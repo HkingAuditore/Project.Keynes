@@ -340,7 +340,12 @@ void DCWorldExt::flush_runtime_visuals(uint32_t dirty_mask) {
 
 static String runtime_effective_mode_name(const RuntimeThreadReport &report) {
     if (report.mode == RuntimeSimulationMode::SHADOW) return "SHADOW";
-    if (report.mode == RuntimeSimulationMode::ACTIVE && report.authority_ready)
+    // A partial promotion is still ACTIVE: some domain's days are now produced
+    // by the worker and the main thread must consume its commits. Requiring
+    // authority_ready here would report OFF for a worker that already owns
+    // Climate, and the commit-consumption boundary would never run.
+    if (report.mode == RuntimeSimulationMode::ACTIVE &&
+        (report.authority_ready || report.authoritative_domain_mask != 0u))
         return "ACTIVE";
     return "OFF";
 }
@@ -380,7 +385,11 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
         out["requested_simulation_thread_mode"] =
             host.mode == RuntimeSimulationMode::ACTIVE ? "ACTIVE" :
             host.mode == RuntimeSimulationMode::SHADOW ? "SHADOW" : "OFF";
-        out["simulation_worker_ready"] = host.authority_ready;
+        // Ready-for-commit-consumption, which a partially promoted worker also
+        // is. `authority_ready` stays available above for callers that mean the
+        // whole-graph gate.
+        out["simulation_worker_ready"] =
+            host.authority_ready || host.authoritative_domain_mask != 0u;
         out["state"] = state;
         out["state_id"] = static_cast<int>(host.state);
         out["domain_abi_version"] = static_cast<int>(host.domain_abi_version);
@@ -388,6 +397,13 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
         out["required_domain_mask"] = static_cast<int64_t>(host.required_domain_mask);
         out["implemented_domain_mask"] = static_cast<int64_t>(host.implemented_domain_mask);
         out["missing_domain_mask"] = static_cast<int64_t>(host.missing_domain_mask);
+        out["requested_authority_mask"] =
+            static_cast<int64_t>(host.requested_authority_mask);
+        out["authoritative_domain_mask"] =
+            static_cast<int64_t>(host.authoritative_domain_mask);
+        out["climate_worker_authoritative"] =
+            (host.authoritative_domain_mask &
+             runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u;
         out["simulation_worker_blocker"] = String(host.coverage_blocker).is_empty()
             ? String(host.fault_code)
             : String(host.coverage_blocker);
@@ -454,6 +470,7 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
         out["climate_pod_replay_ms"] = host.climate_pod_replay_ms;
         out["climate_pod_work_units"] = static_cast<int64_t>(host.climate_pod_work_units);
         out["climate_pod_changed_cells"] = static_cast<int>(host.climate_pod_changed_cells);
+        append_climate_stage_cadence(out, host);
         out["climate_pod_state_hash"] = static_cast<int64_t>(host.climate_pod_state_hash);
         out["climate_pod_reference_hash"] = static_cast<int64_t>(
             host.climate_pod_reference_hash);
@@ -463,6 +480,27 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
             host.climate_pod_parity_mismatch_count);
         out["climate_pod_parity_reason"] = String(host.climate_pod_parity_reason);
         out["climate_pod_fallback_reason"] = String(host.climate_pod_fallback_reason);
+        // 首差异槽位（S2）。少了它们，逐日报告只能说"这天不匹配"，说不出是哪个
+        // 字段哪个 cell——而这正是 harness 唯一能定位分叉的信息。
+        out["climate_parity_day"] = host.climate_parity_day;
+        out["climate_parity_stage"] = static_cast<int>(host.climate_parity_stage);
+        out["climate_parity_cell"] = static_cast<int>(host.climate_parity_cell);
+        out["climate_parity_input_generation"] = static_cast<int64_t>(
+            host.climate_parity_input_generation);
+        out["climate_parity_base_generation"] = static_cast<int64_t>(
+            host.climate_parity_base_generation);
+        out["climate_parity_trace_hash"] = static_cast<int64_t>(
+            host.climate_parity_trace_hash);
+        out["climate_parity_field"] = String(host.climate_parity_field);
+        out["climate_parity_reference_bits"] = String(
+            host.climate_parity_reference_bits);
+        out["climate_parity_worker_bits"] = String(host.climate_parity_worker_bits);
+        // 生产 / worker 各跑过哪些 stage（1 << RuntimeClimateStage）。差集是分叉矩阵
+        // 里 stage 9..13 那些字段唯一可信的归因来源。
+        out["climate_production_stage_mask"] =
+            static_cast<int>(host.climate_production_stage_mask);
+        out["climate_worker_stage_mask"] =
+            static_cast<int>(host.climate_worker_stage_mask);
         out["climate_trace_depth"] = static_cast<int>(host.climate_trace_depth);
         out["climate_trace_front_day"] = host.climate_trace_front_day;
         out["climate_trace_lag_days"] = host.climate_trace_lag_days;
@@ -553,10 +591,16 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
             host.mode == RuntimeSimulationMode::SHADOW ? "SHADOW" : "OFF";
         out["graph_coverage_state"] = String(host.graph_coverage_state);
         out["simulation_host_state"] = static_cast<int>(host.state);
-        out["simulation_worker_ready"] = host.authority_ready;
+        out["simulation_worker_ready"] =
+            host.authority_ready || host.authoritative_domain_mask != 0u;
         out["required_domain_mask"] = static_cast<int64_t>(host.required_domain_mask);
         out["implemented_domain_mask"] = static_cast<int64_t>(host.implemented_domain_mask);
         out["missing_domain_mask"] = static_cast<int64_t>(host.missing_domain_mask);
+        out["authoritative_domain_mask"] =
+            static_cast<int64_t>(host.authoritative_domain_mask);
+        out["climate_worker_authoritative"] =
+            (host.authoritative_domain_mask &
+             runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u;
         out["coverage_blocker"] = String(host.coverage_blocker);
         out["simulation_committed_day"] = host.committed_day;
         out["simulation_generation"] = static_cast<int64_t>(host.generation);
@@ -618,6 +662,7 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
         out["climate_pod_replay_ms"] = host.climate_pod_replay_ms;
         out["climate_pod_work_units"] = static_cast<int64_t>(host.climate_pod_work_units);
         out["climate_pod_changed_cells"] = static_cast<int>(host.climate_pod_changed_cells);
+        append_climate_stage_cadence(out, host);
         out["climate_pod_state_hash"] = static_cast<int64_t>(host.climate_pod_state_hash);
         out["climate_pod_fallback_reason"] = String(host.climate_pod_fallback_reason);
         out["climate_trace_depth"] = static_cast<int>(host.climate_trace_depth);

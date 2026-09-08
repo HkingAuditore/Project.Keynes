@@ -54,6 +54,43 @@ var test_economy_population_scale: int = 0
 @export var ocean_current_visual_enabled: bool = false
 @export var sea_ice_atlas_enabled: bool = false
 @export var mobile_terrain_horizon_enabled: bool = false
+## 生成/读档完成后在生产路径启动 SHADOW worker。探针可先打开
+## runtime_parity_forcing，再让这里启动，避免二次 start 被热切换拒绝。
+var runtime_shadow_on_generate: bool = true
+var runtime_parity_forcing: bool = false
+## 把 Climate 域交给 worker 当权威（per-domain ACTIVE），其余十一个域留在主线程。
+## 打开后 dispatch_system_schedule 一次性抑制 14 个 climate 节点，MapData 由
+## _consume_runtime_commit_if_ready 里的回灌写。
+##
+## 这是运行时可回退的开关：关掉它并重启 worker 即回到同步路径，主线程重新算
+## climate。回退不需要重新生成世界——回灌一直把 worker 状态刷进 MapData，
+## slot 与 MapData 在抑制期间保持同步。
+##
+## 生产默认【开】。抑制面覆盖 native daily slice 图里的 14 个 climate 节点，
+## SeasonRefreshSystem 仍留在主线程（它是 SUS 里按 period_ticks 自驱的独立
+## system，不在那张图里，而且它是地理级重算，本就该是主线程权威）。
+##
+## 两个权威写同一批 MapData 数组这件事已经解决：执行序在 _on_clock_day_changed
+## 里钉成「回灌(第 N 天) → season refresh → capture(第 N+1 天输入)」，三者同一
+## 调用栈内串行，不再依赖节点树的 _process 顺序。并发触碰同一批 slot 导致的
+## 0xC0000005 也已修（native_parallel_executor 的 barrier 竞态）。
+##
+## 已知的两条限制，见 docs/cpp-dots-runtime/full-authoritative-runtime-status.md
+## 第 38 节的实测数字：
+##   1. 小地图（≈2400 格）是负收益。climate 本来只占 0.27ms，capture 打包与回灌
+##      memcpy 的固定开销比它还大。真正有意义的规模是万级格数以上。
+##   2. 大地图上 worker 可能跟不上一天的预算（180x120 下 50 天只有 30 天的回灌
+##      落地）。落不下的那天保持 MapData 原值，不是错值，但场会滞后。
+##
+## 这是运行时可回退的开关（见下方 set_runtime_climate_authority_enabled），回退
+## 不需要重新生成世界。
+var runtime_climate_authority_enabled: bool = true
+## Climate 权威下的回灌游标。worker 自带单调序号，与 commit generation 无关。
+var _runtime_climate_writeback_generation: int = 0
+var _runtime_climate_writeback_days: int = 0
+var _runtime_climate_writeback_last_day: int = -1
+var _runtime_climate_writeback_applied_fields: int = 0
+var _runtime_climate_writeback_skipped: Array = []
 
 var _renderer: HexRenderer = null
 # GM 开关「关闭地形 GI」按下时暂存的三个强度原值，关掉开关时原样还回去。
@@ -174,16 +211,40 @@ func configure(
 func _on_clock_day_changed(day_idx: int) -> void:
 	# OFF/SHADOW keep the synchronous reference authority in this host. The
 	# PlayerController only consumes the resulting state for UI; it must not be
-	# another simulation entry point. ACTIVE will consume worker commits here
-	# once the native domain coverage gate is complete.
+	# another simulation entry point.
 	if not _runtime_ready_for_ticks or _generator == null or _world_clock == null:
 		return
 	var report := _generator.get_runtime_thread_report() \
 		if _generator.has_method("get_runtime_thread_report") else {}
-	var worker_authoritative := String(report.get("simulation_thread_mode", "OFF")) == "ACTIVE" \
-		and bool(report.get("simulation_worker_ready", false))
-	if worker_authoritative:
+	# Whole-graph only. `authority_ready` stays false until every domain has a
+	# POD handler; a per-domain promotion (Climate) must NOT skip the tick,
+	# because the other eleven domains are still computed right here. Reading
+	# `simulation_worker_ready` instead would stop economy, country, triggers
+	# and perf recording the moment Climate alone was promoted — the tick is
+	# the entry point for all of them, not just Climate. Climate itself is
+	# suppressed further down, inside the native daily graph.
+	var whole_graph_authoritative := String(report.get("simulation_thread_mode", "OFF")) == "ACTIVE" \
+		and bool(report.get("authority_ready", false))
+	if whole_graph_authoritative:
 		return
+	# Climate 在 worker 手上时，先把它上一天的结果落进 MapData，再跑这一天的 tick。
+	#
+	# run_daily_tick 里有两个读写 MapData 的环节：season refresh 重算 moisture /
+	# snow_cover / soil_moisture / PAW 这批与日频写者重叠的场，capture 则把 MapData
+	# 打包成 worker 下一天的输入。回灌只挂在 _process 上时，它与本 tick 的先后取决于
+	# 节点树的 _process 顺序 —— 也就是「谁最后写 MapData」决定了 worker 下一天读到
+	# 什么，而这两条路径谁先谁后并没有任何东西保证。在这里显式回灌一次，把顺序钉成
+	#   回灌(第 N 天) → capture(第 N+1 天的输入) → season refresh
+	# 三者落在同一个调用栈里串行。
+	#
+	# 试过反过来排（tick 之后再回灌，让 capture 夹在 season refresh 与回灌之间），
+	# 动机是让季节性重算能进入 worker。零改善：四条平坦的场逐项不变。所以季节信号
+	# 进不来的原因不是这个执行序，改回确定性更强的这一版。
+	#
+	# _process 那次回灌保留：它服务于视觉的每帧刷新。apply 侧有 generation 与
+	# committed-day 双重门，同一天重复调用不会二次应用。
+	if bool(report.get("climate_worker_authoritative", false)):
+		_apply_climate_writeback_if_authoritative(report)
 	run_daily_tick(day_idx, _world_clock.season_phase_for_day(day_idx))
 
 
@@ -426,13 +487,15 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 			return
 		_pending_load_bundle.clear()
 	# Phase A: freeze all worker inputs after generation/restore has completed.
-	# This is a copy boundary only; simulation_thread_mode remains OFF until the
-	# complete POD graph is available and explicitly enabled at startup.
+	# Capture is a copy boundary. SHADOW worker starts immediately after so
+	# production days have a live compare path; ACTIVE still waits on the
+	# remaining domain mask.
 	if _generator != null and _generator.has_method("capture_runtime_inputs_for_worker"):
 		var input_capture: Dictionary = _generator.capture_runtime_inputs_for_worker()
 		if not bool(input_capture.get("ok", false)):
 			push_warning("[runtime-input] capture deferred: %s" % String(
 				input_capture.get("code", "unknown")))
+	_start_production_shadow_worker()
 	var initial_visible_building_cells := PackedInt32Array()
 	for cell in _current_map.cell_count():
 		if cell < _current_map.visible_arr.size() and _current_map.visible_arr[cell] != 0:
@@ -452,6 +515,49 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 			_world_clock.pause(clock_was_paused)
 		on_clock_running_changed(not _world_clock.paused)
 	world_ready.emit(_current_map, _world_data, _generator, _view_adapter)
+
+
+func _start_production_shadow_worker() -> void:
+	if not runtime_shadow_on_generate:
+		return
+	if _generator == null or not _generator.has_method("start_runtime_worker"):
+		return
+	var ext = _generator.get_data_core_world_ext() \
+		if _generator.has_method("get_data_core_world_ext") else null
+	if ext != null and runtime_parity_forcing \
+			and ext.has_method("set_runtime_climate_parity_forcing"):
+		ext.set_runtime_climate_parity_forcing(true)
+	_runtime_climate_writeback_generation = 0
+	_runtime_climate_writeback_days = 0
+	_runtime_climate_writeback_last_day = -1
+	var config: Dictionary = {
+		"simulation_thread_mode": "SHADOW",
+		"graph_coverage_complete": false,
+		"day": 0,
+		"speed_days_per_second": 1.0,
+		"paused": true,
+	}
+	if runtime_climate_authority_enabled:
+		# graph_coverage_complete 在 per-domain ACTIVE 下的含义是"请求的这些域
+		# 线程安全"，不是整图。CLIMATE(0x2) | COMMIT(0x800)：COMMIT 是 barrier
+		# 域本身，C++ 侧也会补上，这里显式写出让配置自解释。
+		config["simulation_thread_mode"] = "ACTIVE"
+		config["graph_coverage_complete"] = true
+		config["authoritative_domain_mask"] = 0x802
+	var started: Dictionary = _generator.start_runtime_worker(config)
+	if not bool(started.get("ok", false)):
+		if runtime_climate_authority_enabled:
+			# 权威启动失败不能静默退回 SHADOW：主线程的 climate 抑制门读的是
+			# worker 侧的授予位，授予没发生就不会抑制，于是主线程仍在算 climate。
+			# 但调用方以为已经转权威了，所以这里必须响。
+			push_error("[runtime-worker] CLIMATE authority start refused: %s (%s)" % [
+				String(started.get("code", "unknown")),
+				String(started.get("message", ""))])
+		else:
+			push_warning("[runtime-worker] SHADOW start deferred: %s" % String(
+				started.get("code", "unknown")))
+		return
+	_sync_runtime_worker_clock()
 
 
 func _stop_previous_runtime_worker() -> void:
@@ -597,6 +703,7 @@ func _consume_runtime_commit_if_ready() -> void:
 	if not bool(report.get("simulation_worker_ready", report.get(
 			"authority_ready", false))):
 		return
+	_apply_climate_writeback_if_authoritative(report)
 	var commit: Dictionary = _generator.poll_runtime_commit(_runtime_commit_generation)
 	var received_new_commit := bool(commit.get("ok", false)) \
 			and bool(commit.get("available", false)) \
@@ -663,6 +770,84 @@ func _consume_runtime_commit_if_ready() -> void:
 			break
 	if all_done:
 		_runtime_pending_visual_generation = 0
+
+
+## Climate 权威在 worker 时，把它提交的那一天刷进 MapData。
+##
+## 这是 ACTIVE Climate 的主线程另一半：抑制门已经让主线程不再算 climate，
+## 如果这里不回灌，MapData 就永久停在转权威那一天。
+##
+## 语义上滞后一日：worker 提交第 N 天之后，主线程在下一个渲染帧才把它应用到
+## MapData，所以同一帧里读 MapData 的消费者看到的是第 N-1 天。这与视觉 patch
+## 消费的滞后一致，也是 worker 不阻塞主线程的代价。需要同帧一致的读者必须走
+## simulation_committed 信号，而不是直接轮询 MapData。
+func _apply_climate_writeback_if_authoritative(report: Dictionary) -> void:
+	if not bool(report.get("climate_worker_authoritative", false)):
+		return
+	# 回灌绑在 DCWorldExt 上，MapGenerator 没有转发它：这条路径每帧走一次，
+	# 多一层 GDScript 转发只是白开销。
+	var ext = _generator.get_data_core_world_ext() \
+		if _generator.has_method("get_data_core_world_ext") else null
+	if ext == null or not ext.has_method("apply_runtime_climate_writeback"):
+		return
+	var applied: Dictionary = ext.apply_runtime_climate_writeback(
+		_runtime_climate_writeback_generation)
+	if not bool(applied.get("ok", false)):
+		# 形状不符 / 权威已撤销都会走到这里。抑制门这时也已经放开（授予位是同一个
+		# 来源），所以主线程会自己重新算 climate，不需要在这里补算。
+		push_warning("[climate-authority] writeback rejected: %s" % String(
+			applied.get("code", "unknown")))
+		return
+	if not bool(applied.get("applied", false)):
+		return
+	_runtime_climate_writeback_generation = int(applied.get(
+		"generation", _runtime_climate_writeback_generation))
+	_runtime_climate_writeback_last_day = int(applied.get("committed_day", -1))
+	_runtime_climate_writeback_days += 1
+	# A field the slot guards reject is a field the worker owns but never
+	# publishes, so MapData silently keeps the pre-promotion value. Kept for
+	# diagnostics rather than warned about per day: the set is constant for a
+	# given world, so the probe reads it once instead of spamming the log.
+	_runtime_climate_writeback_applied_fields = int(applied.get("applied_fields", 0))
+	_runtime_climate_writeback_skipped = applied.get("skipped_fields", [])
+
+
+## 运行时开关 Climate 权威。关掉后停掉 ACTIVE worker、改以 SHADOW 重启，
+## 主线程立刻恢复算 climate。打开则相反。不需要重新生成世界。
+func set_runtime_climate_authority_enabled(enabled: bool) -> Dictionary:
+	runtime_climate_authority_enabled = enabled
+	if _generator == null or not _generator.has_method("request_runtime_stop"):
+		return climate_authority_diagnostics()
+	_generator.request_runtime_stop()
+	var deadline := Time.get_ticks_msec() + 5000
+	while Time.get_ticks_msec() < deadline:
+		var stop_report: Dictionary = _generator.get_runtime_thread_report() \
+			if _generator.has_method("get_runtime_thread_report") else {}
+		var state := String(stop_report.get(
+			"simulation_host_state", stop_report.get("state", "STOPPED")))
+		if state in ["STOPPED", "FAULTED"]:
+			break
+		OS.delay_msec(4)
+	_start_production_shadow_worker()
+	return climate_authority_diagnostics()
+
+
+## Climate 权威诊断。供 dev console / 对拍场景读，不参与调度决策。
+func climate_authority_diagnostics() -> Dictionary:
+	var report: Dictionary = _generator.get_runtime_thread_report() \
+		if _generator != null and _generator.has_method("get_runtime_thread_report") \
+		else {}
+	return {
+		"enabled": runtime_climate_authority_enabled,
+		"worker_authoritative": bool(report.get("climate_worker_authoritative", false)),
+		"authoritative_domain_mask": int(report.get("authoritative_domain_mask", 0)),
+		"requested_authority_mask": int(report.get("requested_authority_mask", 0)),
+		"writeback_generation": _runtime_climate_writeback_generation,
+		"writeback_days": _runtime_climate_writeback_days,
+		"writeback_last_day": _runtime_climate_writeback_last_day,
+		"writeback_applied_fields": _runtime_climate_writeback_applied_fields,
+		"writeback_skipped_fields": _runtime_climate_writeback_skipped,
+	}
 
 
 ## 视觉 intent 的兼容适配点。worker 只发布数值 intent；具体 MapData/GPU
@@ -1129,6 +1314,7 @@ func get_gm_capabilities() -> Dictionary:
 		"commands": _gm_command_specs(technologies, goods, buildings),
 		"toggles": [
 			{"id": "simulation.paused", "label": "暂停模拟", "group": "模拟"},
+			{"id": "simulation.climate_worker_authority", "label": "Climate worker 权威", "group": "模拟"},
 			{"id": "simulation.click_claim_territory", "label": "点击地块接管领土", "group": "模拟"},
 			{"id": "system.autosave", "label": "自动存档（每年）", "group": "系统"},
 			{"id": "visual.day_night", "label": "昼夜循环", "group": "视觉"},
@@ -1232,6 +1418,8 @@ func get_gm_toggle_state(toggle_id: String) -> Dictionary:
 	match toggle_id:
 		"simulation.paused":
 			return {"ok": true, "enabled": _world_clock.paused}
+		"simulation.climate_worker_authority":
+			return {"ok": true, "enabled": runtime_climate_authority_enabled}
 		"simulation.click_claim_territory":
 			return {"ok": true, "enabled": _gm_click_claim_territory_enabled}
 		"system.autosave":
@@ -1330,6 +1518,8 @@ func set_gm_toggle(toggle_id: String, enabled: bool) -> Dictionary:
 				return _gm_error("clock_unavailable", "时钟尚未就绪。")
 			_world_clock.pause(enabled)
 			on_clock_running_changed(not enabled)
+		"simulation.climate_worker_authority":
+			set_runtime_climate_authority_enabled(enabled)
 		"simulation.click_claim_territory":
 			return _gm_set_click_claim_territory_enabled(enabled)
 		"system.autosave":

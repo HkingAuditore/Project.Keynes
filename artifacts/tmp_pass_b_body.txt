@@ -1,0 +1,211 @@
+void climate_pass_b_pure(const ClimatePassBKnobs &knobs,
+                         const ClimatePassBLanes &lanes) {
+    if (knobs.n_cells <= 0) return;
+    // ── 前言：把 knobs/lanes 摊回生产里的局部名，主循环得以原样保留 ──
+    const auto winter_boost = knobs.winter_boost;
+    const auto snow_cool = knobs.snow_cool;
+    const auto veg_cool = knobs.veg_cool;
+    const auto diurnal_amp = knobs.diurnal_amp;
+    const auto evap_gain = knobs.evap_gain;
+    const auto rs_threshold = knobs.rs_threshold;
+    const auto rs_factor = knobs.rs_factor;
+    const auto rs_lookback = knobs.rs_lookback;
+    const auto wrap_period_x = knobs.wrap_period_x;
+    const auto t_freeze = knobs.t_freeze;
+    const auto coupling_gain = knobs.coupling_gain;
+    const auto coast_leak = knobs.coast_leak;
+    const auto sea_ice_albedo_cooling = knobs.sea_ice_albedo_cooling;
+    const auto season_phase = knobs.season_phase;
+    const auto snowpack_cover_low = knobs.snowpack_cover_low;
+    const auto snowpack_cover_full = knobs.snowpack_cover_full;
+    const auto foliage_size = knobs.foliage_size;
+    const auto n_cells = knobs.n_cells;
+    const auto TS = lanes.temp_snapshot;
+    const auto SNOWPACK = lanes.snowpack;
+    const auto ELEV = lanes.elevation;
+    const auto LAT = lanes.lat_norm;
+    const auto POSX = lanes.pos_x;
+    const auto POSY = lanes.pos_y;
+    const auto INSOL_DEV = lanes.insolation_dev;
+    const auto TTA = lanes.temp_transport_anomaly;
+    const auto IW = lanes.is_water;
+    const auto LF = lanes.landform;
+    const auto VG = lanes.vegetation;
+    const auto SIF_PB = lanes.sea_ice_frac;
+    const auto NB = lanes.neighbor_indices;
+    const auto FOL = lanes.foliage_table;
+    const auto LANOM = lanes.local_thermal_anomaly;
+    const auto M = lanes.moisture;
+
+    // LandformType.LF: LOWLAND=5, HILL=6, MOUNTAIN=7, PEAK=8, DELTA=9,
+    //                  SALT_FLAT=11 (per landform_type.gd:9-23)
+    constexpr uint8_t LF_LOWLAND   = 5;
+    constexpr uint8_t LF_MOUNTAIN  = 7;
+    constexpr uint8_t LF_PEAK      = 8;
+    constexpr uint8_t LF_DELTA     = 9;
+    constexpr uint8_t LF_SALT_FLAT = 11;
+
+    for (int i = 0; i < n_cells; ++i) {
+        const bool is_water = IW[i] != 0;
+        const float temp_now     = TS[i];
+        const float moisture_now = M[i];
+        const float snow_cover   = pk_snowpack_cover_for_albedo(SNOWPACK[i], snowpack_cover_low, snowpack_cover_full);
+
+        float d_albedo      = 0.0f;
+        float d_coastal     = 0.0f;
+        float d_landform    = 0.0f;
+        float d_evap        = 0.0f;
+        float d_rain_shadow = 1.0f;
+
+        // (line 4413-4416) ① albedo (land only)
+        if (!is_water) {
+            d_albedo = -snow_cool * snow_cover;
+            const uint8_t veg_id = VG[i];
+            const float foliage = (veg_id < foliage_size) ? FOL[veg_id] : 0.0f;
+            d_albedo -= veg_cool * foliage;
+        }
+
+        // (line 4419-4431) ② coastal heat leak (land only, using snapshot
+        //                   of cells[ni].temperature_transport_anomaly)
+        if (!is_water) {
+            float sum_anomaly = 0.0f;
+            int   n_water     = 0;
+            const int base = i * 6;
+            for (int d = 0; d < 6; ++d) {
+                const int32_t ni = NB[base + d];
+                if (ni < 0) continue;
+                if (IW[ni] != 0) {
+                    sum_anomaly += TTA[ni];
+                    n_water += 1;
+                }
+            }
+            if (n_water > 0) {
+                d_coastal = coast_leak * (sum_anomaly / float(n_water)) * winter_boost;
+            }
+        }
+
+        // (line 4434-4440) ③ landform diurnal (land only)
+        if (!is_water) {
+            const uint8_t lf = LF[i];
+            const float solar_factor = std::clamp(INSOL_DEV[i], -1.0f, 1.0f);
+            if (lf == LF_LOWLAND || lf == LF_SALT_FLAT || lf == LF_DELTA) {
+                d_landform = diurnal_amp * solar_factor;
+            } else if (lf == LF_PEAK || lf == LF_MOUNTAIN) {
+                d_landform = -diurnal_amp * 0.5f * std::max(0.0f, -solar_factor);
+            }
+        }
+
+        // (line 4442-4445) A 修复（2026-06）：原 `T[i] = clamp(temp_now + d_*)`
+        // 改为累加到 cell_local_thermal_anomaly。temp_final 仍计算用于下面 evap
+        // 阶段的 t_eff（保持 GDScript bit-equal 的语义：evap 用 "本日 d_* 注入后" 的 t）。
+        float local_anom_contrib = d_albedo + d_coastal + d_landform;
+        if (local_anom_contrib < -0.08f) local_anom_contrib = -0.08f;
+        else if (local_anom_contrib > 0.08f) local_anom_contrib = 0.08f;
+        LANOM[i] = LANOM[i] + local_anom_contrib;
+        if (LANOM[i] < -0.08f) LANOM[i] = -0.08f;
+        else if (LANOM[i] > 0.08f) LANOM[i] = 0.08f;
+        float temp_final = temp_now + local_anom_contrib;
+        if (temp_final < 0.0f) temp_final = 0.0f;
+        else if (temp_final > 1.0f) temp_final = 1.0f;
+
+        // (line 4456-4481) ④ evap (land only)
+        if (!is_water) {
+            const float t_eff = temp_final + TTA[i];
+            float water_neighbor_w = 0.0f;
+            float sum_water_anomaly = 0.0f;
+            const int bo = i * 6;
+            for (int d = 0; d < 6; ++d) {
+                const int32_t ni = NB[bo + d];
+                if (ni < 0) continue;
+                if (IW[ni] != 0) {
+                    water_neighbor_w += 1.0f;
+                    sum_water_anomaly += TTA[ni];
+                }
+            }
+            float avg_water_anomaly = 0.0f;
+            if (water_neighbor_w > 0.0f) {
+                avg_water_anomaly = sum_water_anomaly / water_neighbor_w;
+            }
+            float nb_w_norm = water_neighbor_w / 6.0f;
+            if (nb_w_norm > 1.0f) nb_w_norm = 1.0f;
+            if (t_eff > t_freeze && nb_w_norm > 0.0f) {
+                d_evap = evap_gain * (t_eff - t_freeze) * nb_w_norm;
+                if (coupling_gain > 0.0f && std::fabs(avg_water_anomaly) > 0.001f) {
+                    float evap_mul = 1.0f + coupling_gain * avg_water_anomaly;
+                    if (evap_mul < 0.0f) evap_mul = 0.0f;
+                    else if (evap_mul > 2.0f) evap_mul = 2.0f;
+                    d_evap *= evap_mul;
+                }
+            }
+            if (avg_water_anomaly < -0.01f && nb_w_norm > 0.0f && coupling_gain > 0.0f) {
+                d_evap += -evap_gain * (-avg_water_anomaly) * nb_w_norm * coupling_gain * 0.5f;
+            }
+        }
+
+        // (line 4484-4518) ⑤ rain shadow (land only, gated by rs_lookback>0)
+        if (!is_water && rs_lookback > 0) {
+            const double ny = double(LAT[i]);
+            // jitter = sin(q*0.31 + r*0.47) * 0.05；schema 没存 q/r。本实现把
+            // jitter 取 0（jitter 仅 ±0.05 ny，对 wind_at 输出方向影响极小，
+            // bit-equal 容差 1e-4 内可容忍。后续 PR 加 cell_q/cell_r schema 后
+            // 可补 jitter）。
+            double w_dx = 0.0, w_dy = 0.0;
+            wind_belt_at(ny, season_phase, &w_dx, &w_dy);
+            const double wlen2 = w_dx * w_dx + w_dy * w_dy;
+            if (wlen2 > 1e-6) {
+                float max_upwind_h = ELEV[i];
+                int probe_idx = i;
+                for (int step = 0; step < rs_lookback; ++step) {
+                    int   best_idx = -1;
+                    double best_dot = 0.1;
+                    const float pwx = POSX[probe_idx];
+                    const float pwy = POSY[probe_idx];
+                    const int pbase = probe_idx * 6;
+                    for (int d3 = 0; d3 < 6; ++d3) {
+                        const int32_t ni3 = NB[pbase + d3];
+                        if (ni3 < 0) continue;
+                        const double dx = pk_wrap_min_image_dx(
+                            double(pwx) - double(POSX[ni3]), wrap_period_x);
+                        const double dy = double(pwy) - double(POSY[ni3]);
+                        const double len2 = dx * dx + dy * dy;
+                        if (len2 < 1e-6) continue;
+                        const double inv_len = 1.0 / std::sqrt(len2);
+                        const double dotv = (dx * w_dx + dy * w_dy) * inv_len;
+                        if (dotv > best_dot) {
+                            best_dot = dotv;
+                            best_idx = ni3;
+                        }
+                    }
+                    if (best_idx < 0) break;
+                    probe_idx = best_idx;
+                    if (ELEV[probe_idx] > max_upwind_h) {
+                        max_upwind_h = ELEV[probe_idx];
+                    }
+                }
+                if (max_upwind_h - ELEV[i] >= rs_threshold) {
+                    d_rain_shadow = rs_factor;
+                }
+            }
+        }
+
+        // (line 4520-4523) write moisture
+        float moisture_final = (moisture_now + d_evap) * d_rain_shadow;
+        if (moisture_final < 0.0f) moisture_final = 0.0f;
+        else if (moisture_final > 1.0f) moisture_final = 1.0f;
+        M[i] = moisture_final;
+    }
+
+    // climate-loop-closure Phase 4.1：海冰反照率→温度反馈尾循环（仅水域）。
+    // A 修复（2026-06）：水域 cell sea-ice 反照率冷却也作为 local anomaly 贡献，
+    // 不再直接改写 cell_temp。LANOM 已被 pass_a 末尾清零，pass_b 主循环对 water cell
+    // 也不写（与原 scalar 一致），所以此处直接累加为水域唯一的 LANOM 贡献。
+    if (sea_ice_albedo_cooling > 0.0f && SIF_PB != nullptr) {
+        for (int i = 0; i < n_cells; ++i) {
+            if (IW[i] == 0) continue;
+            float water_local = LANOM[i] - sea_ice_albedo_cooling * SIF_PB[i];
+            if (water_local < -0.08f) water_local = -0.08f;
+            else if (water_local > 0.08f) water_local = 0.08f;
+            LANOM[i] = water_local;
+        }
+    }
+}

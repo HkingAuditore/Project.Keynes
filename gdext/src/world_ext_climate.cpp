@@ -49,26 +49,15 @@
 
 
 #include "world_ext_internal.h"
+// S3：Climate pass POD buffer + 9 个纯内核的共享定义。
+#include "runtime_climate_passes.h"
 
 namespace pk {
 
 using namespace godot;
 
-static inline float pk_signed_hydrology_contribution(float anomaly,
-                                                      float wet_weight,
-                                                      float dry_weight) {
-    return climate_formula::signed_hydrology_contribution(
-        anomaly, wet_weight, dry_weight);
-}
-
-static inline float pk_plant_available_water(
-        float moisture, float water_balance_30d, float soil_moisture,
-        float water_balance_weight, float soil_buffer_weight,
-        float drought_penalty) {
-    return climate_formula::plant_available_water(
-        moisture, water_balance_30d, soil_moisture,
-        water_balance_weight, soil_buffer_weight, drought_penalty);
-}
+// pk_signed_hydrology_contribution / pk_plant_available_water 已在 S3 搬到
+// runtime_climate_pass_math.h（经 world_ext_internal.h 传递可见）。
 
 
 // Per-cell annual-mean insolation memo. dc_insolation_annual_mean integrates 16
@@ -114,6 +103,7 @@ const float *DCWorldExt::ensure_insol_annual_mean_cache(const float *lat_ptr, in
 
 
 double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase, double season_phase) {
+    _production_stage_mask |= pk_async_climate::CLIMATE_STAGE_BIT_PASS_A;
     (void)phase; // current contract: phase == season_phase (same fast tick)
 
     // [Step 3b-1 DIAG] one-shot fallback-reason probe — prints exactly once
@@ -378,159 +368,148 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
     const float * const __restrict pinsol_mean =
         ensure_insol_annual_mean_cache(pln, n, axial_tilt_deg, daylen_amp);
 
-    // GDScript constants (architecture.md §G.6 / TERRAIN/CV enums)
     (void)pterr;
-    constexpr uint8_t COVER_GLACIER = 2; // CoverType.CV.GLACIER
+    (void)land_continentality; // season_offset_continental 按契约忽略它（见 runtime_climate_formulas.h）
+    // 下面这些标量在 S3 之前由本函数自己的主循环消费；现在它们统一进 scalars，
+    // 由共享内核使用。保留局部变量是为了让上面的 cp_struct 解析段一行不改。
+    (void)insol_amp_gain;
+    (void)thermal_land_eff;
+    (void)thermal_water_eff;
+    (void)thermal_snow_eff;
+    (void)thermal_high_eff;
+    (void)thermal_delta_cap_eff;
+    (void)moisture_relax_eff;
+    (void)ema_alpha_30;
+    (void)ema_alpha_365;
+    (void)annual_ema_alpha;
 
-    // ─── 7. Main loop — 1:1 mirror of _climate_pass_a SoA branch ───────
-    // [Phase C.3c] 主循环抽成 lambda，scalar 路径 run_range(0, n)，
-    // _thread 变体走 pk::parallel_for_range；body 严格 1:1。
-    auto run_range = [&](int begin, int end) {
-        for (int i = begin; i < end; ++i) {
-            const float ny             = pln[i];
-            const float temp_year_lat  = pty[i];
-            const float elevation      = pe[i];
-            const bool  is_water       = piw[i] != 0;
+    // ─── 7. 委托给共享纯内核（S3，断点 2 的解法）─────────────────────────
+    //
+    // 这里原本是一份与 _async_pass_a_kernel_pure 逐行同形的主循环。两份"同形"
+    // 的 float 代码不等于逐位相同结果：编译器对两个 TU 可以做不同的 FMA 收缩与
+    // 寄存器分配，实测 SHADOW 对拍第 1 日就在 temp_baseline 上差 ~9e-8（1 ULP），
+    // 30 日累积到 4.9e-2。parity_hash 是逐位归约，ULP 差就是不通过。
+    //
+    // 所以生产路径不再保留第二份实现：把 _slots 快照进 POD buffer，调与 async
+    // round / SHADOW worker 完全同一个函数，再把输出散回 _slots。等价性从"逐公式
+    // 论证"变成"同一份代码"，且生产侧以后改 pass-A 不需要再同步 worker。
+    using namespace pk_async_climate;
+    ClimateInputBuf &kin = _pass_a_sync_input_buf;
+    ClimateOutputBuf &kout = _pass_a_sync_output_buf;
+    kin.n_cells = n;
+    kout.n_cells = n;
 
-            // (a) dev_today — absolute deviation with a high-latitude relative
-            // blend. Pure absolute insol_now-mean under-amplifies polar seasons;
-            // pure fractional deviation explodes near polar-night mean values.
-            const float ny_clamped = dc_clamp01f(ny);
-            const float insol_now = dc_insolation_now(ny_clamped, float(season_phase), axial_tilt_deg, daylen_amp);
-            const float insol_mean = pinsol_mean[i];
-            float dev_today = dc_insolation_season_dev(ny_clamped, insol_now, insol_mean);
-            if (dev_today < insol_dev_min) dev_today = insol_dev_min;
-            else if (dev_today > insol_dev_max) dev_today = insol_dev_max;
-            const float day_length = dc_day_length_norm(ny_clamped, float(season_phase), axial_tilt_deg);
-            const float heat_input = dc_clamp01f(insol_now * solar_gain);
-
-            // (b) moisture. Insolation affects land moisture only through the
-            // existing temperature/evaporation/wind/ocean/precipitation loop.
-            // The generated base is a static geographic anchor, not a seasonal driver.
-            float moisture_target;
-            if (is_water) {
-                moisture_target = pbm[i];
-            } else {
-                float bm = pbm[i];
-                if (bm > 1.0f) bm = 1.0f;
-                else if (bm < 0.0f) bm = 0.0f;
-                moisture_target = bm;
-                if (pweatherv != nullptr) {
-                    float vapor = pweatherv[i];
-                    if (vapor < 0.0f) vapor = 0.0f; else if (vapor > 1.0f) vapor = 1.0f;
-                    const float vapor_reference = bm * 0.15f;
-                    moisture_target += (vapor - vapor_reference) * moisture_vapor_w;
-                }
-                if (pprecip != nullptr) {
-                    float precip = pprecip[i];
-                    if (precip < 0.0f) precip = 0.0f; else if (precip > 1.0f) precip = 1.0f;
-                    moisture_target += precip * moisture_precip_w;
-                }
-                if (psoil != nullptr) {
-                    float soil = psoil[i];
-                    if (soil < -0.5f) soil = -0.5f; else if (soil > 0.5f) soil = 0.5f;
-                    moisture_target += pk_signed_hydrology_contribution(
-                        soil, moisture_soil_w, moisture_soil_dry_w);
-                }
-                if (pwb != nullptr) {
-                    float wb = pwb[i];
-                    if (wb < -1.0f) wb = -1.0f; else if (wb > 1.0f) wb = 1.0f;
-                    moisture_target += pk_signed_hydrology_contribution(
-                        wb, moisture_wb_w, moisture_wb_dry_w);
-                }
-                if (moisture_target > 1.0f) moisture_target = 1.0f;
-                else if (moisture_target < 0.0f) moisture_target = 0.0f;
-            }
-            float moisture_now = moisture_target;
-            if (!is_water) {
-                float prev_moisture = pm[i];
-                if (!std::isfinite(prev_moisture) || prev_moisture < 0.0f || prev_moisture > 1.0f) {
-                    prev_moisture = moisture_target;
-                }
-                moisture_now = prev_moisture + (moisture_target - prev_moisture) * moisture_relax_eff;
-                if (moisture_now > 1.0f) moisture_now = 1.0f;
-                else if (moisture_now < 0.0f) moisture_now = 0.0f;
-            }
-
-            // (c) temperature
-            // alt_penalty 输入为 sea_level 以上 land_h，避免海平面附近陆地被绝对 elevation 过度扣温。
-            float temp_year = temp_year_lat - float(pk_alt_penalty(double(elevation), double(sea_level)));
-            if (temp_year < 0.0f) temp_year = 0.0f;
-            else if (temp_year > 1.0f) temp_year = 1.0f;
-            // 物理化（2026-06-16）：季节项按吸收短波因子缩放（持久冰封→低吸收）。
-            // 用【年均温度 p365[i]】（上一步 temp_365d）作冰封代理，避免夏季融化正反馈失控。
-            float season_offset = pk_season_offset_continental(insol_amp_gain, is_water, p365[i], dev_today, land_continentality);
-            // [climate-zone-fix P2] 沿海陆地缩小季节振幅（冬暖夏凉）→ 温带海洋性(Cfb)。
-            if (!is_water && pmar != nullptr) {
-                season_offset *= (1.0f - maritime_damp * pmar[i]);
-            }
-            float radiative_target = modifier_climate_radiative_target(
-                i, temp_year + season_offset);
-            if (radiative_target < 0.0f) radiative_target = 0.0f;
-            else if (radiative_target > 1.0f) radiative_target = 1.0f;
-
-            // (d) thermal inertia: radiative target updates heat storage first.
-            const float current_temp = pt[i];
-            float prev_energy = pthermal[i];
-            if (pei[i] == 0) {
-                prev_energy = current_temp;
-            }
-            const float prev_temp = prev_energy;
-            float alpha = thermal_land_eff;
-            if (is_water) alpha = thermal_water_eff;
-            else if (pcov[i] == COVER_GLACIER) alpha = thermal_snow_eff;
-            else if (psnowpack[i] > snowpack_cover_low) alpha = thermal_snow_eff;
-            else if (elevation > 0.70f) alpha = thermal_high_eff;
-            const float heat_next = prev_energy + (radiative_target - prev_energy) * alpha;
-            float temp_delta = heat_next - prev_temp;
-            if (temp_delta > thermal_delta_cap_eff) temp_delta = thermal_delta_cap_eff;
-            else if (temp_delta < -thermal_delta_cap_eff) temp_delta = -thermal_delta_cap_eff;
-            float temp_now = prev_temp + temp_delta;
-            if (temp_now < 0.0f) temp_now = 0.0f;
-            else if (temp_now > 1.0f) temp_now = 1.0f;
-            pthermal[i] = heat_next;
-
-            // (e) keep snowpack physical state, but do not publish visual snow.
-            if (!is_water) {
-                if (pcov[i] == COVER_GLACIER && psnowpack[i] < 0.80f) {
-                    psnowpack[i] = 0.80f;
-                }
-            } else {
-                psnowpack[i] = 0.0f;
-            }
-
-            // (e) write SoA outputs
-            // A 修复（2026-06）：pass_a 不再写 cell_temp。把含热惯性的运行时
-            // baseline 写入 cell_temp_baseline (ptb)；wind_surface 末端用它做合成基准。
-            // cell_temp_baseline_year (pty) 是年级静态 LUT，pass_a 只读不写（与改前一致）。
-            // 同时把 ocean / local anomaly 在 pass_a 末尾清 0，开启新一日累加。
-            ptb[i]  = temp_now;
-            poanom[i] = 0.0f;
-            planom[i] = 0.0f;
-            pm[i]   = moisture_now;
-            pso[i]  = season_offset;
-            pinsol[i] = insol_now;
-            pdev[i]   = dev_today;
-            pday[i]   = day_length;
-            pheat[i]  = heat_input;
-
-            // (f) EMA
-            float m30, m365;
-            if (pei[i] == 0) {
-                m30  = temp_now;
-                m365 = temp_now;
-                pei[i] = 1;
-            } else {
-                // lerp(a, b, t) = a + (b - a) * t
-                m30  = p30[i]  + (temp_now - p30[i])  * ema_alpha_30;
-                m365 = p365[i] + (temp_now - p365[i]) * ema_alpha_365;
-            }
-            p30[i]  = m30;
-            p365[i] = m365;
-            pa[i]   = m30 - m365;
-        }
+    auto snap_f32 = [n](const float *src, std::vector<float> &dst) {
+        dst.resize(size_t(n));
+        std::memcpy(dst.data(), src, size_t(n) * sizeof(float));
     };
-    run_range(0, n);
+    auto snap_u8 = [n](const uint8_t *src, std::vector<uint8_t> &dst) {
+        dst.resize(size_t(n));
+        std::memcpy(dst.data(), src, size_t(n));
+    };
+
+    snap_u8(piw, kin.is_water);
+    snap_u8(pcov, kin.cover);
+    snap_u8(pei, kin.ema_initialized);
+    snap_f32(pe, kin.elevation);
+    snap_f32(pbm, kin.base_moisture);
+    snap_f32(pln, kin.lat_norm);
+    snap_f32(pty, kin.temp_baseline_year);
+    snap_f32(pt, kin.temp);
+    snap_f32(p30, kin.temp_30d);
+    snap_f32(p365, kin.temp_365d);
+    snap_f32(pthermal, kin.thermal_energy);
+    snap_f32(psnowpack, kin.snowpack);
+    snap_f32(pm, kin.moisture);
+    // 可选水文列：sync 路径以"slot 存在且长度匹配"为启用条件，内核以"vector 长度
+    // == n"为启用条件，两者语义一致 —— 不可用时必须清空而不是留上一次的内容。
+    if (pweatherv != nullptr) snap_f32(pweatherv, kin.weather_vapor); else kin.weather_vapor.clear();
+    if (pprecip != nullptr) snap_f32(pprecip, kin.weather_precip); else kin.weather_precip.clear();
+    if (psoil != nullptr) snap_f32(psoil, kin.soil_moisture); else kin.soil_moisture.clear();
+    if (pwb != nullptr) snap_f32(pwb, kin.water_balance_30d); else kin.water_balance_30d.clear();
+    // maritime：sync 的启用条件同时含 damp > 0；内核只看长度，damp 由 scalars 带。
+    if (pmar != nullptr) snap_f32(pmar, kin.maritime); else kin.maritime.clear();
+    // 年均日照：直接交主线程 memo 的内容，内核命中即读 → 与旧主循环逐位相同。
+    snap_f32(pinsol_mean, kin.insol_annual_mean);
+
+    // Modifier 冻结项。sync 旧路径逐 cell 调 modifier_climate_radiative_target
+    // （Godot/DCWorldExt 依赖，worker 不可用）；共享契约是主线程把 add/factor 冻结成
+    // per-cell POD 列，内核只做 (base + add) * factor 再 clamp[0,1]。
+    kin.radiative_modifier_add.assign(size_t(n), 0.0f);
+    kin.radiative_modifier_factor.assign(size_t(n), 1.0f);
+    if (_modifier_runtime != nullptr) {
+        const ModifierRuntime *modifier =
+            static_cast<const ModifierRuntime *>(_modifier_runtime);
+        for (int i = 0; i < n; ++i) {
+            double add = 0.0;
+            double factor = 1.0;
+            modifier->climate_radiative_terms(i, add, factor);
+            kin.radiative_modifier_add[size_t(i)] = float(add);
+            kin.radiative_modifier_factor[size_t(i)] = float(factor);
+        }
+    }
+
+    kin.scalars.season_phase = season_phase;
+    kin.scalars.axial_tilt_deg = axial_tilt_deg;
+    kin.scalars.day_length_gain = daylen_amp;
+    kin.scalars.solar_gain = solar_gain;
+    kin.scalars.insol_amp = insol_amp;
+    kin.scalars.insol_gain = insol_gain;
+    kin.scalars.insol_dev_min = insol_dev_min;
+    kin.scalars.insol_dev_max = insol_dev_max;
+    kin.scalars.thermal_inertia_land = thermal_land;
+    kin.scalars.thermal_inertia_water = thermal_water;
+    kin.scalars.thermal_inertia_snow = thermal_snow;
+    kin.scalars.thermal_inertia_high_mountain = thermal_high;
+    kin.scalars.thermal_daily_delta_cap = thermal_delta_cap;
+    kin.scalars.thermal_dt_days = thermal_dt;
+    kin.scalars.runtime_moisture_base_relax_rate = moisture_relax;
+    kin.scalars.runtime_moisture_weather_vapor_weight = moisture_vapor_w;
+    kin.scalars.runtime_moisture_precip_weight = moisture_precip_w;
+    kin.scalars.runtime_moisture_soil_weight = moisture_soil_w;
+    kin.scalars.runtime_moisture_soil_dry_weight = moisture_soil_dry_w;
+    kin.scalars.runtime_moisture_water_balance_weight = moisture_wb_w;
+    kin.scalars.runtime_moisture_water_balance_dry_weight = moisture_wb_dry_w;
+    kin.scalars.snowpack_cover_low = snowpack_cover_low;
+    kin.scalars.maritime_season_damp = maritime_damp;
+    kin.scalars.sea_level = sea_level;
+    kin.scalars.days_per_year = days_per_year;
+
+
+    if (!_async_pass_a_kernel_pure(kin, kout)) {
+        diag("shared pass_a kernel rejected input dimensions");
+        return -1.0;
+    }
+
+    // 留存这一轮生产真实用过的输入缓冲。reference publish 会把它挂到 trace 帧上，
+    // 于是 worker 跑的是"生产这一天用过的那份输入"，而不是 capture 时另建的一份。
+    _production_round_input = std::make_shared<const ClimateInputBuf>(kin);
+    record_production_pass_a_scalars(kin.scalars);
+
+    // pass_a → reference 边界诊断的留存（见成员注释）。
+    if (_pass_a_reference_boundary_reports_left > 0) {
+        _pass_a_last_temp_baseline = kout.temp_baseline;
+        _pass_a_last_thermal_energy = kout.thermal_energy;
+        _pass_a_last_temp_30d = kout.temp_30d;
+        _pass_a_last_temp_365d = kout.temp_365d;
+    }
+
+    // 散回 _slots。写目标与旧主循环完全一致的 16 条列（含末尾清 0 的两条 anomaly）。
+    std::memcpy(ptb, kout.temp_baseline.data(), size_t(n) * sizeof(float));
+    std::memcpy(pm, kout.moisture.data(), size_t(n) * sizeof(float));
+    std::memcpy(pso, kout.temp_season_offset.data(), size_t(n) * sizeof(float));
+    std::memcpy(pinsol, kout.insolation_now.data(), size_t(n) * sizeof(float));
+    std::memcpy(pdev, kout.insolation_dev.data(), size_t(n) * sizeof(float));
+    std::memcpy(pday, kout.day_length.data(), size_t(n) * sizeof(float));
+    std::memcpy(pheat, kout.heat_input.data(), size_t(n) * sizeof(float));
+    std::memcpy(pthermal, kout.thermal_energy.data(), size_t(n) * sizeof(float));
+    std::memcpy(psnowpack, kout.snowpack.data(), size_t(n) * sizeof(float));
+    std::memcpy(poanom, kout.ocean_thermal_anomaly.data(), size_t(n) * sizeof(float));
+    std::memcpy(planom, kout.local_thermal_anomaly.data(), size_t(n) * sizeof(float));
+    std::memcpy(p30, kout.temp_30d.data(), size_t(n) * sizeof(float));
+    std::memcpy(p365, kout.temp_365d.data(), size_t(n) * sizeof(float));
+    std::memcpy(pa, kout.temp_anomaly.data(), size_t(n) * sizeof(float));
+    std::memcpy(pei, kout.ema_initialized.data(), size_t(n));
 
     // Step 3b-1.5 will fold dirty mask + drift in here. Step 3b-1 leaves
     // climate_dirty_mask / _dt/_dm/_ds_global_yesterday untouched — Pass-B
@@ -575,431 +554,18 @@ double DCWorldExt::run_climate_pass_a(const Dictionary &cp_struct, double phase,
 // 返回值同语义：≥0 = elapsed_ms（实际语义 0.0，与原 pass 末尾 return 0.0 对齐），
 // <0 = 拒绝（GDScript fallback）。
 double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double phase, double season_phase, int n_tasks) {
-    (void)phase; (void)season_phase;
-
-    static bool _diag_printed = false;
-    auto diag = [&](const char *reason) {
-        if (!_diag_printed) {
-            _diag_printed = true;
-            UtilityFunctions::print(String("[DCWorldExt][diag] run_climate_pass_a_thread fallback: ") + String(reason));
-        }
-    };
-
-    if (!_bound) { diag("not _bound"); return -1.0; }
-
-    // ─── 2. Resolve all slot ids ─────────────────────────────────────────
-    const int sid_temp           = component_id(StringName("cell_temp"));
-    const int sid_moisture       = component_id(StringName("cell_moisture"));
-    const int sid_temp_baseline  = component_id(StringName("cell_temp_baseline"));
-    const int sid_temp_30d       = component_id(StringName("cell_temp_30d"));
-    const int sid_temp_365d      = component_id(StringName("cell_temp_365d"));
-    const int sid_temp_anom      = component_id(StringName("cell_temp_anomaly"));
-    const int sid_temp_seas_off  = component_id(StringName("cell_temp_season_offset"));
-    const int sid_elev           = component_id(StringName("cell_elevation"));
-    const int sid_base_moist     = component_id(StringName("cell_base_moisture"));
-    const int sid_lat_norm       = component_id(StringName("cell_lat_norm"));
-    const int sid_temp_year      = component_id(StringName("cell_temp_baseline_year"));
-    const int sid_is_water       = component_id(StringName("cell_is_water"));
-    const int sid_terrain        = component_id(StringName("cell_terrain"));
-    const int sid_cover          = component_id(StringName("cell_cover"));
-    const int sid_ema_init       = component_id(StringName("cell_ema_initialized"));
-    const int sid_insol_now      = component_id(StringName("cell_insolation_now"));
-    const int sid_insol_dev      = component_id(StringName("cell_insolation_dev"));
-    const int sid_day_length     = component_id(StringName("cell_day_length"));
-    const int sid_heat_input     = component_id(StringName("cell_heat_input"));
-    const int sid_thermal_energy = component_id(StringName("cell_thermal_energy"));
-    const int sid_snowpack       = component_id(StringName("cell_snowpack"));
-    // A 修复（2026-06）：见 run_climate_pass_a 同段注释。
-    const int sid_ocean_anom     = component_id(StringName("cell_ocean_thermal_anomaly"));
-    const int sid_local_anom     = component_id(StringName("cell_local_thermal_anomaly"));
-    const int sid_weather_vapor   = component_id(StringName("cell_weather_vapor"));
-    const int sid_weather_precip  = component_id(StringName("cell_weather_precip"));
-    const int sid_soil_moisture   = component_id(StringName("cell_soil_moisture"));
-    const int sid_water_balance   = component_id(StringName("cell_water_balance_30d"));
-
-    if (sid_temp           < 0 || sid_moisture      < 0 ||
-        sid_temp_baseline  < 0 || sid_temp_30d      < 0 || sid_temp_365d < 0 ||
-        sid_temp_anom      < 0 || sid_temp_seas_off < 0 ||
-        sid_elev           < 0 || sid_base_moist    < 0 ||
-        sid_lat_norm       < 0 || sid_temp_year     < 0 ||
-        sid_is_water       < 0 || sid_terrain       < 0 || sid_cover     < 0 ||
-        sid_ema_init       < 0 || sid_insol_now     < 0 || sid_insol_dev < 0 ||
-        sid_day_length     < 0 || sid_heat_input    < 0 ||
-        sid_thermal_energy < 0 || sid_snowpack      < 0 ||
-        sid_ocean_anom     < 0 || sid_local_anom    < 0) {
-        diag("slot id <0");
-        return -1.0;
-    }
-
-    // ─── 3. Pull cp_struct scalars ───────────────────────────────────────
-    const float  insol_amp      = cp_struct.has("insol_amp")
-                                    ? float(cp_struct["insol_amp"]) : 0.20f;
-    const float  insol_gain     = cp_struct.has("insol_gain")
-                                    ? float(cp_struct["insol_gain"]) : 1.0f;
-    const float  insol_amp_gain = insol_amp * insol_gain;
-    const float  land_continentality = cp_struct.has("temp_land_continentality")
-                                    ? float(cp_struct["temp_land_continentality"]) : 1.0f;
-    const float  axial_tilt_deg = cp_struct.has("axial_tilt_deg")
-                                    ? float(cp_struct["axial_tilt_deg"]) : 23.5f;
-    const float  daylen_amp     = cp_struct.has("day_length_gain")
-                                    ? float(cp_struct["day_length_gain"])
-                                    : (cp_struct.has("insolation_daylen_amp")
-                                        ? float(cp_struct["insolation_daylen_amp"]) : 0.35f);
-    const float  solar_gain     = cp_struct.has("solar_gain")
-                                    ? float(cp_struct["solar_gain"]) : 1.0f;
-    const float  insol_dev_min  = cp_struct.has("insol_dev_min")
-                                    ? float(cp_struct["insol_dev_min"]) : -1.0f;
-    const float  insol_dev_max  = cp_struct.has("insol_dev_max")
-                                    ? float(cp_struct["insol_dev_max"]) : 1.0f;
-    const float  thermal_land   = cp_struct.has("thermal_inertia_land")
-                                    ? float(cp_struct["thermal_inertia_land"]) : 0.35f;
-    const float  thermal_water  = cp_struct.has("thermal_inertia_water")
-                                    ? float(cp_struct["thermal_inertia_water"]) : 0.045f;
-    const float  thermal_snow   = cp_struct.has("thermal_inertia_snow")
-                                    ? float(cp_struct["thermal_inertia_snow"]) : 0.09f;
-    const float  thermal_high   = cp_struct.has("thermal_inertia_high_mountain")
-                                    ? float(cp_struct["thermal_inertia_high_mountain"]) : 0.16f;
-    const float  thermal_delta_cap = cp_struct.has("thermal_daily_delta_cap")
-                                    ? float(cp_struct["thermal_daily_delta_cap"]) : 0.15f;
-    // 加速/跳日补偿：α 与 delta_cap 按经过天数积分（dt<=1 退化为原值）。
-    float thermal_dt = cp_struct.has("thermal_dt_days")
-                                    ? float(cp_struct["thermal_dt_days"]) : 1.0f;
-    if (thermal_dt < 1.0f) thermal_dt = 1.0f;
-    else if (thermal_dt > 30.0f) thermal_dt = 30.0f;
-    const float  thermal_land_eff  = pk_thermal_alpha_eff(thermal_land,  thermal_dt);
-    const float  thermal_water_eff = pk_thermal_alpha_eff(thermal_water, thermal_dt);
-    const float  thermal_snow_eff  = pk_thermal_alpha_eff(thermal_snow,  thermal_dt);
-    const float  thermal_high_eff  = pk_thermal_alpha_eff(thermal_high,  thermal_dt);
-    const float  thermal_delta_cap_eff = thermal_delta_cap * thermal_dt;
-    float moisture_relax = cp_struct.has("runtime_moisture_base_relax_rate")
-                                    ? float(cp_struct["runtime_moisture_base_relax_rate"]) : 0.24f;
-    if (moisture_relax < 0.0f) moisture_relax = 0.0f;
-    else if (moisture_relax > 1.0f) moisture_relax = 1.0f;
-    const float moisture_relax_eff = 1.0f - std::pow(1.0f - moisture_relax, thermal_dt);
-    float moisture_vapor_w = cp_struct.has("runtime_moisture_weather_vapor_weight")
-                                    ? float(cp_struct["runtime_moisture_weather_vapor_weight"]) : 0.12f;
-    if (moisture_vapor_w < 0.0f) moisture_vapor_w = 0.0f;
-    else if (moisture_vapor_w > 1.0f) moisture_vapor_w = 1.0f;
-    float moisture_precip_w = cp_struct.has("runtime_moisture_precip_weight")
-                                    ? float(cp_struct["runtime_moisture_precip_weight"]) : 0.78f;
-    if (moisture_precip_w < 0.0f) moisture_precip_w = 0.0f;
-    else if (moisture_precip_w > 2.5f) moisture_precip_w = 2.5f;
-    float moisture_soil_w = cp_struct.has("runtime_moisture_soil_weight")
-                                    ? float(cp_struct["runtime_moisture_soil_weight"]) : 1.82f;
-    if (moisture_soil_w < 0.0f) moisture_soil_w = 0.0f;
-    else if (moisture_soil_w > 2.5f) moisture_soil_w = 2.5f;
-    float moisture_soil_dry_w = cp_struct.has("runtime_moisture_soil_dry_weight")
-                                    ? float(cp_struct["runtime_moisture_soil_dry_weight"]) : 2.21f;
-    if (moisture_soil_dry_w < 0.0f) moisture_soil_dry_w = 0.0f;
-    else if (moisture_soil_dry_w > 2.5f) moisture_soil_dry_w = 2.5f;
-    float moisture_wb_w = cp_struct.has("runtime_moisture_water_balance_weight")
-                                    ? float(cp_struct["runtime_moisture_water_balance_weight"]) : 1.04f;
-    if (moisture_wb_w < 0.0f) moisture_wb_w = 0.0f;
-    else if (moisture_wb_w > 2.5f) moisture_wb_w = 2.5f;
-    float moisture_wb_dry_w = cp_struct.has("runtime_moisture_water_balance_dry_weight")
-                                    ? float(cp_struct["runtime_moisture_water_balance_dry_weight"]) : 1.30f;
-    if (moisture_wb_dry_w < 0.0f) moisture_wb_dry_w = 0.0f;
-    else if (moisture_wb_dry_w > 2.5f) moisture_wb_dry_w = 2.5f;
-    const float  snowpack_cover_low = cp_struct.has("snowpack_cover_low")
-                                    ? float(cp_struct["snowpack_cover_low"]) : 0.05f;
-    // [climate-zone-fix P2] 沿海陆地海洋性调温：season_offset *= (1 - damp*maritime_factor)。
-    // maritime_factor 为静态 per-cell 数组（cp_struct 传入，CoW 零拷贝）；damp=0→关闭=原行为。
-    const float  maritime_damp  = cp_struct.has("maritime_season_damp")
-                                    ? float(cp_struct["maritime_season_damp"]) : 0.0f;
-    PackedFloat32Array maritime_arr;
-    if (cp_struct.has("maritime_factor")) maritime_arr = cp_struct["maritime_factor"];
-    const float  sea_level      = cp_struct.has("sea_level")
-                                    ? float(cp_struct["sea_level"]) : 0.0f;
-    int days_per_year = cp_struct.has("days_per_year") ? int(cp_struct["days_per_year"]) : 365;
-    if (days_per_year < 1) days_per_year = 1;
-    else if (days_per_year > 3660) days_per_year = 3660;
-    const float annual_ema_alpha = 1.0f / float(days_per_year);
-    // [dt-aware EMA 2026-06-28] temp_30d/365d 的 EMA alpha 按 thermal_dt(=本次经过游戏天数)等效缩放。
-    // 旧实现固定用 1/30、1/365 的"每日"alpha，但 pass_a 在加速档下每次只调一次却推进 ~dt 天→两个 EMA
-    // 窗口实际膨胀到 30·dt / 365·dt 天，m30 跟不上季节循环、与 m365 一起趋近年均→temp_anomaly 坍缩到≈0
-    // →DROUGHT/HEATWAVE 结构性不可达。等效多日 alpha=1-(1-base)^dt；dt<=1 时恰为 base（逐位无回归）。
-    const float ema_alpha_30  = (thermal_dt <= 1.0f) ? (1.0f / 30.0f)
-                                    : (1.0f - std::pow(1.0f - 1.0f / 30.0f, thermal_dt));
-    const float ema_alpha_365 = (thermal_dt <= 1.0f) ? annual_ema_alpha
-                                    : (1.0f - std::pow(1.0f - annual_ema_alpha, thermal_dt));
-    // ─── 5. Acquire array views & validate sizes ────────────────────────
-    PackedFloat32Array &temp_a          = _slots.write[sid_temp].arr_f32;
-    PackedFloat32Array &moist_a         = _slots.write[sid_moisture].arr_f32;
-    PackedFloat32Array &temp_baseline_a = _slots.write[sid_temp_baseline].arr_f32;
-    PackedFloat32Array &temp_30d_a      = _slots.write[sid_temp_30d].arr_f32;
-    PackedFloat32Array &temp_365d_a     = _slots.write[sid_temp_365d].arr_f32;
-    PackedFloat32Array &temp_anom_a     = _slots.write[sid_temp_anom].arr_f32;
-    PackedFloat32Array &season_off_a    = _slots.write[sid_temp_seas_off].arr_f32;
-    PackedFloat32Array &elev_a          = _slots.write[sid_elev].arr_f32;
-    PackedFloat32Array &base_moist_a    = _slots.write[sid_base_moist].arr_f32;
-    PackedFloat32Array &lat_a           = _slots.write[sid_lat_norm].arr_f32;
-    PackedFloat32Array &temp_year_a     = _slots.write[sid_temp_year].arr_f32;
-    PackedByteArray    &is_water_a      = _slots.write[sid_is_water].arr_u8;
-    PackedByteArray    &terrain_a       = _slots.write[sid_terrain].arr_u8;
-    PackedByteArray    &cover_a         = _slots.write[sid_cover].arr_u8;
-    PackedByteArray    &ema_init_a      = _slots.write[sid_ema_init].arr_u8;
-    PackedFloat32Array &insol_now_a     = _slots.write[sid_insol_now].arr_f32;
-    PackedFloat32Array &insol_dev_a     = _slots.write[sid_insol_dev].arr_f32;
-    PackedFloat32Array &day_length_a    = _slots.write[sid_day_length].arr_f32;
-    PackedFloat32Array &heat_input_a    = _slots.write[sid_heat_input].arr_f32;
-    PackedFloat32Array &thermal_a       = _slots.write[sid_thermal_energy].arr_f32;
-    PackedFloat32Array &snowpack_a      = _slots.write[sid_snowpack].arr_f32;
-    // A 修复（2026-06）：anomaly 合成 slot — pass_a 末尾 fill 0。
-    PackedFloat32Array &ocean_anom_a    = _slots.write[sid_ocean_anom].arr_f32;
-    PackedFloat32Array &local_anom_a    = _slots.write[sid_local_anom].arr_f32;
-    const PackedFloat32Array *weather_vapor_a = nullptr;
-    const PackedFloat32Array *weather_precip_a = nullptr;
-    const PackedFloat32Array *soil_moisture_a = nullptr;
-    const PackedFloat32Array *water_balance_a = nullptr;
-
-    const int n = temp_a.size();
-    if (n <= 0) { diag("temp_a empty"); return -1.0; }
-
-    // Native-daily fixed cursor support.  The kernel is cell-local, so a
-    // continuation may execute [start_idx, end_idx) without changing the
-    // result of the one-shot pass.  Defaults preserve the existing full-pass
-    // contract for all non-sliced callers.
-    const int start_idx = cp_struct.has("start_idx") ? int(cp_struct["start_idx"]) : 0;
-    const int end_idx_raw = cp_struct.has("end_idx") ? int(cp_struct["end_idx"]) : n;
-    const int end_idx = std::min(std::max(end_idx_raw, start_idx), n);
-    if (start_idx < 0 || start_idx > n || end_idx < start_idx) {
-        diag("invalid range");
-        return -1.0;
-    }
-
-    if (moist_a.size()         != n ||
-        temp_baseline_a.size() != n || temp_30d_a.size()  != n ||
-        temp_365d_a.size()     != n || temp_anom_a.size() != n ||
-        season_off_a.size()    != n || elev_a.size()      != n ||
-        base_moist_a.size()    != n || lat_a.size()       != n ||
-        temp_year_a.size()     != n || is_water_a.size()  != n ||
-        terrain_a.size()       != n || cover_a.size()     != n ||
-        ema_init_a.size()      != n || insol_now_a.size() != n ||
-        insol_dev_a.size()     != n || day_length_a.size()!= n ||
-        heat_input_a.size()    != n || thermal_a.size()   != n ||
-        snowpack_a.size()      != n ||
-        ocean_anom_a.size()    != n || local_anom_a.size() != n) {
-        diag("size mismatch"); return -1.0;
-    }
-    if (sid_weather_vapor >= 0 && _slots.write[sid_weather_vapor].arr_f32.size() == n) {
-        weather_vapor_a = &_slots.write[sid_weather_vapor].arr_f32;
-    }
-    if (sid_weather_precip >= 0 && _slots.write[sid_weather_precip].arr_f32.size() == n) {
-        weather_precip_a = &_slots.write[sid_weather_precip].arr_f32;
-    }
-    if (sid_soil_moisture >= 0 && _slots.write[sid_soil_moisture].arr_f32.size() == n) {
-        soil_moisture_a = &_slots.write[sid_soil_moisture].arr_f32;
-    }
-    if (sid_water_balance >= 0 && _slots.write[sid_water_balance].arr_f32.size() == n) {
-        water_balance_a = &_slots.write[sid_water_balance].arr_f32;
-    }
-
-    // ─── 6. Hot pointers ────────────────────────────────────────────────
-    float * const __restrict pt   = temp_a.ptrw();
-    float * const __restrict pm   = moist_a.ptrw();
-    float * const __restrict ptb  = temp_baseline_a.ptrw();
-    float * const __restrict p30  = temp_30d_a.ptrw();
-    float * const __restrict p365 = temp_365d_a.ptrw();
-    float * const __restrict pa   = temp_anom_a.ptrw();
-    float * const __restrict pso  = season_off_a.ptrw();
-    const float * const      pe   = elev_a.ptr();
-    const float * const      pbm  = base_moist_a.ptr();
-    const float * const      pln  = lat_a.ptr();
-    const float * const      pty  = temp_year_a.ptr();
-    const uint8_t * const    piw  = is_water_a.ptr();
-    const uint8_t * const    pterr= terrain_a.ptr();
-    const uint8_t * const    pcov = cover_a.ptr();
-    uint8_t * const __restrict pei = ema_init_a.ptrw();
-    float * const __restrict pinsol = insol_now_a.ptrw();
-    float * const __restrict pdev   = insol_dev_a.ptrw();
-    float * const __restrict pday   = day_length_a.ptrw();
-    float * const __restrict pheat  = heat_input_a.ptrw();
-    float * const __restrict pthermal = thermal_a.ptrw();
-    float * const __restrict psnowpack = snowpack_a.ptrw();
-    // A 修复（2026-06）：anomaly 合成 slot 写指针。
-    float * const __restrict poanom = ocean_anom_a.ptrw();
-    float * const __restrict planom = local_anom_a.ptrw();
-    const float * const pweatherv = weather_vapor_a != nullptr ? weather_vapor_a->ptr() : nullptr;
-    const float * const pprecip = weather_precip_a != nullptr ? weather_precip_a->ptr() : nullptr;
-    const float * const psoil = soil_moisture_a != nullptr ? soil_moisture_a->ptr() : nullptr;
-    const float * const pwb = water_balance_a != nullptr ? water_balance_a->ptr() : nullptr;
-    // [climate-zone-fix P2] 海洋性因子指针（缺省/关闭→nullptr，热循环跳过缩放）。
-    const float * const pmar = (maritime_arr.size() == n && maritime_damp > 0.0f) ? maritime_arr.ptr() : nullptr;
-
-    (void)pterr;
-    constexpr uint8_t COVER_GLACIER = 2;
-
-    // Per-cell annual-mean insolation: memoized (day-invariant); rebuilt single-
-    // threaded here before the parallel dispatch, then read const in the lambda.
-    const float * const __restrict pinsol_mean =
-        ensure_insol_annual_mean_cache(pln, n, axial_tilt_deg, daylen_amp);
-
-    // ─── 7. Main loop（与 run_climate_pass_a 主循环 1:1）──────────────────
-    auto run_range = [&](int begin, int end) {
-        for (int i = begin; i < end; ++i) {
-            const float ny             = pln[i];
-            const float temp_year_lat  = pty[i];
-            const float elevation      = pe[i];
-            const bool  is_water       = piw[i] != 0;
-
-            const float ny_clamped = dc_clamp01f(ny);
-            const float insol_now = dc_insolation_now(ny_clamped, float(season_phase), axial_tilt_deg, daylen_amp);
-            const float insol_mean = pinsol_mean[i];
-            float dev_today = dc_insolation_season_dev(ny_clamped, insol_now, insol_mean);
-            if (dev_today < insol_dev_min) dev_today = insol_dev_min;
-            else if (dev_today > insol_dev_max) dev_today = insol_dev_max;
-            const float day_length = dc_day_length_norm(ny_clamped, float(season_phase), axial_tilt_deg);
-            const float heat_input = dc_clamp01f(insol_now * solar_gain);
-
-            // Moisture has no direct seasonal multiplier; solar forcing reaches
-            // it through the existing water-cycle state sampled below.
-            float moisture_target;
-            if (is_water) {
-                moisture_target = pbm[i];
-            } else {
-                float bm = pbm[i];
-                if (bm > 1.0f) bm = 1.0f;
-                else if (bm < 0.0f) bm = 0.0f;
-                moisture_target = bm;
-                if (pweatherv != nullptr) {
-                    float vapor = pweatherv[i];
-                    if (vapor < 0.0f) vapor = 0.0f; else if (vapor > 1.0f) vapor = 1.0f;
-                    const float vapor_reference = bm * 0.15f;
-                    moisture_target += (vapor - vapor_reference) * moisture_vapor_w;
-                }
-                if (pprecip != nullptr) {
-                    float precip = pprecip[i];
-                    if (precip < 0.0f) precip = 0.0f; else if (precip > 1.0f) precip = 1.0f;
-                    moisture_target += precip * moisture_precip_w;
-                }
-                if (psoil != nullptr) {
-                    float soil = psoil[i];
-                    if (soil < -0.5f) soil = -0.5f; else if (soil > 0.5f) soil = 0.5f;
-                    moisture_target += pk_signed_hydrology_contribution(
-                        soil, moisture_soil_w, moisture_soil_dry_w);
-                }
-                if (pwb != nullptr) {
-                    float wb = pwb[i];
-                    if (wb < -1.0f) wb = -1.0f; else if (wb > 1.0f) wb = 1.0f;
-                    moisture_target += pk_signed_hydrology_contribution(
-                        wb, moisture_wb_w, moisture_wb_dry_w);
-                }
-                if (moisture_target > 1.0f) moisture_target = 1.0f;
-                else if (moisture_target < 0.0f) moisture_target = 0.0f;
-            }
-            float moisture_now = moisture_target;
-            if (!is_water) {
-                float prev_moisture = pm[i];
-                if (!std::isfinite(prev_moisture) || prev_moisture < 0.0f || prev_moisture > 1.0f) {
-                    prev_moisture = moisture_target;
-                }
-                moisture_now = prev_moisture + (moisture_target - prev_moisture) * moisture_relax_eff;
-                if (moisture_now > 1.0f) moisture_now = 1.0f;
-                else if (moisture_now < 0.0f) moisture_now = 0.0f;
-            }
-
-            float temp_year = temp_year_lat - float(pk_alt_penalty(double(elevation), double(sea_level)));
-            if (temp_year < 0.0f) temp_year = 0.0f;
-            else if (temp_year > 1.0f) temp_year = 1.0f;
-            // 物理化（2026-06-16）：季节项按吸收短波因子缩放（持久冰封→低吸收）。
-            // 用【年均温度 p365[i]】（上一步 temp_365d）作冰封代理，避免夏季融化正反馈失控。
-            float season_offset = pk_season_offset_continental(insol_amp_gain, is_water, p365[i], dev_today, land_continentality);
-            // [climate-zone-fix P2] 沿海陆地缩小季节振幅（冬暖夏凉）→ 温带海洋性(Cfb)。
-            if (!is_water && pmar != nullptr) {
-                season_offset *= (1.0f - maritime_damp * pmar[i]);
-            }
-            float radiative_target = modifier_climate_radiative_target(
-                i, temp_year + season_offset);
-            if (radiative_target < 0.0f) radiative_target = 0.0f;
-            else if (radiative_target > 1.0f) radiative_target = 1.0f;
-
-            const float current_temp = pt[i];
-            float prev_energy = pthermal[i];
-            if (pei[i] == 0) {
-                prev_energy = current_temp;
-            }
-            const float prev_temp = prev_energy;
-            float alpha = thermal_land_eff;
-            if (is_water) alpha = thermal_water_eff;
-            else if (pcov[i] == COVER_GLACIER) alpha = thermal_snow_eff;
-            else if (psnowpack[i] > snowpack_cover_low) alpha = thermal_snow_eff;
-            else if (elevation > 0.70f) alpha = thermal_high_eff;
-            const float heat_next = prev_energy + (radiative_target - prev_energy) * alpha;
-            float temp_delta = heat_next - prev_temp;
-            if (temp_delta > thermal_delta_cap_eff) temp_delta = thermal_delta_cap_eff;
-            else if (temp_delta < -thermal_delta_cap_eff) temp_delta = -thermal_delta_cap_eff;
-            float temp_now = prev_temp + temp_delta;
-            if (temp_now < 0.0f) temp_now = 0.0f;
-            else if (temp_now > 1.0f) temp_now = 1.0f;
-            pthermal[i] = heat_next;
-
-            // Runtime visual snow is authored by weather distribute; climate
-            // only maintains the persistent snowpack used by physics.
-            if (!is_water) {
-                if (pcov[i] == COVER_GLACIER && psnowpack[i] < 0.80f) {
-                    psnowpack[i] = 0.80f;
-                }
-            } else {
-                psnowpack[i] = 0.0f;
-            }
-
-            // A 修复（2026-06）：pass_a 不再写 cell_temp；ptb 承载运行时 baseline，
-            // 同时清零 ocean / local anomaly（开启新一日累加）。详见 run_climate_pass_a。
-            ptb[i]  = temp_now;
-            poanom[i] = 0.0f;
-            planom[i] = 0.0f;
-            pm[i]   = moisture_now;
-            pso[i]  = season_offset;
-            pinsol[i] = insol_now;
-            pdev[i]   = dev_today;
-            pday[i]   = day_length;
-            pheat[i]  = heat_input;
-
-            float m30, m365;
-            if (pei[i] == 0) {
-                m30  = temp_now;
-                m365 = temp_now;
-                pei[i] = 1;
-            } else {
-                m30  = p30[i]  + (temp_now - p30[i])  * ema_alpha_30;
-                m365 = p365[i] + (temp_now - p365[i]) * ema_alpha_365;
-            }
-            p30[i]  = m30;
-            p365[i] = m365;
-            pa[i]   = m30 - m365;
-        }
-    };
-
-    const int range_n = end_idx - start_idx;
-    if (range_n > 0) {
-        // Dispatch over a zero-based local range, then translate task bounds
-        // back to absolute cell indices.  This keeps worker partitioning and
-        // deterministic cell order identical to the full pass.
-        pk::parallel_for_range("pk_climate_pass_a", range_n, n_tasks, /*seq_threshold=*/256,
-            [&](int begin, int end) { run_range(start_idx + begin, start_idx + end); });
-    }
-
-    // §11.2 flush — 与主 pass 一致。A 修复（2026-06）：不再 flush cell_temp，
-    // 改 flush 两条 anomaly slot。
-    if (!bool(cp_struct.get("defer_visible_publish", false))) {
-        _flush_slot_to_map(sid_moisture);
-        _flush_slot_to_map(sid_temp_baseline);
-        _flush_slot_to_map(sid_temp_seas_off);
-        _flush_slot_to_map(sid_ema_init);
-        _flush_slot_to_map(sid_temp_30d);
-        _flush_slot_to_map(sid_temp_365d);
-        _flush_slot_to_map(sid_temp_anom);
-        _flush_slot_to_map(sid_insol_now);
-        _flush_slot_to_map(sid_insol_dev);
-        _flush_slot_to_map(sid_day_length);
-        _flush_slot_to_map(sid_heat_input);
-        _flush_slot_to_map(sid_thermal_energy);
-        _flush_slot_to_map(sid_snowpack);
-        _flush_slot_to_map(sid_ocean_anom);
-        _flush_slot_to_map(sid_local_anom);
-    }
-
-    return 0.0;
+    _production_stage_mask |= pk_async_climate::CLIMATE_STAGE_BIT_PASS_A;
+    // S3：这里原本是 run_climate_pass_a 的第三份 pass-A 实现（prelude 全量复制 +
+    // 主循环走 pk::parallel_for_range）。断点 2 的教训正是"同形的第二份 float 代码
+    // 不等于逐位相同的结果"——两个循环体在不同 TU/不同向量化下会差 1 ULP，而
+    // parity_hash 是逐位归约。pass-A 在 N=2400 时单线程约 0.3ms，并行收益不足以
+    // 换一份必须永久手工同步的算法副本。
+    //
+    // 现在统一转发到 run_climate_pass_a，由它调共享纯内核
+    // pk_async_climate::_async_pass_a_kernel_pure —— 生产 sync、生产 async round、
+    // SHADOW worker 三条驱动路径共用同一份代码。
+    (void)n_tasks;
+    return run_climate_pass_a(cp_struct, phase, season_phase);
 }
 
 // ─── F.2a: ocean water pass ─────────────────────────────────────────────────
@@ -1020,20 +586,7 @@ double DCWorldExt::run_climate_pass_a_thread(const Dictionary &cp_struct, double
 //   * pass anomaly_out as scratch buffer (water cells written; land cells preserved
 //     for subsequent run_ocean_land_pass call)
 //   * after both passes return, copy anomaly_out → cells[i].temperature_transport_anomaly
-static inline float pk_limit_cold_water_positive_transport_source(
-        float source, float baseline, float sea_ice_frac, float t_form, float t_melt) {
-    if (source <= 0.0f) return source;
-    source *= 1.0f - dc_clampf(sea_ice_frac, 0.0f, 1.0f);
-    const float span = std::max(0.001f, t_melt - t_form);
-    float t = (baseline - t_form) / span;
-    if (t < 0.0f) t = 0.0f;
-    else if (t > 1.0f) t = 1.0f;
-    const float cold_gate = t * t * (3.0f - 2.0f * t);
-    source *= cold_gate;
-    const float melt_room = t_melt - baseline;
-    if (melt_room <= 0.0f) return source;
-    return std::min(source, melt_room);
-}
+// pk_limit_cold_water_positive_transport_source 已在 S3 搬到 runtime_climate_pass_math.h。
 
 void DCWorldExt::_ensure_enso_basin_cache(
         int n_cells, const uint8_t *is_water, const uint8_t *terrain,
@@ -1378,65 +931,43 @@ double DCWorldExt::run_ocean_water_pass(Dictionary knobs) {
     const float * const __restrict SIF  = s_sea_ice.arr_f32.ptr();
     float       * const __restrict AOUT = anomaly_out.ptrw();
 
+    // S3: 留存生产这一轮真实用过的标量，reference publish 时随 reference 发布给 worker。
+    // 不写的后果是 worker 跑同一份共享内核、却吃结构默认 knobs。
+    record_production_round_scalars(0x04, knobs);
+    record_production_ocean_water_input(n_cells, baseline_arr.ptr(), temp_before_arr.ptr());
+
     auto t0 = std::chrono::high_resolution_clock::now();
 
-    for (int i = start_idx; i < end_idx; ++i) {
-        if (IW[i] == 0) continue; // skip land
-        const float cur_x = OCX[i];
-        const float cur_y = OCY[i];
-        const float cur_len2 = cur_x * cur_x + cur_y * cur_y;
-        if (cur_len2 < 1e-6f || advect_steps == 0) {
-            AOUT[i] = dc_decay_tta(AOUT[i], tta_zero_current_decay);
-            // A 修复：current 不足时 ocean anomaly 也朝 0 衰减（避免上轮残值滞留）。
-            OANOM_SLOT[i] = OANOM_SLOT[i] * (1.0f - tta_zero_current_decay);
-            continue;
-        }
-        const float inv_cur = 1.0f / std::sqrt(cur_len2);
-        const float up_dx = -cur_x * inv_cur;
-        const float up_dy = -cur_y * inv_cur;
+    // 主循环已下沉到共享内核（见 pk_async_climate::OceanWaterKnobs 注释）。
+    // worker 跑同一份，不再有第二份零覆盖的拄本。
+    {
+        pk_async_climate::OceanWaterKnobs ok;
+        ok.n_cells = n_cells;
+        ok.start_idx = start_idx;
+        ok.end_idx = end_idx;
+        ok.advect_steps = advect_steps;
+        ok.heat_mix = heat_mix;
+        ok.wrap_period_x = wrap_period_x;
+        ok.tta_source_cap = tta_source_cap;
+        ok.tta_blend_rate = tta_blend_rate;
+        ok.tta_zero_current_decay = tta_zero_current_decay;
+        ok.cold_transport_form = cold_transport_form;
+        ok.cold_transport_melt = cold_transport_melt;
 
-        int upstream_idx = i;
-        for (int step = 0; step < advect_steps; ++step) {
-            int   best_idx = -1;
-            float best_dot = 0.1f;
-            const float swx = POSX[upstream_idx];
-            const float swy = POSY[upstream_idx];
-            const int ub = upstream_idx * 6;
-            for (int d = 0; d < 6; ++d) {
-                const int32_t ni = NB[ub + d];
-                if (ni < 0) continue;
-                if (IW[ni] == 0) continue;
-                const float dx = pk_wrap_min_image_dx(POSX[ni] - swx, wrap_period_x);
-                const float dy = POSY[ni] - swy;
-                const float len2 = dx * dx + dy * dy;
-                if (len2 < 1e-6f) continue;
-                const float inv_len = 1.0f / std::sqrt(len2);
-                const float dot_v = (dx * up_dx + dy * up_dy) * inv_len;
-                if (dot_v > best_dot) {
-                    best_dot = dot_v;
-                    best_idx = ni;
-                }
-            }
-            if (best_idx < 0) break;
-            upstream_idx = best_idx;
-        }
+        pk_async_climate::OceanWaterLanes ol;
+        ol.is_water = IW;
+        ol.pos_x = POSX;
+        ol.pos_y = POSY;
+        ol.ocean_current_x = OCX;
+        ol.ocean_current_y = OCY;
+        ol.baseline = BL;
+        ol.temp_before = TB;
+        ol.sea_ice_frac = SIF;
+        ol.neighbors = NB;
+        ol.ocean_anomaly = OANOM_SLOT;
+        ol.tta_inout = AOUT;
 
-        const float temp_self = TB[i];
-        const float temp_up   = TB[upstream_idx];
-        float temp_mixed = temp_self + (temp_up - temp_self) * heat_mix; // = lerpf
-        if (temp_mixed < 0.0f) temp_mixed = 0.0f;
-        else if (temp_mixed > 1.0f) temp_mixed = 1.0f;
-        // Sea ice insulates the surface from positive ocean heat anomalies.
-        // Keep cold anomalies intact, but reduce warm-current injection by ice cover.
-        float source = temp_mixed - BL[i];
-        source = pk_limit_cold_water_positive_transport_source(
-            source, BL[i], SIF[i], cold_transport_form, cold_transport_melt);
-        // A 修复（2026-06）：不再写 T；只写 ocean anomaly slot。
-        float oanom = source;
-        if (oanom < -0.08f) oanom = -0.08f;
-        else if (oanom > 0.08f) oanom = 0.08f;
-        OANOM_SLOT[i] = oanom;
-        AOUT[i] = dc_stabilize_tta(AOUT[i], source, tta_source_cap, tta_blend_rate);
+        pk_async_climate::ocean_water_pure(ok, ol);
     }
 
     const uint8_t *enso_terrain = sid_terrain >= 0 && _slots.write[sid_terrain].arr_u8.size() == n_cells
@@ -1573,52 +1104,38 @@ double DCWorldExt::run_ocean_land_pass(Dictionary knobs) {
     const float * const __restrict FBL  = fallback_baseline.ptr();
     (void)FBL;
 
+    // S3: 留存生产这一轮真实用过的标量，reference publish 时随 reference 发布给 worker。
+    // 不写的后果是 worker 跑同一份共享内核、却吃结构默认 knobs。
+    record_production_round_scalars(0x08, knobs);
+
     auto t0 = std::chrono::high_resolution_clock::now();
 
     // 注意：land 写入的是 LAND cell 的 anomaly，读 WATER 邻居的 anomaly
     // （water pass 已经在 anomaly_inout 里写好）。所以读写不冲突——所有 land
     // i 都不在自身 6 邻居读到的 water cell 集合里（water cell 的 anomaly 在
     // water pass 已 finalized）。可以安全用同一个数组 in-place。
-    for (int i = start_idx; i < end_idx; ++i) {
-        if (IW[i] != 0) continue; // skip water
-        const float swx = POSX[i];
-        const float swy = POSY[i];
-        float weighted_sum = 0.0f;
-        float weight_total = 0.0f;
-        const int b = i * 6;
-        for (int d = 0; d < 6; ++d) {
-            const int32_t ni = NB[b + d];
-            if (ni < 0) continue;
-            if (IW[ni] == 0) continue; // only water nb contributes
-            const float cx = OCX[ni];
-            const float cy = OCY[ni];
-            if (cx * cx + cy * cy < 1e-6f) continue;
-            const float dx = pk_wrap_min_image_dx(swx - POSX[ni], wrap_period_x);
-            const float dy = swy - POSY[ni];
-            const float dlen2 = dx * dx + dy * dy;
-            if (dlen2 < 1e-6f) continue;
-            const float inv_len = 1.0f / std::sqrt(dlen2);
-            const float dot_v = (dx * cx + dy * cy) * inv_len;
-            if (dot_v <= 0.0f) continue;
-            weighted_sum += A[ni] * dot_v;
-            weight_total += dot_v;
-        }
-        const float prev_anomaly = A[i];
-        float anomaly_in = dc_decay_tta(prev_anomaly, tta_decay_rate);
-        if (weight_total > 0.0f) {
-            anomaly_in = dc_stabilize_tta(
-                prev_anomaly, (weighted_sum / weight_total) * effective_leak,
-                tta_source_cap, tta_blend_rate);
-        }
-        A[i] = anomaly_in;
-        // A 修复（2026-06）：land cell 累加 anomaly_in 到 ocean thermal anomaly slot；
-        // 不再直接改写 cell_temp。anomaly_in 已包含 dc_decay/stabilize，本身有界。
-        if ((anomaly_in < 0.0f ? -anomaly_in : anomaly_in) > 1e-5f) {
-            float oanom = OANOM_SLOT[i] + anomaly_in;
-            if (oanom < -0.08f) oanom = -0.08f;
-            else if (oanom > 0.08f) oanom = 0.08f;
-            OANOM_SLOT[i] = oanom;
-        }
+    {
+        pk_async_climate::OceanLandKnobs ok;
+        ok.n_cells = n_cells;
+        ok.start_idx = start_idx;
+        ok.end_idx = end_idx;
+        ok.effective_leak = effective_leak;
+        ok.wrap_period_x = wrap_period_x;
+        ok.tta_source_cap = tta_source_cap;
+        ok.tta_blend_rate = tta_blend_rate;
+        ok.tta_decay_rate = tta_decay_rate;
+
+        pk_async_climate::OceanLandLanes ol;
+        ol.is_water = IW;
+        ol.pos_x = POSX;
+        ol.pos_y = POSY;
+        ol.ocean_current_x = OCX;
+        ol.ocean_current_y = OCY;
+        ol.neighbors = NB;
+        ol.tta_inout = A;
+        ol.ocean_anomaly = OANOM_SLOT;
+
+        pk_async_climate::ocean_land_pure(ok, ol);
     }
 
     // §11 CoW fix: write the modified anomaly back into the Dictionary
@@ -1636,13 +1153,7 @@ double DCWorldExt::run_ocean_land_pass(Dictionary knobs) {
     return std::chrono::duration<double, std::milli>(t1 - t0).count();
 }
 
-static inline float pk_snowpack_cover_for_albedo(float snowpack, float low, float full) {
-    const float span = (full - low) > 0.001f ? (full - low) : 0.001f;
-    float u = (snowpack - low) / span;
-    if (u < 0.0f) u = 0.0f;
-    else if (u > 1.0f) u = 1.0f;
-    return u * u * (3.0f - 2.0f * u);
-}
+// pk_snowpack_cover_for_albedo 已在 S3 搬到 runtime_climate_pass_math.h。
 
 // ─── F.3 main pass ──────────────────────────────────────────────────────────
 //
@@ -1735,6 +1246,9 @@ double DCWorldExt::run_climate_pass_b(const Dictionary &knobs) {
     const float snowpack_cover_low    = knobs.has("snowpack_cover_low") ? float(knobs["snowpack_cover_low"]) : 0.05f;
     const float snowpack_cover_full   = knobs.has("snowpack_cover_full") ? float(knobs["snowpack_cover_full"]) : 0.32f;
 
+    // S3: 留存生产这一轮真实用过的标量，reference publish 时发布给 worker。
+    // 不写的后果是 worker 跑同一份内核但吃结构默认 knobs。
+    record_production_round_scalars(0x02, knobs);
     // ─── Pull PackedArrays ──────────────────────────────────────────────
     PackedInt32Array nb_arr = knobs["neighbor_indices"];
     PackedFloat32Array tta_arr = knobs["temp_transport_anomaly"];
@@ -1749,6 +1263,7 @@ double DCWorldExt::run_climate_pass_b(const Dictionary &knobs) {
     PackedFloat32Array sif_arr_pb;
     if (knobs.has("sea_ice_frac")) sif_arr_pb = knobs["sea_ice_frac"];
     const float * const __restrict SIF_PB = (sif_arr_pb.size() == n_cells) ? sif_arr_pb.ptr() : nullptr;
+    record_production_pass_b_input(n_cells, SIF_PB, tta_arr.ptr());
 
     // ─── Acquire slot arrays + validate sizes ───────────────────────────
     Slot &s_temp     = _slots.write[sid_temp];
@@ -1802,178 +1317,46 @@ double DCWorldExt::run_climate_pass_b(const Dictionary &knobs) {
     std::memcpy(temp_snapshot.data(), T_RO, n_cells * sizeof(float));
     const float * const __restrict TS = temp_snapshot.data();
 
-    // LandformType.LF: LOWLAND=5, HILL=6, MOUNTAIN=7, PEAK=8, DELTA=9,
-    //                  SALT_FLAT=11 (per landform_type.gd:9-23)
-    constexpr uint8_t LF_LOWLAND   = 5;
-    constexpr uint8_t LF_MOUNTAIN  = 7;
-    constexpr uint8_t LF_PEAK      = 8;
-    constexpr uint8_t LF_DELTA     = 9;
-    constexpr uint8_t LF_SALT_FLAT = 11;
+    // S3 P3：主循环已提取为 pk_async_climate::climate_pass_b_pure，worker 侧吃同一份。
+    pk_async_climate::ClimatePassBKnobs pbk;
+    pbk.n_cells                = n_cells;
+    pbk.winter_boost           = winter_boost;
+    pbk.snow_cool              = snow_cool;
+    pbk.veg_cool               = veg_cool;
+    pbk.diurnal_amp            = diurnal_amp;
+    pbk.evap_gain              = evap_gain;
+    pbk.rs_threshold           = rs_threshold;
+    pbk.rs_factor              = rs_factor;
+    pbk.rs_lookback            = rs_lookback;
+    pbk.wrap_period_x          = wrap_period_x;
+    pbk.t_freeze               = t_freeze;
+    pbk.coupling_gain          = coupling_gain;
+    pbk.coast_leak             = coast_leak;
+    pbk.sea_ice_albedo_cooling = sea_ice_albedo_cooling;
+    pbk.season_phase           = season_phase;
+    pbk.snowpack_cover_low     = snowpack_cover_low;
+    pbk.snowpack_cover_full    = snowpack_cover_full;
+    pbk.foliage_size           = foliage_size;
 
-    // ─── Main loop ──────────────────────────────────────────────────────
-    for (int i = 0; i < n_cells; ++i) {
-        const bool is_water = IW[i] != 0;
-        const float temp_now     = TS[i];
-        const float moisture_now = M[i];
-        const float snow_cover   = pk_snowpack_cover_for_albedo(SNOWPACK[i], snowpack_cover_low, snowpack_cover_full);
+    pk_async_climate::ClimatePassBLanes pbl;
+    pbl.temp_snapshot           = TS;
+    pbl.snowpack                = SNOWPACK;
+    pbl.elevation               = ELEV;
+    pbl.lat_norm                = LAT;
+    pbl.pos_x                   = POSX;
+    pbl.pos_y                   = POSY;
+    pbl.insolation_dev          = INSOL_DEV;
+    pbl.temp_transport_anomaly  = TTA;
+    pbl.is_water                = IW;
+    pbl.landform                = LF;
+    pbl.vegetation              = VG;
+    pbl.sea_ice_frac            = SIF_PB;
+    pbl.neighbor_indices        = NB;
+    pbl.foliage_table           = FOL;
+    pbl.local_thermal_anomaly   = LANOM;
+    pbl.moisture                = M;
 
-        float d_albedo      = 0.0f;
-        float d_coastal     = 0.0f;
-        float d_landform    = 0.0f;
-        float d_evap        = 0.0f;
-        float d_rain_shadow = 1.0f;
-
-        // (line 4413-4416) ① albedo (land only)
-        if (!is_water) {
-            d_albedo = -snow_cool * snow_cover;
-            const uint8_t veg_id = VG[i];
-            const float foliage = (veg_id < foliage_size) ? FOL[veg_id] : 0.0f;
-            d_albedo -= veg_cool * foliage;
-        }
-
-        // (line 4419-4431) ② coastal heat leak (land only, using snapshot
-        //                   of cells[ni].temperature_transport_anomaly)
-        if (!is_water) {
-            float sum_anomaly = 0.0f;
-            int   n_water     = 0;
-            const int base = i * 6;
-            for (int d = 0; d < 6; ++d) {
-                const int32_t ni = NB[base + d];
-                if (ni < 0) continue;
-                if (IW[ni] != 0) {
-                    sum_anomaly += TTA[ni];
-                    n_water += 1;
-                }
-            }
-            if (n_water > 0) {
-                d_coastal = coast_leak * (sum_anomaly / float(n_water)) * winter_boost;
-            }
-        }
-
-        // (line 4434-4440) ③ landform diurnal (land only)
-        if (!is_water) {
-            const uint8_t lf = LF[i];
-            const float solar_factor = std::clamp(INSOL_DEV[i], -1.0f, 1.0f);
-            if (lf == LF_LOWLAND || lf == LF_SALT_FLAT || lf == LF_DELTA) {
-                d_landform = diurnal_amp * solar_factor;
-            } else if (lf == LF_PEAK || lf == LF_MOUNTAIN) {
-                d_landform = -diurnal_amp * 0.5f * std::max(0.0f, -solar_factor);
-            }
-        }
-
-        // (line 4442-4445) A 修复（2026-06）：原 `T[i] = clamp(temp_now + d_*)`
-        // 改为累加到 cell_local_thermal_anomaly。temp_final 仍计算用于下面 evap
-        // 阶段的 t_eff（保持 GDScript bit-equal 的语义：evap 用 "本日 d_* 注入后" 的 t）。
-        float local_anom_contrib = d_albedo + d_coastal + d_landform;
-        if (local_anom_contrib < -0.08f) local_anom_contrib = -0.08f;
-        else if (local_anom_contrib > 0.08f) local_anom_contrib = 0.08f;
-        LANOM[i] = LANOM[i] + local_anom_contrib;
-        if (LANOM[i] < -0.08f) LANOM[i] = -0.08f;
-        else if (LANOM[i] > 0.08f) LANOM[i] = 0.08f;
-        float temp_final = temp_now + local_anom_contrib;
-        if (temp_final < 0.0f) temp_final = 0.0f;
-        else if (temp_final > 1.0f) temp_final = 1.0f;
-
-        // (line 4456-4481) ④ evap (land only)
-        if (!is_water) {
-            const float t_eff = temp_final + TTA[i];
-            float water_neighbor_w = 0.0f;
-            float sum_water_anomaly = 0.0f;
-            const int bo = i * 6;
-            for (int d = 0; d < 6; ++d) {
-                const int32_t ni = NB[bo + d];
-                if (ni < 0) continue;
-                if (IW[ni] != 0) {
-                    water_neighbor_w += 1.0f;
-                    sum_water_anomaly += TTA[ni];
-                }
-            }
-            float avg_water_anomaly = 0.0f;
-            if (water_neighbor_w > 0.0f) {
-                avg_water_anomaly = sum_water_anomaly / water_neighbor_w;
-            }
-            float nb_w_norm = water_neighbor_w / 6.0f;
-            if (nb_w_norm > 1.0f) nb_w_norm = 1.0f;
-            if (t_eff > t_freeze && nb_w_norm > 0.0f) {
-                d_evap = evap_gain * (t_eff - t_freeze) * nb_w_norm;
-                if (coupling_gain > 0.0f && std::fabs(avg_water_anomaly) > 0.001f) {
-                    float evap_mul = 1.0f + coupling_gain * avg_water_anomaly;
-                    if (evap_mul < 0.0f) evap_mul = 0.0f;
-                    else if (evap_mul > 2.0f) evap_mul = 2.0f;
-                    d_evap *= evap_mul;
-                }
-            }
-            if (avg_water_anomaly < -0.01f && nb_w_norm > 0.0f && coupling_gain > 0.0f) {
-                d_evap += -evap_gain * (-avg_water_anomaly) * nb_w_norm * coupling_gain * 0.5f;
-            }
-        }
-
-        // (line 4484-4518) ⑤ rain shadow (land only, gated by rs_lookback>0)
-        if (!is_water && rs_lookback > 0) {
-            const double ny = double(LAT[i]);
-            // jitter = sin(q*0.31 + r*0.47) * 0.05；schema 没存 q/r。本实现把
-            // jitter 取 0（jitter 仅 ±0.05 ny，对 wind_at 输出方向影响极小，
-            // bit-equal 容差 1e-4 内可容忍。后续 PR 加 cell_q/cell_r schema 后
-            // 可补 jitter）。
-            double w_dx = 0.0, w_dy = 0.0;
-            wind_belt_at(ny, season_phase, &w_dx, &w_dy);
-            const double wlen2 = w_dx * w_dx + w_dy * w_dy;
-            if (wlen2 > 1e-6) {
-                float max_upwind_h = ELEV[i];
-                int probe_idx = i;
-                for (int step = 0; step < rs_lookback; ++step) {
-                    int   best_idx = -1;
-                    double best_dot = 0.1;
-                    const float pwx = POSX[probe_idx];
-                    const float pwy = POSY[probe_idx];
-                    const int pbase = probe_idx * 6;
-                    for (int d3 = 0; d3 < 6; ++d3) {
-                        const int32_t ni3 = NB[pbase + d3];
-                        if (ni3 < 0) continue;
-                        const double dx = pk_wrap_min_image_dx(
-                            double(pwx) - double(POSX[ni3]), wrap_period_x);
-                        const double dy = double(pwy) - double(POSY[ni3]);
-                        const double len2 = dx * dx + dy * dy;
-                        if (len2 < 1e-6) continue;
-                        const double inv_len = 1.0 / std::sqrt(len2);
-                        const double dotv = (dx * w_dx + dy * w_dy) * inv_len;
-                        if (dotv > best_dot) {
-                            best_dot = dotv;
-                            best_idx = ni3;
-                        }
-                    }
-                    if (best_idx < 0) break;
-                    probe_idx = best_idx;
-                    if (ELEV[probe_idx] > max_upwind_h) {
-                        max_upwind_h = ELEV[probe_idx];
-                    }
-                }
-                if (max_upwind_h - ELEV[i] >= rs_threshold) {
-                    d_rain_shadow = rs_factor;
-                }
-            }
-        }
-
-        // (line 4520-4523) write moisture
-        float moisture_final = (moisture_now + d_evap) * d_rain_shadow;
-        if (moisture_final < 0.0f) moisture_final = 0.0f;
-        else if (moisture_final > 1.0f) moisture_final = 1.0f;
-        M[i] = moisture_final;
-    }
-
-    // climate-loop-closure Phase 4.1：海冰反照率→温度反馈尾循环（仅水域）。
-    // A 修复（2026-06）：水域 cell sea-ice 反照率冷却也作为 local anomaly 贡献，
-    // 不再直接改写 cell_temp。LANOM 已被 pass_a 末尾清零，pass_b 主循环对 water cell
-    // 也不写（与原 scalar 一致），所以此处直接累加为水域唯一的 LANOM 贡献。
-    if (sea_ice_albedo_cooling > 0.0f && SIF_PB != nullptr) {
-        for (int i = 0; i < n_cells; ++i) {
-            if (IW[i] == 0) continue;
-            float water_local = LANOM[i] - sea_ice_albedo_cooling * SIF_PB[i];
-            if (water_local < -0.08f) water_local = -0.08f;
-            else if (water_local > 0.08f) water_local = 0.08f;
-            LANOM[i] = water_local;
-        }
-    }
+    pk_async_climate::climate_pass_b_pure(pbk, pbl);
 
     // §11.2 flush: A 修复（2026-06）— pass_b 不再 flush cell_temp，改 flush local anomaly。
     _flush_slot_to_map(sid_lanom);
@@ -2056,162 +1439,65 @@ struct PassBCtx {
     int rs_lookback;
     // seam-advection-fix：雨影上风探测的经度环绕周期，0 = 无环绕域。
     double wrap_period_x;
+    // 海冰反照率尾循环所需（0 / nullptr = 关闭）。原先三个变体各写一份尾循环，
+    // 收进 ctx 后统一交给 climate_pass_b_sea_ice_tail_pure。
+    int n_cells = 0;
+    float sea_ice_albedo_cooling = 0.0f;
+    const float * __restrict SIF = nullptr;
 };
 
-// 对单个 land cell i 跑 pass_b 的 albedo + coastal + landform + write 段。
-// 不走 evap / rain-shadow（那两段分别由独立 helper 处理，避免 evap 中
-// 第二次邻居扫描污染当前 hot path 的内存访问模式）。返回 temp_final，便于
-// 后续 evap 段直接拿用而不重读 T[i]。
-inline float pass_b_land_compute_temp(const PassBCtx &c, int i) {
-    const float temp_now   = c.TS[i];
-    const float snow_cover = pk_snowpack_cover_for_albedo(
-        c.SNOWPACK[i],
-        c.snowpack_cover_low,
-        c.snowpack_cover_full);
+// PassBCtx → 共享内核的 knobs/lanes。生产 _simd / _thread 与 worker 现在跑同一份
+// per-cell body，pass_b 不再有第二份实现可以偏移。
+inline void pass_b_ctx_to_kernel(const PassBCtx &c,
+                                 pk_async_climate::ClimatePassBKnobs &k,
+                                 pk_async_climate::ClimatePassBLanes &l) {
+    k.n_cells                = c.n_cells;
+    k.winter_boost           = c.winter_boost;
+    k.snow_cool              = c.snow_cool;
+    k.veg_cool               = c.veg_cool;
+    k.diurnal_amp            = c.diurnal_amp;
+    k.evap_gain              = c.evap_gain;
+    k.rs_threshold           = c.rs_threshold;
+    k.rs_factor              = c.rs_factor;
+    k.rs_lookback            = c.rs_lookback;
+    k.wrap_period_x          = c.wrap_period_x;
+    k.t_freeze               = c.t_freeze;
+    k.coupling_gain          = c.coupling_gain;
+    k.coast_leak             = c.coast_leak;
+    k.sea_ice_albedo_cooling = c.sea_ice_albedo_cooling;
+    k.season_phase           = c.season_phase;
+    k.snowpack_cover_low     = c.snowpack_cover_low;
+    k.snowpack_cover_full    = c.snowpack_cover_full;
+    k.foliage_size           = c.foliage_size;
 
-    // ① albedo
-    float d_albedo = -c.snow_cool * snow_cover;
-    const uint8_t veg_id = c.VG[i];
-    const float foliage = (veg_id < c.foliage_size) ? c.FOL[veg_id] : 0.0f;
-    d_albedo -= c.veg_cool * foliage;
-
-    // ② coastal heat leak（snapshot TTA[]，邻居 sentinel < 0 跳过）
-    float d_coastal = 0.0f;
-    {
-        float sum_anomaly = 0.0f;
-        int   n_water     = 0;
-        const int base = i * 6;
-        for (int d = 0; d < 6; ++d) {
-            const int32_t ni = c.NB[base + d];
-            if (ni < 0) continue;
-            if (c.IW[ni] != 0) {
-                sum_anomaly += c.TTA[ni];
-                n_water += 1;
-            }
-        }
-        if (n_water > 0) {
-            d_coastal = c.coast_leak * (sum_anomaly / float(n_water)) * c.winter_boost;
-        }
-    }
-
-    // ③ landform diurnal
-    float d_landform = 0.0f;
-    const uint8_t lf = c.LF[i];
-    const float solar_factor = std::clamp(c.INSOL_DEV[i], -1.0f, 1.0f);
-    if (lf == kLF_LOWLAND || lf == kLF_SALT_FLAT || lf == kLF_DELTA) {
-        d_landform = c.diurnal_amp * solar_factor;
-    } else if (lf == kLF_PEAK || lf == kLF_MOUNTAIN) {
-        d_landform = -c.diurnal_amp * 0.5f * std::max(0.0f, -solar_factor);
-    }
-
-    // ④ A 修复（2026-06）：累加到 cell_local_thermal_anomaly，不再写 cell_temp。
-    // temp_final 仍按原公式 = snapshot + d_albedo + d_coastal + d_landform 返回，
-    // 供 evap 段做 t_eff（保持 GDScript bit-equal 的"d_* 注入后温度"语义）。
-    float local_anom_contrib = d_albedo + d_coastal + d_landform;
-    if (local_anom_contrib < -0.08f) local_anom_contrib = -0.08f;
-    else if (local_anom_contrib > 0.08f) local_anom_contrib = 0.08f;
-    float new_lanom = c.LANOM[i] + local_anom_contrib;
-    if (new_lanom < -0.08f) new_lanom = -0.08f;
-    else if (new_lanom > 0.08f) new_lanom = 0.08f;
-    c.LANOM[i] = new_lanom;
-    float temp_final = temp_now + local_anom_contrib;
-    if (temp_final < 0.0f) temp_final = 0.0f;
-    else if (temp_final > 1.0f) temp_final = 1.0f;
-    return temp_final;
+    l.temp_snapshot          = c.TS;
+    l.snowpack               = c.SNOWPACK;
+    l.elevation              = c.ELEV;
+    l.lat_norm               = c.LAT;
+    l.pos_x                  = c.POSX;
+    l.pos_y                  = c.POSY;
+    l.insolation_dev         = c.INSOL_DEV;
+    l.temp_transport_anomaly = c.TTA;
+    l.is_water               = c.IW;
+    l.landform               = c.LF;
+    l.vegetation             = c.VG;
+    l.sea_ice_frac           = c.SIF;
+    l.neighbor_indices       = c.NB;
+    l.foliage_table          = c.FOL;
+    l.local_thermal_anomaly  = c.LANOM;
+    l.moisture               = c.M;
 }
 
-// 单个 land cell 的 evap 段（与原 scalar 1:1 mirror）。返回 d_evap。
-inline float pass_b_land_compute_evap(const PassBCtx &c, int i, float temp_final) {
-    const float t_eff = temp_final + c.TTA[i];
-    float water_neighbor_w = 0.0f;
-    float sum_water_anomaly = 0.0f;
-    const int bo = i * 6;
-    for (int d = 0; d < 6; ++d) {
-        const int32_t ni = c.NB[bo + d];
-        if (ni < 0) continue;
-        if (c.IW[ni] != 0) {
-            water_neighbor_w += 1.0f;
-            sum_water_anomaly += c.TTA[ni];
-        }
-    }
-    float avg_water_anomaly = 0.0f;
-    if (water_neighbor_w > 0.0f) {
-        avg_water_anomaly = sum_water_anomaly / water_neighbor_w;
-    }
-    float nb_w_norm = water_neighbor_w / 6.0f;
-    if (nb_w_norm > 1.0f) nb_w_norm = 1.0f;
-    float d_evap = 0.0f;
-    if (t_eff > c.t_freeze && nb_w_norm > 0.0f) {
-        d_evap = c.evap_gain * (t_eff - c.t_freeze) * nb_w_norm;
-        if (c.coupling_gain > 0.0f && std::fabs(avg_water_anomaly) > 0.001f) {
-            float evap_mul = 1.0f + c.coupling_gain * avg_water_anomaly;
-            if (evap_mul < 0.0f) evap_mul = 0.0f;
-            else if (evap_mul > 2.0f) evap_mul = 2.0f;
-            d_evap *= evap_mul;
-        }
-    }
-    if (avg_water_anomaly < -0.01f && nb_w_norm > 0.0f && c.coupling_gain > 0.0f) {
-        d_evap += -c.evap_gain * (-avg_water_anomaly) * nb_w_norm * c.coupling_gain * 0.5f;
-    }
-    return d_evap;
-}
-
-// 单个 land cell 的 rain-shadow 段（串行 probe，无 SIMD-able 模式）。
-inline float pass_b_land_compute_rain_shadow(const PassBCtx &c, int i) {
-    if (c.rs_lookback <= 0) return 1.0f;
-    const double ny = double(c.LAT[i]);
-    double w_dx = 0.0, w_dy = 0.0;
-    wind_belt_at(ny, c.season_phase, &w_dx, &w_dy);
-    const double wlen2 = w_dx * w_dx + w_dy * w_dy;
-    if (wlen2 <= 1e-6) return 1.0f;
-    float max_upwind_h = c.ELEV[i];
-    int probe_idx = i;
-    for (int step = 0; step < c.rs_lookback; ++step) {
-        int   best_idx = -1;
-        double best_dot = 0.1;
-        const float pwx = c.POSX[probe_idx];
-        const float pwy = c.POSY[probe_idx];
-        const int pbase = probe_idx * 6;
-        for (int d3 = 0; d3 < 6; ++d3) {
-            const int32_t ni3 = c.NB[pbase + d3];
-            if (ni3 < 0) continue;
-            const double dx = pk_wrap_min_image_dx(
-                double(pwx) - double(c.POSX[ni3]), c.wrap_period_x);
-            const double dy = double(pwy) - double(c.POSY[ni3]);
-            const double len2 = dx * dx + dy * dy;
-            if (len2 < 1e-6) continue;
-            const double inv_len = 1.0 / std::sqrt(len2);
-            const double dotv = (dx * w_dx + dy * w_dy) * inv_len;
-            if (dotv > best_dot) {
-                best_dot = dotv;
-                best_idx = ni3;
-            }
-        }
-        if (best_idx < 0) break;
-        probe_idx = best_idx;
-        if (c.ELEV[probe_idx] > max_upwind_h) {
-            max_upwind_h = c.ELEV[probe_idx];
-        }
-    }
-    return (max_upwind_h - c.ELEV[i] >= c.rs_threshold) ? c.rs_factor : 1.0f;
-}
-
-// land-only main pass：对 land_idx[begin..end) 逐 cell 跑全部 5 段并写 T/M。
-// 抽成 helper 是为了 _thread 变体能按 land_idx 分块复用同一 body。
+// land-only main pass：把 land_idx[begin..end) 交给共享内核。
+// 原先这里还有 pass_b_land_compute_temp / _evap / _rain_shadow 三个 helper，
+// 与 worker 侧那份平行实现逐行重复；已并入 pk_async_climate::climate_pass_b_pure。
 inline void pass_b_run_land_range(const PassBCtx &c,
                                   const int *land_idx,
                                   int begin, int end) {
-    for (int k = begin; k < end; ++k) {
-        const int i = land_idx[k];
-        const float moisture_now = c.M[i];
-        const float temp_final = pass_b_land_compute_temp(c, i);
-        const float d_evap = pass_b_land_compute_evap(c, i, temp_final);
-        const float d_rs   = pass_b_land_compute_rain_shadow(c, i);
-        float moisture_final = (moisture_now + d_evap) * d_rs;
-        if (moisture_final < 0.0f) moisture_final = 0.0f;
-        else if (moisture_final > 1.0f) moisture_final = 1.0f;
-        c.M[i] = moisture_final;
-    }
+    pk_async_climate::ClimatePassBKnobs k;
+    pk_async_climate::ClimatePassBLanes l;
+    pass_b_ctx_to_kernel(c, k, l);
+    pk_async_climate::climate_pass_b_land_range_pure(k, l, land_idx, begin, end);
 }
 
 // [Phase C.3b] 原 PassBLandTask + pass_b_land_worker 已由 parallel_dispatcher.h
@@ -2310,6 +1596,7 @@ double DCWorldExt::run_climate_pass_b_simd(const Dictionary &knobs) {
     PackedFloat32Array sif_arr_pb;
     if (knobs.has("sea_ice_frac")) sif_arr_pb = knobs["sea_ice_frac"];
     const float * const __restrict SIF_PB = (sif_arr_pb.size() == n_cells) ? sif_arr_pb.ptr() : nullptr;
+    record_production_pass_b_input(n_cells, SIF_PB, tta_arr.ptr());
 
     Slot &s_temp     = _slots.write[sid_temp];
     Slot &s_moist    = _slots.write[sid_moist];
@@ -2334,6 +1621,11 @@ double DCWorldExt::run_climate_pass_b_simd(const Dictionary &knobs) {
         return -1.0;
     }
 
+    // S3: 留存生产这一轮真实用过的标量。漏记的后果不只是 worker 吃默认 knobs ——
+    // prod_knobs 诊断位也不会置，于是看起来像“这个 pass 根本没跑”。
+    // native daily graph 默认走的就是 thread 变体，所以漏在这里最隐蔽。
+    record_production_round_scalars(0x02, knobs);
+
     auto t0 = std::chrono::high_resolution_clock::now();
 
     // A 修复（2026-06）：pass_b SIMD 不再写 T；改写 LANOM。T 只读供 TS snapshot。
@@ -2352,6 +1644,9 @@ double DCWorldExt::run_climate_pass_b_simd(const Dictionary &knobs) {
     ctx.NB   = nb_arr.ptr();
     ctx.TTA  = tta_arr.ptr();
     ctx.FOL  = foliage_arr.ptr();
+    ctx.n_cells = n_cells;
+    ctx.sea_ice_albedo_cooling = sea_ice_albedo_cooling;
+    ctx.SIF  = SIF_PB;
 
     // Snapshot temp BEFORE writes（与原 scalar 等价；coastal/evap 段读 TS/TTA）
     std::vector<float> temp_snapshot(n_cells);
@@ -2372,14 +1667,12 @@ double DCWorldExt::run_climate_pass_b_simd(const Dictionary &knobs) {
 
     // climate-loop-closure Phase 4.1：海冰反照率→温度反馈尾循环（仅水域；与 scalar 同形态）。
     // A 修复（2026-06）：写入 LANOM 而非 T。
-    if (sea_ice_albedo_cooling > 0.0f && SIF_PB != nullptr) {
-        for (int i = 0; i < n_cells; ++i) {
-            if (ctx.IW[i] == 0) continue;
-            float water_local = ctx.LANOM[i] - sea_ice_albedo_cooling * SIF_PB[i];
-            if (water_local < -0.08f) water_local = -0.08f;
-            else if (water_local > 0.08f) water_local = 0.08f;
-            ctx.LANOM[i] = water_local;
-        }
+    {
+        // 海冰反照率→水域 LANOM：与 scalar / worker 同一份 climate_pass_b_sea_ice_tail_pure。
+        pk_async_climate::ClimatePassBKnobs tk;
+        pk_async_climate::ClimatePassBLanes tl;
+        pass_b_ctx_to_kernel(ctx, tk, tl);
+        pk_async_climate::climate_pass_b_sea_ice_tail_pure(tk, tl);
     }
 
     _flush_slot_to_map(sid_lanom);
@@ -2474,6 +1767,7 @@ double DCWorldExt::run_climate_pass_b_thread(const Dictionary &knobs, int n_task
     PackedFloat32Array sif_arr_pb;
     if (knobs.has("sea_ice_frac")) sif_arr_pb = knobs["sea_ice_frac"];
     const float * const __restrict SIF_PB = (sif_arr_pb.size() == n_cells) ? sif_arr_pb.ptr() : nullptr;
+    record_production_pass_b_input(n_cells, SIF_PB, tta_arr.ptr());
 
     Slot &s_temp     = _slots.write[sid_temp];
     Slot &s_moist    = _slots.write[sid_moist];
@@ -2498,6 +1792,10 @@ double DCWorldExt::run_climate_pass_b_thread(const Dictionary &knobs, int n_task
         return -1.0;
     }
 
+    // S3: 留存生产这一轮真实用过的标量，reference publish 时随 reference 发布给 worker。
+    // 不写的后果是 worker 跑同一份共享内核、却吃结构默认 knobs。
+    record_production_round_scalars(0x02, knobs);
+
     auto t0 = std::chrono::high_resolution_clock::now();
 
     // A 修复（2026-06）：thread 变体不再写 T；ctx.T 只读供 TS snapshot。
@@ -2516,6 +1814,9 @@ double DCWorldExt::run_climate_pass_b_thread(const Dictionary &knobs, int n_task
     ctx.NB   = nb_arr.ptr();
     ctx.TTA  = tta_arr.ptr();
     ctx.FOL  = foliage_arr.ptr();
+    ctx.n_cells = n_cells;
+    ctx.sea_ice_albedo_cooling = sea_ice_albedo_cooling;
+    ctx.SIF  = SIF_PB;
 
     std::vector<float> temp_snapshot(n_cells);
     std::memcpy(temp_snapshot.data(), ctx.T, n_cells * sizeof(float));
@@ -2530,15 +1831,13 @@ double DCWorldExt::run_climate_pass_b_thread(const Dictionary &knobs, int n_task
 
     if (n_land == 0) {
         // 全水图：跳过 land hot loop，但海冰反照率水域尾循环仍需执行（与 scalar / _simd 等价）。
-        if (sea_ice_albedo_cooling > 0.0f && SIF_PB != nullptr) {
-            for (int i = 0; i < n_cells; ++i) {
-                if (ctx.IW[i] == 0) continue;
-                float water_local = ctx.LANOM[i] - sea_ice_albedo_cooling * SIF_PB[i];
-                if (water_local < -0.08f) water_local = -0.08f;
-                else if (water_local > 0.08f) water_local = 0.08f;
-                ctx.LANOM[i] = water_local;
-            }
-        }
+    {
+        // 海冰反照率→水域 LANOM：与 scalar / worker 同一份 climate_pass_b_sea_ice_tail_pure。
+        pk_async_climate::ClimatePassBKnobs tk;
+        pk_async_climate::ClimatePassBLanes tl;
+        pass_b_ctx_to_kernel(ctx, tk, tl);
+        pk_async_climate::climate_pass_b_sea_ice_tail_pure(tk, tl);
+    }
         // A 修复（2026-06）：不再 flush cell_temp，改 flush local_anom。
         _flush_slot_to_map(sid_lanom);
         if (!bool(knobs.get("defer_visible_publish", false))) {
@@ -2562,14 +1861,12 @@ double DCWorldExt::run_climate_pass_b_thread(const Dictionary &knobs, int n_task
 
     // [climate-mt 2026-07 bug-parity] 海冰反照率→温度水域尾循环（仅水域，无跨 cell 依赖，
     //   串行即可；与 scalar / _simd lines 2065-2073 逐位等价）。
-    if (sea_ice_albedo_cooling > 0.0f && SIF_PB != nullptr) {
-        for (int i = 0; i < n_cells; ++i) {
-            if (ctx.IW[i] == 0) continue;
-            float water_local = ctx.LANOM[i] - sea_ice_albedo_cooling * SIF_PB[i];
-            if (water_local < -0.08f) water_local = -0.08f;
-            else if (water_local > 0.08f) water_local = 0.08f;
-            ctx.LANOM[i] = water_local;
-        }
+    {
+        // 海冰反照率→水域 LANOM：与 scalar / worker 同一份 climate_pass_b_sea_ice_tail_pure。
+        pk_async_climate::ClimatePassBKnobs tk;
+        pk_async_climate::ClimatePassBLanes tl;
+        pass_b_ctx_to_kernel(ctx, tk, tl);
+        pk_async_climate::climate_pass_b_sea_ice_tail_pure(tk, tl);
     }
 
     _flush_slot_to_map(sid_lanom);
@@ -2688,6 +1985,92 @@ inline void ocean_water_run_water_range(const OceanWaterCtx &c,
 
 } // anonymous namespace (ocean water helpers)
 
+static void pk_run_ocean_water_pure(
+        int n_cells,
+        int advect_steps,
+        float heat_mix,
+        float wrap_period_x,
+        float tta_source_cap,
+        float tta_blend_rate,
+        float tta_zero_current_decay,
+        float cold_transport_form,
+        float cold_transport_melt,
+        const uint8_t *is_water,
+        const float *pos_x,
+        const float *pos_y,
+        const float *ocean_current_x,
+        const float *ocean_current_y,
+        const float *baseline,
+        const float *temp_before,
+        const float *sea_ice_frac,
+        const int32_t *neighbors,
+        float *ocean_anomaly,
+        float *tta_inout) {
+    pk_async_climate::OceanWaterKnobs ok;
+    ok.n_cells = n_cells;
+    ok.start_idx = 0;
+    ok.end_idx = n_cells;
+    ok.advect_steps = advect_steps;
+    ok.heat_mix = heat_mix;
+    ok.wrap_period_x = wrap_period_x;
+    ok.tta_source_cap = tta_source_cap;
+    ok.tta_blend_rate = tta_blend_rate;
+    ok.tta_zero_current_decay = tta_zero_current_decay;
+    ok.cold_transport_form = cold_transport_form;
+    ok.cold_transport_melt = cold_transport_melt;
+
+    pk_async_climate::OceanWaterLanes ol;
+    ol.is_water = is_water;
+    ol.pos_x = pos_x;
+    ol.pos_y = pos_y;
+    ol.ocean_current_x = ocean_current_x;
+    ol.ocean_current_y = ocean_current_y;
+    ol.baseline = baseline;
+    ol.temp_before = temp_before;
+    ol.sea_ice_frac = sea_ice_frac;
+    ol.neighbors = neighbors;
+    ol.ocean_anomaly = ocean_anomaly;
+    ol.tta_inout = tta_inout;
+    pk_async_climate::ocean_water_pure(ok, ol);
+}
+
+static void pk_run_ocean_land_pure(
+        int n_cells,
+        float effective_leak,
+        float wrap_period_x,
+        float tta_source_cap,
+        float tta_blend_rate,
+        float tta_decay_rate,
+        const uint8_t *is_water,
+        const float *pos_x,
+        const float *pos_y,
+        const float *ocean_current_x,
+        const float *ocean_current_y,
+        const int32_t *neighbors,
+        float *tta_inout,
+        float *ocean_anomaly) {
+    pk_async_climate::OceanLandKnobs ok;
+    ok.n_cells = n_cells;
+    ok.start_idx = 0;
+    ok.end_idx = n_cells;
+    ok.effective_leak = effective_leak;
+    ok.wrap_period_x = wrap_period_x;
+    ok.tta_source_cap = tta_source_cap;
+    ok.tta_blend_rate = tta_blend_rate;
+    ok.tta_decay_rate = tta_decay_rate;
+
+    pk_async_climate::OceanLandLanes ol;
+    ol.is_water = is_water;
+    ol.pos_x = pos_x;
+    ol.pos_y = pos_y;
+    ol.ocean_current_x = ocean_current_x;
+    ol.ocean_current_y = ocean_current_y;
+    ol.neighbors = neighbors;
+    ol.tta_inout = tta_inout;
+    ol.ocean_anomaly = ocean_anomaly;
+    pk_async_climate::ocean_land_pure(ok, ol);
+}
+
 // fallback：任何 sanity check 失败返回 -1.0，调用方走原 run_ocean_water_pass。
 double DCWorldExt::run_ocean_water_pass_simd(Dictionary knobs) {
     using godot::StringName;
@@ -2801,17 +2184,22 @@ double DCWorldExt::run_ocean_water_pass_simd(Dictionary knobs) {
     ctx.OANOM_SLOT   = s_oanom.arr_f32.ptrw();
     ctx.AOUT         = anomaly_out.ptrw();
 
+    // S3: 留存生产这一轮真实用过的标量。漏记的后果不只是 worker 吃默认 knobs ——
+    // prod_knobs 诊断位也不会置，于是看起来像“这个 pass 根本没跑”。
+    // native daily graph 默认走的就是 thread 变体，所以漏在这里最隐蔽。
+    record_production_round_scalars(0x04, knobs);
+    record_production_ocean_water_input(n_cells, baseline_arr.ptr(), temp_before_arr.ptr());
+
     auto t0 = std::chrono::high_resolution_clock::now();
 
-    // 预筛 water cells：~70% 占比，外层无 if(IW[i]==0) 分支。
-    std::vector<int> water_idx;
-    water_idx.reserve(static_cast<size_t>(n_cells));
-    for (int i = 0; i < n_cells; ++i) {
-        if (ctx.IW[i] != 0) water_idx.push_back(i);
-    }
-    const int n_water = static_cast<int>(water_idx.size());
-
-    ocean_water_run_water_range(ctx, water_idx.data(), 0, n_water);
+    // native daily 默认走 thread 变体；simd 也必须吃同一份内核，否则
+    // SHADOW 对拍的是两套 ocean 物理。并行只是调度，不再是第二套公式。
+    pk_run_ocean_water_pure(
+        n_cells, advect_steps, heat_mix, wrap_period_x,
+        tta_source_cap, tta_blend_rate, tta_zero_current_decay,
+        cold_transport_form, cold_transport_melt,
+        ctx.IW, ctx.POSX, ctx.POSY, ctx.OCX, ctx.OCY,
+        ctx.BL, ctx.TB, ctx.SIF, ctx.NB, ctx.OANOM_SLOT, ctx.AOUT);
 
     const uint8_t *enso_terrain = sid_terrain >= 0 && _slots.write[sid_terrain].arr_u8.size() == n_cells
         ? _slots.write[sid_terrain].arr_u8.ptr() : nullptr;
@@ -2941,54 +2329,35 @@ double DCWorldExt::run_ocean_water_pass_thread(Dictionary knobs, int n_tasks) {
     ctx.OANOM_SLOT   = s_oanom.arr_f32.ptrw();
     ctx.AOUT         = anomaly_out.ptrw();
 
+    // S3: 留存生产这一轮真实用过的标量。漏记的后果不只是 worker 吃默认 knobs ——
+    // prod_knobs 诊断位也不会置，于是看起来像“这个 pass 根本没跑”。
+    // native daily graph 默认走的就是 thread 变体，所以漏在这里最隐蔽。
+    record_production_round_scalars(0x04, knobs);
+    record_production_ocean_water_input(n_cells, baseline_arr.ptr(), temp_before_arr.ptr());
+
     auto t0 = std::chrono::high_resolution_clock::now();
+    (void)n_tasks;
 
-    std::vector<int> water_idx;
-    water_idx.reserve(static_cast<size_t>(n_cells));
-    for (int i = 0; i < n_cells; ++i) {
-        if (ctx.IW[i] != 0) water_idx.push_back(i);
-    }
-    const int n_water = static_cast<int>(water_idx.size());
+    // 与 scalar / worker 同一份内核。thread 变体此前走 ocean_water_compute_one
+    // 平行实现；公式已经对齐，但任何后续改动都会再次分叉。并行只留在 ENSO 之外。
+    pk_run_ocean_water_pure(
+        n_cells, advect_steps, heat_mix, wrap_period_x,
+        tta_source_cap, tta_blend_rate, tta_zero_current_decay,
+        cold_transport_form, cold_transport_melt,
+        ctx.IW, ctx.POSX, ctx.POSY, ctx.OCX, ctx.OCY,
+        ctx.BL, ctx.TB, ctx.SIF, ctx.NB, ctx.OANOM_SLOT, ctx.AOUT);
 
-    auto apply_enso = [&]() {
-        const uint8_t *enso_terrain = sid_terrain >= 0 && _slots.write[sid_terrain].arr_u8.size() == n_cells
-            ? _slots.write[sid_terrain].arr_u8.ptr() : nullptr;
-        const float *enso_lat = sid_lat >= 0 && _slots.write[sid_lat].arr_f32.size() == n_cells
-            ? _slots.write[sid_lat].arr_f32.ptr() : nullptr;
-        const float *enso_wx = sid_wind_x >= 0 && _slots.write[sid_wind_x].arr_f32.size() == n_cells
-            ? _slots.write[sid_wind_x].arr_f32.ptr() : nullptr;
-        const float *enso_wspd = sid_wind_spd >= 0 && _slots.write[sid_wind_spd].arr_f32.size() == n_cells
-            ? _slots.write[sid_wind_spd].arr_f32.ptr() : nullptr;
-        _apply_enso_ocean_slice(knobs, n_cells, 0, n_cells, ctx.IW, enso_terrain,
-                                enso_lat, ctx.POSX, ctx.NB, enso_wx, enso_wspd,
-                                ctx.OANOM_SLOT, ctx.AOUT);
-    };
-
-    if (n_tasks <= 0) {
-        // 自适应：每 task ~1024 cells，但至少 1，至多 16（保守，charter §C 不动并行总基调）
-        n_tasks = std::max(1, std::min(16, (n_water + 1023) / 1024));
-    }
-    // 小规模降级：~256 阈值与 pass_b 对齐
-    if (n_water < 256 || n_tasks == 1) {
-        ocean_water_run_water_range(ctx, water_idx.data(), 0, n_water);
-        apply_enso();
-        knobs["anomaly_out"] = anomaly_out;
-        // A 修复（2026-06）：flush ocean anomaly slot 而非 cell_temp。
-        _flush_slot_to_map(sid_oanom);
-        auto t1 = std::chrono::high_resolution_clock::now();
-        return std::chrono::duration<double, std::milli>(t1 - t0).count();
-    }
-
-    // [Phase C.3b] task struct + WTP gate + wait 由 parallel_for_range 统一封装。
-    // 注意：上方的 n_water<256 || n_tasks==1 短路保留，因为它在 helper 之外
-    //       还要做 knobs["anomaly_out"] 写回 + flush + 计时收尾，行为与原版 1:1。
-    pk::parallel_for_range(
-        "pk_ocean_water", n_water, n_tasks, /*seq_threshold=*/256,
-        [&](int begin, int end) {
-            ocean_water_run_water_range(ctx, water_idx.data(), begin, end);
-        });
-
-    apply_enso();
+    const uint8_t *enso_terrain = sid_terrain >= 0 && _slots.write[sid_terrain].arr_u8.size() == n_cells
+        ? _slots.write[sid_terrain].arr_u8.ptr() : nullptr;
+    const float *enso_lat = sid_lat >= 0 && _slots.write[sid_lat].arr_f32.size() == n_cells
+        ? _slots.write[sid_lat].arr_f32.ptr() : nullptr;
+    const float *enso_wx = sid_wind_x >= 0 && _slots.write[sid_wind_x].arr_f32.size() == n_cells
+        ? _slots.write[sid_wind_x].arr_f32.ptr() : nullptr;
+    const float *enso_wspd = sid_wind_spd >= 0 && _slots.write[sid_wind_spd].arr_f32.size() == n_cells
+        ? _slots.write[sid_wind_spd].arr_f32.ptr() : nullptr;
+    _apply_enso_ocean_slice(knobs, n_cells, 0, n_cells, ctx.IW, enso_terrain,
+                            enso_lat, ctx.POSX, ctx.NB, enso_wx, enso_wspd,
+                            ctx.OANOM_SLOT, ctx.AOUT);
 
     knobs["anomaly_out"] = anomaly_out;
     _flush_slot_to_map(sid_oanom);
@@ -3162,16 +2531,18 @@ double DCWorldExt::run_ocean_land_pass_simd(Dictionary knobs) {
     ctx.OANOM_SLOT     = s_oanom.arr_f32.ptrw();
     ctx.A              = anomaly_inout.ptrw();
 
+    // S3: 留存生产这一轮真实用过的标量。漏记的后果不只是 worker 吃默认 knobs ——
+    // prod_knobs 诊断位也不会置，于是看起来像“这个 pass 根本没跑”。
+    // native daily graph 默认走的就是 thread 变体，所以漏在这里最隐蔽。
+    record_production_round_scalars(0x08, knobs);
+
     auto t0 = std::chrono::high_resolution_clock::now();
 
-    std::vector<int> land_idx;
-    land_idx.reserve(static_cast<size_t>(n_cells));
-    for (int i = 0; i < n_cells; ++i) {
-        if (ctx.IW[i] == 0) land_idx.push_back(i);
-    }
-    const int n_land = static_cast<int>(land_idx.size());
-
-    ocean_land_run_land_range(ctx, land_idx.data(), 0, n_land);
+    pk_run_ocean_land_pure(
+        n_cells, effective_leak, wrap_period_x,
+        tta_source_cap, tta_blend_rate, tta_decay_rate,
+        ctx.IW, ctx.POSX, ctx.POSY, ctx.OCX, ctx.OCY, ctx.NB,
+        ctx.A, ctx.OANOM_SLOT);
 
     knobs["anomaly_inout"] = anomaly_inout;
     // A 修复（2026-06）：flush ocean anomaly slot 而非 cell_temp。
@@ -3265,33 +2636,19 @@ double DCWorldExt::run_ocean_land_pass_thread(Dictionary knobs, int n_tasks) {
     ctx.OANOM_SLOT     = s_oanom.arr_f32.ptrw();
     ctx.A              = anomaly_inout.ptrw();
 
+    // S3: 留存生产这一轮真实用过的标量。漏记的后果不只是 worker 吃默认 knobs ——
+    // prod_knobs 诊断位也不会置，于是看起来像“这个 pass 根本没跑”。
+    // native daily graph 默认走的就是 thread 变体，所以漏在这里最隐蔽。
+    record_production_round_scalars(0x08, knobs);
+
     auto t0 = std::chrono::high_resolution_clock::now();
+    (void)n_tasks;
 
-    std::vector<int> land_idx;
-    land_idx.reserve(static_cast<size_t>(n_cells));
-    for (int i = 0; i < n_cells; ++i) {
-        if (ctx.IW[i] == 0) land_idx.push_back(i);
-    }
-    const int n_land = static_cast<int>(land_idx.size());
-
-    if (n_tasks <= 0) {
-        n_tasks = std::max(1, std::min(16, (n_land + 1023) / 1024));
-    }
-    if (n_land < 256 || n_tasks == 1) {
-        ocean_land_run_land_range(ctx, land_idx.data(), 0, n_land);
-        knobs["anomaly_inout"] = anomaly_inout;
-        // A 修复（2026-06）：flush ocean anomaly slot 而非 cell_temp。
-        _flush_slot_to_map(sid_oanom);
-        auto t1 = std::chrono::high_resolution_clock::now();
-        return std::chrono::duration<double, std::milli>(t1 - t0).count();
-    }
-
-    // [Phase C.3b] task struct + WTP gate + wait 由 parallel_for_range 统一封装。
-    pk::parallel_for_range(
-        "pk_ocean_land", n_land, n_tasks, /*seq_threshold=*/256,
-        [&](int begin, int end) {
-            ocean_land_run_land_range(ctx, land_idx.data(), begin, end);
-        });
+    pk_run_ocean_land_pure(
+        n_cells, effective_leak, wrap_period_x,
+        tta_source_cap, tta_blend_rate, tta_decay_rate,
+        ctx.IW, ctx.POSX, ctx.POSY, ctx.OCX, ctx.OCY, ctx.NB,
+        ctx.A, ctx.OANOM_SLOT);
 
     knobs["anomaly_inout"] = anomaly_inout;
     _flush_slot_to_map(sid_oanom);
@@ -3309,47 +2666,9 @@ double DCWorldExt::run_ocean_land_pass_thread(Dictionary knobs, int n_tasks) {
 // terrain 翻转**不**在 C++ 端写——只输出 flip lists，由 GDScript apply_terrain
 // 维护 multi-axis 同步（passable_land / passable_sea / landform 等派生字段）。
 // 这是 charter §2.5 STRUCT-001 反模式规避：C++ 不应直接改 multi-axis enum。
-static inline float sea_ice_smoothstep(float edge0, float edge1, float x) {
-    const float span = edge1 - edge0;
-    if (span == 0.0f) {
-        return x < edge0 ? 0.0f : 1.0f;
-    }
-    float t = (x - edge0) / span;
-    if (t < 0.0f) t = 0.0f;
-    else if (t > 1.0f) t = 1.0f;
-    return t * t * (3.0f - 2.0f * t);
-}
-
-static inline float sea_ice_freeze_gate(float insolation_now, float freeze_low, float freeze_high) {
-    const float high = std::max(freeze_high, freeze_low + 0.001f);
-    const float gate = 1.0f - sea_ice_smoothstep(freeze_low, high, insolation_now);
-    if (gate < 0.0f) return 0.0f;
-    if (gate > 1.0f) return 1.0f;
-    return gate;
-}
-
-static inline float sea_ice_solar_melt(float insolation_now, float melt_start, float melt_gain) {
-    const float gain = std::max(melt_gain, 0.0f);
-    const float excess = insolation_now - melt_start;
-    return excess > 0.0f ? gain * excess : 0.0f;
-}
-
-static inline float sea_ice_solar_exposure(float sea_ice_frac, float min_thick_ice_exposure = 0.32f) {
-    float kMinThickIceExposure = min_thick_ice_exposure;
-    if (kMinThickIceExposure < 0.0f) kMinThickIceExposure = 0.0f;
-    else if (kMinThickIceExposure > 0.50f) kMinThickIceExposure = 0.50f;
-    const float cover = dc_clampf(sea_ice_frac, 0.0f, 1.0f);
-    const float shield = sea_ice_smoothstep(0.05f, 0.55f, cover);
-    const float exposure = 1.0f - (1.0f - kMinThickIceExposure) * shield;
-    return exposure < kMinThickIceExposure ? kMinThickIceExposure : exposure;
-}
-
-static inline float sea_ice_positive_tta_residual(float tta, float ocean_thermal_anom) {
-    if (tta <= 0.0f) return 0.0f;
-    const float realized = ocean_thermal_anom > 0.0f ? ocean_thermal_anom : 0.0f;
-    const float residual = tta - realized;
-    return residual > 0.0f ? residual : 0.0f;
-}
+// sea_ice_smoothstep / sea_ice_freeze_gate / sea_ice_solar_melt /
+// sea_ice_solar_exposure / sea_ice_positive_tta_residual 已在 S3 搬到
+// runtime_climate_pass_math.h。
 
 double DCWorldExt::run_sea_ice_daily_pass(Dictionary knobs, float season_phase) {
     using godot::StringName;
@@ -3484,156 +2803,74 @@ double DCWorldExt::run_sea_ice_daily_pass(Dictionary knobs, float season_phase) 
     const float   * const __restrict UPW  = upw_arr.ptr();
     const float   * const __restrict INS  = insol_arr.ptr();
 
+    // S3: 留存生产这一轮真实用过的标量，reference publish 时随 reference 发布给 worker。
+    // 不写的后果是 worker 跑同一份共享内核、却吃结构默认 knobs。
+    record_production_round_scalars(0x40, knobs);
+
     auto t0 = std::chrono::high_resolution_clock::now();
 
-    // ─── Phase A: has_cold_neighbor 快照（前一日 SIF）──────────────────
-    // is_water = (terrain == OCEAN || terrain == LAKE || terrain == SEA_ICE)
-    // 当前实现按 terrain enum 值判断；GDScript 用 _is_water(cell.terrain)。
-    // 为减少 enum 假设，has_cold_neighbor 只检查"邻居 terrain 是 water 且
-    // 邻居 SIF >= 0.6"——只关心 SIF 阈值，terrain enum 解析交给 BT/TR 索引。
-    //
-    // _is_water 在 GDScript 端的语义：terrain ∈ {OCEAN, LAKE, COAST?, SEA_ICE}
-    // 这里我们改用 GDScript 写完后的 base_terrain：base in {OCEAN, SEA_ICE}
-    // 也算 water；LAKE 单独排除（GDScript Phase B 里会把 LAKE 强制设 0）。
-    // 简化：用 prev SIF >= 0.6 做"已结冰邻居" → 满足"邻居 must be water"
-    //       的隐含约束（陆地永远 SIF=0，不会满足 0.6 阈值）。
-    std::vector<uint8_t> has_cold_neighbor(n_cells, 0);
-    std::vector<float> prev_sif(static_cast<size_t>(n_cells), 0.0f);
-    for (int i = 0; i < n_cells; ++i) {
-        prev_sif[static_cast<size_t>(i)] = SIF[i];
-    }
+    // Phase A/B 都在共享内核里。worker 的 _async_sea_ice_kernel_pure 走同一份实现，
+    // flip 列表与统计从 emit 取回后按老契约回填 knobs。
+    pk_async_climate::SeaIceKnobs sk;
+    sk.n_cells = n_cells;
+    sk.k_freeze = k_freeze;
+    sk.k_melt = k_melt;
+    sk.t_form = t_form;
+    sk.t_melt = t_melt;
+    sk.contagion = contagion;
+    sk.threshold = threshold;
+    sk.hysteresis = hysteresis;
+    sk.ice_delay = ice_delay;
+    sk.enable_ocean_heat_transport = enable_oht;
+    sk.solar_gate_enabled = solar_gate_enabled;
+    sk.freeze_insol_low = freeze_insol_low;
+    sk.freeze_insol_high = freeze_insol_high;
+    sk.solar_melt_start = solar_melt_start;
+    sk.solar_melt_gain = solar_melt_gain;
+    sk.min_thick_ice_solar_exposure = min_thick_ice_solar_exposure;
+    sk.daily_delta_cap = daily_delta_cap;
+    sk.edge_mix_rate = edge_mix_rate;
+    sk.dt_days = dt_days;
+    sk.terrain_lake_id = id_lake;
+    sk.terrain_sea_ice_id = id_sea_ice;
+    sk.terrain_ocean_id = id_ocean;
 
-    // is_water 1:1 mirror of map_generator.gd::_is_water:
-    //   t ∈ {OCEAN, COAST, LAKE, REEF, KELP, SEA_ICE} → true（6 种）。
-    // 用 water_ids_arr 构建的 256-entry LUT 查询，避免硬编码 enum 值且 future-proof。
+    pk_async_climate::SeaIceLanes sl;
+    sl.terrain = TR;
+    sl.base_terrain = BT;
+    sl.cell_temperature = T;
+    sl.temp_transport_anomaly = TTA;
+    sl.ocean_thermal_anomaly = OANOM;
+    sl.upwelling_strength = UPW;
+    sl.insolation_now = INS;
+    sl.water_terrain_ids = water_ids_arr.ptr();
+    sl.water_terrain_ids_size = int(water_ids_arr.size());
+    sl.neighbor_indices = NB;
+    sl.sea_ice_frac = SIF;
+    record_production_sea_ice_input(sl, n_cells);
 
-    for (int i = 0; i < n_cells; ++i) {
-        if (!is_water_lut[TR[i]]) continue;
-        const int base = i * 6;
-        bool any_cold = false;
-        for (int d = 0; d < 6; ++d) {
-            const int32_t ni = NB[base + d];
-            if (ni < 0) continue;
-            if (!is_water_lut[TR[ni]]) continue;
-            if (prev_sif[static_cast<size_t>(ni)] >= 0.6f) { any_cold = true; break; }
-        }
-        has_cold_neighbor[i] = any_cold ? 1 : 0;
-    }
+    pk_async_climate::SeaIceScratch scratch;
+    pk_async_climate::SeaIceEmit emit;
+    pk_async_climate::sea_ice_pure(sk, sl, scratch, emit);
 
-    // ─── Phase B: 主循环（fraction 增量更新 + flip 候选收集）──────────
     PackedInt32Array  flip_to_ice;
     PackedInt32Array  flip_to_base;
     PackedByteArray   flip_to_base_terrain;
-    int water_count   = 0;
-    int flipped_count = 0;
-
-    for (int i = 0; i < n_cells; ++i) {
-        const uint8_t terr = TR[i];
-
-        // 非 water → 强制 0
-        if (!is_water_lut[terr]) {
-            SIF[i] = 0.0f;
-            continue;
-        }
-        // LAKE → 强制 0（淡水冻结留给后续 phase；与 GDScript 一致）
-        if (int(terr) == id_lake) {
-            SIF[i] = 0.0f;
-            continue;
-        }
-        ++water_count;
-
-        // T_eff
-        const float temp_now = T[i];
-        float t_eff = temp_now;
-        if (enable_oht) {
-            const float tta_residual = sea_ice_positive_tta_residual(TTA[i], OANOM[i]);
-            if (tta_residual > 0.0f) t_eff += ice_delay * tta_residual;
-            const float upw = UPW[i];
-            if (upw > 0.3f) t_eff -= 0.5f * upw;
-        }
-        if (t_eff < 0.0f) t_eff = 0.0f;
-        else if (t_eff > 1.0f) t_eff = 1.0f;
-
-        // k_freeze 邻居传染
-        float k_freeze_eff = k_freeze;
-        if (has_cold_neighbor[i]) {
-            k_freeze_eff = k_freeze * (1.0f + contagion);
-        }
-
-        const float prev_frac = SIF[i];
-
-        // 增量更新
-        const float diff_freeze = (t_form > t_eff) ? (t_form - t_eff) : 0.0f;
-        const float diff_melt   = (t_eff > t_melt) ? (t_eff - t_melt) : 0.0f;
-        float freeze_gate = 1.0f;
-        const float insolation_now = solar_gate_enabled ? INS[i] : 0.0f;
-        if (solar_gate_enabled) {
-            freeze_gate = sea_ice_freeze_gate(insolation_now, freeze_insol_low, freeze_insol_high);
-        }
-        const float solar_melt_base = solar_gate_enabled
-            ? sea_ice_solar_melt(insolation_now, solar_melt_start, solar_melt_gain) : 0.0f;
-        const float freeze_term = k_freeze_eff * diff_freeze * freeze_gate;
-        // [B2 2026-06-28 子步积分] daily_delta_cap 是"每日"上限。旧实现 d_frac=clamp(rate)*dt_days 单步推进，
-        // 加速档(dt_days≫1)下大步长把 melt 过冲 clamp 到 0 → 浪费已累积的冰(0.3 格遇 0.63 融化步丢 0.33
-        // "记忆")→极地饱和度随速度档退化(实测 dt=1 最冷桶 0.861,加速档掉到 ~0.42)且单 tick 突变(视觉双稳)。
-        // 改为按"每日"子步(各步速率独立 clamp≤cap、各自 clamp[0,1]),使结果与逐日仿真一致、与速度档无关。
-        // dt_days=1 时 n_sub=1 → 与旧实现逐位等价(无回归)。solar_exposure 随 frac 逐步重算(厚冰遮蔽随消融变)。
-        int n_sub = int(dt_days);
-        if (float(n_sub) < dt_days) ++n_sub;   // ceil
-        if (n_sub < 1) n_sub = 1;
-        else if (n_sub > 30) n_sub = 30;
-        const float sub_dt = dt_days / float(n_sub);
-        float new_frac = prev_frac;
-        for (int sub = 0; sub < n_sub; ++sub) {
-            const float solar_melt_s = solar_gate_enabled
-                ? solar_melt_base * sea_ice_solar_exposure(new_frac, min_thick_ice_solar_exposure)
-                : 0.0f;
-            float rate = freeze_term - (k_melt * diff_melt + solar_melt_s);
-            if (daily_delta_cap > 0.0f) {
-                if (rate > daily_delta_cap) rate = daily_delta_cap;
-                else if (rate < -daily_delta_cap) rate = -daily_delta_cap;
-            }
-            new_frac += rate * sub_dt;
-            if (new_frac <= 0.0f) { new_frac = 0.0f; if (rate < 0.0f) break; }
-            else if (new_frac >= 1.0f) { new_frac = 1.0f; if (rate > 0.0f) break; }
-        }
-        if (edge_mix_rate > 0.0f) {
-            float sum_nb_frac = 0.0f;
-            int nb_water_count = 0;
-            const int base = i * 6;
-            for (int d = 0; d < 6; ++d) {
-                const int32_t ni = NB[base + d];
-                if (ni < 0 || !is_water_lut[TR[ni]] || int(TR[ni]) == id_lake) continue;
-                sum_nb_frac += prev_sif[static_cast<size_t>(ni)];
-                ++nb_water_count;
-            }
-            if (nb_water_count > 0) {
-                const float avg_nb_frac = sum_nb_frac / float(nb_water_count);
-                const float contrast = std::abs(avg_nb_frac - new_frac);
-                if (contrast > 0.05f && (prev_frac > 0.001f || avg_nb_frac > 0.001f)) {
-                    const float mix = std::min(0.12f, edge_mix_rate * std::max(1.0f, dt_days));
-                    new_frac += (avg_nb_frac - new_frac) * mix;
-                    if (new_frac < 0.0f) new_frac = 0.0f;
-                    else if (new_frac > 1.0f) new_frac = 1.0f;
-                }
-            }
-        }
-        SIF[i] = new_frac;
-
-        // 翻转候选收集（带迟滞）
-        const bool was_ice = (int(terr) == id_sea_ice);
-        if (!was_ice && new_frac >= threshold) {
-            flip_to_ice.append(i);
-            ++flipped_count;
-        } else if (was_ice && new_frac < (threshold - hysteresis)) {
-            const int base_t_int = int(BT[i]);
-            int target_terr = base_t_int;
-            if (base_t_int == id_sea_ice) target_terr = id_ocean;
-            flip_to_base.append(i);
-            flip_to_base_terrain.append(uint8_t(target_terr & 0xFF));
-            ++flipped_count;
-        }
+    flip_to_ice.resize(int(emit.flip_to_ice.size()));
+    if (!emit.flip_to_ice.empty()) {
+        std::memcpy(flip_to_ice.ptrw(), emit.flip_to_ice.data(),
+                    emit.flip_to_ice.size() * sizeof(int32_t));
     }
+    flip_to_base.resize(int(emit.flip_to_base.size()));
+    flip_to_base_terrain.resize(int(emit.flip_to_base_terrain.size()));
+    if (!emit.flip_to_base.empty()) {
+        std::memcpy(flip_to_base.ptrw(), emit.flip_to_base.data(),
+                    emit.flip_to_base.size() * sizeof(int32_t));
+        std::memcpy(flip_to_base_terrain.ptrw(), emit.flip_to_base_terrain.data(),
+                    emit.flip_to_base_terrain.size());
+    }
+    const int water_count   = emit.water_count;
+    const int flipped_count = emit.flipped_count;
 
     // 写 SIF slot（cell_sea_ice_frac CoW-detached buffer 同步回 MapData）
     _flush_slot_to_map(sid_sea_ice);
@@ -3770,13 +3007,6 @@ double DCWorldExt::run_sea_ice_daily_pass_thread(Dictionary knobs, float season_
     if (water_ids_arr.size() <= 0)      { diag("water_terrain_ids empty"); return -1.0; }
     if (cell_temp_arr.size() < n_cells) { diag("cell_temperature_arr size < n_cells"); return -1.0; }
 
-    bool is_water_lut[256];
-    for (int i = 0; i < 256; ++i) is_water_lut[i] = false;
-    for (int k = 0; k < water_ids_arr.size(); ++k) {
-        const int wid = int(water_ids_arr[k]);
-        if (wid >= 0 && wid < 256) is_water_lut[wid] = true;
-    }
-
     Slot &s_sea_ice = _slots.write[sid_sea_ice];
     Slot &s_terrain = _slots.write[sid_terrain];
     Slot &s_oanom   = _slots.write[sid_oanom];
@@ -3797,185 +3027,84 @@ double DCWorldExt::run_sea_ice_daily_pass_thread(Dictionary knobs, float season_
     const float   * const __restrict UPW  = upw_arr.ptr();
     const float   * const __restrict INS  = insol_arr.ptr();
 
+    // S3: 留存生产这一轮真实用过的标量。漏记的后果不只是 worker 吃默认 knobs ——
+    // prod_knobs 诊断位也不会置，于是看起来像“这个 pass 根本没跑”。
+    // native daily graph 默认走的就是 thread 变体，所以漏在这里最隐蔽。
+    record_production_round_scalars(0x40, knobs);
+
     auto t0 = std::chrono::high_resolution_clock::now();
 
-    // ─── Phase A: cold_neighbor 快照（cell-local，纯并行） ──────────────
-    std::vector<uint8_t> has_cold_neighbor(n_cells, 0);
-    std::vector<float> prev_sif(static_cast<size_t>(n_cells), 0.0f);
-    for (int i = 0; i < n_cells; ++i) {
-        prev_sif[static_cast<size_t>(i)] = SIF[i];
-    }
-    {
-        uint8_t * const HCN = has_cold_neighbor.data();
-        const float * const PSIF = prev_sif.data();
-        auto run_a = [&](int begin, int end) {
-            for (int i = begin; i < end; ++i) {
-                if (!is_water_lut[TR[i]]) { HCN[i] = 0; continue; }
-                const int base = i * 6;
-                bool any_cold = false;
-                for (int d = 0; d < 6; ++d) {
-                    const int32_t ni = NB[base + d];
-                    if (ni < 0) continue;
-                    if (!is_water_lut[TR[ni]]) continue;
-                    if (PSIF[ni] >= 0.6f) { any_cold = true; break; }
-                }
-                HCN[i] = any_cold ? 1 : 0;
-            }
-        };
-        pk::parallel_for_range("pk_sea_ice_phaseA", n_cells, n_tasks, 256, run_a);
-    }
+    // native daily 默认走这个 thread 变体。它此前是 2026-06-16 的单步
+    // `d_frac = rate * dt_days` 抄本，而 scalar / worker 已经换成 sea_ice_pure
+    // 的按日子步积分。dt_days≈8..10 时两边差一个数量级，sea_ice 因此在每一个
+    // 真实对拍日都分叉。接到同一份内核之后，并行只是调度，不再是第二套物理。
+    pk_async_climate::SeaIceKnobs sk;
+    sk.n_cells = n_cells;
+    sk.k_freeze = k_freeze;
+    sk.k_melt = k_melt;
+    sk.t_form = t_form;
+    sk.t_melt = t_melt;
+    sk.contagion = contagion;
+    sk.threshold = threshold;
+    sk.hysteresis = hysteresis;
+    sk.ice_delay = ice_delay;
+    sk.enable_ocean_heat_transport = enable_oht;
+    sk.solar_gate_enabled = solar_gate_enabled;
+    sk.freeze_insol_low = freeze_insol_low;
+    sk.freeze_insol_high = freeze_insol_high;
+    sk.solar_melt_start = solar_melt_start;
+    sk.solar_melt_gain = solar_melt_gain;
+    sk.min_thick_ice_solar_exposure = min_thick_ice_solar_exposure;
+    sk.daily_delta_cap = daily_delta_cap;
+    sk.edge_mix_rate = edge_mix_rate;
+    sk.dt_days = dt_days;
+    sk.terrain_lake_id = id_lake;
+    sk.terrain_sea_ice_id = id_sea_ice;
+    sk.terrain_ocean_id = id_ocean;
 
-    // ─── Phase B: 主循环 + emit (flip lists + counters) ─────────────────
-    struct SeaIceEmit {
-        std::vector<int32_t> flip_to_ice;
-        std::vector<int32_t> flip_to_base;
-        std::vector<uint8_t> flip_to_base_terrain;
-        int water_count   = 0;
-        int flipped_count = 0;
+    pk_async_climate::SeaIceLanes sl;
+    sl.terrain = TR;
+    sl.base_terrain = BT;
+    sl.cell_temperature = T;
+    sl.temp_transport_anomaly = TTA;
+    sl.ocean_thermal_anomaly = OANOM;
+    sl.upwelling_strength = UPW;
+    sl.insolation_now = INS;
+    sl.water_terrain_ids = water_ids_arr.ptr();
+    sl.water_terrain_ids_size = int(water_ids_arr.size());
+    sl.neighbor_indices = NB;
+    sl.sea_ice_frac = SIF;
+    record_production_sea_ice_input(sl, n_cells);
 
-        void merge_into(SeaIceEmit &dst) const {
-            // 串行追加 → 与 scalar 升序 1:1
-            dst.flip_to_ice.insert(dst.flip_to_ice.end(),
-                                   flip_to_ice.begin(), flip_to_ice.end());
-            dst.flip_to_base.insert(dst.flip_to_base.end(),
-                                    flip_to_base.begin(), flip_to_base.end());
-            dst.flip_to_base_terrain.insert(dst.flip_to_base_terrain.end(),
-                                            flip_to_base_terrain.begin(),
-                                            flip_to_base_terrain.end());
-            dst.water_count   += water_count;
-            dst.flipped_count += flipped_count;
-        }
-    };
-
-    SeaIceEmit global_emit;
-    {
-        const uint8_t * const HCN = has_cold_neighbor.data();
-        const float * const PSIF = prev_sif.data();
-        auto run_b = [&](int begin, int end, SeaIceEmit &local) {
-            for (int i = begin; i < end; ++i) {
-                const uint8_t terr = TR[i];
-
-                if (!is_water_lut[terr]) {
-                    SIF[i] = 0.0f;
-                    continue;
-                }
-                if (int(terr) == id_lake) {
-                    SIF[i] = 0.0f;
-                    continue;
-                }
-                ++local.water_count;
-
-                const float temp_now = T[i];
-                float t_eff = temp_now;
-                if (enable_oht) {
-                    const float tta_residual = sea_ice_positive_tta_residual(TTA[i], OANOM[i]);
-                    if (tta_residual > 0.0f) t_eff += ice_delay * tta_residual;
-                    const float upw = UPW[i];
-                    if (upw > 0.3f) t_eff -= 0.5f * upw;
-                }
-                if (t_eff < 0.0f) t_eff = 0.0f;
-                else if (t_eff > 1.0f) t_eff = 1.0f;
-
-                float k_freeze_eff = k_freeze;
-                if (HCN[i]) {
-                    k_freeze_eff = k_freeze * (1.0f + contagion);
-                }
-
-                const float prev_frac = PSIF[i];
-
-                const float diff_freeze = (t_form > t_eff) ? (t_form - t_eff) : 0.0f;
-                const float diff_melt   = (t_eff > t_melt) ? (t_eff - t_melt) : 0.0f;
-                float freeze_gate = 1.0f;
-                float solar_melt = 0.0f;
-                if (solar_gate_enabled) {
-                    const float insolation_now = INS[i];
-                    freeze_gate = sea_ice_freeze_gate(insolation_now, freeze_insol_low, freeze_insol_high);
-                    solar_melt = sea_ice_solar_melt(insolation_now, solar_melt_start, solar_melt_gain)
-                        * sea_ice_solar_exposure(prev_frac, min_thick_ice_solar_exposure);
-                }
-                // [S2 fix 2026-05-23] 乘 dt_days：与 scalar 路径 1:1。
-                // [seaice dt 修复 2026-06-16] 见 scalar 路径注释：先裁剪日速率再乘 dt_days。
-                float rate = k_freeze_eff * diff_freeze * freeze_gate
-                           - (k_melt * diff_melt + solar_melt);
-                if (daily_delta_cap > 0.0f) {
-                    if (rate > daily_delta_cap) rate = daily_delta_cap;
-                    else if (rate < -daily_delta_cap) rate = -daily_delta_cap;
-                }
-                float d_frac = rate * dt_days;
-                float new_frac = prev_frac + d_frac;
-                if (new_frac < 0.0f) new_frac = 0.0f;
-                else if (new_frac > 1.0f) new_frac = 1.0f;
-                if (edge_mix_rate > 0.0f) {
-                    float sum_nb_frac = 0.0f;
-                    int nb_water_count = 0;
-                    const int base = i * 6;
-                    for (int d = 0; d < 6; ++d) {
-                        const int32_t ni = NB[base + d];
-                        if (ni < 0 || !is_water_lut[TR[ni]] || int(TR[ni]) == id_lake) continue;
-                        sum_nb_frac += PSIF[ni];
-                        ++nb_water_count;
-                    }
-                    if (nb_water_count > 0) {
-                        const float avg_nb_frac = sum_nb_frac / float(nb_water_count);
-                        const float contrast = std::abs(avg_nb_frac - new_frac);
-                        if (contrast > 0.05f && (prev_frac > 0.001f || avg_nb_frac > 0.001f)) {
-                            const float mix = std::min(0.12f, edge_mix_rate * std::max(1.0f, dt_days));
-                            new_frac += (avg_nb_frac - new_frac) * mix;
-                            if (new_frac < 0.0f) new_frac = 0.0f;
-                            else if (new_frac > 1.0f) new_frac = 1.0f;
-                        }
-                    }
-                }
-                SIF[i] = new_frac;
-
-                const bool was_ice = (int(terr) == id_sea_ice);
-                if (!was_ice && new_frac >= threshold) {
-                    local.flip_to_ice.push_back(i);
-                    ++local.flipped_count;
-                } else if (was_ice && new_frac < (threshold - hysteresis)) {
-                    const int base_t_int = int(BT[i]);
-                    int target_terr = base_t_int;
-                    if (base_t_int == id_sea_ice) target_terr = id_ocean;
-                    local.flip_to_base.push_back(i);
-                    local.flip_to_base_terrain.push_back(uint8_t(target_terr & 0xFF));
-                    ++local.flipped_count;
-                }
-            }
-        };
-        pk::parallel_for_range_with_emit<SeaIceEmit>(
-            "pk_sea_ice_phaseB", n_cells, n_tasks, 256, global_emit, run_b);
-    }
+    pk_async_climate::SeaIceScratch scratch;
+    pk_async_climate::SeaIceEmit emit;
+    pk_async_climate::sea_ice_pure(sk, sl, scratch, emit);
+    (void)n_tasks;
 
     _flush_slot_to_map(sid_sea_ice);
 
-    // 把 SeaIceEmit 转回 PackedArray（与 scalar 等价）
     PackedInt32Array flip_to_ice;
     PackedInt32Array flip_to_base;
     PackedByteArray  flip_to_base_terrain;
-    {
-        const int n_a = int(global_emit.flip_to_ice.size());
-        const int n_b = int(global_emit.flip_to_base.size());
-        flip_to_ice.resize(n_a);
-        flip_to_base.resize(n_b);
-        flip_to_base_terrain.resize(n_b);
-        if (n_a > 0) {
-            std::memcpy(flip_to_ice.ptrw(), global_emit.flip_to_ice.data(),
-                        n_a * sizeof(int32_t));
-        }
-        if (n_b > 0) {
-            std::memcpy(flip_to_base.ptrw(), global_emit.flip_to_base.data(),
-                        n_b * sizeof(int32_t));
-            std::memcpy(flip_to_base_terrain.ptrw(),
-                        global_emit.flip_to_base_terrain.data(),
-                        n_b * sizeof(uint8_t));
-        }
+    flip_to_ice.resize(int(emit.flip_to_ice.size()));
+    if (!emit.flip_to_ice.empty()) {
+        std::memcpy(flip_to_ice.ptrw(), emit.flip_to_ice.data(),
+                    emit.flip_to_ice.size() * sizeof(int32_t));
+    }
+    flip_to_base.resize(int(emit.flip_to_base.size()));
+    flip_to_base_terrain.resize(int(emit.flip_to_base_terrain.size()));
+    if (!emit.flip_to_base.empty()) {
+        std::memcpy(flip_to_base.ptrw(), emit.flip_to_base.data(),
+                    emit.flip_to_base.size() * sizeof(int32_t));
+        std::memcpy(flip_to_base_terrain.ptrw(), emit.flip_to_base_terrain.data(),
+                    emit.flip_to_base_terrain.size());
     }
 
     knobs["flip_to_ice_list"]     = flip_to_ice;
     knobs["flip_to_base_list"]    = flip_to_base;
     knobs["flip_to_base_terrain"] = flip_to_base_terrain;
-    knobs["stat_water_count"]     = global_emit.water_count;
-    knobs["stat_flipped_count"]   = global_emit.flipped_count;
+    knobs["stat_water_count"]     = emit.water_count;
+    knobs["stat_flipped_count"]   = emit.flipped_count;
 
     auto t1 = std::chrono::high_resolution_clock::now();
     return std::chrono::duration<double, std::milli>(t1 - t0).count();
@@ -4001,6 +3130,7 @@ double DCWorldExt::run_sea_ice_daily_pass_thread(Dictionary knobs, float season_
 // LandformType.LF enum order (landform_type.gd:9-23): DEEP_OCEAN=0, OCEAN=1,
 // COAST=2, LAKE=3 are water; PLAIN=4+ are land. So is_water iff lf <= 3.
 double DCWorldExt::run_transpiration_pass(Dictionary knobs) {
+    _production_stage_mask |= pk_async_climate::CLIMATE_STAGE_BIT_TRANSPIRATION;
     using godot::StringName;
     using godot::PackedFloat32Array;
     using godot::PackedInt32Array;
@@ -4051,72 +3181,45 @@ double DCWorldExt::run_transpiration_pass(Dictionary knobs) {
         return -1.0;
     }
 
-    const uint8_t * const __restrict LF   = s_landform.arr_u8.ptr();
-    const uint8_t * const __restrict VEG  = s_veg.arr_u8.ptr();
-    float         * const __restrict M    = s_moist.arr_f32.ptrw();
-    const int32_t * const __restrict NB   = nb_arr.ptr();
-    const float   * const __restrict DON  = donor_arr.ptr();
-
     auto t0 = std::chrono::high_resolution_clock::now();
 
-    // ─── Phase 1: compute deltas (scratch buffer, NOT a slot) ───────────
-    // Stack vector keeps allocation off the heap for the whole pass.
-    std::vector<float> deltas(n_cells, 0.0f);
-    float * const __restrict D = deltas.data();
+    // S3：算法体是共享纯内核，与 async round 和 SHADOW worker 完全同一份代码。
+    // 这里只负责 slot → buffer → slot 的搬运；transpiration 不再有第二份实现。
+    using namespace pk_async_climate;
+    ClimateInputBuf &tin = _transp_sync_input_buf;
+    ClimateOutputBuf &tout = _transp_sync_output_buf;
+    ClimateRoundStaticKnobs tknobs;
+    tin.n_cells = n_cells;
+    tin.landform.assign(s_landform.arr_u8.ptr(), s_landform.arr_u8.ptr() + n_cells);
+    tin.vegetation.assign(s_veg.arr_u8.ptr(), s_veg.arr_u8.ptr() + n_cells);
+    tin.moisture.assign(s_moist.arr_f32.ptr(), s_moist.arr_f32.ptr() + n_cells);
+    tin.scalars.transp_outflow_rate = outflow_rate;
+    tin.scalars.transp_self_rate = self_rate;
+    tknobs.n_cells = n_cells;
+    tknobs.neighbor_indices.assign(nb_arr.ptr(), nb_arr.ptr() + n_cells * 6);
+    tknobs.donor_table.assign(donor_arr.ptr(), donor_arr.ptr() + donor_size);
 
-    for (int i = 0; i < n_cells; ++i) {
-        // Skip water cells (LandformType.is_water): LF.{DEEP_OCEAN..LAKE} = 0..3
-        if (LF[i] <= 3) continue;
-        const uint8_t veg_id = VEG[i];
-        if (veg_id >= donor_size) continue; // safety
-        const float trans = DON[veg_id];
-        if (trans < 0.01f) continue;
-        const float moist = M[i];
-        const float output      = trans * moist;
-        const float self_share = output * self_rate;
-
-        const int base = i * 6;
-        int valid_land_neighbors = 0;
-        for (int d = 0; d < 6; ++d) {
-            const int32_t nb_idx = NB[base + d];
-            if (nb_idx < 0) continue;
-            // Skip water neighbours (mirror of GDScript "海面邻居不接受陆地蒸腾外溢")
-            if (LF[nb_idx] <= 3) continue;
-            ++valid_land_neighbors;
-        }
-        const float transported = valid_land_neighbors > 0 ? output * outflow_rate : 0.0f;
-        D[i] += self_share - transported;
-        const float nb_share = valid_land_neighbors > 0
-            ? transported / float(valid_land_neighbors) : 0.0f;
-        for (int d = 0; d < 6; ++d) {
-            const int32_t nb_idx = NB[base + d];
-            if (nb_idx < 0 || LF[nb_idx] <= 3) continue;
-            D[nb_idx] += nb_share;
-        }
+    if (!_async_transp_kernel_pure(tin, tknobs, _transp_sync_work_buf, tout)) {
+        diag("shared transp kernel rejected input dimensions");
+        return -1.0;
     }
     auto t_compute = std::chrono::high_resolution_clock::now();
 
-    // ─── Phase 2: apply deltas (clamp to [0,1]) ─────────────────────────
+    // 内核的 dirty 列表就是"哪些 cell 真的变了"，直接转成 Godot 侧的两条数组，
+    // 不再重新扫一遍。
+    float * const __restrict M = s_moist.arr_f32.ptrw();
+    const int dirty_count = (int)tout.moisture_dirty_indices.size();
     PackedInt32Array dirty_indices;
     PackedFloat32Array dirty_values;
-    dirty_indices.resize(n_cells);
-    dirty_values.resize(n_cells);
-    int dirty_count = 0;
-    for (int i = 0; i < n_cells; ++i) {
-        const float d = D[i];
-        if (d == 0.0f) continue;
-        float v = M[i] + d;
-        if (v < 0.0f) v = 0.0f;
-        else if (v > 1.0f) v = 1.0f;
-        if (M[i] != v) {
-            M[i] = v;
-            dirty_indices.set(dirty_count, i);
-            dirty_values.set(dirty_count, v);
-            ++dirty_count;
-        }
-    }
     dirty_indices.resize(dirty_count);
     dirty_values.resize(dirty_count);
+    for (int k = 0; k < dirty_count; ++k) {
+        const int32_t idx = tout.moisture_dirty_indices[k];
+        const float value = tout.moisture_dirty_values[k];
+        M[idx] = value;
+        dirty_indices.set(k, idx);
+        dirty_values.set(k, value);
+    }
     knobs["dirty_indices"] = dirty_indices;
     knobs["dirty_values"] = dirty_values;
     knobs["dirty_count"] = dirty_count;
@@ -4221,352 +3324,121 @@ Dictionary DCWorldExt::run_runtime_hydrology_pass(const Dictionary &knobs) {
         return fail("slot_size_mismatch");
     }
 
-    const float precip_scale = knobs.has("hydro_precip_scale") ? float(knobs["hydro_precip_scale"]) : 1.0f;
-    const float snowmelt_scale = knobs.has("hydro_snowmelt_scale") ? float(knobs["hydro_snowmelt_scale"]) : 0.55f;
-    const float soil_capacity = knobs.has("hydro_soil_capacity") ? std::max(0.05f, float(knobs["hydro_soil_capacity"])) : 0.75f;
-    const float infiltration_rate = knobs.has("hydro_infiltration_rate") ? dc_clampf(float(knobs["hydro_infiltration_rate"]), 0.0f, 1.0f) : 0.52f;
-    const float quickflow_fraction = knobs.has("hydro_quickflow_fraction") ? dc_clampf(float(knobs["hydro_quickflow_fraction"]), 0.0f, 1.0f) : 0.36f;
-    const float baseflow_recession = knobs.has("hydro_baseflow_recession") ? dc_clampf(float(knobs["hydro_baseflow_recession"]), 0.0f, 1.0f) : 0.035f;
-    const float channel_release = knobs.has("hydro_channel_release_rate") ? dc_clampf(float(knobs["hydro_channel_release_rate"]), 0.01f, 1.0f) : 0.62f;
-    const float lake_release = knobs.has("hydro_lake_release_rate") ? dc_clampf(float(knobs["hydro_lake_release_rate"]), 0.005f, 1.0f) : 0.18f;
-    const float discharge_ema = knobs.has("hydro_discharge_ema") ? dc_clampf(float(knobs["hydro_discharge_ema"]), 0.01f, 1.0f) : 0.08f;
-    const float bank_moisture_gain = knobs.has("hydro_bank_moisture_gain") ? dc_clampf(float(knobs["hydro_bank_moisture_gain"]), 0.0f, 0.25f) : 0.035f;
-    const float river_moisture_floor = knobs.has("hydro_river_moisture_floor") ? dc_clampf(float(knobs["hydro_river_moisture_floor"]), 0.0f, 1.0f) : 0.66f;
-    const float riparian_moisture_floor = knobs.has("hydro_riparian_moisture_floor") ? dc_clampf(float(knobs["hydro_riparian_moisture_floor"]), 0.0f, 1.0f) : 0.38f;
-    const float river_evap_gain = knobs.has("hydro_river_evap_gain") ? dc_clampf(float(knobs["hydro_river_evap_gain"]), 0.0f, 1.0f) : 0.12f;
-    const float moisture_response_rate = knobs.has("hydro_moisture_response_rate") ? dc_clampf(float(knobs["hydro_moisture_response_rate"]), 0.0f, 1.0f) : 0.08f;
-    const float flood_threshold = knobs.has("hydro_flood_threshold") ? std::max(0.01f, float(knobs["hydro_flood_threshold"])) : 2.2f;
-    const float snowpack_melt_temp_gain = knobs.has("snowpack_melt_temp_gain") ? float(knobs["snowpack_melt_temp_gain"]) : 0.22f;
-    const float snowpack_melt_sun_gain = knobs.has("snowpack_melt_sun_gain") ? float(knobs["snowpack_melt_sun_gain"]) : 0.12f;
-    const float plant_water_balance_weight = knobs.has("plant_water_balance_weight") ? float(knobs["plant_water_balance_weight"]) : 0.35f;
-    const float plant_soil_buffer_weight = knobs.has("plant_soil_buffer_weight") ? float(knobs["plant_soil_buffer_weight"]) : 0.25f;
-    const float plant_drought_penalty = knobs.has("plant_drought_penalty") ? float(knobs["plant_drought_penalty"]) : 0.65f;
-    const float dt_days = knobs.has("dt_days") ? dc_clampf(float(knobs["dt_days"]), 1.0f, 30.0f) : 1.0f;
-    const float baseflow_recession_eff = 1.0f - std::pow(1.0f - baseflow_recession, dt_days);
-    const float discharge_ema_eff = 1.0f - std::pow(1.0f - discharge_ema, dt_days);
-    const float nonriver_discharge_decay = std::pow(1.0f - discharge_ema * 0.5f, dt_days);
-    const float soil_decay_eff = std::pow(0.985f, dt_days);
-    const float water_balance_ema_eff = 1.0f - std::pow(1.0f - (1.0f / 30.0f), dt_days);
-    const float moisture_response_alpha = 1.0f - std::pow(1.0f - moisture_response_rate, dt_days);
+    // 标量收进 POD 结构体。派生系数（*_eff / *_alpha）不在这里算 —— 它们由
+    // hydrology_pass_pure 按 dt_days 自己推，避免生产与 worker 各写一份公式。
+    pk_async_climate::HydrologyKnobs hk;
+    hk.n_cells = n_cells;
+    const auto knob_f = [&knobs](const char *key, float fallback) {
+        return knobs.has(key) ? float(knobs[key]) : fallback;
+    };
+    hk.precip_scale = knob_f("hydro_precip_scale", 1.0f);
+    hk.snowmelt_scale = knob_f("hydro_snowmelt_scale", 0.55f);
+    hk.soil_capacity = knobs.has("hydro_soil_capacity")
+        ? std::max(0.05f, float(knobs["hydro_soil_capacity"])) : 0.75f;
+    hk.infiltration_rate = knobs.has("hydro_infiltration_rate")
+        ? dc_clampf(float(knobs["hydro_infiltration_rate"]), 0.0f, 1.0f) : 0.52f;
+    hk.quickflow_fraction = knobs.has("hydro_quickflow_fraction")
+        ? dc_clampf(float(knobs["hydro_quickflow_fraction"]), 0.0f, 1.0f) : 0.36f;
+    hk.baseflow_recession = knobs.has("hydro_baseflow_recession")
+        ? dc_clampf(float(knobs["hydro_baseflow_recession"]), 0.0f, 1.0f) : 0.035f;
+    hk.channel_release = knobs.has("hydro_channel_release_rate")
+        ? dc_clampf(float(knobs["hydro_channel_release_rate"]), 0.01f, 1.0f) : 0.62f;
+    hk.lake_release = knobs.has("hydro_lake_release_rate")
+        ? dc_clampf(float(knobs["hydro_lake_release_rate"]), 0.005f, 1.0f) : 0.18f;
+    hk.discharge_ema = knobs.has("hydro_discharge_ema")
+        ? dc_clampf(float(knobs["hydro_discharge_ema"]), 0.01f, 1.0f) : 0.08f;
+    hk.bank_moisture_gain = knobs.has("hydro_bank_moisture_gain")
+        ? dc_clampf(float(knobs["hydro_bank_moisture_gain"]), 0.0f, 0.25f) : 0.035f;
+    hk.river_moisture_floor = knobs.has("hydro_river_moisture_floor")
+        ? dc_clampf(float(knobs["hydro_river_moisture_floor"]), 0.0f, 1.0f) : 0.66f;
+    hk.riparian_moisture_floor = knobs.has("hydro_riparian_moisture_floor")
+        ? dc_clampf(float(knobs["hydro_riparian_moisture_floor"]), 0.0f, 1.0f) : 0.38f;
+    hk.river_evap_gain = knobs.has("hydro_river_evap_gain")
+        ? dc_clampf(float(knobs["hydro_river_evap_gain"]), 0.0f, 1.0f) : 0.12f;
+    hk.moisture_response_rate = knobs.has("hydro_moisture_response_rate")
+        ? dc_clampf(float(knobs["hydro_moisture_response_rate"]), 0.0f, 1.0f) : 0.08f;
+    hk.flood_threshold = knobs.has("hydro_flood_threshold")
+        ? std::max(0.01f, float(knobs["hydro_flood_threshold"])) : 2.2f;
+    hk.snowpack_melt_temp_gain = knob_f("snowpack_melt_temp_gain", 0.22f);
+    hk.snowpack_melt_sun_gain = knob_f("snowpack_melt_sun_gain", 0.12f);
+    hk.plant_water_balance_weight = knob_f("plant_water_balance_weight", 0.35f);
+    hk.plant_soil_buffer_weight = knob_f("plant_soil_buffer_weight", 0.25f);
+    hk.plant_drought_penalty = knob_f("plant_drought_penalty", 0.65f);
+    hk.dt_days = knobs.has("dt_days")
+        ? dc_clampf(float(knobs["dt_days"]), 1.0f, 30.0f) : 1.0f;
+    const float moisture_response_alpha =
+        1.0f - std::pow(1.0f - hk.moisture_response_rate, hk.dt_days);
     PackedInt32Array neighbor_indices;
     if (knobs.has("neighbor_indices")) {
         neighbor_indices = knobs["neighbor_indices"];
     }
     const bool has_neighbor_indices = neighbor_indices.size() >= n_cells * 6;
-    const int32_t * const NB = has_neighbor_indices ? neighbor_indices.ptr() : nullptr;
 
-    const int32_t * const __restrict HP = _slots.write[sid_hparent].arr_i32.ptr();
-    const uint8_t * const __restrict HAS_RIV = _slots.write[sid_has_riv].arr_u8.ptr();
-    const uint8_t * const __restrict TERR = _slots.write[sid_terrain].arr_u8.ptr();
-    const uint8_t * const __restrict LF = _slots.write[sid_landform].arr_u8.ptr();
-    const uint8_t * const __restrict VEG = _slots.write[sid_veg].arr_u8.ptr();
-    const uint8_t * const __restrict COV = _slots.write[sid_cover].arr_u8.ptr();
-    const float * const __restrict ELEV = _slots.write[sid_elev].arr_f32.ptr();
-    const float * const __restrict PREC = _slots.write[sid_precip].arr_f32.ptr();
-    const float * const __restrict INTEN = _slots.write[sid_intensity].arr_f32.ptr();
-    const uint8_t * const __restrict WTYPE = _slots.write[sid_wtype].arr_u8.ptr();
-    const float * const __restrict TEMP = _slots.write[sid_temp].arr_f32.ptr();
-    const float * const __restrict HEAT = _slots.write[sid_heat].arr_f32.ptr();
-    const float * const __restrict SNOWP = _slots.write[sid_snowpack].arr_f32.ptr();
-    float * const __restrict MOIST = _slots.write[sid_moist].arr_f32.ptrw();
-    const float * const __restrict BASE_M = _slots.write[sid_base_m].arr_f32.ptr();
-    float * const __restrict SOIL = _slots.write[sid_soil].arr_f32.ptrw();
-    float * const __restrict WB30 = _slots.write[sid_wb30].arr_f32.ptrw();
-    float * const __restrict PLANT_WATER = _slots.write[sid_plant_water].arr_f32.ptrw();
-    const uint8_t * const __restrict IS_WATER = _slots.write[sid_is_water].arr_u8.ptr();
-    const float * const __restrict VITAL = _slots.write[sid_vital].arr_f32.ptr();
-    float * const __restrict Q = _slots.write[sid_q].arr_f32.ptrw();
-    float * const __restrict Q30 = _slots.write[sid_q30].arr_f32.ptrw();
-    float * const __restrict STORAGE = _slots.write[sid_storage].arr_f32.ptrw();
-    float * const __restrict GW = _slots.write[sid_gw].arr_f32.ptrw();
-    float * const __restrict RUNOFF = _slots.write[sid_runoff].arr_f32.ptrw();
-    const uint8_t * const __restrict CANAL_MASK =
-        _slots.write[sid_canal_mask].arr_u8.ptr();
-    float * const __restrict CANAL_WATER =
-        _slots.write[sid_canal_water].arr_f32.ptrw();
+    pk_async_climate::HydrologyLanes hl;
+    hl.hydro_parent = _slots.write[sid_hparent].arr_i32.ptr();
+    hl.has_river = _slots.write[sid_has_riv].arr_u8.ptr();
+    hl.terrain = _slots.write[sid_terrain].arr_u8.ptr();
+    hl.landform = _slots.write[sid_landform].arr_u8.ptr();
+    hl.vegetation = _slots.write[sid_veg].arr_u8.ptr();
+    hl.cover = _slots.write[sid_cover].arr_u8.ptr();
+    hl.elevation = _slots.write[sid_elev].arr_f32.ptr();
+    hl.precip = _slots.write[sid_precip].arr_f32.ptr();
+    hl.intensity = _slots.write[sid_intensity].arr_f32.ptr();
+    hl.weather_type = _slots.write[sid_wtype].arr_u8.ptr();
+    hl.temp = _slots.write[sid_temp].arr_f32.ptr();
+    hl.heat = _slots.write[sid_heat].arr_f32.ptr();
+    hl.snowpack = _slots.write[sid_snowpack].arr_f32.ptr();
+    hl.base_moisture = _slots.write[sid_base_m].arr_f32.ptr();
+    hl.is_water = _slots.write[sid_is_water].arr_u8.ptr();
+    hl.vitality = _slots.write[sid_vital].arr_f32.ptr();
+    hl.canal_mask = _slots.write[sid_canal_mask].arr_u8.ptr();
+    hl.neighbor_indices = has_neighbor_indices ? neighbor_indices.ptr() : nullptr;
+    hl.moisture = _slots.write[sid_moist].arr_f32.ptrw();
+    hl.soil_moisture = _slots.write[sid_soil].arr_f32.ptrw();
+    hl.water_balance_30d = _slots.write[sid_wb30].arr_f32.ptrw();
+    hl.plant_water = _slots.write[sid_plant_water].arr_f32.ptrw();
+    hl.discharge = _slots.write[sid_q].arr_f32.ptrw();
+    hl.discharge_30d = _slots.write[sid_q30].arr_f32.ptrw();
+    hl.river_storage = _slots.write[sid_storage].arr_f32.ptrw();
+    hl.groundwater = _slots.write[sid_gw].arr_f32.ptrw();
+    hl.runoff = _slots.write[sid_runoff].arr_f32.ptrw();
+    hl.canal_water = _slots.write[sid_canal_water].arr_f32.ptrw();
 
     const auto tc0 = std::chrono::high_resolution_clock::now();
-    std::vector<int32_t> child_count(size_t(n_cells), 0);
-    std::vector<float> incoming(size_t(n_cells), 0.0f);
-    std::vector<float> moisture_target(size_t(n_cells), -1.0f);
-    std::vector<int32_t> queue;
-    queue.reserve(size_t(n_cells));
-    double water_in_total = 0.0;
-    double outlet_total = 0.0;
-    int runoff_source_cells = 0;
-    int river_cells_processed = 0;
-    int riparian_neighbor_touches = 0;
-    int river_moisture_floor_touches = 0;
-    int riparian_moisture_floor_touches = 0;
-    float river_moisture_max_delta = 0.0f;
-    float riparian_moisture_max_delta = 0.0f;
-    int flood_candidate_count = 0;
-    int canal_cells_processed = 0;
-    int canal_edges_processed = 0;
-    int canal_freshwater_cells = 0;
-    int canal_saline_cells = 0;
 
-    for (int i = 0; i < n_cells; ++i) {
-        const int32_t p = HP[i];
-        if (p >= 0 && p < n_cells && p != i) child_count[size_t(p)] += 1;
-    }
+    // S3：如实上报"生产这一天跑了 stage 12 RUNTIME_HYDROLOGY"。放在所有守卫之后，
+    // 因为上面的 fail() 分支属于"这一天没算"。
+    _production_stage_mask |= pk_async_climate::CLIMATE_STAGE_BIT_RUNTIME_HYDROLOGY;
 
-    for (int i = 0; i < n_cells; ++i) {
-        const bool is_water = wf_is_water_terrain(TERR[i]) || LF[i] <= 3;
-        const uint8_t wt = WTYPE[i];
-        const float hydro_precip = wf_is_precip_weather_type(wt) ? PREC[i] : 0.0f;
-        const float wet_event = ((wt == 2 || wt == 3 || wt == 7) ? 0.12f : 0.0f) * INTEN[i];
-        const float precip_daily = std::max(0.0f, hydro_precip + wet_event) * precip_scale;
-        const float melt_potential = std::max(0.0f, TEMP[i] - 0.24f) * snowpack_melt_temp_gain
-            + std::max(0.0f, HEAT[i]) * snowpack_melt_sun_gain;
-        const float snowmelt = std::min(std::max(0.0f, SNOWP[i]), melt_potential * dt_days) * snowmelt_scale;
-        const float water_in = precip_daily * dt_days + snowmelt;
-        water_in_total += double(water_in);
+    // stage 12 的数值核心已抽成共享纯内核 pk_async_climate::hydrology_pass_pure。
+    // 运河编译态整组抬进 HydrologyCanalState：以前它是五个 DCWorldExt 成员，worker
+    // 拿不到，于是水文根本没法在 worker 侧跑。现在主线程与 worker 各持一份、各自按
+    // topology_generation 失效。
+    _hydrology_canal.topology_generation = _canal_topology_generation;
+    pk_async_climate::HydrologyStats hs;
+    // 记录给 worker 对拍用的输入。必须在内核之前：MOIST / SOIL / WB30 / Q / Q30 /
+    // STORAGE / GW / CANAL_WATER 都是 in/out，跑完再记就变成记结果。
+    record_production_hydrology_input(hk, hl, has_neighbor_indices,
+                                     _canal_topology_generation, n_cells);
+    pk_async_climate::hydrology_pass_pure(hk, hl, _hydrology_canal,
+                                        _hydrology_scratch, hs);
 
-        const float wetness = dc_clampf((SOIL[i] + 0.5f) * 0.55f + BASE_M[i] * 0.25f + MOIST[i] * 0.20f, 0.0f, 1.0f);
-        const float veg_absorb = (VEG[i] == 0 ? 0.0f : dc_clampf(VITAL[i], 0.0f, 1.0f)) * 0.14f;
-        const float cover_runoff = (COV[i] == 1 || COV[i] == 2) ? 0.18f : ((COV[i] == 3) ? 0.10f : 0.0f);
-        const float relief_runoff = dc_clampf((ELEV[i] - 0.55f) * 0.20f, 0.0f, 0.16f);
-        const float saturation = dc_clampf((wetness - soil_capacity) / std::max(0.001f, 1.0f - soil_capacity), 0.0f, 1.0f);
-        float runoff_coeff = quickflow_fraction + wetness * 0.32f + saturation * 0.35f + cover_runoff + relief_runoff - veg_absorb;
-        runoff_coeff = is_water ? 1.0f : dc_clampf(runoff_coeff, 0.04f, 0.96f);
-        const float quick_runoff = water_in * runoff_coeff;
-        const float infiltration = is_water ? 0.0f : water_in * (1.0f - runoff_coeff) * infiltration_rate;
-
-        GW[i] = std::max(0.0f, GW[i] + infiltration * 0.55f);
-        const float baseflow = GW[i] * baseflow_recession_eff;
-        GW[i] = std::max(0.0f, GW[i] - baseflow);
-        const float local_runoff = quick_runoff + baseflow;
-        RUNOFF[i] = local_runoff;
-        incoming[size_t(i)] += local_runoff;
-        if (local_runoff > 0.0001f) ++runoff_source_cells;
-
-        const float daily_balance = dc_clampf(
-            (water_in - quick_runoff - infiltration * 0.35f) / dt_days, -1.0f, 1.0f);
-        SOIL[i] = dc_clampf(SOIL[i] * soil_decay_eff + infiltration * 0.16f - quick_runoff * 0.025f, -0.5f, 0.5f);
-        WB30[i] = WB30[i] + (daily_balance - WB30[i]) * water_balance_ema_eff;
-
-        if (child_count[size_t(i)] == 0) queue.push_back(i);
-    }
-
-    for (size_t qh = 0; qh < queue.size(); ++qh) {
-        const int i = queue[qh];
-        const bool is_channel = HAS_RIV[i] != 0 || wf_is_water_terrain(TERR[i]) || LF[i] <= 3;
-        const bool is_lake = wf_is_water_terrain(TERR[i]) && TERR[i] != 0;
-        float outflow = incoming[size_t(i)];
-        if (is_channel) {
-            const float release_daily = is_lake ? lake_release : channel_release;
-            const float release = 1.0f - std::pow(1.0f - release_daily, dt_days);
-            STORAGE[i] = std::max(0.0f, STORAGE[i] + incoming[size_t(i)]);
-            outflow = STORAGE[i] * release;
-            STORAGE[i] = std::max(0.0f, STORAGE[i] - outflow);
-            ++river_cells_processed;
-        } else {
-            STORAGE[i] = 0.0f;
-        }
-        Q[i] = (HAS_RIV[i] != 0 || wf_is_water_terrain(TERR[i])) ? outflow : 0.0f;
-        const int32_t p = HP[i];
-        if (p >= 0 && p < n_cells && p != i) {
-            incoming[size_t(p)] += outflow;
-            child_count[size_t(p)] -= 1;
-            if (child_count[size_t(p)] == 0) queue.push_back(p);
-        } else {
-            outlet_total += double(outflow);
-        }
-    }
-
-    for (int i = 0; i < n_cells; ++i) {
-        if (child_count[size_t(i)] <= 0) continue;
-        const int32_t p = HP[i];
-        if (p >= 0 && p < n_cells && p != i) incoming[size_t(p)] += incoming[size_t(i)];
-        else outlet_total += double(incoming[size_t(i)]);
-    }
-
-    float q_max = 0.0f;
-    std::vector<float> river_q;
-    river_q.reserve(size_t(n_cells));
-    for (int i = 0; i < n_cells; ++i) {
-        if (HAS_RIV[i] == 0 && !wf_is_water_terrain(TERR[i])) {
-            Q[i] = 0.0f;
-            Q30[i] = std::max(0.0f, Q30[i] * nonriver_discharge_decay);
-            continue;
-        }
-        q_max = std::max(q_max, Q[i]);
-        river_q.push_back(Q[i]);
-    }
-    const float denom = std::log1p(std::max(q_max, 0.001f));
-    for (int i = 0; i < n_cells; ++i) {
-        if (HAS_RIV[i] == 0 && !wf_is_water_terrain(TERR[i])) continue;
-        const float q_norm = dc_clampf(std::log1p(std::max(0.0f, Q[i])) / denom, 0.0f, 1.0f);
-        Q30[i] = dc_clampf(Q30[i] + (q_norm - Q30[i]) * discharge_ema_eff, 0.0f, 1.0f);
-        if (HAS_RIV[i] != 0 && Q30[i] > flood_threshold) ++flood_candidate_count;
-        if (HAS_RIV[i] != 0) {
-            const float bank_gain = Q30[i] * bank_moisture_gain;
-            const float moisture_floor = dc_clampf(
-                river_moisture_floor + Q30[i] * river_evap_gain * 0.5f, 0.0f, 1.0f);
-            moisture_target[size_t(i)] = std::max(moisture_target[size_t(i)], moisture_floor);
-            SOIL[i] = dc_clampf(SOIL[i] + bank_gain, -0.5f, 0.5f);
-            WB30[i] = dc_clampf(WB30[i] + bank_gain * 0.5f, -1.0f, 1.0f);
-            if (NB != nullptr && bank_gain > 0.0f) {
-                const float neighbor_gain = bank_gain * 0.45f;
-                const int nb_base = i * 6;
-                for (int d = 0; d < 6; ++d) {
-                    const int ni = NB[nb_base + d];
-                    if (ni < 0 || ni >= n_cells || ni == i) continue;
-                    const bool nb_is_water = wf_is_water_terrain(TERR[ni]) || LF[ni] <= 3;
-                    if (nb_is_water || HAS_RIV[ni] != 0) continue;
-                    const float neighbor_floor = dc_clampf(
-                        riparian_moisture_floor + Q30[i] * river_evap_gain * 0.25f, 0.0f, 1.0f);
-                    moisture_target[size_t(ni)] = std::max(moisture_target[size_t(ni)], neighbor_floor);
-                    SOIL[ni] = dc_clampf(SOIL[ni] + neighbor_gain, -0.5f, 0.5f);
-                    WB30[ni] = dc_clampf(WB30[ni] + neighbor_gain * 0.5f, -1.0f, 1.0f);
-                    ++riparian_neighbor_touches;
-                }
-            }
-        }
-    }
-
-    // Sparse artificial-water phase. It is deliberately downstream of the
-    // natural drainage DAG: HP/incoming/Q/STORAGE are read-only here, so canals
-    // neither divert natural rivers nor create/destroy discharge.
-    if (has_neighbor_indices) {
-        if (_canal_hydrology_compiled_generation != _canal_topology_generation ||
-            _canal_hydrology_compiled_cell_count != n_cells) {
-            // Clear water left by cells removed from the topology, then do the
-            // only full-map canal scan. Normal daily passes below touch only
-            // the compiled canal cells and their immediate neighbors.
-            for (const int32_t cell : _canal_hydrology_cells) {
-                if (cell >= 0 && cell < n_cells) CANAL_WATER[cell] = 0.0f;
-            }
-            _canal_hydrology_cells.clear();
-            _canal_hydrology_cells.reserve(256);
-            for (int32_t cell = 0; cell < n_cells; ++cell) {
-                if ((CANAL_MASK[cell] & 0x3fU) != 0)
-                    _canal_hydrology_cells.push_back(cell);
-            }
-            _canal_hydrology_source_kind.assign(size_t(n_cells), 0);
-            _canal_hydrology_strength.assign(size_t(n_cells), 0.0f);
-            _canal_hydrology_compiled_generation = _canal_topology_generation;
-            _canal_hydrology_compiled_cell_count = n_cells;
-        }
-        std::vector<uint8_t> &source_kind = _canal_hydrology_source_kind;
-        std::vector<float> &strength = _canal_hydrology_strength;
-        using CanalNode = std::pair<float, int32_t>;
-        std::priority_queue<CanalNode> propagation;
-        for (const int32_t cell : _canal_hydrology_cells) {
-            CANAL_WATER[cell] = 0.0f;
-            source_kind[size_t(cell)] = 0;
-            strength[size_t(cell)] = 0.0f;
-            uint8_t source = HAS_RIV[cell] != 0 || TERR[cell] == 18 ? 2 : 0;
-            for (int direction = 0; direction < 6; ++direction) {
-                const int32_t neighbor = NB[cell * 6 + direction];
-                if (neighbor < 0 || neighbor >= n_cells) continue;
-                if (HAS_RIV[neighbor] != 0 || TERR[neighbor] == 18) source = 2;
-                else if (source == 0 && (TERR[neighbor] == 0 || TERR[neighbor] == 1 ||
-                         TERR[neighbor] == 19 || TERR[neighbor] == 20 ||
-                         TERR[neighbor] == 21)) source = 1;
-            }
-            if (source != 0) {
-                source_kind[size_t(cell)] = source;
-                strength[size_t(cell)] = 1.0f;
-                propagation.push({1.0f, cell});
-            }
-        }
-        while (!propagation.empty()) {
-            const auto [current_strength, cell] = propagation.top();
-            propagation.pop();
-            if (current_strength + 0.000001f < strength[size_t(cell)]) continue;
-            for (int direction = 0; direction < 6; ++direction) {
-                if ((CANAL_MASK[cell] & (1U << direction)) == 0) continue;
-                const int32_t neighbor = NB[cell * 6 + direction];
-                if (neighbor < 0 || neighbor >= n_cells ||
-                    (CANAL_MASK[neighbor] & (1U << ((direction + 3) % 6))) == 0)
-                    continue;
-                ++canal_edges_processed;
-                const float next_strength = current_strength * 0.96f;
-                // Freshwater wins deterministic ties over saline.
-                if (next_strength > strength[size_t(neighbor)] + 0.000001f ||
-                    (std::abs(next_strength - strength[size_t(neighbor)]) <= 0.000001f &&
-                     source_kind[size_t(cell)] > source_kind[size_t(neighbor)])) {
-                    strength[size_t(neighbor)] = next_strength;
-                    source_kind[size_t(neighbor)] = source_kind[size_t(cell)];
-                    propagation.push({next_strength, neighbor});
-                }
-            }
-        }
-        canal_edges_processed /= 2;
-        for (const int32_t cell : _canal_hydrology_cells) {
-            const float available = dc_clampf(strength[size_t(cell)], 0.0f, 1.0f);
-            CANAL_WATER[cell] = available;
-            ++canal_cells_processed;
-            if (source_kind[size_t(cell)] == 2) {
-                ++canal_freshwater_cells;
-                const float own_target = dc_clampf(
-                    river_moisture_floor * 0.60f * available, 0.0f, 1.0f);
-                moisture_target[size_t(cell)] = std::max(
-                    moisture_target[size_t(cell)], own_target);
-                const float soil_target = dc_clampf(available * 0.30f, -0.5f, 0.5f);
-                SOIL[cell] += (soil_target - SOIL[cell]) * moisture_response_alpha * 0.60f;
-                WB30[cell] += (available * 0.35f - WB30[cell]) *
-                    water_balance_ema_eff * 0.60f;
-                for (int direction = 0; direction < 6; ++direction) {
-                    const int32_t neighbor = NB[cell * 6 + direction];
-                    if (neighbor < 0 || neighbor >= n_cells || IS_WATER[neighbor] != 0)
-                        continue;
-                    const float neighbor_target = dc_clampf(
-                        riparian_moisture_floor * 0.50f * available, 0.0f, 1.0f);
-                    moisture_target[size_t(neighbor)] = std::max(
-                        moisture_target[size_t(neighbor)], neighbor_target);
-                    SOIL[neighbor] += (available * 0.18f - SOIL[neighbor]) *
-                        moisture_response_alpha * 0.50f;
-                    WB30[neighbor] += (available * 0.20f - WB30[neighbor]) *
-                        water_balance_ema_eff * 0.50f;
-                }
-            } else if (source_kind[size_t(cell)] == 1) {
-                ++canal_saline_cells;
-                const float saline_target = dc_clampf(MOIST[cell] +
-                    river_evap_gain * 0.20f * available, 0.0f, 1.0f);
-                moisture_target[size_t(cell)] = std::max(
-                    moisture_target[size_t(cell)], saline_target);
-            }
-        }
-    } else {
-        for (const int32_t cell : _canal_hydrology_cells) {
-            if (cell >= 0 && cell < n_cells) CANAL_WATER[cell] = 0.0f;
-        }
-        _canal_hydrology_cells.clear();
-        _canal_hydrology_source_kind.clear();
-        _canal_hydrology_strength.clear();
-        _canal_hydrology_compiled_generation = std::numeric_limits<uint64_t>::max();
-        _canal_hydrology_compiled_cell_count = -1;
-    }
-
-    // Aggregate all river/canal influences first, then approach the strongest target once per cell.
-    // This prevents multi-river neighbors from receiving several response steps in one pass.
-    if (moisture_response_alpha > 0.0f) {
-        for (int i = 0; i < n_cells; ++i) {
-            const float target = moisture_target[size_t(i)];
-            if (target < 0.0f || MOIST[i] >= target) continue;
-            const float before = MOIST[i];
-            MOIST[i] = dc_clampf(before + (target - before) * moisture_response_alpha, 0.0f, 1.0f);
-            const float delta = MOIST[i] - before;
-            if (HAS_RIV[i] != 0) {
-                ++river_moisture_floor_touches;
-                river_moisture_max_delta = std::max(river_moisture_max_delta, delta);
-            } else {
-                ++riparian_moisture_floor_touches;
-                riparian_moisture_max_delta = std::max(riparian_moisture_max_delta, delta);
-            }
-        }
-    }
-
-    for (int i = 0; i < n_cells; ++i) {
-        PLANT_WATER[i] = IS_WATER[i] != 0 ? 0.0f : pk_plant_available_water(
-            MOIST[i], WB30[i], SOIL[i], plant_water_balance_weight,
-            plant_soil_buffer_weight, plant_drought_penalty);
-    }
-    std::sort(river_q.begin(), river_q.end());
-    const float q_p95 = river_q.empty() ? 0.0f : river_q[size_t(std::min<int>(int(river_q.size()) - 1, int(std::floor(double(river_q.size() - 1) * 0.95))))];
+    const double water_in_total = hs.water_in_total;
+    const double outlet_total = hs.outlet_total;
+    const int runoff_source_cells = hs.runoff_source_cells;
+    const int river_cells_processed = hs.river_cells_processed;
+    const int riparian_neighbor_touches = hs.riparian_neighbor_touches;
+    const int river_moisture_floor_touches = hs.river_moisture_floor_touches;
+    const int riparian_moisture_floor_touches = hs.riparian_moisture_floor_touches;
+    const float river_moisture_max_delta = hs.river_moisture_max_delta;
+    const float riparian_moisture_max_delta = hs.riparian_moisture_max_delta;
+    const int flood_candidate_count = hs.flood_candidate_count;
+    const int canal_cells_processed = hs.canal_cells_processed;
+    const int canal_edges_processed = hs.canal_edges_processed;
+    const int canal_freshwater_cells = hs.canal_freshwater_cells;
+    const int canal_saline_cells = hs.canal_saline_cells;
+    const float q_max = hs.q_max;
+    const float q_p95 = hs.q_p95;
 
     const auto tc1 = std::chrono::high_resolution_clock::now();
     const auto tf0 = std::chrono::high_resolution_clock::now();
@@ -4601,13 +3473,13 @@ Dictionary DCWorldExt::run_runtime_hydrology_pass(const Dictionary &knobs) {
     out["flush_ms"] = flush_ms;
     out["n_cells"] = n_cells;
     out["processed_cells"] = n_cells;
-    out["dt_days"] = dt_days;
+    out["dt_days"] = hk.dt_days;
     out["runoff_source_cells"] = runoff_source_cells;
     out["river_cells_processed"] = river_cells_processed;
     out["riparian_neighbor_touches"] = riparian_neighbor_touches;
     out["river_moisture_floor_touches"] = river_moisture_floor_touches;
     out["riparian_moisture_floor_touches"] = riparian_moisture_floor_touches;
-    out["moisture_response_rate"] = moisture_response_rate;
+    out["moisture_response_rate"] = hk.moisture_response_rate;
     out["moisture_response_alpha"] = moisture_response_alpha;
     out["river_moisture_max_delta"] = river_moisture_max_delta;
     out["riparian_moisture_max_delta"] = riparian_moisture_max_delta;
@@ -4697,25 +3569,22 @@ double DCWorldExt::run_albedo_pass(const Dictionary &knobs) {
     auto t0 = std::chrono::high_resolution_clock::now();
 
     // ─── Main loop ──────────────────────────────────────────────────────
-    // [Phase C.3c] 主循环抽成 lambda，scalar 路径直接 run_range(0,n_cells)，
-    // _thread 变体复用同一 lambda 走 pk::parallel_for_range。
-    auto run_range = [&](int begin, int end) {
-        for (int i = begin; i < end; ++i) {
-            if (IW[i] != 0) continue;                           // skip water cells
-            const uint8_t veg_id = VG[i];
-            float alb = (veg_id < albedo_size) ? ALB[veg_id] : 0.0f;
-            const uint8_t cover_id = CV[i];
-            if (cover_id == cover_snow_id || cover_id == cover_glacier_id) {
-                if (alb < snow_cover_albedo) alb = snow_cover_albedo;
-            }
-            const float dt = (reference_albedo - alb) * albedo_temp_gain;
-            float v = T[i] + dt;
-            if (v < 0.0f) v = 0.0f;
-            else if (v > 1.0f) v = 1.0f;
-            T[i] = v;
-        }
-    };
-    run_range(0, n_cells);
+    // S3：主循环已下沉到 pk_async_climate::albedo_apply_pure。worker 侧调的是同一个
+    // 函数，所以这一段不再有第二份实现可分叉。
+    pk_async_climate::ClimateAlbedoKnobs alb_knobs;
+    alb_knobs.ran = true;
+    alb_knobs.reference_albedo = reference_albedo;
+    alb_knobs.temp_gain = albedo_temp_gain;
+    alb_knobs.snow_cover_albedo = snow_cover_albedo;
+    alb_knobs.cover_snow_id = cover_snow_id;
+    alb_knobs.cover_glacier_id = cover_glacier_id;
+    pk_async_climate::albedo_apply_pure(alb_knobs, IW, VG, CV, ALB,
+                                        albedo_size, T, n_cells);
+
+    // 这一天生产确实跑了 albedo，且用的就是这组标量。reference publish 会把它挂到
+    // trace 帧上，worker 据此在同一批天里跑同一段。留空 = 生产没跑 → worker 也不跑。
+    _production_albedo = alb_knobs;
+    _production_stage_mask |= pk_async_climate::CLIMATE_STAGE_BIT_ALBEDO;
 
     // §11.2 flush: push CoW-detached cell_temp back to MapData
     _flush_slot_to_map(sid_temp);
@@ -4734,92 +3603,15 @@ double DCWorldExt::run_albedo_pass(const Dictionary &knobs) {
 // 模板严格一致：完整复制 prelude + 仅末段主循环改 pk::parallel_for_range。
 // n_tasks=0 → 自适应（ceil(n/1024) 截 [1,16]）；n_cells < 256 || n_tasks==1 → 直接顺序。
 double DCWorldExt::run_albedo_pass_thread(const Dictionary &knobs, int n_tasks) {
-    using godot::StringName;
-    using godot::PackedFloat32Array;
-
-    auto diag = [&](const char *why) {
-        UtilityFunctions::push_warning(
-            "[DCWorldExt] run_albedo_pass_thread: ", why,
-            " — fallback to GDScript");
-    };
-
-    if (!_bound) { diag("not _bound"); return -1.0; }
-
-    // ─── Resolve slot ids ───────────────────────────────────────────────
-    const int sid_iswater = component_id(StringName("cell_is_water"));
-    const int sid_veg     = component_id(StringName("cell_vegetation"));
-    const int sid_cover   = component_id(StringName("cell_cover"));
-    const int sid_temp    = component_id(StringName("cell_temp"));
-    if (sid_iswater < 0 || sid_veg < 0 || sid_cover < 0 || sid_temp < 0) {
-        diag("missing slot id (cell_is_water/vegetation/cover/temp)");
-        return -1.0;
-    }
-
-    // ─── Pull scalars from knobs ────────────────────────────────────────
-    if (!knobs.has("n_cells") || !knobs.has("reference_albedo") ||
-        !knobs.has("albedo_temp_gain") || !knobs.has("albedo_table")) {
-        diag("knobs missing required keys (n_cells / reference_albedo / albedo_temp_gain / albedo_table)");
-        return -1.0;
-    }
-    const int n_cells = int(knobs["n_cells"]);
-    if (n_cells <= 0) { diag("n_cells <= 0"); return -1.0; }
-    const float reference_albedo = float(knobs["reference_albedo"]);
-    const float albedo_temp_gain = float(knobs["albedo_temp_gain"]);
-    const float snow_cover_albedo = float(knobs.get("snow_cover_albedo", 0.75f));
-    const uint8_t cover_snow_id    = uint8_t(int(knobs.get("cover_snow_id", 1)));
-    const uint8_t cover_glacier_id = uint8_t(int(knobs.get("cover_glacier_id", 2)));
-
-    // ─── Pull albedo_table ──────────────────────────────────────────────
-    PackedFloat32Array albedo_arr = knobs["albedo_table"];
-    const int albedo_size = albedo_arr.size();
-    if (albedo_size <= 0) { diag("albedo_table empty"); return -1.0; }
-
-    // ─── Acquire slot arrays + validate sizes ───────────────────────────
-    Slot &s_iswater = _slots.write[sid_iswater];
-    Slot &s_veg     = _slots.write[sid_veg];
-    Slot &s_cover   = _slots.write[sid_cover];
-    Slot &s_temp    = _slots.write[sid_temp];
-    if (s_iswater.arr_u8.size() != n_cells ||
-        s_veg.arr_u8.size()     != n_cells ||
-        s_cover.arr_u8.size()   != n_cells ||
-        s_temp.arr_f32.size()   != n_cells) {
-        diag("slot array size mismatch (re-bind needed?)");
-        return -1.0;
-    }
-
-    const uint8_t * const __restrict IW    = s_iswater.arr_u8.ptr();
-    const uint8_t * const __restrict VG    = s_veg.arr_u8.ptr();
-    const uint8_t * const __restrict CV    = s_cover.arr_u8.ptr();
-    float         * const __restrict T     = s_temp.arr_f32.ptrw();
-    const float   * const __restrict ALB   = albedo_arr.ptr();
-
-    auto t0 = std::chrono::high_resolution_clock::now();
-
-    // ─── Main loop（与 run_albedo_pass 主循环 1:1） ──────────────────────
-    auto run_range = [&](int begin, int end) {
-        for (int i = begin; i < end; ++i) {
-            if (IW[i] != 0) continue;
-            const uint8_t veg_id = VG[i];
-            float alb = (veg_id < albedo_size) ? ALB[veg_id] : 0.0f;
-            const uint8_t cover_id = CV[i];
-            if (cover_id == cover_snow_id || cover_id == cover_glacier_id) {
-                if (alb < snow_cover_albedo) alb = snow_cover_albedo;
-            }
-            const float dt = (reference_albedo - alb) * albedo_temp_gain;
-            float v = T[i] + dt;
-            if (v < 0.0f) v = 0.0f;
-            else if (v > 1.0f) v = 1.0f;
-            T[i] = v;
-        }
-    };
-
-    pk::parallel_for_range("pk_albedo", n_cells, n_tasks, /*seq_threshold=*/256, run_range);
-
-    // §11.2 flush
-    _flush_slot_to_map(sid_temp);
-
-    auto t1 = std::chrono::high_resolution_clock::now();
-    return std::chrono::duration<double, std::milli>(t1 - t0).count();
+    // S3：这里原本是 albedo 的第二份实现（prelude 全量复制 + 主循环走
+    // pk::parallel_for_range）。与 run_climate_pass_a_thread 同理：albedo 主循环在
+    // N=2400 时是微秒级，并行收益不足以换一份必须永久手工同步的副本，
+    // 而 parity_hash 是逐位归约——同形的 float 循环在不同向量化下会差 1 ULP。
+    //
+    // 现在统一转发到 run_albedo_pass，由它调共享纯内核
+    // pk_async_climate::albedo_apply_pure。
+    (void)n_tasks;
+    return run_albedo_pass(knobs);
 }
 
 // ─── DOTS-Final-Push 任务 3：run_vegetation_dynamics_pass ────────────────
@@ -4834,102 +3626,9 @@ double DCWorldExt::run_albedo_pass_thread(const Dictionary &knobs, int n_tasks) 
 // 写回 → caller unpack 回 cell。N=2400 时 6 个 PackedArray 一进一出的总开销
 // 约 0.05ms，远小于跑算法的 ~9ms。
 
-static inline float vegdyn_clamp01(float v) {
-    if (v < 0.0f) return 0.0f;
-    if (v > 1.0f) return 1.0f;
-    return v;
-}
-
-static inline float vegdyn_plant_water(
-        float moisture,
-        float water_balance_30d,
-        float soil_moisture,
-        float water_balance_weight,
-        float soil_buffer_weight,
-        float drought_penalty) {
-    return pk_plant_available_water(
-        moisture, water_balance_30d, soil_moisture,
-        water_balance_weight, soil_buffer_weight, drought_penalty);
-}
-
-static inline float vegdyn_compat_of(
-        int vg,
-        float temp,
-        float plant_water,
-        int n_veg,
-        const float *IDT,
-        const float *IDM,
-        const float *TLT,
-        const float *TLM) {
-    if (vg < 0 || vg >= n_veg) return -1.0f;
-    return pk_vegetation_climate_score_for_type(
-        uint8_t(vg), temp, plant_water, IDT[vg], IDM[vg], TLT[vg], TLM[vg]);
-}
-
-static inline float vegdyn_compat_of(
-        int vg,
-        float temp,
-        float plant_water,
-        int n_veg,
-        const float *IDT,
-        const float *IDM,
-        const float *TLT,
-        const float *TLM,
-        uint8_t terrain,
-        uint8_t landform) {
-    const float climate = vegdyn_compat_of(vg, temp, plant_water, n_veg, IDT, IDM, TLT, TLM);
-    if (climate < 0.0f) return climate;
-    return climate * pk_vegetation_terrain_weight(terrain, landform, uint8_t(vg), plant_water);
-}
-
-static inline uint8_t vegdyn_best_transition(
-        uint8_t current,
-        float temp,
-        float plant_water,
-        int n_veg,
-        const float *IDT,
-        const float *IDM,
-        const float *TLT,
-        const float *TLM,
-        const uint8_t *NXU,
-        const uint8_t *NXD,
-        uint8_t terrain,
-        uint8_t landform,
-        float &best_score) {
-    (void)NXU;
-    (void)NXD;
-    uint8_t best = current;
-    best_score = -1.0f;
-    if (current >= n_veg) return best;
-    for (int candidate = 1; candidate < n_veg; ++candidate) {
-        if (candidate == current || !pk_vegetation_candidate_allowed(terrain, uint8_t(candidate))) continue;
-        const float score = vegdyn_compat_of(
-            candidate, temp, plant_water, n_veg, IDT, IDM, TLT, TLM, terrain, landform);
-        if (score > best_score) {
-            best = uint8_t(candidate);
-            best_score = score;
-        }
-    }
-    return best;
-}
-
-static inline float vegdyn_weather_stress(
-        uint8_t v_id,
-        int wt,
-        float wi,
-        int n_veg,
-        int n_wt,
-        int wt_pen_size,
-        const float *WPN,
-        const float *RES,
-        float weather_penalty_scale) {
-    const float base_pen = (wt >= 0 && wt < wt_pen_size) ? WPN[wt] : 0.0f;
-    float resist = 0.0f;
-    if (v_id < n_veg && wt >= 0 && wt < n_wt) {
-        resist = RES[int(v_id) * n_wt + wt];
-    }
-    return base_pen * weather_penalty_scale * (wi > 0.0f ? wi : 0.0f) * (1.0f - resist);
-}
+// S3：vegdyn_clamp01 / plant_water / compat_of / best_transition / weather_stress
+// 五个 helper 与整段主循环已下沉到 runtime_climate_passes.cpp 的
+// pk_async_climate::vegetation_dynamics_apply_pure，生产与 SHADOW worker 共用一份。
 
 double DCWorldExt::run_vegetation_dynamics_pass(Dictionary knobs) {
     using godot::StringName;
@@ -5103,132 +3802,76 @@ static const char *required_scalars[] = {
 
     auto t0 = std::chrono::high_resolution_clock::now();
 
+    // S3：如实上报"生产这一天跑了 stage 9 VEGETATION_DYNAMICS"。见
+    // _production_stage_mask 的注释。
+    _production_stage_mask |= pk_async_climate::CLIMATE_STAGE_BIT_VEGETATION_DYNAMICS;
+
     // ─── Output candidate buffers (会大幅小于 n_cells，先 reserve 64) ────
-    std::vector<int32_t> succ_indices;
-    std::vector<uint8_t> succ_to_veg;
-    succ_indices.reserve(64);
-    succ_to_veg.reserve(64);
+    pk_async_climate::VegetationDynamicsEmit vd_emit;
+    vd_emit.indices.reserve(64);
+    vd_emit.to_veg.reserve(64);
+    std::vector<int32_t> &succ_indices = vd_emit.indices;
+    std::vector<uint8_t> &succ_to_veg  = vd_emit.to_veg;
 
-    // ─── Main loop ──────────────────────────────────────────────────────
-    for (int i = 0; i < n_cells; ++i) {
-        const uint8_t v_id = VG[i];
-        const float plant_water = IW[i] != 0 ? 0.0f : vegdyn_plant_water(
-            M[i], WBAL[i], SOILC[i], plant_water_balance_weight,
-            plant_soil_buffer_weight, plant_drought_penalty);
-        PLANT_WATER[i] = plant_water;
-        if (IW[i] != 0 || v_id == veg_none_id) {
-            VIT[i] = 0.0f;
-            LSK[i] = 0;
-            HSK[i] = 0;
-            VGP[i] = 0.0f;
-            continue;
-        }
-        const float temp = T30[i];
-        const float compat = vegdyn_compat_of(v_id, temp, plant_water, n_veg, IDT, IDM, TLT, TLM, TERR[i], LF[i]);
+    // ─── Main loop ────────────────────────────────────
+    // S3：下沉到共享纯内核。原先这里、run_vegetation_dynamics_pass_thread、
+    // run_stage_b_pass ② 段是三份逐字副本，漏同步任一份都会表现成分叉。
+    pk_async_climate::VegetationDynamicsKnobs vd_knobs;
+    vd_knobs.ran = true;
+    vd_knobs.scale = scale;
+    vd_knobs.streak_days = streak_days;
+    vd_knobs.vitality_change_rate = rate;
+    vd_knobs.compat_harshness = harshness;
+    vd_knobs.low_threshold = low_thresh;
+    vd_knobs.high_threshold = high_thresh;
+    vd_knobs.succession_degrade_days = degrade_days;
+    vd_knobs.succession_upgrade_days = upgrade_days;
+    vd_knobs.n_wt = n_wt;
+    vd_knobs.wt_clear_id = wt_clear_id;
+    vd_knobs.veg_none_id = veg_none_id;
+    vd_knobs.weather_penalty_scale = weather_penalty_scale;
+    vd_knobs.plant_water_balance_weight = plant_water_balance_weight;
+    vd_knobs.plant_soil_buffer_weight = plant_soil_buffer_weight;
+    vd_knobs.plant_drought_penalty = plant_drought_penalty;
+    vd_knobs.succession_min_compat_gain = succession_min_compat_gain;
+    vd_knobs.low_vitality_damping_threshold = low_vitality_damping_threshold;
+    vd_knobs.succession_cooldown_days = succession_cooldown_days;
+    // 这条路径走 knobs 的 PackedArray 入口，没有 stress 四条 SoA lane。
+    vd_knobs.stress_enabled = false;
+    vd_knobs.n_veg = n_veg;
+    vd_knobs.wt_pen_size = wt_pen_arr.size();
 
-        // weather penalty (clamp wt to valid id range; no init → CLEAR)
-        int wt = wt_clear_id;
-        float wi = 0.0f;
-        if (WTIN[i] != 0) {
-            wt = int(WTT[i]);
-            wi = WTI[i];
-        }
-        const float weather_stress = vegdyn_weather_stress(
-            v_id, wt, wi, n_veg, n_wt, wt_pen_arr.size(), WPN, RES, weather_penalty_scale);
-        float water_pressure = WBAL[i] * 0.18f + SOILC[i] * 0.10f;
-        if (water_pressure < -0.12f) water_pressure = -0.12f;
-        else if (water_pressure > 0.12f) water_pressure = 0.12f;
-        const float target = vegdyn_clamp01(compat + water_pressure - weather_stress);
-        const float prev_vit = VIT[i];
-        float dv = (target - prev_vit) * rate;
-        if (dv < 0.0f) {
-            dv *= harshness;
-            if (low_vitality_damping_threshold > 0.0f && prev_vit < low_vitality_damping_threshold) {
-                float damping = prev_vit / low_vitality_damping_threshold;
-                if (damping < 0.25f) damping = 0.25f;
-                else if (damping > 1.0f) damping = 1.0f;
-                dv *= damping;
-            }
-        }
-        VGP[i] = target - prev_vit;
+    pk_async_climate::VegetationDynamicsTables vd_tables;
+    vd_tables.ideal_temp      = IDT;
+    vd_tables.ideal_moist     = IDM;
+    vd_tables.temp_tol        = TLT;
+    vd_tables.moist_tol       = TLM;
+    vd_tables.weather_penalty = WPN;
+    vd_tables.resistance      = RES;
+    vd_tables.next_up         = NXU;
+    vd_tables.next_down       = NXD;
 
-        // vitality update (clamp 0..1)
-        float vit = vegdyn_clamp01(prev_vit + dv * scale);
-        VIT[i] = vit;
+    pk_async_climate::VegetationDynamicsLanes vd_lanes;
+    vd_lanes.is_water              = IW;
+    vd_lanes.terrain               = TERR;
+    vd_lanes.landform              = LF;
+    vd_lanes.vegetation            = VG;
+    vd_lanes.temp_30d              = T30;
+    vd_lanes.moisture              = M;
+    vd_lanes.water_balance_30d     = WBAL;
+    vd_lanes.soil_moisture         = SOILC;
+    vd_lanes.weather_type          = WTT;
+    vd_lanes.weather_intensity     = WTI;
+    vd_lanes.weather_field_init    = WTIN;
+    vd_lanes.plant_available_water = PLANT_WATER;
+    vd_lanes.vegetation_growth_pressure = VGP;
+    vd_lanes.vitality              = VIT;
+    vd_lanes.low_streak            = LSK;
+    vd_lanes.high_streak           = HSK;
 
-        // streak update
-        int ls = LSK[i];
-        int hs = HSK[i];
-        if (ls < 0 || hs < 0) {
-            ls += streak_days; if (ls > 0) ls = 0;
-            hs += streak_days; if (hs > 0) hs = 0;
-            LSK[i] = ls;
-            HSK[i] = hs;
-            continue;
-        }
-        const uint8_t nxt_up_for_streak = (v_id < n_veg) ? NXU[v_id] : v_id;
-        const float nxt_up_score_for_streak = (nxt_up_for_streak != v_id &&
-                                                pk_vegetation_candidate_allowed(TERR[i], nxt_up_for_streak))
-            ? vegdyn_compat_of(nxt_up_for_streak, temp, plant_water, n_veg, IDT, IDM, TLT, TLM, TERR[i], LF[i])
-            : -1.0f;
-        const bool upgrade_candidate =
-            nxt_up_for_streak != v_id &&
-            nxt_up_score_for_streak >= compat + succession_min_compat_gain &&
-            nxt_up_score_for_streak >= high_thresh;
-        float best_transition_score = -1.0f;
-        const uint8_t best_transition = vegdyn_best_transition(
-            v_id, temp, plant_water, n_veg, IDT, IDM, TLT, TLM, NXU, NXD, TERR[i], LF[i],
-            best_transition_score);
-        const bool degrade_candidate = best_transition != v_id &&
-            best_transition_score >= compat + succession_min_compat_gain;
-        const bool severe_biome_mismatch = pk_vegetation_needs_biome_reconcile(TERR[i], v_id);
-        if (degrade_candidate && (target < low_thresh ||
-                                  (severe_biome_mismatch && target < high_thresh))) {
-            ls += streak_days;
-            hs = 0;
-        } else if (upgrade_candidate && vit > low_thresh && target > low_thresh) {
-            hs += streak_days;
-            ls = 0;
-        } else {
-            ls -= streak_days; if (ls < 0) ls = 0;
-            hs -= streak_days; if (hs < 0) hs = 0;
-        }
-
-        // succession candidate decision (degrade priority — mirror GDScript order)
-        bool fired = false;
-        if (ls >= degrade_days) {
-            // climate-loop-closure Phase 3.2：气候导向退化目标——在 harsher/richer
-            // 两候选里挑 compat 更高者(过湿→richer 湿生，过旱→harsher 荒漠)。
-            if (degrade_candidate) {
-                succ_indices.push_back(i);
-                succ_to_veg.push_back(best_transition);
-                const int cooldown = succession_cooldown_days > 0 ? -succession_cooldown_days : 0;
-                ls = cooldown;
-                hs = cooldown;
-                fired = true;
-            } else {
-                // 没有下家：把 ls 清零防止反复触发（与 GDScript 一致）
-                ls = 0;
-            }
-        }
-        if (!fired && hs >= upgrade_days) {
-            uint8_t nxt = (v_id < n_veg) ? NXU[v_id] : v_id;
-            const float nxt_sc = (nxt != v_id && pk_vegetation_candidate_allowed(TERR[i], nxt))
-                ? vegdyn_compat_of(nxt, temp, plant_water, n_veg, IDT, IDM, TLT, TLM, TERR[i], LF[i]) : -1.0f;
-            if (nxt != v_id && nxt_sc >= compat + succession_min_compat_gain) {
-                succ_indices.push_back(i);
-                succ_to_veg.push_back(nxt);
-                const int cooldown = succession_cooldown_days > 0 ? -succession_cooldown_days : 0;
-                ls = cooldown;
-                hs = cooldown;
-            } else {
-                hs = 0;
-            }
-        }
-        LSK[i] = ls;
-        HSK[i] = hs;
-    }
-
+    record_production_vegetation_input(vd_knobs, vd_tables, vd_lanes, n_cells);
+    pk_async_climate::vegetation_dynamics_apply_pure(
+        vd_knobs, vd_tables, vd_lanes, 0, n_cells, vd_emit);
     // ─── Pack succession results back into knobs ────────────────────────
     PackedInt32Array out_indices;
     PackedByteArray  out_to_veg;
@@ -5258,340 +3901,15 @@ static const char *required_scalars[] = {
     auto t1 = std::chrono::high_resolution_clock::now();
     return std::chrono::duration<double, std::milli>(t1 - t0).count();
 }
-
-// ─── [Phase C.3d] vegetation_dynamics 并行变体 ─────────────────────────────
-//
-// 完整复制 run_vegetation_dynamics_pass 的 prelude，主循环走
-// pk::parallel_for_range_with_emit。thread-local Emit 持有 succession_indices
-// + succession_to_veg；reduce 按 task_idx 升序串行 merge_into，保持 cell idx
-// 升序契约（与 scalar bit-equal）。
-//
-// 注意：VIT/LSK/HSK 三个 ptrw 是 cell-local 写（每 cell 仅写自己 i 索引），
-// 多线程下不同 task 写不同 cell range，无 race。
+// ─── [Phase C.3d] vegetation_dynamics 并行变体 ───────────────────────
 double DCWorldExt::run_vegetation_dynamics_pass_thread(Dictionary knobs, int n_tasks) {
-    using godot::StringName;
-    using godot::PackedFloat32Array;
-    using godot::PackedInt32Array;
-    using godot::PackedByteArray;
-
-    auto diag = [&](const char *why) {
-        UtilityFunctions::push_warning(
-            "[DCWorldExt] run_vegetation_dynamics_pass_thread: ", why,
-            " — fallback to GDScript");
-    };
-
-    if (!_bound) { diag("not _bound"); return -1.0; }
-
-    const int sid_iswater  = component_id(StringName("cell_is_water"));
-    const int sid_terrain  = component_id(StringName("cell_terrain"));
-    const int sid_landform = component_id(StringName("cell_landform"));
-    const int sid_veg      = component_id(StringName("cell_vegetation"));
-    const int sid_temp     = component_id(StringName("cell_temp"));
-    const int sid_temp_30d = component_id(StringName("cell_temp_30d"));
-    const int sid_moist    = component_id(StringName("cell_moisture"));
-    const int sid_water_bal = component_id(StringName("cell_water_balance_30d"));
-    const int sid_soil     = component_id(StringName("cell_soil_moisture"));
-    const int sid_plant_water = component_id(StringName("cell_plant_available_water"));
-    const int sid_vgp      = component_id(StringName("cell_vegetation_growth_pressure"));
-    const int sid_wt_type  = component_id(StringName("cell_weather_type"));
-    const int sid_wt_int   = component_id(StringName("cell_weather_intensity"));
-    const int sid_wt_init  = component_id(StringName("cell_weather_field_init"));
-    if (sid_iswater < 0 || sid_terrain < 0 || sid_landform < 0 || sid_veg < 0 || sid_temp < 0 || sid_temp_30d < 0 ||
-        sid_moist < 0 || sid_water_bal < 0 || sid_soil < 0 || sid_plant_water < 0 || sid_vgp < 0 ||
-        sid_wt_type < 0 || sid_wt_int < 0 || sid_wt_init < 0) {
-        diag("missing slot id");
-        return -1.0;
-    }
-
-    static const char *required_scalars[] = {
-        "n_cells", "day_scale", "streak_days",
-        "vitality_change_rate", "compat_harshness",
-        "plant_water_balance_weight", "plant_soil_buffer_weight",
-        "plant_drought_penalty", "succession_min_compat_gain",
-        "low_threshold", "high_threshold",
-        "succession_degrade_days", "succession_upgrade_days",
-        "n_wt", "wt_clear_id", "veg_none_id",
-    };
-    for (const char *k : required_scalars) {
-        if (!knobs.has(k)) { diag("knobs missing required scalar key"); return -1.0; }
-    }
-    const int   n_cells       = int(knobs["n_cells"]);
-    if (n_cells <= 0) { diag("n_cells <= 0"); return -1.0; }
-    const float day_scale_raw = float(knobs["day_scale"]);
-    const float scale         = day_scale_raw < 1.0f ? 1.0f : day_scale_raw;
-    const int   streak_days   = int(knobs["streak_days"]);
-    const float rate          = float(knobs["vitality_change_rate"]);
-    const float harshness     = float(knobs["compat_harshness"]);
-    const float low_thresh    = float(knobs["low_threshold"]);
-    const float high_thresh   = float(knobs["high_threshold"]);
-    const int   degrade_days  = int(knobs["succession_degrade_days"]);
-    const int   upgrade_days  = int(knobs["succession_upgrade_days"]);
-    const int   n_wt          = int(knobs["n_wt"]);
-    const int   wt_clear_id   = int(knobs["wt_clear_id"]);
-    const uint8_t veg_none_id = uint8_t(int(knobs["veg_none_id"]));
-    const float weather_penalty_scale = knobs.has("weather_penalty_scale") ? float(knobs["weather_penalty_scale"]) : 1.0f;
-    const float plant_water_balance_weight = float(knobs["plant_water_balance_weight"]);
-    const float plant_soil_buffer_weight = float(knobs["plant_soil_buffer_weight"]);
-    const float plant_drought_penalty = float(knobs["plant_drought_penalty"]);
-    const float succession_min_compat_gain = float(knobs["succession_min_compat_gain"]);
-    const float low_vitality_damping_threshold = knobs.has("vegetation_low_vitality_damping_threshold")
-                                               ? float(knobs["vegetation_low_vitality_damping_threshold"]) : 0.40f;
-    const int   succession_cooldown_days = knobs.has("vegetation_succession_cooldown_days")
-                                         ? int(knobs["vegetation_succession_cooldown_days"]) : 30;
-    if (n_wt <= 0) { diag("n_wt <= 0"); return -1.0; }
-
-    static const char *required_tables[] = {
-        "ideal_temp_table", "ideal_moist_table",
-        "temp_tol_table", "moist_tol_table",
-        "weather_penalty_table", "resistance_table",
-        "next_up_table", "next_down_table",
-        "vitality_arr", "low_streak_arr", "high_streak_arr",
-    };
-    for (const char *k : required_tables) {
-        if (!knobs.has(k)) { diag("knobs missing required table key"); return -1.0; }
-    }
-    PackedFloat32Array ideal_t_arr   = knobs["ideal_temp_table"];
-    PackedFloat32Array ideal_m_arr   = knobs["ideal_moist_table"];
-    PackedFloat32Array tol_t_arr     = knobs["temp_tol_table"];
-    PackedFloat32Array tol_m_arr     = knobs["moist_tol_table"];
-    PackedFloat32Array wt_pen_arr    = knobs["weather_penalty_table"];
-    PackedFloat32Array resist_arr    = knobs["resistance_table"];
-    PackedByteArray    next_up_arr   = knobs["next_up_table"];
-    PackedByteArray    next_down_arr = knobs["next_down_table"];
-    PackedFloat32Array vitality_arr  = knobs["vitality_arr"];
-    PackedInt32Array   low_streak    = knobs["low_streak_arr"];
-    PackedInt32Array   high_streak   = knobs["high_streak_arr"];
-
-    const int n_veg = ideal_t_arr.size();
-    if (n_veg <= 0) { diag("ideal_temp_table empty"); return -1.0; }
-    if (ideal_m_arr.size() != n_veg || tol_t_arr.size() != n_veg ||
-        tol_m_arr.size() != n_veg || next_up_arr.size() != n_veg ||
-        next_down_arr.size() != n_veg) {
-        diag("VEG-indexed table size mismatch");
-        return -1.0;
-    }
-    if (wt_pen_arr.size() < n_wt) { diag("weather_penalty_table size < n_wt"); return -1.0; }
-    if (resist_arr.size() != n_veg * n_wt) {
-        diag("resistance_table size != n_veg * n_wt");
-        return -1.0;
-    }
-    if (vitality_arr.size() != n_cells || low_streak.size() != n_cells ||
-        high_streak.size() != n_cells) {
-        diag("vitality/streak in/out array size mismatch");
-        return -1.0;
-    }
-
-    Slot &s_iswater = _slots.write[sid_iswater];
-    Slot &s_terrain = _slots.write[sid_terrain];
-    Slot &s_landform = _slots.write[sid_landform];
-    Slot &s_veg     = _slots.write[sid_veg];
-    Slot &s_temp    = _slots.write[sid_temp];
-    Slot &s_temp30  = _slots.write[sid_temp_30d];
-    Slot &s_moist   = _slots.write[sid_moist];
-    Slot &s_wb      = _slots.write[sid_water_bal];
-    Slot &s_soil    = _slots.write[sid_soil];
-    Slot &s_plant_water = _slots.write[sid_plant_water];
-    Slot &s_vgp     = _slots.write[sid_vgp];
-    Slot &s_wt_type = _slots.write[sid_wt_type];
-    Slot &s_wt_int  = _slots.write[sid_wt_int];
-    Slot &s_wt_init = _slots.write[sid_wt_init];
-    if (s_iswater.arr_u8.size() != n_cells || s_terrain.arr_u8.size() != n_cells ||
-        s_landform.arr_u8.size() != n_cells || s_veg.arr_u8.size()     != n_cells ||
-        s_temp.arr_f32.size()   != n_cells || s_temp30.arr_f32.size() != n_cells ||
-        s_moist.arr_f32.size()  != n_cells || s_wb.arr_f32.size()     != n_cells ||
-        s_soil.arr_f32.size()   != n_cells || s_plant_water.arr_f32.size() != n_cells ||
-        s_vgp.arr_f32.size()    != n_cells ||
-        s_wt_type.arr_u8.size() != n_cells || s_wt_int.arr_f32.size() != n_cells ||
-        s_wt_init.arr_u8.size() != n_cells) {
-        diag("slot array size mismatch (re-bind needed?)");
-        return -1.0;
-    }
-
-    const uint8_t * const __restrict IW   = s_iswater.arr_u8.ptr();
-    const uint8_t * const __restrict TERR = s_terrain.arr_u8.ptr();
-    const uint8_t * const __restrict LF   = s_landform.arr_u8.ptr();
-    const uint8_t * const __restrict VG   = s_veg.arr_u8.ptr();
-    const float   * const __restrict T    = s_temp.arr_f32.ptr();
-    (void)T;
-    const float   * const __restrict T30  = s_temp30.arr_f32.ptr();
-    const float   * const __restrict M    = s_moist.arr_f32.ptr();
-    const float   * const __restrict WBAL = s_wb.arr_f32.ptr();
-    const float   * const __restrict SOILC = s_soil.arr_f32.ptr();
-    float         * const __restrict PLANT_WATER = s_plant_water.arr_f32.ptrw();
-    float         * const __restrict VGP  = s_vgp.arr_f32.ptrw();
-    const uint8_t * const __restrict WTT  = s_wt_type.arr_u8.ptr();
-    const float   * const __restrict WTI  = s_wt_int.arr_f32.ptr();
-    const uint8_t * const __restrict WTIN = s_wt_init.arr_u8.ptr();
-    const float   * const __restrict IDT  = ideal_t_arr.ptr();
-    const float   * const __restrict IDM  = ideal_m_arr.ptr();
-    const float   * const __restrict TLT  = tol_t_arr.ptr();
-    const float   * const __restrict TLM  = tol_m_arr.ptr();
-    const float   * const __restrict WPN  = wt_pen_arr.ptr();
-    const float   * const __restrict RES  = resist_arr.ptr();
-    const uint8_t * const __restrict NXU  = next_up_arr.ptr();
-    const uint8_t * const __restrict NXD  = next_down_arr.ptr();
-    float   * const __restrict VIT  = vitality_arr.ptrw();
-    int32_t * const __restrict LSK  = low_streak.ptrw();
-    int32_t * const __restrict HSK  = high_streak.ptrw();
-    const int wt_pen_size = wt_pen_arr.size();
-
-    auto t0 = std::chrono::high_resolution_clock::now();
-
-    struct VegEmit {
-        std::vector<int32_t> indices;
-        std::vector<uint8_t> to_veg;
-
-        void merge_into(VegEmit &dst) const {
-            dst.indices.insert(dst.indices.end(), indices.begin(), indices.end());
-            dst.to_veg.insert(dst.to_veg.end(), to_veg.begin(), to_veg.end());
-        }
-    };
-    VegEmit global_emit;
-    global_emit.indices.reserve(64);
-    global_emit.to_veg.reserve(64);
-
-    auto run = [&](int begin, int end, VegEmit &local) {
-        for (int i = begin; i < end; ++i) {
-            const uint8_t v_id = VG[i];
-            const float plant_water = IW[i] != 0 ? 0.0f : vegdyn_plant_water(
-                M[i], WBAL[i], SOILC[i], plant_water_balance_weight,
-                plant_soil_buffer_weight, plant_drought_penalty);
-            PLANT_WATER[i] = plant_water;
-            if (IW[i] != 0 || v_id == veg_none_id) {
-                VIT[i] = 0.0f;
-                LSK[i] = 0;
-                HSK[i] = 0;
-                VGP[i] = 0.0f;
-                continue;
-            }
-            const float temp = T30[i];
-            const float compat = vegdyn_compat_of(v_id, temp, plant_water, n_veg, IDT, IDM, TLT, TLM, TERR[i], LF[i]);
-
-            int wt = wt_clear_id;
-            float wi = 0.0f;
-            if (WTIN[i] != 0) {
-                wt = int(WTT[i]);
-                wi = WTI[i];
-            }
-            const float weather_stress = vegdyn_weather_stress(
-                v_id, wt, wi, n_veg, n_wt, wt_pen_size, WPN, RES, weather_penalty_scale);
-            float water_pressure = WBAL[i] * 0.18f + SOILC[i] * 0.10f;
-            if (water_pressure < -0.12f) water_pressure = -0.12f;
-            else if (water_pressure > 0.12f) water_pressure = 0.12f;
-            const float target = vegdyn_clamp01(compat + water_pressure - weather_stress);
-            const float prev_vit = VIT[i];
-            float dv = (target - prev_vit) * rate;
-            if (dv < 0.0f) {
-                dv *= harshness;
-                if (low_vitality_damping_threshold > 0.0f && prev_vit < low_vitality_damping_threshold) {
-                    float damping = prev_vit / low_vitality_damping_threshold;
-                    if (damping < 0.25f) damping = 0.25f;
-                    else if (damping > 1.0f) damping = 1.0f;
-                    dv *= damping;
-                }
-            }
-            VGP[i] = target - prev_vit;
-
-            float vit = vegdyn_clamp01(prev_vit + dv * scale);
-            VIT[i] = vit;
-
-            int ls = LSK[i];
-            int hs = HSK[i];
-            if (ls < 0 || hs < 0) {
-                ls += streak_days; if (ls > 0) ls = 0;
-                hs += streak_days; if (hs > 0) hs = 0;
-                LSK[i] = ls;
-                HSK[i] = hs;
-                continue;
-            }
-        const uint8_t nxt_up_for_streak = (v_id < n_veg) ? NXU[v_id] : v_id;
-        const float nxt_up_score_for_streak = (nxt_up_for_streak != v_id &&
-                                                pk_vegetation_candidate_allowed(TERR[i], nxt_up_for_streak))
-            ? vegdyn_compat_of(nxt_up_for_streak, temp, plant_water, n_veg, IDT, IDM, TLT, TLM, TERR[i], LF[i])
-            : -1.0f;
-        const bool upgrade_candidate =
-            nxt_up_for_streak != v_id &&
-            nxt_up_score_for_streak >= compat + succession_min_compat_gain &&
-            nxt_up_score_for_streak >= high_thresh;
-        float best_transition_score = -1.0f;
-        const uint8_t best_transition = vegdyn_best_transition(
-            v_id, temp, plant_water, n_veg, IDT, IDM, TLT, TLM, NXU, NXD, TERR[i], LF[i],
-            best_transition_score);
-        const bool degrade_candidate = best_transition != v_id &&
-            best_transition_score >= compat + succession_min_compat_gain;
-        const bool severe_biome_mismatch = pk_vegetation_needs_biome_reconcile(TERR[i], v_id);
-            if (degrade_candidate && (target < low_thresh ||
-                                      (severe_biome_mismatch && target < high_thresh))) {
-                ls += streak_days;
-                hs = 0;
-        } else if (upgrade_candidate && vit > low_thresh && target > low_thresh) {
-                hs += streak_days;
-                ls = 0;
-            } else {
-                ls -= streak_days; if (ls < 0) ls = 0;
-                hs -= streak_days; if (hs < 0) hs = 0;
-            }
-
-            bool fired = false;
-            if (ls >= degrade_days) {
-                if (degrade_candidate) {
-                    local.indices.push_back(i);
-                    local.to_veg.push_back(best_transition);
-                    const int cooldown = succession_cooldown_days > 0 ? -succession_cooldown_days : 0;
-                    ls = cooldown;
-                    hs = cooldown;
-                    fired = true;
-                } else {
-                    ls = 0;
-                }
-            }
-            if (!fired && hs >= upgrade_days) {
-                uint8_t nxt = (v_id < n_veg) ? NXU[v_id] : v_id;
-                const float nxt_sc = (nxt != v_id && pk_vegetation_candidate_allowed(TERR[i], nxt))
-                    ? vegdyn_compat_of(nxt, temp, plant_water, n_veg, IDT, IDM, TLT, TLM, TERR[i], LF[i]) : -1.0f;
-                if (nxt != v_id && nxt_sc >= compat + succession_min_compat_gain) {
-                    local.indices.push_back(i);
-                    local.to_veg.push_back(nxt);
-                    const int cooldown = succession_cooldown_days > 0 ? -succession_cooldown_days : 0;
-                    ls = cooldown;
-                    hs = cooldown;
-                } else {
-                    hs = 0;
-                }
-            }
-            LSK[i] = ls;
-            HSK[i] = hs;
-        }
-    };
-    pk::parallel_for_range_with_emit<VegEmit>(
-        "pk_veg_dyn", n_cells, n_tasks, 256, global_emit, run);
-
-    PackedInt32Array out_indices;
-    PackedByteArray  out_to_veg;
-    const int n_succ = int(global_emit.indices.size());
-    out_indices.resize(n_succ);
-    out_to_veg.resize(n_succ);
-    if (n_succ > 0) {
-        std::memcpy(out_indices.ptrw(), global_emit.indices.data(), n_succ * sizeof(int32_t));
-        std::memcpy(out_to_veg.ptrw(),  global_emit.to_veg.data(),  n_succ * sizeof(uint8_t));
-    }
-    knobs["succession_indices"] = out_indices;
-    knobs["succession_to_veg"]  = out_to_veg;
-    knobs["stat_succession_count"] = n_succ;
-    if (n_succ > 0) {
-        const int64_t tick = int64_t(knobs.get("tick", int64_t(knobs.get("day_idx", 0))));
-        const int32_t phase = int32_t(knobs.get("event_phase", 0));
-        _emit_succession_events(out_indices, out_to_veg, VG, s_veg.arr_u8.size(), tick, phase, 1);
-    }
-
-    knobs["vitality_arr"]   = vitality_arr;
-    knobs["low_streak_arr"] = low_streak;
-    knobs["high_streak_arr"]= high_streak;
-    _flush_slot_to_map(sid_vgp);
-    _flush_slot_to_map(sid_plant_water);
-
-    auto t1 = std::chrono::high_resolution_clock::now();
-    return std::chrono::duration<double, std::milli>(t1 - t0).count();
+    // S3：这里原本是 vegetation_dynamics 的第二份实现（prelude 全量复制 +
+    // 主循环走 pk::parallel_for_range_with_emit）。与 run_albedo_pass_thread /
+    // run_climate_feedback_pass_thread 同理：共享纯内核已经支持 [begin, end)
+    // 分段，但 parity_hash 是逐位归约 —— 同形的 float 循环在不同向量化下会差
+    // 1 ULP，而 N=2400 时并行收益不足以换一份必须永久手工同步的副本。
+    (void)n_tasks;
+    return run_vegetation_dynamics_pass(knobs);
 }
 
 // ─── DOTS-Final-Push 任务 4：run_climate_feedback_pass ───────────────────
@@ -5695,91 +4013,28 @@ double DCWorldExt::run_climate_feedback_pass(Dictionary knobs) {
 
     auto t0 = std::chrono::high_resolution_clock::now();
 
-    // ─── Main loop ──────────────────────────────────────────────────────
-    // [Phase C.3c] 主循环抽成 lambda，scalar 路径 run_range(0, n_cells)，
-    // _thread 变体走 pk::parallel_for_range；body 严格 1:1 与原循环一致。
-    auto run_range = [&](int begin, int end) {
-        for (int i = begin; i < end; ++i) {
-            if (IW[i] != 0) continue;                              // skip water cells
-
-            // ① ocean → base_moisture drift（年尺度，每日 |Δ| ≤ per_day_clamp）
-            if (ocean_drift_gain > 0.0f) {
-                float sum_an = 0.0f;
-                int   n_water = 0;
-                const int base = i * 6;
-                for (int d = 0; d < 6; ++d) {
-                    const int32_t ni = NB[base + d];
-                    if (ni < 0) continue;
-                    if (IW[ni] != 0) {
-                        sum_an += TTA[ni];
-                        n_water += 1;
-                    }
-                }
-                if (n_water > 0) {
-                    const float avg_an = sum_an / float(n_water);
-                    if (std::fabs(avg_an) > 0.005f) {
-                        float coastal_ratio = float(n_water) / 6.0f;
-                        if (coastal_ratio > 1.0f) coastal_ratio = 1.0f;
-                        float d_base = ocean_drift_gain * avg_an * coastal_ratio * scale;
-                        if (d_base < -per_day_clamp) d_base = -per_day_clamp;
-                        else if (d_base > per_day_clamp) d_base = per_day_clamp;
-                        float bm = BM[i] + d_base;
-                        if (bm < 0.0f) bm = 0.0f;
-                        else if (bm > 1.0f) bm = 1.0f;
-                        BM[i] = bm;
-                    }
-                }
-            }
-
-            // ② weather → soil / vegetation_growth_pressure 累加（小权重）
-            const bool init = WTIN[i] != 0;
-            const int   wt = init ? int(WTT[i]) : -1;             // -1 = uninit (== CLEAR semantically)
-            const float wi = init ? WTI[i] : 0.0f;
-            if (wi < 0.01f) continue;
-
-            float precip = 0.0f;
-            if      (wt == wt_rain_id)     precip = wi;
-            else if (wt == wt_storm_id)    precip = wi * 0.8f;
-            else if (wt == wt_monsoon_id)  precip = wi * 1.2f;
-            else if (wt == wt_blizzard_id) precip = wi * 0.3f;
-            else if (wt == wt_drought_id)  precip = -wi * 0.6f;
-            else if (wt == wt_heatwave_id) precip = -wi * 0.4f;
-            // else: precip = 0.0 (CLEAR / FOG / etc.)
-
-            // soil_moisture (clamp -0.5..0.5)
-            float d_soil = soil_gain * precip * scale;
-            if (d_soil < -per_day_clamp) d_soil = -per_day_clamp;
-            else if (d_soil > per_day_clamp) d_soil = per_day_clamp;
-            float soil = SOIL[i] + d_soil;
-            if (soil < -0.5f) soil = -0.5f;
-            else if (soil > 0.5f) soil = 0.5f;
-            SOIL[i] = soil;
-
-            // 让天气流动(2026-06-21)：weather → base_moisture 直接反馈(镜像 GDScript
-            // _apply_weather_to_map_feedback_pass)。降水抬升/干旱压低局地气候湿度 → 闭环。
-            if (base_m_gain > 0.0f) {
-                float d_bm = base_m_gain * precip * scale;
-                if (d_bm < -per_day_clamp) d_bm = -per_day_clamp;
-                else if (d_bm > per_day_clamp) d_bm = per_day_clamp;
-                float bmw = BM[i] + d_bm;
-                if (bmw < 0.0f) bmw = 0.0f;
-                else if (bmw > 1.0f) bmw = 1.0f;
-                BM[i] = bmw;
-            }
-
-            if (write_weather_veg_pressure) {
-                // vegetation_growth_pressure (clamp -0.5..0.5)
-                float d_veg = veg_gain * precip * scale;
-                if (d_veg < -per_day_clamp) d_veg = -per_day_clamp;
-                else if (d_veg > per_day_clamp) d_veg = per_day_clamp;
-                float vg_v = VG[i] + d_veg;
-                if (vg_v < -0.5f) vg_v = -0.5f;
-                else if (vg_v > 0.5f) vg_v = 0.5f;
-                VG[i] = vg_v;
-            }
-        }
-    };
-    run_range(0, n_cells);
+    // ─── Main loop ──────────────────────────────────
+    // S3：下沉到共享纯内核。原先这里、run_climate_feedback_pass_thread、
+    // run_stage_b_pass ③ 段是三份逐字副本，漏同步任一份都会表现成分叉。
+    pk_async_climate::ClimateFeedbackKnobs fb_knobs;
+    fb_knobs.ran = true;
+    fb_knobs.soil_gain = soil_gain;
+    fb_knobs.veg_gain = veg_gain;
+    fb_knobs.scale = scale;
+    fb_knobs.per_day_clamp = per_day_clamp;
+    fb_knobs.ocean_drift_gain = ocean_drift_gain;
+    fb_knobs.base_moisture_gain = base_m_gain;
+    fb_knobs.write_weather_veg_pressure = write_weather_veg_pressure;
+    fb_knobs.wt_rain_id = wt_rain_id;
+    fb_knobs.wt_storm_id = wt_storm_id;
+    fb_knobs.wt_monsoon_id = wt_monsoon_id;
+    fb_knobs.wt_blizzard_id = wt_blizzard_id;
+    fb_knobs.wt_drought_id = wt_drought_id;
+    fb_knobs.wt_heatwave_id = wt_heatwave_id;
+    record_production_feedback_input(fb_knobs, n_cells, IW, WTT, WTI, WTIN, TTA,
+                                     BM, SOIL);
+    pk_async_climate::climate_feedback_apply_pure(
+        fb_knobs, IW, WTT, WTI, WTIN, NB, TTA, BM, SOIL, VG, 0, n_cells);
 
     // §11.2 flush: push CoW-detached cell_base_moisture back to MapData
     _flush_slot_to_map(sid_base_m);
@@ -5801,184 +4056,12 @@ double DCWorldExt::run_climate_feedback_pass(Dictionary knobs) {
 // 与 run_albedo_pass_thread 模板严格一致：完整复制 prelude + 主循环走 parallel_for_range。
 // n_tasks=0 → 自适应；n_cells < 256 || n_tasks==1 → 直接顺序。
 double DCWorldExt::run_climate_feedback_pass_thread(Dictionary knobs, int n_tasks) {
-    using godot::StringName;
-    using godot::PackedFloat32Array;
-    using godot::PackedInt32Array;
-
-    auto diag = [&](const char *why) {
-        UtilityFunctions::push_warning(
-            "[DCWorldExt] run_climate_feedback_pass_thread: ", why,
-            " — fallback to GDScript");
-    };
-
-    if (!_bound) { diag("not _bound"); return -1.0; }
-
-    // ─── Resolve slot ids ───────────────────────────────────────────────
-    const int sid_iswater  = component_id(StringName("cell_is_water"));
-    const int sid_wt_type  = component_id(StringName("cell_weather_type"));
-    const int sid_wt_int   = component_id(StringName("cell_weather_intensity"));
-    const int sid_wt_init  = component_id(StringName("cell_weather_field_init"));
-    const int sid_base_m   = component_id(StringName("cell_base_moisture"));
-    if (sid_iswater < 0 || sid_wt_type < 0 || sid_wt_int < 0 ||
-        sid_wt_init < 0 || sid_base_m < 0) {
-        diag("missing slot id (cell_is_water/weather_type/weather_intensity/weather_field_init/base_moisture)");
-        return -1.0;
-    }
-
-    // ─── Pull scalars ───────────────────────────────────────────────────
-    static const char *required_scalars[] = {
-        "n_cells", "soil_gain", "veg_gain", "scale", "per_day_clamp",
-        "ocean_drift_gain", "wt_clear_id",
-        "wt_rain_id", "wt_storm_id", "wt_monsoon_id",
-        "wt_blizzard_id", "wt_drought_id", "wt_heatwave_id",
-    };
-    for (const char *k : required_scalars) {
-        if (!knobs.has(k)) { diag("knobs missing required scalar key"); return -1.0; }
-    }
-    const int   n_cells          = int(knobs["n_cells"]);
-    if (n_cells <= 0) { diag("n_cells <= 0"); return -1.0; }
-    const float soil_gain        = float(knobs["soil_gain"]);
-    const float veg_gain         = float(knobs["veg_gain"]);
-    const bool  write_weather_veg_pressure = bool(knobs.get("write_weather_veg_pressure", true));
-    const float scale            = float(knobs["scale"]);
-    const float per_day_clamp    = float(knobs["per_day_clamp"]);
-    const float ocean_drift_gain = float(knobs["ocean_drift_gain"]);
-    // 让天气流动(2026-06-21)：weather → base_moisture 反馈增益(optional; 缺省 0 = 关闭)。
-    const float base_m_gain = float(knobs.has("weather_to_base_moisture_gain") ? double(knobs["weather_to_base_moisture_gain"]) : 0.0);
-    const int   wt_rain_id       = int(knobs["wt_rain_id"]);
-    const int   wt_storm_id      = int(knobs["wt_storm_id"]);
-    const int   wt_monsoon_id    = int(knobs["wt_monsoon_id"]);
-    const int   wt_blizzard_id   = int(knobs["wt_blizzard_id"]);
-    const int   wt_drought_id    = int(knobs["wt_drought_id"]);
-    const int   wt_heatwave_id   = int(knobs["wt_heatwave_id"]);
-
-    // ─── Pull PackedArrays ──────────────────────────────────────────────
-    if (!knobs.has("neighbor_indices") || !knobs.has("temp_transport_anomaly") ||
-        !knobs.has("soil_moisture_arr") || !knobs.has("veg_growth_pressure_arr")) {
-        diag("knobs missing required PackedArray key");
-        return -1.0;
-    }
-    PackedInt32Array   nb_arr        = knobs["neighbor_indices"];
-    PackedFloat32Array tta_arr       = knobs["temp_transport_anomaly"];
-    PackedFloat32Array soil_arr      = knobs["soil_moisture_arr"];
-    PackedFloat32Array vg_arr        = knobs["veg_growth_pressure_arr"];
-    if (nb_arr.size() < n_cells * 6)    { diag("neighbor_indices size < n_cells * 6"); return -1.0; }
-    if (tta_arr.size() != n_cells)      { diag("temp_transport_anomaly size mismatch"); return -1.0; }
-    if (soil_arr.size() != n_cells)     { diag("soil_moisture_arr size mismatch"); return -1.0; }
-    if (vg_arr.size() != n_cells)       { diag("veg_growth_pressure_arr size mismatch"); return -1.0; }
-
-    // ─── Acquire slot arrays + validate sizes ───────────────────────────
-    Slot &s_iswater = _slots.write[sid_iswater];
-    Slot &s_wt_type = _slots.write[sid_wt_type];
-    Slot &s_wt_int  = _slots.write[sid_wt_int];
-    Slot &s_wt_init = _slots.write[sid_wt_init];
-    Slot &s_base_m  = _slots.write[sid_base_m];
-    if (s_iswater.arr_u8.size() != n_cells || s_wt_type.arr_u8.size() != n_cells ||
-        s_wt_int.arr_f32.size() != n_cells || s_wt_init.arr_u8.size() != n_cells ||
-        s_base_m.arr_f32.size()  != n_cells) {
-        diag("slot array size mismatch (re-bind needed?)");
-        return -1.0;
-    }
-
-    const uint8_t * const __restrict IW    = s_iswater.arr_u8.ptr();
-    const uint8_t * const __restrict WTT   = s_wt_type.arr_u8.ptr();
-    const float   * const __restrict WTI   = s_wt_int.arr_f32.ptr();
-    const uint8_t * const __restrict WTIN  = s_wt_init.arr_u8.ptr();
-    float         * const __restrict BM    = s_base_m.arr_f32.ptrw();
-    const int32_t * const __restrict NB    = nb_arr.ptr();
-    const float   * const __restrict TTA   = tta_arr.ptr();
-    float         * const __restrict SOIL  = soil_arr.ptrw();
-    float         * const __restrict VG    = vg_arr.ptrw();
-
-    auto t0 = std::chrono::high_resolution_clock::now();
-
-    // ─── Main loop（与 run_climate_feedback_pass 主循环 1:1） ────────────
-    auto run_range = [&](int begin, int end) {
-        for (int i = begin; i < end; ++i) {
-            if (IW[i] != 0) continue;
-
-            if (ocean_drift_gain > 0.0f) {
-                float sum_an = 0.0f;
-                int   n_water = 0;
-                const int base = i * 6;
-                for (int d = 0; d < 6; ++d) {
-                    const int32_t ni = NB[base + d];
-                    if (ni < 0) continue;
-                    if (IW[ni] != 0) {
-                        sum_an += TTA[ni];
-                        n_water += 1;
-                    }
-                }
-                if (n_water > 0) {
-                    const float avg_an = sum_an / float(n_water);
-                    if (std::fabs(avg_an) > 0.005f) {
-                        float coastal_ratio = float(n_water) / 6.0f;
-                        if (coastal_ratio > 1.0f) coastal_ratio = 1.0f;
-                        float d_base = ocean_drift_gain * avg_an * coastal_ratio * scale;
-                        if (d_base < -per_day_clamp) d_base = -per_day_clamp;
-                        else if (d_base > per_day_clamp) d_base = per_day_clamp;
-                        float bm = BM[i] + d_base;
-                        if (bm < 0.0f) bm = 0.0f;
-                        else if (bm > 1.0f) bm = 1.0f;
-                        BM[i] = bm;
-                    }
-                }
-            }
-
-            const bool init = WTIN[i] != 0;
-            const int   wt = init ? int(WTT[i]) : -1;
-            const float wi = init ? WTI[i] : 0.0f;
-            if (wi < 0.01f) continue;
-
-            float precip = 0.0f;
-            if      (wt == wt_rain_id)     precip = wi;
-            else if (wt == wt_storm_id)    precip = wi * 0.8f;
-            else if (wt == wt_monsoon_id)  precip = wi * 1.2f;
-            else if (wt == wt_blizzard_id) precip = wi * 0.3f;
-            else if (wt == wt_drought_id)  precip = -wi * 0.6f;
-            else if (wt == wt_heatwave_id) precip = -wi * 0.4f;
-
-            float d_soil = soil_gain * precip * scale;
-            if (d_soil < -per_day_clamp) d_soil = -per_day_clamp;
-            else if (d_soil > per_day_clamp) d_soil = per_day_clamp;
-            float soil = SOIL[i] + d_soil;
-            if (soil < -0.5f) soil = -0.5f;
-            else if (soil > 0.5f) soil = 0.5f;
-            SOIL[i] = soil;
-
-            // 让天气流动(2026-06-21)：weather → base_moisture 直接反馈(镜像 GDScript
-            // _apply_weather_to_map_feedback_pass)。降水抬升/干旱压低局地气候湿度 → 闭环。
-            if (base_m_gain > 0.0f) {
-                float d_bm = base_m_gain * precip * scale;
-                if (d_bm < -per_day_clamp) d_bm = -per_day_clamp;
-                else if (d_bm > per_day_clamp) d_bm = per_day_clamp;
-                float bmw = BM[i] + d_bm;
-                if (bmw < 0.0f) bmw = 0.0f;
-                else if (bmw > 1.0f) bmw = 1.0f;
-                BM[i] = bmw;
-            }
-
-            if (write_weather_veg_pressure) {
-                float d_veg = veg_gain * precip * scale;
-                if (d_veg < -per_day_clamp) d_veg = -per_day_clamp;
-                else if (d_veg > per_day_clamp) d_veg = per_day_clamp;
-                float vg_v = VG[i] + d_veg;
-                if (vg_v < -0.5f) vg_v = -0.5f;
-                else if (vg_v > 0.5f) vg_v = 0.5f;
-                VG[i] = vg_v;
-            }
-        }
-    };
-
-    pk::parallel_for_range("pk_climate_feedback", n_cells, n_tasks, /*seq_threshold=*/256, run_range);
-
-    _flush_slot_to_map(sid_base_m);
-
-    knobs["soil_moisture_arr"]       = soil_arr;
-    knobs["veg_growth_pressure_arr"] = vg_arr;
-
-    auto t1 = std::chrono::high_resolution_clock::now();
-    return std::chrono::duration<double, std::milli>(t1 - t0).count();
+    // S3：这里原本是 feedback 的第二份实现（prelude 全量复制 + 主循环走
+    // pk::parallel_for_range）。与 run_albedo_pass_thread / run_climate_pass_a_thread 同理：
+    // N=2400 时这个循环是微秒级，并行收益不足以换一份必须永久手工同步的
+    // 副本；而 parity_hash 是逐位归约 —— 同形的 float 循环在不同向量化下会差 1 ULP。
+    (void)n_tasks;
+    return run_climate_feedback_pass(knobs);
 }
 
 // ─── 方案 B：stage_b 三段合并 run_stage_b_pass ────────────────────────────
@@ -6180,21 +4263,21 @@ double DCWorldExt::run_stage_b_pass(Dictionary knobs) {
 
         auto t0 = std::chrono::high_resolution_clock::now();
 
-        // ─── Main loop（与 run_albedo_pass:3604-3617 完全一致）──────────
-        for (int i = 0; i < n_cells; ++i) {
-            if (IW[i] != 0) continue;
-            const uint8_t veg_id = VG[i];
-            float alb = (veg_id < albedo_size) ? ALB[veg_id] : 0.0f;
-            const uint8_t cover_id = CV[i];
-            if (cover_id == cover_snow_id || cover_id == cover_glacier_id) {
-                if (alb < snow_cover_albedo) alb = snow_cover_albedo;
-            }
-            const float dt = (reference_albedo - alb) * albedo_temp_gain;
-            float v = T[i] + dt;
-            if (v < 0.0f) v = 0.0f;
-            else if (v > 1.0f) v = 1.0f;
-            T[i] = v;
-        }
+        // ─── Main loop ──────────────────────────────────────────────────
+        // S3：与 run_albedo_pass 一同下沉到共享纯 kernel。这里原先是第三份逐字副本
+        // （run_albedo_pass / run_albedo_pass_thread / 本段），任何一份改动漏同步都
+        // 会表现成"温度场在某些天分叉"。
+        pk_async_climate::ClimateAlbedoKnobs alb_knobs;
+        alb_knobs.ran = true;
+        alb_knobs.reference_albedo = reference_albedo;
+        alb_knobs.temp_gain = albedo_temp_gain;
+        alb_knobs.snow_cover_albedo = snow_cover_albedo;
+        alb_knobs.cover_snow_id = cover_snow_id;
+        alb_knobs.cover_glacier_id = cover_glacier_id;
+        pk_async_climate::albedo_apply_pure(alb_knobs, IW, VG, CV, ALB,
+                                            albedo_size, T, n_cells);
+        _production_albedo = alb_knobs;
+        _production_stage_mask |= pk_async_climate::CLIMATE_STAGE_BIT_ALBEDO;
 
         auto t1 = std::chrono::high_resolution_clock::now();
         albedo_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
@@ -6364,174 +4447,84 @@ double DCWorldExt::run_stage_b_pass(Dictionary knobs) {
 
         auto t0 = std::chrono::high_resolution_clock::now();
 
-        std::vector<int32_t> succ_indices;
-        std::vector<uint8_t> succ_to_veg;
-        succ_indices.reserve(64);
-        succ_to_veg.reserve(64);
+        // S3：如实上报"生产这一天跑了 stage 9 VEGETATION_DYNAMICS"。native_daily
+        // 路径真正跑的是这一份（stage_b ② 段），不是 run_vegetation_dynamics_pass。
+        _production_stage_mask |= pk_async_climate::CLIMATE_STAGE_BIT_VEGETATION_DYNAMICS;
 
-        // ─── Main loop（与 run_vegetation_dynamics_pass:3778-3868 完全一致）─
-        for (int i = 0; i < n_cells; ++i) {
-            const uint8_t v_id = VG[i];
-            const float soil_now = SOIL_COMP != nullptr ? SOIL_COMP[i] : 0.0f;
-            const float plant_water = IW[i] != 0 ? 0.0f : vegdyn_plant_water(
-                M[i], WBAL[i], soil_now, plant_water_balance_weight,
-                plant_soil_buffer_weight, plant_drought_penalty);
-            PLANT_WATER[i] = plant_water;
-            if (IW[i] != 0 || v_id == veg_none_id) {
-                VIT[i] = 0.0f;
-                LSK[i] = 0;
-                HSK[i] = 0;
-                if (VGP_COMP != nullptr) VGP_COMP[i] = 0.0f;
-                if (vegetation_stress_enabled) {
-                    VHEAT[i] = 0.0f;
-                    VDROUGHT[i] = 0.0f;
-                    VCOLD[i] = 0.0f;
-                    VREGEN[i] = 0.0f;
-                }
-                continue;
-            }
-            const float temp = T30[i];
-            const float compat = vegdyn_compat_of(v_id, temp, plant_water, n_veg, IDT, IDM, TLT, TLM, TERR[i], LF[i]);
+        pk_async_climate::VegetationDynamicsEmit vd_emit;
+        vd_emit.indices.reserve(64);
+        vd_emit.to_veg.reserve(64);
+        std::vector<int32_t> &succ_indices = vd_emit.indices;
+        std::vector<uint8_t> &succ_to_veg  = vd_emit.to_veg;
 
-            int wt = wt_clear_id;
-            float wi = 0.0f;
-            if (WTIN[i] != 0) {
-                wt = int(WTT[i]);
-                wi = WTI[i];
-            }
-            const float weather_stress = vegdyn_weather_stress(
-                v_id, wt, wi, n_veg, n_wt, wt_pen_arr.size(), WPN, RES, weather_penalty_scale);
-            float stress_max = 0.0f;
-            float regen_score = 0.0f;
-            if (vegetation_stress_enabled) {
-                float heat_input = 0.0f;
-                float cold_input = 0.0f;
-                float drought_input = 0.0f;
-                if (v_id < n_veg) {
-                    const float temp_tol = std::max(TLT[v_id], 0.05f);
-                    const float moist_tol = std::max(TLM[v_id], 0.05f);
-                    heat_input = vegdyn_clamp01((temp - (IDT[v_id] + temp_tol)) / temp_tol);
-                    cold_input = vegdyn_clamp01(((IDT[v_id] - temp_tol) - temp) / temp_tol);
-                    const float water_deficit = vegdyn_clamp01(((IDM[v_id] - moist_tol) - plant_water) / moist_tol);
-                    drought_input = water_deficit;
-                    if (WTIN[i] != 0 && wt == wt_drought_id) {
-                        drought_input = std::max(drought_input, water_deficit * vegdyn_clamp01(wi));
-                    }
-                }
-                if (WTIN[i] != 0) {
-                    const float wi_clamped = vegdyn_clamp01(wi);
-                    if (wt == wt_heatwave_id) {
-                        heat_input = std::max(heat_input, wi_clamped);
-                    } else if (wt == wt_blizzard_id) {
-                        cold_input = std::max(cold_input, wi_clamped);
-                    }
-                }
-                const float regen_input = vegdyn_clamp01(compat * (1.0f - weather_stress) * (0.5f + 0.5f * plant_water));
-                const float heat = VHEAT[i] + (heat_input - VHEAT[i]) * vegetation_stress_blend;
-                const float drought = VDROUGHT[i] + (drought_input - VDROUGHT[i]) * vegetation_stress_blend;
-                const float cold = VCOLD[i] + (cold_input - VCOLD[i]) * vegetation_stress_blend;
-                const float regen = VREGEN[i] + (regen_input - VREGEN[i]) * vegetation_stress_blend;
-                VHEAT[i] = heat;
-                VDROUGHT[i] = drought;
-                VCOLD[i] = cold;
-                VREGEN[i] = regen;
-                stress_max = std::max(heat, std::max(drought, cold));
-                regen_score = regen;
-            }
-            float water_pressure = WBAL[i] * 0.18f + soil_now * 0.10f;
-            if (water_pressure < -0.12f) water_pressure = -0.12f;
-            else if (water_pressure > 0.12f) water_pressure = 0.12f;
-            const float target = vegetation_stress_enabled
-                ? vegdyn_clamp01(compat + water_pressure - weather_stress - stress_max * 0.25f + regen_score * 0.10f)
-                : vegdyn_clamp01(compat + water_pressure - weather_stress);
-            const float prev_vit = VIT[i];
-            float dv = (target - prev_vit) * rate;
-            if (dv < 0.0f) {
-                dv *= harshness;
-                if (low_vitality_damping_threshold > 0.0f && prev_vit < low_vitality_damping_threshold) {
-                    float damping = prev_vit / low_vitality_damping_threshold;
-                    if (damping < 0.25f) damping = 0.25f;
-                    else if (damping > 1.0f) damping = 1.0f;
-                    dv *= damping;
-                }
-            }
-            if (VGP_COMP != nullptr) VGP_COMP[i] = target - prev_vit;
+        // ─── Main loop ─────────────────────────────────────
+        // S3：下沉到共享纯内核。native_daily 生产热路径跑的就是这一处，
+        // 所以 record_production_vegetation_input 也必须在这里取读当日真实输入：
+        // weather_type / weather_intensity 已经被本 tick 的 weather pass 整场重写过，
+        // environment 快照那份是 tick 起始拍的，用它等于拿昨天的天气算今天的植被。
+        pk_async_climate::VegetationDynamicsKnobs vd_knobs;
+        vd_knobs.ran = true;
+        vd_knobs.scale = scale;
+        vd_knobs.streak_days = streak_days;
+        vd_knobs.vitality_change_rate = rate;
+        vd_knobs.compat_harshness = harshness;
+        vd_knobs.low_threshold = low_thresh;
+        vd_knobs.high_threshold = high_thresh;
+        vd_knobs.succession_degrade_days = degrade_days;
+        vd_knobs.succession_upgrade_days = upgrade_days;
+        vd_knobs.n_wt = n_wt;
+        vd_knobs.wt_clear_id = wt_clear_id;
+        vd_knobs.veg_none_id = veg_none_id;
+        vd_knobs.weather_penalty_scale = weather_penalty_scale;
+        vd_knobs.plant_water_balance_weight = plant_water_balance_weight;
+        vd_knobs.plant_soil_buffer_weight = plant_soil_buffer_weight;
+        vd_knobs.plant_drought_penalty = plant_drought_penalty;
+        vd_knobs.succession_min_compat_gain = succession_min_compat_gain;
+        vd_knobs.low_vitality_damping_threshold = low_vitality_damping_threshold;
+        vd_knobs.succession_cooldown_days = succession_cooldown_days;
+        vd_knobs.stress_enabled = vegetation_stress_enabled;
+        vd_knobs.stress_blend = vegetation_stress_blend;
+        vd_knobs.wt_blizzard_id = wt_blizzard_id;
+        vd_knobs.wt_drought_id = wt_drought_id;
+        vd_knobs.wt_heatwave_id = wt_heatwave_id;
+        vd_knobs.n_veg = n_veg;
+        vd_knobs.wt_pen_size = wt_pen_arr.size();
 
-            float vit = vegdyn_clamp01(prev_vit + dv * scale);
-            VIT[i] = vit;
+        pk_async_climate::VegetationDynamicsTables vd_tables;
+        vd_tables.ideal_temp      = IDT;
+        vd_tables.ideal_moist     = IDM;
+        vd_tables.temp_tol        = TLT;
+        vd_tables.moist_tol       = TLM;
+        vd_tables.weather_penalty = WPN;
+        vd_tables.resistance      = RES;
+        vd_tables.next_up         = NXU;
+        vd_tables.next_down       = NXD;
 
-            int ls = LSK[i];
-            int hs = HSK[i];
-            if (ls < 0 || hs < 0) {
-                ls += streak_days; if (ls > 0) ls = 0;
-                hs += streak_days; if (hs > 0) hs = 0;
-                LSK[i] = ls;
-                HSK[i] = hs;
-                continue;
-            }
-            const uint8_t nxt_up_for_streak = (v_id < n_veg) ? NXU[v_id] : v_id;
-            const float nxt_up_score_for_streak = (nxt_up_for_streak != v_id &&
-                                                    pk_vegetation_candidate_allowed(TERR[i], nxt_up_for_streak))
-                ? vegdyn_compat_of(nxt_up_for_streak, temp, plant_water, n_veg, IDT, IDM, TLT, TLM, TERR[i], LF[i])
-                : -1.0f;
-            const bool upgrade_candidate =
-                nxt_up_for_streak != v_id &&
-                nxt_up_score_for_streak >= compat + succession_min_compat_gain &&
-                nxt_up_score_for_streak >= high_thresh;
-            float best_transition_score = -1.0f;
-            const uint8_t best_transition = vegdyn_best_transition(
-                v_id, temp, plant_water, n_veg, IDT, IDM, TLT, TLM, NXU, NXD, TERR[i], LF[i],
-                best_transition_score);
-            const bool degrade_candidate = best_transition != v_id &&
-                best_transition_score >= compat + succession_min_compat_gain;
-            const bool severe_biome_mismatch = pk_vegetation_needs_biome_reconcile(TERR[i], v_id);
-            if (degrade_candidate &&
-                ((vegetation_stress_enabled && stress_max > 0.65f) || severe_biome_mismatch) &&
-                target < high_thresh) {
-                const int stress_days = std::max(streak_days, int(std::round(float(streak_days) * stress_max)));
-                ls += stress_days;
-                hs = 0;
-            } else if (degrade_candidate && target < low_thresh) {
-                ls += streak_days;
-                hs = 0;
-            } else if (upgrade_candidate && vit > low_thresh && target > low_thresh) {
-                hs += streak_days;
-                ls = 0;
-            } else {
-                ls -= streak_days; if (ls < 0) ls = 0;
-                hs -= streak_days; if (hs < 0) hs = 0;
-            }
+        pk_async_climate::VegetationDynamicsLanes vd_lanes;
+        vd_lanes.is_water              = IW;
+        vd_lanes.terrain               = TERR;
+        vd_lanes.landform              = LF;
+        vd_lanes.vegetation            = VG;
+        vd_lanes.temp_30d              = T30;
+        vd_lanes.moisture              = M;
+        vd_lanes.water_balance_30d     = WBAL;
+        vd_lanes.soil_moisture         = SOIL_COMP;
+        vd_lanes.weather_type          = WTT;
+        vd_lanes.weather_intensity     = WTI;
+        vd_lanes.weather_field_init    = WTIN;
+        vd_lanes.plant_available_water = PLANT_WATER;
+        vd_lanes.vegetation_growth_pressure = VGP_COMP;
+        vd_lanes.vitality              = VIT;
+        vd_lanes.low_streak            = LSK;
+        vd_lanes.high_streak           = HSK;
+        vd_lanes.heat_stress           = VHEAT;
+        vd_lanes.drought_stress        = VDROUGHT;
+        vd_lanes.cold_stress           = VCOLD;
+        vd_lanes.regen_score           = VREGEN;
 
-            bool fired = false;
-            if (ls >= degrade_days) {
-                if (degrade_candidate) {
-                    succ_indices.push_back(i);
-                    succ_to_veg.push_back(best_transition);
-                    const int cooldown = succession_cooldown_days > 0 ? -succession_cooldown_days : 0;
-                    ls = cooldown;
-                    hs = cooldown;
-                    fired = true;
-                } else {
-                    ls = 0;
-                }
-            }
-            if (!fired && hs >= upgrade_days) {
-                uint8_t nxt = (v_id < n_veg) ? NXU[v_id] : v_id;
-                const float nxt_sc = (nxt != v_id && pk_vegetation_candidate_allowed(TERR[i], nxt))
-                    ? vegdyn_compat_of(nxt, temp, plant_water, n_veg, IDT, IDM, TLT, TLM, TERR[i], LF[i]) : -1.0f;
-                if (nxt != v_id && nxt_sc >= compat + succession_min_compat_gain) {
-                    succ_indices.push_back(i);
-                    succ_to_veg.push_back(nxt);
-                    const int cooldown = succession_cooldown_days > 0 ? -succession_cooldown_days : 0;
-                    ls = cooldown;
-                    hs = cooldown;
-                } else {
-                    hs = 0;
-                }
-            }
-            LSK[i] = ls;
-            HSK[i] = hs;
-        }
+        record_production_vegetation_input(vd_knobs, vd_tables, vd_lanes, n_cells);
+        pk_async_climate::vegetation_dynamics_apply_pure(
+            vd_knobs, vd_tables, vd_lanes, 0, n_cells, vd_emit);
 
         // 演替输出 → out_*_vd（最后统一写回 knobs）
         n_succ_vd = int(succ_indices.size());
@@ -6645,81 +4638,28 @@ double DCWorldExt::run_stage_b_pass(Dictionary knobs) {
 
         auto t0 = std::chrono::high_resolution_clock::now();
 
-        // ─── Main loop（与 run_climate_feedback_pass:3992-4056 完全一致）─
-        for (int i = 0; i < n_cells; ++i) {
-            if (IW[i] != 0) continue;
-
-            if (ocean_drift_gain > 0.0f) {
-                float sum_an = 0.0f;
-                int   n_water = 0;
-                const int base = i * 6;
-                for (int d = 0; d < 6; ++d) {
-                    const int32_t ni = NB[base + d];
-                    if (ni < 0) continue;
-                    if (IW[ni] != 0) {
-                        sum_an += TTA[ni];
-                        n_water += 1;
-                    }
-                }
-                if (n_water > 0) {
-                    const float avg_an = sum_an / float(n_water);
-                    if (std::fabs(avg_an) > 0.005f) {
-                        float coastal_ratio = float(n_water) / 6.0f;
-                        if (coastal_ratio > 1.0f) coastal_ratio = 1.0f;
-                        float d_base = ocean_drift_gain * avg_an * coastal_ratio * scale;
-                        if (d_base < -per_day_clamp) d_base = -per_day_clamp;
-                        else if (d_base > per_day_clamp) d_base = per_day_clamp;
-                        float bm = BM[i] + d_base;
-                        if (bm < 0.0f) bm = 0.0f;
-                        else if (bm > 1.0f) bm = 1.0f;
-                        BM[i] = bm;
-                    }
-                }
-            }
-
-            const bool init = WTIN[i] != 0;
-            const int   wt = init ? int(WTT[i]) : -1;
-            const float wi = init ? WTI[i] : 0.0f;
-            if (wi < 0.01f) continue;
-
-            float precip = 0.0f;
-            if      (wt == wt_rain_id)     precip = wi;
-            else if (wt == wt_storm_id)    precip = wi * 0.8f;
-            else if (wt == wt_monsoon_id)  precip = wi * 1.2f;
-            else if (wt == wt_blizzard_id) precip = wi * 0.3f;
-            else if (wt == wt_drought_id)  precip = -wi * 0.6f;
-            else if (wt == wt_heatwave_id) precip = -wi * 0.4f;
-
-            float d_soil = soil_gain * precip * scale;
-            if (d_soil < -per_day_clamp) d_soil = -per_day_clamp;
-            else if (d_soil > per_day_clamp) d_soil = per_day_clamp;
-            float soil = SOIL[i] + d_soil;
-            if (soil < -0.5f) soil = -0.5f;
-            else if (soil > 0.5f) soil = 0.5f;
-            SOIL[i] = soil;
-
-            // 让天气流动(2026-06-21)：weather → base_moisture 直接反馈(镜像 GDScript
-            // _apply_weather_to_map_feedback_pass)。降水抬升/干旱压低局地气候湿度 → 闭环。
-            if (base_m_gain > 0.0f) {
-                float d_bm = base_m_gain * precip * scale;
-                if (d_bm < -per_day_clamp) d_bm = -per_day_clamp;
-                else if (d_bm > per_day_clamp) d_bm = per_day_clamp;
-                float bmw = BM[i] + d_bm;
-                if (bmw < 0.0f) bmw = 0.0f;
-                else if (bmw > 1.0f) bmw = 1.0f;
-                BM[i] = bmw;
-            }
-
-            if (write_weather_veg_pressure) {
-                float d_veg = veg_gain * precip * scale;
-                if (d_veg < -per_day_clamp) d_veg = -per_day_clamp;
-                else if (d_veg > per_day_clamp) d_veg = per_day_clamp;
-                float vg_v = VGP[i] + d_veg;
-                if (vg_v < -0.5f) vg_v = -0.5f;
-                else if (vg_v > 0.5f) vg_v = 0.5f;
-                VGP[i] = vg_v;
-            }
-        }
+        // ─── Main loop ────────────────────────────────
+        // S3：与 run_climate_feedback_pass 一同下沉到共享纯 kernel。这里原先是第三份
+        // 逐字副本，而它才是生产 native_daily 路径上真正跑的那一份。
+        pk_async_climate::ClimateFeedbackKnobs fb_knobs;
+        fb_knobs.ran = true;
+        fb_knobs.soil_gain = soil_gain;
+        fb_knobs.veg_gain = veg_gain;
+        fb_knobs.scale = scale;
+        fb_knobs.per_day_clamp = per_day_clamp;
+        fb_knobs.ocean_drift_gain = ocean_drift_gain;
+        fb_knobs.base_moisture_gain = base_m_gain;
+        fb_knobs.write_weather_veg_pressure = write_weather_veg_pressure;
+        fb_knobs.wt_rain_id = wt_rain_id;
+        fb_knobs.wt_storm_id = wt_storm_id;
+        fb_knobs.wt_monsoon_id = wt_monsoon_id;
+        fb_knobs.wt_blizzard_id = wt_blizzard_id;
+        fb_knobs.wt_drought_id = wt_drought_id;
+        fb_knobs.wt_heatwave_id = wt_heatwave_id;
+        record_production_feedback_input(fb_knobs, n_cells, IW, WTT, WTI, WTIN,
+                                        TTA, BM, SOIL);
+        pk_async_climate::climate_feedback_apply_pure(
+            fb_knobs, IW, WTT, WTI, WTIN, NB, TTA, BM, SOIL, VGP, 0, n_cells);
 
         // 写回 in/out arrays —— 仅老路径需要把 soil/vg 重新塞回 knobs；
         // 新路径下 _slots 已被 ptrw 直接修改，末尾 _flush_slot_to_map 推回。
@@ -7270,342 +5210,11 @@ void DCWorldExt::async_climate_shutdown_all() {
 // 中 transpiration 段落新增的 "async parity" 描述（Stage 1 写文档时补）。
 
 namespace pk_async_climate {
-
-// 错误码（worker 通过 atomic int 传给主线程，主线程 push_warning）。
-constexpr int PK_ASYNC_ROUND_ERR_OK              = 0;
-constexpr int PK_ASYNC_ROUND_ERR_INPUT_SIZE      = 1;
-constexpr int PK_ASYNC_ROUND_ERR_KERNEL_FAILED   = 2;
-
-// Round-level scalars / cp 字段（kick 时主线程从 GDScript Dictionary 提取，
-// worker 在 round 内整段使用）。新增字段时同步更新 kick 提取代码 +
-// _async_climate_round_run_passes 内 stub。
-struct ClimateRoundScalars {
-    // round 锁定的相位（kick 时刻的 season_phase）。worker 全程用这个值，
-    // 不再因 round 跨多 ticks 而 stale。解决"夏至滞后"。
-    double season_phase = 0.0;
-
-    // ── 来自 cp_struct（climate_pass_a 用） ─────────────────────────────
-    double axial_tilt_deg = 23.5;
-    double day_length_gain = 0.35;
-    double solar_gain = 1.0;
-    double insol_amp = 0.20;       // sync 路径 default 0.20
-    double insol_gain = 1.0;
-    double moist_scale_now = 1.0;
-    float  runtime_moisture_base_relax_rate = 0.24f;
-    float  runtime_moisture_weather_vapor_weight = 0.12f;
-    float  runtime_moisture_precip_weight = 0.78f;
-    float  runtime_moisture_soil_weight = 1.82f;
-    float  runtime_moisture_soil_dry_weight = 2.21f;
-    float  runtime_moisture_water_balance_weight = 1.04f;
-    float  runtime_moisture_water_balance_dry_weight = 1.30f;
-    int    days_per_year = 365;
-    double sea_level = 0.5;
-
-    // pass_a 额外字段（cp.thermal_inertia_* / thermal_daily_delta_cap /
-    // snowpack_cover_* / insol_dev_min/max）。sync 路径 default 与
-    // run_climate_pass_a 顶部一致。
-    double insol_dev_min = -1.0;
-    double insol_dev_max = 1.0;
-    double thermal_inertia_land = 0.35;
-    double thermal_inertia_water = 0.045;
-    double thermal_inertia_snow = 0.09;
-    double thermal_inertia_high_mountain = 0.16;
-    double thermal_daily_delta_cap = 0.15;
-    // 加速/跳日补偿：本次 pass_a 距上次实际经过的仿真天数（默认 1.0）。
-    // 热惯性松弛与 delta_cap 按此天数积分，否则加速档下海洋温度会严重欠积分、
-    // 滞后于太阳直射点。见 climate_daily_system._build_async_kick_input。
-    double thermal_dt_days = 1.0;
-    double snowpack_cover_low = 0.05;
-    double snowpack_cover_full = 0.32;
-    // [climate-zone-fix P2] 沿海陆地季节振幅最大衰减比（0=关闭=原行为；0.55=海岸格季节
-    // 振幅仅余 45%）。与 per-cell maritime 因子相乘后缩放 season_offset。
-    double maritime_season_damp = 0.0;
-
-    // transp pass 用（Stage 1 实装）
-    float  transp_outflow_rate = 0.025f;
-    float  transp_self_rate    = 0.015f;
-
-    // pass_b knobs（Stage 2，与 sync run_climate_pass_b knobs 一一对应）
-    float  pb_winter_boost  = 1.0f;
-    float  pb_snow_cool     = 0.0f;
-    float  pb_veg_cool      = 0.0f;
-    float  pb_diurnal_amp   = 0.0f;
-    float  pb_evap_gain     = 0.0f;
-    float  pb_rs_threshold  = 0.0f;
-    float  pb_rs_factor     = 1.0f;
-    int    pb_rs_lookback   = 0;
-    float  pb_t_freeze      = 0.0f;
-    float  pb_coupling_gain = 0.0f;
-    float  pb_coast_leak    = 0.0f;
-    float  pb_sea_ice_albedo_cooling = 0.01f;
-
-    // ocean_water / ocean_land knobs（Stage 2）
-    int    ow_advect_steps = 3;
-    float  ow_heat_mix     = 0.55f;
-    float  ow_tta_source_cap = 0.22f;
-    float  ow_tta_blend_rate = 0.70f;
-    float  ow_tta_zero_current_decay = 0.06f;
-    float  ol_effective_leak = 0.55f;
-    float  ol_tta_source_cap = 0.22f;
-    float  ol_tta_blend_rate = 0.70f;
-    float  ol_tta_decay_rate = 0.04f;
-
-    // seam-advection-fix 2026-08-03：经度环绕周期（= map.width·√3，单位六边形空间，
-    // 不含 hex_size）。pass_b 雨影 / ocean_water / ocean_land / wind_air / wind_surface
-    // 五个 async 内核都用 cell_pos_x 差分求邻居方向，接缝需最小映像折叠。
-    // kick 时从 DCWorldExt::_native_wrap_period_x 常驻值取（input 可显式覆盖）。
-    // 0 = 无环绕域 → 内核退化为裸差分（旧行为）。
-    float  wrap_period_x = 0.0f;
-
-    // wind_air / wind_surface knobs（Stage 2）
-    int    wa_advect_steps = 3;
-    float  wa_heat_mix     = 0.25f;
-    float  ws_air_leak     = 0.35f;
-    float  ws_cold_transport_form = 0.06f;
-    float  ws_cold_transport_melt = 0.11f;
-
-    // sea_ice knobs（Stage 2）
-    float si_k_freeze      = 0.40f;
-    float si_k_melt        = 1.45f;
-    float si_t_form        = 0.06f;
-    float si_t_melt        = 0.11f;
-    float si_contagion     = 0.035f;
-    float si_threshold     = 0.72f;
-    float si_hysteresis    = 0.18f;
-    float si_ice_delay     = 1.0f;
-    bool  si_enable_oht    = true;
-    bool  si_apply_terrain_flips = false;
-    bool  si_solar_gate_enabled = true;
-    float si_freeze_insol_low  = 0.22f;
-    float si_freeze_insol_high = 0.45f;
-    float si_solar_melt_start  = 0.28f;
-    float si_solar_melt_gain   = 1.35f;
-    float si_min_thick_ice_solar_exposure = 0.32f;
-    float si_daily_delta_cap   = 0.070f;
-    float si_edge_mix_rate     = 0.035f;
-    float si_dt_days           = 1.0f;
-    int   si_terrain_lake_id    = -1;
-    int   si_terrain_sea_ice_id = -1;
-    int   si_terrain_ocean_id   = -1;
-
-    // ─── finalizer pass knobs（Stage 9，2026-06-16） ──────────────────────
-    // 与 GDScript _apply_daily_climate_finalizer 一一对应：
-    //   temp_cap_enabled = cp.thermal_final_delta_cap_enabled
-    //   temp_cap         = cp.thermal_daily_delta_cap (默认 0.15)
-    //   tta_cap          = cp.temperature_transport_anomaly_daily_cap (默认 0.12)
-    //   has_temp_start   = _temp_start_of_day_arr.size() == n
-    //   has_tta_start    = _tta_start_of_day_arr.size() == n
-    bool  fin_temp_cap_enabled = true;
-    float fin_temp_cap         = 0.15f;
-    float fin_tta_cap          = 0.12f;
-    bool  fin_has_temp_start   = false;
-    bool  fin_has_tta_start    = false;
-
-    // ─── passes_mask（plan §async-stage-2，2026-06-14） ──────────────────
-    // bit-mask 控制 worker 跑哪几个 pass。kick 时 GDScript 传入。
-    //   bit 0: pass_a
-    //   bit 1: pass_b
-    //   bit 2: ocean_water
-    //   bit 3: ocean_land
-    //   bit 4: wind_air
-    //   bit 5: wind_surface
-    //   bit 6: sea_ice
-    //   bit 7: transp
-    //   bit 8: finalizer (Stage 9，2026-06-16)
-    // 默认 0x1FF 全开（含 finalizer）。Stage 2 A/B 验证时 bench 单独跑一个 pass，
-    // 设 mask=0x01（仅 pass_a）或 0x100（仅 finalizer）。
-    // Stage 2 期间 stub 的 pass（pass_b/ocean_*/wind_*/sea_ice）即使被 mask
-    // 启用，worker 内部仍是 no-op；不会影响 A/B（验证字段不被它们触碰）。
-    int    passes_mask = 0x1FF;
-};
-
-// 主线程序列化进 input_buf 的字段集合。所有 cell-level 数据都是 std::vector<float>
-// 或 std::vector<uint8_t>，长度 = n_cells。
-//
-// Stage 1 范围内只列了 transpiration 实际读的 3 个字段（landform/vegetation/
-// moisture），加上少量后续 stage 会用的字段占位。其余字段 Stage 2 时按需追加。
-struct ClimateInputBuf {
-    int n_cells = 0;
-
-    // U8 cell-level（transp 用 + pass_a 用 is_water/terrain/cover + pass_b 用 landform/vegetation）
-    std::vector<uint8_t> landform;         // transp: is_water iff lf <= 3；pass_b: LF_LOWLAND/PEAK 等判断
-    std::vector<uint8_t> vegetation;       // transp: donor_table 索引；pass_b: foliage_table 索引
-    std::vector<uint8_t> is_water;         // pass_a / pass_b 都用
-    std::vector<uint8_t> terrain;          // pass_a 占位（实际未读，预留）
-    std::vector<uint8_t> cover;            // pass_a 用：COVER_GLACIER 判断
-
-    // U8 in/out — pass_a 既读 ema_initialized 又会把 0 置 1。stage 2 起按
-    // in_buf 提供初值，pass_a 在 out_buf 里更新（避免 in/out aliasing）。
-    std::vector<uint8_t> ema_initialized;
-
-    // F32 cell-level（transp 读 moisture；pass_a 读静态字段 + 上次温度 / 雪 / 热能；
-    // pass_b 读 temp 快照 + snow_cover + elev + lat + pos + insol_dev + tta + sif）
-    std::vector<float>   moisture;         // transp 输入；pass_b 输入（read + write）
-    std::vector<float>   elevation;        // pass_a / pass_b 读
-    std::vector<float>   base_moisture;    // pass_a 读
-    std::vector<float>   weather_vapor;    // pass_a: atmospheric anomaly source
-    std::vector<float>   soil_moisture;    // pass_a: signed hydrology anomaly
-    std::vector<float>   water_balance_30d;// pass_a: signed long-window anomaly
-    std::vector<float>   lat_norm;         // pass_a / pass_b 读
-    // [climate-zone-fix P2] 海洋性因子 ∈[0,1]，1=紧贴海岸/0=深内陆（由 dist_ocean 指数衰减得到）。
-    // pass_a 用它对陆地缩小季节振幅，形成沿海小年较差（温带海洋性 Cfb）。缺省空→不调温。
-    std::vector<float>   maritime;         // pass_a 读（静态）
-    std::vector<float>   temp_baseline_year; // pass_a 读（静态 LUT）
-    // pass_a 年均日照缓存（perf 2026-07-05, Item 4）：dc_insolation_annual_mean(clamp01(ny),
-    // axial_tilt, daylen) 只依赖 lat + 两个行星常数，与 season 无关，故对每 cell 逐 tick 恒等。
-    // async pass_a kernel 是 static free function、跑在 worker thread，无法安全触碰 member
-    // 缓存 _insol_annual_mean_cache（会 data race）。改由主线程在 kick 快照时（持锁）预计算填此
-    // 字段，worker 直接读 → bit-equal（同一 dc_insolation_annual_mean(dc_clamp01f(ny),...)）。
-    // 空 → worker 回退 inline 重算（旧行为，向后兼容）。
-    std::vector<float>   insol_annual_mean;  // pass_a 读（主线程预烘焙）
-    std::vector<float>   temp;             // pass_a 读 prev_temp；pass_b 读 temp_snapshot
-    std::vector<float>   temp_30d;         // pass_a 读：EMA prev
-    std::vector<float>   temp_365d;        // pass_a 读：EMA prev
-    std::vector<float>   thermal_energy;   // pass_a 读：prev_energy
-    std::vector<float>   snowpack;         // pass_a 读：alpha 判断 + 计算 snow_cover
-    std::vector<float>   radiative_modifier_add;    // pass_a: frozen Modifier add
-    std::vector<float>   radiative_modifier_factor; // pass_a: frozen Modifier factor
-    // pass_b 新增字段：
-    std::vector<float>   pos_x;            // pass_b: 邻居方向计算；ocean_water/land 也用
-    std::vector<float>   pos_y;            // pass_b; ocean_water/land 也用
-    std::vector<float>   insolation_dev;   // pass_b: solar_factor
-    std::vector<float>   temp_transport_anomaly; // pass_b: TTA 输入 (海岸 leak + evap)
-    std::vector<float>   sea_ice_frac;     // pass_b: 海冰反照率冷却尾循环
-    // local_thermal_anomaly: pass_b 在 in 上累加（in/out 都用）
-    std::vector<float>   local_thermal_anomaly;
-    // ocean_water/ocean_land 新增字段
-    std::vector<float>   ocean_current_x;        // ocean_water/land: 邻居方向
-    std::vector<float>   ocean_current_y;
-    std::vector<float>   ocean_thermal_anomaly;  // ocean_water/land 都写（in/out）
-    // wind_air / wind_surface 新增字段（Stage 2）
-    std::vector<float>   wind_x;                 // wind_*: 邻居 advect direction
-    std::vector<float>   wind_y;
-    std::vector<float>   wind_speed;             // wind_*: speed_mix
-    std::vector<float>   temp_baseline;          // wind_surface: 合成 cell_temp baseline
-    std::vector<float>   air_mass_temp_anomaly;  // wind_air write / wind_surface read+write
-    // sea_ice 新增字段（Stage 2）
-    std::vector<uint8_t> base_terrain;     // sea_ice: 还原 base terrain when ice melts
-    std::vector<float>   upwelling_strength; // sea_ice: 海水上涌冷却
-    std::vector<float>   insolation_now;   // sea_ice: solar gate
-    std::vector<float>   cell_temperature_arr; // sea_ice: 主线程传 climate/ocean-adjusted T
-    std::vector<uint8_t> water_terrain_ids; // sea_ice: 256-entry water LUT 源
-    std::vector<float>   sea_ice_frac_inout; // sea_ice: in/out（pass_b 也读它）
-    // ─── finalizer pass 输入字段（Stage 9，2026-06-16） ─────────────────
-    // 主线程在 begin_round 时把 round-start snapshot 传进来。worker finalizer
-    // pass 用它做 clamp(temp - start ± temp_cap) + Δ 统计。GDScript 端的
-    // _temp_start_of_day_arr / _tta_start_of_day_arr 一一对应。
-    std::vector<float>   temp_start_of_day;     // finalizer: temp clamp baseline
-    std::vector<float>   tta_start_of_day;      // finalizer: TTA clamp baseline
-    std::vector<float>   sea_ice_frac_prev;     // finalizer: sea_ice_delta_max
-    std::vector<float>   weather_precip;        // finalizer: precip_p95
-    // ─── 后续 pass 占位 ──────────────────────────────────────────────────
-    // 全部 9 pass 输入字段已覆盖
-
-    // round-level scalars（在 kick 时设值）
-    ClimateRoundScalars scalars;
-};
-
-// worker 写入的输出字段集合。同样只列 transp 真正会写的（moisture）+ Stage 2
-// 后续追加。output buf 不持有 input copy，节省 220+ KB 内存。
-struct ClimateOutputBuf {
-    int n_cells = 0;
-
-    // ─── pass_a 输出（Stage 2 实装） ────────────────────────────────────
-    // 与 run_climate_pass_a 末尾 16 个 _flush_slot_to_map 一一对应：
-    // moisture / snow_cover / temp_baseline / temp_season_offset /
-    // ema_initialized / temp_30d / temp_365d / temp_anomaly / insolation_now /
-    // insolation_dev / day_length / heat_input / thermal_energy / snowpack /
-    // ocean_thermal_anomaly / local_thermal_anomaly
-    //
-    // 注意：transp 也写 moisture（覆盖 pass_a 的 moisture 输出）。Stage 2
-    // 范围内 transp 在 pass_a 之后跑，但当前 worker loop pass_a 是 stub，
-    // moisture 还是 transp 唯一写者。Stage 3 stub 替换后顺序自然处理。
-    std::vector<float>   moisture;             // transp（Stage 1）& pass_a
-    std::vector<float>   temp_baseline;
-    std::vector<float>   temp_season_offset;
-    std::vector<uint8_t> ema_initialized;
-    std::vector<float>   temp_30d;
-    std::vector<float>   temp_365d;
-    std::vector<float>   temp_anomaly;
-    std::vector<float>   insolation_now;
-    std::vector<float>   insolation_dev;
-    std::vector<float>   day_length;
-    std::vector<float>   heat_input;
-    std::vector<float>   thermal_energy;
-    std::vector<float>   snowpack;
-    std::vector<float>   ocean_thermal_anomaly;
-    std::vector<float>   local_thermal_anomaly;
-    // wind_air / wind_surface 输出（Stage 2）
-    std::vector<float>   air_mass_temp_anomaly;   // wind_air write / wind_surface overwrite
-    std::vector<float>   temp;                    // wind_surface 最终写 cell_temp (climate round 唯一)
-    // sea_ice 输出（Stage 2）
-    std::vector<float>   sea_ice_frac;            // sea_ice 写
-    std::vector<uint8_t> terrain;                 // sea_ice 翻转写（apply_terrain_flips 时）
-
-    // dirty 索引（transp 已计算过 dirty_indices/dirty_values，
-    // 主线程 poll 时可一并取出做 mark_dirty_indexed 优化）
-    std::vector<int32_t> moisture_dirty_indices;
-    std::vector<float>   moisture_dirty_values;
-
-    // ─── 占位（Stage 2 余下 pass 启用） ───────────────────────────────────
-    // pass_b 输出：local_thermal_anomaly（追加）/ moisture（覆盖）
-    // ocean_water 输出：ocean_thermal_anomaly
-    // ocean_land 输出：ocean_thermal_anomaly（累加）
-    // wind_air 输出：air_mass_temp_anomaly
-    // wind_surface 输出：temp（最终）/ air_mass_temp_anomaly
-    // sea_ice 输出：sea_ice_frac / terrain（flip 事件需要单独输出列表）
-
-    // sea_ice flip events（Stage 2 sea_ice 移植时启用）。主线程 poll 时
-    // 据此调用 GDScript 端的 mark_terrain_dirty / atlas update 等钩子。
-    std::vector<int32_t> flipped_cell_indices;
-    std::vector<uint8_t> flipped_new_terrain;
-
-    // ─── finalizer pass diag（Stage 9，2026-06-16） ─────────────────────
-    // 与 GDScript _apply_daily_climate_finalizer 返回的 diag 字段一一对应。
-    // worker 写完后主线程 poll 拿来填 _last_finalizer_diag，跳过同名 GDScript loop。
-    // 全部 scalars / counters，无 PackedArray，poll 端 marshalling cost 可忽略。
-    bool   fin_applied = false;
-    float  fin_max_temp_delta = 0.0f;
-    float  fin_p95_temp_delta = 0.0f;
-    float  fin_p99_temp_delta = 0.0f;
-    float  fin_preclamp_max_temp_delta = 0.0f;
-    float  fin_preclamp_p99_temp_delta = 0.0f;
-    int32_t fin_temp_delta_gt_005_count = 0;
-    int32_t fin_temp_delta_gt_010_count = 0;
-    int32_t fin_temp_delta_gt_020_count = 0;
-    int32_t fin_temp_delta_clamped_count = 0;
-    float  fin_max_transport_anomaly = 0.0f;
-    int32_t fin_tta_clamped_count = 0;
-    int32_t fin_thermal_init_count = 0;
-    float  fin_sea_ice_delta_max = 0.0f;
-    float  fin_precip_p95 = 0.0f;
-    int32_t fin_cells_seen = 0;
-    // finalizer 写出的 final TTA（in/out aliasing，独立 buffer 避免和 wind_air 输出冲突）
-    std::vector<float> tta_final;
-};
-
-// worker 私有临时 buffer（一次 alloc，round 间复用）。所有 pass 都从这里
-// 借用 scratch 空间，不在 worker 回调内重新 resize（除非 n_cells 变了）。
-struct ClimateWorkBuf {
-    int n_cells = 0;
-    std::vector<float> deltas;          // transp Phase 1 累加器
-    std::vector<float> scratch_a;       // 后续 pass 复用
-    std::vector<float> scratch_b;
-    // ocean pass 内部 anomaly_inout buffer（temp_transport_anomaly per-round 累加器）。
-    // ocean_water 写 water cells，ocean_land 读 water cells + 写 land cells。
-    // Stage 2 期间它就是 TTA 字段在 round 内的状态——pass_b 也用这个传给 TTA 读取。
-    std::vector<float> ocean_tta_inout;
-};
-
-// round-invariant 静态数据（neighbor_indices / donor_table / foliage_table），
-// 在 bind_map_data 之后由 GDScript 调 set_static_knobs 注入一次。round 间复用。
-struct ClimateRoundStaticKnobs {
-    int                  n_cells = 0;
-    std::vector<int32_t> neighbor_indices;   // size = n_cells * 6
-    std::vector<float>   donor_table;        // 蒸腾贡献率（按 vegetation enum）
-    std::vector<float>   foliage_table;      // pass_b 用（Stage 2）
-    std::vector<float>   albedo_table;       // weather/climate 用（Stage 2）
-};
+// ClimateRoundScalars / ClimateInputBuf / ClimateOutputBuf / ClimateWorkBuf /
+// ClimateRoundStaticKnobs 与 9 个 _async_*_kernel_pure 已在 S3 搬到
+// runtime_climate_passes.h/.cpp（Godot 无依赖，生产与 SHADOW worker 共用）。
+// 本文件保留 AsyncClimateRoundTask / AsyncClimateRoundState 与 worker 线程驱动，
+// 它们属于主线程侧的 async round 生命周期，不属于共享算法层。
 
 // Round async task。本设计只支持单 round 任务（不需要 task_id 多路），
 // 全局只有一个实例，由 _async_climate_round_state 持有。
@@ -7668,1520 +5277,6 @@ struct AsyncClimateRoundState {
     std::vector<std::string> lifecycle_finalize_tail_boundary_intents;
 };
 
-// ─── Pure kernels（worker 线程跑，零 Godot API） ─────────────────────────
-
-// pass_a pure kernel — 移植自 DCWorldExt::run_climate_pass_a（world_ext.cpp:2096）。
-// 算法逐行 1:1 镜像 sync 路径 line 2293-2417 的 run_range lambda body：
-//   - 每 cell 独立（无邻居 gather，无跨 cell 写）
-//   - 用 dc_* helper（dc_insolation_now / dc_clamp01f / dc_clampf 等），它们已经
-//     是 pure inline 函数，worker 安全调用
-//   - 末尾把 ocean_anom / local_anom 清 0（开启新一日累加，与 sync line 2393-2394 一致）
-//
-// 输入：in.{is_water, terrain, cover, ema_initialized, moisture, elevation,
-//           base_moisture, lat_norm, temp_baseline_year, temp, temp_30d, temp_365d,
-//           thermal_energy, snowpack} + in.scalars
-// 输出：out.{moisture, snow_cover, temp_baseline, temp_season_offset,
-//            ema_initialized, temp_30d, temp_365d, temp_anomaly,
-//            insolation_now, insolation_dev, day_length, heat_input,
-//            thermal_energy, snowpack, ocean_thermal_anomaly, local_thermal_anomaly}
-//
-// 注意：sync 路径直接 ptrw() 写 _slots（同一 buffer in/out 别名）。pure kernel
-// 严格分 in/out，避免 worker 看到自己上一 cell 写的中间状态——因为 pass_a 每个
-// cell 独立，**没有 in-place 依赖**，分 in/out 不影响 bit-equal。
-static bool _async_pass_a_kernel_pure(const ClimateInputBuf &in,
-                                      ClimateOutputBuf &out) {
-    const int n = in.n_cells;
-    if (n <= 0) return false;
-    // 输入维度校验
-    if ((int)in.is_water.size()           != n) return false;
-    if ((int)in.cover.size()              != n) return false;
-    if ((int)in.ema_initialized.size()    != n) return false;
-    if ((int)in.elevation.size()          != n) return false;
-    if ((int)in.base_moisture.size()      != n) return false;
-    if ((int)in.lat_norm.size()           != n) return false;
-    if ((int)in.temp_baseline_year.size() != n) return false;
-    if ((int)in.temp.size()               != n) return false;
-    if ((int)in.temp_30d.size()           != n) return false;
-    if ((int)in.temp_365d.size()          != n) return false;
-    if ((int)in.thermal_energy.size()     != n) return false;
-    if ((int)in.snowpack.size()           != n) return false;
-
-    // ── scalars ──
-    const float season_phase = (float)in.scalars.season_phase;
-    const float axial_tilt_deg = (float)in.scalars.axial_tilt_deg;
-    const float daylen_amp     = (float)in.scalars.day_length_gain;
-    const float solar_gain     = (float)in.scalars.solar_gain;
-    const float insol_amp      = (float)in.scalars.insol_amp;
-    const float insol_gain     = (float)in.scalars.insol_gain;
-    const float insol_amp_gain = insol_amp * insol_gain;
-    const float land_continentality = 1.0f;  // compatibility field; pass-A helper ignores it
-    const float moisture_relax = dc_clampf(in.scalars.runtime_moisture_base_relax_rate, 0.0f, 1.0f);
-    const float moisture_vapor_w = dc_clampf(in.scalars.runtime_moisture_weather_vapor_weight, 0.0f, 1.0f);
-    const float moisture_precip_w = dc_clampf(in.scalars.runtime_moisture_precip_weight, 0.0f, 2.5f);
-    const float moisture_soil_w = dc_clampf(in.scalars.runtime_moisture_soil_weight, 0.0f, 2.5f);
-    const float moisture_soil_dry_w = dc_clampf(in.scalars.runtime_moisture_soil_dry_weight, 0.0f, 2.5f);
-    const float moisture_wb_w = dc_clampf(in.scalars.runtime_moisture_water_balance_weight, 0.0f, 2.5f);
-    const float moisture_wb_dry_w = dc_clampf(in.scalars.runtime_moisture_water_balance_dry_weight, 0.0f, 2.5f);
-    const float insol_dev_min  = (float)in.scalars.insol_dev_min;
-    const float insol_dev_max  = (float)in.scalars.insol_dev_max;
-    const float thermal_land   = (float)in.scalars.thermal_inertia_land;
-    const float thermal_water  = (float)in.scalars.thermal_inertia_water;
-    const float thermal_snow   = (float)in.scalars.thermal_inertia_snow;
-    const float thermal_high   = (float)in.scalars.thermal_inertia_high_mountain;
-    const float thermal_delta_cap = (float)in.scalars.thermal_daily_delta_cap;
-    // 加速/跳日补偿：α 与 delta_cap 按经过天数积分（dt<=1 退化为原值）。
-    float thermal_dt = (float)in.scalars.thermal_dt_days;
-    if (thermal_dt < 1.0f) thermal_dt = 1.0f;
-    else if (thermal_dt > 30.0f) thermal_dt = 30.0f;
-    const float moisture_relax_eff = 1.0f - std::pow(1.0f - moisture_relax, thermal_dt);
-    const float thermal_land_eff  = pk_thermal_alpha_eff(thermal_land,  thermal_dt);
-    const float thermal_water_eff = pk_thermal_alpha_eff(thermal_water, thermal_dt);
-    const float thermal_snow_eff  = pk_thermal_alpha_eff(thermal_snow,  thermal_dt);
-    const float thermal_high_eff  = pk_thermal_alpha_eff(thermal_high,  thermal_dt);
-    const float thermal_delta_cap_eff = thermal_delta_cap * thermal_dt;
-    const float snowpack_cover_low  = (float)in.scalars.snowpack_cover_low;
-    const float snowpack_cover_full = (float)in.scalars.snowpack_cover_full;
-    const float sea_level = (float)in.scalars.sea_level;
-    int days_per_year = in.scalars.days_per_year;
-    if (days_per_year < 1) days_per_year = 1;
-    else if (days_per_year > 3660) days_per_year = 3660;
-    const float annual_ema_alpha = 1.0f / float(days_per_year);
-
-    constexpr uint8_t COVER_GLACIER = 2;
-
-    // ── 输出 resize ──
-    auto ensure_f32 = [n](std::vector<float> &v) {
-        if ((int)v.size() != n) v.resize(n);
-    };
-    auto ensure_u8 = [n](std::vector<uint8_t> &v) {
-        if ((int)v.size() != n) v.resize(n);
-    };
-    ensure_f32(out.moisture);
-    ensure_f32(out.temp_baseline);
-    ensure_f32(out.temp_season_offset);
-    ensure_u8(out.ema_initialized);
-    ensure_f32(out.temp_30d);
-    ensure_f32(out.temp_365d);
-    ensure_f32(out.temp_anomaly);
-    ensure_f32(out.insolation_now);
-    ensure_f32(out.insolation_dev);
-    ensure_f32(out.day_length);
-    ensure_f32(out.heat_input);
-    ensure_f32(out.thermal_energy);
-    ensure_f32(out.snowpack);
-    ensure_f32(out.ocean_thermal_anomaly);
-    ensure_f32(out.local_thermal_anomaly);
-
-    // ── 输入指针 ──
-    const uint8_t *IW = in.is_water.data();
-    const uint8_t *COV = in.cover.data();
-    const uint8_t *EI_IN = in.ema_initialized.data();
-    const float *PE = in.elevation.data();
-    const float *PBM = in.base_moisture.data();
-    const float *PWEATHERV = ((int)in.weather_vapor.size() == n) ? in.weather_vapor.data() : nullptr;
-    const float *PPRECIP = ((int)in.weather_precip.size() == n) ? in.weather_precip.data() : nullptr;
-    const float *PSOIL = ((int)in.soil_moisture.size() == n) ? in.soil_moisture.data() : nullptr;
-    const float *PWB = ((int)in.water_balance_30d.size() == n) ? in.water_balance_30d.data() : nullptr;
-    const float *PLN = in.lat_norm.data();
-    // Item 4：主线程预烘焙的年均日照 LUT（尺寸匹配才启用，否则 null → inline 回退）。
-    const float *INSOL_MEAN_BAKED =
-        ((int)in.insol_annual_mean.size() == n) ? in.insol_annual_mean.data() : nullptr;
-    const float *PTY = in.temp_baseline_year.data();
-    const float *PT_IN = in.temp.data();
-    const float *P30_IN = in.temp_30d.data();
-    const float *P365_IN = in.temp_365d.data();
-    const float *PTH_IN = in.thermal_energy.data();
-    const float *PSP_IN = in.snowpack.data();
-    const float *PRAD_ADD = ((int)in.radiative_modifier_add.size() == n)
-        ? in.radiative_modifier_add.data() : nullptr;
-    const float *PRAD_FACTOR = ((int)in.radiative_modifier_factor.size() == n)
-        ? in.radiative_modifier_factor.data() : nullptr;
-    // [climate-zone-fix P2] 海洋性调温：per-cell maritime 因子 + 全局衰减比。缺省空/0→关闭。
-    const float maritime_damp = (float)in.scalars.maritime_season_damp;
-    const float *PMAR = ((int)in.maritime.size() == n) ? in.maritime.data() : nullptr;
-
-    // ── 输出指针 ──
-    float *PMOIST = out.moisture.data();
-    float *PTB = out.temp_baseline.data();
-    float *PSO = out.temp_season_offset.data();
-    uint8_t *EI_OUT = out.ema_initialized.data();
-    float *P30 = out.temp_30d.data();
-    float *P365 = out.temp_365d.data();
-    float *PA = out.temp_anomaly.data();
-    float *PINSOL = out.insolation_now.data();
-    float *PDEV = out.insolation_dev.data();
-    float *PDAY = out.day_length.data();
-    float *PHEAT = out.heat_input.data();
-    float *PTHERM = out.thermal_energy.data();
-    float *PSPOUT = out.snowpack.data();
-    float *POANOM = out.ocean_thermal_anomaly.data();
-    float *PLANOM = out.local_thermal_anomaly.data();
-
-    // ── 主循环（1:1 镜像 sync run_range body） ──
-    for (int i = 0; i < n; ++i) {
-        const float ny = PLN[i];
-        const float temp_year_lat = PTY[i];
-        const float elevation = PE[i];
-        const bool is_water = IW[i] != 0;
-
-        // (a) dev_today + insolation
-        const float ny_clamped = dc_clamp01f(ny);
-        const float insol_now = dc_insolation_now(ny_clamped, season_phase, axial_tilt_deg, daylen_amp);
-        // perf (Item 4, 2026-07-05): insol_mean 是年均、season-无关。主线程 kick 时已把
-        // dc_insolation_annual_mean(dc_clamp01f(ny),...) 预烘焙进 in.insol_annual_mean（持锁、
-        // 主线程算，避免 worker 触 member 缓存的 data race）。命中即读 → bit-equal；字段缺失/
-        // 尺寸不符时回退 inline 重算（旧行为，向后兼容旧调用方）。
-        const float insol_mean = INSOL_MEAN_BAKED
-            ? INSOL_MEAN_BAKED[i]
-            : dc_insolation_annual_mean(ny_clamped, axial_tilt_deg, daylen_amp);
-        float dev_today = dc_insolation_season_dev(ny_clamped, insol_now, insol_mean);
-        if (dev_today < insol_dev_min) dev_today = insol_dev_min;
-        else if (dev_today > insol_dev_max) dev_today = insol_dev_max;
-        const float day_length = dc_day_length_norm(ny_clamped, season_phase, axial_tilt_deg);
-        const float heat_input = dc_clamp01f(insol_now * solar_gain);
-
-        // (b) moisture: no direct insolation/season multiplier.
-        float moisture_now;
-        if (is_water) {
-            moisture_now = PBM[i];
-        } else {
-            float bm = PBM[i];
-            if (bm > 1.0f) bm = 1.0f;
-            else if (bm < 0.0f) bm = 0.0f;
-            float moisture_target = bm;
-            if (PWEATHERV != nullptr) {
-                const float vapor = dc_clampf(PWEATHERV[i], 0.0f, 1.0f);
-                moisture_target += (vapor - bm * 0.15f) * moisture_vapor_w;
-            }
-            if (PPRECIP != nullptr) {
-                moisture_target += dc_clampf(PPRECIP[i], 0.0f, 1.0f) * moisture_precip_w;
-            }
-            if (PSOIL != nullptr) {
-                const float soil = dc_clampf(PSOIL[i], -0.5f, 0.5f);
-                moisture_target += pk_signed_hydrology_contribution(
-                    soil, moisture_soil_w, moisture_soil_dry_w);
-            }
-            if (PWB != nullptr) {
-                const float wb = dc_clampf(PWB[i], -1.0f, 1.0f);
-                moisture_target += pk_signed_hydrology_contribution(
-                    wb, moisture_wb_w, moisture_wb_dry_w);
-            }
-            moisture_target = dc_clampf(moisture_target, 0.0f, 1.0f);
-            const float previous = ((int)in.moisture.size() == n)
-                ? dc_clampf(in.moisture[size_t(i)], 0.0f, 1.0f) : moisture_target;
-            moisture_now = previous + (moisture_target - previous) * moisture_relax_eff;
-        }
-
-        // (c) temperature
-        float temp_year = temp_year_lat - float(pk_alt_penalty(double(elevation), double(sea_level)));
-        if (temp_year < 0.0f) temp_year = 0.0f;
-        else if (temp_year > 1.0f) temp_year = 1.0f;
-        // 物理化（2026-06-16）：季节项按吸收短波因子缩放（持久冰封→低吸收）。
-        // 用【年均温度 P365_IN[i]】（上一步 temp_365d）作冰封代理，避免夏季融化正反馈失控。
-        float season_offset = pk_season_offset_continental(insol_amp_gain, is_water, P365_IN[i], dev_today, land_continentality);
-        // [climate-zone-fix P2] 沿海陆地海洋性调温：按距海衰减缩小季节振幅（冬暖夏凉），
-        // 让温带海洋性(Cfb)在中纬沿海涌现。water/内陆(maritime≈0)不受影响。
-        if (!is_water && PMAR != nullptr && maritime_damp > 0.0f) {
-            season_offset *= (1.0f - maritime_damp * PMAR[i]);
-        }
-        float radiative_target = temp_year + season_offset;
-        if (PRAD_ADD != nullptr) radiative_target += PRAD_ADD[i];
-        if (PRAD_FACTOR != nullptr) radiative_target *= PRAD_FACTOR[i];
-        if (radiative_target < 0.0f) radiative_target = 0.0f;
-        else if (radiative_target > 1.0f) radiative_target = 1.0f;
-
-        // (d) thermal inertia
-        const float current_temp = PT_IN[i];
-        float prev_energy = PTH_IN[i];
-        if (EI_IN[i] == 0) {
-            prev_energy = current_temp;
-        }
-        const float prev_temp = prev_energy;
-        float alpha = thermal_land_eff;
-        if (is_water) alpha = thermal_water_eff;
-        else if (COV[i] == COVER_GLACIER) alpha = thermal_snow_eff;
-        else if (PSP_IN[i] > snowpack_cover_low) alpha = thermal_snow_eff;
-        else if (elevation > 0.70f) alpha = thermal_high_eff;
-        const float heat_next = prev_energy + (radiative_target - prev_energy) * alpha;
-        float temp_delta = heat_next - prev_temp;
-        if (temp_delta > thermal_delta_cap_eff) temp_delta = thermal_delta_cap_eff;
-        else if (temp_delta < -thermal_delta_cap_eff) temp_delta = -thermal_delta_cap_eff;
-        float temp_now = prev_temp + temp_delta;
-        if (temp_now < 0.0f) temp_now = 0.0f;
-        else if (temp_now > 1.0f) temp_now = 1.0f;
-        PTHERM[i] = heat_next;
-
-        // (e) snowpack maintenance. Runtime visual snow cover is authored by
-        // weather distribute; climate only keeps physical snowpack for thermal
-        // inertia and pass-b albedo.
-        // 注意：sync 路径中 psnowpack[i] 可能被改写（GLACIER min=0.80）。这里
-        // 我们使用 out.snowpack（写回值），先 default 复制 in，再按需 clamp。
-        float sp = PSP_IN[i];
-        if (!is_water) {
-            if (COV[i] == COVER_GLACIER && sp < 0.80f) {
-                sp = 0.80f;
-            }
-        } else {
-            sp = 0.0f;
-        }
-        PSPOUT[i] = sp;
-
-        // (e) write outputs（pass_a 不再写 cell_temp，由 wind_surface 末端合成；
-        // 这里 PMOIST/PTB/PSO/PINSOL/PDEV/PDAY/PHEAT 写入）
-        PTB[i] = temp_now;
-        POANOM[i] = 0.0f;     // pass_a 末尾清 0，开启新一日累加
-        PLANOM[i] = 0.0f;
-        PMOIST[i] = moisture_now;
-        PSO[i] = season_offset;
-        PINSOL[i] = insol_now;
-        PDEV[i] = dev_today;
-        PDAY[i] = day_length;
-        PHEAT[i] = heat_input;
-
-        // (f) EMA
-        float m30, m365;
-        if (EI_IN[i] == 0) {
-            m30 = temp_now;
-            m365 = temp_now;
-            EI_OUT[i] = 1;
-        } else {
-            m30 = P30_IN[i] + (temp_now - P30_IN[i]) * (1.0f / 30.0f);
-            m365 = P365_IN[i] + (temp_now - P365_IN[i]) * annual_ema_alpha;
-            EI_OUT[i] = EI_IN[i];
-        }
-        P30[i] = m30;
-        P365[i] = m365;
-        PA[i] = m30 - m365;
-    }
-    return true;
-}
-
-// pass_b pure kernel — 移植自 DCWorldExt::run_climate_pass_b（world_ext.cpp:5256）。
-// 算法逐行 1:1 镜像 sync 路径主循环（line 5399-5546）+ 海冰反照率尾循环（line 5552-5560）：
-//   - 5 段决定：albedo / coastal heat leak / landform diurnal / evap / rain_shadow
-//   - 写出 cell_local_thermal_anomaly（累加，clamp ±0.08）和 cell_moisture
-//   - 海冰反照率尾循环只对水域 cell 写 LANOM
-//
-// 输入：in.{is_water, landform, vegetation, snow_cover, elevation, lat_norm,
-//           pos_x, pos_y, insolation_dev, temp（snapshot 入参）, moisture（in/out）,
-//           local_thermal_anomaly（in/out）, temp_transport_anomaly, sea_ice_frac} +
-//      static knobs.{neighbor_indices, foliage_table} + scalars
-// 输出：out.{moisture, local_thermal_anomaly}
-//
-// 注意：算法本体严格 1:1，与 sync 路径在同一 input 下输出 bit-equal。
-// 海冰反照率尾循环（sync line 5548-5560）也实装。
-static bool _async_pass_b_kernel_pure(const ClimateInputBuf &in,
-                                      const ClimateRoundStaticKnobs &knobs,
-                                      ClimateOutputBuf &out) {
-    const int n = in.n_cells;
-    if (n <= 0) return false;
-    if ((int)in.is_water.size()       != n) return false;
-    if ((int)in.landform.size()       != n) return false;
-    if ((int)in.vegetation.size()     != n) return false;
-    if ((int)in.snowpack.size()       != n) return false;
-    if ((int)in.elevation.size()      != n) return false;
-    if ((int)in.lat_norm.size()       != n) return false;
-    if ((int)in.pos_x.size()          != n) return false;
-    if ((int)in.pos_y.size()          != n) return false;
-    if ((int)in.insolation_dev.size() != n) return false;
-    if ((int)in.temp.size()           != n) return false;
-    if ((int)in.moisture.size()       != n) return false;
-    if ((int)in.local_thermal_anomaly.size() != n) return false;
-    if ((int)in.temp_transport_anomaly.size() != n) return false;
-    if ((int)knobs.neighbor_indices.size() < n * 6) return false;
-    const int foliage_size = (int)knobs.foliage_table.size();
-    if (foliage_size <= 0) return false;
-    // sea_ice_frac 可选；尾循环要求 size == n_cells，否则跳过
-    const bool sif_valid = ((int)in.sea_ice_frac.size() == n);
-
-    // ── scalars ──
-    const float winter_boost  = in.scalars.pb_winter_boost;
-    const float snow_cool     = in.scalars.pb_snow_cool;
-    const float veg_cool      = in.scalars.pb_veg_cool;
-    const float diurnal_amp   = in.scalars.pb_diurnal_amp;
-    const float evap_gain     = in.scalars.pb_evap_gain;
-    const float rs_threshold  = in.scalars.pb_rs_threshold;
-    const float rs_factor     = in.scalars.pb_rs_factor;
-    const int   rs_lookback   = in.scalars.pb_rs_lookback;
-    const double wrap_period_x = double(in.scalars.wrap_period_x);  // seam-advection-fix
-    const float t_freeze      = in.scalars.pb_t_freeze;
-    const float coupling_gain = in.scalars.pb_coupling_gain;
-    const float coast_leak    = in.scalars.pb_coast_leak;
-    const float sea_ice_albedo_cooling = in.scalars.pb_sea_ice_albedo_cooling;
-    const double season_phase = in.scalars.season_phase;
-    const float snowpack_cover_low = float(in.scalars.snowpack_cover_low);
-    const float snowpack_cover_full = float(in.scalars.snowpack_cover_full);
-
-    // ── 输出 buffer 准备 ──
-    auto ensure_f32 = [n](std::vector<float> &v) {
-        if ((int)v.size() != n) v.resize(n);
-    };
-    ensure_f32(out.moisture);
-    ensure_f32(out.local_thermal_anomaly);
-
-    // ── in.local_thermal_anomaly 是 in/out（pass_b 在它上面累加）。需要先 copy
-    //    in → out，然后 pass_b 主循环在 out.local_thermal_anomaly 上累加。
-    //    sync 路径对 LANOM 是直接 ptrw() 累加（in-place），等价于 in==out 别名。
-    std::memcpy(out.local_thermal_anomaly.data(),
-                in.local_thermal_anomaly.data(),
-                n * sizeof(float));
-    // moisture 也是 in/out（sync 路径 in-place 写）。先 copy 让算法在 out 上原位修改。
-    std::memcpy(out.moisture.data(), in.moisture.data(), n * sizeof(float));
-
-    // ── 输入指针 ──
-    const uint8_t *IW = in.is_water.data();
-    const uint8_t *LF = in.landform.data();
-    const uint8_t *VG = in.vegetation.data();
-    const float *SNOWPACK = in.snowpack.data();
-    const float *ELEV = in.elevation.data();
-    const float *LAT  = in.lat_norm.data();
-    const float *POSX = in.pos_x.data();
-    const float *POSY = in.pos_y.data();
-    const float *INSOL_DEV = in.insolation_dev.data();
-    const float *TS = in.temp.data();   // temp snapshot（pass_b 不写 temp）
-    const float *TTA = in.temp_transport_anomaly.data();
-    const float *SIF_PB = sif_valid ? in.sea_ice_frac.data() : nullptr;
-    const int32_t *NB = knobs.neighbor_indices.data();
-    const float *FOL = knobs.foliage_table.data();
-
-    // ── 输出/累加目标指针 ──
-    float *LANOM = out.local_thermal_anomaly.data();
-    float *M = out.moisture.data();
-
-    // LandformType.LF：与 sync 同 enum 序
-    constexpr uint8_t LF_LOWLAND   = 5;
-    constexpr uint8_t LF_MOUNTAIN  = 7;
-    constexpr uint8_t LF_PEAK      = 8;
-    constexpr uint8_t LF_DELTA     = 9;
-    constexpr uint8_t LF_SALT_FLAT = 11;
-
-    // ─── 主循环（1:1 镜像 sync line 5399-5546） ───
-    for (int i = 0; i < n; ++i) {
-        const bool is_water = IW[i] != 0;
-        const float temp_now     = TS[i];
-        const float moisture_now = M[i];
-        float snow_cover = pk_snowpack_cover_for_albedo(SNOWPACK[i], snowpack_cover_low, snowpack_cover_full);
-        if (!is_water && in.cover.size() == n && in.cover[i] == 2 && snow_cover < 0.80f) {
-            snow_cover = 0.80f;
-        }
-
-        float d_albedo      = 0.0f;
-        float d_coastal     = 0.0f;
-        float d_landform    = 0.0f;
-        float d_evap        = 0.0f;
-        float d_rain_shadow = 1.0f;
-
-        // ① albedo (land only)
-        if (!is_water) {
-            d_albedo = -snow_cool * snow_cover;
-            const uint8_t veg_id = VG[i];
-            const float foliage = (veg_id < foliage_size) ? FOL[veg_id] : 0.0f;
-            d_albedo -= veg_cool * foliage;
-        }
-
-        // ② coastal heat leak (land only, using TTA snapshot)
-        if (!is_water) {
-            float sum_anomaly = 0.0f;
-            int   n_water     = 0;
-            const int base = i * 6;
-            for (int d = 0; d < 6; ++d) {
-                const int32_t ni = NB[base + d];
-                if (ni < 0) continue;
-                if (IW[ni] != 0) {
-                    sum_anomaly += TTA[ni];
-                    n_water += 1;
-                }
-            }
-            if (n_water > 0) {
-                d_coastal = coast_leak * (sum_anomaly / float(n_water)) * winter_boost;
-            }
-        }
-
-        // ③ landform diurnal (land only)
-        if (!is_water) {
-            const uint8_t lf = LF[i];
-            const float solar_factor = std::clamp(INSOL_DEV[i], -1.0f, 1.0f);
-            if (lf == LF_LOWLAND || lf == LF_SALT_FLAT || lf == LF_DELTA) {
-                d_landform = diurnal_amp * solar_factor;
-            } else if (lf == LF_PEAK || lf == LF_MOUNTAIN) {
-                d_landform = -diurnal_amp * 0.5f * std::max(0.0f, -solar_factor);
-            }
-        }
-
-        // ④ A 修复（2026-06）：累加到 LANOM (clamp ±0.08)
-        float local_anom_contrib = d_albedo + d_coastal + d_landform;
-        if (local_anom_contrib < -0.08f) local_anom_contrib = -0.08f;
-        else if (local_anom_contrib > 0.08f) local_anom_contrib = 0.08f;
-        LANOM[i] = LANOM[i] + local_anom_contrib;
-        if (LANOM[i] < -0.08f) LANOM[i] = -0.08f;
-        else if (LANOM[i] > 0.08f) LANOM[i] = 0.08f;
-        float temp_final = temp_now + local_anom_contrib;
-        if (temp_final < 0.0f) temp_final = 0.0f;
-        else if (temp_final > 1.0f) temp_final = 1.0f;
-
-        // ⑤ evap (land only)
-        if (!is_water) {
-            const float t_eff = temp_final + TTA[i];
-            float water_neighbor_w = 0.0f;
-            float sum_water_anomaly = 0.0f;
-            const int bo = i * 6;
-            for (int d = 0; d < 6; ++d) {
-                const int32_t ni = NB[bo + d];
-                if (ni < 0) continue;
-                if (IW[ni] != 0) {
-                    water_neighbor_w += 1.0f;
-                    sum_water_anomaly += TTA[ni];
-                }
-            }
-            float avg_water_anomaly = 0.0f;
-            if (water_neighbor_w > 0.0f) {
-                avg_water_anomaly = sum_water_anomaly / water_neighbor_w;
-            }
-            float nb_w_norm = water_neighbor_w / 6.0f;
-            if (nb_w_norm > 1.0f) nb_w_norm = 1.0f;
-            if (t_eff > t_freeze && nb_w_norm > 0.0f) {
-                d_evap = evap_gain * (t_eff - t_freeze) * nb_w_norm;
-                if (coupling_gain > 0.0f && std::fabs(avg_water_anomaly) > 0.001f) {
-                    float evap_mul = 1.0f + coupling_gain * avg_water_anomaly;
-                    if (evap_mul < 0.0f) evap_mul = 0.0f;
-                    else if (evap_mul > 2.0f) evap_mul = 2.0f;
-                    d_evap *= evap_mul;
-                }
-            }
-            if (avg_water_anomaly < -0.01f && nb_w_norm > 0.0f && coupling_gain > 0.0f) {
-                d_evap += -evap_gain * (-avg_water_anomaly) * nb_w_norm * coupling_gain * 0.5f;
-            }
-        }
-
-        // ⑥ rain shadow (land only, gated by rs_lookback>0)
-        if (!is_water && rs_lookback > 0) {
-            const double ny = double(LAT[i]);
-            double w_dx = 0.0, w_dy = 0.0;
-            wind_belt_at(ny, season_phase, &w_dx, &w_dy);
-            const double wlen2 = w_dx * w_dx + w_dy * w_dy;
-            if (wlen2 > 1e-6) {
-                float max_upwind_h = ELEV[i];
-                int probe_idx = i;
-                for (int step = 0; step < rs_lookback; ++step) {
-                    int   best_idx = -1;
-                    double best_dot = 0.1;
-                    const float pwx = POSX[probe_idx];
-                    const float pwy = POSY[probe_idx];
-                    const int pbase = probe_idx * 6;
-                    for (int d3 = 0; d3 < 6; ++d3) {
-                        const int32_t ni3 = NB[pbase + d3];
-                        if (ni3 < 0) continue;
-                        const double dx = pk_wrap_min_image_dx(
-                            double(pwx) - double(POSX[ni3]), wrap_period_x);
-                        const double dy = double(pwy) - double(POSY[ni3]);
-                        const double len2 = dx * dx + dy * dy;
-                        if (len2 < 1e-6) continue;
-                        const double inv_len = 1.0 / std::sqrt(len2);
-                        const double dotv = (dx * w_dx + dy * w_dy) * inv_len;
-                        if (dotv > best_dot) {
-                            best_dot = dotv;
-                            best_idx = ni3;
-                        }
-                    }
-                    if (best_idx < 0) break;
-                    probe_idx = best_idx;
-                    if (ELEV[probe_idx] > max_upwind_h) {
-                        max_upwind_h = ELEV[probe_idx];
-                    }
-                }
-                if (max_upwind_h - ELEV[i] >= rs_threshold) {
-                    d_rain_shadow = rs_factor;
-                }
-            }
-        }
-
-        // ⑦ write moisture
-        float moisture_final = (moisture_now + d_evap) * d_rain_shadow;
-        if (moisture_final < 0.0f) moisture_final = 0.0f;
-        else if (moisture_final > 1.0f) moisture_final = 1.0f;
-        M[i] = moisture_final;
-    }
-
-    // ─── 海冰反照率→温度反馈尾循环（仅水域，1:1 sync line 5552-5560） ───
-    if (sea_ice_albedo_cooling > 0.0f && SIF_PB != nullptr) {
-        for (int i = 0; i < n; ++i) {
-            if (IW[i] == 0) continue;
-            float water_local = LANOM[i] - sea_ice_albedo_cooling * SIF_PB[i];
-            if (water_local < -0.08f) water_local = -0.08f;
-            else if (water_local > 0.08f) water_local = 0.08f;
-            LANOM[i] = water_local;
-        }
-    }
-    return true;
-}
-
-// ocean_water pure kernel — 移植自 DCWorldExt::run_ocean_water_pass（world_ext.cpp:4558）。
-// 算法逐行 1:1 镜像 sync 路径（line 4655-4708）：
-//   - 仅 water cell：沿 -current 方向回溯 advect_steps 步，找最对齐邻居
-//   - temp_mixed = lerp(temp_self, temp_up, heat_mix)，clamp [0,1]
-//   - 写 ocean_thermal_anomaly slot = clamp(temp_mixed - baseline, ±0.08)
-//   - 用 dc_stabilize_tta / dc_decay_tta 更新 work.ocean_tta_inout（per-cell TTA）
-//
-// 输入：in.{is_water, pos_x, pos_y, ocean_current_x, ocean_current_y} + scalars
-// work：work.ocean_tta_inout（in/out 累加器，pass_b 也会读它作为 TTA snapshot）
-// 输出：out.ocean_thermal_anomaly（写 water cells）
-//
-// 注意：sync 路径接 `baseline_arr` / `temp_before_arr` knobs，但本 kernel 把
-// baseline 等同于 cell_temp_baseline (in.temp_baseline)，temp_before 等同于
-// in.temp（pre-pass_a 快照）。这与 sync 路径同语义（caller 都用 baseline=
-// temp_baseline_a 或 EMA-init 时算的派生值；temp_before=temp_a or baseline）。
-// Stage 2 期间 sync 端 caller 仍传 baseline_arr/temp_before_arr knobs，所以
-// async 这里直接复用 in.temp_baseline_year / in.temp 做参考——bench 时主线程
-// 把 sync 端用到的 baseline/temp_before 一并传过来。
-static bool _async_ocean_water_kernel_pure(const ClimateInputBuf &in,
-                                           const ClimateRoundStaticKnobs &knobs,
-                                           ClimateWorkBuf &work,
-                                           ClimateOutputBuf &out) {
-    const int n = in.n_cells;
-    if (n <= 0) return false;
-    if ((int)in.is_water.size()        != n) return false;
-    if ((int)in.pos_x.size()           != n) return false;
-    if ((int)in.pos_y.size()           != n) return false;
-    if ((int)in.ocean_current_x.size() != n) return false;
-    if ((int)in.ocean_current_y.size() != n) return false;
-    if ((int)in.temp.size()            != n) return false;
-    if ((int)in.temp_baseline_year.size() != n) return false;
-    if ((int)in.sea_ice_frac.size()    != n) return false;
-    if ((int)in.ocean_thermal_anomaly.size() != n) return false;
-    if ((int)knobs.neighbor_indices.size() < n * 6) return false;
-
-    const int advect_steps = in.scalars.ow_advect_steps;
-    const float heat_mix   = in.scalars.ow_heat_mix;
-    const float wrap_period_x = in.scalars.wrap_period_x;  // seam-advection-fix
-    const float tta_source_cap = dc_clampf(in.scalars.ow_tta_source_cap, 0.0f, 0.5f);
-    const float tta_blend_rate = dc_clampf(in.scalars.ow_tta_blend_rate, 0.0f, 1.0f);
-    const float tta_zero_current_decay = dc_clampf(in.scalars.ow_tta_zero_current_decay, 0.0f, 1.0f);
-
-    // 输出
-    if ((int)out.ocean_thermal_anomaly.size() != n) out.ocean_thermal_anomaly.resize(n);
-    // ocean_water 累加到 ocean_thermal_anomaly slot；首先 copy in → out 作为基础。
-    std::memcpy(out.ocean_thermal_anomaly.data(),
-                in.ocean_thermal_anomaly.data(),
-                n * sizeof(float));
-
-    // work.ocean_tta_inout：sync 路径的 anomaly_out。round 入口处由主线程从
-    // map.temperature_transport_anomaly_arr 初始化（kick 写 in.temp_transport_anomaly），
-    // worker 入口再 copy 到 work scratch。
-    if ((int)work.ocean_tta_inout.size() != n) work.ocean_tta_inout.resize(n);
-    std::memcpy(work.ocean_tta_inout.data(),
-                in.temp_transport_anomaly.data(),
-                n * sizeof(float));
-
-    const uint8_t *IW = in.is_water.data();
-    const float *POSX = in.pos_x.data();
-    const float *POSY = in.pos_y.data();
-    const float *OCX  = in.ocean_current_x.data();
-    const float *OCY  = in.ocean_current_y.data();
-    const float *TB   = in.temp.data();              // temp_before snapshot
-    const float *BL   = in.temp_baseline_year.data();// baseline (与 sync 同源)
-    const float *SIF  = in.sea_ice_frac.data();
-    const int32_t *NB = knobs.neighbor_indices.data();
-
-    float *AOUT = work.ocean_tta_inout.data();
-    float *OANOM = out.ocean_thermal_anomaly.data();
-
-    for (int i = 0; i < n; ++i) {
-        if (IW[i] == 0) continue; // skip land
-        const float cur_x = OCX[i];
-        const float cur_y = OCY[i];
-        const float cur_len2 = cur_x * cur_x + cur_y * cur_y;
-        if (cur_len2 < 1e-6f || advect_steps == 0) {
-            AOUT[i] = dc_decay_tta(AOUT[i], tta_zero_current_decay);
-            OANOM[i] = OANOM[i] * (1.0f - tta_zero_current_decay);
-            continue;
-        }
-        const float inv_cur = 1.0f / std::sqrt(cur_len2);
-        const float up_dx = -cur_x * inv_cur;
-        const float up_dy = -cur_y * inv_cur;
-
-        int upstream_idx = i;
-        for (int step = 0; step < advect_steps; ++step) {
-            int   best_idx = -1;
-            float best_dot = 0.1f;
-            const float swx = POSX[upstream_idx];
-            const float swy = POSY[upstream_idx];
-            const int ub = upstream_idx * 6;
-            for (int d = 0; d < 6; ++d) {
-                const int32_t ni = NB[ub + d];
-                if (ni < 0) continue;
-                if (IW[ni] == 0) continue;
-                const float dx = pk_wrap_min_image_dx(POSX[ni] - swx, wrap_period_x);
-                const float dy = POSY[ni] - swy;
-                const float len2 = dx * dx + dy * dy;
-                if (len2 < 1e-6f) continue;
-                const float inv_len = 1.0f / std::sqrt(len2);
-                const float dot_v = (dx * up_dx + dy * up_dy) * inv_len;
-                if (dot_v > best_dot) {
-                    best_dot = dot_v;
-                    best_idx = ni;
-                }
-            }
-            if (best_idx < 0) break;
-            upstream_idx = best_idx;
-        }
-
-        const float temp_self = TB[i];
-        const float temp_up   = TB[upstream_idx];
-        float temp_mixed = temp_self + (temp_up - temp_self) * heat_mix;
-        if (temp_mixed < 0.0f) temp_mixed = 0.0f;
-        else if (temp_mixed > 1.0f) temp_mixed = 1.0f;
-        float source = temp_mixed - BL[i];
-        source = pk_limit_cold_water_positive_transport_source(
-            source, BL[i], SIF[i], in.scalars.si_t_form, in.scalars.si_t_melt);
-        float oanom = source;
-        if (oanom < -0.08f) oanom = -0.08f;
-        else if (oanom > 0.08f) oanom = 0.08f;
-        OANOM[i] = oanom;
-        AOUT[i] = dc_stabilize_tta(AOUT[i], source, tta_source_cap, tta_blend_rate);
-    }
-    return true;
-}
-
-// ocean_land pure kernel — 移植自 DCWorldExt::run_ocean_land_pass（world_ext.cpp:4736）。
-// 算法逐行 1:1 镜像 sync 主循环（line 4831-4871）：
-//   - 仅 land cell：在 6 邻居里取 water cell，按 dot(self→nb, nb_current) 加权
-//   - anomaly_in = dc_decay_tta(prev) 或 dc_stabilize_tta(prev, weighted_avg * eff_leak, ...)
-//   - 写 work.ocean_tta_inout[i]
-//   - if |anomaly_in| > 1e-5 → 累加到 out.ocean_thermal_anomaly[i]（clamp ±0.08）
-//
-// 注意：必须在 ocean_water 之后跑，依赖 work.ocean_tta_inout 里 water cells 的
-// fresh anomaly（ocean_water 已写）。
-static bool _async_ocean_land_kernel_pure(const ClimateInputBuf &in,
-                                          const ClimateRoundStaticKnobs &knobs,
-                                          ClimateWorkBuf &work,
-                                          ClimateOutputBuf &out) {
-    const int n = in.n_cells;
-    if (n <= 0) return false;
-    if ((int)in.is_water.size()        != n) return false;
-    if ((int)in.pos_x.size()           != n) return false;
-    if ((int)in.pos_y.size()           != n) return false;
-    if ((int)in.ocean_current_x.size() != n) return false;
-    if ((int)in.ocean_current_y.size() != n) return false;
-    if ((int)knobs.neighbor_indices.size() < n * 6) return false;
-    if ((int)work.ocean_tta_inout.size() != n) return false;
-
-    const float effective_leak = in.scalars.ol_effective_leak;
-    const float wrap_period_x = in.scalars.wrap_period_x;  // seam-advection-fix
-    const float tta_source_cap = dc_clampf(in.scalars.ol_tta_source_cap, 0.0f, 0.5f);
-    const float tta_blend_rate = dc_clampf(in.scalars.ol_tta_blend_rate, 0.0f, 1.0f);
-    const float tta_decay_rate = dc_clampf(in.scalars.ol_tta_decay_rate, 0.0f, 1.0f);
-
-    if ((int)out.ocean_thermal_anomaly.size() != n) {
-        // 防御：若 ocean_water 没跑，则用 in.ocean_thermal_anomaly 作为基础
-        out.ocean_thermal_anomaly.resize(n);
-        std::memcpy(out.ocean_thermal_anomaly.data(),
-                    in.ocean_thermal_anomaly.data(),
-                    n * sizeof(float));
-    }
-
-    const uint8_t *IW = in.is_water.data();
-    const float *POSX = in.pos_x.data();
-    const float *POSY = in.pos_y.data();
-    const float *OCX  = in.ocean_current_x.data();
-    const float *OCY  = in.ocean_current_y.data();
-    const int32_t *NB = knobs.neighbor_indices.data();
-    float *A = work.ocean_tta_inout.data();
-    float *OANOM = out.ocean_thermal_anomaly.data();
-
-    for (int i = 0; i < n; ++i) {
-        if (IW[i] != 0) continue; // skip water
-        const float swx = POSX[i];
-        const float swy = POSY[i];
-        float weighted_sum = 0.0f;
-        float weight_total = 0.0f;
-        const int b = i * 6;
-        for (int d = 0; d < 6; ++d) {
-            const int32_t ni = NB[b + d];
-            if (ni < 0) continue;
-            if (IW[ni] == 0) continue; // only water nb contributes
-            const float cx = OCX[ni];
-            const float cy = OCY[ni];
-            if (cx * cx + cy * cy < 1e-6f) continue;
-            const float dx = pk_wrap_min_image_dx(swx - POSX[ni], wrap_period_x);
-            const float dy = swy - POSY[ni];
-            const float dlen2 = dx * dx + dy * dy;
-            if (dlen2 < 1e-6f) continue;
-            const float inv_len = 1.0f / std::sqrt(dlen2);
-            const float dot_v = (dx * cx + dy * cy) * inv_len;
-            if (dot_v <= 0.0f) continue;
-            weighted_sum += A[ni] * dot_v;
-            weight_total += dot_v;
-        }
-        const float prev_anomaly = A[i];
-        float anomaly_in = dc_decay_tta(prev_anomaly, tta_decay_rate);
-        if (weight_total > 0.0f) {
-            anomaly_in = dc_stabilize_tta(
-                prev_anomaly, (weighted_sum / weight_total) * effective_leak,
-                tta_source_cap, tta_blend_rate);
-        }
-        A[i] = anomaly_in;
-        if ((anomaly_in < 0.0f ? -anomaly_in : anomaly_in) > 1e-5f) {
-            float oanom = OANOM[i] + anomaly_in;
-            if (oanom < -0.08f) oanom = -0.08f;
-            else if (oanom > 0.08f) oanom = 0.08f;
-            OANOM[i] = oanom;
-        }
-    }
-    return true;
-}
-
-// wind_air pure kernel — 移植自 DCWorldExt::run_wind_air_mass_pass（world_ext.cpp:4887）。
-// 算法逐行 1:1 镜像 sync 主循环（line 4963-5009）：
-//   - 每 cell：A[i] = 0
-//   - 若 wind_speed^2 < 1e-6 或 advect_steps==0：跳过（A=0）
-//   - 否则沿 -wind 方向回溯 advect_steps 步找最对齐邻居（**不限 water**——
-//     与 sync 路径一致；与 ocean_water 限 water 不同）
-//   - temp_mixed = lerp(temp_self, temp_up, heat_mix * speed_mix)
-//     speed_mix = clamp(wf_wind_speed_norm(...) / 1.2, 0.25, 1.35)
-//   - A[i] = temp_mixed - baseline
-//
-// 输入：in.{wind_x, wind_y, wind_speed, pos_x, pos_y, temp（snapshot）,
-//           temp_baseline_year（作 baseline_arr）} + scalars
-// 输出：out.air_mass_temp_anomaly
-static bool _async_wind_air_kernel_pure(const ClimateInputBuf &in,
-                                        const ClimateRoundStaticKnobs &knobs,
-                                        ClimateOutputBuf &out) {
-    const int n = in.n_cells;
-    if (n <= 0) return false;
-    if ((int)in.wind_x.size()             != n) return false;
-    if ((int)in.wind_y.size()             != n) return false;
-    if ((int)in.wind_speed.size()         != n) return false;
-    if ((int)in.pos_x.size()              != n) return false;
-    if ((int)in.pos_y.size()              != n) return false;
-    if ((int)in.temp.size()               != n) return false;
-    if ((int)in.temp_baseline_year.size() != n) return false;
-    if ((int)knobs.neighbor_indices.size() < n * 6) return false;
-
-    const int advect_steps = in.scalars.wa_advect_steps;
-    const float heat_mix   = in.scalars.wa_heat_mix;
-    const float wrap_period_x = in.scalars.wrap_period_x;  // seam-advection-fix
-
-    if ((int)out.air_mass_temp_anomaly.size() != n) out.air_mass_temp_anomaly.resize(n);
-
-    const float *WX  = in.wind_x.data();
-    const float *WY  = in.wind_y.data();
-    const float *WSP = in.wind_speed.data();
-    const float *POSX = in.pos_x.data();
-    const float *POSY = in.pos_y.data();
-    const float *TB  = in.temp.data();
-    const float *BL  = in.temp_baseline_year.data();
-    const int32_t *NB = knobs.neighbor_indices.data();
-    float *A = out.air_mass_temp_anomaly.data();
-
-    for (int i = 0; i < n; ++i) {
-        A[i] = 0.0f;
-
-        const float wind_x = WX[i];
-        const float wind_y = WY[i];
-        const float wind_len2 = wind_x * wind_x + wind_y * wind_y;
-        if (wind_len2 < 1e-6f || advect_steps == 0) continue;
-
-        const float inv_wind_len = 1.0f / std::sqrt(wind_len2);
-        const float up_dx = -wind_x * inv_wind_len;
-        const float up_dy = -wind_y * inv_wind_len;
-
-        int upstream_idx = i;
-        for (int step = 0; step < advect_steps; ++step) {
-            int best_idx = -1;
-            float best_dot = 0.1f;
-            const float swx = POSX[upstream_idx];
-            const float swy = POSY[upstream_idx];
-            const int ub = upstream_idx * 6;
-            for (int d = 0; d < 6; ++d) {
-                const int32_t ni = NB[ub + d];
-                if (ni < 0) continue;
-                const float dx = pk_wrap_min_image_dx(POSX[ni] - swx, wrap_period_x);
-                const float dy = POSY[ni] - swy;
-                const float len2 = dx * dx + dy * dy;
-                if (len2 < 1e-6f) continue;
-                const float inv_len = 1.0f / std::sqrt(len2);
-                const float dot_v = (dx * up_dx + dy * up_dy) * inv_len;
-                if (dot_v > best_dot) {
-                    best_dot = dot_v;
-                    best_idx = ni;
-                }
-            }
-            if (best_idx < 0) break;
-            upstream_idx = best_idx;
-        }
-
-        const float temp_self = TB[i];
-        const float temp_up   = TB[upstream_idx];
-        // wf_wind_speed_norm（与 sync inline 同源）
-        float speed = WSP[i];
-        if (speed <= 0.0001f) {
-            const float len2 = wind_x * wind_x + wind_y * wind_y;
-            speed = (len2 > 0.0001f) ? std::sqrt(len2) : 0.0f;
-        }
-        float speed_mix = speed / 1.2f;
-        if (speed_mix < 0.25f) speed_mix = 0.25f;
-        else if (speed_mix > 1.35f) speed_mix = 1.35f;
-        const float temp_mixed_raw = temp_self + (temp_up - temp_self) * heat_mix * speed_mix;
-        A[i] = temp_mixed_raw - BL[i];
-    }
-    return true;
-}
-
-// wind_surface pure kernel — 移植自 DCWorldExt::run_wind_surface_pass（world_ext.cpp:5022）。
-// 算法逐行 1:1 镜像 sync 主循环（line 5114-5166）：
-//   - 每 cell：对 6 邻居计算 weight = dot(self→nb_pos, nb_wind) * speed_mix(nb)
-//     speed_mix = clamp(wf_wind_speed_norm(nb_wind, nb_wind_speed) / 1.2, 0.20, 1.35)
-//   - anomaly_in = (weighted_sum / weight_total) * air_leak，clamp ±0.08
-//   - 写 out.air_mass_temp_anomaly[i] = anomaly_in（OVERWRITE 不累加）
-//   - 合成 cell_temp = clamp(baseline + clamp(ocean_anom + air_anom, ±0.08)
-//                     + local_anom, 0, 1)，总 anomaly 再 clamp ±0.15
-//
-// 依赖：必须在 pass_a / pass_b / ocean_water / ocean_land / wind_air 之后跑（依赖
-// 它们写的 temp_baseline / ocean_thermal_anomaly / local_thermal_anomaly /
-// air_mass_temp_anomaly 当前值）。
-//
-// 输入：in.{wind_x, wind_y, wind_speed, pos_x, pos_y, temp_baseline_year（备份 baseline）}
-// in/out：out.{air_mass_temp_anomaly, temp_baseline, ocean_thermal_anomaly,
-//              local_thermal_anomaly}（前序 pass 输出，wind_surface 读取做合成）
-// 输出：out.{air_mass_temp_anomaly（覆写）, temp（最终温度）}
-static bool _async_wind_surface_kernel_pure(const ClimateInputBuf &in,
-                                            const ClimateRoundStaticKnobs &knobs,
-                                            ClimateOutputBuf &out) {
-    const int n = in.n_cells;
-    if (n <= 0) return false;
-    if ((int)in.wind_x.size()             != n) return false;
-    if ((int)in.wind_y.size()             != n) return false;
-    if ((int)in.wind_speed.size()         != n) return false;
-    if ((int)in.pos_x.size()              != n) return false;
-    if ((int)in.pos_y.size()              != n) return false;
-    if ((int)in.temp_baseline_year.size() != n) return false;
-    if ((int)knobs.neighbor_indices.size() < n * 6) return false;
-
-    const float air_leak = in.scalars.ws_air_leak;
-    const float cold_transport_form = in.scalars.ws_cold_transport_form;
-    const float cold_transport_melt = in.scalars.ws_cold_transport_melt;
-    const float wrap_period_x = in.scalars.wrap_period_x;  // seam-advection-fix
-
-    // 准备 input snapshot：sync 路径用 anomaly_src.duplicate()（air_anom 旧值）
-    // 作为读取来源，AOUT 作为新输出。但 wind_air 已写 out.air_mass_temp_anomaly。
-    // 我们这里 AIN 用 in.air_mass_temp_anomaly（或 out.air_mass_temp_anomaly 如果非空），
-    // AOUT 直接写 out.air_mass_temp_anomaly。复刻 sync 的 AIN/AOUT 分离。
-    // Stage 2 bench 时主线程会传 in.air_mass_temp_anomaly = MapData.air_mass_temp_anomaly_arr。
-    // Round 模式下（mask=0x30 + 上一 pass wind_air 跑过），out.air_mass_temp_anomaly 已是
-    // wind_air 输出——但 sync 路径的 AIN 也是 wind_air 写完的值（slot 写后再读），所以
-    // **正确做法是用 out.air_mass_temp_anomaly 作为 AIN**（如果它是 wind_air 输出的话）。
-    // 决策：bench 时 mask=0x20（仅 wind_surface），主线程要把 sync 路径"wind_air 跑完之后"
-    // 的 air_anom 传成 in.air_mass_temp_anomaly。该字段同时也是 out 的初值。
-    if ((int)out.air_mass_temp_anomaly.size() != n) {
-        out.air_mass_temp_anomaly.resize(n);
-        if ((int)in.air_mass_temp_anomaly.size() == n) {
-            std::memcpy(out.air_mass_temp_anomaly.data(),
-                        in.air_mass_temp_anomaly.data(),
-                        n * sizeof(float));
-        }
-    }
-    if ((int)out.temp.size() != n) out.temp.resize(n);
-
-    // 准备合成 baseline / oanom / lanom 输入。这些字段如果 out 已写则用 out 值；
-    // 否则用 in 值（bench 模式：主线程把 sync 路径"pass_a/b/ocean_* 之后"的快照传过来）。
-    auto choose_field = [n](const std::vector<float> &out_v,
-                            const std::vector<float> &in_v) -> const float* {
-        if ((int)out_v.size() == n) return out_v.data();
-        if ((int)in_v.size()  == n) return in_v.data();
-        return nullptr;
-    };
-    const float *BL_RUNTIME = choose_field(out.temp_baseline, in.temp_baseline);
-    if (BL_RUNTIME == nullptr) {
-        // 兜底：用 in.temp_baseline_year（年级 LUT）作为 fallback baseline
-        BL_RUNTIME = in.temp_baseline_year.data();
-    }
-    const float *OANOM = choose_field(out.ocean_thermal_anomaly, in.ocean_thermal_anomaly);
-    const float *LANOM = choose_field(out.local_thermal_anomaly, in.local_thermal_anomaly);
-    const float *FBL = in.temp_baseline_year.data();  // fallback_baseline_arr
-
-    // AIN：上一 pass wind_air 输出的 air anomaly。bench mask=0x20 时主线程把它
-    // 装到 in.air_mass_temp_anomaly。
-    // 注意：sync 路径 AIN 与 AOUT 是同 slot 的 in-place 别名读/写，因为
-    // wind_surface 读 ni（邻居）的旧 air_anom 计算 weighted_sum，写 i 自己的
-    // 新 air_anom。**邻居 ni 的写时序在 i 之前**（loop 顺序），所以 sync 实际是
-    // 类似 Gauss-Seidel：当 i 处理时，nb_idx < i 的邻居用的是它们刚刚的新值，
-    // nb_idx > i 用的是旧值。
-    // 但 sync 用 anomaly_src.duplicate() → AIN 永远指向"调用前"的旧 air anomaly，
-    // 即 wind_air 写完后的整套值，loop 内 ni 邻居读的是 AIN[ni] 旧值；
-    // AOUT 写的是新值。这是 Jacobi 风格——pure kernel 必须严格遵守。
-    std::vector<float> ain_snapshot;
-    ain_snapshot.assign(out.air_mass_temp_anomaly.begin(), out.air_mass_temp_anomaly.end());
-    const float *AIN = ain_snapshot.data();
-    float *AOUT = out.air_mass_temp_anomaly.data();
-    float *T_OUT = out.temp.data();
-
-    const float *WX  = in.wind_x.data();
-    const float *WY  = in.wind_y.data();
-    const float *WSP = in.wind_speed.data();
-    const float *POSX = in.pos_x.data();
-    const float *POSY = in.pos_y.data();
-    const int32_t *NB = knobs.neighbor_indices.data();
-
-    for (int i = 0; i < n; ++i) {
-        const float swx = POSX[i];
-        const float swy = POSY[i];
-        float weighted_sum = 0.0f;
-        float weight_total = 0.0f;
-        const int b = i * 6;
-        for (int d = 0; d < 6; ++d) {
-            const int32_t ni = NB[b + d];
-            if (ni < 0) continue;
-            const float wind_x = WX[ni];
-            const float wind_y = WY[ni];
-            if (wind_x * wind_x + wind_y * wind_y < 1e-6f) continue;
-            const float dx = pk_wrap_min_image_dx(swx - POSX[ni], wrap_period_x);
-            const float dy = swy - POSY[ni];
-            const float len2 = dx * dx + dy * dy;
-            if (len2 < 1e-6f) continue;
-            const float inv_len = 1.0f / std::sqrt(len2);
-            const float weight = (dx * wind_x + dy * wind_y) * inv_len;
-            if (weight <= 0.0f) continue;
-            // wf_wind_speed_norm(WX[ni], WY[ni], WSP[ni])
-            float speed_nb = WSP[ni];
-            if (speed_nb <= 0.0001f) {
-                const float len2_nb = wind_x * wind_x + wind_y * wind_y;
-                speed_nb = (len2_nb > 0.0001f) ? std::sqrt(len2_nb) : 0.0f;
-            }
-            float speed_w = speed_nb / 1.2f;
-            if (speed_w < 0.20f) speed_w = 0.20f;
-            else if (speed_w > 1.35f) speed_w = 1.35f;
-            const float adv_weight = weight * speed_w;
-            weighted_sum += AIN[ni] * adv_weight;
-            weight_total += adv_weight;
-        }
-
-        // air-mass 平流
-        float anomaly_in = 0.0f;
-        if (weight_total > 0.0f) {
-            anomaly_in = (weighted_sum / weight_total) * air_leak;
-        }
-        float air_final = anomaly_in;
-        if (air_final < -0.08f) air_final = -0.08f;
-        else if (air_final > 0.08f) air_final = 0.08f;
-        AOUT[i] = air_final;
-
-        // 合成 cell_temp：ocean 与 air 都是横向热输运，先共享同一 ±0.08 预算；
-        // 对接近结冰线的水格，正向输运先被潜热/成冰门控吸收，避免无冰边缘水面
-        // 被固定抬高到 melt 阈值以上而无法重新结冰。
-        float base = BL_RUNTIME[i];
-        // 0.0 is a valid frozen/polar-night runtime baseline; fall back only
-        // when the runtime baseline is not a finite value.
-        if (!std::isfinite(base)) base = FBL[i];
-        float transport_anom = (OANOM ? OANOM[i] : 0.0f) + air_final;
-        if ((int)in.is_water.size() == n && in.is_water[i] != 0 && transport_anom > 0.0f) {
-            transport_anom *= pk_snowpack_cover_for_albedo(base, cold_transport_form, cold_transport_melt);
-        }
-        if (transport_anom < -0.08f) transport_anom = -0.08f;
-        else if (transport_anom > 0.08f) transport_anom = 0.08f;
-        float total_anom = transport_anom + (LANOM ? LANOM[i] : 0.0f);
-        if (total_anom < -0.15f) total_anom = -0.15f;
-        else if (total_anom > 0.15f) total_anom = 0.15f;
-        float total = base + total_anom;
-        if (total < 0.0f) total = 0.0f;
-        else if (total > 1.0f) total = 1.0f;
-        T_OUT[i] = total;
-    }
-    return true;
-}
-
-// sea_ice pure kernel — 移植自 DCWorldExt::run_sea_ice_daily_pass（world_ext.cpp:6784）。
-// 算法逐行 1:1 镜像 sync 路径主循环：
-//   Phase A：build has_cold_neighbor[]（前一日 SIF 邻居快照）
-//   Phase B：fraction 增量更新 + flip 候选收集
-//
-// 关键依赖：
-//   - is_water_lut（256-entry 表，由 water_terrain_ids 构建）
-//   - cell_temperature_arr（climate/ocean 之后调整的 T——主线程算）
-//   - sea_ice_freeze_gate / sea_ice_solar_melt（已有 inline helper，worker 安全）
-//
-// 输入：in.{terrain, base_terrain, sea_ice_frac_inout, temp_transport_anomaly,
-//           ocean_thermal_anomaly, upwelling_strength, insolation_now, cell_temperature_arr,
-//           water_terrain_ids} + scalars + static knobs.neighbor_indices
-// 输出：out.{sea_ice_frac, terrain, flipped_cell_indices, flipped_new_terrain}
-//
-// 注意：flipped lists 主线程在 poll 时消费（atlas dirty / map.terrain mirror sync）。
-// out.terrain 已包含翻转结果（与 in.terrain 不同），主线程 poll 写 _slots[cell_terrain]
-// 时若 apply_terrain_flips 为 true 则会同步生效。
-static bool _async_sea_ice_kernel_pure(const ClimateInputBuf &in,
-                                       const ClimateRoundStaticKnobs &knobs,
-                                       ClimateOutputBuf &out) {
-    const int n = in.n_cells;
-    if (n <= 0) return false;
-    if ((int)in.terrain.size()               != n) return false;
-    if ((int)in.base_terrain.size()          != n) return false;
-    if ((int)in.sea_ice_frac_inout.size()    != n) return false;
-    if ((int)in.temp_transport_anomaly.size() != n) return false;
-    if ((int)in.ocean_thermal_anomaly.size()  != n) return false;
-    if ((int)in.upwelling_strength.size()    != n) return false;
-    if ((int)in.insolation_now.size()        != n) return false;
-    if ((int)in.cell_temperature_arr.size()  != n) return false;
-    if ((int)in.water_terrain_ids.size()     <= 0) return false;
-    if ((int)knobs.neighbor_indices.size() < n * 6) return false;
-
-    // ── scalars ──
-    const float k_freeze    = in.scalars.si_k_freeze;
-    const float k_melt      = in.scalars.si_k_melt;
-    const float t_form      = in.scalars.si_t_form;
-    const float t_melt      = in.scalars.si_t_melt;
-    const float contagion   = in.scalars.si_contagion;
-    const float threshold   = in.scalars.si_threshold;
-    const float hysteresis  = in.scalars.si_hysteresis;
-    const float ice_delay   = in.scalars.si_ice_delay;
-    const bool  enable_oht  = in.scalars.si_enable_oht;
-    const bool  apply_terrain_flips = in.scalars.si_apply_terrain_flips;
-    const bool  solar_gate_enabled = in.scalars.si_solar_gate_enabled;
-    const float freeze_insol_low = in.scalars.si_freeze_insol_low;
-    const float freeze_insol_high = in.scalars.si_freeze_insol_high;
-    const float solar_melt_start = in.scalars.si_solar_melt_start;
-    const float solar_melt_gain  = in.scalars.si_solar_melt_gain;
-    const float min_thick_ice_solar_exposure = in.scalars.si_min_thick_ice_solar_exposure;
-    const float daily_delta_cap  = in.scalars.si_daily_delta_cap;
-    float edge_mix_rate = in.scalars.si_edge_mix_rate;
-    if (edge_mix_rate < 0.0f) edge_mix_rate = 0.0f;
-    else if (edge_mix_rate > 0.20f) edge_mix_rate = 0.20f;
-    float dt_days = in.scalars.si_dt_days;
-    if (dt_days < 0.0f) dt_days = 0.0f;
-    else if (dt_days > 30.0f) dt_days = 30.0f;
-    const int   id_lake     = in.scalars.si_terrain_lake_id;
-    const int   id_sea_ice  = in.scalars.si_terrain_sea_ice_id;
-    const int   id_ocean    = in.scalars.si_terrain_ocean_id;
-
-    // ── water LUT 构建 ──
-    bool is_water_lut[256];
-    for (int i = 0; i < 256; ++i) is_water_lut[i] = false;
-    for (int k = 0; k < (int)in.water_terrain_ids.size(); ++k) {
-        const int wid = int(in.water_terrain_ids[k]);
-        if (wid >= 0 && wid < 256) is_water_lut[wid] = true;
-    }
-
-    // ── 输出 buffer ──
-    if ((int)out.sea_ice_frac.size() != n) out.sea_ice_frac.resize(n);
-    std::memcpy(out.sea_ice_frac.data(), in.sea_ice_frac_inout.data(), n * sizeof(float));
-    if ((int)out.terrain.size() != n) out.terrain.resize(n);
-    std::memcpy(out.terrain.data(), in.terrain.data(), n);
-    out.flipped_cell_indices.clear();
-    out.flipped_new_terrain.clear();
-
-    const uint8_t *TR_IN = in.terrain.data();
-    const uint8_t *BT = in.base_terrain.data();
-    const float *T_IN = in.cell_temperature_arr.data();
-    const float *TTA = in.temp_transport_anomaly.data();
-    const float *OANOM = in.ocean_thermal_anomaly.data();
-    const float *UPW = in.upwelling_strength.data();
-    const float *INS = in.insolation_now.data();
-    const int32_t *NB = knobs.neighbor_indices.data();
-    float *SIF = out.sea_ice_frac.data();
-    uint8_t *TR_OUT = out.terrain.data();
-
-    std::vector<float> prev_sif(static_cast<size_t>(n), 0.0f);
-    for (int i = 0; i < n; ++i) {
-        prev_sif[static_cast<size_t>(i)] = SIF[i];
-    }
-
-    // ─── Phase A: has_cold_neighbor ───
-    std::vector<uint8_t> has_cold_neighbor(n, 0);
-    for (int i = 0; i < n; ++i) {
-        if (!is_water_lut[TR_IN[i]]) continue;
-        const int base = i * 6;
-        bool any_cold = false;
-        for (int d = 0; d < 6; ++d) {
-            const int32_t ni = NB[base + d];
-            if (ni < 0) continue;
-            if (!is_water_lut[TR_IN[ni]]) continue;
-            if (prev_sif[static_cast<size_t>(ni)] >= 0.6f) { any_cold = true; break; }
-        }
-        has_cold_neighbor[i] = any_cold ? 1 : 0;
-    }
-
-    // ─── Phase B: 主循环 + flip 候选收集 ───
-    int flipped_count = 0;
-
-    for (int i = 0; i < n; ++i) {
-        const uint8_t terr = TR_IN[i];
-        if (!is_water_lut[terr]) {
-            SIF[i] = 0.0f;
-            continue;
-        }
-        if (int(terr) == id_lake) {
-            SIF[i] = 0.0f;
-            continue;
-        }
-
-        const float temp_now = T_IN[i];
-        float t_eff = temp_now;
-        if (enable_oht) {
-            const float tta_residual = sea_ice_positive_tta_residual(TTA[i], OANOM[i]);
-            if (tta_residual > 0.0f) t_eff += ice_delay * tta_residual;
-            const float upw = UPW[i];
-            if (upw > 0.3f) t_eff -= 0.5f * upw;
-        }
-        if (t_eff < 0.0f) t_eff = 0.0f;
-        else if (t_eff > 1.0f) t_eff = 1.0f;
-
-        float k_freeze_eff = k_freeze;
-        if (has_cold_neighbor[i]) {
-            k_freeze_eff = k_freeze * (1.0f + contagion);
-        }
-
-        const float prev_frac = prev_sif[static_cast<size_t>(i)];
-
-        const float diff_freeze = (t_form > t_eff) ? (t_form - t_eff) : 0.0f;
-        const float diff_melt   = (t_eff > t_melt) ? (t_eff - t_melt) : 0.0f;
-        float freeze_gate = 1.0f;
-        float solar_melt = 0.0f;
-        if (solar_gate_enabled) {
-            const float insolation_now = INS[i];
-            freeze_gate = sea_ice_freeze_gate(insolation_now, freeze_insol_low, freeze_insol_high);
-            solar_melt = sea_ice_solar_melt(insolation_now, solar_melt_start, solar_melt_gain)
-                * sea_ice_solar_exposure(prev_frac, min_thick_ice_solar_exposure);
-        }
-        // [seaice dt 修复 2026-06-16] daily_delta_cap 是"每日"上限：必须先裁剪
-        // 日速率、再乘 dt_days。否则加速档（dt_days≫1）下每轮 d_frac 被砍到
-        // ≤cap，海冰每轮最多只长 cap，亚极地短暂冷却窗口里永远涨不到翻转阈值
-        // → "已很冷却无冰"。melt 侧对称。
-        float rate = k_freeze_eff * diff_freeze * freeze_gate
-                   - (k_melt * diff_melt + solar_melt);
-        if (daily_delta_cap > 0.0f) {
-            if (rate > daily_delta_cap) rate = daily_delta_cap;
-            else if (rate < -daily_delta_cap) rate = -daily_delta_cap;
-        }
-        float d_frac = rate * dt_days;
-        float new_frac = prev_frac + d_frac;
-        if (new_frac < 0.0f) new_frac = 0.0f;
-        else if (new_frac > 1.0f) new_frac = 1.0f;
-        if (edge_mix_rate > 0.0f) {
-            float sum_nb_frac = 0.0f;
-            int nb_water_count = 0;
-            const int base = i * 6;
-            for (int d = 0; d < 6; ++d) {
-                const int32_t ni = NB[base + d];
-                if (ni < 0 || !is_water_lut[TR_IN[ni]] || int(TR_IN[ni]) == id_lake) continue;
-                sum_nb_frac += prev_sif[static_cast<size_t>(ni)];
-                ++nb_water_count;
-            }
-            if (nb_water_count > 0) {
-                const float avg_nb_frac = sum_nb_frac / float(nb_water_count);
-                const float contrast = std::abs(avg_nb_frac - new_frac);
-                if (contrast > 0.05f && (prev_frac > 0.001f || avg_nb_frac > 0.001f)) {
-                    const float mix = std::min(0.12f, edge_mix_rate * std::max(1.0f, dt_days));
-                    new_frac += (avg_nb_frac - new_frac) * mix;
-                    if (new_frac < 0.0f) new_frac = 0.0f;
-                    else if (new_frac > 1.0f) new_frac = 1.0f;
-                }
-            }
-        }
-        SIF[i] = new_frac;
-
-        // 翻转候选
-        const bool was_ice = (int(terr) == id_sea_ice);
-        if (!was_ice && new_frac >= threshold) {
-            out.flipped_cell_indices.push_back(i);
-            out.flipped_new_terrain.push_back(uint8_t(id_sea_ice & 0xFF));
-            if (apply_terrain_flips) {
-                TR_OUT[i] = uint8_t(id_sea_ice & 0xFF);
-            }
-            ++flipped_count;
-        } else if (was_ice && new_frac < (threshold - hysteresis)) {
-            const int base_t_int = int(BT[i]);
-            int target_terr = base_t_int;
-            if (base_t_int == id_sea_ice) target_terr = id_ocean;
-            out.flipped_cell_indices.push_back(i);
-            out.flipped_new_terrain.push_back(uint8_t(target_terr & 0xFF));
-            if (apply_terrain_flips) {
-                TR_OUT[i] = uint8_t(target_terr & 0xFF);
-            }
-            ++flipped_count;
-        }
-    }
-    return true;
-}
-
-// transp pure kernel — 移植自 run_transpiration_pass（world_ext.cpp:7341）。
-// 算法逐行 1:1，输入输出全 std::vector，不写 _slots，不调 _flush_slot_to_map。
-// 输出在 out.moisture / out.moisture_dirty_indices / out.moisture_dirty_values。
-//
-// ✅ Stage 3 数据流闭环：worker loop 在每个 pass 跑完后把 out.field 同步回
-// in.field，让后续 pass 读 in 就拿到 fresh 值。transp 是 round 最后 pass，
-// 读 in.moisture 时 pass_b 已把它的输出同步回去（pass_b → in.moisture），
-// 等价于 sync 路径里 transp 读 _slots[cell_moisture]（已被 pass_b 写过）。
-//
-// 返回 true 成功，false 表示 input 验证失败（输入维度不匹配）。
-static bool _async_transp_kernel_pure(const ClimateInputBuf &in,
-                                      const ClimateRoundStaticKnobs &knobs,
-                                      ClimateWorkBuf &work,
-                                      ClimateOutputBuf &out) {
-    const int n = in.n_cells;
-    if (n <= 0) return false;
-    if ((int)in.landform.size()   != n) return false;
-    if ((int)in.vegetation.size() != n) return false;
-    if ((int)in.moisture.size()   != n) return false;
-    if ((int)knobs.neighbor_indices.size() < n * 6) return false;
-    const int donor_size = (int)knobs.donor_table.size();
-    if (donor_size <= 0) return false;
-
-    const float outflow_rate = in.scalars.transp_outflow_rate;
-    const float self_rate    = in.scalars.transp_self_rate;
-
-    // 准备工作 buffer
-    if ((int)work.deltas.size() != n) work.deltas.assign(n, 0.0f);
-    else std::fill(work.deltas.begin(), work.deltas.end(), 0.0f);
-    float *D = work.deltas.data();
-
-    const uint8_t *LF  = in.landform.data();
-    const uint8_t *VEG = in.vegetation.data();
-    const float   *M_in = in.moisture.data();
-    const int32_t *NB   = knobs.neighbor_indices.data();
-    const float   *DON  = knobs.donor_table.data();
-
-    // ─── Phase 1: compute deltas（与 sync 路径 1:1） ───
-    for (int i = 0; i < n; ++i) {
-        if (LF[i] <= 3) continue;             // skip water cells (LandformType.is_water)
-        const uint8_t veg_id = VEG[i];
-        if (veg_id >= donor_size) continue;    // safety
-        const float trans = DON[veg_id];
-        if (trans < 0.01f) continue;
-        const float moist = M_in[i];
-        const float output      = trans * moist;
-        const float self_share = output * self_rate;
-
-        const int base = i * 6;
-        int valid_land_neighbors = 0;
-        for (int d = 0; d < 6; ++d) {
-            const int32_t nb_idx = NB[base + d];
-            if (nb_idx < 0) continue;
-            if (LF[nb_idx] <= 3) continue;     // 水面邻居不接受陆地蒸腾外溢
-            ++valid_land_neighbors;
-        }
-        const float transported = valid_land_neighbors > 0 ? output * outflow_rate : 0.0f;
-        D[i] += self_share - transported;
-        const float nb_share = valid_land_neighbors > 0
-            ? transported / float(valid_land_neighbors) : 0.0f;
-        for (int d = 0; d < 6; ++d) {
-            const int32_t nb_idx = NB[base + d];
-            if (nb_idx < 0 || LF[nb_idx] <= 3) continue;
-            D[nb_idx] += nb_share;
-        }
-    }
-
-    // ─── Phase 2: apply deltas to output（先 copy input → output，再 +deltas） ───
-    if ((int)out.moisture.size() != n) out.moisture.assign(n, 0.0f);
-    std::memcpy(out.moisture.data(), M_in, n * sizeof(float));
-    if ((int)out.moisture_dirty_indices.size() < n) {
-        out.moisture_dirty_indices.assign(n, 0);
-    }
-    if ((int)out.moisture_dirty_values.size() < n) {
-        out.moisture_dirty_values.assign(n, 0.0f);
-    }
-    int32_t *dirty_idx = out.moisture_dirty_indices.data();
-    float   *dirty_val = out.moisture_dirty_values.data();
-    int dirty_count = 0;
-
-    float *M_out = out.moisture.data();
-    for (int i = 0; i < n; ++i) {
-        const float d = D[i];
-        if (d == 0.0f) continue;
-        float v = M_out[i] + d;
-        if (v < 0.0f) v = 0.0f;
-        else if (v > 1.0f) v = 1.0f;
-        if (M_out[i] != v) {
-            M_out[i] = v;
-            dirty_idx[dirty_count] = i;
-            dirty_val[dirty_count] = v;
-            ++dirty_count;
-        }
-    }
-    out.moisture_dirty_indices.resize(dirty_count);
-    out.moisture_dirty_values.resize(dirty_count);
-    return true;
-}
-
-// ─── finalizer kernel（Stage 9，2026-06-16） ──────────────────────────────
-// 移植自 GDScript ClimateDailySystem::_apply_daily_climate_finalizer
-// (climate_daily_system.gd:586)。
-//
-// 行为完全 1:1（含 mirror_temperature_cells / TTA clamp / thermal init / sort /
-// percentile / sea_ice_delta_max / precip_p95）。但有几点关键区别：
-//   1. 不写 HexCell facade（worker thread 不能碰 Godot Object）。GDScript 端
-//      在 facade 启用时 mirror=false，cell.temperature getter 直接走 SoA，所以
-//      worker 写 out.temp + 主线程 publish_to_slot 完全等价。facade 关闭时
-//      （兼容 fallback 路径）GDScript 自己跑 finalizer。
-//   2. 读 in.temp / in.tta / in.thermal_energy / in.ema_initialized / in.sea_ice_frac /
-//      in.sea_ice_frac_prev / in.weather_precip。
-//   3. 输入 baseline：in.temp_start_of_day / in.tta_start_of_day。size==n 时
-//      启用 clamp，否则跳过（diag 仍累计 max_delta）。
-//   4. 写 out.temp（覆盖 wind_surface 的输出）/ out.tta（in/out aliasing —
-//      需要先 copy in→out 再 clamp）/ out.thermal_energy（覆盖 pass_a 的输出）。
-//
-// 返回 true 成功 / false 输入维度问题。
-static bool _async_finalizer_kernel_pure(const ClimateInputBuf &in,
-                                         ClimateOutputBuf &out) {
-    const int n = in.n_cells;
-    if (n <= 0) return false;
-    if ((int)in.temp.size() != n) return false;
-    if ((int)in.temp_transport_anomaly.size() != n) return false;
-    if ((int)in.thermal_energy.size() != n) return false;
-
-    // wind_surface 可能在前面已经写 out.temp；如果没写过（pass mask 关闭 wind_surface）
-    // 则用 in.temp 兜底。注意：从 ClimateOutputBuf 的注释看 out.temp 是
-    // wind_surface 唯一写者（climate round 最终 temp），所以 wind_surface 跑过
-    // 时 out.temp == final 输出；finalizer 在它之上 clamp。
-    if ((int)out.temp.size() != n) {
-        out.temp.assign(n, 0.0f);
-        std::memcpy(out.temp.data(), in.temp.data(), n * sizeof(float));
-    }
-
-    const float *T_in       = in.temp.data();
-    float       *T_out      = out.temp.data();
-    const float *TTA_in     = in.temp_transport_anomaly.data();
-    const float *HEAT_in    = in.thermal_energy.data();
-    const uint8_t *EMA_in   = in.ema_initialized.empty() ? nullptr : in.ema_initialized.data();
-
-    const float temp_cap        = in.scalars.fin_temp_cap;
-    const float tta_cap         = in.scalars.fin_tta_cap;
-    const bool  temp_cap_enable = in.scalars.fin_temp_cap_enabled;
-    const bool  has_temp_start  = in.scalars.fin_has_temp_start
-                                  && (int)in.temp_start_of_day.size() == n;
-    const bool  has_tta_start   = in.scalars.fin_has_tta_start
-                                  && (int)in.tta_start_of_day.size() == n;
-    const float *TS = has_temp_start ? in.temp_start_of_day.data() : nullptr;
-    const float *TTS = has_tta_start ? in.tta_start_of_day.data() : nullptr;
-
-    // 准备 TTA 输出（in/out aliasing — finalizer 写 cell.temperature_transport_anomaly
-    // 时可能同时被同 round 的 pass_b 写过；为不打断 pass_b → finalizer 数据流，
-    // out.temperature_transport_anomaly 先 copy in 再 in-place clamp）。
-    if ((int)out.temp.size() != n) out.temp.assign(n, 0.0f);
-    // 我们需要一个 out 端的 tta buffer。复用 out.air_mass_temp_anomaly 风格——
-    // 但 finalizer 写自己的 tta 单独一个 vector（避免和 wind_air 冲突）。
-    // 简单做法：直接写回 in 不可（worker 不应该回写 in）；新增 out.tta 字段。
-    // 这里走临时方案：复用 in 在 worker 内的拷贝——还不行。
-    // 决策：finalizer 写到一个新 output 字段 out.temp_transport_anomaly。
-    // 该字段需要在 ClimateOutputBuf 加入。Step 4.1 已加。
-
-    // ── temp loop + delta 统计 ──
-    std::vector<float> temp_deltas(n, 0.0f);
-    std::vector<float> preclamp_temp_deltas(n, 0.0f);
-    float max_temp_delta = 0.0f;
-    float preclamp_max_temp_delta = 0.0f;
-    int32_t gt005 = 0, gt010 = 0, gt020 = 0, clamped = 0;
-    for (int i = 0; i < n; ++i) {
-        const float start_t = has_temp_start ? TS[i] : T_out[i];
-        const float raw_t = T_out[i];
-        float final_t = raw_t;
-        const float pre_abs = std::fabs(raw_t - start_t);
-        preclamp_temp_deltas[i] = pre_abs;
-        if (pre_abs > preclamp_max_temp_delta) preclamp_max_temp_delta = pre_abs;
-        if (temp_cap_enable && has_temp_start) {
-            if (final_t < start_t - temp_cap) final_t = start_t - temp_cap;
-            else if (final_t > start_t + temp_cap) final_t = start_t + temp_cap;
-            if (final_t < 0.0f) final_t = 0.0f;
-            else if (final_t > 1.0f) final_t = 1.0f;
-            if (std::fabs(final_t - raw_t) > 0.000001f) ++clamped;
-            T_out[i] = final_t;
-        }
-        const float abs_dt = std::fabs(final_t - start_t);
-        temp_deltas[i] = abs_dt;
-        if (abs_dt > 0.005f) ++gt005;
-        if (abs_dt > 0.010f) ++gt010;
-        if (abs_dt > 0.020f) ++gt020;
-        if (abs_dt > max_temp_delta) max_temp_delta = abs_dt;
-    }
-    out.fin_max_temp_delta = max_temp_delta;
-    out.fin_preclamp_max_temp_delta = preclamp_max_temp_delta;
-    out.fin_temp_delta_gt_005_count = gt005;
-    out.fin_temp_delta_gt_010_count = gt010;
-    out.fin_temp_delta_gt_020_count = gt020;
-    out.fin_temp_delta_clamped_count = clamped;
-
-    // ── TTA loop + clamp + max ──
-    // 注：sync GDScript path 直接在 map.temperature_transport_anomaly_arr in-place clamp。
-    // worker 这里写到独立 buffer，主线程 poll 后 publish 到 slot。
-    // 临时方案：复用 out.air_mass_temp_anomaly buffer 容易和 wind_air 输出
-    // 冲突。改为：用 std::vector 局部，主线程 poll 时通过 PackedFloat32Array
-    // 输出 (out.tta_final)。先临时 in-place 修改 in.temp_transport_anomaly?
-    // —— 不行，in 是 const&。所以加 out.temp_transport_anomaly。
-    if ((int)out.tta_final.size() != n) out.tta_final.assign(n, 0.0f);
-    std::memcpy(out.tta_final.data(), TTA_in, n * sizeof(float));
-    float *TTA_out = out.tta_final.data();
-    float max_tta = 0.0f;
-    int32_t tta_clamped_count = 0;
-    for (int i = 0; i < n; ++i) {
-        const float start_tta = has_tta_start ? TTS[i] : 0.0f;
-        const float raw_tta = TTA_out[i];
-        float final_tta = raw_tta;
-        if (tta_cap > 0.0f && has_tta_start) {
-            if (final_tta < start_tta - tta_cap) final_tta = start_tta - tta_cap;
-            else if (final_tta > start_tta + tta_cap) final_tta = start_tta + tta_cap;
-            if (std::fabs(final_tta - raw_tta) > 0.000001f) {
-                TTA_out[i] = final_tta;
-                ++tta_clamped_count;
-            }
-        }
-        const float abs_tta = std::fabs(final_tta);
-        if (abs_tta > max_tta) max_tta = abs_tta;
-    }
-    out.fin_max_transport_anomaly = max_tta;
-    out.fin_tta_clamped_count = tta_clamped_count;
-
-    // ── thermal_energy init loop（NaN/Inf 或 ema=0 → temp） ──
-    if ((int)out.thermal_energy.size() != n) out.thermal_energy.assign(n, 0.0f);
-    std::memcpy(out.thermal_energy.data(), HEAT_in, n * sizeof(float));
-    float *HEAT_out = out.thermal_energy.data();
-    int32_t thermal_init = 0;
-    for (int i = 0; i < n; ++i) {
-        const float v = HEAT_out[i];
-        bool needs_init = !std::isfinite(v);
-        if (!needs_init && EMA_in != nullptr && EMA_in[i] == 0) needs_init = true;
-        if (needs_init) {
-            HEAT_out[i] = T_out[i];
-            ++thermal_init;
-        }
-    }
-    out.fin_thermal_init_count = thermal_init;
-
-    // ── sort + percentile（p95 / p99） ──
-    std::sort(temp_deltas.begin(), temp_deltas.end());
-    std::sort(preclamp_temp_deltas.begin(), preclamp_temp_deltas.end());
-    auto percentile = [](const std::vector<float> &sorted, float pct) -> float {
-        if (sorted.empty()) return 0.0f;
-        const int idx = std::min((int)sorted.size() - 1,
-                                  (int)std::floor((double)(sorted.size() - 1) * pct));
-        return sorted[idx];
-    };
-    out.fin_p95_temp_delta = percentile(temp_deltas, 0.95f);
-    out.fin_p99_temp_delta = percentile(temp_deltas, 0.99f);
-    out.fin_preclamp_p99_temp_delta = percentile(preclamp_temp_deltas, 0.99f);
-
-    // ── sea_ice_delta_max（仅当 in.sea_ice_frac / in.sea_ice_frac_prev 都齐） ──
-    out.fin_sea_ice_delta_max = 0.0f;
-    if ((int)in.sea_ice_frac.size() == n && (int)in.sea_ice_frac_prev.size() == n) {
-        const float *SIF = in.sea_ice_frac.data();
-        const float *SIFp = in.sea_ice_frac_prev.data();
-        float max_ds = 0.0f;
-        for (int i = 0; i < n; ++i) {
-            const float ds = std::fabs(SIF[i] - SIFp[i]);
-            if (ds > max_ds) max_ds = ds;
-        }
-        out.fin_sea_ice_delta_max = max_ds;
-    }
-
-    // ── precip_p95（sort weather_precip duplicate） ──
-    out.fin_precip_p95 = 0.0f;
-    if ((int)in.weather_precip.size() == n) {
-        std::vector<float> precip_vals(in.weather_precip);
-        std::sort(precip_vals.begin(), precip_vals.end());
-        out.fin_precip_p95 = percentile(precip_vals, 0.95f);
-    }
-
-    out.fin_cells_seen = n;
-    out.fin_applied = true;
-    return true;
-}
-
 // ─── 7 个 stub kernel（Stage 2 替换为 pure kernel） ─────────────────────────
 // 当前行为：直接把 input 拷贝到 output（如果 output 字段存在），不修改 climate
 // 状态。GDScript 端在 cp.use_climate_round_async=true 时，仍然走原 sync sub-pass
@@ -9217,289 +5312,20 @@ static void _async_climate_round_worker_main(AsyncClimateRoundTask *t) {
         // 其它 6 pass 仍是 stub（即使 mask 启用也不修改 output）。
         // 主线程 poll 时把 output 字段写回 _slots + flush 到 MapData。
         // Stage 3 stub 全部实装后，passes_mask 默认 0xFF 即整 round async。
-        bool ok = true;
-        const int mask = t->w_in_buf.scalars.passes_mask;
-
-        // ─── pass_a（bit 0） ──────────────────────────────────────────
-        const auto pa0 = clock::now();
-        if ((mask & 0x01) != 0 && (int)t->w_in_buf.is_water.size() == t->w_in_buf.n_cells) {
-            // 输入完整时跑 pass_a pure kernel
-            if (!_async_pass_a_kernel_pure(t->w_in_buf, t->w_out_buf)) {
-                ok = false;
-            }
-            // Round 数据流：pass_a 写的字段刷新到 in，让后续 pass 读到 fresh 值。
-            // sync 路径里 pass_a 通过 _flush_slot_to_map 把 16 个 slot 推回 MapData，
-            // 然后下一 pass 入口的 refresh_slots_from_map 把 _slots 又拉到最新。
-            // async 路径不走 MapData，但同 round 内的"上一 pass 写 → 下一 pass 读"
-            // 必须用 in/out 同步实现。
-            // 注：pass_a 是 round 第一个 pass，没有前序 pass 写过 in 字段；只刷新
-            // pass_a 的输出回 in，让 pass_b / ocean_water / wind_air / transp 等读到。
-            const int n_pa = t->w_in_buf.n_cells;
-            if (n_pa > 0) {
-                auto cp_if_size = [n_pa](std::vector<float> &dst, const std::vector<float> &src) {
-                    if ((int)src.size() == n_pa) {
-                        if ((int)dst.size() != n_pa) dst.resize(n_pa);
-                        std::memcpy(dst.data(), src.data(), n_pa * sizeof(float));
-                    }
-                };
-                auto cp_if_size_u8 = [n_pa](std::vector<uint8_t> &dst, const std::vector<uint8_t> &src) {
-                    if ((int)src.size() == n_pa) {
-                        if ((int)dst.size() != n_pa) dst.resize(n_pa);
-                        std::memcpy(dst.data(), src.data(), n_pa);
-                    }
-                };
-                // pass_b 读这些字段：temp_baseline / moisture / snow_cover / insolation_dev
-                // ocean_water 读 temp_baseline (作 baseline_arr)；其他 pass 间接读
-                cp_if_size(t->w_in_buf.moisture,         t->w_out_buf.moisture);
-                cp_if_size(t->w_in_buf.temp_baseline,    t->w_out_buf.temp_baseline);
-                cp_if_size(t->w_in_buf.insolation_dev,   t->w_out_buf.insolation_dev);
-                cp_if_size(t->w_in_buf.thermal_energy,   t->w_out_buf.thermal_energy);
-                cp_if_size(t->w_in_buf.snowpack,         t->w_out_buf.snowpack);
-                cp_if_size(t->w_in_buf.temp_30d,         t->w_out_buf.temp_30d);
-                cp_if_size(t->w_in_buf.temp_365d,        t->w_out_buf.temp_365d);
-                cp_if_size_u8(t->w_in_buf.ema_initialized, t->w_out_buf.ema_initialized);
-                // ocean / local anomaly 被 pass_a 清 0；同步给 pass_b/ocean_*
-                cp_if_size(t->w_in_buf.ocean_thermal_anomaly, t->w_out_buf.ocean_thermal_anomaly);
-                cp_if_size(t->w_in_buf.local_thermal_anomaly, t->w_out_buf.local_thermal_anomaly);
-            }
-        }
-        const auto pa1 = clock::now();
-        t->last_pass_a_us.store(
-            (int64_t)std::chrono::duration_cast<std::chrono::microseconds>(pa1 - pa0).count(),
-            std::memory_order_relaxed);
-
-        // ─── pass_b（bit 1） ──────────────────────────────────────────
-        const auto pb0 = clock::now();
-        if ((mask & 0x02) != 0
-                && (int)t->w_in_buf.is_water.size()       == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.landform.size()       == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.vegetation.size()     == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.snowpack.size()       == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.elevation.size()      == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.lat_norm.size()       == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.pos_x.size()          == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.pos_y.size()          == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.insolation_dev.size() == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.temp.size()           == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.moisture.size()       == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.local_thermal_anomaly.size() == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.temp_transport_anomaly.size() == t->w_in_buf.n_cells
-                && (int)t->static_knobs.foliage_table.size() > 0) {
-            if (!_async_pass_b_kernel_pure(t->w_in_buf, t->static_knobs, t->w_out_buf)) {
-                ok = false;
-            }
-            // Round 数据流：pass_b 写 moisture（覆盖 pass_a）+ local_thermal_anomaly。
-            // 同步给 ocean_water/land 和 wind_air/surface 等后续 pass。
-            const int n_pb = t->w_in_buf.n_cells;
-            if (n_pb > 0) {
-                if ((int)t->w_out_buf.moisture.size() == n_pb) {
-                    std::memcpy(t->w_in_buf.moisture.data(),
-                                t->w_out_buf.moisture.data(), n_pb * sizeof(float));
-                }
-                if ((int)t->w_out_buf.local_thermal_anomaly.size() == n_pb) {
-                    std::memcpy(t->w_in_buf.local_thermal_anomaly.data(),
-                                t->w_out_buf.local_thermal_anomaly.data(), n_pb * sizeof(float));
-                }
-            }
-        }
-        const auto pb1 = clock::now();
-        t->last_pass_b_us.store(
-            (int64_t)std::chrono::duration_cast<std::chrono::microseconds>(pb1 - pb0).count(),
-            std::memory_order_relaxed);
-
-        // ─── ocean_water（bit 2） ─────────────────────────────────────
-        const auto ow0 = clock::now();
-        if ((mask & 0x04) != 0
-                && (int)t->w_in_buf.is_water.size()        == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.pos_x.size()           == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.pos_y.size()           == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.ocean_current_x.size() == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.ocean_current_y.size() == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.temp.size()            == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.temp_baseline_year.size() == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.ocean_thermal_anomaly.size() == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.temp_transport_anomaly.size() == t->w_in_buf.n_cells) {
-            if (!_async_ocean_water_kernel_pure(t->w_in_buf, t->static_knobs,
-                                                t->w_work_buf, t->w_out_buf)) {
-                ok = false;
-            }
-            // Round 数据流：ocean_water 写 ocean_thermal_anomaly (water cells)。
-            // ocean_land 通过 work.ocean_tta_inout 读 water cells fresh anomaly，
-            // ocean_thermal_anomaly slot 也要同步给 wind_surface 做合成。
-            const int n_ow = t->w_in_buf.n_cells;
-            if (n_ow > 0 && (int)t->w_out_buf.ocean_thermal_anomaly.size() == n_ow) {
-                std::memcpy(t->w_in_buf.ocean_thermal_anomaly.data(),
-                            t->w_out_buf.ocean_thermal_anomaly.data(), n_ow * sizeof(float));
-            }
-        }
-        const auto ow1 = clock::now();
-        t->last_ocean_water_us.store(
-            (int64_t)std::chrono::duration_cast<std::chrono::microseconds>(ow1 - ow0).count(),
-            std::memory_order_relaxed);
-
-        // ─── ocean_land（bit 3） — 依赖 ocean_water 写完 work.ocean_tta_inout
-        const auto ol0 = clock::now();
-        if ((mask & 0x08) != 0
-                && (int)t->w_in_buf.is_water.size()        == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.pos_x.size()           == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.pos_y.size()           == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.ocean_current_x.size() == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.ocean_current_y.size() == t->w_in_buf.n_cells) {
-            // 若 ocean_water 没跑，ocean_tta_inout 还是空——单跑 ocean_land 时
-            // 用 in.temp_transport_anomaly 初始化它。
-            if ((int)t->w_work_buf.ocean_tta_inout.size() != t->w_in_buf.n_cells
-                    && (int)t->w_in_buf.temp_transport_anomaly.size() == t->w_in_buf.n_cells) {
-                t->w_work_buf.ocean_tta_inout.resize(t->w_in_buf.n_cells);
-                std::memcpy(t->w_work_buf.ocean_tta_inout.data(),
-                            t->w_in_buf.temp_transport_anomaly.data(),
-                            t->w_in_buf.n_cells * sizeof(float));
-            }
-            if (!_async_ocean_land_kernel_pure(t->w_in_buf, t->static_knobs,
-                                               t->w_work_buf, t->w_out_buf)) {
-                ok = false;
-            }
-            // Round 数据流：ocean_land 累加 ocean_thermal_anomaly (land cells)。
-            // wind_surface 读它做合成。
-            const int n_ol = t->w_in_buf.n_cells;
-            if (n_ol > 0 && (int)t->w_out_buf.ocean_thermal_anomaly.size() == n_ol) {
-                std::memcpy(t->w_in_buf.ocean_thermal_anomaly.data(),
-                            t->w_out_buf.ocean_thermal_anomaly.data(), n_ol * sizeof(float));
-            }
-        }
-        const auto ol1 = clock::now();
-        t->last_ocean_land_us.store(
-            (int64_t)std::chrono::duration_cast<std::chrono::microseconds>(ol1 - ol0).count(),
-            std::memory_order_relaxed);
-
-        // ─── wind_air / wind_surface / sea_ice 仍是 stub
-        // ─── wind_air（bit 4） ────────────────────────────────────────
-        const auto wa0 = clock::now();
-        if ((mask & 0x10) != 0
-                && (int)t->w_in_buf.wind_x.size()  == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.wind_y.size()  == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.wind_speed.size() == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.pos_x.size()   == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.pos_y.size()   == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.temp.size()    == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.temp_baseline_year.size() == t->w_in_buf.n_cells) {
-            if (!_async_wind_air_kernel_pure(t->w_in_buf, t->static_knobs, t->w_out_buf)) {
-                ok = false;
-            }
-            // Round 数据流：wind_air 写 air_mass_temp_anomaly。
-            // wind_surface 读它（作为 AIN snapshot）做加权平均。
-            const int n_wa = t->w_in_buf.n_cells;
-            if (n_wa > 0 && (int)t->w_out_buf.air_mass_temp_anomaly.size() == n_wa) {
-                std::memcpy(t->w_in_buf.air_mass_temp_anomaly.data(),
-                            t->w_out_buf.air_mass_temp_anomaly.data(), n_wa * sizeof(float));
-            }
-        }
-        const auto wa1 = clock::now();
-        t->last_wind_air_us.store(
-            (int64_t)std::chrono::duration_cast<std::chrono::microseconds>(wa1 - wa0).count(),
-            std::memory_order_relaxed);
-
-        // ─── wind_surface（bit 5） — 依赖 wind_air / pass_a / pass_b / ocean_*
-        const auto ws0 = clock::now();
-        if ((mask & 0x20) != 0
-                && (int)t->w_in_buf.wind_x.size()  == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.wind_y.size()  == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.wind_speed.size() == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.pos_x.size()   == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.pos_y.size()   == t->w_in_buf.n_cells) {
-            if (!_async_wind_surface_kernel_pure(t->w_in_buf, t->static_knobs, t->w_out_buf)) {
-                ok = false;
-            }
-            // Round 数据流：wind_surface 写 cell_temp（合成）+ overwrite air_anom。
-            // sea_ice 期望读 climate/ocean-adjusted T —— round 模式下这就是 wind_surface
-            // 输出的 cell_temp，同步给 in.cell_temperature_arr（覆盖 kick 传入的旧值）。
-            const int n_ws = t->w_in_buf.n_cells;
-            if (n_ws > 0) {
-                if ((int)t->w_out_buf.temp.size() == n_ws
-                        && (int)t->w_in_buf.cell_temperature_arr.size() == n_ws) {
-                    std::memcpy(t->w_in_buf.cell_temperature_arr.data(),
-                                t->w_out_buf.temp.data(), n_ws * sizeof(float));
-                }
-                if ((int)t->w_out_buf.air_mass_temp_anomaly.size() == n_ws) {
-                    std::memcpy(t->w_in_buf.air_mass_temp_anomaly.data(),
-                                t->w_out_buf.air_mass_temp_anomaly.data(), n_ws * sizeof(float));
-                }
-            }
-        }
-        const auto ws1 = clock::now();
-        t->last_wind_surface_us.store(
-            (int64_t)std::chrono::duration_cast<std::chrono::microseconds>(ws1 - ws0).count(),
-            std::memory_order_relaxed);
-
-        // sea_ice 仍是 stub（Stage 2 余下工作）
-        // ─── sea_ice（bit 6） ─────────────────────────────────────────
-        const auto si0 = clock::now();
-        if ((mask & 0x40) != 0
-                && (int)t->w_in_buf.terrain.size()              == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.base_terrain.size()         == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.sea_ice_frac_inout.size()   == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.temp_transport_anomaly.size() == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.upwelling_strength.size()   == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.insolation_now.size()       == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.cell_temperature_arr.size() == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.water_terrain_ids.size()    > 0) {
-            if (!_async_sea_ice_kernel_pure(t->w_in_buf, t->static_knobs, t->w_out_buf)) {
-                ok = false;
-            }
-            // Round 数据流：sea_ice 写 sea_ice_frac + 翻转 terrain。transp 不依赖
-            // 它们；但 in.sea_ice_frac_inout / in.terrain 同步以便后续诊断 / round
-            // 重复 kick 时拿到最新值（虽然单 round 不会重复跑同一 pass）。
-            const int n_si = t->w_in_buf.n_cells;
-            if (n_si > 0) {
-                if ((int)t->w_out_buf.sea_ice_frac.size() == n_si) {
-                    std::memcpy(t->w_in_buf.sea_ice_frac_inout.data(),
-                                t->w_out_buf.sea_ice_frac.data(), n_si * sizeof(float));
-                }
-                if ((int)t->w_out_buf.terrain.size() == n_si) {
-                    std::memcpy(t->w_in_buf.terrain.data(),
-                                t->w_out_buf.terrain.data(), n_si);
-                }
-            }
-        }
-        const auto si1 = clock::now();
-        t->last_sea_ice_us.store(
-            (int64_t)std::chrono::duration_cast<std::chrono::microseconds>(si1 - si0).count(),
-            std::memory_order_relaxed);
-
-        // ─── transp（bit 7） ──────────────────────────────────────────
-        const auto tr0 = clock::now();
-        if ((mask & 0x80) != 0
-                && (int)t->w_in_buf.landform.size()   == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.vegetation.size() == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.moisture.size()   == t->w_in_buf.n_cells) {
-            if (!_async_transp_kernel_pure(t->w_in_buf, t->static_knobs,
-                                           t->w_work_buf, t->w_out_buf)) {
-                ok = false;
-            }
-        }
-        const auto tr1 = clock::now();
-        t->last_transp_us.store(
-            (int64_t)std::chrono::duration_cast<std::chrono::microseconds>(tr1 - tr0).count(),
-            std::memory_order_relaxed);
-
-        // ─── finalizer（bit 8，Stage 9 2026-06-16） ──────────────────────
-        // 在 round 末尾跑一次：clamp temp/TTA、统计 Δ percentile、thermal init、
-        // sea_ice_delta_max、precip_p95。等价 GDScript _apply_daily_climate_finalizer。
-        const auto fi0 = clock::now();
-        if ((mask & 0x100) != 0
-                && (int)t->w_in_buf.temp.size() == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.temp_transport_anomaly.size() == t->w_in_buf.n_cells
-                && (int)t->w_in_buf.thermal_energy.size() == t->w_in_buf.n_cells) {
-            // out.temp 已被 wind_surface 写入（mask bit 5 启用时）；finalizer
-            // 在它之上 clamp。若 wind_surface 没写过（mask bit 5 关闭），kernel
-            // 内部用 in.temp 兜底初始化 out.temp。
-            if (!_async_finalizer_kernel_pure(t->w_in_buf, t->w_out_buf)) {
-                ok = false;
-            }
-        }
-        const auto fi1 = clock::now();
-        t->last_finalizer_us.store(
-            (int64_t)std::chrono::duration_cast<std::chrono::microseconds>(fi1 - fi0).count(),
-            std::memory_order_relaxed);
+        // S3：9-pass 编排已搬到共享 TU（runtime_climate_passes.cpp），runtime
+        // worker 调的是同一份。这里只负责把逐 pass 耗时搬回 atomic 供 poll 读。
+        pk_async_climate::ClimateRoundPassTiming timing;
+        const bool ok = pk_async_climate::run_climate_round_passes(
+            t->w_in_buf, t->static_knobs, t->w_work_buf, t->w_out_buf, &timing);
+        t->last_pass_a_us.store(timing.pass_us[0], std::memory_order_relaxed);
+        t->last_pass_b_us.store(timing.pass_us[1], std::memory_order_relaxed);
+        t->last_ocean_water_us.store(timing.pass_us[2], std::memory_order_relaxed);
+        t->last_ocean_land_us.store(timing.pass_us[3], std::memory_order_relaxed);
+        t->last_wind_air_us.store(timing.pass_us[4], std::memory_order_relaxed);
+        t->last_wind_surface_us.store(timing.pass_us[5], std::memory_order_relaxed);
+        t->last_sea_ice_us.store(timing.pass_us[6], std::memory_order_relaxed);
+        t->last_transp_us.store(timing.pass_us[7], std::memory_order_relaxed);
+        t->last_finalizer_us.store(timing.pass_us[8], std::memory_order_relaxed);
 
         const auto compute_t1 = clock::now();
         t->w_out_buf.n_cells = t->w_in_buf.n_cells;
@@ -9636,6 +5462,870 @@ void DCWorldExt::async_climate_round_set_static_knobs(const Dictionary &knobs) {
     _read_pf32_to_vec(knobs, "albedo_table",   t->static_knobs.albedo_table, 0);
 }
 
+// ─── Dictionary → ClimateInputBuf 提取（生产 kick 与 SHADOW capture 共用）────
+//
+// S3：原来这段只存在于 async_climate_round_kick 的锁内。SHADOW worker 需要拿到
+// **与生产 round 完全相同的输入缓冲**才谈得上对拍——如果 worker 自己另写一套
+// snapshot→buf 映射，就等于把断点 1 的"两套实现比结果"从算法层挪到了输入层。
+// 所以把提取逻辑收成一个方法：生产 kick 与 capture_runtime_inputs 都调它，
+// 输入侧差异被消除，剩下的分叉只可能来自执行顺序与状态所有权。
+//
+// 调用方负责持锁（kick 在 task mtx 内调用）。radiative modifier 与 insol 年均
+// LUT 都在这里就地烘焙，因为它们必须由主线程算（worker 不能触 member 缓存）。
+bool DCWorldExt::override_climate_round_input_from_slots(int n_cells,
+        pk_async_climate::ClimateInputBuf &buf) {
+    if (!_bound || n_cells <= 0) return false;
+
+    // 只覆盖 pass_a 真正读的 slot-backed lane。maritime_factor 不是 slot（由
+    // cp_struct 侧携带），radiative modifier 与 insol LUT 由调用方烘焙。
+    struct F32Lane { const char *component; std::vector<float> *dst; bool required; };
+    struct U8Lane  { const char *component; std::vector<uint8_t> *dst; bool required; };
+    const F32Lane f32_lanes[] = {
+        {"cell_elevation",          &buf.elevation,         true},
+        {"cell_base_moisture",      &buf.base_moisture,     true},
+        {"cell_lat_norm",           &buf.lat_norm,          true},
+        {"cell_temp_baseline_year", &buf.temp_baseline_year, true},
+        {"cell_temp",               &buf.temp,              true},
+        {"cell_temp_30d",           &buf.temp_30d,          true},
+        {"cell_temp_365d",          &buf.temp_365d,         true},
+        {"cell_thermal_energy",     &buf.thermal_energy,    true},
+        {"cell_snowpack",           &buf.snowpack,          true},
+        {"cell_moisture",           &buf.moisture,          true},
+        // 可选水文列：slot 缺失时清空，让内核走"这条 lane 不参与"的分支——与
+        // run_climate_pass_a 里 nullptr 指针的语义一致。
+        {"cell_weather_vapor",      &buf.weather_vapor,     false},
+        {"cell_weather_precip",     &buf.weather_precip,    false},
+        {"cell_soil_moisture",      &buf.soil_moisture,     false},
+        {"cell_water_balance_30d",  &buf.water_balance_30d, false},
+    };
+    const U8Lane u8_lanes[] = {
+        {"cell_is_water",        &buf.is_water,        true},
+        {"cell_terrain",         &buf.terrain,         true},
+        {"cell_cover",           &buf.cover,           true},
+        {"cell_ema_initialized", &buf.ema_initialized, true},
+    };
+
+    // 先整体校验，避免只覆盖一半 lane 留下混合来源的 buffer。
+    for (const F32Lane &lane : f32_lanes) {
+        const int sid = component_id(StringName(lane.component));
+        const bool ok = sid >= 0 && _slots.write[sid].arr_f32.size() == n_cells;
+        if (!ok && lane.required) return false;
+    }
+    for (const U8Lane &lane : u8_lanes) {
+        const int sid = component_id(StringName(lane.component));
+        const bool ok = sid >= 0 && _slots.write[sid].arr_u8.size() == n_cells;
+        if (!ok && lane.required) return false;
+    }
+
+    for (const F32Lane &lane : f32_lanes) {
+        const int sid = component_id(StringName(lane.component));
+        if (sid < 0 || _slots.write[sid].arr_f32.size() != n_cells) {
+            lane.dst->clear();
+            continue;
+        }
+        lane.dst->resize(size_t(n_cells));
+        std::memcpy(lane.dst->data(), _slots.write[sid].arr_f32.ptr(),
+                    size_t(n_cells) * sizeof(float));
+    }
+    for (const U8Lane &lane : u8_lanes) {
+        const int sid = component_id(StringName(lane.component));
+        if (sid < 0 || _slots.write[sid].arr_u8.size() != n_cells) {
+            lane.dst->clear();
+            continue;
+        }
+        lane.dst->resize(size_t(n_cells));
+        std::memcpy(lane.dst->data(), _slots.write[sid].arr_u8.ptr(), size_t(n_cells));
+    }
+
+    // ─── pass_b..sea_ice 读的 slot-backed lane ────────────────────────────
+    //
+    // 这些 lane 此前只从 GDScript 的 round-input Dictionary 取，而那份 Dictionary
+    // 走的是 MapData 镜像。风场是纯 slot 产物（physics 只写 DCWorldExt slot，从不
+    // 回灌 MapData），于是 worker 拿到的 wind_x/wind_y/wind_speed 是长度对、内容
+    // 全零的数组 —— 长度对所以 pass 守卫全过、不报 starve，但 wind_air 每个 cell
+    // 都在 wind_len2 < 1e-6 处 continue，wind_surface 的平流权重全被跳过，weather
+    // solve 也拿不到风。分叉矩阵里 temperature 的 2266 格、vapor 的全图偏移、
+    // precipitation 归零，都是这一条。
+    //
+    // 与上面两组的区别：slot 不可用时**保留** Dictionary 给的内容而不是清空。
+    // 清空会把当前唯一的来源也一并抹掉，比拿到零值更糟。
+    struct OverlayF32 { const char *component; std::vector<float> *dst; };
+    struct OverlayU8  { const char *component; std::vector<uint8_t> *dst; };
+    const OverlayF32 overlay_f32[] = {
+        // wind_air / wind_surface / weather solve
+        {"cell_wind_x",                        &buf.wind_x},
+        {"cell_wind_y",                        &buf.wind_y},
+        {"cell_wind_speed",                    &buf.wind_speed},
+        // 邻居方向几何（pass_b / ocean_* / wind_* 都用）
+        {"cell_pos_x",                         &buf.pos_x},
+        {"cell_pos_y",                         &buf.pos_y},
+        // pass_b
+        {"cell_insolation_dev",                &buf.insolation_dev},
+        {"cell_temperature_transport_anomaly", &buf.temp_transport_anomaly},
+        // wind_surface 的合成 baseline 与 air anomaly 快照
+        {"cell_temp_baseline",                 &buf.temp_baseline},
+        {"cell_air_mass_temp_anomaly",         &buf.air_mass_temp_anomaly},
+        // ocean_water / ocean_land
+        {"cell_ocean_current_x",               &buf.ocean_current_x},
+        {"cell_ocean_current_y",               &buf.ocean_current_y},
+        {"cell_ocean_thermal_anomaly",         &buf.ocean_thermal_anomaly},
+        // sea_ice
+        {"cell_upwelling_strength",            &buf.upwelling_strength},
+        {"cell_insolation_now",                &buf.insolation_now},
+        {"cell_sea_ice_frac",                  &buf.sea_ice_frac_inout},
+    };
+    const OverlayU8 overlay_u8[] = {
+        {"cell_landform",     &buf.landform},
+        {"cell_vegetation",   &buf.vegetation},
+        {"cell_base_terrain", &buf.base_terrain},
+    };
+    for (const OverlayF32 &lane : overlay_f32) {
+        const int sid = component_id(StringName(lane.component));
+        if (sid < 0 || _slots.write[sid].arr_f32.size() != n_cells) continue;
+        lane.dst->resize(size_t(n_cells));
+        std::memcpy(lane.dst->data(), _slots.write[sid].arr_f32.ptr(),
+                    size_t(n_cells) * sizeof(float));
+    }
+    for (const OverlayU8 &lane : overlay_u8) {
+        const int sid = component_id(StringName(lane.component));
+        if (sid < 0 || _slots.write[sid].arr_u8.size() != n_cells) continue;
+        lane.dst->resize(size_t(n_cells));
+        std::memcpy(lane.dst->data(), _slots.write[sid].arr_u8.ptr(), size_t(n_cells));
+    }
+    return true;
+}
+
+void DCWorldExt::record_production_feedback_input(
+        const pk_async_climate::ClimateFeedbackKnobs &knobs, int n_cells,
+        const uint8_t *is_water, const uint8_t *weather_type,
+        const float *weather_intensity, const uint8_t *weather_field_init,
+        const float *temp_transport_anomaly, const float *base_moisture,
+        const float *soil_moisture) {
+    if (n_cells <= 0 || is_water == nullptr || weather_type == nullptr ||
+        weather_intensity == nullptr || weather_field_init == nullptr ||
+        temp_transport_anomaly == nullptr || base_moisture == nullptr ||
+        soil_moisture == nullptr) {
+        return;
+    }
+    auto rec = std::make_shared<pk_async_climate::ClimateFeedbackInput>();
+    rec->knobs = knobs;
+    rec->n_cells = n_cells;
+    const size_t n = size_t(n_cells);
+    const auto copy_f32 = [n](std::vector<float> &dst, const float *src) {
+        dst.resize(n);
+        std::memcpy(dst.data(), src, n * sizeof(float));
+    };
+    const auto copy_u8 = [n](std::vector<uint8_t> &dst, const uint8_t *src) {
+        dst.resize(n);
+        std::memcpy(dst.data(), src, n);
+    };
+    copy_u8(rec->is_water, is_water);
+    copy_u8(rec->weather_type, weather_type);
+    copy_f32(rec->weather_intensity, weather_intensity);
+    copy_u8(rec->weather_field_init, weather_field_init);
+    copy_f32(rec->temp_transport_anomaly, temp_transport_anomaly);
+    // base_moisture / soil_moisture 是 in/out：这里必须在 kernel 跑之前调用，记的是
+    // 生产读到的初值。调用点就在 apply 之前一行。
+    copy_f32(rec->base_moisture, base_moisture);
+    copy_f32(rec->soil_moisture, soil_moisture);
+    _production_feedback = std::move(rec);
+    _production_stage_mask |= pk_async_climate::CLIMATE_STAGE_BIT_CLIMATE_FEEDBACK;
+}
+
+void DCWorldExt::record_production_vegetation_input(
+        const pk_async_climate::VegetationDynamicsKnobs &knobs,
+        const pk_async_climate::VegetationDynamicsTables &tables,
+        const pk_async_climate::VegetationDynamicsLanes &lanes,
+        int n_cells) {
+    if (n_cells <= 0 || knobs.n_veg <= 0 || knobs.n_wt <= 0) return;
+    if (tables.ideal_temp == nullptr || tables.ideal_moist == nullptr ||
+        tables.temp_tol == nullptr || tables.moist_tol == nullptr ||
+        tables.weather_penalty == nullptr || tables.resistance == nullptr ||
+        tables.next_up == nullptr || tables.next_down == nullptr) {
+        return;
+    }
+    if (lanes.is_water == nullptr || lanes.terrain == nullptr ||
+        lanes.landform == nullptr || lanes.vegetation == nullptr ||
+        lanes.temp_30d == nullptr || lanes.moisture == nullptr ||
+        lanes.water_balance_30d == nullptr || lanes.weather_type == nullptr ||
+        lanes.weather_intensity == nullptr || lanes.weather_field_init == nullptr) {
+        return;
+    }
+    auto rec = std::make_shared<pk_async_climate::VegetationDynamicsInput>();
+    rec->knobs = knobs;
+    rec->n_cells = n_cells;
+    const size_t n = size_t(n_cells);
+    const auto copy_f32 = [](std::vector<float> &dst, const float *src, size_t count) {
+        dst.resize(count);
+        if (count > 0) std::memcpy(dst.data(), src, count * sizeof(float));
+    };
+    const auto copy_u8 = [](std::vector<uint8_t> &dst, const uint8_t *src, size_t count) {
+        dst.resize(count);
+        if (count > 0) std::memcpy(dst.data(), src, count);
+    };
+    const size_t nv = size_t(knobs.n_veg);
+    copy_f32(rec->ideal_temp, tables.ideal_temp, nv);
+    copy_f32(rec->ideal_moist, tables.ideal_moist, nv);
+    copy_f32(rec->temp_tol, tables.temp_tol, nv);
+    copy_f32(rec->moist_tol, tables.moist_tol, nv);
+    copy_f32(rec->weather_penalty, tables.weather_penalty, size_t(std::max(knobs.wt_pen_size, 0)));
+    copy_f32(rec->resistance, tables.resistance, nv * size_t(knobs.n_wt));
+    copy_u8(rec->next_up, tables.next_up, nv);
+    copy_u8(rec->next_down, tables.next_down, nv);
+    copy_u8(rec->is_water, lanes.is_water, n);
+    copy_u8(rec->terrain, lanes.terrain, n);
+    copy_u8(rec->landform, lanes.landform, n);
+    copy_u8(rec->vegetation, lanes.vegetation, n);
+    copy_f32(rec->temp_30d, lanes.temp_30d, n);
+    copy_f32(rec->moisture, lanes.moisture, n);
+    copy_f32(rec->water_balance_30d, lanes.water_balance_30d, n);
+    copy_u8(rec->weather_type, lanes.weather_type, n);
+    copy_f32(rec->weather_intensity, lanes.weather_intensity, n);
+    copy_u8(rec->weather_field_init, lanes.weather_field_init, n);
+    // soil_moisture 与 regen_score 都不是 worker store 的成员：记生产读到的初值，
+    // worker 侧用 scratch 承接，输出丢弃（与 feedback 的 soil_moisture 同处理）。
+    rec->has_soil_moisture = lanes.soil_moisture != nullptr;
+    if (rec->has_soil_moisture) copy_f32(rec->soil_moisture, lanes.soil_moisture, n);
+    if (lanes.regen_score != nullptr) copy_f32(rec->regen_score, lanes.regen_score, n);
+    rec->has_growth_pressure = lanes.vegetation_growth_pressure != nullptr;
+    _production_vegetation = std::move(rec);
+    _production_stage_mask |= pk_async_climate::CLIMATE_STAGE_BIT_VEGETATION_DYNAMICS;
+}
+
+void DCWorldExt::record_production_weather_input(
+        const pk_async_climate::WeatherFieldKnobs &knobs,
+        const pk_async_climate::SynopticAdvanceKnobs &synoptic,
+        bool synoptic_enabled,
+        const pk_async_climate::WeatherFieldLanes &lanes,
+        const pk_async_climate::WeatherFieldState &state,
+        int n_cells,
+        const uint8_t *field_init) {
+    if (n_cells <= 0) return;
+    // 必需 lane 缺任何一条就不记：半份记录会让 worker 侧的长度校验静默跳过整个
+    // stage，而那在分叉矩阵里和"生产这天没跑 weather"长得一样。
+    if (lanes.temp_read == nullptr || lanes.moisture_read == nullptr ||
+        lanes.air_anomaly == nullptr || lanes.wind_x == nullptr ||
+        lanes.wind_y == nullptr || lanes.wind_speed == nullptr ||
+        lanes.terrain == nullptr || lanes.has_river == nullptr ||
+        lanes.elevation == nullptr || lanes.vegetation == nullptr ||
+        lanes.pos_x == nullptr || lanes.pos_y == nullptr ||
+        lanes.temp_transport_anomaly == nullptr) {
+        return;
+    }
+    auto rec = std::make_shared<pk_async_climate::WeatherFieldInput>();
+    rec->knobs = knobs;
+    rec->synoptic = synoptic;
+    rec->synoptic_enabled = synoptic_enabled;
+    rec->n_cells = n_cells;
+    rec->ran = true;
+    const size_t n = size_t(n_cells);
+    const auto cp_f32 = [n](std::vector<float> &dst, const float *src) {
+        if (src == nullptr) { dst.clear(); return; }
+        dst.resize(n);
+        std::memcpy(dst.data(), src, n * sizeof(float));
+    };
+    const auto cp_u8 = [n](std::vector<uint8_t> &dst, const uint8_t *src) {
+        if (src == nullptr) { dst.clear(); return; }
+        dst.resize(n);
+        std::memcpy(dst.data(), src, n);
+    };
+    cp_f32(rec->temp_read, lanes.temp_read);
+    cp_f32(rec->moisture_read, lanes.moisture_read);
+    cp_f32(rec->air_anomaly, lanes.air_anomaly);
+    cp_f32(rec->wind_x, lanes.wind_x);
+    cp_f32(rec->wind_y, lanes.wind_y);
+    cp_f32(rec->wind_speed, lanes.wind_speed);
+    cp_u8(rec->terrain, lanes.terrain);
+    cp_u8(rec->has_river, lanes.has_river);
+    cp_f32(rec->river_q30, lanes.river_q30);
+    cp_f32(rec->elevation, lanes.elevation);
+    cp_u8(rec->vegetation, lanes.vegetation);
+    cp_f32(rec->soil_moisture, lanes.soil_moisture);
+    cp_f32(rec->vitality, lanes.vitality);
+    cp_f32(rec->sea_ice, lanes.sea_ice);
+    cp_f32(rec->pos_x, lanes.pos_x);
+    cp_f32(rec->pos_y, lanes.pos_y);
+    cp_f32(rec->temp_anomaly, lanes.temp_anomaly);
+    cp_f32(rec->snow_cover, lanes.snow_cover);
+    cp_f32(rec->temp_transport_anomaly, lanes.temp_transport_anomaly);
+
+    // 跨 tick 状态：这里记的是生产这一轮【读到的】初值，所以调用点必须在 solve
+    // 之前 —— conv_inhib 与 ψ 都是 in/out。
+    cp_f32(rec->conv_inhib, state.conv_inhib);
+    if (synoptic_enabled) rec->psi = _wx_synoptic;
+    if (state.cyclone_tag != nullptr &&
+        state.cyclone_tag_count == n_cells) {
+        rec->cyclone_tag.resize(n);
+        std::memcpy(rec->cyclone_tag.data(), state.cyclone_tag,
+                    n * sizeof(uint32_t));
+        rec->cyclone_generation = state.cyclone_generation;
+        cp_f32(rec->cyclone_lift, state.cyclone_lift);
+        cp_f32(rec->cyclone_x, state.cyclone_x);
+        cp_f32(rec->cyclone_y, state.cyclone_y);
+    }
+    if (state.monsoon_thermal != nullptr &&
+        state.monsoon_thermal_count == n_cells) {
+        cp_f32(rec->monsoon_thermal, state.monsoon_thermal);
+    }
+    if (state.traj_idx != nullptr && state.traj_w != nullptr) {
+        rec->traj_idx.resize(n * 3);
+        rec->traj_w.resize(n * 3);
+        std::memcpy(rec->traj_idx.data(), state.traj_idx, n * 3 * sizeof(int32_t));
+        std::memcpy(rec->traj_w.data(), state.traj_w, n * 3 * sizeof(float));
+    }
+    if (field_init != nullptr) {
+        rec->field_init.resize(n);
+        std::memcpy(rec->field_init.data(), field_init, n);
+    }
+    _production_weather = std::move(rec);
+    // stage bit 由 solve pass 自己置位（它在 sliced 路径上可能被多次调用，而记录只
+    // 在 start_idx == 0 那次做）。
+}
+
+void DCWorldExt::record_production_weather_distribute_input(
+        const pk_async_climate::WeatherDistributeKnobs &knobs,
+        const pk_async_climate::WeatherDistributeLanes &lanes,
+        const pk_async_climate::WeatherDistributeState &state,
+        int n_cells) {
+    if (n_cells <= 0) return;
+    if (lanes.heat == nullptr || lanes.elevation == nullptr ||
+        lanes.landform == nullptr || lanes.terrain == nullptr ||
+        lanes.weather_intensity == nullptr || lanes.weather_precip == nullptr ||
+        lanes.weather_type == nullptr || lanes.weather_field_init == nullptr ||
+        lanes.cover == nullptr || lanes.soil_moisture == nullptr ||
+        state.accumulated_snow_days == nullptr ||
+        state.pre_snow_cover == nullptr) {
+        return;
+    }
+    auto rec = std::make_shared<pk_async_climate::WeatherDistributeInput>();
+    rec->knobs = knobs;
+    rec->n_cells = n_cells;
+    rec->ran = true;
+    const size_t n = size_t(n_cells);
+    const auto cp_f32 = [n](std::vector<float> &dst, const float *src) {
+        dst.resize(n);
+        std::memcpy(dst.data(), src, n * sizeof(float));
+    };
+    const auto cp_u8 = [n](std::vector<uint8_t> &dst, const uint8_t *src) {
+        dst.resize(n);
+        std::memcpy(dst.data(), src, n);
+    };
+    const auto cp_i32 = [n](std::vector<int32_t> &dst, const int32_t *src) {
+        dst.resize(n);
+        std::memcpy(dst.data(), src, n * sizeof(int32_t));
+    };
+    cp_f32(rec->heat, lanes.heat);
+    cp_f32(rec->elevation, lanes.elevation);
+    cp_u8(rec->landform, lanes.landform);
+    cp_u8(rec->terrain, lanes.terrain);
+    cp_f32(rec->weather_intensity, lanes.weather_intensity);
+    cp_f32(rec->weather_precip, lanes.weather_precip);
+    cp_u8(rec->weather_type, lanes.weather_type);
+    cp_u8(rec->weather_field_init, lanes.weather_field_init);
+    cp_u8(rec->cover, lanes.cover);
+    cp_f32(rec->soil_moisture, lanes.soil_moisture);
+    cp_i32(rec->accumulated_snow_days, state.accumulated_snow_days);
+    cp_i32(rec->pre_snow_cover, state.pre_snow_cover);
+    _production_weather_distribute = std::move(rec);
+    // stage bit 由 WEATHER 那一位代表：distribute 与 field solve 同属 stage 11，
+    // 分开置位会让分叉矩阵多出一个没有对应字段的 stage。
+    _production_stage_mask |= pk_async_climate::CLIMATE_STAGE_BIT_WEATHER;
+}
+
+void DCWorldExt::record_production_hydrology_input(
+        const pk_async_climate::HydrologyKnobs &knobs,
+        const pk_async_climate::HydrologyLanes &lanes,
+        bool has_neighbors, uint64_t canal_topology_generation,
+        int n_cells) {
+    if (n_cells <= 0) return;
+    if (lanes.has_river == nullptr || lanes.terrain == nullptr ||
+        lanes.landform == nullptr || lanes.vegetation == nullptr ||
+        lanes.cover == nullptr || lanes.elevation == nullptr ||
+        lanes.precip == nullptr || lanes.intensity == nullptr ||
+        lanes.weather_type == nullptr || lanes.temp == nullptr ||
+        lanes.heat == nullptr || lanes.snowpack == nullptr ||
+        lanes.base_moisture == nullptr || lanes.is_water == nullptr ||
+        lanes.vitality == nullptr || lanes.canal_mask == nullptr ||
+        lanes.soil_moisture == nullptr || lanes.discharge_30d == nullptr) {
+        return;
+    }
+    auto rec = std::make_shared<pk_async_climate::HydrologyInput>();
+    rec->knobs = knobs;
+    rec->n_cells = n_cells;
+    rec->ran = true;
+    rec->has_neighbors = has_neighbors;
+    rec->canal_topology_generation = canal_topology_generation;
+    const size_t n = size_t(n_cells);
+    const auto cp_f32 = [n](std::vector<float> &dst, const float *src) {
+        dst.resize(n);
+        std::memcpy(dst.data(), src, n * sizeof(float));
+    };
+    const auto cp_u8 = [n](std::vector<uint8_t> &dst, const uint8_t *src) {
+        dst.resize(n);
+        std::memcpy(dst.data(), src, n);
+    };
+    cp_u8(rec->has_river, lanes.has_river);
+    cp_u8(rec->terrain, lanes.terrain);
+    cp_u8(rec->landform, lanes.landform);
+    cp_u8(rec->vegetation, lanes.vegetation);
+    cp_u8(rec->cover, lanes.cover);
+    cp_f32(rec->elevation, lanes.elevation);
+    cp_f32(rec->precip, lanes.precip);
+    cp_f32(rec->intensity, lanes.intensity);
+    cp_u8(rec->weather_type, lanes.weather_type);
+    cp_f32(rec->temp, lanes.temp);
+    cp_f32(rec->heat, lanes.heat);
+    cp_f32(rec->snowpack, lanes.snowpack);
+    cp_f32(rec->base_moisture, lanes.base_moisture);
+    cp_u8(rec->is_water, lanes.is_water);
+    cp_f32(rec->vitality, lanes.vitality);
+    cp_u8(rec->canal_mask, lanes.canal_mask);
+    cp_f32(rec->soil_moisture, lanes.soil_moisture);
+    cp_f32(rec->discharge_30d, lanes.discharge_30d);
+    if (lanes.canal_water != nullptr) cp_f32(rec->canal_water, lanes.canal_water);
+    // hydro_parent 不在这里记：它只在地图生成/regen 时重建，属于 round static
+    // knobs 的范畴，每天再抄一份 int32 全图纯属浪费。
+    _production_hydrology = std::move(rec);
+}
+
+// 生产 pass_b 用的海冰浓度 lane。三个变体（scalar / simd / thread）都调这里，最后
+// 一个覆盖前面的，内容相同所以结果一致。SIF 为空（cp 没配 sea_ice_albedo_cooling
+// 或 knobs 没带 sea_ice_frac）时也要如实记一个空的 —— 留着上一天那份会让 worker
+// 在生产本来跳过尾循环的那一天照跑。
+void DCWorldExt::record_production_pass_b_input(int n_cells, const float *sea_ice_frac,
+                                               const float *temp_transport_anomaly) {
+    if (n_cells <= 0) return;
+    auto in = std::make_shared<pk_async_climate::ClimatePassBInput>();
+    in->n_cells = n_cells;
+    if (sea_ice_frac != nullptr) {
+        in->sea_ice_frac.assign(sea_ice_frac, sea_ice_frac + n_cells);
+    }
+    if (temp_transport_anomaly != nullptr) {
+        in->temp_transport_anomaly.assign(temp_transport_anomaly,
+                                          temp_transport_anomaly + n_cells);
+    }
+    _production_pass_b = std::move(in);
+}
+
+// 生产 sea_ice 用的温度 lane。scalar / thread 两个变体都调这里。
+void DCWorldExt::record_production_sea_ice_input(
+        const pk_async_climate::SeaIceLanes &lanes, int n_cells) {
+    if (n_cells <= 0) return;
+    auto in = std::make_shared<pk_async_climate::SeaIceInput>();
+    in->n_cells = n_cells;
+    const auto cp_f32 = [n_cells](std::vector<float> &dst, const float *src) {
+        if (src == nullptr) return;
+        dst.assign(src, src + n_cells);
+    };
+    const auto cp_u8 = [n_cells](std::vector<uint8_t> &dst, const uint8_t *src) {
+        if (src == nullptr) return;
+        dst.assign(src, src + n_cells);
+    };
+    cp_f32(in->cell_temperature, lanes.cell_temperature);
+    cp_f32(in->upwelling_strength, lanes.upwelling_strength);
+    cp_f32(in->insolation_now, lanes.insolation_now);
+    cp_f32(in->ocean_thermal_anomaly, lanes.ocean_thermal_anomaly);
+    cp_f32(in->temp_transport_anomaly, lanes.temp_transport_anomaly);
+    cp_u8(in->terrain, lanes.terrain);
+    cp_u8(in->base_terrain, lanes.base_terrain);
+    cp_f32(in->sea_ice_frac, lanes.sea_ice_frac);
+    if (lanes.water_terrain_ids != nullptr && lanes.water_terrain_ids_size > 0) {
+        in->water_terrain_ids.assign(
+            lanes.water_terrain_ids,
+            lanes.water_terrain_ids + lanes.water_terrain_ids_size);
+    }
+    _production_sea_ice = std::move(in);
+}
+
+// 生产 wind_surface 读到的 oanom。空记录会让 worker 退回自己 pass_a 的清零，
+// 而不是错吃上一天的值，所以守住 nullptr 而不是记一个空的。
+// 生产 ocean_water 用的 baseline / temp_before。两条都不是 slot，只在这个调用点
+// 才抽得到真值 —— 见 pk_async_climate::OceanWaterInput 的注释。
+void DCWorldExt::record_production_ocean_water_input(int n_cells, const float *baseline,
+                                                    const float *temp_before) {
+    if (n_cells <= 0) return;
+    auto in = std::make_shared<pk_async_climate::OceanWaterInput>();
+    in->n_cells = n_cells;
+    if (baseline != nullptr) in->baseline.assign(baseline, baseline + n_cells);
+    if (temp_before != nullptr) in->temp_before.assign(temp_before, temp_before + n_cells);
+    _production_ocean_water = std::move(in);
+}
+
+void DCWorldExt::record_production_wind_surface_input(int n_cells, const float *ocean_anomaly) {
+    if (n_cells <= 0 || ocean_anomaly == nullptr) return;
+    auto in = std::make_shared<pk_async_climate::WindSurfaceInput>();
+    in->n_cells = n_cells;
+    in->ocean_anomaly.assign(ocean_anomaly, ocean_anomaly + n_cells);
+    _production_wind_surface = std::move(in);
+}
+
+void DCWorldExt::record_production_pass_a_scalars(
+        const pk_async_climate::ClimateRoundScalars &src) {
+    _production_round_scalar_mask |= 0x01;
+    _production_stage_mask |= pk_async_climate::CLIMATE_STAGE_BIT_PASS_A;
+    pk_async_climate::ClimateRoundScalars &s = _production_round_scalars;
+    s.season_phase = src.season_phase;
+    s.axial_tilt_deg = src.axial_tilt_deg;
+    s.day_length_gain = src.day_length_gain;
+    s.solar_gain = src.solar_gain;
+    s.insol_amp = src.insol_amp;
+    s.insol_gain = src.insol_gain;
+    s.insol_dev_min = src.insol_dev_min;
+    s.insol_dev_max = src.insol_dev_max;
+    s.thermal_inertia_land = src.thermal_inertia_land;
+    s.thermal_inertia_water = src.thermal_inertia_water;
+    s.thermal_inertia_snow = src.thermal_inertia_snow;
+    s.thermal_inertia_high_mountain = src.thermal_inertia_high_mountain;
+    s.thermal_daily_delta_cap = src.thermal_daily_delta_cap;
+    s.thermal_dt_days = src.thermal_dt_days;
+    s.runtime_moisture_base_relax_rate = src.runtime_moisture_base_relax_rate;
+    s.runtime_moisture_weather_vapor_weight = src.runtime_moisture_weather_vapor_weight;
+    s.runtime_moisture_precip_weight = src.runtime_moisture_precip_weight;
+    s.runtime_moisture_soil_weight = src.runtime_moisture_soil_weight;
+    s.runtime_moisture_soil_dry_weight = src.runtime_moisture_soil_dry_weight;
+    s.runtime_moisture_water_balance_weight = src.runtime_moisture_water_balance_weight;
+    s.runtime_moisture_water_balance_dry_weight = src.runtime_moisture_water_balance_dry_weight;
+    s.snowpack_cover_low = src.snowpack_cover_low;
+    s.maritime_season_damp = src.maritime_season_damp;
+    s.sea_level = src.sea_level;
+    s.days_per_year = src.days_per_year;
+}
+
+void DCWorldExt::record_production_round_scalars(int pass_bit,
+                                                 const Dictionary &knobs) {
+    using namespace pk_async_climate;
+    // pass_bit 与 RuntimeClimateStage 的低八位同源（见 CLIMATE_STAGE_BIT_PASS_A 处
+    // 的注释）。每个生产 round pass 都会调到这里，所以这一句就是低八位 stage 掩码的
+    // 唯一记录点；漏了它，分叉矩阵会把"生产跑了但没记"误报成"生产没跑"。
+    _production_stage_mask |= pass_bit;
+    ClimateRoundScalars &s = _production_round_scalars;
+    // wrap_period_x 的兜底必须是 _native_wrap_period_x（生产各 pass 缺这个键时用
+    // 的就是它），而不是结构默认 0。GDScript 的 wind/ocean knobs 里根本不带这个
+    // 键，所以按结构默认记等于告诉 worker"域宽是 0"——所有 advect 类 pass 的接缝
+    // 折叠因此在两边不一致。
+    const auto f = [&knobs](const char *key, float fallback) {
+        return knobs.has(key) ? float(knobs[key]) : fallback;
+    };
+    const auto d = [&knobs](const char *key, double fallback) {
+        return knobs.has(key) ? double(knobs[key]) : fallback;
+    };
+    const auto i32 = [&knobs](const char *key, int fallback) {
+        return knobs.has(key) ? int(knobs[key]) : fallback;
+    };
+    const auto b = [&knobs](const char *key, bool fallback) {
+        return knobs.has(key) ? bool(knobs[key]) : fallback;
+    };
+    switch (pass_bit) {
+    case 0x02:  // pass_b
+        s.pb_winter_boost = f("winter_boost", s.pb_winter_boost);
+        s.pb_snow_cool = f("snow_cool", s.pb_snow_cool);
+        s.pb_veg_cool = f("veg_cool", s.pb_veg_cool);
+        s.pb_diurnal_amp = f("diurnal_amp", s.pb_diurnal_amp);
+        s.pb_evap_gain = f("evap_gain", s.pb_evap_gain);
+        s.pb_rs_threshold = f("rs_threshold", s.pb_rs_threshold);
+        s.pb_rs_factor = f("rs_factor", s.pb_rs_factor);
+        s.pb_rs_lookback = i32("rs_lookback", s.pb_rs_lookback);
+        s.pb_t_freeze = f("t_freeze", s.pb_t_freeze);
+        s.pb_coupling_gain = f("coupling_gain", s.pb_coupling_gain);
+        s.pb_coast_leak = f("coast_leak", s.pb_coast_leak);
+        s.pb_sea_ice_albedo_cooling =
+            f("sea_ice_albedo_cooling", s.pb_sea_ice_albedo_cooling);
+        // snowpack_cover_* 与 wrap_period_x 是 pass_a/pass_b 共用的，pass_b 的 knobs
+        // 里带的是生产 pass_b 实际用的那一份，照抄。
+        s.snowpack_cover_low = d("snowpack_cover_low", s.snowpack_cover_low);
+        s.snowpack_cover_full = d("snowpack_cover_full", s.snowpack_cover_full);
+        s.wrap_period_x = f("wrap_period_x", float(_native_wrap_period_x));
+        break;
+    case 0x04:  // ocean_water
+        s.ow_advect_steps = i32("advect_steps", s.ow_advect_steps);
+        s.ow_heat_mix = f("heat_mix", s.ow_heat_mix);
+        s.ow_tta_source_cap = f("tta_source_cap", s.ow_tta_source_cap);
+        s.ow_tta_blend_rate = f("tta_blend_rate", s.ow_tta_blend_rate);
+        s.ow_tta_zero_current_decay =
+            f("tta_zero_current_decay", s.ow_tta_zero_current_decay);
+        s.ow_cold_transport_form =
+            f("cold_transport_form_threshold", s.ow_cold_transport_form);
+        s.ow_cold_transport_melt =
+            f("cold_transport_melt_threshold", s.ow_cold_transport_melt);
+        s.wrap_period_x = f("wrap_period_x", float(_native_wrap_period_x));
+        break;
+    case 0x08:  // ocean_land
+        s.ol_effective_leak = f("effective_leak", s.ol_effective_leak);
+        s.ol_tta_source_cap = f("tta_source_cap", s.ol_tta_source_cap);
+        s.ol_tta_blend_rate = f("tta_blend_rate", s.ol_tta_blend_rate);
+        s.ol_tta_decay_rate = f("tta_decay_rate", s.ol_tta_decay_rate);
+        s.wrap_period_x = f("wrap_period_x", float(_native_wrap_period_x));
+        break;
+    case 0x10:  // wind_air（生产入口是 run_wind_air_mass_pass）
+        s.wa_advect_steps = i32("advect_steps", s.wa_advect_steps);
+        s.wa_heat_mix = f("heat_mix", s.wa_heat_mix);
+        s.wrap_period_x = f("wrap_period_x", float(_native_wrap_period_x));
+        break;
+    case 0x20:  // wind_surface
+        s.ws_air_leak = f("air_leak", s.ws_air_leak);
+        s.ws_cold_transport_form =
+            f("cold_transport_form_threshold", s.ws_cold_transport_form);
+        s.ws_cold_transport_melt =
+            f("cold_transport_melt_threshold", s.ws_cold_transport_melt);
+        s.wrap_period_x = f("wrap_period_x", float(_native_wrap_period_x));
+        break;
+    case 0x40:  // sea_ice
+        s.si_k_freeze = f("k_freeze", s.si_k_freeze);
+        s.si_k_melt = f("k_melt", s.si_k_melt);
+        s.si_t_form = f("t_form", s.si_t_form);
+        s.si_t_melt = f("t_melt", s.si_t_melt);
+        s.si_contagion = f("contagion", s.si_contagion);
+        s.si_threshold = f("threshold", s.si_threshold);
+        s.si_hysteresis = f("hysteresis", s.si_hysteresis);
+        s.si_ice_delay = f("ice_delay", s.si_ice_delay);
+        s.si_enable_oht = b("enable_ocean_heat_transport", s.si_enable_oht);
+        s.si_solar_gate_enabled = b("solar_gate_enabled", s.si_solar_gate_enabled);
+        s.si_freeze_insol_low = f("freeze_insol_low", s.si_freeze_insol_low);
+        s.si_freeze_insol_high = f("freeze_insol_high", s.si_freeze_insol_high);
+        s.si_solar_melt_start = f("solar_melt_start", s.si_solar_melt_start);
+        s.si_solar_melt_gain = f("solar_melt_gain", s.si_solar_melt_gain);
+        s.si_min_thick_ice_solar_exposure =
+            f("min_thick_ice_solar_exposure", s.si_min_thick_ice_solar_exposure);
+        s.si_daily_delta_cap = f("daily_delta_cap", s.si_daily_delta_cap);
+        s.si_edge_mix_rate = f("edge_mix_rate", s.si_edge_mix_rate);
+        s.si_dt_days = f("dt_days", s.si_dt_days);
+        s.si_terrain_lake_id = i32("terrain_lake_id", s.si_terrain_lake_id);
+        s.si_terrain_sea_ice_id = i32("terrain_sea_ice_id", s.si_terrain_sea_ice_id);
+        s.si_terrain_ocean_id = i32("terrain_ocean_id", s.si_terrain_ocean_id);
+        break;
+    default:
+        return;
+    }
+    _production_round_scalar_mask |= pass_bit;
+}
+
+void DCWorldExt::fill_climate_round_input(const Dictionary &input, int n_cells,
+                                          pk_async_climate::ClimateInputBuf &buf,
+                                          bool prefer_slot_lanes) {
+    using namespace pk_async_climate;
+    if (n_cells <= 0) {
+        buf = ClimateInputBuf{};
+        return;
+    }
+    buf.n_cells = n_cells;
+
+    // Stage 1 字段（transp 读）
+    _read_pu8_to_vec(input,  "landform",   buf.landform,   n_cells);
+    _read_pu8_to_vec(input,  "vegetation", buf.vegetation, n_cells);
+    _read_pf32_to_vec(input, "moisture",   buf.moisture,   n_cells);
+
+    // Stage 2 字段（pass_a 读）。如不提供则填空（0）；worker 内的 pass_a
+    // 维度校验会拒绝跑（passes_mask & 0x01 但 is_water.size() != n_cells）。
+    _read_pu8_to_vec(input,  "is_water",            buf.is_water,            n_cells);
+    _read_pu8_to_vec(input,  "terrain",             buf.terrain,             n_cells);
+    _read_pu8_to_vec(input,  "cover",               buf.cover,               n_cells);
+    _read_pu8_to_vec(input,  "ema_initialized",     buf.ema_initialized,     n_cells);
+    _read_pf32_to_vec(input, "elevation",           buf.elevation,           n_cells);
+    _read_pf32_to_vec(input, "base_moisture",       buf.base_moisture,       n_cells);
+    _read_pf32_to_vec(input, "weather_vapor",       buf.weather_vapor,       n_cells);
+    _read_pf32_to_vec(input, "weather_precip",      buf.weather_precip,      n_cells);
+    _read_pf32_to_vec(input, "soil_moisture",       buf.soil_moisture,       n_cells);
+    _read_pf32_to_vec(input, "water_balance_30d",   buf.water_balance_30d,   n_cells);
+    _read_pf32_to_vec(input, "lat_norm",            buf.lat_norm,            n_cells);
+    // [climate-zone-fix P2] 海洋性调温因子（静态 per-cell；缺省空→不调温）
+    _read_pf32_to_vec(input, "maritime_factor",     buf.maritime,            n_cells);
+    _read_pf32_to_vec(input, "temp_baseline_year",  buf.temp_baseline_year,  n_cells);
+    _read_pf32_to_vec(input, "temp",                buf.temp,                n_cells);
+    _read_pf32_to_vec(input, "temp_30d",            buf.temp_30d,            n_cells);
+    _read_pf32_to_vec(input, "temp_365d",           buf.temp_365d,           n_cells);
+    _read_pf32_to_vec(input, "thermal_energy",      buf.thermal_energy,      n_cells);
+    _read_pf32_to_vec(input, "snowpack",            buf.snowpack,            n_cells);
+    buf.radiative_modifier_add.assign(
+        static_cast<size_t>(n_cells), 0.0f);
+    buf.radiative_modifier_factor.assign(
+        static_cast<size_t>(n_cells), 1.0f);
+    if (_modifier_runtime != nullptr) {
+        const ModifierRuntime *modifier =
+            static_cast<const ModifierRuntime *>(_modifier_runtime);
+        for (int cell = 0; cell < n_cells; ++cell) {
+            double add = 0.0;
+            double factor = 1.0;
+            modifier->climate_radiative_terms(cell, add, factor);
+            buf.radiative_modifier_add[static_cast<size_t>(cell)] =
+                static_cast<float>(add);
+            buf.radiative_modifier_factor[static_cast<size_t>(cell)] =
+                static_cast<float>(factor);
+        }
+    }
+
+    // Stage 2 字段（pass_b 读）。snow_cover/moisture 与 pass_a 共享。
+    _read_pf32_to_vec(input, "pos_x",                     buf.pos_x,                     n_cells);
+    _read_pf32_to_vec(input, "pos_y",                     buf.pos_y,                     n_cells);
+    _read_pf32_to_vec(input, "insolation_dev",            buf.insolation_dev,            n_cells);
+    _read_pf32_to_vec(input, "temp_transport_anomaly",    buf.temp_transport_anomaly,    n_cells);
+    _read_pf32_to_vec(input, "local_thermal_anomaly",     buf.local_thermal_anomaly,     n_cells);
+    _read_pf32_to_vec(input, "sea_ice_frac",              buf.sea_ice_frac,              n_cells);
+
+    // Stage 2 字段（ocean_water/ocean_land 读）
+    _read_pf32_to_vec(input, "ocean_current_x",           buf.ocean_current_x,           n_cells);
+    _read_pf32_to_vec(input, "ocean_current_y",           buf.ocean_current_y,           n_cells);
+    _read_pf32_to_vec(input, "ocean_thermal_anomaly",     buf.ocean_thermal_anomaly,     n_cells);
+
+    // Stage 2 字段（wind_air/wind_surface 读）
+    _read_pf32_to_vec(input, "wind_x",                    buf.wind_x,                    n_cells);
+    _read_pf32_to_vec(input, "wind_y",                    buf.wind_y,                    n_cells);
+    _read_pf32_to_vec(input, "wind_speed",                buf.wind_speed,                n_cells);
+    _read_pf32_to_vec(input, "temp_baseline",             buf.temp_baseline,             n_cells);
+    _read_pf32_to_vec(input, "air_mass_temp_anomaly",     buf.air_mass_temp_anomaly,     n_cells);
+
+    // Stage 2 字段（sea_ice 读）
+    _read_pu8_to_vec(input,  "base_terrain",              buf.base_terrain,              n_cells);
+    _read_pf32_to_vec(input, "upwelling_strength",        buf.upwelling_strength,        n_cells);
+    _read_pf32_to_vec(input, "insolation_now",            buf.insolation_now,            n_cells);
+    _read_pf32_to_vec(input, "cell_temperature_arr",      buf.cell_temperature_arr,      n_cells);
+    _read_pf32_to_vec(input, "sea_ice_frac_inout",        buf.sea_ice_frac_inout,        n_cells);
+    _read_pu8_to_vec(input,  "water_terrain_ids",         buf.water_terrain_ids,         0);
+
+    // Round-level scalars
+    buf.scalars.season_phase     = double(input.get("season_phase", 0.0));
+    buf.scalars.axial_tilt_deg   = double(input.get("axial_tilt_deg", 23.5));
+    buf.scalars.day_length_gain  = double(input.get("day_length_gain", 0.35));
+    buf.scalars.solar_gain       = double(input.get("solar_gain", 1.0));
+    buf.scalars.insol_amp        = double(input.get("insol_amp", 0.20));
+    buf.scalars.insol_gain       = double(input.get("insol_gain", 1.0));
+    buf.scalars.moist_scale_now  = double(input.get("moist_scale_now", 1.0));
+    buf.scalars.runtime_moisture_base_relax_rate = float(input.get("runtime_moisture_base_relax_rate", 0.24));
+    buf.scalars.runtime_moisture_weather_vapor_weight = float(input.get("runtime_moisture_weather_vapor_weight", 0.12));
+    buf.scalars.runtime_moisture_precip_weight = float(input.get("runtime_moisture_precip_weight", 0.78));
+    buf.scalars.runtime_moisture_soil_weight = float(input.get("runtime_moisture_soil_weight", 1.82));
+    buf.scalars.runtime_moisture_soil_dry_weight = float(input.get("runtime_moisture_soil_dry_weight", 2.21));
+    buf.scalars.runtime_moisture_water_balance_weight = float(input.get("runtime_moisture_water_balance_weight", 1.04));
+    buf.scalars.runtime_moisture_water_balance_dry_weight = float(input.get("runtime_moisture_water_balance_dry_weight", 1.30));
+    buf.scalars.days_per_year    = int(input.get("days_per_year", 365));
+    buf.scalars.sea_level        = double(input.get("sea_level", 0.5));
+    // pass_a 扩展 scalars
+    buf.scalars.insol_dev_min               = double(input.get("insol_dev_min", -1.0));
+    buf.scalars.insol_dev_max               = double(input.get("insol_dev_max", 1.0));
+    buf.scalars.thermal_inertia_land        = double(input.get("thermal_inertia_land", 0.35));
+    buf.scalars.thermal_inertia_water       = double(input.get("thermal_inertia_water", 0.045));
+    buf.scalars.thermal_inertia_snow        = double(input.get("thermal_inertia_snow", 0.09));
+    buf.scalars.thermal_inertia_high_mountain = double(input.get("thermal_inertia_high_mountain", 0.16));
+    buf.scalars.thermal_daily_delta_cap     = double(input.get("thermal_daily_delta_cap", 0.15));
+    buf.scalars.thermal_dt_days             = double(input.get("thermal_dt_days", 1.0));
+    buf.scalars.snowpack_cover_low          = double(input.get("snowpack_cover_low", 0.05));
+    buf.scalars.snowpack_cover_full         = double(input.get("snowpack_cover_full", 0.32));
+    buf.scalars.maritime_season_damp        = double(input.get("maritime_season_damp", 0.0));
+    // transp scalars
+    buf.scalars.transp_outflow_rate = float(input.get("transp_outflow_rate", 0.025));
+    buf.scalars.transp_self_rate    = float(input.get("transp_self_rate", 0.015));
+
+    // pass_b scalars（Stage 2）
+    buf.scalars.pb_winter_boost  = float(input.get("pb_winter_boost", 1.0));
+    buf.scalars.pb_snow_cool     = float(input.get("pb_snow_cool", 0.0));
+    buf.scalars.pb_veg_cool      = float(input.get("pb_veg_cool", 0.0));
+    buf.scalars.pb_diurnal_amp   = float(input.get("pb_diurnal_amp", 0.0));
+    buf.scalars.pb_evap_gain     = float(input.get("pb_evap_gain", 0.0));
+    buf.scalars.pb_rs_threshold  = float(input.get("pb_rs_threshold", 0.0));
+    buf.scalars.pb_rs_factor     = float(input.get("pb_rs_factor", 1.0));
+    buf.scalars.pb_rs_lookback   = int(input.get("pb_rs_lookback", 0));
+    buf.scalars.pb_t_freeze      = float(input.get("pb_t_freeze", 0.0));
+    buf.scalars.pb_coupling_gain = float(input.get("pb_coupling_gain", 0.0));
+    buf.scalars.pb_coast_leak    = float(input.get("pb_coast_leak", 0.0));
+    buf.scalars.pb_sea_ice_albedo_cooling = float(input.get("pb_sea_ice_albedo_cooling", 0.01));
+
+    // seam-advection-fix：环绕周期。常驻值优先，input 显式给了才覆盖（单测用）。
+    buf.scalars.wrap_period_x = float(input.get("wrap_period_x", _native_wrap_period_x));
+
+    // ocean_water / ocean_land scalars（Stage 2）
+    buf.scalars.ow_advect_steps  = int(input.get("ow_advect_steps", 3));
+    buf.scalars.ow_heat_mix      = float(input.get("ow_heat_mix", 0.55));
+    buf.scalars.ow_tta_source_cap = float(input.get("ow_tta_source_cap", 0.22));
+    buf.scalars.ow_cold_transport_form =
+        float(input.get("ow_cold_transport_form", 0.06));
+    buf.scalars.ow_cold_transport_melt =
+        float(input.get("ow_cold_transport_melt", 0.11));
+    buf.scalars.ow_tta_blend_rate = float(input.get("ow_tta_blend_rate", 0.70));
+    buf.scalars.ow_tta_zero_current_decay = float(input.get("ow_tta_zero_current_decay", 0.06));
+    buf.scalars.ol_effective_leak = float(input.get("ol_effective_leak", 0.55));
+    buf.scalars.ol_tta_source_cap = float(input.get("ol_tta_source_cap", 0.22));
+    buf.scalars.ol_tta_blend_rate = float(input.get("ol_tta_blend_rate", 0.70));
+    buf.scalars.ol_tta_decay_rate = float(input.get("ol_tta_decay_rate", 0.04));
+
+    // wind_air / wind_surface scalars（Stage 2）
+    buf.scalars.wa_advect_steps = int(input.get("wa_advect_steps", 3));
+    buf.scalars.wa_heat_mix     = float(input.get("wa_heat_mix", 0.25));
+    buf.scalars.ws_air_leak     = float(input.get("ws_air_leak", 0.35));
+    buf.scalars.ws_cold_transport_form = float(input.get("ws_cold_transport_form", 0.06));
+    buf.scalars.ws_cold_transport_melt = float(input.get("ws_cold_transport_melt", 0.11));
+
+    // sea_ice scalars（Stage 2）
+    buf.scalars.si_k_freeze     = float(input.get("si_k_freeze", 0.40));
+    buf.scalars.si_k_melt       = float(input.get("si_k_melt", 1.45));
+    buf.scalars.si_t_form       = float(input.get("si_t_form", 0.06));
+    buf.scalars.si_t_melt       = float(input.get("si_t_melt", 0.11));
+    buf.scalars.si_contagion    = float(input.get("si_contagion", 0.035));
+    buf.scalars.si_threshold    = float(input.get("si_threshold", 0.68));
+    buf.scalars.si_hysteresis   = float(input.get("si_hysteresis", 0.12));
+    buf.scalars.si_ice_delay    = float(input.get("si_ice_delay", 1.0));
+    buf.scalars.si_enable_oht   = bool(input.get("si_enable_oht", true));
+    buf.scalars.si_apply_terrain_flips = bool(input.get("si_apply_terrain_flips", false));
+    buf.scalars.si_solar_gate_enabled = bool(input.get("si_solar_gate_enabled", true));
+    buf.scalars.si_freeze_insol_low  = float(input.get("si_freeze_insol_low", 0.22));
+    buf.scalars.si_freeze_insol_high = float(input.get("si_freeze_insol_high", 0.45));
+    buf.scalars.si_solar_melt_start  = float(input.get("si_solar_melt_start", 0.28));
+    buf.scalars.si_solar_melt_gain   = float(input.get("si_solar_melt_gain", 1.35));
+    buf.scalars.si_min_thick_ice_solar_exposure = float(input.get("si_min_thick_ice_solar_exposure", 0.32));
+    buf.scalars.si_daily_delta_cap   = float(input.get("si_daily_delta_cap", 0.070));
+    buf.scalars.si_edge_mix_rate     = float(input.get("si_edge_mix_rate", 0.035));
+    buf.scalars.si_dt_days           = float(input.get("si_dt_days", 1.0));
+    buf.scalars.si_terrain_lake_id    = int(input.get("si_terrain_lake_id", -1));
+    buf.scalars.si_terrain_sea_ice_id = int(input.get("si_terrain_sea_ice_id", -1));
+    buf.scalars.si_terrain_ocean_id   = int(input.get("si_terrain_ocean_id", -1));
+
+    // ─── finalizer pass fields（Stage 9，2026-06-16） ─────────────────
+    // _temp_start_of_day_arr / _tta_start_of_day_arr / sea_ice_frac_prev /
+    // weather_precip 由 GDScript 主线程在 begin_round 时打快照传入。
+    _read_pf32_to_vec(input, "fin_temp_start_of_day",   buf.temp_start_of_day,   n_cells);
+    _read_pf32_to_vec(input, "fin_tta_start_of_day",    buf.tta_start_of_day,    n_cells);
+    _read_pf32_to_vec(input, "fin_sea_ice_frac_prev",   buf.sea_ice_frac_prev,   n_cells);
+    _read_pf32_to_vec(input, "fin_weather_precip",      buf.weather_precip,      n_cells);
+    buf.scalars.fin_temp_cap_enabled = bool(input.get("fin_temp_cap_enabled", true));
+    buf.scalars.fin_temp_cap         = float(input.get("fin_temp_cap", 0.15));
+    buf.scalars.fin_tta_cap          = float(input.get("fin_tta_cap", 0.12));
+    buf.scalars.fin_has_temp_start   = bool(input.get("fin_has_temp_start", false));
+    buf.scalars.fin_has_tta_start    = bool(input.get("fin_has_tta_start", false));
+
+    // passes_mask（默认 0x1FF 含 finalizer bit）
+    buf.scalars.passes_mask = int(input.get("passes_mask", 0x1FF));
+
+    // ─── S3：把 pass_a 的 per-cell lane 换成 _slots 的内容 ─────────────────
+    // 必须在下面烘焙 insol LUT 之前做，因为 LUT 由 buf.lat_norm 导出。
+    if (prefer_slot_lanes) {
+        override_climate_round_input_from_slots(n_cells, buf);
+    }
+
+    // ─── Item 4 (perf 2026-07-05)：主线程预烘焙年均日照 LUT ────────────────
+    // pass_a worker 每 cell 需 dc_insolation_annual_mean(clamp01(ny), axial_tilt, daylen)，
+    // 该值 season-无关（16×9 trig/cell）。async kernel 跑在 worker thread、无法安全用 member
+    // 缓存，故在此（持锁、主线程）按 lat_norm 逐 cell 预算好，worker 直接读 → bit-equal。
+    // 仅 pass_a 参与时（passes_mask & 0x01）才烘焙，省无谓开销；否则清空退回 inline。
+    if ((buf.scalars.passes_mask & 0x01) != 0 &&
+        (int)buf.lat_norm.size() == n_cells) {
+        const float ax_tilt = float(buf.scalars.axial_tilt_deg);
+        const float dl_amp  = float(buf.scalars.day_length_gain);
+        buf.insol_annual_mean.resize(static_cast<size_t>(n_cells));
+        for (int i = 0; i < n_cells; ++i) {
+            buf.insol_annual_mean[static_cast<size_t>(i)] =
+                dc_insolation_annual_mean(dc_clamp01f(buf.lat_norm[static_cast<size_t>(i)]),
+                                          ax_tilt, dl_amp);
+        }
+    } else {
+        buf.insol_annual_mean.clear();
+    }
+
+    // 输入边界诊断：只留存 SHADOW capture 交给 worker 的那一份。
+    if (prefer_slot_lanes) {
+        _captured_climate_round_input = buf;
+        _captured_climate_round_input_valid = true;
+        ++_capture_call_count;
+    }
+}
+
 bool DCWorldExt::async_climate_round_kick(const Dictionary &input) {
     using namespace pk_async_climate;
     AsyncClimateRoundState *st = _get_round_state(_async_climate_round_state);
@@ -9663,206 +6353,7 @@ bool DCWorldExt::async_climate_round_kick(const Dictionary &input) {
     // Snapshot inputs into in_buf under lock.
     {
         std::lock_guard<std::mutex> lk(t->mtx);
-        t->in_buf.n_cells = n_cells;
-
-        // Stage 1 字段（transp 读）
-        _read_pu8_to_vec(input,  "landform",   t->in_buf.landform,   n_cells);
-        _read_pu8_to_vec(input,  "vegetation", t->in_buf.vegetation, n_cells);
-        _read_pf32_to_vec(input, "moisture",   t->in_buf.moisture,   n_cells);
-
-        // Stage 2 字段（pass_a 读）。如不提供则填空（0）；worker 内的 pass_a
-        // 维度校验会拒绝跑（passes_mask & 0x01 但 is_water.size() != n_cells）。
-        _read_pu8_to_vec(input,  "is_water",            t->in_buf.is_water,            n_cells);
-        _read_pu8_to_vec(input,  "terrain",             t->in_buf.terrain,             n_cells);
-        _read_pu8_to_vec(input,  "cover",               t->in_buf.cover,               n_cells);
-        _read_pu8_to_vec(input,  "ema_initialized",     t->in_buf.ema_initialized,     n_cells);
-        _read_pf32_to_vec(input, "elevation",           t->in_buf.elevation,           n_cells);
-        _read_pf32_to_vec(input, "base_moisture",       t->in_buf.base_moisture,       n_cells);
-        _read_pf32_to_vec(input, "weather_vapor",       t->in_buf.weather_vapor,       n_cells);
-        _read_pf32_to_vec(input, "weather_precip",      t->in_buf.weather_precip,      n_cells);
-        _read_pf32_to_vec(input, "soil_moisture",       t->in_buf.soil_moisture,       n_cells);
-        _read_pf32_to_vec(input, "water_balance_30d",   t->in_buf.water_balance_30d,   n_cells);
-        _read_pf32_to_vec(input, "lat_norm",            t->in_buf.lat_norm,            n_cells);
-        // [climate-zone-fix P2] 海洋性调温因子（静态 per-cell；缺省空→不调温）
-        _read_pf32_to_vec(input, "maritime_factor",     t->in_buf.maritime,            n_cells);
-        _read_pf32_to_vec(input, "temp_baseline_year",  t->in_buf.temp_baseline_year,  n_cells);
-        _read_pf32_to_vec(input, "temp",                t->in_buf.temp,                n_cells);
-        _read_pf32_to_vec(input, "temp_30d",            t->in_buf.temp_30d,            n_cells);
-        _read_pf32_to_vec(input, "temp_365d",           t->in_buf.temp_365d,           n_cells);
-        _read_pf32_to_vec(input, "thermal_energy",      t->in_buf.thermal_energy,      n_cells);
-        _read_pf32_to_vec(input, "snowpack",            t->in_buf.snowpack,            n_cells);
-        t->in_buf.radiative_modifier_add.assign(
-            static_cast<size_t>(n_cells), 0.0f);
-        t->in_buf.radiative_modifier_factor.assign(
-            static_cast<size_t>(n_cells), 1.0f);
-        if (_modifier_runtime != nullptr) {
-            const ModifierRuntime *modifier =
-                static_cast<const ModifierRuntime *>(_modifier_runtime);
-            for (int cell = 0; cell < n_cells; ++cell) {
-                double add = 0.0;
-                double factor = 1.0;
-                modifier->climate_radiative_terms(cell, add, factor);
-                t->in_buf.radiative_modifier_add[static_cast<size_t>(cell)] =
-                    static_cast<float>(add);
-                t->in_buf.radiative_modifier_factor[static_cast<size_t>(cell)] =
-                    static_cast<float>(factor);
-            }
-        }
-
-        // Stage 2 字段（pass_b 读）。snow_cover/moisture 与 pass_a 共享。
-        _read_pf32_to_vec(input, "pos_x",                     t->in_buf.pos_x,                     n_cells);
-        _read_pf32_to_vec(input, "pos_y",                     t->in_buf.pos_y,                     n_cells);
-        _read_pf32_to_vec(input, "insolation_dev",            t->in_buf.insolation_dev,            n_cells);
-        _read_pf32_to_vec(input, "temp_transport_anomaly",    t->in_buf.temp_transport_anomaly,    n_cells);
-        _read_pf32_to_vec(input, "local_thermal_anomaly",     t->in_buf.local_thermal_anomaly,     n_cells);
-        _read_pf32_to_vec(input, "sea_ice_frac",              t->in_buf.sea_ice_frac,              n_cells);
-
-        // Stage 2 字段（ocean_water/ocean_land 读）
-        _read_pf32_to_vec(input, "ocean_current_x",           t->in_buf.ocean_current_x,           n_cells);
-        _read_pf32_to_vec(input, "ocean_current_y",           t->in_buf.ocean_current_y,           n_cells);
-        _read_pf32_to_vec(input, "ocean_thermal_anomaly",     t->in_buf.ocean_thermal_anomaly,     n_cells);
-
-        // Stage 2 字段（wind_air/wind_surface 读）
-        _read_pf32_to_vec(input, "wind_x",                    t->in_buf.wind_x,                    n_cells);
-        _read_pf32_to_vec(input, "wind_y",                    t->in_buf.wind_y,                    n_cells);
-        _read_pf32_to_vec(input, "wind_speed",                t->in_buf.wind_speed,                n_cells);
-        _read_pf32_to_vec(input, "temp_baseline",             t->in_buf.temp_baseline,             n_cells);
-        _read_pf32_to_vec(input, "air_mass_temp_anomaly",     t->in_buf.air_mass_temp_anomaly,     n_cells);
-
-        // Stage 2 字段（sea_ice 读）
-        _read_pu8_to_vec(input,  "base_terrain",              t->in_buf.base_terrain,              n_cells);
-        _read_pf32_to_vec(input, "upwelling_strength",        t->in_buf.upwelling_strength,        n_cells);
-        _read_pf32_to_vec(input, "insolation_now",            t->in_buf.insolation_now,            n_cells);
-        _read_pf32_to_vec(input, "cell_temperature_arr",      t->in_buf.cell_temperature_arr,      n_cells);
-        _read_pf32_to_vec(input, "sea_ice_frac_inout",        t->in_buf.sea_ice_frac_inout,        n_cells);
-        _read_pu8_to_vec(input,  "water_terrain_ids",         t->in_buf.water_terrain_ids,         0);
-
-        // Round-level scalars
-        t->in_buf.scalars.season_phase     = double(input.get("season_phase", 0.0));
-        t->in_buf.scalars.axial_tilt_deg   = double(input.get("axial_tilt_deg", 23.5));
-        t->in_buf.scalars.day_length_gain  = double(input.get("day_length_gain", 0.35));
-        t->in_buf.scalars.solar_gain       = double(input.get("solar_gain", 1.0));
-        t->in_buf.scalars.insol_amp        = double(input.get("insol_amp", 0.20));
-        t->in_buf.scalars.insol_gain       = double(input.get("insol_gain", 1.0));
-        t->in_buf.scalars.moist_scale_now  = double(input.get("moist_scale_now", 1.0));
-        t->in_buf.scalars.runtime_moisture_base_relax_rate = float(input.get("runtime_moisture_base_relax_rate", 0.24));
-        t->in_buf.scalars.runtime_moisture_weather_vapor_weight = float(input.get("runtime_moisture_weather_vapor_weight", 0.12));
-        t->in_buf.scalars.runtime_moisture_precip_weight = float(input.get("runtime_moisture_precip_weight", 0.78));
-        t->in_buf.scalars.runtime_moisture_soil_weight = float(input.get("runtime_moisture_soil_weight", 1.82));
-        t->in_buf.scalars.runtime_moisture_soil_dry_weight = float(input.get("runtime_moisture_soil_dry_weight", 2.21));
-        t->in_buf.scalars.runtime_moisture_water_balance_weight = float(input.get("runtime_moisture_water_balance_weight", 1.04));
-        t->in_buf.scalars.runtime_moisture_water_balance_dry_weight = float(input.get("runtime_moisture_water_balance_dry_weight", 1.30));
-        t->in_buf.scalars.days_per_year    = int(input.get("days_per_year", 365));
-        t->in_buf.scalars.sea_level        = double(input.get("sea_level", 0.5));
-        // pass_a 扩展 scalars
-        t->in_buf.scalars.insol_dev_min               = double(input.get("insol_dev_min", -1.0));
-        t->in_buf.scalars.insol_dev_max               = double(input.get("insol_dev_max", 1.0));
-        t->in_buf.scalars.thermal_inertia_land        = double(input.get("thermal_inertia_land", 0.35));
-        t->in_buf.scalars.thermal_inertia_water       = double(input.get("thermal_inertia_water", 0.045));
-        t->in_buf.scalars.thermal_inertia_snow        = double(input.get("thermal_inertia_snow", 0.09));
-        t->in_buf.scalars.thermal_inertia_high_mountain = double(input.get("thermal_inertia_high_mountain", 0.16));
-        t->in_buf.scalars.thermal_daily_delta_cap     = double(input.get("thermal_daily_delta_cap", 0.15));
-        t->in_buf.scalars.thermal_dt_days             = double(input.get("thermal_dt_days", 1.0));
-        t->in_buf.scalars.snowpack_cover_low          = double(input.get("snowpack_cover_low", 0.05));
-        t->in_buf.scalars.snowpack_cover_full         = double(input.get("snowpack_cover_full", 0.32));
-        t->in_buf.scalars.maritime_season_damp        = double(input.get("maritime_season_damp", 0.0));
-        // transp scalars
-        t->in_buf.scalars.transp_outflow_rate = float(input.get("transp_outflow_rate", 0.025));
-        t->in_buf.scalars.transp_self_rate    = float(input.get("transp_self_rate", 0.015));
-
-        // pass_b scalars（Stage 2）
-        t->in_buf.scalars.pb_winter_boost  = float(input.get("pb_winter_boost", 1.0));
-        t->in_buf.scalars.pb_snow_cool     = float(input.get("pb_snow_cool", 0.0));
-        t->in_buf.scalars.pb_veg_cool      = float(input.get("pb_veg_cool", 0.0));
-        t->in_buf.scalars.pb_diurnal_amp   = float(input.get("pb_diurnal_amp", 0.0));
-        t->in_buf.scalars.pb_evap_gain     = float(input.get("pb_evap_gain", 0.0));
-        t->in_buf.scalars.pb_rs_threshold  = float(input.get("pb_rs_threshold", 0.0));
-        t->in_buf.scalars.pb_rs_factor     = float(input.get("pb_rs_factor", 1.0));
-        t->in_buf.scalars.pb_rs_lookback   = int(input.get("pb_rs_lookback", 0));
-        t->in_buf.scalars.pb_t_freeze      = float(input.get("pb_t_freeze", 0.0));
-        t->in_buf.scalars.pb_coupling_gain = float(input.get("pb_coupling_gain", 0.0));
-        t->in_buf.scalars.pb_coast_leak    = float(input.get("pb_coast_leak", 0.0));
-        t->in_buf.scalars.pb_sea_ice_albedo_cooling = float(input.get("pb_sea_ice_albedo_cooling", 0.01));
-
-        // seam-advection-fix：环绕周期。常驻值优先，input 显式给了才覆盖（单测用）。
-        t->in_buf.scalars.wrap_period_x = float(input.get("wrap_period_x", _native_wrap_period_x));
-
-        // ocean_water / ocean_land scalars（Stage 2）
-        t->in_buf.scalars.ow_advect_steps  = int(input.get("ow_advect_steps", 3));
-        t->in_buf.scalars.ow_heat_mix      = float(input.get("ow_heat_mix", 0.55));
-        t->in_buf.scalars.ow_tta_source_cap = float(input.get("ow_tta_source_cap", 0.22));
-        t->in_buf.scalars.ow_tta_blend_rate = float(input.get("ow_tta_blend_rate", 0.70));
-        t->in_buf.scalars.ow_tta_zero_current_decay = float(input.get("ow_tta_zero_current_decay", 0.06));
-        t->in_buf.scalars.ol_effective_leak = float(input.get("ol_effective_leak", 0.55));
-        t->in_buf.scalars.ol_tta_source_cap = float(input.get("ol_tta_source_cap", 0.22));
-        t->in_buf.scalars.ol_tta_blend_rate = float(input.get("ol_tta_blend_rate", 0.70));
-        t->in_buf.scalars.ol_tta_decay_rate = float(input.get("ol_tta_decay_rate", 0.04));
-
-        // wind_air / wind_surface scalars（Stage 2）
-        t->in_buf.scalars.wa_advect_steps = int(input.get("wa_advect_steps", 3));
-        t->in_buf.scalars.wa_heat_mix     = float(input.get("wa_heat_mix", 0.25));
-        t->in_buf.scalars.ws_air_leak     = float(input.get("ws_air_leak", 0.35));
-        t->in_buf.scalars.ws_cold_transport_form = float(input.get("ws_cold_transport_form", 0.06));
-        t->in_buf.scalars.ws_cold_transport_melt = float(input.get("ws_cold_transport_melt", 0.11));
-
-        // sea_ice scalars（Stage 2）
-        t->in_buf.scalars.si_k_freeze     = float(input.get("si_k_freeze", 0.40));
-        t->in_buf.scalars.si_k_melt       = float(input.get("si_k_melt", 1.45));
-        t->in_buf.scalars.si_t_form       = float(input.get("si_t_form", 0.06));
-        t->in_buf.scalars.si_t_melt       = float(input.get("si_t_melt", 0.11));
-        t->in_buf.scalars.si_contagion    = float(input.get("si_contagion", 0.035));
-        t->in_buf.scalars.si_threshold    = float(input.get("si_threshold", 0.68));
-        t->in_buf.scalars.si_hysteresis   = float(input.get("si_hysteresis", 0.12));
-        t->in_buf.scalars.si_ice_delay    = float(input.get("si_ice_delay", 1.0));
-        t->in_buf.scalars.si_enable_oht   = bool(input.get("si_enable_oht", true));
-        t->in_buf.scalars.si_apply_terrain_flips = bool(input.get("si_apply_terrain_flips", false));
-        t->in_buf.scalars.si_solar_gate_enabled = bool(input.get("si_solar_gate_enabled", true));
-        t->in_buf.scalars.si_freeze_insol_low  = float(input.get("si_freeze_insol_low", 0.22));
-        t->in_buf.scalars.si_freeze_insol_high = float(input.get("si_freeze_insol_high", 0.45));
-        t->in_buf.scalars.si_solar_melt_start  = float(input.get("si_solar_melt_start", 0.28));
-        t->in_buf.scalars.si_solar_melt_gain   = float(input.get("si_solar_melt_gain", 1.35));
-        t->in_buf.scalars.si_min_thick_ice_solar_exposure = float(input.get("si_min_thick_ice_solar_exposure", 0.32));
-        t->in_buf.scalars.si_daily_delta_cap   = float(input.get("si_daily_delta_cap", 0.070));
-        t->in_buf.scalars.si_edge_mix_rate     = float(input.get("si_edge_mix_rate", 0.035));
-        t->in_buf.scalars.si_dt_days           = float(input.get("si_dt_days", 1.0));
-        t->in_buf.scalars.si_terrain_lake_id    = int(input.get("si_terrain_lake_id", -1));
-        t->in_buf.scalars.si_terrain_sea_ice_id = int(input.get("si_terrain_sea_ice_id", -1));
-        t->in_buf.scalars.si_terrain_ocean_id   = int(input.get("si_terrain_ocean_id", -1));
-
-        // ─── finalizer pass fields（Stage 9，2026-06-16） ─────────────────
-        // _temp_start_of_day_arr / _tta_start_of_day_arr / sea_ice_frac_prev /
-        // weather_precip 由 GDScript 主线程在 begin_round 时打快照传入。
-        _read_pf32_to_vec(input, "fin_temp_start_of_day",   t->in_buf.temp_start_of_day,   n_cells);
-        _read_pf32_to_vec(input, "fin_tta_start_of_day",    t->in_buf.tta_start_of_day,    n_cells);
-        _read_pf32_to_vec(input, "fin_sea_ice_frac_prev",   t->in_buf.sea_ice_frac_prev,   n_cells);
-        _read_pf32_to_vec(input, "fin_weather_precip",      t->in_buf.weather_precip,      n_cells);
-        t->in_buf.scalars.fin_temp_cap_enabled = bool(input.get("fin_temp_cap_enabled", true));
-        t->in_buf.scalars.fin_temp_cap         = float(input.get("fin_temp_cap", 0.15));
-        t->in_buf.scalars.fin_tta_cap          = float(input.get("fin_tta_cap", 0.12));
-        t->in_buf.scalars.fin_has_temp_start   = bool(input.get("fin_has_temp_start", false));
-        t->in_buf.scalars.fin_has_tta_start    = bool(input.get("fin_has_tta_start", false));
-
-        // passes_mask（默认 0x1FF 含 finalizer bit）
-        t->in_buf.scalars.passes_mask = int(input.get("passes_mask", 0x1FF));
-
-        // ─── Item 4 (perf 2026-07-05)：主线程预烘焙年均日照 LUT ────────────────
-        // pass_a worker 每 cell 需 dc_insolation_annual_mean(clamp01(ny), axial_tilt, daylen)，
-        // 该值 season-无关（16×9 trig/cell）。async kernel 跑在 worker thread、无法安全用 member
-        // 缓存，故在此（持锁、主线程）按 lat_norm 逐 cell 预算好，worker 直接读 → bit-equal。
-        // 仅 pass_a 参与时（passes_mask & 0x01）才烘焙，省无谓开销；否则清空退回 inline。
-        if ((t->in_buf.scalars.passes_mask & 0x01) != 0 &&
-            (int)t->in_buf.lat_norm.size() == n_cells) {
-            const float ax_tilt = float(t->in_buf.scalars.axial_tilt_deg);
-            const float dl_amp  = float(t->in_buf.scalars.day_length_gain);
-            t->in_buf.insol_annual_mean.resize(static_cast<size_t>(n_cells));
-            for (int i = 0; i < n_cells; ++i) {
-                t->in_buf.insol_annual_mean[static_cast<size_t>(i)] =
-                    dc_insolation_annual_mean(dc_clamp01f(t->in_buf.lat_norm[static_cast<size_t>(i)]),
-                                              ax_tilt, dl_amp);
-            }
-        } else {
-            t->in_buf.insol_annual_mean.clear();
-        }
+        fill_climate_round_input(input, n_cells, t->in_buf);
 
         t->request_pending.store(true, std::memory_order_release);
     }

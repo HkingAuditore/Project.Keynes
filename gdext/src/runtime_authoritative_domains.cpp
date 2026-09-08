@@ -333,7 +333,9 @@ void RuntimeClimateStore::reset(uint32_t cells) {
     resize(convergence);
     resize(instability);
     weather_type.assign(cells, 0);
-    weather_transition.assign(cells, 0);
+    weather_prev_type.assign(cells, 0);
+    weather_target_type.assign(cells, 0);
+    resize(weather_transition_alpha);
     resize(snow_cover);
     resize(snowpack);
     resize(sea_ice);
@@ -368,7 +370,8 @@ bool RuntimeClimateStore::validate(std::string &error) const {
         same_size(weather_intensity, n) && same_size(vapor, n) &&
         same_size(cloud_water, n) && same_size(cloud_cover, n) &&
         same_size(convergence, n) && same_size(instability, n) &&
-        same_size(weather_type, n) && same_size(weather_transition, n) &&
+        same_size(weather_type, n) && same_size(weather_prev_type, n) &&
+        same_size(weather_target_type, n) && same_size(weather_transition_alpha, n) &&
         same_size(snow_cover, n) && same_size(snowpack, n) && same_size(sea_ice, n) &&
         same_size(runoff, n) && same_size(groundwater, n) &&
         same_size(river_storage, n) && same_size(river_discharge, n) &&
@@ -391,6 +394,7 @@ bool RuntimeClimateStore::validate(std::string &error) const {
         finite_vector(weather_intensity) && finite_vector(vapor) &&
         finite_vector(cloud_water) && finite_vector(cloud_cover) &&
         finite_vector(convergence) && finite_vector(instability) &&
+        finite_vector(weather_transition_alpha) &&
         finite_vector(snow_cover) && finite_vector(snowpack) && finite_vector(sea_ice) &&
         finite_vector(runoff) && finite_vector(groundwater) && finite_vector(river_storage) &&
         finite_vector(river_discharge) && finite_vector(riparian_moisture) &&
@@ -428,7 +432,9 @@ uint64_t RuntimeClimateStore::state_hash() const {
     hash = mix_vector(hash, convergence);
     hash = mix_vector(hash, instability);
     hash = mix_vector(hash, weather_type);
-    hash = mix_vector(hash, weather_transition);
+    hash = mix_vector(hash, weather_prev_type);
+    hash = mix_vector(hash, weather_target_type);
+    hash = mix_vector(hash, weather_transition_alpha);
     hash = mix_vector(hash, snow_cover);
     hash = mix_vector(hash, snowpack);
     hash = mix_vector(hash, sea_ice);

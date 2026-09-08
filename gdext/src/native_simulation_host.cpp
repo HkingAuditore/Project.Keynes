@@ -1,5 +1,6 @@
 #include "native_simulation_host.h"
 #include "native_parallel_executor.h"
+#include "runtime_climate_parity.h"
 
 #include <algorithm>
 #include <chrono>
@@ -79,7 +80,8 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
                                   bool graph_coverage_complete,
                                   int64_t initial_day,
                                   double speed_days_per_second,
-                                  bool paused) {
+                                  bool paused,
+                                  uint32_t requested_authority_mask) {
     RuntimeWorkerState expected = RuntimeWorkerState::STOPPED;
     if (!_state.compare_exchange_strong(expected, RuntimeWorkerState::STARTING,
             std::memory_order_acq_rel, std::memory_order_relaxed)) {
@@ -98,17 +100,27 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         _mode.store(RuntimeSimulationMode::OFF, std::memory_order_release);
         _graph_coverage_complete.store(false, std::memory_order_release);
         _authority_ready.store(false, std::memory_order_release);
+        _requested_authority_mask.store(0, std::memory_order_release);
+        _authoritative_domain_mask.store(0, std::memory_order_release);
         _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
         return true;
     }
+    // Per-domain gate. An ACTIVE request names the domains it wants to own; a
+    // domain without a POD handler can never be granted, but the domains that
+    // do have one no longer wait for the other eleven. COMMIT is the barrier
+    // domain itself, so any non-empty request implicitly needs it.
+    const uint32_t wanted = mode == RuntimeSimulationMode::ACTIVE
+        ? (requested_authority_mask | runtime_domain_mask(RuntimeDomainId::COMMIT))
+        : 0u;
+    const uint32_t ungranted = wanted & ~implemented_domain_mask();
     if (mode == RuntimeSimulationMode::ACTIVE &&
-        (!graph_coverage_complete ||
-         implemented_domain_mask() != RUNTIME_ALL_DOMAIN_MASK)) {
+        (!graph_coverage_complete || wanted == 0u || ungranted != 0u)) {
         _mode.store(RuntimeSimulationMode::OFF, std::memory_order_release);
         _graph_coverage_complete.store(false, std::memory_order_release);
         _authority_ready.store(false, std::memory_order_release);
-        const char *blocker = graph_coverage_complete &&
-            implemented_domain_mask() != RUNTIME_ALL_DOMAIN_MASK
+        _requested_authority_mask.store(0, std::memory_order_release);
+        _authoritative_domain_mask.store(0, std::memory_order_release);
+        const char *blocker = graph_coverage_complete && ungranted != 0u
             ? "missing_native_domain_handlers"
             : "runtime_graph_not_thread_safe";
         size_t i = 0;
@@ -149,6 +161,10 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     // external `true` here must never make the facade report ACTIVE.
     _graph_coverage_complete.store(false, std::memory_order_release);
     _authority_ready.store(false, std::memory_order_release);
+    // The request is recorded now; the grant is published only after a barrier
+    // proves the worker actually ran those domains (see publish_day).
+    _requested_authority_mask.store(wanted, std::memory_order_release);
+    _authoritative_domain_mask.store(0, std::memory_order_release);
     _mode.store(mode, std::memory_order_release);
     _committed_day.store(start_day, std::memory_order_release);
     _speed_days_per_second.store(std::max(0.0, start_speed),
@@ -198,6 +214,10 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     _climate_pod_replay_ms.store(0.0, std::memory_order_release);
     _climate_pod_work_units.store(0, std::memory_order_release);
     _climate_pod_changed_cells.store(0, std::memory_order_release);
+    for (size_t i = 0; i < _climate_stage_ms.size(); ++i) {
+        _climate_stage_ms[i].store(0.0, std::memory_order_relaxed);
+        _climate_stage_work[i].store(0, std::memory_order_relaxed);
+    }
     _climate_pod_state_hash.store(0, std::memory_order_release);
     _climate_pod_reference_hash.store(0, std::memory_order_release);
     _climate_pod_parity_compared.store(false, std::memory_order_release);
@@ -275,6 +295,8 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     _climate_trace_missing.store(0, std::memory_order_release);
     _climate_trace_latest_hash.store(0, std::memory_order_release);
     _climate_trace_signal.store(0, std::memory_order_release);
+    clear_climate_parity_divergence();
+    reset_climate_parity_fields();
     _state_hash.store(start_state_hash, std::memory_order_release);
     const auto bootstrap_environment = environment_snapshot();
     const auto bootstrap_country = std::atomic_load_explicit(
@@ -343,6 +365,12 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
 void NativeSimulationHost::request_stop() {
     const RuntimeWorkerState current = _state.load(std::memory_order_acquire);
     if (current == RuntimeWorkerState::STOPPED) return;
+    // Revoke before the worker has actually wound down. The main-thread
+    // schedule gate suppresses a promoted domain for as long as this mask names
+    // it, so a domain must stop being worker-owned the instant a stop is asked
+    // for. Leaving it set until the thread exits would drop the days in
+    // between: nobody computes climate while the worker is on its way out.
+    _authoritative_domain_mask.store(0, std::memory_order_release);
     _stop_requested.store(true, std::memory_order_release);
     if (current != RuntimeWorkerState::FAULTED) {
         _state.store(RuntimeWorkerState::STOPPING, std::memory_order_release);
@@ -406,7 +434,20 @@ bool NativeSimulationHost::publish_environment(
         error = "runtime_input_stale";
         return false;
     }
-    if (snapshot.day < _committed_day.load(std::memory_order_acquire)) {
+    // Under Climate authority the environment is Climate's only input, and
+    // Climate's progress — not the worker clock's — is what makes a capture
+    // stale. The worker clock advances off its own speed/debt accounting and
+    // routinely runs ahead of the main thread; comparing against it rejected
+    // every publish after the clock overtook the tick loop, which froze the
+    // environment and silently stopped Climate. `sus_tick_daily` does not
+    // inspect the capture result, so the rejection was invisible.
+    const bool climate_authoritative_watermark =
+        (_authoritative_domain_mask.load(std::memory_order_acquire) &
+         runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u;
+    const int64_t stale_watermark = climate_authoritative_watermark
+        ? _climate_committed_day.load(std::memory_order_acquire)
+        : _committed_day.load(std::memory_order_acquire);
+    if (snapshot.day < stale_watermark) {
         _stale_environment_rejected.fetch_add(1, std::memory_order_relaxed);
         error = "runtime_input_before_committed_day";
         return false;
@@ -415,7 +456,16 @@ bool NativeSimulationHost::publish_environment(
     // channel. Reject the capture before publishing the live convenience
     // snapshot when its bounded storage is full; this preserves the invariant
     // that every accepted input has a corresponding OFF reference release.
-    if (!_climate_trace.push(snapshot)) {
+    //
+    // Skipped once Climate is worker-authoritative: production no longer runs,
+    // so no reference will ever be released for these frames and nothing
+    // consumes them. Pushing anyway would fill the bounded trace and then start
+    // rejecting every environment publish with capacity_exceeded, which is the
+    // one input ACTIVE Climate depends on.
+    const bool climate_authoritative =
+        (_authoritative_domain_mask.load(std::memory_order_acquire) &
+         runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u;
+    if (!climate_authoritative && !_climate_trace.push(snapshot)) {
         error = "climate_trace_capacity_exceeded";
         return false;
     }
@@ -428,14 +478,170 @@ bool NativeSimulationHost::publish_environment(
     _environment_cell_count.store(snapshot.cell_count, std::memory_order_release);
     _environment_topology_validated.store(snapshot.topology_validated,
                                            std::memory_order_release);
+    // Under ACTIVE authority a fresh environment is the only thing that can
+    // release a worker parked on a failed input barrier, so it has to wake it.
+    _control_cv.notify_all();
     return true;
+}
+
+namespace {
+// Copies text into an atomic char buffer one character at a time. The reader
+// loads the same way, so a partially written value can be observed as a
+// truncated string but never as a torn one.
+template <size_t N>
+void store_atomic_text(std::array<std::atomic<char>, N> &destination,
+                       const char *source) {
+    size_t index = 0;
+    if (source != nullptr) {
+        for (; index + 1u < N && source[index] != '\0'; ++index)
+            destination[index].store(source[index], std::memory_order_relaxed);
+    }
+    for (; index < N; ++index)
+        destination[index].store('\0', std::memory_order_relaxed);
+}
+} // namespace
+
+void NativeSimulationHost::publish_climate_parity_divergence(
+        const RuntimeClimateParityReport &diff) {
+    _climate_parity_stage.store(diff.stage, std::memory_order_release);
+    _climate_parity_cell.store(diff.cell, std::memory_order_release);
+    store_atomic_text(_climate_parity_field, diff.field);
+    store_atomic_text(_climate_parity_reference_bits, diff.reference_bits);
+    store_atomic_text(_climate_parity_worker_bits, diff.worker_bits);
+}
+
+void NativeSimulationHost::clear_climate_parity_divergence() {
+    _climate_parity_stage.store(0, std::memory_order_release);
+    _climate_parity_cell.store(0, std::memory_order_release);
+    store_atomic_text(_climate_parity_field, "");
+    store_atomic_text(_climate_parity_reference_bits, "");
+    store_atomic_text(_climate_parity_worker_bits, "");
+}
+
+void NativeSimulationHost::accumulate_climate_parity_fields(
+        int64_t day, const RuntimeClimateStore &reference,
+        const RuntimeClimateStore &worker) {
+    const size_t field_count = runtime_climate_parity_field_count();
+    if (field_count > RUNTIME_CLIMATE_PARITY_MAX_FIELDS) return;
+    // Reused across days so a 1000-day run does not allocate per day.
+    static thread_local std::vector<RuntimeClimateParityFieldDiff> diffs;
+    diffs.resize(RUNTIME_CLIMATE_PARITY_MAX_FIELDS);
+    runtime_climate_parity_field_divergence(reference, worker, diffs.data(),
+                                           diffs.size());
+    const RuntimeClimateParityField *table = runtime_climate_parity_fields();
+    for (size_t i = 0; i < field_count; ++i) {
+        ClimateParityFieldAccumulator &slot = _climate_parity_field_stats[i];
+        if (table[i].comparability !=
+            RuntimeClimateParityComparability::COMPARABLE) {
+            continue;
+        }
+        const RuntimeClimateParityFieldDiff &diff = diffs[i];
+        slot.compared_days.fetch_add(1, std::memory_order_relaxed);
+        slot.last_diverged_cells.store(diff.diverged_cells,
+                                       std::memory_order_relaxed);
+        slot.last_out_of_band_cells.store(diff.out_of_band_cells,
+                                          std::memory_order_relaxed);
+        if (diff.out_of_band_cells != 0) {
+            slot.out_of_band_days.fetch_add(1, std::memory_order_relaxed);
+            slot.out_of_band_cells.fetch_add(diff.out_of_band_cells,
+                                             std::memory_order_relaxed);
+            double previous_band = slot.max_out_of_band_delta.load(std::memory_order_relaxed);
+            while (diff.max_abs_delta > previous_band &&
+                   !slot.max_out_of_band_delta.compare_exchange_weak(
+                       previous_band, diff.max_abs_delta,
+                       std::memory_order_relaxed, std::memory_order_relaxed)) {
+            }
+            if (slot.first_out_of_band_day.load(std::memory_order_relaxed) < 0) {
+                slot.first_out_of_band_day.store(day, std::memory_order_release);
+            }
+        }
+        if (diff.diverged_cells == 0) continue;
+        slot.diverged_days.fetch_add(1, std::memory_order_relaxed);
+        slot.diverged_cells.fetch_add(diff.diverged_cells,
+                                      std::memory_order_relaxed);
+        double previous_delta = slot.max_abs_delta.load(std::memory_order_relaxed);
+        while (diff.max_abs_delta > previous_delta &&
+               !slot.max_abs_delta.compare_exchange_weak(
+                   previous_delta, diff.max_abs_delta,
+                   std::memory_order_relaxed, std::memory_order_relaxed)) {
+        }
+        // Only the first divergence carries diagnostic value: later days are
+        // already downstream of it, so do not overwrite the evidence.
+        if (slot.first_diverged_day.load(std::memory_order_relaxed) >= 0) continue;
+        slot.first_cell.store(diff.first_cell, std::memory_order_relaxed);
+        store_atomic_text(slot.first_reference_bits, diff.reference_bits);
+        store_atomic_text(slot.first_worker_bits, diff.worker_bits);
+        slot.first_diverged_day.store(day, std::memory_order_release);
+    }
+}
+
+void NativeSimulationHost::reset_climate_parity_fields() {
+    _climate_parity_forced_days.store(0, std::memory_order_release);
+    for (ClimateParityFieldAccumulator &slot : _climate_parity_field_stats) {
+        slot.diverged_days.store(0, std::memory_order_relaxed);
+        slot.compared_days.store(0, std::memory_order_relaxed);
+        slot.diverged_cells.store(0, std::memory_order_relaxed);
+        slot.out_of_band_cells.store(0, std::memory_order_relaxed);
+        slot.out_of_band_days.store(0, std::memory_order_relaxed);
+        slot.first_out_of_band_day.store(-1, std::memory_order_relaxed);
+        slot.first_cell.store(0, std::memory_order_relaxed);
+        slot.last_diverged_cells.store(0, std::memory_order_relaxed);
+        slot.last_out_of_band_cells.store(0, std::memory_order_relaxed);
+        slot.max_abs_delta.store(0.0, std::memory_order_relaxed);
+        slot.max_out_of_band_delta.store(0.0, std::memory_order_relaxed);
+        store_atomic_text(slot.first_reference_bits, "");
+        store_atomic_text(slot.first_worker_bits, "");
+        slot.first_diverged_day.store(-1, std::memory_order_release);
+    }
+}
+
+NativeSimulationHost::ClimateParityFieldStatus
+NativeSimulationHost::climate_parity_field_status(size_t index) const {
+    ClimateParityFieldStatus out;
+    if (index >= _climate_parity_field_stats.size()) return out;
+    const ClimateParityFieldAccumulator &slot = _climate_parity_field_stats[index];
+    out.diverged_days = slot.diverged_days.load(std::memory_order_acquire);
+    out.compared_days = slot.compared_days.load(std::memory_order_acquire);
+    out.diverged_cells = slot.diverged_cells.load(std::memory_order_acquire);
+    out.out_of_band_cells = slot.out_of_band_cells.load(std::memory_order_acquire);
+    out.out_of_band_days = slot.out_of_band_days.load(std::memory_order_acquire);
+    out.first_diverged_day = slot.first_diverged_day.load(std::memory_order_acquire);
+    out.first_out_of_band_day =
+        slot.first_out_of_band_day.load(std::memory_order_acquire);
+    out.first_cell = slot.first_cell.load(std::memory_order_acquire);
+    out.last_diverged_cells = slot.last_diverged_cells.load(std::memory_order_acquire);
+    out.last_out_of_band_cells =
+        slot.last_out_of_band_cells.load(std::memory_order_acquire);
+    out.max_abs_delta = slot.max_abs_delta.load(std::memory_order_acquire);
+    out.max_out_of_band_delta =
+        slot.max_out_of_band_delta.load(std::memory_order_acquire);
+    for (size_t i = 0; i < slot.first_reference_bits.size(); ++i) {
+        out.first_reference_bits[i] =
+            slot.first_reference_bits[i].load(std::memory_order_relaxed);
+    }
+    for (size_t i = 0; i < slot.first_worker_bits.size(); ++i) {
+        out.first_worker_bits[i] =
+            slot.first_worker_bits[i].load(std::memory_order_relaxed);
+    }
+    out.first_reference_bits[sizeof(out.first_reference_bits) - 1u] = '\0';
+    out.first_worker_bits[sizeof(out.first_worker_bits) - 1u] = '\0';
+    return out;
 }
 
 bool NativeSimulationHost::publish_climate_reference(
         int64_t day, uint64_t reference_state_hash,
-        std::string &error) {
+        std::string &error,
+        RuntimeClimateReferencePublish publish) {
     if (day < 0 || reference_state_hash == 0) {
         error = "climate_trace_reference_invalid";
+        return false;
+    }
+    // A state whose own reduction disagrees with the published hash would make
+    // every later comparison meaningless, so reject the pair rather than
+    // storing an inconsistent frame.
+    if (publish.reference_store != nullptr &&
+        publish.reference_store->parity_hash() != reference_state_hash) {
+        error = "climate_trace_reference_state_hash_inconsistent";
         return false;
     }
     uint64_t input_hash = 0;
@@ -444,7 +650,7 @@ bool NativeSimulationHost::publish_climate_reference(
         return false;
     }
     if (!_climate_trace.mark_reference_ready(
-            day, input_hash, reference_state_hash, error)) {
+            day, input_hash, reference_state_hash, error, std::move(publish))) {
         return false;
     }
     const bool ready = _climate_trace.mark_consumable(day, error);
@@ -682,7 +888,55 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             trace_result == RuntimeClimateTracePopResult::CONSUMED &&
                 trace_frame.environment != nullptr
                 ? trace_frame.environment.get() : nullptr;
-        if (climate_environment != nullptr) {
+        // 冷启动引导：worker 的 store 是全零，而它拿到的第一帧 reference 已经带着
+        // 整个世界生成期的 Climate 结果。这一天比的不是算法，而是"worker 没见过
+        // 世界生成"，必然红，且红在每一个字段上——把它当对拍数据会污染整张分叉矩阵。
+        //
+        // 所以第一帧只做一件事：把生产状态整体收作 worker 的起点，不计入对拍。
+        // 之后每一天 worker 才真的从与生产同一个基线往前推。
+        const bool climate_cold_start =
+            climate_environment != nullptr &&
+            _climate_authority.store().committed_day < 0 &&
+            trace_frame.reference_store != nullptr;
+        // S3 冷启动边界诊断：cold start 落在哪一天、采纳的 reference 是哪个哈希，
+        // 以及紧随其后的几天 worker 究竟跑了哪些 stage。day 2 的一次性分叉只可能
+        // 出在这两者之一，靠分叉矩阵反推不出来。
+        static std::atomic<int> s_climate_boundary_reports_left{8};
+        if (climate_cold_start) {
+            std::memset(&climate_report, 0, sizeof(climate_report));
+            if (_climate_authority.adopt_reference_baseline(
+                    plan.context.day, *trace_frame.reference_store,
+                    *climate_environment, climate_report)) {
+                runtime_copy_text(climate_report.parity_reason,
+                                  "climate_cold_start_baseline");
+                climate_ok = true;
+            } else {
+                if (climate_report.error[0] == '\0') {
+                    runtime_copy_text(climate_report.error,
+                                      "climate_cold_start_baseline_failed");
+                }
+                climate_ok = false;
+            }
+            if (s_climate_boundary_reports_left.fetch_sub(1, std::memory_order_relaxed) > 0) {
+                std::fprintf(stderr,
+                             "[climate][boundary] cold-start day=%lld ok=%d "
+                             "ref_hash=%llu adopted_parity=%llu round_ran=%d\n",
+                             static_cast<long long>(plan.context.day), climate_ok ? 1 : 0,
+                             static_cast<unsigned long long>(trace_frame.reference_state_hash),
+                             static_cast<unsigned long long>(
+                                 _climate_authority.store().parity_hash()),
+                             climate_environment->climate_round_ran ? 1 : 0);
+                std::fflush(stderr);
+            }
+            _climate_pod_parity_compared.store(false, std::memory_order_release);
+            _climate_pod_parity_matched.store(false, std::memory_order_release);
+            _climate_parity_day.store(plan.context.day, std::memory_order_release);
+            for (size_t i = 0; i < _climate_pod_parity_reason.size(); ++i) {
+                _climate_pod_parity_reason[i].store(
+                    climate_report.parity_reason[i], std::memory_order_release);
+                if (climate_report.parity_reason[i] == '\0') break;
+            }
+        } else if (climate_environment != nullptr) {
             const bool climate_planned = _climate_authority.plan_day(
                 plan.context.day, *climate_environment, climate_report);
             // plan_day resets the report, so attach the trace metadata only
@@ -690,8 +944,33 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             climate_report.reference_state_hash = trace_frame.reference_state_hash;
             climate_report.parity_compared = climate_planned &&
                 trace_frame.reference_state_hash != 0;
+            // Compare the canonical parity reduction, not state_hash. The
+            // latter mixes in worker-only bookkeeping (generation, rng_state,
+            // history cursor) that no production reference can reproduce, so
+            // comparing it could never succeed.
             climate_report.parity_matched = climate_report.parity_compared &&
-                climate_report.state_hash == trace_frame.reference_state_hash;
+                climate_report.parity_hash == trace_frame.reference_state_hash;
+            if (s_climate_boundary_reports_left.fetch_sub(1, std::memory_order_relaxed) > 0) {
+                std::fprintf(stderr,
+                             "[climate][boundary] day=%lld planned=%d compared=%d matched=%d "
+                             "worker_parity=%llu ref=%llu stage_ran=0x%X prod_stage=0x%X "
+                             "round_ran=%d alb=%d veg=%d fb=%d err=%s\n",
+                             static_cast<long long>(plan.context.day), climate_planned ? 1 : 0,
+                             climate_report.parity_compared ? 1 : 0,
+                             climate_report.parity_matched ? 1 : 0,
+                             static_cast<unsigned long long>(climate_report.parity_hash),
+                             static_cast<unsigned long long>(trace_frame.reference_state_hash),
+                             climate_report.worker_stage_mask,
+                             climate_report.production_stage_mask,
+                             climate_environment->climate_round_ran ? 1 : 0,
+                             climate_environment->climate_albedo.ran ? 1 : 0,
+                             climate_environment->climate_vegetation != nullptr &&
+                                 climate_environment->climate_vegetation->knobs.ran ? 1 : 0,
+                             climate_environment->climate_feedback != nullptr &&
+                                 climate_environment->climate_feedback->knobs.ran ? 1 : 0,
+                             climate_report.error);
+                std::fflush(stderr);
+            }
             if (!climate_planned) {
                 // Preserve the authority's first execution/preflight error;
                 // a failed plan is not a parity comparison and must not be
@@ -715,17 +994,87 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                 runtime_copy_text(climate_report.error,
                                   "climate_reference_hash_missing");
             } else if (!climate_report.parity_matched) {
-                runtime_copy_text(climate_report.parity_reason,
-                                  "climate_reference_hash_mismatch");
-                // Abort before commit so a failed deterministic comparison
-                // cannot advance the worker-owned Climate generation/day.
-                _climate_authority.discard_plan();
-                climate_report.completed = 0;
-                climate_ok = false;
-                climate_report.preflight_ok = 0;
-                runtime_copy_text(climate_report.error,
-                                  "climate_reference_hash_mismatch");
+                // Two unequal hashes say nothing about which stage diverged.
+                // When the frame carries the production state, locate the
+                // first differing field and cell; that is what turns a red
+                // light into a work item.
+                if (trace_frame.reference_store != nullptr) {
+                    RuntimeClimateParityReport diff;
+                    diff.day = plan.context.day;
+                    // The full per-field fold is what the divergence matrix is
+                    // built from; the first difference alone would only ever
+                    // name the earliest field in table order.
+                    accumulate_climate_parity_fields(
+                        plan.context.day, *trace_frame.reference_store,
+                        _climate_authority.planned_store());
+                    if (runtime_climate_parity_first_difference(
+                            *trace_frame.reference_store,
+                            _climate_authority.planned_store(), diff)) {
+                        const RuntimeClimateParityField *field =
+                            runtime_climate_parity_field(diff.field);
+                        if (field != nullptr) {
+                            diff.stage = static_cast<uint16_t>(field->stage);
+                        }
+                        publish_climate_parity_divergence(diff);
+                        if (s_climate_boundary_reports_left.load(std::memory_order_relaxed) > -8) {
+                            std::fprintf(stderr,
+                                         "[climate][boundary] day=%lld first_diff=%s[%u] "
+                                         "ref=%s worker=%s\n",
+                                         static_cast<long long>(plan.context.day), diff.field,
+                                         diff.cell, diff.reference_bits, diff.worker_bits);
+                            std::fflush(stderr);
+                        }
+                        runtime_copy_text(climate_report.parity_reason,
+                                          "climate_reference_field_mismatch");
+                    } else {
+                        // The fields agree but the hashes do not, which means
+                        // the two sides disagree about the framing rather than
+                        // about the physics.
+                        clear_climate_parity_divergence();
+                        runtime_copy_text(climate_report.parity_reason,
+                                          "climate_reference_framing_mismatch");
+                    }
+                } else {
+                    clear_climate_parity_divergence();
+                    runtime_copy_text(climate_report.parity_reason,
+                                      "climate_reference_hash_mismatch");
+                }
+                if (_climate_parity_forcing.load(std::memory_order_acquire) &&
+                    trace_frame.reference_store != nullptr) {
+                    // Measurement mode. Retrying the same day forever would
+                    // pin the whole run to its first divergence, so adopt the
+                    // production state and let the next day be measured on its
+                    // own. parity_matched stays false either way.
+                    climate_ok = _climate_authority.commit_day_forced(
+                        plan.context.day, *trace_frame.reference_store,
+                        climate_report);
+                    _climate_parity_forced_days.fetch_add(1,
+                                                          std::memory_order_relaxed);
+                    if (!climate_ok && climate_report.error[0] == '\0') {
+                        runtime_copy_text(climate_report.error,
+                                          "climate_forced_commit_failed");
+                    }
+                    runtime_copy_text(climate_report.parity_reason,
+                                      "climate_reference_mismatch_forced");
+                } else {
+                    // Abort before commit so a failed deterministic comparison
+                    // cannot advance the worker-owned Climate generation/day.
+                    _climate_authority.discard_plan();
+                    climate_report.completed = 0;
+                    climate_ok = false;
+                    climate_report.preflight_ok = 0;
+                    runtime_copy_text(climate_report.error,
+                                      climate_report.parity_reason);
+                }
             } else {
+                // Record the agreeing day too, so a field's divergence rate is
+                // out of the days it was actually compared rather than out of
+                // the days it happened to fail.
+                if (trace_frame.reference_store != nullptr) {
+                    accumulate_climate_parity_fields(
+                        plan.context.day, *trace_frame.reference_store,
+                        _climate_authority.planned_store());
+                }
                 // Only a matching next-state hash may cross the commit
                 // boundary. The kernel's plan hash is identical to the
                 // committed hash because commit only swaps the two lanes.
@@ -738,6 +1087,9 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                                           "climate_commit_failed");
                     }
                 } else {
+                    // Drop any divergence recorded for an earlier day so a
+                    // stale field name cannot be read as today's result.
+                    clear_climate_parity_divergence();
                     runtime_copy_text(climate_report.parity_reason, "ok");
                 }
             }
@@ -776,12 +1128,23 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
         _climate_pod_replay_ms.store(climate_report.replay_ms, std::memory_order_release);
         _climate_pod_work_units.store(climate_report.work_units, std::memory_order_release);
         _climate_pod_changed_cells.store(climate_report.changed_cells, std::memory_order_release);
+        for (size_t i = 0; i < _climate_stage_ms.size() &&
+                           i < climate_report.stage_ms.size(); ++i) {
+            _climate_stage_ms[i].store(climate_report.stage_ms[i],
+                                       std::memory_order_relaxed);
+            _climate_stage_work[i].store(climate_report.stage_work[i],
+                                         std::memory_order_relaxed);
+        }
         _climate_pod_state_hash.store(climate_report.state_hash, std::memory_order_release);
         for (size_t i = 0; i < _climate_pod_fallback_reason.size(); ++i) {
             _climate_pod_fallback_reason[i].store(climate_report.error[i],
                                                   std::memory_order_release);
             if (climate_report.error[i] == '\0') break;
         }
+        _climate_production_stage_mask.store(climate_report.production_stage_mask,
+                                            std::memory_order_release);
+        _climate_worker_stage_mask.store(climate_report.worker_stage_mask,
+                                        std::memory_order_release);
 
         RuntimeDayContext diagnostic_context = plan.context;
         diagnostic_context.input_generation = climate_environment != nullptr
@@ -925,8 +1288,125 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
     // the existing Country/Economy/Effect/Modifier/Climate/Trigger stores have
     // native POD adapters. Keeping the remaining stages uncompleted makes the
     // coverage gap observable instead of accidentally claiming ACTIVE.
+    // ACTIVE Climate. Distinct from the SHADOW branch above in the one way that
+    // matters: there is no production reference to wait for, because production
+    // is suppressed. SHADOW deliberately refuses to substitute the live
+    // environment for a missing trace frame — doing so would make parity
+    // non-replayable — but under authority the live snapshot *is* the input.
+    //
+    // Reaching this point requires the per-domain gate to have granted CLIMATE,
+    // so this cannot run while the main thread is still computing Climate.
+    const bool climate_authority_requested =
+        _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE &&
+        (_requested_authority_mask.load(std::memory_order_acquire) &
+         runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u;
+    bool active_climate_ok = false;
+    if (climate_authority_requested) {
+        const auto environment = environment_snapshot();
+        RuntimeClimateVerticalReport climate_report{};
+        // The environment day, not plan.context.day. Under authority the
+        // published environment is Climate's only input and arrives one per
+        // main-thread tick, whereas plan.context.day is `_committed_day + 1`
+        // off this worker's own clock. Those two advance independently, and
+        // `_committed_day` only moves when the day succeeds — so a single
+        // mismatch used to be terminal: the worker stayed pinned on its day
+        // while the environment ran ahead, and `environment.day != day` held
+        // forever after. Climate then silently stopped computing while the
+        // write-back kept publishing the stale store.
+        const int64_t climate_day = environment != nullptr ? environment->day : -1;
+        const int64_t climate_committed = _climate_authority.store().committed_day;
+        // Whether this day actually ran the kernel. The worker retries the next
+        // day immediately after a successful one and parks on the missing
+        // environment, so an unconditional diagnostic store would overwrite the
+        // day that computed with the empty report of the park that followed it —
+        // which is why stage_work/state_hash/stage_mask all read as zero while
+        // the kernel was demonstrably running.
+        bool climate_day_computed = false;
+        if (environment == nullptr) {
+            runtime_copy_text(climate_report.error, "climate_environment_missing");
+        } else if (plan.context.day > climate_day) {
+            // The worker clock has outrun the main thread. Park the day instead
+            // of committing it: letting the clock run ahead is what desynced
+            // the two sides in the first place, and every day committed past
+            // the last published environment is a day Climate cannot compute.
+            runtime_copy_text(climate_report.error,
+                              "climate_environment_not_published");
+        } else if (climate_day <= climate_committed) {
+            // No new input this day. Not a failure: the worker clock is free to
+            // run ahead of the main thread, and Climate simply has nothing to
+            // advance until the next publish. Reporting it as a preflight
+            // failure would stall the whole worker on a condition only the main
+            // thread can clear, which is the deadlock described above.
+            active_climate_ok = true;
+            runtime_copy_text(climate_report.parity_reason,
+                              "climate_environment_day_not_new");
+        } else if (_climate_authority.plan_day(climate_day, *environment,
+                                               climate_report)) {
+            climate_day_computed = true;
+            active_climate_ok = _climate_authority.commit_day(climate_day,
+                                                              climate_report);
+            if (active_climate_ok) {
+                _climate_committed_day.store(climate_day,
+                                             std::memory_order_release);
+            } else {
+                _climate_authority.discard_plan();
+            }
+        } else {
+            climate_day_computed = true;
+            _climate_authority.discard_plan();
+        }
+        if (climate_day_computed) {
+            _climate_pod_ready.store(active_climate_ok, std::memory_order_release);
+            _climate_pod_plan_ms.store(climate_report.plan_ms,
+                                       std::memory_order_release);
+            _climate_pod_replay_ms.store(climate_report.replay_ms,
+                                         std::memory_order_release);
+            _climate_pod_work_units.store(climate_report.work_units,
+                                          std::memory_order_release);
+            _climate_pod_changed_cells.store(climate_report.changed_cells,
+                                             std::memory_order_release);
+            _climate_pod_state_hash.store(climate_report.state_hash,
+                                          std::memory_order_release);
+            for (size_t s = 0; s < _climate_stage_ms.size() &&
+                               s < climate_report.stage_ms.size(); ++s) {
+                _climate_stage_ms[s].store(climate_report.stage_ms[s],
+                                           std::memory_order_relaxed);
+                _climate_stage_work[s].store(climate_report.stage_work[s],
+                                             std::memory_order_relaxed);
+            }
+            _climate_worker_stage_mask.store(climate_report.worker_stage_mask,
+                                            std::memory_order_release);
+        }
+        // Nothing to compare against under authority; keep the parity slots
+        // explicitly empty rather than leaving the last SHADOW day's verdict
+        // sitting in the report as if it still applied.
+        _climate_production_stage_mask.store(0, std::memory_order_release);
+        _climate_pod_parity_compared.store(false, std::memory_order_release);
+        _climate_pod_parity_matched.store(false, std::memory_order_release);
+        // Parking on an unpublished environment is the steady state between two
+        // main-thread ticks, not a fault. Reporting it here would bury the last
+        // real kernel error under a reason that is present on almost every day.
+        if (climate_day_computed) {
+            for (size_t s = 0; s < _climate_pod_fallback_reason.size(); ++s) {
+                _climate_pod_fallback_reason[s].store(climate_report.error[s],
+                                                      std::memory_order_release);
+                if (climate_report.error[s] == '\0') break;
+            }
+        }
+    }
+
     for (uint32_t i = 0; i < plan.stage_count; ++i) {
         RuntimeDomainPlan &stage = plan.stages[i];
+        if (stage.domain == RuntimeDomainId::CLIMATE && active_climate_ok) {
+            stage.dirty_families = RUNTIME_DIRTY_CLIMATE_FIELDS | RUNTIME_DIRTY_WEATHER;
+            stage.work_units = _climate_pod_work_units.load(std::memory_order_relaxed);
+            stage.completed = 1;
+            commit.dirty_families |= stage.dirty_families;
+            commit.work_units += stage.work_units;
+            commit.completed_domain_mask |= runtime_domain_mask(stage.domain);
+            ++commit.completed_stage_count;
+            continue;
+        }
         if (stage.domain == RuntimeDomainId::COUNTRY &&
             _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::SHADOW) {
             RuntimeCountryDayContext country_context;
@@ -964,6 +1444,13 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
         commit.work_units += stage.work_units;
         commit.completed_domain_mask |= runtime_domain_mask(stage.domain);
         ++commit.completed_stage_count;
+    }
+    // A failed authoritative Climate day must not advance the clock. The main
+    // thread is suppressed, so advancing anyway would silently drop that day:
+    // nobody computed it and nothing would ever go back for it. Zero here parks
+    // the worker on the same day until the input barrier clears.
+    if (climate_authority_requested && !active_climate_ok) {
+        commit.preflight_ok = 0;
     }
     return commit;
 }
@@ -1045,6 +1532,10 @@ void NativeSimulationHost::publish_day(
 
 void NativeSimulationHost::set_fault(const char *code) {
     _worker_fault_count.fetch_add(1, std::memory_order_relaxed);
+    // A faulted worker owns nothing. Same reason as request_stop: the schedule
+    // gate must hand the domain back to the main thread rather than let a dead
+    // worker keep it suppressed.
+    _authoritative_domain_mask.store(0, std::memory_order_release);
     const char *value = code ? code : "unknown";
     size_t i = 0;
     for (; i + 1 < _fault_code.size() && value[i] != '\0'; ++i) {
@@ -1712,6 +2203,14 @@ void NativeSimulationHost::worker_main() {
                         std::memory_order_release);
                     const uint64_t trace_signal =
                         _climate_trace_signal.load(std::memory_order_acquire);
+                    // Under ACTIVE Climate authority there is no trace signal
+                    // to wait for: production is suppressed and the only input
+                    // that can unblock the day is a fresh environment publish
+                    // from the main thread. Waiting on the trace alone would
+                    // park the worker forever the first time the environment
+                    // is not yet available.
+                    const uint64_t environment_signal =
+                        _environment_generation.load(std::memory_order_acquire);
                     std::unique_lock<std::mutex> lock(_control_mutex);
                     _control_cv.wait(lock, [&] {
                         return _stop_requested.load(std::memory_order_acquire) ||
@@ -1719,6 +2218,8 @@ void NativeSimulationHost::worker_main() {
                             _paused.load(std::memory_order_acquire) ||
                             _climate_trace_signal.load(std::memory_order_acquire) !=
                                 trace_signal ||
+                            _environment_generation.load(
+                                std::memory_order_acquire) != environment_signal ||
                             _climate_trace.consumable_depth() != 0;
                     });
                     break;
@@ -1729,6 +2230,62 @@ void NativeSimulationHost::worker_main() {
                     implemented_domain_mask() == RUNTIME_ALL_DOMAIN_MASK) {
                     _graph_coverage_complete.store(true, std::memory_order_release);
                     _authority_ready.store(true, std::memory_order_release);
+                }
+                // Per-domain grant. A domain is promoted once this day's commit
+                // covers it, independently of whether the whole graph is
+                // complete. Granting only the requested subset keeps a domain
+                // the caller did not ask for on the main thread even when its
+                // handler happens to exist.
+                if (_mode.load(std::memory_order_acquire) ==
+                        RuntimeSimulationMode::ACTIVE) {
+                    const uint32_t wanted =
+                        _requested_authority_mask.load(std::memory_order_acquire);
+                    if (wanted != 0u &&
+                        (day_commit.completed_domain_mask & wanted) == wanted) {
+                        _authoritative_domain_mask.store(wanted,
+                            std::memory_order_release);
+                    }
+                    // Publish the committed Climate state for main-thread
+                    // write-back. Ordered before the authority grant becomes
+                    // observable to a reader that has not seen a day yet: the
+                    // schedule gate suppresses production the moment the grant
+                    // lands, so the first suppressed tick must already have a
+                    // snapshot to consume.
+                    if ((wanted & runtime_domain_mask(RuntimeDomainId::CLIMATE))
+                            != 0u) {
+                        // Only a day Climate actually advanced may be
+                        // published. The worker clock is free to run ahead of
+                        // the main thread, and on those idle days the store is
+                        // unchanged; handing the main thread a fresh cursor for
+                        // it would make it re-apply the same state every day and
+                        // report a healthy write-back cadence while Climate was
+                        // in fact standing still. That is exactly how a stalled
+                        // Climate stayed invisible behind writeback_days.
+                        const int64_t climate_day =
+                            _climate_authority.store().committed_day;
+                        uint32_t slot = 0;
+                        if (climate_day > _climate_writeback_last_day.load(
+                                std::memory_order_relaxed) &&
+                            _climate_writeback.try_begin_write(slot)) {
+                            RuntimeClimateSnapshot &out =
+                                _climate_writeback.write_buffer(slot);
+                            out = _climate_authority.snapshot();
+                            // Own monotonic sequence, not the commit
+                            // generation: the commit generation is bumped later
+                            // inside publish_day, so reading it here would
+                            // hand out a stale cursor and the main thread would
+                            // re-apply the same day.
+                            out.generation = _climate_writeback_sequence.fetch_add(
+                                1, std::memory_order_relaxed) + 1u;
+                            // Climate's day, not the worker clock's: this is the
+                            // day whose state the buffer carries.
+                            out.committed_day = climate_day;
+                            out.dirty_families = day_commit.dirty_families;
+                            _climate_writeback.publish(slot);
+                            _climate_writeback_last_day.store(
+                                climate_day, std::memory_order_relaxed);
+                        }
+                    }
                 }
                 _last_day_stage_count.store(day_plan.stage_count,
                                             std::memory_order_release);
@@ -1767,6 +2324,10 @@ RuntimeThreadReport NativeSimulationHost::report() const {
     out.required_domain_mask = RUNTIME_ALL_DOMAIN_MASK;
     out.implemented_domain_mask = implemented_domain_mask();
     out.missing_domain_mask = out.required_domain_mask & ~out.implemented_domain_mask;
+    out.requested_authority_mask =
+        _requested_authority_mask.load(std::memory_order_acquire);
+    out.authoritative_domain_mask =
+        _authoritative_domain_mask.load(std::memory_order_acquire);
     const char *coverage = out.authority_ready ? "complete" : "partial";
     size_t coverage_index = 0;
     for (; coverage_index + 1 < sizeof(out.graph_coverage_state) &&
@@ -1841,6 +2402,10 @@ RuntimeThreadReport NativeSimulationHost::report() const {
     out.climate_pod_replay_ms = _climate_pod_replay_ms.load(std::memory_order_acquire);
     out.climate_pod_work_units = _climate_pod_work_units.load(std::memory_order_acquire);
     out.climate_pod_changed_cells = _climate_pod_changed_cells.load(std::memory_order_acquire);
+    for (size_t i = 0; i < out.climate_stage_ms.size(); ++i) {
+        out.climate_stage_ms[i] = _climate_stage_ms[i].load(std::memory_order_relaxed);
+        out.climate_stage_work[i] = _climate_stage_work[i].load(std::memory_order_relaxed);
+    }
     out.climate_pod_state_hash = _climate_pod_state_hash.load(std::memory_order_acquire);
     out.climate_pod_reference_hash = _climate_pod_reference_hash.load(std::memory_order_acquire);
     out.climate_pod_parity_compared = _climate_pod_parity_compared.load(std::memory_order_acquire);
@@ -1866,6 +2431,10 @@ RuntimeThreadReport NativeSimulationHost::report() const {
         if (value == '\0') break;
     }
     out.climate_pod_fallback_reason[sizeof(out.climate_pod_fallback_reason) - 1] = '\0';
+    out.climate_production_stage_mask =
+        _climate_production_stage_mask.load(std::memory_order_acquire);
+    out.climate_worker_stage_mask =
+        _climate_worker_stage_mask.load(std::memory_order_acquire);
     const uint64_t command_write = _command_enqueue_pos.load(std::memory_order_acquire);
     const uint64_t command_read = _command_dequeue_pos.load(std::memory_order_acquire);
     const uint64_t receipt_write = _receipt_write.load(std::memory_order_acquire);

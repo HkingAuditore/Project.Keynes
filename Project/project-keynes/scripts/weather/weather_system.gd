@@ -1225,6 +1225,53 @@ func _build_weather_distribute_knobs(map: MapData, n_cells: int) -> Dictionary:
 		"can_form_flood_arr": cff,
 	}
 
+# ACTIVE climate authority：worker 侧 weather field stage 的 knobs 入口。
+#
+# 与 distribute 那个包装不同，field knobs 拿不到就建不出来：_build_weather_field_knobs
+# 读的是 _field_solver._field_slice_*，而那套 slice state 由 begin_weather_field_solve
+# 建立。所以这里必须真的 begin 一次，取完 knobs 立刻 clear —— 权威下生产的 weather
+# 段是被抑制的，没有 apply_unified_fast_tick_result 会来收尾，留着就是一份每天新建
+# 却永不消费的悬挂 state。
+#
+# 返回的 PackedArray 是 CoW 值语义，clear 不会动它们，worker 拿到的那份仍然有效。
+func build_field_knobs_for_worker(map: MapData, world: WorldData,
+		season_idx: int, climate_anomaly: float,
+		season_phase: float) -> Dictionary:
+	if _data_core_world_ext == null or map == null or world == null:
+		return {}
+	var n_cells: int = map.cell_count()
+	if n_cells <= 0:
+		return {}
+	_current_map_for_tick = map
+	begin_weather_field_solve(map, world, season_idx, climate_anomaly,
+		season_phase, true)
+	if not _field_solver._field_slice_fast_indexed:
+		# fast-indexed 是 solve 的硬前置，缺了它生产也会 fallback。
+		_clear_weather_field_slice_state()
+		_current_map_for_tick = null
+		return {}
+	var knobs: Dictionary = _build_weather_field_knobs(map, world, n_cells)
+	_clear_weather_field_slice_state()
+	_current_map_for_tick = null
+	return knobs
+
+
+# ACTIVE climate authority：worker 侧 distribute stage 的 knobs 入口。
+#
+# 生产路径经 build_unified_fast_tick_weather_knobs 一次拿 field+distribute+summary
+# 三组，但那条会先调 begin_weather_field_solve 初始化 field slice state；worker
+# 权威下生产的 weather 段是被抑制的，那份 state 没人消费。这里只暴露 distribute
+# 段，与生产共用同一个 builder —— 那些 snow/flood 阈值有一半是 builder 里的硬编码
+# 常量，在 map_generator 侧重抄一份等于给它们开第二个漂移入口。
+#
+# 无副作用：_build_weather_distribute_knobs 只读 map 与 profile 派生的标量，
+# 唯一的写是 _dist_acc_snow_cache / _dist_pre_cover_cache 的重建，而那是幂等的。
+func build_distribute_knobs_for_worker(map: MapData, n_cells: int) -> Dictionary:
+	if map == null or n_cells <= 0:
+		return {}
+	return _build_weather_distribute_knobs(map, n_cells)
+
+
 # 调用 C++ 端 run_weather_distribute_pass。返回 Dictionary {"elapsed_ms", "cover_dirty",
 # "changed_cells"(PackedInt32Array), "accumulated_snow_days"/"pre_snow_cover"(已被 C++ 改写)}。
 # elapsed_ms < 0 表示 precondition 失败，调用方走 GDScript fallback。

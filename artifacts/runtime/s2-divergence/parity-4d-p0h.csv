@@ -1,0 +1,5 @@
+day,parity_compared,parity_matched,diverged_field_count,diverged_cells,first_field,first_stage,first_cell,first_reference,first_worker,reason,production_stage_mask,worker_stage_mask
+2,true,false,7,12810,temperature,10,60,0.0228064526,0.0266841967,climate_reference_mismatch_forced,0x0,0x0
+3,true,true,0,0,,0,0,,,ok,0x0,0x0
+4,true,true,0,0,,0,0,,,ok,0x0,0x0
+5,true,true,0,0,,0,0,,,ok,0x0,0x0

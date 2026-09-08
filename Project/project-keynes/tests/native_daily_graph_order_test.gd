@@ -22,6 +22,7 @@ func _run() -> void:
 	var schedule_src: String = _read_source("res://../../gdext/src/system_schedule.cpp")
 	var generator_src: String = _read_source("res://scripts/geography/map_generator.gd")
 	var climate_src: String = _read_source("res://../../gdext/src/world_ext_climate.cpp")
+	var transp_src: String = _read_source("res://../../gdext/src/runtime_climate_passes.cpp")
 	var weather_src: String = _read_source("res://../../gdext/src/world_ext_weather.cpp")
 	var season_src: String = _read_source("res://../../gdext/src/world_ext_generate.cpp")
 
@@ -162,7 +163,8 @@ func _run() -> void:
 			"\"cell_day_length\"",
 			"\"cell_thermal_energy\"",
 		]) and _contains_in_order(daily_src, [
-			"} else if (done && _native_daily_slice_bundle.has(\"climate_pass_a_struct\")) {",
+			"} else if (done && !climate_suppressed &&",
+			"_native_daily_slice_bundle.has(\"climate_pass_a_struct\")) {",
 			"NATIVE_DAILY_PASS_A_DEFERRED_SLOTS[i]",
 			"_flush_slot_to_map(sid)",
 			"breakdown[\"pass_a_deferred_publish_slots\"] = published",
@@ -179,8 +181,8 @@ func _run() -> void:
 			"_native_daily_live_f32(\"cell_insolation_now\", map.insolation_now_arr, n_cells)"
 		))
 	_expect("transpiration subtracts donor outflow before neighbor distribution",
-		climate_src.contains("D[i] += self_share - transported") and
-		climate_src.contains("transported / float(valid_land_neighbors)"))
+		transp_src.contains("D[i] += self_share - transported") and
+		transp_src.contains("transported / float(valid_land_neighbors)"))
 	_expect("weather direct moisture writes are gated",
 		weather_src.contains("weather_direct_moisture_enabled") and
 		weather_src.contains("direct_moisture_enabled"))

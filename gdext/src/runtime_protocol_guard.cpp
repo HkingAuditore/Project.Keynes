@@ -197,13 +197,32 @@ bool RuntimeProtocolGuard::self_test(std::string &error) {
         }
     }
 
-    // Current rollout deliberately exposes COMMIT only. This check prevents
-    // a future change from silently allowing ACTIVE before all twelve stages
-    // have verified handlers.
-    const uint32_t implemented_mask = runtime_domain_mask(RuntimeDomainId::COMMIT);
+    // Two separate gates, and this guard has to keep them apart.
+    //
+    // The whole-graph gate must stay shut: COMMIT and CLIMATE have verified
+    // handlers, the other ten do not, so a request for everything is still
+    // refused. Without this a future change could silently promote all twelve.
+    const uint32_t implemented_mask = runtime_domain_mask(RuntimeDomainId::COMMIT)
+        | runtime_domain_mask(RuntimeDomainId::CLIMATE);
     if (implemented_mask == RUNTIME_ALL_DOMAIN_MASK ||
         (RUNTIME_ALL_DOMAIN_MASK & ~implemented_mask) == 0u) {
         fail(error, "runtime_active_gate_should_remain_blocked");
+        return false;
+    }
+
+    // The per-domain gate must admit exactly the implemented subset. Climate
+    // alone is grantable; anything naming an unimplemented domain must leave a
+    // non-empty ungranted remainder and therefore be refused.
+    const uint32_t climate_request = runtime_domain_mask(RuntimeDomainId::CLIMATE)
+        | runtime_domain_mask(RuntimeDomainId::COMMIT);
+    if ((climate_request & ~implemented_mask) != 0u) {
+        fail(error, "runtime_per_domain_gate_should_admit_climate");
+        return false;
+    }
+    const uint32_t economy_request = climate_request
+        | runtime_domain_mask(RuntimeDomainId::ECONOMY);
+    if ((economy_request & ~implemented_mask) == 0u) {
+        fail(error, "runtime_per_domain_gate_should_refuse_unimplemented");
         return false;
     }
 

@@ -1,8 +1,14 @@
 #pragma once
 
+// S3：Climate 生产 pass 的共享纯内核缓冲。runtime_climate_passes.h 与本文件一样
+// 不依赖 Godot，所以把 ClimateInputBuf 编入环境快照不会破坏"跨线程边界只允许传
+// Godot 无关值"这条约束。
+#include "runtime_climate_passes.h"
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -104,6 +110,22 @@ struct RuntimeCommandPacket {
     std::array<uint8_t, RUNTIME_MAX_COMMAND_PAYLOAD> payload{};
 };
 
+// Climate worker commands. Payload is POD-only; strings stay on the facade.
+// VISUAL / ECONOMY opcodes emit RuntimeDomainIntent toward those domains and
+// wait on the matching RuntimeDomainAck before the next Climate day commits.
+enum class RuntimeClimateCommand : uint16_t {
+    NOOP = 0,
+    SET_POLICY = 1,
+    FORCE_STAGE_MASK = 2,
+    REQUEST_VISUAL_ACK = 3,
+    REQUEST_ECONOMY_ACK = 4,
+};
+
+enum class RuntimeClimateIntentOpcode : uint16_t {
+    VISUAL_FIELD_DIRTY = 1,
+    ECONOMY_YIELD_HINT = 2,
+};
+
 enum class RuntimeReceiptCode : uint16_t {
     OK = 0,
     INVALID_PAYLOAD = 1,
@@ -188,6 +210,10 @@ struct RuntimeEnvironmentSnapshot {
     std::vector<float> cell_temperature_transport_anomaly;
     std::vector<uint8_t> cell_ema_initialized;
     std::vector<float> cell_elevation;
+    // weather field 的平流与几何缓存要用格子平面坐标。生产从 knobs 的 cell_pos
+    // （PackedVector2Array）解交织出两条 float lane，快照这里直接存解好的两条。
+    std::vector<float> cell_pos_x;
+    std::vector<float> cell_pos_y;
     std::vector<float> cell_lat_norm;
     std::vector<float> cell_geometry_area;
     std::vector<float> cell_wind_band;
@@ -211,6 +237,80 @@ struct RuntimeEnvironmentSnapshot {
     std::vector<uint8_t> visible;
     std::vector<float> building_resource_reserve;
     std::vector<float> building_resource_extra;
+    // S3（断点 2 的解法）：生产 Climate round 的输入缓冲，由主线程 capture 时用
+    // DCWorldExt::fill_climate_round_input 填充——与 async_climate_round_kick 走
+    // 的是同一段提取代码。worker 拿到它之后直接调 runtime_climate_passes.h 里的
+    // 共享纯内核，因此不再需要在 worker 侧维护第二套 pass 实现。
+    //
+    // n_cells == 0 表示这一帧没有携带 round 输入（旧 harness / 稀疏 fixture）。
+    // 此时 worker 退回旧的诊断近似实现，并在 parity 报告里如实标注。
+    pk_async_climate::ClimateInputBuf climate_round_input;
+    // 这一天生产 stage_b 的 albedo 段跑没跑、用的什么标量。由 reference publish 如实
+    // 填入（见 RuntimeClimateTrace::mark_reference_ready），worker 照此决定跑不跑
+    // stage 8。它与 climate_round_ran 相互独立：albedo 走 stage_b 自己的 stride。
+    pk_async_climate::ClimateAlbedoKnobs climate_albedo;
+    // stage 10（climate_feedback）同理，但它需要的不只是标量：feedback 跑在 weather
+    // 之后，而快照是 tick 起始拍的，weather_type / weather_intensity 在这两个时刻之间
+    // 被 weather pass 整场重写过。所以生产必须整份留存它自己读到的 lane。
+    //
+    // shared_ptr 而不是内联结构：快照本身每天都会被克隆一次（mark_reference_ready），
+    // 内联 7 条 per-cell lane 等于每天多拷 60 KB，而其中大多数天 feedback 根本没跑。
+    // nullptr = 这一天生产没跑 feedback，worker 也不跑。
+    std::shared_ptr<const pk_async_climate::ClimateFeedbackInput> climate_feedback;
+    // stage 11 同理。它额外带七组跨 tick 状态的初值（ψ / 对流抑制 / 气旋强迫 /
+    // 季风热力 / 轨迹表），worker 第一次跑 weather 时靠它播种。
+    std::shared_ptr<const pk_async_climate::WeatherFieldInput> climate_weather;
+    // stage 12 同理。它额外带运河拓扑代号，worker 的运河编译缓存按它失效。
+    std::shared_ptr<const pk_async_climate::HydrologyInput> climate_hydrology;
+    // weather distribute 同理。snow_cover / snowpack / cover 的当日最后一个写者。
+    std::shared_ptr<const pk_async_climate::WeatherDistributeInput> climate_weather_distribute;
+    // stage 9（vegetation_dynamics）同理，且更彻底：它读的 8 张查表来自 GDScript 的
+    // vegetation catalog，worker 侧完全没有获取途径，只能整份随 reference 发布。
+    // nullptr = 这一天生产没跑 vegetation_dynamics，worker 也不跑。
+    std::shared_ptr<const pk_async_climate::VegetationDynamicsInput> climate_vegetation;
+    // 生产这一天跑过哪些 Climate stage（1 << RuntimeClimateStage）。见
+    // RuntimeClimateReferencePublish::production_stage_mask。worker 只读不写。
+    int climate_production_stage_mask = 0;
+    // 季末一次的反馈消费。见 RuntimeClimateReferencePublish::seasonal_feedback_ran。
+    bool  climate_seasonal_feedback_ran = false;
+    float climate_seasonal_feedback_decay = 1.0f;
+    // 季末 season refresh 跑了没。为真时 worker 在当天 advance 之前把 moisture
+    // 从 input 收回来——那一天 moisture 不是 worker 算的。
+    bool  climate_season_refresh_ran = false;
+    // Climate 是不是在 worker 手上（= 主线程那侧被抑制门整段关掉了）。
+    //
+    // 生产被抑制之后，凡是「由生产 pass 顺带记录、再随 reference publish 交给 worker」
+    // 的东西都会静默停更。这个标志门控 worker 侧对这类缺口的补偿，目前有两处：
+    //
+    //   1. round scalars —— fill_climate_round_input 只填 per-cell lane，scalars 唯一
+    //      的填充点是 run_climate_pass_a 里的 record_production_pass_a_scalars。
+    //      ACTIVE 下 season_phase 因此停在默认 0.0，pass_a 每天按同一个季节相位算
+    //      日照，温度场整年没有振幅。
+    //   2. plant_available_water —— PAW 是 f(moisture, WB30, soil) 的纯派生量，
+    //      ACTIVE 下从 input 播种等于读自己昨天回灌的那份（它在回灌表里，而 capture
+    //      早于 _sus.tick()），闭环导致它只在 vegetation_dynamics 那几天动。
+    //
+    // 两处都必须门控而不能无条件做：SHADOW 下 round_in 来自 reference publish，
+    // scalars 是生产记录的真值；PAW 也必须跟着生产每 48/49 天一次的节拍走。无条件
+    // 补偿会让 parity 立刻分叉。
+    //
+    // 与 own_snow_state / own_field_state 是同一套「ACTIVE 下谁负责」的区分，只是那
+    // 两条问的是跨天状态谁持有，这条问的是被抑制的记录谁补。
+    bool  climate_worker_authoritative = false;
+    float climate_paw_water_balance_weight = 0.35f;
+    float climate_paw_soil_buffer_weight = 0.25f;
+    float climate_paw_drought_penalty = 0.65f;
+    // 生产 Climate round 是按 stride 跑的，不是每日一轮（实测 60x40 下约每 10 日
+    // 一轮）。worker 若每天都跑 pass_a，就会在生产没动的日子里单方面推进温度场——
+    // 分叉矩阵会把这种节拍错位报成算法分叉。
+    //
+    // 默认 true = "照常跑"。只有 reference publish 才有资格按生产侧真实情况把它
+    // 改成 false。默认取 false 会让任何没显式设过它的 fixture 静默变成整域 no-op，
+    // 那种默认值的代价是测试全绿但什么都没算。
+    bool climate_round_ran = true;
+    // round 不变量（neighbor_indices / donor / foliage / albedo 表）。与 per-day
+    // 输入分开，因为它只在 bind_map_data 之后变一次。
+    pk_async_climate::ClimateRoundStaticKnobs climate_round_static_knobs;
 };
 
 // Shared validation for the main-thread facade and the worker publish gate.
@@ -685,6 +785,19 @@ struct RuntimeThreadReport {
     uint32_t required_domain_mask = RUNTIME_ALL_DOMAIN_MASK;
     uint32_t implemented_domain_mask = 0;
     uint32_t missing_domain_mask = RUNTIME_ALL_DOMAIN_MASK;
+    // Per-domain authority. `authority_ready` above keeps its whole-graph
+    // meaning: it stays false until every domain has a POD handler. A domain
+    // whose parity is proven can be promoted on its own before that, which is
+    // what these two describe.
+    //
+    //   requested   = the mask the caller asked to own at start()
+    //   authoritative = the subset the worker has actually proven at a barrier
+    //
+    // Main-thread schedule gates read `authoritative_domain_mask`, never
+    // `authority_ready`; a partial promotion must suppress exactly the
+    // promoted domains and leave the rest on the main thread.
+    uint32_t requested_authority_mask = 0;
+    uint32_t authoritative_domain_mask = 0;
     char graph_coverage_state[32]{};
     char coverage_blocker[64]{};
     bool interactive = false;
@@ -759,6 +872,19 @@ struct RuntimeThreadReport {
     char climate_parity_reference_bits[24]{};
     char climate_parity_worker_bits[24]{};
     char climate_pod_fallback_reason[64]{};
+    // 1 << RuntimeClimateStage 的位掩码。差集（production & ~worker）= "生产算了、
+    // worker 没算"，这是分叉矩阵里 stage 9..13 那些字段唯一可信的归因来源；缺了它
+    // "worker 缺实现"和"这一天生产本来也没跑"在矩阵上长得一模一样。
+    int32_t climate_production_stage_mask = 0;
+    int32_t climate_worker_stage_mask = 0;
+    // 逐 stage 的 worker 侧耗时与工作量，索引即 RuntimeClimateStage。
+    // RuntimeClimateVerticalReport 早就有这两条，但没进 ThreadReport，GDScript 因此
+    // 拿不到任何 per-stage 数据，performance.csv 只能记一个总的 climate_pod_plan_ms。
+    // ACTIVE 下"哪个 stage 变慢了"必须能在不重编译的情况下回答。
+    std::array<double, static_cast<size_t>(
+        pk_async_climate::CLIMATE_STAGE_SLOT_COUNT)> climate_stage_ms{};
+    std::array<uint64_t, static_cast<size_t>(
+        pk_async_climate::CLIMATE_STAGE_SLOT_COUNT)> climate_stage_work{};
     uint32_t command_queue_depth = 0;
     uint32_t receipt_queue_depth = 0;
     double time_debt_days = 0.0;

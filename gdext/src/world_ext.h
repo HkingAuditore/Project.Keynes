@@ -48,6 +48,14 @@
 namespace pk {
 
 class NativeSimulationHost;
+struct RuntimeClimateStore;
+
+// Adds climate_stage_ms / climate_stage_work / climate_stage_names to a report
+// dictionary. Both the thread report and the runtime graph perf snapshot expose
+// it, so performance.csv has the same per-stage columns whichever facade the
+// caller happened to query.
+void append_climate_stage_cadence(godot::Dictionary &out,
+                                 const RuntimeThreadReport &report);
 
 struct NativeSliceResult {
     uint32_t status = 0;
@@ -202,6 +210,25 @@ public:
       godot::Dictionary capture_runtime_inputs(const godot::Dictionary &inputs);
     godot::Dictionary publish_runtime_climate_reference(int64_t day,
                                                         int64_t state_hash);
+    // Reduces a production Climate state to the canonical parity hash. The
+    // main thread passes the MapData arrays; the same C++ function the worker
+    // uses produces the value, so the two sides are comparable by
+    // construction instead of by convention.
+    godot::Dictionary compute_runtime_climate_parity_hash(
+            const godot::Dictionary &fields);
+    // Publishes the reference for a day as state plus hash in one call. The
+    // hash is derived from the state here, so the two cannot disagree, and the
+    // retained state lets a mismatch be reported per field and cell.
+    godot::Dictionary publish_runtime_climate_reference_state(
+            int64_t day, const godot::Dictionary &fields);
+    // The canonical parity field table, for tests and divergence reports.
+    godot::Array get_runtime_climate_parity_fields() const;
+    // Cumulative per-field divergence since the worker started. This is the
+    // stage/field matrix a migration order is derived from.
+    godot::Array get_runtime_climate_parity_divergence() const;
+    // Diagnostic only: keeps a divergent SHADOW day advancing by adopting the
+    // production reference, so more than one day can be measured.
+    godot::Dictionary set_runtime_climate_parity_forcing(bool enabled);
     godot::Dictionary capture_country_runtime_snapshot();
     godot::Dictionary capture_country_pod_catalog();
     godot::Dictionary submit_runtime_command(const godot::Dictionary &command);
@@ -214,11 +241,31 @@ public:
     godot::Dictionary poll_runtime_save(int64_t request_id);
     godot::Dictionary restore_runtime_bundle(const godot::PackedByteArray &bytes);
     godot::Dictionary request_runtime_stop();
+    // True while the worker holds ACTIVE authority over the Climate domain, so
+    // the main-thread Climate schedule must not run. Read straight off the host
+    // rather than from a bundle field: a value injected by GDScript is a frame
+    // stale, and a stale `false` would run a duplicate Climate day while the
+    // worker is already producing one.
+    bool climate_worker_authoritative() const;
+    // Applies the newest worker-committed Climate day into the DataCore slots
+    // and flushes them to MapData. This is the main-thread half of ACTIVE
+    // Climate: without it the worker would own the domain while MapData stayed
+    // frozen at the day authority was granted.
+    //
+    // `after_generation` is the caller's cursor; pass the value returned in
+    // "generation" by the previous successful call. Non-blocking, and a no-op
+    // when the worker has not committed a newer day.
+    godot::Dictionary apply_runtime_climate_writeback(int64_t after_generation);
+    bool runtime_climate_writeback_self_test() const;
     bool runtime_snapshot_ring_self_test() const;
     bool runtime_domain_pod_self_test() const;
     bool runtime_authoritative_domains_self_test() const;
     bool runtime_climate_authority_self_test() const;
     bool runtime_climate_trace_self_test() const;
+    // Returns a Dictionary rather than a bool: a parity failure needs its
+    // reason to be actionable, and a bare false is what let earlier gaps sit
+    // behind a green light.
+    godot::Dictionary runtime_climate_parity_contract_test() const;
     bool runtime_country_pod_authority_self_test() const;
     bool runtime_protocol_guard_self_test() const;
     bool is_native_daily_visual_commit_pending() const;
@@ -2285,6 +2332,101 @@ public:
     // 提取到 worker buffer。round 间复用，不在每次 kick 时重序列化。
     void async_climate_round_set_static_knobs(const godot::Dictionary &knobs);
 
+    // S3：Dictionary → ClimateInputBuf 的唯一提取实现。async_climate_round_kick
+    // 与 capture_runtime_inputs（SHADOW worker 的输入边界）都调它，保证两条驱动
+    // 路径拿到逐位相同的输入缓冲。调用方负责并发保护。
+    // prefer_slot_lanes=true 时，pass_a 读的 per-cell lane 改从 _slots 取而不是从
+    // Dictionary（即 MapData 镜像）取。SHADOW capture 必须用它：生产 pass_a 读的是
+    // _slots，MapData 镜像只在部分 pass 末尾 flush，两者在同一日起点未必相等——
+    // 那种差异会以"同一份内核算出不同结果"的形式出现在对拍里，极难归因。
+    void fill_climate_round_input(const godot::Dictionary &input, int n_cells,
+                                  pk_async_climate::ClimateInputBuf &buf,
+                                  bool prefer_slot_lanes = false);
+
+    // 记下生产 pass_b 用的海冰浓度 lane。它不是 slot，也不在 pass_a 留存的 kin 里。
+    void record_production_pass_b_input(int n_cells, const float *sea_ice_frac,
+                                       const float *temp_transport_anomaly);
+
+    // 同理，sea_ice 的温度 lane：生产刻意从 GDScript 的 cell.temperature 打包传入，
+    // 不是 SoA cell_temp。两者差一整段 ocean_land 修正，读错会多算冰。
+    void record_production_sea_ice_input(
+        const pk_async_climate::SeaIceLanes &lanes, int n_cells);
+
+    // 记下生产 wind_surface 真正读到的 oanom。它由跳过 round 的分片 ocean stage
+    // 写，worker 补不出来 —— 见 pk_async_climate::WindSurfaceInput 的注释。
+    void record_production_wind_surface_input(int n_cells, const float *ocean_anomaly);
+
+    // 记下生产 ocean_water 真正用的 baseline / temp_before——两者都是非 slot 的
+    // 派生量，见 pk_async_climate::OceanWaterInput 的注释。
+    void record_production_ocean_water_input(int n_cells, const float *baseline,
+                                            const float *temp_before);
+
+    // 从一个 sync pass 的 knobs Dictionary 里抽出它那段 round 标量，记进
+    // _production_round_scalars。pass_bit 用 passes_mask 的位（0x02 pass_b /
+    // 0x04 ocean_water / 0x08 ocean_land / 0x10 wind_air / 0x20 wind_surface /
+    // 0x40 sea_ice）。在每个 pass 的标量拉取之后调用，读的就是那个 pass 自己用的
+    // Dictionary —— 所以不会产生第二个取值来源。
+    // pass_a 的 25 个标量没有对应的 knobs Dictionary 记录点（生产在 pass 内部就把
+    // 它们组装成 ClimateRoundScalars 了）。直接抄那一份，而不是再解析一次字典。
+    void record_production_pass_a_scalars(
+        const pk_async_climate::ClimateRoundScalars &src);
+    void record_production_round_scalars(int pass_bit,
+                                        const godot::Dictionary &knobs);
+
+    // stage 10（climate_feedback）：把生产这一次真正读到的输入 lane 连同标量整份留存。
+    // 为什么不能让 worker 用 environment 快照的同名 lane：feedback 跑在 stage_b 段、
+    // 也就是 weather 之后，而快照是 tick 起始拍的；weather_type / weather_intensity 在
+    // 这两个时刻之间正好被 weather pass 整场重写过。
+    void record_production_feedback_input(
+            const pk_async_climate::ClimateFeedbackKnobs &knobs, int n_cells,
+            const uint8_t *is_water, const uint8_t *weather_type,
+            const float *weather_intensity, const uint8_t *weather_field_init,
+            const float *temp_transport_anomaly, const float *base_moisture,
+            const float *soil_moisture);
+
+    // stage 9（vegetation_dynamics）同理，但它读的东西更多：8 张查表 + 11 条输入
+    // lane，其中 terrain / landform / vegetation 三条会被上一天的演替后处理（GDScript
+    // 侧写 cell.vegetation）改动，而那次写入不属于任何 climate stage —— 拿快照那份等于
+    // 用演替前的植被算演替后的活力。
+    void record_production_vegetation_input(
+            const pk_async_climate::VegetationDynamicsKnobs &knobs,
+            const pk_async_climate::VegetationDynamicsTables &tables,
+            const pk_async_climate::VegetationDynamicsLanes &lanes,
+            int n_cells);
+
+    // stage 11（weather field solve）同理，但它还要记七组跨 tick 状态的初值。
+    // 那七组都不是 RuntimeClimateStore 的成员，worker 若从零起步，ψ 与对流抑制要好
+    // 几天才与生产收敛，而这几天会被分叉矩阵记成算法分叉。
+    void record_production_weather_input(
+            const pk_async_climate::WeatherFieldKnobs &knobs,
+            const pk_async_climate::SynopticAdvanceKnobs &synoptic,
+            bool synoptic_enabled,
+            const pk_async_climate::WeatherFieldLanes &lanes,
+            const pk_async_climate::WeatherFieldState &state,
+            int n_cells,
+            const uint8_t *field_init = nullptr);
+
+    // weather distribute（stage 11 后段）同理。cover 与两条积雪计数都是没有 store
+    // 成员承接的 in/out，记初值、worker 用 scratch。
+    void record_production_weather_distribute_input(
+            const pk_async_climate::WeatherDistributeKnobs &knobs,
+            const pk_async_climate::WeatherDistributeLanes &lanes,
+            const pk_async_climate::WeatherDistributeState &state,
+            int n_cells);
+
+    // stage 12（runtime hydrology）同理。运河拓扑代号也跟着过去：worker 侧的
+    // 编译缓存按它失效，对不上就会在运河变更的那一天潜默用旧拓扑。
+    void record_production_hydrology_input(
+            const pk_async_climate::HydrologyKnobs &knobs,
+            const pk_async_climate::HydrologyLanes &lanes,
+            bool has_neighbors, uint64_t canal_topology_generation,
+            int n_cells);
+
+    // 把 pass_a 读的 slot-backed lane 覆盖进 buf。返回 false 表示 slot 不完整
+    // （未 bind / 尺寸不符），此时 buf 保持调用方给的内容。
+    bool override_climate_round_input_from_slots(int n_cells,
+                                                pk_async_climate::ClimateInputBuf &buf);
+
     // 主线程入口：把当前 _slots[] 内容快照到 input_buf，传入 round-level
     // scalars（season_phase / cp 字段），唤醒 worker。返回 false 表示
     // worker 还没消费上一次 request（total_reused++），主线程应继续用
@@ -2342,6 +2484,106 @@ private:
     std::vector<float>                        _insol_annual_mean_cache;
     uint64_t                                  _insol_cache_fingerprint = 0;
     bool                                      _insol_cache_valid = false;
+
+    // ---- S3: sync run_climate_pass_a 的共享内核 scratch ------------------
+    // run_climate_pass_a 不再自带第二份 pass-A 算法，而是把 _slots 快照进这两个
+    // buffer 后调 pk_async_climate::_async_pass_a_kernel_pure —— 与 async round 和
+    // SHADOW worker 完全同一份代码。buffer 常驻，避免每日 tick 重新分配 24 条列。
+    pk_async_climate::ClimateInputBuf          _pass_a_sync_input_buf;
+    pk_async_climate::ClimateOutputBuf         _pass_a_sync_output_buf;
+
+    // run_transpiration_pass 同样已委派给 _async_transp_kernel_pure。
+    pk_async_climate::ClimateInputBuf          _transp_sync_input_buf;
+    pk_async_climate::ClimateOutputBuf         _transp_sync_output_buf;
+    pk_async_climate::ClimateWorkBuf           _transp_sync_work_buf;
+
+    // ---- S3: 生产 round 输入的所有权 --------------------------------------
+    // 本 reference 周期内生产 pass_a 实际用过的输入缓冲。publish reference 时交给
+    // trace 帧，让 worker 跑的是"生产这一天真的跑了 round、且用的就是这份输入"。
+    // 空 shared_ptr = 这一天生产没跑 round（round 走 stride，不是每日一轮），
+    // worker 据此整段跳过 Climate；否则它会在生产没动的日子里单方面推进温度场。
+    std::shared_ptr<const pk_async_climate::ClimateInputBuf> _production_round_input;
+    // 生产各 sync pass 真实用过的标量。pass_a 的那一份在 _production_round_input 里，
+    // 其余 6 个 pass 没有 ClimateInputBuf 可留存（它们直接从 knobs Dictionary 读、写
+    // slot），所以这里单独攒一份：每个 pass 跑到时把自己那段标量写进来，publish 时随
+    // reference 一起发布。
+    //
+    // 为什么必须这么做：SHADOW capture 侧的 round input 依赖 ClimateDailySystem，而
+    // native_daily 路径下它根本没注册，于是 pb_/ow_/ol_/wa_/ws_/si_ 这些标量在 worker
+    // 侧全是 ClimateRoundScalars 的结构默认值 —— worker 跑的是同一份内核，但吃的是不同
+    // 的 knobs，分叉矩阵会把它报成算法分叉。
+    pk_async_climate::ClimateRoundScalars _production_round_scalars;
+    // 哪几段标量这一轮真的被生产写过（bit 位与 passes_mask 一致）。没写过的段不参与
+    // overlay —— 否则会把"生产这天没跑这个 pass"写成"用默认 knobs 跑过"。
+    int _production_round_scalar_mask = 0;
+    // wind_air 的 baseline_arr 与风场回溯轨迹表。两者都不是 slot：baseline 是
+    // GDScript 按 map 缓存的静态数组、由 knobs 传入，轨迹表是物理风场的派生量且
+    // 带指纹校验。capture 侧都取不到，所以在生产跑 wind_air 时照抄一份，publish
+    // 时随 reference 发布。ran 由 n_cells > 0 表示；publish 后复位。
+    std::shared_ptr<const pk_async_climate::WindAirInput> _production_wind_air;
+    // pass_b 的海冰浓度 lane（生产从 MapData 镜像取，既不是 slot 也不在 pass_a 的
+    // kin 里）。见 ClimatePassBInput 的注释：缺它会让水格的 LANOM 停在 0。
+    std::shared_ptr<const pk_async_climate::ClimatePassBInput> _production_pass_b;
+    // sea_ice 的温度 lane（同上，非 slot）。
+    std::shared_ptr<const pk_async_climate::SeaIceInput> _production_sea_ice;
+    // wind_surface 读到的 oanom（同上，非 worker 权威）。
+    std::shared_ptr<const pk_async_climate::WindSurfaceInput> _production_wind_surface;
+    std::shared_ptr<const pk_async_climate::OceanWaterInput> _production_ocean_water;
+    // 同理，但针对 albedo：它跑在 native daily graph 的 stage_b 段、用自己的 stride，
+    // 与 climate round 不同步。ran=false（默认）即"这一天生产没跑 albedo"。publish 后
+    // 复位，下一天必须由新的一次 albedo 段重新置位。
+    pk_async_climate::ClimateAlbedoKnobs _production_albedo;
+    // stage 10 同理，但它需要的不只是标量：feedback 读的 weather lane 与 tick 起始的
+    // 快照不是一份，所以整份输入都得留存。shared_ptr 是因为 publish 之后 worker 线程
+    // 还要持有它，而主线程下一天就会覆盖这个成员。
+    std::shared_ptr<const pk_async_climate::ClimateFeedbackInput> _production_feedback;
+    // stage 11 同理。它是 round 内最后一批写者之一，且带七组跨 tick 状态的初值。
+    std::shared_ptr<const pk_async_climate::WeatherFieldInput> _production_weather;
+    // stage 12 同理。
+    std::shared_ptr<const pk_async_climate::HydrologyInput> _production_hydrology;
+    // weather distribute 同理。
+    std::shared_ptr<const pk_async_climate::WeatherDistributeInput> _production_weather_distribute;
+    // stage 9 同理。它比 feedback 更必须整份留存：8 张查表来自 GDScript catalog，
+    // worker 侧根本没有获取途径。
+    std::shared_ptr<const pk_async_climate::VegetationDynamicsInput> _production_vegetation;
+    // 生产这一天跑过哪些 Climate stage（1 << RuntimeClimateStage）。对尚未提取成共享
+    // 内核的 stage 也照实置位 —— 分叉矩阵里 stage 9..13 的字段有两种可能成因（worker
+    // 缺实现 / 生产这天本来也没跑），只有这个掩码能把它们分开。publish 后复位。
+    //
+    // 实测这件事很重要：stage_b 的三个子 stride（albedo 10 / vegetation 5 /
+    // feedback 10）是按 weather 调用次数计的，而 weather 自己还有 bucket stride，
+    // 于是 30 日窗口里 feedback 一次都不会触发。
+    int _production_stage_mask = 0;
+    // 季末反馈消费（map_generator.gd::_consume_feedback_buffers）。它是纯 GDScript
+    // pass，不经过任何 record_production_* 路径，所以只能由 GDScript 主动报进来。
+    bool  _production_seasonal_feedback_ran = false;
+    float _production_seasonal_feedback_decay = 1.0f;
+    bool  _production_season_refresh_ran = false;
+    // 节拍诊断：配错一天会表现成"算法分叉"，所以前若干天照实打出 round_ran。
+    int _publish_cadence_reports_left = 34;
+    // 生产自增量诊断：上一次 publish 的 reference。round_ran=0 且 stage mask=0x0 的
+    // 那一天，如果 reference 相对前一天变了，就证明存在 14 stage 之外的写者（例如
+    // native daily finalizer）。这比反推分叉矩阵直接得多，且不依赖任何猜测。
+    std::shared_ptr<const RuntimeClimateStore> _last_published_climate_reference;
+
+    // capture 侧另建的一份 round 输入。worker 只在 trace 帧没带生产缓冲时才会读到
+    // 它，而那种情况下 worker 本来就整段跳过 Climate —— 所以它现在是纯 fallback，
+    // 不参与对拍。留着是为了 snapshot 校验有完整的 lane 形状可查。
+    pk_async_climate::ClimateInputBuf          _captured_climate_round_input;
+    bool                                       _captured_climate_round_input_valid = false;
+    int64_t                                    _captured_climate_round_input_day = -1;
+    int64_t                                    _pass_a_call_count = 0;
+    int64_t                                    _capture_call_count = 0;
+
+    // ---- S3: pass_a 输出 → reference 边界诊断 -----------------------------
+    // 输入侧对齐之后，剩下的可能性是 reference 不等于 pass_a 的输出（同一 tick 里
+    // 有更晚的 pass 覆写了这几条 MapData 数组）。这里留存本 tick pass_a 写出的 4 条
+    // 场，publish reference 时比一次。
+    std::vector<float>                         _pass_a_last_temp_baseline;
+    std::vector<float>                         _pass_a_last_thermal_energy;
+    std::vector<float>                         _pass_a_last_temp_30d;
+    std::vector<float>                         _pass_a_last_temp_365d;
+    int                                        _pass_a_reference_boundary_reports_left = 4;
 
     // ---- SLP lat-LUT annual-mean sub-cache (perf 2026-07-05, Item 5) ----
     // run_slp_field_pass 每 pass 按 ny 预建 LUT_BINS 档 lut_solar_heat，其中
@@ -2630,12 +2872,12 @@ private:
     // not expose the large chunk/market implementation to every pass TU.
     void                                     *_economy_runtime        = nullptr;
     uint64_t                                  _canal_topology_generation = 0;
-    uint64_t                                  _canal_hydrology_compiled_generation =
-        std::numeric_limits<uint64_t>::max();
-    int32_t                                   _canal_hydrology_compiled_cell_count = -1;
-    std::vector<int32_t>                      _canal_hydrology_cells;
-    std::vector<uint8_t>                      _canal_hydrology_source_kind;
-    std::vector<float>                        _canal_hydrology_strength;
+    // 运河编译态。原先是五个独立成员，现在整组进 HydrologyCanalState ——
+    // hydrology_pass_pure 要能在 worker 侧跑，而 worker 拿不到 DCWorldExt 的成员。
+    // 两边各持一份，各自按 _canal_topology_generation 失效。
+    pk_async_climate::HydrologyCanalState     _hydrology_canal;
+    // 每日重置的临时缓冲，抬成成员只为省掉每天四次分配。
+    pk_async_climate::HydrologyScratch        _hydrology_scratch;
     std::unordered_set<uint64_t>              _canal_commit_idempotency;
     std::vector<int32_t>                      _canal_visual_dirty_cells;
     void                                     *_economy_csv_recorder   = nullptr;
@@ -2737,6 +2979,11 @@ private:
     std::vector<float>             _wf_nb_dx;            // n*6, self->nb wrapped delta x
     std::vector<float>             _wf_nb_dy;            // n*6, self->nb wrapped delta y
     std::vector<float>             _wf_nb_invd;          // n*6, 1/sqrt(|d|²) 或 0 (dl2<=1e-4 哨兵)
+    // 同一份 cell_pos 的 POD 视图。共享纯内核不能接 godot::Vector2，而单纯把
+    // PackedVector2Array 解交织成两条 float lane 是逐位无损的，所以内核与生产
+    // 热路径读到的位置完全相同。每轮 start_idx==0 重填。
+    std::vector<float>             _wf_pos_x;            // n
+    std::vector<float>             _wf_pos_y;            // n
     int                            _wf_nb_geom_n = 0;    // 已构建几何缓存的 n_cells（0=未填）
     float                          _wf_nb_geom_wrap = -1.0f;  // 构建时的 wrap_width_x（变更→失效）
 
@@ -2834,6 +3081,11 @@ private:
     void _ensure_slot_capacity(Slot &slot, int new_count);
     void _flush_slot_to_map(int comp_id);
     int  _bind_index_for_slot(int comp_id);
+    // Reverse of the above: MapData property name -> slot name. The Climate
+    // parity table names MapData arrays, so write-back needs to get from there
+    // to a slot. Returns the slot name so callers outside world_ext.cpp do not
+    // need BIND_TABLE in scope. nullptr when the property is not bound.
+    static const char *_slot_name_for_property(const char *property_name);
     bool _slot_is_visual_dirty(int comp_id);
     godot::Dictionary _queue_bio_observations(
         int64_t country_handle, int64_t effective_day,

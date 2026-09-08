@@ -1,0 +1,210 @@
+{
+	"active_ticks": 42,
+	"active_writeback_days": 41,
+	"days": 40,
+	"first_occurrence_still_forked": true,
+	"label": "active40",
+	"production_ticks": 40,
+	"rows": [
+		{
+			"cells": 2400,
+			"day": 7,
+			"field": "temperature",
+			"first_cell": 60,
+			"max_abs": 0.173575162887573,
+			"out_of_band_cells": 2202
+		},
+		{
+			"cells": 2400,
+			"day": 7,
+			"field": "moisture",
+			"first_cell": 95,
+			"max_abs": 0.68980672955513,
+			"out_of_band_cells": 1204
+		},
+		{
+			"cells": 2400,
+			"day": 7,
+			"field": "vapor",
+			"first_cell": -1,
+			"max_abs": 0.0,
+			"out_of_band_cells": 0
+		},
+		{
+			"cells": 2400,
+			"day": 7,
+			"field": "alpha",
+			"first_cell": 0,
+			"max_abs": 1.0,
+			"out_of_band_cells": 2400
+		},
+		{
+			"cells": 2400,
+			"day": 7,
+			"field": "snowpack",
+			"first_cell": -1,
+			"max_abs": 0.0,
+			"out_of_band_cells": 0
+		},
+		{
+			"cells": 2400,
+			"day": 7,
+			"field": "paw",
+			"first_cell": -1,
+			"max_abs": 0.0,
+			"out_of_band_cells": 0
+		},
+		{
+			"cells": 2400,
+			"day": 18,
+			"field": "temperature",
+			"first_cell": 60,
+			"max_abs": 0.169469252228737,
+			"out_of_band_cells": 2180
+		},
+		{
+			"cells": 2400,
+			"day": 18,
+			"field": "moisture",
+			"first_cell": 95,
+			"max_abs": 0.970856487751007,
+			"out_of_band_cells": 1187
+		},
+		{
+			"cells": 2400,
+			"day": 18,
+			"field": "vapor",
+			"first_cell": 0,
+			"max_abs": 0.216720968484879,
+			"out_of_band_cells": 2400
+		},
+		{
+			"cells": 2400,
+			"day": 18,
+			"field": "alpha",
+			"first_cell": 2201,
+			"max_abs": 0.349999994039536,
+			"out_of_band_cells": 7
+		},
+		{
+			"cells": 2400,
+			"day": 18,
+			"field": "snowpack",
+			"first_cell": 95,
+			"max_abs": 0.319999992847443,
+			"out_of_band_cells": 154
+		},
+		{
+			"cells": 2400,
+			"day": 18,
+			"field": "paw",
+			"first_cell": 0,
+			"max_abs": 1.0,
+			"out_of_band_cells": 2356
+		},
+		{
+			"cells": 2400,
+			"day": 28,
+			"field": "temperature",
+			"first_cell": 61,
+			"max_abs": 0.214181959629059,
+			"out_of_band_cells": 2162
+		},
+		{
+			"cells": 2400,
+			"day": 28,
+			"field": "moisture",
+			"first_cell": 95,
+			"max_abs": 0.970952292904258,
+			"out_of_band_cells": 830
+		},
+		{
+			"cells": 2400,
+			"day": 28,
+			"field": "vapor",
+			"first_cell": 0,
+			"max_abs": 0.266666889190674,
+			"out_of_band_cells": 2400
+		},
+		{
+			"cells": 2400,
+			"day": 28,
+			"field": "alpha",
+			"first_cell": -1,
+			"max_abs": 0.0,
+			"out_of_band_cells": 0
+		},
+		{
+			"cells": 2400,
+			"day": 28,
+			"field": "snowpack",
+			"first_cell": 95,
+			"max_abs": 0.325485825538635,
+			"out_of_band_cells": 166
+		},
+		{
+			"cells": 2400,
+			"day": 28,
+			"field": "paw",
+			"first_cell": 0,
+			"max_abs": 1.0,
+			"out_of_band_cells": 2390
+		},
+		{
+			"cells": 2400,
+			"day": 38,
+			"field": "temperature",
+			"first_cell": 180,
+			"max_abs": 0.218567371368408,
+			"out_of_band_cells": 2123
+		},
+		{
+			"cells": 2400,
+			"day": 38,
+			"field": "moisture",
+			"first_cell": 95,
+			"max_abs": 0.784806966781616,
+			"out_of_band_cells": 1165
+		},
+		{
+			"cells": 2400,
+			"day": 38,
+			"field": "vapor",
+			"first_cell": 0,
+			"max_abs": 0.298281073570251,
+			"out_of_band_cells": 2398
+		},
+		{
+			"cells": 2400,
+			"day": 38,
+			"field": "alpha",
+			"first_cell": -1,
+			"max_abs": 0.0,
+			"out_of_band_cells": 0
+		},
+		{
+			"cells": 2400,
+			"day": 38,
+			"field": "snowpack",
+			"first_cell": 99,
+			"max_abs": 0.331165820360184,
+			"out_of_band_cells": 163
+		},
+		{
+			"cells": 2400,
+			"day": 38,
+			"field": "paw",
+			"first_cell": 0,
+			"max_abs": 1.0,
+			"out_of_band_cells": 2376
+		}
+	],
+	"seed": 20260906,
+	"snap_days": [
+		7,
+		18,
+		28,
+		38
+	],
+	"tolerance": 0.001
+}

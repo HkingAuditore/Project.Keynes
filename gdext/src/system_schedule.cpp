@@ -363,6 +363,31 @@ int dispatch_system_schedule(DCWorldExt* self,
                              const char*& out_fail_stage) {
     out_any_pass_ran = false;
     out_fail_stage = nullptr;
+    // Climate authority gate. Every node in SCHEDULE_GRAPH writes a Climate
+    // domain slot, so a promoted Climate domain suppresses the whole table in
+    // one place instead of fourteen scattered checks.
+    //
+    // out_any_pass_ran stays true: the caller treats false as "the bundle had
+    // no pass knobs" and fails the tick. Suppression is a successful no-op, not
+    // a missing bundle.
+    //
+    // The caller must also skip flush_slots_to_map on a suppressed tick. The
+    // slots still hold the previous day's values because nothing recomputed
+    // them, and flushing would write that stale copy over the snapshot the
+    // worker just fed back into MapData.
+    // Written unconditionally so a stale `true` cannot survive revocation in a
+    // merged diagnostics breakdown.
+    const bool climate_suppressed = self->climate_worker_authoritative();
+    breakdown["climate_authority_suppressed"] = climate_suppressed;
+    if (climate_suppressed) {
+        breakdown["climate_ms"] = 0.0;
+        breakdown["ocean_ms"] = 0.0;
+        breakdown["weather_ms"] = 0.0;
+        breakdown["hydrology_ms"] = 0.0;
+        breakdown["stage_b_ms"] = 0.0;
+        out_any_pass_ran = true;
+        return 0;
+    }
     for (int i = 0; i < SCHEDULE_GRAPH_SIZE; ++i) {
         const SystemNode& node = SCHEDULE_GRAPH[i];
         if (!bundle.has(node.bundle_key)) {

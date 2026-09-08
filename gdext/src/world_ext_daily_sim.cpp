@@ -1,5 +1,7 @@
 #include "world_ext.h"
 
+#include "runtime_climate_passes.h"
+
 #include "component_bind_table.gen.h"  // A1 / dots-migration-roadmap §3 — autogen by tools/codegen/gen_cpp_bind_table.py
 #include "system_schedule.h"           // Phase C.1 — 静态 DAG 调度图
 #include "parallel_dispatcher.h"       // Phase C.3a — 并行分发 helper（统一 5 个手写 _thread）
@@ -851,6 +853,11 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
         _native_daily_slice_breakdown["retained_gdscript_authority"] = _native_daily_slice_retained_authority;
         _native_daily_slice_breakdown["native_state_snapshot"] = _native_daily_slice_state_snapshot;
         _native_daily_slice_breakdown["round_id"] = _native_daily_slice_round_id;
+        // Seeded here as well as at the authority gate below, so a continuation
+        // call that returns before reaching the gate still reports the state
+        // rather than dropping the key and reading as "not suppressed".
+        _native_daily_slice_breakdown["climate_authority_suppressed"] =
+            climate_worker_authoritative();
 
         const auto t_context0 = std::chrono::high_resolution_clock::now();
         if (bool(_native_daily_slice_bundle.get("refresh_slots_from_map", true))) {
@@ -1332,6 +1339,30 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
         }
         return false;
     };
+    // Climate authority gate for the sliced production path.
+    //
+    // Every node in NATIVE_DAILY_SLICE_GRAPH writes a Climate-domain slot, so a
+    // promoted Climate domain suppresses the whole graph rather than a subset.
+    // Pushing the cursor to the end rather than returning early keeps the slice
+    // state machine on its normal path: next_present_node then reports -1, the
+    // round is reported done, and the per-round bookkeeping below (progress,
+    // published slots, authority report) runs exactly as it does for a real
+    // round. Returning early instead would leave the cursor mid-graph and the
+    // next tick would resume a round nobody is computing.
+    //
+    // any_pass_ran is forced true because the caller treats false as "the
+    // bundle had no pass knobs" and fails the tick.
+    const bool climate_suppressed = climate_worker_authoritative();
+    // Written unconditionally. The diagnostics bus *merges* breakdowns rather
+    // than replacing them, so a key only set while suppressed would survive
+    // revocation and report the main thread as still suppressed after it had
+    // resumed.
+    breakdown["climate_authority_suppressed"] = climate_suppressed;
+    if (climate_suppressed) {
+        _native_daily_slice_node_index = NATIVE_DAILY_SLICE_GRAPH_SIZE;
+        _native_daily_slice_any_pass_ran = true;
+        _native_daily_slice_breakdown = breakdown;
+    }
     const uint32_t deferred_bits_active = native_daily_deferred_node_bits(_native_daily_slice_bundle);
     int node_index = native_daily_next_present_node(_native_daily_slice_bundle,
                                                     _native_daily_slice_node_index,
@@ -1494,14 +1525,19 @@ Dictionary DCWorldExt::run_native_daily_slice(const Dictionary &tick_knobs) {
                                                           _native_daily_slice_node_index,
                                                           deferred_bits_active);
     const bool done = next_index < 0;
-    if (done && bool(_native_daily_slice_bundle.get("flush_slots_to_map", true))) {
+    // Both flush branches are skipped while Climate is suppressed: the slots
+    // still hold the day authority was granted, and either one would overwrite
+    // the snapshot the worker fed back into MapData with that stale copy.
+    if (done && !climate_suppressed &&
+        bool(_native_daily_slice_bundle.get("flush_slots_to_map", true))) {
         const auto t_flush0 = std::chrono::high_resolution_clock::now();
         flush_slots_to_map();
         const auto t_flush1 = std::chrono::high_resolution_clock::now();
         breakdown["render_prepare_ms"] =
             std::chrono::duration<double, std::milli>(t_flush1 - t_flush0).count();
         _native_daily_slice_breakdown = breakdown;
-    } else if (done && _native_daily_slice_bundle.has("climate_pass_a_struct")) {
+    } else if (done && !climate_suppressed &&
+               _native_daily_slice_bundle.has("climate_pass_a_struct")) {
         // Production skips the bulk flush (flush_slots_to_map=false) because each
         // native pass publishes its own slots. Pass-A cannot: it runs deferred, so
         // without this commit its whole slot family — insolation, day length,
@@ -2748,7 +2784,12 @@ Dictionary DCWorldExt::run_native_daily_tick(const Dictionary &tick_knobs) {
         return finish_with_failure("native_daily_bundle", "no pass knobs in native_daily_bundle");
     }
 
-    if (bool(bundle.get("flush_slots_to_map", true))) {
+    // A Climate-suppressed tick computed nothing, so the slots still hold
+    // yesterday's values. Flushing them would overwrite the snapshot the ACTIVE
+    // worker fed back into MapData with a one-day-old copy.
+    const bool climate_suppressed =
+        bool(breakdown.get("climate_authority_suppressed", false));
+    if (!climate_suppressed && bool(bundle.get("flush_slots_to_map", true))) {
         const auto t_flush0 = std::chrono::high_resolution_clock::now();
         flush_slots_to_map();
         const auto t_flush1 = std::chrono::high_resolution_clock::now();
@@ -3132,71 +3173,44 @@ Dictionary DCWorldExt::run_native_daily_finalizer(Dictionary knobs) {
     const bool has_temp_start = temp_start.size() == n;
     const bool has_tta_start  = tta_start.size() == n;
 
-    // NOTE: GDScript floats are 64-bit and clampf()/absf() operate in double; PackedFloat32
-    // reads promote to double and only the store narrows back to float32. To stay bit-equal
-    // with MapGenerator._native_daily_apply_finalizer we MUST do every intermediate in double
-    // and narrow to float ONLY on write-back (a float32 kernel diverges by ~1e-5 on the TTA
-    // clamp, which then propagates into ocean/weather/hydrology the next round).
-
-    // --- temp delta-cap (mirrors GDScript temp loop) ---
+    // 全程 double / 写回时才收窄的约束已下沉到共享内核（见
+    // pk_async_climate::FinalizerKnobs 的注释）。worker 的
+    // _async_finalizer_kernel_pure 跑同一份实现，不再有第二个 float32 拄本。
     PackedFloat32Array temp_out = temp_in;       // CoW: ptrw() below forks a private buffer
-    float *tp = temp_out.ptrw();
-    const float *ts = has_temp_start ? temp_start.ptr() : nullptr;
-    double max_temp_delta = 0.0, preclamp_max = 0.0;
-    int gt005 = 0, gt010 = 0, gt020 = 0, clamped = 0;
-    for (int i = 0; i < n; ++i) {
-        const double start_t = has_temp_start ? (double)ts[i] : (double)tp[i];
-        const double raw = (double)tp[i];
-        double final_t = raw;
-        const double pre = std::fabs(raw - start_t);
-        if (pre > preclamp_max) preclamp_max = pre;
-        if (temp_cap_enabled && has_temp_start) {
-            const double lo = start_t - temp_cap, hi = start_t + temp_cap;
-            final_t = final_t < lo ? lo : (final_t > hi ? hi : final_t);
-            final_t = final_t < 0.0 ? 0.0 : (final_t > 1.0 ? 1.0 : final_t);
-            if (std::fabs(final_t - raw) > 0.000001) ++clamped;
-            tp[i] = (float)final_t;
-        }
-        const double dt = std::fabs(final_t - start_t);
-        if (dt > 0.005) ++gt005;
-        if (dt > 0.010) ++gt010;
-        if (dt > 0.020) ++gt020;
-        if (dt > max_temp_delta) max_temp_delta = dt;
-    }
-
-    // --- tta delta-cap (mirrors GDScript tta loop) ---
     PackedFloat32Array tta_out = tta_in;
-    float *qp = tta_out.ptrw();
-    const float *qs = has_tta_start ? tta_start.ptr() : nullptr;
-    double max_transport = 0.0;
-    int tta_clamped = 0;
-    for (int i = 0; i < n; ++i) {
-        const double start_q = has_tta_start ? (double)qs[i] : 0.0;
-        const double raw = (double)qp[i];
-        double final_q = raw;
-        if (tta_cap > 0.0 && has_tta_start) {
-            const double lo = start_q - tta_cap, hi = start_q + tta_cap;
-            final_q = final_q < lo ? lo : (final_q > hi ? hi : final_q);
-            if (std::fabs(final_q - raw) > 0.000001) { qp[i] = (float)final_q; ++tta_clamped; }
-        }
-        const double aq = std::fabs(final_q);
-        if (aq > max_transport) max_transport = aq;
-    }
-
-    // --- thermal init (mirrors GDScript thermal loop; uses the CLAMPED temp) ---
     const bool has_thermal = thermal_in.size() == n;
     PackedFloat32Array thermal_out = thermal_in;
-    int thermal_init = 0;
-    if (has_thermal) {
-        float *hp = thermal_out.ptrw();
-        const uint8_t *ep = ema_in.ptr();
-        const int ema_n = ema_in.size();
-        for (int i = 0; i < n; ++i) {
-            bool needs = std::isnan(hp[i]) || std::isinf(hp[i]);
-            if (i < ema_n && ep[i] == 0) needs = true;
-            if (needs) { hp[i] = tp[i]; ++thermal_init; }
-        }
-    }
+
+    pk_async_climate::FinalizerKnobs fk;
+    fk.n_cells = n;
+    fk.temp_cap_enabled = temp_cap_enabled;
+    fk.temp_cap = temp_cap;
+    fk.tta_cap = tta_cap;
+    fk.has_temp_start = has_temp_start;
+    fk.has_tta_start = has_tta_start;
+
+    pk_async_climate::FinalizerLanes fl;
+    fl.temp_start = has_temp_start ? temp_start.ptr() : nullptr;
+    fl.tta_start = has_tta_start ? tta_start.ptr() : nullptr;
+    fl.ema = ema_in.size() > 0 ? ema_in.ptr() : nullptr;
+    fl.ema_size = int(ema_in.size());
+    fl.temp = temp_out.ptrw();
+    fl.tta = tta_out.ptrw();
+    fl.thermal = has_thermal ? thermal_out.ptrw() : nullptr;
+
+    pk_async_climate::FinalizerStats fs;
+    pk_async_climate::finalizer_pure(fk, fl, fs);
+
+    const double max_temp_delta = fs.max_temp_delta;
+    const double preclamp_max = fs.preclamp_max_temp_delta;
+    const double max_transport = fs.max_transport_anomaly;
+    const int gt005 = fs.temp_delta_gt_005;
+    const int gt010 = fs.temp_delta_gt_010;
+    const int gt020 = fs.temp_delta_gt_020;
+    const int clamped = fs.temp_clamped;
+    const int tta_clamped = fs.tta_clamped;
+    const int thermal_init = fs.thermal_init;
+    float *tp = fl.temp;
 
     out["rc"] = 0;
     out["temp_out"] = temp_out;

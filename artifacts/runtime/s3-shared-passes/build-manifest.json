@@ -1,0 +1,32 @@
+{
+  "generated_utc": "2026-09-05T21:47:00.545906+00:00",
+  "git_head": "c3255fccd18c49dcdd51e635a90f6d87b1120eb5",
+  "git_dirty": true,
+  "abi": [
+    "constexpr uint32_t RUNTIME_DOMAIN_ABI_VERSION = 1u;",
+    "constexpr uint32_t RUNTIME_DOMAIN_POD_ABI_VERSION = 3u;"
+  ],
+  "probe": {
+    "label": "s3seaice",
+    "map": "60x40",
+    "seed": 20260906,
+    "days": 30,
+    "compared_days": 30,
+    "matched_days": 26,
+    "forced_days": 4,
+    "round_passes_ran": "0x1F3",
+    "round_passes_starved": "0x0"
+  },
+  "dlls": {
+    "dots_ext.windows.template_debug.x86_64.dll": {
+      "sha256": "c838c810b2c5e7421fda5042289261f55273a2c0ed5810ba491cd7f5d39c35a3",
+      "bytes": 8626688,
+      "mtime_utc": "2026-09-05T21:42:03.228761+00:00"
+    },
+    "dots_ext.windows.template_release.x86_64.dll": {
+      "sha256": "92bef1cac9fe8b5bf3e07d2e70a5e322d81a70451f7044c1e109fd0959c03262",
+      "bytes": 7421952,
+      "mtime_utc": "2026-09-05T21:46:47.090363+00:00"
+    }
+  }
+}

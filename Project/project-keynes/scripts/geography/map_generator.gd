@@ -469,6 +469,13 @@ var _pending_season_refresh: bool = false
 var _season_refresh_in_progress: bool = false
 var _pending_season_idx: int = 0
 var _last_season_refresh_day: int = -1
+# 上一次 capture 时看到的 _last_season_refresh_day。用来做边沿检测而不是日相等
+# 判断：finish_season_refresh 与 capture 都在同一个 SUS tick 里，但 season round 是
+# 分片跑的（micro/chunked），finish 落在哪个 tick 的哪个位置不由 capture 这边决定。
+# 用 `_last_season_refresh_day == day` 会在 finish 排在 capture 之后的那些 round 上
+# 静默漏掉一次收回（实测 150 天 3 次 refresh 只捕到 1 次）。边沿检测最坏晚一天，
+# 但不会漏。
+var _last_capture_season_refresh_day: int = -1
 var _last_season_refresh_breakdown: Dictionary = {}
 # 逐 tick 散布刷新滚动快照（2026-08-01）：日级原生 pass（海冰翻转、veg_dyn、季节 redecide 等）
 # 会改写 landform/vegetation/cover，但这些写入路径都不调 queue_detail_scatter_refresh，
@@ -787,6 +794,8 @@ var _weather_stride_logged: int = -1
 # 所以 call_index % stride 是 day_index % stride 的合法代理。
 var _refresh_daily_call_index: int = -1
 var _weather_stage_b_call_index: int = -1
+# runtime_hydrology_stride 的节拍计数：只在真实 tick 的 weather 到期轮推进。
+var _native_daily_hydrology_call_index: int = -1
 # Stagger 对齐（2026-06）：native daily 内 weather/stage_b 上次嵌入推进的模拟日。
 # 用 day_index 差值 ≥ stride 判定下次推进，复刻 legacy weather bucket 的推进频率
 # （默认每 8 天一次），避免 native round 跨多天 / 起始日与 phase 错开导致 tick 取模
@@ -1099,6 +1108,10 @@ var _bio_occupancy_daily_job = null
 var _bio_occupancy_slice_inflight: bool = false
 var _bio_occupancy_day_pending: bool = false
 var _native_daily_day_pending: bool = false
+# Counts completed native daily Climate rounds. It plays the role the GDScript
+# path's pass_generation plays: proof that the round captured for a trace frame
+# has since reached its immutable boundary.
+var _native_daily_climate_round_generation: int = 0
 # Bio occupancy 的 species/catalog、邻接索引和 carrier 映射只依赖 MapData
 # 实例及其 cell 数量；动态气候/植被/储量列仍在每次 pass 更新。缓存是
 # GDScript facade 的 transient 数据，不属于模拟 authority、存档或 state hash。
@@ -2078,7 +2091,10 @@ func _runtime_climate_hash_append(hashing, label: String, value) -> void:
 	if value is Array or value is Dictionary:
 		hashing.update(var_to_bytes(value))
 		return
-	hashing.update(String(value).to_utf8_buffer())
+	# str(), not String(): the String constructor rejects plain int/float/bool
+	# arguments at runtime, which silently dropped every scalar knob from the
+	# catalog hash instead of framing it.
+	hashing.update(str(value).to_utf8_buffer())
 
 
 func _runtime_climate_hash_digest_value(digest: PackedByteArray) -> int:
@@ -2219,9 +2235,12 @@ func capture_runtime_inputs_for_worker(day: int = -1, phase: float = -1.0) -> Di
 	# NativeSimulationHost keeps the last accepted immutable generation across a
 	# save/restore boundary. Reconcile that watermark before allocating the next
 	# capture so a restored host never receives a duplicate generation.
+	# Hoisted: the same report also says whether Climate is worker-authoritative,
+	# which decides whether this capture has to carry the per-stage knobs below.
+	var thread_report: Dictionary = {}
 	if _data_core_world_ext != null and _data_core_world_ext.has_method(
 			"get_runtime_thread_report"):
-		var thread_report: Dictionary = get_runtime_thread_report()
+		thread_report = get_runtime_thread_report()
 		_runtime_input_generation = maxi(
 			_runtime_input_generation,
 			int(thread_report.get("environment_generation", 0)))
@@ -2276,6 +2295,28 @@ func capture_runtime_inputs_for_worker(day: int = -1, phase: float = -1.0) -> Di
 		"cell_geometry_area": geometry_area,
 		"cell_wind_band": wind_band,
 		"cell_ocean_heat_capacity": ocean_heat_capacity,
+		# 这三条原本不在 capture 里：environment 快照的字段虽然早就声明了它们，但
+		# copy_f32 的语义是"key 缺席就留空并放行"，所以缺席一直是静默的。权威下
+		# weather distribute 要读 heat（融雪的日照项）与 soil_moisture（它自己的
+		# in/out），少一条就整个 stage 静默跳过，snow_cover 因此恒为 0。
+		# weather_type 只是为了过 distribute 的 size 检查 —— 内核实际读的是自己
+		# store 里那份（round 刚写过），但输入侧仍要求它齐长。
+		"cell_heat_input": map.heat_input_arr,
+		"cell_soil_moisture": map.soil_moisture_arr,
+		"cell_weather_type": map.weather_type_arr,
+		# 同一批缺口的后三条：feedback 读 base_moisture 与
+		# temperature_transport_anomaly，vegetation_dynamics 读 water_balance_30d。
+		"cell_base_moisture": map.base_moisture_arr,
+		"cell_water_balance_30d": map.water_balance_30d_arr,
+		"cell_temperature_transport_anomaly": map.temperature_transport_anomaly_arr,
+		# weather field 的平流与邻域几何要用格子平面坐标。
+		"cell_pos_x": map.cell_pos_x_arr,
+		"cell_pos_y": map.cell_pos_y_arr,
+		# 风场与气团温度异常：weather field 的平流方向与锋生项。
+		"cell_wind_x": map.wind_x_arr,
+		"cell_wind_y": map.wind_y_arr,
+		"cell_wind_speed": map.wind_speed_arr,
+		"cell_air_mass_temp_anomaly": map.air_mass_temp_anomaly_arr,
 		"neighbor_indices": map.neighbor_indices_packed(),
 		"neighbor_offsets": neighbor_offsets,
 		"hydro_parent": hydro_parent,
@@ -2292,6 +2333,56 @@ func capture_runtime_inputs_for_worker(day: int = -1, phase: float = -1.0) -> Di
 		"visible": map.visible_arr,
 		"building_resource_reserve": building_reserve,
 		"building_resource_extra": building_extra,
+		# S3：生产 Climate round 的输入缓冲。worker 用它调共享纯内核，替代原来
+		# worker 侧自己重写的 stage 近似实现。
+		# ACTIVE 下这个字典还负责带全套 round scalars（见该函数里的说明）—— 那是
+		# 「海冰不显示」「季节振幅只剩 62.5%」的共同根因所在。
+		"climate_round_input": _build_runtime_climate_round_input(
+			map, phase,
+			bool(thread_report.get("climate_worker_authoritative", false))),
+		"climate_round_static_knobs": {
+			"donor_table": _build_transpiration_donor_table(),
+			"foliage_table": _build_climate_b_foliage_table(),
+			# stage 8 albedo 用。生产 stage_b 的 albedo 段读的是同一个构建函数的结果，
+			# 所以 worker 与生产查的是同一张表；缺了它 worker 会静默跳过 albedo，而
+			# albedo 是 temp 的日内最后写者。
+			"albedo_table": _build_albedo_donor_table(),
+			# sea_ice 的 water terrain LUT。它不是 per-cell lane，所以 capture 的
+			# slot 兜底覆盖不到它；缺了它 sea_ice pass 会静默跳过。
+			"water_terrain_ids": PackedByteArray([
+				int(TerrainType.TERRAIN.OCEAN) & 0xFF,
+				int(TerrainType.TERRAIN.COAST) & 0xFF,
+				int(TerrainType.TERRAIN.LAKE) & 0xFF,
+				int(TerrainType.TERRAIN.REEF) & 0xFF,
+				int(TerrainType.TERRAIN.KELP) & 0xFF,
+				int(TerrainType.TERRAIN.SEA_ICE) & 0xFF,
+			]),
+		},
+		# Per-stage knobs for the stages the worker cannot reach on its own.
+		# Empty unless Climate is worker-authoritative; under SHADOW these same
+		# stages get their input from the production reference publish, and
+		# supplying a second source would give the two sides different inputs
+		# for the same day.
+		"climate_stage_knobs": _build_runtime_climate_stage_knobs(
+			map, day, bool(thread_report.get("climate_worker_authoritative", false))),
+		# season refresh 今天跑过没有。worker 内核用它决定要不要把 moisture 与
+		# plant_available_water 从 input 收回来 —— 那一天这两个字段的权威是主线程，
+		# 不是 worker（season refresh 没有搬进 worker，它是地理级重算）。
+		#
+		# SHADOW 下这个标志由 reference publish 填（RuntimeClimateTrace）；ACTIVE 不
+		# 走 trace，所以它一直是 false，收回机制整个失效。表现是 PAW 停在 worker 那份
+		# 陈旧副本上、每 48 天才被 vegetation_dynamics 动一次，而生产侧每 30 天就被
+		# season refresh 重算一次。
+		#
+		# 顺序上成立：回灌 → season refresh → capture 是同一调用栈内串行的（见
+		# world_runtime_host._on_clock_day_changed），所以这里读到的 MapData 已经是
+		# season refresh 写完之后的值。
+		"climate_season_refresh_ran": _consume_season_refresh_edge(),
+		# Climate 在 worker 手上时，worker 要自己补上「生产被抑制后就停更」的那些
+		# 记录：round scalars（season_phase）与 PAW。两处都不能无条件做，否则
+		# SHADOW parity 立刻分叉。见 RuntimeEnvironmentSnapshot::climate_worker_authoritative。
+		"climate_worker_authoritative": bool(
+			thread_report.get("climate_worker_authoritative", false)),
 	})
 	if bool(result.get("ok", false)):
 		_runtime_input_generation = input_generation
@@ -2319,66 +2410,57 @@ func capture_runtime_inputs_for_worker(day: int = -1, phase: float = -1.0) -> Di
 	return result
 
 
-func _compute_runtime_climate_reference_hash(map: MapData, day: int) -> int:
-	if map == null or day < 0:
-		return 0
-	var hashing := HashingContext.new()
-	hashing.start(HashingContext.HASH_SHA256)
-	hashing.update("runtime-climate-reference-v1\n".to_utf8_buffer())
-	_runtime_climate_hash_append(hashing, "day", day)
-	_runtime_climate_hash_append(hashing, "width", int(map.width))
-	_runtime_climate_hash_append(hashing, "height", int(map.height))
-	_runtime_climate_hash_append(hashing, "cells", int(map.cell_count()))
-	_runtime_climate_hash_append(hashing, "catalog", _runtime_climate_catalog_hash_for_map(map))
-	_runtime_climate_hash_append(hashing, "topology", _runtime_climate_topology_generation_for_map(map))
-	_runtime_climate_hash_append(hashing, "temperature", map.temp_arr)
-	_runtime_climate_hash_append(hashing, "temperature_30d_ema", map.temp_30d_arr)
-	_runtime_climate_hash_append(hashing, "temperature_365d_ema", map.temp_365d_arr)
-	_runtime_climate_hash_append(hashing, "temperature_baseline", map.temp_baseline_arr)
-	_runtime_climate_hash_append(hashing, "thermal_energy", map.thermal_energy_arr)
-	_runtime_climate_hash_append(hashing, "moisture", map.moisture_arr)
-	_runtime_climate_hash_append(hashing, "plant_available_water", map.plant_available_water_arr)
-	_runtime_climate_hash_append(hashing, "water_balance_30d", map.water_balance_30d_arr)
-	_runtime_climate_hash_append(hashing, "weather_precipitation", map.weather_precip_arr)
-	_runtime_climate_hash_append(hashing, "weather_intensity", map.weather_intensity_arr)
-	_runtime_climate_hash_append(hashing, "weather_vapor", map.weather_vapor_arr)
-	_runtime_climate_hash_append(hashing, "weather_cloud_water", map.weather_cloud_water_arr)
-	_runtime_climate_hash_append(hashing, "weather_cloud", map.weather_cloud_arr)
-	_runtime_climate_hash_append(hashing, "weather_convergence", map.weather_convergence_arr)
-	_runtime_climate_hash_append(hashing, "weather_instability", map.weather_instability_arr)
-	_runtime_climate_hash_append(hashing, "weather_type", map.weather_type_arr)
-	_runtime_climate_hash_append(hashing, "weather_transition", map.weather_transition_alpha_arr)
-	_runtime_climate_hash_append(hashing, "snow_cover", map.snow_cover_arr)
-	_runtime_climate_hash_append(hashing, "snowpack", map.snowpack_arr)
-	_runtime_climate_hash_append(hashing, "sea_ice", map.sea_ice_frac_arr)
-	_runtime_climate_hash_append(hashing, "runoff", map.surface_runoff_arr)
-	_runtime_climate_hash_append(hashing, "groundwater", map.groundwater_storage_arr)
-	_runtime_climate_hash_append(hashing, "river_storage", map.river_storage_arr)
-	_runtime_climate_hash_append(hashing, "river_discharge", map.river_discharge_arr)
-	_runtime_climate_hash_append(hashing, "riparian_moisture",
-		_runtime_climate_optional_array(map, "riparian_moisture_arr", TYPE_PACKED_FLOAT32_ARRAY))
-	_runtime_climate_hash_append(hashing, "vegetation_vitality", map.vegetation_vitality_arr)
-	_runtime_climate_hash_append(hashing, "vegetation_growth_pressure", map.vegetation_growth_pressure_arr)
-	_runtime_climate_hash_append(hashing, "vegetation_heat_stress", map.vegetation_heat_stress_arr)
-	_runtime_climate_hash_append(hashing, "vegetation_drought_stress", map.vegetation_drought_stress_arr)
-	_runtime_climate_hash_append(hashing, "vegetation_cold_stress", map.vegetation_cold_stress_arr)
-	_runtime_climate_hash_append(hashing, "growth_streak", map.vitality_high_streak_arr)
-	_runtime_climate_hash_append(hashing, "drought_streak", map.vitality_low_streak_arr)
-	_runtime_climate_hash_append(hashing, "succession_candidate", map.vegetation_regen_score_arr)
-	_runtime_climate_hash_append(hashing, "temperature_anomaly", map.temp_anomaly_arr)
-	_runtime_climate_hash_append(hashing, "ocean_thermal_anomaly", map.ocean_thermal_anomaly_arr)
-	_runtime_climate_hash_append(hashing, "local_thermal_anomaly", map.local_thermal_anomaly_arr)
-	_runtime_climate_hash_append(hashing, "air_mass_temperature_anomaly", map.air_mass_temp_anomaly_arr)
-	_runtime_climate_hash_append(hashing, "temperature_transport_anomaly", map.temperature_transport_anomaly_arr)
-	_runtime_climate_hash_append(hashing, "soil_moisture", map.soil_moisture_arr)
+# Collects the OFF-path Climate state in the shape the canonical parity
+# reduction expects. The field set is deliberately not written out here: it is
+# read from the C++ table so the two sides cannot drift, and the reduction
+# itself runs in C++ because hashing ~30 arrays per day in GDScript would be
+# far too slow for a 1000-day comparison.
+func _collect_runtime_climate_parity_fields(map: MapData) -> Dictionary:
+	if map == null:
+		return {"ok": false, "code": "climate_parity_reference_input_invalid"}
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
+			"get_runtime_climate_parity_fields"):
+		return {"ok": false, "code": "climate_parity_field_table_missing"}
+	var fields := {}
+	fields["cell_count"] = int(map.cell_count())
 	var anomaly := 0.0
 	if _world_clock_ref != null:
 		var anomaly_value = _world_clock_ref.get("climate_anomaly")
 		if anomaly_value != null:
 			anomaly = float(anomaly_value)
-	_runtime_climate_hash_append(hashing, "climate_anomaly", anomaly)
-	_runtime_climate_hash_append(hashing, "vision_revision", int(map.vision_revision))
-	return _runtime_climate_hash_digest_value(hashing.finish())
+	fields["climate_anomaly"] = anomaly
+	var absent: Array = []
+	for entry in _data_core_world_ext.get_runtime_climate_parity_fields():
+		if String(entry.get("comparability", "")) != "comparable":
+			continue
+		var array_name := String(entry.get("map_data_array", ""))
+		var value = _runtime_climate_parity_map_array(map, array_name)
+		if value == null:
+			absent.append(array_name)
+			continue
+		fields[String(entry.get("name", ""))] = value
+	if not absent.is_empty():
+		return {
+			"ok": false,
+			"code": "climate_parity_map_arrays_absent",
+			"absent_arrays": absent,
+		}
+	return {"ok": true, "fields": fields}
+
+
+# Returns null when MapData does not expose the array at all, which is a
+# contract break rather than an empty field, and must not be hashed as zeros.
+func _runtime_climate_parity_map_array(map: MapData, array_name: String):
+	if array_name == "":
+		return null
+	var value = map.get(array_name)
+	if value == null:
+		return null
+	var value_type := typeof(value)
+	if value_type != TYPE_PACKED_FLOAT32_ARRAY and value_type != TYPE_PACKED_INT32_ARRAY \
+			and value_type != TYPE_PACKED_BYTE_ARRAY:
+		return null
+	return value
 
 
 func _runtime_climate_reference_ready_for_day(day: int) -> bool:
@@ -2387,6 +2469,16 @@ func _runtime_climate_reference_ready_for_day(day: int) -> bool:
 	var pending: Dictionary = _runtime_climate_trace_pending[day]
 	if bool(pending.get("reference_published", false)):
 		return true
+	# The native daily job owns Climate on the production path, where neither
+	# ClimateDailySystem nor _last_climate_breakdown exists. Checking for those
+	# made this function return false forever, which silently disabled the whole
+	# capture/reference barrier: frames were captured and never released, so the
+	# SHADOW worker had nothing to compare against.
+	if _native_daily_sim_job != null:
+		if native_daily_round_active():
+			return false
+		return _native_daily_climate_round_generation > \
+			int(pending.get("pass_generation_before", -1))
 	if _refresh_climate_daily_job == null:
 		return false
 	var state := _native_daily_climate_round_state_snapshot()
@@ -2437,19 +2529,28 @@ func _publish_runtime_climate_reference(day: int, map: MapData = null) -> Dictio
 			"fallback_reason": "synchronous Climate round is not complete",
 			"day": day,
 		}
-	var state_hash := _compute_runtime_climate_reference_hash(map, day)
-	if state_hash <= 0:
-		return _runtime_climate_failure("climate_trace_reference_hash_invalid",
-			"reference Climate state hash is zero", day)
+	var fields: Dictionary = _collect_runtime_climate_parity_fields(map)
+	if not bool(fields.get("ok", false)):
+		var field_code := String(fields.get("code", "climate_parity_fields_unavailable"))
+		return _runtime_climate_failure(field_code, field_code, day)
 	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
-			"publish_runtime_climate_reference"):
+			"publish_runtime_climate_reference_state"):
 		return _runtime_climate_failure("runtime_worker_api_missing",
 			"runtime climate reference API is unavailable", day)
-	var result: Dictionary = _data_core_world_ext.publish_runtime_climate_reference(
-		day, state_hash)
+	# Publish state and hash in one call: the hash is derived from the state on
+	# the C++ side, so they cannot disagree, and retaining the state lets a
+	# mismatch be reported per field and cell instead of as two numbers.
+	var result: Dictionary = _data_core_world_ext.publish_runtime_climate_reference_state(
+		day, fields["fields"])
 	if not bool(result.get("ok", false)):
 		var code := String(result.get("code", "climate_trace_reference_publish_failed"))
 		return _runtime_climate_failure(code, code, day)
+	var state_hash := int(result.get("parity_hash", 0))
+	# A parity hash uses all 64 bits, so a negative value is normal here; only
+	# zero means the reduction produced nothing.
+	if state_hash == 0:
+		return _runtime_climate_failure("climate_trace_reference_hash_invalid",
+			"reference Climate state hash is zero", day)
 	pending["reference_published"] = true
 	pending["reference_hash"] = state_hash
 	pending["published_at_msec"] = Time.get_ticks_msec()
@@ -4283,6 +4384,285 @@ func _ensure_maritime_factor(map: MapData, decay_cells: float) -> PackedFloat32A
 	return out
 
 
+# _async_pass_a_kernel_pure 的硬校验 lane 列表（gdext/src/runtime_climate_passes.cpp
+# 顶部的维度检查）。任一条 size != n_cells，共享内核直接 return false。
+const _RUNTIME_CLIMATE_ROUND_REQUIRED_LANES: Array = [
+	"is_water", "cover", "ema_initialized", "elevation", "base_moisture",
+	"lat_norm", "temp_baseline_year", "temp", "temp_30d", "temp_365d",
+	"thermal_energy", "snowpack",
+]
+var _runtime_climate_round_input_lanes_reported: bool = false
+
+
+# ─── S3：SHADOW worker 的 Climate round 输入 ────────────────────────────────
+#
+# 断点 2 的解法是"不维护第二套 Climate 实现"：生产 pass 已被提取为 Godot 无依赖
+# 纯内核（gdext/src/runtime_climate_passes.h），worker 直接调同一份代码。前提是
+# worker 必须拿到与生产 round 逐位相同的输入缓冲，所以这里按
+# climate_daily_system._build_async_kick_input 的字段集组同一份 Dictionary，交给
+# capture_runtime_inputs 里的 DCWorldExt::fill_climate_round_input 提取。
+#
+# 为什么不复用 climate_daily_system 的那个函数：native_daily 路径下
+# ClimateDailySystem 根本没注册（见 _native_daily_climate_round_state_snapshot），
+# 所以 knob 来源只能是生成器侧的 _c() / _last_cfg。字段名必须与 kick 一致——C++
+# 提取端是同一个方法，键名对不上就等于静默丢字段。
+# ─── Climate 权威下的 stage 节拍 ───────────────────────────────────────────
+#
+# 生产的 _weather_stage_b_call_index 只在生产真的跑过一轮 weather 时才 ++，而
+# Climate 转 worker 权威后生产整图被抑制门短路，那个计数器就永远停在 -1，于是
+# albedo / vegetation / feedback 的 stride 一次都命中不了 —— 表现成 worker 逐日
+# 在跑却有五个 stage 永远不执行，snow_cover 与 vegetation_growth_pressure 恒零。
+#
+# 所以权威下需要一套自己的计数器。刻意与生产那套并行而不是复用：SHADOW 对拍依赖
+# 生产计数器如实反映生产行为，两边共用一个就会让 worker 的节拍决策反过来影响对拍
+# 基线。
+var _runtime_climate_distribute_reported: bool = false
+var _runtime_climate_field_reported: bool = false
+var _runtime_climate_worker_weather_embed_day: int = -1000000
+var _runtime_climate_worker_stage_b_call_index: int = -1
+
+
+func _build_runtime_climate_stage_knobs(map: MapData, day: int,
+		authoritative: bool) -> Dictionary:
+	if not authoritative or map == null:
+		return {}
+	var cp_now = _c()
+	if cp_now == null:
+		return {}
+	# weather 轮的外层节拍。stage_b 的三个子 stride 以"第几轮 weather"计数，所以
+	# 这一层不到期就整份不发，与生产"非到期 tick 不嵌入 stage_b_knobs"一致。
+	var stride: int = _native_daily_weather_cadence_stride(cp_now)
+	var due: bool = true
+	if stride > 1:
+		if _runtime_climate_worker_weather_embed_day <= -1000000:
+			# 冷启动首跑日与 legacy weather bucket 对齐（StridePolicy 在
+			# (day+phase)%stride==0 首跑，即 day=stride-phase）。
+			var phase: int = 0
+			if cp_now.get("sim_stagger_enabled") != null \
+					and bool(cp_now.sim_stagger_enabled):
+				var raw: int = int(cp_now.sim_stagger_weather_phase) \
+						if cp_now.get("sim_stagger_weather_phase") != null else 4
+				phase = posmod(raw, stride)
+			var first_due_day: int = (stride - phase) if phase > 0 else stride
+			due = day >= first_due_day
+		else:
+			due = (day - _runtime_climate_worker_weather_embed_day) >= stride
+	if not due:
+		return {}
+	_runtime_climate_worker_weather_embed_day = day
+	_runtime_climate_worker_stage_b_call_index += 1
+	var out: Dictionary = {"weather_round": true}
+	# 复用生产那份组装：节拍与标量口径必须与生产逐位一致，重写一份就等于在
+	# worker 侧引入第二套 stride 语义。elapsed_days_per_call 取 weather 轮间隔，
+	# 因为这套计数器每 stride 天才推进一次。
+	var stage_b: Dictionary = _build_native_daily_stage_b_knobs(
+		map, cp_now, _runtime_climate_worker_stage_b_call_index, float(stride))
+	if not stage_b.is_empty():
+		out["stage_b"] = stage_b
+	# distribute 是 stage 11 的后半段，也是 snow_cover / snowpack /
+	# water_balance_30d 的权威写者 —— 权威下它不跑，那三条就恒为 0（sea_ice 与
+	# albedo 都读 snow_cover，所以缺口会往下游传）。
+	#
+	# 同样复用生产的 builder：那些 snow/flood 阈值有一半是 builder 里的硬编码
+	# 常量，在 worker 侧重抄一份等于给它们开第二个漂移入口。不走
+	# build_unified_fast_tick_weather_knobs —— 那条会先调
+	# begin_weather_field_solve 初始化 field slice state，而权威下生产的 weather
+	# 段是被抑制的，那份 state 没人消费，留着只是悬挂。
+	if _weather_system != null \
+			and _weather_system.has_method("build_distribute_knobs_for_worker"):
+		var dist: Dictionary = _weather_system.build_distribute_knobs_for_worker(
+			map, map.cell_count())
+		if not dist.is_empty():
+			out["stage_distribute"] = dist
+		# stage 11 前半段 weather field —— soil_moisture 的补水来源。distribute 只是
+		# 把已有的天气分配下去，降水本身是这一段解出来的，所以 field 不跑时
+		# soil_moisture 只有蒸腾的支出、没有收入，会一路单调衰减。
+		if _weather_system.has_method("build_field_knobs_for_worker") \
+				and _sus_world != null:
+			var clock: Dictionary = _native_daily_weather_clock_values(0.0)
+			var field_knobs: Dictionary = \
+				_weather_system.build_field_knobs_for_worker(
+					map, _sus_world,
+					int(clock.get("season_idx", 0)),
+					float(clock.get("anomaly", 0.0)),
+					float(clock.get("season_phase", 0.0)))
+			if not field_knobs.is_empty():
+				out["stage_weather"] = field_knobs
+			elif not _runtime_climate_field_reported:
+				_runtime_climate_field_reported = true
+				push_warning("[climate/worker] field knobs empty (fast_indexed?)")
+		elif not _runtime_climate_field_reported:
+			_runtime_climate_field_reported = true
+			push_warning("[climate/worker] no field builder: has_method=%s world=%s"
+				% [str(_weather_system.has_method("build_field_knobs_for_worker")),
+					str(_sus_world)])
+		elif not _runtime_climate_distribute_reported:
+			_runtime_climate_distribute_reported = true
+			push_warning("[climate/worker] distribute knobs came back empty")
+	elif not _runtime_climate_distribute_reported:
+		# 权威下 distribute 不接就是 snow_cover 恒零，所以这条缺席必须出声，
+		# 而不是安静地少跑一个 stage。
+		_runtime_climate_distribute_reported = true
+		push_warning("[climate/worker] no distribute builder: ws=%s has_method=%s"
+			% [str(_weather_system),
+				str(_weather_system != null and _weather_system.has_method(
+					"build_distribute_knobs_for_worker"))])
+	return out
+
+
+func _build_runtime_climate_round_input(
+		map: MapData, season_phase: float,
+		worker_authoritative: bool = false) -> Dictionary:
+	# S3：这里曾经是 _build_async_kick_input 的第二份实现（只覆盖 pass_a 需要的
+	# 那些 lane）。生产 Climate 绝大多数日子走的是 async round，它的输入由
+	# ClimateDailySystem._build_async_kick_input 构造 —— 两份构造代码只要有一个
+	# 字段取值不同，SHADOW worker 就会在"同一份内核"上算出不同结果，而分叉矩阵
+	# 会把它误报成算法分叉。所以 capture 直接复用生产自己的那份构造函数。
+	#
+	# 拿不到 ClimateDailySystem（native_daily 路径下它根本没注册）时返回空字典：
+	# worker 会退回诊断近似并在 parity reason 里标注，而不是拿一份来源不同的输入
+	# 去冒充对拍。
+	if map == null:
+		return {}
+	var job = _refresh_climate_daily_job
+	if job == null or not job.has_method("_build_async_kick_input"):
+		if not _runtime_climate_round_input_lanes_reported:
+			_runtime_climate_round_input_lanes_reported = true
+			push_warning("[runtime-climate-round] no ClimateDailySystem; SHADOW capture carries no shared pass input")
+		# 上面那句注释说的"退回诊断近似"并没有发生：per-cell lane 由 C++ 侧
+		# prefer_slot_lanes 从 _slots 填满，n_cells 也由 static knobs 给出，于是
+		# shared_passes_available 成立、共享 round 照跑 —— 只有 scalars 全是结构体
+		# 默认值，因为它们唯一的来路就是这个字典。这个"半真"状态静默了很久：
+		# si_t_form 默认 0.06 而 profile 是 0.08，海冰 frac 上限只到 0.024（几乎不
+		# 结冰），insol_amp 默认 0.20 而 profile 是 0.32，季节温度振幅只剩 62.5%。
+		#
+		# 所以这里不能返回空字典，要把 scalars 补上。仅 ACTIVE：SHADOW 下 scalars
+		# 由 overlay_production_round_scalars 从生产记录覆盖，而且下面那个构建函数
+		# 会 consume dt_days 累积值 —— SHADOW 下两侧都 consume 会互相偷。
+		if not worker_authoritative:
+			return {}
+		return _build_runtime_climate_round_scalar_knobs(map, season_phase)
+	var input: Dictionary = job._build_async_kick_input(season_phase)
+	if typeof(input) != TYPE_DICTIONARY:
+		return {}
+	# 共享内核对每条输入 lane 都做 size == n 的硬校验，任一条缺失就整体静默回退到
+	# worker 的诊断近似实现。这个诊断就是用来抓"镜像空数组"的，只在第一次不完整时报。
+	var n_cells: int = map.soa_size()
+	if not _runtime_climate_round_input_lanes_reported:
+		var missing: PackedStringArray = PackedStringArray()
+		for lane in _RUNTIME_CLIMATE_ROUND_REQUIRED_LANES:
+			var arr = input.get(lane)
+			if arr == null or arr.size() != n_cells:
+				missing.append("%s=%d" % [lane, 0 if arr == null else arr.size()])
+		if not missing.is_empty():
+			_runtime_climate_round_input_lanes_reported = true
+			push_warning("[runtime-climate-round] pass_a shared kernel disabled; n_cells=%d incomplete lanes: %s"
+					% [n_cells, ", ".join(missing)])
+	return input
+
+
+# ACTIVE 下 climate round 全部 scalars 的来源。
+#
+# 生产那侧这批值由各 pass 自己在运行时调 record_production_round_scalars 记录，再随
+# reference publish 交给 worker（SHADOW）。ACTIVE 把生产 climate 整段抑制掉之后那条
+# 来路就断了，而 capture 唯一的 round input 通道
+# （ClimateDailySystem._build_async_kick_input）在 native_daily 路径下拿不到 job。
+#
+# 键名与 C++ fill_climate_round_input（world_ext_climate.cpp:6180+）逐一对应，前缀即
+# pass：pb_ = pass_b、ow_/ol_ = ocean water/land、wa_/ws_ = wind air/surface、
+# si_ = sea_ice。pass_a 那一段直接复用生产的 cp_struct 构建函数，键名本就相同。
+#
+# 这是这批 profile 字段的第三份读取（另两份：cp_struct + ClimateDailySystem 里那份
+# 标着"必须 mirror"的移植）。没有合并是因为三个调用点的依赖不同 —— 这份不能碰 map
+# （lane 走 slots）也不能依赖 job 实例。任何一侧改了 profile 字段名，三份都要改。
+func _build_runtime_climate_round_scalar_knobs(
+		map: MapData, season_phase: float) -> Dictionary:
+	var cp = _c()
+	if cp == null or _last_cfg == null:
+		return {}
+	# pass_a：cp_struct 的键名与 fill_climate_round_input 完全一致，直接用。
+	# 注意它内部 consume 了 climate dt_days，所以这个函数只能在 ACTIVE 下调。
+	var d: Dictionary = _build_native_daily_climate_pass_a_struct(map, cp, season_phase)
+	# transpiration
+	d["transp_outflow_rate"] = float(cp.transpiration_outflow_rate) if cp.get("transpiration_outflow_rate") != null else 0.025
+	d["transp_self_rate"] = float(cp.transpiration_self_rate) if cp.get("transpiration_self_rate") != null else 0.015
+	# pass_b。winter_boost 生产恒 1.0；coast_leak 来自 _last_cfg 而不是 profile。
+	d["pb_winter_boost"] = 1.0
+	d["pb_snow_cool"] = float(cp.snow_albedo_cooling) if cp.get("snow_albedo_cooling") != null else 0.0
+	d["pb_veg_cool"] = float(cp.vegetation_cooling) if cp.get("vegetation_cooling") != null else 0.0
+	d["pb_diurnal_amp"] = float(cp.landform_diurnal_amp) if cp.get("landform_diurnal_amp") != null else 0.0
+	d["pb_evap_gain"] = float(cp.evaporation_gain) if cp.get("evaporation_gain") != null else 0.0
+	d["pb_rs_threshold"] = float(cp.rain_shadow_threshold) if cp.get("rain_shadow_threshold") != null else 0.0
+	d["pb_rs_factor"] = float(cp.rain_shadow_factor) if cp.get("rain_shadow_factor") != null else 1.0
+	d["pb_rs_lookback"] = maxi(0, int(cp.rain_shadow_lookback)) if cp.get("rain_shadow_lookback") != null else 0
+	d["pb_t_freeze"] = float(cp.sea_ice_form_threshold) if cp.get("sea_ice_form_threshold") != null else 0.0
+	d["pb_coupling_gain"] = float(cp.ocean_moisture_coupling_gain) if cp.get("ocean_moisture_coupling_gain") != null else 0.0
+	d["pb_coast_leak"] = float(_last_cfg.COASTAL_HEAT_LEAK)
+	d["pb_sea_ice_albedo_cooling"] = float(cp.sea_ice_albedo_cooling) if cp.get("sea_ice_albedo_cooling") != null else 0.01
+	# ocean_water / ocean_land。TTA 那四个 ocean_water 与 ocean_land 共用同一份值，
+	# C++ 侧按 ow_/ol_ 前缀分别取。
+	d["ow_advect_steps"] = maxi(0, int(_last_cfg.OCEAN_HEAT_ADVECT_STEPS))
+	d["ow_heat_mix"] = clampf(float(_last_cfg.OCEAN_HEAT_MIX), 0.0, 1.0)
+	var tta_cap: float = clampf(float(cp.temperature_transport_anomaly_source_cap), 0.0, 0.5) if cp.get("temperature_transport_anomaly_source_cap") != null else 0.22
+	var tta_blend: float = clampf(float(cp.temperature_transport_anomaly_blend_rate), 0.0, 1.0) if cp.get("temperature_transport_anomaly_blend_rate") != null else 0.70
+	var tta_decay: float = clampf(float(cp.temperature_transport_anomaly_decay_rate), 0.0, 1.0) if cp.get("temperature_transport_anomaly_decay_rate") != null else 0.04
+	var tta_zero: float = clampf(float(cp.temperature_transport_anomaly_zero_current_decay), 0.0, 1.0) if cp.get("temperature_transport_anomaly_zero_current_decay") != null else 0.06
+	d["ow_tta_source_cap"] = tta_cap
+	d["ow_tta_blend_rate"] = tta_blend
+	d["ow_tta_zero_current_decay"] = tta_zero
+	d["ol_tta_source_cap"] = tta_cap
+	d["ol_tta_blend_rate"] = tta_blend
+	d["ol_tta_decay_rate"] = tta_decay
+	d["ol_effective_leak"] = float(_last_cfg.COASTAL_HEAT_LEAK)
+	# ocean_water 的冷输运阈值与 sea_ice 的 t_form/t_melt 是两组不同的 knob（C++ 侧
+	# 曾经误用过后者，见 runtime_climate_passes.cpp 里那处注释）。
+	d["ow_cold_transport_form"] = float(cp.sea_ice_form_threshold) if cp.get("sea_ice_form_threshold") != null else 0.06
+	d["ow_cold_transport_melt"] = float(cp.sea_ice_melt_threshold) if cp.get("sea_ice_melt_threshold") != null else 0.11
+	# wind_air / wind_surface
+	d["wa_advect_steps"] = maxi(0, int(_last_cfg.WIND_HEAT_ADVECT_STEPS))
+	d["wa_heat_mix"] = clampf(float(_last_cfg.WIND_HEAT_MIX), 0.0, 1.0)
+	d["ws_air_leak"] = float(_last_cfg.AIR_MASS_HEAT_LEAK)
+	d["ws_cold_transport_form"] = float(cp.sea_ice_form_threshold) if cp.get("sea_ice_form_threshold") != null else 0.06
+	d["ws_cold_transport_melt"] = float(cp.sea_ice_melt_threshold) if cp.get("sea_ice_melt_threshold") != null else 0.11
+	# sea_ice。这一段是「海冰完全不显示」的直接原因：默认 t_form 0.06 vs profile
+	# 0.08、k_freeze/k_melt/delta_cap 全默认，实测 frac 上限只到 0.024。
+	d["si_k_freeze"] = float(cp.sea_ice_freeze_rate) if cp.get("sea_ice_freeze_rate") != null else 0.40
+	d["si_k_melt"] = float(cp.sea_ice_melt_rate) if cp.get("sea_ice_melt_rate") != null else 1.45
+	var si_t_form: float = float(cp.sea_ice_form_threshold) if cp.get("sea_ice_form_threshold") != null else 0.06
+	var si_t_melt: float = float(cp.sea_ice_melt_threshold) if cp.get("sea_ice_melt_threshold") != null else 0.11
+	d["si_contagion"] = float(cp.sea_ice_neighbor_contagion) if cp.get("sea_ice_neighbor_contagion") != null else 0.035
+	d["si_threshold"] = float(cp.sea_ice_terrain_threshold) if cp.get("sea_ice_terrain_threshold") != null else 0.68
+	d["si_hysteresis"] = float(cp.sea_ice_terrain_hysteresis) if cp.get("sea_ice_terrain_hysteresis") != null else 0.12
+	d["si_ice_delay"] = float(_last_cfg.OCEAN_CURRENT_ICE_DELAY)
+	d["si_solar_gate_enabled"] = bool(cp.sea_ice_solar_gate_enabled) if cp.get("sea_ice_solar_gate_enabled") != null else true
+	d["si_freeze_insol_low"] = float(cp.sea_ice_freeze_insol_low) if cp.get("sea_ice_freeze_insol_low") != null else 0.22
+	d["si_freeze_insol_high"] = float(cp.sea_ice_freeze_insol_high) if cp.get("sea_ice_freeze_insol_high") != null else 0.45
+	d["si_solar_melt_start"] = float(cp.sea_ice_solar_melt_start) if cp.get("sea_ice_solar_melt_start") != null else 0.28
+	d["si_solar_melt_gain"] = float(cp.sea_ice_solar_melt_gain) if cp.get("sea_ice_solar_melt_gain") != null else 1.35
+	d["si_min_thick_ice_solar_exposure"] = float(cp.sea_ice_min_thick_ice_solar_exposure) if cp.get("sea_ice_min_thick_ice_solar_exposure") != null else 0.32
+	d["si_daily_delta_cap"] = float(cp.sea_ice_daily_delta_cap) if cp.get("sea_ice_daily_delta_cap") != null else 0.070
+	d["si_edge_mix_rate"] = float(cp.sea_ice_edge_mix_rate) if cp.get("sea_ice_edge_mix_rate") != null else 0.035
+	d["si_enable_oht"] = bool(_last_cfg.enable_ocean_heat_transport)
+	d["si_terrain_lake_id"] = int(TerrainType.TERRAIN.LAKE) & 0xFF
+	d["si_terrain_sea_ice_id"] = int(TerrainType.TERRAIN.SEA_ICE) & 0xFF
+	d["si_terrain_ocean_id"] = int(TerrainType.TERRAIN.OCEAN) & 0xFF
+	d["si_apply_terrain_flips"] = true
+	d["si_dt_days"] = float(_consume_sea_ice_dt_days()) if has_method("_consume_sea_ice_dt_days") else 1.0
+	# 生产在调 sea_ice pass 之前把 t_form/t_melt 各减去 climate_anomaly * 0.10
+	# （_apply_sea_ice_daily_pass）。worker 要用同一组阈值，所以这个偏移要在这里做。
+	var ca_now: float = 0.0
+	if _world_clock_ref != null:
+		var ca_v = _world_clock_ref.get("climate_anomaly")
+		if ca_v != null:
+			ca_now = float(ca_v)
+	if not is_equal_approx(ca_now, 0.0):
+		si_t_form = clampf(si_t_form - 0.10 * ca_now, 0.0, 1.0)
+		si_t_melt = clampf(si_t_melt - 0.10 * ca_now, 0.0, 1.0)
+	d["si_t_form"] = si_t_form
+	d["si_t_melt"] = si_t_melt
+	return d
+
+
 func _build_native_daily_climate_pass_a_struct(map: MapData, cp_now, season_phase: float) -> Dictionary:
 	if map == null or cp_now == null or _last_cfg == null:
 		return {}
@@ -4842,7 +5222,13 @@ func _native_daily_required_pass_keys(cp_now) -> PackedStringArray:
 			and bool(cp_now.runtime_hydrology_enabled):
 		if keys.find("weather_knobs") < 0:
 			keys.append("weather_knobs")
-		keys.append("runtime_hydrology_knobs")
+		# 与 stage_b 同理：stride > 1 时水文在多数 tick 合法缺席，硬性要求它会把
+		# native_daily active handoff 卡住。stride == 1（默认）仍然逐轮要求。
+		var hydrology_stride: int = 1
+		if cp_now.get("runtime_hydrology_stride") != null:
+			hydrology_stride = maxi(1, int(cp_now.runtime_hydrology_stride))
+		if hydrology_stride <= 1:
+			keys.append("runtime_hydrology_knobs")
 	return keys
 
 
@@ -4865,6 +5251,20 @@ func _native_daily_climate_round_state_snapshot() -> Dictionary:
 	if _refresh_climate_daily_job != null \
 			and _refresh_climate_daily_job.has_method("climate_round_state_snapshot"):
 		return _refresh_climate_daily_job.climate_round_state_snapshot()
+	# On the native_daily path ClimateDailySystem is never registered, so there
+	# is no GDScript pass cursor to report. Describe the native round instead;
+	# returning "missing job" here used to make every consumer of this snapshot
+	# conclude the Climate round had not completed.
+	if _native_daily_sim_job != null:
+		return {
+			"owner": "native_daily",
+			"native_state_status": "native_daily_owner",
+			"round_active": native_daily_round_active(),
+			"finalize_pending": false,
+			"pass_generation": _native_daily_climate_round_generation,
+			"pass_cursor": 1,
+			"pass_count": 1,
+		}
 	return {
 		"owner": "gdscript_retained",
 		"native_state_status": "missing_refresh_climate_daily_job",
@@ -5249,15 +5649,29 @@ func _build_native_daily_bundle(
 			or native_weather_active_bootstrap
 	var runtime_hydrology_active: bool = cp_now.get("runtime_hydrology_enabled") != null \
 			and bool(cp_now.runtime_hydrology_enabled)
-	var runtime_hydrology_knobs: Dictionary = _build_native_daily_runtime_hydrology_knobs(
-		map,
-		cp_now,
-		float(_native_daily_contract_stride_days()) if commit_side_effects else 1.0
-	)
 	# Stagger 对齐：weather + stage_b 节点只在 legacy weather bucket 到期 tick 推进。
 	# 注册/SHADOW probe 用 force_weather_embed=true 强制纳入以保留 readiness 校验。
 	var weather_due_this_tick: bool = force_weather_embed \
 			or _native_daily_weather_cadence_due(cp_now, ctx)
+	# runtime_hydrology_stride 此前在 ClimateProfile 里声明但全库无引用，也就是说
+	# 无论配成几，水文都跟着每个 weather 轮跑。按 stage_b 三件套的同一套模式接线：
+	# 计数器只在真实 tick 的 weather 到期轮推进，probe（commit_side_effects=false）
+	# 不许动它，否则 readiness 探测会把节拍带偏。
+	var runtime_hydrology_stride: int = 1
+	if cp_now.get("runtime_hydrology_stride") != null:
+		runtime_hydrology_stride = maxi(1, int(cp_now.runtime_hydrology_stride))
+	var runtime_hydrology_due: bool = true
+	if runtime_hydrology_active and runtime_hydrology_stride > 1:
+		if commit_side_effects and weather_due_this_tick:
+			_native_daily_hydrology_call_index += 1
+		runtime_hydrology_due = (_native_daily_hydrology_call_index % runtime_hydrology_stride) == 0
+	var runtime_hydrology_knobs: Dictionary = {}
+	if runtime_hydrology_due:
+		runtime_hydrology_knobs = _build_native_daily_runtime_hydrology_knobs(
+			map,
+			cp_now,
+			float(_native_daily_contract_stride_days()) if commit_side_effects else 1.0
+		)
 	if _weather_system != null and _world != null \
 			and native_weather_daily_allowed \
 			and weather_due_this_tick \
@@ -6570,6 +6984,13 @@ func _record_native_daily_slice_climate_breakdown(res: Dictionary, breakdown: Di
 		if not pass_diag.has("path"):
 			pass_diag["path"] = diag["path"]
 	diag["pass_diag"] = pass_diag
+	# This record is overwriting, not merging, so it must carry the authority
+	# state itself. Without it the key set by the schedule path disappears here
+	# and readers see a suppressed main thread as having resumed (or vice versa).
+	if _data_core_world_ext != null \
+			and _data_core_world_ext.has_method("climate_worker_authoritative"):
+		diag["climate_authority_suppressed"] = \
+			_data_core_world_ext.climate_worker_authoritative()
 	_diagnostics_bus.record_climate_breakdown(diag)
 
 
@@ -7227,6 +7648,18 @@ func sus_tick_daily(world_clock_node, day_index_override: int = -1,
 	# Capture the immutable Climate input immediately before the synchronous OFF
 	# graph. The worker never reads MapData directly; it can only consume this
 	# frame after _publish_runtime_climate_reference() releases its hash below.
+	# capture 留在同步图之前，ACTIVE 也一样。
+	#
+	# 试过在 ACTIVE 下把它挪到 _sus.tick() 之后（那条约束的原始理由——「worker 要吃
+	# 生产 pass_a 稍后读到的同一份输入」——在 ACTIVE 下确实不再成立，因为生产 climate
+	# 被抑制门整段关掉了）。动机是让 season refresh 的季节性重算能进入 worker。
+	#
+	# 结果是零改善：snow_cover 非零格仍恒 113~117、soil_moisture 仍恒 914、
+	# vegetation_growth_pressure 仍恒 909、moisture 仍 0.902~0.913，与挪动前逐项一致
+	# （stage 接线也确认未受影响，累计 pass_a=149 weather=19 albedo=1）。
+	#
+	# 所以「worker 的场平坦 = 季节信号被 capture 时点挡在门外」这个假设是错的，真正
+	# 的原因在别处。挪回来：没有证据支持的时点改动不值得留在这条路径上。
 	var runtime_climate_capture: Dictionary = \
 		capture_runtime_inputs_for_worker(trace_input_day, sp)
 	# 任务 8：每个 tick 入场前清掉 weather_refresh 的 ran_this_tick 标志，
@@ -7274,6 +7707,9 @@ func sus_tick_daily(world_clock_node, day_index_override: int = -1,
 		var native_done_reported := bool(native_tick_report.get("done", true))
 		if native_done_reported and not bool(_native_daily_sim_job.get("_native_round_active")):
 			_native_daily_day_pending = false
+			# The round reached its immutable boundary, so the captured frame for
+			# this day may now be released to the worker.
+			_native_daily_climate_round_generation += 1
 	if world_clock_node != null and world_clock_node.has_method("request_simulation_backpressure"):
 		world_clock_node.request_simulation_backpressure(
 			&"native_daily_day_barrier", native_daily_round_active())
@@ -8167,6 +8603,15 @@ func finish_season_refresh(_map: MapData, _world: WorldData, _season_idx: int) -
 	_season_round_slots_fresh = false
 	_season_round_slots_skip_count = 0
 	_season_round_slots_refresh_count = 0
+
+
+# capture 侧的 season refresh 边沿检测。见 _last_capture_season_refresh_day。
+# 返回「距上次 capture 之间 season refresh 完成过一轮」，读完即消费。
+func _consume_season_refresh_edge() -> bool:
+	if _last_season_refresh_day == _last_capture_season_refresh_day:
+		return false
+	_last_capture_season_refresh_day = _last_season_refresh_day
+	return true
 
 
 func sus_season_refresh_breakdown() -> Dictionary:
@@ -16991,6 +17436,25 @@ func run_hydrology_discharge_pass_native(map: MapData, world: WorldData) -> Dict
 			"published_to_slot": false,
 			"fallback_reason": "runtime_hydrology_disabled",
 		}
+	# legacy weather chain 也要吃 runtime_hydrology_stride，和 native graph 的
+	# 节拍保持一致。两条路径互斥，所以共用同一个计数器。
+	var stride: int = 1
+	if cp_now.get("runtime_hydrology_stride") != null:
+		stride = maxi(1, int(cp_now.runtime_hydrology_stride))
+	if stride > 1:
+		_native_daily_hydrology_call_index += 1
+		if (_native_daily_hydrology_call_index % stride) != 0:
+			return {
+				"done": true,
+				"elapsed_ms": (Time.get_ticks_usec() - t0) / 1000.0,
+				"work_done": 0,
+				"progress_ratio": 1.0,
+				"stage_name": "hydrology_discharge",
+				"substage": "stride_skip",
+				"path": "stride_skip",
+				"published_to_slot": false,
+				"fallback_reason": "runtime_hydrology_stride_skip",
+			}
 	if map == null or world == null:
 		return {
 			"done": true,

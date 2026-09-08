@@ -60,6 +60,13 @@ private:
     void *_task_userdata = nullptr;
     uint32_t _published_task_count = 0;
     uint32_t _participating_workers = 0;
+    // Workers that have taken `_task_fn` out of the critical section and may
+    // still call it. `_remaining_tasks == 0` alone does not imply this is 0: a
+    // worker can be preempted between reading the group and entering its task
+    // loop, and would then call the previous group's fn — whose stack-backed
+    // userdata run_group has already released — against the next group's task
+    // cursor. run_group must wait on both.
+    uint32_t _active_workers = 0;
     std::atomic<uint32_t> _next_task{0};
     std::atomic<uint32_t> _remaining_tasks{0};
 
