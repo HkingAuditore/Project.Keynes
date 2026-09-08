@@ -74,6 +74,11 @@ cohort 与家族分支的八维度综合满意度、阶层权重、生存闸门�
 
 ## 阅读顺序
 
+0. [运行时权威迁移：目标、设计框架、当前状态与任务](./authority-migration.md)
+   - **迁移总纲，先读这一篇。**十个 domain 各自到哪一步、放行标准是什么、接下来做什么。
+   - 第五部分「失效模式库」在动 worker / 跨边界接线的代码前必读。
+   - 它取代了 `full-authoritative-runtime-status.md`（该文已降为历史归档，只用于考古）。
+
 1. [Architecture Overview](./architecture-overview.md)
    - 先读这一篇，建立 Godot/GDScript、DataCore、GDExtension、SUS/DCSystem、C++ schedule graph 之间的层次关系。
    - 重点关注“谁是权威数据源”和“哪些职责仍在 GDScript orchestration 层”。
