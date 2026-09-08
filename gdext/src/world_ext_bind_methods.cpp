@@ -113,6 +113,16 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::capture_country_runtime_snapshot);
     ClassDB::bind_method(D_METHOD("capture_country_pod_catalog"),
                          &DCWorldExt::capture_country_pod_catalog);
+    ClassDB::bind_method(D_METHOD("configure_country_reference_trace", "enabled", "max_frames"),
+                         &DCWorldExt::configure_country_reference_trace,
+                         DEFVAL(4096));
+    ClassDB::bind_method(D_METHOD("poll_country_reference_trace", "after_frame_id", "limit"),
+                         &DCWorldExt::poll_country_reference_trace,
+                         DEFVAL(0), DEFVAL(128));
+    ClassDB::bind_method(D_METHOD("capture_country_reference_checkpoint"),
+                         &DCWorldExt::capture_country_reference_checkpoint);
+    ClassDB::bind_method(D_METHOD("restore_country_runtime_checkpoint", "canonical_pkcn"),
+                         &DCWorldExt::restore_country_runtime_checkpoint);
     ClassDB::bind_method(D_METHOD("submit_runtime_command", "command"),
                          &DCWorldExt::submit_runtime_command);
     ClassDB::bind_method(D_METHOD("poll_runtime_receipts", "max_items"),
@@ -150,6 +160,10 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::runtime_climate_parity_contract_test);
     ClassDB::bind_method(D_METHOD("runtime_country_pod_authority_self_test"),
                          &DCWorldExt::runtime_country_pod_authority_self_test);
+    ClassDB::bind_method(D_METHOD("runtime_country_core_protocol_self_test"),
+                         &DCWorldExt::runtime_country_core_protocol_self_test);
+    ClassDB::bind_method(D_METHOD("runtime_country_peer_protocol_self_test"),
+                         &DCWorldExt::runtime_country_peer_protocol_self_test);
     ClassDB::bind_method(D_METHOD("runtime_protocol_guard_self_test"),
                          &DCWorldExt::runtime_protocol_guard_self_test);
     ClassDB::bind_method(D_METHOD("is_native_daily_visual_commit_pending"),

@@ -3,6 +3,7 @@
 #include "runtime_pod_protocol.h"
 #include "runtime_snapshot_ring.h"
 #include "runtime_country_pod.h"
+#include "country_core.h"
 #include "runtime_domain_pod.h"
 #include "runtime_authoritative_domains.h"
 #include "runtime_climate_authority.h"
@@ -68,6 +69,10 @@ public:
             RuntimeClimateReferencePublish publish = {});
     std::shared_ptr<const RuntimeEnvironmentSnapshot> environment_snapshot() const;
     bool publish_country_snapshot(const RuntimeCountryPodSnapshot &snapshot);
+    bool publish_country_checkpoint(const CountryCoreCheckpoint &checkpoint,
+                                    std::string &error);
+    bool pending_country_checkpoint(CountryCoreCheckpoint &out,
+                                    std::string &error) const;
     RuntimeCountryPodDiagnostics country_pod_diagnostics() const;
 
     bool enqueue(RuntimeCommandPacket packet);
@@ -258,6 +263,7 @@ private:
     RuntimeSnapshotRing _snapshots;
     std::shared_ptr<const RuntimeEnvironmentSnapshot> _environment_snapshot;
     std::shared_ptr<const RuntimeCountryPodSnapshot> _country_snapshot;
+    std::shared_ptr<const CountryCoreCheckpoint> _country_checkpoint;
     mutable std::shared_ptr<const RuntimeCountryPodDiagnostics> _country_pod_diagnostics;
     std::atomic<uint64_t> _environment_generation{0};
     std::atomic<int64_t> _environment_day{0};

@@ -16,6 +16,7 @@
 #include <godot_cpp/variant/string.hpp>
 
 #include "runtime_pod_protocol.h"
+#include "country_core.h"
 
 namespace pk {
 
@@ -192,6 +193,17 @@ public:
     godot::Dictionary bootstrap(const godot::Dictionary &packet,
                                 const godot::PackedByteArray &is_water);
     godot::Dictionary submit_commands(const godot::Dictionary &batch);
+    bool submit_typed_commands(const CountryTypedCommand *commands, size_t count,
+                               std::vector<CountryCommandReceipt> &receipts,
+                               std::string &error);
+    bool poll_typed_receipt(CountryCommandReceipt &out);
+    bool seal_boundary(uint64_t session_epoch, uint64_t boundary_id,
+                       int64_t day, CountryBoundarySeal &out,
+                       std::string &error);
+    uint64_t session_epoch() const { return _session_epoch; }
+    // Destructive contract probe for a dedicated test runtime. Exercises the
+    // typed receipt lifecycle and seal watermark without a second algorithm.
+    bool protocol_contract_self_test(std::string &error);
     godot::Dictionary submit_observation_batch(
         int64_t handle, const godot::PackedInt32Array &cells,
         const godot::PackedInt32Array &signals, int64_t effective_day);
@@ -202,11 +214,22 @@ public:
                                    bool &ok, std::string &reason) const;
     bool has_pending_effect_commands() const;
     bool should_run(int64_t day_index) const;
-    // Phase B POD adapter. It covers the research-only continuation path and
-    // intentionally rejects command batches until their payload conversion
-    // is migrated. No Godot value is created while this method executes.
+    // Godot-free execution adapter. It shares the exact command/research core
+    // used by run_slice(); peer-backed research still requires the explicit
+    // cross-domain bridge before a worker may invoke it.
     bool run_day_pod(const RuntimeCountryDayContext &context,
                      RuntimeCountryDayCommit &out);
+    // Capture and validate the immutable peer facts used by one Country
+    // research boundary. The capture is a main-thread adapter operation; the
+    // returned object is safe to hand to a worker because it contains no
+    // Godot values or runtime pointers.
+    bool capture_peer_context(int64_t day, uint32_t continuation_index,
+                              CountryPeerContext &out,
+                              std::string &error) const;
+    // Exercises request identity, stale-session rejection and idempotent
+    // technology-effect handling without changing the production authority
+    // mode. This is intentionally separate from the worker authority gate.
+    bool peer_protocol_self_test(std::string &error);
     // Copy the numeric Country authority into a worker-safe immutable
     // projection. This method is a main-thread capture boundary; the
     // returned snapshot contains no Godot values or string references.
@@ -220,6 +243,20 @@ public:
     godot::Dictionary run_slice(const godot::Dictionary &ctx);
     godot::Dictionary report() const;
     godot::Dictionary reset(const godot::String &reason);
+
+    // Diagnostic-only production reference trace. Frames are captured at
+    // Country semantic boundaries and contain deterministic per-state-family
+    // hashes plus command/event watermarks. The full canonical PKCN payload is
+    // captured explicitly so normal tracing never copies the complete store.
+    godot::Dictionary configure_reference_trace(bool enabled,
+                                                 int32_t max_frames = 4096);
+    godot::Dictionary poll_reference_trace(int64_t after_frame_id = 0,
+                                           int32_t limit = 128) const;
+    godot::Dictionary capture_reference_checkpoint() const;
+    bool capture_core_checkpoint(CountryCoreCheckpoint &out,
+                                 std::string &error) const;
+    bool restore_core_checkpoint(const CountryCoreCheckpoint &checkpoint,
+                                 std::string &error);
 
     godot::Dictionary cell_summary(int32_t cell) const;
     godot::Dictionary country_summary(int64_t handle) const;
@@ -323,6 +360,9 @@ private:
     };
 
     struct Command {
+        uint64_t request_id = 0;
+        uint32_t producer_id = 0;
+        uint64_t observed_generation = 0;
         int32_t opcode = 0;
         int64_t effective_day = 0;
         int64_t sequence = 0;
@@ -464,7 +504,19 @@ private:
     };
 
     bool validate_handle(uint64_t handle, int32_t &slot) const;
+    bool validate_admission_command(const Command &command,
+                                    std::string &error) const;
+    void push_typed_receipt(const Command &command,
+                            CountryCommandReceiptCode code,
+                            const std::string &reason = {});
+    CountryBoundarySeal open_implicit_boundary(int64_t day);
+    void close_boundary_seal();
+    CountryCoreStepResult run_slice_core(int64_t requested_day);
     uint64_t make_handle(int32_t slot) const;
+    int64_t debit_country_cash(int64_t country_handle, int64_t requested,
+                               const char *trace_stage);
+    int64_t credit_country_cash(int64_t country_handle, int64_t offered,
+                                const char *trace_stage);
     int32_t append_country(const std::string &stable_id,
                            const std::string &display_name, int64_t cash);
     int32_t tax_item_count(int32_t kind) const;
@@ -503,8 +555,56 @@ private:
     uint64_t catalog_hash() const;
     uint64_t catalog_hash_v3() const;
     uint64_t compute_state_hash() const;
+    struct ReferenceHashes {
+        uint64_t identity = 0;
+        uint64_t territory = 0;
+        uint64_t treasury = 0;
+        uint64_t technology = 0;
+        uint64_t research = 0;
+        uint64_t signals = 0;
+        uint64_t tax = 0;
+        uint64_t effect = 0;
+    };
+    struct ReferenceFrame {
+        uint64_t frame_id = 0;
+        uint64_t boundary_id = 0;
+        uint32_t continuation_index = 0;
+        int64_t day = -1;
+        std::string stage;
+        bool semantic_commit = false;
+        bool day_barrier = false;
+        uint64_t catalog_hash = 0;
+        uint64_t technology_catalog_hash = 0;
+        uint64_t command_watermark = 0;
+        uint64_t command_hash = 0;
+        uint64_t command_count = 0;
+        uint64_t business_state_hash = 0;
+        ReferenceHashes hashes;
+        uint64_t generation = 0;
+        uint64_t territory_generation = 0;
+        uint64_t research_generation = 0;
+        uint64_t tax_generation = 0;
+        uint64_t visual_generation = 0;
+        int64_t first_event_id = 0;
+        int64_t last_event_id = 0;
+        uint64_t effect_intent_count = 0;
+        uint64_t effect_ack_count = 0;
+    };
+    ReferenceHashes compute_reference_hashes() const;
+    uint64_t reference_command_hash(const std::vector<Command> &commands) const;
+    void begin_reference_boundary(int64_t day);
+    void record_reference_frame(const char *stage, int64_t day,
+                                bool semantic_commit, bool day_barrier,
+                                uint64_t command_hash = 0,
+                                uint64_t command_count = 0,
+                                int64_t first_event_id = 0);
+    void record_direct_reference_frame(const char *stage);
     bool encode_save(std::vector<uint8_t> &out, std::string &error) const;
     bool decode_save(const std::vector<uint8_t> &bytes, std::string &error);
+    bool decode_save_in_place(const std::vector<uint8_t> &bytes,
+                              std::string &error);
+    bool restore_core_checkpoint_in_place(
+        const CountryCoreCheckpoint &checkpoint, std::string &error);
     void initialize_country_research(int32_t slot);
     void rebuild_pending_activation_index() const;
     // FULL/PROBE diagnostics validate the transient activation index against
@@ -541,21 +641,43 @@ private:
                                                 int32_t signal);
     static const SignalEvidence *find_signal_evidence(
         const std::vector<SignalEvidence> &entries, int32_t signal);
-    int64_t effective_research_cost(int32_t slot, int32_t technology) const;
-    void ensure_research_modifier_cache(int32_t slot) const;
+    int64_t effective_research_cost(
+        int32_t slot, int32_t technology,
+        const CountryPeerContext *peer_context = nullptr) const;
+    void ensure_research_modifier_cache(
+        int32_t slot,
+        const CountryPeerContext *peer_context = nullptr) const;
     // Sparse progress may exceed catalog base cost when country.research.cost_factor
     // is above 1.0. Restore validation must accept any value that effective cost
     // could legally reach under the ModifierCatalog clamp ceiling.
     int64_t max_storable_research_progress(int32_t technology) const;
     bool finalize_research_head_if_complete(int32_t slot, int32_t domain,
                                             int64_t day_index,
-                                            bool use_pending_queue);
+                                            bool use_pending_queue,
+                                            CountryPeerContext *peer_context = nullptr);
     int64_t progress_for(int32_t slot, int32_t technology) const;
     void set_progress(int32_t slot, int32_t technology, int64_t value);
-    int32_t run_research_day(int64_t day_index);
-    bool ensure_technology_effect_instance(int32_t slot, int32_t technology,
-                                           int64_t day_index);
-    bool ack_chain_due(int64_t day_index) const;
+    int32_t run_research_day(
+        int64_t day_index, const CountryPeerContext *peer_context = nullptr,
+        CountryPeerContext *out_peer_context = nullptr);
+    bool ensure_technology_effect_instance(
+        int32_t slot, int32_t technology, int64_t day_index,
+        CountryPeerContext &peer_context);
+    bool ack_chain_due(
+        int64_t day_index,
+        const CountryPeerContext *peer_context = nullptr) const;
+    CountryPeerTechnologyState *find_peer_technology_state(
+        CountryPeerContext &context, int32_t slot, int32_t technology);
+    const CountryPeerTechnologyState *find_peer_technology_state(
+        const CountryPeerContext &context, int32_t slot,
+        int32_t technology) const;
+    CountryPeerTechnologyState &ensure_peer_technology_state(
+        CountryPeerContext &context, int32_t slot, int32_t technology);
+    CountryPeerResult apply_peer_intent(CountryPeerContext &context,
+                                         const CountryPeerIntent &intent);
+    CountryPeerIntent make_peer_intent(
+        const CountryPeerContext &context, CountryPeerIntentCode opcode,
+        int32_t slot, int32_t technology, int64_t day_index) const;
 
     bool _configured = false;
     bool _bootstrapped = false;
@@ -588,6 +710,10 @@ private:
     mutable uint64_t _state_hash_cache_tax_policy_version = 0;
     mutable EraRewardReference _state_hash_cache_era_reward{};
     uint64_t _submit_order = 0;
+    uint64_t _session_epoch = 1;
+    uint64_t _next_boundary_id = 1;
+    CountryBoundarySeal _boundary_seal;
+    bool _boundary_seal_active = false;
     uint64_t _next_event_id = 1;
     int64_t _last_committed_day = -1;
     int32_t _max_commands_per_slice = 65536;
@@ -691,6 +817,10 @@ private:
     std::vector<int64_t> _country_research_consumed_total;
     std::vector<int64_t> _country_research_progress_total;
     std::vector<int64_t> _country_research_completed_total;
+    // K2-A protocol diagnostics. These are not authority state and do not
+    // participate in business/checkpoint hashes.
+    uint64_t _peer_intents_emitted = 0;
+    uint64_t _peer_results_consumed = 0;
     std::vector<int32_t> _country_tax_defaults;
     std::vector<int32_t> _country_tax_default_modes;
     std::vector<int32_t> _country_income_tax_overrides;
@@ -711,6 +841,8 @@ private:
     uint64_t _tax_policy_version = 0;
     int64_t _last_research_day = -1;
     std::vector<Command> _pending_commands;
+    std::deque<CountryCommandReceipt> _typed_receipts;
+    std::unordered_map<uint64_t, CountryCommandReceipt> _typed_request_state;
     std::unordered_map<int64_t, EffectCommandResult> _effect_command_results;
     std::unordered_map<uint64_t, int64_t> _effect_command_idempotency;
     int64_t _next_effect_request_id = 1;
@@ -718,6 +850,14 @@ private:
     std::deque<Event> _events;
     CommandBatchState _command_batch;
     godot::Dictionary _report;
+    bool _reference_trace_enabled = false;
+    size_t _reference_trace_capacity = 4096;
+    uint64_t _next_reference_frame_id = 1;
+    uint64_t _reference_boundary_id = 0;
+    uint32_t _reference_continuation_index = 0;
+    int64_t _reference_boundary_day = -1;
+    int64_t _reference_boundary_first_event_id = 0;
+    std::deque<ReferenceFrame> _reference_frames;
     // Suppresses the one legacy diagnostic write in run_research_day() while
     // the POD adapter is executing on a worker-owned runtime.
     bool _pod_execution = false;

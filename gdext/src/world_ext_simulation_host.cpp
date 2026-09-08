@@ -3,6 +3,7 @@
 #include "native_parallel_executor.h"
 #include "runtime_domain_pod.h"
 #include "runtime_country_pod.h"
+#include "country_runtime.h"
 #include "runtime_protocol_guard.h"
 
 #include <algorithm>
@@ -1618,6 +1619,21 @@ Dictionary DCWorldExt::request_runtime_save(int64_t request_id) {
         out["code"] = "invalid_save_request_id";
         return out;
     }
+    if (_country_runtime != nullptr) {
+        CountryCoreCheckpoint checkpoint;
+        std::string country_error;
+        if (!static_cast<NativeCountryRuntime *>(_country_runtime)
+                 ->capture_core_checkpoint(checkpoint, country_error) ||
+            !_runtime_host->publish_country_checkpoint(checkpoint,
+                                                       country_error)) {
+            out["ok"] = false;
+            out["pending"] = false;
+            out["code"] = String(country_error.empty()
+                ? "country_checkpoint_capture_failed"
+                : country_error.c_str());
+            return out;
+        }
+    }
     if (!_runtime_host->request_save(static_cast<uint64_t>(request_id))) {
         out["ok"] = false;
         out["pending"] = false;
@@ -1676,6 +1692,12 @@ Dictionary DCWorldExt::poll_runtime_save(int64_t request_id) {
     PackedByteArray bytes;
     bytes.resize(static_cast<int>(bundle->bytes.size()));
     if (!bundle->bytes.empty()) std::memcpy(bytes.ptrw(), bundle->bytes.data(), bundle->bytes.size());
+    PackedByteArray country_pkcn;
+    country_pkcn.resize(static_cast<int64_t>(bundle->country_pkcn_bytes.size()));
+    if (!bundle->country_pkcn_bytes.empty()) {
+        std::memcpy(country_pkcn.ptrw(), bundle->country_pkcn_bytes.data(),
+                    bundle->country_pkcn_bytes.size());
+    }
     out["ok"] = true;
     out["pending"] = false;
     out["ready"] = true;
@@ -1697,6 +1719,8 @@ Dictionary DCWorldExt::poll_runtime_save(int64_t request_id) {
     out["pending_command_count"] = static_cast<int>(bundle->pending_commands.size());
     out["domain_pod_bytes"] = static_cast<int64_t>(bundle->domain_pod_bytes.size());
     out["climate_bytes"] = static_cast<int64_t>(bundle->climate_bytes.size());
+    out["country_bytes"] = static_cast<int64_t>(bundle->country_bytes.size());
+    out["country_pkcn"] = country_pkcn;
     out["checksum"] = static_cast<int64_t>(bundle->checksum);
     out["bytes"] = bytes;
     return out;
