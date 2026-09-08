@@ -1610,34 +1610,16 @@ namespace {
 // 写明了它同时是这个绑定接受的字典键），所以这里不存在第二套名字映射 —— 表是
 // 唯一的真相，加一个 parity 字段不需要动这个函数。
 //
-// 缺席的字段留在 reset 后的零值上，并不报错：生产某一天没跑某个 stage 时那条数组
-// 本来就不该出现，而把它当成错误会让整天的 reference 无法发布。
+// 缺一条 comparable 字段就整份拒绝，`missing_fields` 带回是哪几条。**不能**把缺席
+// 的字段当成零值继续哈希：那样归约照样出一个数，而两侧的零位置不同，日后会以
+// "Climate 算法分叉"的形式浮出来 —— 一个本来在边界上就能一句话说清的问题，变成
+// 要从分叉矩阵反推的谜题。cell_count 同理不从数组长度推断：推断出来的值一旦不对，
+// 逐条 size 检查会把每条字段都报成长度错，掩盖真正缺失的那一条。
 bool build_climate_store_from_fields(const Dictionary &fields,
                                      RuntimeClimateStore &store,
-                                     String &error) {
-    int cell_count = static_cast<int>(fields.get("cell_count", 0));
-    if (cell_count <= 0) {
-        // 没给 cell_count 时从任一条数组推断，长度不一致由下面逐条的 size 检查兜住。
-        const size_t count = runtime_climate_parity_field_count();
-        const RuntimeClimateParityField *table = runtime_climate_parity_fields();
-        for (size_t i = 0; i < count && cell_count <= 0; ++i) {
-            if (!fields.has(table[i].name)) continue;
-            const Variant raw = fields[table[i].name];
-            switch (raw.get_type()) {
-            case Variant::PACKED_FLOAT32_ARRAY:
-                cell_count = PackedFloat32Array(raw).size();
-                break;
-            case Variant::PACKED_INT32_ARRAY:
-                cell_count = PackedInt32Array(raw).size();
-                break;
-            case Variant::PACKED_BYTE_ARRAY:
-                cell_count = PackedByteArray(raw).size();
-                break;
-            default:
-                break;
-            }
-        }
-    }
+                                     String &error,
+                                     Array *missing_fields = nullptr) {
+    const int cell_count = static_cast<int>(fields.get("cell_count", 0));
     if (cell_count <= 0) {
         error = String("climate_reference_cell_count_missing");
         return false;
@@ -1647,9 +1629,18 @@ bool build_climate_store_from_fields(const Dictionary &fields,
         static_cast<float>(static_cast<double>(fields.get("climate_anomaly", 0.0)));
     const size_t count = runtime_climate_parity_field_count();
     const RuntimeClimateParityField *table = runtime_climate_parity_fields();
+    Array missing;
     for (size_t i = 0; i < count; ++i) {
         const RuntimeClimateParityField &f = table[i];
-        if (!fields.has(f.name)) continue;
+        // 非 comparable 的两类字段本来就不该出现：no_reference 是生产侧没有对应的
+        // MapData 数组，type_mismatch 是两侧元素类型无法逐位比 —— 归约也不含它们。
+        if (!fields.has(f.name)) {
+            if (f.comparability ==
+                    RuntimeClimateParityComparability::COMPARABLE) {
+                missing.push_back(String(f.name));
+            }
+            continue;
+        }
         const Variant raw = fields[f.name];
         switch (f.kind) {
         case RuntimeClimateParityKind::F32: {
@@ -1698,6 +1689,11 @@ bool build_climate_store_from_fields(const Dictionary &fields,
             break;
         }
         }
+    }
+    if (!missing.is_empty()) {
+        error = String("climate_parity_fields_missing");
+        if (missing_fields != nullptr) *missing_fields = missing;
+        return false;
     }
     return true;
 }
@@ -1750,6 +1746,41 @@ Dictionary DCWorldExt::set_runtime_climate_parity_forcing(bool enabled) {
     return out;
 }
 
+// 这三条枚举跨边界时给的是字符串而不是序号：GDScript 侧一律用 String() 包装它们
+// （map_generator.gd:2434 的 != "comparable"、runtime_climate_parity_test 的
+// in ["f32","i32","u8"]），而 Godot 4 的 String() 构造不接受 int —— 给序号会在那一行
+// 抛 "Nonexistent 'String' constructor"，把 _collect_runtime_climate_parity_fields
+// 整个打断，于是 reference publish 永远 pending、SHADOW 对拍一天都比不上。
+static const char *pk_parity_kind_name(RuntimeClimateParityKind kind) {
+    switch (kind) {
+        case RuntimeClimateParityKind::F32: return "f32";
+        case RuntimeClimateParityKind::I32: return "i32";
+        case RuntimeClimateParityKind::U8:  return "u8";
+    }
+    return "f32";
+}
+
+static const char *pk_parity_comparability_name(
+        RuntimeClimateParityComparability c) {
+    switch (c) {
+        case RuntimeClimateParityComparability::COMPARABLE: return "comparable";
+        case RuntimeClimateParityComparability::TYPE_MISMATCH:
+            return "type_mismatch";
+        case RuntimeClimateParityComparability::NO_REFERENCE:
+            return "no_reference";
+    }
+    return "no_reference";
+}
+
+static const char *pk_parity_tolerance_name(RuntimeClimateParityTolerance t) {
+    switch (t) {
+        case RuntimeClimateParityTolerance::BITWISE: return "bitwise";
+        case RuntimeClimateParityTolerance::SLICED:  return "sliced";
+        case RuntimeClimateParityTolerance::CHAINED: return "chained";
+    }
+    return "bitwise";
+}
+
 Array DCWorldExt::get_runtime_climate_parity_fields() const {
     Array out;
     const size_t count = runtime_climate_parity_field_count();
@@ -1759,9 +1790,9 @@ Array DCWorldExt::get_runtime_climate_parity_fields() const {
         Dictionary row;
         row["name"] = String(f.name);
         row["map_data_array"] = String(f.map_data_array);
-        row["kind"] = static_cast<int>(f.kind);
-        row["comparability"] = static_cast<int>(f.comparability);
-        row["tolerance"] = static_cast<int>(f.tolerance);
+        row["kind"] = String(pk_parity_kind_name(f.kind));
+        row["comparability"] = String(pk_parity_comparability_name(f.comparability));
+        row["tolerance"] = String(pk_parity_tolerance_name(f.tolerance));
         row["tolerance_band"] =
             runtime_climate_parity_tolerance_band(f.tolerance);
         row["stage"] = static_cast<int>(f.stage);
@@ -1986,10 +2017,15 @@ Dictionary DCWorldExt::compute_runtime_climate_parity_hash(
     Dictionary out;
     RuntimeClimateStore store;
     String error;
-    if (!build_climate_store_from_fields(fields, store, error)) {
+    Array missing;
+    if (!build_climate_store_from_fields(fields, store, error, &missing)) {
         out["ok"] = false;
-        out["code"] = "climate_reference_fields_invalid";
+        // 缺字段与"字段有问题"是两种不同的 code：前者调用方能直接读出缺哪几条，
+        // 后者要看 field 里的 name(dtype|size)。
+        out["code"] = missing.is_empty()
+            ? String("climate_reference_fields_invalid") : error;
         out["field"] = error;
+        out["missing_fields"] = missing;
         return out;
     }
     out["ok"] = true;
@@ -1997,11 +2033,11 @@ Dictionary DCWorldExt::compute_runtime_climate_parity_hash(
     out["cell_count"] = static_cast<int64_t>(store.cell_count);
     // 用与 worker 完全相同的那一个归约函数。两侧"按约定各算一遍"是这条对拍最早的
     // 失效方式，所以这里刻意不复制哈希逻辑。
-    out["state_hash"] =
+    out["parity_hash"] =
         static_cast<int64_t>(runtime_climate_parity_hash(store));
     out["parity_version"] =
         static_cast<int64_t>(RUNTIME_CLIMATE_PARITY_VERSION);
-    out["comparable_fields"] =
+    out["fields_hashed"] =
         static_cast<int64_t>(runtime_climate_parity_comparable_count());
     return out;
 }
@@ -2021,10 +2057,13 @@ Dictionary DCWorldExt::publish_runtime_climate_reference_state(
     }
     auto store = std::make_shared<RuntimeClimateStore>();
     String error;
-    if (!build_climate_store_from_fields(fields, *store, error)) {
+    Array missing;
+    if (!build_climate_store_from_fields(fields, *store, error, &missing)) {
         out["ok"] = false;
-        out["code"] = "climate_reference_fields_invalid";
+        out["code"] = missing.is_empty()
+            ? String("climate_reference_fields_invalid") : error;
         out["field"] = error;
+        out["missing_fields"] = missing;
         return out;
     }
     // 哈希在这里从 state 派生，所以两者不可能互相矛盾 —— 这正是这个绑定存在的理由
@@ -2098,14 +2137,16 @@ Dictionary DCWorldExt::publish_runtime_climate_reference_state(
         out["ok"] = false;
         out["code"] = String(host_error.c_str());
         out["day"] = day;
-        out["state_hash"] = static_cast<int64_t>(state_hash);
+        out["parity_hash"] = static_cast<int64_t>(state_hash);
         return out;
     }
     out["ok"] = true;
     out["pending"] = false;
     out["code"] = "ok";
     out["day"] = day;
-    out["state_hash"] = static_cast<int64_t>(state_hash);
+    // 键名是 parity_hash：调用方（map_generator.gd:2548）按它取值，取到 0 会判成
+    // "归约什么都没算出来"并把这一天整个作废。
+    out["parity_hash"] = static_cast<int64_t>(state_hash);
     out["cell_count"] = static_cast<int64_t>(store->cell_count);
     return out;
 }
@@ -2125,11 +2166,11 @@ Dictionary DCWorldExt::runtime_climate_parity_contract_test() const {
     out["code"] = ok ? String("ok") : String(error.c_str());
     out["parity_version"] =
         static_cast<int64_t>(RUNTIME_CLIMATE_PARITY_VERSION);
-    out["field_count"] =
+    out["fields_total"] =
         static_cast<int64_t>(runtime_climate_parity_field_count());
-    out["comparable_count"] =
+    out["fields_comparable"] =
         static_cast<int64_t>(runtime_climate_parity_comparable_count());
-    out["max_fields"] =
+    out["fields_max"] =
         static_cast<int64_t>(RUNTIME_CLIMATE_PARITY_MAX_FIELDS);
     return out;
 }
@@ -2147,10 +2188,12 @@ Array DCWorldExt::get_runtime_climate_parity_divergence() const {
         row["name"] = String(table[i].name);
         row["stage"] = static_cast<int>(table[i].stage);
         row["stage_name"] = String(runtime_climate_stage_name(table[i].stage));
-        row["tolerance"] = static_cast<int>(table[i].tolerance);
+        // 与 get_runtime_climate_parity_fields 同一口径：字符串而不是枚举序号。
+        row["tolerance"] = String(pk_parity_tolerance_name(table[i].tolerance));
         row["tolerance_band"] =
             runtime_climate_parity_tolerance_band(table[i].tolerance);
-        row["comparability"] = static_cast<int>(table[i].comparability);
+        row["comparability"] =
+            String(pk_parity_comparability_name(table[i].comparability));
         row["compared_days"] = static_cast<int64_t>(st.compared_days);
         row["diverged_days"] = static_cast<int64_t>(st.diverged_days);
         row["diverged_cells"] = static_cast<int64_t>(st.diverged_cells);

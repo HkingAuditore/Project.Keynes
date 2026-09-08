@@ -14,3 +14,6 @@ __pycache__/
 # 嵌入式 godot-cpp 备份/临时仓库，不纳入版本管理
 /gdext/godot-cpp.bak-20260830/
 /gdext/godot-cpp.tmpfix/
+
+# 回归/soak 的临时日志（下划线前缀是这些一次性抓取的约定）
+/tmp/_*.txt
