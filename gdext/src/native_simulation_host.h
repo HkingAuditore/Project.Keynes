@@ -99,8 +99,19 @@ public:
     // Reports the compile-time POD barrier coverage. This is deliberately
     // independent from the caller's graph_coverage_complete hint.
     static constexpr uint32_t implemented_domain_mask() {
-        // Climate POD handler is live in SHADOW. ACTIVE still requires the
-        // remaining ten gameplay domains before the promotion gate opens.
+        // Which domains have a real POD handler -- NOT which ones are currently
+        // authoritative. Those are three different masks and conflating them
+        // misreads the whole migration state:
+        //   implemented (here)        compile-time; a domain may be listed and
+        //                             still run in SHADOW only.
+        //   requested_authority_mask  per-session, from the start() caller; must
+        //                             be a subset of this one.
+        //   completed_domain_mask     per-day report of what actually ran.
+        // Climate ships ACTIVE-authoritative in production as of 2026-09-08
+        // (runtime_climate_authority_enabled defaults true, which makes
+        // world_runtime_host.gd request 0x802). Promotion is per-domain, so the
+        // remaining gameplay domains do not block it; only whole-graph ACTIVE
+        // (start() without an explicit mask) still requires all of 0xFFF.
         return runtime_domain_mask(RuntimeDomainId::COMMIT)
             | runtime_domain_mask(RuntimeDomainId::CLIMATE);
     }
