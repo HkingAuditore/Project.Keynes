@@ -1,0 +1,11 @@
+﻿runtime S0 baseline
+generated : 2026-09-05T17:32:11.3192749Z
+git HEAD  : c3255fccd18c49dcdd51e635a90f6d87b1120eb5 (master), gdext/src dirty=0
+ABI       : domain v1 / pod v3
+DLL       : dots_ext.windows.template_debug.x86_64.dll sha256=B5524B817612094AE314886E841C60755A7CD62109E9FD49FDB397F5D2291979 stale=False
+DLL       : dots_ext.windows.template_release.x86_64.dll sha256=BED31F840F82D8D3D4AE16D98F409A85766032DEF41FB0EA17B4E24536071511 stale=False
+tests     : 10/11 passed
+coverage  : implemented_domain_mask = 0x800  ["COMMIT"]
+criteria  : criteria met: 1/7
+gate      : dots_completion_gate FAILING (known GDScript debt, not a runtime regression)
+verdict   : BASELINE OK

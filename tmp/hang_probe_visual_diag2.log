@@ -1,0 +1,168 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[ui-layout-diag/bind_ui] is_web=false viewport_visible_rect=[P: (0.0, 0.0), S: (51.2, 51.2)] window_size=(64, 64) content_scale_factor=1.250 content_scale_mode=0 device_pixel_ratio=-1.000 top_bar_rect=[P: (-245.9, 0.0), S: (543.0, 56.0)] right_panel_rect=[P: (-408.8, 68.0), S: (460.0, 366.0)] country_action_bar_rect=[P: (-142.4, -30.8), S: (336.0, 74.0)]
+[detail_scatter/DRAIN_CFG] budget_ms=2.50 chunks_per_frame=4 plan_items=16 cells_per_batch=32 chunk_size=16
+[native_generation/base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=2400 native_ms=6.886 water=1621 land=779
+[native_generation/post_base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=2400 native_ms=1.564 lakes=10 rivers=89 volcanoes=0
+[native_generation/vegetation] native_ms=0.549 candidates=789 none=1227 score=[0.000,1.244,1.146] plant_water_land=788 river_adjacent_desert=0 coastal_highland_desert=0 terrain_weight=[0.180,1.200]
+[native_generation/qa] single_water=0 tiny<=3=0 small<=5=0 bodies=1 largest=1611 | land_below_sea=1.3% | terr_distinct=21 entropy=3.036bit | river_ratio=3.708%
+MapGenerator v7: per-cell 74ms (2400 cells, path=gdext)
+MapBaker v6: hm=(1024, 606) seed=1944596873
+    [fused] terrain=70.9ms erosion=2.2ms(ok=true) river=13.2ms(ok=true) latitude=0.1ms coast_sdf=4.3ms(ok=true)
+  geometry fields (fused C++): 155ms
+  physical circulation hex solve: deferred until DCWorldExt bind (ext=true idx=true soa=false)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+[bake-stage] height_flow begin
+[bake-stage] height_flow end 92ms
+[bake-stage] terrain_normal end
+[bake-stage] horizon end
+[bake-stage] enum_lut end
+[bake-stage] water_depth begin
+[bake-stage] water_depth end
+[bake-stage] terrain_detail begin
+[bake-stage] terrain_detail end
+[bake-stage] visual_tiles begin
+[visual-tiles/diag] before_initialize layout=tiled grid=(4, 3) layer=(420, 348)
+[visual-tiles/diag] after_initialize layers=12
+[visual-tiles/diag] layer=0 before_native
+[visual-tiles/diag] layer=0 after_native keys=["fallback", "reason", "path", "elapsed_ms", "width", "height", "generation_id", "layer_id", "terrain_normal", "map_index", "water_depth", "terrain_detail", "edge_neighbor", "edge_distance", "hashes", "normal_reference_radius_px", "normal_radius_x_px", "normal_radius_y_px", "normal_reference_step_x", "normal_reference_step_y", "raster_scale_x", "raster_scale_y", "distance_scale", "river_sdf_max_dist_px", "coast_sdf_max_dist_px", "shore_carve_band_px", "edge_distance_units", "edge_distance_saturate_hex", "terrain_ms", "river_ms", "coast_ms", "csr_emitted"]
+[visual-tiles/diag] layer=0 before_upload
+[visual-tiles/diag] layer=0 after_upload wall=0.56ms
+[visual-tiles/diag] layer=1 before_native
+[visual-tiles/diag] layer=1 after_native keys=["fallback", "reason", "path", "elapsed_ms", "width", "height", "generation_id", "layer_id", "terrain_normal", "map_index", "water_depth", "terrain_detail", "edge_neighbor", "edge_distance", "hashes", "normal_reference_radius_px", "normal_radius_x_px", "normal_radius_y_px", "normal_reference_step_x", "normal_reference_step_y", "raster_scale_x", "raster_scale_y", "distance_scale", "river_sdf_max_dist_px", "coast_sdf_max_dist_px", "shore_carve_band_px", "edge_distance_units", "edge_distance_saturate_hex", "terrain_ms", "river_ms", "coast_ms", "csr_emitted"]
+[visual-tiles/diag] layer=1 before_upload
+[visual-tiles/diag] layer=1 after_upload wall=0.68ms
+[visual-tiles/diag] layer=2 before_native
+[visual-tiles/diag] layer=2 after_native keys=["fallback", "reason", "path", "elapsed_ms", "width", "height", "generation_id", "layer_id", "terrain_normal", "map_index", "water_depth", "terrain_detail", "edge_neighbor", "edge_distance", "hashes", "normal_reference_radius_px", "normal_radius_x_px", "normal_radius_y_px", "normal_reference_step_x", "normal_reference_step_y", "raster_scale_x", "raster_scale_y", "distance_scale", "river_sdf_max_dist_px", "coast_sdf_max_dist_px", "shore_carve_band_px", "edge_distance_units", "edge_distance_saturate_hex", "terrain_ms", "river_ms", "coast_ms", "csr_emitted"]
+[visual-tiles/diag] layer=2 before_upload
+[visual-tiles/diag] layer=2 after_upload wall=0.56ms
+[visual-tiles/diag] layer=3 before_native
+[visual-tiles/diag] layer=3 after_native keys=["fallback", "reason", "path", "elapsed_ms", "width", "height", "generation_id", "layer_id", "terrain_normal", "map_index", "water_depth", "terrain_detail", "edge_neighbor", "edge_distance", "hashes", "normal_reference_radius_px", "normal_radius_x_px", "normal_radius_y_px", "normal_reference_step_x", "normal_reference_step_y", "raster_scale_x", "raster_scale_y", "distance_scale", "river_sdf_max_dist_px", "coast_sdf_max_dist_px", "shore_carve_band_px", "edge_distance_units", "edge_distance_saturate_hex", "terrain_ms", "river_ms", "coast_ms", "csr_emitted"]
+[visual-tiles/diag] layer=3 before_upload
+[visual-tiles/diag] layer=3 after_upload wall=0.79ms
+[visual-tiles/diag] layer=4 before_native
+[visual-tiles/diag] layer=4 after_native keys=["fallback", "reason", "path", "elapsed_ms", "width", "height", "generation_id", "layer_id", "terrain_normal", "map_index", "water_depth", "terrain_detail", "edge_neighbor", "edge_distance", "hashes", "normal_reference_radius_px", "normal_radius_x_px", "normal_radius_y_px", "normal_reference_step_x", "normal_reference_step_y", "raster_scale_x", "raster_scale_y", "distance_scale", "river_sdf_max_dist_px", "coast_sdf_max_dist_px", "shore_carve_band_px", "edge_distance_units", "edge_distance_saturate_hex", "terrain_ms", "river_ms", "coast_ms", "csr_emitted"]
+[visual-tiles/diag] layer=4 before_upload
+[visual-tiles/diag] layer=4 after_upload wall=0.61ms
+[visual-tiles/diag] layer=5 before_native
+[visual-tiles/diag] layer=5 after_native keys=["fallback", "reason", "path", "elapsed_ms", "width", "height", "generation_id", "layer_id", "terrain_normal", "map_index", "water_depth", "terrain_detail", "edge_neighbor", "edge_distance", "hashes", "normal_reference_radius_px", "normal_radius_x_px", "normal_radius_y_px", "normal_reference_step_x", "normal_reference_step_y", "raster_scale_x", "raster_scale_y", "distance_scale", "river_sdf_max_dist_px", "coast_sdf_max_dist_px", "shore_carve_band_px", "edge_distance_units", "edge_distance_saturate_hex", "terrain_ms", "river_ms", "coast_ms", "csr_emitted"]
+[visual-tiles/diag] layer=5 before_upload
+[visual-tiles/diag] layer=5 after_upload wall=0.71ms
+[visual-tiles/diag] layer=6 before_native
+[visual-tiles/diag] layer=6 after_native keys=["fallback", "reason", "path", "elapsed_ms", "width", "height", "generation_id", "layer_id", "terrain_normal", "map_index", "water_depth", "terrain_detail", "edge_neighbor", "edge_distance", "hashes", "normal_reference_radius_px", "normal_radius_x_px", "normal_radius_y_px", "normal_reference_step_x", "normal_reference_step_y", "raster_scale_x", "raster_scale_y", "distance_scale", "river_sdf_max_dist_px", "coast_sdf_max_dist_px", "shore_carve_band_px", "edge_distance_units", "edge_distance_saturate_hex", "terrain_ms", "river_ms", "coast_ms", "csr_emitted"]
+[visual-tiles/diag] layer=6 before_upload
+[visual-tiles/diag] layer=6 after_upload wall=0.79ms
+[visual-tiles/diag] layer=7 before_native
+[visual-tiles/diag] layer=7 after_native keys=["fallback", "reason", "path", "elapsed_ms", "width", "height", "generation_id", "layer_id", "terrain_normal", "map_index", "water_depth", "terrain_detail", "edge_neighbor", "edge_distance", "hashes", "normal_reference_radius_px", "normal_radius_x_px", "normal_radius_y_px", "normal_reference_step_x", "normal_reference_step_y", "raster_scale_x", "raster_scale_y", "distance_scale", "river_sdf_max_dist_px", "coast_sdf_max_dist_px", "shore_carve_band_px", "edge_distance_units", "edge_distance_saturate_hex", "terrain_ms", "river_ms", "coast_ms", "csr_emitted"]
+[visual-tiles/diag] layer=7 before_upload
+[visual-tiles/diag] layer=7 after_upload wall=0.54ms
+[visual-tiles/diag] layer=8 before_native
+[visual-tiles/diag] layer=8 after_native keys=["fallback", "reason", "path", "elapsed_ms", "width", "height", "generation_id", "layer_id", "terrain_normal", "map_index", "water_depth", "terrain_detail", "edge_neighbor", "edge_distance", "hashes", "normal_reference_radius_px", "normal_radius_x_px", "normal_radius_y_px", "normal_reference_step_x", "normal_reference_step_y", "raster_scale_x", "raster_scale_y", "distance_scale", "river_sdf_max_dist_px", "coast_sdf_max_dist_px", "shore_carve_band_px", "edge_distance_units", "edge_distance_saturate_hex", "terrain_ms", "river_ms", "coast_ms", "csr_emitted"]
+[visual-tiles/diag] layer=8 before_upload
+[visual-tiles/diag] layer=8 after_upload wall=0.70ms
+[visual-tiles/diag] layer=9 before_native
+[visual-tiles/diag] layer=9 after_native keys=["fallback", "reason", "path", "elapsed_ms", "width", "height", "generation_id", "layer_id", "terrain_normal", "map_index", "water_depth", "terrain_detail", "edge_neighbor", "edge_distance", "hashes", "normal_reference_radius_px", "normal_radius_x_px", "normal_radius_y_px", "normal_reference_step_x", "normal_reference_step_y", "raster_scale_x", "raster_scale_y", "distance_scale", "river_sdf_max_dist_px", "coast_sdf_max_dist_px", "shore_carve_band_px", "edge_distance_units", "edge_distance_saturate_hex", "terrain_ms", "river_ms", "coast_ms", "csr_emitted"]
+[visual-tiles/diag] layer=9 before_upload
+[visual-tiles/diag] layer=9 after_upload wall=0.69ms
+[visual-tiles/diag] layer=10 before_native
+[visual-tiles/diag] layer=10 after_native keys=["fallback", "reason", "path", "elapsed_ms", "width", "height", "generation_id", "layer_id", "terrain_normal", "map_index", "water_depth", "terrain_detail", "edge_neighbor", "edge_distance", "hashes", "normal_reference_radius_px", "normal_radius_x_px", "normal_radius_y_px", "normal_reference_step_x", "normal_reference_step_y", "raster_scale_x", "raster_scale_y", "distance_scale", "river_sdf_max_dist_px", "coast_sdf_max_dist_px", "shore_carve_band_px", "edge_distance_units", "edge_distance_saturate_hex", "terrain_ms", "river_ms", "coast_ms", "csr_emitted"]
+[visual-tiles/diag] layer=10 before_upload
+[visual-tiles/diag] layer=10 after_upload wall=0.56ms
+[visual-tiles/diag] layer=11 before_native
+[visual-tiles/diag] layer=11 after_native keys=["fallback", "reason", "path", "elapsed_ms", "width", "height", "generation_id", "layer_id", "terrain_normal", "map_index", "water_depth", "terrain_detail", "edge_neighbor", "edge_distance", "hashes", "normal_reference_radius_px", "normal_radius_x_px", "normal_radius_y_px", "normal_reference_step_x", "normal_reference_step_y", "raster_scale_x", "raster_scale_y", "distance_scale", "river_sdf_max_dist_px", "coast_sdf_max_dist_px", "shore_carve_band_px", "edge_distance_units", "edge_distance_saturate_hex", "terrain_ms", "river_ms", "coast_ms", "csr_emitted"]
+[visual-tiles/diag] layer=11 before_upload
+[visual-tiles/diag] layer=11 after_upload wall=0.64ms
+  visual tiles: {"degradation_reason":"","effective_budget_px":1717248,"effective_texels_per_hex":16.0059221751742,"effective_world_units_per_texel":"(1.373983, 1.375)","estimated_peak_bytes":68402880,"estimated_resident_bytes":40340160,"fallback_reason":"","generation_id":1,"grid_size":"(4, 3)","gutter_px":2,"hex_size":22.0,"horizon_path":"neutral_pending","interior_size":"(416, 344)","layer_size":"(420, 348)","layers":[{"bake_ms":38.9438,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":6529063573119757536,"edge_neighbor":5864500912623293414,"height":-7465192186713560810,"map_index":-6073107688315633784,"terrain_detail":-2382285532521706335,"terrain_normal":-1317818033718980130,"water_depth":-4692563217275104188},"layer":0,"normal_radius_px":"(7, 7)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":1.112,"wall_ms":41.45},{"bake_ms":58.3641,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-1249692567926722458,"edge_neighbor":6002972387195263624,"height":-7285679658435174307,"map_index":8940371437026651600,"terrain_detail":5036494441431178758,"terrain_normal":3973694631551755563,"water_depth":662930310868912367},"layer":1,"normal_radius_px":"(7, 7)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":1.216,"wall_ms":61.198},{"bake_ms":94.0698,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":7129631671236922222,"edge_neighbor":3773635277745121986,"height":7596694492808536108,"map_index":313251964330505674,"terrain_detail":-745525302803014377,"terrain_normal":-407520228834748787,"water_depth":-1274886268333001193},"layer":2,"normal_radius_px":"(7, 7)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":1.101,"wall_ms":96.993},{"bake_ms":73.8019,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":2006582222414234885,"edge_neighbor":3703937717161416670,"height":2692856364912664436,"map_index":-2940541510509256049,"terrain_detail":6740359267426010213,"terrain_normal":-452764964218628409,"water_depth":3974522652768216836},"layer":3,"normal_radius_px":"(7, 7)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":1.43,"wall_ms":76.918},{"bake_ms":89.073,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":7871746107856891203,"edge_neighbor":-5361755465402004660,"height":-5306722370234529302,"map_index":-1132712933756347397,"terrain_detail":-1523319099177820795,"terrain_normal":839201515268517797,"water_depth":5263192946554759060},"layer":4,"normal_radius_px":"(7, 7)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":1.155,"wall_ms":91.753},{"bake_ms":98.6558,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":8447681494476794375,"edge_neighbor":-4376101332812395736,"height":1001699469045508835,"map_index":3019153449186811561,"terrain_detail":-4146722558349743373,"terrain_normal":-8971281753439862107,"water_depth":2442155628937934437},"layer":5,"normal_radius_px":"(7, 7)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":1.346,"wall_ms":101.67},{"bake_ms":121.4327,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-8218990118020309901,"edge_neighbor":-672812670369742084,"height":-8558792223223959644,"map_index":-1661699128020172366,"terrain_detail":3702516557611162104,"terrain_normal":-5757695953973293642,"water_depth":-4717516023636550010},"layer":6,"normal_radius_px":"(7, 7)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":1.345,"wall_ms":124.206},{"bake_ms":76.2586,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-2643224416968854932,"edge_neighbor":-4395220283358381658,"height":8718198929379771044,"map_index":8878343856484298633,"terrain_detail":816756934536156828,"terrain_normal":1137465522960091866,"water_depth":-3071748698145325849},"layer":7,"normal_radius_px":"(7, 7)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":1.14,"wall_ms":78.763},{"bake_ms":53.3804,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-6116614127751933416,"edge_neighbor":9056113260648346498,"height":8873792622121584553,"map_index":3150303755798759868,"terrain_detail":6940683827249838680,"terrain_normal":3806422801776048451,"water_depth":4867317397701124828},"layer":8,"normal_radius_px":"(7, 7)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":1.241,"wall_ms":56.148},{"bake_ms":53.3357,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":7040957470468561420,"edge_neighbor":-3892736007079415515,"height":-4278569447968305513,"map_index":2186066939782130292,"terrain_detail":-1098933982051427218,"terrain_normal":212056013729100490,"water_depth":1606032085219904616},"layer":9,"normal_radius_px":"(7, 7)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":1.345,"wall_ms":56.06},{"bake_ms":80.6288,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-3802300108244789121,"edge_neighbor":8857700186518682457,"height":-652330515136925691,"map_index":1441533885612340503,"terrain_detail":8971360381111241267,"terrain_normal":-1886524414217486923,"water_depth":2631904866799604143},"layer":10,"normal_radius_px":"(7, 7)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.994,"wall_ms":83.036},{"bake_ms":69.2023,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":3085403087403905824,"edge_neighbor":-529457242895181547,"height":5616348164234635479,"map_index":4509242813055672073,"terrain_detail":-783034261620028213,"terrain_normal":1683280451729939840,"water_depth":6060040596220919113},"layer":11,"normal_radius_px":"(7, 7)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":1.234,"wall_ms":71.679}],"logical_size":"(1664, 1032)","mode":"tiled","path":"visual_tiled_static","profile":"desktop_high","renderer":"mobile","requested_budget_px":1716216,"requested_texels_per_hex":16.0,"requested_tile_world_span":"(704.0, 704.0)","requested_world_units_per_texel":1.375,"tile_world_area":270355.817993164,"tile_world_span":"(571.5768, 473.0)","total_ms":944.061,"visual_domain":"[P: (0.0, -44.0), S: (2286.307, 1419.0)]","wrap_period_x":2286.30706599092,"wrap_x":true}
+[bake-stage] visual_tiles end
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/organic.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:359)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:342)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1186)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1224)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/dry_sand.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:359)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:342)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1186)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1224)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/rock.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:359)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:342)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1186)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1224)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/snow_wet.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:359)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:342)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1186)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1224)
+  cell LUT encode: deferred until DCWorldExt bind
+  encode: 3654ms
+MapBaker v6: total 3821ms
+MapGenerator v7: bake 3849ms
+MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)
+MapGenerator: skip _compute_terrain_perturbed_wind (physical-hex solver writes per-cell)
+[SUS] sim budget strict=false frame=8.00ms warn=2.00ms slice=0.75ms upload=1.50ms scheduler=DCSystemScheduler native_sus=auto
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+[DataCore] _data_core_world_ext bound=true (climate co-processor; class=DCWorldExt)
+[native_world] configure rc=0 reason=configured cells=2400 wrap_period_x=103.923
+[native_generation] path=gdext n=2400 published=9 native_ms=0.160 compute_ms=0.106 flush_ms=0.053
+[hex_cell] facade ENABLED (2400 cells bound; ext=true)
+[DataCore] _baker climate_profile injected=true (fixes WorldData.config==null sea_ice prepare path)
+[phys_solve][oneshot] OK slp=1.06ms wind=0.50ms psi=0.36ms(ran=true) upwelling=0.10ms total=2.56ms
+PhysicalCirculation solve@phase=1.50 total=3ms (C++ one-shot run_physical_solve_pass)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+[physical_init] deferred native refresh complete: 4ms
+[cell_lut] deferred encode: 1ms path=gdext
+[bio-occupancy] seed landmasses=14 provinces=14 species=19 secondary_hearths=4
+[bio-occupancy]   bio.maize envelope=69 hearth=5 seeded_landmasses=1 primary_landmass=5 primary_envelope=26 occupied=5 occupied/envelope=0.19
+[bio-occupancy]   bio.wheat envelope=176 hearth=59 seeded_landmasses=1 primary_landmass=1 primary_envelope=101 occupied=59 occupied/envelope=0.58
+[bio-occupancy]   bio.rice envelope=78 hearth=19 seeded_landmasses=2 primary_landmass=1 primary_envelope=42 occupied=19 occupied/envelope=0.45
+[bio-occupancy]   bio.potato envelope=108 hearth=20 seeded_landmasses=2 primary_landmass=5 primary_envelope=12 occupied=20 occupied/envelope=1.67
+[bio-occupancy]   bio.horse envelope=198 hearth=25 seeded_landmasses=1 primary_landmass=5 primary_envelope=51 occupied=25 occupied/envelope=0.49
+[bio-occupancy]   bio.cotton envelope=149 hearth=21 seeded_landmasses=1 primary_landmass=1 primary_envelope=93 occupied=21 occupied/envelope=0.23
+[bio-occupancy]   bio.flax envelope=158 hearth=52 seeded_landmasses=1 primary_landmass=1 primary_envelope=94 occupied=52 occupied/envelope=0.55
+[bio-occupancy]   bio.spice envelope=124 hearth=20 seeded_landmasses=1 primary_landmass=1 primary_envelope=85 occupied=20 occupied/envelope=0.24
+[bio-occupancy]   bio.rubber envelope=77 hearth=1 seeded_landmasses=1 primary_landmass=5 primary_envelope=12 occupied=1 occupied/envelope=0.08
+[bio-occupancy]   bio.sheep envelope=29 hearth=4 seeded_landmasses=1 primary_landmass=1 primary_envelope=18 occupied=4 occupied/envelope=0.22
+[bio-occupancy]   bio.goat envelope=337 hearth=48 seeded_landmasses=1 primary_landmass=1 primary_envelope=194 occupied=48 occupied/envelope=0.25
+[bio-occupancy]   bio.cattle envelope=12 hearth=4 seeded_landmasses=1 primary_landmass=1 primary_envelope=7 occupied=4 occupied/envelope=0.57
+[bio-occupancy]   bio.pig envelope=321 hearth=129 seeded_landmasses=2 primary_landmass=1 primary_envelope=193 occupied=129 occupied/envelope=0.67
+[bio-occupancy]   bio.camel envelope=83 hearth=15 seeded_landmasses=1 primary_landmass=5 primary_envelope=31 occupied=15 occupied/envelope=0.48
+[bio-occupancy]   bio.yak envelope=109 hearth=34 seeded_landmasses=1 primary_landmass=1 primary_envelope=67 occupied=34 occupied/envelope=0.51
+[bio-occupancy]   bio.silkworm envelope=179 hearth=56 seeded_landmasses=1 primary_landmass=1 primary_envelope=124 occupied=56 occupied/envelope=0.45
+[bio-occupancy]   bio.reed envelope=123 hearth=9 seeded_landmasses=2 primary_landmass=1 primary_envelope=70 occupied=9 occupied/envelope=0.13
+[bio-occupancy]   bio.bast_fiber envelope=233 hearth=40 seeded_landmasses=2 primary_landmass=1 primary_envelope=134 occupied=40 occupied/envelope=0.30
+[bio-occupancy]   bio.dye_plant envelope=155 hearth=22 seeded_landmasses=1 primary_landmass=5 primary_envelope=43 occupied=22 occupied/envelope=0.51
+[bio-occupancy]   landmass 1 classes=cold_grazer, open_food, dry_grazer, fiber_wet, fiber_open, forest_grazer, highland_food, open_grazer, tropical, fiber_forest, wetland_food foods=wheat, potato, rice
+[bio-occupancy]   landmass 2 classes=none foods=none
+[bio-occupancy]   landmass 3 classes=none foods=none
+[bio-occupancy]   landmass 4 classes=none foods=none
+[bio-occupancy]   landmass 5 classes=forest_grazer, fiber_open, fiber_forest, dry_grazer, tropical, fiber_wet, open_food, open_grazer, wetland_food, highland_food foods=maize, rice, potato
+[bio-occupancy]   landmass 6 classes=none foods=none
+[bio-occupancy]   landmass 7 classes=none foods=none
+[bio-occupancy]   landmass 8 classes=none foods=none
+[bio-occupancy]   landmass 9 classes=none foods=none
+[bio-occupancy]   landmass 10 classes=none foods=none
+[bio-occupancy]   landmass 11 classes=none foods=none
+[bio-occupancy]   landmass 12 classes=none foods=none
+[bio-occupancy]   landmass 13 classes=none foods=none
+[bio-occupancy]   landmass 14 classes=none foods=none
+[weather] gdext acceleration ON (class=DCWorldExt)
+[weather] gdext field commit ON
+[weather] gdext distribute ON
+[weather] gdext summary ON
+[weather] hexcell facade ON (skip AoS double-write in hot loop)
+[weather] gdext resident knobs ON (class=KnobsHandle)
+[economy] ACTIVE native graph cells=2400 goods=134 cohorts=24 epoch_days=1 trade=ACTIVE topology_ready=true topology_generation=1 bootstrap=starter_settlement_bootstrap_v9 founder_families=6 founder_people=6
+[country] ACTIVE native authority countries=6 cells=2400 generation=1
+[weather/knobs] resident KnobsHandle path ACTIVE — first to_*_knobs_dict hit (field_rebuild_count=1 expected ≤1; stable Hz target ≤1 Hz)
+[native_daily] ACTIVE: registered native_daily_sim + natural_resource_daily + bio_occupancy_daily; retained season_refresh + ocean_currents boundary jobs
+[DCSystemScheduler] topology: ["season_refresh", "trigger_runtime", "ideology_runtime", "effect_runtime", "modifier_daily", "gameplay_effect", "natural_resource_daily", "bio_occupancy_daily", "enum_atlas_upload", "ocean_currents", "native_daily_sim", "dynamic_visual_atlas_upload", "country_daily", "economy_daily"]
+[season_refresh] b_plus_start path=gdext handle=1 season=0 n_cells=2400

@@ -1,0 +1,9 @@
+﻿found 89860 start=2026/8/29 2:18:22
+  stop-issued 89860
+found 39816 start=2026/8/29 2:51:16
+  stop-issued 39816
+found 83508 start=2026/8/29 2:52:28
+  stop-issued 83508
+after: 89860 -> STILL ALIVE
+after: 39816 -> STILL ALIVE
+after: 83508 -> STILL ALIVE

@@ -1,6 +1,6 @@
 param(
     [string]$RepoRoot = (Get-Location).Path,
-    [string]$GodotExe = 'F:\Developent\Godot\Godot_v4.6.2-stable_win64.exe\Godot_v4.6.2-stable_win64_console.exe',
+    [string]$GodotExe = $(if ($env:GODOT_BIN) { $env:GODOT_BIN } else { 'D:\Godot\Godot_v4.6.2-stable_win64.exe\Godot_v4.6.2-stable_win64_console.exe' }),
     [ValidateRange(1, 100000)]
     [int]$Days = 50,
     [ValidateRange(0.001, 10000.0)]

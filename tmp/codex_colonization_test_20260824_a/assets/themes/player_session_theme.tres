@@ -1,351 +1,10 @@
-[gd_resource type="Theme" load_steps=58 format=3]
+[gd_resource type="Theme" format=3 uid="uid://cnjby7mpvii16"]
 
-[ext_resource type="FontFile" path="res://assets/fonts/source_han/SourceHanSansCN-VF.woff2" id="1_sans"]
-[ext_resource type="FontFile" path="res://assets/fonts/source_han_serif/SourceHanSerifCN-Regular.otf" id="2_serif"]
-[ext_resource type="Texture2D" path="res://assets/ui/family_workspace/bitmap/card_frame_clean_v4.png" id="3_card"]
+[ext_resource type="FontFile" uid="uid://0mtmrt8e1u4k" path="res://assets/fonts/source_han/SourceHanSansCN-VF.woff2" id="1_sans"]
+[ext_resource type="FontFile" uid="uid://bjn4jpgq6alwt" path="res://assets/fonts/source_han_serif/SourceHanSerifCN-Regular.otf" id="2_serif"]
+[ext_resource type="Texture2D" uid="uid://ccrb06urnvs1j" path="res://assets/ui/family_workspace/bitmap/card_frame_clean_v4.png" id="3_card"]
 [ext_resource type="Texture2D" path="res://assets/ui/family_workspace/bitmap/nav_normal_bitmap.tres" id="4_nav_normal"]
 [ext_resource type="Texture2D" path="res://assets/ui/family_workspace/bitmap/nav_active_bitmap.tres" id="5_nav_active"]
-
-[sub_resource type="FontVariation" id="SansMedium"]
-base_font = ExtResource("1_sans")
-variation_opentype = {&"wght": 620.0}
-
-[sub_resource type="FontVariation" id="SansStrong"]
-base_font = ExtResource("1_sans")
-variation_opentype = {&"wght": 780.0}
-variation_embolden = 0.16
-
-[sub_resource type="FontVariation" id="SerifStrong"]
-base_font = ExtResource("2_serif")
-variation_embolden = 0.75
-
-[sub_resource type="StyleBoxTexture" id="ArchivePanel"]
-texture = ExtResource("3_card")
-texture_margin_left = 24.0
-texture_margin_top = 22.0
-texture_margin_right = 24.0
-texture_margin_bottom = 22.0
-content_margin_left = 18.0
-content_margin_top = 16.0
-content_margin_right = 18.0
-content_margin_bottom = 16.0
-modulate_color = Color(1, 1, 1, 0.96)
-
-[sub_resource type="StyleBoxTexture" id="ArchiveNavNormal"]
-texture = ExtResource("4_nav_normal")
-texture_margin_left = 24.0
-texture_margin_top = 22.0
-texture_margin_right = 24.0
-texture_margin_bottom = 22.0
-content_margin_left = 16.0
-content_margin_top = 8.0
-content_margin_right = 8.0
-content_margin_bottom = 8.0
-
-[sub_resource type="StyleBoxTexture" id="ArchiveNavHover"]
-texture = ExtResource("4_nav_normal")
-texture_margin_left = 24.0
-texture_margin_top = 22.0
-texture_margin_right = 24.0
-texture_margin_bottom = 22.0
-modulate_color = Color(1.06, 1.03, 0.94, 1)
-content_margin_left = 16.0
-content_margin_top = 7.0
-content_margin_right = 8.0
-content_margin_bottom = 9.0
-
-[sub_resource type="StyleBoxTexture" id="ArchiveNavPressed"]
-texture = ExtResource("5_nav_active")
-texture_margin_left = 24.0
-texture_margin_top = 22.0
-texture_margin_right = 24.0
-texture_margin_bottom = 22.0
-content_margin_left = 16.0
-content_margin_top = 9.0
-content_margin_right = 8.0
-content_margin_bottom = 7.0
-
-[sub_resource type="StyleBoxTexture" id="ArchiveNavDisabled"]
-texture = ExtResource("4_nav_normal")
-texture_margin_left = 24.0
-texture_margin_top = 22.0
-texture_margin_right = 24.0
-texture_margin_bottom = 22.0
-modulate_color = Color(0.72, 0.68, 0.59, 0.62)
-content_margin_left = 16.0
-content_margin_top = 8.0
-content_margin_right = 8.0
-content_margin_bottom = 8.0
-
-[sub_resource type="StyleBoxFlat" id="ArchiveBand"]
-bg_color = Color(0.98, 0.94, 0.84, 0.3)
-border_width_bottom = 1
-border_color = Color(0.4, 0.28, 0.16, 0.46)
-content_margin_left = 8.0
-content_margin_top = 5.0
-content_margin_right = 8.0
-content_margin_bottom = 6.0
-
-[sub_resource type="StyleBoxFlat" id="ArchiveWorkbench"]
-bg_color = Color(0.98, 0.94, 0.84, 0.34)
-border_width_left = 2
-border_color = Color(0.48, 0.16, 0.1, 0.52)
-content_margin_left = 12.0
-content_margin_top = 9.0
-content_margin_right = 10.0
-content_margin_bottom = 9.0
-
-[sub_resource type="StyleBoxEmpty" id="ArchivePage"]
-content_margin_left = 2.0
-content_margin_top = 2.0
-content_margin_right = 2.0
-content_margin_bottom = 2.0
-
-[sub_resource type="StyleBoxFlat" id="CountryShell"]
-bg_color = Color(0.055, 0.039, 0.026, 0.99)
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 1
-border_color = Color(0.55, 0.39, 0.2, 0.92)
-corner_radius_top_left = 4
-corner_radius_top_right = 4
-corner_radius_bottom_right = 4
-corner_radius_bottom_left = 4
-shadow_color = Color(0, 0, 0, 0.62)
-shadow_size = 14
-shadow_offset = Vector2(0, 5)
-
-[sub_resource type="StyleBoxFlat" id="CountryRail"]
-bg_color = Color(0.105, 0.072, 0.043, 1)
-border_width_right = 2
-border_color = Color(0.67, 0.47, 0.23, 0.88)
-content_margin_left = 14.0
-content_margin_top = 18.0
-content_margin_right = 14.0
-content_margin_bottom = 16.0
-
-[sub_resource type="StyleBoxFlat" id="CountryPage"]
-bg_color = Color(0.955, 0.91, 0.79, 1)
-content_margin_left = 22.0
-content_margin_top = 18.0
-content_margin_right = 22.0
-content_margin_bottom = 18.0
-
-[sub_resource type="StyleBoxFlat" id="CountryHeader"]
-bg_color = Color(0.89, 0.81, 0.65, 1)
-border_width_bottom = 2
-border_color = Color(0.48, 0.16, 0.1, 0.84)
-content_margin_left = 14.0
-content_margin_top = 9.0
-content_margin_right = 10.0
-content_margin_bottom = 10.0
-
-[sub_resource type="StyleBoxFlat" id="CountryNavNormal"]
-bg_color = Color(0.13, 0.09, 0.052, 0.01)
-border_width_left = 3
-border_color = Color(0.69, 0.49, 0.24, 0)
-corner_radius_top_right = 2
-corner_radius_bottom_right = 2
-content_margin_left = 12.0
-content_margin_top = 10.0
-content_margin_right = 10.0
-content_margin_bottom = 10.0
-
-[sub_resource type="StyleBoxFlat" id="CountryNavHover"]
-bg_color = Color(0.24, 0.16, 0.085, 0.9)
-border_width_left = 3
-border_color = Color(0.69, 0.49, 0.24, 0.72)
-corner_radius_top_right = 2
-corner_radius_bottom_right = 2
-content_margin_left = 12.0
-content_margin_top = 10.0
-content_margin_right = 10.0
-content_margin_bottom = 10.0
-
-[sub_resource type="StyleBoxFlat" id="CountryNavPressed"]
-bg_color = Color(0.48, 0.16, 0.1, 1)
-border_width_left = 4
-border_color = Color(0.82, 0.62, 0.31, 1)
-corner_radius_top_right = 2
-corner_radius_bottom_right = 2
-content_margin_left = 11.0
-content_margin_top = 10.0
-content_margin_right = 10.0
-content_margin_bottom = 10.0
-
-[sub_resource type="StyleBoxFlat" id="CountryNavDisabled"]
-bg_color = Color(0.1, 0.07, 0.043, 0.2)
-border_width_left = 3
-border_color = Color(0.4, 0.3, 0.2, 0.18)
-content_margin_left = 12.0
-content_margin_top = 10.0
-content_margin_right = 10.0
-content_margin_bottom = 10.0
-
-[sub_resource type="StyleBoxFlat" id="WorkspaceStatus"]
-bg_color = Color(0.855, 0.77, 0.6, 1)
-border_width_bottom = 1
-border_color = Color(0.4, 0.28, 0.16, 0.62)
-content_margin_left = 12.0
-content_margin_top = 7.0
-content_margin_right = 12.0
-content_margin_bottom = 7.0
-
-[sub_resource type="StyleBoxFlat" id="WorkspaceToolbar"]
-bg_color = Color(0.925, 0.865, 0.72, 1)
-border_width_bottom = 1
-border_color = Color(0.48, 0.16, 0.1, 0.48)
-content_margin_left = 10.0
-content_margin_top = 7.0
-content_margin_right = 10.0
-content_margin_bottom = 7.0
-
-[sub_resource type="StyleBoxFlat" id="WorkspaceCanvas"]
-bg_color = Color(0.972, 0.938, 0.84, 1)
-border_width_top = 1
-border_color = Color(0.48, 0.34, 0.19, 0.32)
-
-[sub_resource type="StyleBoxFlat" id="WorkspaceRail"]
-bg_color = Color(0.9, 0.83, 0.68, 1)
-border_width_right = 1
-border_color = Color(0.48, 0.32, 0.17, 0.58)
-content_margin_left = 14.0
-content_margin_top = 12.0
-content_margin_right = 14.0
-content_margin_bottom = 12.0
-
-[sub_resource type="StyleBoxFlat" id="WorkspaceRailRight"]
-bg_color = Color(0.93, 0.87, 0.73, 1)
-border_width_left = 1
-border_color = Color(0.48, 0.32, 0.17, 0.58)
-content_margin_left = 16.0
-content_margin_top = 12.0
-content_margin_right = 14.0
-content_margin_bottom = 12.0
-
-[sub_resource type="StyleBoxFlat" id="IdeologyStage"]
-bg_color = Color(0.91, 0.84, 0.69, 1)
-border_width_top = 2
-border_width_bottom = 2
-border_color = Color(0.48, 0.16, 0.1, 0.62)
-content_margin_left = 22.0
-content_margin_top = 18.0
-content_margin_right = 22.0
-content_margin_bottom = 18.0
-
-[sub_resource type="StyleBoxFlat" id="EconomyLedger"]
-bg_color = Color(0.97, 0.935, 0.835, 1)
-border_width_top = 2
-border_color = Color(0.69, 0.49, 0.24, 0.72)
-content_margin_left = 16.0
-content_margin_top = 12.0
-content_margin_right = 16.0
-content_margin_bottom = 12.0
-
-[sub_resource type="StyleBoxFlat" id="PaperCard"]
-bg_color = Color(0.965, 0.92, 0.81, 0.94)
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 1
-border_color = Color(0.42, 0.29, 0.17, 0.48)
-corner_radius_top_left = 2
-corner_radius_top_right = 2
-corner_radius_bottom_right = 2
-corner_radius_bottom_left = 2
-content_margin_left = 8.0
-content_margin_top = 6.0
-content_margin_right = 8.0
-content_margin_bottom = 6.0
-
-[sub_resource type="StyleBoxFlat" id="MetricCard"]
-bg_color = Color(0.985, 0.945, 0.84, 0.97)
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 1
-border_color = Color(0.48, 0.31, 0.17, 0.54)
-corner_radius_top_left = 2
-corner_radius_top_right = 2
-corner_radius_bottom_right = 2
-corner_radius_bottom_left = 2
-content_margin_left = 10.0
-content_margin_top = 7.0
-content_margin_right = 10.0
-content_margin_bottom = 7.0
-
-[sub_resource type="StyleBoxFlat" id="HudPanel"]
-bg_color = Color(0.09, 0.065, 0.045, 0.97)
-border_width_bottom = 2
-border_color = Color(0.65, 0.45, 0.24, 0.92)
-shadow_color = Color(0, 0, 0, 0.48)
-shadow_size = 8
-shadow_offset = Vector2(0, 3)
-
-[sub_resource type="StyleBoxFlat" id="HudInset"]
-bg_color = Color(0.13, 0.09, 0.055, 0.96)
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 1
-border_color = Color(0.58, 0.39, 0.2, 0.82)
-corner_radius_top_left = 2
-corner_radius_top_right = 2
-corner_radius_bottom_right = 2
-corner_radius_bottom_left = 2
-content_margin_left = 12.0
-content_margin_top = 6.0
-content_margin_right = 12.0
-content_margin_bottom = 6.0
-
-[sub_resource type="StyleBoxFlat" id="ButtonNormal"]
-bg_color = Color(0.94, 0.88, 0.74, 0.94)
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 1
-border_color = Color(0.43, 0.28, 0.15, 0.64)
-corner_radius_top_left = 2
-corner_radius_top_right = 2
-corner_radius_bottom_right = 2
-corner_radius_bottom_left = 2
-content_margin_left = 8.0
-content_margin_top = 4.0
-content_margin_right = 8.0
-content_margin_bottom = 4.0
-
-[sub_resource type="StyleBoxFlat" id="ButtonHover"]
-bg_color = Color(1, 0.955, 0.83, 1)
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 1
-border_color = Color(0.66, 0.4, 0.19, 0.9)
-corner_radius_top_left = 2
-corner_radius_top_right = 2
-corner_radius_bottom_right = 2
-corner_radius_bottom_left = 2
-content_margin_left = 8.0
-content_margin_top = 4.0
-content_margin_right = 8.0
-content_margin_bottom = 4.0
-
-[sub_resource type="StyleBoxFlat" id="ButtonPressed"]
-bg_color = Color(0.43, 0.14, 0.085, 0.98)
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 2
-border_color = Color(0.74, 0.51, 0.25, 0.96)
-corner_radius_top_left = 2
-corner_radius_top_right = 2
-corner_radius_bottom_right = 2
-corner_radius_bottom_left = 2
-content_margin_left = 8.0
-content_margin_top = 4.0
-content_margin_right = 8.0
-content_margin_bottom = 3.0
 
 [sub_resource type="StyleBoxFlat" id="ButtonDisabled"]
 bg_color = Color(0.28, 0.22, 0.16, 0.28)
@@ -371,210 +30,53 @@ corner_radius_top_right = 3
 corner_radius_bottom_right = 3
 corner_radius_bottom_left = 3
 
-[sub_resource type="StyleBoxFlat" id="TabNormal"]
-bg_color = Color(0, 0, 0, 0)
-border_width_bottom = 1
-border_color = Color(0.42, 0.28, 0.16, 0.42)
-content_margin_left = 6.0
-content_margin_top = 3.0
-content_margin_right = 6.0
-content_margin_bottom = 4.0
-
-[sub_resource type="StyleBoxFlat" id="TabHover"]
-bg_color = Color(0.52, 0.22, 0.13, 0.08)
-border_width_bottom = 1
-border_color = Color(0.58, 0.29, 0.16, 0.72)
-content_margin_left = 6.0
-content_margin_top = 3.0
-content_margin_right = 6.0
-content_margin_bottom = 4.0
-
-[sub_resource type="StyleBoxFlat" id="TabPressed"]
-bg_color = Color(0.48, 0.16, 0.1, 0.14)
-border_width_left = 3
-border_width_bottom = 1
-border_color = Color(0.48, 0.16, 0.1, 0.92)
-content_margin_left = 6.0
-content_margin_top = 3.0
-content_margin_right = 6.0
-content_margin_bottom = 4.0
-
-[sub_resource type="StyleBoxFlat" id="ChapterNormal"]
-bg_color = Color(0.94, 0.88, 0.74, 0.72)
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 2
-border_color = Color(0.44, 0.29, 0.16, 0.54)
-corner_radius_top_left = 2
-corner_radius_top_right = 2
-content_margin_left = 8.0
-content_margin_top = 5.0
-content_margin_right = 8.0
-content_margin_bottom = 4.0
-
-[sub_resource type="StyleBoxFlat" id="ChapterHover"]
-bg_color = Color(1, 0.95, 0.82, 0.96)
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 2
-border_color = Color(0.64, 0.39, 0.18, 0.88)
-corner_radius_top_left = 2
-corner_radius_top_right = 2
-content_margin_left = 8.0
-content_margin_top = 5.0
-content_margin_right = 8.0
-content_margin_bottom = 4.0
-
-[sub_resource type="StyleBoxFlat" id="ChapterPressed"]
-bg_color = Color(0.45, 0.14, 0.085, 0.96)
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 3
-border_color = Color(0.75, 0.52, 0.27, 0.98)
-corner_radius_top_left = 2
-corner_radius_top_right = 2
-content_margin_left = 8.0
-content_margin_top = 5.0
-content_margin_right = 8.0
-content_margin_bottom = 3.0
-
-[sub_resource type="StyleBoxFlat" id="HudButtonNormal"]
-bg_color = Color(0.12, 0.085, 0.052, 0.98)
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 1
-border_color = Color(0.45, 0.31, 0.17, 0.78)
-corner_radius_top_left = 2
-corner_radius_top_right = 2
-corner_radius_bottom_right = 2
-corner_radius_bottom_left = 2
+[sub_resource type="StyleBoxFlat" id="ButtonHover"]
 content_margin_left = 8.0
 content_margin_top = 4.0
 content_margin_right = 8.0
 content_margin_bottom = 4.0
-
-[sub_resource type="StyleBoxFlat" id="HudButtonHover"]
-bg_color = Color(0.19, 0.13, 0.075, 1)
+bg_color = Color(1, 0.955, 0.83, 1)
 border_width_left = 1
 border_width_top = 1
 border_width_right = 1
-border_width_bottom = 2
-border_color = Color(0.77, 0.53, 0.27, 0.94)
+border_width_bottom = 1
+border_color = Color(0.66, 0.4, 0.19, 0.9)
 corner_radius_top_left = 2
 corner_radius_top_right = 2
 corner_radius_bottom_right = 2
 corner_radius_bottom_left = 2
+
+[sub_resource type="StyleBoxFlat" id="ButtonNormal"]
+content_margin_left = 8.0
+content_margin_top = 4.0
+content_margin_right = 8.0
+content_margin_bottom = 4.0
+bg_color = Color(0.94, 0.88, 0.74, 0.94)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.43, 0.28, 0.15, 0.64)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
+[sub_resource type="StyleBoxFlat" id="ButtonPressed"]
 content_margin_left = 8.0
 content_margin_top = 4.0
 content_margin_right = 8.0
 content_margin_bottom = 3.0
-
-[sub_resource type="StyleBoxFlat" id="HudButtonPressed"]
-bg_color = Color(0.45, 0.17, 0.095, 1)
+bg_color = Color(0.43, 0.14, 0.085, 0.98)
 border_width_left = 1
 border_width_top = 1
 border_width_right = 1
-border_width_bottom = 3
-border_color = Color(0.92, 0.72, 0.38, 1)
-corner_radius_top_left = 2
-corner_radius_top_right = 2
-corner_radius_bottom_right = 2
-corner_radius_bottom_left = 2
-content_margin_left = 8.0
-content_margin_top = 4.0
-content_margin_right = 8.0
-content_margin_bottom = 2.0
-
-[sub_resource type="StyleBoxFlat" id="HudButtonDisabled"]
-bg_color = Color(0.1, 0.075, 0.052, 0.7)
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 1
-border_color = Color(0.32, 0.24, 0.16, 0.56)
-corner_radius_top_left = 2
-corner_radius_top_right = 2
-corner_radius_bottom_right = 2
-corner_radius_bottom_left = 2
-
-[sub_resource type="StyleBoxFlat" id="HudButtonFocus"]
-bg_color = Color(0, 0, 0, 0)
-border_width_left = 2
-border_width_top = 2
-border_width_right = 2
 border_width_bottom = 2
-border_color = Color(0.92, 0.72, 0.38, 0.96)
+border_color = Color(0.74, 0.51, 0.25, 0.96)
 corner_radius_top_left = 2
 corner_radius_top_right = 2
 corner_radius_bottom_right = 2
 corner_radius_bottom_left = 2
-
-[sub_resource type="StyleBoxFlat" id="ProgressBackground"]
-bg_color = Color(0.24, 0.19, 0.14, 0.42)
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 1
-border_color = Color(0.39, 0.28, 0.18, 0.66)
-corner_radius_top_left = 3
-corner_radius_top_right = 3
-corner_radius_bottom_right = 3
-corner_radius_bottom_left = 3
-
-[sub_resource type="StyleBoxFlat" id="ProgressFill"]
-bg_color = Color(0.56, 0.24, 0.16, 0.92)
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 1
-border_color = Color(0.72, 0.46, 0.25, 0.95)
-corner_radius_top_left = 3
-corner_radius_top_right = 3
-corner_radius_bottom_right = 3
-corner_radius_bottom_left = 3
-
-[sub_resource type="StyleBoxFlat" id="LineEditNormal"]
-bg_color = Color(0.97, 0.91, 0.77, 0.94)
-border_width_left = 1
-border_width_top = 1
-border_width_right = 1
-border_width_bottom = 1
-border_color = Color(0.43, 0.29, 0.16, 0.62)
-corner_radius_top_left = 3
-corner_radius_top_right = 3
-corner_radius_bottom_right = 3
-corner_radius_bottom_left = 3
-content_margin_left = 8.0
-content_margin_top = 5.0
-content_margin_right = 8.0
-content_margin_bottom = 5.0
-
-[sub_resource type="StyleBoxFlat" id="LineEditFocus"]
-bg_color = Color(1, 0.96, 0.84, 1)
-border_width_left = 2
-border_width_top = 2
-border_width_right = 2
-border_width_bottom = 2
-border_color = Color(0.58, 0.25, 0.16, 0.9)
-corner_radius_top_left = 3
-corner_radius_top_right = 3
-corner_radius_bottom_right = 3
-corner_radius_bottom_left = 3
-content_margin_left = 7.0
-content_margin_top = 4.0
-content_margin_right = 7.0
-content_margin_bottom = 4.0
-
-[sub_resource type="StyleBoxFlat" id="ScrollTrack"]
-bg_color = Color(0.34, 0.25, 0.16, 0.25)
-corner_radius_top_left = 3
-corner_radius_top_right = 3
-corner_radius_bottom_right = 3
-corner_radius_bottom_left = 3
 
 [sub_resource type="StyleBoxFlat" id="ScrollGrabber"]
 bg_color = Color(0.54, 0.36, 0.2, 0.78)
@@ -606,224 +108,726 @@ corner_radius_top_right = 3
 corner_radius_bottom_right = 3
 corner_radius_bottom_left = 3
 
+[sub_resource type="StyleBoxFlat" id="ScrollTrack"]
+bg_color = Color(0.34, 0.25, 0.16, 0.25)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
 [sub_resource type="StyleBoxLine" id="Rule"]
 color = Color(0.4, 0.28, 0.16, 0.55)
+
+[sub_resource type="StyleBoxFlat" id="LineEditFocus"]
+content_margin_left = 7.0
+content_margin_top = 4.0
+content_margin_right = 7.0
+content_margin_bottom = 4.0
+bg_color = Color(1, 0.96, 0.84, 1)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.58, 0.25, 0.16, 0.9)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
+[sub_resource type="StyleBoxFlat" id="LineEditNormal"]
+content_margin_left = 8.0
+content_margin_top = 5.0
+content_margin_right = 8.0
+content_margin_bottom = 5.0
+bg_color = Color(0.97, 0.91, 0.77, 0.94)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.43, 0.29, 0.16, 0.62)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
+[sub_resource type="StyleBoxFlat" id="ArchiveBand"]
+content_margin_left = 8.0
+content_margin_top = 5.0
+content_margin_right = 8.0
+content_margin_bottom = 6.0
+bg_color = Color(0.98, 0.94, 0.84, 0.3)
+border_width_bottom = 1
+border_color = Color(0.4, 0.28, 0.16, 0.46)
+
+[sub_resource type="StyleBoxTexture" id="ArchiveNavDisabled"]
+content_margin_left = 16.0
+content_margin_top = 8.0
+content_margin_right = 8.0
+content_margin_bottom = 8.0
+texture = ExtResource("4_nav_normal")
+texture_margin_left = 24.0
+texture_margin_top = 22.0
+texture_margin_right = 24.0
+texture_margin_bottom = 22.0
+modulate_color = Color(0.72, 0.68, 0.59, 0.62)
+
+[sub_resource type="StyleBoxTexture" id="ArchiveNavHover"]
+content_margin_left = 16.0
+content_margin_top = 7.0
+content_margin_right = 8.0
+content_margin_bottom = 9.0
+texture = ExtResource("4_nav_normal")
+texture_margin_left = 24.0
+texture_margin_top = 22.0
+texture_margin_right = 24.0
+texture_margin_bottom = 22.0
+modulate_color = Color(1.06, 1.03, 0.94, 1)
+
+[sub_resource type="StyleBoxTexture" id="ArchiveNavNormal"]
+content_margin_left = 16.0
+content_margin_top = 8.0
+content_margin_right = 8.0
+content_margin_bottom = 8.0
+texture = ExtResource("4_nav_normal")
+texture_margin_left = 24.0
+texture_margin_top = 22.0
+texture_margin_right = 24.0
+texture_margin_bottom = 22.0
+
+[sub_resource type="StyleBoxTexture" id="ArchiveNavPressed"]
+content_margin_left = 16.0
+content_margin_top = 9.0
+content_margin_right = 8.0
+content_margin_bottom = 7.0
+texture = ExtResource("5_nav_active")
+texture_margin_left = 24.0
+texture_margin_top = 22.0
+texture_margin_right = 24.0
+texture_margin_bottom = 22.0
+
+[sub_resource type="FontVariation" id="SansStrong"]
+base_font = ExtResource("1_sans")
+variation_opentype = {
+&"wght": 780.0
+}
+variation_embolden = 0.16
+
+[sub_resource type="StyleBoxEmpty" id="ArchivePage"]
+content_margin_left = 2.0
+content_margin_top = 2.0
+content_margin_right = 2.0
+content_margin_bottom = 2.0
+
+[sub_resource type="StyleBoxTexture" id="ArchivePanel"]
+content_margin_left = 18.0
+content_margin_top = 16.0
+content_margin_right = 18.0
+content_margin_bottom = 16.0
+texture = ExtResource("3_card")
+texture_margin_left = 24.0
+texture_margin_top = 22.0
+texture_margin_right = 24.0
+texture_margin_bottom = 22.0
+modulate_color = Color(1, 1, 1, 0.96)
+
+[sub_resource type="FontVariation" id="SerifStrong"]
+base_font = ExtResource("2_serif")
+variation_embolden = 0.75
+
+[sub_resource type="StyleBoxFlat" id="ArchiveWorkbench"]
+content_margin_left = 12.0
+content_margin_top = 9.0
+content_margin_right = 10.0
+content_margin_bottom = 9.0
+bg_color = Color(0.98, 0.94, 0.84, 0.34)
+border_width_left = 2
+border_color = Color(0.48, 0.16, 0.1, 0.52)
+
+[sub_resource type="StyleBoxFlat" id="MetricCard"]
+content_margin_left = 10.0
+content_margin_top = 7.0
+content_margin_right = 10.0
+content_margin_bottom = 7.0
+bg_color = Color(0.985, 0.945, 0.84, 0.97)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.48, 0.31, 0.17, 0.54)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
+[sub_resource type="StyleBoxFlat" id="ChapterHover"]
+content_margin_left = 8.0
+content_margin_top = 5.0
+content_margin_right = 8.0
+content_margin_bottom = 4.0
+bg_color = Color(1, 0.95, 0.82, 0.96)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 2
+border_color = Color(0.64, 0.39, 0.18, 0.88)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+
+[sub_resource type="StyleBoxFlat" id="ChapterNormal"]
+content_margin_left = 8.0
+content_margin_top = 5.0
+content_margin_right = 8.0
+content_margin_bottom = 4.0
+bg_color = Color(0.94, 0.88, 0.74, 0.72)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 2
+border_color = Color(0.44, 0.29, 0.16, 0.54)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+
+[sub_resource type="StyleBoxFlat" id="ChapterPressed"]
+content_margin_left = 8.0
+content_margin_top = 5.0
+content_margin_right = 8.0
+content_margin_bottom = 3.0
+bg_color = Color(0.45, 0.14, 0.085, 0.96)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 3
+border_color = Color(0.75, 0.52, 0.27, 0.98)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+
+[sub_resource type="StyleBoxFlat" id="CountryHeader"]
+content_margin_left = 14.0
+content_margin_top = 9.0
+content_margin_right = 10.0
+content_margin_bottom = 10.0
+bg_color = Color(0.89, 0.81, 0.65, 1)
+border_width_bottom = 2
+border_color = Color(0.48, 0.16, 0.1, 0.84)
+
+[sub_resource type="StyleBoxFlat" id="CountryNavDisabled"]
+content_margin_left = 12.0
+content_margin_top = 10.0
+content_margin_right = 10.0
+content_margin_bottom = 10.0
+bg_color = Color(0.1, 0.07, 0.043, 0.2)
+border_width_left = 3
+border_color = Color(0.4, 0.3, 0.2, 0.18)
+
+[sub_resource type="StyleBoxFlat" id="CountryNavHover"]
+content_margin_left = 12.0
+content_margin_top = 10.0
+content_margin_right = 10.0
+content_margin_bottom = 10.0
+bg_color = Color(0.24, 0.16, 0.085, 0.9)
+border_width_left = 3
+border_color = Color(0.69, 0.49, 0.24, 0.72)
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+
+[sub_resource type="StyleBoxFlat" id="CountryNavNormal"]
+content_margin_left = 12.0
+content_margin_top = 10.0
+content_margin_right = 10.0
+content_margin_bottom = 10.0
+bg_color = Color(0.13, 0.09, 0.052, 0.01)
+border_width_left = 3
+border_color = Color(0.69, 0.49, 0.24, 0)
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+
+[sub_resource type="StyleBoxFlat" id="CountryNavPressed"]
+content_margin_left = 11.0
+content_margin_top = 10.0
+content_margin_right = 10.0
+content_margin_bottom = 10.0
+bg_color = Color(0.48, 0.16, 0.1, 1)
+border_width_left = 4
+border_color = Color(0.82, 0.62, 0.31, 1)
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+
+[sub_resource type="StyleBoxFlat" id="CountryPage"]
+content_margin_left = 22.0
+content_margin_top = 18.0
+content_margin_right = 22.0
+content_margin_bottom = 18.0
+bg_color = Color(0.955, 0.91, 0.79, 1)
+
+[sub_resource type="StyleBoxFlat" id="CountryRail"]
+content_margin_left = 14.0
+content_margin_top = 18.0
+content_margin_right = 14.0
+content_margin_bottom = 16.0
+bg_color = Color(0.105, 0.072, 0.043, 1)
+border_width_right = 2
+border_color = Color(0.67, 0.47, 0.23, 0.88)
+
+[sub_resource type="FontVariation" id="SansMedium"]
+base_font = ExtResource("1_sans")
+variation_opentype = {
+&"wght": 620.0
+}
+
+[sub_resource type="StyleBoxFlat" id="CountryShell"]
+bg_color = Color(0.055, 0.039, 0.026, 0.99)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.55, 0.39, 0.2, 0.92)
+corner_radius_top_left = 4
+corner_radius_top_right = 4
+corner_radius_bottom_right = 4
+corner_radius_bottom_left = 4
+shadow_color = Color(0, 0, 0, 0.62)
+shadow_size = 14
+shadow_offset = Vector2(0, 5)
+
+[sub_resource type="StyleBoxFlat" id="EconomyLedger"]
+content_margin_left = 16.0
+content_margin_top = 12.0
+content_margin_right = 16.0
+content_margin_bottom = 12.0
+bg_color = Color(0.97, 0.935, 0.835, 1)
+border_width_top = 2
+border_color = Color(0.69, 0.49, 0.24, 0.72)
+
+[sub_resource type="StyleBoxFlat" id="HudButtonDisabled"]
+bg_color = Color(0.1, 0.075, 0.052, 0.7)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.32, 0.24, 0.16, 0.56)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
+[sub_resource type="StyleBoxFlat" id="HudButtonFocus"]
+bg_color = Color(0, 0, 0, 0)
+border_width_left = 2
+border_width_top = 2
+border_width_right = 2
+border_width_bottom = 2
+border_color = Color(0.92, 0.72, 0.38, 0.96)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
+[sub_resource type="StyleBoxFlat" id="HudButtonHover"]
+content_margin_left = 8.0
+content_margin_top = 4.0
+content_margin_right = 8.0
+content_margin_bottom = 3.0
+bg_color = Color(0.19, 0.13, 0.075, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 2
+border_color = Color(0.77, 0.53, 0.27, 0.94)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
+[sub_resource type="StyleBoxFlat" id="HudButtonPressed"]
+content_margin_left = 8.0
+content_margin_top = 4.0
+content_margin_right = 8.0
+content_margin_bottom = 2.0
+bg_color = Color(0.45, 0.17, 0.095, 1)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 3
+border_color = Color(0.92, 0.72, 0.38, 1)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
+[sub_resource type="StyleBoxFlat" id="HudButtonNormal"]
+content_margin_left = 8.0
+content_margin_top = 4.0
+content_margin_right = 8.0
+content_margin_bottom = 4.0
+bg_color = Color(0.12, 0.085, 0.052, 0.98)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.45, 0.31, 0.17, 0.78)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
+[sub_resource type="StyleBoxFlat" id="PaperCard"]
+content_margin_left = 8.0
+content_margin_top = 6.0
+content_margin_right = 8.0
+content_margin_bottom = 6.0
+bg_color = Color(0.965, 0.92, 0.81, 0.94)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.42, 0.29, 0.17, 0.48)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
+[sub_resource type="StyleBoxFlat" id="HudInset"]
+content_margin_left = 12.0
+content_margin_top = 6.0
+content_margin_right = 12.0
+content_margin_bottom = 6.0
+bg_color = Color(0.13, 0.09, 0.055, 0.96)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.58, 0.39, 0.2, 0.82)
+corner_radius_top_left = 2
+corner_radius_top_right = 2
+corner_radius_bottom_right = 2
+corner_radius_bottom_left = 2
+
+[sub_resource type="StyleBoxFlat" id="HudPanel"]
+bg_color = Color(0.09, 0.065, 0.045, 0.97)
+border_width_bottom = 2
+border_color = Color(0.65, 0.45, 0.24, 0.92)
+shadow_color = Color(0, 0, 0, 0.48)
+shadow_size = 8
+shadow_offset = Vector2(0, 3)
+
+[sub_resource type="StyleBoxFlat" id="IdeologyStage"]
+content_margin_left = 22.0
+content_margin_top = 18.0
+content_margin_right = 22.0
+content_margin_bottom = 18.0
+bg_color = Color(0.91, 0.84, 0.69, 1)
+border_width_top = 2
+border_width_bottom = 2
+border_color = Color(0.48, 0.16, 0.1, 0.62)
+
+[sub_resource type="StyleBoxFlat" id="TabNormal"]
+content_margin_left = 6.0
+content_margin_top = 3.0
+content_margin_right = 6.0
+content_margin_bottom = 4.0
+bg_color = Color(0, 0, 0, 0)
+border_width_bottom = 1
+border_color = Color(0.42, 0.28, 0.16, 0.42)
+
+[sub_resource type="StyleBoxFlat" id="TabHover"]
+content_margin_left = 6.0
+content_margin_top = 3.0
+content_margin_right = 6.0
+content_margin_bottom = 4.0
+bg_color = Color(0.52, 0.22, 0.13, 0.08)
+border_width_bottom = 1
+border_color = Color(0.58, 0.29, 0.16, 0.72)
+
+[sub_resource type="StyleBoxFlat" id="TabPressed"]
+content_margin_left = 6.0
+content_margin_top = 3.0
+content_margin_right = 6.0
+content_margin_bottom = 4.0
+bg_color = Color(0.48, 0.16, 0.1, 0.14)
+border_width_left = 3
+border_width_bottom = 1
+border_color = Color(0.48, 0.16, 0.1, 0.92)
+
+[sub_resource type="StyleBoxFlat" id="WorkspaceCanvas"]
+bg_color = Color(0.972, 0.938, 0.84, 1)
+border_width_top = 1
+border_color = Color(0.48, 0.34, 0.19, 0.32)
+
+[sub_resource type="StyleBoxFlat" id="WorkspaceRail"]
+content_margin_left = 14.0
+content_margin_top = 12.0
+content_margin_right = 14.0
+content_margin_bottom = 12.0
+bg_color = Color(0.9, 0.83, 0.68, 1)
+border_width_right = 1
+border_color = Color(0.48, 0.32, 0.17, 0.58)
+
+[sub_resource type="StyleBoxFlat" id="WorkspaceRailRight"]
+content_margin_left = 16.0
+content_margin_top = 12.0
+content_margin_right = 14.0
+content_margin_bottom = 12.0
+bg_color = Color(0.93, 0.87, 0.73, 1)
+border_width_left = 1
+border_color = Color(0.48, 0.32, 0.17, 0.58)
+
+[sub_resource type="StyleBoxFlat" id="WorkspaceStatus"]
+content_margin_left = 12.0
+content_margin_top = 7.0
+content_margin_right = 12.0
+content_margin_bottom = 7.0
+bg_color = Color(0.855, 0.77, 0.6, 1)
+border_width_bottom = 1
+border_color = Color(0.4, 0.28, 0.16, 0.62)
+
+[sub_resource type="StyleBoxFlat" id="WorkspaceToolbar"]
+content_margin_left = 10.0
+content_margin_top = 7.0
+content_margin_right = 10.0
+content_margin_bottom = 7.0
+bg_color = Color(0.925, 0.865, 0.72, 1)
+border_width_bottom = 1
+border_color = Color(0.48, 0.16, 0.1, 0.48)
+
+[sub_resource type="StyleBoxFlat" id="ProgressBackground"]
+bg_color = Color(0.24, 0.19, 0.14, 0.42)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.39, 0.28, 0.18, 0.66)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
+
+[sub_resource type="StyleBoxFlat" id="ProgressFill"]
+bg_color = Color(0.56, 0.24, 0.16, 0.92)
+border_width_left = 1
+border_width_top = 1
+border_width_right = 1
+border_width_bottom = 1
+border_color = Color(0.72, 0.46, 0.25, 0.95)
+corner_radius_top_left = 3
+corner_radius_top_right = 3
+corner_radius_bottom_right = 3
+corner_radius_bottom_left = 3
 
 [resource]
 default_font = SubResource("SansMedium")
 default_font_size = 16
-Label/colors/font_color = Color(0.12, 0.07, 0.035, 1)
-Label/colors/font_shadow_color = Color(0, 0, 0, 0)
 Button/colors/font_color = Color(0.16, 0.09, 0.045, 1)
+Button/colors/font_disabled_color = Color(0.38, 0.3, 0.22, 0.62)
 Button/colors/font_hover_color = Color(0.48, 0.19, 0.12, 1)
 Button/colors/font_pressed_color = Color(0.9, 0.74, 0.46, 1)
-Button/colors/font_disabled_color = Color(0.38, 0.3, 0.22, 0.62)
-Button/styles/normal = SubResource("ButtonNormal")
-Button/styles/hover = SubResource("ButtonHover")
-Button/styles/pressed = SubResource("ButtonPressed")
 Button/styles/disabled = SubResource("ButtonDisabled")
 Button/styles/focus = SubResource("ButtonFocus")
-PanelContainer/styles/panel = SubResource("PaperCard")
-LineEdit/colors/font_color = Color(0.12, 0.07, 0.035, 1)
-LineEdit/colors/font_placeholder_color = Color(0.39, 0.29, 0.2, 0.72)
-LineEdit/colors/caret_color = Color(0.57, 0.25, 0.16, 1)
-LineEdit/styles/normal = SubResource("LineEditNormal")
-LineEdit/styles/focus = SubResource("LineEditFocus")
-ProgressBar/styles/background = SubResource("ProgressBackground")
-ProgressBar/styles/fill = SubResource("ProgressFill")
-VScrollBar/styles/scroll = SubResource("ScrollTrack")
-VScrollBar/styles/scroll_focus = SubResource("ScrollTrack")
-VScrollBar/styles/grabber = SubResource("ScrollGrabber")
-VScrollBar/styles/grabber_highlight = SubResource("ScrollGrabberHover")
-VScrollBar/styles/grabber_pressed = SubResource("ScrollGrabberPressed")
-HScrollBar/styles/scroll = SubResource("ScrollTrack")
-HScrollBar/styles/scroll_focus = SubResource("ScrollTrack")
+Button/styles/hover = SubResource("ButtonHover")
+Button/styles/normal = SubResource("ButtonNormal")
+Button/styles/pressed = SubResource("ButtonPressed")
 HScrollBar/styles/grabber = SubResource("ScrollGrabber")
 HScrollBar/styles/grabber_highlight = SubResource("ScrollGrabberHover")
 HScrollBar/styles/grabber_pressed = SubResource("ScrollGrabberPressed")
+HScrollBar/styles/scroll = SubResource("ScrollTrack")
+HScrollBar/styles/scroll_focus = SubResource("ScrollTrack")
 HSeparator/styles/separator = SubResource("Rule")
-VSeparator/styles/separator = SubResource("Rule")
-TooltipLabel/colors/font_color = Color(0.12, 0.07, 0.035, 1)
-TooltipPanel/styles/panel = SubResource("PaperCard")
-PKPanel/base_type = &"PanelContainer"
-PKPanel/styles/panel = SubResource("PaperCard")
-PKInsetPanel/base_type = &"PanelContainer"
-PKInsetPanel/styles/panel = SubResource("PaperCard")
-PKArchivePanel/base_type = &"PanelContainer"
-PKArchivePanel/styles/panel = SubResource("ArchivePanel")
+Label/colors/font_color = Color(0.12, 0.07, 0.035, 1)
+Label/colors/font_shadow_color = Color(0, 0, 0, 0)
+LineEdit/colors/caret_color = Color(0.57, 0.25, 0.16, 1)
+LineEdit/colors/font_color = Color(0.12, 0.07, 0.035, 1)
+LineEdit/colors/font_placeholder_color = Color(0.39, 0.29, 0.2, 0.72)
+LineEdit/styles/focus = SubResource("LineEditFocus")
+LineEdit/styles/normal = SubResource("LineEditNormal")
 PKArchiveBand/base_type = &"PanelContainer"
 PKArchiveBand/styles/panel = SubResource("ArchiveBand")
-PKArchiveWorkbench/base_type = &"PanelContainer"
-PKArchiveWorkbench/styles/panel = SubResource("ArchiveWorkbench")
+PKArchiveNavButton/base_type = &"Button"
+PKArchiveNavButton/colors/font_color = Color(0.16, 0.09, 0.045, 1)
+PKArchiveNavButton/colors/font_disabled_color = Color(0.34, 0.27, 0.2, 0.62)
+PKArchiveNavButton/colors/font_hover_color = Color(0.48, 0.19, 0.12, 1)
+PKArchiveNavButton/colors/font_pressed_color = Color(0.98, 0.9, 0.68, 1)
+PKArchiveNavButton/styles/disabled = SubResource("ArchiveNavDisabled")
+PKArchiveNavButton/styles/focus = SubResource("ButtonFocus")
+PKArchiveNavButton/styles/hover = SubResource("ArchiveNavHover")
+PKArchiveNavButton/styles/normal = SubResource("ArchiveNavNormal")
+PKArchiveNavButton/styles/pressed = SubResource("ArchiveNavPressed")
+PKArchiveNavLabel/base_type = &"Label"
+PKArchiveNavLabel/colors/font_color = Color(0.14, 0.08, 0.04, 1)
+PKArchiveNavLabel/font_sizes/font_size = 15
+PKArchiveNavLabel/fonts/font = SubResource("SansStrong")
 PKArchivePage/base_type = &"PanelContainer"
 PKArchivePage/styles/panel = SubResource("ArchivePage")
-PKCountryShell/base_type = &"PanelContainer"
-PKCountryShell/styles/panel = SubResource("CountryShell")
-PKCountryRail/base_type = &"PanelContainer"
-PKCountryRail/styles/panel = SubResource("CountryRail")
-PKCountryPage/base_type = &"PanelContainer"
-PKCountryPage/styles/panel = SubResource("CountryPage")
-PKCountryHeader/base_type = &"PanelContainer"
-PKCountryHeader/styles/panel = SubResource("CountryHeader")
-PKWorkspaceStatus/base_type = &"PanelContainer"
-PKWorkspaceStatus/styles/panel = SubResource("WorkspaceStatus")
-PKWorkspaceToolbar/base_type = &"PanelContainer"
-PKWorkspaceToolbar/styles/panel = SubResource("WorkspaceToolbar")
-PKWorkspaceCanvas/base_type = &"PanelContainer"
-PKWorkspaceCanvas/styles/panel = SubResource("WorkspaceCanvas")
-PKWorkspaceRail/base_type = &"PanelContainer"
-PKWorkspaceRail/styles/panel = SubResource("WorkspaceRail")
-PKWorkspaceRailRight/base_type = &"PanelContainer"
-PKWorkspaceRailRight/styles/panel = SubResource("WorkspaceRailRight")
-PKIdeologyStage/base_type = &"PanelContainer"
-PKIdeologyStage/styles/panel = SubResource("IdeologyStage")
-PKEconomyLedger/base_type = &"PanelContainer"
-PKEconomyLedger/styles/panel = SubResource("EconomyLedger")
-PKPaperCard/base_type = &"PanelContainer"
-PKPaperCard/styles/panel = SubResource("PaperCard")
-PKEraRewardCard/base_type = &"PanelContainer"
-PKEraRewardCard/styles/panel = SubResource("PaperCard")
-PKHUDPanel/base_type = &"PanelContainer"
-PKHUDPanel/styles/panel = SubResource("HudPanel")
-PKHUDInset/base_type = &"PanelContainer"
-PKHUDInset/styles/panel = SubResource("HudInset")
-PKDialog/base_type = &"PanelContainer"
-PKDialog/styles/panel = SubResource("ArchivePanel")
-PKPrimaryButton/base_type = &"Button"
-PKPrimaryButton/colors/font_color = Color(0.98, 0.9, 0.68, 1)
-PKPrimaryButton/colors/font_hover_color = Color(1, 0.95, 0.8, 1)
-PKPrimaryButton/colors/font_pressed_color = Color(1, 0.95, 0.8, 1)
-PKPrimaryButton/colors/font_disabled_color = Color(0.62, 0.54, 0.43, 0.72)
-PKPrimaryButton/styles/normal = SubResource("HudButtonPressed")
-PKPrimaryButton/styles/hover = SubResource("HudButtonHover")
-PKPrimaryButton/styles/pressed = SubResource("HudButtonNormal")
-PKPrimaryButton/styles/disabled = SubResource("HudButtonDisabled")
-PKPrimaryButton/styles/focus = SubResource("HudButtonFocus")
-PKEraRewardButton/base_type = &"Button"
-PKEraRewardButton/colors/font_color = Color(0.98, 0.9, 0.68, 1)
-PKEraRewardButton/colors/font_hover_color = Color(1, 0.95, 0.8, 1)
-PKEraRewardButton/colors/font_pressed_color = Color(1, 0.95, 0.8, 1)
-PKEraRewardButton/colors/font_disabled_color = Color(0.62, 0.54, 0.43, 0.72)
-PKEraRewardButton/styles/normal = SubResource("HudButtonPressed")
-PKEraRewardButton/styles/hover = SubResource("HudButtonHover")
-PKEraRewardButton/styles/pressed = SubResource("HudButtonNormal")
-PKEraRewardButton/styles/disabled = SubResource("HudButtonDisabled")
-PKEraRewardButton/styles/focus = SubResource("HudButtonFocus")
-PKIconButton/base_type = &"Button"
-PKIconButton/colors/font_color = Color(0.16, 0.09, 0.045, 1)
-PKIconButton/colors/font_hover_color = Color(0.48, 0.19, 0.12, 1)
-PKIconButton/colors/font_pressed_color = Color(0.98, 0.9, 0.68, 1)
-PKIconButton/styles/normal = SubResource("ButtonNormal")
-PKIconButton/styles/hover = SubResource("ButtonHover")
-PKIconButton/styles/pressed = SubResource("ButtonPressed")
-PKIconButton/styles/disabled = SubResource("ButtonDisabled")
-PKIconButton/styles/focus = SubResource("ButtonFocus")
+PKArchivePanel/base_type = &"PanelContainer"
+PKArchivePanel/styles/panel = SubResource("ArchivePanel")
+PKArchiveTitle/base_type = &"Label"
+PKArchiveTitle/colors/font_color = Color(0.08, 0.035, 0.018, 1)
+PKArchiveTitle/font_sizes/font_size = 30
+PKArchiveTitle/fonts/font = SubResource("SerifStrong")
+PKArchiveWorkbench/base_type = &"PanelContainer"
+PKArchiveWorkbench/styles/panel = SubResource("ArchiveWorkbench")
+PKBadgeLabel/base_type = &"Label"
+PKBadgeLabel/colors/font_color = Color(0.25, 0.12, 0.06, 1)
+PKBadgeLabel/styles/normal = SubResource("MetricCard")
 PKChapterTab/base_type = &"Button"
 PKChapterTab/colors/font_color = Color(0.16, 0.09, 0.045, 1)
 PKChapterTab/colors/font_hover_color = Color(0.48, 0.19, 0.12, 1)
 PKChapterTab/colors/font_pressed_color = Color(0.98, 0.9, 0.68, 1)
-PKChapterTab/styles/normal = SubResource("ChapterNormal")
-PKChapterTab/styles/hover = SubResource("ChapterHover")
-PKChapterTab/styles/pressed = SubResource("ChapterPressed")
 PKChapterTab/styles/disabled = SubResource("ButtonDisabled")
 PKChapterTab/styles/focus = SubResource("ButtonFocus")
-PKArchiveNavButton/base_type = &"Button"
-PKArchiveNavButton/colors/font_color = Color(0.16, 0.09, 0.045, 1)
-PKArchiveNavButton/colors/font_hover_color = Color(0.48, 0.19, 0.12, 1)
-PKArchiveNavButton/colors/font_pressed_color = Color(0.98, 0.9, 0.68, 1)
-PKArchiveNavButton/colors/font_disabled_color = Color(0.34, 0.27, 0.2, 0.62)
-PKArchiveNavButton/styles/normal = SubResource("ArchiveNavNormal")
-PKArchiveNavButton/styles/hover = SubResource("ArchiveNavHover")
-PKArchiveNavButton/styles/pressed = SubResource("ArchiveNavPressed")
-PKArchiveNavButton/styles/disabled = SubResource("ArchiveNavDisabled")
-PKArchiveNavButton/styles/focus = SubResource("ButtonFocus")
+PKChapterTab/styles/hover = SubResource("ChapterHover")
+PKChapterTab/styles/normal = SubResource("ChapterNormal")
+PKChapterTab/styles/pressed = SubResource("ChapterPressed")
+PKCountryHeader/base_type = &"PanelContainer"
+PKCountryHeader/styles/panel = SubResource("CountryHeader")
 PKCountryNavButton/base_type = &"Button"
 PKCountryNavButton/colors/font_color = Color(0.92, 0.84, 0.68, 1)
+PKCountryNavButton/colors/font_disabled_color = Color(0.55, 0.49, 0.4, 0.58)
 PKCountryNavButton/colors/font_hover_color = Color(1, 0.93, 0.76, 1)
 PKCountryNavButton/colors/font_pressed_color = Color(1, 0.94, 0.78, 1)
-PKCountryNavButton/colors/font_disabled_color = Color(0.55, 0.49, 0.4, 0.58)
-PKCountryNavButton/styles/normal = SubResource("CountryNavNormal")
-PKCountryNavButton/styles/hover = SubResource("CountryNavHover")
-PKCountryNavButton/styles/pressed = SubResource("CountryNavPressed")
 PKCountryNavButton/styles/disabled = SubResource("CountryNavDisabled")
 PKCountryNavButton/styles/focus = SubResource("ButtonFocus")
+PKCountryNavButton/styles/hover = SubResource("CountryNavHover")
+PKCountryNavButton/styles/normal = SubResource("CountryNavNormal")
+PKCountryNavButton/styles/pressed = SubResource("CountryNavPressed")
+PKCountryPage/base_type = &"PanelContainer"
+PKCountryPage/styles/panel = SubResource("CountryPage")
+PKCountryRail/base_type = &"PanelContainer"
+PKCountryRail/styles/panel = SubResource("CountryRail")
+PKCountryRailMuted/base_type = &"Label"
+PKCountryRailMuted/colors/font_color = Color(0.71, 0.62, 0.48, 0.92)
+PKCountryRailMuted/font_sizes/font_size = 13
+PKCountryRailMuted/fonts/font = SubResource("SansMedium")
+PKCountryRailTitle/base_type = &"Label"
+PKCountryRailTitle/colors/font_color = Color(0.96, 0.88, 0.7, 1)
+PKCountryRailTitle/font_sizes/font_size = 22
+PKCountryRailTitle/fonts/font = SubResource("SerifStrong")
+PKCountryShell/base_type = &"PanelContainer"
+PKCountryShell/styles/panel = SubResource("CountryShell")
+PKDangerText/base_type = &"Label"
+PKDangerText/colors/font_color = Color(0.58, 0.18, 0.12, 1)
+PKDialog/base_type = &"PanelContainer"
+PKDialog/styles/panel = SubResource("ArchivePanel")
+PKEconomyLedger/base_type = &"PanelContainer"
+PKEconomyLedger/styles/panel = SubResource("EconomyLedger")
+PKEraRewardButton/base_type = &"Button"
+PKEraRewardButton/colors/font_color = Color(0.98, 0.9, 0.68, 1)
+PKEraRewardButton/colors/font_disabled_color = Color(0.62, 0.54, 0.43, 0.72)
+PKEraRewardButton/colors/font_hover_color = Color(1, 0.95, 0.8, 1)
+PKEraRewardButton/colors/font_pressed_color = Color(1, 0.95, 0.8, 1)
+PKEraRewardButton/styles/disabled = SubResource("HudButtonDisabled")
+PKEraRewardButton/styles/focus = SubResource("HudButtonFocus")
+PKEraRewardButton/styles/hover = SubResource("HudButtonHover")
+PKEraRewardButton/styles/normal = SubResource("HudButtonPressed")
+PKEraRewardButton/styles/pressed = SubResource("HudButtonNormal")
+PKEraRewardCard/base_type = &"PanelContainer"
+PKEraRewardCard/styles/panel = SubResource("PaperCard")
+PKEraRewardStatus/base_type = &"Label"
+PKEraRewardStatus/colors/font_color = Color(0.29, 0.2, 0.13, 0.92)
+PKEraRewardStatus/font_sizes/font_size = 14
+PKEraRewardStatus/fonts/font = SubResource("SansMedium")
+PKHUDButton/base_type = &"Button"
+PKHUDButton/colors/font_color = Color(0.965, 0.925, 0.825, 1)
+PKHUDButton/colors/font_disabled_color = Color(0.55, 0.49, 0.4, 0.68)
+PKHUDButton/colors/font_hover_color = Color(1, 0.94, 0.74, 1)
+PKHUDButton/colors/font_pressed_color = Color(1, 0.94, 0.74, 1)
+PKHUDButton/styles/disabled = SubResource("HudButtonDisabled")
+PKHUDButton/styles/focus = SubResource("HudButtonFocus")
+PKHUDButton/styles/hover = SubResource("HudButtonHover")
+PKHUDButton/styles/normal = SubResource("HudButtonNormal")
+PKHUDButton/styles/pressed = SubResource("HudButtonPressed")
+PKHUDInset/base_type = &"PanelContainer"
+PKHUDInset/styles/panel = SubResource("HudInset")
+PKHUDLabel/base_type = &"Label"
+PKHUDLabel/colors/font_color = Color(0.965, 0.925, 0.825, 1)
+PKHUDLabel/font_sizes/font_size = 14
+PKHUDLabel/fonts/font = SubResource("SansMedium")
+PKHUDPanel/base_type = &"PanelContainer"
+PKHUDPanel/styles/panel = SubResource("HudPanel")
+PKHUDTab/base_type = &"Button"
+PKHUDTab/colors/font_color = Color(0.78, 0.7, 0.56, 1)
+PKHUDTab/colors/font_disabled_color = Color(0.55, 0.49, 0.4, 0.56)
+PKHUDTab/colors/font_hover_color = Color(1, 0.94, 0.74, 1)
+PKHUDTab/colors/font_pressed_color = Color(1, 0.94, 0.74, 1)
+PKHUDTab/styles/disabled = SubResource("HudButtonDisabled")
+PKHUDTab/styles/focus = SubResource("HudButtonFocus")
+PKHUDTab/styles/hover = SubResource("HudButtonHover")
+PKHUDTab/styles/normal = SubResource("HudButtonNormal")
+PKHUDTab/styles/pressed = SubResource("HudButtonPressed")
+PKIconButton/base_type = &"Button"
+PKIconButton/colors/font_color = Color(0.16, 0.09, 0.045, 1)
+PKIconButton/colors/font_hover_color = Color(0.48, 0.19, 0.12, 1)
+PKIconButton/colors/font_pressed_color = Color(0.98, 0.9, 0.68, 1)
+PKIconButton/styles/disabled = SubResource("ButtonDisabled")
+PKIconButton/styles/focus = SubResource("ButtonFocus")
+PKIconButton/styles/hover = SubResource("ButtonHover")
+PKIconButton/styles/normal = SubResource("ButtonNormal")
+PKIconButton/styles/pressed = SubResource("ButtonPressed")
+PKIdeologyStage/base_type = &"PanelContainer"
+PKIdeologyStage/styles/panel = SubResource("IdeologyStage")
+PKInsetPanel/base_type = &"PanelContainer"
+PKInsetPanel/styles/panel = SubResource("PaperCard")
+PKMetricCard/base_type = &"PanelContainer"
+PKMetricCard/styles/panel = SubResource("MetricCard")
+PKMutedLabel/base_type = &"Label"
+PKMutedLabel/colors/font_color = Color(0.29, 0.2, 0.13, 0.92)
+PKMutedLabel/font_sizes/font_size = 14
+PKMutedLabel/fonts/font = SubResource("SansMedium")
+PKPanel/base_type = &"PanelContainer"
+PKPanel/styles/panel = SubResource("PaperCard")
+PKPaperCard/base_type = &"PanelContainer"
+PKPaperCard/styles/panel = SubResource("PaperCard")
+PKPrimaryButton/base_type = &"Button"
+PKPrimaryButton/colors/font_color = Color(0.98, 0.9, 0.68, 1)
+PKPrimaryButton/colors/font_disabled_color = Color(0.62, 0.54, 0.43, 0.72)
+PKPrimaryButton/colors/font_hover_color = Color(1, 0.95, 0.8, 1)
+PKPrimaryButton/colors/font_pressed_color = Color(1, 0.95, 0.8, 1)
+PKPrimaryButton/styles/disabled = SubResource("HudButtonDisabled")
+PKPrimaryButton/styles/focus = SubResource("HudButtonFocus")
+PKPrimaryButton/styles/hover = SubResource("HudButtonHover")
+PKPrimaryButton/styles/normal = SubResource("HudButtonPressed")
+PKPrimaryButton/styles/pressed = SubResource("HudButtonNormal")
+PKSectionTitle/base_type = &"Label"
+PKSectionTitle/colors/font_color = Color(0.48, 0.16, 0.1, 1)
+PKSectionTitle/font_sizes/font_size = 17
+PKSectionTitle/fonts/font = SubResource("SansStrong")
 PKTabButton/base_type = &"Button"
 PKTabButton/colors/font_color = Color(0.16, 0.09, 0.045, 1)
 PKTabButton/colors/font_hover_color = Color(0.48, 0.19, 0.12, 1)
 PKTabButton/colors/font_pressed_color = Color(0.48, 0.16, 0.1, 1)
-PKTabButton/styles/normal = SubResource("TabNormal")
-PKTabButton/styles/hover = SubResource("TabHover")
-PKTabButton/styles/pressed = SubResource("TabPressed")
 PKTabButton/styles/disabled = SubResource("TabNormal")
 PKTabButton/styles/focus = SubResource("ButtonFocus")
-PKMetricCard/base_type = &"PanelContainer"
-PKMetricCard/styles/panel = SubResource("MetricCard")
-PKHUDButton/base_type = &"Button"
-PKHUDButton/colors/font_color = Color(0.965, 0.925, 0.825, 1)
-PKHUDButton/colors/font_hover_color = Color(1, 0.94, 0.74, 1)
-PKHUDButton/colors/font_pressed_color = Color(1, 0.94, 0.74, 1)
-PKHUDButton/colors/font_disabled_color = Color(0.55, 0.49, 0.4, 0.68)
-PKHUDButton/styles/normal = SubResource("HudButtonNormal")
-PKHUDButton/styles/hover = SubResource("HudButtonHover")
-PKHUDButton/styles/pressed = SubResource("HudButtonPressed")
-PKHUDButton/styles/disabled = SubResource("HudButtonDisabled")
-PKHUDButton/styles/focus = SubResource("HudButtonFocus")
-PKHUDTab/base_type = &"Button"
-PKHUDTab/colors/font_color = Color(0.78, 0.7, 0.56, 1)
-PKHUDTab/colors/font_hover_color = Color(1, 0.94, 0.74, 1)
-PKHUDTab/colors/font_pressed_color = Color(1, 0.94, 0.74, 1)
-PKHUDTab/colors/font_disabled_color = Color(0.55, 0.49, 0.4, 0.56)
-PKHUDTab/styles/normal = SubResource("HudButtonNormal")
-PKHUDTab/styles/hover = SubResource("HudButtonHover")
-PKHUDTab/styles/pressed = SubResource("HudButtonPressed")
-PKHUDTab/styles/disabled = SubResource("HudButtonDisabled")
-PKHUDTab/styles/focus = SubResource("HudButtonFocus")
+PKTabButton/styles/hover = SubResource("TabHover")
+PKTabButton/styles/normal = SubResource("TabNormal")
+PKTabButton/styles/pressed = SubResource("TabPressed")
 PKTitle/base_type = &"Label"
 PKTitle/colors/font_color = Color(0.08, 0.035, 0.018, 1)
-PKTitle/fonts/font = SubResource("SerifStrong")
 PKTitle/font_sizes/font_size = 25
-PKSectionTitle/base_type = &"Label"
-PKSectionTitle/colors/font_color = Color(0.48, 0.16, 0.1, 1)
-PKSectionTitle/fonts/font = SubResource("SansStrong")
-PKSectionTitle/font_sizes/font_size = 17
-PKMutedLabel/base_type = &"Label"
-PKMutedLabel/colors/font_color = Color(0.29, 0.2, 0.13, 0.92)
-PKMutedLabel/fonts/font = SubResource("SansMedium")
-PKMutedLabel/font_sizes/font_size = 14
-PKHUDLabel/base_type = &"Label"
-PKHUDLabel/colors/font_color = Color(0.965, 0.925, 0.825, 1)
-PKHUDLabel/fonts/font = SubResource("SansMedium")
-PKHUDLabel/font_sizes/font_size = 14
-PKDangerText/base_type = &"Label"
-PKDangerText/colors/font_color = Color(0.58, 0.18, 0.12, 1)
-PKBadgeLabel/base_type = &"Label"
-PKBadgeLabel/colors/font_color = Color(0.25, 0.12, 0.06, 1)
-PKBadgeLabel/styles/normal = SubResource("MetricCard")
-PKArchiveTitle/base_type = &"Label"
-PKArchiveTitle/colors/font_color = Color(0.08, 0.035, 0.018, 1)
-PKArchiveTitle/fonts/font = SubResource("SerifStrong")
-PKArchiveTitle/font_sizes/font_size = 30
-PKArchiveNavLabel/base_type = &"Label"
-PKArchiveNavLabel/colors/font_color = Color(0.14, 0.08, 0.04, 1)
-PKArchiveNavLabel/fonts/font = SubResource("SansStrong")
-PKArchiveNavLabel/font_sizes/font_size = 15
-PKEraRewardStatus/base_type = &"Label"
-PKEraRewardStatus/colors/font_color = Color(0.29, 0.2, 0.13, 0.92)
-PKEraRewardStatus/fonts/font = SubResource("SansMedium")
-PKEraRewardStatus/font_sizes/font_size = 14
-PKCountryRailTitle/base_type = &"Label"
-PKCountryRailTitle/colors/font_color = Color(0.96, 0.88, 0.7, 1)
-PKCountryRailTitle/fonts/font = SubResource("SerifStrong")
-PKCountryRailTitle/font_sizes/font_size = 22
-PKCountryRailMuted/base_type = &"Label"
-PKCountryRailMuted/colors/font_color = Color(0.71, 0.62, 0.48, 0.92)
-PKCountryRailMuted/fonts/font = SubResource("SansMedium")
-PKCountryRailMuted/font_sizes/font_size = 13
-PKWorkspaceTitle/base_type = &"Label"
-PKWorkspaceTitle/colors/font_color = Color(0.24, 0.105, 0.052, 1)
-PKWorkspaceTitle/fonts/font = SubResource("SansStrong")
-PKWorkspaceTitle/font_sizes/font_size = 19
+PKTitle/fonts/font = SubResource("SerifStrong")
+PKWorkspaceCanvas/base_type = &"PanelContainer"
+PKWorkspaceCanvas/styles/panel = SubResource("WorkspaceCanvas")
 PKWorkspaceLabel/base_type = &"Label"
 PKWorkspaceLabel/colors/font_color = Color(0.18, 0.105, 0.055, 1)
-PKWorkspaceLabel/fonts/font = SubResource("SansMedium")
 PKWorkspaceLabel/font_sizes/font_size = 15
+PKWorkspaceLabel/fonts/font = SubResource("SansMedium")
+PKWorkspaceRail/base_type = &"PanelContainer"
+PKWorkspaceRail/styles/panel = SubResource("WorkspaceRail")
+PKWorkspaceRailRight/base_type = &"PanelContainer"
+PKWorkspaceRailRight/styles/panel = SubResource("WorkspaceRailRight")
+PKWorkspaceStatus/base_type = &"PanelContainer"
+PKWorkspaceStatus/styles/panel = SubResource("WorkspaceStatus")
+PKWorkspaceTitle/base_type = &"Label"
+PKWorkspaceTitle/colors/font_color = Color(0.24, 0.105, 0.052, 1)
+PKWorkspaceTitle/font_sizes/font_size = 19
+PKWorkspaceTitle/fonts/font = SubResource("SansStrong")
+PKWorkspaceToolbar/base_type = &"PanelContainer"
+PKWorkspaceToolbar/styles/panel = SubResource("WorkspaceToolbar")
+PanelContainer/styles/panel = SubResource("PaperCard")
+ProgressBar/styles/background = SubResource("ProgressBackground")
+ProgressBar/styles/fill = SubResource("ProgressFill")
+TooltipLabel/colors/font_color = Color(0.12, 0.07, 0.035, 1)
+TooltipPanel/styles/panel = SubResource("PaperCard")
+VScrollBar/styles/grabber = SubResource("ScrollGrabber")
+VScrollBar/styles/grabber_highlight = SubResource("ScrollGrabberHover")
+VScrollBar/styles/grabber_pressed = SubResource("ScrollGrabberPressed")
+VScrollBar/styles/scroll = SubResource("ScrollTrack")
+VScrollBar/styles/scroll_focus = SubResource("ScrollTrack")
+VSeparator/styles/separator = SubResource("Rule")

@@ -1,0 +1,214 @@
+==============================================================================
+GLOBAL SUMMARY  day 138..5946  n=5809
+==============================================================================
+
+-- population proxy (no global population column exists) --
+  cohort_count               first=   21 last=   17 min=   16 max=   22 mean=   18.52
+  filled_owner_jobs          first=  115 last=  101 min=  100 max=  119 mean=  109.10
+  filled_employee_jobs       first=    5 last=    1 min=    0 max=    5 mean=    1.06
+  unemployed_population      first=    0 last=    0 min=    0 max=    2 mean=    0.05
+  labor_force(own+emp+unemp) first=  120 last=  102 min=  101 max=  122 mean=  110.21
+
+-- demography --
+  births=41 deaths=59 net=-18 over 5809 days (15.92 yr)
+  mean labor force = 110.2
+  crude birth rate  =   23.37 per 1000 labor-force per year
+  crude death rate  =   33.64 per 1000 labor-force per year
+  net  rate         =  -10.26
+  days with births>0 : 41 / 5809  (0.71%)
+  first 10 birth days : [716, 717, 719, 723, 738, 889, 1430, 1440, 1452, 1470]
+  last  10 birth days : [4482, 4942, 4976, 5018, 5164, 5219, 5637, 5670, 5726, 5917]
+  birth gap days: min=1 median=39.5 max=654
+  days with deaths>0 : 57 (0.98%)
+  death gap days: min=2 median=68.0 max=424
+
+  births/deaths per 500-day bucket:
+    d  138-  637: births=   0 deaths=   3 cohorts= 19.7 labor= 118.4
+    d  638- 1137: births=   6 deaths=   9 cohorts= 19.4 labor= 119.1
+    d 1138- 1637: births=   5 deaths=   2 cohorts= 19.1 labor= 114.5
+    d 1638- 2137: births=   1 deaths=   7 cohorts= 19.0 labor= 113.0
+    d 2138- 2637: births=   5 deaths=   6 cohorts= 19.1 labor= 111.7
+    d 2638- 3137: births=   5 deaths=   7 cohorts= 18.8 labor= 109.4
+    d 3138- 3637: births=   3 deaths=   5 cohorts= 18.0 labor= 106.5
+    d 3638- 4137: births=   2 deaths=   3 cohorts= 18.0 labor= 106.2
+    d 4138- 4637: births=   5 deaths=   4 cohorts= 18.2 labor= 106.6
+    d 4638- 5137: births=   3 deaths=   3 cohorts= 18.4 labor= 106.2
+    d 5138- 5637: births=   3 deaths=   6 cohorts= 17.2 labor= 105.6
+    d 5638- 6137: births=   3 deaths=   4 cohorts= 16.6 labor= 102.2
+
+-- globally zero / near-zero flow counters --
+  production_inputs_consumed             total=               0  nonzero_days=    0
+  building_resource_generated            total=               0  nonzero_days=    0
+  trade_candidates_generated             total=               0  nonzero_days=    0
+  trade_candidates_accepted              total=               0  nonzero_days=    0
+  trade_orders_dispatched                total=               0  nonzero_days=    0
+  trade_orders_arrived                   total=               0  nonzero_days=    0
+  building_investments_started           total=              19  nonzero_days=   18
+  building_wages_unpaid                  total=               0  nonzero_days=    0
+  merchant_credit_bad_debt               total=               0  nonzero_days=    0
+  recovery_restarted                     total=               0  nonzero_days=    0
+  recovery_failed                        total=               0  nonzero_days=    0
+  recovery_liquidated_buildings          total=               0  nonzero_days=    0
+  desired_business_demand                total=               0  nonzero_days=    0
+  funded_business_demand                 total=               0  nonzero_days=    0
+  unfunded_business_demand               total=               0  nonzero_days=    0
+  production_input_reserved              total=               0  nonzero_days=    0
+  production_input_reserve_shortfall     total=               0  nonzero_days=    0
+  owner_working_capital_reserved         total=               0  nonzero_days=    0
+  owner_working_capital_allocated        total=               0  nonzero_days=    0
+  building_investment_candidates         total=           1,326  nonzero_days=  385
+  construction_goods_consumed            total=         259,175  nonzero_days=   12
+  maintenance_unmet                      total=         691,721  nonzero_days= 5788
+
+-- merchant liquidity / money --
+  merchant_cash                          first=      69,158,262 last=       2,918,866 peak=     245,821,410 trough=         420,502
+  merchant_economic_assets               first=      72,779,481 last=       4,394,926 peak=     248,190,668 trough=       2,560,595
+  merchant_procurement_budget            first=      60,229,172 last=       2,518,617 peak=     215,093,731 trough=         351,708
+  merchant_procurement_spent             first=         602,000 last=         287,764 peak=         948,115 trough=         170,589
+  merchant_inventory_retail_value        first=       3,811,838 last=       1,553,767 peak=       9,399,587 trough=       1,553,767
+  merchant_inventory_liquidation_value   first=       3,621,219 last=       1,476,060 peak=       8,929,561 trough=       1,476,060
+  bullion_money_issued                   first=         800,000 last=         160,000 peak=         800,000 trough=               0
+  producer_revenue                       first=       1,402,038 last=         447,782 peak=       1,560,416 trough=         171,962
+  building_wages_paid                    first=         342,500 last=          68,500 peak=         342,500 trough=               0
+  producer_support_money_issued          first=              38 last=              18 peak=          32,054 trough=              13
+
+-- production / goods --
+  production_output_stock                first=86485 last=86984 min=50339@d3840 max=108668@d802 early180=93341 late180=81324.3
+  production_output_retained             first=108731 last=95842 min=79794@d5755 max=111890@d392 early180=109829 late180=92310
+  production_output_discarded            first=415 last=459 min=317@d5865 max=22873@d4970 early180=418.811 late180=440.856
+  production_output_supported            first=18 last=16 min=11@d4245 max=22520@d4484 early180=1059.98 late180=4303.09
+  building_resource_consumed             first=18308 last=20192 min=12251@d5865 max=23877@d3058 early180=18385.4 late180=18438.7
+  cycle_flow_produced                    first=0 last=0 min=0@d138 max=0@d138 early180=0 late180=0
+  cycle_flow_consumed                    first=0 last=0 min=0@d138 max=0@d138 early180=0 late180=0
+  cycle_flow_discarded                   first=0 last=0 min=0@d138 max=0@d138 early180=0 late180=0
+  loss_suspended_building_groups         first=0 last=0 min=0@d138 max=0@d138 early180=0 late180=0
+
+-- trade signal vs action --
+  trade_source_signals                   total=        43,550 last=          14 nonzero_days= 2905
+  trade_destination_signals              total=        58,993 last=          21 nonzero_days= 2905
+  trade_ready_candidates                 total=             0 last=           0 nonzero_days=    0
+  trade_relief_candidates                total=             0 last=           0 nonzero_days=    0
+  trade_capacity_available               total=297,795,584,000 last=  50,331,648 nonzero_days= 5809
+  trade_capacity_used                    total=             0 last=           0 nonzero_days=    0
+  trade_deficit_episodes_started         total=           167 last=           0 nonzero_days=  167
+  trade_deficit_episodes_resolved        total=           165 last=           0 nonzero_days=  165
+  trade_unresolved_no_attempt            total=        18,505 last=           3 nonzero_days= 5809
+  trade_unresolved_no_spread             total=             0 last=           0 nonzero_days=    0
+  trade_unresolved_margin                total=             0 last=           0 nonzero_days=    0
+  trade_unresolved_route                 total=         5,095 last=           1 nonzero_days= 5095
+  trade_unresolved_stock                 total=        94,040 last=          18 nonzero_days= 5809
+  trade_unresolved_capacity              total=             0 last=           0 nonzero_days=    0
+  trade_unresolved_cash                  total=             0 last=           0 nonzero_days=    0
+  trade_unresolved_order_cap             total=             0 last=           0 nonzero_days=    0
+  trade_signal_max_age_days              total=    17,665,169 last=       5,945 nonzero_days= 5809
+  trade_response_deadline_misses         total=       117,640 last=          22 nonzero_days= 5809
+
+==============================================================================
+COHORTS (cell 1860 only)
+==============================================================================
+  cell 1860 population first=20 last=20 min=19 max=21 mean=19.76
+  cohorts per day: min=3 max=5
+
+  per-cohort detail (last day sample):
+    coh 0 sig=        13 prof= 13 pop=  15 funds/人=  5677.91 sat=0.9162 cash_cov=1.042 liv_cov=1.006 worst=  7 merch=0 own=15 emp=0 unemp=0
+    coh 1 sig=        17 prof= 17 pop=   2 funds/人=  1908.57 sat=0.9162 cash_cov=4.933 liv_cov=2.044 worst=  7 merch=0 own=2 emp=0 unemp=0
+    coh 2 sig=        26 prof= 26 pop=   2 funds/人=   112.34 sat=0.9162 cash_cov=1.353 liv_cov=1.353 worst=  7 merch=1 own=2 emp=0 unemp=0
+    coh 3 sig=        28 prof= 28 pop=   1 funds/人=   175.70 sat=0.9162 cash_cov=6.575 liv_cov=6.575 worst=  7 merch=0 own=0 emp=1 unemp=0
+
+  cohort satisfaction / coverage over time (cell 1860):
+    satisfaction_q16                 first=0.997528 last=0.916199 min=0@d720 max=0.999985@d146 early180=0.784713 late180=0.97777
+    cash_expense_coverage_q16        first=1.52959 last=6.57452 min=0.15036@d5840 max=13.3711@d5918 early180=2.93093 late180=3.16754
+    livelihood_coverage_q16          first=1.08609 last=6.57452 min=0.548935@d5840 max=13.3711@d5918 early180=2.20968 late180=2.60442
+    worst_need_id distribution: {'7': 14441, '16': 5084, '-1': 911, '13': 133}
+    funds per capita (cell 1860):
+      first=331.204 last=4469.3 min=331.204@d138 max=4680.1@d5916 early180=474.406 late180=4642.75
+
+==============================================================================
+MARKET (cell 1860)
+==============================================================================
+  goods=134 rows=778406 days=5809
+
+  top 25 goods by peak stock:
+    good                         stock_last  stock_max   dem_max   dem_avg short_max   p_first    p_last     p_min     p_max
+    logs                              17855     299373      7392    4530.0     1.000      8358      3167      1000      8482
+    gathered_plants                       0     114661      7128    3362.0     0.708     14627     14658      2006     50000
+    clothing                          60000      60000         0       0.0     0.000      2724      2400      2400      2724
+    bast_fiber                            0      47416         0       0.0     0.000       817      3545       700      3545
+    game_meat                           653       5400      3576    3090.6     0.170     17304     15584     11841     18331
+    raw_hide                            660        660         0       0.0     0.000      6474      2400      2400      6474
+    adobe_brick                           0          0         0       0.0     0.000      6000      6000      6000      6000
+    advanced_chips                        0          0         0       0.0     0.000    110000    110000    110000    110000
+    agricultural_machinery                0          0         0       0.0     0.000     52000     52000     52000     52000
+    aluminum                              0          0         0       0.0     0.000     36000     36000     36000     36000
+    automobiles                           0          0         0       0.0     0.000     52000     52000     52000     52000
+    autonomous_systems                    0          0         0       0.0     0.000    220000    220000    220000    220000
+    batteries                             0          0         0       0.0     0.000     52000     52000     52000     52000
+    bauxite                               0          0         0       0.0     0.000     10000     10000     10000     10000
+    beverages                             0          0         0       0.0     0.000     16000     16000     16000     16000
+    bread                                 0          0         0       0.0     0.000     16000     16000     16000     16000
+    bricks                                0          0         0       0.0     0.000     22000     22000     22000     22000
+    brine                                 0          0         0       0.0     0.000      4000      4000      4000      4000
+    bronze_tools                          0          0         0       0.0     0.000     26000     26000     26000     26000
+    canned_fish                           0          0         0       0.0     0.000     16000     16000     16000     16000
+    cement                                0          0         0       0.0     0.000     22000     22000     22000     22000
+    charcoal                              0          0         0       0.0     0.000      9000      9000      9000      9000
+    chipped_stone_tools                   0          0         0       0.0     0.000     75000     75000     75000     75000
+    clay                                  0          0         0       0.0     0.000     10000     10000     10000     10000
+    cloth                                 0          0         0       0.0     0.000     24000     24000     24000     24000
+
+  goods ever active (peak stock>0 or demand>0): 6 / 134
+  active goods list: ['logs', 'gathered_plants', 'clothing', 'bast_fiber', 'game_meat', 'raw_hide']
+
+  active goods, price and shortage detail:
+    bast_fiber                 stock    47416->       0 (max    47416) hav        0 dem      0.0->? max        0 withdraw      6.6 offered      0.0 short_avg  0.000 max  0.000 price     817->   3545 [700,3545]
+    clothing                   stock    60000->   60000 (max    60000) hav    60000 dem      0.0->? max        0 withdraw      0.0 offered      0.0 short_avg  0.000 max  0.000 price    2724->   2400 [2400,2724]
+    game_meat                  stock     2934->     653 (max     5400) hav      653 dem   3090.6->? max     3576 withdraw   4736.2 offered   3080.3 short_avg  0.001 max  0.170 price   17304->  15584 [11841,18331]
+    gathered_plants            stock        0->       0 (max   114661) hav        0 dem   3362.0->? max     7128 withdraw  14629.9 offered   2270.2 short_avg  0.341 max  0.708 price   14627->  14658 [2006,50000]
+    logs                       stock    17855->   17855 (max   299373) hav        0 dem   4530.0->? max     7392 withdraw   7403.7 offered   2944.9 short_avg  0.346 max  1.000 price    8358->   3167 [1000,8482]
+    raw_hide                   stock      660->     660 (max      660) hav      660 dem      0.0->? max        0 withdraw      0.0 offered     33.0 short_avg  0.000 max  0.000 price    6474->   2400 [2400,6474]
+
+==============================================================================
+BUILDINGS (cell 1860)
+==============================================================================
+  row-classes: 15  rows=71312
+  actual groups: 0   candidate-only rows: 5
+
+   isC  grp  type       owner     n   cnt own_req own_fill emp_req emp_fill  cap_q16   margin        state      out     sold    disc      ret       rev       gap
+
+==============================================================================
+RESOURCES (cell 1860)
+==============================================================================
+  resources=31 rows=180079
+
+  resource                     open          final            min      d%   gen_appl  extr_appl      nat_neg  safe_yield     life_d
+  timber                  5297452.5      3946476.2      3905086.8   25.50        0.0     7261.4    1794146.7   6246566.0         -1
+  stone                 127103000.0    127103000.0    127103000.0    0.00        0.0        0.0          0.0         0.0          0
+  fertile_soil             277584.5        30453.5        30025.0   89.03        0.0        0.0     247926.1         0.0          0
+  coal                  276426340.0    276426340.0    276426340.0    0.00        0.0        0.0          0.0         0.0          0
+  oil                     6509428.0      6480388.0      6480388.0    0.45        0.0        0.0      29040.0         0.0          0
+  natural_gas            10527929.0     10527929.0     10527929.0    0.00        0.0        0.0          0.0         0.0          0
+  copper_ore             19693108.0     19693108.0     19693108.0    0.00        0.0        0.0          0.0         0.0          0
+  iron_ore                      0.0            0.0            0.0    0.00        0.0        0.0          0.0         0.0          0
+  gold_ore                6098777.5      6098519.0      6098519.0    0.00        0.0      258.5        210.1         0.0   60985190
+  silver_ore              6993223.0      6993223.0      6993223.0    0.00        0.0        0.0          0.0         0.0          0
+  salt                          0.0            0.0            0.0    0.00        0.0        0.0          0.0         0.0          0
+  saltpeter                     0.0            0.0            0.0    0.00        0.0        0.0          0.0         0.0          0
+  rare_earth                    0.0            0.0            0.0    0.00        0.0        0.0          0.0         0.0          0
+  clay                   25722010.0     10509880.0     10508335.0   59.14        0.0        0.0   15286000.0         0.0          0
+  wild_game                108003.5        30932.1        30932.1   71.36        0.0     7014.3      70057.2     11215.0         -1
+  marine_fish              346230.2       347883.8       346230.2   -0.48        0.0        0.0      16130.6     46730.0         -1
+  freshwater_fish               0.0            0.0            0.0    0.00        0.0        0.0          0.0         0.0         -1
+  arable_land              125000.0       125000.0       125000.0    0.00        0.0        0.0          0.0         0.0          0
+  paddy_land                    0.0            0.0            0.0    0.00        0.0        0.0          0.0         0.0          0
+  plantation_land               0.0            0.0            0.0    0.00        0.0        0.0          0.0         0.0          0
+  pasture                  160000.0       160000.0       160000.0    0.00        0.0        0.0          0.0         0.0          0
+  bauxite                       0.0            0.0            0.0    0.00        0.0        0.0          0.0         0.0          0
+  limestone                     0.0            0.0            0.0    0.00        0.0        0.0          0.0         0.0          0
+  silica_sand                   0.0            0.0            0.0    0.00        0.0        0.0          0.0         0.0          0
+  phosphate_rock                0.0            0.0            0.0    0.00        0.0        0.0          0.0         0.0          0
+  tin_ore                       0.0            0.0            0.0    0.00        0.0        0.0          0.0         0.0          0
+  lead_ore               14270431.0     14270431.0     14270431.0    0.00        0.0        0.0          0.0         0.0          0
+  zinc_ore               11163374.0     11163374.0     11163374.0    0.00        0.0        0.0          0.0         0.0          0
+  manganese_ore                 0.0            0.0            0.0    0.00        0.0        0.0          0.0         0.0          0
+  sulfur                 14565309.0     14565309.0     14565309.0    0.00        0.0        0.0          0.0         0.0          0
+  flint                  73696984.0     73696984.0     73696984.0    0.00        0.0        0.0          0.0         0.0          0

@@ -1,7 +1,7 @@
 param(
     [switch]$Build,
     [switch]$Godot,
-    [string]$GodotPath = "F:\Developent\Godot\Godot_v4.6.2-stable_win64.exe\Godot_v4.6.2-stable_win64_console.exe"
+    [string]$GodotPath = $(if ($env:GODOT_BIN) { $env:GODOT_BIN } else { 'D:\Godot\Godot_v4.6.2-stable_win64.exe\Godot_v4.6.2-stable_win64_console.exe' })
 )
 
 $ErrorActionPreference = "Stop"

@@ -1,0 +1,17 @@
+from pathlib import Path
+root = Path(Dir('.').abspath).parent
+SConsignFile('../../tmp/climate_parity/parity.sconsign.dblite')
+env = Environment()
+env.Append(CPPPATH=[str(root / 'src')])
+if env['PLATFORM'] == 'win32':
+    env.Append(CCFLAGS=['/std:c++17', '/EHsc', '/O2'])
+else:
+    env.Append(CCFLAGS=['-std=c++17', '-O2'])
+# runtime_climate_parity.cpp needs RuntimeClimateStore::reset/state_hash, which
+# live in runtime_authoritative_domains.cpp. Neither pulls in godot-cpp.
+objects = [
+    env.Object('../../tmp/climate_parity/parity', '../src/runtime_climate_parity.cpp'),
+    env.Object('../../tmp/climate_parity/domains', '../src/runtime_authoritative_domains.cpp'),
+    env.Object('../../tmp/climate_parity/test', 'climate_parity_test.cpp'),
+]
+Default(env.Program('../../tmp/climate_parity/climate_parity_test', objects))

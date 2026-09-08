@@ -4671,6 +4671,12 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
 
     if (!_bound) return fail("not bound");
     const int stage = int(knobs.get("stage", 8));
+    // 记给 worker 对拍/权威用：季末重算这一天，moisture 的权威写者是 stage 0/1，
+    // 不是当天的 climate round。worker 那份 store.moisture 是持久累加的，不采纳
+    // 生产值就会从季末开始整条 hydrology 链（PAW/runoff/river_*）一起偏。
+    // 取完即清在 publish 侧；refresh 跨 slice 时两个 tick 都置位，也正是两天生产
+    // 都动过 moisture。
+    _production_season_refresh_ran = true;
     // DOTS-Total-CPP（task-item.md 任务 2）：扩展 stage 分发到 0 / 8 / 10。
     // - stage 0 (moisture set)  ：纯 SoA loop，直接 C++。
     // - stage 8 (sync_current_state)：只从当前 runtime cell_temp 派生慢层/视觉轴；
@@ -4757,6 +4763,12 @@ godot::Dictionary DCWorldExt::run_season_refresh_stage(godot::Dictionary knobs) 
         float         * const __restrict SOIL = soil_arr.ptrw();
         float         * const __restrict VG   = vg_arr.ptrw();
         constexpr double FEEDBACK_SOIL_TO_BASE_W = 0.15;
+
+        // 记给 worker 对拍用。这个 pass 一季只跑一次、不在任何 climate stage 里，
+        // 所以它对 vegetation_growth_pressure 的衰减在 stage mask 里完全隐身；worker
+        // 侧那份是自己持久化的 store 成员，不跟着衰减就会在季末停在生产的两倍。
+        _production_seasonal_feedback_ran = true;
+        _production_seasonal_feedback_decay = float(decay);
 
         auto t0 = std::chrono::high_resolution_clock::now();
         int touched = 0;

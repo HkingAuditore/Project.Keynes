@@ -99,6 +99,16 @@ void DCWorldExt::_bind_methods() {
                           &DCWorldExt::capture_runtime_inputs);
      ClassDB::bind_method(D_METHOD("publish_runtime_climate_reference", "day", "state_hash"),
                           &DCWorldExt::publish_runtime_climate_reference);
+     ClassDB::bind_method(D_METHOD("compute_runtime_climate_parity_hash", "fields"),
+                          &DCWorldExt::compute_runtime_climate_parity_hash);
+     ClassDB::bind_method(D_METHOD("publish_runtime_climate_reference_state", "day", "fields"),
+                          &DCWorldExt::publish_runtime_climate_reference_state);
+     ClassDB::bind_method(D_METHOD("get_runtime_climate_parity_fields"),
+                          &DCWorldExt::get_runtime_climate_parity_fields);
+     ClassDB::bind_method(D_METHOD("get_runtime_climate_parity_divergence"),
+                          &DCWorldExt::get_runtime_climate_parity_divergence);
+     ClassDB::bind_method(D_METHOD("set_runtime_climate_parity_forcing", "enabled"),
+                          &DCWorldExt::set_runtime_climate_parity_forcing);
     ClassDB::bind_method(D_METHOD("capture_country_runtime_snapshot"),
                          &DCWorldExt::capture_country_runtime_snapshot);
     ClassDB::bind_method(D_METHOD("capture_country_pod_catalog"),
@@ -119,6 +129,13 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::restore_runtime_bundle);
     ClassDB::bind_method(D_METHOD("request_runtime_stop"),
                          &DCWorldExt::request_runtime_stop);
+    ClassDB::bind_method(D_METHOD("climate_worker_authoritative"),
+                         &DCWorldExt::climate_worker_authoritative);
+    ClassDB::bind_method(
+        D_METHOD("apply_runtime_climate_writeback", "after_generation"),
+        &DCWorldExt::apply_runtime_climate_writeback);
+    ClassDB::bind_method(D_METHOD("runtime_climate_writeback_self_test"),
+                         &DCWorldExt::runtime_climate_writeback_self_test);
     ClassDB::bind_method(D_METHOD("runtime_snapshot_ring_self_test"),
                          &DCWorldExt::runtime_snapshot_ring_self_test);
     ClassDB::bind_method(D_METHOD("runtime_domain_pod_self_test"),
@@ -129,6 +146,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::runtime_climate_authority_self_test);
     ClassDB::bind_method(D_METHOD("runtime_climate_trace_self_test"),
                          &DCWorldExt::runtime_climate_trace_self_test);
+    ClassDB::bind_method(D_METHOD("runtime_climate_parity_contract_test"),
+                         &DCWorldExt::runtime_climate_parity_contract_test);
     ClassDB::bind_method(D_METHOD("runtime_country_pod_authority_self_test"),
                          &DCWorldExt::runtime_country_pod_authority_self_test);
     ClassDB::bind_method(D_METHOD("runtime_protocol_guard_self_test"),

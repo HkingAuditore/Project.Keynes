@@ -1,0 +1,66 @@
+﻿scons: Reading SConscript files ...
+Building for architecture x86_64 on platform windows
+scons: done reading SConscript files.
+scons: Building targets ...
+scons: `godot-cpp\bin\libgodot-cpp.windows.template_debug.x86_64.lib' is up to date.
+Linking Shared Library D:\Godot\ProjectKeynes\Project.Keynes\Project\project-keynes\addons\dots_ext\bin\windows\dots_ext.windows.template_debug.x86_64.dll ...
+scons.exe :   正在创建库 D:\Godot\ProjectKeynes\Project.Keynes\Project\project-keynes\addons\dots_ext\bin\windows\dots_ext.w
+indows.template_debug.x86_64.lib 和对象 D:\Godot\ProjectKeynes\Project.Keynes\Project\project-keynes\addons\dots_ext\bin\w
+indows\dots_ext.windows.template_debug.x86_64.exp
+所在位置 D:\Godot\ProjectKeynes\Project.Keynes\tools\runtime\build_gdext.ps1:32 字符: 12
++     $out = & scons platform=windows target=$Target -j8 2>&1
++            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (  正在创建库 D:\Godo...ebug.x86_64.exp:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+system_schedule.windows.template_debug.x86_64.obj : error LNK2019: 无法解析的外部符号 "public: bool __cdecl pk::DCWorldExt::clim
+ate_worker_authoritative(void)const " (?climate_worker_authoritative@DCWorldExt@pk@@QEBA_NXZ)，函数 "int __cdecl pk::dispa
+tch_system_schedule(class pk::DCWorldExt *,class godot::Dictionary &,class godot::Dictionary const &,class godot::Dicti
+onary &,bool &,char const * &)" (?dispatch_system_schedule@pk@@YAHPEAVDCWorldExt@1@AEAVDictionary@godot@@AEBV34@1AEA_NA
+EAPEBD@Z) 中引用了该符号
+world_ext_bind_methods.windows.template_debug.x86_64.obj : error LNK2001: 无法解析的外部符号 "public: bool __cdecl pk::DCWorldEx
+t::climate_worker_authoritative(void)const " (?climate_worker_authoritative@DCWorldExt@pk@@QEBA_NXZ)
+world_ext_daily_sim.windows.template_debug.x86_64.obj : error LNK2001: 无法解析的外部符号 "public: bool __cdecl pk::DCWorldExt::
+climate_worker_authoritative(void)const " (?climate_worker_authoritative@DCWorldExt@pk@@QEBA_NXZ)
+world_ext_bind_methods.windows.template_debug.x86_64.obj : error LNK2019: 无法解析的外部符号 "public: class godot::Dictionary __
+cdecl pk::DCWorldExt::compute_runtime_climate_parity_hash(class godot::Dictionary const &)" (?compute_runtime_climate_p
+arity_hash@DCWorldExt@pk@@QEAA?AVDictionary@godot@@AEBV34@@Z)，函数 "protected: static void __cdecl pk::DCWorldExt::_bind_
+methods(void)" (?_bind_methods@DCWorldExt@pk@@KAXXZ) 中引用了该符号
+world_ext_bind_methods.windows.template_debug.x86_64.obj : error LNK2019: 无法解析的外部符号 "public: class godot::Dictionary __
+cdecl pk::DCWorldExt::publish_runtime_climate_reference_state(__int64,class godot::Dictionary const &)" (?publish_runti
+me_climate_reference_state@DCWorldExt@pk@@QEAA?AVDictionary@godot@@_JAEBV34@@Z)，函数 "protected: static void __cdecl pk::
+DCWorldExt::_bind_methods(void)" (?_bind_methods@DCWorldExt@pk@@KAXXZ) 中引用了该符号
+world_ext_bind_methods.windows.template_debug.x86_64.obj : error LNK2019: 无法解析的外部符号 "public: class godot::Array __cdecl
+ pk::DCWorldExt::get_runtime_climate_parity_fields(void)const " (?get_runtime_climate_parity_fields@DCWorldExt@pk@@QEBA
+?AVArray@godot@@XZ)，函数 "protected: static void __cdecl pk::DCWorldExt::_bind_methods(void)" (?_bind_methods@DCWorldExt@
+pk@@KAXXZ) 中引用了该符号
+world_ext_bind_methods.windows.template_debug.x86_64.obj : error LNK2019: 无法解析的外部符号 "public: class godot::Array __cdecl
+ pk::DCWorldExt::get_runtime_climate_parity_divergence(void)const " (?get_runtime_climate_parity_divergence@DCWorldExt@
+pk@@QEBA?AVArray@godot@@XZ)，函数 "protected: static void __cdecl pk::DCWorldExt::_bind_methods(void)" (?_bind_methods@DCW
+orldExt@pk@@KAXXZ) 中引用了该符号
+world_ext_bind_methods.windows.template_debug.x86_64.obj : error LNK2019: 无法解析的外部符号 "public: class godot::Dictionary __
+cdecl pk::DCWorldExt::set_runtime_climate_parity_forcing(bool)" (?set_runtime_climate_parity_forcing@DCWorldExt@pk@@QEA
+A?AVDictionary@godot@@_N@Z)，函数 "protected: static void __cdecl pk::DCWorldExt::_bind_methods(void)" (?_bind_methods@DCW
+orldExt@pk@@KAXXZ) 中引用了该符号
+world_ext_bind_methods.windows.template_debug.x86_64.obj : error LNK2019: 无法解析的外部符号 "public: class godot::Dictionary __
+cdecl pk::DCWorldExt::apply_runtime_climate_writeback(__int64)" (?apply_runtime_climate_writeback@DCWorldExt@pk@@QEAA?A
+VDictionary@godot@@_J@Z)，函数 "protected: static void __cdecl pk::DCWorldExt::_bind_methods(void)" (?_bind_methods@DCWorl
+dExt@pk@@KAXXZ) 中引用了该符号
+world_ext_bind_methods.windows.template_debug.x86_64.obj : error LNK2019: 无法解析的外部符号 "public: bool __cdecl pk::DCWorldEx
+t::runtime_climate_writeback_self_test(void)const " (?runtime_climate_writeback_self_test@DCWorldExt@pk@@QEBA_NXZ)，函数 "
+protected: static void __cdecl pk::DCWorldExt::_bind_methods(void)" (?_bind_methods@DCWorldExt@pk@@KAXXZ) 中引用了该符号
+world_ext_bind_methods.windows.template_debug.x86_64.obj : error LNK2019: 无法解析的外部符号 "public: class godot::Dictionary __
+cdecl pk::DCWorldExt::runtime_climate_parity_contract_test(void)const " (?runtime_climate_parity_contract_test@DCWorldE
+xt@pk@@QEBA?AVDictionary@godot@@XZ)，函数 "protected: static void __cdecl pk::DCWorldExt::_bind_methods(void)" (?_bind_met
+hods@DCWorldExt@pk@@KAXXZ) 中引用了该符号
+world_ext_runtime_graph.windows.template_debug.x86_64.obj : error LNK2019: 无法解析的外部符号 "void __cdecl pk::append_climate_s
+tage_cadence(class godot::Dictionary &,struct pk::RuntimeThreadReport const &)" (?append_climate_stage_cadence@pk@@YAXA
+EAVDictionary@godot@@AEBURuntimeThreadReport@1@@Z)，函数 "public: class godot::Dictionary __cdecl pk::DCWorldExt::get_runt
+ime_perf_snapshot(int)const " (?get_runtime_perf_snapshot@DCWorldExt@pk@@QEBA?AVDictionary@godot@@H@Z) 中引用了该符号
+D:\Godot\ProjectKeynes\Project.Keynes\Project\project-keynes\addons\dots_ext\bin\windows\dots_ext.windows.template_debu
+g.x86_64.dll : fatal error LNK1120: 10 个无法解析的外部命令
+scons: *** [D:\Godot\ProjectKeynes\Project.Keynes\Project\project-keynes\addons\dots_ext\bin\windows\dots_ext.windows.t
+emplate_debug.x86_64.dll] Error 1120
+scons: building terminated because of errors.
+
+[build] FAILED

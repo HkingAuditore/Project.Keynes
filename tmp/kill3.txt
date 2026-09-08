@@ -1,0 +1,8 @@
+﻿count before: 3
+Godot_v4.6.2-stable_win64 id=39816 start=2026/8/29 2:51:16 responding=True
+  Kill() ok
+Godot_v4.6.2-stable_win64 id=83508 start=2026/8/29 2:52:28 responding=True
+  Kill() ok
+Godot_v4.6.2-stable_win64 id=89860 start=2026/8/29 2:18:22 responding=True
+  Kill() ok
+count after: 0

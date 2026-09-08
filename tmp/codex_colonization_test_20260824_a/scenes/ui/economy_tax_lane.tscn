@@ -7,6 +7,11 @@ custom_minimum_size = Vector2(30, 0)
 layout_mode = 2
 vertical_alignment = 1
 theme_type_variation = &"PKMutedLabel"
+[node name="Mode" type="OptionButton" parent="."]
+custom_minimum_size = Vector2(72, 30)
+layout_mode = 2
+focus_mode = 0
+tooltip_text = "百分比或绝对值计税"
 [node name="Spin" type="SpinBox" parent="."]
 custom_minimum_size = Vector2(88, 30)
 layout_mode = 2

@@ -133,6 +133,11 @@ Dictionary DCWorldExt::get_native_fronts_snapshot_packed() const {
 // 切片稀释)，且用「平滑引导流(风邻域平均)+纯取值半拉格朗日平移」保持空间连贯(修复多格
 // 采样打散场的问题)。solve 循环只读 _wx_synoptic 做耦合 → ψ 移动 → 云/雨成片随风平移。
 // 返回 elapsed_ms (≥0)；ψ 关闭返回 0；失败返回 -1.0。
+//
+// S3：数值实现已并入 pk_async_climate::synoptic_advance_pure，本 pass 只做 slot
+// 取值与 knob 解析。注意它把 cell_temp slot 直接当斜压门的输入，而内核要求的是
+// 归一化温度；solve pass 里的调用点传的是主循环的 TR。这条路径目前没有调用方
+// （run_synoptic_advance_pass_native 全库无引用），真要启用得先接一条归一化温度。
 double DCWorldExt::run_synoptic_advance_pass(const Dictionary &knobs) {
     using godot::StringName;
     using godot::PackedVector2Array;
@@ -163,9 +168,11 @@ double DCWorldExt::run_synoptic_advance_pass(const Dictionary &knobs) {
     if (cell_pos_arr.size() != n_cells || nb_arr.size() < n_cells * 6) { diag("pos/nb size mismatch"); return -1.0; }
 
     const float syn_baroclinic = knobs.has("weather_synoptic_baroclinic") ? float(knobs["weather_synoptic_baroclinic"]) : 0.40f;
-    const float syn_damp       = knobs.has("weather_synoptic_damp")       ? float(knobs["weather_synoptic_damp"])       : 0.94f;
-    const float syn_diffuse    = knobs.has("weather_synoptic_diffuse")    ? float(knobs["weather_synoptic_diffuse"])    : 0.12f;
-    const float syn_seed_rate  = knobs.has("weather_synoptic_seed_rate")  ? float(knobs["weather_synoptic_seed_rate"])  : 0.05f;
+    // 默认值与 run_weather_field_solve_pass 的 ψ 段一致。合并前这里是 0.94/0.12/0.05，
+    // 于是同一个 knob 缺省时两条路径给出不同的 ψ 演化。
+    const float syn_damp       = knobs.has("weather_synoptic_damp")       ? float(knobs["weather_synoptic_damp"])       : 0.90f;
+    const float syn_diffuse    = knobs.has("weather_synoptic_diffuse")    ? float(knobs["weather_synoptic_diffuse"])    : 0.05f;
+    const float syn_seed_rate  = knobs.has("weather_synoptic_seed_rate")  ? float(knobs["weather_synoptic_seed_rate"])  : 0.015f;
     const float syn_seed_amp   = knobs.has("weather_synoptic_seed_amp")   ? float(knobs["weather_synoptic_seed_amp"])   : 0.42f;
     int         syn_adv_cells  = knobs.has("weather_synoptic_adv_cells")  ? int(knobs["weather_synoptic_adv_cells"])    : 3;
     if (syn_adv_cells < 0) syn_adv_cells = 0; else if (syn_adv_cells > 16) syn_adv_cells = 16;
@@ -186,53 +193,30 @@ double DCWorldExt::run_synoptic_advance_pass(const Dictionary &knobs) {
     const Vector2 * const __restrict POS  = cell_pos_arr.ptr();
     const int32_t * const __restrict NB   = nb_arr.ptr();
 
-    if (_wx_synoptic.size() != (size_t)n_cells) {
-        _wx_synoptic.assign((size_t)n_cells, 0.0f);
-        _wx_synoptic_prev.assign((size_t)n_cells, 0.0f);
+    if (_wf_pos_x.size() != (size_t)n_cells) {
+        _wf_pos_x.assign((size_t)n_cells, 0.0f);
+        _wf_pos_y.assign((size_t)n_cells, 0.0f);
     }
-    _wx_synoptic_prev = _wx_synoptic;                  // 整步快照(脱离切片)
-    float * const __restrict PSI = _wx_synoptic.data();
-    const float * const __restrict PSI_PREV = _wx_synoptic_prev.data();
+    for (int i = 0; i < n_cells; ++i) {
+        _wf_pos_x[(size_t)i] = POS[i].x;
+        _wf_pos_y[(size_t)i] = POS[i].y;
+    }
+
+    pk_async_climate::SynopticAdvanceKnobs syn;
+    syn.baroclinic = syn_baroclinic;
+    syn.damp = syn_damp;
+    syn.diffuse = syn_diffuse;
+    syn.seed_rate = syn_seed_rate;
+    syn.seed_amp = syn_seed_amp;
+    syn.adv_cells = syn_adv_cells;
+    syn.tick = syn_tick;
+    syn.cell_pos_scale = pos_scale;
+    syn.wrap_width_x = wrap_width_x;
 
     auto t0 = std::chrono::high_resolution_clock::now();
-    for (int i = 0; i < n_cells; ++i) {
-        const int base = i * 6;
-        // 平滑引导流：风邻域平均(去地转风小尺度切变→departure 场平滑→平移连贯,不打散)
-        float gx = WX[i], gy = WY[i];
-        int gn = 1;
-        for (int d = 0; d < 6; ++d) {
-            const int nb = NB[base + d];
-            if (nb < 0) continue;
-            gx += WX[nb]; gy += WY[nb]; ++gn;
-        }
-        gx /= float(gn); gy /= float(gn);
-        // 半拉格朗日真平移：沿 -引导流走 syn_adv_cells 格找 departure，取 ψ_prev[dep]
-        int dep = i;
-        for (int s = 0; s < syn_adv_cells; ++s) {
-            const int up = wf_neighbor_aligned_idx(dep, -gx, -gy, POS, NB, n_cells, pos_scale, wrap_width_x);
-            if (up < 0 || up >= n_cells) break;
-            dep = up;
-        }
-        float psi = PSI_PREV[dep];
-        // 斜压门：邻域温度梯度
-        float tmin = TEMP[i], tmax = TEMP[i];
-        for (int d = 0; d < 6; ++d) {
-            const int nb = NB[base + d];
-            if (nb < 0) continue;
-            const float t = TEMP[nb];
-            if (t < tmin) tmin = t;
-            if (t > tmax) tmax = t;
-        }
-        const float gate = wf_smoothstep(0.04f, 0.16f, tmax - tmin);
-        psi *= (1.0f + syn_baroclinic * gate);                                  // 斜压增长
-        const float seed_rate = syn_seed_rate * (0.30f + 0.70f * gate);
-        if (wf_hash01(i, syn_tick) < seed_rate)
-            psi += syn_seed_amp * (wf_hash01(i + 50021, syn_tick) - 0.5f) * 2.0f; // 稀疏气旋生成
-        psi += (wf_neighbor_average_vapor_idx(i, NB, PSI_PREV) - psi) * syn_diffuse; // 轻扩散
-        psi *= syn_damp;                                                        // 阻尼
-        if (psi > 1.0f) psi = 1.0f; else if (psi < -1.0f) psi = -1.0f;
-        PSI[i] = psi;
-    }
+    pk_async_climate::synoptic_advance_pure(
+        n_cells, NB, _wf_pos_x.data(), _wf_pos_y.data(), WX, WY, TEMP, syn,
+        _wx_synoptic, _wx_synoptic_prev);
     auto t1 = std::chrono::high_resolution_clock::now();
     return std::chrono::duration<double, std::milli>(t1 - t0).count();
 }
@@ -729,42 +713,41 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     // ─── 计时 (返回给调用方做对账，charter §0 铁律 3) ──────────────────
     auto t0 = std::chrono::high_resolution_clock::now();
 
+    // S3：如实上报"生产这一天跑了 stage 11 WEATHER"。field solve 还没有共享纯内核，
+    // 所以 worker 侧不会跑；但把生产跑过这件事记下来，分叉矩阵才能把 WEATHER 那 8 个
+    // 字段的分叉归到"worker 缺实现"，而不是与"这天两边都没跑"混在一起。
+    _production_stage_mask |= pk_async_climate::CLIMATE_STAGE_BIT_WEATHER;
+
     // ── Stage13b「让天气移动」：每轮(start_idx==0)在主循环前对全场推进一次 ψ ────────────────
     // 内联进 solve pass → 与 solve 必然一起执行(不依赖 GDScript 调度挂钩、换 DLL 即生效)；全场一次→
     // 不被切片稀释。平滑引导流(风邻域平均)+纯取值半拉格朗日平移→ψ 涡旋成片随风移动。主循环只读 PSI[i]。
-    if (PSI != nullptr && start_idx == 0) {
-        _wx_synoptic_prev = _wx_synoptic;                              // 整步快照
-        float * const __restrict PSI_W = _wx_synoptic.data();
-        const float * const __restrict PSI_R = _wx_synoptic_prev.data();
-        // 斜压门用归一化温度 TR(与主循环一致)；勿用 cell_temp slot(实际量纲→smoothstep 恒1→ψ 指数爆炸饱和)。
-        for (int p = 0; p < n_cells; ++p) {
-            const int pb = p * 6;
-            // 平滑引导流：风邻域平均(去地转风小尺度切变→平移连贯)
-            float gx = WX[p], gy = WY[p]; int gn = 1;
-            for (int dd = 0; dd < 6; ++dd) { const int nb = NB[pb + dd]; if (nb < 0) continue; gx += WX[nb]; gy += WY[nb]; ++gn; }
-            gx /= float(gn); gy /= float(gn);
-            // 半拉格朗日真平移：沿 -引导流走 syn_adv_cells 格取 departure 的 ψ_prev
-            int dep = p;
-            for (int s = 0; s < syn_adv_cells; ++s) {
-                const int up = wf_neighbor_aligned_idx(dep, -gx, -gy, POS, NB, n_cells, weather_cell_pos_scale, weather_wrap_width_x);
-                if (up < 0 || up >= n_cells) break; dep = up;
-            }
-            float ps = PSI_R[dep];
-            // 斜压门：邻域温度梯度
-            float tmn = TR[p], tmx = TR[p];
-            for (int dd = 0; dd < 6; ++dd) { const int nb = NB[pb + dd]; if (nb < 0) continue; const float tv = TR[nb]; if (tv < tmn) tmn = tv; if (tv > tmx) tmx = tv; }
-            const float g = wf_smoothstep(0.04f, 0.16f, tmx - tmn);
-            const float aps0 = ps < 0.0f ? -ps : ps;
-            ps *= (1.0f + syn_baroclinic * g * (1.0f - aps0));          // 斜压增长(随振幅饱和→有界,不全场饱和)
-            const float sr = syn_seed_rate * (0.30f + 0.70f * g);
-            if (wf_hash01(p, syn_tick) < sr)
-                ps += syn_seed_amp * (wf_hash01(p + 50021, syn_tick) - 0.5f) * 2.0f; // 稀疏气旋生成
-            ps += (wf_neighbor_average_vapor_idx(p, NB, PSI_R) - ps) * syn_diffuse;  // 轻扩散
-            ps *= syn_damp;                                             // 阻尼
-            if (ps > 1.0f) ps = 1.0f; else if (ps < -1.0f) ps = -1.0f;
-            if (ps < 0.05f && ps > -0.05f) ps = 0.0f;                   // 阈值清零→防低值 ψ 经扩散/平流铺满全场，保稀疏移动涡旋
-            PSI_W[p] = ps;
+    if (start_idx == 0) {
+        // cell_pos 的 POD 视图：解交织，逐位无损。共享内核只能吃 float lane。
+        if (_wf_pos_x.size() != (size_t)n_cells) {
+            _wf_pos_x.assign((size_t)n_cells, 0.0f);
+            _wf_pos_y.assign((size_t)n_cells, 0.0f);
         }
+        for (int p = 0; p < n_cells; ++p) {
+            _wf_pos_x[(size_t)p] = POS[p].x;
+            _wf_pos_y[(size_t)p] = POS[p].y;
+        }
+    }
+
+    if (PSI != nullptr && start_idx == 0) {
+        // 斜压门用归一化温度 TR(与主循环一致)；勿用 cell_temp slot(实际量纲→smoothstep 恒1→ψ 指数爆炸饱和)。
+        pk_async_climate::SynopticAdvanceKnobs syn;
+        syn.baroclinic = syn_baroclinic;
+        syn.damp = syn_damp;
+        syn.diffuse = syn_diffuse;
+        syn.seed_rate = syn_seed_rate;
+        syn.seed_amp = syn_seed_amp;
+        syn.adv_cells = syn_adv_cells;
+        syn.tick = syn_tick;
+        syn.cell_pos_scale = weather_cell_pos_scale;
+        syn.wrap_width_x = weather_wrap_width_x;
+        pk_async_climate::synoptic_advance_pure(
+            n_cells, NB, _wf_pos_x.data(), _wf_pos_y.data(), WX, WY, TR, syn,
+            _wx_synoptic, _wx_synoptic_prev);
     }
 
     // ── perf P2: 邻域几何缓存构建（每轮 start_idx==0）──────────────────────
@@ -777,28 +760,10 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
             _wf_nb_dy.assign(need, 0.0f);
             _wf_nb_invd.assign(need, 0.0f);
         }
-        float * const __restrict GBX = _wf_nb_dx.data();
-        float * const __restrict GBY = _wf_nb_dy.data();
-        float * const __restrict GBI = _wf_nb_invd.data();
-        for (int p = 0; p < n_cells; ++p) {
-            const int b = p * 6;
-            const float sx = POS[p].x;
-            const float sy = POS[p].y;
-            for (int d = 0; d < 6; ++d) {
-                const int32_t nb_idx = NB[b + d];
-                if (nb_idx < 0) {
-                    GBX[b + d] = 0.0f; GBY[b + d] = 0.0f; GBI[b + d] = 0.0f;
-                    continue;
-                }
-                float dx = 0.0f, dy = 0.0f;
-                wf_wrapped_delta(sx, sy, POS[nb_idx].x, POS[nb_idx].y,
-                                 weather_wrap_width_x, dx, dy);
-                GBX[b + d] = dx;
-                GBY[b + d] = dy;
-                const float dl2 = dx * dx + dy * dy;
-                GBI[b + d] = (dl2 > 0.0001f) ? (1.0f / Math::sqrt(dl2)) : 0.0f;
-            }
-        }
+        pk_async_climate::weather_field_geometry_cache_pure(
+            n_cells, NB, _wf_pos_x.data(), _wf_pos_y.data(),
+            weather_wrap_width_x, _wf_nb_dx.data(), _wf_nb_dy.data(),
+            _wf_nb_invd.data());
         _wf_nb_geom_n = n_cells;
         _wf_nb_geom_wrap = weather_wrap_width_x;
     }
@@ -808,10 +773,11 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
     const float * const __restrict GEOM_DY   = use_geom_cache ? _wf_nb_dy.data()   : nullptr;
     const float * const __restrict GEOM_INVD = use_geom_cache ? _wf_nb_invd.data() : nullptr;
 
-    // ─── NS 化 Phase 2:风场回溯轨迹表消费资格(半拉格朗日三点插值替代 hopping)──
-    // 轨迹表由 wind pass 末构建(成员缓存);指纹 = 风场 64 降采样状态,任何绕过
-    // wind pass 的风槽改写/换图即失配 → 落旧 hopping 并 _phys_wind_traj_stale_count++。
-    // knob wind_traj_weather_share=false 时仅构建不消费(A/B 隔离)。
+    // ─── stage 11 的数值核心已抽成共享纯内核 ────────────────────
+    // pk_async_climate::weather_field_solve_pure。这里只做 Godot 侧的装配：
+    // 把 Dictionary knob 收成 POD 结构体、把 slot/PackedArray 收成裸指针 lane、
+    // 把 DCWorldExt 上那七组跳 tick 状态收成 state。循环体一行数值都不在这里了，
+    // 所以 worker 跑的和生产跑的是同一份代码。
     const int32_t *TRAJ_IDX = nullptr;
     const float   *TRAJ_W   = nullptr;
     if (_phys_wind_traj_valid && _phys_wind_traj_consume_enabled
@@ -823,743 +789,157 @@ double DCWorldExt::run_weather_field_solve_pass(const Dictionary &knobs) {
             ++_phys_wind_traj_stale_count;
         }
     }
-    // 轨迹表三点插值:权重构建期已 clamp≥0 归一(单调、无 overshoot)。
-    auto wx_traj_sample = [&](int idx, const float *FIELD) -> float {
-        const int t3 = idx * 3;
-        return TRAJ_W[t3] * FIELD[TRAJ_IDX[t3]]
-             + TRAJ_W[t3 + 1] * FIELD[TRAJ_IDX[t3 + 1]]
-             + TRAJ_W[t3 + 2] * FIELD[TRAJ_IDX[t3 + 2]];
-    };
 
-    // 几何缓存派发 wrapper（cache 命中走缓存变体，否则回退原 helper；两路 bit-equal）。
-    auto wx_aligned = [&](int idx, float dx, float dy) -> int {
-        return use_geom_cache
-            ? wf_neighbor_aligned_idx_cached(idx, dx, dy, NB, GEOM_DX, GEOM_DY,
-                                             n_cells, weather_cell_pos_scale)
-            : wf_neighbor_aligned_idx(idx, dx, dy, POS, NB, n_cells,
-                                      weather_cell_pos_scale, weather_wrap_width_x);
-    };
-    auto wx_upstream_avg = [&](int idx, int first_up, const float *FIELD,
-                               float wdx, float wdy) -> float {
-        return use_geom_cache
-            ? wf_upstream_vapor_idx_from_first_cached(
-                  idx, first_up, NB, GEOM_DX, GEOM_DY, FIELD, wdx, wdy, n_cells,
-                  weather_cell_pos_scale, field_advect_steps)
-            : wf_upstream_vapor_idx_from_first(
-                  idx, first_up, POS, NB, FIELD, wdx, wdy, n_cells,
-                  weather_cell_pos_scale, weather_wrap_width_x, field_advect_steps);
-    };
-    auto wx_convergence = [&](int idx) -> float {
-        return use_geom_cache
-            ? wf_wind_convergence_idx_cached(idx, NB, GEOM_DX, GEOM_DY, GEOM_INVD,
-                                             WX, WY, WSPD)
-            : wf_wind_convergence_idx(idx, POS, NB, WX, WY, WSPD,
-                                      weather_wrap_width_x);
-    };
+    pk_async_climate::WeatherFieldKnobs wfk;
+    wfk.n_cells = n_cells;
+    wfk.climate_anomaly = climate_anomaly;
+    wfk.refresh_convergence = refresh_convergence;
+    wfk.apply_convergence_boost = apply_convergence_boost;
+    wfk.use_next_outputs = use_next_outputs;
+    wfk.field_advect_steps = field_advect_steps;
+    wfk.field_diffusion = field_diffusion;
+    wfk.field_ocean_evap_gain = field_ocean_evap_gain;
+    wfk.field_precip_inertia = field_precip_inertia;
+    wfk.field_precip_spatial_smooth = field_precip_spatial_smooth;
+    wfk.field_cloud_inertia = field_cloud_inertia;
+    wfk.field_wet_terrain_precip_damping = field_wet_terrain_precip_damping;
+    wfk.field_lake_precip_damping = field_lake_precip_damping;
+    wfk.field_lake_evap_scale = field_lake_evap_scale;
+    wfk.field_extreme_precip_soft_cap = field_extreme_precip_soft_cap;
+    wfk.field_extreme_precip_softness = field_extreme_precip_softness;
+    wfk.field_land_evapotranspiration_gain = field_land_evapotranspiration_gain;
+    wfk.field_ocean_precip_suppression = field_ocean_precip_suppression;
+    wfk.field_frontogenesis_gain = field_frontogenesis_gain;
+    wfk.field_rain_shadow_drying = field_rain_shadow_drying;
+    wfk.field_advect_vapor = field_advect_vapor;
+    wfk.field_advect_cloud = field_advect_cloud;
+    wfk.field_rh_condense = field_rh_condense;
+    wfk.field_static_cond_w = field_static_cond_w;
+    wfk.field_condense_rate = field_condense_rate;
+    wfk.field_lift_cond_gain = field_lift_cond_gain;
+    wfk.field_conv_cond_gain = field_conv_cond_gain;
+    wfk.field_thermal_conv_cond = field_thermal_conv_cond;
+    wfk.field_thermal_conv_precip = field_thermal_conv_precip;
+    wfk.field_autoconversion = field_autoconversion;
+    wfk.field_precip_base_frac = field_precip_base_frac;
+    wfk.field_lift_precip_gain = field_lift_precip_gain;
+    wfk.field_conv_precip_gain = field_conv_precip_gain;
+    wfk.field_oro_precip_gain = field_oro_precip_gain;
+    wfk.field_stratiform_gain = field_stratiform_gain;
+    wfk.field_cool_season_vapor_floor = field_cool_season_vapor_floor;
+    wfk.field_cloud_reevap = field_cloud_reevap;
+    wfk.weather_cell_pos_scale = weather_cell_pos_scale;
+    wfk.weather_wrap_width_x = weather_wrap_width_x;
+    wfk.cold_precip_as_blizzard = cold_precip_as_blizzard;
+    wfk.snow_classification_margin = snow_classification_margin;
+    wfk.weather_lat_te_norm = weather_lat_te_norm;
+    wfk.omega_ascent_gain = OMEGA_ASCENT_GAIN;
+    wfk.world_bounds_pos_y = wb_pos_y;
+    wfk.world_bounds_size_y = wb_size_y;
+    wfk.syn_supp = syn_supp;
+    wfk.syn_enh = syn_enh;
+    wfk.syn_front_force = syn_front_force;
+    wfk.syn_front_enh = syn_front_enh;
+    wfk.syn_base_lift = syn_base_lift;
+    wfk.weather_transition_enabled = weather_transition_enabled;
+    wfk.weather_transition_alpha_rate = weather_transition_alpha_rate;
+    wfk.weather_transition_dt_days = weather_transition_dt_days;
+    // 这两个原来在每 cell 的循环体里各查一次 Dictionary。
+    wfk.thermal_monsoon_enabled = bool(knobs.get("thermal_monsoon_enabled",
+        _native_runtime_config.get("thermal_monsoon_enabled", false)));
+    wfk.cyclone_storm_type_id = uint8_t(
+        std::clamp(int(knobs.get("cyclone_storm_type_id", 2)), 0, 255));
 
-    auto surface_vapor_source = [&](int src_idx, float src_temp, float src_base_m,
-                                     float src_wind_mag, float src_ocean_an,
-                                     bool src_on_water, bool src_is_lake,
-                                     bool src_has_river, float src_river_q,
-                                     float src_river_source_scale) -> float {
-        // [climate-zone-fix P3] 冷季地板抬高低温端蒸发；floor=0 时与原 smoothstep 逐位一致。
-        float temp_evap = wf_smoothstep(0.10f, 0.78f, src_temp);
-        if (temp_evap < field_cool_season_vapor_floor) temp_evap = field_cool_season_vapor_floor;
-        const float wind_evap = 0.70f + src_wind_mag * 0.55f;
-        float wet_bonus = 0.0f;
-        switch (TERR[src_idx]) {
-            case 10: // SWAMP
-            case 11: // JUNGLE
-            case 22: // DELTA
-                wet_bonus = 0.010f;
-                break;
-            case 18: // LAKE
-                wet_bonus = 0.016f;
-                break;
-            default:
-                wet_bonus = 0.0f;
-                break;
-        }
-        if (src_on_water) {
-            const float sea_ice = (SICE != nullptr) ? dc_clampf(SICE[src_idx], 0.0f, 1.0f) : 0.0f;
-            float src = (0.018f + temp_evap * 0.052f) * field_ocean_evap_gain * wind_evap;
-            src *= dc_clampf(1.0f + src_ocean_an * 0.55f, 0.55f, 1.45f);
-            src *= (1.0f - sea_ice * 0.92f);
-            if (src_is_lake) src *= field_lake_evap_scale;
-            return (src > 0.0f) ? src : 0.0f;
-        }
-        const float soil_norm = (SOIL != nullptr)
-            ? dc_clampf(0.5f + SOIL[src_idx], 0.0f, 1.0f)
-            : dc_clampf(src_base_m, 0.0f, 1.0f);
-        const float vitality = (VITA != nullptr) ? dc_clampf(VITA[src_idx], 0.0f, 1.0f) : 0.7f;
-        const float veg_flux = wf_vegetation_transp_factor(VEG[src_idx]) * (0.45f + vitality * 0.65f);
-        float src = (0.005f + src_base_m * 0.010f + soil_norm * 0.020f + veg_flux * 0.016f + wet_bonus)
-            * field_land_evapotranspiration_gain * temp_evap * (0.85f + src_wind_mag * 0.25f);
-        if (src_has_river) {
-            const float river_scale = dc_clampf(src_river_source_scale, 0.0f, 1.0f);
-            const float river_extra = (0.010f + src_river_q * 0.020f)
-                * field_land_evapotranspiration_gain * temp_evap;
-            src += river_extra * river_scale;
-        }
-        return (src > 0.0f) ? src : 0.0f;
-    };
+    pk_async_climate::WeatherFieldLanes wfl;
+    wfl.temp_read = TR;
+    wfl.moisture_read = MR;
+    wfl.air_anomaly = AA;
+    wfl.wind_x = WX;
+    wfl.wind_y = WY;
+    wfl.wind_speed = WSPD;
+    wfl.terrain = TERR;
+    wfl.has_river = RIV;
+    wfl.river_q30 = RQ30;
+    wfl.elevation = ELEV;
+    wfl.vegetation = VEG;
+    wfl.soil_moisture = SOIL;
+    wfl.vitality = VITA;
+    wfl.sea_ice = SICE;
+    wfl.pos_x = _wf_pos_x.data();
+    wfl.pos_y = _wf_pos_y.data();
+    wfl.temp_anomaly = TANO;
+    wfl.snow_cover = SNOWR;
+    wfl.neighbor_indices = NB;
+    wfl.prev_vapor = PV;
+    wfl.prev_precip = PP;
+    wfl.prev_cloud_water = PCW;
+    wfl.temp_transport_anomaly = TA;
+    wfl.prev_convergence = PREV_CNV;
+    wfl.prev_cloud = PREV_CLOUD;
+    wfl.out_vapor = OUT_VAP;
+    wfl.out_cloud = OUT_CLD;
+    wfl.out_cloud_water = OUT_CW;
+    wfl.out_precip = OUT_PRE;
+    wfl.out_instability = OUT_INS;
+    wfl.out_intensity = OUT_INT;
+    wfl.out_convergence = OUT_CNV;
+    wfl.out_type_u8 = OUT_TYP;
+    wfl.out_type_i32 = OUT_TYP_I32;
+    wfl.out_prev_type = OUT_PREV_TYP;
+    wfl.out_target_type = OUT_TARGET_TYP;
+    wfl.out_alpha = OUT_ALPHA;
+    wfl.out_field_init = OUT_FIN;
 
-    // ─── Tight loop — 1:1 mirror of the GDScript weather field hot loop ──
-    // Source of truth: field_solver.gd::run_slice (fast_indexed path). Keep this
-    // loop bit-equal with that fallback; run set_field_verify_mode(true) to A/B
-    // check (tol 1e-4). NOTE: hot loop moved out of weather_system.gd (PR-1..7);
-    // do not chase the old weather_system.gd:678-757 citation.
-    // ── perf P1: 每 cell 输出互不依赖（仅写 OUT_*[i]/INHIB[i]/transition[i]，无标量累加器；
-    // staged 路径 OUT_* 与 prev 不同 buffer），故按 cell 区间并行、bit-equal、无需 reduce。
-    // direct(use_next_outputs==false) 路径 OUT_CNV 与 PREV_CNV 同 buffer 且读邻居→保持串行。
-    auto run_weather_cell_range = [&](int rb, int re) {
-    for (int i = rb; i < re; ++i) {
-        float temp = TR[i] + climate_anomaly + AA[i];
-        if (temp < 0.0f) temp = 0.0f;
-        else if (temp > 1.0f) temp = 1.0f;
+    pk_async_climate::WeatherFieldState wfs;
+    wfs.conv_inhib = INHIB;
+    wfs.psi = PSI;
+    wfs.cyclone_tag = _cyclone_force_tag.empty() ? nullptr : _cyclone_force_tag.data();
+    wfs.cyclone_tag_count = int(_cyclone_force_tag.size());
+    wfs.cyclone_generation = _cyclone_force_generation;
+    wfs.cyclone_lift = _cyclone_force_lift.empty() ? nullptr : _cyclone_force_lift.data();
+    wfs.cyclone_x = _cyclone_force_x.empty() ? nullptr : _cyclone_force_x.data();
+    wfs.cyclone_y = _cyclone_force_y.empty() ? nullptr : _cyclone_force_y.data();
+    wfs.monsoon_thermal = _phys_monsoon_thermal.empty()
+        ? nullptr : _phys_monsoon_thermal.data();
+    wfs.monsoon_thermal_count = int(_phys_monsoon_thermal.size());
+    wfs.traj_idx = TRAJ_IDX;
+    wfs.traj_w = TRAJ_W;
+    wfs.geom_dx = GEOM_DX;
+    wfs.geom_dy = GEOM_DY;
+    wfs.geom_invd = GEOM_INVD;
 
-        float base_m = MR[i];
-        if (base_m < 0.0f) base_m = 0.0f;
-        else if (base_m > 1.0f) base_m = 1.0f;
-        float vapor_capacity = 0.18f + 0.82f * temp - 0.18f * ELEV[i];
-        if (vapor_capacity < 0.14f) vapor_capacity = 0.14f;
-        else if (vapor_capacity > 1.0f) vapor_capacity = 1.0f;
-
-        const bool on_water = wf_is_water_terrain(TERR[i]);
-        // ── perf P3: 融合 3 个 6-邻域 gather 为一次遍历（逐 d 顺序与原版一致→bit-equal）──
-        //   ① ocean_an     = wf_avg_ocean_anomaly_at_idx(i, TERR, NB, TA)
-        //   ② neighbor_vapor= wf_neighbor_average_vapor_idx(i, NB, PV)
-        //   ③ temp_min/max  = 邻域温度极值（原下方 temp gradient 循环）
-        float ocean_an;
-        float neighbor_vapor;
-        float temp_min = temp;
-        float temp_max = temp;
-        {
-            const int fb = i * 6;
-            float vap_sum = PV[i];
-            int   vap_n   = 1;
-            float oa_sum  = 0.0f;
-            int   oa_n    = 0;
-            for (int d = 0; d < 6; ++d) {
-                const int32_t nb_idx = NB[fb + d];
-                if (nb_idx < 0) continue;
-                vap_sum += PV[nb_idx];                // ② vapor 邻域均值（含 self）
-                vap_n   += 1;
-                float nb_temp = TR[nb_idx] + climate_anomaly + AA[nb_idx];  // ③ 温度梯度极值
-                if (nb_temp < 0.0f) nb_temp = 0.0f;
-                else if (nb_temp > 1.0f) nb_temp = 1.0f;
-                if (nb_temp < temp_min) temp_min = nb_temp;
-                if (nb_temp > temp_max) temp_max = nb_temp;
-                if (!on_water && wf_is_water_terrain(TERR[nb_idx])) {       // ① 陆格→水邻居 TA 均值
-                    oa_sum += TA[nb_idx];
-                    oa_n   += 1;
-                }
-            }
-            neighbor_vapor = vap_sum / float(vap_n);
-            ocean_an = on_water ? TA[i] : ((oa_n == 0) ? 0.0f : (oa_sum / float(oa_n)));
-        }
-        const float local_sea_ice = (on_water && SICE != nullptr) ? dc_clampf(SICE[i], 0.0f, 1.0f) : 0.0f;
-
-        float wind_x = WX[i];
-        float wind_y = WY[i];
-        const bool cyclone_forced = i < int(_cyclone_force_tag.size()) &&
-            _cyclone_force_tag[static_cast<size_t>(i)] == _cyclone_force_generation;
-        const float cyclone_lift = cyclone_forced
-            ? _cyclone_force_lift[static_cast<size_t>(i)] : 0.0f;
-        if (cyclone_forced) {
-            wind_x += _cyclone_force_x[static_cast<size_t>(i)];
-            wind_y += _cyclone_force_y[static_cast<size_t>(i)];
-        }
-        const float wlen2 = wind_x * wind_x + wind_y * wind_y;
-        float wind_dx, wind_dy;
-        if (wlen2 < 0.0001f) {
-            // Conservative fallback: dir = (1,0) like the GDScript final
-            // `wind.normalized() if length_squared > 0.0001 else Vector2.RIGHT`.
-            // Magnitude stays 0 → wind_mag=0 → advect_w lower bound.
-            wind_dx = 1.0f;
-            wind_dy = 0.0f;
-        } else {
-            const float inv = 1.0f / Math::sqrt(wlen2);
-            wind_dx = wind_x * inv;
-            wind_dy = wind_y * inv;
-        }
-        const float wind_len = wf_wind_speed_norm(wind_x, wind_y, WSPD[i]);
-
-        const int upstream_idx = (field_advect_steps > 0)
-            ? wx_aligned(i, -wind_dx, -wind_dy)
-            : -1;
-
-        // NS 化 Phase 2:轨迹表命中 → 真半拉格朗日三点插值(1 次表查 + 3 点 lerp,
-        // 替代 3×6 邻居探测的 hopping,回溯长度含风速×dt 语义);未命中 → 旧路径。
-        const float advected_vapor = (TRAJ_IDX != nullptr)
-            ? wx_traj_sample(i, PV)
-            : wx_upstream_avg(i, upstream_idx, PV, wind_dx, wind_dy);
-
-        // neighbor_vapor 已在上方 P3 融合 gather 中算出。
-
-        float wind_mag = wind_len / 1.2f;
-        if (wind_mag < 0.0f) wind_mag = 0.0f;
-        else if (wind_mag > 1.0f) wind_mag = 1.0f;
-
-        const float lift = wf_orographic_lift_from_upstream_idx(
-            i, upstream_idx, ELEV);
-        float convergence = PREV_CNV[i];
-        if (refresh_convergence) {
-            convergence = wx_convergence(i);
-        }
-
-        float advect_w = 0.65f + wind_mag * 0.30f;
-        if (advect_w < 0.65f) advect_w = 0.65f;
-        else if (advect_w > 0.95f) advect_w = 0.95f;
-
-        const bool is_lake = (TERR[i] == 18);
-        const bool has_river = (!is_lake) && (RIV[i] != 0) && (!on_water);
-        const float river_flow_feedback = has_river
-            ? dc_clampf((RQ30 != nullptr ? RQ30[i] : 0.0f), 0.0f, 1.0f)
-            : 0.0f;
-        float river_recycle_lock = 0.0f;
-        if (has_river) {
-            float river_forcing_proxy = convergence * 0.65f;
-            const float lift_forcing = (lift > 0.0f) ? lift * 0.80f : 0.0f;
-            if (lift_forcing > river_forcing_proxy) river_forcing_proxy = lift_forcing;
-            river_recycle_lock = wf_smoothstep(0.035f, 0.12f, PP[i])
-                * (1.0f - wf_smoothstep(0.16f, 0.44f, river_forcing_proxy))
-                * (0.35f + river_flow_feedback * 0.65f);
-            river_recycle_lock = dc_clampf(river_recycle_lock, 0.0f, 1.0f);
-        }
-        const float river_source_scale = 1.0f - river_recycle_lock * 0.72f;
-        const float river_evap_floor = has_river
-            ? std::max(0.08f, river_flow_feedback * 0.22f) * (1.0f - river_recycle_lock * 0.65f)
-            : 0.0f;
-        if (is_lake) {
-            advect_w *= 0.5f;
-            if (advect_w < 0.20f) advect_w = 0.20f;
-            else if (advect_w > 0.50f) advect_w = 0.50f;
-        } else if (has_river) {
-            advect_w *= (0.88f - river_flow_feedback * 0.10f);
-            if (advect_w < 0.55f) advect_w = 0.55f;
-            else if (advect_w > 0.85f) advect_w = 0.85f;
-        }
-
-        float effective_ocean_an = ocean_an;
-        if (is_lake) {
-            effective_ocean_an = 0.20f;
-        } else if (has_river) {
-            if (ocean_an > river_evap_floor) effective_ocean_an = ocean_an;
-            else                             effective_ocean_an = river_evap_floor;
-        }
-
-        const float source_local = surface_vapor_source(
-            i, temp, base_m, wind_mag, effective_ocean_an, on_water, is_lake,
-            has_river, river_flow_feedback, river_source_scale);
-        float source_upwind = source_local;
-        bool upstream_on_water = false;
-        if (upstream_idx >= 0 && upstream_idx < n_cells) {
-            float up_temp = TR[upstream_idx] + climate_anomaly + AA[upstream_idx];
-            if (up_temp < 0.0f) up_temp = 0.0f;
-            else if (up_temp > 1.0f) up_temp = 1.0f;
-            float up_base_m = MR[upstream_idx];
-            if (up_base_m < 0.0f) up_base_m = 0.0f;
-            else if (up_base_m > 1.0f) up_base_m = 1.0f;
-            const bool up_on_water = wf_is_water_terrain(TERR[upstream_idx]);
-            upstream_on_water = up_on_water;
-            const bool up_is_lake = (TERR[upstream_idx] == 18);
-            const bool up_has_river = (!up_is_lake) && (RIV[upstream_idx] != 0) && (!up_on_water);
-            const float up_river_q = up_has_river
-                ? dc_clampf((RQ30 != nullptr ? RQ30[upstream_idx] : 0.0f), 0.0f, 1.0f)
-                : 0.0f;
-            float up_river_recycle_lock = 0.0f;
-            if (up_has_river) {
-                const float up_forcing_proxy = dc_clampf(PREV_CNV[upstream_idx] * 0.65f, 0.0f, 1.0f);
-                up_river_recycle_lock = wf_smoothstep(0.035f, 0.12f, PP[upstream_idx])
-                    * (1.0f - wf_smoothstep(0.16f, 0.44f, up_forcing_proxy))
-                    * (0.35f + up_river_q * 0.65f);
-                up_river_recycle_lock = dc_clampf(up_river_recycle_lock, 0.0f, 1.0f);
-            }
-            const float up_river_source_scale = 1.0f - up_river_recycle_lock * 0.72f;
-            const float up_ocean_an = up_on_water ? TA[upstream_idx] : effective_ocean_an;
-            source_upwind = surface_vapor_source(
-                upstream_idx, up_temp, up_base_m, wind_mag, up_ocean_an,
-                up_on_water, up_is_lake, up_has_river, up_river_q, up_river_source_scale);
-        }
-
-        // 平流式湿团：vapor 去 base_m 锚定 → 本地与上风加权平流(强度随风速) + 邻域扩散 + 蒸发源。
-        // 允许短暂过饱和(不夹 cap 上限)，由后续凝结消耗 → 随风移动的湿团。镜像 field_solver.gd。
-        // 方案③ vapor 全预报化:平流主导(floor 0.55→0.75,低风也强输送)→水汽主要由上风决定=连续方程平流项,
-        // 蒸发只是注入、降水/凝结是汇,水汽随风成河(atmospheric river)→ψ 在水汽河上移动沿途有水可榨成雨。
-        float adv_w_v = field_advect_vapor * (0.75f + 0.25f * wind_mag);
-        if (adv_w_v > 0.99f) adv_w_v = 0.99f;
-        float vapor = PV[i] + (advected_vapor - PV[i]) * adv_w_v;
-        vapor = vapor + (neighbor_vapor - vapor) * field_diffusion;
-        vapor += source_local + source_upwind * wind_mag * 0.25f;
-        // Stage14c ψ>0 气旋水汽辐合抽吸：向邻域较湿处靠拢(把周围湿气卷入移动涡旋)→突破"水汽静止锚定"，
-        // 让降水能随 ψ 平移。仅邻域更湿时抽(不凭空造汽,有界≤邻域均值)，避免破坏水量平衡致全局过湿。
-        const float psi_now = (PSI != nullptr) ? PSI[i] : 0.0f;
-        if (psi_now > 0.0f && neighbor_vapor > vapor) {
-            vapor += (neighbor_vapor - vapor) * psi_now * 0.78f;   // Stage14e 0.55→0.78 更强抽吸→湿气更跟 ψ→移动更明显
-        }
-        if (vapor < 0.0f) vapor = 0.0f;
-        (void)advect_w;
-
-        // (背风焚风干燥已移入下方凝结/降水的 lift<0 抑制，避免对 vapor 重复扣减)
-
-        // temp_min/temp_max 已在上方 P3 融合 gather 中算出。
-        const float temp_gradient = temp_max - temp_min;
-        // 斜压门(温度梯度大=锋面/中纬冷季)；Stage9 #5 用于把 ψ 致雨限定在斜压带(锋面雨)。
-        const float baroclinic_gate = wf_smoothstep(0.04f, 0.16f, temp_gradient);
-        // Stage13「让天气移动」：ψ 的演化已抽到独立全场 pass run_synoptic_advance_pass(每轮一次、
-        // 不切片、半拉格朗日平移)。本 solve 循环只【读】ψ 当前值做耦合 → ψ 移动 → 云/雨成片随风平移。
-        const float psi = (PSI != nullptr) ? PSI[i] : 0.0f;
-        float relative_humidity = vapor / ((vapor_capacity > 0.001f) ? vapor_capacity : 0.001f);
-        if (relative_humidity < 0.0f) relative_humidity = 0.0f;
-        const float frontal_convergence = wf_smoothstep(0.14f, 0.46f, convergence);
-        const float humidity_front_gate = wf_smoothstep(0.25f, 0.78f, relative_humidity);  // Stage2: 0.38→0.25 冷湿锋面成雨
-        float frontogenesis = frontal_convergence * wf_smoothstep(0.04f, 0.16f, temp_gradient)
-                            * humidity_front_gate * field_frontogenesis_gain;
-        if (frontogenesis < 0.0f) frontogenesis = 0.0f;
-        else if (frontogenesis > 1.0f) frontogenesis = 1.0f;
-        const float lift_pos = (lift > 0.0f) ? lift : 0.0f;
-
-        // Stage11 层状降水(stratiform)：对流(temp>0.48 暖门)挡死的冷/高/水区水汽充足却无触发——补一支不需浮力
-        // 的层状成雨：湿度 + 弱动力抬升(地形/辐合/锋面/海面层云·lake-effect),温度越低权重越高(与对流互补,
-        // 不在暖区重复加雨)。海面项=海洋层云/冷湖效应(修#4湖/冷海·实测水汽0.204最足却几乎不降)。
-        const float strat_cool = 1.0f - wf_smoothstep(0.40f, 0.62f, temp);       // 暖→0(交给对流) 冷→1
-        const float oro_elev = wf_smoothstep(0.45f, 0.82f, ELEV[i]);             // 高地形(山地)抬升强度,供 stratiform + trig 复用
-        const float strat_humid = wf_smoothstep(0.32f, 0.62f, relative_humidity); // Stage14f 0.42→0.32 中湿(山地/冷区 rh~0.39)也成层状雨
-        float strat_drive = lift_pos * 0.90f + convergence * 0.60f + frontogenesis * 0.80f
-                          + oro_elev * 0.35f;                                     // 弱化静态山地云源，避免固定山地永雨
-        if (on_water) strat_drive += (0.22f + wind_mag * 0.30f) * (1.0f - local_sea_ice * 0.92f);
-        if (strat_drive > 1.0f) strat_drive = 1.0f;
-        float stratiform = strat_humid * strat_cool * strat_drive * field_stratiform_gain;
-        if (stratiform < 0.0f) stratiform = 0.0f;
-        else if (stratiform > 1.0f) stratiform = 1.0f;
-
-        // 热力对流(大陆夏季雷暴/对流雨)：地表加热(高温)+本地水汽 → 浮力抬升凝结+高效降水。修复内陆
-        // rh 永远<<静力阈(实测~0.15<<0.55)、lift/辐合皆缺 → 蒸散/平流来的 vapor 凝不成云的死结
-        // (用户洞察:内陆本地蒸发应能成雨)。仅陆地(海洋有独立对流抑制)。季节自限:冬温<0.45 不触发;
-        // 降水耗 vapor→rh 降→对流减弱→不永雨,呈"晴-积累-雷暴"间歇。rh*4.2 门控干空气(rh<0.05)不虚假对流。
-        // 2026-06-22 雨云化根因修复：陆地 rh 中位仅0.18(>0.55 仅2.7% → 静力凝结 sup 基本为0=死)，
-        // 成云降水 76% 靠本项热力对流。rh*5.0 门控把干空气(rh0.18)硬拉成半饱和 → 温暖陆地处处冒弱对流
-        // → 产云水后平流扩散 → 遍地雾+小雨、无晴无强雨。convective 实测双峰(p50=0,p75=0.39)：在谷底
-        // 0.28 硬截断 → 砍遍地弱对流(仅损失6.5%降水)使其转晴/多云，保留强对流核 → 明显降水突显、拉开
-        // "晴↔强降水"对比。(GDScript field_solver 镜像同值)
-        float conv_raw = wf_smoothstep(0.48f, 0.74f, temp) * dc_clampf(relative_humidity * 2.6f, 0.0f, 1.0f);
-        const float convective = (on_water || conv_raw < 0.42f) ? 0.0f : conv_raw;
-        float ocean_convective = 0.0f;
-        if (on_water) {
-            ocean_convective = wf_smoothstep(0.10f, 0.22f, ocean_an)
-                * wf_smoothstep(0.58f, 0.78f, temp)
-                * dc_clampf(relative_humidity, 0.0f, 1.0f);
-            const float open_water = 1.0f - local_sea_ice * 0.92f;
-            const float warm_humid_marine = wf_smoothstep(0.54f, 0.74f, temp)
-                * wf_smoothstep(0.47f, 0.69f, relative_humidity)
-                * dc_clampf(open_water, 0.0f, 1.0f);
-            const float marine_convective_seed = warm_humid_marine * (0.20f + wind_mag * 0.36f);
-            if (marine_convective_seed > ocean_convective) ocean_convective = marine_convective_seed;
-            if (ocean_convective > 1.0f) ocean_convective = 1.0f;
-        }
-        float onshore_moist_flux = 0.0f;
-        float coastal_monsoon_flux = 0.0f;
-        if (!on_water && upstream_idx >= 0 && upstream_on_water) {
-            onshore_moist_flux = wind_mag * dc_clampf(relative_humidity, 0.0f, 1.0f)
-                               * wf_smoothstep(0.54f, 0.75f, temp);
-            coastal_monsoon_flux = onshore_moist_flux;
-        } else if (on_water && upstream_idx >= 0) {
-            const int downwind_idx = wx_aligned(i, wind_dx, wind_dy);
-            bool near_land = false;
-            if (downwind_idx >= 0 && downwind_idx < n_cells) {
-                near_land = !wf_is_water_terrain(TERR[downwind_idx]);
-            }
-            if (near_land) {
-                coastal_monsoon_flux = wind_mag * dc_clampf(relative_humidity, 0.0f, 1.0f)
-                                     * wf_smoothstep(0.56f, 0.76f, temp) * 0.75f;
-            }
-        }
-        if (bool(knobs.get("thermal_monsoon_enabled",
-                _native_runtime_config.get("thermal_monsoon_enabled", false))) &&
-            i < int(_phys_monsoon_thermal.size())) {
-            coastal_monsoon_flux *= std::max(
-                0.0f, _phys_monsoon_thermal[static_cast<size_t>(i)]);
-        }
-        float dynamic_forcing = frontogenesis;
-        const float convergence_forcing = convergence * 0.65f;
-        if (convergence_forcing > dynamic_forcing) dynamic_forcing = convergence_forcing;
-        if (convective > dynamic_forcing) dynamic_forcing = convective;
-        if (ocean_convective > dynamic_forcing) dynamic_forcing = ocean_convective;
-        if (coastal_monsoon_flux > dynamic_forcing) dynamic_forcing = coastal_monsoon_flux;
-        if (cyclone_lift > dynamic_forcing) dynamic_forcing = cyclone_lift;
-        if (stratiform > dynamic_forcing) dynamic_forcing = stratiform;  // Stage11 冷区层状降水
-        // Stage12「让天气移动」: ψ>0(气旋/低压)在所有纬度加抬升(base)+斜压带额外强化(锋面)→移动的雨系统;
-        // ψ 随流场平流→雨带跟着移动。Stage9 的纯斜压门控改为 base + 斜压 bonus(热带也吃 base,接受适度热带变率)。
-        // Stage14「激进推 ψ 主导」: ψ>0(低压)强抬升成降水主驱动；ψ<0(高压)下沉【压低静止 lift】→连静止
-        // 强迫的降水也压住 → 移动的晴空带。这样降水/晴空都跟 ψ 平移(天气成片移动)。代价:过湿+扰动雨热。
-        if (psi > 0.0f) {
-            dynamic_forcing += psi * (syn_base_lift + syn_front_force * baroclinic_gate);
-        } else {
-            dynamic_forcing *= (1.0f + psi * 0.85f);   // psi<0 → ×<1 压低静止抬升
-            if (dynamic_forcing < 0.0f) dynamic_forcing = 0.0f;
-        }
-        // Stage6: post-rain 抑制留 45% 残余(辐合带雨团下完也进入不应期)。镜像 field_solver.gd。
-        float post_rain_subsidence = wf_smoothstep(0.035f, 0.11f, PP[i])
-            * (1.0f - 0.55f * wf_smoothstep(0.18f, 0.55f, dynamic_forcing));
-
-        // climate-realism Stage1: Hadley/Ferrel omega (镜像 field_solver.gd)
-        // dlat = 本格纬度距「热赤道」度数; ITCZ/风暴轴上升带增雨, 副热带下沉带抑制凝结+降水→晴干。
-        float omega_ny = (wb_size_y > 0.001f)
-            ? dc_clampf((POS[i].y - wb_pos_y) / wb_size_y, 0.0f, 1.0f) : 0.5f;
-        float omega_adlat = (omega_ny - weather_lat_te_norm) * 180.0f;
-        if (omega_adlat < 0.0f) omega_adlat = -omega_adlat;
-        const float omega_itcz = 1.0f - wf_smoothstep(8.0f, 16.0f, omega_adlat);
-        const float omega_storm = wf_smoothstep(40.0f, 48.0f, omega_adlat)
-            * (1.0f - wf_smoothstep(62.0f, 70.0f, omega_adlat));
-        float omega_ascent = (omega_itcz > omega_storm) ? omega_itcz : omega_storm;
-        const float omega_descent = wf_smoothstep(14.0f, 22.0f, omega_adlat)
-            * (1.0f - wf_smoothstep(34.0f, 42.0f, omega_adlat));
-        const float omega_precip_mult = (1.0f + omega_ascent * OMEGA_ASCENT_GAIN)
-            * (1.0f - omega_descent * OMEGA_DESCENT_GAIN);
-
-        // 凝结 vapor→cloud_water：动力(抬升/辐合)主导 + 静力过饱和(rh 超阈) + 热力对流。
-        float sup = relative_humidity - field_rh_condense;
-        if (sup < 0.0f) sup = 0.0f;
-        // Stage14「ψ 主导降水」：ψ 直接进【凝结/降水生成】(像 convective/stratiform 旁路 autoconv)，让移动的
-        // ψ 涡旋成为降水主源→云雨成片随 ψ 平移。之前 base_lift 误加进 dynamic_forcing(不驱动 cond/trig)→无效。
-        const float psi_lift = (psi > 0.0f) ? psi * (syn_base_lift + syn_front_force * baroclinic_gate) : 0.0f;
-        const float psi_supp = (psi < 0.0f) ? (1.0f + psi * 0.50f) : 1.0f;  // ψ<0(高压)压低凝结+降水→移动晴空(Stage14c 0.80→0.50 收温和,防压太干)
-        float cond_force = sup * field_static_cond_w + lift_pos * field_lift_cond_gain
-                         + convergence * field_conv_cond_gain + frontogenesis * 1.35f
-                         + convective * field_thermal_conv_cond
-                         + ocean_convective * 0.90f
-                         + stratiform * 0.75f
-                         + cyclone_lift * 1.10f
-                         + psi_lift * 1.20f;     // 方案③+ 0.90→1.20 ψ 致凝结(移动涡旋成云,主导)
-        if (cond_force < 0.0f) cond_force = 0.0f;
-        else if (cond_force > 1.0f) cond_force = 1.0f;
-        cond_force *= psi_supp;                  // Stage14 ψ<0 压低凝结
-        cond_force *= (1.0f - post_rain_subsidence * 0.45f);
-        cond_force *= (1.0f - omega_descent * OMEGA_DESCENT_COND);   // 副热带下沉抑制凝结
-        float condensation = vapor * cond_force * field_condense_rate;
-        if (lift < 0.0f) {                       // 背风下沉(焚风)抑制凝结
-            float foehn = 1.0f + lift * field_rain_shadow_drying;
-            if (foehn < 0.0f) foehn = 0.0f;
-            condensation *= foehn;
-        }
-        if (condensation > vapor * 0.92f) condensation = vapor * 0.92f;
-        if (condensation < 0.0f) condensation = 0.0f;
-        vapor -= condensation;
-
-        // cloud_water 随风平流(搬运湿团) + 凝结加入 + 邻域扩散。复用 vapor 平流 helper(传 PCW)。
-        float cloud_water = (PCW != nullptr) ? PCW[i] : 0.0f;
-        if (PCW != nullptr && upstream_idx >= 0 && upstream_idx < n_cells) {
-            // NS 化 Phase 2:与 vapor 同一张轨迹表(湿团整体随风输运)。
-            const float cw_upwind = (TRAJ_IDX != nullptr)
-                ? wx_traj_sample(i, PCW)
-                : wx_upstream_avg(i, upstream_idx, PCW, wind_dx, wind_dy);
-            const float cw_neighbor = wf_neighbor_average_vapor_idx(i, NB, PCW);
-            float adv_w_c = field_advect_cloud * (0.55f + 0.45f * wind_mag);
-            if (adv_w_c > 0.98f) adv_w_c = 0.98f;
-            cloud_water = cloud_water + (cw_upwind - cloud_water) * adv_w_c;
-            cloud_water = cloud_water + (cw_neighbor - cloud_water) * field_diffusion;
-        }
-        cloud_water += condensation;
-        if (cloud_water < 0.0f) cloud_water = 0.0f;
-        else if (cloud_water > 1.0f) cloud_water = 1.0f;
-
-        float instability = (temp - 0.48f) * 0.80f
-                          + relative_humidity * 0.30f
-                          + convergence * 0.55f
-                          + lift_pos * 1.20f
-                          + frontogenesis * 0.55f
-                          + ocean_convective * 0.35f;
-        instability += cyclone_lift * 0.45f;
-        if (instability < 0.0f) instability = 0.0f;
-        else if (instability > 1.0f) instability = 1.0f;
-
-        // 降水：autoconversion 消耗 cloud_water。动力(辐合/抬升/不稳定)触发主导，地形弱增强；
-        // 背景 base_frac 很小 → 无动力区降水压到 wet 阈值以下 → 只有移动天气系统处成雨 → 雨随系统移动。
-        float trig = field_autoconversion * (field_precip_base_frac
-                        + lift_pos * field_lift_precip_gain
-                        + convergence * field_conv_precip_gain
-                        + frontogenesis * 0.85f
-                        + instability * 0.30f);
-        trig *= (1.0f + lift_pos * field_oro_precip_gain);
-        trig += convective * field_thermal_conv_precip;   // 对流雨高效成雨，旁路 autoconv 瓶颈(内陆 cw 少)
-        trig += ocean_convective * 0.95f;
-        trig += stratiform * 0.80f;   // Stage11 层状降水高效成雨(冷/高/水区,旁路 autoconv)→修 #4湖/#5a雪/#6山
-        trig += cyclone_lift * 0.75f;
-        trig += psi_lift * 1.50f;     // 方案③+ 1.10→1.50 ψ 致雨主驱动(降水成片随 ψ 平移,盖过静止 lift)
-        trig += oro_elev * 0.18f * wf_smoothstep(0.02f, 0.10f, cloud_water);  // 弱化固定地形转化，保留迎风坡但不锁死雨核
-        trig *= psi_supp;             // Stage14 ψ<0 压低降水→移动晴空
-        if (trig < 0.0f) trig = 0.0f;
-        else if (trig > 0.95f) trig = 0.95f;
-        float precip_target = cloud_water * trig;
-        precip_target *= omega_precip_mult;   // Stage1 omega: ITCZ/风暴轴增雨 + 副热带下沉抑雨(纬向廓线)
-        // Stage9 #5 ψ 耦合：ψ<0(高压)强抑雨→湿季间断；ψ>0(低压)增雨——基础弱(syn_enh，热带也仅此)，
-        // 斜压带额外强增(syn_front_enh×gate)→冷季锋面雨。这样热带不堆暴雨、中纬冷季出现雨热不同期降水。
+    // 记录给 worker 对拍用的输入。必须在 solve 之前：conv_inhib / ψ / 过渡三条都是
+    // in/out，跑完再记就变成记结果。只在 start_idx == 0 那一次记 —— sliced 路径会把
+    // 同一天切成多段调用，每段重记一次的话后面几段读到的 conv_inhib 已经是本轮改过
+    // 的了。stage bit 同理只置一次。
+    if (start_idx == 0) {
+        pk_async_climate::SynopticAdvanceKnobs syn_rec;
         if (PSI != nullptr) {
-            float syn_enh_eff = syn_enh + syn_front_enh * baroclinic_gate;
-            float syn_mult = 1.0f + (psi < 0.0f ? psi * syn_supp : psi * syn_enh_eff);
-            if (syn_mult < 0.0f) syn_mult = 0.0f;
-            precip_target *= syn_mult;
+            syn_rec.baroclinic = syn_baroclinic;
+            syn_rec.damp = syn_damp;
+            syn_rec.diffuse = syn_diffuse;
+            syn_rec.seed_rate = syn_seed_rate;
+            syn_rec.seed_amp = syn_seed_amp;
+            syn_rec.adv_cells = syn_adv_cells;
+            syn_rec.tick = syn_tick;
+            syn_rec.cell_pos_scale = weather_cell_pos_scale;
+            syn_rec.wrap_width_x = weather_wrap_width_x;
         }
-        // Stage6e 对流抑制记忆(双稳)：读累积抑制(本 tick 起始)，硬阈压制移到最终降水处(EMA 之后)。
-        const float inhib_old = (INHIB != nullptr) ? INHIB[i] : 0.0f;
-        if (lift < 0.0f) {
-            float shadow = (-lift) * field_rain_shadow_drying;
-            if (shadow > 0.85f) shadow = 0.85f;
-            precip_target *= (1.0f - shadow);
-        }
-        if (has_river && river_recycle_lock > 0.0f) {
-            const float river_relief = river_recycle_lock
-                * (1.0f - wf_smoothstep(0.22f, 0.50f, dynamic_forcing));
-            if (river_relief > 0.0f) {
-                const float cloud_relief = cloud_water * 0.22f * river_relief;
-                cloud_water -= cloud_relief;
-                vapor += cloud_relief * 0.60f;
-                precip_target *= (1.0f - 0.48f * river_relief);
-            }
-        }
-        // 水面对流抑制(保留动力门控：辐合/锋生/暖流异常 释放降水；instability 仅极端深对流安全阀)。
-        float ocean_drive = 0.0f;
-        if (on_water) {
-            float drv_an = ocean_an / 0.16f;
-            if (drv_an < 0.0f) drv_an = 0.0f; else if (drv_an > 1.0f) drv_an = 1.0f;
-            float drv_in = (instability - 0.52f) / 0.30f;
-            if (drv_in < 0.0f) drv_in = 0.0f; else if (drv_in > 1.0f) drv_in = 1.0f;
-            float drv_cv = (convergence - 0.38f) / 0.16f;
-            if (drv_cv < 0.0f) drv_cv = 0.0f; else if (drv_cv > 1.0f) drv_cv = 1.0f;
-            float drv_fr = frontogenesis / 0.16f;
-            if (drv_fr < 0.0f) drv_fr = 0.0f; else if (drv_fr > 1.0f) drv_fr = 1.0f;
-            float drv_mn = coastal_monsoon_flux / 0.18f;
-            if (drv_mn < 0.0f) drv_mn = 0.0f; else if (drv_mn > 1.0f) drv_mn = 1.0f;
-            float drv_hc = wf_smoothstep(0.47f, 0.69f, relative_humidity)
-                * wf_smoothstep(0.040f, 0.105f, cloud_water)
-                * wf_smoothstep(0.54f, 0.74f, temp);
-            // Stage14e 湖泊不再额外压低 humid-convective 驱动(原 ×0.60 致湖面少雨绕湖)；湖泊像小内海正常对流。
-            drv_hc *= 0.68f;
-            ocean_drive = drv_an;
-            if (drv_in > ocean_drive) ocean_drive = drv_in;
-            if (drv_cv > ocean_drive) ocean_drive = drv_cv;
-            if (drv_fr > ocean_drive) ocean_drive = drv_fr;
-            if (drv_mn > ocean_drive) ocean_drive = drv_mn;
-            if (drv_hc > ocean_drive) ocean_drive = drv_hc;
-            if (omega_ascent > ocean_drive) ocean_drive = omega_ascent;   // ITCZ/风暴轴释放海面抑制
-            float precip_suppression = field_ocean_precip_suppression;
-            if (is_lake && precip_suppression > 0.10f) precip_suppression = 0.10f;  // Stage14e 湖泊几乎不抑制(像内陆水体能下雨)→不再绕湖(原0.35仍压制)
-            if (!is_lake && precip_suppression > 0.78f) precip_suppression = 0.78f;
-            const float ocean_lo = 1.0f - precip_suppression;
-            precip_target *= ocean_lo + (1.0f - ocean_lo) * ocean_drive;
-            const float marine_relief = post_rain_subsidence
-                * (1.0f - wf_smoothstep(0.30f, 0.58f, ocean_drive));
-            precip_target *= (1.0f - marine_relief * 0.72f);
-        }
-        if (precip_target > cloud_water) precip_target = cloud_water;   // 降水不超过现有云水
-        if (precip_target < 0.0f) precip_target = 0.0f;
-        cloud_water -= precip_target;
-        if (cloud_water < 0.0f) cloud_water = 0.0f;
-        const float precip_cloud_reserve = precip_target * (0.18f + dynamic_forcing * 0.18f);
-        cloud_water += precip_cloud_reserve;
-        if (cloud_water > 1.0f) cloud_water = 1.0f;
-        const float quiet_core = 1.0f - wf_smoothstep(0.12f, 0.50f, dynamic_forcing);
-        if (on_water && !is_lake && ocean_drive < 0.34f) {   // Stage14e 湖泊不刮云水(marine_scour 是海洋机制,会让小湖云存不住→绕湖)
-            float marine_scour = cloud_water * (0.036f + (0.34f - ocean_drive) * 0.18f)
-                               * (1.0f + post_rain_subsidence * 1.60f);
-            if (marine_scour < 0.0f) marine_scour = 0.0f;
-            if (marine_scour > cloud_water) marine_scour = cloud_water;
-            cloud_water -= marine_scour;
-            vapor += marine_scour * 0.55f;
-        }
-
-        // 干空气云水再蒸发回 vapor（湿团边缘消散 → 闭合水量收支）。
-        float reevap = cloud_water * field_cloud_reevap * (1.0f - relative_humidity)
-                     * (1.0f + post_rain_subsidence * 1.75f + quiet_core * 0.75f);
-        if (reevap < 0.0f) reevap = 0.0f;
-        if (reevap > cloud_water) reevap = cloud_water;
-        cloud_water -= reevap;
-        vapor += reevap;
-        if (on_water) {
-            vapor *= (1.0f - post_rain_subsidence
-                * (1.0f - wf_smoothstep(0.28f, 0.58f, ocean_drive)) * 0.045f);
-        }
-
-        // 降水稳定性(地形阻尼 + 极端 soft cap) + EMA 时间惯性(保留)。
-        precip_target = wf_apply_precip_stability(
-            TERR[i], precip_target,
-            field_wet_terrain_precip_damping,
-            field_lake_precip_damping,
-            field_extreme_precip_soft_cap,
-            field_extreme_precip_softness);
-        // Stage10 不应期(inhib≥1)作用于 target(EMA 前)→降水随惯性平滑衰减到近零，不再瞬间砍断(去时间跳变)。镜像 field_solver.gd。
-        if (inhib_old >= 1.0f) {
-            precip_target *= (1.0f - INHIB_STRENGTH);
-        }
-        float precip = PP[i] + (precip_target - PP[i]) * field_precip_inertia;
-        if (precip_target < PP[i] && dynamic_forcing < 0.20f) {
-            precip = precip + (precip_target - precip) * (post_rain_subsidence * 0.55f);
-        }
-        // Stage10b 空间平滑(非对称)：强填洞(precip<邻域→去棋盘洞+扩雨到干邻格，降永晴)、弱削峰(×0.30→保超级单体暴雨)。镜像 field_solver.gd。
-        if (field_precip_spatial_smooth > 0.0f) {
-            const float nbr_precip = wf_neighbor_average_vapor_idx(i, NB, PP);
-            const float k = (nbr_precip > precip) ? field_precip_spatial_smooth
-                                                  : field_precip_spatial_smooth * 0.30f;
-            precip += (nbr_precip - precip) * k;
-        }
-        const float effective_precip_floor = on_water ? 0.014f : 0.018f;
-        if (precip < 0.003f) precip = 0.0f;
-        const float provisional_cloud = dc_clampf(cloud_water * 1.10f + condensation * 0.25f, 0.0f, 1.0f);
-        const float temp_anom_i = (TANO != nullptr) ? TANO[i] : 0.0f;
-        const float snow_cover_cls = (SNOWR != nullptr) ? SNOWR[i] : 0.0f;
-        uint8_t pre_wt = wf_classify_field_weather_at(
-            temp, vapor, provisional_cloud, cloud_water, precip, instability,
-            ocean_an, wind_len, temp_anom_i,
-            std::max(onshore_moist_flux, coastal_monsoon_flux),
-            cold_precip_as_blizzard, snow_classification_margin, on_water, snow_cover_cls);
-        const bool quiet_non_precip = !wf_is_precip_weather_type(pre_wt) && quiet_core > 0.0f;
-        if ((precip < 0.003f || quiet_non_precip) && quiet_core > 0.0f) {
-            float clear_cap = 0.065f + dynamic_forcing * 0.12f;
-            if (on_water && ocean_drive < 0.20f) {
-                const float ocean_cap = 0.070f + ocean_drive * 0.18f;
-                if (ocean_cap < clear_cap) clear_cap = ocean_cap;
-            }
-            if (cloud_water > clear_cap) {
-                const float excess_cloud_water = (cloud_water - clear_cap) * quiet_core;
-                cloud_water -= excess_cloud_water;
-                vapor += excess_cloud_water * 0.75f;
-            }
-        }
-        if (quiet_non_precip && precip < effective_precip_floor) {
-            vapor += precip * 0.65f;
-            precip = 0.0f;
-        }
-        if (vapor < 0.0f) vapor = 0.0f;
-        else if (vapor > 1.0f) vapor = 1.0f;   // 写回夹 [0,1]：下游(分类/可视/植被)按归一化消费
-        float vapor_after_precip = vapor;
-        (void)field_vapor_relax_rate;
-        const float rain_core = wf_smoothstep(0.025f, 0.095f, precip);
-        const float front_core = wf_smoothstep(0.08f, 0.55f, frontogenesis);
-        float cloud_floor = rain_core * (0.14f + rain_core * 0.22f);
-        const float front_cloud_floor = front_core * 0.30f;
-        if (front_cloud_floor > cloud_floor) cloud_floor = front_cloud_floor;
-        if (convective > 0.0f) {
-            const float convective_cloud_floor = 0.06f + convective * 0.18f;
-            if (convective_cloud_floor > cloud_floor) cloud_floor = convective_cloud_floor;
-        }
-        if (ocean_convective > 0.0f) {
-            const float ocean_cloud_floor = 0.10f + ocean_convective * 0.16f;
-            if (ocean_cloud_floor > cloud_floor) cloud_floor = ocean_cloud_floor;
-        }
-        if (quiet_non_precip) {
-            const float fair_humid = wf_smoothstep(0.34f, 0.56f, relative_humidity);
-            const float fair_cloud_floor = fair_humid * quiet_core * (0.050f + fair_humid * 0.070f);
-            if (fair_cloud_floor > cloud_floor) cloud_floor = fair_cloud_floor;
-        }
-        float cloud = cloud_water * 1.10f + condensation * 0.25f;
-        if (cloud < cloud_floor) cloud = cloud_floor;
-        // Stage15 云量时间 EMA(减 shader 闪烁)：cloud 混入瞬时 condensation/cloud_floor(无时间惯性)→在渲染阈值
-        // 附近抖动闪烁。用上帧云量做 EMA 平滑(cloud_water 本身已平滑,只需压住瞬时项的抖)。
-        const float prev_cloud = PREV_CLOUD[i];
-        cloud = prev_cloud + (cloud - prev_cloud) * field_cloud_inertia;
-        if (cloud < 0.0f) cloud = 0.0f;
-        else if (cloud > 1.0f) cloud = 1.0f;
-
-        // classify + intensity
-        uint8_t wt = wf_classify_field_weather_at(
-            temp, vapor, cloud, cloud_water, precip, instability,
-            ocean_an, wind_len, temp_anom_i,
-            std::max(onshore_moist_flux, coastal_monsoon_flux),
-            cold_precip_as_blizzard, snow_classification_margin, on_water, snow_cover_cls);
-        if (cyclone_lift >= 0.58f && on_water) {
-            wt = uint8_t(std::clamp(int(knobs.get("cyclone_storm_type_id", 2)), 0, 255));
-        }
-        if (!wf_is_precip_weather_type(wt) && precip > 0.0f) {
-            vapor += precip * 0.65f;
-            if (vapor > 1.0f) vapor = 1.0f;
-            vapor_after_precip = vapor;
-            precip = 0.0f;
-        } else if (precip > 0.0f) {
-            // Stage6 放电：实际降水抽干本格水汽→自发停雨/消散+随上风水汽移动+海面自生成。镜像 field_solver.gd。
-            // Stage6b：持续降水(PP[i])放电翻倍→砍"连下一周"长尾，不动新生短雨段。
-            const float discharge_amp = 1.0f + DISCHARGE_SUSTAIN * wf_smoothstep(0.04f, 0.10f, PP[i]);
-            vapor_after_precip -= precip * VAPOR_DISCHARGE * discharge_amp;
-            if (vapor_after_precip < 0.0f) vapor_after_precip = 0.0f;
-        }
-        // Stage6g 更新对流抑制(按时长两段)：充能期连续降水累加→满进不应期；不应期衰减→落回清零重启。镜像 field_solver.gd。
-        if (INHIB != nullptr) {
-            float ni;
-            if (inhib_old >= 1.0f) {
-                ni = inhib_old - INHIB_REFRAC;
-                if (ni < 1.0f) ni = 0.0f;
-            } else if (precip > INHIB_WET) {
-                ni = inhib_old + INHIB_CHARGE;
-                if (ni >= 1.0f) ni = 2.0f;
-            } else {
-                ni = inhib_old * INHIB_LEAK;
-            }
-            INHIB[i] = ni;
-        }
-        float intensity = wf_field_intensity_for_type(
-            wt, temp, vapor, cloud, precip, instability, ocean_an);
-        if (refresh_convergence && apply_convergence_boost) {
-            wf_apply_frontal_convergence_boost_idx(
-                i, TR, AA, NB, climate_anomaly, convergence,
-                temp, vapor, ocean_an,
-                cloud, precip, instability, wt, intensity);
-        }
-
-        uint8_t display_wt = wt;
-        if (weather_transition_enabled && OUT_PREV_TYP != nullptr && OUT_TARGET_TYP != nullptr && OUT_ALPHA != nullptr) {
-            const uint8_t current_display = OUT_TYP[i];
-            uint8_t prev_type = OUT_PREV_TYP[i];
-            uint8_t target_type = OUT_TARGET_TYP[i];
-            float alpha = OUT_ALPHA[i];
-            if (alpha < 0.0f) alpha = 0.0f;
-            else if (alpha > 1.0f) alpha = 1.0f;
-            if (target_type != wt) {
-                prev_type = current_display;
-                target_type = wt;
-                alpha = weather_transition_alpha_rate * weather_transition_dt_days; // [dt-aware] 当前求解即计入
-                if (alpha > 1.0f) alpha = 1.0f;
-            } else if (prev_type == target_type || current_display == target_type) {
-                prev_type = target_type;
-                alpha = 0.0f;
-            } else {
-                alpha += weather_transition_alpha_rate * weather_transition_dt_days;
-                if (alpha > 1.0f) alpha = 1.0f;
-            }
-            display_wt = (alpha >= 1.0f) ? target_type : prev_type;
-            if (alpha >= 1.0f) {
-                prev_type = target_type;
-                alpha = 0.0f;
-            }
-            OUT_PREV_TYP[i] = prev_type;
-            OUT_TARGET_TYP[i] = target_type;
-            OUT_ALPHA[i] = alpha;
-        }
-
-        // (line 751-757) write outputs
-        OUT_VAP[i] = vapor_after_precip;
-        OUT_CLD[i] = cloud;
-        if (OUT_CW != nullptr) {
-            OUT_CW[i] = cloud_water;
-        }
-        OUT_PRE[i] = precip;
-        OUT_INS[i] = instability;
-        OUT_INT[i] = intensity;
-        OUT_CNV[i] = convergence;
-        if (use_next_outputs) {
-            OUT_TYP_I32[i] = int32_t(wt);
-        } else {
-            OUT_TYP[i] = display_wt;
-            OUT_FIN[i] = 1; // weather_field_initialized = true
-        }
+        record_production_weather_input(wfk, syn_rec, PSI != nullptr, wfl, wfs,
+                                       n_cells, s_wfin.arr_u8.ptr());
+        _production_stage_mask |= pk_async_climate::CLIMATE_STAGE_BIT_WEATHER;
     }
-    }; // run_weather_cell_range
 
     if (use_next_outputs && (end_idx - start_idx) >= 256) {
         // staged 路径并行（native daily）。区间 [start_idx, end_idx) → 0-based n + 偏移。
         pk::parallel_for_range("pk_weather_field", end_idx - start_idx,
-            [&](int b, int e) { run_weather_cell_range(start_idx + b, start_idx + e); });
+            [&](int b, int e) {
+                pk_async_climate::weather_field_solve_pure(
+                    wfk, wfl, wfs, start_idx + b, start_idx + e);
+            });
     } else {
-        run_weather_cell_range(start_idx, end_idx);
+        pk_async_climate::weather_field_solve_pure(
+            wfk, wfl, wfs, start_idx, end_idx);
     }
 
     // §11.2 flush: push CoW-detached weather output slots back to MapData
@@ -1793,124 +1173,52 @@ Dictionary DCWorldExt::run_weather_field_commit_pass(Dictionary knobs) {
 
     auto t0 = std::chrono::high_resolution_clock::now();
 
-    for (int i = 0; i < n_cells; ++i) {
-        W_DIRTY[i] = 0;
-    }
-
-    int dirty_count = 0;
-    int convergence_dirty_count = 0;
+    // S3 P3：计算体已提取为 pk_async_climate::weather_commit_pure，worker 走同一份。
     PackedFloat32Array convergence_deltas;
     if (refresh_convergence) {
         convergence_deltas.resize(n_cells);
     }
-    float * const __restrict CONV_DELTA =
-        refresh_convergence ? convergence_deltas.ptrw() : nullptr;
-    double water_budget_error_acc = 0.0;
-    constexpr float CHANGE_EPS = 0.002f;
 
-    for (int i = 0; i < n_cells; ++i) {
-        const float v_vapor = NEXT_VAP[i];
-        const float v_cloud = NEXT_CLD[i];
-        const float v_cloud_water =
-            (NEXT_CW != nullptr) ? NEXT_CW[i] : (v_cloud * 0.5f);
-        const float v_precip = NEXT_PRE[i];
-        const float v_instability = NEXT_INS[i];
-        const float v_intensity = NEXT_INT[i];
-        const float v_convergence = NEXT_CNV[i];
-        const uint8_t v_type = static_cast<uint8_t>(NEXT_TYP[i] & 0xFF);
-        if (refresh_convergence) {
-            const float conv_delta = std::fabs(W_CNV[i] - v_convergence);
-            if (conv_delta > 0.0005f && CONV_DELTA != nullptr) {
-                CONV_DELTA[convergence_dirty_count++] = conv_delta;
-            }
-        }
+    pk_async_climate::WeatherCommitKnobs wck;
+    wck.n_cells                    = n_cells;
+    wck.refresh_convergence        = refresh_convergence;
+    wck.weather_transition_enabled = weather_transition_enabled;
+    wck.transition_rate            = transition_rate;
+    wck.transition_dt_days         = transition_dt_days;
+    wck.lut_slots                  = lut_slots;
 
-        const float prev_budget_cloud_water = (W_CW != nullptr) ? W_CW[i] : 0.0f;
-        water_budget_error_acc += std::fabs(
-            double(v_vapor + v_cloud_water + v_precip) -
-            double(PREV_VAP[i] + prev_budget_cloud_water));
+    pk_async_climate::WeatherCommitLanes wcl;
+    wcl.next_vapor        = NEXT_VAP;
+    wcl.next_cloud        = NEXT_CLD;
+    wcl.next_cloud_water  = NEXT_CW;
+    wcl.next_precip       = NEXT_PRE;
+    wcl.next_instability  = NEXT_INS;
+    wcl.next_intensity    = NEXT_INT;
+    wcl.next_convergence  = NEXT_CNV;
+    wcl.next_type         = NEXT_TYP;
+    wcl.prev_vapor        = PREV_VAP;
+    wcl.neighbor_indices  = NB;
+    wcl.intensity         = W_INT;
+    wcl.cloud             = W_CLD;
+    wcl.cloud_water       = W_CW;
+    wcl.precip            = W_PRE;
+    wcl.vapor             = W_VAP;
+    wcl.convergence       = W_CNV;
+    wcl.instability       = W_INS;
+    wcl.type              = W_TYP;
+    wcl.prev_type         = W_PREV;
+    wcl.target_type       = W_TARGET;
+    wcl.transition_alpha  = W_ALPHA;
+    wcl.field_init        = W_FIN;
+    wcl.dirty             = W_DIRTY;
+    wcl.lut               = WX;
+    wcl.convergence_deltas = refresh_convergence ? convergence_deltas.ptrw() : nullptr;
 
-        uint8_t display_type = v_type;
-        uint8_t prev_type = v_type;
-        uint8_t target_type = v_type;
-        float alpha = 1.0f;
-        if (weather_transition_enabled && W_PREV != nullptr && W_TARGET != nullptr && W_ALPHA != nullptr) {
-            const uint8_t current_display = W_TYP[i];
-            prev_type = W_PREV[i];
-            target_type = W_TARGET[i];
-            alpha = W_ALPHA[i];
-            if (alpha < 0.0f) alpha = 0.0f;
-            else if (alpha > 1.0f) alpha = 1.0f;
-            if (target_type != v_type) {
-                prev_type = current_display;
-                target_type = v_type;
-                alpha = transition_rate * transition_dt_days; // [dt-aware] 当前求解即计入
-                if (alpha > 1.0f) alpha = 1.0f;
-            } else if (prev_type == target_type || current_display == target_type) {
-                prev_type = target_type;
-                alpha = 0.0f;
-            } else {
-                alpha += transition_rate * transition_dt_days;
-                if (alpha > 1.0f) alpha = 1.0f;
-            }
-            display_type = (alpha >= 1.0f) ? target_type : prev_type;
-            if (alpha >= 1.0f) {
-                prev_type = target_type;
-                alpha = 0.0f;
-            }
-        }
-
-        bool weather_changed = false;
-        weather_changed = weather_changed || (std::fabs(W_VAP[i] - v_vapor) > CHANGE_EPS);
-        weather_changed = weather_changed || (std::fabs(W_CLD[i] - v_cloud) > CHANGE_EPS);
-        if (W_CW != nullptr) {
-            weather_changed = weather_changed || (std::fabs(W_CW[i] - v_cloud_water) > CHANGE_EPS);
-        }
-        weather_changed = weather_changed || (std::fabs(W_PRE[i] - v_precip) > CHANGE_EPS);
-        weather_changed = weather_changed || (W_TYP[i] != display_type);
-
-        if (weather_changed) {
-            if (W_DIRTY[i] == 0) {
-                W_DIRTY[i] = 1;
-                ++dirty_count;
-            }
-            const int nb_base = i * 6;
-            for (int d = 0; d < 6; ++d) {
-                const int32_t nb_i = NB[nb_base + d];
-                if (nb_i >= 0 && nb_i < n_cells && W_DIRTY[nb_i] == 0) {
-                    W_DIRTY[nb_i] = 1;
-                    ++dirty_count;
-                }
-            }
-        }
-
-        W_INT[i] = v_intensity;
-        W_CLD[i] = v_cloud;
-        if (W_CW != nullptr) {
-            W_CW[i] = v_cloud_water;
-        }
-        W_PRE[i] = v_precip;
-        W_TYP[i] = display_type;
-        const int w4 = i * 4;
-        WX[w4] = display_type;
-        WX[w4 + 1] = q01_byte_commit(v_intensity);
-        WX[w4 + 2] = q01_byte_commit(v_cloud);
-        WX[w4 + 3] = q01_byte_commit(v_vapor);
-        if (W_PREV != nullptr) {
-
-            W_PREV[i] = prev_type;
-        }
-        if (W_TARGET != nullptr) {
-            W_TARGET[i] = target_type;
-        }
-        if (W_ALPHA != nullptr) {
-            W_ALPHA[i] = alpha;
-        }
-        W_VAP[i] = v_vapor;
-        W_CNV[i] = v_convergence;
-        W_INS[i] = v_instability;
-        W_FIN[i] = 1;
-    }
+    pk_async_climate::WeatherCommitStats wcs;
+    pk_async_climate::weather_commit_pure(wck, wcl, wcs);
+    const int dirty_count = wcs.dirty_count;
+    const int convergence_dirty_count = wcs.convergence_dirty_count;
+    const double water_budget_error_acc = wcs.water_budget_error_sum;
 
     _flush_slot_to_map(sid_w_intens);
     _flush_slot_to_map(sid_w_cloud);
@@ -2035,6 +1343,10 @@ double DCWorldExt::run_wind_air_mass_pass(Dictionary knobs) {
         ? s_temp.arr_f32.ptr()
         : temp_before_arr.ptr();
 
+    // S3: 留存生产这一轮真实用过的标量，reference publish 时随 reference 发布给 worker。
+    // 不写的后果是 worker 跑同一份共享内核、却吃结构默认 knobs。
+    record_production_round_scalars(0x10, knobs);
+
     auto t0 = std::chrono::high_resolution_clock::now();
 
     // NS 化 Phase 2:风场回溯轨迹表消费资格(与 weather field solve 同一契约:
@@ -2051,67 +1363,47 @@ double DCWorldExt::run_wind_air_mass_pass(Dictionary knobs) {
         }
     }
 
-    for (int i = start_idx; i < end_idx; ++i) {
-        A[i] = 0.0f;
-
-        const float wind_x = WX[i];
-        const float wind_y = WY[i];
-        const float wind_len2 = wind_x * wind_x + wind_y * wind_y;
-        if (wind_len2 < 1e-6f || advect_steps == 0) {
-            continue;
+    // S3：baseline 与轨迹表都不是 slot，capture 侧取不到，worker 只能靠这里照抄。
+    // 分片调用时每一片都记同一份（内容与 start_idx 无关），最后一片覆盖前面的，
+    // 结果一致。
+    {
+        auto wa_in = std::make_shared<pk_async_climate::WindAirInput>();
+        wa_in->n_cells = n_cells;
+        wa_in->baseline.assign(BL, BL + n_cells);
+        wa_in->wind_x.assign(WX, WX + n_cells);
+        wa_in->wind_y.assign(WY, WY + n_cells);
+        wa_in->wind_speed.assign(WSP, WSP + n_cells);
+        if (TRAJ_IDX != nullptr && TRAJ_W != nullptr) {
+            wa_in->traj_idx.assign(TRAJ_IDX, TRAJ_IDX + size_t(n_cells) * 3u);
+            wa_in->traj_w.assign(TRAJ_W, TRAJ_W + size_t(n_cells) * 3u);
         }
+        _production_wind_air = std::move(wa_in);
+    }
 
-        const float inv_wind_len = 1.0f / std::sqrt(wind_len2);
-        const float up_dx = -wind_x * inv_wind_len;
-        const float up_dy = -wind_y * inv_wind_len;
+    // S3：这一段曾与 worker 的 _async_wind_air_kernel_pure 是两份实现，差三处
+    // （轨迹表分支、isfinite 兜底、baseline 来源），温度链条因此在 round 里偏。
+    // 现在两边都调这一个内核。
+    {
+        pk_async_climate::WindAirKnobs wa_knobs;
+        wa_knobs.n_cells = n_cells;
+        wa_knobs.advect_steps = advect_steps;
+        wa_knobs.heat_mix = heat_mix;
+        wa_knobs.wrap_period_x = wrap_period_x;
 
-        int upstream_idx = i;
-        for (int step = 0; step < advect_steps; ++step) {
-            int best_idx = -1;
-            float best_dot = 0.1f;
-            const float swx = POSX[upstream_idx];
-            const float swy = POSY[upstream_idx];
-            const int ub = upstream_idx * 6;
-            for (int d = 0; d < 6; ++d) {
-                const int32_t ni = NB[ub + d];
-                if (ni < 0) continue;
-                const float dx = pk_wrap_min_image_dx(POSX[ni] - swx, wrap_period_x);
-                const float dy = POSY[ni] - swy;
-                const float len2 = dx * dx + dy * dy;
-                if (len2 < 1e-6f) continue;
-                const float inv_len = 1.0f / std::sqrt(len2);
-                const float dot_v = (dx * up_dx + dy * up_dy) * inv_len;
-                if (dot_v > best_dot) {
-                    best_dot = dot_v;
-                    best_idx = ni;
-                }
-            }
-            if (best_idx < 0) break;
-            upstream_idx = best_idx;
-        }
+        pk_async_climate::WindAirLanes wa_lanes;
+        wa_lanes.wind_x = WX;
+        wa_lanes.wind_y = WY;
+        wa_lanes.wind_speed = WSP;
+        wa_lanes.pos_x = POSX;
+        wa_lanes.pos_y = POSY;
+        wa_lanes.temp_before = TB;
+        wa_lanes.baseline = BL;
+        wa_lanes.neighbor_indices = NB;
+        wa_lanes.traj_idx = TRAJ_IDX;
+        wa_lanes.traj_w = TRAJ_W;
+        wa_lanes.air_anomaly = A;
 
-        const float temp_self_raw = TB[i];
-        const float temp_self = std::isfinite(temp_self_raw) ? temp_self_raw : BL[i];
-        // NS 化 Phase 2:轨迹表命中 → 回溯三角形三点插值上游温度(每顶点独立
-        // finite 守门,与旧 temp_up_raw 单点守门同语义);未命中 → 旧离散上游。
-        float temp_up;
-        if (TRAJ_IDX != nullptr) {
-            const int t3 = i * 3;
-            const int j0 = TRAJ_IDX[t3], j1 = TRAJ_IDX[t3 + 1], j2 = TRAJ_IDX[t3 + 2];
-            const float t0r = TB[j0], t1r = TB[j1], t2r = TB[j2];
-            const float t0v = std::isfinite(t0r) ? t0r : BL[j0];
-            const float t1v = std::isfinite(t1r) ? t1r : BL[j1];
-            const float t2v = std::isfinite(t2r) ? t2r : BL[j2];
-            temp_up = TRAJ_W[t3] * t0v + TRAJ_W[t3 + 1] * t1v + TRAJ_W[t3 + 2] * t2v;
-        } else {
-            const float temp_up_raw = TB[upstream_idx];
-            temp_up = std::isfinite(temp_up_raw) ? temp_up_raw : BL[upstream_idx];
-        }
-        float speed_mix = wf_wind_speed_norm(wind_x, wind_y, WSP[i]) / 1.2f;
-        if (speed_mix < 0.25f) speed_mix = 0.25f;
-        else if (speed_mix > 1.35f) speed_mix = 1.35f;
-        const float temp_mixed_raw = temp_self + (temp_up - temp_self) * heat_mix * speed_mix;
-        A[i] = temp_mixed_raw - BL[i];
+        pk_async_climate::wind_air_pure(wa_knobs, wa_lanes, start_idx, end_idx);
     }
 
     knobs["cursor_start"] = start_idx;
@@ -2230,70 +1522,43 @@ double DCWorldExt::run_wind_surface_pass(Dictionary knobs) {
     const float * const __restrict OANOM      = s_oanom.arr_f32.ptr();
     const float * const __restrict LANOM      = s_lanom.arr_f32.ptr();
 
+    // S3: 留存生产这一轮真实用过的标量，reference publish 时随 reference 发布给 worker。
+    // 不写的后果是 worker 跑同一份共享内核、却吃结构默认 knobs。
+    record_production_round_scalars(0x20, knobs);
+    // oanom 是分叉链头，且它的权威在生产的分片 ocean stage 手里（见
+    // WindSurfaceInput 注释）。在消费点记录，抽到的就是生产真正用的那份。
+    record_production_wind_surface_input(n_cells, OANOM);
+
     auto t0 = std::chrono::high_resolution_clock::now();
 
-    for (int i = start_idx; i < end_idx; ++i) {
-        const float swx = POSX[i];
-        const float swy = POSY[i];
-        float weighted_sum = 0.0f;
-        float weight_total = 0.0f;
-        const int b = i * 6;
-        for (int d = 0; d < 6; ++d) {
-            const int32_t ni = NB[b + d];
-            if (ni < 0) continue;
-            const float wind_x = WX[ni];
-            const float wind_y = WY[ni];
-            if (wind_x * wind_x + wind_y * wind_y < 1e-6f) continue;
-            const float dx = pk_wrap_min_image_dx(swx - POSX[ni], wrap_period_x);
-            const float dy = swy - POSY[ni];
-            const float len2 = dx * dx + dy * dy;
-            if (len2 < 1e-6f) continue;
-            const float inv_len = 1.0f / std::sqrt(len2);
-            const float weight = (dx * wind_x + dy * wind_y) * inv_len;
-            if (weight <= 0.0f) continue;
-            float speed_w = wf_wind_speed_norm(wind_x, wind_y, WSP[ni]) / 1.2f;
-            if (speed_w < 0.20f) speed_w = 0.20f;
-            else if (speed_w > 1.35f) speed_w = 1.35f;
-            const float adv_weight = weight * speed_w;
-            weighted_sum += AIN[ni] * adv_weight;
-            weight_total += adv_weight;
-        }
+    // S3：与 worker 的 _async_wind_surface_kernel_pure 合成一个内核。两份主循环
+    // 此前恰好逐位相同，但那是运气——它们连 smoothstep 都调的是不同函数，只是
+    // 在当前 knobs 下数学等价。合了之后 cell_temp 只有一个写法。
+    {
+        pk_async_climate::WindSurfaceKnobs ws_knobs;
+        ws_knobs.n_cells = n_cells;
+        ws_knobs.air_leak = air_leak;
+        ws_knobs.wrap_period_x = wrap_period_x;
+        ws_knobs.cold_transport_form = cold_transport_form;
+        ws_knobs.cold_transport_melt = cold_transport_melt;
 
-        // 风致 air-mass 平流：把邻接 air-mass anomaly 加权平均到本 cell 的 air anomaly。
-        float anomaly_in = 0.0f;
-        if (weight_total > 0.0f) {
-            anomaly_in = (weighted_sum / weight_total) * air_leak;
-        }
-        // A 修复（2026-06）：air anomaly 是单 round 的瞬时 deviation（不持久），
-        // 改为 OVERWRITE 而非 accumulate。原 scalar 实现里 AOUT[i] = anomaly_in (覆写)，
-        // 后面 T[i] += anomaly_in 把本日 air 注入一次。新架构合成 T = baseline +
-        // transport(ocean_anom + air_anom) + local_anom，同样要求 air_anom 每天重写
-        // （否则会日复一日累加到 cap）。
-        float air_final = anomaly_in;
-        if (air_final < -0.08f) air_final = -0.08f;
-        else if (air_final > 0.08f) air_final = 0.08f;
-        AOUT[i] = air_final;
+        pk_async_climate::WindSurfaceLanes ws_lanes;
+        ws_lanes.wind_x = WX;
+        ws_lanes.wind_y = WY;
+        ws_lanes.wind_speed = WSP;
+        ws_lanes.pos_x = POSX;
+        ws_lanes.pos_y = POSY;
+        ws_lanes.is_water = IW;
+        ws_lanes.baseline = BL_RUNTIME;
+        ws_lanes.fallback_baseline = FBL;
+        ws_lanes.ocean_anomaly = OANOM;
+        ws_lanes.local_anomaly = LANOM;
+        ws_lanes.neighbor_indices = NB;
+        ws_lanes.air_anomaly_in = AIN;
+        ws_lanes.air_anomaly_out = AOUT;
+        ws_lanes.temp_out = T;
 
-        // 合成 cell_temp：ocean 与 air 都是横向热输运，先共享同一 ±0.08 预算；
-        // 对接近结冰线的水格，正向输运先被潜热/成冰门控吸收，避免无冰边缘水面
-        // 被固定抬高到 melt 阈值以上而无法重新结冰。
-        float base = BL_RUNTIME[i];
-        // A polar-night / frozen baseline of exactly 0.0 is valid. Only non-finite
-        // runtime baselines should fall back to the year/static baseline.
-        if (!std::isfinite(base)) base = FBL[i];
-        float transport_anom = OANOM[i] + air_final;
-        if (IW[i] != 0 && transport_anom > 0.0f) {
-            transport_anom *= wf_smoothstep(cold_transport_form, cold_transport_melt, base);
-        }
-        if (transport_anom < -0.08f) transport_anom = -0.08f;
-        else if (transport_anom > 0.08f) transport_anom = 0.08f;
-        float total_anom = transport_anom + LANOM[i];
-        if (total_anom < -0.15f) total_anom = -0.15f;
-        else if (total_anom > 0.15f) total_anom = 0.15f;
-        float total = base + total_anom;
-        if (total < 0.0f) total = 0.0f;
-        else if (total > 1.0f) total = 1.0f;
-        T[i] = total;
+        pk_async_climate::wind_surface_pure(ws_knobs, ws_lanes, start_idx, end_idx);
     }
 
     s_air_anom.arr_f32 = anomaly_out;
@@ -2688,36 +1953,46 @@ Dictionary DCWorldExt::run_weather_distribute_pass(const Dictionary &knobs) {
         }
     }
 
-    const int   n_cells              = int(knobs["n_cells"]);
-    const float snow_min_intensity   = float(knobs["snow_min_intensity"]);
-    const float snow_freeze_t        = float(knobs["snow_freeze_t"]);
-    const float snow_melt_t          = float(knobs["snow_melt_t"]);
-    const float snow_intensity_snow  = float(knobs["snow_intensity_for_snowing"]);
-    const int   snow_accum_days_req  = int(knobs["snow_accum_days_req"]);
-    const float flood_heavy_int      = float(knobs["flood_heavy_intensity"]);
-    const float flood_heavy_pre      = float(knobs["flood_heavy_precip"]);
-    const float flood_low_int        = float(knobs["flood_lowland_intensity"]);
-    const float flood_low_elev       = float(knobs["flood_lowland_elev"]);
-    const float flood_low_moist      = float(knobs["flood_lowland_moisture"]);
-    const int   wt_clear             = int(knobs["wt_clear"]);
-    const int   cv_snow              = int(knobs["cv_snow"]);
-    const int   cv_none              = int(knobs["cv_none"]);
-    const int   cv_flooding          = int(knobs["cv_flooding"]);
-    const float snowpack_accum_gain  = knobs.has("snowpack_accum_gain") ? float(knobs["snowpack_accum_gain"]) : 0.10f;
-    const float snowpack_melt_temp_gain = knobs.has("snowpack_melt_temp_gain") ? float(knobs["snowpack_melt_temp_gain"]) : 0.22f;
-    const float snowpack_melt_sun_gain = knobs.has("snowpack_melt_sun_gain") ? float(knobs["snowpack_melt_sun_gain"]) : 0.12f;
-    const float snowpack_cover_low   = knobs.has("snowpack_cover_low") ? float(knobs["snowpack_cover_low"]) : 0.05f;
-    const float snowpack_cover_full  = knobs.has("snowpack_cover_full") ? float(knobs["snowpack_cover_full"]) : 0.32f;
-    const float snowpack_cover_span  = (snowpack_cover_full - snowpack_cover_low) > 0.001f
-        ? (snowpack_cover_full - snowpack_cover_low) : 0.001f;
-    // climate-loop-closure Phase 2.1：气候态物理雪线 floor 参数（threshold=0 关闭）。
-    const float snowline_temp_threshold = knobs.has("snowline_temp_threshold") ? float(knobs["snowline_temp_threshold"]) : 0.24f;
-    const float snowline_band = knobs.has("snowline_band") ? float(knobs["snowline_band"]) : 0.22f;
-    const float snowline_band_safe = snowline_band > 0.001f ? snowline_band : 0.001f;
-    float weather_temp_anomaly_cap = knobs.has("weather_temp_anomaly_cap") ? float(knobs["weather_temp_anomaly_cap"]) : 0.025f;
+    // 标量收进 POD 结构体。span / band 的下限保护不在这里做 ——
+    // weather_distribute_pure 自己按 cover_low/full 与 band 推，避免两份公式。
+    pk_async_climate::WeatherDistributeKnobs wdk;
+    const int n_cells = int(knobs["n_cells"]);
+    wdk.n_cells = n_cells;
+    wdk.snow_min_intensity = float(knobs["snow_min_intensity"]);
+    wdk.snow_freeze_t = float(knobs["snow_freeze_t"]);
+    wdk.snow_melt_t = float(knobs["snow_melt_t"]);
+    wdk.snow_intensity_snow = float(knobs["snow_intensity_for_snowing"]);
+    wdk.snow_accum_days_req = int(knobs["snow_accum_days_req"]);
+    wdk.flood_heavy_int = float(knobs["flood_heavy_intensity"]);
+    wdk.flood_heavy_pre = float(knobs["flood_heavy_precip"]);
+    wdk.flood_low_int = float(knobs["flood_lowland_intensity"]);
+    wdk.flood_low_elev = float(knobs["flood_lowland_elev"]);
+    wdk.flood_low_moist = float(knobs["flood_lowland_moisture"]);
+    wdk.wt_clear = int(knobs["wt_clear"]);
+    wdk.cv_snow = int(knobs["cv_snow"]);
+    wdk.cv_none = int(knobs["cv_none"]);
+    wdk.cv_flooding = int(knobs["cv_flooding"]);
+    wdk.snowpack_accum_gain = knobs.has("snowpack_accum_gain")
+        ? float(knobs["snowpack_accum_gain"]) : 0.10f;
+    wdk.snowpack_melt_temp_gain = knobs.has("snowpack_melt_temp_gain")
+        ? float(knobs["snowpack_melt_temp_gain"]) : 0.22f;
+    wdk.snowpack_melt_sun_gain = knobs.has("snowpack_melt_sun_gain")
+        ? float(knobs["snowpack_melt_sun_gain"]) : 0.12f;
+    wdk.snowpack_cover_low = knobs.has("snowpack_cover_low")
+        ? float(knobs["snowpack_cover_low"]) : 0.05f;
+    wdk.snowpack_cover_full = knobs.has("snowpack_cover_full")
+        ? float(knobs["snowpack_cover_full"]) : 0.32f;
+    wdk.snowline_temp_threshold = knobs.has("snowline_temp_threshold")
+        ? float(knobs["snowline_temp_threshold"]) : 0.24f;
+    wdk.snowline_band = knobs.has("snowline_band") ? float(knobs["snowline_band"]) : 0.22f;
+    float weather_temp_anomaly_cap = knobs.has("weather_temp_anomaly_cap")
+        ? float(knobs["weather_temp_anomaly_cap"]) : 0.025f;
     if (weather_temp_anomaly_cap < 0.0f) weather_temp_anomaly_cap = 0.0f;
     else if (weather_temp_anomaly_cap > 0.10f) weather_temp_anomaly_cap = 0.10f;
-    const bool direct_moisture_enabled = bool(knobs.get("weather_direct_moisture_enabled", false));
+    wdk.weather_temp_anomaly_cap = weather_temp_anomaly_cap;
+    const bool direct_moisture_enabled =
+        bool(knobs.get("weather_direct_moisture_enabled", false));
+    wdk.direct_moisture_enabled = direct_moisture_enabled;
 
     PackedInt32Array  acc_snow_days  = knobs["accumulated_snow_days"];
     PackedInt32Array  pre_snow_cover = knobs["pre_snow_cover"];
@@ -2771,301 +2046,48 @@ Dictionary DCWorldExt::run_weather_distribute_pass(const Dictionary &knobs) {
     }
 
     // ─── ptrw / ptr ────────────────────────────────────────────────────
-    float * const __restrict T   = s_temp.arr_f32.ptrw();
-    float * const __restrict M   = s_moist.arr_f32.ptrw();
-    float * const __restrict SC  = s_snow_cov.arr_f32.ptrw();
-    float * const __restrict SP  = s_snowpack.arr_f32.ptrw();
-    float * const __restrict WB  = s_waterbal.arr_f32.ptrw();
-    float * const __restrict SOIL = s_soil.arr_f32.ptrw();
-    uint8_t * const __restrict CV = s_cover.arr_u8.ptrw();
-    const uint8_t * const __restrict LF = s_lf.arr_u8.ptr();
-    const uint8_t * const __restrict TERR = s_terrain.arr_u8.ptr();
-    const float * const __restrict EL = s_elev.arr_f32.ptr();
-    const float * const __restrict HEAT = s_heat.arr_f32.ptr();
-    const float * const __restrict WI = s_w_int.arr_f32.ptr();
-    const float * const __restrict WP = s_w_pre.arr_f32.ptr();
-    const uint8_t * const __restrict WT_ = s_w_typ.arr_u8.ptr();
-    const uint8_t * const __restrict WFI = s_w_fin.arr_u8.ptr();
-    int32_t * const __restrict ACC = acc_snow_days.ptrw();
-    int32_t * const __restrict PRE = pre_snow_cover.ptrw();
-    const float * const __restrict TD = temp_delta_arr.ptr();
-    const float * const __restrict MD = moist_delta_arr.ptr();
-    const uint8_t * const __restrict CFS = cfs_arr.ptr();
-    const uint8_t * const __restrict CFF = cff_arr.ptr();
+    // 四张剖面表拷进 knobs：它们是 8 项定长表，进 POD 结构体后 worker 不必再持有
+    // Godot PackedArray。长度已在上面校验过恰好是 8。
+    std::memcpy(wdk.temp_delta, temp_delta_arr.ptr(), 8 * sizeof(float));
+    std::memcpy(wdk.moist_delta, moist_delta_arr.ptr(), 8 * sizeof(float));
+    std::memcpy(wdk.can_form_snow, cfs_arr.ptr(), 8);
+    std::memcpy(wdk.can_form_flood, cff_arr.ptr(), 8);
 
-    auto clamp01 = [](float v) -> float {
-        if (v < 0.0f) return 0.0f;
-        if (v > 1.0f) return 1.0f;
-        return v;
-    };
-    auto clampf = [](float v, float lo, float hi) -> float {
-        return v < lo ? lo : (v > hi ? hi : v);
-    };
-    auto smoothstep_local = [&](float a, float b, float x) -> float {
-        if (b <= a) return x >= b ? 1.0f : 0.0f;
-        float t = (x - a) / (b - a);
-        if (t < 0.0f) t = 0.0f; else if (t > 1.0f) t = 1.0f;
-        return t * t * (3.0f - 2.0f * t);
-    };
-    constexpr uint8_t COVER_GLACIER = 2;
+    pk_async_climate::WeatherDistributeLanes wdl;
+    wdl.temp = s_temp.arr_f32.ptrw();
+    wdl.moisture = s_moist.arr_f32.ptrw();
+    wdl.snow_cover = s_snow_cov.arr_f32.ptrw();
+    wdl.snowpack = s_snowpack.arr_f32.ptrw();
+    wdl.water_balance_30d = s_waterbal.arr_f32.ptrw();
+    wdl.soil_moisture = s_soil.arr_f32.ptrw();
+    wdl.cover = s_cover.arr_u8.ptrw();
+    wdl.landform = s_lf.arr_u8.ptr();
+    wdl.terrain = s_terrain.arr_u8.ptr();
+    wdl.elevation = s_elev.arr_f32.ptr();
+    wdl.heat = s_heat.arr_f32.ptr();
+    wdl.weather_intensity = s_w_int.arr_f32.ptr();
+    wdl.weather_precip = s_w_pre.arr_f32.ptr();
+    wdl.weather_type = s_w_typ.arr_u8.ptr();
+    wdl.weather_field_init = s_w_fin.arr_u8.ptr();
 
-    auto snow_summer_melt_bonus = [&](float heat_input, float elevation) -> float {
-        const float sun = smoothstep_local(0.55f, 0.90f, clampf(heat_input, 0.0f, 1.0f));
-        const float high_elev = smoothstep_local(0.62f, 0.95f, clampf(elevation, 0.0f, 1.0f));
-        return sun * (1.0f - high_elev * 0.60f) * 0.045f;
-    };
+    pk_async_climate::WeatherDistributeState wds;
+    wds.accumulated_snow_days = acc_snow_days.ptrw();
+    wds.pre_snow_cover = pre_snow_cover.ptrw();
 
-    auto snowline_floor_for_cell = [&](float temp_now, float heat_input, float elevation,
-                                       float snowline_temp_threshold,
-                                       float snowline_band_safe) -> float {
-        if (snowline_temp_threshold <= 0.0f) return 0.0f;
-        const float sun = smoothstep_local(0.45f, 0.85f, clampf(heat_input, 0.0f, 1.0f));
-        const float high_elev = smoothstep_local(0.60f, 0.95f, clampf(elevation, 0.0f, 1.0f));
-        const float summer_drop = sun * (0.14f + (0.045f - 0.14f) * high_elev);
-        const float elev_bonus = clampf((elevation - 0.30f) * 0.10f, 0.0f, 0.08f);
-        const float effective_threshold = snowline_temp_threshold + elev_bonus - summer_drop;
-        const float raw_floor = clampf((effective_threshold - temp_now) / snowline_band_safe, 0.0f, 1.0f);
-        // Stage4(2026-06-23): 雪线 floor 只为深冻区自动铺白；雪线边缘交给 snowpack-from-snowfall。
-        // 镜像 weather_system.gd _snowline_floor_for_cell。
-        return smoothstep_local(0.30f, 0.80f, raw_floor);
-    };
-
-    // LandformType.is_water：DEEP_OCEAN(0) / OCEAN(1) / COAST(2) / LAKE(3) → true
-    auto is_water_lf = [](uint8_t lf) -> bool {
-        return lf <= 3;
-    };
-    auto is_water_terrain = [](uint8_t t) -> bool {
-        return t == 0  ||  // OCEAN
-               t == 1  ||  // COAST
-               t == 18 ||  // LAKE
-               t == 19 ||  // REEF
-               t == 20 ||  // SEA_ICE
-               t == 21;    // KELP
-    };
-
-    // ─── 主循环（1:1 复刻 _distribute_weather_field_to_cells + _apply_snow_accumulation）─
+    // 数值核心已抽成共享纯内核 pk_async_climate::weather_distribute_pure，那几个
+    // 局部 lambda 也跟着进去了。这里只留 Godot 侧的装配、记录与 flush。
+    // 记录必须在内核之前：temp / moisture / snowpack / cover / 两条积雪计数全是
+    // in/out，跑完再记就变成记结果。
+    record_production_weather_distribute_input(wdk, wdl, wds, n_cells);
+    pk_async_climate::WeatherDistributeEmit wde;
+    pk_async_climate::weather_distribute_pure(wdk, wdl, wds, wde);
     PackedInt32Array changed_cells;
-    bool cover_dirty = false;
-    for (int i = 0; i < n_cells; ++i) {
-        const bool field_init = WFI[i] != 0;
-        const int  wt        = field_init ? int(WT_[i]) : wt_clear;
-        const float intensity = field_init ? WI[i] : 0.0f;
-        const float raw_precip = field_init ? WP[i] : 0.0f;
-        const float precip = (field_init && wf_is_precip_weather_type(uint8_t(wt))) ? raw_precip : 0.0f;
-
-        // CLEAR / 低强度退化分支
-        if (wt == wt_clear || intensity <= snow_min_intensity) {
-            const bool water_lf = is_water_lf(LF[i]) || is_water_terrain(TERR[i]);
-            if (!water_lf && (ACC[i] > 0 || CV[i] == cv_snow)) {
-                // _apply_snow_accumulation(cell, wt, cell.temperature, 0.0)
-                // intensity = 0 ⇒ snowing 永假；只有融化 / 升级判定可能触发。
-                // 2026-05-18 雪线修正：melt_t 加 elev 偏移（高山难融，平原易融）。
-                //   与 GDScript SNOW_ELEV_NEUTRAL=0.30 / MELT_GAIN=0.30 / MAX_OFF=0.10 SAME_SOURCE。
-                const float elev_delta_c = EL[i] - 0.30f;
-                float melt_off_c = elev_delta_c * 0.30f;
-                if (melt_off_c >  0.10f) melt_off_c =  0.10f;
-                else if (melt_off_c < -0.10f) melt_off_c = -0.10f;
-                const float melt_t_local = snow_melt_t + melt_off_c;
-                const float temp_now = T[i];
-                if (temp_now > melt_t_local) {
-                    int new_acc = ACC[i] - 1;
-                    if (new_acc < 0) new_acc = 0;
-                    ACC[i] = new_acc;
-                }
-                // 升级 / 融化（与下方主分支同算法）
-                if (ACC[i] >= snow_accum_days_req && CV[i] != cv_snow && CV[i] != COVER_GLACIER) {
-                    PRE[i] = int(CV[i]);
-                    CV[i] = uint8_t(cv_snow);
-                    changed_cells.append(i);
-                    cover_dirty = true;
-                } else if (ACC[i] <= 0 && CV[i] == cv_snow) {
-                    int restored = (PRE[i] >= 0) ? PRE[i] : cv_none;
-                    CV[i] = uint8_t(restored);
-                    PRE[i] = -1;
-                    changed_cells.append(i);
-                    cover_dirty = true;
-                }
-            }
-            float sp = SP[i];
-            float wb = WB[i];
-            float soil = SOIL[i];
-            float sc = 0.0f;
-            if (water_lf) {
-                SP[i] = 0.0f;
-                WB[i] = wb + (0.0f - wb) * (1.0f / 30.0f);
-                SC[i] = 0.0f;
-            } else {
-                const float elev_delta = EL[i] - 0.30f;
-                float melt_off = elev_delta * 0.30f;
-                if (melt_off > 0.10f) melt_off = 0.10f;
-                else if (melt_off < -0.10f) melt_off = -0.10f;
-                const float melt_t_local = snow_melt_t + melt_off;
-                float freeze_off = elev_delta * 0.20f;
-                if (freeze_off > 0.06f) freeze_off = 0.06f;
-                else if (freeze_off < -0.06f) freeze_off = -0.06f;
-                const float freeze_t_local = snow_freeze_t + freeze_off;
-                const bool cold_precip = (T[i] < freeze_t_local) && (precip > 0.002f);
-                float snow_accum = cold_precip ? precip * snowpack_accum_gain * 0.75f : 0.0f;
-                if (cold_precip) {
-                    snow_accum += (intensity < 0.15f ? intensity : 0.15f) * 0.006f;
-                }
-                const float melt = ((T[i] - melt_t_local) > 0.0f ? (T[i] - melt_t_local) : 0.0f) * snowpack_melt_temp_gain
-                    + HEAT[i] * snowpack_melt_sun_gain
-                    + snow_summer_melt_bonus(HEAT[i], EL[i]);
-                sp = clampf(sp + snow_accum - melt, 0.0f, 1.0f);
-                if (CV[i] == COVER_GLACIER && sp < 0.80f) sp = 0.80f;
-                const float evap_proxy = clampf((0.01f + ((M[i] - 0.45f) > 0.0f ? (M[i] - 0.45f) : 0.0f) * 0.03f)
-                    * (0.35f + T[i] * 1.05f) * 0.65f, 0.0f, 1.0f);
-                const float runoff = ((M[i] - 0.82f) > 0.0f ? (M[i] - 0.82f) : 0.0f) * 0.25f
-                    + ((EL[i] - 0.70f) > 0.0f ? (EL[i] - 0.70f) : 0.0f) * precip * 0.06f;
-                const float daily_balance = clampf(precip - evap_proxy - runoff, -1.0f, 1.0f);
-                wb = wb + (daily_balance - wb) * (1.0f / 30.0f);
-                // climate-loop-closure Phase 3.1：土壤水每日衰减(×0.97)，停雨后排干。
-                soil = clampf(soil * 0.97f + daily_balance * 0.08f, -0.5f, 0.5f);
-                if (direct_moisture_enabled) {
-                    M[i] = clamp01(M[i] + precip * 0.35f
-                        + ((daily_balance > 0.0f) ? daily_balance * 0.04f : 0.0f));
-                }
-                // climate-loop-closure Phase 2.1/2.2：物理雪线 floor（仅陆地）。
-                float snow_floor_c = 0.0f;
-                if (snowline_temp_threshold > 0.0f) {
-                    snow_floor_c = snowline_floor_for_cell(T[i], HEAT[i], EL[i], snowline_temp_threshold, snowline_band_safe);
-                    if (snow_floor_c * snowpack_cover_full > sp) sp = snow_floor_c * snowpack_cover_full;
-                }
-                float u = (sp - snowpack_cover_low) / snowpack_cover_span;
-                if (u < 0.0f) u = 0.0f; else if (u > 1.0f) u = 1.0f;
-                sc = u * u * (3.0f - 2.0f * u);
-                if (snow_floor_c > sc) sc = snow_floor_c;
-                if (CV[i] == COVER_GLACIER && sc < 0.80f) sc = 0.80f;
-                SP[i] = sp;
-                WB[i] = wb;
-                SOIL[i] = soil;
-                SC[i] = sc;
-            }
-            continue;
-        }
-
-        const float td_v = (wt >= 0 && wt < 8) ? TD[wt] : 0.0f;
-        const float md_v = (wt >= 0 && wt < 8) ? MD[wt] : 0.0f;
-        const float moist_now = direct_moisture_enabled
-            ? clamp01(M[i] + md_v * intensity + precip * 0.35f)
-            : M[i];
-        float temp_delta = td_v * intensity;
-        if (temp_delta > weather_temp_anomaly_cap) temp_delta = weather_temp_anomaly_cap;
-        else if (temp_delta < -weather_temp_anomaly_cap) temp_delta = -weather_temp_anomaly_cap;
-        const float temp_now  = clamp01(T[i] + temp_delta);
-        M[i] = moist_now;
-        T[i] = temp_now;
-
-        float sp_now = SP[i];
-        const float prev_sp = sp_now;
-        float wb_now = WB[i];
-        float soil_now = SOIL[i];
-        const bool water_lf_weather = is_water_lf(LF[i]) || is_water_terrain(TERR[i]);
-        if (water_lf_weather) {
-            sp_now = 0.0f;
-            wb_now = wb_now + (0.0f - wb_now) * (1.0f / 30.0f);
-        } else {
-            const float elev_delta_sp = EL[i] - 0.30f;
-            float freeze_off_sp = elev_delta_sp * 0.20f;
-            if (freeze_off_sp > 0.06f) freeze_off_sp = 0.06f;
-            else if (freeze_off_sp < -0.06f) freeze_off_sp = -0.06f;
-            float melt_off_sp = elev_delta_sp * 0.30f;
-            if (melt_off_sp > 0.10f) melt_off_sp = 0.10f;
-            else if (melt_off_sp < -0.10f) melt_off_sp = -0.10f;
-            const float freeze_t_sp = snow_freeze_t + freeze_off_sp;
-            const float melt_t_sp = snow_melt_t + melt_off_sp;
-            const bool can_snow_sp = (wt >= 0 && wt < 8) && (CFS[wt] != 0);
-            const bool precip_can_snow_sp = (wt != wt_clear) && (wt != 4) && (wt != 6);
-            const bool snowing_sp = (can_snow_sp || precip_can_snow_sp) && (temp_now < freeze_t_sp) && (precip > 0.0f);
-            float snow_accum = snowing_sp ? (precip * snowpack_accum_gain + intensity * 0.015f) : 0.0f;
-            const float warm_rain_melt = (temp_now > melt_t_sp) ? precip * 0.03f : 0.0f;
-            const float melt = ((temp_now - melt_t_sp) > 0.0f ? (temp_now - melt_t_sp) : 0.0f) * snowpack_melt_temp_gain
-                + HEAT[i] * snowpack_melt_sun_gain
-                + snow_summer_melt_bonus(HEAT[i], EL[i])
-                + warm_rain_melt;
-            sp_now = clampf(sp_now + snow_accum - melt, 0.0f, 1.0f);
-            if (CV[i] == COVER_GLACIER && sp_now < 0.80f) sp_now = 0.80f;
-            const float meltwater = (prev_sp - sp_now) > 0.0f ? (prev_sp - sp_now) : 0.0f;
-            const float runoff = ((moist_now - 0.82f) > 0.0f ? (moist_now - 0.82f) : 0.0f) * 0.25f
-                + ((EL[i] - 0.70f) > 0.0f ? (EL[i] - 0.70f) : 0.0f) * precip * 0.06f;
-            const float evap_proxy = clampf((0.01f + ((moist_now - 0.45f) > 0.0f ? (moist_now - 0.45f) : 0.0f) * 0.03f)
-                * (0.35f + temp_now * 1.05f) * 0.65f, 0.0f, 1.0f);
-            const float daily_balance = clampf(precip * 1.15f + meltwater * 0.65f - evap_proxy - runoff, -1.0f, 1.0f);
-            wb_now = wb_now + (daily_balance - wb_now) * (1.0f / 30.0f);
-            // climate-loop-closure Phase 3.1：土壤水每日衰减(×0.97)，停雨后排干。
-            soil_now = clampf(soil_now * 0.97f + daily_balance * 0.08f, -0.5f, 0.5f);
-        }
-        // climate-loop-closure Phase 2.1/2.2：物理雪线 floor（仅陆地）。
-        float snow_floor_w = 0.0f;
-        if (snowline_temp_threshold > 0.0f && !water_lf_weather) {
-            snow_floor_w = snowline_floor_for_cell(temp_now, HEAT[i], EL[i], snowline_temp_threshold, snowline_band_safe);
-            if (snow_floor_w * snowpack_cover_full > sp_now) sp_now = snow_floor_w * snowpack_cover_full;
-        }
-        float u_sp = (sp_now - snowpack_cover_low) / snowpack_cover_span;
-        if (u_sp < 0.0f) u_sp = 0.0f; else if (u_sp > 1.0f) u_sp = 1.0f;
-        float snow_cover_now = u_sp * u_sp * (3.0f - 2.0f * u_sp);
-        if (snow_floor_w > snow_cover_now) snow_cover_now = snow_floor_w;
-        if (CV[i] == COVER_GLACIER && snow_cover_now < 0.80f) snow_cover_now = 0.80f;
-        SP[i] = sp_now;
-        SC[i] = snow_cover_now;
-        WB[i] = wb_now;
-        SOIL[i] = soil_now;
-
-        if (!water_lf_weather) {
-            // 雪：累积式 _apply_snow_accumulation(cell, wt, temp_now, intensity)
-            // 2026-05-18 雪线修正：freeze_t / melt_t 随 elev 偏移（与 GDScript SAME_SOURCE）。
-            //   neutral=0.30；freeze_gain=0.20，max_off=±0.06；melt_gain=0.30，max_off=±0.10。
-            const float elev_delta_m = EL[i] - 0.30f;
-            float freeze_off_m = elev_delta_m * 0.20f;
-            if (freeze_off_m >  0.06f) freeze_off_m =  0.06f;
-            else if (freeze_off_m < -0.06f) freeze_off_m = -0.06f;
-            float melt_off_m = elev_delta_m * 0.30f;
-            if (melt_off_m >  0.10f) melt_off_m =  0.10f;
-            else if (melt_off_m < -0.10f) melt_off_m = -0.10f;
-            const float freeze_t_local = snow_freeze_t + freeze_off_m;
-            const float melt_t_local   = snow_melt_t   + melt_off_m;
-            const bool can_snow = (wt >= 0 && wt < 8) && (CFS[wt] != 0);
-            const bool snowing  = can_snow && (temp_now < freeze_t_local) && (intensity > snow_intensity_snow);
-            if (snowing) {
-                ACC[i] += 1;
-            } else if (temp_now > melt_t_local) {
-                int new_acc = ACC[i] - 1;
-                if (new_acc < 0) new_acc = 0;
-                ACC[i] = new_acc;
-            }
-            if (ACC[i] >= snow_accum_days_req && CV[i] != cv_snow && CV[i] != COVER_GLACIER) {
-                PRE[i] = int(CV[i]);
-                CV[i] = uint8_t(cv_snow);
-                changed_cells.append(i);
-                cover_dirty = true;
-            } else if (ACC[i] <= 0 && CV[i] == cv_snow) {
-                int restored = (PRE[i] >= 0) ? PRE[i] : cv_none;
-                CV[i] = uint8_t(restored);
-                PRE[i] = -1;
-                changed_cells.append(i);
-                cover_dirty = true;
-            }
-
-            // 洪涝
-            const bool can_flood = (wt >= 0 && wt < 8) && (CFF[wt] != 0);
-            if (CV[i] != cv_snow && can_flood) {
-                const bool heavy_flood   = (intensity > flood_heavy_int) && (precip > flood_heavy_pre);
-                const bool lowland_flood = (intensity > flood_low_int) && (EL[i] < flood_low_elev) && (moist_now > flood_low_moist);
-                if ((heavy_flood || lowland_flood) && CV[i] != cv_flooding) {
-                    CV[i] = uint8_t(cv_flooding);
-                    changed_cells.append(i);
-                    cover_dirty = true;
-                }
-            }
-            // Stage8 退水(不受 can_flood 门限制→DROUGHT/CLEAR 也能退)：修"洪泛与旱灾共存"。镜像 weather_system.gd。
-            if (CV[i] == cv_flooding && moist_now < 0.50f && precip < 0.04f) {
-                CV[i] = uint8_t(cv_none);
-                changed_cells.append(i);
-                cover_dirty = true;
-            }
-        }
+    if (!wde.changed_cells.empty()) {
+        changed_cells.resize(int(wde.changed_cells.size()));
+        std::memcpy(changed_cells.ptrw(), wde.changed_cells.data(),
+                    wde.changed_cells.size() * sizeof(int32_t));
     }
+    const bool cover_dirty = wde.cover_dirty;
 
     // ─── §11.2 flush：把 CoW-detach 后的 temp/moisture/cover 推回 GDScript
     // MapData property（与 F.1 / F.2 等同模式）。──────────────────────────

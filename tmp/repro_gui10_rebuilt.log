@@ -1,0 +1,24 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+D3D12 12_0 - Forward Mobile - Using Device #0: NVIDIA - NVIDIA GeForce RTX 4080
+
+[ui-layout-diag/bind_ui] is_web=false viewport_visible_rect=[P: (0.0, 0.0), S: (1092.8, 614.4)] window_size=(1366, 768) content_scale_factor=1.250 content_scale_mode=0 device_pixel_ratio=-1.000 top_bar_rect=[P: (0.0, 0.0), S: (1092.8, 56.0)] right_panel_rect=[P: (632.8, 68.0), S: (460.0, 534.4)] country_action_bar_rect=[P: (380.4, 532.4), S: (400.0, 74.0)]
+[detail_scatter/DRAIN_CFG] budget_ms=2.50 chunks_per_frame=4 plan_items=16 cells_per_batch=32 chunk_size=16
+[native_generation/base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=2400 native_ms=7.728 water=1831 land=569
+[native_generation/post_base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=2400 native_ms=1.497 lakes=0 rivers=63 volcanoes=0
+[native_generation/vegetation] native_ms=0.529 candidates=564 none=1473 score=[0.000,1.378,1.090] plant_water_land=569 river_adjacent_desert=0 coastal_highland_desert=0 terrain_weight=[0.180,1.200]
+[native_generation/qa] single_water=0 tiny<=3=0 small<=5=0 bodies=1 largest=1831 | land_below_sea=0.0% | terr_distinct=19 entropy=2.561bit | river_ratio=2.625%
+MapGenerator v7: per-cell 68ms (2400 cells, path=gdext)
+MapBaker v6: hm=(1024, 606) seed=538414908
+    [fused] terrain=68.8ms erosion=2.7ms(ok=true) river=12.7ms(ok=true) latitude=0.1ms coast_sdf=3.6ms(ok=true)
+  geometry fields (fused C++): 149ms
+  physical circulation hex solve: deferred until DCWorldExt bind (ext=true idx=true soa=false)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+ERROR: 23 RID allocations of type 'N10RendererRD14TextureStorage7TextureE' were leaked at exit.
+WARNING: 40 RIDs of type "Texture" were leaked.
+   at: finalize (servers/rendering/rendering_device.cpp:7505)
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced22ShapedTextDataAdvancedE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 245 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

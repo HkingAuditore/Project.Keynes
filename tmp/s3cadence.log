@@ -1,0 +1,278 @@
+﻿Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[native_generation/base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=2400 native_ms=6.632 water=1179 land=1221
+[native_generation/post_base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=2400 native_ms=2.039 lakes=10 rivers=229 volcanoes=2
+[native_generation/vegetation] native_ms=1.017 candidates=1218 none=925 score=[0.228,0.986,1.120] plant_water_land=1218 river_adjacent_desert=0 coastal_highland_desert=0 terrain_weight=[0.180,1.200]
+[native_generation/qa] single_water=0 tiny<=3=0 small<=5=0 bodies=3 largest=763 | land_below_sea=0.0% | terr_distinct=24 entropy=3.408bit | river_ratio=9.542%
+MapGenerator v7: per-cell 68ms (2400 cells, path=gdext)
+MapBaker v6: hm=(1024, 606) seed=20260906
+    [fused] terrain=73.3ms erosion=2.1ms(ok=true) river=14.5ms(ok=true) latitude=0.1ms coast_sdf=4.8ms(ok=true)
+  geometry fields (fused C++): 155ms
+  physical circulation hex solve: deferred until DCWorldExt bind (ext=true idx=true soa=false)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+  visual tiles: {"degradation_reason":"","effective_budget_px":1335168,"effective_texels_per_hex":14.1134163904991,"effective_world_units_per_texel":"(1.561685, 1.555921)","estimated_peak_bytes":52958880,"estimated_resident_bytes":31232160,"fallback_reason":"","generation_id":1,"grid_size":"(3, 2)","gutter_px":2,"hex_size":22.0,"horizon_path":"neutral_pending","interior_size":"(488, 456)","layer_size":"(492, 460)","layers":[{"bake_ms":128.9661,"coast_sdf_max_dist_px":12.00627660199,"distance_scale":1.50078457524874,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":6470650287552259852,"edge_neighbor":5283044410453837862,"height":604520932650265051,"map_index":7359769124450484024,"terrain_detail":78141204446602846,"terrain_normal":2152550246829764068,"water_depth":8333557819524518435},"layer":0,"normal_radius_px":"(19, 19)","raster_scale":"(1.49663, 1.504951)","river_sdf_max_dist_px":5.25274601337061,"shore_carve_band_px":9,"upload_ms":0.082,"wall_ms":129.586},{"bake_ms":118.7985,"coast_sdf_max_dist_px":12.00627660199,"distance_scale":1.50078457524874,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":111762246980454106,"edge_neighbor":1080078410442784869,"height":-8583544258533934027,"map_index":-3332195339887549533,"terrain_detail":6906195604304297443,"terrain_normal":6969266971564265211,"water_depth":992879332163721852},"layer":1,"normal_radius_px":"(19, 19)","raster_scale":"(1.49663, 1.504951)","river_sdf_max_dist_px":5.25274601337061,"shore_carve_band_px":9,"upload_ms":0.111,"wall_ms":119.405},{"bake_ms":138.692,"coast_sdf_max_dist_px":12.00627660199,"distance_scale":1.50078457524874,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":3053619552328746944,"edge_neighbor":-2379647355250012031,"height":1472011932144812266,"map_index":2464743727406746073,"terrain_detail":-4363823883937306,"terrain_normal":7110884969010234635,"water_depth":-1868782331998373001},"layer":2,"normal_radius_px":"(19, 19)","raster_scale":"(1.49663, 1.504951)","river_sdf_max_dist_px":5.25274601337061,"shore_carve_band_px":9,"upload_ms":0.068,"wall_ms":139.232},{"bake_ms":63.4202,"coast_sdf_max_dist_px":12.00627660199,"distance_scale":1.50078457524874,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-7588093239656427440,"edge_neighbor":-1973105554334649327,"height":5190793902284453899,"map_index":6034308482589873818,"terrain_detail":7133055085693150590,"terrain_normal":210041411668994730,"water_depth":-5390388811558893632},"layer":3,"normal_radius_px":"(19, 19)","raster_scale":"(1.49663, 1.504951)","river_sdf_max_dist_px":5.25274601337061,"shore_carve_band_px":9,"upload_ms":0.107,"wall_ms":63.955},{"bake_ms":102.1948,"coast_sdf_max_dist_px":12.00627660199,"distance_scale":1.50078457524874,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":6992021327383405453,"edge_neighbor":2883794929398166542,"height":-2246792973718100226,"map_index":-5071216388593923979,"terrain_detail":643541239762371271,"terrain_normal":-4145589563506980791,"water_depth":607567901899641571},"layer":4,"normal_radius_px":"(19, 19)","raster_scale":"(1.49663, 1.504951)","river_sdf_max_dist_px":5.25274601337061,"shore_carve_band_px":9,"upload_ms":0.108,"wall_ms":102.835},{"bake_ms":111.5174,"coast_sdf_max_dist_px":12.00627660199,"distance_scale":1.50078457524874,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-5266619138957632836,"edge_neighbor":4935254377721998374,"height":-427360695763732269,"map_index":3921758235032749944,"terrain_detail":-7143758466013824731,"terrain_normal":4331584538023317315,"water_depth":-3412068446716429033},"layer":5,"normal_radius_px":"(19, 19)","raster_scale":"(1.49663, 1.504951)","river_sdf_max_dist_px":5.25274601337061,"shore_carve_band_px":9,"upload_ms":0.067,"wall_ms":112.054}],"logical_size":"(1464, 912)","mode":"tiled","path":"visual_tiled_static","profile":"desktop_auto","renderer":"mobile","requested_budget_px":1313865,"requested_texels_per_hex":14.0,"requested_tile_world_span":"(804.5714, 804.5714)","requested_world_units_per_texel":1.57142857142857,"tile_world_area":540711.621551514,"tile_world_span":"(762.1024, 709.5)","total_ms":667.282,"visual_domain":"[P: (0.0, -44.0), S: (2286.307, 1419.0)]","wrap_period_x":2286.30706599092,"wrap_x":true}
+Godot_v4.6.2-stable_win64_console.exe : WARNING: Loaded resource as image file, this will not work on export: 'res://as
+sets/textures/terrain_materials/organic.png'. Instead, import the image file as an Image resource and load it normally 
+as a resource.
+所在位置 C:\Users\hkinghuang\AppData\Local\Temp\ps-script-c32a5f48-2d0f-43e3-a483-1e4e3262810e.ps1:91 字符: 1
++ & $env:GODOT_BIN --headless --path Project/project-keynes -s tests/cl ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (WARNING: Loaded... as a resource.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1179)
+       [3] generate (res://scripts/geography/map_generator.gd:1465)
+       [4] generate_world (res://scripts/game/world_runtime_host.gd:379)
+       [5] _run (res://tests/climate_parity_probe.gd:82)
+       [6] _init (res://tests/climate_parity_probe.gd:40)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/dry_sand
+.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1179)
+       [3] generate (res://scripts/geography/map_generator.gd:1465)
+       [4] generate_world (res://scripts/game/world_runtime_host.gd:379)
+       [5] _run (res://tests/climate_parity_probe.gd:82)
+       [6] _init (res://tests/climate_parity_probe.gd:40)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/rock.png
+'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1179)
+       [3] generate (res://scripts/geography/map_generator.gd:1465)
+       [4] generate_world (res://scripts/game/world_runtime_host.gd:379)
+       [5] _run (res://tests/climate_parity_probe.gd:82)
+       [6] _init (res://tests/climate_parity_probe.gd:40)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/snow_wet
+.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1179)
+       [3] generate (res://scripts/geography/map_generator.gd:1465)
+       [4] generate_world (res://scripts/game/world_runtime_host.gd:379)
+       [5] _run (res://tests/climate_parity_probe.gd:82)
+       [6] _init (res://tests/climate_parity_probe.gd:40)
+  cell LUT encode: deferred until DCWorldExt bind
+  encode: 2827ms
+MapBaker v6: total 2982ms
+MapGenerator v7: bake 3002ms
+MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)
+MapGenerator: skip _compute_terrain_perturbed_wind (physical-hex solver writes per-cell)
+[SUS] sim budget strict=false frame=8.00ms warn=2.00ms slice=0.75ms upload=1.50ms scheduler=DCSystemScheduler native_sus=auto
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter 脗搂11)
+[DataCore] _data_core_world_ext bound=true (climate co-processor; class=DCWorldExt)
+[native_world] configure rc=0 reason=configured cells=2400 wrap_period_x=103.923
+[native_generation] path=gdext n=2400 published=9 native_ms=0.094 compute_ms=0.053 flush_ms=0.041
+[hex_cell] facade ENABLED (2400 cells bound; ext=true)
+[DataCore] _baker climate_profile injected=true (fixes WorldData.config==null sea_ice prepare path)
+[phys_solve][oneshot] OK slp=0.89ms wind=0.47ms psi=0.25ms(ran=true) upwelling=0.04ms total=2.06ms
+PhysicalCirculation solve@phase=1.50 total=2ms (C++ one-shot run_physical_solve_pass)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+[physical_init] deferred native refresh complete: 2ms
+[cell_lut] deferred encode: 1ms path=gdext
+[bio-occupancy] seed landmasses=2 provinces=2 species=20 secondary_hearths=0
+[bio-occupancy]   bio.maize envelope=206 hearth=75 seeded_landmasses=1 primary_landmass=1 primary_envelope=206 occupied=75 occupied/envelope=0.36
+[bio-occupancy]   bio.wheat envelope=283 hearth=89 seeded_landmasses=1 primary_landmass=1 primary_envelope=283 occupied=89 occupied/envelope=0.31
+[bio-occupancy]   bio.rice envelope=103 hearth=30 seeded_landmasses=1 primary_landmass=1 primary_envelope=103 occupied=30 occupied/envelope=0.29
+[bio-occupancy]   bio.potato envelope=176 hearth=92 seeded_landmasses=1 primary_landmass=1 primary_envelope=176 occupied=92 occupied/envelope=0.52
+[bio-occupancy]   bio.horse envelope=312 hearth=148 seeded_landmasses=1 primary_landmass=1 primary_envelope=312 occupied=148 occupied/envelope=0.47
+[bio-occupancy]   bio.cotton envelope=296 hearth=163 seeded_landmasses=1 primary_landmass=1 primary_envelope=296 occupied=163 occupied/envelope=0.55
+[bio-occupancy]   bio.flax envelope=266 hearth=133 seeded_landmasses=1 primary_landmass=1 primary_envelope=266 occupied=133 occupied/envelope=0.50
+[bio-occupancy]   bio.spice envelope=202 hearth=41 seeded_landmasses=1 primary_landmass=1 primary_envelope=202 occupied=41 occupied/envelope=0.20
+[bio-occupancy]   bio.rubber envelope=133 hearth=50 seeded_landmasses=1 primary_landmass=1 primary_envelope=133 occupied=50 occupied/envelope=0.38
+[bio-occupancy]   bio.sheep envelope=82 hearth=2 seeded_landmasses=1 primary_landmass=1 primary_envelope=82 occupied=2 occupied/envelope=0.02
+[bio-occupancy]   bio.goat envelope=552 hearth=61 seeded_landmasses=1 primary_landmass=1 primary_envelope=552 occupied=61 occupied/envelope=0.11
+[bio-occupancy]   bio.cattle envelope=70 hearth=36 seeded_landmasses=1 primary_landmass=1 primary_envelope=70 occupied=36 occupied/envelope=0.51
+[bio-occupancy]   bio.pig envelope=403 hearth=61 seeded_landmasses=1 primary_landmass=1 primary_envelope=403 occupied=61 occupied/envelope=0.15
+[bio-occupancy]   bio.camel envelope=105 hearth=30 seeded_landmasses=1 primary_landmass=1 primary_envelope=105 occupied=30 occupied/envelope=0.29
+[bio-occupancy]   bio.yak envelope=163 hearth=82 seeded_landmasses=1 primary_landmass=1 primary_envelope=163 occupied=82 occupied/envelope=0.50
+[bio-occupancy]   bio.silkworm envelope=241 hearth=63 seeded_landmasses=1 primary_landmass=1 primary_envelope=241 occupied=63 occupied/envelope=0.26
+[bio-occupancy]   bio.reed envelope=217 hearth=16 seeded_landmasses=1 primary_landmass=1 primary_envelope=217 occupied=16 occupied/envelope=0.07
+[bio-occupancy]   bio.bast_fiber envelope=300 hearth=72 seeded_landmasses=1 primary_landmass=1 primary_envelope=300 occupied=72 occupied/envelope=0.24
+[bio-occupancy]   bio.dye_plant envelope=302 hearth=15 seeded_landmasses=1 primary_landmass=1 primary_envelope=302 occupied=15 occupied/envelope=0.05
+[bio-occupancy]   bio.medicinal_herb envelope=454 hearth=92 seeded_landmasses=1 primary_landmass=1 primary_envelope=454 occupied=92 occupied/envelope=0.20
+[bio-occupancy]   landmass 1 classes=cold_grazer, fiber_forest, dry_grazer, fiber_wet, highland_food, open_grazer, open_food, fiber_open, forest_grazer, wetland_food, tropical foods=potato, wheat, rice, maize
+[bio-occupancy]   landmass 2 classes=none foods=none
+[weather] gdext acceleration ON (class=DCWorldExt)
+[weather] gdext field commit ON
+[weather] gdext distribute ON
+[weather] gdext summary ON
+[weather] hexcell facade ON (skip AoS double-write in hot loop)
+[weather] gdext resident knobs ON (class=KnobsHandle)
+ERROR: [economy] test bootstrap failed: bootstrap_construction_source_missing candidate_regions=2 skipped_regions=2 det
+ails=[{ "component_index": 0, "missing_timber": true, "missing_stone": true, "cell_count": 1207, "first_cell": 95 }, { 
+"component_index": 1, "missing_timber": true, "missing_stone": true, "cell_count": 1, "first_cell": 1229 }] diagnostics
+={ "passable_cells": 1208, "resource_positive_cells": { "fertile_soil": 1065, "timber": 0, "stone": 0 }, "resource_peak
+s": { "fertile_soil": 350000.0, "timber": 0.0, "stone": 0.0 }, "root_buildings": { "timber_collector": 0, "stone_collec
+tor": 0 }, "fallback_roots": { "timber_collector": 0, "stone_collector": 0 } }
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _setup_economy_runtime (res://scripts/geography/map_generator.gd:1739)
+       [1] _setup_sus (res://scripts/geography/map_generator.gd:3566)
+       [2] generate (res://scripts/geography/map_generator.gd:1593)
+       [3] generate_world (res://scripts/game/world_runtime_host.gd:379)
+       [4] _run (res://tests/climate_parity_probe.gd:82)
+       [5] _init (res://tests/climate_parity_probe.gd:40)
+[weather/knobs] resident KnobsHandle path ACTIVE 鈥?first to_*_knobs_dict hit (field_rebuild_count=1 expected 鈮?; stable Hz target 鈮? Hz)
+[native_daily] ACTIVE: registered native_daily_sim + natural_resource_daily + bio_occupancy_daily; retained season_refresh + ocean_currents boundary jobs
+[DCSystemScheduler] topology: ["season_refresh", "effect_runtime", "gameplay_effect", "natural_resource_daily", "bio_occupancy_daily", "enum_atlas_upload", "ocean_currents", "native_daily_sim", "dynamic_visual_atlas_upload"]
+WARNING: [runtime-climate-round] no ClimateDailySystem; SHADOW capture carries no shared pass input
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _build_runtime_climate_round_input (res://scripts/geography/map_generator.gd:4362)
+       [1] capture_runtime_inputs_for_worker (res://scripts/geography/map_generator.gd:2262)
+       [2] generate_world (res://scripts/game/world_runtime_host.gd:432)
+       [3] _run (res://tests/climate_parity_probe.gd:82)
+       [4] _init (res://tests/climate_parity_probe.gd:40)
+[DCSystemScheduler][RT] ocean_skip#1 tick=1 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#2 tick=2 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#3 tick=3 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[phys_solve][RT] start#1 phase=0.0438 pending=nan solve_ocean=true ext=true idx=true soa=true
+[slp_field] path-decision call#1: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true -> cpp_gate=true
+[slp_field] commit-diag call#1: rc=0.060 slp_out=2400 n_cells=2400 map_slp=2400 slice=0:300 final=false published=false slot=19/2400 reason=intermediate_slice
+[slp_field][RT-DIAG] call#1 phase=0.0438 rc=0.060 slp_out=2400 n=2400 slice=0:300 final=false published=false slot=19/2400 slot_reason=intermediate_slice -> intermediate_slice
+[natural_resource/slow-dump] tick=5 day=5 wall=3.42 cpp=0.317 compute=0.268 loop=0.022 flush=0.105 wrapper=2.914 layout=cell_indices dispatches=0 resources=13/31 skipped_static=18 published=true total_delta=2494686.98026
+[DCSystemScheduler][RT] ocean_skip#4 tick=5 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#5 tick=7 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[pass_a][reference-boundary] day 0: reference matches pass_a output
+[publish][cadence] day=0 round_ran=1 prod_knobs=0x72 stages=0x0
+[publish][cadence] day=1 round_ran=0 prod_knobs=0x0 stages=0x0
+[publish][cadence] day=2 round_ran=0 prod_knobs=0x0 stages=0x0
+[publish][cadence] day=3 round_ran=0 prod_knobs=0x0 stages=0x0
+[publish][cadence] day=4 round_ran=0 prod_knobs=0x0 stages=0x0
+[publish][cadence] day=5 round_ran=0 prod_knobs=0x0 stages=0x0
+[publish][cadence] day=6 round_ran=0 prod_knobs=0x0 stages=0x0
+[slp_field] path-decision call#2: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true -> cpp_gate=true
+[slp_field] commit-diag call#2: rc=0.057 slp_out=2400 n_cells=2400 map_slp=2400 slice=300:600 final=false published=false slot=19/2400 reason=intermediate_slice
+[slp_field][RT-DIAG] call#2 phase=0.0438 rc=0.057 slp_out=2400 n=2400 slice=300:600 final=false published=false slot=19/2400 slot_reason=intermediate_slice -> intermediate_slice
+[DCSystemScheduler][RT] ocean_skip#6 tick=9 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#7 tick=10 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#8 tick=11 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[slp_field] path-decision call#3: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true -> cpp_gate=true
+[slp_field] commit-diag call#3: rc=0.058 slp_out=2400 n_cells=2400 map_slp=2400 slice=600:900 final=false published=false slot=19/2400 reason=intermediate_slice
+[slp_field][RT-DIAG] call#3 phase=0.0438 rc=0.058 slp_out=2400 n=2400 slice=600:900 final=false published=false slot=19/2400 slot_reason=intermediate_slice -> intermediate_slice
+[DCSystemScheduler][RT] ocean_skip#9 tick=13 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#10 tick=14 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#11 tick=15 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[slp_field][RT-DIAG] call#4 phase=0.0438 rc=0.055 slp_out=2400 n=2400 slice=900:1200 final=false published=false slot=19/2400 slot_reason=intermediate_slice -> intermediate_slice
+[DCSystemScheduler][RT] ocean_skip#12 tick=17 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[pass_a][reference-boundary] day 7: reference matches pass_a output
+[publish][cadence] day=7 round_ran=1 prod_knobs=0x72 stages=0x1F00
+[publish][cadence] day=8 round_ran=0 prod_knobs=0x0 stages=0x0
+[publish][cadence] day=9 round_ran=0 prod_knobs=0x0 stages=0x0
+[publish][cadence] day=10 round_ran=0 prod_knobs=0x0 stages=0x0
+[publish][cadence] day=11 round_ran=0 prod_knobs=0x0 stages=0x0
+[publish][cadence] day=12 round_ran=0 prod_knobs=0x0 stages=0x0
+[publish][cadence] day=13 round_ran=0 prod_knobs=0x0 stages=0x0
+[publish][cadence] day=14 round_ran=0 prod_knobs=0x0 stages=0x0
+[publish][cadence] day=15 round_ran=0 prod_knobs=0x0 stages=0x0
+[publish][cadence] day=16 round_ran=0 prod_knobs=0x0 stages=0x0
+[publish][cadence] day=17 round_ran=0 prod_knobs=0x0 stages=0x0
+[climate-kernel][round] shared=1 ok=1 n_cells=2400 mask=0x1F3 ran=0x1F3 starved=0x0 knobs_cells=2400
+[DCSystemScheduler][RT] ocean_skip#13 tick=19 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[slp_field][RT-DIAG] call#5 phase=0.0438 rc=0.065 slp_out=2400 n=2400 slice=1200:1500 final=false published=false slot=19/2400 slot_reason=intermediate_slice -> intermediate_slice
+[DCSystemScheduler][RT] ocean_skip#14 tick=21 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#15 tick=22 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#16 tick=23 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#17 tick=25 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#18 tick=26 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#19 tick=27 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[pass_a][reference-boundary] day 18: reference matches pass_a output
+[publish][cadence] day=18 round_ran=1 prod_knobs=0x72 stages=0x1800
+[publish][cadence] day=19 round_ran=0 prod_knobs=0x0 stages=0x0
+[publish][cadence] day=20 round_ran=0 prod_knobs=0x0 stages=0x0
+[publish][cadence] day=21 round_ran=0 prod_knobs=0x0 stages=0x0
+[publish][cadence] day=22 round_ran=0 prod_knobs=0x0 stages=0x0
+[publish][cadence] day=23 round_ran=0 prod_knobs=0x0 stages=0x0
+[publish][cadence] day=24 round_ran=0 prod_knobs=0x0 stages=0x0
+[publish][cadence] day=25 round_ran=0 prod_knobs=0x0 stages=0x0
+[publish][cadence] day=26 round_ran=0 prod_knobs=0x0 stages=0x0
+[publish][cadence] day=27 round_ran=0 prod_knobs=0x0 stages=0x0
+[DCSystemScheduler][RT] ocean_skip#20 tick=29 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[season_refresh] b_plus_start path=gdext handle=1 season=0 n_cells=2400
+[season_refresh] b_plus_finish path=gdext native_ms=0.470 slices=1 stages_done=12
+[DCSystemScheduler][RT] ocean_skip#21 tick=31 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[slp_field] gdext path ACTIVE 鈥?first run elapsed=0.31ms (legacy GDScript baseline ~36ms; target < 3ms)
+[DCSystemScheduler][RT] ocean_skip#22 tick=33 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#23 tick=34 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#24 tick=35 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#25 tick=37 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#26 tick=38 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[pass_a][reference-boundary] day 28: reference matches pass_a output
+[publish][cadence] day=28 round_ran=1 prod_knobs=0x72 stages=0x1800
+[publish][cadence] day=29 round_ran=0 prod_knobs=0x0 stages=0x0
+[publish][cadence] day=30 round_ran=0 prod_knobs=0x0 stages=0x0
+[publish][cadence] day=31 round_ran=0 prod_knobs=0x0 stages=0x0
+[publish][cadence] day=32 round_ran=0 prod_knobs=0x0 stages=0x0
+[publish][cadence] day=33 round_ran=0 prod_knobs=0x0 stages=0x0
+[DCSystemScheduler][RT] ocean_skip#27 tick=39 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[psi_solver] path-decision call#1: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true heat=true -> cpp_gate=true
+[psi_solver] gdext path ACTIVE 鈥?first run elapsed=0.29ms (legacy GDScript stage3+4+5 baseline ~32+ms; target < 5ms)
+[psi_solver] commit-diag call#1: rc=0.288 n_water=880 n_cells=2400 published=true
+[DCSystemScheduler][RT] ocean_skip#28 tick=41 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#29 tick=43 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[parity-probe] label=s3cadence seed=20260906 map=60x40 cells=2400 compared_days=30 matched_days=26 forced_days=4
+[parity-probe] stage cadence (production_days / worker_days / missing = prod ran, worker did not)
+  0  PASS_A                   production=0   worker=3   missing=0
+  1  PASS_B                   production=0   worker=3   missing=0
+  2  OCEAN_WATER              production=0   worker=0   missing=0
+  3  OCEAN_LAND               production=0   worker=0   missing=0
+  4  WIND_AIR                 production=0   worker=3   missing=0
+  5  WIND_SURFACE             production=0   worker=3   missing=0
+  6  SEA_ICE                  production=0   worker=3   missing=0
+  7  TRANSPIRATION            production=0   worker=3   missing=0
+  8  ALBEDO                   production=1   worker=1   missing=0
+  9  VEGETATION_DYNAMICS      production=1   worker=0   missing=1
+  10 CLIMATE_FEEDBACK         production=1   worker=1   missing=0
+  11 WEATHER                  production=3   worker=0   missing=3
+  12 RUNTIME_HYDROLOGY        production=3   worker=0   missing=3
+  13 STAGE_B_AFTER_HYDROLOGY  production=0   worker=0   missing=0
+[parity-probe] stage x field divergence (day of first divergence, -1 = never)
+  CLIMATE_FEEDBACK         temperature                    first_day=2    diverged_days=4/30 cells=9003 max_delta=0.175
+  PASS_A                   temperature_30d_ema            first_day=-1   diverged_days=0/30 cells=0 max_delta=0.0
+  PASS_A                   temperature_365d_ema           first_day=2    diverged_days=1/30 cells=2268 max_delta=0.002306
+  PASS_A                   temperature_baseline           first_day=-1   diverged_days=0/30 cells=0 max_delta=0.0
+  PASS_A                   thermal_energy                 first_day=2    diverged_days=1/30 cells=2268 max_delta=0.07537
+  STAGE_B_AFTER_HYDROLOGY  moisture                       first_day=2    diverged_days=4/30 cells=4753 max_delta=0.782491
+  RUNTIME_HYDROLOGY        plant_available_water          first_day=7    diverged_days=3/30 cells=4339 max_delta=1.0
+  RUNTIME_HYDROLOGY        water_balance_30d              first_day=2    diverged_days=4/30 cells=6060 max_delta=1.0
+  WEATHER                  weather_precipitation          first_day=7    diverged_days=3/30 cells=1638 max_delta=0.121561
+  WEATHER                  weather_intensity              first_day=7    diverged_days=3/30 cells=1646 max_delta=0.869147
+  WEATHER                  vapor                          first_day=7    diverged_days=3/30 cells=7200 max_delta=0.216721
+  WEATHER                  cloud_water                    first_day=7    diverged_days=3/30 cells=6584 max_delta=0.097149
+  WEATHER                  cloud_cover                    first_day=7    diverged_days=3/30 cells=6597 max_delta=0.364814
+  WIND_AIR                 convergence                    first_day=18   diverged_days=1/30 cells=2372 max_delta=0.846557
+  WEATHER                  instability                    first_day=7    diverged_days=3/30 cells=6461 max_delta=1.0
+  WEATHER                  weather_type                   first_day=18   diverged_days=2/30 cells=1247 max_delta=7.0
+  WEATHER                  weather_transition             SKIPPED (store is uint8 but weather_transition_alpha_arr is PackedFloat32Array)
+  SEA_ICE                  snow_cover                     first_day=7    diverged_days=3/30 cells=308 max_delta=1.0
+  RUNTIME_HYDROLOGY        snowpack                       first_day=2    diverged_days=4/30 cells=347 max_delta=0.8
+  SEA_ICE                  sea_ice                        first_day=7    diverged_days=3/30 cells=1171 max_delta=0.980098
+  RUNTIME_HYDROLOGY        runoff                         first_day=7    diverged_days=3/30 cells=1902 max_delta=1.049624
+  RUNTIME_HYDROLOGY        groundwater                    first_day=7    diverged_days=3/30 cells=1312 max_delta=0.213095
+  RUNTIME_HYDROLOGY        river_storage                  first_day=7    diverged_days=3/30 cells=2067 max_delta=11.5606
+  RUNTIME_HYDROLOGY        river_discharge                first_day=7    diverged_days=3/30 cells=2238 max_delta=83.532761
+  RUNTIME_HYDROLOGY        riparian_moisture              SKIPPED (map_data.gd declares no riparian_moisture_arr)
+  VEGETATION_DYNAMICS      vegetation_vitality            first_day=2    diverged_days=2/30 cells=3821 max_delta=0.999842
+  TRANSPIRATION            vegetation_growth_pressure     first_day=7    diverged_days=2/30 cells=2622 max_delta=1.405171
+  VEGETATION_DYNAMICS      vegetation_heat_stress         first_day=7    diverged_days=1/30 cells=28 max_delta=0.201841
+  VEGETATION_DYNAMICS      vegetation_drought_stress      first_day=7    diverged_days=1/30 cells=21 max_delta=0.442346
+  VEGETATION_DYNAMICS      vegetation_cold_stress         first_day=7    diverged_days=1/30 cells=31 max_delta=0.233036
+  VEGETATION_DYNAMICS      vegetation_growth_streak       first_day=7    diverged_days=1/30 cells=38 max_delta=100.0
+  VEGETATION_DYNAMICS      vegetation_drought_streak      first_day=7    diverged_days=1/30 cells=190 max_delta=100.0
+  VEGETATION_DYNAMICS      vegetation_succession_candidate SKIPPED (store is a uint8 flag but vegetation_regen_score_arr is a float score)
+ERROR: 26 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 383 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

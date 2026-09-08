@@ -1,0 +1,41 @@
+﻿{
+    "generated_utc":  "2026-09-05T17:31:26.3526783Z",
+    "repo_root":  "D:\\Godot\\ProjectKeynes\\Project.Keynes",
+    "git":  {
+                "head":  "c3255fccd18c49dcdd51e635a90f6d87b1120eb5",
+                "branch":  "master",
+                "gdext_src_dirty":  0
+            },
+    "abi":  {
+                "runtime_domain_abi_version":  1,
+                "runtime_domain_pod_abi_version":  3
+            },
+    "newest_source":  {
+                          "path":  "gdext\\src\\modifier_runtime.h",
+                          "last_write_utc":  "2026-09-05T16:02:54.9359200Z"
+                      },
+    "dlls":  [
+                 {
+                     "name":  "dots_ext.windows.template_debug.x86_64.dll",
+                     "present":  true,
+                     "sha256":  "B5524B817612094AE314886E841C60755A7CD62109E9FD49FDB397F5D2291979",
+                     "size_bytes":  8571392,
+                     "last_write_utc":  "2026-09-05T17:16:07.7597081Z",
+                     "stale":  false
+                 },
+                 {
+                     "name":  "dots_ext.windows.template_release.x86_64.dll",
+                     "present":  true,
+                     "sha256":  "BED31F840F82D8D3D4AE16D98F409A85766032DEF41FB0EA17B4E24536071511",
+                     "size_bytes":  7371776,
+                     "last_write_utc":  "2026-09-05T17:19:37.1079345Z",
+                     "stale":  false
+                 }
+             ],
+    "stale":  {
+                  "any":  false,
+                  "dlls":  [
+
+                           ]
+              }
+}

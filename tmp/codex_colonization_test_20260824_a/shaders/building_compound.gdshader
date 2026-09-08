@@ -33,6 +33,13 @@ uniform vec2 tod_debug_sun_uv = vec2(0.25, 0.5);
 uniform float tod_debug_sun_height_scale = 1.0;
 uniform vec3 tod_sun_dir = vec3(0.4, -0.7, 0.6);
 uniform float tod_exposure = 1.0;
+
+// Windows are emissive only after the local sun has crossed into night.  Keep
+// the transition soft so the whole map does not pop when the terminator moves.
+const float BUILDING_WINDOW_NIGHT_START = 0.18;
+const float BUILDING_WINDOW_NIGHT_FULL = 0.62;
+const float BUILDING_WINDOW_LIGHT_GAIN = 1.45;
+const float BUILDING_WINDOW_HALO_GAIN = 0.34;
 #include "res://shaders/include/earth_daylight.gdshaderinc"
 
 varying flat float v_style;
@@ -161,10 +168,19 @@ void fragment() {
 			+ authored_ed.moon_col * authored_ed.moon_strength
 				* mix(0.05, 0.12, authored_up);
 		authored_color *= max(authored_light, vec3(0.08)) * tod_exposure;
-		// Windows are nearly inert by day and become readable at night.
-		if (authored_live && visual_quality > 1) {
+		// Windows are emissive only for live knowledge.  Fogged memory keeps its
+		// remembered neutral appearance instead of receiving live TOD lighting.
+		if (authored_live && surface.b > 0.001) {
+			float authored_window_night = smoothstep(
+				BUILDING_WINDOW_NIGHT_START, BUILDING_WINDOW_NIGHT_FULL,
+				authored_ed.pixel_night);
 			authored_color += vec3(1.0, 0.62, 0.24) * surface.b
-				* mix(0.015, 0.30, authored_ed.pixel_night) * tod_exposure;
+				* authored_window_night * BUILDING_WINDOW_LIGHT_GAIN * tod_exposure;
+			// Give sub-pixel windows enough energy to survive mip filtering at the
+			// compound/macro transition without turning the whole facade emissive.
+			authored_color += vec3(1.0, 0.44, 0.12)
+				* smoothstep(0.02, 0.42, surface.b) * authored_window_night
+				* BUILDING_WINDOW_HALO_GAIN * tod_exposure;
 		}
 		float authored_alpha = authored.a * geometry_alpha
 			* smoothstep(0.36, 0.54, camera_zoom);
@@ -249,6 +265,9 @@ void fragment() {
 	float window_glow = max(
 		box_mask(p, vec2(0.12, 0.235), vec2(0.064, 0.040), 0.009),
 		box_mask(p, vec2(0.36, 0.235), vec2(0.039, 0.036), 0.009));
+	float window_halo = max(
+		box_mask(p, vec2(0.12, 0.235), vec2(0.125, 0.090), 0.045),
+		box_mask(p, vec2(0.36, 0.235), vec2(0.090, 0.084), 0.040));
 	color = mix(color, vec3(0.14, 0.085, 0.048), door_frame);
 	color = mix(color, vec3(0.050, 0.035, 0.025), door);
 	color = mix(color, vec3(0.115, 0.085, 0.055), windows);
@@ -309,8 +328,14 @@ void fragment() {
 			* max(ed.sun_dir.z, 0.0)
 		+ ed.moon_col * ed.moon_strength * mix(0.05, 0.12, roof_weight);
 	color *= max(building_light, vec3(0.08)) * tod_exposure;
-	color += vec3(1.0, 0.62, 0.24) * window_glow
-		* mix(0.015, 0.30, ed.pixel_night) * tod_exposure;
+	if (live_visible) {
+		float window_night = smoothstep(BUILDING_WINDOW_NIGHT_START,
+			BUILDING_WINDOW_NIGHT_FULL, ed.pixel_night);
+		color += vec3(1.0, 0.62, 0.24) * window_glow
+			* window_night * BUILDING_WINDOW_LIGHT_GAIN * tod_exposure;
+		color += vec3(1.0, 0.44, 0.12) * window_halo
+			* window_night * BUILDING_WINDOW_HALO_GAIN * tod_exposure;
+	}
 
 	float glyph = max(max(max(roof_outer, wall_front),
 		max(wall_side, foundation)), max(chimney, max(feature, windows)));

@@ -1,0 +1,24 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[ui-layout-diag/bind_ui] is_web=false viewport_visible_rect=[P: (0.0, 0.0), S: (51.2, 51.2)] window_size=(64, 64) content_scale_factor=1.250 content_scale_mode=0 device_pixel_ratio=-1.000 top_bar_rect=[P: (-245.9, 0.0), S: (543.0, 56.0)] right_panel_rect=[P: (-408.8, 68.0), S: (460.0, 366.0)] country_action_bar_rect=[P: (-142.4, -30.8), S: (336.0, 74.0)]
+[detail_scatter/DRAIN_CFG] budget_ms=2.50 chunks_per_frame=4 plan_items=16 cells_per_batch=32 chunk_size=16
+[native_generation/base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=2400 native_ms=7.231 water=1540 land=860
+[native_generation/post_base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=2400 native_ms=1.577 lakes=0 rivers=92 volcanoes=0
+[native_generation/vegetation] native_ms=0.575 candidates=856 none=1120 score=[0.000,1.246,1.146] plant_water_land=860 river_adjacent_desert=0 coastal_highland_desert=0 terrain_weight=[0.180,1.200]
+[native_generation/qa] single_water=0 tiny<=3=0 small<=5=0 bodies=1 largest=1540 | land_below_sea=0.0% | terr_distinct=21 entropy=3.203bit | river_ratio=3.833%
+MapGenerator v7: per-cell 76ms (2400 cells, path=gdext)
+MapBaker v6: hm=(1024, 606) seed=40374750
+    [fused] terrain=80.9ms erosion=2.6ms(ok=true) river=14.5ms(ok=true) latitude=0.1ms coast_sdf=5.2ms(ok=true)
+  geometry fields (fused C++): 169ms
+  physical circulation hex solve: deferred until DCWorldExt bind (ext=true idx=true soa=false)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+[bake-stage] height_flow begin
+[bake-stage] height_flow end 77ms
+[bake-stage] terrain_normal end
+[bake-stage] horizon end
+[bake-stage] enum_lut end
+[bake-stage] water_depth begin
+[bake-stage] water_depth end
+[bake-stage] terrain_detail begin
+[bake-stage] terrain_detail end
+[bake-stage] visual_tiles begin

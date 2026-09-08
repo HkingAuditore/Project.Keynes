@@ -1,0 +1,16 @@
+day,parity_compared,parity_matched,diverged_field_count,diverged_cells,first_field,first_stage,first_cell,first_reference,first_worker,reason,production_stage_mask,worker_stage_mask
+2,true,true,0,0,,0,0,,,ok,0x0,0x0
+3,true,true,0,0,,0,0,,,ok,0x0,0x0
+4,true,true,0,0,,0,0,,,ok,0x0,0x0
+5,true,true,0,0,,0,0,,,ok,0x0,0x0
+6,true,true,0,0,,0,0,,,ok,0x0,0x0
+7,true,false,14,10084,temperature,10,156,0.00816244446,0.0121935047,climate_reference_mismatch_forced,0x1F00,0x1FFF
+8,true,true,0,0,,0,0,,,ok,0x0,0x0
+9,true,true,0,0,,0,0,,,ok,0x0,0x0
+10,true,true,0,0,,0,0,,,ok,0x0,0x0
+11,true,true,0,0,,0,0,,,ok,0x0,0x0
+12,true,true,0,0,,0,0,,,ok,0x0,0x0
+13,true,true,0,0,,0,0,,,ok,0x0,0x0
+14,true,true,0,0,,0,0,,,ok,0x0,0x0
+15,true,true,0,0,,0,0,,,ok,0x0,0x0
+16,true,true,0,0,,0,0,,,ok,0x0,0x0

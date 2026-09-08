@@ -556,11 +556,11 @@ bool DCWorldExt::bind_map_data(Object *map_data) {
     // A newly bound MapData may have a different restored canal mask even
     // when the DCWorldExt object itself is reused. Force one sparse topology
     // compilation before the next hydrology pass.
-    _canal_hydrology_compiled_generation = std::numeric_limits<uint64_t>::max();
-    _canal_hydrology_compiled_cell_count = -1;
-    _canal_hydrology_cells.clear();
-    _canal_hydrology_source_kind.clear();
-    _canal_hydrology_strength.clear();
+    _hydrology_canal.compiled_generation = std::numeric_limits<uint64_t>::max();
+    _hydrology_canal.compiled_cell_count = -1;
+    _hydrology_canal.cells.clear();
+    _hydrology_canal.source_kind.clear();
+    _hydrology_canal.strength.clear();
     _map_data = map_data;
 
     int bound_count = 0;
@@ -827,6 +827,15 @@ int DCWorldExt::_bind_index_for_slot(int comp_id) {
         }
     }
     return int(cached);
+}
+
+const char *DCWorldExt::_slot_name_for_property(const char *property_name) {
+    if (property_name == nullptr || property_name[0] == '\0') return nullptr;
+    for (int i = 0; i < BIND_TABLE_SIZE; ++i) {
+        if (std::strcmp(property_name, BIND_TABLE[i].property_name) == 0)
+            return BIND_TABLE[i].slot_name;
+    }
+    return nullptr;
 }
 
 bool DCWorldExt::_slot_is_visual_dirty(int comp_id) {

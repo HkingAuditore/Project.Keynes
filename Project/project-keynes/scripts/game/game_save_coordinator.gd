@@ -11,6 +11,7 @@ const REQUIRED_SECTIONS := [
 ]
 const SaveRepositoryScript = preload("res://scripts/game/save_repository.gd")
 const RuntimeStateProviderScript = preload("res://scripts/game/runtime_state_provider.gd")
+const PksrBundleHeaderScript = preload("res://scripts/game/pksr_bundle_header.gd")
 const TECHNOLOGY_INDUSTRY_PROVIDER_ID := "technology_industry"
 const TECHNOLOGY_INDUSTRY_REVISION := 2
 
@@ -583,7 +584,7 @@ func _capture_native_runtime_bundle() -> Dictionary:
 		var polled: Dictionary = generator.poll_runtime_save(request_id)
 		if bool(polled.get("ready", false)):
 			var bytes: PackedByteArray = polled.get("bytes", PackedByteArray())
-			if not _valid_native_runtime_bundle(bytes):
+			if not _valid_native_runtime_bundle(bytes, polled):
 				return _result(false, "simulation_runtime_checksum_failed",
 					"后台 runtime bundle 校验失败。")
 			return {"ok": true, "bytes": bytes}
@@ -595,15 +596,12 @@ func _capture_native_runtime_bundle() -> Dictionary:
 	return _result(false, "runtime_save_timeout", "等待后台 runtime 保存超时。")
 
 
-func _valid_native_runtime_bundle(bytes: PackedByteArray) -> bool:
+func _valid_native_runtime_bundle(bytes: PackedByteArray,
+		polled: Dictionary = {}) -> bool:
 	# PKSR v2 contains the immutable runtime envelope. The container section hash
-	# is checked by SaveRepository; this validates the fixed ABI header before it
-	# reaches a restore provider. PKSR v1 is intentionally rejected.
-	return bytes.size() >= 2161 \
-		and bytes.slice(0, 4).get_string_from_ascii() == "PKSR" \
-		and bytes.decode_u32(4) == 2 \
-		and bytes.decode_u32(81) == 1 \
-		and bytes.decode_u32(85) == 1
+	# is checked by SaveRepository; the header contract lives in PksrBundleHeader
+	# so it stays next to the offsets it depends on.
+	return PksrBundleHeaderScript.valid(bytes, polled)
 
 
 func _can_country_provider(context: Dictionary) -> Dictionary:

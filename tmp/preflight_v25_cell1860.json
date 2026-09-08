@@ -1,0 +1,17 @@
+{
+  "output": "D:\\Godot\\ProjectKeynes\\Project.Keynes\\tmp\\economy_record_20260829_025602_v25_cell1860_q-15_r31_profile.json",
+  "rows": {
+    "summary": 5809,
+    "cohorts": 20569,
+    "market": 778406,
+    "buildings": 71312,
+    "resources": 180079
+  },
+  "signals": 1,
+  "series": 134,
+  "correlations": {
+    "top_level": 30,
+    "top_first_difference": 30,
+    "top_lagged_first_difference": 30
+  }
+}

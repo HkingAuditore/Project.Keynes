@@ -1,0 +1,60 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] catalog compiles
+  [PASS] cadence fixture country bootstraps
+  [PASS] cadence fixture configures
+  [PASS] cadence fixture bootstraps
+  [PASS] opening one-cell world locks N=1, P near 5, and I > P
+  [PASS] opening cell settles on sample day
+  [PASS] second day still daily with injected fast timing
+  [PASS] cadence knife ms stays on completed-COMMIT order of magnitude
+  [PASS] cadence fixture country bootstraps
+  [PASS] cadence fixture configures
+  [PASS] cadence fixture bootstraps
+  [PASS] injected medium timing lands in 2–4
+  [PASS] cadence fixture country bootstraps
+  [PASS] cadence fixture configures
+  [PASS] cadence fixture bootstraps
+  [info] heavy lock N=5 P=5 I=30 knives=5 plan_knives=1 invest_knives=64
+  [PASS] injected heavy timing locks N=5, I near 30, and I > P
+  [PASS] cadence fixture country bootstraps
+  [PASS] cadence fixture configures
+  [PASS] cadence fixture bootstraps
+  [PASS] forced five-day lock at bootstrap
+  [PASS] timing inject does not change N/P/I inside the cycle
+  [PASS] cadence fixture country bootstraps
+  [PASS] cadence fixture configures
+  [PASS] cadence fixture bootstraps
+  [PASS] nine-cell fixture uses a 2–4 day lock
+  [PASS] day 0 conserves
+  [PASS] day 1 conserves
+  [PASS] day 2 conserves
+  [PASS] one cycle covers every populated cell once
+  [PASS] cadence fixture country bootstraps
+  [PASS] cadence fixture configures
+  [PASS] cadence fixture bootstraps
+  [PASS] injected timing makes N/P/I sequence repeatable
+  [PASS] sparse cadence fixture country bootstraps
+  [PASS] sparse cadence fixture configures
+  [PASS] sparse cadence fixture bootstraps
+  [PASS] sparse fixture exposes three live cells
+  [PASS] sparse fixture still locks a 1-5 market cycle
+  [PASS] sparse day 0 conserves
+  [PASS] sparse due_cells stay inside the live set
+  [PASS] one market cycle due_cells sum equals live cells, not cell_count
+  [PASS] cadence fixture country bootstraps
+  [PASS] cadence fixture configures
+  [PASS] cadence fixture bootstraps
+  [PASS] PKCN save begins
+  [PASS] PKCN save completes
+  [PASS] v42 save begins
+  [PASS] v42 save completes
+  [PASS] PKCN restore matches
+  [PASS] v42 restore keeps locked cadence
+=== economy cadence runtime PASS ===
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 275 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

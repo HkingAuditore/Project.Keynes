@@ -1,0 +1,20 @@
+﻿[i] = cloud;
+        if (OUT_CW != nullptr) {
+            OUT_CW[i] = cloud_water;
+        }
+        OUT_PRE[i] = precip;
+        OUT_INS[i] = instability;
+        OUT_INT[i] = intensity;
+        OUT_CNV[i] = convergence;
+        if (use_next_outputs) {
+            OUT_TYP_I32[i] = int32_t(wt);
+        } else {
+            OUT_TYP[i] = display_wt;
+            OUT_FIN[i] = 1; // weather_field_initialized = true
+        }
+    }
+}
+
+// 邻域几何缓存：self->nb 的 wrapped delta 与 1/sqrt(dl2)。原来内联在 solve pass 里，
+// 与主循环的 wf_wrapped_delta / sqrt 同序同式，所以缓存命中与否 bit-equal。
+

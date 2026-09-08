@@ -53,7 +53,16 @@ struct RuntimeClimateStore {
     std::vector<float> convergence;
     std::vector<float> instability;
     std::vector<uint8_t> weather_type;
-    std::vector<uint8_t> weather_transition;
+    // 过渡动画的三条 lane，与生产的 cell_weather_prev_type /
+    // cell_weather_target_type / cell_weather_transition_alpha 一一对应。
+    //
+    // 之前这里只有一个 uint8 weather_transition，语义是"今天的类型变了没有"，与
+    // 生产的三条 slot 不是同一个量，于是它在 parity 表里只能挂 TYPE_MISMATCH、
+    // 永久排除在对拍之外。ACTIVE 下这三条要靠 writeback 回灌 MapData，缺一条
+    // 天气过渡动画就会卡住，所以按真实形状展开。
+    std::vector<uint8_t> weather_prev_type;
+    std::vector<uint8_t> weather_target_type;
+    std::vector<float> weather_transition_alpha;
     std::vector<float> snow_cover;
     std::vector<float> snowpack;
     std::vector<float> sea_ice;
@@ -79,7 +88,13 @@ struct RuntimeClimateStore {
 
     void reset(uint32_t cells);
     bool validate(std::string &error) const;
+    // Covers every field including worker-only bookkeeping. Use for save,
+    // restore and snapshot integrity.
     uint64_t state_hash() const;
+    // Covers only the fields that also exist on the production side, so the
+    // two paths are actually comparable. Defined in runtime_climate_parity.cpp
+    // alongside the canonical field table. Use for parity comparison.
+    uint64_t parity_hash() const;
 };
 
 struct RuntimeCountryStore {

@@ -1017,7 +1017,11 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
                 const int base = i * 6;
                 for (int d = 0; d < 6; ++d) {
                     const int32_t ni = NB[base + d];
-                    if (ni < 0) continue;
+                    // Upper bound as well as the -1 "no neighbour" sentinel. A
+                    // neighbour table that is stale or type-confused yields
+                    // indices in the 1e9 range, and an unbounded read here
+                    // faults instead of degrading.
+                    if (ni < 0 || ni >= n_cells) continue;
                     const double dfx = double(WX[ni]) * double(WSP_SLOT[ni]) - fx_i;
                     const double dfy = double(WY[ni]) * double(WSP_SLOT[ni]) - fy_i;
                     dv += dfx * NB_DIR_X[d] + dfy * NB_DIR_Y[d];
@@ -1033,7 +1037,7 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
                 int nb_cnt = 0;
                 for (int d = 0; d < 6; ++d) {
                     const int32_t ni = NB[base + d];
-                    if (ni < 0) continue;
+                    if (ni < 0 || ni >= n_cells) continue;
                     gx += (double(DIV[ni]) - d_self) * NB_DIR_X[d];
                     gy += (double(DIV[ni]) - d_self) * NB_DIR_Y[d];
                     ++nb_cnt;

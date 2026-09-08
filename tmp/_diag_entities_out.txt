@@ -1,0 +1,226 @@
+﻿
+==== summary ====
+path: D:\Godot\ProjectKeynes\Project.Keynes\tmp\economy_record_20260901_164046_v25_cell1522_q15_r15_summary.csv
+header_sha256_16: 3f9d4127c07a964d
+column_count: 186
+columns_count 186
+rows: 20540
+day_first: 3551
+day_last: 24090
+unique_days: 20540
+day_gaps: []
+unique_epochs: 20540
+cells: []
+missing_core_columns: []
+blank_core_rows: 0
+bad_width_rows: 0
+duplicate_primary_keys: 0
+epoch_order_regressions: 0
+detail_epochs_not_in_summary: []
+
+==== cohorts ====
+path: D:\Godot\ProjectKeynes\Project.Keynes\tmp\economy_record_20260901_164046_v25_cell1522_q15_r15_cohorts.csv
+header_sha256_16: aa91b99cd9eddba2
+column_count: 26
+columns_count 26
+rows: 91706
+day_first: 3551
+day_last: 24090
+unique_days: 20540
+day_gaps: []
+unique_epochs: 20540
+cells: [1522]
+missing_core_columns: []
+blank_core_rows: 0
+bad_width_rows: 0
+duplicate_primary_keys: 0
+epoch_order_regressions: 0
+detail_epochs_not_in_summary: []
+
+==== market ====
+path: D:\Godot\ProjectKeynes\Project.Keynes\tmp\economy_record_20260901_164046_v25_cell1522_q15_r15_market.csv
+header_sha256_16: 1b615d4c840d694e
+column_count: 50
+columns_count 50
+rows: 2752360
+day_first: 3551
+day_last: 24090
+unique_days: 20540
+day_gaps: []
+unique_epochs: 20540
+cells: [1522]
+missing_core_columns: []
+blank_core_rows: 0
+bad_width_rows: 0
+duplicate_primary_keys: 0
+epoch_order_regressions: 0
+detail_epochs_not_in_summary: []
+
+==== buildings ====
+path: D:\Godot\ProjectKeynes\Project.Keynes\tmp\economy_record_20260901_164046_v25_cell1522_q15_r15_buildings.csv
+header_sha256_16: 846f3c064b86caaa
+column_count: 132
+columns_count 132
+rows: 674890
+day_first: 3551
+day_last: 24090
+unique_days: 20540
+day_gaps: []
+unique_epochs: 20540
+cells: [1522]
+missing_core_columns: []
+blank_core_rows: 0
+bad_width_rows: 0
+duplicate_primary_keys: 0
+epoch_order_regressions: 0
+detail_epochs_not_in_summary: []
+
+==== resources ====
+path: D:\Godot\ProjectKeynes\Project.Keynes\tmp\economy_record_20260901_164046_v25_cell1522_q15_r15_resources.csv
+header_sha256_16: 475dcf08af7c7602
+column_count: 23
+columns_count 23
+rows: 636740
+day_first: 3551
+day_last: 24090
+unique_days: 20540
+day_gaps: []
+unique_epochs: 20540
+cells: [1522]
+missing_core_columns: []
+blank_core_rows: 0
+bad_width_rows: 0
+duplicate_primary_keys: 0
+epoch_order_regressions: 0
+detail_epochs_not_in_summary: []
+
+==== summary structure keys === ['first', 'last', 'flow_totals', 'audit_max_abs', 'categorical_values']
+series_index keys sample ['count', 'metadata']
+
+==== cohorts ===
+{"sig": 13, "prof": "forager", "merchant": false, "pop": [44, 36, -8], "funds_pc": [6773.65, 30152.88], "sat": [65535.0, 46428.0, 46290.0], "cov": [66342.0, 72458.0, 44830.0], "worst_need": "clothing", "days": [3551, 24090]}
+{"sig": 17, "prof": "hunter", "merchant": false, "pop": [11, 3, -8], "funds_pc": [24.42, 49424.03], "sat": [65535.0, 46428.0, 46290.0], "cov": [63023.0, 59120.0, 34899.0], "worst_need": "clothing", "days": [3551, 24090]}
+{"sig": 23, "prof": "lorekeeper", "merchant": false, "pop": [17, 16, -1], "funds_pc": [40302.15, 42465.25], "sat": [65535.0, 65535.0, 47684.0], "cov": [830.0, 0.0, 0.0], "worst_need": "home_energy", "days": [3551, 3782]}
+{"sig": 3, "prof": "artisan", "merchant": false, "pop": [1, 1, 0], "funds_pc": [42871.35, 15314.38], "sat": [65535.0, 46428.0, 0.0], "cov": [1497938.0, 861466.0, 0.0], "worst_need": "clothing", "days": [3551, 24090]}
+{"sig": 28, "prof": "miner", "merchant": false, "pop": [1, 1, 0], "funds_pc": [1043.71, 235.34], "sat": [65535.0, 65535.0, 65535.0], "cov": [307883.0, 76833.0, 60292.0], "worst_need": "clothing", "days": [5005, 5738]}
+{"sig": 43, "prof": "unemployed", "merchant": false, "pop": [1, 1, 0], "funds_pc": [0.0, 0.0], "sat": [65535.0, 65535.0, 65535.0], "cov": [65536.0, 65536.0, 0.0], "worst_need": "-1", "days": [3594, 23826]}
+{"sig": 26, "prof": "merchant", "merchant": true, "pop": [5, 6, 1], "funds_pc": [2662.14, 8700.56], "sat": [65535.0, 46428.0, 46290.0], "cov": [52961.0, 51604.0, 0.0], "worst_need": "clothing", "days": [3551, 24090]}
+{"sig": 12, "prof": "fisher", "merchant": false, "pop": [1, 8, 7], "funds_pc": [30.57, 5990.52], "sat": [65535.0, 46428.0, 46290.0], "cov": [59993.0, 84701.0, 59993.0], "worst_need": "clothing", "days": [6373, 24090]}
+
+==== building_types ===
+{"type_id": 45, "building_id": "communal_hearth", "first_day": 3551, "last_day": 24090, "count_first": 20.0, "count_last": 29.0, "suspended_groups_last": 1.0, "recovery_groups_last": 0.0, "output_total": 1090804.0, "sold_total": 476282.0, "discard_total": 50.0, "sell_through": 0.4366338957319555, "discard_share": 4.5837749036490515e-05, "revenue_to_viability_cost": 17.397743364108123, "late_utilization_q16": 0.0, "late_margin_q16": 0.0, "debt_principal_last": 0.0}
+{"type_id": 113, "building_id": "hide_scraping_shelter", "first_day": 3551, "last_day": 24090, "count_first": 1.0, "count_last": 2.0, "suspended_groups_last": 1.0, "recovery_groups_last": 0.0, "output_total": 3903229.0, "sold_total": 3741345.0, "discard_total": 155122.0, "sell_through": 0.9585256207104426, "discard_share": 0.03974196748384479, "revenue_to_viability_cost": 4.3431961110421256, "late_utilization_q16": 0.0, "late_margin_q16": 0.0, "debt_principal_last": 0.0}
+{"type_id": 71, "building_id": "early_knowledge_institution", "first_day": 3551, "last_day": 3830, "count_first": 18.0, "count_last": 1.0, "suspended_groups_last": 1.0, "recovery_groups_last": 0.0, "output_total": 21028739.0, "sold_total": 88.0, "discard_total": 21028651.0, "sell_through": 4.184749261474975e-06, "discard_share": 0.9999958152507386, "revenue_to_viability_cost": 1.885752761545309e-05, "late_utilization_q16": null, "late_margin_q16": null, "debt_principal_last": 0.0}
+{"type_id": 72, "building_id": "early_merchant_post", "first_day": 3551, "last_day": 24090, "count_first": 1.0, "count_last": 1.0, "suspended_groups_last": 0.0, "recovery_groups_last": 0.0, "output_total": 0.0, "sold_total": 0.0, "discard_total": 0.0, "sell_through": null, "discard_share": null, "revenue_to_viability_cost": null, "late_utilization_q16": 0.0, "late_margin_q16": 0.0, "debt_principal_last": 0.0}
+{"type_id": 13, "building_id": "bast_wrap_shelter", "first_day": 6373, "last_day": 24090, "count_first": 1.0, "count_last": 1.0, "suspended_groups_last": 0.0, "recovery_groups_last": 0.0, "output_total": 3075978.0, "sold_total": 3034760.0, "discard_total": 37080.0, "sell_through": 0.9866000342005047, "discard_share": 0.012054702601904175, "revenue_to_viability_cost": 6.780502609053605, "late_utilization_q16": 0.0, "late_margin_q16": -65536.0, "debt_principal_last": 0.0}
+{"type_id": 99, "building_id": "freshwater_fishing_camp", "first_day": 6373, "last_day": 24090, "count_first": 1.0, "count_last": 42.0, "suspended_groups_last": 0.0, "recovery_groups_last": 0.0, "output_total": 614923287.0, "sold_total": 243962359.0, "discard_total": 0.0, "sell_through": 0.3967362501267577, "discard_share": 0.0, "revenue_to_viability_cost": 0.6888774773154214, "late_utilization_q16": 21116.522222222222, "late_margin_q16": 65536.0, "debt_principal_last": 0.0}
+{"type_id": 103, "building_id": "gathering_ground", "first_day": 3551, "last_day": 24090, "count_first": 11.0, "count_last": 76.0, "suspended_groups_last": 0.0, "recovery_groups_last": 0.0, "output_total": 1784503995.0, "sold_total": 367613583.0, "discard_total": 27612033.0, "sell_through": 0.2060032278044858, "discard_share": 0.015473225656746149, "revenue_to_viability_cost": 0.14658641939107422, "late_utilization_q16": 35505.0, "late_margin_q16": 54364.46666666667, "debt_principal_last": 0.0}
+{"type_id": 389, "building_id": "wild_wheat_stand", "first_day": 3551, "last_day": 24090, "count_first": 61.0, "count_last": 61.0, "suspended_groups_last": 0.0, "recovery_groups_last": 0.0, "output_total": 2566287266.0, "sold_total": 2455832702.0, "discard_total": 2956.0, "sell_through": 0.9569593920901294, "discard_share": 1.1518585776281523e-06, "revenue_to_viability_cost": 0.7825861169649376, "late_utilization_q16": 35505.0, "late_margin_q16": -12514.244444444445, "debt_principal_last": 0.0}
+{"type_id": 12, "building_id": "bast_fiber_camp", "first_day": 6323, "last_day": 24090, "count_first": 1.0, "count_last": 1.0, "suspended_groups_last": 0.0, "recovery_groups_last": 0.0, "output_total": 12542184.0, "sold_total": 6366796.0, "discard_total": 6175388.0, "sell_through": 0.5076305689662981, "discard_share": 0.49236943103370195, "revenue_to_viability_cost": 1.6545286734856264, "late_utilization_q16": 35505.0, "late_margin_q16": 0.0, "debt_principal_last": 0.0}
+{"type_id": 357, "building_id": "stone_age_hunting_camp", "first_day": 3551, "last_day": 24090, "count_first": 32.0, "count_last": 75.0, "suspended_groups_last": 0.0, "recovery_groups_last": 0.0, "output_total": 568328999.0, "sold_total": 274724938.0, "discard_total": 17839277.0, "sell_through": 0.48339067421052007, "discard_share": 0.03138899656957325, "revenue_to_viability_cost": 0.25341965060201227, "late_utilization_q16": 62701.12222222222, "late_margin_q16": 65536.0, "debt_principal_last": 
+{"type_id": 62, "building_id": "deadwood_gathering_camp", "first_day": 3551, "last_day": 24090, "count_first": 5.0, "count_last": 12.0, "suspended_groups_last": 0.0, "recovery_groups_last": 0.0, "output_total": 1517385811.0, "sold_total": 829561779.0, "discard_total": 0.0, "sell_through": 0.5467045842832123, "discard_share": 0.0, "revenue_to_viability_cost": 0.3204439593046752, "late_utilization_q16": 65529.0, "late_margin_q16": 10604.1, "debt_principal_last": 0.0}
+{"type_id": 297, "building_id": "placer_gold_working", "first_day": 3551, "last_day": 24090, "count_first": 7.0, "count_last": 7.0, "suspended_groups_last": 0.0, "recovery_groups_last": 0.0, "output_total": 75082.0, "sold_total": 75082.0, "discard_total": 0.0, "sell_through": 1.0, "discard_share": 0.0, "revenue_to_viability_cost": 0.025331102087504963, "late_utilization_q16": 65536.0, "late_margin_q16": -65536.0, "debt_principal_last": 0.0}
+
+==== building_row_classes ===
+{
+  "actual": 217682,
+  "candidate": 246480,
+  "sentinel": 210728
+}
+
+==== investment_rejection_counts ===
+{
+  "12": 11444,
+  "2": 24670,
+  "3": 187588,
+  "5": 21079,
+  "9": 515,
+  "0": 1114,
+  "14": 30,
+  "18": 40
+}
+
+==== resources top deplete / critical ===
+resource keys ['resource_id', 'first_day', 'last_day', 'reserve_first', 'reserve_last', 'reserve_min', 'reserve_delta', 'depletion_share', 'natural_net_total', 'artificial_applied_total', 'artificial_pending_last', 'extraction_applied_total', 'projected_life_days_last']
+{"resource_id": "freshwater_fish", "resource_stable_id": null, "first_reserve": null, "last_reserve": null, "min_reserve": null, "depletion_share": 0.3270354627852287, "last_projected_life": null, "min_projected_life": null, "sum_artificial_extraction_applied": null, "sum_natural_negative_change": null}
+{"resource_id": "wild_game", "resource_stable_id": null, "first_reserve": null, "last_reserve": null, "min_reserve": null, "depletion_share": 0.25978340788534043, "last_projected_life": null, "min_projected_life": null, "sum_artificial_extraction_applied": null, "sum_natural_negative_change": null}
+{"resource_id": "clay", "resource_stable_id": null, "first_reserve": null, "last_reserve": null, "min_reserve": null, "depletion_share": 0.09180509875846674, "last_projected_life": null, "min_projected_life": null, "sum_artificial_extraction_applied": null, "sum_natural_negative_change": null}
+{"resource_id": "fertile_soil", "resource_stable_id": null, "first_reserve": null, "last_reserve": null, "min_reserve": null, "depletion_share": 0.020008027853935368, "last_projected_life": null, "min_projected_life": null, "sum_artificial_extraction_applied": null, "sum_natural_negative_change": null}
+{"resource_id": "oil", "resource_stable_id": null, "first_reserve": null, "last_reserve": null, "min_reserve": null, "depletion_share": 0.0030633921874326495, "last_projected_life": null, "min_projected_life": null, "sum_artificial_extraction_applied": null, "sum_natural_negative_change": null}
+{"resource_id": "gold_ore", "resource_stable_id": null, "first_reserve": null, "last_reserve": null, "min_reserve": null, "depletion_share": 3.9864616297375585e-06, "last_projected_life": null, "min_projected_life": null, "sum_artificial_extraction_applied": null, "sum_natural_negative_change": null}
+{"resource_id": "timber", "resource_stable_id": null, "first_reserve": null, "last_reserve": null, "min_reserve": null, "depletion_share": -0.037511109330667466, "last_projected_life": null, "min_projected_life": null, "sum_artificial_extraction_applied": null, "sum_natural_negative_change": null}
+{"resource_id": "arable_land", "resource_stable_id": null, "first_reserve": null, "last_reserve": null, "min_reserve": null, "depletion_share": 0.0, "last_projected_life": null, "min_projected_life": null, "sum_artificial_extraction_applied": null, "sum_natural_negative_change": null}
+{"resource_id": "coal", "resource_stable_id": null, "first_reserve": null, "last_reserve": null, "min_reserve": null, "depletion_share": 0.0, "last_projected_life": null, "min_projected_life": null, "sum_artificial_extraction_applied": null, "sum_natural_negative_change": null}
+{"resource_id": "copper_ore", "resource_stable_id": null, "first_reserve": null, "last_reserve": null, "min_reserve": null, "depletion_share": 0.0, "last_projected_life": null, "min_projected_life": null, "sum_artificial_extraction_applied": null, "sum_natural_negative_change": null}
+{"resource_id": "flint", "resource_stable_id": null, "first_reserve": null, "last_reserve": null, "min_reserve": null, "depletion_share": 0.0, "last_projected_life": null, "min_projected_life": null, "sum_artificial_extraction_applied": null, "sum_natural_negative_change": null}
+{"resource_id": "iron_ore", "resource_stable_id": null, "first_reserve": null, "last_reserve": null, "min_reserve": null, "depletion_share": 0.0, "last_projected_life": null, "min_projected_life": null, "sum_artificial_extraction_applied": null, "sum_natural_negative_change": null}
+{"resource_id": "limestone", "resource_stable_id": null, "first_reserve": null, "last_reserve": null, "min_reserve": null, "depletion_share": 0.0, "last_projected_life": null, "min_projected_life": null, "sum_artificial_extraction_applied": null, "sum_natural_negative_change": null}
+{"resource_id": "natural_gas", "resource_stable_id": null, "first_reserve": null, "last_reserve": null, "min_reserve": null, "depletion_share": 0.0, "last_projected_life": null, "min_projected_life": null, "sum_artificial_extraction_applied": null, "sum_natural_negative_change": null}
+{"resource_id": "paddy_land", "resource_stable_id": null, "first_reserve": null, "last_reserve": null, "min_reserve": null, "depletion_share": 0.0, "last_projected_life": null, "min_projected_life": null, "sum_artificial_extraction_applied": null, "sum_natural_negative_change": null}
+
+==== market_goods shortage-ish ===
+good keys ['good_id', 'rows', 'active_rows', 'shortage_share_of_active', 'severe_shortage_share_of_active', 'first', 'last', 'mean', 'late_mean', 'price_change_ratio']
+{"good_id": "prepared_staples", "rows": 20540, "active_rows": 18556, "shortage_share_of_active": 0.9980599267083423, "severe_shortage_share_of_active": 0.955324423367105, "first": {"day": 3551, "stock": 0.0, "demand_ema": 7.0, "business_demand_ema": 0.0, "offered_supply_ema": 0.0, "realized_withdrawal_ema": 0.0, "production_input_reserve": 0.0, "household_available_stock": 0.0, "merchant_inventory_target": 90540.0, "merchant_procurement_shortfall
+{"good_id": "clothing", "rows": 20540, "active_rows": 20540, "shortage_share_of_active": 0.7737585199610516, "severe_shortage_share_of_active": 0.7477117818889971, "first": {"day": 3551, "stock": 12504.0, "demand_ema": 424.0, "business_demand_ema": 0.0, "offered_supply_ema": 532.0, "realized_withdrawal_ema": 424.0, "production_input_reserve": 0.0, "household_available_stock": 12504.0, "merchant_inventory_target": 31800.0, "merchant_procurement_sh
+{"good_id": "logs", "rows": 20540, "active_rows": 20540, "shortage_share_of_active": 0.7988802336903603, "severe_shortage_share_of_active": 0.0124634858812074, "first": {"day": 3551, "stock": 50290.0, "demand_ema": 17740.0, "business_demand_ema": 497.0, "offered_supply_ema": 12595.0, "realized_withdrawal_ema": 22191.0, "production_input_reserve": 0.0, "household_available_stock": 50290.0, "merchant_inventory_target": 1331460.0, "merchant_procurem
+{"good_id": "wheat_grain", "rows": 20540, "active_rows": 20540, "shortage_share_of_active": 0.9693281402142162, "severe_shortage_share_of_active": 0.0, "first": {"day": 3551, "stock": 224989.0, "demand_ema": 73505.0, "business_demand_ema": 0.0, "offered_supply_ema": 75457.0, "realized_withdrawal_ema": 82697.0, "production_input_reserve": 0.0, "household_available_stock": 224989.0, "merchant_inventory_target": 7443000.0, "merchant_procurement_shor
+{"good_id": "gathered_plants", "rows": 20540, "active_rows": 20540, "shortage_share_of_active": 0.15579357351509251, "severe_shortage_share_of_active": 0.1447906523855891, "first": {"day": 3551, "stock": 3003.0, "demand_ema": 121.0, "business_demand_ema": 0.0, "offered_supply_ema": 0.0, "realized_withdrawal_ema": 24764.0, "production_input_reserve": 0.0, "household_available_stock": 3003.0, "merchant_inventory_target": 2971620.0, "merchant_procur
+{"good_id": "fish", "rows": 20540, "active_rows": 20540, "shortage_share_of_active": 0.2162609542356378, "severe_shortage_share_of_active": 0.19342745861733204, "first": {"day": 3551, "stock": 0.0, "demand_ema": 215.0, "business_demand_ema": 0.0, "offered_supply_ema": 0.0, "realized_withdrawal_ema": 0.0, "production_input_reserve": 0.0, "household_available_stock": 0.0, "merchant_inventory_target": 109260.0, "merchant_procurement_shortfall": 1092
+{"good_id": "game_meat", "rows": 20540, "active_rows": 20540, "shortage_share_of_active": 0.04430379746835443, "severe_shortage_share_of_active": 0.0124634858812074, "first": {"day": 3551, "stock": 0.0, "demand_ema": 9609.0, "business_demand_ema": 0.0, "offered_supply_ema": 9241.0, "realized_withdrawal_ema": 18309.0, "production_input_reserve": 0.0, "household_available_stock": 0.0, "merchant_inventory_target": 1709910.0, "merchant_procurement_sh
+{"good_id": "bast_fiber", "rows": 20540, "active_rows": 20540, "shortage_share_of_active": 0.0, "severe_shortage_share_of_active": 0.0, "first": {"day": 3551, "stock": 0.0, "demand_ema": 0.0, "business_demand_ema": 13.0, "offered_supply_ema": 0.0, "realized_withdrawal_ema": 0.0, "production_input_reserve": 0.0, "household_available_stock": 0.0, "merchant_inventory_target": 780.0, "merchant_procurement_shortfall": 780.0, "desired_business_demand":
+{"good_id": "adobe_brick", "rows": 20540, "active_rows": 0, "shortage_share_of_active": null, "severe_shortage_share_of_active": null, "first": {"day": 3551, "stock": 0.0, "demand_ema": 0.0, "business_demand_ema": 0.0, "offered_supply_ema": 0.0, "realized_withdrawal_ema": 0.0, "production_input_reserve": 0.0, "household_available_stock": 0.0, "merchant_inventory_target": 0.0, "merchant_procurement_shortfall": 0.0, "desired_business_demand": 0.0, 
+{"good_id": "advanced_chips", "rows": 20540, "active_rows": 0, "shortage_share_of_active": null, "severe_shortage_share_of_active": null, "first": {"day": 3551, "stock": 0.0, "demand_ema": 0.0, "business_demand_ema": 0.0, "offered_supply_ema": 0.0, "realized_withdrawal_ema": 0.0, "production_input_reserve": 0.0, "household_available_stock": 0.0, "merchant_inventory_target": 0.0, "merchant_procurement_shortfall": 0.0, "desired_business_demand": 0.
+{"good_id": "agricultural_machinery", "rows": 20540, "active_rows": 0, "shortage_share_of_active": null, "severe_shortage_share_of_active": null, "first": {"day": 3551, "stock": 0.0, "demand_ema": 0.0, "business_demand_ema": 0.0, "offered_supply_ema": 0.0, "realized_withdrawal_ema": 0.0, "production_input_reserve": 0.0, "household_available_stock": 0.0, "merchant_inventory_target": 0.0, "merchant_procurement_shortfall": 0.0, "desired_business_dem
+{"good_id": "aluminum", "rows": 20540, "active_rows": 0, "shortage_share_of_active": null, "severe_shortage_share_of_active": null, "first": {"day": 3551, "stock": 0.0, "demand_ema": 0.0, "business_demand_ema": 0.0, "offered_supply_ema": 0.0, "realized_withdrawal_ema": 0.0, "production_input_reserve": 0.0, "household_available_stock": 0.0, "merchant_inventory_target": 0.0, "merchant_procurement_shortfall": 0.0, "desired_business_demand": 0.0, "fu
+{"good_id": "automobiles", "rows": 20540, "active_rows": 0, "shortage_share_of_active": null, "severe_shortage_share_of_active": null, "first": {"day": 3551, "stock": 0.0, "demand_ema": 0.0, "business_demand_ema": 0.0, "offered_supply_ema": 0.0, "realized_withdrawal_ema": 0.0, "production_input_reserve": 0.0, "household_available_stock": 0.0, "merchant_inventory_target": 0.0, "merchant_procurement_shortfall": 0.0, "desired_business_demand": 0.0, 
+{"good_id": "autonomous_systems", "rows": 20540, "active_rows": 0, "shortage_share_of_active": null, "severe_shortage_share_of_active": null, "first": {"day": 3551, "stock": 0.0, "demand_ema": 0.0, "business_demand_ema": 0.0, "offered_supply_ema": 0.0, "realized_withdrawal_ema": 0.0, "production_input_reserve": 0.0, "household_available_stock": 0.0, "merchant_inventory_target": 0.0, "merchant_procurement_shortfall": 0.0, "desired_business_demand"
+{"good_id": "batteries", "rows": 20540, "active_rows": 0, "shortage_share_of_active": null, "severe_shortage_share_of_active": null, "first": {"day": 3551, "stock": 0.0, "demand_ema": 0.0, "business_demand_ema": 0.0, "offered_supply_ema": 0.0, "realized_withdrawal_ema": 0.0, "production_input_reserve": 0.0, "household_available_stock": 0.0, "merchant_inventory_target": 0.0, "merchant_procurement_shortfall": 0.0, "desired_business_demand": 0.0, "f
+{"good_id": "bauxite", "rows": 20540, "active_rows": 0, "shortage_share_of_active": null, "severe_shortage_share_of_active": null, "first": {"day": 3551, "stock": 0.0, "demand_ema": 0.0, "business_demand_ema": 0.0, "offered_supply_ema": 0.0, "realized_withdrawal_ema": 0.0, "production_input_reserve": 0.0, "household_available_stock": 0.0, "merchant_inventory_target": 0.0, "merchant_procurement_shortfall": 0.0, "desired_business_demand": 0.0, "fun
+{"good_id": "beverages", "rows": 20540, "active_rows": 0, "shortage_share_of_active": null, "severe_shortage_share_of_active": null, "first": {"day": 3551, "stock": 0.0, "demand_ema": 0.0, "business_demand_ema": 0.0, "offered_supply_ema": 0.0, "realized_withdrawal_ema": 0.0, "production_input_reserve": 0.0, "household_available_stock": 0.0, "merchant_inventory_target": 0.0, "merchant_procurement_shortfall": 0.0, "desired_business_demand": 0.0, "f
+{"good_id": "bread", "rows": 20540, "active_rows": 0, "shortage_share_of_active": null, "severe_shortage_share_of_active": null, "first": {"day": 3551, "stock": 0.0, "demand_ema": 0.0, "business_demand_ema": 0.0, "offered_supply_ema": 0.0, "realized_withdrawal_ema": 0.0, "production_input_reserve": 0.0, "household_available_stock": 0.0, "merchant_inventory_target": 0.0, "merchant_procurement_shortfall": 0.0, "desired_business_demand": 0.0, "funde
+{"good_id": "bricks", "rows": 20540, "active_rows": 0, "shortage_share_of_active": null, "severe_shortage_share_of_active": null, "first": {"day": 3551, "stock": 0.0, "demand_ema": 0.0, "business_demand_ema": 0.0, "offered_supply_ema": 0.0, "realized_withdrawal_ema": 0.0, "production_input_reserve": 0.0, "household_available_stock": 0.0, "merchant_inventory_target": 0.0, "merchant_procurement_shortfall": 0.0, "desired_business_demand": 0.0, "fund
+{"good_id": "brine", "rows": 20540, "active_rows": 0, "shortage_share_of_active": null, "severe_shortage_share_of_active": null, "first": {"day": 3551, "stock": 0.0, "demand_ema": 0.0, "business_demand_ema": 0.0, "offered_supply_ema": 0.0, "realized_withdrawal_ema": 0.0, "production_input_reserve": 0.0, "household_available_stock": 0.0, "merchant_inventory_target": 0.0, "merchant_procurement_shortfall": 0.0, "desired_business_demand": 0.0, "funde
+
+==== top first_difference correlations involving key terms ===
+
+-- top_first_difference --
+{"left": "cohorts.merchant_funds_share", "right": "market.merchant_cash", "lag_days": 0, "samples": 20539, "pearson": 0.9984843578531823, "mixed_scope": false, "spearman": 0.9858949671146885, "score": 0.9858949671146885}
+{"left": "market.merchant_effective_buy_factor_q16", "right": "resources.artificial_change_pending", "lag_days": 0, "samples": 20539, "pearson": 0.9757744472703639, "mixed_scope": false, "spearman": 0.877421407415833, "score": 0.877421407415833}
+{"left": "market.merchant_effective_buy_factor_q16", "right": "resources.artificial_change_applied", "lag_days": 0, "samples": 20539, "pearson": -0.973680167907604, "mixed_scope": false, "spearman": -0.8766941469441922, "score": 0.8766941469441922}
+{"left": "market.stockout_active_goods", "right": "resources.artificial_change_pending", "lag_days": 0, "samples": 20539, "pearson": -0.9041003100933207, "mixed_scope": false, "spearman": -0.8461946607440446, "score": 0.8461946607440446}
+{"left": "market.stockout_active_goods", "right": "resources.artificial_change_applied", "lag_days": 0, "samples": 20539, "pearson": 0.9003682261892917, "mixed_scope": false, "spearman": 0.8419118575851129, "score": 0.8419118575851129}
+{"left": "market.household_available_stock", "right": "resources.artificial_change_applied", "lag_days": 0, "samples": 20539, "pearson": -0.9256668515356408, "mixed_scope": false, "spearman": -0.8035417692406501, "score": 0.8035417692406501}
+{"left": "summary.filled_owner_jobs", "right": "resources.artificial_change_pending", "lag_days": 0, "samples": 20539, "pearson": 0.8028051748006986, "mixed_scope": true, "spearman": 0.9297046913674409, "score": 0.8028051748006986}
+{"left": "market.household_available_stock", "right": "resources.artificial_change_pending", "lag_days": 0, "samples": 20539, "pearson": 0.9230625718545307, "mixed_scope": false, "spearman": 0.7976855094259251, "score": 0.7976855094259251}
+{"left": "summary.filled_owner_jobs", "right": "resources.artificial_change_applied", "lag_days": 0, "samples": 20539, "pearson": -0.7963802014130171, "mixed_scope": true, "spearman": -0.9202699813981808, "score": 0.7963802014130171}
+{"left": "summary.filled_owner_jobs", "right": "market.stockout_active_goods", "lag_days": 0, "samples": 20539, "pearson": -0.7691246469383931, "mixed_scope": true, "spearman": -0.8496936289937305, "score": 0.7691246469383931}
+{"left": "cohorts.owner", "right": "buildings.owner_fill_ratio", "lag_days": 0, "samples": 20539, "pearson": 0.7637193683679186, "mixed_scope": false, "spearman": 0.9058836301303632, "score": 0.7637193683679186}
+{"left": "summary.production_output_stock", "right": "market.merchant_effective_buy_factor_q16", "lag_days": 0, "samples": 20539, "pearson": -0.7638729177279179, "mixed_scope": true, "spearman": -0.7563636520001873, "score": 0.7563636520001873}
+
+-- top_lagged_first_difference --
+{"driver": "market.merchant_effective_buy_factor_q16", "outcome": "resources.artificial_change_applied", "lag_days": 1, "samples": 20538, "pearson": 0.9757756394931765, "spearman": 0.8774219497745966, "score": 0.8774219497745966, "mixed_scope": false}
+{"driver": "resources.artificial_change_pending", "outcome": "market.merchant_effective_buy_factor_q16", "lag_days": 1, "samples": 20538, "pearson": -0.973704527333615, "spearman": -0.8766971318933242, "score": 0.8766971318933242, "mixed_scope": false}
+{"driver": "market.merchant_effective_buy_factor_q16", "outcome": "resources.artificial_change_pending", "lag_days": 1, "samples": 20538, "pearson": -0.9737165174133685, "spearman": -0.8766134693296916, "score": 0.8766134693296916, "mixed_scope": false}
+{"driver": "resources.artificial_change_applied", "outcome": "market.merchant_effective_buy_factor_q16", "lag_days": 1, "samples": 20538, "pearson": 0.9694816586855705, "spearman": 0.8721560223075855, "score": 0.8721560223075855, "mixed_scope": false}
+{"driver": "market.merchant_effective_buy_factor_q16", "outcome": "resources.artificial_change_applied", "lag_days": 5, "samples": 20534, "pearson": 0.9622092831621043, "spearman": 0.8638758805447234, "score": 0.8638758805447234, "mixed_scope": false}
+{"driver": "market.merchant_effective_buy_factor_q16", "outcome": "resources.artificial_change_pending", "lag_days": 5, "samples": 20534, "pearson": -0.9593147732131425, "spearman": -0.8604384750986531, "score": 0.8604384750986531, "mixed_scope": false}
+{"driver": "resources.artificial_change_pending", "outcome": "market.merchant_effective_buy_factor_q16", "lag_days": 5, "samples": 20534, "pearson": -0.9588447816835977, "spearman": -0.8596088302361526, "score": 0.8596088302361526, "mixed_scope": false}
+{"driver": "resources.artificial_change_applied", "outcome": "market.merchant_effective_buy_factor_q16", "lag_days": 5, "samples": 20534, "pearson": 0.9556341477728887, "spearman": 0.8559935314224474, "score": 0.8559935314224474, "mixed_scope": false}
+{"driver": "market.stockout_active_goods", "outcome": "resources.artificial_change_applied", "lag_days": 1, "samples": 20538, "pearson": -0.9040977893488071, "spearman": -0.8461912768069111, "score": 0.8461912768069111, "mixed_scope": false}
+{"driver": "market.stockout_active_goods", "outcome": "resources.artificial_change_pending", "lag_days": 1, "samples": 20538, "pearson": 0.9032096525230048, "spearman": 0.8459637840421812, "score": 0.8459637840421812, "mixed_scope": false}
+{"driver": "resources.artificial_change_pending", "outcome": "market.stockout_active_goods", "lag_days": 1, "samples": 20538, "pearson": 0.9004190479921002, "spearman": 0.8419514506547907, "score": 0.8419514506547907, "mixed_scope": false}
+{"driver": "resources.artificial_change_applied", "outcome": "market.stockout_active_goods", "lag_days": 1, "samples": 20538, "pearson": -0.8959532343878207, "spearman": -0.8380874227279012, "score": 0.8380874227279012, "mixed_scope": false}
+
+-- top_level --
+{"left": "cohorts.population", "right": "buildings.filled_owner", "lag_days": 0, "samples": 20540, "pearson": 0.9996099563551067, "mixed_scope": false, "spearman": 0.9990915420349616, "score": 0.9990915420349616}
+{"left": "cohorts.merchant_funds_share", "right": "market.merchant_cash", "lag_days": 0, "samples": 20540, "pearson": 0.9864078968616351, "mixed_scope": false, "spearman": 0.9958198384949277, "score": 0.9864078968616351}
+{"left": "market.merchant_effective_buy_factor_q16", "right": "resources.artificial_change_pending", "lag_days": 0, "samples": 20540, "pearson": 0.9468072298122229, "mixed_scope": false, "spearman": 0.9206282269180136, "score": 0.9206282269180136}
+{"left": "cohorts.population", "right": "market.merchant_procurement_shortfall", "lag_days": 0, "samples": 20540, "pearson": 0.9430569658657293, "mixed_scope": false, "spearman": 0.9192752694037132, "score": 0.9192752694037132}
+{"left": "cohorts.owner", "right": "market.merchant_procurement_shortfall", "lag_days": 0, "samples": 20540, "pearson": 0.9424223980867048, "mixed_scope": false, "spearman": 0.9188985316747088, "score": 0.9188985316747088}
+{"left": "market.merchant_procurement_shortfall", "right": "buildings.filled_owner", "lag_days": 0, "samples": 20540, "pearson": 0.9424223980867048, "mixed_scope": false, "spearman": 0.9188985316747088, "score": 0.9188985316747088}
+{"left": "market.merchant_effective_buy_factor_q16", "right": "resources.artificial_change_applied", "lag_days": 0, "samples": 20540, "pearson": -0.931620261407507, "mixed_scope": false, "spearman": -0.9144991075827875, "score": 0.9144991075827875}
+{"left": "cohorts.funds_per_capita", "right": "buildings.filled_owner", "lag_days": 0, "samples": 20540, "pearson": -0.9698177274893048, "mixed_scope": false, "spearman": -0.9110940340442192, "score": 0.9110940340442192}
+{"left": "cohorts.merchant_funds_share", "right": "market.merchant_economic_assets", "lag_days": 0, "samples": 20540, "pearson": 0.9075068199348573, "mixed_scope": false, "spearman": 0.9446391662727093, "score": 0.9075068199348573}
+{"left": "cohorts.owner", "right": "market.realized_withdrawal_ema", "lag_days": 0, "samples": 20540, "pearson": 0.9290906374654523, "mixed_scope": false, "spearman": 0.8469870378862627, "score": 0.8469870378862627}
+{"left": "market.realized_withdrawal_ema", "right": "buildings.filled_owner", "lag_days": 0, "samples": 20540, "pearson": 0.9290906374654523, "mixed_scope": false, "spearman": 0.8469870378862627, "score": 0.8469870378862627}
+{"left": "cohorts.population", "right": "market.realized_withdrawal_ema", "lag_days": 0, "samples": 20540, "pearson": 0.9276468954315498, "mixed_scope": false, "spearman": 0.8450106840965672, "score": 0.8450106840965672}

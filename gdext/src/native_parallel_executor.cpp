@@ -99,7 +99,8 @@ void NativeParallelExecutor::run_group(uint32_t task_count, TaskFn fn,
 
     std::unique_lock<std::mutex> state_lock(_state_mutex);
     _done_cv.wait(state_lock, [this]() {
-        return _remaining_tasks.load(std::memory_order_acquire) == 0;
+        return _remaining_tasks.load(std::memory_order_acquire) == 0 &&
+            _active_workers == 0;
     });
     _task_fn = nullptr;
     _task_userdata = nullptr;
@@ -129,6 +130,11 @@ void NativeParallelExecutor::worker_loop(uint32_t worker_index) {
             userdata = _task_userdata;
             task_count = _published_task_count;
             participates = worker_index < _participating_workers;
+            // Claimed inside the critical section, before this thread can be
+            // preempted, so run_group cannot return — and cannot invalidate
+            // the userdata this thread just took — until the task loop below
+            // has exited.
+            if (participates && fn != nullptr) ++_active_workers;
         }
         if (!participates || fn == nullptr) continue;
 
@@ -145,6 +151,11 @@ void NativeParallelExecutor::worker_loop(uint32_t worker_index) {
                 std::lock_guard<std::mutex> state_guard(_state_mutex);
                 _done_cv.notify_one();
             }
+        }
+
+        {
+            std::lock_guard<std::mutex> state_guard(_state_mutex);
+            if (--_active_workers == 0) _done_cv.notify_one();
         }
     }
 }

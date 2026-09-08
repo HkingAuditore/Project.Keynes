@@ -2,7 +2,7 @@ param(
     [string]$RepoRoot = (Get-Location).Path,
     [switch]$Godot,
     [switch]$Build,
-    [string]$GodotExe = 'F:\Developent\Godot\Godot_v4.6.2-stable_win64.exe\Godot_v4.6.2-stable_win64_console.exe'
+    [string]$GodotExe = $(if ($env:GODOT_BIN) { $env:GODOT_BIN } else { 'D:\Godot\Godot_v4.6.2-stable_win64.exe\Godot_v4.6.2-stable_win64_console.exe' })
 )
 
 $ErrorActionPreference = 'Stop'

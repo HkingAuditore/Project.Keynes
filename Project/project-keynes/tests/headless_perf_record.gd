@@ -116,6 +116,15 @@ func _run() -> int:
 	host.initial_seed = seed
 	host.generate_test_economy_data = synthetic_test_economy
 	host.test_economy_population_scale = population_scale
+	# Climate 权威的 A/B 开关。必须在 configure 之前设：它决定 bind 时 worker 要不要
+	# seed climate store，也决定主线程那 14 个 climate 节点会不会被抑制门关掉 —— 两者
+	# 都发生在地图生成里，事后再改开关只会得到一个半开半关的世界。
+	#
+	# 不带参数时跟随 host 默认值（现已为 true），这个 recorder 测的就是生产路径。
+	# 要与转 ACTIVE 之前的历史 CSV 对比，显式传 climate_authority=off。
+	if args.has("climate_authority"):
+		host.runtime_climate_authority_enabled = _argument_enabled(
+			args.get("climate_authority", "false"))
 	get_root().add_child(host)
 	host.configure(null, null, clock)
 	if not synthetic_test_economy:
@@ -253,6 +262,13 @@ func _run() -> int:
 	var actual_height := actual_map.height
 	var actual_seed := host.last_seed()
 	var generation_ms := float(Time.get_ticks_usec() - generation_started) / 1000.0
+	# SceneTree -s does not pump WorldRuntimeHost._process, so ACTIVE write-back
+	# has to be driven here. The worker also starts paused with the clock.
+	var runtime_ext = generator.get_data_core_world_ext() \
+		if generator.has_method("get_data_core_world_ext") else null
+	if host.runtime_climate_authority_enabled and runtime_ext != null \
+			and runtime_ext.has_method("set_runtime_clock"):
+		runtime_ext.set_runtime_clock(false, speed)
 
 	var recorder: RefCounted = PerfRecorderScript.new()
 	recorder.call("bind_main", host)
@@ -270,6 +286,11 @@ func _run() -> int:
 		var phase := clock.season_phase_for_day(day)
 		host.run_daily_tick(day, phase)
 		host.finish_daily_tick(0.0, {})
+		if host.runtime_climate_authority_enabled:
+			var writeback_deadline := Time.get_ticks_msec() + 40
+			while Time.get_ticks_msec() < writeback_deadline:
+				host._consume_runtime_commit_if_ready()
+				OS.delay_msec(2)
 
 		var drained := await _drain_hard_barrier(clock, day)
 		barrier_pulses += int(drained.get("pulses", 0))
@@ -345,6 +366,16 @@ func _run() -> int:
 		int(tariff_totals.get("subsidy_paid", 0)),
 		int(economy_report.get("memory_bytes", 0)), rows, expected_rows, output_path,
 	])
+	var climate_diag: Dictionary = host.climate_authority_diagnostics() \
+		if host.has_method("climate_authority_diagnostics") else {}
+	var climate_authority_on := host.runtime_climate_authority_enabled
+	print("[headless-perf/climate] enabled=%s worker_authoritative=%s writeback_days=%d writeback_last_day=%d mask=0x%X" % [
+		str(climate_diag.get("enabled", false)),
+		str(climate_diag.get("worker_authoritative", false)),
+		int(climate_diag.get("writeback_days", 0)),
+		int(climate_diag.get("writeback_last_day", -1)),
+		int(climate_diag.get("authoritative_domain_mask", 0)),
+	])
 	host.set_perf_recorder(null)
 	recorder.call("bind_main", null)
 	host.free()
@@ -362,6 +393,9 @@ func _run() -> int:
 		return 6
 	if fatal or ledger_failures > 0:
 		return 7
+	if climate_authority_on and int(climate_diag.get("writeback_days", 0)) <= 0:
+		push_error("[headless-perf] Climate authority was on but no write-back landed")
+		return 8
 	return 0
 
 

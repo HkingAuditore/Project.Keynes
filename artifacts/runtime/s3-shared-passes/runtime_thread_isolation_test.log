@@ -1,0 +1,36 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+=== runtime thread isolation smoke ===
+  [PASS] thread API exported
+  [PASS] commit API exported
+  [PASS] stop API exported
+  [PASS] thread QoS API exported
+  [PASS] runtime restore API exported
+  [PASS] partial graph is rejected
+  [PASS] rejection is explicit
+  [PASS] ACTIVE is blocked until every native domain handler exists
+  [PASS] shadow graph starts asynchronously
+  [PASS] domain POD ABI version is exposed
+  [PASS] worker reaches running state
+  [PASS] worker waits for OFF reference trace at day barrier
+  [PASS] main thread never waits for simulation
+  [PASS] time debt remains bounded
+  [PASS] coverage reports missing native domain handlers
+  [PASS] barrier pause remains non-blocking
+  [PASS] barrier stop remains non-blocking
+  [PASS] barrier worker stops cleanly
+=== done: 18 checks, 0 failures ===
+Godot_v4.6.2-stable_win64.exe : ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' we
+re leaked at exit.
+ËùÔÚÎ»ÖÃ C:\Users\hkinghuang\AppData\Local\Temp\ps-script-0e0fb027-5ae8-4ba8-a80a-f8af51f5732a.ps1:89 ×Ö·û: 526
++ ... ')){ $out = & $godot --headless --path Project/project-keynes --scrip ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (ERROR: 11 RID a...leaked at exit.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 111 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
+

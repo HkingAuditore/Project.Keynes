@@ -25,8 +25,10 @@ param(
 # not failures, and 'Stop' would abort the run mid-suite.
 $ErrorActionPreference = 'Continue'
 
+# GODOT_BIN is the repo-wide convention for locating Godot.
+if (-not $GodotExe) { $GodotExe = $env:GODOT_BIN }
 if (-not $GodotExe) {
-    $GodotExe = (Get-ChildItem "F:\Developent\Godot", "C:\Program Files\Godot" -Recurse `
+    $GodotExe = (Get-ChildItem "D:\Godot", "C:\Program Files\Godot" -Recurse `
         -Filter "Godot_v*_win64_console.exe" -ErrorAction SilentlyContinue |
         Select-Object -First 1 -ExpandProperty FullName)
 }

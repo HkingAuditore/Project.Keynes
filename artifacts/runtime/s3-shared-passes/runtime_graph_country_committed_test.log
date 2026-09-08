@@ -1,0 +1,25 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[runtime-graph-country] ok: first pulse consumes bootstrap generation without emit
+[runtime-graph-country] ok: same generation does not redispatch
+[runtime-graph-country] ok: CLAIM generation emits country_committed once
+[runtime-graph-country] ok: repeat pulse after CLAIM stays quiet
+[runtime-graph-country] ok: zero-count generation still reaches event normalization
+[runtime-graph-country] ok: facade emits when only changed_cells is set
+[runtime-graph-country] ok: facade stays quiet when nothing changed
+[runtime-graph-country] ok: stale 0/0 report recovers CLAIM from native event stream
+[runtime-graph-country] PASS
+Godot_v4.6.2-stable_win64.exe : ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' we
+re leaked at exit.
+ËùÔÚÎ»ÖÃ C:\Users\hkinghuang\AppData\Local\Temp\ps-script-0e0fb027-5ae8-4ba8-a80a-f8af51f5732a.ps1:89 ×Ö·û: 526
++ ... ')){ $out = & $godot --headless --path Project/project-keynes --scrip ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (ERROR: 11 RID a...leaked at exit.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 111 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
+

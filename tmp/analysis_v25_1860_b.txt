@@ -1,0 +1,182 @@
+==============================================================================
+SATISFACTION / COVERAGE TIMELINE (cell 1860, 500-day buckets)
+==============================================================================
+          bucket  sat_mean  sat_min  cov_mean  liv_mean   pop   funds_pc  births  deaths
+    138-    637    0.8637   0.6004     2.709     1.972  20.0      730.4       0       3
+    638-   1137    0.8961   0.0000     2.246     1.480  20.2     1507.8       6       9
+   1138-   1637    0.9393   0.6952     2.304     1.443  19.3     2147.8       5       2
+   1638-   2137    0.9564   0.6952     2.361     1.517  19.7     2811.0       1       7
+   2138-   2637    0.9512   0.6952     2.375     1.535  19.9     3457.7       5       6
+   2638-   3137    0.9507   0.0000     2.216     1.475  20.0     4197.5       5       7
+   3138-   3637    0.9685   0.6952     1.409     1.076  19.5     4558.6       3       5
+   3638-   4137    0.9268   0.6192     1.553     1.079  19.9     4463.2       2       3
+   4138-   4637    0.9318   0.6952     1.542     1.060  19.7     4500.7       5       4
+   4638-   5137    0.9524   0.6952     1.497     1.041  19.6     4533.9       3       3
+   5138-   5637    0.9374   0.3102     1.550     1.070  19.9     4473.0       3       6
+   5638-   6137    0.8698   0.3602     1.955     1.451  19.1     4656.9       3       4
+
+-- is satisfaction shared across cohorts on the same day? --
+  sampled 157 days; identical across cohorts on 148 (94%)
+  day 138 values: ['65374', '65374', '65374', '65374']
+  day 5946 values: ['60044', '60044', '60044', '60044']
+
+-- worst_need_id by 1000-day bucket --
+  d138-1137: 7:3951, 16:246, -1:1
+  d1138-2137: 7:4000, -1:1
+  d2138-3137: 7:3532, 16:256, -1:113, 13:6
+  d3138-4137: 16:1917, 7:551, -1:526, 13:8
+  d4138-5137: 16:1775, 7:973, -1:244, 13:10
+  d5138-6137: 7:1434, 16:890, 13:109, -1:26
+
+==============================================================================
+FOOD / SUBSISTENCE MARKET DETAIL (cell 1860)
+==============================================================================
+
+  -- gathered_plants --
+              bucket     stock    havail   demand  offered   withdr   short    price  imp_ema  exp_ema
+        138-    837      5954      5954     4646     3514    15053   0.249    37094        0        0
+        838-   1537         0         0     3805     3032    14572   0.197    50000        0        0
+       1538-   2237         0         0     3992     3032    14572   0.236    50000        0        0
+       2238-   2937         0         0     4157     3032    14572   0.270    50000        0        0
+       2938-   3637         0         0     2228     1183    14572   0.498    50000        0        0
+       3638-   4337         0         0     2918     1419    14572   0.502    50000        0        0
+       4338-   5037         0         0     2778     1432    14572   0.469    50000        0        0
+       5038-   5737      7299      7299     2561     1538    14486   0.385    44722        0        0
+       5738-   6437     20038     20038     2729     2201    14862   0.067     5949        0        0
+    days household_available_stock==0: 5415/5809 (93.2%)
+    days shortage_q16 >= 0.5: 1924 (33.1%)
+    trade_last_rejection_reason: {'4': 5807, '0': 2}
+    trade_signal_age_days last=240 first_dispatch_delay=-1 relief_pressure=0.475
+
+  -- game_meat --
+              bucket     stock    havail   demand  offered   withdr   short    price  imp_ema  exp_ema
+        138-    837      2020      2020     3090     3081     4738   0.000    17103        0        0
+        838-   1537      2010      2010     3090     3081     4737   0.000    16257        0        0
+       1538-   2237      1923      1923     3092     3081     4740   0.000    16711        0        0
+       2238-   2937      1996      1996     3086     3081     4734   0.000    17135        0        0
+       2938-   3637      2142      2142     3090     3081     4737   0.000    14630        0        0
+       3638-   4337      1967      1967     3091     3079     4734   0.001    16003        0        0
+       4338-   5037      1986      1986     3092     3079     4734   0.002    15708        0        0
+       5038-   5737      2014      2014     3089     3079     4732   0.001    15149        0        0
+       5738-   6437      1915      1915     3104     3081     4747   0.002    13061        0        0
+    days household_available_stock==0: 78/5809 (1.3%)
+    days shortage_q16 >= 0.5: 0 (0.0%)
+    trade_last_rejection_reason: {'4': 5809}
+    trade_signal_age_days last=5945 first_dispatch_delay=-1 relief_pressure=0.000
+
+  -- logs --
+              bucket     stock    havail   demand  offered   withdr   short    price  imp_ema  exp_ema
+        138-    837     17855         0     4112     2022     5200   0.511     8478        0        0
+        838-   1537     17855         0     3902     1941     5200   0.506     8267        0        0
+       1538-   2237     17855         0     4013     1987     5200   0.508     8383        0        0
+       2238-   2937     17855         0     4113     2024     5200   0.511     8481        0        0
+       2938-   3637    163724    145869     4811     4361     9392   0.081     2460        0        0
+       3638-   4337     17958       104     5567     3951     9816   0.258     1884        0        0
+       4338-   5037     20818      2964     5313     3968     9866   0.219     2055        0        0
+       5038-   5737     18860      1005     4911     3609     9362   0.210     1816        0        0
+       5738-   6437     17854         0     2849     1925     7384   0.218     1781        0        0
+    days household_available_stock==0: 4897/5809 (84.3%)
+    days shortage_q16 >= 0.5: 3013 (51.9%)
+    trade_last_rejection_reason: {'3': 3147, '4': 2647, '0': 15}
+    trade_signal_age_days last=2486 first_dispatch_delay=-1 relief_pressure=0.000
+
+  -- clothing --
+              bucket     stock    havail   demand  offered   withdr   short    price  imp_ema  exp_ema
+        138-    837     60000     60000        0        0        0   0.000     2402        0        0
+        838-   1537     60000     60000        0        0        0   0.000     2400        0        0
+       1538-   2237     60000     60000        0        0        0   0.000     2400        0        0
+       2238-   2937     60000     60000        0        0        0   0.000     2400        0        0
+       2938-   3637     60000     60000        0        0        0   0.000     2400        0        0
+       3638-   4337     60000     60000        0        0        0   0.000     2400        0        0
+       4338-   5037     60000     60000        0        0        0   0.000     2400        0        0
+       5038-   5737     60000     60000        0        0        0   0.000     2400        0        0
+       5738-   6437     60000     60000        0        0        0   0.000     2400        0        0
+    days household_available_stock==0: 0/5809 (0.0%)
+    days shortage_q16 >= 0.5: 0 (0.0%)
+    trade_last_rejection_reason: {'0': 5809}
+    trade_signal_age_days last=0 first_dispatch_delay=-1 relief_pressure=0.000
+
+  -- bast_fiber --
+              bucket     stock    havail   demand  offered   withdr   short    price  imp_ema  exp_ema
+        138-    837     41824     32896        0        0       13   0.000      701        0        0
+        838-   1537     30624     21696        0        0       13   0.000      700        0        0
+       1538-   2237     19424     10496        0        0       13   0.000      700        0        0
+       2238-   2937      8224      1070        0        0       13   0.000      700        0        0
+       2938-   3637       307         0        0        0        3   0.000      906        0        0
+       3638-   4337         0         0        0        0        0   0.000     1586        0        0
+       4338-   5037         0         0        0        0        0   0.000     2286        0        0
+       5038-   5737         0         0        0        0        0   0.000     2986        0        0
+       5738-   6437         0         0        0        0        0   0.000     3441        0        0
+    days household_available_stock==0: 3403/5809 (58.6%)
+    days shortage_q16 >= 0.5: 0 (0.0%)
+    trade_last_rejection_reason: {'4': 3401, '0': 2408}
+    trade_signal_age_days last=3402 first_dispatch_delay=-1 relief_pressure=1.000
+
+  -- raw_hide --
+              bucket     stock    havail   demand  offered   withdr   short    price  imp_ema  exp_ema
+        138-    837       660       660        0       33        0   0.000     2640        0        0
+        838-   1537       660       660        0       33        0   0.000     2400        0        0
+       1538-   2237       660       660        0       33        0   0.000     2400        0        0
+       2238-   2937       660       660        0       33        0   0.000     2400        0        0
+       2938-   3637       660       660        0       33        0   0.000     2400        0        0
+       3638-   4337       660       660        0       33        0   0.000     2400        0        0
+       4338-   5037       660       660        0       33        0   0.000     2400        0        0
+       5038-   5737       660       660        0       33        0   0.000     2400        0        0
+       5738-   6437       660       660        0       33        0   0.000     2400        0        0
+    days household_available_stock==0: 0/5809 (0.0%)
+    days shortage_q16 >= 0.5: 0 (0.0%)
+    trade_last_rejection_reason: {'0': 5809}
+    trade_signal_age_days last=0 first_dispatch_delay=-1 relief_pressure=0.000
+
+==============================================================================
+BUILDING ROW CLASSES (cell 1860)
+==============================================================================
+  distinct classes: 15
+  is_construction values: ['0']
+  group_index values: ['-1', '-2', '0', '1', '2', '3', '4']
+
+  per class:
+    isC= 0 grp=  0 type=  62 owner=        13 cand= 0 days= 5809 first_d=138 last_d=5946 count=   3 state=           0 rej=0                            score= 0.0000 req_cap=         0
+    isC= 0 grp=  1 type=  72 owner=        26 cand= 0 days= 5809 first_d=138 last_d=5946 count=   1 state=           0 rej=0                            score= 0.0000 req_cap=         0
+    isC= 0 grp=  2 type= 103 owner=        13 cand= 0 days= 5809 first_d=138 last_d=5946 count=  12 state=           0 rej=0                            score= 0.0000 req_cap=         0
+    isC= 0 grp=  3 type= 297 owner=        26 cand= 0 days= 5809 first_d=138 last_d=5946 count=   2 state=           0 rej=0                            score= 0.0000 req_cap=         0
+    isC= 0 grp=  4 type= 357 owner=        17 cand= 0 days= 5809 first_d=138 last_d=5946 count=   2 state=           0 rej=0                            score= 0.0000 req_cap=         0
+    isC= 0 grp= -1 type=  62 owner=        -1 cand= 1 days= 5809 first_d=138 last_d=5946 count=   0 state=           0 rej=3                            score= 0.0000 req_cap=         0
+    isC= 0 grp= -1 type=  72 owner=        -1 cand= 1 days= 5809 first_d=138 last_d=5946 count=   0 state=           0 rej=3                            score= 0.0000 req_cap=         0
+    isC= 0 grp= -1 type= 103 owner=        -1 cand= 1 days= 5809 first_d=138 last_d=5946 count=   0 state=           0 rej=12                           score= 0.0000 req_cap=         0
+    isC= 0 grp= -1 type= 297 owner=        -1 cand= 1 days= 5809 first_d=138 last_d=5946 count=   0 state=           0 rej=12                           score= 0.0000 req_cap=         0
+    isC= 0 grp= -1 type= 357 owner=        -1 cand= 1 days= 5809 first_d=138 last_d=5946 count=   0 state=           0 rej=12                           score= 0.0000 req_cap=         0
+    isC= 0 grp= -2 type=  72 owner=        26 cand= 0 days= 5809 first_d=138 last_d=5946 count=   0 state=           0 rej=0                            score= 0.0000 req_cap=         0
+    isC= 0 grp= -2 type= 297 owner=        28 cand= 0 days= 3553 first_d=1044 last_d=5946 count=   0 state=           0 rej=0                            score= 0.0000 req_cap=         0
+    isC= 0 grp= -2 type=  62 owner=        13 cand= 0 days= 2921 first_d=1043 last_d=5946 count=   0 state=           0 rej=0                            score= 0.0000 req_cap=         0
+    isC= 0 grp= -2 type= 297 owner=        26 cand= 0 days=  936 first_d=3032 last_d=5165 count=   0 state=           0 rej=0                            score= 0.0000 req_cap=         0
+    isC= 0 grp= -2 type= 357 owner=        17 cand= 0 days=    3 first_d=3688 last_d=5166 count=   0 state=           0 rej=0                            score= 0.0000 req_cap=         0
+
+==============================================================================
+MAINTENANCE & SUPPORT
+==============================================================================
+  maintenance_goods_consumed             total=       1,213,889 nonzero_days= 5809 mean_nz=         209 first=       294 last=       163
+  maintenance_unmet                      total=         691,721 nonzero_days= 5788 mean_nz=         120 first=         0 last=       115
+  production_output_supported            total=      29,187,650 nonzero_days= 5809 mean_nz=       5,025 first=        18 last=        16
+  owner_output_consumed                  total=     579,269,992 nonzero_days= 5809 mean_nz=      99,719 first=   108,731 last=    95,842
+  producer_support_money_issued          total=      10,098,592 nonzero_days= 5809 mean_nz=       1,738 first=        38 last=        18
+  building_resource_generated            total=               0 nonzero_days=    0 mean_nz=           0 first=         0 last=         0
+  building_resource_net_delta            total=    -119,650,904 nonzero_days= 5809 mean_nz=     -20,598 first=   -18,308 last=   -20,192
+  building_resource_consumed             total=     119,650,904 nonzero_days= 5809 mean_nz=      20,598 first=    18,308 last=    20,192
+
+==============================================================================
+BIRTH EVENT CONTEXT (cell-1860 state on the day before each birth)
+==============================================================================
+  cell-1860 mean satisfaction overall = 0.9310
+  cell-1860 mean satisfaction on birth days = 0.9464 (n=41)
+  first 12 birth days -> sat: [(716, 1.0), (717, 1.0), (719, 1.0), (723, 0.8), (738, 0.8), (889, 0.8), (1430, 1.0), (1440, 1.0), (1452, 1.0), (1470, 1.0), (1474, 1.0), (2128, 1.0)]
+  last 12 birth days  -> sat: [(4316, 1.0), (4423, 1.0), (4482, 1.0), (4942, 0.905), (4976, 0.885), (5018, 0.927), (5164, 1.0), (5219, 1.0), (5637, 0.584), (5670, 0.652), (5726, 0.696), (5917, 1.0)]
+
+  lagged correlation, cell-1860 satisfaction vs global births (first differences):
+    lag    0 d: r = +0.0041 (n=5808)
+    lag    1 d: r = +0.0035 (n=5806)
+    lag    7 d: r = -0.0120 (n=5800)
+    lag   30 d: r = +0.0240 (n=5777)
+    lag   90 d: r = +0.0342 (n=5717)
+    lag  180 d: r = -0.0107 (n=5627)
+    lag  365 d: r = +0.0113 (n=5442)

@@ -1,5 +1,7 @@
 #include "runtime_climate_authority.h"
 
+#include "runtime_climate_parity.h"
+
 #include <chrono>
 #include <cstring>
 #include <limits>
@@ -9,7 +11,10 @@ namespace {
 constexpr uint32_t CLIMATE_SECTION_MARKER = 0x324d4c43u; // CLM2
 // CLM2 ABI 2 adds the compiled map shape to the section header.  Runtime
 // Domain POD ABI and save-section ABI are intentionally versioned separately.
-constexpr uint32_t CLIMATE_SECTION_ABI = 2u;
+// ABI 3 replaces the single uint8 weather_transition lane with the three lanes
+// the production path actually keeps (prev type / target type / alpha), so the
+// lane set and its order changed and older sections cannot be read.
+constexpr uint32_t CLIMATE_SECTION_ABI = 3u;
 constexpr uint64_t FNV_OFFSET = 1469598103934665603ull;
 constexpr uint64_t FNV_PRIME = 1099511628211ull;
 
@@ -133,9 +138,11 @@ struct Reader {
     X(instability) X(snow_cover) X(snowpack) X(sea_ice) X(runoff) X(groundwater) \
     X(river_storage) X(river_discharge) X(riparian_moisture) X(vegetation_vitality) \
     X(vegetation_growth_pressure) X(vegetation_heat_stress) \
-    X(vegetation_drought_stress) X(vegetation_cold_stress)
+    X(vegetation_drought_stress) X(vegetation_cold_stress) \
+    X(weather_transition_alpha)
 #define CLIMATE_U8_LANES(X) \
-    X(weather_type) X(weather_transition) X(vegetation_succession_candidate)
+    X(weather_type) X(weather_prev_type) X(weather_target_type) \
+    X(vegetation_succession_candidate)
 #define CLIMATE_I32_LANES(X) \
     X(vegetation_growth_streak) X(vegetation_drought_streak)
 } // namespace
@@ -163,13 +170,29 @@ bool RuntimeClimateAuthority::seed_from_input(
         _store.temperature[i] = environment.cell_temp[i];
         _store.temperature_30d_ema[i] = environment.cell_temp_30d.empty()
             ? environment.cell_temp[i] : environment.cell_temp_30d[i];
-        _store.temperature_365d_ema[i] = _store.temperature_30d_ema[i];
+        // 365d EMA 有自己的 environment lane，退回 30d 只是占位。两者在春秋季相差
+        // 最大（30d 跟着季节走，365d 基本是年均），拿 30d 顶替等于让年际基线从一个
+        // 季节性偏移起步。与 WB30 同一类缺陷。
+        _store.temperature_365d_ema[i] = environment.cell_temp_365d.empty()
+            ? _store.temperature_30d_ema[i] : environment.cell_temp_365d[i];
         _store.thermal_energy[i] = environment.cell_temp[i];
         _store.moisture[i] = environment.cell_moisture.empty()
             ? 0.0f : environment.cell_moisture[i];
         _store.plant_available_water[i] = environment.cell_plant_available_water.empty()
             ? 0.0f : environment.cell_plant_available_water[i];
-        _store.water_balance_30d[i] = _store.plant_available_water[i];
+        // WB30 有自己的 environment lane，不能拿 PAW 顶替。两者物理意义不同：PAW 是
+        // 植物可用水（同图量级 0.3~1.2），WB30 是 30 天水平衡（生产同图约 0.04）。
+        //
+        // 播成 PAW 的后果在 ACTIVE 下会一直留在场里：distribute 是 store 里 WB30
+        // 唯一的写者，而它对陆地格只把原值写回、对水域格按 29/30 衰减，没有任何一步
+        // 会把这个初值纠正回来。WB30 又是 pk_plant_available_water 的输入，于是
+        // PAW 与 vegetation_growth_pressure 整条链跟着偏。
+        //
+        // 连形状都不对：seed 在 bind 时执行，那时地图生成刚算完的 PAW 还是全场非零
+        // （水域格要等第一次 vegetation_dynamics 才被 is_water 分支清零），所以错误
+        // 初值是 2400 格全非零，而生产只有 914 个陆地格非零。
+        _store.water_balance_30d[i] = environment.cell_water_balance_30d.empty()
+            ? 0.0f : environment.cell_water_balance_30d[i];
         _store.weather_precipitation[i] = environment.cell_weather_precip.empty()
             ? 0.0f : environment.cell_weather_precip[i];
         _store.weather_intensity[i] = environment.cell_weather_intensity.empty()
@@ -177,7 +200,11 @@ bool RuntimeClimateAuthority::seed_from_input(
         _store.snow_cover[i] = environment.cell_snow_cover.empty()
             ? 0.0f : environment.cell_snow_cover[i];
         _store.snowpack[i] = _store.snow_cover[i];
-        _store.vegetation_vitality[i] = 0.5f;
+        // vitality 同样有 environment lane。硬编码 0.5 会把水域格和无植被格也播成
+        // 半健康（生产那里它们是 0），而 vegetation_dynamics 要等 48 天才跑第一次，
+        // 这个假值在那之前一直是下游的输入。
+        _store.vegetation_vitality[i] = environment.cell_vegetation_vitality.empty()
+            ? 0.5f : environment.cell_vegetation_vitality[i];
     }
     _next = _store;
     return _store.validate(error) && _next.validate(error);
@@ -293,11 +320,16 @@ bool RuntimeClimateAuthority::plan_day(
     report.work_units = kernel_report.work_units;
     report.changed_cells = kernel_report.changed_cells;
     report.state_hash = kernel_report.state_hash;
+    // The planned next state is what a reference for this day describes; the
+    // commit below only swaps lanes, so both report the same parity hash.
+    report.parity_hash = _next.parity_hash();
     report.input_hash = kernel_report.input_hash;
     report.catalog_hash = _catalog.hash;
     report.input_generation = environment.generation;
     report.stage_ms = kernel_report.stage_ms;
     report.stage_work = kernel_report.stage_work;
+    report.production_stage_mask = kernel_report.production_stage_mask;
+    report.worker_stage_mask = kernel_report.stage_ran_mask;
     report.plan_ms = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - begin).count();
     _planned_day = day;
@@ -316,12 +348,81 @@ bool RuntimeClimateAuthority::commit_day(
     const auto begin = std::chrono::steady_clock::now();
     _kernel.commit(_store, _next);
     report.state_hash = _store.state_hash();
+    report.parity_hash = _store.parity_hash();
     report.replay_ms = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - begin).count();
     report.completed = 1;
     report.preflight_ok = 1;
     _last_input_generation = report.input_generation;
     _plan_ready = false;
+    _last_report = report;
+    return true;
+}
+
+bool RuntimeClimateAuthority::commit_day_forced(
+        int64_t day, const RuntimeClimateStore &reference,
+        RuntimeClimateVerticalReport &report) {
+    if (!commit_day(day, report)) return false;
+    if (!runtime_climate_parity_adopt_comparable_fields(_store, reference)) {
+        set_error(report, "climate_reference_shape_mismatch");
+        return false;
+    }
+    // Both hashes must be recomputed: the physical fields just changed, so the
+    // pre-adoption values would misdescribe the state that is now committed.
+    report.state_hash = _store.state_hash();
+    report.parity_hash = _store.parity_hash();
+    _last_report = report;
+    return true;
+}
+
+bool RuntimeClimateAuthority::adopt_reference_baseline(
+        int64_t day, const RuntimeClimateStore &reference,
+        const RuntimeEnvironmentSnapshot &environment,
+        RuntimeClimateVerticalReport &report) {
+    report = RuntimeClimateVerticalReport{};
+    if (_store.cell_count != reference.cell_count) {
+        set_error(report, "climate_reference_shape_mismatch");
+        return false;
+    }
+    // The catalog must be compiled here, not left to the next plan_day. That
+    // path treats `!_catalog_ready` as "the store has never been seeded" and
+    // runs seed_from_input(), which overwrites every physical lane from the raw
+    // environment — i.e. it throws away the baseline this function just
+    // adopted. The symptom is a single divergent day right after cold start
+    // (the store is re-seeded, the reference is not), which reads as an
+    // algorithmic divergence in the matrix while nothing algorithmic is wrong.
+    if (!_catalog_ready) {
+        std::string catalog_error;
+        if (!_kernel.compile_catalog(environment, _catalog, catalog_error)) {
+            set_error(report, catalog_error.c_str());
+            return false;
+        }
+        _catalog_ready = true;
+    }
+    if (!runtime_climate_parity_adopt_comparable_fields(_store, reference)) {
+        set_error(report, "climate_reference_shape_mismatch");
+        return false;
+    }
+    // Only the comparable physical fields come from the reference. Bookkeeping
+    // stays the worker's own, which is why this is a baseline and not a restore:
+    // rng_state and history intentionally keep their cold-start values.
+    _store.committed_day = day;
+    ++_store.generation;
+    ++_store.climate_generation;
+    // Both lanes take the baseline. copy_store_lanes would refresh `next` on the
+    // next plan anyway, but leaving the two lanes out of sync means any lane the
+    // copy list ever misses shows up exactly once, on the first day after cold
+    // start — the hardest possible day to attribute.
+    _next = _store;
+    _last_input_generation = environment.generation;
+    _plan_ready = false;
+    _planned_day = -1;
+    report.completed = 1;
+    report.preflight_ok = 1;
+    report.input_generation = environment.generation;
+    report.catalog_hash = _catalog.hash;
+    report.state_hash = _store.state_hash();
+    report.parity_hash = _store.parity_hash();
     _last_report = report;
     return true;
 }
@@ -606,9 +707,35 @@ bool RuntimeClimateAuthority::self_test(std::string &error) {
     }
     RuntimeClimateAuthority authority;
     RuntimeClimateVerticalReport report;
-    if (!authority.plan_day(0, environment, report) ||
-        !authority.commit_day(0, report)) {
+    if (!authority.plan_day(0, environment, report)) {
         error = report.error;
+        return false;
+    }
+    // The host compares parity at plan time but only the committed state
+    // becomes authoritative. If commit could change the parity reduction, a
+    // day could be admitted on the strength of a hash that no longer describes
+    // what was committed.
+    const uint64_t planned_parity = report.parity_hash;
+    if (planned_parity == 0) {
+        error = "climate_plan_parity_hash_zero";
+        return false;
+    }
+    if (!authority.commit_day(0, report)) {
+        error = report.error;
+        return false;
+    }
+    if (report.parity_hash != planned_parity) {
+        error = "climate_commit_changed_parity_hash";
+        return false;
+    }
+    if (authority.store().parity_hash() != planned_parity) {
+        error = "climate_committed_store_parity_hash_mismatch";
+        return false;
+    }
+    // parity_hash and state_hash must stay distinct concerns: the former is
+    // comparable across the boundary, the latter guards save integrity.
+    if (authority.store().parity_hash() == authority.store().state_hash()) {
+        error = "climate_parity_and_state_hash_conflated";
         return false;
     }
     // A parity barrier may reject the planned next state before commit. The
@@ -701,6 +828,133 @@ bool RuntimeClimateAuthority::self_test(std::string &error) {
         error = "climate_section_abi_mismatch_not_rejected";
         return false;
     }
+    return true;
+}
+
+// ─── RuntimeClimateWritebackRing ──────────────────────────────────────────
+
+RuntimeClimateWritebackRing::RuntimeClimateWritebackRing() {
+    for (auto &state : _states) state.store(FREE, std::memory_order_relaxed);
+}
+
+bool RuntimeClimateWritebackRing::try_begin_write(uint32_t &index) {
+    for (size_t i = 0; i < SLOT_COUNT; ++i) {
+        uint8_t expected = FREE;
+        if (_states[i].compare_exchange_strong(expected, WRITING,
+                std::memory_order_acq_rel, std::memory_order_relaxed)) {
+            index = static_cast<uint32_t>(i);
+            return true;
+        }
+    }
+    // A READY slot the main thread has not taken yet is recyclable: the newer
+    // day supersedes it. Only a slot actively being READ is untouchable.
+    for (size_t i = 0; i < SLOT_COUNT; ++i) {
+        uint8_t expected = READY;
+        if (_states[i].compare_exchange_strong(expected, WRITING,
+                std::memory_order_acq_rel, std::memory_order_relaxed)) {
+            _publish_drop_count.fetch_add(1, std::memory_order_relaxed);
+            index = static_cast<uint32_t>(i);
+            return true;
+        }
+    }
+    _publish_drop_count.fetch_add(1, std::memory_order_relaxed);
+    return false;
+}
+
+void RuntimeClimateWritebackRing::publish(uint32_t index) {
+    if (index >= SLOT_COUNT) return;
+    _published_generation.store(_buffers[index].generation,
+                                std::memory_order_release);
+    _states[index].store(READY, std::memory_order_release);
+}
+
+bool RuntimeClimateWritebackRing::try_acquire_latest(uint64_t after_generation,
+                                                     uint32_t &index) {
+    // Pick the newest READY slot strictly newer than the caller's cursor. The
+    // scan is over three slots, so there is no reason to keep a hint.
+    bool found = false;
+    size_t best = 0;
+    uint64_t best_generation = 0;
+    for (size_t i = 0; i < SLOT_COUNT; ++i) {
+        if (_states[i].load(std::memory_order_acquire) != READY) continue;
+        const uint64_t generation = _buffers[i].generation;
+        if (generation <= after_generation) continue;
+        if (!found || generation > best_generation) {
+            found = true;
+            best = i;
+            best_generation = generation;
+        }
+    }
+    if (!found) return false;
+    uint8_t expected = READY;
+    if (!_states[best].compare_exchange_strong(expected, READING,
+            std::memory_order_acq_rel, std::memory_order_relaxed)) {
+        // The worker recycled it between the scan and the claim. The caller
+        // retries on the next frame against a newer day.
+        return false;
+    }
+    index = static_cast<uint32_t>(best);
+    return true;
+}
+
+void RuntimeClimateWritebackRing::release(uint32_t index) {
+    if (index >= SLOT_COUNT) return;
+    _states[index].store(FREE, std::memory_order_release);
+}
+
+void RuntimeClimateWritebackRing::reset() {
+    for (auto &state : _states) state.store(FREE, std::memory_order_relaxed);
+    for (auto &buffer : _buffers) buffer = RuntimeClimateSnapshot{};
+    _published_generation.store(0, std::memory_order_relaxed);
+    _publish_drop_count.store(0, std::memory_order_relaxed);
+}
+
+bool RuntimeClimateWritebackRing::self_test(std::string &error) {
+    RuntimeClimateWritebackRing ring;
+    uint32_t slot = 0;
+    if (ring.try_acquire_latest(0, slot)) {
+        error = "climate_writeback_empty_ring_acquired";
+        return false;
+    }
+    if (!ring.try_begin_write(slot)) {
+        error = "climate_writeback_first_write_refused";
+        return false;
+    }
+    ring.write_buffer(slot).generation = 1;
+    ring.write_buffer(slot).committed_day = 7;
+    ring.publish(slot);
+    uint32_t read_slot = 0;
+    if (!ring.try_acquire_latest(0, read_slot)) {
+        error = "climate_writeback_published_not_visible";
+        return false;
+    }
+    if (ring.read_buffer(read_slot).committed_day != 7) {
+        error = "climate_writeback_payload_mismatch";
+        return false;
+    }
+    // Re-reading the same generation must not hand out the same day twice.
+    uint32_t again = 0;
+    if (ring.try_acquire_latest(1, again)) {
+        error = "climate_writeback_stale_generation_acquired";
+        return false;
+    }
+    // The worker must keep making progress while that slot is held.
+    uint32_t next_write = 0;
+    if (!ring.try_begin_write(next_write) || next_write == read_slot) {
+        error = "climate_writeback_write_blocked_by_reader";
+        return false;
+    }
+    ring.write_buffer(next_write).generation = 2;
+    ring.write_buffer(next_write).committed_day = 8;
+    ring.publish(next_write);
+    ring.release(read_slot);
+    uint32_t newest = 0;
+    if (!ring.try_acquire_latest(1, newest) ||
+        ring.read_buffer(newest).committed_day != 8) {
+        error = "climate_writeback_newest_not_selected";
+        return false;
+    }
+    ring.release(newest);
     return true;
 }
 

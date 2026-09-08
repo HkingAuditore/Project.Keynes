@@ -29,6 +29,14 @@
 
 ## 当前生产状态
 
+`WorldRuntimeHost.runtime_climate_authority_enabled` 生产默认 true。generate 以
+per-domain ACTIVE（`CLIMATE|COMMIT = 0x802`）启动 worker；主线程 native daily
+climate 图被抑制，MapData 由 `apply_runtime_climate_writeback` 回灌，滞后一日。
+SHADOW 对拍 / CLM2 字节测试必须在 generate 前关掉该开关。运行时回退：GM
+「Climate worker 权威」或 `set_runtime_climate_authority_enabled(false)`。
+整图 ACTIVE 仍禁止。证据见 `docs/cpp-dots-runtime/full-authoritative-runtime-status.md`
+与 `artifacts/runtime/s4-evidence/`。
+
 `earth_like.tres`：
 
 - ACTIVE native daily，stride/lag 10。
