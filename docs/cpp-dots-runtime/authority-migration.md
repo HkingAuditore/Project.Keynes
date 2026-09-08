@@ -92,7 +92,122 @@ CLIMATE|COMMIT = 0x802`，滞后一日），Country 有完整 POD 实现但未�
 
 # 第二部分：设计框架
 
-## 2.1 权威模型：不要用单一 "native=true" 概括
+先讲整体架构和调度怎么跑（2.1–2.2），再讲权威是怎么定义的（2.3–2.4）、每日执行序与数据契约
+（2.5–2.6），然后逐个模块讲它具体怎么运行（2.7），最后是放行标准（2.8）。
+
+## 2.1 总体架构
+
+五层，自上而下。**每一层只对下一层负责，跨层直连是缺陷**：
+
+```text
+Godot 层        WorldClock / 场景树 / renderer / UI
+    │            （day_changed 信号是仿真的唯一心跳）
+编排层          MapGenerator.sus_tick_daily / WorldRuntimeHost
+    │            （生命周期、bundle 打包、fallback、finalizer、Godot 边界）
+调度层          DCSystemScheduler → SusSchedulerExt
+    │            （注册、拓扑、预算、跳过、统计；不拥有业务状态）
+执行层          DCSystem / SusJob  ←→  C++ pass / native 图 / POD worker
+    │            （真正算东西的地方）
+数据层          DCWorld（GDScript mirror） / DCWorldExt（C++ SoA slots） / MapData
+                 （MapData 是给 GDScript、debug、CSV、baker、renderer 看的可见镜像）
+```
+
+三条角色约定，违反了就会出现难查的问题：
+
+- **`SusSchedulerExt` 只调度，不拥有气候/经济业务状态。**
+- **`MapGenerator` 负责生命周期与 Godot 边界，不该重新承接全图数学 hot loop。**
+- **`ClimateProfile` 及其 `.tres` 决定 feature gate、cadence、budget、物理 knob 与 owner gate。**
+  这意味着**同一份代码在不同 profile 下是不同的系统**——见 2.2 末尾的警告。
+
+## 2.2 调度机制
+
+### 2.2.1 两个调度器的分工
+
+| 职责 | 归属 | 证据 |
+| --- | --- | --- |
+| 注册 system、reads/writes 拓扑、重写 priority | `DCSystemScheduler` | `dc_system_scheduler.gd:308-378` |
+| tick 入口、同步 budget 配置 | `DCSystemScheduler` | `:388-426` |
+| **决定跑不跑**（policy / `should_run` / deadline_critical） | `SusSchedulerExt` | `sus_scheduler_ext.cpp:512-533, 474-478` |
+| 决定顺序 | 拓扑定 priority → Ext 内 `stable_sort` | `dc_system_scheduler.gd:357-371`；`sus_scheduler_ext.cpp:216-218` |
+| 管预算（frame gate + 每 job slice 循环） | `SusSchedulerExt` | `sus_scheduler_ext.cpp:421-422, 482-607` |
+
+> **坑**：拓扑 rebuild 后必须刷新 Ext 侧 descriptor，否则 C++ 仍按旧顺序跑
+> （`dc_system_scheduler.gd:364-369`）。
+
+### 2.2.2 调度概念的实际语义
+
+这几个词的含义与直觉不完全一致：
+
+| 概念 | 实际语义 |
+| --- | --- |
+| `frame_budget_ms` | 单 tick 墙钟预算。**只阻止启动新 job / 新 slice，不会中断已经在跑的 native pass**——所以一个长 C++ pass 照样会超预算 |
+| `slice_budget_ms` | job 级软预算。一次 visit 内可连跑多个 slice，直到 job 内 elapsed ≥ 该值 |
+| `must_run` | 绕过 `frame_budget_exhausted`，**但仍受 policy 与 depends_on 约束**。不是"一定会跑" |
+| `depends_on` | 依赖 job 仍 `in_flight` 或本 tick 未完成 → skip，reason=`dep_pending:*` |
+| `policy_gated` | 注册的 policy 或 job 自己的 `should_run(ctx)` 返回 false |
+| `strict_budget_one_job` | strict 模式下本 tick 已有 optional job 跑过，则跳过后续 optional job |
+| `skipped[frame_budget_exhausted]` | tick 已耗尽预算，且该 job 非 must_run / starving / deadline_critical |
+
+**两个不同层的 budget 容易混**：`ClimateProfile.sim_frame_budget_ms`（生产 `earth_like.tres:28`
+= 8.0）是 SUS 的每 tick 预算；`WorldClock.sim_frame_budget_ms`（默认 8.0）是**日推进时间盒**，
+两者不是一回事。
+
+### 2.2.3 一个 tick 的完整调用链
+
+```text
+WorldClock._process
+  → _advance_one_sim_day() → day_changed.emit(day)        world_clock.gd:223-230
+main.gd::_on_day_changed
+  → MapGenerator.sus_tick_daily(clock, day_idx, season_phase)   main.gd:1499
+MapGenerator.sus_tick_daily
+  → SusTickContext.make(...) → DCSystemScheduler.tick(ctx)      map_generator.gd:7675
+DCSystemScheduler.tick
+  → _sus.tick(ctx)  →  SusSchedulerExt::tick                    dc_system_scheduler.gd:388
+SusSchedulerExt::tick
+  → 逐 job：budget / policy / dep gate → job.run_slice(ctx) 循环 sus_scheduler_ext.cpp:410-770
+DCSystem.run_slice → tick(ctx) → C++ pass
+```
+
+tick 结束后经 `report_last_tick()` 出报告（Ext 侧写 `_last_report`，`:789-823`）。
+
+**跨帧续跑**：遇到硬 barrier 时 `WorldClock` 发 `simulation_backpressure_pulse`，
+`MapGenerator._continue_economy_inflight` 调 `DCSystemScheduler.continue_system` 补跑
+（`world_clock.gd:199-202`；`map_generator.gd:3026-3098`）。
+
+### 2.2.4 注册了哪些 job
+
+`MapGenerator._setup_sus()`（`:3433+`）。**注册是有条件的**，同一份代码在不同 profile 下注册
+出的 job 集合不同：
+
+| job | 注册条件 |
+| --- | --- |
+| `effect_runtime` / `gameplay_effect` | `configure_effects` 成功 |
+| `modifier_daily` / `trigger_daily` / `ideology_runtime` | 对应 facade 已配置 |
+| `country_daily` / `economy_daily` | 对应 facade 已配置 |
+| `season_refresh` / `ocean_currents` / `natural_resource_daily` / `bio_occupancy_daily` | 无条件 |
+| `native_daily_sim` + 视觉上传 job | **`native_daily_sim_mode==ACTIVE` 且 native slice API 就绪**，注册后 early-return |
+| `refresh_climate_daily` / `sea_ice_daily` / `weather_refresh` / `enum_atlas_upload` | 上一条不成立时的 legacy 分叉 |
+
+### 2.2.5 native daily 的 slice 续跑
+
+`DCWorldExt::run_native_daily_slice()` 单次调用跑若干节点后返回 `done=false`，cursor 存在
+`DCWorldExt` 成员里：图节点游标 `_native_daily_slice_node_index`（`world_ext.h:2786`）、节点内
+cell range 游标 `_native_daily_slice_cell_cursor`、round 活跃标志 `_native_daily_slice_active`。
+
+> **坑**：SUS 因预算跳过 native 首 slice 时会设 `_native_daily_day_pending`，靠 pulse 补跑
+> （`map_generator.gd:7696-7705`）。所以"这一天 native 没跑"未必是缺陷，可能只是被推迟了。
+
+### ⚠ 2.2.6 脚本默认值 ≠ 生产配置
+
+`ClimateProfile` 里的 `@export` 默认值**几乎全是 false / OFF**，生产靠 `earth_like.tres` 覆盖。
+最容易踩的是 `native_daily_sim_mode`：脚本默认 `OFF(0)`，而生产 `earth_like.tres:9` = `2
+(ACTIVE)`，且 `native_daily_legacy_daily_production_retired = true`（`:27`）。
+
+**只看 `climate_profile.gd` 会得出"生产气候走 legacy `ClimateDailySystem`"的结论，那是错的。**
+（写这份文档时的一次独立调查就是这么栽的。）任何不加载 `earth_like.tres` 的 fixture 拿到的
+是一套完全不同的系统——这解释过好几次"测试里复现不出来"。完整覆盖清单见附录 B.2。
+
+## 2.3 权威模型：不要用单一 "native=true" 概括
 
 判断"某个东西是不是 DOTS 权威"要拆成七个维度分别回答。这是全套判断的基础，3.2 逐域状态也
 按它组织。
@@ -117,7 +232,7 @@ Worker 权威下还要多问两层，这两层各让 Climate 栽过一次：
   停在世界生成值且不报错。表现是"字段冻结"，不是数值分叉。
 - **主线程还有第二个写者吗？** 抑制门漏掉的写者会和回灌打架，表现为单 tick 跳变。
 
-## 2.2 域模型与三个 mask
+## 2.4 域模型与三个 mask
 
 `RuntimeDomainId` 共 **12 个域**（`runtime_pod_protocol.h:328`），`RUNTIME_ALL_DOMAIN_MASK = 0xFFF`：
 
@@ -155,7 +270,7 @@ per-domain 放行之前的语义）。
 的回灌值。目前 Climate 的下游（经济的 plant water / temp30d）走 slot 冻结输入，本来就不要求
 当日值，所以没暴露问题。**后续每个域放行前必须逐个确认这一点。**
 
-## 2.3 两条执行路径
+## 2.5 每日执行序：两条路径
 
 **主线程路径**（Climate 之外的全部域）：
 
@@ -183,7 +298,7 @@ WorldClock._process() → day_changed
 - **顺序钉死**：回灌必须在主线程的同域改写（如 season refresh）之前。反过来的话，主线程那次
   写入会被次日回灌整体覆盖，且没有任何报错。
 
-## 2.4 数据契约
+## 2.6 数据契约
 
 四条通路，各有各的失效方式：
 
@@ -202,7 +317,120 @@ WorldClock._process() → day_changed
 - **枚举跨边界必须给字符串**。Godot 4 的 `String()` 构造函数不接受 int，给序号会在 GDScript
   侧抛构造错误并打断整个字段收集，表现成 parity 全 0 而不是某字段分叉。
 
-## 2.5 放行门（gate）
+## 2.7 各模块具体怎么跑
+
+前面讲的是共性框架。三个主要模块的运行方式差别很大，**它们不是同一套机制的三个实例**。
+
+### 2.7.1 Climate
+
+**生产形态**（`earth_like.tres`：`native_daily_sim_mode=2`、`stride=10`、legacy 已退役）：
+
+```text
+SUS job `native_daily_sim`
+  → MapGenerator.run_native_daily_slice_from_job
+  → DCWorldExt::run_native_daily_slice(tick_knobs)     跨帧续跑，cursor 在 DCWorldExt
+  → NATIVE_DAILY_SLICE_GRAPH（21 节点，含 weather 拆分）
+```
+
+两张图不要混：**slice 路径走 21 节点的 `NATIVE_DAILY_SLICE_GRAPH`**
+（`world_ext_daily_sim.cpp:65-109`）；一次性全量 tick 走 15 节点的 `SCHEDULE_GRAPH`
+（`system_schedule.cpp:308-354`）。后者是节点顺序的权威定义，`native_daily_graph_order_test`
+校验的就是它。
+
+15 节点顺序及其理由：
+
+```text
+1 climate_pass_a   2 climate_pass_b   3 ocean_water   4 ocean_land
+5 wind_air         6 wind_surface     7 sea_ice       8 transpiration
+9 albedo          10 vegetation_dynamics  11 climate_feedback
+12 stage_b        13 weather         14 runtime_hydrology  15 stage_b_after_hydrology
+```
+
+- pass_b 读 round-start TTA，**必须在当天 ocean 更新之前**，否则当天新 TTA 立刻反馈进当天湿度。
+- `wind_surface` 汇总 baseline/ocean/air/local anomaly 后发布 `cell_temp`。
+- sea ice 必须读 wind-surface 之后的有效温度。
+- hydrology 读当天有效 precip，且要在 stage_b 读 soil/WB30 之前完成；开启时用
+  `stage_b_after_hydrology`，不能同时跑普通 `stage_b`。
+
+**`season_refresh` 不在这两张图里**——它是独立 SUS job（priority 50），按 `period_ticks` 自驱
+的慢变量轮（`season_refresh_system.gd:32-57`）。这是 Climate worker 化时最大的一个坑：它是
+主线程写者，且必须排在回灌之后。
+
+**Worker ACTIVE 形态**：上述 14 个 Climate 节点被抑制门跳过，由 POD worker 跑同一份共享纯
+内核，执行序见 2.5。worker 侧 round 内八个 pass + 五个 `stage_knobs` stage，hydrology 两侧
+都不跑。
+
+### 2.7.2 Economy
+
+**与 Climate 完全不同的机制**：Economy 有自己的内部状态机 `ECONOMY_GRAPH`
+（`economy_runtime_diagnostics.cpp:571`），**独立于** SUS 图和 native daily 图。
+
+驱动路径有两条，生产走第二条：
+
+```text
+① SUS job `economy_daily`  —— runtime_graph_active() 时 should_run 直接返回 false
+② DCWorldExt::advance_runtime_pulse → run_economy_slice_compact   ← 生产路径
+   （native_runtime_graph_mode=ACTIVE，earth_like.tres:10）
+```
+
+**冻结 epoch 是它的核心机制**：`start_epoch(day)` 冻结当日 environment/building 上下文，并
+`capture_country_epoch` 复制 country 的领土/科技/税表/国库快照。目的是在整个周期内隔离 live
+country。**新 cycle 必须等 country 当日命令已 commit**——`country_runtime->should_run(day)` 为
+真时 economy 不启动新 cycle（`economy_runtime.cpp:7076-7078`）。
+
+冻结周期内的 stage 主序（`run_slice_internal`，`economy_runtime.cpp:8991+`）：
+
+```text
+BUILDING_PLAN → TRADE_SETTLE → LEDGER_APPLY
+→ BUILDING_EMPLOYMENT → BUILDING_PRODUCTION → HOUSEHOLD_MARKET
+→ GOVERNMENT_RESEARCH_PROCUREMENT → TRADE_DISPATCH → STRUCTURAL_COMMIT
+→ BUILDING_COMMIT → FAMILY_COMMIT → PERSON_COMMIT → AGGREGATE_PUBLISH
+```
+
+**它自己的 worker 不是 POD worker**：`economy_profile.worker_enabled`（默认 true）开启的是
+`NativeParallelExecutor` + `parallel_for_range` 的按 cell 分 task 并行
+（`parallel_dispatcher.h:45-99`），与 `NativeSimulationHost` 的 POD worker 是两个东西。这一点
+直接影响 E1 的决策：**Economy 已经是并行的了**，搬进 POD worker 的增量收益需要单独论证。
+
+**守恒审计**在 `aggregate_publish` 的 `PublishPhase::VERIFY`
+（`economy_runtime_publish.cpp:367-373`）。失败 → `_fatal=true`、`_stage=FATAL`，GDScript 侧
+`EconomyDailySystem` 收到 `fatal` 后清 barrier 并 **`world_clock.pause(true)`**
+（`economy_daily_system.gd:155-166`）。生产路径的审计字段是 `population_error` /
+`money_error` / `goods_error`，**不是** `ledger_failures`（后者只在 POD 诊断适配层里）。
+
+### 2.7.3 Country
+
+驱动路径与 Economy 同构：SUS job `country_daily` 在 `runtime_graph_active()` 时不跑，生产由
+`advance_runtime_pulse` 驱动（`country_daily_system.gd:31-36`；`world_ext_runtime_graph.cpp:172-180`）。
+
+**命令屏障**是它区别于其他模块的地方：
+
+```text
+命令入队 _pending_commands
+  → slice 开头：无 active batch 时 open_implicit_boundary + begin_reference_boundary
+  → 按 seal watermark 过滤出 admitted_and_due，装入 _command_batch
+  → 批内 preflight + apply
+  → Effect ACK 未完成 → country_day_barrier
+  → GDScript 侧 world_clock.request_simulation_backpressure
+```
+
+（`country_runtime.cpp:2289-2401`；`country_daily_system.gd:67-69`）
+
+**与 Economy 的边界**：国库/科技/领土由 `NativeCountryRuntime` 权威，Economy 通过
+`capture_country_epoch` 冻结快照消费；税率在 epoch begin 从 country + modifier 快照冻结；
+研究采购在 Economy 的 `GOVERNMENT_RESEARCH_PROCUREMENT` stage 消费冻结的 country 政策。
+
+**`country_committed` 信号**：由 `CountryFacade.dispatch_committed_events` 在领土/country 变更
+时发出，`WorldRuntimeHost`（视野/边界）、`PlayerController`、`GameUIManager` 监听。
+注意顺序要求——runtime graph 路径下必须**先 `sync_country_territory_to_map` 再 dispatch**
+（`map_generator.gd:3305-3333`），否则监听方读到的 `cell.country_slot` 是旧的。
+
+### 2.7.4 其余模块
+
+`modifier_daily` / `trigger_daily` / `ideology_runtime` / `effect_runtime` / `gameplay_effect`
+都是 SUS job + 各自的 native runtime，走主线程同步路径。它们的 POD 侧只有诊断投影（见 4.2）。
+
+## 2.8 放行门（gate）
 
 原定的准入清单是七条：1000 日逐日 parity、save/restore parity、`fallback_count=0`、
 `fatal=false`、`source scan=0`、worker 不访问 Godot 类型、`main_wait_on_sim_us=0`。
@@ -654,10 +882,33 @@ max 恒等于当日增量上限）；缺 knob 落到结构默认值（默认值�
 | `Project/.../scripts/geography/map_generator.gd` | capture、knobs 构建、stage 节拍 |
 | `Project/.../scripts/game/world_runtime_host.gd` | worker 生命周期、模式决策（:520） |
 
-## Country（下一个域）
+## 调度层
+
+| 文件 | 内容 |
+| --- | --- |
+| `Project/.../scripts/data_core/dc_system_scheduler.gd` | 注册、拓扑排序、profile 配置透传、`tick()` 入口 |
+| `gdext/src/sus_scheduler_ext.cpp` | **真正的 gate + slice 循环**：预算、policy、depends_on、统计 |
+| `Project/.../scripts/simulation/sus/sus_job.gd` | `slice_budget_ms` / `must_run` / `depends_on` 的定义处 |
+| `Project/.../scripts/game/world_clock.gd` | `day_changed`、日推进时间盒、`simulation_backpressure_pulse` |
+| `gdext/src/world_ext_daily_sim.cpp` | native daily slice 图（21 节点）、cursor、continuation |
+| `gdext/src/system_schedule.cpp` | `SCHEDULE_GRAPH` 15 节点顺序（**节点顺序的权威定义**） |
+| `gdext/src/world_ext_runtime_graph.cpp` | `advance_runtime_pulse`：生产下 Economy/Country 的实际驱动点 |
+
+## Country
 
 `gdext/src/runtime_country_pod.{h,cpp}`（POD authority）、`gdext/src/country_runtime.{h,cpp}`
-（legacy）、`gdext/src/world_ext_country.cpp`。
+（legacy，命令屏障在 `:2289-2401`）、`gdext/src/world_ext_country.cpp`、
+`Project/.../scripts/simulation/systems/country_daily_system.gd`。
+
+## Economy
+
+| 文件 | 内容 |
+| --- | --- |
+| `gdext/src/economy_runtime.cpp` | stage 枚举（h:662）、`run_slice_internal` 主序（:8991+）、epoch 门禁（:7076） |
+| `gdext/src/economy_runtime_epoch.cpp` | 冻结 epoch：预检、country 快照、税率冻结 |
+| `gdext/src/economy_runtime_publish.cpp` | `aggregate_publish`、**守恒审计 VERIFY**（:367） |
+| `gdext/src/parallel_dispatcher.h` | `parallel_for_range`——Economy 的并行是这个，不是 POD worker |
+| `Project/.../scripts/simulation/systems/economy_daily_system.gd` | SUS 侧包装、fatal 时 `world_clock.pause(true)` |
 
 ---
 
