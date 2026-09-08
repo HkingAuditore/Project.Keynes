@@ -1,8 +1,9 @@
 # Scheduling, save, and verification
 
-Current exact schemas are PKCN v11, PKEF v9, PKTR v4, and PKEC v33. PKCN restores before PKEC;
-older PKCN/PKEF/PKTR schemas or technology, signal, recipe, Trigger, or content-binding identity
-changes return `catalog_hash_mismatch`. The older version notes below are historical design context.
+As of 2026-09-08, the exact schemas are PKCN v13, PKEF v11, PKTR v6, and PKEC v51. PKCN restores
+before PKEC; incompatible Country, Effect, Trigger, technology, signal, recipe, or content-binding
+identity is rejected explicitly. Version numbers here describe the current tree, not a compatibility
+promise for future schemas.
 
 ## Scheduler contract
 
@@ -21,16 +22,19 @@ batches do not clone technology or treasury matrices because they cannot mutate 
 
 ## Save boundary
 
-PKCN v1 contains catalog identity, country records, territory, technology, goods treasury, pending
-commands, and an end marker. PKEC v11 contains no global treasury or per-cell technology; it records
-the matching PKCN schema, generation, and hash plus domestic in-flight trade orders/escrow. Country
-changes only affect new routes; dispatched orders do not mutate PKCN.
+PKCN v13 is the canonical Country payload. It contains catalog/content identity, country records,
+territory, technology/discovery/pending state, sparse research and signal evidence, treasury, tax
+policy, pending commands, era reward reference, and the Country Modifier subdomain. CPD2 ABI v2
+wraps the exact same PKCN bytes plus session, command watermark, request state, terminal receipts,
+event cursor, and boundary cursor. PKSR v2 carries CPD2 under section bit `0x8`; the standalone PKCN
+provider reuses the embedded bytes rather than encoding Country a second time.
 
-Save only when country commands are idle and economy is at a committed boundary. Restore PKCN first,
-then PKEC. Validate cell/good/technology catalogs, country generation/hash, chunk truncation, and
-restore order. PKEC v10 migrates with empty trade state; legacy schemas must return
-`legacy_economy_save_unsupported`; do not keep a
-compatibility decoder that silently synthesizes countries.
+Save only when Country has no due batch, same-day ACK chain, or open boundary and Economy is at a
+committed boundary. Restore PKCN/CPD2 first, then PKEC. Validate cell/good/technology/signal catalogs,
+Country generation/day/hash, protocol metadata, chunk truncation, and restore order. Decode Country
+and its Modifier subdomain into isolated staging copies; install only after all checks pass. The
+current PKEC reader accepts only schema v51 and reports `economy_save_price_v6_requires_new_game`
+for schema mismatch; do not silently synthesize countries.
 
 PKFG v1 is not country authority, but it is ordered against it: fog restore follows PKCN because
 re-solving visibility reads the restored territory. It persists only the monotonic `cell_explored`
@@ -44,7 +48,8 @@ array; current visibility and `fog_k` are derived and are recomputed through
 - Commands: deterministic order, atomic create+territory, rename, last-territory guard, stale handle.
 - Technology: nationwide uniform result, unowned false, next-cycle visibility only.
 - Treasury: both transfer directions, caps, bad handles/markets, exact combined conservation.
-- Save: PKCN/PKEC round trip, truncation, catalog/hash/generation/order mismatch, legacy rejection.
+- Save: PKCN/PKEC and PKSR/CPD2 round trip, shared canonical PKCN bytes, truncation,
+  catalog/hash/generation/order mismatch, atomic rejection, future-command and event-cursor recovery.
 - Vision: PKFG `explored` round trip; after restore, visibility and border mesh match the territory.
 - UI: 1280x720 no horizontal clipping, Chinese compact money, stable tabs/scroll/node count.
 - Runtime: debug/release build, focused and existing tests, 30+ ACTIVE ticks, no fallback.

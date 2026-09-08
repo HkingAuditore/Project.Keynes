@@ -31,6 +31,12 @@ func _run() -> void:
 		"starting_technology_ids": PackedStringArray(["tech.hunting"])}
 	_expect("country configures", bool(ext.configure_country(catalog, profile, 2, 17).get("ok", false)))
 	_expect("country bootstraps", bool(ext.bootstrap_country({}, PackedByteArray([0, 0])).get("ok", false)))
+	_expect("typed command seal and receipt contract",
+		ext.has_method("runtime_country_core_protocol_self_test")
+		and bool(ext.runtime_country_core_protocol_self_test()))
+	_expect("peer context identity and stale ACK contract",
+		ext.has_method("runtime_country_peer_protocol_self_test")
+		and bool(ext.runtime_country_peer_protocol_self_test()))
 	var captured: Dictionary = ext.capture_country_runtime_snapshot()
 	_expect("bootstrapped snapshot accepted", bool(captured.get("ok", false)))
 	_expect("snapshot exposes bounded metadata", int(captured.get("country_count", 0)) > 0

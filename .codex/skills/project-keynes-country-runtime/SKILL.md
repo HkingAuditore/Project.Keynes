@@ -5,8 +5,10 @@ description: Guide Project.Keynes native country runtime work covering country i
 
 # Project.Keynes Country Runtime
 
-Treat `NativeCountryRuntime` as the only authority for country identity, territory, country technology,
-and treasury. Keep GDScript as orchestration, command packing, stable-ID resolution, and read-only UI.
+Treat `CountryCore` as the single Country business algorithm. `NativeCountryRuntime` is still the
+production synchronous owner; the Host-side Country path remains SHADOW-only until command
+transport, peer ACK/transaction bridges, read-view publication, parity, and performance gates pass.
+Keep GDScript as orchestration, command packing, stable-ID resolution, and read-only UI.
 
 ## Ground first
 
@@ -45,6 +47,8 @@ reservation, tax policy snapshots, Modifier-effective rates, subsidy history, or
 - Do not let mid-cycle country changes enter an already frozen economy cycle.
 - Do not let economy start a new frozen cycle while due country commands remain uncommitted.
 - Restore PKCN before PKEC and reject legacy countryless PKEC schemas precisely.
+- Decode PKCN/CPD2 into isolated Country and Modifier staging state; install only after every
+  catalog, protocol, generation, day, and business-hash check succeeds.
 - Restore PKFG after PKCN, and never store exploration progress inside PKCN.
   Vision and country borders only consume `cell.country_slot`; they are not
   country authority. See `docs/cpp-dots-runtime/vision-fog-and-borders.md`.
@@ -64,9 +68,10 @@ country×signal-value matrix or write these fields into `HexCell`/DataCore.
 
 Vision is not country authority. Its player-fog transition only submits the command at the next
 country boundary. `CountryFacade.research_signal_snapshot()` and country events are cold-path/UI
-facades. PKCN v11 persists the signal/catalog/content/Trigger identity, bitset, observed-cell dedupe
-keys, and sparse evidence; restore rejects older schemas and catalog mismatch as
-`catalog_hash_mismatch`.
+facades. PKCN v13 persists the signal/catalog/content/Trigger identity, bitset, observed-cell dedupe
+keys, sparse evidence, tax assessment modes, pending commands, and the Country Modifier subdomain.
+CPD2 ABI v2 wraps that exact canonical PKCN plus request/receipt/session metadata in PKSR v2 section
+bit `0x8`; restore rejects incompatible schemas and catalog mismatch instead of guessing.
 
 ## Verify
 
@@ -77,4 +82,5 @@ From the repository root run:
 ```
 
 Use `-Build` for debug/release GDExtension builds and `-Godot` when a Godot executable is available.
+The Godot gate runs the reference, core, POD protocol, and CPD2 save-roundtrip tests.
 Report unrun gates explicitly, including performance gates that need the release benchmark scene.

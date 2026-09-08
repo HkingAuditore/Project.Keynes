@@ -13,7 +13,7 @@
 
 ## 快照日期与事实优先级
 
-本文件基于 2026-07-29 仓库状态。每次使用时按以下顺序重新确认：
+本文件基于 2026-09-08 仓库状态（Climate 转后台 worker 权威之后）。每次使用时按以下顺序重新确认：
 
 1. `gdext/src/system_schedule.cpp` 与相关 C++/GDScript调用点。
 2. `Project/project-keynes/data/world/*.tres` 生产profile override。
@@ -29,13 +29,58 @@
 
 ## 当前生产状态
 
+### Climate 由后台 worker 权威（当前默认）
+
 `WorldRuntimeHost.runtime_climate_authority_enabled` 生产默认 true。generate 以
 per-domain ACTIVE（`CLIMATE|COMMIT = 0x802`）启动 worker；主线程 native daily
-climate 图被抑制，MapData 由 `apply_runtime_climate_writeback` 回灌，滞后一日。
+climate 图被抑制门挡住，MapData 由 `apply_runtime_climate_writeback` 回灌，
+**滞后一日**（worker 算 day N，day N+1 落地）。
+
+执行序在 `_on_clock_day_changed` 里钉死：**回灌(day N) → season refresh → capture(day N+1 输入)**。
+这不是风格问题 —— 换序会让 season refresh 对回灌表内字段的写入全部作废。
+
+worker 侧的输入分三路，缺任何一路都不会报错：
+
+- **environment 快照**：per-cell lane，`capture_runtime_inputs` 从 DataCore `_slots` 取
+  （不是 MapData 镜像）。
+- **`climate_round_scalars`**：round 标量整套。ACTIVE 下生产 pass_a 被抑制，这些标量再无
+  别的来路，而缺席时取结构体默认值 —— `insol_amp` 默认 0.20 对 profile 的 0.32，季节振幅
+  只剩 62.5%，表现为"温度看不出日照差异"。
+- **`climate_stage_knobs`**：round 之外那五个 stage 的 knobs 与查表 —— albedo、
+  vegetation_dynamics、climate_feedback、weather field solve、weather distribute。它们跑在
+  native daily 的 stage_b 段、各有自己的 stride，输入不全在 environment 里（catalog 查表、
+  跨 tick 缓存、builder 里的硬编码阈值）。字典非空本身就等于"今天 weather 轮到期"。
+  hydrology 两侧都不跑（`runtime_hydrology_enabled=false`）。**键名的权威来源是生产的执行
+  函数**（`run_weather_distribute_pass` / `run_albedo_pass` / `run_stage_b_pass` /
+  `run_weather_field_solve_pass`），不是结构体字段名；默认值与 clamp 都要照抄。
+
+跨天自持的状态（ACTIVE 下生产那份不再推进，每天拿它播种等于抹平记忆）：`own_snow_state`
+管 `accumulated_snow_days` / `pre_snow_cover`，`own_field_state` 管 `conv_inhib` /
+`field_init`，PAW 由 worker 每日自派生。
+
+没有 store 成员的输出走 snapshot 独立字段回灌：`soil_moisture` 与 pass_a 的五条
+（`insolation_now` / `insolation_dev` / `day_length` / `heat_input` / `temp_season_offset`）。
+它们不进 store 故不动 PKEC 格式。
+
 SHADOW 对拍 / CLM2 字节测试必须在 generate 前关掉该开关。运行时回退：GM
 「Climate worker 权威」或 `set_runtime_climate_authority_enabled(false)`。
-整图 ACTIVE 仍禁止。证据见 `docs/cpp-dots-runtime/full-authoritative-runtime-status.md`
-与 `artifacts/runtime/s4-evidence/`。
+整图 ACTIVE 仍禁止。
+
+**已知限制**：
+
+- 小地图（60x40）是负收益：`sus_sim_avg` +5.5%。大地图（180x120）主线程 climate job
+  −49%、climate 计算 −98.5%，但 SUS 总均值不动 —— worker 与主线程抢 CPU，省下的没变成
+  吞吐。帧延迟是真收益，headless 量不出来（`frame_wall_ms` 恒 0）。
+- 大地图上 worker 跟不上节拍：180x120 下 `writeback_days=30/50`（小地图 49/50）。
+- ψ / cyclone / monsoon 在 worker 侧留空（待办 `synoptic-own`）：推进输入是风场，而 worker
+  的 wind pass 在 round 里比 weather 晚，自己推一份只会把风场的分叉搬到 ψ 上。代价是降水
+  少了移动涡旋这条主驱动（`syn_base_lift` 默认 1.55，当前配置里最强的一项）。
+- `vegetation_growth_pressure` 均值符号与主线程对照相反（+0.113 vs −0.011），未定论。
+
+证据见 `docs/cpp-dots-runtime/full-authoritative-runtime-status.md` 第 39–42 节与
+`artifacts/runtime/s4-evidence/`。
+
+### 主线程 native daily（worker 关闭时的路径）
 
 `earth_like.tres`：
 
@@ -74,6 +119,7 @@ SHADOW 对拍 / CLM2 字节测试必须在 generate 前关掉该开关。运行�
 | Native daily | slice continuation、owner/report/finalizer | bundle/JIT/round-trip、commit lag、finalizer |
 | Climate visuals | per-cell LUT/atlas C++编码辅助 | Image/ImageTexture/RID生命周期仍Godot |
 | Climate→economy | plant water/temp30d slot冻结输入 | 经济结算不是climate authority |
+| Climate worker (POD) | **生产默认权威**；round 八 stage + stage_knobs 五 stage 全跑，回灌 38~39 场 | 一日滞后；ψ/cyclone 留空；大地图回灌跟不上节拍 |
 
 ## Retained boundaries
 
@@ -115,6 +161,25 @@ SHADOW 对拍 / CLM2 字节测试必须在 generate 前关掉该开关。运行�
 10. **天气录制错源**：weather diagnostics必须读weather report，分类snapshot与current state不是同一时刻。
 11. **Profile层级**：脚本默认、earth-like和mobile override不同；调参必须指出修改层。
 12. **长期反馈过拟合**：短录制无法证明海冰季节相位、Köppen分布、植被演替和水文稳定。
+
+以下五条是 worker 权威特有的，都是实际踩过的：
+
+13. **"缺省值恰好合法"**：worker 的输入 lane 缺席时被 `fill_climate_round_input` 填成等长
+    零数组，所有 `size == n` 守卫全过、不报 starve、round `ok=1`，只有物理结果不对。
+    已出现四次（`wind_baseline`、`sea_ice_frac`、round scalars、pass_a 输出）。**判据是
+    "这条 lane 在 ACTIVE 下还有写者吗"，不是"它长度对不对"。**
+14. **stage 计数不能证明单个 stage 跑了**：stage 11 的 weather field solve 与 distribute
+    共用一个 bit，`weather=15` 照常出现而 field solve 一天没跑。**验收判据必须是该 stage
+    独占的输出场。**
+15. **跨边界字典键名**：Dictionary 是无类型边界，两侧各写一个名字不会有任何人报错。
+    另外 Godot 4 的 `String()` 构造不接受 int —— 跨边界发枚举序号会在 GDScript 侧抛
+    "Nonexistent 'String' constructor"。重建任何返回 Dictionary 的绑定，先 grep 调用方的
+    `.get("...")` 当契约。
+16. **ACTIVE 与 SHADOW 是两条代码路径**：一条全绿不能替另一条背书。只有 SHADOW 会穿过
+    GDScript↔C++ 的 parity 边界往回读值。
+17. **改一条 lane 前先查它有几个读者**：`sea_ice_frac` 同时是 sea_ice 与 ocean_water 的
+    必需 lane，只按前者修会让整个 round 失败，而表象（`writeback_days` 掉到 1）与起因
+    完全不像同一件事。
 
 ## 禁止重复的失败方向
 

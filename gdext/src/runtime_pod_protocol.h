@@ -15,6 +15,8 @@
 
 namespace pk {
 
+struct CountryPeerContext;
+
 template <size_t N>
 inline void runtime_copy_text(char (&destination)[N], const char *source) noexcept {
     static_assert(N > 0, "runtime diagnostic buffers must not be empty");
@@ -53,6 +55,7 @@ constexpr uint32_t RUNTIME_SAVE_BUNDLE_VERSION = 2u;
 constexpr uint32_t RUNTIME_SAVE_SECTION_RUNTIME_ENVELOPE = 1u << 0;
 constexpr uint32_t RUNTIME_SAVE_SECTION_DOMAIN_POD = 1u << 1;
 constexpr uint32_t RUNTIME_SAVE_SECTION_CLIMATE = 1u << 2;
+constexpr uint32_t RUNTIME_SAVE_SECTION_COUNTRY = 1u << 3;
 
 static_assert(RUNTIME_COMMAND_QUEUE_CAPACITY == 4096u,
               "runtime command queue capacity is part of the ABI");
@@ -551,6 +554,10 @@ struct RuntimeCountryDayContext {
     int64_t day = 0;
     double speed_scale = 1.0;
     uint64_t input_generation = 0;
+    // Immutable peer facts captured at the semantic Country boundary.  The
+    // pointer is borrowed for one cooperative step and is never retained by a
+    // worker after the call returns.
+    const CountryPeerContext *peer_context = nullptr;
 };
 
 enum class RuntimeCountryPodError : uint16_t {
@@ -559,6 +566,7 @@ enum class RuntimeCountryPodError : uint16_t {
     INVALID_CONTEXT = 2,
     COMMAND_BATCH_PENDING = 3,
     CROSS_DOMAIN_BARRIER_REQUIRED = 4,
+    COMMAND_REJECTED = 5,
 };
 
 struct RuntimeCountryDayCommit {
@@ -939,6 +947,11 @@ struct RuntimeSaveBundle {
     // Independent climate section. It is immutable bytes encoded by the
     // worker at a completed day barrier; Godot only copies/writes these bytes.
     std::vector<uint8_t> climate_bytes;
+    // CPD2 v2 wraps the exact PKCN payload used by the normal Country provider
+    // plus worker protocol metadata. country_pkcn_bytes is not another wire
+    // section; it lets the save coordinator reuse the same capture.
+    std::vector<uint8_t> country_bytes;
+    std::vector<uint8_t> country_pkcn_bytes;
     std::array<uint64_t, 256> producer_sequences{};
     uint64_t fallback_producer_sequence = 0;
 };

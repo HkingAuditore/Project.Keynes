@@ -10,11 +10,13 @@
 #include <cstring>
 #include <iterator>
 #include <limits>
+#include <memory>
 #include <numeric>
 #include <type_traits>
 #include <unordered_set>
 
 #include <godot_cpp/variant/char_string.hpp>
+#include <godot_cpp/variant/array.hpp>
 #include <godot_cpp/variant/packed_int64_array.hpp>
 #include <godot_cpp/variant/packed_string_array.hpp>
 #include <godot_cpp/variant/string_name.hpp>
@@ -398,6 +400,11 @@ Dictionary NativeCountryRuntime::configure(const Dictionary &catalog,
     _territory_generation = 0;
     _research_generation = 0;
     _submit_order = 0;
+    _typed_receipts.clear();
+    _typed_request_state.clear();
+    close_boundary_seal();
+    _next_boundary_id = 1;
+    if (++_session_epoch == 0) _session_epoch = 1;
     _next_event_id = 1;
     _last_committed_day = -1;
     _countries = {};
@@ -1069,6 +1076,11 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
     _cell_tax_policy_intern.clear();
     _last_research_day = -1;
     _pending_commands.clear();
+    _typed_receipts.clear();
+    _typed_request_state.clear();
+    close_boundary_seal();
+    _next_boundary_id = 1;
+    if (++_session_epoch == 0) _session_epoch = 1;
     _effect_command_results.clear();
     _effect_command_idempotency.clear();
     _next_effect_request_id = 1;
@@ -1279,10 +1291,458 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
     _last_research_day = -1;
     publish_report("aggregate_publish", -1, 0, 0, 0, _cell_count,
                    static_cast<int32_t>(_countries.active.size()), _mode == MODE_ACTIVE);
+    begin_reference_boundary(-1);
+    record_reference_frame("bootstrap", -1, true, false);
     Dictionary out = report();
     out["ok"] = true;
     out["default_bootstrap"] = ids.empty();
     return out;
+}
+
+bool NativeCountryRuntime::validate_admission_command(
+        const Command &command, std::string &error) const {
+    if (command.opcode < COMMAND_CREATE_COUNTRY ||
+        command.opcode > COMMAND_CLAIM_UNOWNED_TERRITORY) {
+        error = "country_command_opcode_invalid";
+        return false;
+    }
+    if (command.effective_day < 0 || command.sequence < 0) {
+        error = "country_command_order_invalid";
+        return false;
+    }
+    if (command.observed_generation != 0 &&
+        command.observed_generation != _generation) {
+        error = "stale_command_generation";
+        return false;
+    }
+    if (command.opcode == COMMAND_SET_RESEARCH_WEIGHTS) {
+        const std::array<int32_t, RUNTIME_COUNTRY_RESEARCH_DOMAIN_COUNT> weights{{
+            command.weights_bp[0], command.weights_bp[1],
+            command.weights_bp[2], command.weights_bp[3]}};
+        if (!runtime_country_research_weights_valid(weights)) {
+            error = "country_research_weight_policy_invalid";
+            return false;
+        }
+    }
+    if (command.opcode >= COMMAND_SET_TAX_DEFAULT &&
+        command.opcode <= COMMAND_CLEAR_TAX_OVERRIDE) {
+        const bool needs_value =
+            command.opcode != COMMAND_CLEAR_TAX_OVERRIDE;
+        if (command.tax_kind < 0 || command.tax_kind >= TAX_KIND_COUNT ||
+            (needs_value &&
+             (!tax_assessment_mode_valid(command.tax_assessment_mode) ||
+              !tax_value_valid(command.tax_assessment_mode,
+                               command.tax_rate_basis_points))) ||
+            (command.opcode != COMMAND_SET_TAX_DEFAULT &&
+             (command.tax_item < 0 ||
+              command.tax_item >= tax_item_count(command.tax_kind)))) {
+            error = "country_tax_command_invalid";
+            return false;
+        }
+    }
+    if (command.opcode >= COMMAND_SET_CELL_TAX_DEFAULT &&
+        command.opcode <= COMMAND_CLEAR_CELL_TAX_POLICY) {
+        const bool has_kind =
+            command.opcode != COMMAND_CLEAR_CELL_TAX_POLICY;
+        const bool has_item =
+            command.opcode == COMMAND_SET_CELL_TAX_OVERRIDE ||
+            command.opcode == COMMAND_CLEAR_CELL_TAX_OVERRIDE;
+        const bool has_rate =
+            command.opcode == COMMAND_SET_CELL_TAX_DEFAULT ||
+            command.opcode == COMMAND_SET_CELL_TAX_OVERRIDE;
+        if (command.cell < 0 || command.cell >= _cell_count ||
+            _is_water[static_cast<size_t>(command.cell)] != 0 ||
+            (has_kind && (command.tax_kind < 0 ||
+                          command.tax_kind >= TAX_KIND_COUNT)) ||
+            (has_item && (command.tax_item < 0 ||
+                          command.tax_item >=
+                              tax_item_count(command.tax_kind))) ||
+            (has_rate &&
+             (!tax_assessment_mode_valid(command.tax_assessment_mode) ||
+              !tax_value_valid(command.tax_assessment_mode,
+                               command.tax_rate_basis_points)))) {
+            error = "country_cell_tax_command_invalid";
+            return false;
+        }
+    }
+    if (command.opcode == COMMAND_CLAIM_UNOWNED_TERRITORY &&
+        (command.cell < 0 || command.cell >= _cell_count ||
+         _is_water[static_cast<size_t>(command.cell)] != 0)) {
+        error = "country_claim_target_invalid";
+        return false;
+    }
+    return true;
+}
+
+bool NativeCountryRuntime::submit_typed_commands(
+        const CountryTypedCommand *commands, size_t count,
+        std::vector<CountryCommandReceipt> &receipts, std::string &error) {
+    receipts.clear();
+    error.clear();
+    if (!_configured || !_bootstrapped || _mode == MODE_OFF) {
+        error = "country_runtime_unavailable";
+        return false;
+    }
+    if (commands == nullptr || count == 0) {
+        error = "country_command_batch_empty";
+        return false;
+    }
+    std::vector<Command> staged;
+    staged.reserve(count);
+    std::unordered_set<uint64_t> new_request_ids;
+    uint64_t next_submit_order = _submit_order;
+    for (size_t i = 0; i < count; ++i) {
+        const CountryTypedCommand &source = commands[i];
+        if (source.request_id == 0) {
+            error = "country_request_id_invalid";
+            break;
+        }
+        const auto existing = _typed_request_state.find(source.request_id);
+        if (existing != _typed_request_state.end()) continue;
+        if (!new_request_ids.insert(source.request_id).second) {
+            error = "country_request_id_duplicate";
+            break;
+        }
+        if (source.sequence >
+            static_cast<uint64_t>(std::numeric_limits<int64_t>::max())) {
+            error = "country_command_order_invalid";
+            break;
+        }
+        Command command;
+        command.request_id = source.request_id;
+        command.producer_id = source.producer_id;
+        command.observed_generation = source.observed_generation;
+        command.opcode = source.opcode;
+        command.effective_day = source.effective_day;
+        command.sequence = static_cast<int64_t>(source.sequence);
+        command.target_handle = source.target_handle;
+        command.cell = source.cell;
+        command.aux = source.aux;
+        command.domain = source.domain;
+        command.position = source.position;
+        std::copy(std::begin(source.weights_bp), std::end(source.weights_bp),
+                  std::begin(command.weights_bp));
+        command.tax_kind = source.tax_kind;
+        command.tax_item = source.tax_item;
+        command.tax_rate_basis_points = source.tax_rate_basis_points;
+        command.tax_assessment_mode = source.tax_assessment_mode;
+        command.value = source.value;
+        command.stable_id = source.stable_id;
+        command.display_name = source.display_name;
+        command.submit_order = ++next_submit_order;
+        if (!validate_admission_command(command, error)) break;
+        staged.push_back(std::move(command));
+    }
+    if (!error.empty()) {
+        receipts.reserve(count);
+        for (size_t i = 0; i < count; ++i) {
+            const auto existing = _typed_request_state.find(commands[i].request_id);
+            if (existing != _typed_request_state.end()) {
+                receipts.push_back(existing->second);
+                continue;
+            }
+            CountryCommandReceipt receipt;
+            receipt.request_id = commands[i].request_id;
+            receipt.producer_id = commands[i].producer_id;
+            receipt.sequence = commands[i].sequence;
+            receipt.effective_day = commands[i].effective_day;
+            receipt.generation = _generation;
+            receipt.code = CountryCommandReceiptCode::ADMISSION_REJECTED;
+            receipt.reason = error;
+            receipts.push_back(std::move(receipt));
+        }
+        return false;
+    }
+
+    _pending_commands.reserve(_pending_commands.size() + staged.size());
+    _pending_commands.insert(_pending_commands.end(),
+        std::make_move_iterator(staged.begin()),
+        std::make_move_iterator(staged.end()));
+    _submit_order = next_submit_order;
+    receipts.reserve(count);
+    for (size_t i = 0; i < count; ++i) {
+        const auto existing = _typed_request_state.find(commands[i].request_id);
+        if (existing != _typed_request_state.end()) {
+            receipts.push_back(existing->second);
+            continue;
+        }
+        CountryCommandReceipt receipt;
+        receipt.request_id = commands[i].request_id;
+        receipt.producer_id = commands[i].producer_id;
+        receipt.sequence = commands[i].sequence;
+        receipt.effective_day = commands[i].effective_day;
+        receipt.generation = _generation;
+        receipt.code = CountryCommandReceiptCode::ACCEPTED;
+        _typed_request_state.emplace(receipt.request_id, receipt);
+        receipts.push_back(std::move(receipt));
+    }
+    return true;
+}
+
+bool NativeCountryRuntime::poll_typed_receipt(CountryCommandReceipt &out) {
+    if (_typed_receipts.empty()) return false;
+    out = std::move(_typed_receipts.front());
+    _typed_receipts.pop_front();
+    return true;
+}
+
+CountryBoundarySeal NativeCountryRuntime::open_implicit_boundary(int64_t day) {
+    CountryBoundarySeal seal;
+    seal.session_epoch = _session_epoch;
+    seal.boundary_id = _next_boundary_id++;
+    seal.day = day;
+    seal.last_admitted_submit_order = _submit_order;
+    seal.expected_base_generation = _generation;
+    seal.catalog_hash = catalog_hash();
+    _boundary_seal = seal;
+    _boundary_seal_active = true;
+    return seal;
+}
+
+bool NativeCountryRuntime::seal_boundary(
+        uint64_t session_epoch, uint64_t boundary_id, int64_t day,
+        CountryBoundarySeal &out, std::string &error) {
+    error.clear();
+    if (!_configured || !_bootstrapped || _mode == MODE_OFF) {
+        error = "country_runtime_unavailable";
+        return false;
+    }
+    if (session_epoch == 0 || session_epoch != _session_epoch) {
+        error = "country_boundary_session_mismatch";
+        return false;
+    }
+    if (boundary_id == 0 || day < 0) {
+        error = "country_boundary_invalid";
+        return false;
+    }
+    if (_command_batch.active) {
+        error = "country_boundary_in_progress";
+        return false;
+    }
+    if (_boundary_seal_active) {
+        if (_boundary_seal.session_epoch == session_epoch &&
+            _boundary_seal.boundary_id == boundary_id &&
+            _boundary_seal.day == day) {
+            out = _boundary_seal;
+            return true;
+        }
+        error = "country_boundary_already_sealed";
+        return false;
+    }
+    _boundary_seal.session_epoch = session_epoch;
+    _boundary_seal.boundary_id = boundary_id;
+    _boundary_seal.day = day;
+    _boundary_seal.last_admitted_submit_order = _submit_order;
+    _boundary_seal.expected_base_generation = _generation;
+    _boundary_seal.catalog_hash = catalog_hash();
+    _boundary_seal_active = true;
+    _next_boundary_id = std::max(_next_boundary_id, boundary_id + 1);
+    out = _boundary_seal;
+    return true;
+}
+
+void NativeCountryRuntime::close_boundary_seal() {
+    _boundary_seal = {};
+    _boundary_seal_active = false;
+}
+
+bool NativeCountryRuntime::protocol_contract_self_test(std::string &error) {
+    error.clear();
+    if (!_configured || !_bootstrapped || _mode == MODE_OFF ||
+        _command_batch.active || _boundary_seal_active ||
+        !_pending_commands.empty()) {
+        error = "country_protocol_test_requires_idle_runtime";
+        return false;
+    }
+    int32_t slot = -1;
+    for (int32_t candidate = 0;
+         candidate < static_cast<int32_t>(_countries.active.size());
+         ++candidate) {
+        if (_countries.active[static_cast<size_t>(candidate)] != 0) {
+            slot = candidate;
+            break;
+        }
+    }
+    if (slot < 0) {
+        error = "country_protocol_test_country_missing";
+        return false;
+    }
+    int32_t owned_cell = -1;
+    for (int32_t cell = 0; cell < _cell_count; ++cell) {
+        if (_cell_country_slot[static_cast<size_t>(cell)] == slot) {
+            owned_cell = cell;
+            break;
+        }
+    }
+    if (owned_cell < 0) {
+        error = "country_protocol_test_territory_missing";
+        return false;
+    }
+
+    CountryCommandReceipt discarded;
+    while (poll_typed_receipt(discarded)) {}
+    const int64_t day = std::max<int64_t>(0, _last_committed_day + 1);
+    const uint64_t handle = make_handle(slot);
+    const uint64_t request_base =
+        (0x4354525900000000ULL ^ (_session_epoch << 16U) ^
+         (_generation << 8U)) & ~0xffULL;
+    CountryTypedCommand first;
+    first.request_id = request_base | 1ULL;
+    first.producer_id = 7;
+    first.sequence = 100;
+    first.observed_generation = _generation;
+    first.effective_day = day;
+    first.opcode = COMMAND_RENAME_COUNTRY;
+    first.target_handle = handle;
+    first.display_name = "protocol.first";
+    std::vector<CountryCommandReceipt> receipts;
+    if (!submit_typed_commands(&first, 1, receipts, error) ||
+        receipts.size() != 1 ||
+        receipts[0].code != CountryCommandReceiptCode::ACCEPTED) {
+        if (error.empty()) error = "country_protocol_test_first_admission";
+        return false;
+    }
+
+    CountryBoundarySeal seal;
+    const uint64_t explicit_boundary = _next_boundary_id + 100;
+    if (!seal_boundary(_session_epoch, explicit_boundary, day, seal, error))
+        return false;
+
+    CountryTypedCommand second = first;
+    second.request_id = request_base | 2ULL;
+    second.sequence = 101;
+    second.display_name = "protocol.second";
+    if (!submit_typed_commands(&second, 1, receipts, error) ||
+        receipts.size() != 1 ||
+        receipts[0].code != CountryCommandReceiptCode::ACCEPTED) {
+        if (error.empty()) error = "country_protocol_test_second_admission";
+        return false;
+    }
+    const CountryCoreStepResult first_step = run_slice_core(day);
+    if (first_step.status != CountryCoreStepStatus::BOUNDARY_COMMITTED ||
+        first_step.seal.boundary_id != explicit_boundary ||
+        first_step.seal.last_admitted_submit_order != seal.last_admitted_submit_order ||
+        _countries.display_name[static_cast<size_t>(slot)] != "protocol.first") {
+        error = "country_protocol_test_seal_watermark";
+        return false;
+    }
+    CountryCommandReceipt terminal;
+    if (!poll_typed_receipt(terminal) ||
+        terminal.request_id != first.request_id ||
+        terminal.code != CountryCommandReceiptCode::COMMITTED ||
+        poll_typed_receipt(discarded)) {
+        error = "country_protocol_test_first_terminal";
+        return false;
+    }
+
+    const CountryCoreStepResult second_step = run_slice_core(day);
+    if (second_step.status != CountryCoreStepStatus::BOUNDARY_COMMITTED ||
+        second_step.seal.boundary_id == explicit_boundary ||
+        _countries.display_name[static_cast<size_t>(slot)] != "protocol.second" ||
+        !poll_typed_receipt(terminal) ||
+        terminal.request_id != second.request_id ||
+        terminal.code != CountryCommandReceiptCode::COMMITTED) {
+        error = "country_protocol_test_second_terminal";
+        return false;
+    }
+
+    CountryTypedCommand rejected = first;
+    rejected.request_id = request_base | 3ULL;
+    rejected.sequence = 102;
+    rejected.observed_generation = _generation;
+    rejected.effective_day = day + 1;
+    rejected.opcode = COMMAND_CLAIM_UNOWNED_TERRITORY;
+    rejected.cell = owned_cell;
+    rejected.display_name.clear();
+    if (!submit_typed_commands(&rejected, 1, receipts, error)) return false;
+    const uint64_t generation_before_rejection = _generation;
+    const CountryCoreStepResult rejected_step = run_slice_core(day + 1);
+    if (rejected_step.status != CountryCoreStepStatus::REJECTED ||
+        _generation != generation_before_rejection ||
+        !poll_typed_receipt(terminal) ||
+        terminal.request_id != rejected.request_id ||
+        terminal.code != CountryCommandReceiptCode::REJECTED_AT_EXECUTION) {
+        error = "country_protocol_test_execution_rejection";
+        return false;
+    }
+
+    if (!submit_typed_commands(&first, 1, receipts, error) ||
+        receipts.size() != 1 ||
+        receipts[0].code != CountryCommandReceiptCode::COMMITTED ||
+        !_pending_commands.empty()) {
+        error = "country_protocol_test_idempotent_replay";
+        return false;
+    }
+
+    const uint64_t expected_hash = compute_state_hash();
+    const uint64_t previous_session = _session_epoch;
+    CountryCoreCheckpoint captured;
+    if (!capture_core_checkpoint(captured, error)) return false;
+    std::vector<uint8_t> encoded;
+    if (!encode_country_core_checkpoint(captured, encoded, error)) return false;
+    CountryCoreCheckpoint decoded;
+    if (!decode_country_core_checkpoint(encoded.data(), encoded.size(),
+                                        decoded, error) ||
+        decoded.canonical_pkcn != captured.canonical_pkcn ||
+        decoded.business_state_hash != expected_hash) {
+        if (error.empty()) error = "country_protocol_test_checkpoint_roundtrip";
+        return false;
+    }
+    std::vector<uint8_t> corrupted = encoded;
+    corrupted[corrupted.size() / 2u] ^= 0x1u;
+    CountryCoreCheckpoint rejected_checkpoint;
+    std::string corruption_error;
+    if (decode_country_core_checkpoint(corrupted.data(), corrupted.size(),
+                                       rejected_checkpoint,
+                                       corruption_error)) {
+        error = "country_protocol_test_checkpoint_corruption";
+        return false;
+    }
+    CountryCoreCheckpoint mismatched = decoded;
+    mismatched.business_state_hash ^= FNV_PRIME;
+    const uint64_t rejected_generation = _generation;
+    const uint64_t rejected_session = _session_epoch;
+    std::string mismatch_error;
+    if (restore_core_checkpoint(mismatched, mismatch_error) ||
+        mismatch_error != "country_checkpoint_business_state_mismatch" ||
+        _generation != rejected_generation ||
+        _session_epoch != rejected_session ||
+        compute_state_hash() != expected_hash) {
+        error = "country_protocol_test_checkpoint_rejection_not_atomic";
+        return false;
+    }
+    std::vector<uint8_t> after_rejection;
+    if (!encode_save(after_rejection, error) ||
+        after_rejection != captured.canonical_pkcn) {
+        if (error.empty())
+            error = "country_protocol_test_checkpoint_rejection_mutated_state";
+        return false;
+    }
+    if (!restore_core_checkpoint(decoded, error) ||
+        _session_epoch == previous_session ||
+        compute_state_hash() != expected_hash ||
+        _typed_request_state.size() != decoded.request_states.size() ||
+        _next_boundary_id != decoded.next_boundary_id) {
+        if (error.empty()) error = "country_protocol_test_checkpoint_restore";
+        return false;
+    }
+    return true;
+}
+
+void NativeCountryRuntime::push_typed_receipt(
+        const Command &command, CountryCommandReceiptCode code,
+        const std::string &reason) {
+    if (command.request_id == 0) return;
+    CountryCommandReceipt receipt;
+    receipt.request_id = command.request_id;
+    receipt.producer_id = command.producer_id;
+    receipt.sequence = static_cast<uint64_t>(command.sequence);
+    receipt.effective_day = command.effective_day;
+    receipt.generation = _generation;
+    receipt.code = code;
+    receipt.reason = reason;
+    _typed_request_state[receipt.request_id] = receipt;
+    _typed_receipts.push_back(std::move(receipt));
 }
 
 Dictionary NativeCountryRuntime::submit_commands(const Dictionary &batch) {
@@ -1333,23 +1793,10 @@ Dictionary NativeCountryRuntime::submit_commands(const Dictionary &batch) {
         display_names.size() != count)
         return fail("country_command_batch_shape_invalid");
 
-    // Validate the entire research-weight subset before touching the pending
-    // queue. A malformed late item must not leave an earlier valid item in
-    // the same submitted batch queued for a future day.
+    std::vector<Command> staged_commands;
+    staged_commands.reserve(count);
+    uint64_t next_submit_order = _submit_order;
     for (size_t i = 0; i < count; ++i) {
-        if (opcodes[i] != COMMAND_SET_RESEARCH_WEIGHTS) continue;
-        const std::array<int32_t, RUNTIME_COUNTRY_RESEARCH_DOMAIN_COUNT> weights{
-            {weights0[i], weights1[i], weights2[i], weights3[i]}};
-        if (!runtime_country_research_weights_valid(weights))
-            return fail("country_research_weight_policy_invalid");
-    }
-
-    _pending_commands.reserve(_pending_commands.size() + count);
-    for (size_t i = 0; i < count; ++i) {
-        if (opcodes[i] < COMMAND_CREATE_COUNTRY ||
-            opcodes[i] > COMMAND_CLAIM_UNOWNED_TERRITORY)
-            return fail("country_command_opcode_invalid");
-        if (days[i] < 0 || sequences[i] < 0) return fail("country_command_order_invalid");
         Command command;
         command.opcode = opcodes[i];
         command.effective_day = days[i];
@@ -1367,55 +1814,20 @@ Dictionary NativeCountryRuntime::submit_commands(const Dictionary &batch) {
         command.tax_item = tax_items[i];
         command.tax_rate_basis_points = tax_rates[i];
         command.tax_assessment_mode = tax_modes[i];
-        if (command.opcode >= COMMAND_SET_TAX_DEFAULT &&
-            command.opcode <= COMMAND_CLEAR_TAX_OVERRIDE) {
-            const bool needs_value =
-                command.opcode != COMMAND_CLEAR_TAX_OVERRIDE;
-            if (command.tax_kind < 0 || command.tax_kind >= TAX_KIND_COUNT ||
-                (needs_value &&
-                 (!tax_assessment_mode_valid(command.tax_assessment_mode) ||
-                  !tax_value_valid(command.tax_assessment_mode,
-                                  command.tax_rate_basis_points))) ||
-                (command.opcode != COMMAND_SET_TAX_DEFAULT &&
-                 (command.tax_item < 0 ||
-                  command.tax_item >= tax_item_count(command.tax_kind)))) {
-                return fail("country_tax_command_invalid");
-            }
-        }
-        if (command.opcode >= COMMAND_SET_CELL_TAX_DEFAULT &&
-            command.opcode <= COMMAND_CLEAR_CELL_TAX_POLICY) {
-            const bool has_kind =
-                command.opcode != COMMAND_CLEAR_CELL_TAX_POLICY;
-            const bool has_item =
-                command.opcode == COMMAND_SET_CELL_TAX_OVERRIDE ||
-                command.opcode == COMMAND_CLEAR_CELL_TAX_OVERRIDE;
-            const bool has_rate =
-                command.opcode == COMMAND_SET_CELL_TAX_DEFAULT ||
-                command.opcode == COMMAND_SET_CELL_TAX_OVERRIDE;
-            if (command.cell < 0 || command.cell >= _cell_count ||
-                _is_water[static_cast<size_t>(command.cell)] != 0 ||
-                (has_kind && (command.tax_kind < 0 ||
-                              command.tax_kind >= TAX_KIND_COUNT)) ||
-                (has_item && (command.tax_item < 0 ||
-                              command.tax_item >=
-                                  tax_item_count(command.tax_kind))) ||
-                (has_rate &&
-                 (!tax_assessment_mode_valid(command.tax_assessment_mode) ||
-                  !tax_value_valid(command.tax_assessment_mode,
-                                  command.tax_rate_basis_points)))) {
-                return fail("country_cell_tax_command_invalid");
-            }
-        }
-        if (command.opcode == COMMAND_CLAIM_UNOWNED_TERRITORY &&
-            (command.cell < 0 || command.cell >= _cell_count ||
-             _is_water[static_cast<size_t>(command.cell)] != 0))
-            return fail("country_claim_target_invalid");
         command.value = values[i];
         command.stable_id = stable_ids[i];
         command.display_name = display_names[i];
-        command.submit_order = ++_submit_order;
-        _pending_commands.push_back(std::move(command));
+        command.submit_order = ++next_submit_order;
+        std::string admission_error;
+        if (!validate_admission_command(command, admission_error))
+            return fail(admission_error);
+        staged_commands.push_back(std::move(command));
     }
+    _pending_commands.reserve(_pending_commands.size() + count);
+    _pending_commands.insert(_pending_commands.end(),
+        std::make_move_iterator(staged_commands.begin()),
+        std::make_move_iterator(staged_commands.end()));
+    _submit_order = next_submit_order;
     Dictionary out;
     out["ok"] = true;
     out["submitted"] = static_cast<int64_t>(count);
@@ -1582,13 +1994,6 @@ bool NativeCountryRuntime::run_day_pod(
         out.error_code = RuntimeCountryPodError::INVALID_CONTEXT;
         return false;
     }
-    // Command translation still originates in the Godot facade. Do not let a
-    // partially migrated worker consume a batch whose payload semantics have
-    // not been converted to RuntimeCommandEnvelope yet.
-    if (_command_batch.active || !_pending_commands.empty()) {
-        out.error_code = RuntimeCountryPodError::COMMAND_BATCH_PENDING;
-        return false;
-    }
     // Research completion may call these peer runtimes for Effect/Modifier
     // ACK and economy milestones. They need their own POD barrier adapters
     // before Country can safely become a worker-owned domain.
@@ -1605,19 +2010,31 @@ bool NativeCountryRuntime::run_day_pod(
         bool &value;
         ~PodExecutionReset() { value = false; }
     } reset{_pod_execution};
-    const int32_t changed = run_research_day(context.day);
+    const CountryCoreStepResult step = run_slice_core(context.day);
+    if (!step.ok) {
+        out.error_code = RuntimeCountryPodError::COMMAND_REJECTED;
+        out.preflight_ok = 0;
+        out.completed = step.done ? 1 : 0;
+        return false;
+    }
 
-    out.completed = 1;
+    out.completed = step.done ? 1 : 0;
     out.preflight_ok = 1;
-    out.changed_countries = static_cast<uint32_t>(std::max(0, changed));
-    out.changed_territory_cells = 0;
+    out.ack_required = step.day_barrier ? 1 : 0;
+    out.changed_countries = static_cast<uint32_t>(
+        std::max(0, step.changed_countries));
+    out.changed_territory_cells = static_cast<uint32_t>(
+        std::max(0, step.changed_cells));
     out.research_work_units = static_cast<uint64_t>(
         std::max<int64_t>(0, _research_countries_scanned)) +
         static_cast<uint64_t>(std::max<int64_t>(0, _research_pending_checks)) +
         static_cast<uint64_t>(std::max<int64_t>(0, _research_discovery_checks));
     out.country_generation = _generation;
     out.state_hash = static_cast<uint64_t>(state_hash());
-    if (changed > 0) out.dirty_families |= RUNTIME_DIRTY_COUNTRY_STATE;
+    if (step.changed_countries > 0)
+        out.dirty_families |= RUNTIME_DIRTY_COUNTRY_STATE;
+    if (step.changed_cells > 0)
+        out.dirty_families |= RUNTIME_DIRTY_COUNTRY_TERRITORY;
     if (_visual_era_generation != visual_generation_before)
         out.dirty_families |= RUNTIME_DIRTY_COUNTRY_VISUAL_ERA;
     return true;
@@ -1768,13 +2185,91 @@ uint64_t NativeCountryRuntime::make_handle(int32_t slot) const {
 Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
     if (!_configured || !_bootstrapped) return fail("country_not_bootstrapped");
     const int64_t requested_day = dict_num<int64_t>(ctx, "day_index", 0);
-    if (_mode == MODE_OFF) {
+    CountryCoreStepResult result = run_slice_core(requested_day);
+    if (result.status == CountryCoreStepStatus::OFF) {
         Dictionary out;
         out["ok"] = true;
         out["done"] = true;
         out["stage"] = "idle";
         out["path"] = "off";
+        out["core_status"] = country_core_step_status_name(result.status);
         return out;
+    }
+
+    publish_report(result.stage.c_str(), requested_day, result.preflight_ms,
+                   result.apply_ms, result.publish_ms,
+                   result.changed_cells, result.changed_countries,
+                   result.published_to_slot, result.reason);
+    Dictionary out = report();
+    out["ok"] = result.ok;
+    out["done"] = result.done;
+    out["stage"] = String(result.stage.c_str());
+    out["path"] = String(result.path.c_str());
+    out["core_status"] = country_core_step_status_name(result.status);
+    out["elapsed_ms"] = result.elapsed_ms;
+    out["cursor_start"] = result.cursor_start;
+    out["cursor_end"] = result.cursor_end;
+    out["cursor_total"] = result.cursor_total;
+    out["progress_ratio"] = result.progress_ratio;
+    out["country_day_barrier"] = result.day_barrier;
+    out["observation_batch_input"] = result.observation_batch_input;
+    out["observation_batch_added"] = result.observation_batch_added;
+    if (!result.reason.empty()) out["fatal_reason"] = result.reason.c_str();
+    if (!result.changed_cell_indices.empty()) {
+        PackedInt32Array changed_cells;
+        PackedInt32Array changed_owners;
+        changed_cells.resize(static_cast<int64_t>(result.changed_cell_indices.size()));
+        changed_owners.resize(static_cast<int64_t>(result.changed_cell_owners.size()));
+        std::memcpy(changed_cells.ptrw(), result.changed_cell_indices.data(),
+                    result.changed_cell_indices.size() * sizeof(int32_t));
+        std::memcpy(changed_owners.ptrw(), result.changed_cell_owners.data(),
+                    result.changed_cell_owners.size() * sizeof(int32_t));
+        out["_changed_cell_indices"] = changed_cells;
+        out["_changed_cell_owners"] = changed_owners;
+    }
+    return out;
+}
+
+CountryCoreStepResult NativeCountryRuntime::run_slice_core(
+        int64_t requested_day) {
+    CountryCoreStepResult result;
+    if (_mode == MODE_OFF) {
+        result.status = CountryCoreStepStatus::OFF;
+        result.path = "off";
+        return result;
+    }
+
+    if (!_command_batch.active) {
+        if (!_boundary_seal_active) open_implicit_boundary(requested_day);
+        result.seal = _boundary_seal;
+        if (_boundary_seal.session_epoch != _session_epoch) {
+            result.status = CountryCoreStepStatus::REJECTED;
+            result.ok = false;
+            result.stage = "boundary_seal";
+            result.reason = "country_boundary_session_mismatch";
+            close_boundary_seal();
+            return result;
+        }
+        if (_boundary_seal.day != requested_day) {
+            result.status = CountryCoreStepStatus::REJECTED;
+            result.ok = false;
+            result.stage = "boundary_seal";
+            result.reason = "country_boundary_day_mismatch";
+            close_boundary_seal();
+            return result;
+        }
+        if (_boundary_seal.expected_base_generation != _generation ||
+            _boundary_seal.catalog_hash != catalog_hash()) {
+            result.status = CountryCoreStepStatus::REJECTED;
+            result.ok = false;
+            result.stage = "boundary_seal";
+            result.reason = "country_boundary_base_mismatch";
+            close_boundary_seal();
+            return result;
+        }
+        begin_reference_boundary(requested_day);
+    } else {
+        result.seal = _boundary_seal;
     }
 
     // A slice may commit commands, research progress, goods, territory, or
@@ -1785,16 +2280,22 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
 
     const Clock::time_point start = Clock::now();
     if (!_command_batch.active) {
-        const bool all_due = std::all_of(_pending_commands.begin(), _pending_commands.end(),
-            [&](const Command &command) { return command.effective_day <= requested_day; });
-        if (all_due) {
+        const uint64_t admitted_watermark =
+            _boundary_seal.last_admitted_submit_order;
+        const auto admitted_and_due = [&](const Command &command) {
+            return command.submit_order <= admitted_watermark &&
+                command.effective_day <= requested_day;
+        };
+        const bool all_selected = std::all_of(
+            _pending_commands.begin(), _pending_commands.end(), admitted_and_due);
+        if (all_selected) {
             _command_batch.commands.swap(_pending_commands);
         } else {
             std::vector<Command> future_commands;
             _command_batch.commands.reserve(_pending_commands.size());
             future_commands.reserve(_pending_commands.size());
             for (Command &command : _pending_commands) {
-                if (command.effective_day <= requested_day)
+                if (admitted_and_due(command))
                     _command_batch.commands.push_back(std::move(command));
                 else
                     future_commands.push_back(std::move(command));
@@ -1802,23 +2303,44 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
             _pending_commands.swap(future_commands);
         }
         if (_command_batch.commands.empty()) {
-            const int32_t research_changed = run_research_day(requested_day);
+            CountryPeerContext peer_context;
+            std::string peer_error;
+            if (!capture_peer_context(requested_day,
+                                      _reference_continuation_index,
+                                      peer_context, peer_error)) {
+                result.status = CountryCoreStepStatus::FAULTED;
+                result.ok = false;
+                result.done = true;
+                result.stage = "peer_context_capture";
+                result.reason = peer_error.empty()
+                    ? "country_peer_context_capture_failed" : peer_error;
+                close_boundary_seal();
+                return result;
+            }
+            const int32_t research_changed = run_research_day(
+                requested_day, &peer_context, &peer_context);
             _last_committed_day = std::max(_last_committed_day, requested_day);
-            publish_report(research_changed > 0 ? "research_publish" : "idle",
-                           requested_day, 0, 0, elapsed_ms(start), 0,
-                           research_changed, false);
-            Dictionary out = report();
-            out["ok"] = true;
-            out["done"] = true;
-            out["stage"] = research_changed > 0 ? "research_publish" : "idle";
-            out["elapsed_ms"] = elapsed_ms(start);
+            const bool day_barrier = ack_chain_due(requested_day,
+                                                   &peer_context);
+            const double total_ms = elapsed_ms(start);
+            result.status = day_barrier
+                ? CountryCoreStepStatus::NEED_PEER_RESULTS
+                : CountryCoreStepStatus::DAY_QUIESCENT;
+            result.semantic_commit = true;
+            result.day_barrier = day_barrier;
+            result.stage = research_changed > 0 ? "research_publish" : "idle";
+            result.publish_ms = total_ms;
+            result.elapsed_ms = total_ms;
+            result.changed_countries = research_changed;
+            record_reference_frame(research_changed > 0
+                    ? "research_publish" : "idle",
+                requested_day, true, day_barrier);
+            close_boundary_seal();
             // Research completion registers Effect instances after the morning
             // Effect slot. Raise the barrier so the continuation drain can ACK
             // before the next country day; country should_run is already false
             // because _last_research_day == requested_day.
-            if (ack_chain_due(requested_day))
-                out["country_day_barrier"] = true;
-            return out;
+            return result;
         }
         const auto command_less = [](const Command &lhs, const Command &rhs) {
             if (lhs.effective_day != rhs.effective_day)
@@ -2598,33 +3120,45 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
 
     if (!error.empty()) {
         const double preflight_ms = batch.preflight_ms;
+        const uint64_t command_hash = reference_command_hash(batch.commands);
+        const uint64_t command_count =
+            static_cast<uint64_t>(batch.commands.size());
         for (const Command &command : batch.commands) {
+            push_typed_receipt(command,
+                CountryCommandReceiptCode::REJECTED_AT_EXECUTION, error);
             if (command.effect_request_id == 0) continue;
             EffectCommandResult &result = _effect_command_results[command.effect_request_id];
             result.complete = 1; result.ok = 0; result.reason = error;
         }
         _command_batch = {};
-        publish_report("command_preflight", day, preflight_ms, 0, 0, 0, 0, false, error);
-        Dictionary out = report();
-        out["ok"] = false;
-        out["done"] = true;
-        out["fatal_reason"] = error.c_str();
-        return out;
+        record_reference_frame("command_rejected", day, false, false,
+                               command_hash, command_count);
+        close_boundary_seal();
+        result.status = CountryCoreStepStatus::REJECTED;
+        result.ok = false;
+        result.stage = "command_preflight";
+        result.reason = error;
+        result.preflight_ms = preflight_ms;
+        result.elapsed_ms = preflight_ms;
+        return result;
     }
 
     if (batch.cursor < batch.commands.size()) {
-        publish_report("command_preflight", day, batch.preflight_ms, 0, 0, 0, 0, false);
-        Dictionary out = report();
-        out["ok"] = true;
-        out["done"] = false;
-        out["country_day_barrier"] = true;
-        out["cursor_start"] = static_cast<int64_t>(cursor_start);
-        out["cursor_end"] = static_cast<int64_t>(batch.cursor);
-        out["cursor_total"] = static_cast<int64_t>(batch.commands.size());
-        out["progress_ratio"] = static_cast<double>(batch.cursor) /
+        record_reference_frame("command_preflight", day, false, true,
+            reference_command_hash(batch.commands),
+            static_cast<uint64_t>(batch.commands.size()));
+        result.status = CountryCoreStepStatus::PROGRESS;
+        result.done = false;
+        result.day_barrier = true;
+        result.stage = "command_preflight";
+        result.preflight_ms = batch.preflight_ms;
+        result.elapsed_ms = batch.preflight_ms;
+        result.cursor_start = static_cast<int64_t>(cursor_start);
+        result.cursor_end = static_cast<int64_t>(batch.cursor);
+        result.cursor_total = static_cast<int64_t>(batch.commands.size());
+        result.progress_ratio = static_cast<double>(batch.cursor) /
             static_cast<double>(batch.commands.size());
-        out["elapsed_ms"] = batch.preflight_ms;
-        return out;
+        return result;
     }
 
     for (size_t slot = 0; slot < batch.countries.active.size(); ++slot) {
@@ -2635,21 +3169,33 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
     }
     if (!error.empty()) {
         const double preflight_ms = batch.preflight_ms;
+        const uint64_t command_hash = reference_command_hash(batch.commands);
+        const uint64_t command_count =
+            static_cast<uint64_t>(batch.commands.size());
         for (const Command &command : batch.commands) {
+            push_typed_receipt(command,
+                CountryCommandReceiptCode::REJECTED_AT_EXECUTION, error);
             if (command.effect_request_id == 0) continue;
             EffectCommandResult &result = _effect_command_results[command.effect_request_id];
             result.complete = 1; result.ok = 0; result.reason = error;
         }
         _command_batch = {};
-        publish_report("command_preflight", day, preflight_ms, 0, 0, 0, 0, false, error);
-        Dictionary out = report();
-        out["ok"] = false;
-        out["done"] = true;
-        out["fatal_reason"] = error.c_str();
-        return out;
+        record_reference_frame("command_rejected", day, false, false,
+                               command_hash, command_count);
+        close_boundary_seal();
+        result.status = CountryCoreStepStatus::REJECTED;
+        result.ok = false;
+        result.stage = "command_preflight";
+        result.reason = error;
+        result.preflight_ms = preflight_ms;
+        result.elapsed_ms = preflight_ms;
+        return result;
     }
 
     const double preflight_ms = batch.preflight_ms;
+    const uint64_t reference_batch_hash = reference_command_hash(batch.commands);
+    const uint64_t reference_batch_count =
+        static_cast<uint64_t>(batch.commands.size());
     const int32_t changed_country_count = static_cast<int32_t>(std::count(
         batch.changed_countries.begin(), batch.changed_countries.end(), uint8_t{1}));
     SparseCellDelta cell_delta = std::move(batch.cell_delta);
@@ -2718,7 +3264,16 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
         signal_refreshes.erase(std::unique(signal_refreshes.begin(), signal_refreshes.end()),
                                signal_refreshes.end());
     }
+    std::vector<Command> committed_typed_commands;
     for (const Command &command : batch.commands) {
+        if (command.request_id != 0) {
+            Command receipt_command;
+            receipt_command.request_id = command.request_id;
+            receipt_command.producer_id = command.producer_id;
+            receipt_command.sequence = command.sequence;
+            receipt_command.effective_day = command.effective_day;
+            committed_typed_commands.push_back(std::move(receipt_command));
+        }
         if (command.effect_request_id == 0) continue;
         EffectCommandResult &result = _effect_command_results[command.effect_request_id];
         result.complete = 1; result.ok = 1; result.reason.clear();
@@ -2799,45 +3354,63 @@ Dictionary NativeCountryRuntime::run_slice(const Dictionary &ctx) {
     const Clock::time_point publish_start = Clock::now();
     if (!cell_delta_order.empty()) rebuild_cell_csr();
     ++_generation;
+    for (const Command &command : committed_typed_commands)
+        push_typed_receipt(command, CountryCommandReceiptCode::COMMITTED);
     if (!cell_delta_order.empty()) ++_territory_generation;
     _last_committed_day = day;
     for (Event &event : staged_events) push_event(std::move(event));
-    const int32_t research_changed = run_research_day(day);
+    CountryPeerContext peer_context;
+    std::string peer_error;
+    if (!capture_peer_context(day, _reference_continuation_index,
+                              peer_context, peer_error)) {
+        result.status = CountryCoreStepStatus::FAULTED;
+        result.ok = false;
+        result.done = true;
+        result.stage = "peer_context_capture";
+        result.reason = peer_error.empty()
+            ? "country_peer_context_capture_failed" : peer_error;
+        close_boundary_seal();
+        return result;
+    }
+    const int32_t research_changed = run_research_day(
+        day, &peer_context, &peer_context);
     const double aggregate_ms = elapsed_ms(publish_start);
-    publish_report("aggregate_publish", day, preflight_ms, apply_ms, aggregate_ms,
-                   static_cast<int32_t>(cell_delta_order.size()),
-                   changed_country_count + research_changed,
-                   _mode == MODE_ACTIVE && !cell_delta_order.empty());
-    Dictionary out = report();
-    out["ok"] = true;
-    out["done"] = true;
-    out["elapsed_ms"] = preflight_ms + apply_ms + aggregate_ms;
-    out["cursor_start"] = 0;
-    out["cursor_end"] = static_cast<int64_t>(cursor_limit);
-    out["cursor_total"] = static_cast<int64_t>(cursor_limit);
-    out["progress_ratio"] = 1.0;
-    out["country_day_barrier"] = should_run(day) || ack_chain_due(day);
-    out["observation_batch_input"] = observation_batch_input;
-    out["observation_batch_added"] = observation_batch_added;
+    const bool day_barrier = should_run(day) ||
+        ack_chain_due(day, &peer_context);
+    result.status = CountryCoreStepStatus::BOUNDARY_COMMITTED;
+    result.semantic_commit = true;
+    result.day_barrier = day_barrier;
+    result.stage = "aggregate_publish";
+    result.preflight_ms = preflight_ms;
+    result.apply_ms = apply_ms;
+    result.publish_ms = aggregate_ms;
+    result.elapsed_ms = preflight_ms + apply_ms + aggregate_ms;
+    result.cursor_start = 0;
+    result.cursor_end = static_cast<int64_t>(cursor_limit);
+    result.cursor_total = static_cast<int64_t>(cursor_limit);
+    result.progress_ratio = 1.0;
+    result.changed_cells = static_cast<int32_t>(cell_delta_order.size());
+    result.changed_countries = changed_country_count + research_changed;
+    result.published_to_slot =
+        _mode == MODE_ACTIVE && !cell_delta_order.empty();
+    result.observation_batch_input = observation_batch_input;
+    result.observation_batch_added = observation_batch_added;
     if (!cell_delta_order.empty()) {
         if (!std::is_sorted(cell_delta_order.begin(), cell_delta_order.end()))
             std::sort(cell_delta_order.begin(), cell_delta_order.end());
-        PackedInt32Array changed_cells;
-        PackedInt32Array changed_owners;
-        changed_cells.resize(static_cast<int64_t>(cell_delta_order.size()));
-        changed_owners.resize(static_cast<int64_t>(cell_delta_order.size()));
-        int32_t *cell_ptr = changed_cells.ptrw();
-        int32_t *owner_ptr = changed_owners.ptrw();
+        result.changed_cell_indices.resize(cell_delta_order.size());
+        result.changed_cell_owners.resize(cell_delta_order.size());
         for (size_t i = 0; i < cell_delta_order.size(); ++i) {
-            cell_ptr[i] = cell_delta_order[i];
+            result.changed_cell_indices[i] = cell_delta_order[i];
             int32_t owner = direct_unique_territory ? direct_cell_owners[i] : NEUTRAL_SLOT;
             if (!direct_unique_territory) cell_delta.get(cell_delta_order[i], owner);
-            owner_ptr[i] = owner;
+            result.changed_cell_owners[i] = owner;
         }
-        out["_changed_cell_indices"] = changed_cells;
-        out["_changed_cell_owners"] = changed_owners;
     }
-    return out;
+    record_reference_frame("aggregate_publish", day, true, day_barrier,
+                           reference_batch_hash, reference_batch_count);
+    close_boundary_seal();
+    return result;
 }
 
 void NativeCountryRuntime::rebuild_cell_csr() {
@@ -3010,6 +3583,466 @@ void NativeCountryRuntime::publish_report(const char *stage, int64_t day,
 
 Dictionary NativeCountryRuntime::report() const { return _report.duplicate(); }
 
+NativeCountryRuntime::ReferenceHashes
+NativeCountryRuntime::compute_reference_hashes() const {
+    ReferenceHashes out;
+    auto hash_count = [](uint64_t &hash, size_t count) {
+        const uint64_t value = static_cast<uint64_t>(count);
+        hash_bytes(hash, &value, sizeof(value));
+    };
+    auto hash_vector = [&](uint64_t &hash, const auto &values) {
+        hash_count(hash, values.size());
+        if (!values.empty())
+            hash_bytes(hash, values.data(), values.size() * sizeof(values[0]));
+    };
+    auto hash_strings = [&](uint64_t &hash,
+                            const std::vector<std::string> &values) {
+        hash_count(hash, values.size());
+        for (const std::string &value : values) hash_string(hash, value);
+    };
+
+    out.identity = FNV_OFFSET;
+    hash_vector(out.identity, _countries.active);
+    hash_vector(out.identity, _countries.generation);
+    hash_strings(out.identity, _countries.stable_id);
+    hash_strings(out.identity, _countries.display_name);
+    hash_vector(out.identity, _countries.state_version);
+    hash_bytes(out.identity, &_starting_country_slot,
+               sizeof(_starting_country_slot));
+
+    out.territory = FNV_OFFSET;
+    hash_vector(out.territory, _countries.territory_count);
+    hash_vector(out.territory, _cell_country_slot);
+    hash_vector(out.territory, _country_cell_offsets);
+    hash_vector(out.territory, _country_cells);
+
+    out.treasury = FNV_OFFSET;
+    hash_vector(out.treasury, _countries.cash);
+    hash_vector(out.treasury, _country_goods);
+
+    out.technology = FNV_OFFSET;
+    hash_vector(out.technology, _country_technologies);
+    hash_vector(out.technology, _country_discovered);
+    hash_vector(out.technology, _country_pending_technologies);
+    hash_vector(out.technology, _current_visual_era);
+    hash_bytes(out.technology, &_era_reward_reference.plan_id,
+               sizeof(_era_reward_reference.plan_id));
+    hash_bytes(out.technology, &_era_reward_reference.offer_generation,
+               sizeof(_era_reward_reference.offer_generation));
+    hash_bytes(out.technology, &_era_reward_reference.milestone_technology,
+               sizeof(_era_reward_reference.milestone_technology));
+    hash_bytes(out.technology, &_era_reward_reference.status,
+               sizeof(_era_reward_reference.status));
+
+    out.research = FNV_OFFSET;
+    hash_count(out.research, _country_research_progress.size());
+    for (const auto &entries : _country_research_progress) {
+        hash_count(out.research, entries.size());
+        for (const auto &entry : entries) {
+            hash_bytes(out.research, &entry.first, sizeof(entry.first));
+            hash_bytes(out.research, &entry.second, sizeof(entry.second));
+        }
+    }
+    hash_vector(out.research, _country_research_queues);
+    hash_vector(out.research, _country_research_queue_lengths);
+    hash_vector(out.research, _country_research_weights_bp);
+    hash_vector(out.research, _country_research_auto_purchase);
+    hash_vector(out.research, _country_research_daily_budgets);
+    hash_vector(out.research, _country_research_deferred_points);
+    hash_vector(out.research, _country_research_purchased_total);
+    hash_vector(out.research, _country_research_consumed_total);
+    hash_vector(out.research, _country_research_progress_total);
+    hash_vector(out.research, _country_research_completed_total);
+    hash_bytes(out.research, &_last_research_day,
+               sizeof(_last_research_day));
+
+    out.signals = FNV_OFFSET;
+    hash_vector(out.signals, _country_research_signals);
+    hash_count(out.signals, _country_research_signal_cells.size());
+    for (const auto &cells : _country_research_signal_cells)
+        hash_vector(out.signals, cells);
+    hash_count(out.signals, _country_research_signal_evidence.size());
+    for (const auto &entries : _country_research_signal_evidence) {
+        hash_count(out.signals, entries.size());
+        for (const SignalEvidence &entry : entries) {
+            hash_bytes(out.signals, &entry.signal, sizeof(entry.signal));
+            hash_bytes(out.signals, &entry.count, sizeof(entry.count));
+            hash_bytes(out.signals, &entry.first_day, sizeof(entry.first_day));
+            hash_bytes(out.signals, &entry.last_day, sizeof(entry.last_day));
+            hash_bytes(out.signals, &entry.first_cell, sizeof(entry.first_cell));
+        }
+    }
+
+    out.tax = FNV_OFFSET;
+    hash_vector(out.tax, _country_tax_defaults);
+    hash_vector(out.tax, _country_tax_default_modes);
+    hash_vector(out.tax, _country_income_tax_overrides);
+    hash_vector(out.tax, _country_consumption_tax_overrides);
+    hash_vector(out.tax, _country_business_tax_overrides);
+    hash_vector(out.tax, _country_import_tax_overrides);
+    hash_vector(out.tax, _country_export_tax_overrides);
+    hash_vector(out.tax, _country_income_tax_mode_overrides);
+    hash_vector(out.tax, _country_consumption_tax_mode_overrides);
+    hash_vector(out.tax, _country_business_tax_mode_overrides);
+    hash_vector(out.tax, _country_import_tax_mode_overrides);
+    hash_vector(out.tax, _country_export_tax_mode_overrides);
+    hash_count(out.tax, _cell_tax_policy_ids.size());
+    for (uint32_t policy_id : _cell_tax_policy_ids) {
+        const CellTaxPolicy &policy = cell_tax_policy(policy_id);
+        hash_vector(out.tax, policy.defaults);
+        hash_vector(out.tax, policy.default_modes);
+        hash_count(out.tax, policy.overrides.size());
+        for (const CellTaxOverride &entry : policy.overrides) {
+            hash_bytes(out.tax, &entry.kind, sizeof(entry.kind));
+            hash_bytes(out.tax, &entry.item, sizeof(entry.item));
+            hash_bytes(out.tax, &entry.rate, sizeof(entry.rate));
+            hash_bytes(out.tax, &entry.mode, sizeof(entry.mode));
+        }
+    }
+
+    out.effect = FNV_OFFSET;
+    std::vector<std::pair<uint64_t, int64_t>> idempotency(
+        _effect_command_idempotency.begin(), _effect_command_idempotency.end());
+    std::sort(idempotency.begin(), idempotency.end());
+    hash_count(out.effect, idempotency.size());
+    for (const auto &entry : idempotency) {
+        hash_bytes(out.effect, &entry.first, sizeof(entry.first));
+        hash_bytes(out.effect, &entry.second, sizeof(entry.second));
+    }
+    std::vector<int64_t> result_ids;
+    result_ids.reserve(_effect_command_results.size());
+    for (const auto &entry : _effect_command_results)
+        result_ids.push_back(entry.first);
+    std::sort(result_ids.begin(), result_ids.end());
+    hash_count(out.effect, result_ids.size());
+    for (int64_t id : result_ids) {
+        const EffectCommandResult &result = _effect_command_results.at(id);
+        hash_bytes(out.effect, &id, sizeof(id));
+        hash_bytes(out.effect, &result.complete, sizeof(result.complete));
+        hash_bytes(out.effect, &result.ok, sizeof(result.ok));
+        hash_string(out.effect, result.reason);
+    }
+    hash_bytes(out.effect, &_next_effect_request_id,
+               sizeof(_next_effect_request_id));
+    return out;
+}
+
+uint64_t NativeCountryRuntime::reference_command_hash(
+        const std::vector<Command> &commands) const {
+    uint64_t hash = FNV_OFFSET;
+    const uint64_t count = static_cast<uint64_t>(commands.size());
+    hash_bytes(hash, &count, sizeof(count));
+    for (const Command &command : commands) {
+        hash_bytes(hash, &command.request_id, sizeof(command.request_id));
+        hash_bytes(hash, &command.producer_id, sizeof(command.producer_id));
+        hash_bytes(hash, &command.observed_generation,
+                   sizeof(command.observed_generation));
+        hash_bytes(hash, &command.opcode, sizeof(command.opcode));
+        hash_bytes(hash, &command.effective_day, sizeof(command.effective_day));
+        hash_bytes(hash, &command.sequence, sizeof(command.sequence));
+        hash_bytes(hash, &command.target_handle, sizeof(command.target_handle));
+        hash_bytes(hash, &command.cell, sizeof(command.cell));
+        hash_bytes(hash, &command.aux, sizeof(command.aux));
+        hash_bytes(hash, &command.domain, sizeof(command.domain));
+        hash_bytes(hash, &command.position, sizeof(command.position));
+        hash_bytes(hash, command.weights_bp, sizeof(command.weights_bp));
+        hash_bytes(hash, &command.tax_kind, sizeof(command.tax_kind));
+        hash_bytes(hash, &command.tax_item, sizeof(command.tax_item));
+        hash_bytes(hash, &command.tax_rate_basis_points,
+                   sizeof(command.tax_rate_basis_points));
+        hash_bytes(hash, &command.tax_assessment_mode,
+                   sizeof(command.tax_assessment_mode));
+        hash_bytes(hash, &command.value, sizeof(command.value));
+        hash_string(hash, command.stable_id);
+        hash_string(hash, command.display_name);
+        hash_bytes(hash, &command.submit_order, sizeof(command.submit_order));
+        hash_bytes(hash, &command.effect_request_id,
+                   sizeof(command.effect_request_id));
+        hash_bytes(hash, &command.effect_idempotency_key,
+                   sizeof(command.effect_idempotency_key));
+    }
+    return hash;
+}
+
+void NativeCountryRuntime::begin_reference_boundary(int64_t day) {
+    if (!_reference_trace_enabled) return;
+    if (_boundary_seal_active &&
+        _boundary_seal.session_epoch == _session_epoch) {
+        _reference_boundary_id = _boundary_seal.boundary_id;
+    } else {
+        ++_reference_boundary_id;
+    }
+    _reference_boundary_day = day;
+    _reference_continuation_index = 0;
+    _reference_boundary_first_event_id =
+        static_cast<int64_t>(_next_event_id);
+}
+
+void NativeCountryRuntime::record_reference_frame(
+        const char *stage, int64_t day, bool semantic_commit,
+        bool day_barrier, uint64_t command_hash, uint64_t command_count,
+        int64_t first_event_id) {
+    if (!_reference_trace_enabled) return;
+    ReferenceFrame frame;
+    frame.frame_id = _next_reference_frame_id++;
+    frame.boundary_id = _reference_boundary_id;
+    frame.continuation_index = _reference_continuation_index++;
+    frame.day = day;
+    frame.stage = stage != nullptr ? stage : "";
+    frame.semantic_commit = semantic_commit;
+    frame.day_barrier = day_barrier;
+    frame.catalog_hash = catalog_hash();
+    frame.technology_catalog_hash = _technology_catalog_identity_hash;
+    frame.command_watermark = _boundary_seal_active
+        ? _boundary_seal.last_admitted_submit_order : _submit_order;
+    frame.command_hash = command_hash;
+    frame.command_count = command_count;
+    frame.business_state_hash = compute_state_hash();
+    frame.hashes = compute_reference_hashes();
+    frame.generation = _generation;
+    frame.territory_generation = _territory_generation;
+    frame.research_generation = _research_generation;
+    frame.tax_generation = _tax_policy_version;
+    frame.visual_generation = _visual_era_generation;
+    frame.first_event_id = first_event_id != 0
+        ? first_event_id : _reference_boundary_first_event_id;
+    frame.last_event_id = _next_event_id > 0
+        ? static_cast<int64_t>(_next_event_id - 1) : 0;
+    for (const auto &entry : _effect_command_results) {
+        ++frame.effect_intent_count;
+        if (entry.second.complete != 0) ++frame.effect_ack_count;
+    }
+    _reference_frames.push_back(std::move(frame));
+    while (_reference_frames.size() > _reference_trace_capacity)
+        _reference_frames.pop_front();
+}
+
+void NativeCountryRuntime::record_direct_reference_frame(const char *stage) {
+    if (!_reference_trace_enabled) return;
+    begin_reference_boundary(_last_committed_day);
+    record_reference_frame(stage, _last_committed_day, true, false);
+}
+
+Dictionary NativeCountryRuntime::configure_reference_trace(bool enabled,
+                                                             int32_t max_frames) {
+    Dictionary out;
+    if (max_frames < 1 || max_frames > 65536) {
+        out["ok"] = false;
+        out["reason"] = "country_reference_capacity_invalid";
+        return out;
+    }
+    _reference_trace_enabled = enabled;
+    _reference_trace_capacity = static_cast<size_t>(max_frames);
+    _reference_frames.clear();
+    _next_reference_frame_id = 1;
+    _reference_boundary_id = 0;
+    _reference_continuation_index = 0;
+    _reference_boundary_day = -1;
+    _reference_boundary_first_event_id = 0;
+    out["ok"] = true;
+    out["enabled"] = enabled;
+    out["capacity"] = max_frames;
+    return out;
+}
+
+Dictionary NativeCountryRuntime::poll_reference_trace(int64_t after_frame_id,
+                                                        int32_t limit) const {
+    Dictionary out;
+    Array frames;
+    const int32_t bounded_limit = std::clamp(limit, 1, 4096);
+    for (const ReferenceFrame &frame : _reference_frames) {
+        if (static_cast<int64_t>(frame.frame_id) <= after_frame_id) continue;
+        Dictionary item;
+        item["frame_id"] = static_cast<int64_t>(frame.frame_id);
+        item["boundary_id"] = static_cast<int64_t>(frame.boundary_id);
+        item["continuation_index"] = static_cast<int64_t>(frame.continuation_index);
+        item["day"] = frame.day;
+        item["stage"] = String(frame.stage.c_str());
+        item["semantic_commit"] = frame.semantic_commit;
+        item["day_barrier"] = frame.day_barrier;
+        item["catalog_hash"] = static_cast<int64_t>(frame.catalog_hash);
+        item["technology_catalog_hash"] =
+            static_cast<int64_t>(frame.technology_catalog_hash);
+        item["command_watermark"] =
+            static_cast<int64_t>(frame.command_watermark);
+        item["command_hash"] = static_cast<int64_t>(frame.command_hash);
+        item["command_count"] = static_cast<int64_t>(frame.command_count);
+        item["business_state_hash"] =
+            static_cast<int64_t>(frame.business_state_hash);
+        item["identity_hash"] = static_cast<int64_t>(frame.hashes.identity);
+        item["territory_hash"] = static_cast<int64_t>(frame.hashes.territory);
+        item["treasury_hash"] = static_cast<int64_t>(frame.hashes.treasury);
+        item["technology_hash"] = static_cast<int64_t>(frame.hashes.technology);
+        item["research_hash"] = static_cast<int64_t>(frame.hashes.research);
+        item["signal_hash"] = static_cast<int64_t>(frame.hashes.signals);
+        item["tax_hash"] = static_cast<int64_t>(frame.hashes.tax);
+        item["effect_hash"] = static_cast<int64_t>(frame.hashes.effect);
+        item["generation"] = static_cast<int64_t>(frame.generation);
+        item["territory_generation"] =
+            static_cast<int64_t>(frame.territory_generation);
+        item["research_generation"] =
+            static_cast<int64_t>(frame.research_generation);
+        item["tax_generation"] = static_cast<int64_t>(frame.tax_generation);
+        item["visual_generation"] =
+            static_cast<int64_t>(frame.visual_generation);
+        item["first_event_id"] = frame.first_event_id;
+        item["last_event_id"] = frame.last_event_id;
+        item["effect_intent_count"] =
+            static_cast<int64_t>(frame.effect_intent_count);
+        item["effect_ack_count"] =
+            static_cast<int64_t>(frame.effect_ack_count);
+        frames.push_back(item);
+        if (frames.size() >= bounded_limit) break;
+    }
+    out["ok"] = true;
+    out["enabled"] = _reference_trace_enabled;
+    out["frames"] = frames;
+    out["retained"] = static_cast<int64_t>(_reference_frames.size());
+    out["next_frame_id"] = static_cast<int64_t>(_next_reference_frame_id);
+    return out;
+}
+
+Dictionary NativeCountryRuntime::capture_reference_checkpoint() const {
+    Dictionary out;
+    std::vector<uint8_t> bytes;
+    std::string error;
+    if (!encode_save(bytes, error)) {
+        out["ok"] = false;
+        out["reason"] = String(error.c_str());
+        return out;
+    }
+    PackedByteArray packed;
+    packed.resize(static_cast<int64_t>(bytes.size()));
+    if (!bytes.empty())
+        std::memcpy(packed.ptrw(), bytes.data(), bytes.size());
+    out["ok"] = true;
+    out["schema_version"] = SCHEMA_VERSION;
+    out["generation"] = static_cast<int64_t>(_generation);
+    out["day"] = _last_committed_day;
+    out["business_state_hash"] = static_cast<int64_t>(compute_state_hash());
+    out["bytes"] = packed;
+    return out;
+}
+
+bool NativeCountryRuntime::capture_core_checkpoint(
+        CountryCoreCheckpoint &out, std::string &error) const {
+    CountryCoreCheckpoint checkpoint;
+    if (!encode_save(checkpoint.canonical_pkcn, error)) return false;
+    checkpoint.session_epoch = _session_epoch;
+    checkpoint.catalog_hash = catalog_hash();
+    checkpoint.generation = _generation;
+    checkpoint.committed_day = _last_committed_day;
+    checkpoint.business_state_hash = compute_state_hash();
+    checkpoint.command_watermark = _submit_order;
+    checkpoint.next_event_id = _next_event_id;
+    checkpoint.next_boundary_id = _next_boundary_id;
+    checkpoint.pending_protocol.reserve(_pending_commands.size());
+    for (const Command &command : _pending_commands) {
+        if (command.request_id == 0) continue;
+        checkpoint.pending_protocol.push_back(CountryPendingCommandProtocol{
+            command.submit_order, command.request_id, command.producer_id,
+            command.observed_generation});
+    }
+    checkpoint.request_states.reserve(_typed_request_state.size());
+    for (const auto &entry : _typed_request_state)
+        checkpoint.request_states.push_back(entry.second);
+    std::sort(checkpoint.request_states.begin(), checkpoint.request_states.end(),
+        [](const CountryCommandReceipt &lhs, const CountryCommandReceipt &rhs) {
+            return lhs.request_id < rhs.request_id;
+        });
+    checkpoint.terminal_receipts.assign(_typed_receipts.begin(),
+                                        _typed_receipts.end());
+    std::vector<uint8_t> encoded;
+    if (!encode_country_core_checkpoint(checkpoint, encoded, error)) return false;
+    size_t cursor = encoded.size() - sizeof(uint64_t);
+    checkpoint.checkpoint_hash = 0;
+    for (uint32_t i = 0; i < sizeof(uint64_t); ++i)
+        checkpoint.checkpoint_hash |=
+            static_cast<uint64_t>(encoded[cursor + i]) << (i * 8u);
+    out = std::move(checkpoint);
+    return true;
+}
+
+bool NativeCountryRuntime::restore_core_checkpoint(
+        const CountryCoreCheckpoint &checkpoint, std::string &error) {
+    if (!validate_country_core_checkpoint(checkpoint, error)) return false;
+    if (!_configured) {
+        error = "country_checkpoint_runtime_unconfigured";
+        return false;
+    }
+    if (checkpoint.catalog_hash != catalog_hash()) {
+        error = "country_checkpoint_catalog_mismatch";
+        return false;
+    }
+
+    NativeCountryRuntime staged(*this);
+    std::unique_ptr<ModifierRuntime> staged_modifier;
+    if (_modifier_runtime != nullptr) {
+        staged_modifier = std::make_unique<ModifierRuntime>(*_modifier_runtime);
+        staged_modifier->attach_country_runtime(&staged);
+        staged_modifier->attach_economy_runtime(_economy_runtime);
+        staged._modifier_runtime = staged_modifier.get();
+    }
+    if (!staged.restore_core_checkpoint_in_place(checkpoint, error))
+        return false;
+
+    ModifierRuntime *live_modifier = _modifier_runtime;
+    NativeEconomyRuntime *live_economy = _economy_runtime;
+    EffectRuntime *live_effect = _effect_runtime;
+    *this = std::move(staged);
+    _modifier_runtime = live_modifier;
+    _economy_runtime = live_economy;
+    _effect_runtime = live_effect;
+    if (live_modifier != nullptr) {
+        *live_modifier = std::move(*staged_modifier);
+        live_modifier->attach_country_runtime(this);
+        live_modifier->attach_economy_runtime(live_economy);
+    }
+    return true;
+}
+
+bool NativeCountryRuntime::restore_core_checkpoint_in_place(
+        const CountryCoreCheckpoint &checkpoint, std::string &error) {
+    if (!decode_save_in_place(checkpoint.canonical_pkcn, error)) return false;
+
+    std::unordered_map<uint64_t, Command *> pending_by_order;
+    pending_by_order.reserve(_pending_commands.size());
+    for (Command &command : _pending_commands)
+        pending_by_order.emplace(command.submit_order, &command);
+    for (const CountryPendingCommandProtocol &metadata :
+         checkpoint.pending_protocol) {
+        const auto found = pending_by_order.find(metadata.submit_order);
+        if (found == pending_by_order.end() || found->second->request_id != 0) {
+            error = "country_checkpoint_pending_protocol_mismatch";
+            return false;
+        }
+        found->second->request_id = metadata.request_id;
+        found->second->producer_id = metadata.producer_id;
+        found->second->observed_generation = metadata.observed_generation;
+    }
+    _typed_request_state.clear();
+    for (const CountryCommandReceipt &receipt : checkpoint.request_states)
+        _typed_request_state.emplace(receipt.request_id, receipt);
+    _typed_receipts.assign(checkpoint.terminal_receipts.begin(),
+                           checkpoint.terminal_receipts.end());
+    _next_event_id = checkpoint.next_event_id;
+    _next_boundary_id = checkpoint.next_boundary_id;
+    close_boundary_seal();
+    if (checkpoint.session_epoch == std::numeric_limits<uint64_t>::max()) {
+        error = "country_checkpoint_session_epoch_exhausted";
+        return false;
+    }
+    _session_epoch = std::max(_session_epoch, checkpoint.session_epoch + 1u);
+    if (_generation != checkpoint.generation ||
+        _last_committed_day != checkpoint.committed_day ||
+        _submit_order != checkpoint.command_watermark ||
+        compute_state_hash() != checkpoint.business_state_hash) {
+        error = "country_checkpoint_business_state_mismatch";
+        return false;
+    }
+    return true;
+}
+
 Dictionary NativeCountryRuntime::reset(const String &reason) {
     _bootstrapped = false;
     _state_hash_cache_valid = false;
@@ -3070,6 +4103,11 @@ Dictionary NativeCountryRuntime::reset(const String &reason) {
     _tax_policy_version = 0;
     _last_research_day = -1;
     _pending_commands.clear();
+    _typed_receipts.clear();
+    _typed_request_state.clear();
+    close_boundary_seal();
+    _next_boundary_id = 1;
+    if (++_session_epoch == 0) _session_epoch = 1;
     _effect_command_results.clear();
     _effect_command_idempotency.clear();
     _next_effect_request_id = 1;
@@ -3791,6 +4829,8 @@ bool NativeCountryRuntime::purchase_research_points(int32_t country_slot,
     _country_research_purchased_total[slot] += quantity;
     ++_countries.state_version[slot];
     ++_generation;
+    _state_hash_cache_valid = false;
+    record_direct_reference_frame("research_procurement");
     return true;
 }
 
@@ -4068,10 +5108,11 @@ void NativeCountryRuntime::set_progress(int32_t slot, int32_t technology, int64_
 }
 
 int64_t NativeCountryRuntime::effective_research_cost(
-        int32_t slot, int32_t technology) const {
+        int32_t slot, int32_t technology,
+        const CountryPeerContext *peer_context) const {
     if (technology < 0 || technology >= static_cast<int32_t>(_technology_costs.size()))
         return 1;
-    ensure_research_modifier_cache(slot);
+    ensure_research_modifier_cache(slot, peer_context);
     const double cost_factor = slot >= 0 &&
         slot < static_cast<int32_t>(_research_modifier_cache.size())
         ? _research_modifier_cache[static_cast<size_t>(slot)].cost_factor : 1.0;
@@ -4080,16 +5121,19 @@ int64_t NativeCountryRuntime::effective_research_cost(
         cost_factor)));
 }
 
-void NativeCountryRuntime::ensure_research_modifier_cache(int32_t slot) const {
+void NativeCountryRuntime::ensure_research_modifier_cache(
+        int32_t slot, const CountryPeerContext *peer_context) const {
     if (slot < 0 || slot >= static_cast<int32_t>(_countries.active.size())) return;
     if (_research_modifier_cache.size() < _countries.active.size())
         _research_modifier_cache.resize(_countries.active.size());
     ResearchModifierCache &cache =
         _research_modifier_cache[static_cast<size_t>(slot)];
     const uint64_t handle = make_handle(slot);
-    const uint64_t version = _modifier_runtime != nullptr &&
-        _modifier_runtime->configured()
-        ? _modifier_runtime->domain_snapshot_version(ModifierRuntime::COUNTRY) : 0;
+    const uint64_t version = peer_context != nullptr
+        ? peer_context->modifier_generation
+        : (_modifier_runtime != nullptr && _modifier_runtime->configured()
+            ? _modifier_runtime->domain_snapshot_version(ModifierRuntime::COUNTRY)
+            : 0);
     if (cache.country_handle == handle && cache.modifier_version == version) {
         ++_research_modifier_cache_hits;
         return;
@@ -4100,6 +5144,20 @@ void NativeCountryRuntime::ensure_research_modifier_cache(int32_t slot) const {
     cache.modifier_version = version;
     cache.cost_factor = 1.0;
     cache.efficiency = {{1.0, 1.0, 1.0, 1.0}};
+    if (peer_context != nullptr) {
+        const size_t slot_index = static_cast<size_t>(slot);
+        if (slot_index < peer_context->research_cost_factor.size())
+            cache.cost_factor = peer_context->research_cost_factor[slot_index];
+        const size_t efficiency_base = slot_index * 4u;
+        if (efficiency_base + 4u <= peer_context->research_efficiency.size()) {
+            for (int32_t domain = 0; domain < 4; ++domain)
+                cache.efficiency[static_cast<size_t>(domain)] =
+                    peer_context->research_efficiency[efficiency_base +
+                        static_cast<size_t>(domain)];
+        }
+        _research_modifier_ms += elapsed_ms(started);
+        return;
+    }
     if (_modifier_runtime != nullptr && _modifier_runtime->configured()) {
         static const char *EFFICIENCY_STATS[4] = {
             "country.research.agriculture_efficiency",
@@ -4149,7 +5207,7 @@ int64_t NativeCountryRuntime::max_storable_research_progress(
 
 bool NativeCountryRuntime::finalize_research_head_if_complete(
         int32_t slot, int32_t domain, int64_t day_index,
-        bool use_pending_queue) {
+        bool use_pending_queue, CountryPeerContext *peer_context) {
     if (slot < 0 || domain < 0 || domain >= 4) return false;
     const size_t length_index = static_cast<size_t>(slot) * 4U +
         static_cast<size_t>(domain);
@@ -4159,7 +5217,8 @@ bool NativeCountryRuntime::finalize_research_head_if_complete(
     const int32_t technology = _country_research_queues[queue_base];
     if (technology < 0 || has_technology(slot, technology) ||
         !prerequisites_met(slot, technology) ||
-        progress_for(slot, technology) < effective_research_cost(slot, technology))
+        progress_for(slot, technology) < effective_research_cost(
+            slot, technology, peer_context))
         return false;
 
     const size_t word_index = static_cast<size_t>(slot) * _technology_words +
@@ -4169,8 +5228,9 @@ bool NativeCountryRuntime::finalize_research_head_if_complete(
     if (use_pending_queue) insert_pending_activation(slot, technology);
     const std::string &modifier_key =
         _technology_modifier_definition_keys[static_cast<size_t>(technology)];
-    if (!modifier_key.empty())
-        ensure_technology_effect_instance(slot, technology, day_index);
+    if (!modifier_key.empty() && peer_context != nullptr)
+        ensure_technology_effect_instance(
+            slot, technology, day_index, *peer_context);
     ++_country_research_completed_total[static_cast<size_t>(slot)];
     for (int32_t i = 1; i < length; ++i)
         _country_research_queues[queue_base + static_cast<size_t>(i - 1)] =
@@ -4236,7 +5296,416 @@ int64_t NativeCountryRuntime::research_consumed_total() const {
     return total;
 }
 
-bool NativeCountryRuntime::ack_chain_due(int64_t day_index) const {
+bool NativeCountryRuntime::capture_peer_context(
+        int64_t day, uint32_t continuation_index,
+        CountryPeerContext &out, std::string &error) const {
+    out = CountryPeerContext{};
+    error.clear();
+    if (!_configured || !_bootstrapped || _mode == MODE_OFF) {
+        error = "country_peer_context_runtime_unavailable";
+        return false;
+    }
+    if (day < 0) {
+        error = "country_peer_context_day_invalid";
+        return false;
+    }
+
+    out.session_epoch = _session_epoch;
+    out.country_generation = _generation;
+    out.modifier_generation = _modifier_runtime != nullptr &&
+            _modifier_runtime->configured()
+        ? _modifier_runtime->domain_snapshot_version(ModifierRuntime::COUNTRY)
+        : 0;
+    // EffectRuntime currently exposes a catalog watermark rather than a
+    // mutable store generation.  It is still a useful identity check here:
+    // the country handle generation and session epoch reject delayed ACKs,
+    // while this value rejects a result routed to a different Effect catalog.
+    out.effect_generation = _effect_runtime_enabled && _effect_runtime != nullptr
+        ? _effect_runtime->catalog_hash() : 0;
+    out.economy_generation = 0;
+    out.day = day;
+    out.continuation_index = continuation_index;
+    out.effect_enabled = _effect_runtime_enabled && _effect_runtime != nullptr ? 1 : 0;
+    out.modifier_enabled = _modifier_runtime != nullptr &&
+        _modifier_runtime->configured() ? 1 : 0;
+    out.economy_enabled = _economy_runtime != nullptr ? 1 : 0;
+    out.effect_should_run = out.effect_enabled != 0 &&
+        _effect_runtime->should_run(day) ? 1 : 0;
+    out.modifier_should_run = out.modifier_enabled != 0 &&
+        _modifier_runtime->should_run(day) ? 1 : 0;
+
+    constexpr double kFallbackMaxCostFactor = 4.0;
+    out.max_research_cost_factor = kFallbackMaxCostFactor;
+    if (out.modifier_enabled != 0) {
+        out.max_research_cost_factor = _modifier_runtime->stat_clamp_max(
+            "country.research.cost_factor", kFallbackMaxCostFactor);
+        if (!(out.max_research_cost_factor > 0.0) ||
+            !std::isfinite(out.max_research_cost_factor))
+            out.max_research_cost_factor = kFallbackMaxCostFactor;
+    }
+
+    const size_t country_count = _countries.active.size();
+    out.research_cost_factor.assign(country_count, 1.0);
+    out.research_efficiency.assign(country_count * 4u, 1.0);
+    static constexpr const char *EFFICIENCY_STATS[4] = {
+        "country.research.agriculture_efficiency",
+        "country.research.engineering_efficiency",
+        "country.research.science_efficiency",
+        "country.research.society_efficiency",
+    };
+    if (out.modifier_enabled != 0) {
+        for (size_t slot = 0; slot < country_count; ++slot) {
+            if (_countries.active[slot] == 0) continue;
+            const uint64_t handle = make_handle(static_cast<int32_t>(slot));
+            double cost_factor = _modifier_runtime->effective_value(
+                ModifierRuntime::COUNTRY, "country.research.cost_factor",
+                handle, 0, 1.0);
+            if (!(cost_factor > 0.0) || !std::isfinite(cost_factor))
+                cost_factor = 1.0;
+            out.research_cost_factor[slot] = cost_factor;
+            for (int32_t domain = 0; domain < 4; ++domain) {
+                double efficiency = _modifier_runtime->effective_value(
+                    ModifierRuntime::COUNTRY, EFFICIENCY_STATS[domain],
+                    handle, 0, 1.0);
+                if (!(efficiency > 0.0) || !std::isfinite(efficiency))
+                    efficiency = 1.0;
+                out.research_efficiency[slot * 4u +
+                    static_cast<size_t>(domain)] = efficiency;
+            }
+        }
+    }
+
+    const size_t technology_count = _technology_ids.size();
+    out.technology_states.reserve(country_count);
+    for (size_t slot = 0; slot < country_count; ++slot) {
+        if (_countries.active[slot] == 0) continue;
+        const size_t word_base = slot * static_cast<size_t>(_technology_words);
+        for (size_t technology = 0; technology < technology_count; ++technology) {
+            const size_t word = word_base + technology / 64u;
+            if (word >= _country_pending_technologies.size() ||
+                (_country_pending_technologies[word] &
+                    (uint64_t{1} << (technology % 64u))) == 0)
+                continue;
+            CountryPeerTechnologyState state;
+            state.country_slot = static_cast<int32_t>(slot);
+            state.technology = static_cast<int32_t>(technology);
+            state.target_handle = make_handle(state.country_slot);
+            state.effect_instance_id = static_cast<uint64_t>(
+                ((state.target_handle & 0x00007fffffffffffULL) << 16U) |
+                static_cast<uint64_t>(technology + 1u));
+            state.effect_generation = static_cast<uint32_t>(
+                state.target_handle >> 32U);
+            if (out.effect_enabled != 0 &&
+                state.effect_instance_id > 0 && state.effect_generation != 0) {
+                if (_effect_runtime->has_instance_pod(
+                        static_cast<int64_t>(state.effect_instance_id),
+                        state.effect_generation))
+                    state.flags |= COUNTRY_PEER_EFFECT_EXISTS;
+                if (_effect_runtime->instance_fire_acked_pod(
+                        static_cast<int64_t>(state.effect_instance_id),
+                        state.effect_generation))
+                    state.flags |= COUNTRY_PEER_EFFECT_FIRE_ACKED;
+            }
+            if (out.modifier_enabled != 0 &&
+                technology < _technology_modifier_definition_keys.size() &&
+                !_technology_modifier_definition_keys[technology].empty() &&
+                _modifier_runtime->has_technology_effect(
+                    state.target_handle,
+                    _technology_modifier_definition_keys[technology],
+                    state.technology))
+                state.flags |= COUNTRY_PEER_MODIFIER_APPLIED;
+            out.technology_states.push_back(state);
+        }
+    }
+    return true;
+}
+
+CountryPeerTechnologyState *NativeCountryRuntime::find_peer_technology_state(
+        CountryPeerContext &context, int32_t slot, int32_t technology) {
+    const auto it = std::lower_bound(context.technology_states.begin(),
+        context.technology_states.end(), std::pair<int32_t, int32_t>{slot, technology},
+        [](const CountryPeerTechnologyState &entry,
+           const std::pair<int32_t, int32_t> &value) {
+            return entry.country_slot < value.first ||
+                (entry.country_slot == value.first &&
+                 entry.technology < value.second);
+        });
+    return it != context.technology_states.end() &&
+            it->country_slot == slot && it->technology == technology
+        ? &(*it) : nullptr;
+}
+
+const CountryPeerTechnologyState *NativeCountryRuntime::find_peer_technology_state(
+        const CountryPeerContext &context, int32_t slot,
+        int32_t technology) const {
+    const auto it = std::lower_bound(context.technology_states.begin(),
+        context.technology_states.end(), std::pair<int32_t, int32_t>{slot, technology},
+        [](const CountryPeerTechnologyState &entry,
+           const std::pair<int32_t, int32_t> &value) {
+            return entry.country_slot < value.first ||
+                (entry.country_slot == value.first &&
+                 entry.technology < value.second);
+        });
+    return it != context.technology_states.end() &&
+            it->country_slot == slot && it->technology == technology
+        ? &(*it) : nullptr;
+}
+
+CountryPeerTechnologyState &NativeCountryRuntime::ensure_peer_technology_state(
+        CountryPeerContext &context, int32_t slot, int32_t technology) {
+    auto it = std::lower_bound(context.technology_states.begin(),
+        context.technology_states.end(), std::pair<int32_t, int32_t>{slot, technology},
+        [](const CountryPeerTechnologyState &entry,
+           const std::pair<int32_t, int32_t> &value) {
+            return entry.country_slot < value.first ||
+                (entry.country_slot == value.first &&
+                 entry.technology < value.second);
+        });
+    if (it == context.technology_states.end() || it->country_slot != slot ||
+        it->technology != technology) {
+        CountryPeerTechnologyState state;
+        state.country_slot = slot;
+        state.technology = technology;
+        const uint64_t handle = make_handle(slot);
+        state.target_handle = handle;
+        state.effect_instance_id = static_cast<uint64_t>(
+            ((handle & 0x00007fffffffffffULL) << 16U) |
+            static_cast<uint64_t>(technology + 1));
+        state.effect_generation = static_cast<uint32_t>(handle >> 32U);
+        it = context.technology_states.insert(it, state);
+    }
+    return *it;
+}
+
+CountryPeerIntent NativeCountryRuntime::make_peer_intent(
+        const CountryPeerContext &context, CountryPeerIntentCode opcode,
+        int32_t slot, int32_t technology, int64_t day_index) const {
+    CountryPeerIntent intent;
+    intent.opcode = opcode;
+    intent.session_epoch = context.session_epoch;
+    intent.country_generation = context.country_generation;
+    switch (opcode) {
+    case CountryPeerIntentCode::ENSURE_TECHNOLOGY_EFFECT:
+    case CountryPeerIntentCode::NUDGE_TECHNOLOGY_EFFECT:
+    case CountryPeerIntentCode::NOTIFY_ERA_REWARD:
+        intent.peer_generation = context.effect_generation;
+        break;
+    case CountryPeerIntentCode::APPLY_TECHNOLOGY_MODIFIER:
+        intent.peer_generation = context.modifier_generation;
+        break;
+    case CountryPeerIntentCode::NOTIFY_ECONOMY_MILESTONE:
+        intent.peer_generation = context.economy_generation;
+        break;
+    }
+    intent.day = day_index;
+    intent.continuation_index = context.continuation_index;
+    intent.country_slot = slot;
+    intent.technology = technology;
+    intent.target_handle = slot >= 0 ? make_handle(slot) : 0;
+    if (slot >= 0 && technology >= 0) {
+        intent.effect_instance_id = static_cast<uint64_t>(
+            ((intent.target_handle & 0x00007fffffffffffULL) << 16U) |
+            static_cast<uint64_t>(technology + 1));
+        intent.effect_generation = static_cast<uint32_t>(
+            intent.target_handle >> 32U);
+    }
+    intent.request_id = country_peer_request_id(
+        intent.session_epoch, intent.country_generation, intent.day,
+        intent.continuation_index, slot, technology, opcode);
+    intent.idempotency_key = intent.request_id ^ 0x504545525f4944ull;
+    return intent;
+}
+
+CountryPeerResult NativeCountryRuntime::apply_peer_intent(
+        CountryPeerContext &context, const CountryPeerIntent &intent) {
+    CountryPeerResult result;
+    result.opcode = intent.opcode;
+    result.request_id = intent.request_id;
+    result.session_epoch = intent.session_epoch;
+    result.country_generation = intent.country_generation;
+    result.peer_generation = intent.peer_generation;
+    result.day = intent.day;
+    result.continuation_index = intent.continuation_index;
+    result.country_slot = intent.country_slot;
+    result.technology = intent.technology;
+    result.target_handle = intent.target_handle;
+    ++_peer_intents_emitted;
+
+    auto reject = [&](CountryPeerResultCode code, const char *reason) {
+        result.code = code;
+        country_peer_copy_reason(result.reason, reason);
+        ++_peer_results_consumed;
+        return result;
+    };
+    if (intent.protocol_version != COUNTRY_PEER_PROTOCOL_VERSION ||
+        intent.session_epoch == 0 || intent.session_epoch != _session_epoch ||
+        intent.session_epoch != context.session_epoch ||
+        intent.country_generation == 0 ||
+        intent.country_generation != context.country_generation ||
+        intent.country_generation != _generation ||
+        intent.day != context.day ||
+        intent.continuation_index != context.continuation_index) {
+        return reject(CountryPeerResultCode::STALE,
+                      "country_peer_intent_identity_stale");
+    }
+    const bool effect_intent =
+        intent.opcode == CountryPeerIntentCode::ENSURE_TECHNOLOGY_EFFECT ||
+        intent.opcode == CountryPeerIntentCode::NUDGE_TECHNOLOGY_EFFECT ||
+        intent.opcode == CountryPeerIntentCode::NOTIFY_ERA_REWARD;
+    const bool modifier_intent =
+        intent.opcode == CountryPeerIntentCode::APPLY_TECHNOLOGY_MODIFIER;
+    const bool economy_intent =
+        intent.opcode == CountryPeerIntentCode::NOTIFY_ECONOMY_MILESTONE;
+    const uint64_t expected_peer_generation = effect_intent
+        ? context.effect_generation
+        : (modifier_intent ? context.modifier_generation :
+            (economy_intent ? context.economy_generation : 0));
+    if (intent.peer_generation != expected_peer_generation) {
+        return reject(CountryPeerResultCode::STALE,
+                      "country_peer_intent_peer_generation_stale");
+    }
+
+    if (intent.opcode == CountryPeerIntentCode::NOTIFY_ERA_REWARD) {
+        if (!_effect_runtime_enabled || _effect_runtime == nullptr)
+            return reject(CountryPeerResultCode::REJECTED,
+                          "country_peer_effect_runtime_unavailable");
+        std::string peer_error;
+        if (!_effect_runtime->notify_era_reward_technology_activated_pod(
+                intent.target_handle, intent.technology, intent.day,
+                peer_error))
+            return reject(CountryPeerResultCode::REJECTED,
+                          peer_error.empty() ? "country_peer_era_reward_rejected"
+                                              : peer_error.c_str());
+        result.code = CountryPeerResultCode::APPLIED;
+        ++_peer_results_consumed;
+        return result;
+    }
+    if (intent.opcode == CountryPeerIntentCode::NOTIFY_ECONOMY_MILESTONE) {
+        if (_economy_runtime != nullptr)
+            _economy_runtime->notify_era_milestone_activated(
+                intent.target_handle);
+        result.code = CountryPeerResultCode::APPLIED;
+        ++_peer_results_consumed;
+        return result;
+    }
+    int32_t validated_slot = -1;
+    if (intent.country_slot < 0 || intent.technology < 0 ||
+        intent.technology >= static_cast<int32_t>(_technology_ids.size()) ||
+        !validate_handle(intent.target_handle, validated_slot) ||
+        validated_slot != intent.country_slot)
+        return reject(CountryPeerResultCode::REJECTED,
+                      "country_peer_intent_target_invalid");
+
+    CountryPeerTechnologyState &state = ensure_peer_technology_state(
+        context, intent.country_slot, intent.technology);
+    if (intent.opcode == CountryPeerIntentCode::ENSURE_TECHNOLOGY_EFFECT ||
+        intent.opcode == CountryPeerIntentCode::NUDGE_TECHNOLOGY_EFFECT) {
+        if (!_effect_runtime_enabled || _effect_runtime == nullptr)
+            return reject(CountryPeerResultCode::REJECTED,
+                          "country_peer_effect_runtime_unavailable");
+        if (intent.effect_generation == 0 ||
+            intent.effect_generation != static_cast<uint32_t>(
+                intent.target_handle >> 32U) ||
+            intent.effect_instance_id == 0)
+            return reject(CountryPeerResultCode::STALE,
+                          "country_peer_effect_generation_invalid");
+        const bool exists = _effect_runtime->has_instance_pod(
+            static_cast<int64_t>(intent.effect_instance_id),
+            intent.effect_generation);
+        if (!exists) {
+            if (intent.opcode == CountryPeerIntentCode::NUDGE_TECHNOLOGY_EFFECT)
+                return reject(CountryPeerResultCode::REJECTED,
+                              "country_peer_effect_instance_missing");
+            std::string peer_error;
+            if (!_effect_runtime->upsert_instance_pod(
+                    static_cast<int64_t>(intent.effect_instance_id),
+                    std::string("technology.") +
+                        _technology_ids[static_cast<size_t>(intent.technology)],
+                    intent.effect_generation, 0x54454348,
+                    intent.technology + 1, intent.target_handle,
+                    intent.target_handle, intent.effect_generation, 0,
+                    intent.day, true, peer_error))
+                return reject(CountryPeerResultCode::REJECTED,
+                              peer_error.empty() ? "country_peer_effect_upsert_rejected"
+                                                  : peer_error.c_str());
+        }
+        if (!_effect_runtime->instance_fire_acked_pod(
+                static_cast<int64_t>(intent.effect_instance_id),
+                intent.effect_generation)) {
+            if (!_effect_runtime->nudge_unacked_instance_pod(
+                    static_cast<int64_t>(intent.effect_instance_id),
+                    intent.effect_generation, intent.day))
+                return reject(CountryPeerResultCode::REJECTED,
+                              "country_peer_effect_nudge_rejected");
+        }
+        state.flags |= COUNTRY_PEER_EFFECT_EXISTS;
+        if (_effect_runtime->instance_fire_acked_pod(
+                static_cast<int64_t>(intent.effect_instance_id),
+                intent.effect_generation)) {
+            state.flags |= COUNTRY_PEER_EFFECT_FIRE_ACKED;
+            result.code = CountryPeerResultCode::READY;
+        } else {
+            state.flags &= static_cast<uint8_t>(~COUNTRY_PEER_EFFECT_FIRE_ACKED);
+            context.effect_should_run = 1;
+            result.code = CountryPeerResultCode::PENDING;
+        }
+        result.technology_flags = state.flags;
+        ++_peer_results_consumed;
+        return result;
+    }
+    if (intent.opcode == CountryPeerIntentCode::APPLY_TECHNOLOGY_MODIFIER) {
+        if (_modifier_runtime == nullptr || !_modifier_runtime->configured() ||
+            intent.technology >= static_cast<int32_t>(
+                _technology_modifier_definition_keys.size()) ||
+            _technology_modifier_definition_keys[
+                static_cast<size_t>(intent.technology)].empty())
+            return reject(CountryPeerResultCode::REJECTED,
+                          "country_peer_modifier_runtime_unavailable");
+        if (!state.has(COUNTRY_PEER_MODIFIER_APPLIED)) {
+            std::string peer_error;
+            if (!_modifier_runtime->apply_technology_effect(
+                    intent.target_handle,
+                    _technology_modifier_definition_keys[
+                        static_cast<size_t>(intent.technology)],
+                    intent.technology, intent.day, peer_error))
+                return reject(CountryPeerResultCode::REJECTED,
+                              peer_error.empty() ? "country_peer_modifier_apply_rejected"
+                                                  : peer_error.c_str());
+            state.flags |= COUNTRY_PEER_MODIFIER_APPLIED;
+            context.modifier_generation = _modifier_runtime->domain_snapshot_version(
+                ModifierRuntime::COUNTRY);
+        }
+        result.code = CountryPeerResultCode::APPLIED;
+        result.technology_flags = state.flags;
+        ++_peer_results_consumed;
+        return result;
+    }
+    return reject(CountryPeerResultCode::REJECTED,
+                  "country_peer_intent_opcode_invalid");
+}
+
+bool NativeCountryRuntime::ensure_technology_effect_instance(
+        int32_t slot, int32_t technology, int64_t day_index,
+        CountryPeerContext &peer_context) {
+    if (technology < 0 || technology >= static_cast<int32_t>(_technology_ids.size()))
+        return false;
+    const CountryPeerTechnologyState *state = find_peer_technology_state(
+        peer_context, slot, technology);
+    const CountryPeerIntentCode opcode = state != nullptr &&
+        state->has(COUNTRY_PEER_EFFECT_EXISTS)
+        ? CountryPeerIntentCode::NUDGE_TECHNOLOGY_EFFECT
+        : CountryPeerIntentCode::ENSURE_TECHNOLOGY_EFFECT;
+    const CountryPeerIntent intent = make_peer_intent(
+        peer_context, opcode, slot, technology, day_index);
+    const CountryPeerResult result = apply_peer_intent(peer_context, intent);
+    return result.ok();
+}
+
+bool NativeCountryRuntime::ack_chain_due(
+        int64_t day_index, const CountryPeerContext *peer_context) const {
+    if (peer_context != nullptr && peer_context->day == day_index)
+        return peer_context->effect_should_run != 0 ||
+            peer_context->modifier_should_run != 0;
     if (_effect_runtime_enabled && _effect_runtime != nullptr &&
         _effect_runtime->should_run(day_index))
         return true;
@@ -4244,36 +5713,36 @@ bool NativeCountryRuntime::ack_chain_due(int64_t day_index) const {
         _modifier_runtime->should_run(day_index);
 }
 
-bool NativeCountryRuntime::ensure_technology_effect_instance(
-        int32_t slot, int32_t technology, int64_t day_index) {
-    if (!_effect_runtime_enabled || _effect_runtime == nullptr) return false;
-    if (technology < 0 || technology >= static_cast<int32_t>(_technology_ids.size()))
-        return false;
-    const uint64_t handle = make_handle(slot);
-    const int64_t effect_instance_id = static_cast<int64_t>(
-        ((handle & 0x00007fffffffffffULL) << 16U) |
-        static_cast<uint64_t>(technology + 1));
-    const uint32_t effect_generation = static_cast<uint32_t>(handle >> 32U);
-    if (effect_instance_id <= 0 || effect_generation == 0) return false;
-    if (_effect_runtime->has_instance_pod(effect_instance_id, effect_generation)) {
-        // Existing pending nodes must be re-queued. Skip-if-exists alone left
-        // unacked instances (cadence 3650 / consumed due heap / REJECTED ACK)
-        // pending forever after a missed Effect morning.
-        _effect_runtime->nudge_unacked_instance_pod(
-            effect_instance_id, effect_generation, day_index);
-        return true;
-    }
-    std::string effect_error;
-    return _effect_runtime->upsert_instance_pod(
-        effect_instance_id,
-        std::string("technology.") + _technology_ids[static_cast<size_t>(technology)],
-        effect_generation, 0x54454348, technology + 1,
-        handle, handle, effect_generation, 0,
-        day_index, true, effect_error);
-}
-
-int32_t NativeCountryRuntime::run_research_day(int64_t day_index) {
+int32_t NativeCountryRuntime::run_research_day(
+        int64_t day_index, const CountryPeerContext *peer_context,
+        CountryPeerContext *out_peer_context) {
     if (_technology_points_good_id < 0) return 0;
+    CountryPeerContext owned_peer_context;
+    if (peer_context == nullptr) {
+        std::string peer_error;
+        if (!capture_peer_context(day_index, _reference_continuation_index,
+                                  owned_peer_context, peer_error)) {
+            if (!_pod_execution && !peer_error.empty())
+                _report["country_peer_context_error"] = String(peer_error.c_str());
+            if (out_peer_context != nullptr) *out_peer_context = owned_peer_context;
+            return 0;
+        }
+        peer_context = &owned_peer_context;
+    }
+    if (peer_context->day != day_index ||
+        peer_context->session_epoch != _session_epoch ||
+        peer_context->country_generation != _generation) {
+        if (!_pod_execution)
+            _report["country_peer_context_error"] =
+                "country_peer_context_identity_stale";
+        if (out_peer_context != nullptr) *out_peer_context = *peer_context;
+        return 0;
+    }
+    // The input capture remains immutable. Immediate synchronous adapter
+    // results are applied to this local copy so a same-day continuation sees
+    // exactly the facts produced by the intent it just submitted.
+    CountryPeerContext working_peer_context = *peer_context;
+    CountryPeerContext *working_context = &working_peer_context;
     _research_activation_ms = 0.0;
     _research_allocation_ms = 0.0;
     _research_effect_ack_ms = 0.0;
@@ -4352,36 +5821,34 @@ int32_t NativeCountryRuntime::run_research_day(int64_t day_index) {
                 _technology_modifier_definition_keys[static_cast<size_t>(technology)];
             bool modifier_ready = technology_modifier_key.empty();
             const uint64_t handle = make_handle(slot);
-            if (_effect_runtime_enabled && _effect_runtime != nullptr &&
+            if (working_context->effect_enabled != 0 &&
                 !technology_modifier_key.empty()) {
                 const Clock::time_point effect_started = Clock::now();
-                const int64_t effect_instance_id = static_cast<int64_t>(
-                    ((handle & 0x00007fffffffffffULL) << 16U) |
-                    static_cast<uint64_t>(technology + 1));
-                const uint32_t effect_generation = static_cast<uint32_t>(handle >> 32U);
-                const bool effect_registered =
-                    ensure_technology_effect_instance(slot, technology, day_index);
-                const bool fire_acked = effect_registered &&
-                    _effect_runtime->instance_fire_acked_pod(
-                        effect_instance_id, effect_generation);
-                const bool modifier_applied =
-                    _modifier_runtime != nullptr && _modifier_runtime->configured() &&
-                    _modifier_runtime->has_technology_effect(
-                        handle, technology_modifier_key, technology);
-                modifier_ready = fire_acked || modifier_applied;
+                ensure_technology_effect_instance(
+                    slot, technology, day_index, *working_context);
+                const CountryPeerTechnologyState *peer_state =
+                    find_peer_technology_state(*working_context, slot, technology);
+                modifier_ready = peer_state != nullptr &&
+                    (peer_state->has(COUNTRY_PEER_EFFECT_FIRE_ACKED) ||
+                     peer_state->has(COUNTRY_PEER_MODIFIER_APPLIED));
                 _research_effect_ack_ms += elapsed_ms(effect_started);
             }
             if (!modifier_ready &&
-                (!_effect_runtime_enabled || _effect_runtime == nullptr) &&
-                _modifier_runtime != nullptr && _modifier_runtime->configured() &&
+                working_context->effect_enabled == 0 &&
+                working_context->modifier_enabled != 0 &&
                 !technology_modifier_key.empty()) {
                 const Clock::time_point effect_started = Clock::now();
                 // Legacy configurations without EffectRuntime retain their
                 // direct idempotent path. Once EffectRuntime is authoritative,
                 // activation must wait for its cross-domain ACK chain.
-                std::string modifier_error;
-                modifier_ready = _modifier_runtime->apply_technology_effect(
-                    handle, technology_modifier_key, technology, day_index, modifier_error);
+                const CountryPeerIntent intent = make_peer_intent(
+                    *working_context,
+                    CountryPeerIntentCode::APPLY_TECHNOLOGY_MODIFIER,
+                    slot, technology, day_index);
+                const CountryPeerResult result = apply_peer_intent(
+                    *working_context, intent);
+                modifier_ready = result.ok() &&
+                    result.has(COUNTRY_PEER_MODIFIER_APPLIED);
                 _research_effect_ack_ms += elapsed_ms(effect_started);
             }
             if (!modifier_ready) continue;
@@ -4402,15 +5869,22 @@ int32_t NativeCountryRuntime::run_research_day(int64_t day_index) {
             // Era rewards are emitted only after the technology's permanent
             // Effect has ACKed and the completed bit becomes authoritative.
             // Research progress reaching its cost never enters this hook.
-            if (_effect_runtime_enabled && _effect_runtime != nullptr) {
-                std::string reward_error;
-                _effect_runtime->notify_era_reward_technology_activated_pod(
-                    handle, technology, day_index, reward_error);
-                if (!_pod_execution && !reward_error.empty())
-                    _report["era_reward_error"] = String(reward_error.c_str());
-                if (_economy_runtime != nullptr)
-                    _economy_runtime->notify_era_milestone_activated(
-                        static_cast<uint64_t>(handle));
+            if (working_context->effect_enabled != 0) {
+                const CountryPeerIntent reward_intent = make_peer_intent(
+                    *working_context, CountryPeerIntentCode::NOTIFY_ERA_REWARD,
+                    slot, technology, day_index);
+                const CountryPeerResult reward_result = apply_peer_intent(
+                    *working_context, reward_intent);
+                if (!_pod_execution && !reward_result.ok())
+                    _report["era_reward_error"] = String(
+                        reward_result.reason.data());
+                if (working_context->economy_enabled != 0) {
+                    const CountryPeerIntent economy_intent = make_peer_intent(
+                        *working_context,
+                        CountryPeerIntentCode::NOTIFY_ECONOMY_MILESTONE,
+                        slot, technology, day_index);
+                    apply_peer_intent(*working_context, economy_intent);
+                }
             }
             activated = true;
         }
@@ -4431,7 +5905,8 @@ int32_t NativeCountryRuntime::run_research_day(int64_t day_index) {
         // head is complete. Finalize such heads before the stock early exit.
         for (int32_t domain = 0; domain < 4; ++domain) {
             while (finalize_research_head_if_complete(
-                    slot, domain, day_index, use_pending_queue)) {
+                    slot, domain, day_index, use_pending_queue,
+                    working_context)) {
                 ++_countries.state_version[static_cast<size_t>(slot)];
                 ++changed;
             }
@@ -4504,11 +5979,12 @@ int32_t NativeCountryRuntime::run_research_day(int64_t day_index) {
                 }
                 if (!prerequisites_met(slot, technology)) break;
                 const int64_t progress = progress_for(slot, technology);
-                ensure_research_modifier_cache(slot);
+                ensure_research_modifier_cache(slot, working_context);
                 const double efficiency =
                     _research_modifier_cache[static_cast<size_t>(slot)]
                         .efficiency[static_cast<size_t>(domain)];
-                const int64_t effective_cost = effective_research_cost(slot, technology);
+                const int64_t effective_cost = effective_research_cost(
+                    slot, technology, working_context);
                 const int64_t remaining = std::max<int64_t>(
                     0, effective_cost - progress);
                 const int64_t spend_needed = std::max<int64_t>(
@@ -4538,7 +6014,8 @@ int32_t NativeCountryRuntime::run_research_day(int64_t day_index) {
                     const std::string &completed_modifier_key =
                         _technology_modifier_definition_keys[static_cast<size_t>(technology)];
                     if (!completed_modifier_key.empty())
-                        ensure_technology_effect_instance(slot, technology, day_index);
+                        ensure_technology_effect_instance(
+                            slot, technology, day_index, *working_context);
                     ++_country_research_completed_total[static_cast<size_t>(slot)];
                     for (int32_t i = 1; i < length; ++i)
                         _country_research_queues[queue_base + static_cast<size_t>(i - 1)] =
@@ -4585,16 +6062,102 @@ int32_t NativeCountryRuntime::run_research_day(int64_t day_index) {
         ++_research_generation;
         ++_generation;
     }
+    if (out_peer_context != nullptr)
+        *out_peer_context = std::move(working_peer_context);
     return changed;
 }
 
-int64_t NativeCountryRuntime::transfer_cash_to_cohort(int64_t country_handle, int64_t requested) {
+bool NativeCountryRuntime::peer_protocol_self_test(std::string &error) {
+    error.clear();
+    if (!_configured || !_bootstrapped || _mode == MODE_OFF ||
+        _command_batch.active || _boundary_seal_active ||
+        !_pending_commands.empty()) {
+        error = "country_peer_protocol_test_requires_idle_runtime";
+        return false;
+    }
+    CountryPeerContext context;
+    if (!capture_peer_context(
+            std::max<int64_t>(0, _last_committed_day),
+            _reference_continuation_index, context, error))
+        return false;
+    if (context.protocol_version != COUNTRY_PEER_PROTOCOL_VERSION ||
+        context.session_epoch != _session_epoch ||
+        context.country_generation != _generation ||
+        context.research_cost_factor.size() != _countries.active.size() ||
+        context.research_efficiency.size() != _countries.active.size() * 4u) {
+        error = "country_peer_protocol_test_context_shape";
+        return false;
+    }
+    int32_t slot = -1;
+    for (int32_t candidate = 0;
+         candidate < static_cast<int32_t>(_countries.active.size());
+         ++candidate) {
+        if (_countries.active[static_cast<size_t>(candidate)] != 0) {
+            slot = candidate;
+            break;
+        }
+    }
+    if (slot < 0) {
+        error = "country_peer_protocol_test_country_missing";
+        return false;
+    }
+    const int32_t technology = _technology_ids.empty() ? -1 : 0;
+    if (technology < 0) {
+        error = "country_peer_protocol_test_technology_missing";
+        return false;
+    }
+    const CountryPeerIntent first = make_peer_intent(
+        context, CountryPeerIntentCode::ENSURE_TECHNOLOGY_EFFECT,
+        slot, technology, context.day);
+    const CountryPeerIntent second = make_peer_intent(
+        context, CountryPeerIntentCode::ENSURE_TECHNOLOGY_EFFECT,
+        slot, technology, context.day);
+    if (first.request_id == 0 || first.request_id != second.request_id ||
+        first.idempotency_key != second.idempotency_key) {
+        error = "country_peer_protocol_test_request_identity";
+        return false;
+    }
+    CountryPeerIntent stale_session = first;
+    ++stale_session.session_epoch;
+    const CountryPeerResult stale_session_result = apply_peer_intent(
+        context, stale_session);
+    if (stale_session_result.code != CountryPeerResultCode::STALE ||
+        std::string(stale_session_result.reason.data()) !=
+            "country_peer_intent_identity_stale") {
+        error = "country_peer_protocol_test_session_rejection";
+        return false;
+    }
+    CountryPeerIntent stale_generation = first;
+    ++stale_generation.peer_generation;
+    const CountryPeerResult stale_generation_result = apply_peer_intent(
+        context, stale_generation);
+    if (stale_generation_result.code != CountryPeerResultCode::STALE ||
+        std::string(stale_generation_result.reason.data()) !=
+            "country_peer_intent_peer_generation_stale") {
+        error = "country_peer_protocol_test_peer_generation_rejection";
+        return false;
+    }
+    return true;
+}
+
+int64_t NativeCountryRuntime::debit_country_cash(
+        int64_t country_handle, int64_t requested, const char *trace_stage) {
     int32_t slot = -1;
     if (requested <= 0 || !validate_handle(static_cast<uint64_t>(country_handle), slot)) return 0;
     const int64_t moved = std::min(requested, _countries.cash[static_cast<size_t>(slot)]);
     _countries.cash[static_cast<size_t>(slot)] -= moved;
-    if (moved > 0) { ++_countries.state_version[static_cast<size_t>(slot)]; ++_generation; }
+    if (moved > 0) {
+        ++_countries.state_version[static_cast<size_t>(slot)];
+        ++_generation;
+        _state_hash_cache_valid = false;
+        record_direct_reference_frame(trace_stage);
+    }
     return moved;
+}
+
+int64_t NativeCountryRuntime::transfer_cash_to_cohort(
+        int64_t country_handle, int64_t requested) {
+    return debit_country_cash(country_handle, requested, "cash_to_cohort");
 }
 
 int64_t NativeCountryRuntime::cash_for_handle(int64_t country_handle) const {
@@ -4639,32 +6202,45 @@ bool NativeCountryRuntime::spend_treasury_assets(
     }
     ++_countries.state_version[static_cast<size_t>(slot)];
     ++_generation;
+    _state_hash_cache_valid = false;
+    record_direct_reference_frame("treasury_spend");
     return true;
 }
 
-int64_t NativeCountryRuntime::transfer_cash_from_cohort(int64_t country_handle, int64_t offered) {
+int64_t NativeCountryRuntime::credit_country_cash(
+        int64_t country_handle, int64_t offered, const char *trace_stage) {
     int32_t slot = -1;
     if (offered <= 0 || !validate_handle(static_cast<uint64_t>(country_handle), slot)) return 0;
     const int64_t room = std::numeric_limits<int64_t>::max() - _countries.cash[static_cast<size_t>(slot)];
     const int64_t moved = std::min(offered, room);
     _countries.cash[static_cast<size_t>(slot)] += moved;
-    if (moved > 0) { ++_countries.state_version[static_cast<size_t>(slot)]; ++_generation; }
+    if (moved > 0) {
+        ++_countries.state_version[static_cast<size_t>(slot)];
+        ++_generation;
+        _state_hash_cache_valid = false;
+        record_direct_reference_frame(trace_stage);
+    }
     return moved;
+}
+
+int64_t NativeCountryRuntime::transfer_cash_from_cohort(
+        int64_t country_handle, int64_t offered) {
+    return credit_country_cash(country_handle, offered, "cash_from_cohort");
 }
 
 int64_t NativeCountryRuntime::reserve_fiscal_cash(int64_t country_handle,
                                                    int64_t requested) {
-    return transfer_cash_to_cohort(country_handle, requested);
+    return debit_country_cash(country_handle, requested, "fiscal_reserve");
 }
 
 int64_t NativeCountryRuntime::return_fiscal_cash(int64_t country_handle,
                                                   int64_t offered) {
-    return transfer_cash_from_cohort(country_handle, offered);
+    return credit_country_cash(country_handle, offered, "fiscal_return");
 }
 
 int64_t NativeCountryRuntime::collect_fiscal_cash(int64_t country_handle,
                                                    int64_t offered) {
-    return transfer_cash_from_cohort(country_handle, offered);
+    return credit_country_cash(country_handle, offered, "fiscal_collect");
 }
 
 int64_t NativeCountryRuntime::transfer_good_to_market(int64_t country_handle, int32_t good_id,
@@ -4675,7 +6251,12 @@ int64_t NativeCountryRuntime::transfer_good_to_market(int64_t country_handle, in
     int64_t &stock = _country_goods[static_cast<size_t>(slot) * _good_ids.size() + static_cast<size_t>(good_id)];
     const int64_t moved = std::min(requested, stock);
     stock -= moved;
-    if (moved > 0) { ++_countries.state_version[static_cast<size_t>(slot)]; ++_generation; }
+    if (moved > 0) {
+        ++_countries.state_version[static_cast<size_t>(slot)];
+        ++_generation;
+        _state_hash_cache_valid = false;
+        record_direct_reference_frame("good_to_market");
+    }
     return moved;
 }
 
@@ -4687,7 +6268,12 @@ int64_t NativeCountryRuntime::transfer_good_from_market(int64_t country_handle, 
     int64_t &stock = _country_goods[static_cast<size_t>(slot) * _good_ids.size() + static_cast<size_t>(good_id)];
     const int64_t moved = std::min(offered, std::numeric_limits<int64_t>::max() - stock);
     stock += moved;
-    if (moved > 0) { ++_countries.state_version[static_cast<size_t>(slot)]; ++_generation; }
+    if (moved > 0) {
+        ++_countries.state_version[static_cast<size_t>(slot)];
+        ++_generation;
+        _state_hash_cache_valid = false;
+        record_direct_reference_frame("good_from_market");
+    }
     return moved;
 }
 
@@ -4941,11 +6527,16 @@ int32_t NativeCountryRuntime::research_signal_evidence_count(
 void NativeCountryRuntime::set_era_reward_reference_pod(
         int64_t plan_id, int64_t offer_generation,
         int32_t milestone_technology, int32_t status) {
+    const bool changed = _era_reward_reference.plan_id != plan_id ||
+        _era_reward_reference.offer_generation != offer_generation ||
+        _era_reward_reference.milestone_technology != milestone_technology ||
+        _era_reward_reference.status != status;
     _era_reward_reference.plan_id = plan_id;
     _era_reward_reference.offer_generation = offer_generation;
     _era_reward_reference.milestone_technology = milestone_technology;
     _era_reward_reference.status = status;
     _state_hash_cache_valid = false;
+    if (changed) record_direct_reference_frame("era_reward_reference");
 }
 
 uint64_t NativeCountryRuntime::catalog_hash_v3() const {
@@ -5103,7 +6694,10 @@ Dictionary NativeCountryRuntime::poll_events(int64_t after_event_id, int32_t lim
 
 bool NativeCountryRuntime::encode_save(std::vector<uint8_t> &out, std::string &error) const {
     if (!_bootstrapped) { error = "country_save_not_bootstrapped"; return false; }
-    if (_command_batch.active) { error = "country_save_requires_idle_command_graph"; return false; }
+    if (_command_batch.active || _boundary_seal_active) {
+        error = "country_save_requires_idle_command_graph";
+        return false;
+    }
     if (std::any_of(_pending_commands.begin(), _pending_commands.end(),
             [&](const Command &command) {
                 return command.effective_day <= _last_committed_day;
@@ -5253,6 +6847,33 @@ bool NativeCountryRuntime::encode_save(std::vector<uint8_t> &out, std::string &e
 }
 
 bool NativeCountryRuntime::decode_save(const std::vector<uint8_t> &bytes, std::string &error) {
+    NativeCountryRuntime staged(*this);
+    std::unique_ptr<ModifierRuntime> staged_modifier;
+    if (_modifier_runtime != nullptr) {
+        staged_modifier = std::make_unique<ModifierRuntime>(*_modifier_runtime);
+        staged_modifier->attach_country_runtime(&staged);
+        staged_modifier->attach_economy_runtime(_economy_runtime);
+        staged._modifier_runtime = staged_modifier.get();
+    }
+    if (!staged.decode_save_in_place(bytes, error)) return false;
+
+    ModifierRuntime *live_modifier = _modifier_runtime;
+    NativeEconomyRuntime *live_economy = _economy_runtime;
+    EffectRuntime *live_effect = _effect_runtime;
+    *this = std::move(staged);
+    _modifier_runtime = live_modifier;
+    _economy_runtime = live_economy;
+    _effect_runtime = live_effect;
+    if (live_modifier != nullptr) {
+        *live_modifier = std::move(*staged_modifier);
+        live_modifier->attach_country_runtime(this);
+        live_modifier->attach_economy_runtime(live_economy);
+    }
+    return true;
+}
+
+bool NativeCountryRuntime::decode_save_in_place(
+        const std::vector<uint8_t> &bytes, std::string &error) {
     size_t cursor = 0;
     uint32_t magic = 0, version = 0, end = 0;
     uint64_t saved_catalog = 0, generation_value = 0, saved_submit_order = 0;
@@ -6107,6 +7728,13 @@ bool NativeCountryRuntime::decode_save(const std::vector<uint8_t> &bytes, std::s
     _last_committed_day = committed_day;
     _submit_order = std::max(saved_submit_order, max_submit_order);
     _bootstrapped = true;
+    _events.clear();
+    _next_event_id = 1;
+    _typed_receipts.clear();
+    _typed_request_state.clear();
+    close_boundary_seal();
+    _next_boundary_id = 1;
+    if (++_session_epoch == 0) _session_epoch = 1;
     _current_visual_era.resize(_countries.active.size(), -1);
     for (int32_t slot = 0;
          slot < static_cast<int32_t>(_countries.active.size()); ++slot)
@@ -6190,6 +7818,8 @@ Dictionary NativeCountryRuntime::end_restore() {
     _restore_active = false;
     _restore_bytes.clear();
     if (!ok) return fail(error);
+    begin_reference_boundary(_last_committed_day);
+    record_reference_frame("restore", _last_committed_day, true, false);
     Dictionary out;
     out["ok"] = true;
     out["state_hash"] = state_hash();

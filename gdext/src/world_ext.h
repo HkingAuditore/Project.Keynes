@@ -231,6 +231,13 @@ public:
     godot::Dictionary set_runtime_climate_parity_forcing(bool enabled);
     godot::Dictionary capture_country_runtime_snapshot();
     godot::Dictionary capture_country_pod_catalog();
+    godot::Dictionary configure_country_reference_trace(bool enabled,
+                                                         int max_frames = 4096);
+    godot::Dictionary poll_country_reference_trace(int64_t after_frame_id = 0,
+                                                    int limit = 128) const;
+    godot::Dictionary capture_country_reference_checkpoint() const;
+    godot::Dictionary restore_country_runtime_checkpoint(
+        const godot::PackedByteArray &canonical_pkcn);
     godot::Dictionary submit_runtime_command(const godot::Dictionary &command);
     godot::Dictionary poll_runtime_receipts(int max_items = 128);
     godot::Dictionary set_runtime_qos_threaded(bool interactive);
@@ -267,6 +274,8 @@ public:
     // behind a green light.
     godot::Dictionary runtime_climate_parity_contract_test() const;
     bool runtime_country_pod_authority_self_test() const;
+    bool runtime_country_core_protocol_self_test();
+    bool runtime_country_peer_protocol_self_test();
     bool runtime_protocol_guard_self_test() const;
     bool is_native_daily_visual_commit_pending() const;
     void complete_native_daily_visual_commit();

@@ -36,6 +36,7 @@ const OFFSET_SECTION_MASK := Header.OFFSET_SECTION_MASK
 const SECTION_RUNTIME_ENVELOPE := Header.SECTION_RUNTIME_ENVELOPE
 const SECTION_DOMAIN_POD := Header.SECTION_DOMAIN_POD
 const SECTION_CLIMATE := Header.SECTION_CLIMATE
+const SECTION_COUNTRY := Header.SECTION_COUNTRY
 
 var _checks := 0
 var _failures := 0
@@ -155,10 +156,15 @@ func _check_header(bytes: PackedByteArray, polled: Dictionary) -> void:
 	# possibly accept that.
 	_expect("the CLIMATE section is present", (section_mask & SECTION_CLIMATE) != 0)
 	_expect("the CLIMATE payload is non-empty", int(polled.get("climate_bytes", 0)) > 0)
+	_expect("the Country section is present", (section_mask & SECTION_COUNTRY) != 0)
+	_expect("the Country payload and canonical PKCN are non-empty",
+		int(polled.get("country_bytes", 0)) > 0
+		and not (polled.get("country_pkcn", PackedByteArray()) as PackedByteArray).is_empty())
 	_expect("committed_day in the header is non-negative",
 		bytes.decode_s64(OFFSET_COMMITTED_DAY) >= 0)
-	print("  section_mask=0x%X climate_bytes=%d domain_pod_bytes=%d committed_day=%d" % [
+	print("  section_mask=0x%X climate_bytes=%d country_bytes=%d domain_pod_bytes=%d committed_day=%d" % [
 		section_mask, int(polled.get("climate_bytes", 0)),
+		int(polled.get("country_bytes", 0)),
 		int(polled.get("domain_pod_bytes", 0)), bytes.decode_s64(OFFSET_COMMITTED_DAY)])
 
 
@@ -169,6 +175,8 @@ func _check_coordinator_validator(bytes: PackedByteArray, polled: Dictionary) ->
 		Header.valid(bytes))
 	_expect("the header helper reports the CLIMATE section",
 		Header.has_climate_section(bytes))
+	_expect("the header helper reports the Country section",
+		Header.has_country_section(bytes))
 
 	# The regression this test exists for: the coordinator used to require
 	# `section_mask == 1`, which no bundle with a live climate store can satisfy.

@@ -226,7 +226,8 @@ func _save(slot_id: String, reason: String) -> Dictionary:
 		_busy = false
 		return runtime_bundle
 	var collected := _collect_sections(was_paused, previous_speed,
-		 runtime_bundle.get("bytes", PackedByteArray()))
+		 runtime_bundle.get("bytes", PackedByteArray()),
+		 runtime_bundle.get("country_pkcn", PackedByteArray()))
 	if not bool(collected.get("ok", false)):
 		_restore_clock_mode(was_paused, previous_speed)
 		_busy = false
@@ -323,10 +324,12 @@ func _can_save() -> Dictionary:
 
 
 func _collect_sections(saved_paused: bool, saved_speed: float,
-		native_runtime_bundle: PackedByteArray = PackedByteArray()) -> Dictionary:
+		native_runtime_bundle: PackedByteArray = PackedByteArray(),
+		native_country_pkcn: PackedByteArray = PackedByteArray()) -> Dictionary:
 	var generator := _runtime_host.generator()
 	var context := _provider_context(_runtime_host, generator, saved_paused, saved_speed)
 	context["native_runtime_bundle"] = native_runtime_bundle
+	context["native_country_pkcn"] = native_country_pkcn
 	var sections := {}
 	var provider_manifest: Array = []
 	for provider in _providers:
@@ -561,16 +564,19 @@ func _restore_simulation_runtime_provider(sections: Dictionary, context: Diction
 
 func _capture_native_runtime_bundle() -> Dictionary:
 	if _runtime_host == null or _runtime_host.generator() == null:
-		return {"ok": true, "bytes": PackedByteArray()}
+		return {"ok": true, "bytes": PackedByteArray(),
+			"country_pkcn": PackedByteArray()}
 	var generator := _runtime_host.generator()
 	if not generator.has_method("get_runtime_thread_report") \
 			or not generator.has_method("request_runtime_save") \
 			or not generator.has_method("poll_runtime_save"):
-		return {"ok": true, "bytes": PackedByteArray()}
+		return {"ok": true, "bytes": PackedByteArray(),
+			"country_pkcn": PackedByteArray()}
 	var report: Dictionary = generator.get_runtime_thread_report()
 	var mode := String(report.get("requested_simulation_thread_mode", "OFF"))
 	if mode == "OFF":
-		return {"ok": true, "bytes": PackedByteArray()}
+		return {"ok": true, "bytes": PackedByteArray(),
+			"country_pkcn": PackedByteArray()}
 	var request_id := _next_runtime_save_request_id
 	_next_runtime_save_request_id += 1
 	if _next_runtime_save_request_id <= 0:
@@ -587,7 +593,8 @@ func _capture_native_runtime_bundle() -> Dictionary:
 			if not _valid_native_runtime_bundle(bytes, polled):
 				return _result(false, "simulation_runtime_checksum_failed",
 					"后台 runtime bundle 校验失败。")
-			return {"ok": true, "bytes": bytes}
+			return {"ok": true, "bytes": bytes,
+				"country_pkcn": polled.get("country_pkcn", PackedByteArray())}
 		var state := String(generator.get_runtime_thread_report().get(
 			"simulation_host_state", ""))
 		if state == "FAULTED":
@@ -705,6 +712,10 @@ func _write_clock_provider(context: Dictionary) -> Dictionary:
 
 
 func _write_country_provider(context: Dictionary) -> Dictionary:
+	var shared_pkcn: PackedByteArray = context.get(
+		"native_country_pkcn", PackedByteArray())
+	if not shared_pkcn.is_empty():
+		return {"ok": true, "sections": {"pkcn": shared_pkcn}}
 	var captured := _capture_native(context.generator.get_country_facade(), "country")
 	return {"ok": true, "sections": {"pkcn": captured.bytes}} \
 		if bool(captured.get("ok", false)) else captured
@@ -869,7 +880,17 @@ func _restore_clock_provider(sections: Dictionary, _context: Dictionary) -> Dict
 
 
 func _restore_country_provider(sections: Dictionary, context: Dictionary) -> Dictionary:
-	var result: Dictionary = context.generator.get_country_facade().restore_bytes(sections.pkcn)
+	var facade = context.generator.get_country_facade()
+	var ext = facade.world_ext() if facade != null else null
+	if ext != null and ext.has_method("restore_country_runtime_checkpoint"):
+		var checkpoint_result: Dictionary = ext.restore_country_runtime_checkpoint(
+			sections.pkcn)
+		if bool(checkpoint_result.get("available", false)):
+			return checkpoint_result if bool(checkpoint_result.get("ok", false)) else \
+				_result(false, String(checkpoint_result.get("code",
+					"country_checkpoint_restore_failed")),
+					"CPD2/PKCN 国家恢复失败。")
+	var result: Dictionary = facade.restore_bytes(sections.pkcn)
 	return result if bool(result.get("ok", false)) else _result(false,
 		"pkcn_restore_failed", String(result.get("reason", "国家恢复失败。")))
 

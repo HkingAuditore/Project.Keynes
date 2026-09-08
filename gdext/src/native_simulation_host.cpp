@@ -333,6 +333,25 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
             return false;
         }
     }
+    if (restore_pending && !_pending_restore_bundle.country_bytes.empty()) {
+        CountryCoreCheckpoint checkpoint;
+        std::string country_restore_error;
+        if (!decode_country_core_checkpoint(
+                _pending_restore_bundle.country_bytes.data(),
+                _pending_restore_bundle.country_bytes.size(), checkpoint,
+                country_restore_error)) {
+            set_fault(country_restore_error.empty()
+                ? "country_checkpoint_restore_failed"
+                : country_restore_error.c_str());
+            _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
+            return false;
+        }
+        auto copy = std::make_shared<CountryCoreCheckpoint>(
+            std::move(checkpoint));
+        std::atomic_store_explicit(&_country_checkpoint,
+            std::shared_ptr<const CountryCoreCheckpoint>(std::move(copy)),
+            std::memory_order_release);
+    }
     _pod_visual_intents.clear();
     _pod_receipts.clear();
     _has_pending_restore = false;
@@ -670,6 +689,27 @@ bool NativeSimulationHost::publish_country_snapshot(
         std::shared_ptr<const RuntimeCountryPodSnapshot>(std::move(copy)),
         std::memory_order_release);
     return true;
+}
+
+bool NativeSimulationHost::publish_country_checkpoint(
+        const CountryCoreCheckpoint &checkpoint, std::string &error) {
+    if (!validate_country_core_checkpoint(checkpoint, error)) return false;
+    auto copy = std::make_shared<CountryCoreCheckpoint>(checkpoint);
+    std::atomic_store_explicit(&_country_checkpoint,
+        std::shared_ptr<const CountryCoreCheckpoint>(std::move(copy)),
+        std::memory_order_release);
+    return true;
+}
+
+bool NativeSimulationHost::pending_country_checkpoint(
+        CountryCoreCheckpoint &out, std::string &error) const {
+    if (!_has_pending_restore || _pending_restore_bundle.country_bytes.empty()) {
+        error = "country_checkpoint_not_pending";
+        return false;
+    }
+    return decode_country_core_checkpoint(
+        _pending_restore_bundle.country_bytes.data(),
+        _pending_restore_bundle.country_bytes.size(), out, error);
 }
 
 RuntimeCountryPodDiagnostics NativeSimulationHost::country_pod_diagnostics() const {
@@ -1704,7 +1744,8 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
     if ((parsed.section_mask & RUNTIME_SAVE_SECTION_RUNTIME_ENVELOPE) == 0 ||
         (parsed.section_mask & ~(RUNTIME_SAVE_SECTION_RUNTIME_ENVELOPE |
                                  RUNTIME_SAVE_SECTION_DOMAIN_POD |
-                                 RUNTIME_SAVE_SECTION_CLIMATE)) != 0) {
+                                 RUNTIME_SAVE_SECTION_CLIMATE |
+                                 RUNTIME_SAVE_SECTION_COUNTRY)) != 0) {
         error = "runtime_bundle_section_mask_invalid";
         return false;
     }
@@ -1845,6 +1886,43 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
         }
         cursor += 8u;
     }
+    if ((parsed.section_mask & RUNTIME_SAVE_SECTION_COUNTRY) != 0) {
+        constexpr uint32_t COUNTRY_SECTION_MARKER = 0x32445043u; // CPD2
+        uint32_t country_marker = 0;
+        uint32_t country_size = 0;
+        if (cursor > payload_end || payload_end - cursor < 16u ||
+            !read_u32(cursor, country_marker) ||
+            !read_u32(cursor + 4u, country_size) ||
+            country_marker != COUNTRY_SECTION_MARKER ||
+            country_size > 64u * 1024u * 1024u ||
+            country_size > payload_end - cursor - 16u) {
+            error = "runtime_bundle_country_section_invalid";
+            return false;
+        }
+        cursor += 8u;
+        parsed.country_bytes.assign(bytes + cursor, bytes + cursor + country_size);
+        cursor += country_size;
+        uint64_t country_checksum = 0;
+        if (!read_u64(cursor, country_checksum)) {
+            error = "runtime_bundle_country_section_checksum_missing";
+            return false;
+        }
+        const uint64_t computed = country_checkpoint_checksum(
+            parsed.country_bytes.data(), parsed.country_bytes.size());
+        if (computed != country_checksum) {
+            error = "runtime_bundle_country_section_checksum_failed";
+            return false;
+        }
+        cursor += 8u;
+        CountryCoreCheckpoint checkpoint;
+        if (!decode_country_core_checkpoint(parsed.country_bytes.data(),
+                                            parsed.country_bytes.size(),
+                                            checkpoint, error)) {
+            error = "runtime_bundle_country_section_invalid:" + error;
+            return false;
+        }
+        parsed.country_pkcn_bytes = checkpoint.canonical_pkcn;
+    }
     if (cursor != payload_end) {
         error = "runtime_bundle_producer_cursor_invalid";
         return false;
@@ -1892,6 +1970,20 @@ void NativeSimulationHost::build_save_bundle(
             return;
         }
         bundle->section_mask |= RUNTIME_SAVE_SECTION_CLIMATE;
+    }
+    const auto country_checkpoint = std::atomic_load_explicit(
+        &_country_checkpoint, std::memory_order_acquire);
+    if (country_checkpoint != nullptr) {
+        std::string country_save_error;
+        if (!encode_country_core_checkpoint(*country_checkpoint,
+                                            bundle->country_bytes,
+                                            country_save_error)) {
+            set_fault(country_save_error.empty() ? "country_save_encode_failed" :
+                      country_save_error.c_str());
+            return;
+        }
+        bundle->country_pkcn_bytes = country_checkpoint->canonical_pkcn;
+        bundle->section_mask |= RUNTIME_SAVE_SECTION_COUNTRY;
     }
 
     // PKSR v2 is an endian-stable runtime envelope. The fixed scalar header
@@ -2013,6 +2105,19 @@ void NativeSimulationHost::build_save_bundle(
             climate_checksum *= 1099511628211ull;
         }
         append_u64_le(climate_checksum);
+    }
+
+    if (country_checkpoint != nullptr) {
+        constexpr uint32_t COUNTRY_SECTION_MARKER = 0x32445043u; // CPD2
+        append_u32_le(COUNTRY_SECTION_MARKER);
+        const uint32_t country_section_size = static_cast<uint32_t>(
+            std::min<size_t>(bundle->country_bytes.size(),
+                             64u * 1024u * 1024u));
+        append_u32_le(country_section_size);
+        if (country_section_size > 0)
+            append_bytes(bundle->country_bytes.data(), country_section_size);
+        append_u64_le(country_checkpoint_checksum(bundle->country_bytes.data(),
+                                                   country_section_size));
     }
 
     uint64_t checksum = 1469598103934665603ull;

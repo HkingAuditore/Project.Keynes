@@ -6,6 +6,7 @@
 #include "native_simulation_host.h"
 
 #include <chrono>
+#include <cstring>
 
 namespace pk {
 
@@ -180,6 +181,80 @@ Dictionary DCWorldExt::capture_country_pod_catalog() {
     out["research_condition_refs"] = condition_refs;
     out["research_condition_values"] = condition_values;
     return out;
+}
+
+Dictionary DCWorldExt::restore_country_runtime_checkpoint(
+        const PackedByteArray &canonical_pkcn) {
+    Dictionary out;
+    if (_runtime_host == nullptr || _country_runtime == nullptr) {
+        out["ok"] = false;
+        out["available"] = false;
+        out["code"] = "country_checkpoint_not_pending";
+        return out;
+    }
+    CountryCoreCheckpoint checkpoint;
+    std::string error;
+    if (!_runtime_host->pending_country_checkpoint(checkpoint, error)) {
+        out["ok"] = false;
+        out["available"] = false;
+        out["code"] = String(error.c_str());
+        return out;
+    }
+    out["available"] = true;
+    if (canonical_pkcn.size() !=
+            static_cast<int64_t>(checkpoint.canonical_pkcn.size()) ||
+        (!checkpoint.canonical_pkcn.empty() &&
+         std::memcmp(canonical_pkcn.ptr(), checkpoint.canonical_pkcn.data(),
+                     checkpoint.canonical_pkcn.size()) != 0)) {
+        out["ok"] = false;
+        out["code"] = "country_checkpoint_pkcn_mismatch";
+        return out;
+    }
+    if (!country_runtime_from(_country_runtime)->restore_core_checkpoint(
+            checkpoint, error)) {
+        out["ok"] = false;
+        out["code"] = String(error.empty()
+            ? "country_checkpoint_restore_failed" : error.c_str());
+        return out;
+    }
+    out["ok"] = true;
+    out["code"] = "ok";
+    out["generation"] = static_cast<int64_t>(checkpoint.generation);
+    out["committed_day"] = checkpoint.committed_day;
+    out["business_state_hash"] =
+        static_cast<int64_t>(checkpoint.business_state_hash);
+    return out;
+}
+
+bool DCWorldExt::runtime_country_core_protocol_self_test() {
+    if (_country_runtime == nullptr) return false;
+    std::string error;
+    return country_runtime_from(_country_runtime)->protocol_contract_self_test(error);
+}
+
+bool DCWorldExt::runtime_country_peer_protocol_self_test() {
+    if (_country_runtime == nullptr) return false;
+    std::string error;
+    return country_runtime_from(_country_runtime)->peer_protocol_self_test(error);
+}
+
+Dictionary DCWorldExt::configure_country_reference_trace(bool enabled,
+                                                           int max_frames) {
+    return _country_runtime == nullptr ? country_unavailable()
+        : country_runtime_from(_country_runtime)->configure_reference_trace(
+            enabled, max_frames);
+}
+
+Dictionary DCWorldExt::poll_country_reference_trace(int64_t after_frame_id,
+                                                      int limit) const {
+    return _country_runtime == nullptr ? country_unavailable()
+        : country_runtime_from(_country_runtime)->poll_reference_trace(
+            after_frame_id, limit);
+}
+
+Dictionary DCWorldExt::capture_country_reference_checkpoint() const {
+    return _country_runtime == nullptr ? country_unavailable()
+        : country_runtime_from(_country_runtime)->capture_reference_checkpoint();
 }
 
 Dictionary DCWorldExt::run_country_slice(const Dictionary &ctx) {

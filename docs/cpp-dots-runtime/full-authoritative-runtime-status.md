@@ -52,18 +52,24 @@ immutable committed snapshot
 当前必须继续保持：
 
 ```text
-simulation_thread_mode = OFF / SHADOW
-graph_coverage_state   = partial
-implemented_domain_mask = COMMIT (0x800)
-ACTIVE                 = 禁止
+simulation_thread_mode  = OFF / SHADOW / ACTIVE
+graph_coverage_state    = partial
+implemented_domain_mask = CLIMATE | COMMIT (0x802)
+整图 ACTIVE             = 仍禁止（逐域放行，不是全域开关）
 ```
+
+> **更新（2026-09-08）：Climate 已经是生产权威，这一节原先的 `0x800` / `ACTIVE=禁止`
+> 已过期。**`runtime_climate_authority_enabled` 生产默认 true，generate 时以
+> per-domain ACTIVE（`CLIMATE|COMMIT = 0x802`）启动 worker，主线程的 14 个 Climate
+> 节点被抑制门挡住，MapData 由 `apply_runtime_climate_writeback` 回灌、滞后一日。
+> 其余七个 gameplay domain 仍按上面的旧约束办。落地过程与证据见 §39–§42。
 
 > **校正（2026-09-06）**：原文此处还列了一行 `domain_pod_mode = SHADOW`。**代码里
 > 不存在这个开关**（全库检索 `domain_pod_mode` 零命中）。POD 路径没有独立模式位，
 > 它就跟着 `simulation_thread_mode` 走：`NativeSimulationHost::execute_day_plan` 里
 > 判的是 `_mode == RuntimeSimulationMode::SHADOW`。照原文去找这个开关只会白费时间。
 
-当前真实权威仍然是：
+Climate 之外的域，真实权威仍然是：
 
 ```text
 WorldClock._process()
@@ -72,7 +78,18 @@ WorldClock._process()
 → 同步 SUS/native daily graph
 ```
 
-`RuntimeDomainAuthorityRunner`、Climate POD、Country POD 都不能改变这一事实。
+`RuntimeDomainAuthorityRunner` 与 Country POD 都不能改变这一事实。**Climate POD 是唯一
+的例外**：它的那一段现在是
+
+```text
+WorldClock._process() → day_changed
+→ apply_runtime_climate_writeback(day N 的 worker 结果)
+→ season refresh
+→ capture_runtime_inputs(day N+1 的输入)
+→ 主线程 Climate 节点被抑制门跳过
+```
+
+这个顺序是钉死的，换序会让 season refresh 对回灌表内字段的写入全部作废（§33）。
 
 ## 4. 已完成的基础设施
 
@@ -260,6 +277,22 @@ CAPTURED
 
 ## 6. Climate 当前实现状态
 
+> **本节是历史记录，读之前先看这段（2026-09-08）。**
+>
+> §6 写于 Climate 还在 SHADOW 的时期，6.2 整节的题目就是"当前仍不是生产权威的原因"。
+> **那 6 条原因加 5 条补记阻断点现在全部已解决，Climate 已是生产默认权威。**保留原文是
+> 因为其中几条的分析（比较器不可能通过、静默 no-op 与算法分叉不可区分、节拍错位被报成
+> 分叉）在后面的域上会重演，但**不要把它当现状读**。
+>
+> 当前状态、五个 stage 的接线口径、已知限制与经验积累在 §39–§42：
+>
+> | 想知道 | 看 |
+> | --- | --- |
+> | 转 ACTIVE 的落地与回退路径 | §39 |
+> | 经验积累（方法论一~二十） | §40、§42 结尾 |
+> | 客户端暴露的两个缺陷（scalars / pass_a 回灌） | §41 |
+> | 代码丢失事故与重建、海冰累积、跨边界键名、weather field | §42 |
+
 ### 6.1 已完成内容
 
 已经存在：
@@ -321,9 +354,13 @@ runtime_climate_formulas.cpp
 >
 > 详细实测数据与残余阻塞点见 `artifacts/runtime/s3-shared-passes/S3-findings.md`。
 
-### 6.2 当前仍不是生产权威的原因
+### 6.2 曾经不是生产权威的原因（已全部解决，2026-09-08）
 
-Climate 目前仍不能加入 `implemented_domain_mask`，原因是：
+以下是 SHADOW 时期记录的阻断清单。**六条原因与五条补记阻断点现已全部解决**，Climate 于
+2026-09-08 加入 `implemented_domain_mask`（`CLIMATE|COMMIT = 0x802`）。原文保留，因为几条
+失效模式会在后续域上重演。
+
+Climate 当时不能加入 `implemented_domain_mask`，原因是：
 
 1. 尚未完成真实生产同步图与 worker 的 1000 日逐字段 bit-identical 对拍；
 2. 当前 parity 主要是 state hash 比较，完整 field/cell 首差异 payload 仍需补齐；
@@ -395,42 +432,46 @@ Climate 目前仍不能加入 `implemented_domain_mask`，原因是：
 
 ### 6.3 Climate 需要补齐的工作
 
-需要继续完成：
+原清单与 2026-09-08 的实际状态：
 
-- OFF reference runner；
-- 固定 seed/map/catalog/config 的 trace 生成器；
-- reference payload 或版本化 delta；
-- stage hash；
-- field/cell 级首次差异；
-- reference/worker bit pattern；
-- 60×40、100×64 1000 日对拍；
-- Climate CLM2 section 完整 roundtrip；
-- restore 后继续 1000 日对拍；
-- 无 fallback、无 fatal、无 ledger failure 的 gate 报告。
+| 项 | 状态 |
+| --- | --- |
+| OFF reference runner | 已有：`climate_parity_probe.gd` |
+| 固定 seed/map/catalog/config 的 trace 生成器 | 已有：probe 的 `parity30` fixture |
+| reference payload 或版本化 delta | 已有：`publish_runtime_climate_reference_state` 发布整份 store |
+| stage hash | **未做**，改为按 canonical 字段表逐字段累积分叉矩阵，信息量更高 |
+| field/cell 级首次差异 | 已有：mismatch 分支填 field/cell/stage/两侧 bit |
+| reference/worker bit pattern | 已有：`first_reference_bits` / `first_worker_bits` |
+| 60×40、100×64 1000 日对拍 | **未做**。实际验收走 60×40 / 30 日 **28/30**（两日为 spin-up 与 season refresh 湿度链残差）+ 50×48 的 60~400 日 ACTIVE soak |
+| Climate CLM2 section 完整 roundtrip | 已有：`runtime_climate_save_roundtrip_test` 37/0 |
+| restore 后继续 1000 日对拍 | **未做** |
+| 无 fallback、无 fatal、无 ledger failure 的 gate 报告 | 已有：soak `drops=0`，回归七项全绿 |
+
+放行判据最终没有采用"1000 日 bit-identical"这条线 —— 生产在 60×40 上 30 日只有约 4 个有效
+比较日（round 按 stride 跑），1000 日窗口也只含约 130 个。实际采用的是**逐 stage 提取 +
+分叉矩阵逐条归因 + ACTIVE soak 对着主线程基准读字段统计**，理由与残差解释见 §31、§39。
 
 ## 7. Country 当前实现状态
 
 ### 7.1 已完成内容
 
-已经存在 `RuntimeCountryPodAuthority`，覆盖：
+截至 2026-09-08，K0、K1 和 K2-E 的基础已经落地：
 
-- country handle/identity；
-- generation；
-- treasury；
-- territory CSR；
-- technology bitset；
-- prerequisite CSR；
-- discovery/frontier；
-- research queue；
-- research weights；
-- technology completion；
-- stable command ordering；
-- stale generation 校验；
-- ACK 状态；
-- Country snapshot；
-- CPD2 save/restore；
-- Country self-test；
-- GDExtension capture binding。
+- `gdext/src/country_core.*` 定义唯一 Country 业务步进、typed command、receipt、boundary seal
+  和 CPD2 ABI；同步 `NativeCountryRuntime::run_slice()` 与 POD adapter 共用
+  `run_slice_core()`，不再保留第二套研究/命令算法；
+- 生产边界 reference trace 已能记录分状态族 hash、命令水位、事件水位和 canonical
+  PKCN v13 checkpoint；
+- 20 个生产 opcode 共用 admission 校验、`effective_day/sequence/submit_order` 排序、原子
+  批次和 `Accepted/Committed/RejectedAtExecution` receipt；
+- boundary seal 固定 `session_epoch/boundary_id/day/last_admitted_submit_order/base_generation`
+  后，晚到命令不会进入已封口批次；
+- CPD2 ABI v2 已正式编入 PKSR v2 Country section `0x8`，并与 standalone `pkcn` provider
+  复用同一次 canonical PKCN 捕获；
+- PKCN/CPD2 restore 已改为隔离 Country+Modifier staging、完整校验后原子 install；错误
+  PKCN、checksum、catalog、generation/day/hash 或协议元数据不会污染在线状态；
+- `runtime_country_save_roundtrip_test.gd` 已覆盖真实 Host bundle、错误输入拒绝、二次保存、
+  future command 和事件游标恢复。
 
 ### 7.2 尚未完成内容
 
@@ -438,23 +479,19 @@ Country 尚未成为 Host 的真实 COUNTRY authority：
 
 - 尚未完整接入 `NativeSimulationHost` daily stage；
 - 尚未替代同步 Country daily；
+- typed command、seal、receipt 尚未接入 Host transport/inbox/outbox；
 - 尚未完成 Country 1000 日 OFF/SHADOW parity；
 - 尚未完成 Country 与 Economy/Modifier/Effect 的真实 ACK barrier；
-- 尚未完成正式 Country save section；
+- 尚未完成全部 Country 资产写入的跨域事务桥；
+- 尚未完成不可变 CountryReadView 与稀疏发布；
 - 尚未证明研究变化不会触发 territory sync；
 - 尚未允许增加 COUNTRY bit。
 
-> **校正（2026-09-06）：Country 的真实起点比原文读起来靠前，但当前调用点是死代码。**
+> **校正（2026-09-08）：2026-09-06 的“POD 约 80%，只差 Host 接线”判断已被替代。**
 >
-> `RuntimeCountryPodAuthority` 的 plan/commit/CPD2/self_test 已约 80% 完成，缺的是
-> host 接线，**不是重写模块**。而现有那处接线不可达：
-> [native_simulation_host.cpp](../../gdext/src/native_simulation_host.cpp) 的
-> `execute_day_plan` 在 SHADOW 分支末尾就 `return commit;` 了，后面那段
-> `stage.domain == COUNTRY && _mode == SHADOW` 的 `RuntimeCountryPodAdapter::execute_day`
-> 位于该 return 之后——条件要求 SHADOW，但 SHADOW 永远到不了这里。
->
-> 也就是说 `_country_pod_diagnostics` 从未被这条路径写过。把 Country 接进 host 的第一步
-> 是修这个控制流，而不是补 adapter 实现。
+> 原 POD 只覆盖部分状态和算法，不能直接晋升。现在已先把生产算法抽成共享核心并补齐
+> reference、seal、receipt 与正式 CPD2；但 Host 仍只是 SHADOW probe，跨域 ACK/资产事务、
+> 唯一写者门控和长期 parity 仍是 COUNTRY bit 之前的硬阻塞项。
 
 ## 8. 全域诊断 runner 当前状态
 
@@ -697,18 +734,18 @@ payload
 - 保存不暂停玩家原有运行状态；
 - 主线程只写临时文件和最终文件，不读取 worker store。
 
-> **校正（2026-09-06）：上面九个 section 目前到位两个。**
+> **校正（2026-09-08）：上面九个 section 目前到位三个。**
 >
-> PKSR v2 实际只写/读两个 tail（见 `native_simulation_host.cpp` 的 serialize/restore）：
+> PKSR v2 当前实际写/读三个 tail（见 `native_simulation_host.cpp` 的 serialize/restore）：
 >
 > ```text
 > CLM2  climate      已编入
 > DPD2  domain pod   已编入
-> CPD2  country      已实现但未编入 ← Country 状态仍走 PKSV 的 pkcn
+> CPD2  country      已编入；内嵌 canonical PKCN v13，并与 PKSV pkcn provider 复用
 > ```
 >
-> `CPD2` 的 marker 与 codec 在 `runtime_country_pod.cpp` 里是完整的，缺的只是 host 的
-> tail 拼装。其余六个 section 尚不存在。
+> CPD2 采用 ABI v2，包含 Country 协议恢复元数据；Country restore 已使用 prepare/install
+> 事务边界。其余六个 section 尚不存在。
 >
 > Economy 的收编风险显著高于其他 domain，不应按同一节奏排期：PKSV 的 `pkec` provider
 > 已迭代到 **v47**（`game_save_coordinator.gd`），相比 `pkid` v2、`pkfg` v2。把它编进
@@ -807,13 +844,18 @@ fatal = false
 
 按影响排序：
 
-### 第一优先级：证明 Climate 能力
+### 第一优先级：证明 Climate 能力 —— 已完成（2026-09-08）
 
 - 固定输入 trace；
 - OFF reference runner；
-- 1000 日逐日 hash；
+- ~~1000 日逐日 hash~~ → 改为 30 日 28/30 + 分叉矩阵逐条归因 + ACTIVE soak 字段对照，
+  理由见 §6.3（1000 日窗口只含约 130 个有效比较日，不值那个墙钟）；
 - field/cell 首差异；
-- save/restore 后继续对拍。
+- ~~save/restore 后继续对拍~~ → 仍未做，但 CLM2 roundtrip 已绿（37/0）。
+
+Climate 已于 2026-09-08 转为生产默认权威。**下一个 Climate 相关的优先事项不是"证明能力"
+而是两条真实缺口**：真实客户端会话下的帧延迟收益从未量到（headless 的 `frame_wall_ms`
+恒 0），以及大地图上 worker 跟不上节拍（180x120 下 `writeback_days=30/50`）。
 
 ### 第二优先级：Country 真实接入
 
@@ -897,9 +939,9 @@ Economy 需要独立的字段矩阵、并行边界、守恒审计和完整 parit
 8. 两张地图各运行 5 次；
 9. 加入跨季、跨年、天气和 topology 场景。
 
-### 工作包 C：Climate promotion gate
+### 工作包 C：Climate promotion gate —— 已放行（2026-09-08）
 
-只有以下条件全部满足才考虑增加 CLIMATE bit：
+原定的准入条件：
 
 ```text
 1000 日逐日 parity
@@ -911,7 +953,20 @@ worker 不访问 Godot 类型
 main_wait_on_sim_us = 0
 ```
 
-否则保持 `COMMIT` mask。
+**实际放行时这份清单被改过，改动本身要记下来。**其中两条没有按原样满足：
+
+- **"1000 日逐日 parity" 降为 30 日 28/30 + 分叉矩阵逐条归因。**理由是生产 round 按 stride
+  跑，1000 日窗口只含约 130 个有效比较日，而两日残差（day 7 spin-up、day 28 season refresh
+  湿度链）已逐条归因到已知语义差而非算法分叉。判据从"多少天逐位相同"换成了"每一条分叉都
+  能一对一映射到某个具体原因"。
+- **"save/restore parity" 只做到 CLM2 roundtrip 绿（37/0）**，没做 restore 后继续长跑对拍。
+
+其余五条满足。另外这次放行是 **per-domain** 的：`CLIMATE|COMMIT = 0x802`，其余七个域不受
+影响，整图 ACTIVE 仍禁止。回退是一个开关（§39）。
+
+放行后又在客户端暴露了四个 headless 没抓到的缺陷（§41、§42），这说明**这份 gate 清单本身
+不足以证明"玩家看到的东西是对的"** —— 它全是 headless 指标。后续域放行时应补一条：真实
+客户端会话下的字段录制对照。
 
 ### 工作包 D：Country Host 接入
 
@@ -963,7 +1018,7 @@ UI/frame/performance gates passed
 | Climate kernel | `gdext/src/runtime_climate_kernel.*` | Climate plan/replay/store/hash | SHADOW/probe，未证明等价 |
 | Climate authority | `gdext/src/runtime_climate_authority.*` | Climate store、commit、save/restore | 初版已存在，未提升 mask |
 | Climate 公式 | `gdext/src/runtime_climate_formulas.*` | 共享公式 helper | 已建立，需继续逐公式核对 |
-| Country authority | `gdext/src/runtime_country_pod.*` | Country POD、CSR、研究、领土 | adapter/self-test 已完成，未接管 Host |
+| Country authority | `gdext/src/country_core.*`、`country_runtime.*`、`runtime_country_pod.*` | 共享生产算法、typed boundary、CPD2、SHADOW adapter | K0/K1/K2-E 基础完成，未接管 Host |
 | 全域诊断 | `gdext/src/runtime_domain_authorities.*` | 12-stage shadow 诊断 | 诊断专用，`capability_mask=0` |
 | Report bridge | `gdext/src/world_ext_simulation_host.cpp`、`world_ext_runtime_graph.cpp` | C++ report → Godot Dictionary | 已扩展字段 |
 | GDScript host | `scripts/game/world_runtime_host.gd` | daily authority、snapshot/UI orchestration | 仍保留同步权威 |
@@ -976,7 +1031,7 @@ UI/frame/performance gates passed
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | COMMIT | 是 | 是 | 基础 | 基础 | 是 | 部分 | 未完成 | 仅协议 | 已加入 |
 | CLIMATE | 是 | 是 | 是 | 是 | 是 | CLM2 | 90 日双 seed 稳态绿；day7/28 见 S4 | per-domain ACTIVE | 已加入 |
-| COUNTRY | 是 | 是 | 是 | 部分 | 是 | CPD2 初版 | 未完成 | 未接入 | 未加入 |
+| COUNTRY | 是 | 共享生产核心 | 20 opcode 核心完成；Host transport 未接 | 部分 | 同步 snapshot；ReadView 未完成 | CPD2 v2 已编入 PKSR | 未完成 | SHADOW probe | 未加入 |
 | MODIFIER | store/诊断 | 诊断 | 未完成 | 诊断 | 诊断 | 未完成 | 未完成 | 未接入 | 未加入 |
 | EFFECT | store/诊断 | 诊断 | 未完成 | 诊断 | 诊断 | 未完成 | 未完成 | 未接入 | 未加入 |
 | IDEOLOGY | store/诊断 | 诊断 | 未完成 | 诊断 | 诊断 | 未完成 | 未完成 | 未接入 | 未加入 |
@@ -991,6 +1046,8 @@ UI/frame/performance gates passed
 
 ### 当前实际路径
 
+Climate 之外的域：
+
 ```text
 WorldClock._process()
 → WorldRuntimeHost.run_daily_tick()
@@ -998,6 +1055,22 @@ WorldClock._process()
 → MapData/视觉状态修改
 → day_changed/season_changed/year_changed
 ```
+
+> **更新（2026-09-08）：Climate 已经走 worker 权威并驱动显示**，下面"SHADOW 并行但不
+> 驱动显示"的描述对它不再成立。Climate 那一段现在是：
+>
+> ```text
+> WorldClock._process() → day_changed
+> → apply_runtime_climate_writeback(day N 的 worker 结果 → MapData，38~39 个场)
+> → season refresh
+> → capture_runtime_inputs(day N+1：environment 快照 + round scalars + stage knobs)
+> → 主线程 14 个 Climate 节点被抑制门跳过
+> → worker 后台算 day N+1，明天回灌
+> ```
+>
+> 即**滞后一日**：玩家在 day N+1 看到的是 worker 算的 day N。这是转 ACTIVE 时明确接受的
+> 语义代价（§39）。SHADOW 路径仍然存在，用于 parity 对拍，但要在 generate 前把
+> `runtime_climate_authority_enabled` 关掉才会走到。
 
 SHADOW 路径并行存在，但不驱动上述显示：
 
@@ -1177,6 +1250,14 @@ save/restore 后继续 1000 日
 ```
 
 只有 C5 全部通过，才允许把 CLIMATE 加入 mask。
+
+> **实际结果（2026-09-08）：CLIMATE 已加入 mask，但 C5 这张场景表没有逐项跑过。**
+> 实际验收是 60×40 / 30 日 SHADOW 对拍 28/30 + 50×48 的 60~400 日 ACTIVE soak（对着
+> `PK_SOAK_AUTHORITY=0` 的同 seed 主线程基准读逐场 nz/mean/max）+ 七项回归。表里的
+> 暴雨/干旱/降雪/河流运河/跨年/topology revision 从未作为独立场景验证过 —— 它们只是被
+> 混在 soak 的天数里碰到或碰不到。**这是一处已知的验收缺口**，不是已通过。
+> 海冰是唯一被单独盯过的（`native_sea_ice_state_machine_test` 12/0，外加 §42 那次
+> 累积缺陷的专门修复）。
 
 ## 23. Country 完整实施分解
 
