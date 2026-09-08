@@ -973,6 +973,127 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
             fb->weather_field_init.assign(cells, 1u);
             snapshot.climate_feedback = fb;
         }
+
+        // stage 9 vegetation_dynamics —— vegetation_growth_pressure 的另一个写者，
+        // 也是 plant_available_water / vitality / 两条 streak 的写者。它要的八张查表
+        // 来自 GDScript 的 vegetation catalog，worker 侧没有任何获取途径，只能整份
+        // 随字典过来（好在它们是 round 不变量，builder 每次给的是同一份）。
+        if (bool(stage_b.get("run_veg_dyn", false))) {
+            auto vd = std::make_shared<pk_async_climate::VegetationDynamicsInput>();
+            vd->n_cells = static_cast<int>(cells);
+            auto &k = vd->knobs;
+            k.ran = true;
+            const auto bf = [&stage_b](const char *key, float fallback) {
+                return stage_b.has(key) ? float(stage_b[key]) : fallback;
+            };
+            const auto bi = [&stage_b](const char *key, int fallback) {
+                return stage_b.has(key) ? int(stage_b[key]) : fallback;
+            };
+            // day_scale 先过 max(1.0) 再存，与生产同一口径。
+            const float day_scale_raw = bf("day_scale", 1.0f);
+            k.scale = day_scale_raw < 1.0f ? 1.0f : day_scale_raw;
+            k.streak_days = bi("streak_days", 0);
+            k.vitality_change_rate = bf("vitality_change_rate", 0.0f);
+            k.compat_harshness = bf("compat_harshness", 1.0f);
+            k.low_threshold = bf("low_threshold", 0.0f);
+            k.high_threshold = bf("high_threshold", 1.0f);
+            k.succession_degrade_days = bi("succession_degrade_days", 0);
+            k.succession_upgrade_days = bi("succession_upgrade_days", 0);
+            k.n_wt = bi("n_wt", 0);
+            k.wt_clear_id = bi("wt_clear_id", 0);
+            k.veg_none_id = static_cast<uint8_t>(bi("veg_none_id", 0));
+            k.weather_penalty_scale = bf("weather_penalty_scale", 1.0f);
+            k.plant_water_balance_weight = bf("plant_water_balance_weight", 0.0f);
+            k.plant_soil_buffer_weight = bf("plant_soil_buffer_weight", 0.0f);
+            k.plant_drought_penalty = bf("plant_drought_penalty", 0.0f);
+            k.succession_min_compat_gain = bf("succession_min_compat_gain", 0.0f);
+            k.low_vitality_damping_threshold =
+                bf("vegetation_low_vitality_damping_threshold", 0.40f);
+            k.succession_cooldown_days =
+                bi("vegetation_succession_cooldown_days", 30);
+            k.stress_enabled = bool(stage_b.get("vegetation_stress_enabled", false));
+            // stress_blend 生产侧算好再存，两侧各做一次除法会差 ULP。
+            float memory_days = bf("vegetation_stress_memory_days", 30.0f);
+            if (memory_days < 1.0f) memory_days = 1.0f;
+            float blend = k.scale / memory_days;
+            if (blend < 0.0f) blend = 0.0f;
+            else if (blend > 1.0f) blend = 1.0f;
+            k.stress_blend = blend;
+            k.wt_blizzard_id = bi("wt_blizzard_id", 3);
+            k.wt_drought_id = bi("wt_drought_id", 4);
+            k.wt_heatwave_id = bi("wt_heatwave_id", 6);
+
+            bool tables_ok = k.n_wt > 0;
+            const auto table_f32 = [&stage_b, &tables_ok](
+                    const char *key, std::vector<float> &out_vec) {
+                const Variant raw = stage_b.get(key, Variant());
+                if (raw.get_type() != Variant::PACKED_FLOAT32_ARRAY) {
+                    tables_ok = false;
+                    return;
+                }
+                const PackedFloat32Array v = raw;
+                if (v.size() <= 0) {
+                    tables_ok = false;
+                    return;
+                }
+                out_vec.assign(v.ptr(), v.ptr() + v.size());
+            };
+            const auto table_u8 = [&stage_b, &tables_ok](
+                    const char *key, std::vector<uint8_t> &out_vec) {
+                const Variant raw = stage_b.get(key, Variant());
+                if (raw.get_type() != Variant::PACKED_BYTE_ARRAY) {
+                    tables_ok = false;
+                    return;
+                }
+                const PackedByteArray v = raw;
+                if (v.size() <= 0) {
+                    tables_ok = false;
+                    return;
+                }
+                out_vec.assign(v.ptr(), v.ptr() + v.size());
+            };
+            table_f32("ideal_temp_table", vd->ideal_temp);
+            table_f32("ideal_moist_table", vd->ideal_moist);
+            table_f32("temp_tol_table", vd->temp_tol);
+            table_f32("moist_tol_table", vd->moist_tol);
+            table_f32("weather_penalty_table", vd->weather_penalty);
+            table_f32("resistance_table", vd->resistance);
+            table_u8("next_up_table", vd->next_up);
+            table_u8("next_down_table", vd->next_down);
+            // 表维度由表长决定（生产也是这么推的）：n_veg 看 ideal_temp，
+            // wt_pen_size 可以大于 n_wt。
+            k.n_veg = static_cast<int32_t>(vd->ideal_temp.size());
+            k.wt_pen_size = static_cast<int32_t>(vd->weather_penalty.size());
+            if (k.n_veg <= 0 ||
+                static_cast<size_t>(k.n_veg) * static_cast<size_t>(k.n_wt) >
+                    vd->resistance.size()) {
+                tables_ok = false;
+            }
+
+            vd->is_water = snapshot.is_water;
+            vd->terrain = snapshot.terrain;
+            vd->landform = snapshot.landform;
+            vd->vegetation = snapshot.vegetation;
+            vd->temp_30d = snapshot.cell_temp_30d;
+            vd->moisture = snapshot.cell_moisture;
+            vd->water_balance_30d = snapshot.cell_water_balance_30d;
+            vd->soil_moisture = snapshot.cell_soil_moisture;
+            vd->has_soil_moisture = vd->soil_moisture.size() == cells;
+            vd->weather_type = snapshot.cell_weather_type;
+            vd->weather_intensity = snapshot.cell_weather_intensity;
+            vd->weather_field_init.assign(cells, 1u);
+            vd->has_growth_pressure = true;
+            // regen_score 没有 store 成员也没有快照 lane，内核用 scratch 承接初值后
+            // 丢弃。stress_enabled 时守卫要求它齐长，所以从零起算 —— 与生产读到的
+            // 初值有一次性差异，但这条量不参与任何跨天累积。
+            if (k.stress_enabled) {
+                vd->regen_score.assign(cells, 0.0f);
+            }
+
+            if (tables_ok) {
+                snapshot.climate_vegetation = vd;
+            }
+        }
     }
 
     snapshot.topology_validated = cells > 0 &&
