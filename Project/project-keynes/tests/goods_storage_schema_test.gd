@@ -396,6 +396,14 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	_expect("country goods transfer back to market conserves goods",
 		_good_value(ext.get_country_treasury_snapshot(country.country_handle), "quantities", "grain") == 600 and
 		int(goods_out_report.get("goods_error", 1)) == 0)
+	var asset_report: Dictionary = ext.get_country_report().get(
+		"economy_asset_transactions", {})
+	_expect("Country asset bridge records cash and goods transfers",
+		int(asset_report.get("completed", 0)) >= 4
+		and int(asset_report.get("prepared", 0)) >= 4
+		and int(asset_report.get("commit_decisions", 0)) >= 4)
+	_expect("normal capped transfers do not report ledger failures",
+		int(asset_report.get("ledger_failures", -1)) == 0)
 
 	var country_save_begin: Dictionary = ext.begin_country_save(4096)
 	if not bool(country_save_begin.get("ok", false)):

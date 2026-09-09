@@ -1,0 +1,2 @@
+frame_idx,timestamp_ms,frame_wall_ms,fast_tick_count,fast_tick_occurred,last_fast_tick_ms,clock_day,writeback_last_day,writeback_lag_days,main_wait_on_sim_us,worker_fault_count,completed_days,runtime_graph_last_elapsed_us,climate_pod_plan_ms,climate_pod_replay_ms,domain_authority_plan_ms,domain_authority_replay_ms
+0,33567,3208.516,1,false,10,1,-1,-1,0,0,0,0,0,0,0,0

@@ -56,6 +56,15 @@ constexpr uint32_t RUNTIME_SAVE_SECTION_RUNTIME_ENVELOPE = 1u << 0;
 constexpr uint32_t RUNTIME_SAVE_SECTION_DOMAIN_POD = 1u << 1;
 constexpr uint32_t RUNTIME_SAVE_SECTION_CLIMATE = 1u << 2;
 constexpr uint32_t RUNTIME_SAVE_SECTION_COUNTRY = 1u << 3;
+// Stage H owns the first post-Country section bit.  Keep the later reserved
+// domain bits distinct so a Trigger section cannot be mistaken for Modifier.
+constexpr uint32_t RUNTIME_SAVE_SECTION_TRIGGER = 1u << 4;
+constexpr uint32_t RUNTIME_SAVE_SECTION_MODIFIER = 1u << 5;
+constexpr uint32_t RUNTIME_SAVE_SECTION_EVENTS = 1u << 6;
+// F2-F6 keeps Effect in its own immutable POD section. This is deliberately
+// separate from the legacy PKEF facade section and is not an ACTIVE gate.
+constexpr uint32_t RUNTIME_SAVE_SECTION_EFFECT = 1u << 7;
+constexpr uint32_t RUNTIME_SAVE_SECTION_IDEOLOGY = 1u << 8;
 
 static_assert(RUNTIME_COMMAND_QUEUE_CAPACITY == 4096u,
               "runtime command queue capacity is part of the ABI");
@@ -122,6 +131,16 @@ enum class RuntimeClimateCommand : uint16_t {
     FORCE_STAGE_MASK = 2,
     REQUEST_VISUAL_ACK = 3,
     REQUEST_ECONOMY_ACK = 4,
+};
+
+// Events commands use an explicit little-endian payload. APPEND_BATCH carries
+// a bounded array of RuntimeEventsIngressRecord values; the worker assigns IDs
+// only after it has sorted commands by the shared protocol ordering.
+enum class RuntimeEventsCommand : uint16_t {
+    APPEND_BATCH = 1,
+    ACK_CONSUMER = 2,
+    CONFIGURE_CAPACITY = 3,
+    CLEAR_RESET = 4,
 };
 
 enum class RuntimeClimateIntentOpcode : uint16_t {
@@ -477,7 +496,12 @@ struct RuntimeDomainAck {
     uint16_t domain = 0;
     RuntimeDomainAckCode code = RuntimeDomainAckCode::OK;
     int64_t effective_day = 0;
+    uint32_t producer_id = 0;
+    uint64_t sequence = 0;
 };
+
+constexpr uint16_t RUNTIME_DOMAIN_INTENT_DEFERRED = 1u << 0;
+constexpr uint16_t RUNTIME_DOMAIN_INTENT_REQUIRES_ACK = 1u << 1;
 
 struct RuntimeDomainIntent {
     uint16_t source_domain = 0;
@@ -490,6 +514,24 @@ struct RuntimeDomainIntent {
     int64_t value = 0;
     int64_t effective_day = 0;
     std::array<int64_t, 4> payload{};
+    uint64_t request_id = 0;
+    uint32_t producer_id = 0;
+    uint64_t sequence = 0;
+    // Fixed Modifier command lanes. Generic domains may leave these at their
+    // defaults; Effect uses them so duration/stack/magnitude survive the POD
+    // handoff without an opaque byte payload.
+    int32_t duration_days = -2;
+    int32_t stacks = 1;
+    int32_t magnitude_q16 = 65536;
+    int32_t reserved = 0;
+    uint64_t group_handle = 0;
+    uint64_t modifier_handle = 0;
+    // Effect fills these lanes with the typed action (1..6) and the stable
+    // command idempotency identity. Other domains leave them at zero.
+    uint16_t effect_action = 0;
+    uint16_t reserved_effect = 0;
+    uint32_t reserved_effect_flags = 0;
+    uint64_t idempotency_key = 0;
 };
 
 struct RuntimeDomainTiming {
@@ -648,6 +690,30 @@ struct RuntimeCountryPodSnapshot {
     std::vector<int64_t> research_purchased_total;
     std::vector<int64_t> research_consumed_total;
     std::vector<uint8_t> is_water;
+};
+
+// Main-thread read view for a committed worker Country state. The snapshot
+// remains immutable and owned by the host; the patch is the only territory
+// payload copied for the normal publish path. `full_snapshot_required` is
+// set when a consumer has missed the immediately preceding generation and
+// therefore cannot safely apply the retained sparse patch by itself.
+struct RuntimeCountryReadView {
+    bool available = false;
+    bool full_snapshot_required = false;
+    uint64_t generation = 0;
+    uint64_t patch_base_generation = 0;
+    int64_t committed_day = -1;
+    uint64_t state_hash = 0;
+    uint32_t dirty_families = 0;
+    uint64_t territory_watermark = 0;
+    uint64_t research_watermark = 0;
+    uint64_t tax_watermark = 0;
+    uint64_t visual_watermark = 0;
+    uint32_t country_count = 0;
+    uint32_t cell_count = 0;
+    std::vector<int32_t> changed_cells;
+    std::vector<int32_t> changed_owners;
+    std::shared_ptr<const RuntimeCountryPodSnapshot> snapshot;
 };
 
 // Numeric, immutable catalog compiled by the main-thread facade before a
@@ -916,8 +982,56 @@ struct RuntimeThreadReport {
       uint32_t country_pod_active_index_count = 0;
       uint32_t country_pod_pending_checks = 0;
       bool country_pod_ack_pending = false;
-      char country_pod_blocker[64]{};
-      char fault_code[64]{};
+    char country_pod_blocker[64]{};
+    bool modifier_pod_ready = false;
+    double modifier_pod_plan_ms = 0.0;
+    double modifier_pod_replay_ms = 0.0;
+    uint64_t modifier_pod_work_units = 0;
+    uint64_t modifier_pod_state_hash = 0;
+    uint64_t modifier_pod_snapshot_generation = 0;
+    uint32_t modifier_pod_ack_count = 0;
+    char modifier_pod_fallback_reason[64]{};
+    bool ideology_pod_ready = false;
+    double ideology_pod_plan_ms = 0.0;
+    double ideology_pod_replay_ms = 0.0;
+    uint64_t ideology_pod_state_hash = 0;
+    uint64_t ideology_pod_snapshot_generation = 0;
+    uint32_t ideology_pod_pending_transition_count = 0;
+    uint32_t ideology_pod_intent_count = 0;
+    char ideology_pod_fallback_reason[64]{};
+    bool events_probe_enabled = false;
+    bool events_pod_ready = false;
+    double events_pod_plan_ms = 0.0;
+    double events_pod_replay_ms = 0.0;
+    uint64_t events_pod_state_hash = 0;
+    uint64_t events_pod_snapshot_generation = 0;
+    uint32_t events_pod_event_count = 0;
+    uint32_t events_pod_ack_count = 0;
+    uint64_t events_pod_drop_count = 0;
+    char events_pod_fallback_reason[64]{};
+    // Trigger POD SHADOW parity. These fields are diagnostic only and never
+    // contribute to implemented_domain_mask or authoritative_domain_mask.
+    int64_t trigger_parity_day = -1;
+    int64_t trigger_reference_day = -1;
+    uint64_t trigger_input_hash = 0;
+    uint64_t trigger_reference_input_hash = 0;
+    uint64_t trigger_reference_state_hash = 0;
+    uint64_t trigger_worker_state_hash = 0;
+    uint64_t trigger_reference_effect_hash = 0;
+    uint64_t trigger_worker_effect_hash = 0;
+    uint32_t trigger_required_ack_count = 0;
+    uint32_t trigger_received_ack_count = 0;
+    uint32_t trigger_pending_ack_count = 0;
+    uint64_t trigger_generation = 0;
+    int64_t trigger_committed_day = -1;
+    int64_t trigger_acked_effect_id = 0;
+    uint32_t trigger_pending_command_count = 0;
+    uint8_t trigger_parity_compared = 0;
+    uint8_t trigger_parity_matched = 0;
+    int32_t trigger_first_divergence_index = -1;
+    char trigger_first_divergence_kind[32]{};
+    char trigger_blocker[64]{};
+    char fault_code[64]{};
 };
 
 // The bundle is immutable after publication.  It deliberately contains only
@@ -952,6 +1066,11 @@ struct RuntimeSaveBundle {
     // section; it lets the save coordinator reuse the same capture.
     std::vector<uint8_t> country_bytes;
     std::vector<uint8_t> country_pkcn_bytes;
+    std::vector<uint8_t> trigger_bytes;
+    std::vector<uint8_t> modifier_bytes;
+    std::vector<uint8_t> events_bytes;
+    std::vector<uint8_t> effect_bytes;
+    std::vector<uint8_t> ideology_bytes;
     std::array<uint64_t, 256> producer_sequences{};
     uint64_t fallback_producer_sequence = 0;
 };

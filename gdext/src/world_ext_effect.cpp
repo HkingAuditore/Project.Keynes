@@ -5,6 +5,12 @@
 #include "economy_runtime.h"
 #include "ideology_runtime.h"
 #include "modifier_runtime.h"
+#include "runtime_effect_pod.h"
+#include "native_simulation_host.h"
+
+#include <algorithm>
+#include <string>
+#include <type_traits>
 
 namespace pk {
 
@@ -23,12 +29,241 @@ Dictionary unavailable() {
     out["reason"] = "effect_runtime_unavailable";
     return out;
 }
+
+template <typename T>
+T packed_value(const godot::Dictionary &catalog, const char *key,
+               int index, T fallback = T{}) {
+    const godot::Variant raw = catalog.get(key, godot::Variant());
+    if (raw.get_type() != godot::Variant::PACKED_INT32_ARRAY &&
+        raw.get_type() != godot::Variant::PACKED_INT64_ARRAY &&
+        raw.get_type() != godot::Variant::PACKED_BYTE_ARRAY) return fallback;
+    if constexpr (std::is_same_v<T, int32_t>) {
+        const auto values = static_cast<godot::PackedInt32Array>(raw);
+        return index >= 0 && index < values.size() ? values[index] : fallback;
+    } else if constexpr (std::is_same_v<T, int64_t>) {
+        const auto values = static_cast<godot::PackedInt64Array>(raw);
+        return index >= 0 && index < values.size() ? values[index] : fallback;
+    } else {
+        const auto values = static_cast<godot::PackedByteArray>(raw);
+        return index >= 0 && index < values.size() ? values[index] : fallback;
+    }
+}
+
+godot::PackedInt32Array packed_i32(const godot::Dictionary &catalog,
+                                   const char *key) {
+    return catalog.get(key, godot::PackedInt32Array());
+}
+godot::PackedInt64Array packed_i64(const godot::Dictionary &catalog,
+                                   const char *key) {
+    return catalog.get(key, godot::PackedInt64Array());
+}
+godot::PackedByteArray packed_u8(const godot::Dictionary &catalog,
+                                 const char *key) {
+    return catalog.get(key, godot::PackedByteArray());
+}
+godot::PackedStringArray packed_strings(const godot::Dictionary &catalog,
+                                        const char *key) {
+    return catalog.get(key, godot::PackedStringArray());
+}
+
+bool compile_effect_pod_catalog(const Dictionary &catalog,
+                               RuntimeEffectPodCatalog &out,
+                               std::string &error) {
+    error.clear();
+    out = RuntimeEffectPodCatalog{};
+    const int protocol = static_cast<int>(catalog.get("protocol_version", 0));
+    if (protocol != 1) { error = "effect_pod_protocol_version_invalid"; return false; }
+    out.max_instances = static_cast<uint32_t>(std::max<int64_t>(1,
+        static_cast<int64_t>(catalog.get("max_instances", 4096))));
+    out.max_transactions = static_cast<uint32_t>(std::max<int64_t>(1,
+        static_cast<int64_t>(catalog.get("max_transactions", 8192))));
+    out.max_work_per_slice = static_cast<uint32_t>(std::max<int64_t>(1,
+        static_cast<int64_t>(catalog.get("max_work_per_slice", 1024))));
+    out.max_commands_per_transaction = static_cast<uint32_t>(std::max<int64_t>(1,
+        static_cast<int64_t>(catalog.get("max_native_modifier_commands", 4096))));
+
+    const auto metric_keys = packed_strings(catalog, "metric_keys");
+    for (int i = 0; i < metric_keys.size(); ++i) {
+        const String key = metric_keys[i];
+        if (key.is_empty()) { error = "effect_pod_metric_key_empty"; return false; }
+        out.metric_key_hashes.push_back(RuntimeEffectPodAuthority::hash_text(
+            key.utf8().get_data()));
+    }
+    const auto behavior_keys = packed_strings(catalog, "behavior_keys");
+    const auto effect_keys = packed_strings(catalog, "effect_keys");
+    const auto versions = packed_i32(catalog, "versions");
+    const auto cadence_days = packed_i32(catalog, "cadence_days");
+    const auto max_work = packed_i32(catalog, "max_work");
+    const auto enabled = packed_u8(catalog, "enabled");
+    const auto source_kinds = packed_i32(catalog, "source_kinds");
+    const auto target_domains = packed_i32(catalog, "target_domains");
+    const auto operations = packed_i32(catalog, "operations");
+    const auto lifecycles = packed_i32(catalog, "lifecycles");
+    const auto duration_days = packed_i32(catalog, "duration_days");
+    const auto stack_policies = packed_i32(catalog, "stack_policies");
+    const auto stack_keys = packed_strings(catalog, "stack_keys");
+    const auto max_stacks = packed_i32(catalog, "max_stacks");
+    const auto priorities = packed_i32(catalog, "priorities");
+    const auto selector_kinds = packed_i32(catalog, "target_selector_kinds");
+    const auto selector_ids = packed_strings(catalog, "target_selector_ids");
+    const auto prestige = packed_i32(catalog, "magnitude_by_prestige_q16");
+    const int count = effect_keys.size();
+    if (behavior_keys.size() != count || versions.size() != count ||
+        cadence_days.size() != count || max_work.size() != count ||
+        enabled.size() != count || source_kinds.size() != count ||
+        target_domains.size() != count || operations.size() != count ||
+        lifecycles.size() != count || duration_days.size() != count ||
+        stack_policies.size() != count || stack_keys.size() != count ||
+        max_stacks.size() != count || priorities.size() != count ||
+        selector_kinds.size() != count || selector_ids.size() != count ||
+        (!prestige.is_empty() && prestige.size() != count * 6)) {
+        error = "effect_pod_definition_columns_invalid";
+        return false;
+    }
+
+    const auto condition_offsets = packed_i32(catalog, "condition_offsets");
+    const auto condition_ops = packed_i32(catalog, "condition_ops");
+    const auto condition_arg0 = packed_i32(catalog, "condition_arg0");
+    const auto condition_values = packed_i64(catalog, "condition_values");
+    const auto instruction_offsets = packed_i32(catalog, "instruction_offsets");
+    const auto instruction_ops = packed_i32(catalog, "instruction_ops");
+    const auto instruction_arg0 = packed_i32(catalog, "instruction_arg0");
+    const auto instruction_arg1 = packed_i32(catalog, "instruction_arg1");
+    const auto instruction_values = packed_i64(catalog, "instruction_values");
+    const auto command_offsets = packed_i32(catalog, "command_offsets");
+    const auto command_actions = packed_i32(catalog, "command_actions");
+    const auto command_domains = packed_i32(catalog, "command_domains");
+    const auto command_opcodes = packed_i32(catalog, "command_opcodes");
+    const auto command_resolvers = packed_i32(catalog, "command_target_resolvers");
+    const auto command_targets = packed_i64(catalog, "command_static_targets");
+    const auto command_value_modes = packed_i32(catalog, "command_value_modes");
+    const auto command_values = packed_i64(catalog, "command_values");
+    const auto command_durations = packed_i32(catalog, "command_duration_days");
+    const auto command_stacks = packed_i32(catalog, "command_stacks");
+    const auto command_keys = packed_strings(catalog, "command_keys");
+    const auto command_definition_keys = packed_strings(catalog, "command_definition_keys");
+    const auto payload_i0 = packed_i64(catalog, "command_payload_i0");
+    const auto payload_i1 = packed_i64(catalog, "command_payload_i1");
+    const auto payload_i2 = packed_i64(catalog, "command_payload_i2");
+    const auto payload_i3 = packed_i64(catalog, "command_payload_i3");
+    if (condition_offsets.size() != count + 1 || instruction_offsets.size() != count + 1 ||
+        command_offsets.size() != count + 1 || condition_ops.size() != condition_arg0.size() ||
+        condition_ops.size() != condition_values.size() ||
+        instruction_ops.size() != instruction_arg0.size() ||
+        instruction_ops.size() != instruction_arg1.size() ||
+        instruction_ops.size() != instruction_values.size()) {
+        error = "effect_pod_program_columns_invalid";
+        return false;
+    }
+    for (int i = 0; i < condition_ops.size(); ++i) {
+        RuntimeEffectPodCondition value;
+        value.op = static_cast<RuntimeEffectPodConditionOp>(condition_ops[i]);
+        value.arg0 = condition_arg0[i]; value.value = condition_values[i];
+        out.conditions.push_back(value);
+    }
+    for (int i = 0; i < instruction_ops.size(); ++i) {
+        RuntimeEffectPodInstruction value;
+        value.op = static_cast<RuntimeEffectPodInstructionOp>(instruction_ops[i]);
+        value.arg0 = instruction_arg0[i]; value.arg1 = instruction_arg1[i];
+        value.value = instruction_values[i];
+        out.instructions.push_back(value);
+    }
+    if (command_actions.size() != command_domains.size() ||
+        command_actions.size() != command_opcodes.size() ||
+        command_actions.size() != command_resolvers.size() ||
+        command_actions.size() != command_targets.size() ||
+        command_actions.size() != command_value_modes.size() ||
+        command_actions.size() != command_values.size() ||
+        command_actions.size() != command_durations.size() ||
+        command_actions.size() != command_stacks.size() ||
+        command_actions.size() != command_keys.size() ||
+        command_actions.size() != command_definition_keys.size()) {
+        error = "effect_pod_command_columns_invalid";
+        return false;
+    }
+    for (int i = 0; i < command_actions.size(); ++i) {
+        if (command_keys[i].is_empty()) { error = "effect_pod_command_key_empty"; return false; }
+        RuntimeEffectPodCommandDefinition value;
+        value.action = static_cast<RuntimeEffectPodAction>(command_actions[i]);
+        value.domain = command_domains[i]; value.opcode = command_opcodes[i];
+        value.target_resolver = static_cast<RuntimeEffectPodTargetResolver>(command_resolvers[i]);
+        value.static_target = static_cast<uint64_t>(command_targets[i]);
+        value.value_mode = static_cast<RuntimeEffectPodValueMode>(command_value_modes[i]);
+        value.value = command_values[i]; value.duration_days = command_durations[i];
+        value.stacks = command_stacks[i];
+        value.command_key_hash = RuntimeEffectPodAuthority::hash_text(
+            command_keys[i].utf8().get_data());
+        value.definition_key_hash = command_definition_keys[i].is_empty() ? 0 :
+            RuntimeEffectPodAuthority::hash_text(command_definition_keys[i].utf8().get_data());
+        value.payload = {i < payload_i0.size() ? payload_i0[i] : 0,
+                         i < payload_i1.size() ? payload_i1[i] : 0,
+                         i < payload_i2.size() ? payload_i2[i] : 0,
+                         i < payload_i3.size() ? payload_i3[i] : 0};
+        out.commands.push_back(value);
+    }
+    for (int i = 0; i < count; ++i) {
+        if (effect_keys[i].is_empty() || behavior_keys[i].is_empty() == false) {
+            if (!behavior_keys[i].is_empty()) {
+                error = "effect_pod_behavior_implementation_missing:" +
+                    std::string(behavior_keys[i].utf8().get_data());
+                return false;
+            }
+        }
+        const auto valid_offset = [](const PackedInt32Array &offsets, int index,
+                                     int total) { return offsets[index] >= 0 &&
+            offsets[index] <= offsets[index + 1] && offsets[index + 1] <= total; };
+        if (!valid_offset(condition_offsets, i, condition_ops.size()) ||
+            !valid_offset(instruction_offsets, i, instruction_ops.size()) ||
+            !valid_offset(command_offsets, i, command_actions.size())) {
+            error = "effect_pod_definition_offsets_invalid";
+            return false;
+        }
+        RuntimeEffectPodDefinition value;
+        value.key_hash = RuntimeEffectPodAuthority::hash_text(effect_keys[i].utf8().get_data());
+        value.version = versions[i]; value.cadence_days = cadence_days[i];
+        value.max_work = max_work[i]; value.enabled = enabled[i] != 0;
+        value.condition_begin = condition_offsets[i];
+        value.condition_count = condition_offsets[i + 1] - condition_offsets[i];
+        value.instruction_begin = instruction_offsets[i];
+        value.instruction_count = instruction_offsets[i + 1] - instruction_offsets[i];
+        value.command_begin = command_offsets[i];
+        value.command_count = command_offsets[i + 1] - command_offsets[i];
+        value.source_kind = source_kinds[i]; value.target_domain = target_domains[i];
+        value.operation = operations[i];
+        value.lifecycle = static_cast<RuntimeEffectPodLifecycle>(lifecycles[i]);
+        value.duration_days = duration_days[i];
+        value.stack_policy = static_cast<RuntimeEffectPodStackPolicy>(stack_policies[i]);
+        value.stack_key_hash = stack_keys[i].is_empty() ? 0 :
+            RuntimeEffectPodAuthority::hash_text(stack_keys[i].utf8().get_data());
+        value.max_stacks = max_stacks[i]; value.priority = priorities[i];
+        value.target_selector_kind = selector_kinds[i];
+        value.target_selector_hash = selector_ids[i].is_empty() ? 0 :
+            RuntimeEffectPodAuthority::hash_text(selector_ids[i].utf8().get_data());
+        for (int tier = 0; tier < 6; ++tier)
+            value.magnitude_by_prestige_q16[tier] = prestige.is_empty()
+                ? 65536 : prestige[i * 6 + tier];
+        out.definitions.push_back(value);
+    }
+    // No behavior is registered by this bridge yet. Declarative programs are
+    // fully POD; open-ended behavior programs fail explicitly above.
+    out.catalog_hash = 0;
+    return true;
+}
 } // namespace
 
 Dictionary DCWorldExt::configure_effects(const Dictionary &catalog) {
     if (_effect_runtime == nullptr) _effect_runtime = new EffectRuntime();
     Dictionary result = runtime_from(_effect_runtime)->configure(catalog);
     if (bool(result.get("ok", false))) {
+        if (!_runtime_host) _runtime_host = std::make_unique<NativeSimulationHost>();
+        RuntimeEffectPodCatalog pod_catalog;
+        std::string pod_error;
+        const bool pod_ok = compile_effect_pod_catalog(catalog, pod_catalog, pod_error) &&
+            _runtime_host->configure_effect_pod(pod_catalog, pod_error);
+        result["effect_pod_ready"] = pod_ok;
+        result["effect_pod_fallback_reason"] = String(pod_error.c_str());
+        result["effect_pod_catalog_hash"] = pod_ok
+            ? static_cast<int64_t>(_runtime_host->effect_pod_report().catalog_hash) : 0;
         if (_country_runtime != nullptr) {
             runtime_from(_effect_runtime)->attach_country_runtime(
                 static_cast<NativeCountryRuntime *>(_country_runtime));

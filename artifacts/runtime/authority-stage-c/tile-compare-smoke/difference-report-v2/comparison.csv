@@ -1,0 +1,3 @@
+﻿field,samples,different_samples,max_abs_diff,mean_abs_diff,p95_abs_diff,p95_method,policy_declared,policy_exceeded,best_lag,best_lag_mean_abs_diff,first_tick,first_cell
+temp_arr,2,1,0.25,0.125,0.25,deterministic_reservoir_50000,False,True,0,0.125,2,0
+moisture_arr,2,0,0.0,0.0,0.0,deterministic_reservoir_50000,False,False,0,0.0,,

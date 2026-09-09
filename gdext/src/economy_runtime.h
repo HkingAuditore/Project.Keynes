@@ -345,6 +345,9 @@ public:
     }
     bool should_run(int64_t day_index) const;
     bool deadline_critical(int64_t day_index) const;
+    // Mutable peer-domain watermark.  `_epoch_id` identifies an Economy
+    // epoch; this value identifies the latest committed aggregate state.
+    uint64_t committed_generation() const { return _committed_generation; }
     void drain_bio_introduces(godot::PackedInt32Array &cells,
                               godot::PackedInt32Array &bits);
     godot::PackedInt32Array economy_live_cells_query();
@@ -675,6 +678,13 @@ private:
         GOVERNMENT_RESEARCH_PROCUREMENT = 15,
         FAMILY_COMMIT = 16,
         PERSON_COMMIT = 17,
+    };
+
+    struct CountryResearchProcurementCandidate {
+        int32_t country = -1;
+        int32_t market = -1;
+        int32_t good = -1;
+        int64_t price = 0;
     };
 
     enum class PublishPhase : uint8_t {
@@ -3306,6 +3316,7 @@ private:
     int64_t _catalog_hash = 0;
     int64_t _catalog_compat_hash_v6 = 0;
     int64_t _epoch_id = 0;
+    uint64_t _committed_generation = 1;
     int64_t _sample_day = -1;
     int64_t _current_day = -1;
     int64_t _commit_day = -1;
@@ -3494,6 +3505,21 @@ private:
     int64_t _government_research_procured_points = 0;
     int64_t _government_research_procurement_cash = 0;
     int64_t _government_research_procurement_orders = 0;
+    // Resumable government research procurement state. These vectors are
+    // epoch-local continuation data: candidate ordering and country budget
+    // decisions are captured once, then consumed in stable cursor order.
+    std::vector<CountryResearchProcurementCandidate>
+        _country_research_procurement_candidates;
+    std::vector<int64_t> _country_research_procurement_budgets;
+    std::vector<int64_t> _country_research_procurement_remaining;
+    std::vector<uint8_t> _country_research_procurement_enabled;
+    size_t _country_research_procurement_cursor = 0;
+    int32_t _country_research_procurement_phase = 0;
+    bool _country_research_procurement_initialized = false;
+    bool _country_research_procurement_done = false;
+    int64_t _country_research_procurement_slices = 0;
+    int64_t _country_research_procurement_transactions = 0;
+    int64_t _country_research_procurement_rejections = 0;
     std::vector<int64_t> _merchant_procurement_paid_by_cell;
     std::vector<int64_t> _merchant_procurement_retail_by_cell;
     std::vector<int64_t> _merchant_procurement_factor_weighted_cash_by_cell;
@@ -5581,6 +5607,22 @@ private:
     bool rebuild_merchant_ranges(std::string &error);
     bool repair_cell_merchant_and_rebuild(int32_t cell, std::string &error);
     bool run_government_research_procurement(std::string &error);
+    // Economy-owned peer coordinator for Country treasury research purchases.
+    // The caller keeps deterministic candidate ordering; this helper owns the
+    // typed prepare/commit/apply/ACK boundary and the peer-side mutations.
+    bool coordinate_country_research_purchase(
+        int32_t country, int32_t market, int32_t good, int64_t quantity,
+        int64_t cash, const std::vector<int32_t> &living_merchants,
+        std::string &error);
+    bool coordinate_country_fiscal_transaction(
+        int32_t country, int32_t operation, int64_t amount,
+        int64_t &committed, std::string &error);
+    // Economy-owned peer coordinator for Country/cohort cash transfers. The
+    // cohort is prepared before Country commit, then mutated exactly once and
+    // acknowledged with the same transaction identity.
+    bool coordinate_country_cohort_cash(
+        int32_t cohort_slot, int64_t country_handle, int32_t operation,
+        int64_t amount, int64_t &committed, std::string &error);
     void refresh_country_research_goods_consumed();
     bool compile_family_catalog(const godot::Dictionary &catalog,
                                 std::string &error);
@@ -6029,3 +6071,4 @@ inline int64_t NativeEconomyRuntime::goods_cost(
 }
 
 } // namespace pk
+

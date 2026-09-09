@@ -100,6 +100,10 @@ struct CountryPeerResult {
     uint64_t request_id = 0;
     uint64_t session_epoch = 0;
     uint64_t country_generation = 0;
+    // Generation captured after the peer has applied (or durably rejected)
+    // the intent.  `peer_generation` remains the input watermark from the
+    // intent so delayed ACKs can be checked against the original request.
+    uint64_t committed_peer_generation = 0;
     uint64_t peer_generation = 0;
     int64_t day = -1;
     uint32_t continuation_index = 0;
@@ -116,6 +120,29 @@ struct CountryPeerResult {
     }
     bool has(uint8_t flag) const noexcept {
         return (technology_flags & flag) != 0;
+    }
+};
+
+// The protocol state is separate from Country business state. It controls
+// whether a boundary may wait, report a peer rejection, retry on a later day,
+// or be captured into CPD2. Rejected work remains an in-memory retry barrier;
+// CPD2 capture must refuse it instead of silently dropping the retry metadata.
+struct CountryPeerProtocolStatus {
+    uint32_t protocol_version = COUNTRY_PEER_PROTOCOL_VERSION;
+    uint8_t async_mode = 0;
+    uint32_t pending_intents = 0;
+    uint32_t queued_intents = 0;
+    uint32_t rejected_intents = 0;
+    uint8_t has_unreported_rejection = 0;
+    int64_t retry_day = -1;
+    uint64_t rejected_request_id = 0;
+    CountryPeerIntentCode rejected_opcode =
+        CountryPeerIntentCode::ENSURE_TECHNOLOGY_EFFECT;
+    std::array<char, COUNTRY_PEER_REASON_CAPACITY> rejection_reason{};
+
+    bool has_save_barrier() const noexcept {
+        return pending_intents != 0 || queued_intents != 0 ||
+            rejected_intents != 0;
     }
 };
 

@@ -1,0 +1,44 @@
+{
+  "stage": "K2-B",
+  "generated_local": "2026-09-09T17:10:00+08:00",
+  "status": "partial",
+  "authority_mask_before": "0x802",
+  "authority_mask_after": "0x802",
+  "active_enabled": false,
+  "operations": [
+    "treasury_spend",
+    "fiscal_reserve",
+    "fiscal_return",
+    "fiscal_collect",
+    "cash_to_cohort",
+    "cash_from_cohort",
+    "good_to_market",
+    "good_from_market",
+    "research_purchase"
+  ],
+  "transaction_states": [
+    "Created",
+    "AwaitingPeerPrepared",
+    "PeerPrepared",
+    "CommitDecided",
+    "CountryApplied",
+    "AwaitingPeerApplied",
+    "Completed",
+    "Rejected",
+    "Faulted"
+  ],
+  "evidence": [
+    "runtime_country_economy_transaction_test.gd: 43 checks, 0 failures",
+    "runtime_country_peer_bridge_test.gd: 106 checks, 0 failures",
+    "runtime_country_save_roundtrip_test.gd: 36 checks, 0 failures",
+    "runtime_country_pod_test.gd: 34 checks, 0 failures",
+    "canal_runtime_test.gd: 28 checks, 0 failures",
+    "treasury_construction_runtime_test.gd: 2 grouped-material planner failures; bridge-specific assertions passed"
+  ],
+  "known_limitations": [
+    "persistent NativeSimulationHost Country stage not ACTIVE",
+    "NativeSimulationHost persistent Country stage not ACTIVE",
+    "fiscal escrow, cohort cash and ordinary market-goods production callers remain compatibility bridges; construction/canal use synchronous compatibility adapters over the typed Country transaction state machine",
+    "no Country authority mask promotion"
+  ]
+}

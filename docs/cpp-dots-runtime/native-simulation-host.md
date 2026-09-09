@@ -9,13 +9,14 @@
 `world_ext_simulation_host.cpp` 做参数校验、PackedArray 深拷贝和轻量轮询；worker 不保存
 `Object`、`Variant`、`Dictionary`、`MapData` 或场景树引用。
 
-当前 `implemented_domain_mask()` 只有 `COMMIT`。因此：
+当前 `implemented_domain_mask()` 为 `CLIMATE | COMMIT = 0x802`。Modifier 虽已接入 SHADOW POD pipeline，仍不在 ACTIVE authority mask。因此：
 
 - `SHADOW` 可以启动，用于时钟、命令排序、环境快照、提交环和故障路径测试；
 - `ACTIVE` 在缺少任一 native POD domain handler 时直接返回
   `runtime_native_domains_incomplete`，不会以“假 ACTIVE”运行；
 - 生产权威仍由 OFF/同步 SUS 路径提供，直到 Country、Economy、Effect、Modifier、Ideology、
-  Trigger、Climate 和 Events 都完成同一日 barrier。
+ Climate 保持现有按域 ACTIVE 资格；Modifier 的生产权威仍由 legacy OFF/同步 SUS 路径提供，
+ 直到 E8 明确放行。Country、Economy、Effect、Ideology、Trigger 和 Events 仍需各自完成同一日 barrier。
 
 ## POD domain pipeline（当前 SHADOW）
 
@@ -38,6 +39,19 @@ SHADOW 每个模拟日会执行该 pipeline 并将 `pod_completed_domain_mask`�
 runtime 仍是权威。这样可以先做逐日 hash/工作量对拍，再逐域接入真实 state/replay/ACK，
 避免用占位 domain 错误开启 ACTIVE。`runtime_domain_pod_self_test()` 覆盖全阶段完成、
 有限输入、事件/研究意图和 hash 随日期推进。
+
+### Ideology G2-G7 SHADOW stage
+
+Ideology is wired between Country and Effect. The host publishes the previous
+committed Economy class-opinion snapshot, captures Country technology/research
+state, and invokes the worker POD plan at the daily barrier. Worker commands
+and snapshots cross the boundary as numeric copies only. Equip, unequip,
+promotion, level replacement, and active progression emit deferred typed Effect
+intents; the host exposes those intents and accepts only real Effect ACKs. A
+missing, stale, rejected, or not-yet-returned ACK leaves the transition pending
+and never becomes final ACTIVE ideology state. The synchronous ideology runtime
+remains the production reference, and this stage does not alter
+`implemented_domain_mask() == 0x802`.
 
 Climate 边界现在还保留一份独立的 `RuntimeClimatePodSnapshot`：温度、湿度、雪盖、
 30 日 EMA、水分平衡、降水、天气强度、植被活力、anomaly 和 RNG 均为深拷贝 POD。
@@ -102,6 +116,11 @@ PKSR v1 runtime envelope 同样明确拒绝，v2 必须携带
 `runtime_domain_abi_version`、`section_mask`、pending command tail 和 producer
 cursor；checksum 校验通过后才允许进入下一次 worker start。
 
+When present, the worker ideology state is encoded as an independent `IDP1`
+section with its own ABI, catalog/state hash, bounded length, and checksum.
+`IDP1` is restored transactionally after worker stop and catalog/bootstrap
+completion. It is never reconstructed from `PDP3` or synchronous `PKID`.
+
 ## 后续迁移顺序
 
 1. 为每个 domain 实现 `RuntimeDayPlan` 的纯 POD calculate/replay adapter；
@@ -119,3 +138,9 @@ the worker never receives `NativeCountryRuntime`, `Object`, `Variant`, or
 publishes `country_pod_*` diagnostics. The probe intentionally reports
 `cross_domain_ack_adapter_missing` and does not claim Country authority. ACTIVE
 remains rejected until all domain handlers and ACK barriers are native POD.
+
+## Modifier POD shadow stage
+
+阶段 E2-E7 的 Modifier stage 位于 EFFECT -> MODIFIER -> ... -> COMMIT，执行完整 POD plan/replay、expiry、五个 opcode、ACK 校验和 snapshot publish。Modifier commit 前必须先成功预留 snapshot slot；ACK 缺失、容量溢出、身份不匹配或 snapshot shape/catalog hash 错误都会 discard plan，不 swap current、不发布 snapshot、不推进 generation，并写入 modifier_pod_fallback_reason。
+
+Modifier 不改变 implemented_domain_mask == 0x802。legacy ModifierRuntime 仍负责生产 daily，Host 只运行 SHADOW 对照；capture 后 ingress 自动延迟至下一安全日边界，main_wait_on_sim_us 保持为零。

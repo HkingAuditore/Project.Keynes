@@ -165,6 +165,17 @@ void RuntimeDomainPodPipeline::reset(uint32_t cell_count, uint32_t country_count
     _economy.generation = 0; _economy.ledger_failures = 0;
     _events.next_event_id = 1; _events.generation = 0;
     _report = RuntimeDomainPipelineReport{};
+    _restored_legacy_modifier = false;
+    _trigger_catalog = RuntimeTriggerPodCatalog{};
+    _trigger_catalog.catalog_hash = 1;
+    _trigger_catalog.source_count = 1;
+    _trigger_catalog.event_type_span = 1;
+    _trigger_catalog.max_states = 1;
+    _trigger_catalog.max_pending_events = 1;
+    _trigger_catalog.distinct_capacity = 1;
+    std::string trigger_bootstrap_error;
+    _trigger_authority.bootstrap(RuntimeTriggerSnapshot{}, _trigger_catalog,
+                                 trigger_bootstrap_error);
     _intents.clear();
     _acks.clear();
     _last_execute_ok = true;
@@ -373,22 +384,36 @@ RuntimeDomainReport RuntimeDomainPodPipeline::run_trigger(
     RuntimeDomainReport out; out.domain = RuntimeDomainId::TRIGGER_INPUT;
     out.day = context.day;
     out.input_generation = context.input_generation;
-    out.base_generation = _trigger.generation;
+    out.base_generation = static_cast<uint32_t>(_trigger_authority.generation());
     const auto begin = std::chrono::steady_clock::now();
-    if (_trigger.accumulators.empty()) {
-        _trigger.accumulators.assign(1, 0); _trigger.cooldown_until.assign(1, 0);
-        _trigger.fire_sequences.assign(1, 0);
+    RuntimeTriggerPodPlan plan;
+    std::string error;
+    if (!_trigger_authority.plan_day(context.day, context.input_generation, plan, error) ||
+        !_trigger_authority.commit_day(plan, plan.acks, error)) {
+        out.preflight_ok = 0;
+        runtime_copy_text(out.fallback_reason, error.empty()
+            ? "trigger_pod_transaction_failed" : error.c_str());
+        out.timing.elapsed_ms = elapsed_ms(begin);
+        return out;
     }
-    ++_trigger.accumulators[0]; ++_trigger.generation;
-    out.completed = 1; out.dirty_families = RUNTIME_DIRTY_EVENTS;
-    out.timing.work_units = _trigger.accumulators.size();
-    out.timing.state_hash = hash_mix(FNV_OFFSET, static_cast<uint64_t>(_trigger.accumulators[0]));
-    if (_trigger.accumulators[0] == 1 && intents.size() < RUNTIME_DOMAIN_INTENT_CAPACITY) {
+    out.completed = 1; out.preflight_ok = 1; out.dirty_families = RUNTIME_DIRTY_EVENTS;
+    out.timing.work_units = plan.next_state.states.size() + plan.intents.size();
+    out.timing.intent_count = static_cast<uint32_t>(plan.intents.size());
+    out.timing.ack_count = plan.required_ack_count;
+    out.timing.state_hash = _trigger_authority.state_hash();
+    for (const RuntimeTriggerEffectIntent &effect : plan.intents) {
+        if (intents.size() >= RUNTIME_DOMAIN_INTENT_CAPACITY) break;
         RuntimeDomainIntent intent;
         intent.source_domain = static_cast<uint16_t>(RuntimeDomainId::TRIGGER_INPUT);
-        intent.target_domain = static_cast<uint16_t>(RuntimeDomainId::EFFECT);
-        intent.opcode = 1; intent.source_id = 1; intent.effective_day = context.day;
-        intents.push_back(intent); out.timing.intent_count = 1;
+        intent.target_domain = static_cast<uint16_t>(effect.domain);
+        intent.opcode = static_cast<uint16_t>(effect.opcode);
+        intent.source_id = static_cast<uint64_t>(effect.id);
+        intent.target_handle = effect.target_handle;
+        intent.target_generation = effect.target_generation;
+        intent.value = effect.resolved_value;
+        intent.effective_day = effect.effective_day;
+        intent.payload = effect.payload;
+        intents.push_back(intent);
     }
     out.timing.elapsed_ms = elapsed_ms(begin); return out;
 }
@@ -570,21 +595,15 @@ bool RuntimeDomainPodPipeline::execute_day(
 void RuntimeDomainPodPipeline::serialize(std::vector<uint8_t> &out) const {
     out.clear();
     out.reserve(256u + _climate.temperature.size() * 16u + _events.journal.size() * 32u);
-    out.insert(out.end(), {'P', 'D', 'P', '3'});
+    out.insert(out.end(), {'P', 'D', 'P', '4'});
     append_u32(out, RUNTIME_DOMAIN_POD_ABI_VERSION);
-    append_u64(out, _modifier.generation); append_u64(out, _modifier.revision);
     append_u64(out, _effect.next_instance_id); append_u64(out, _effect.generation);
     append_u64(out, _ideology.rng_state); append_u64(out, _ideology.generation);
     append_u64(out, _trigger.generation); append_u64(out, _climate.generation);
     append_u64(out, _climate.rng_state);
     append_u64(out, _economy.generation); append_u64(out, _economy.ledger_failures);
     append_u64(out, _events.next_event_id); append_u64(out, _events.generation);
-    write_vector(out, _modifier.entries, [](auto &bytes, const RuntimeModifierPodEntry &v) {
-        append_u64(bytes, v.target_handle); append_u32(bytes, v.target_generation);
-        append_u32(bytes, v.definition_id); append_i64(bytes, v.stacks);
-        append_i64(bytes, v.expires_day); append_i64(bytes, v.value_q16);
-    });
-    write_vector(out, _effect.instances, [](auto &bytes, const RuntimeEffectPodInstance &v) {
+    write_vector(out, _effect.instances, [](auto &bytes, const RuntimeDomainEffectPodInstance &v) {
         append_u64(bytes, v.instance_id); append_u32(bytes, v.generation);
         append_u32(bytes, v.target_domain | (static_cast<uint32_t>(v.opcode) << 16u));
         append_u64(bytes, v.target_handle); append_i64(bytes, v.next_due_day);
@@ -626,7 +645,11 @@ void RuntimeDomainPodPipeline::serialize(std::vector<uint8_t> &out) const {
 
 bool RuntimeDomainPodPipeline::restore(const uint8_t *data, size_t size, std::string &error) {
     error.clear();
-    if (data == nullptr || size < 4u + 4u || std::memcmp(data, "PDP3", 4u) != 0) {
+    const bool legacy_pdp3 = data != nullptr && size >= 8u &&
+        std::memcmp(data, "PDP3", 4u) == 0;
+    const bool current_pdp4 = data != nullptr && size >= 8u &&
+        std::memcmp(data, "PDP4", 4u) == 0;
+    if (!legacy_pdp3 && !current_pdp4) {
         error = "runtime_domain_pod_magic_invalid"; return false;
     }
     size_t cursor = 4u; uint32_t version = 0;
@@ -651,8 +674,14 @@ bool RuntimeDomainPodPipeline::restore(const uint8_t *data, size_t size, std::st
         _economy = economy_backup;
         _events = events_backup;
     };
-    uint64_t *scalars[] = {&_modifier.generation, &_modifier.revision,
-        &_effect.next_instance_id, &_effect.generation, &_ideology.rng_state,
+    uint64_t legacy_modifier_generation = 0;
+    uint64_t legacy_modifier_revision = 0;
+    if (legacy_pdp3 &&
+        (!read_u64(data, size, cursor, legacy_modifier_generation) ||
+         !read_u64(data, size, cursor, legacy_modifier_revision))) {
+        rollback(); error = "runtime_domain_pod_header_truncated"; return false;
+    }
+    uint64_t *scalars[] = {&_effect.next_instance_id, &_effect.generation, &_ideology.rng_state,
         &_ideology.generation, &_trigger.generation, &_climate.generation,
         &_climate.rng_state,
         &_economy.generation, &_economy.ledger_failures, &_events.next_event_id,
@@ -665,12 +694,30 @@ bool RuntimeDomainPodPipeline::restore(const uint8_t *data, size_t size, std::st
         std::memcpy(&value, &bits, sizeof(value)); return std::isfinite(value);
     };
     const auto read_modifier = [](const uint8_t *bytes, size_t length, size_t &at, RuntimeModifierPodEntry &v) {
-        int64_t stacks = 0; return read_u64(bytes,length,at,v.target_handle) && read_u32(bytes,length,at,v.target_generation) &&
-            read_u32(bytes,length,at,v.definition_id) && read_i64(bytes,length,at,stacks) &&
-            read_i64(bytes,length,at,v.expires_day) && read_i64(bytes,length,at,v.value_q16) &&
-            (stacks >= std::numeric_limits<int32_t>::min() &&
-             stacks <= std::numeric_limits<int32_t>::max()) &&
-            (v.stacks = static_cast<int32_t>(stacks), true);
+        uint32_t definition_id = 0;
+        uint32_t scope = 0;
+        uint32_t stacks = 0;
+        uint32_t magnitude_q16 = 0;
+        if (!read_u64(bytes, length, at, v.modifier_handle) ||
+            !read_u64(bytes, length, at, v.target_handle) ||
+            !read_u32(bytes, length, at, v.target_generation) ||
+            !read_u32(bytes, length, at, definition_id) ||
+            !read_u32(bytes, length, at, scope) ||
+            !read_u64(bytes, length, at, v.entity_handle) ||
+            !read_u64(bytes, length, at, v.group_handle) ||
+            !read_u64(bytes, length, at, v.source_type) ||
+            !read_u64(bytes, length, at, v.source_id) ||
+            !read_u32(bytes, length, at, stacks) ||
+            !read_u32(bytes, length, at, magnitude_q16) ||
+            !read_i64(bytes, length, at, v.applied_day) ||
+            !read_i64(bytes, length, at, v.expires_day)) {
+            return false;
+        }
+        v.definition_id = static_cast<int32_t>(definition_id);
+        v.scope = static_cast<int32_t>(scope);
+        v.stacks = static_cast<int32_t>(stacks);
+        v.magnitude_q16 = static_cast<int32_t>(magnitude_q16);
+        return true;
     };
     // Reset vectors before filling them so a failed restore cannot retain an
     // entry from a previous world.
@@ -680,8 +727,18 @@ bool RuntimeDomainPodPipeline::restore(const uint8_t *data, size_t size, std::st
     _climate.water_balance.clear(); _climate.weather_precip.clear();
     _climate.weather_intensity.clear(); _climate.vegetation_vitality.clear();
     _economy.population.clear(); _economy.treasury.clear(); _economy.inventory.clear(); _events.journal.clear();
-    if (!read_vector(data,size,cursor,_modifier.entries,read_modifier,1u<<20) ||
-        !read_vector(data,size,cursor,_effect.instances,[](const uint8_t *b,size_t s,size_t &a,RuntimeEffectPodInstance &v){
+    if (legacy_pdp3) {
+        _modifier.generation = legacy_modifier_generation;
+        _modifier.revision = legacy_modifier_revision;
+        if (!read_vector(data,size,cursor,_modifier.entries,read_modifier,1u<<20)) {
+            rollback(); error = "runtime_domain_pod_payload_invalid"; return false;
+        }
+    } else {
+        _modifier.entries.clear();
+        _modifier.generation = 0;
+        _modifier.revision = 0;
+    }
+    if (!read_vector(data,size,cursor,_effect.instances,[](const uint8_t *b,size_t s,size_t &a,RuntimeDomainEffectPodInstance &v){
             uint32_t packed=0, active=0; return read_u64(b,s,a,v.instance_id)&&read_u32(b,s,a,v.generation)&&read_u32(b,s,a,packed)&&read_u64(b,s,a,v.target_handle)&&read_i64(b,s,a,v.next_due_day)&&read_u32(b,s,a,v.required_ack_mask)&&read_u32(b,s,a,v.received_ack_mask)&&read_u64(b,s,a,v.fire_sequence)&&read_u32(b,s,a,active)&&active <= 1u&&(v.target_domain=static_cast<uint16_t>(packed),v.opcode=static_cast<uint16_t>(packed>>16u),v.active=static_cast<uint8_t>(active),true);
         },1u<<20) ||
         !read_vector(data,size,cursor,_ideology.countries,[](const uint8_t *b,size_t s,size_t &a,RuntimeIdeologyPodCountry &v){int64_t dominant=0,pending=0;return read_u64(b,s,a,v.country_handle)&&read_i64(b,s,a,v.points)&&read_i64(b,s,a,dominant)&&read_i64(b,s,a,pending)&&read_u32(b,s,a,v.revision)&&dominant >= std::numeric_limits<int32_t>::min()&&dominant <= std::numeric_limits<int32_t>::max()&&pending >= std::numeric_limits<int32_t>::min()&&pending <= std::numeric_limits<int32_t>::max()&&(v.dominant_id=static_cast<int32_t>(dominant),v.pending_transition=static_cast<int32_t>(pending),true);},1u<<20) ||
@@ -706,6 +763,7 @@ bool RuntimeDomainPodPipeline::restore(const uint8_t *data, size_t size, std::st
         !read_vector(data,size,cursor,_events.journal,[](const uint8_t *b,size_t s,size_t &a,RuntimeEventPodEntry &v){uint32_t packed=0;return read_i64(b,s,a,v.day)&&read_u64(b,s,a,v.event_id)&&read_u32(b,s,a,packed)&&read_u64(b,s,a,v.source_handle)&&read_i64(b,s,a,v.value)&&(v.type=static_cast<uint16_t>(packed),v.flags=static_cast<uint16_t>(packed>>16u),true);},RUNTIME_DOMAIN_EVENT_CAPACITY) || cursor != size) {
         rollback(); error = "runtime_domain_pod_payload_invalid"; return false;
     }
+    _restored_legacy_modifier = legacy_pdp3;
     return true;
 }
 

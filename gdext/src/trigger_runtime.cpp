@@ -2,6 +2,8 @@
 #include "effect_runtime.h"
 #include "economy_runtime.h"
 #include "ideology_runtime.h"
+#include "native_simulation_host.h"
+#include "runtime_trigger_kernel.h"
 
 #include <godot_cpp/variant/array.hpp>
 #include <godot_cpp/variant/packed_int32_array.hpp>
@@ -946,6 +948,7 @@ void TriggerRuntime::emit_effects(int32_t trigger_id, int32_t state_index,
         effect.effective_day = event.day + 1;
         effect.source_priority = source.source_priority;
         effect.trigger_id = trigger_id;
+        effect.effect_definition_id = definition.effect_begin + i;
         effect.target_handle = resolve_effect_target(source, state_target, event);
         effect.target_generation = generation_from_handle(effect.target_handle);
         effect.fire_sequence = sequence;
@@ -994,87 +997,137 @@ Dictionary TriggerRuntime::run_daily(int64_t day_index) {
     if (!_configured) return failure("trigger_runtime_not_configured");
     if (day_index < _current_day) return failure("trigger_day_regression");
     const auto started = std::chrono::steady_clock::now();
-    _current_day = day_index;
-    std::stable_sort(_pending_events.begin(), _pending_events.end(),
-        [](const Event &a, const Event &b) {
-            if (a.day != b.day) return a.day < b.day;
-            if (a.source_id != b.source_id) return a.source_id < b.source_id;
-            return a.event_id < b.event_id;
-        });
-    size_t retained = 0;
-    int64_t processed = 0;
+    RuntimeTriggerPodCatalog catalog;
+    RuntimeTriggerSnapshot snapshot;
+    std::string kernel_error;
+    if (!export_pod_catalog(catalog, kernel_error) ||
+        !export_pod_snapshot(snapshot, kernel_error))
+        return failure(kernel_error.empty() ? "trigger_pod_export_failed" : kernel_error.c_str());
+
+    const RuntimeTriggerSnapshot previous_snapshot = snapshot;
+    const size_t pending_before = snapshot.pending_events.size();
+    std::vector<RuntimeTriggerEffectIntent> emitted;
+    if (!RuntimeTriggerKernel::evaluate_day(catalog, snapshot, day_index,
+                                            emitted, kernel_error))
+        return failure(kernel_error.empty() ? "trigger_kernel_failed" : kernel_error.c_str());
+
+    // The kernel retains only future events, so the difference is the exact
+    // number consumed without maintaining a second event loop in the facade.
+    const int64_t processed = static_cast<int64_t>(pending_before) -
+        static_cast<int64_t>(snapshot.pending_events.size());
     int64_t fired = 0;
-    for (size_t event_index = 0; event_index < _pending_events.size(); ++event_index) {
-        const Event event = _pending_events[event_index];
-        if (event.day > day_index) {
-            _pending_events[retained++] = event;
-            continue;
-        }
-        ++processed;
-        if (event.source_id < 0 || event.source_id >= _source_count ||
-            event.event_type < 0 || event.event_type >= _event_type_span ||
-            _source_needs_resync[event.source_id] != 0) continue;
-        auto process_rule = [&](int32_t trigger_id, uint64_t target) {
-            Definition &definition = _definitions[trigger_id];
-            if (definition.enabled == 0 ||
-                (definition.payload_schema > 0 &&
-                 definition.payload_schema != event.payload_schema) ||
-                !event_matches(definition, event)) return;
-            const int32_t state_index = find_or_create_state(
-                trigger_id, target, generation_from_handle(target));
-            if (state_index < 0 || _state.needs_resync[state_index] != 0) return;
-            if (_state.last_event_id[state_index] >= event.event_id) return;
-            int64_t old_value = 0, new_value = 0, event_value = 0;
-            if (!update_aggregate(state_index, definition, event,
-                                  old_value, new_value, event_value)) return;
-            _state.last_event_id[state_index] = event.event_id;
-            const int64_t old_level = old_value >= 0 ? old_value / definition.threshold : 0;
-            const int64_t new_level = new_value >= 0 ? new_value / definition.threshold : 0;
-            _state.remainder[state_index] = new_value >= 0
-                ? new_value % definition.threshold : 0;
-            ++_rules_evaluated;
-            if (!evaluate_conditions(definition, state_index, old_value,
-                                     new_value, old_level, new_level)) return;
-            const int64_t fire_count = fire_count_for(definition, state_index,
-                old_value, new_value, old_level, new_level);
-            if (fire_count <= 0) return;
-            emit_effects(trigger_id, state_index, event, fire_count,
-                         new_level, event_value);
-            fired += fire_count;
-            if (definition.mode == ONE_SHOT) _state.completed[state_index] = 1;
-            if (definition.cooldown_days > 0)
-                _state.cooldown_until[state_index] = day_index + definition.cooldown_days;
-        };
-        const auto &rules = _index_by_source_event[
-            static_cast<size_t>(event.source_id) * _event_type_span + event.event_type];
-        for (int32_t trigger_id : rules) {
-            if (_definitions[trigger_id].dynamic_binding != 0) continue;
-            process_rule(trigger_id, resolve_target(_definitions[trigger_id], event));
-        }
-        const auto branch_it = _branch_index_by_event_cell.find(
-            branch_event_cell_key(event.source_id, event.event_type,
-                                  static_cast<int32_t>(event.group_handle)));
-        if (branch_it != _branch_index_by_event_cell.end()) {
-            for (const int32_t binding_index : branch_it->second) {
-                if (binding_index < 0 || binding_index >= static_cast<int32_t>(
-                        _branch_bindings.size())) continue;
-                const BranchBinding &binding = _branch_bindings[binding_index];
-                process_rule(binding.trigger_id, binding.branch_handle);
+    for (const RuntimeTriggerPodSnapshotState &after : snapshot.states) {
+        for (const RuntimeTriggerPodSnapshotState &before : previous_snapshot.states) {
+            if (before.trigger_id == after.trigger_id &&
+                before.target_handle == after.target_handle) {
+                if (after.fire_sequence > before.fire_sequence)
+                    fired += static_cast<int64_t>(after.fire_sequence -
+                                                  before.fire_sequence);
+                break;
             }
         }
+        bool existed = false;
+        for (const RuntimeTriggerPodSnapshotState &before : previous_snapshot.states) {
+            if (before.trigger_id == after.trigger_id &&
+                before.target_handle == after.target_handle) {
+                existed = true;
+                break;
+            }
+        }
+        if (!existed) fired += static_cast<int64_t>(after.fire_sequence);
     }
-    _pending_events.resize(retained);
-    std::stable_sort(_effects.begin(), _effects.end(),
-        [](const Effect &a, const Effect &b) {
-            if (a.effective_day != b.effective_day)
-                return a.effective_day < b.effective_day;
-            if (a.source_priority != b.source_priority)
-                return a.source_priority < b.source_priority;
-            if (a.trigger_id != b.trigger_id) return a.trigger_id < b.trigger_id;
-            if (a.target_handle != b.target_handle)
-                return a.target_handle < b.target_handle;
-            return a.fire_sequence < b.fire_sequence;
-        });
+
+    // Replace only after the Godot-free kernel succeeds. This keeps the
+    // facade transactional while preserving all PKTR v6 fields and strings.
+    const uint64_t events_ingested = _events_ingested;
+    const uint64_t events_deduplicated = _events_deduplicated;
+    const uint64_t events_rejected = _events_rejected;
+    const uint64_t effects_emitted = _effects_emitted + emitted.size();
+    const uint64_t rules_evaluated = _rules_evaluated;
+    const uint64_t gap_count = _gap_count;
+    const uint64_t resync_count = _resync_count;
+    for (const RuntimeTriggerPodSnapshotState &source : snapshot.states) {
+        if (source.trigger_id < 0 ||
+            source.trigger_id >= static_cast<int32_t>(_definitions.size()) ||
+            source.distinct_keys.size() != static_cast<size_t>(_distinct_capacity))
+            return failure("trigger_state_restore_failed");
+    }
+    reset_runtime_state();
+    _current_day = day_index;
+    _next_effect_id = snapshot.next_effect_id;
+    _acked_effect_id = snapshot.acked_effect_id;
+    _source_cursor = snapshot.source_cursor;
+    _source_needs_resync = snapshot.source_needs_resync;
+    _source_gap_begin = snapshot.source_gap_begin;
+    _source_gap_end = snapshot.source_gap_end;
+    for (size_t i = 0; i < snapshot.enabled.size() &&
+                       i < _definitions.size(); ++i)
+        _definitions[i].enabled = snapshot.enabled[i] != 0 ? 1 : 0;
+    for (const RuntimeTriggerBranchBinding &source : snapshot.branch_bindings) {
+        if (source.trigger_id < 0 ||
+            source.trigger_id >= static_cast<int32_t>(_definitions.size()))
+            return failure("trigger_branch_binding_restore_failed");
+        _branch_bindings.push_back({source.trigger_id, source.branch_handle,
+                                    source.cell, source.reward_target});
+    }
+    rebuild_branch_index();
+    for (const RuntimeTriggerPodSnapshotState &source : snapshot.states) {
+        const int32_t index = find_or_create_state(source.trigger_id,
+            source.target_handle, source.target_generation);
+        if (index < 0) return failure("trigger_state_restore_failed");
+        _state.accumulator[index] = source.accumulator;
+        _state.remainder[index] = source.remainder;
+        _state.last_event_id[index] = source.last_event_id;
+        _state.fire_sequence[index] = source.fire_sequence;
+        _state.cooldown_until[index] = source.cooldown_until;
+        _state.window_start_day[index] = source.window_start_day;
+        _state.last_observed[index] = source.last_observed;
+        _state.last_sample_day[index] = source.last_sample_day;
+        _state.completed[index] = source.completed;
+        _state.initialized[index] = source.initialized;
+        _state.needs_resync[index] = source.needs_resync;
+        const size_t begin = static_cast<size_t>(index) * _distinct_capacity;
+        std::copy(source.distinct_keys.begin(), source.distinct_keys.end(),
+                  _distinct_keys.begin() + begin);
+    }
+    for (const RuntimeTriggerEvent &source : snapshot.pending_events) {
+        Event event;
+        event.source_id = source.source_id; event.event_id = source.event_id;
+        event.day = source.day; event.event_type = source.event_type;
+        event.payload_schema = source.payload_schema;
+        event.entity_handle = source.entity_handle;
+        event.group_handle = source.group_handle;
+        event.value = source.value; event.payload = source.payload;
+        event.snapshot = source.snapshot != 0;
+        _pending_events.push_back(event);
+    }
+    for (const RuntimeTriggerEffectIntent &source : snapshot.pending_effects) {
+        Effect effect;
+        effect.id = source.id; effect.effective_day = source.effective_day;
+        effect.source_priority = source.source_priority;
+        effect.trigger_id = source.trigger_id;
+        effect.target_handle = source.target_handle;
+        effect.target_generation = source.target_generation;
+        effect.fire_sequence = source.fire_sequence; effect.action = source.action;
+        effect.domain = source.domain; effect.opcode = source.opcode;
+        effect.resolved_value = source.resolved_value;
+        effect.duration_days = source.duration_days; effect.stacks = source.stacks;
+        effect.payload = source.payload;
+        if (source.effect_definition_id >= 0 &&
+            source.effect_definition_id < static_cast<int32_t>(_effect_definitions.size())) {
+            const EffectDefinition &definition = _effect_definitions[source.effect_definition_id];
+            effect.command_key = definition.command_key;
+            effect.definition_key = definition.definition_key;
+        }
+        _effects.push_back(std::move(effect));
+    }
+    _events_ingested = events_ingested;
+    _events_deduplicated = events_deduplicated;
+    _events_rejected = events_rejected;
+    _effects_emitted = effects_emitted;
+    _rules_evaluated = rules_evaluated;
+    _gap_count = gap_count;
+    _resync_count = resync_count;
     _last_evaluate_ms = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - started).count();
     Dictionary out = report();
@@ -1159,6 +1212,7 @@ Dictionary TriggerRuntime::ack_effects(int64_t up_to_effect_id) {
 
 Dictionary TriggerRuntime::handoff_effects(EffectRuntime *effect_runtime,
                                            NativeIdeologyRuntime *ideology_runtime,
+                                           NativeSimulationHost *ideology_pod_host,
                                            int32_t limit) {
     if (!_configured || effect_runtime == nullptr) return failure("trigger_effect_handoff_unavailable");
     const int32_t max_count = std::max(1, std::min(limit, 4096));
@@ -1198,6 +1252,35 @@ Dictionary TriggerRuntime::handoff_effects(EffectRuntime *effect_runtime,
                 blocked_opcode = effect.opcode;
                 blocked_trigger_id = effect.trigger_id;
                 break;
+            }
+            if (ideology_pod_host != nullptr) {
+                RuntimeIdeologyPodCommand pod_command;
+                pod_command.request_id = static_cast<uint64_t>(effect.id);
+                pod_command.source_priority = effect.source_priority;
+                pod_command.producer_id = 2u;
+                pod_command.sequence = static_cast<uint64_t>(effect.id);
+                pod_command.requested_day = effect.effective_day;
+                pod_command.effective_day = effect.effective_day;
+                pod_command.opcode = static_cast<RuntimeIdeologyPodOpcode>(
+                    effect.opcode);
+                pod_command.country_handle = effect.target_handle;
+                pod_command.ideology_id = static_cast<int32_t>(effect.payload[0]);
+                pod_command.value_q16 = effect.resolved_value;
+                pod_command.offer_generation = static_cast<uint32_t>(
+                    std::max<int64_t>(0, effect.payload[1]));
+                pod_command.choice_index = static_cast<int32_t>(effect.payload[2]);
+                pod_command.gate_id = static_cast<int32_t>(effect.payload[3]);
+                if (!ideology_pod_host->queue_ideology_pod_command(
+                        pod_command, error)) {
+                    blocked_reason = error.empty()
+                        ? "trigger_ideology_pod_handoff_failed" : error;
+                    blocked_command_key = effect.command_key;
+                    blocked_definition_key = effect.definition_key;
+                    blocked_action = effect.action;
+                    blocked_opcode = effect.opcode;
+                    blocked_trigger_id = effect.trigger_id;
+                    break;
+                }
             }
             last_effect_id = effect.id;
             ++handed_off;
@@ -1708,6 +1791,21 @@ Dictionary TriggerRuntime::restore(const PackedByteArray &packed) {
         for (int p = 0; p < 4; ++p)
             if (!read_le(bytes, size, cursor, effect.payload[p]))
                 return failure("trigger_restore_effect_payload_truncated");
+        if (effect.trigger_id >= 0 && effect.trigger_id < static_cast<int32_t>(_definitions.size())) {
+            const Definition &definition = _definitions[effect.trigger_id];
+            for (int32_t offset = 0; offset < definition.effect_count; ++offset) {
+                const int32_t effect_id = definition.effect_begin + offset;
+                const EffectDefinition &candidate = _effect_definitions[effect_id];
+                if (candidate.action == effect.action && candidate.domain == effect.domain &&
+                    candidate.opcode == effect.opcode &&
+                    candidate.command_key == effect.command_key &&
+                    candidate.definition_key == effect.definition_key &&
+                    candidate.payload == effect.payload) {
+                    effect.effect_definition_id = effect_id;
+                    break;
+                }
+            }
+        }
         _effects.push_back(std::move(effect));
     }
     if (!read_le(bytes, size, cursor, end) || end != SAVE_END || cursor != size)
@@ -1724,6 +1822,154 @@ Dictionary TriggerRuntime::clear_state() {
     out["ok"] = true;
     out["migration"] = "legacy_empty_trigger_state";
     return out;
+}
+
+bool TriggerRuntime::export_pod_catalog(RuntimeTriggerPodCatalog &out,
+                                        std::string &error) const {
+    error.clear();
+    if (!_configured) { error = "trigger_runtime_not_configured"; return false; }
+    out = RuntimeTriggerPodCatalog{};
+    out.catalog_hash = _catalog_hash;
+    out.max_states = _max_states;
+    out.max_pending_events = _max_pending_events;
+    out.distinct_capacity = _distinct_capacity;
+    out.source_count = _source_count;
+    out.event_type_span = _event_type_span;
+    out.strict_source_cursors = _strict_source_cursors ? 1 : 0;
+    out.condition_ops = _condition_ops;
+    out.definitions.reserve(_definitions.size());
+    for (const Definition &source : _definitions) {
+        RuntimeTriggerDefinition definition;
+        definition.key_hash = fnv_string(1469598103934665603ull, source.key);
+        definition.version = source.version;
+        definition.source_id = source.source_id;
+        definition.event_type = source.event_type;
+        definition.payload_schema = source.payload_schema;
+        definition.aggregator = source.aggregator;
+        definition.value_field = source.value_field;
+        definition.distinct_field = source.distinct_field;
+        definition.scope = source.scope;
+        definition.target_resolver = source.target_resolver;
+        definition.static_target = source.static_target;
+        definition.threshold = source.threshold;
+        definition.mode = source.mode;
+        definition.cooldown_days = source.cooldown_days;
+        definition.window_days = source.window_days;
+        definition.qualifier_threshold = source.qualifier_threshold;
+        definition.duration_field = source.duration_field;
+        definition.development_metric_id = source.development_metric_id;
+        definition.development_era_index = source.development_era_index;
+        definition.condition_begin = source.condition_begin;
+        definition.condition_count = source.condition_count;
+        definition.effect_begin = source.effect_begin;
+        definition.effect_count = source.effect_count;
+        definition.selector_field = source.selector_field;
+        definition.selector_value = source.selector_value;
+        definition.enabled = source.enabled;
+        definition.dynamic_binding = source.dynamic_binding;
+        definition.selector_negated = source.selector_negated;
+        out.definitions.push_back(definition);
+    }
+    out.effects.reserve(_effect_definitions.size());
+    for (const EffectDefinition &source : _effect_definitions) {
+        RuntimeTriggerEffectDefinition effect;
+        effect.action = source.action;
+        effect.source_priority = source.source_priority;
+        effect.domain = source.domain;
+        effect.opcode = source.opcode;
+        effect.target_resolver = source.target_resolver;
+        effect.static_target = source.static_target;
+        effect.value_mode = source.value_mode;
+        effect.value = source.value;
+        effect.duration_days = source.duration_days;
+        effect.stacks = source.stacks;
+        effect.payload = source.payload;
+        out.effects.push_back(effect);
+    }
+    return true;
+}
+
+bool TriggerRuntime::export_pod_snapshot(RuntimeTriggerSnapshot &out,
+                                         std::string &error) const {
+    error.clear();
+    if (!_configured) { error = "trigger_runtime_not_configured"; return false; }
+    out = RuntimeTriggerSnapshot{};
+    out.generation = 0;
+    out.catalog_hash = _catalog_hash;
+    out.committed_day = _current_day;
+    out.current_day = _current_day;
+    out.next_effect_id = _next_effect_id;
+    out.acked_effect_id = _acked_effect_id;
+    out.source_cursor = _source_cursor;
+    out.source_needs_resync = _source_needs_resync;
+    out.source_gap_begin = _source_gap_begin;
+    out.source_gap_end = _source_gap_end;
+    out.enabled.reserve(_definitions.size());
+    for (const Definition &definition : _definitions) out.enabled.push_back(definition.enabled);
+    out.states.reserve(_state_count);
+    for (int32_t i = 0; i < _state_count; ++i) {
+        RuntimeTriggerPodSnapshotState state;
+        state.trigger_id = _state.trigger_id[i];
+        state.target_handle = _state.target_handle[i];
+        state.target_generation = _state.target_generation[i];
+        state.accumulator = _state.accumulator[i];
+        state.remainder = _state.remainder[i];
+        state.last_event_id = _state.last_event_id[i];
+        state.fire_sequence = _state.fire_sequence[i];
+        state.cooldown_until = _state.cooldown_until[i];
+        state.window_start_day = _state.window_start_day[i];
+        state.last_observed = _state.last_observed[i];
+        state.last_sample_day = _state.last_sample_day[i];
+        state.completed = _state.completed[i];
+        state.initialized = _state.initialized[i];
+        state.needs_resync = _state.needs_resync[i];
+        const size_t begin = static_cast<size_t>(i) * _distinct_capacity;
+        state.distinct_keys.assign(_distinct_keys.begin() + begin,
+                                   _distinct_keys.begin() + begin + _distinct_capacity);
+        out.states.push_back(std::move(state));
+    }
+    for (const BranchBinding &binding : _branch_bindings) {
+        out.branch_bindings.push_back({binding.trigger_id, binding.branch_handle,
+            binding.cell, binding.reward_target, 1});
+    }
+    out.pending_events.reserve(_pending_events.size());
+    for (const Event &source : _pending_events) {
+        RuntimeTriggerEvent event;
+        event.source_id = source.source_id; event.event_id = source.event_id;
+        event.day = source.day; event.event_type = source.event_type;
+        event.payload_schema = source.payload_schema; event.entity_handle = source.entity_handle;
+        event.group_handle = source.group_handle; event.value = source.value;
+        event.payload = source.payload; event.snapshot = source.snapshot ? 1 : 0;
+        out.pending_events.push_back(event);
+    }
+    out.pending_effects.reserve(_effects.size());
+    for (const Effect &source : _effects) {
+        RuntimeTriggerEffectIntent effect;
+        effect.id = source.id; effect.effective_day = source.effective_day;
+        effect.source_priority = source.source_priority; effect.trigger_id = source.trigger_id;
+        effect.effect_definition_id = source.effect_definition_id;
+        effect.target_handle = source.target_handle; effect.target_generation = source.target_generation;
+        effect.fire_sequence = source.fire_sequence; effect.action = source.action;
+        effect.domain = source.domain; effect.opcode = source.opcode;
+        effect.resolved_value = source.resolved_value; effect.duration_days = source.duration_days;
+        effect.stacks = source.stacks; effect.payload = source.payload;
+        out.pending_effects.push_back(effect);
+    }
+    return true;
+}
+
+uint64_t TriggerRuntime::pod_state_hash() const {
+    RuntimeTriggerSnapshot snapshot;
+    std::string error;
+    return export_pod_snapshot(snapshot, error)
+        ? RuntimeTriggerPodAuthority::canonical_state_hash(snapshot) : 0;
+}
+
+uint64_t TriggerRuntime::pod_effect_hash() const {
+    RuntimeTriggerSnapshot snapshot;
+    std::string error;
+    return export_pod_snapshot(snapshot, error)
+        ? RuntimeTriggerPodAuthority::canonical_effect_hash(snapshot.pending_effects) : 0;
 }
 
 } // namespace pk

@@ -3,8 +3,11 @@
 #include "country_runtime.h"
 #include "economy_runtime.h"
 #include "modifier_runtime.h"
+#include "native_simulation_host.h"
 
 #include <cstring>
+#include <limits>
+#include <type_traits>
 #include <vector>
 
 namespace pk {
@@ -36,12 +39,97 @@ Dictionary DCWorldExt::configure_modifiers(const Dictionary &catalog,
         static_cast<NativeCountryRuntime *>(_country_runtime)->attach_modifier_runtime(runtime);
     if (_economy_runtime != nullptr)
         static_cast<NativeEconomyRuntime *>(_economy_runtime)->attach_modifier_runtime(runtime);
-    return runtime->configure(catalog, cell_count);
+    Dictionary result = runtime->configure(catalog, cell_count);
+    if (!static_cast<bool>(result.get("ok", false))) return result;
+    if (!_runtime_host) _runtime_host = std::make_unique<NativeSimulationHost>();
+    RuntimeModifierPodCatalog pod_catalog;
+    std::string pod_error;
+    const bool pod_ok = runtime->export_pod_catalog(pod_catalog, pod_error) &&
+        _runtime_host->configure_modifier_pod(pod_catalog, pod_error);
+    result["modifier_pod_ready"] = pod_ok;
+    result["modifier_pod_fallback_reason"] = String(pod_error.c_str());
+    result["modifier_pod_catalog_hash"] = pod_ok
+        ? static_cast<int64_t>(_runtime_host->modifier_pod_catalog_hash()) : 0;
+    return result;
 }
 
 Dictionary DCWorldExt::submit_modifier_commands(const Dictionary &packed_batch) {
-    return _modifier_runtime == nullptr ? unavailable()
-        : runtime_from(_modifier_runtime)->submit_commands(packed_batch);
+    if (_modifier_runtime == nullptr) return unavailable();
+    ModifierRuntime *runtime = runtime_from(_modifier_runtime);
+    Dictionary result = runtime->submit_commands(packed_batch);
+    if (!static_cast<bool>(result.get("ok", false)) || !_runtime_host) return result;
+
+    const PackedInt64Array request_ids = result.get("request_ids", PackedInt64Array());
+    const PackedInt32Array opcodes = packed_batch.get("opcodes", PackedInt32Array());
+    const PackedInt32Array producers = packed_batch.get("producer_ids", PackedInt32Array());
+    const PackedInt64Array sequences = packed_batch.get("sequences", PackedInt64Array());
+    const PackedInt64Array days = packed_batch.get("effective_days", PackedInt64Array());
+    const PackedStringArray definitions = packed_batch.get("definition_keys", PackedStringArray());
+    const PackedInt32Array domains = packed_batch.get("domains", PackedInt32Array());
+    const PackedInt32Array scopes = packed_batch.get("scopes", PackedInt32Array());
+    const PackedInt64Array entities = packed_batch.get("entity_handles", PackedInt64Array());
+    const PackedInt64Array groups = packed_batch.get("group_handles", PackedInt64Array());
+    const PackedInt64Array source_types = packed_batch.get("source_types", PackedInt64Array());
+    const PackedInt64Array source_ids = packed_batch.get("source_ids", PackedInt64Array());
+    const PackedInt32Array durations = packed_batch.get("duration_days", PackedInt32Array());
+    const PackedInt32Array stacks = packed_batch.get("stacks", PackedInt32Array());
+    const PackedInt32Array magnitudes = packed_batch.get("magnitude_q16", PackedInt32Array());
+    const PackedInt64Array handles = packed_batch.get("modifier_handles", PackedInt64Array());
+    const int32_t count = request_ids.size();
+    int32_t shadow_enqueued = 0;
+    std::string shadow_error;
+    const RuntimeThreadReport host_report = _runtime_host->report();
+    for (int32_t i = 0; i < count; ++i) {
+        RuntimeCommandPacket packet;
+        packet.envelope.request_id = static_cast<uint64_t>(request_ids[i]);
+        packet.envelope.producer_id = static_cast<uint32_t>(producers[i]);
+        packet.envelope.sequence = static_cast<uint64_t>(sequences[i]);
+        packet.envelope.observed_generation = host_report.generation;
+        packet.envelope.requested_day = days[i];
+        packet.envelope.effective_day = days[i];
+        packet.envelope.domain = static_cast<uint16_t>(RuntimeDomainId::MODIFIER);
+        packet.envelope.opcode = static_cast<uint16_t>(opcodes[i]);
+        packet.envelope.payload_size = RUNTIME_MODIFIER_POD_WIRE_SIZE;
+        size_t cursor = 0;
+        const auto append = [&packet, &cursor](auto value) {
+            using T = decltype(value);
+            using U = std::make_unsigned_t<T>;
+            U bits = static_cast<U>(value);
+            for (size_t byte = 0; byte < sizeof(T); ++byte) {
+                packet.payload[cursor++] = static_cast<uint8_t>(
+                    bits & static_cast<U>(0xffu));
+                bits >>= 8u;
+            }
+        };
+        const int32_t definition_id = runtime->definition_id_for_key(
+            definitions[i].utf8().get_data());
+        const uint64_t entity_handle = static_cast<uint64_t>(entities[i]);
+        const uint32_t target_generation = scopes[i] == ModifierRuntime::ENTITY
+            ? static_cast<uint32_t>(entity_handle >> 32u) : 0u;
+        append(static_cast<uint32_t>(RUNTIME_MODIFIER_POD_WIRE_ABI_VERSION));
+        append(static_cast<uint16_t>(domains[i]));
+        append(static_cast<uint16_t>(scopes[i]));
+        append(definition_id);
+        append(entity_handle);
+        append(static_cast<uint64_t>(groups[i]));
+        append(static_cast<uint64_t>(source_types[i]));
+        append(static_cast<uint64_t>(source_ids[i]));
+        append(static_cast<int32_t>(durations[i]));
+        append(static_cast<int32_t>(stacks[i]));
+        append(static_cast<int32_t>(magnitudes[i]));
+        append(static_cast<uint64_t>(handles[i]));
+        append(target_generation);
+        append(host_report.environment_generation);
+        if (cursor != RUNTIME_MODIFIER_POD_WIRE_SIZE ||
+            !_runtime_host->enqueue_modifier_shadow(std::move(packet))) {
+            shadow_error = "modifier_shadow_enqueue_failed";
+            continue;
+        }
+        ++shadow_enqueued;
+    }
+    result["modifier_shadow_enqueued"] = shadow_enqueued;
+    result["modifier_shadow_fallback_reason"] = String(shadow_error.c_str());
+    return result;
 }
 
 Dictionary DCWorldExt::run_modifier_daily(int64_t day_index) {
@@ -177,6 +265,117 @@ Dictionary DCWorldExt::clear_modifier_domain(int domain) {
     out["ok"] = true;
     out["domain"] = domain;
     out["migration"] = "legacy_empty_modifier_store";
+    return out;
+}
+
+Dictionary DCWorldExt::get_runtime_modifier_snapshot(int64_t after_generation) {
+    Dictionary out;
+    out["ok"] = false;
+    out["available"] = false;
+    if (!_runtime_host) {
+        out["reason"] = "runtime_host_unavailable";
+        return out;
+    }
+    const uint64_t cursor = after_generation < 0
+        ? std::numeric_limits<uint64_t>::max()
+        : static_cast<uint64_t>(after_generation);
+    uint32_t slot = 0;
+    if (!_runtime_host->try_acquire_modifier_snapshot(cursor, slot)) {
+        out["ok"] = true;
+        out["reason"] = "";
+        return out;
+    }
+    const RuntimeModifierPodSnapshot &snapshot =
+        _runtime_host->modifier_snapshot_buffer(slot);
+    bool shape_ok = snapshot.abi_version == RUNTIME_MODIFIER_POD_ABI_VERSION &&
+        snapshot.catalog_hash == _runtime_host->modifier_pod_catalog_hash();
+    for (const RuntimeModifierPodEntry &entry : snapshot.entries)
+        shape_ok = shape_ok && entry.domain < 4;
+    for (const RuntimeModifierPodBucket &bucket : snapshot.buckets)
+        shape_ok = shape_ok && bucket.domain < 4 && bucket.scope < 3;
+    if (!shape_ok) {
+        _runtime_host->release_modifier_snapshot(slot);
+        out["reason"] = "modifier_snapshot_shape_or_catalog_invalid";
+        return out;
+    }
+    PackedInt64Array domain_versions;
+    domain_versions.resize(4);
+    for (int32_t i = 0; i < 4; ++i)
+        domain_versions.set(i, static_cast<int64_t>(snapshot.domain_versions[i]));
+    PackedInt32Array entry_domains, entry_definitions, entry_scopes,
+        entry_generations, entry_stacks, entry_magnitudes;
+    PackedInt64Array entry_handles, entry_targets, entry_entities, entry_groups,
+        entry_source_types, entry_source_ids, entry_applied_days, entry_expiry_days;
+    const int64_t entry_count = static_cast<int64_t>(snapshot.entries.size());
+    entry_domains.resize(entry_count); entry_definitions.resize(entry_count);
+    entry_scopes.resize(entry_count); entry_generations.resize(entry_count);
+    entry_stacks.resize(entry_count); entry_magnitudes.resize(entry_count);
+    entry_handles.resize(entry_count); entry_targets.resize(entry_count);
+    entry_entities.resize(entry_count); entry_groups.resize(entry_count);
+    entry_source_types.resize(entry_count); entry_source_ids.resize(entry_count);
+    entry_applied_days.resize(entry_count); entry_expiry_days.resize(entry_count);
+    for (int64_t i = 0; i < entry_count; ++i) {
+        const auto &entry = snapshot.entries[static_cast<size_t>(i)];
+        entry_domains.set(i, entry.domain); entry_definitions.set(i, entry.definition_id);
+        entry_scopes.set(i, entry.scope); entry_generations.set(i, entry.target_generation);
+        entry_stacks.set(i, entry.stacks); entry_magnitudes.set(i, entry.magnitude_q16);
+        entry_handles.set(i, static_cast<int64_t>(entry.modifier_handle));
+        entry_targets.set(i, static_cast<int64_t>(entry.target_handle));
+        entry_entities.set(i, static_cast<int64_t>(entry.entity_handle));
+        entry_groups.set(i, static_cast<int64_t>(entry.group_handle));
+        entry_source_types.set(i, static_cast<int64_t>(entry.source_type));
+        entry_source_ids.set(i, static_cast<int64_t>(entry.source_id));
+        entry_applied_days.set(i, entry.applied_day); entry_expiry_days.set(i, entry.expires_day);
+    }
+    PackedInt32Array bucket_domains, bucket_scopes, bucket_stats, bucket_counts;
+    PackedInt64Array bucket_scope_ids;
+    PackedFloat64Array bucket_adds, bucket_factors;
+    const int64_t bucket_count = static_cast<int64_t>(snapshot.buckets.size());
+    bucket_domains.resize(bucket_count); bucket_scopes.resize(bucket_count);
+    bucket_stats.resize(bucket_count); bucket_counts.resize(bucket_count);
+    bucket_scope_ids.resize(bucket_count); bucket_adds.resize(bucket_count);
+    bucket_factors.resize(bucket_count);
+    for (int64_t i = 0; i < bucket_count; ++i) {
+        const auto &bucket = snapshot.buckets[static_cast<size_t>(i)];
+        bucket_domains.set(i, bucket.domain); bucket_scopes.set(i, bucket.scope);
+        bucket_stats.set(i, static_cast<int32_t>(bucket.stat_id));
+        bucket_counts.set(i, static_cast<int32_t>(bucket.active_count));
+        bucket_scope_ids.set(i, static_cast<int64_t>(bucket.scope_id));
+        bucket_adds.set(i, bucket.sum_add); bucket_factors.set(i, bucket.product_factor);
+    }
+    out["ok"] = true; out["available"] = true; out["reason"] = "";
+    out["abi_version"] = static_cast<int64_t>(snapshot.abi_version);
+    out["generation"] = static_cast<int64_t>(snapshot.generation);
+    out["committed_day"] = snapshot.committed_day;
+    out["catalog_hash"] = static_cast<int64_t>(snapshot.catalog_hash);
+    out["state_hash"] = static_cast<int64_t>(snapshot.state_hash);
+    out["domain_versions"] = domain_versions;
+    out["entry_domains"] = entry_domains; out["entry_handles"] = entry_handles;
+    out["entry_target_handles"] = entry_targets; out["entry_target_generations"] = entry_generations;
+    out["entry_definition_ids"] = entry_definitions; out["entry_scopes"] = entry_scopes;
+    out["entry_entity_handles"] = entry_entities; out["entry_group_handles"] = entry_groups;
+    out["entry_source_types"] = entry_source_types; out["entry_source_ids"] = entry_source_ids;
+    out["entry_stacks"] = entry_stacks; out["entry_magnitude_q16"] = entry_magnitudes;
+    out["entry_applied_days"] = entry_applied_days; out["entry_expiry_days"] = entry_expiry_days;
+    out["bucket_domains"] = bucket_domains; out["bucket_scopes"] = bucket_scopes;
+    out["bucket_stat_ids"] = bucket_stats; out["bucket_scope_ids"] = bucket_scope_ids;
+    out["bucket_sum_add"] = bucket_adds; out["bucket_product_factor"] = bucket_factors;
+    out["bucket_active_counts"] = bucket_counts;
+    _runtime_host->release_modifier_snapshot(slot);
+    return out;
+}
+
+Dictionary DCWorldExt::runtime_modifier_pod_self_test() const {
+    std::string error;
+    const bool authority_ok = RuntimeModifierPodAuthority::self_test(error);
+    NativeSimulationHost protocol_host;
+    const bool protocol_ok = authority_ok && protocol_host.modifier_pod_self_test(&error);
+    const bool ok = authority_ok && protocol_ok;
+    Dictionary out;
+    out["ok"] = ok;
+    out["reason"] = ok ? "" : String(error.c_str());
+    out["implemented_domain_mask"] = static_cast<int64_t>(
+        NativeSimulationHost::implemented_domain_mask());
     return out;
 }
 

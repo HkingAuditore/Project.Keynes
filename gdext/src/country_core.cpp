@@ -35,6 +35,11 @@ uint64_t country_peer_request_id(uint64_t session_epoch,
     mix(static_cast<uint64_t>(static_cast<uint32_t>(country_slot)));
     mix(static_cast<uint64_t>(static_cast<uint32_t>(technology)));
     mix(static_cast<uint64_t>(static_cast<uint16_t>(opcode)));
+    // Godot exposes Variant integers as signed int64_t. Peer IDs cross the
+    // GDExtension boundary and are later echoed by a GDScript/main-thread
+    // adapter, so reserve the sign bit rather than emitting an opaque uint64
+    // that would become negative and be rejected on re-entry.
+    value &= static_cast<uint64_t>(std::numeric_limits<int64_t>::max());
     return value == 0 ? 1 : value;
 }
 

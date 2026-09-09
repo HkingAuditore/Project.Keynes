@@ -1,10 +1,12 @@
 #pragma once
 
 #include "runtime_authoritative_domains.h"
+#include "runtime_trigger_pod.h"
 
 #include <array>
 #include <cstdint>
 #include <string>
+#include <mutex>
 #include <vector>
 
 namespace pk {
@@ -75,11 +77,29 @@ public:
                   RuntimeDomainAuthorityPlan &plan,
                   std::string &error);
     bool commit_day(RuntimeDomainAuthorityPlan &plan, std::string &error);
+    bool accept_modifier_acks(RuntimeDomainAuthorityPlan &plan,
+                              const std::vector<RuntimeDomainAck> &acks,
+                              std::string &error);
     void discard_plan();
 
     const RuntimeDomainAuthorityReport &report() const { return _report; }
     const RuntimeAuthoritativeDomainStores &stores() const { return _current; }
     RuntimeAuthoritativeDomainStores &stores_for_test() { return _current; }
+
+    bool configure_trigger_pod(const RuntimeTriggerPodCatalog &catalog,
+                               std::string &error);
+    bool queue_trigger_command(const RuntimeTriggerCommand &command,
+                               std::string &error);
+    RuntimeTriggerPodDiagnostics trigger_pod_diagnostics() const;
+    bool set_trigger_reference_frame(int64_t day, uint64_t input_hash,
+                                     uint64_t state_hash, uint64_t effect_hash,
+                                     std::string &error);
+    const RuntimeTriggerPodCatalog &trigger_catalog() const { return _trigger_catalog; }
+    bool encode_trigger_save(RuntimeTriggerPodSaveSection &section,
+                             std::string &error) const;
+    bool restore_trigger_save(const RuntimeTriggerPodSaveSection &section,
+                              const RuntimeTriggerPodCatalog &catalog,
+                              std::string &error);
 
     // This mask is deliberately diagnostic-only.  Returning zero prevents a
     // caller from accidentally treating the probe as an ACTIVE capability.
@@ -133,6 +153,11 @@ private:
     std::vector<RuntimeDomainAck> _acks;
     std::vector<RuntimeEventRecord> _event_scratch;
     std::vector<uint64_t> _distinct_scratch;
+    mutable std::mutex _trigger_mutex;
+    RuntimeTriggerPodAuthority _trigger_authority;
+    RuntimeTriggerPodCatalog _trigger_catalog;
+    RuntimeTriggerPodPlan _trigger_plan;
+    bool _trigger_configured = false;
     bool _plan_ready = false;
 };
 

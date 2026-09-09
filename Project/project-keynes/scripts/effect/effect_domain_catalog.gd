@@ -371,7 +371,10 @@ static func _ideology_command_definition(ideology_ir: Dictionary) -> Resource:
 	var end := EffectInstructionScript.new()
 	end.op = 12 # External ideology ingress owns firing; this program is a template registry.
 	definition.instructions = [end]
-	for prefix in ["persistent", "on_enter"]:
+	# Ideology transitions submit persistent, one-shot, and reverse-CSR synergy
+	# templates through the same external `ideology.command` program. All three
+	# prefixes must therefore register matching Effect command definitions.
+	for prefix in ["persistent", "on_enter", "synergy_effect"]:
 		var actions: PackedInt32Array = ideology_ir.get("%s_actions" % prefix, PackedInt32Array())
 		var domains: PackedInt32Array = ideology_ir.get("%s_domains" % prefix, PackedInt32Array())
 		var opcodes: PackedInt32Array = ideology_ir.get("%s_opcodes" % prefix, PackedInt32Array())

@@ -29,6 +29,7 @@ var _viewport_refit_pending := false
 func _ready() -> void:
 	if OS.has_feature("mobile"):
 		PKLog.enabled = false
+	_apply_stage_c_debug_metadata()
 	_configure_runtime()
 	var flow: Node = _game_flow()
 	var request: Dictionary = flow.consume_request() if flow != null else {}
@@ -46,6 +47,25 @@ func _ready() -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
 	await _runtime_host.generate_world(-1, _ui_manager.map_safe_area())
+
+
+func _apply_stage_c_debug_metadata() -> void:
+	# Stage C is a development-only measurement hook. It is intentionally read
+	# before WorldRuntimeHost.configure() because the authority choice is
+	# consumed during world bind/generation. No product setting or GM toggle is
+	# added for this path.
+	if not OS.is_debug_build():
+		return
+	if not Engine.has_meta(&"stage_c_authority_mode"):
+		return
+	var mode := String(Engine.get_meta(&"stage_c_authority_mode", "")).to_upper()
+	if mode not in ["ACTIVE", "OFF"]:
+		push_warning("[stage-c] ignored invalid authority mode: %s" % mode)
+		return
+	_runtime_host.runtime_climate_authority_enabled = mode == "ACTIVE"
+	print("[stage-c] authority=%s worker=%s" % [
+		mode, "ACTIVE" if mode == "ACTIVE" else "SHADOW",
+	])
 
 
 func _on_viewport_size_changed() -> void:

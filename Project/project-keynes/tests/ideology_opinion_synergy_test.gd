@@ -72,8 +72,9 @@ func _run() -> void:
 	_expect("Effect domain catalog builds", effect_catalog != null)
 	if effect_catalog == null:
 		return
+	var effect_ir: Dictionary = effect_catalog.compile_native_catalog()
 	_expect("Effect runtime configures", bool(ext.configure_effects(
-		effect_catalog.compile_native_catalog()).get("ok", false)))
+		effect_ir).get("ok", false)))
 	var ideology_catalog: Resource = IdeologyCatalogScript.load_default()
 	var ideology_ir: Dictionary = ideology_catalog.compile_native_catalog(
 		native_catalog, native_catalog)

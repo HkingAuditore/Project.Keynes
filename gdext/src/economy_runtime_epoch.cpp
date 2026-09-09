@@ -251,6 +251,17 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _government_research_procured_points = 0;
     _government_research_procurement_cash = 0;
     _government_research_procurement_orders = 0;
+    _country_research_procurement_candidates.clear();
+    _country_research_procurement_budgets.clear();
+    _country_research_procurement_remaining.clear();
+    _country_research_procurement_enabled.clear();
+    _country_research_procurement_cursor = 0;
+    _country_research_procurement_phase = 0;
+    _country_research_procurement_initialized = false;
+    _country_research_procurement_done = false;
+    _country_research_procurement_slices = 0;
+    _country_research_procurement_transactions = 0;
+    _country_research_procurement_rejections = 0;
     auto reset_cell_metric = [&](std::vector<int64_t> &metric) {
         if (metric.size() != static_cast<size_t>(_cell_count)) {
             metric.assign(static_cast<size_t>(_cell_count), 0);

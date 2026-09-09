@@ -262,6 +262,7 @@ func _wait_for_safe_boundary() -> Dictionary:
 			return boundary
 		var code := String(boundary.get("code", ""))
 		if code not in ["save_requires_committed_boundary", "save_requires_idle_country", \
+			"save_requires_idle_country_peer", \
 			"save_requires_idle_effect", "save_requires_idle_ideology", \
 			"save_requires_idle_effect_country", "save_requires_idle_effect_economy", \
 			"save_requires_idle_effect_gameplay"]:
@@ -304,6 +305,13 @@ func _can_save() -> Dictionary:
 		return _result(false, "save_requires_committed_boundary", "经济尚未到达联合提交边界。")
 	var country_busy := bool(country_report.get("busy", false))
 	var country_ext = country.world_ext()
+	if country_ext != null and country_ext.has_method("get_country_peer_protocol_status"):
+		var peer_status: Dictionary = country_ext.get_country_peer_protocol_status()
+		if int(peer_status.get("pending_intents", 0)) > 0 \
+			or int(peer_status.get("queued_intents", 0)) > 0 \
+			or int(peer_status.get("rejected_intents", 0)) > 0:
+			return _result(false, "save_requires_idle_country_peer",
+				"Country peer continuation 尚未到达可保存边界。")
 	if country_ext != null and country_ext.has_method("country_should_run"):
 		country_busy = country_busy or bool(country_ext.country_should_run(_world_clock.day_index()))
 	else:

@@ -58,6 +58,9 @@ var test_economy_population_scale: int = 0
 ## runtime_parity_forcing，再让这里启动，避免二次 start 被热切换拒绝。
 var runtime_shadow_on_generate: bool = true
 var runtime_parity_forcing: bool = false
+## Events POD remains an opt-in probe in Stage I. It mirrors the legacy journal
+## and never becomes part of the ACTIVE authority mask.
+var runtime_events_probe_enabled: bool = false
 ## 把 Climate 域交给 worker 当权威（per-domain ACTIVE），其余十一个域留在主线程。
 ## 打开后 dispatch_system_schedule 一次性抑制 14 个 climate 节点，MapData 由
 ## _consume_runtime_commit_if_ready 里的回灌写。
@@ -168,6 +171,14 @@ var _runtime_last_commit: Dictionary = {}
 var _runtime_last_visual_apply_ms: float = 0.0
 var _runtime_last_ui_feedback_ms: float = 0.0
 var _runtime_last_gpu_upload_ms: float = 0.0
+var _country_worker_transport_last_service: Dictionary = {}
+var _country_worker_transport_capture: Dictionary = {}
+var _country_worker_read_generation: int = 0
+var _country_worker_read_last_day: int = -1
+var _country_worker_read_last_result: Dictionary = {}
+var _country_worker_read_patch_count: int = 0
+var _country_worker_read_full_snapshot_count: int = 0
+var _country_worker_read_rejected_count: int = 0
 var _gm_sequence: int = 1
 var _gm_click_claim_territory_enabled: bool = false
 var _gm_click_claim_pending_days: Dictionary = {}
@@ -397,6 +408,12 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 	_runtime_pending_visual_generation = 0
 	_runtime_pending_dirty_families = 0
 	_runtime_last_commit.clear()
+	_country_worker_read_generation = 0
+	_country_worker_read_last_day = -1
+	_country_worker_read_last_result.clear()
+	_country_worker_read_patch_count = 0
+	_country_worker_read_full_snapshot_count = 0
+	_country_worker_read_rejected_count = 0
 	# A new map must never race the previous simulation host.  The stop request
 	# is non-blocking. Wait for the lifecycle acknowledgement one render frame
 	# at a time before replacing the generator, so the old DCWorldExt destructor
@@ -495,6 +512,11 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 		if not bool(input_capture.get("ok", false)):
 			push_warning("[runtime-input] capture deferred: %s" % String(
 				input_capture.get("code", "unknown")))
+	if _generator != null and _generator.has_method("capture_country_worker_inputs"):
+		_country_worker_transport_capture = _generator.capture_country_worker_inputs()
+		if not bool(_country_worker_transport_capture.get("ok", false)):
+			push_warning("[country-worker] capture deferred: %s" % String(
+				_country_worker_transport_capture.get("code", "unknown")))
 	_start_production_shadow_worker()
 	var initial_visible_building_cells := PackedInt32Array()
 	for cell in _current_map.cell_count():
@@ -536,6 +558,7 @@ func _start_production_shadow_worker() -> void:
 		"day": 0,
 		"speed_days_per_second": 1.0,
 		"paused": true,
+		"events_probe_enabled": runtime_events_probe_enabled,
 	}
 	if runtime_climate_authority_enabled:
 		# graph_coverage_complete 在 per-domain ACTIVE 下的含义是"请求的这些域
@@ -677,6 +700,8 @@ func map_overlay_diagnostics() -> Dictionary:
 
 
 func _process(_delta: float) -> void:
+	_service_country_worker_transport()
+	_consume_country_worker_read_view_if_authoritative()
 	_consume_runtime_commit_if_ready()
 	var now_msec := Time.get_ticks_msec()
 	if now_msec >= _building_visual_next_poll_msec:
@@ -685,6 +710,103 @@ func _process(_delta: float) -> void:
 	if not _map_overlay_dirty or _map_overlay_request.is_empty():
 		return
 	_refresh_map_overlay(false)
+
+
+## Host-side Country intent drain.  SHADOW replays typed results without
+## touching Effect/Modifier/Economy.  ACTIVE deliberately remains disabled
+## until K2-B/K2-C installs the real transaction coordinator.
+func _service_country_worker_transport() -> void:
+	if not _runtime_ready_for_ticks or _generator == null \
+			or not _generator.has_method("service_country_worker_peer_adapter"):
+		return
+	var report: Dictionary = _generator.get_runtime_thread_report() \
+		if _generator.has_method("get_runtime_thread_report") else {}
+	var mode := String(report.get("simulation_thread_mode",
+		report.get("requested_simulation_thread_mode", "OFF")))
+	if mode != "SHADOW":
+		return
+	_country_worker_transport_last_service = \
+		_generator.service_country_worker_peer_adapter(64, true)
+
+
+## ACTIVE Country's only MapData read-back boundary.  The worker snapshot is
+## immutable and stays on the native side; this method copies either the
+## generation-contiguous sparse owner patch or an explicit full bootstrap /
+## recovery snapshot.  It never waits for the worker and never calls the
+## synchronous Country write API.
+func _consume_country_worker_read_view_if_authoritative() -> void:
+	if not _runtime_ready_for_ticks or _generator == null \
+			or not _generator.has_method("get_country_worker_read_view"):
+		return
+	var report: Dictionary = _generator.get_runtime_thread_report() \
+		if _generator.has_method("get_runtime_thread_report") else {}
+	var granted_mask := int(report.get("authoritative_domain_mask", 0))
+	if (granted_mask & 0x004) == 0:
+		return
+	var view: Dictionary = _generator.get_country_worker_read_view(
+		_country_worker_read_generation)
+	if not bool(view.get("ok", false)) or not bool(view.get("available", false)):
+		return
+	var generation := int(view.get("generation", 0))
+	if generation <= _country_worker_read_generation:
+		return
+	var cell_count := _current_map.cell_count() if _current_map != null else 0
+	if cell_count <= 0:
+		_country_worker_read_rejected_count += 1
+		return
+	var changed_cells: PackedInt32Array = view.get(
+		"changed_cells", PackedInt32Array())
+	var changed_owners: PackedInt32Array = view.get(
+		"changed_owners", PackedInt32Array())
+	var full_required := bool(view.get("full_snapshot_required", false))
+	var applied_cells := PackedInt32Array()
+	if full_required:
+		var full_owners: PackedInt32Array = view.get(
+			"full_cell_owners", PackedInt32Array())
+		if full_owners.size() != cell_count:
+			_country_worker_read_rejected_count += 1
+			push_warning("[country-authority] full read view rejected: cell shape mismatch")
+			return
+		_current_map.country_slot_arr = full_owners.duplicate()
+		applied_cells.resize(cell_count)
+		for cell in cell_count:
+			applied_cells[cell] = cell
+		_country_worker_read_full_snapshot_count += 1
+	else:
+		if changed_cells.size() != changed_owners.size():
+			_country_worker_read_rejected_count += 1
+			push_warning("[country-authority] sparse read view rejected: patch shape mismatch")
+			return
+		if _current_map.country_slot_arr.size() != cell_count:
+			_country_worker_read_rejected_count += 1
+			push_warning("[country-authority] sparse read view rejected: MapData shape mismatch")
+			return
+		for i in changed_cells.size():
+			var cell := int(changed_cells[i])
+			if cell < 0 or cell >= cell_count:
+				_country_worker_read_rejected_count += 1
+				push_warning("[country-authority] sparse read view rejected: cell out of range")
+				return
+			_current_map.country_slot_arr[cell] = int(changed_owners[i])
+			applied_cells.append(cell)
+		_country_worker_read_patch_count += 1
+
+	_country_worker_read_generation = generation
+	_country_worker_read_last_day = int(view.get("committed_day", -1))
+	_country_worker_read_last_result = view.duplicate(true)
+	_country_worker_read_last_result["applied_cells"] = applied_cells.size()
+	_country_worker_read_last_result["full_snapshot_applied"] = full_required
+	var worker_report := view.duplicate(true)
+	worker_report["changed_cells"] = applied_cells
+	worker_report["changed_cell_count"] = applied_cells.size()
+	worker_report["full_snapshot_applied"] = full_required
+	worker_report["country_generation"] = generation
+	# CountryFacade is the existing notification path.  It emits the same
+	# country_committed signal consumed by vision, border, controller and UI.
+	var facade = _generator.get_country_facade() \
+		if _generator.has_method("get_country_facade") else null
+	if facade != null and facade.has_method("dispatch_worker_committed_view"):
+		facade.dispatch_worker_committed_view(worker_report)
 
 
 ## ACTIVE worker 的唯一主线程消费点。poll_runtime_commit() 只返回不可变提交
@@ -802,7 +924,10 @@ func _apply_climate_writeback_if_authoritative(report: Dictionary) -> void:
 		return
 	_runtime_climate_writeback_generation = int(applied.get(
 		"generation", _runtime_climate_writeback_generation))
-	_runtime_climate_writeback_last_day = int(applied.get("committed_day", -1))
+	# Older compatible runtimes may omit committed_day from the apply result;
+	# the worker report driving this consume is the same committed generation.
+	_runtime_climate_writeback_last_day = int(applied.get(
+		"committed_day", report.get("simulation_committed_day", -1)))
 	_runtime_climate_writeback_days += 1
 	# A field the slot guards reject is a field the worker owns but never
 	# publishes, so MapData silently keeps the pre-promotion value. Kept for

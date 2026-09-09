@@ -6,6 +6,7 @@
 class_name TileDataRecorder
 extends RefCounted
 
+const SCHEMA_VERSION: int = 1
 
 const FIXED_COLUMNS: Array = [
 	"row_idx",
@@ -355,6 +356,14 @@ var _last_tick_stats_ms: float = 0.0
 var _last_tick_format_ms: float = 0.0
 var _last_tick_flush_ms: float = 0.0
 var _last_tick_encoder_path: String = "gdscript"
+var _session_metadata: Dictionary = {}
+var _sidecar_path: String = ""
+var _runtime_report_start: Dictionary = {}
+var _runtime_report_end: Dictionary = {}
+var _first_seen_tick: int = -1
+var _last_seen_tick: int = -1
+var _first_recorded_tick: int = -1
+var _last_recorded_tick: int = -1
 
 
 func bind_main(m) -> void:
@@ -383,6 +392,18 @@ func skipped_tick_count() -> int:
 
 func hit_limit() -> bool:
 	return _hit_limit
+
+
+func schema_version() -> int:
+	return SCHEMA_VERSION
+
+
+func sidecar_path() -> String:
+	return _sidecar_path
+
+
+func set_session_metadata(metadata: Dictionary) -> void:
+	_session_metadata = metadata.duplicate(true)
 
 
 func last_tick_ms() -> float:
@@ -420,7 +441,7 @@ func set_sampling_config(tick_stride: int = DEFAULT_TICK_STRIDE,
 	_compact_fields = compact_fields
 
 
-func start() -> void:
+func start(metadata: Dictionary = {}) -> void:
 	_close_file()
 	_recording = false
 	_hit_limit = false
@@ -442,6 +463,19 @@ func start() -> void:
 	_soa_field_types = PackedInt32Array()
 	_csv_encoder_ext = null
 	_path = ""
+	_sidecar_path = ""
+	_runtime_report_start = {}
+	_runtime_report_end = {}
+	_first_seen_tick = -1
+	_last_seen_tick = -1
+	_first_recorded_tick = -1
+	_last_recorded_tick = -1
+	if not metadata.is_empty():
+		_session_metadata = metadata.duplicate(true)
+	elif OS.is_debug_build() and Engine.has_meta(&"stage_c_tile_metadata"):
+		var raw_metadata = Engine.get_meta(&"stage_c_tile_metadata", {})
+		if raw_metadata is Dictionary:
+			_session_metadata = (raw_metadata as Dictionary).duplicate(true)
 
 	var map_data = _current_map()
 	if map_data == null:
@@ -488,13 +522,29 @@ func start() -> void:
 	for f in _soa_fields:
 		_columns.append(f)
 
-	var export_dir: String = _export_dir_absolute()
+	var export_dir: String = String(_session_metadata.get("output_dir", ""))
+	if export_dir.is_empty():
+		export_dir = _export_dir_absolute()
+	export_dir = ProjectSettings.globalize_path(export_dir).simplify_path()
 	DirAccess.make_dir_recursive_absolute(export_dir)
 	var dt: Dictionary = Time.get_datetime_dict_from_system()
-	_path = export_dir.path_join("tile_data_record_%04d%02d%02d_%02d%02d%02d.csv" % [
-		int(dt.get("year", 0)), int(dt.get("month", 0)), int(dt.get("day", 0)),
-		int(dt.get("hour", 0)), int(dt.get("minute", 0)), int(dt.get("second", 0)),
-	])
+	var requested_csv_path := String(_session_metadata.get("csv_path", ""))
+	if not requested_csv_path.is_empty():
+		_path = ProjectSettings.globalize_path(requested_csv_path).simplify_path()
+		DirAccess.make_dir_recursive_absolute(_path.get_base_dir())
+	else:
+		var requested_name := String(_session_metadata.get("csv_name", ""))
+		if requested_name.is_empty():
+			requested_name = "tile_data_record_%04d%02d%02d_%02d%02d%02d.csv" % [
+				int(dt.get("year", 0)), int(dt.get("month", 0)), int(dt.get("day", 0)),
+				int(dt.get("hour", 0)), int(dt.get("minute", 0)), int(dt.get("second", 0)),
+			]
+		_path = export_dir.path_join(requested_name)
+	_sidecar_path = String(_session_metadata.get("sidecar_path", ""))
+	if _sidecar_path.is_empty():
+		_sidecar_path = _path.get_basename() + ".sidecar.json"
+	_sidecar_path = ProjectSettings.globalize_path(_sidecar_path).simplify_path()
+	DirAccess.make_dir_recursive_absolute(_sidecar_path.get_base_dir())
 
 	_file = FileAccess.open(_path, FileAccess.WRITE)
 	if _file == null:
@@ -510,11 +560,13 @@ func start() -> void:
 	_csv_encoder_ext = _discover_csv_encoder_ext()
 
 	_map_ref = map_data
+	_runtime_report_start = _runtime_report_snapshot()
 	if _main != null and _main.has_method("get_fast_tick_count"):
 		_start_tick = int(_main.get_fast_tick_count())
 	else:
 		_start_tick = 0
 	_recording = true
+	_write_sidecar(false)
 	print("[tile-data-record] start cells=%d soa_cols=%d tick_stride=%d cell_stride=%d max_rows=%d compact=%s start_tick=%d path=%s" % [
 		_cell_count, _soa_fields.size(), _tick_stride, _cell_stride, _max_rows,
 		str(_compact_fields), _start_tick, _path,
@@ -526,6 +578,8 @@ func stop_and_export() -> String:
 	_recording = false
 	_flush_line_batch()
 	_close_file()
+	_runtime_report_end = _runtime_report_snapshot()
+	_write_sidecar(true)
 	if _row_count <= 0:
 		print("[tile-data-record] stop: no rows captured")
 		return ""
@@ -552,6 +606,9 @@ func on_fast_tick(sample: Dictionary) -> Dictionary:
 	_tick_count += 1
 
 	var global_tick: int = int(sample.get("tick_idx", _start_tick + _tick_count))
+	if _first_seen_tick < 0:
+		_first_seen_tick = global_tick
+	_last_seen_tick = global_tick
 	var local_tick: int = maxi(0, global_tick - _start_tick)
 	if _tick_stride > 1 and (local_tick % _tick_stride) != 0:
 		_skipped_tick_count += 1
@@ -647,6 +704,9 @@ func on_fast_tick(sample: Dictionary) -> Dictionary:
 		if _last_tick_format_ms < 0.0:
 			_last_tick_format_ms = 0.0
 	_recorded_tick_count += 1
+	if _first_recorded_tick < 0:
+		_first_recorded_tick = global_tick
+	_last_recorded_tick = global_tick
 	_last_tick_ms = (Time.get_ticks_usec() - t_tick_us0) / 1000.0
 	return {
 		"recorded": true,
@@ -960,7 +1020,79 @@ func _abort_recording(reason: String) -> void:
 	_recording = false
 	_flush_line_batch()
 	_close_file()
+	_runtime_report_end = _runtime_report_snapshot()
+	_write_sidecar(true, reason)
 	push_warning("[tile-data-record] auto-stop: %s; partial CSV kept at %s" % [reason, _path])
+
+
+func _runtime_report_snapshot() -> Dictionary:
+	var report: Dictionary = {}
+	if _main != null and _main.has_method("get_generator"):
+		var generator = _main.get_generator()
+		if generator != null and generator.has_method("get_runtime_thread_report"):
+			report = generator.get_runtime_thread_report()
+	if _main != null and _main.has_method("climate_authority_diagnostics"):
+		report["climate_authority_diagnostics"] = _main.climate_authority_diagnostics()
+	return report
+
+
+func _write_sidecar(final: bool, stop_reason: String = "") -> void:
+	if _sidecar_path.is_empty():
+		return
+	var report := _runtime_report_end if final and not _runtime_report_end.is_empty() \
+		else _runtime_report_snapshot()
+	var authority_mode := String(_session_metadata.get("authority_mode", "")).to_upper()
+	if authority_mode.is_empty():
+		authority_mode = "ACTIVE" if String(report.get(
+			"simulation_thread_mode", "OFF")).to_upper() == "ACTIVE" else "OFF"
+	var worker_mode := String(_session_metadata.get("worker_mode", "")).to_upper()
+	if worker_mode.is_empty():
+		worker_mode = "ACTIVE" if authority_mode == "ACTIVE" else "SHADOW"
+	var climate_diag: Dictionary = report.get("climate_authority_diagnostics", {})
+	var payload: Dictionary = {
+		"schema": "TileDataRecorderSidecar",
+		"schema_version": SCHEMA_VERSION,
+		"csv_path": _path,
+		"session": _session_metadata.duplicate(true),
+		"authority_mode": authority_mode,
+		"worker_mode": worker_mode,
+		"fields": Array(_columns),
+		"soa_fields": Array(_soa_fields),
+		"tick_coverage": {
+			"tick_stride": _tick_stride,
+			"first_seen_tick": _first_seen_tick,
+			"last_seen_tick": _last_seen_tick,
+			"first_recorded_tick": _first_recorded_tick,
+			"last_recorded_tick": _last_recorded_tick,
+			"seen_ticks": _tick_count,
+			"recorded_ticks": _recorded_tick_count,
+			"skipped_ticks": _skipped_tick_count,
+		},
+		"cell_coverage": {
+			"cell_count": _cell_count,
+			"cell_stride": _cell_stride,
+			"first_cell_index": 0 if _cell_count > 0 else -1,
+			"last_cell_index": _cell_count - 1,
+			"rows": _row_count,
+		},
+		"sampling": sampling_summary(),
+		"runtime": {
+			"committed_day": int(report.get("simulation_committed_day", -1)),
+			"writeback_day": int(climate_diag.get("writeback_last_day", -1)),
+			"worker_fault_count": int(report.get("worker_fault_count", 0)),
+			"runtime_report_start": _runtime_report_start.duplicate(true),
+			"runtime_report_end": report.duplicate(true),
+		},
+		"stop_reason": stop_reason,
+		"complete": final,
+	}
+	var file := FileAccess.open(_sidecar_path, FileAccess.WRITE)
+	if file == null:
+		push_warning("[tile-data-record] sidecar open failed path=%s err=%d" % [
+			_sidecar_path, FileAccess.get_open_error()])
+		return
+	file.store_string(JSON.stringify(payload, "  "))
+	file.close()
 
 
 func _close_file() -> void:

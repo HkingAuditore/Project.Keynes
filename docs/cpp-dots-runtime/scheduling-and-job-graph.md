@@ -7,6 +7,13 @@ Native Runtime Graph ACTIVE 时，已注册的旧 SUS `country_daily` 仅保留 
 Economy 只能在同一 graph day barrier 内按稳定顺序推进，GDScript 不得因 `day_changed` 再补跑
 同一天。
 
+Country worker 的 read-view 消费不属于新的调度 job，也不推进模拟日。WorldRuntimeHost._process()
+在 Country transport service 后执行一次非阻塞 get_country_worker_read_view(cursor)：连续
+generation 应用 sparse cell/owner patch，跳过 generation 时只接受 full snapshot。消费完成后
+复用 CountryFacade.country_committed，因此 vision、border、UI 仍由原事件路径驱动。Country 未获
+granted bit 时该消费边界完全不运行；当前正式 0x802 不改变现有同步 Country 写者。read-view
+代码是 ACTIVE 准入后的发布适配器，不是提前放行。
+
 Graph dirty family 是 domain commit 的确认集合，不是“再做一次 MapData 全量发布”的请求。
 `flush_runtime_visuals(mask)` 只清除真实交集；未被 mask 选中的 dirty family 必须保留到后续
 确认。国家领土同步由 `territory_generation` 触发，研究、国库、税务和国家名称变化只发布
@@ -1195,3 +1202,5 @@ hash 对拍前，生产模式必须保持 OFF；这不是性能失败，而是�
 producer sequence。这样 `request_runtime_save()` 已接受的命令不会因为尚未执行而丢失；
 恢复只在 host 为 `STOPPED` 时校验 PKSR optional tail，下一次 `start` 将其放回 worker
 本地 pending 列表。主线程仍只接收 immutable bytes，不读取任何 domain store。
+
+阶段 E 的日序固定包含 EFFECT -> MODIFIER。Effect 只产生 typed intent，Modifier POD 产生真实 OK/REJECTED/STALE_GENERATION/RETRY ACK；ACK barrier 未闭合时 Effect plan 不能 commit。Modifier shadow command 在 capture 后才进入 pending 日队列，因此迟到请求只能在下一日执行。

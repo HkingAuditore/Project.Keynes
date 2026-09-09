@@ -80,6 +80,13 @@ const FLAGS: Array = [
 		resource = "ClimateProfile",
 		description = "海冰 / enum atlas 仅上传 dirty 区域（非全 RGBA8 重传）",
 	},
+	{
+		name = &"use_climate_round_async",
+		owner = "climate.round",
+		default = true,
+		resource = "ClimateProfile",
+		description = "完整 climate round 通过原生异步分阶段管线执行",
+	},
 	# ─── Climate / Weather 业务开关 ────────────────────────────────────
 	{
 		name = &"daily_climate_interpolation",

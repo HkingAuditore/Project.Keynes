@@ -402,6 +402,7 @@ Dictionary NativeCountryRuntime::configure(const Dictionary &catalog,
     _submit_order = 0;
     _typed_receipts.clear();
     _typed_request_state.clear();
+    clear_peer_protocol_state();
     close_boundary_seal();
     _next_boundary_id = 1;
     if (++_session_epoch == 0) _session_epoch = 1;
@@ -462,9 +463,25 @@ Dictionary NativeCountryRuntime::configure(const Dictionary &catalog,
     _effect_command_results.clear();
     _effect_command_idempotency.clear();
     _next_effect_request_id = 1;
+    clear_peer_protocol_state();
     _era_reward_reference = {};
     _events.clear();
     _command_batch = {};
+    _economy_asset_transaction_history.clear();
+    _economy_asset_request_index.clear();
+    _economy_asset_transactions_in_flight.clear();
+    _economy_asset_reserved_cash.clear();
+    _economy_asset_reserved_goods.clear();
+    _economy_asset_reserved_research_points.clear();
+    _next_economy_asset_transaction_id = 1;
+    _economy_asset_operation_sequence = 0;
+    _economy_asset_transactions_created = 0;
+    _economy_asset_transactions_completed = 0;
+    _economy_asset_transactions_rejected = 0;
+    _economy_asset_prepare_count = 0;
+    _economy_asset_commit_count = 0;
+    _economy_asset_complete_count = 0;
+    _economy_asset_ledger_failures = 0;
     _is_water.clear();
     _report.clear();
     _report["configured"] = true;
@@ -497,6 +514,11 @@ int32_t NativeCountryRuntime::append_country(const std::string &stable_id,
     _countries.territory_count.push_back(0);
     _countries.cash.push_back(cash);
     _countries.state_version.push_back(1);
+    _economy_asset_reserved_cash.resize(_countries.active.size(), 0);
+    _economy_asset_reserved_goods.resize(
+        _countries.active.size() * _good_ids.size(), 0);
+    _economy_asset_reserved_research_points.resize(
+        _countries.active.size(), 0);
     _country_technologies.resize(static_cast<size_t>(slot + 1) * _technology_words, 0);
     _current_visual_era.resize(static_cast<size_t>(slot + 1), -1);
     _country_goods.resize(static_cast<size_t>(slot + 1) * _good_ids.size(), 0);
@@ -1078,12 +1100,19 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
     _pending_commands.clear();
     _typed_receipts.clear();
     _typed_request_state.clear();
+    clear_peer_protocol_state();
     close_boundary_seal();
     _next_boundary_id = 1;
     if (++_session_epoch == 0) _session_epoch = 1;
     _effect_command_results.clear();
     _effect_command_idempotency.clear();
     _next_effect_request_id = 1;
+    _economy_asset_transactions_in_flight.clear();
+    _economy_asset_reserved_cash.assign(_countries.active.size(), 0);
+    _economy_asset_reserved_goods.assign(
+        _countries.active.size() * _good_ids.size(), 0);
+    _economy_asset_reserved_research_points.assign(
+        _countries.active.size(), 0);
     _era_reward_reference = {};
     _events.clear();
     _command_batch = {};
@@ -1374,6 +1403,31 @@ bool NativeCountryRuntime::validate_admission_command(
     return true;
 }
 
+const char *economy_asset_status_name(
+        NativeCountryRuntime::EconomyAssetTransactionStatus status) {
+    switch (status) {
+    case NativeCountryRuntime::ECONOMY_ASSET_CREATED: return "created";
+    case NativeCountryRuntime::ECONOMY_ASSET_COUNTRY_PREPARED:
+        return "country_prepared";
+    case NativeCountryRuntime::ECONOMY_ASSET_PEER_PREPARED:
+        return "peer_prepared";
+    case NativeCountryRuntime::ECONOMY_ASSET_COMMIT_DECIDED:
+        return "commit_decided";
+    case NativeCountryRuntime::ECONOMY_ASSET_COUNTRY_APPLIED:
+        return "country_applied";
+    case NativeCountryRuntime::ECONOMY_ASSET_PEER_APPLIED:
+        return "peer_applied";
+    case NativeCountryRuntime::ECONOMY_ASSET_COMPLETED: return "completed";
+    case NativeCountryRuntime::ECONOMY_ASSET_REJECTED: return "rejected";
+    case NativeCountryRuntime::ECONOMY_ASSET_AWAITING_PEER_PREPARED:
+        return "awaiting_peer_prepared";
+    case NativeCountryRuntime::ECONOMY_ASSET_AWAITING_PEER_APPLIED:
+        return "awaiting_peer_applied";
+    case NativeCountryRuntime::ECONOMY_ASSET_FAULTED: return "faulted";
+    }
+    return "unknown";
+}
+
 bool NativeCountryRuntime::submit_typed_commands(
         const CountryTypedCommand *commands, size_t count,
         std::vector<CountryCommandReceipt> &receipts, std::string &error) {
@@ -1550,7 +1604,9 @@ bool NativeCountryRuntime::protocol_contract_self_test(std::string &error) {
     error.clear();
     if (!_configured || !_bootstrapped || _mode == MODE_OFF ||
         _command_batch.active || _boundary_seal_active ||
-        !_pending_commands.empty()) {
+        !_pending_commands.empty() || _peer_async_mode ||
+        !_peer_pending_intents.empty() || !_peer_intent_queue.empty() ||
+        !_peer_result_cache.empty()) {
         error = "country_protocol_test_requires_idle_runtime";
         return false;
     }
@@ -1933,6 +1989,8 @@ bool NativeCountryRuntime::has_pending_effect_commands() const {
 bool NativeCountryRuntime::should_run(int64_t day_index) const {
     if (!_configured || !_bootstrapped || _mode == MODE_OFF) return false;
     if (_command_batch.active) return true;
+    if (!_peer_pending_intents.empty()) return true;
+    if (peer_rejection_needs_service(day_index)) return true;
     // Trigger/Effect often enqueue DISCOVER with effective_day = event.day + 1.
     // Incomplete effect results for those future commands must not pin today;
     // the due-command scan below already covers same-day Effect work, and an
@@ -1942,10 +2000,41 @@ bool NativeCountryRuntime::should_run(int64_t day_index) const {
     if (_technology_points_good_id >= 0) {
         if (_pending_queue_enabled) {
             if (_pending_activation_index_dirty) rebuild_pending_activation_index();
-            if (_pending_activation_count > 0) return true;
+            for (int32_t slot = 0;
+                 slot < static_cast<int32_t>(_pending_activation_indices.size());
+                 ++slot) {
+                for (const int32_t technology :
+                         _pending_activation_indices[static_cast<size_t>(slot)]) {
+                    if (!peer_rejection_blocks_activation(slot, technology,
+                                                           day_index))
+                        return true;
+                }
+            }
         } else {
-            for (uint64_t word : _country_pending_technologies)
-                if (word != 0) return true;
+            for (int32_t slot = 0;
+                 slot < static_cast<int32_t>(_countries.active.size()); ++slot) {
+                if (_countries.active[static_cast<size_t>(slot)] == 0) continue;
+                const size_t word_base = static_cast<size_t>(slot) *
+                    static_cast<size_t>(_technology_words);
+                for (int32_t word = 0; word < _technology_words; ++word) {
+                    uint64_t pending = _country_pending_technologies[
+                        word_base + static_cast<size_t>(word)];
+                    while (pending != 0) {
+                        uint64_t low_bit = pending;
+                        int32_t bit = 0;
+                        while ((low_bit & 1u) == 0u) {
+                            low_bit >>= 1u;
+                            ++bit;
+                        }
+                        const int32_t technology = word * 64 + bit;
+                        if (technology < static_cast<int32_t>(_technology_ids.size()) &&
+                            !peer_rejection_blocks_activation(
+                                slot, technology, day_index))
+                            return true;
+                        pending &= pending - 1;
+                    }
+                }
+            }
         }
         for (const int32_t active_slot : _research_active_country_slots) {
             if (active_slot < 0 ||
@@ -1963,6 +2052,8 @@ bool NativeCountryRuntime::should_run(int64_t day_index) const {
                 const size_t queue_base = length_index * 8U;
                 const int32_t technology = _country_research_queues[queue_base];
                 if (technology >= 0 && !has_technology(static_cast<int32_t>(slot), technology) &&
+                    !peer_rejection_blocks_activation(
+                        static_cast<int32_t>(slot), technology, day_index) &&
                     progress_for(static_cast<int32_t>(slot), technology) >=
                         effective_research_cost(static_cast<int32_t>(slot), technology))
                     return true;
@@ -1974,8 +2065,15 @@ bool NativeCountryRuntime::should_run(int64_t day_index) const {
             const size_t queue_base = slot * 4U;
             for (int32_t domain = 0; domain < 4; ++domain) {
                 if (_country_research_queue_lengths[
-                        queue_base + static_cast<size_t>(domain)] != 0)
-                    return true;
+                        queue_base + static_cast<size_t>(domain)] != 0) {
+                    const size_t queue_index = (slot * 4U +
+                        static_cast<size_t>(domain)) * 8U;
+                    const int32_t technology = _country_research_queues[queue_index];
+                    if (technology >= 0 &&
+                        !peer_rejection_blocks_activation(
+                            static_cast<int32_t>(slot), technology, day_index))
+                        return true;
+                }
             }
         }
     }
@@ -2278,6 +2376,31 @@ CountryCoreStepResult NativeCountryRuntime::run_slice_core(
     // between reports and bridge queries in the same committed state.
     _state_hash_cache_valid = false;
 
+    // A peer rejection is a durable protocol outcome, not an idle result.
+    // Report it once at the next semantic boundary before admitting another
+    // command batch. The committed Country state remains intact; only the
+    // rejected peer operation is blocked until its retry day.
+    const auto peer_rejection_result = [&]() {
+        const CountryPeerProtocolStatus status = peer_protocol_status();
+        if (_command_batch.active || status.has_unreported_rejection == 0 ||
+            !peer_rejection_needs_service(requested_day))
+            return false;
+        result.status = CountryCoreStepStatus::REJECTED;
+        result.ok = false;
+        result.done = true;
+        result.semantic_commit = false;
+        result.day_barrier = false;
+        result.stage = "peer_rejection";
+        result.reason = status.rejection_reason[0] != '\0'
+            ? std::string(status.rejection_reason.data())
+            : "country_peer_result_rejected";
+        mark_peer_rejections_reported(requested_day);
+        record_reference_frame("peer_rejected", requested_day, false, false);
+        close_boundary_seal();
+        return true;
+    };
+    if (peer_rejection_result()) return result;
+
     const Clock::time_point start = Clock::now();
     if (!_command_batch.active) {
         const uint64_t admitted_watermark =
@@ -2319,6 +2442,16 @@ CountryCoreStepResult NativeCountryRuntime::run_slice_core(
             }
             const int32_t research_changed = run_research_day(
                 requested_day, &peer_context, &peer_context);
+            if (!_peer_protocol_fault_reason.empty()) {
+                result.status = CountryCoreStepStatus::FAULTED;
+                result.ok = false;
+                result.done = true;
+                result.stage = "peer_retry";
+                result.reason = _peer_protocol_fault_reason;
+                close_boundary_seal();
+                return result;
+            }
+            if (peer_rejection_result()) return result;
             _last_committed_day = std::max(_last_committed_day, requested_day);
             const bool day_barrier = ack_chain_due(requested_day,
                                                    &peer_context);
@@ -3374,6 +3507,16 @@ CountryCoreStepResult NativeCountryRuntime::run_slice_core(
     }
     const int32_t research_changed = run_research_day(
         day, &peer_context, &peer_context);
+    if (!_peer_protocol_fault_reason.empty()) {
+        result.status = CountryCoreStepStatus::FAULTED;
+        result.ok = false;
+        result.done = true;
+        result.stage = "peer_retry";
+        result.reason = _peer_protocol_fault_reason;
+        close_boundary_seal();
+        return result;
+    }
+    if (peer_rejection_result()) return result;
     const double aggregate_ms = elapsed_ms(publish_start);
     const bool day_barrier = should_run(day) ||
         ack_chain_due(day, &peer_context);
@@ -3451,6 +3594,15 @@ void NativeCountryRuntime::publish_report(const char *stage, int64_t day,
     _report["country_count"] = static_cast<int64_t>(_countries.active.size());
     _report["cell_count"] = _cell_count;
     _report["pending_commands"] = static_cast<int64_t>(_pending_commands.size());
+    _report["peer_async_mode"] = _peer_async_mode;
+    _report["peer_pending_intents"] = static_cast<int64_t>(
+        _peer_pending_intents.size());
+    _report["peer_queued_intents"] = static_cast<int64_t>(
+        _peer_intent_queue.size());
+    _report["peer_cached_results"] = static_cast<int64_t>(
+        _peer_result_cache.size());
+    _report["peer_intents_emitted"] = static_cast<int64_t>(_peer_intents_emitted);
+    _report["peer_results_consumed"] = static_cast<int64_t>(_peer_results_consumed);
     _report["research_queue_size"] = _pending_activation_index_dirty
         ? static_cast<int64_t>(-1) : _pending_activation_count;
     _report["research_pending_queue_enabled"] = _pending_queue_enabled;
@@ -3581,7 +3733,14 @@ void NativeCountryRuntime::publish_report(const char *stage, int64_t day,
     _report["research_report_ms"] = report_build_ms;
 }
 
-Dictionary NativeCountryRuntime::report() const { return _report.duplicate(); }
+Dictionary NativeCountryRuntime::report() const {
+    Dictionary out = _report.duplicate();
+    const Dictionary transactions = economy_asset_transaction_report();
+    out["economy_asset_transactions"] = transactions;
+    out["economy_asset_ledger_failures"] = transactions.get(
+        "ledger_failures", 0);
+    return out;
+}
 
 NativeCountryRuntime::ReferenceHashes
 NativeCountryRuntime::compute_reference_hashes() const {
@@ -3927,6 +4086,15 @@ Dictionary NativeCountryRuntime::capture_reference_checkpoint() const {
 bool NativeCountryRuntime::capture_core_checkpoint(
         CountryCoreCheckpoint &out, std::string &error) const {
     CountryCoreCheckpoint checkpoint;
+    const CountryPeerProtocolStatus peer_status = peer_protocol_status();
+    if (peer_status.pending_intents != 0 || peer_status.queued_intents != 0) {
+        error = "country_checkpoint_peer_pending";
+        return false;
+    }
+    if (peer_status.rejected_intents != 0) {
+        error = "country_checkpoint_peer_rejected_retry_pending";
+        return false;
+    }
     if (!encode_save(checkpoint.canonical_pkcn, error)) return false;
     checkpoint.session_epoch = _session_epoch;
     checkpoint.catalog_hash = catalog_hash();
@@ -4105,6 +4273,7 @@ Dictionary NativeCountryRuntime::reset(const String &reason) {
     _pending_commands.clear();
     _typed_receipts.clear();
     _typed_request_state.clear();
+    clear_peer_protocol_state();
     close_boundary_seal();
     _next_boundary_id = 1;
     if (++_session_epoch == 0) _session_epoch = 1;
@@ -4814,24 +4983,956 @@ bool NativeCountryRuntime::research_procurement_policy(int32_t country_slot, boo
     return true;
 }
 
-bool NativeCountryRuntime::purchase_research_points(int32_t country_slot,
-                                                     int64_t quantity,
-                                                     int64_t total_cost) {
-    if (country_slot < 0 || country_slot >= static_cast<int32_t>(_countries.active.size()) ||
-        quantity <= 0 || total_cost < 0 ||
-        _countries.cash[static_cast<size_t>(country_slot)] < total_cost) return false;
-    const size_t slot = static_cast<size_t>(country_slot);
-    int64_t &stock = _country_goods[
-        slot * _good_ids.size() + static_cast<size_t>(_technology_points_good_id)];
-    if (quantity > std::numeric_limits<int64_t>::max() - stock) return false;
-    _countries.cash[slot] -= total_cost;
-    stock += quantity;
-    _country_research_purchased_total[slot] += quantity;
+uint64_t NativeCountryRuntime::begin_economy_asset_transaction(
+        EconomyAssetTransaction &transaction, uint64_t request_id,
+        uint32_t origin_domain, int64_t origin_epoch, int32_t origin_stage) {
+    transaction.transaction_id = _next_economy_asset_transaction_id++;
+    if (transaction.transaction_id == 0)
+        transaction.transaction_id = _next_economy_asset_transaction_id++;
+    transaction.session_epoch = _session_epoch;
+    transaction.origin_domain = origin_domain;
+    transaction.origin_epoch = origin_epoch;
+    transaction.origin_stage = origin_stage;
+    transaction.operation_sequence = ++_economy_asset_operation_sequence;
+    transaction.request_id = request_id != 0 ? request_id : transaction.transaction_id;
+    transaction.status = ECONOMY_ASSET_CREATED;
+    _economy_asset_request_index[transaction.request_id] =
+        transaction.transaction_id;
+    ++_economy_asset_transactions_created;
+    return transaction.transaction_id;
+}
+
+void NativeCountryRuntime::finish_economy_asset_transaction(
+        EconomyAssetTransaction &transaction, bool completed,
+        const char *rejection_reason, bool conservation_failure) {
+    if (completed) {
+        transaction.status = ECONOMY_ASSET_COMPLETED;
+        ++_economy_asset_transactions_completed;
+        ++_economy_asset_complete_count;
+    } else {
+        transaction.status = ECONOMY_ASSET_REJECTED;
+        transaction.conservation_ok = !conservation_failure;
+        transaction.rejection_reason = rejection_reason == nullptr
+            ? "country_economy_asset_transaction_rejected" : rejection_reason;
+        ++_economy_asset_transactions_rejected;
+        if (conservation_failure)
+            ++_economy_asset_ledger_failures;
+    }
+    _economy_asset_request_index[transaction.request_id] =
+        transaction.transaction_id;
+    _economy_asset_transactions_in_flight.erase(transaction.transaction_id);
+    _economy_asset_transaction_history.push_back(transaction);
+    while (_economy_asset_transaction_history.size() > 4096)
+        _economy_asset_transaction_history.pop_front();
+}
+
+bool NativeCountryRuntime::find_economy_asset_transaction(
+        uint64_t request_id, EconomyAssetTransaction &out) const {
+    if (request_id == 0) return false;
+    const auto indexed = _economy_asset_request_index.find(request_id);
+    if (indexed == _economy_asset_request_index.end()) return false;
+    const auto pending = _economy_asset_transactions_in_flight.find(
+        indexed->second);
+    if (pending != _economy_asset_transactions_in_flight.end()) {
+        out = pending->second;
+        return true;
+    }
+    for (auto it = _economy_asset_transaction_history.rbegin();
+         it != _economy_asset_transaction_history.rend(); ++it) {
+        if (it->transaction_id == indexed->second) {
+            out = *it;
+            return true;
+        }
+    }
+    return false;
+}
+
+namespace {
+
+Dictionary economy_asset_transaction_dictionary(
+        const NativeCountryRuntime::EconomyAssetTransaction &transaction) {
+    Dictionary out;
+    out["ok"] = true;
+    out["transaction_id"] = static_cast<int64_t>(transaction.transaction_id);
+    out["request_id"] = static_cast<int64_t>(transaction.request_id);
+    out["session_epoch"] = static_cast<int64_t>(transaction.session_epoch);
+    out["origin_domain"] = static_cast<int64_t>(transaction.origin_domain);
+    out["origin_epoch"] = transaction.origin_epoch;
+    out["origin_stage"] = transaction.origin_stage;
+    out["operation_sequence"] = static_cast<int64_t>(
+        transaction.operation_sequence);
+    out["operation"] = static_cast<int64_t>(transaction.operation);
+    out["status"] = static_cast<int64_t>(transaction.status);
+    out["status_name"] = economy_asset_status_name(transaction.status);
+    out["country_handle"] = static_cast<int64_t>(transaction.country_handle);
+    out["country_slot"] = transaction.country_slot;
+    out["country_generation"] = static_cast<int64_t>(
+        transaction.country_generation_before);
+    out["peer_generation"] = static_cast<int64_t>(transaction.peer_generation);
+    out["requested_cash"] = transaction.requested_cash;
+    out["reserved_cash"] = transaction.reserved_cash;
+    out["committed_cash"] = transaction.committed_cash;
+    out["requested_quantity"] = transaction.requested_quantity;
+    out["prepared_quantity"] = transaction.prepared_quantity;
+    out["committed_quantity"] = transaction.committed_quantity;
+    out["requested_goods_total"] = transaction.requested_goods_total;
+    out["reserved_goods_total"] = transaction.reserved_goods_total;
+    out["committed_goods_total"] = transaction.committed_goods_total;
+    out["country_cash_before"] = transaction.country_cash_before;
+    out["country_cash_after"] = transaction.country_cash_after;
+    out["country_good_before"] = transaction.country_good_before;
+    out["country_good_after"] = transaction.country_good_after;
+    out["all_or_nothing"] = transaction.all_or_nothing;
+    out["conservation_ok"] = transaction.conservation_ok;
+    out["rejection_reason"] = String::utf8(
+        transaction.rejection_reason.c_str());
+    PackedInt32Array ids;
+    PackedInt64Array quantities;
+    PackedInt64Array before_goods;
+    PackedInt64Array after_goods;
+    ids.resize(static_cast<int64_t>(transaction.good_ids.size()));
+    quantities.resize(static_cast<int64_t>(transaction.good_quantities.size()));
+    before_goods.resize(ids.size());
+    after_goods.resize(ids.size());
+    for (int64_t i = 0; i < ids.size(); ++i) {
+        ids.set(i, transaction.good_ids[static_cast<size_t>(i)]);
+        quantities.set(i, transaction.good_quantities[static_cast<size_t>(i)]);
+        before_goods.set(i, i < static_cast<int64_t>(
+            transaction.country_goods_before.size())
+            ? transaction.country_goods_before[static_cast<size_t>(i)] : 0);
+        after_goods.set(i, i < static_cast<int64_t>(
+            transaction.country_goods_after.size())
+            ? transaction.country_goods_after[static_cast<size_t>(i)] : 0);
+    }
+    out["good_ids"] = ids;
+    out["good_quantities"] = quantities;
+    out["country_goods_before"] = before_goods;
+    out["country_goods_after"] = after_goods;
+    return out;
+}
+
+Dictionary economy_asset_failure(const char *code) {
+    Dictionary out;
+    out["ok"] = false;
+    out["code"] = code;
+    return out;
+}
+
+} // namespace
+
+Dictionary NativeCountryRuntime::begin_economy_treasury_spend(
+        int64_t country_handle, const PackedInt32Array &good_ids,
+        const PackedInt64Array &quantities, int64_t cash,
+        int64_t origin_epoch, int32_t origin_stage, uint64_t request_id) {
+    if (request_id != 0) {
+        EconomyAssetTransaction previous;
+        if (find_economy_asset_transaction(request_id, previous)) {
+            Dictionary out = economy_asset_transaction_dictionary(previous);
+            out["replayed"] = true;
+            return out;
+        }
+    }
+    EconomyAssetTransaction transaction;
+    transaction.operation = ECONOMY_ASSET_TREASURY_SPEND;
+    transaction.country_handle = static_cast<uint64_t>(country_handle);
+    transaction.requested_cash = cash;
+    transaction.requested_goods_total = 0;
+    transaction.all_or_nothing = true;
+    begin_economy_asset_transaction(transaction, request_id,
+        static_cast<uint32_t>(RuntimeDomainId::ECONOMY), origin_epoch,
+        origin_stage);
+
+    int32_t slot = -1;
+    auto reject = [&](const char *reason) {
+        finish_economy_asset_transaction(transaction, false, reason);
+        Dictionary out = economy_asset_transaction_dictionary(transaction);
+        out["ok"] = false;
+        out["code"] = reason;
+        return out;
+    };
+    if (cash < 0 || good_ids.size() != quantities.size() ||
+        good_ids.size() > 4096 ||
+        !validate_handle(static_cast<uint64_t>(country_handle), slot))
+        return reject("country_treasury_async_target_invalid");
+
+    transaction.country_slot = slot;
+    transaction.country_generation_before = _generation;
+    transaction.country_cash_before = _countries.cash[static_cast<size_t>(slot)];
+    transaction.good_ids.reserve(static_cast<size_t>(good_ids.size()));
+    transaction.good_quantities.reserve(static_cast<size_t>(quantities.size()));
+    const size_t base = static_cast<size_t>(slot) * _good_ids.size();
+    const int64_t available_cash = transaction.country_cash_before -
+        _economy_asset_reserved_cash[static_cast<size_t>(slot)];
+    if (available_cash < cash)
+        return reject("country_treasury_async_cash_insufficient");
+    for (int64_t i = 0; i < good_ids.size(); ++i) {
+        const int32_t good_id = good_ids[i];
+        const int64_t quantity = quantities[i];
+        if (good_id < 0 || good_id >= static_cast<int32_t>(_good_ids.size()) ||
+            quantity < 0)
+            return reject("country_treasury_async_good_invalid");
+        for (const int32_t prior : transaction.good_ids)
+            if (prior == good_id)
+                return reject("country_treasury_async_duplicate_good");
+        if (transaction.requested_goods_total >
+                std::numeric_limits<int64_t>::max() - quantity)
+            return reject("country_treasury_async_quantity_overflow");
+        const size_t index = base + static_cast<size_t>(good_id);
+        const int64_t available = _country_goods[index] -
+            _economy_asset_reserved_goods[index];
+        if (available < quantity)
+            return reject("country_treasury_async_goods_insufficient");
+        transaction.good_ids.push_back(good_id);
+        transaction.good_quantities.push_back(quantity);
+        transaction.requested_goods_total += quantity;
+        transaction.reserved_goods_total += quantity;
+        if (i == 0) transaction.good_id = good_id;
+    }
+    transaction.reserved_cash = cash;
+    transaction.prepared_quantity = transaction.requested_goods_total;
+    _economy_asset_reserved_cash[static_cast<size_t>(slot)] += cash;
+    for (size_t i = 0; i < transaction.good_ids.size(); ++i)
+        _economy_asset_reserved_goods[base + static_cast<size_t>(
+            transaction.good_ids[i])] += transaction.good_quantities[i];
+    transaction.status = ECONOMY_ASSET_AWAITING_PEER_PREPARED;
+    ++_economy_asset_prepare_count;
+    _economy_asset_transactions_in_flight.emplace(
+        transaction.transaction_id, transaction);
+    return economy_asset_transaction_dictionary(transaction);
+}
+
+Dictionary NativeCountryRuntime::acknowledge_economy_asset_peer_prepared(
+        uint64_t transaction_id, uint64_t session_epoch,
+        uint64_t country_generation, uint64_t peer_generation,
+        bool accepted, const String &reason) {
+    auto it = _economy_asset_transactions_in_flight.find(transaction_id);
+    if (it == _economy_asset_transactions_in_flight.end()) {
+        EconomyAssetTransaction terminal;
+        for (auto history = _economy_asset_transaction_history.rbegin();
+             history != _economy_asset_transaction_history.rend(); ++history) {
+            if (history->transaction_id == transaction_id) {
+                terminal = *history;
+                Dictionary out = economy_asset_transaction_dictionary(terminal);
+                out["replayed"] = true;
+                return out;
+            }
+        }
+        return economy_asset_failure("country_treasury_async_transaction_unknown");
+    }
+    EconomyAssetTransaction &transaction = it->second;
+    if (transaction.status == ECONOMY_ASSET_PEER_PREPARED && accepted) {
+        if (session_epoch != transaction.session_epoch ||
+            country_generation != transaction.country_generation_before ||
+            peer_generation != transaction.peer_generation)
+            return economy_asset_failure(
+                "country_treasury_async_prepare_duplicate_mismatch");
+        Dictionary out = economy_asset_transaction_dictionary(transaction);
+        out["replayed"] = true;
+        return out;
+    }
+    if (transaction.status != ECONOMY_ASSET_AWAITING_PEER_PREPARED)
+        return economy_asset_failure("country_treasury_async_prepare_state_invalid");
+    if (session_epoch != transaction.session_epoch ||
+        country_generation != transaction.country_generation_before ||
+        peer_generation == 0)
+        return economy_asset_failure("country_treasury_async_prepare_identity_mismatch");
+    auto release_reservation = [&]() {
+        if (transaction.country_slot < 0) return;
+        const size_t slot = static_cast<size_t>(transaction.country_slot);
+        _economy_asset_reserved_cash[slot] -= transaction.reserved_cash;
+        const size_t base = slot * _good_ids.size();
+        for (size_t i = 0; i < transaction.good_ids.size(); ++i)
+            _economy_asset_reserved_goods[base + static_cast<size_t>(
+                transaction.good_ids[i])] -= transaction.good_quantities[i];
+        if (transaction.operation == ECONOMY_ASSET_RESEARCH_PURCHASE &&
+            slot < _economy_asset_reserved_research_points.size())
+            _economy_asset_reserved_research_points[slot] -=
+                transaction.prepared_quantity;
+        transaction.reserved_cash = 0;
+        transaction.reserved_goods_total = 0;
+    };
+    if (!accepted) {
+        release_reservation();
+        transaction.rejection_reason = reason.is_empty()
+            ? "country_treasury_async_peer_prepare_rejected"
+            : reason.utf8().get_data();
+        finish_economy_asset_transaction(transaction, false,
+            transaction.rejection_reason.c_str());
+        return economy_asset_transaction_snapshot(transaction_id);
+    }
+    transaction.peer_generation = peer_generation;
+    transaction.status = ECONOMY_ASSET_PEER_PREPARED;
+    Dictionary out = economy_asset_transaction_dictionary(transaction);
+    out["ok"] = true;
+    return out;
+}
+
+Dictionary NativeCountryRuntime::begin_economy_fiscal_reserve(
+        int64_t country_handle, int64_t requested, int64_t origin_epoch,
+        int32_t origin_stage, uint64_t request_id) {
+    if (request_id != 0) {
+        EconomyAssetTransaction previous;
+        if (find_economy_asset_transaction(request_id, previous)) {
+            Dictionary out = economy_asset_transaction_dictionary(previous);
+            out["replayed"] = true;
+            return out;
+        }
+    }
+    EconomyAssetTransaction transaction;
+    transaction.operation = ECONOMY_ASSET_FISCAL_RESERVE;
+    transaction.country_handle = static_cast<uint64_t>(country_handle);
+    transaction.requested_quantity = requested;
+    transaction.requested_cash = requested;
+    transaction.all_or_nothing = false;
+    begin_economy_asset_transaction(transaction, request_id,
+        static_cast<uint32_t>(RuntimeDomainId::ECONOMY), origin_epoch,
+        origin_stage);
+    int32_t slot = -1;
+    auto reject = [&](const char *reason) {
+        finish_economy_asset_transaction(transaction, false, reason);
+        Dictionary out = economy_asset_transaction_dictionary(transaction);
+        out["ok"] = false;
+        out["code"] = reason;
+        return out;
+    };
+    if (requested <= 0 || !validate_handle(static_cast<uint64_t>(country_handle), slot))
+        return reject("country_fiscal_async_reserve_target_invalid");
+    transaction.country_slot = slot;
+    transaction.country_generation_before = _generation;
+    transaction.country_cash_before = _countries.cash[static_cast<size_t>(slot)];
+    const int64_t available = transaction.country_cash_before -
+        _economy_asset_reserved_cash[static_cast<size_t>(slot)];
+    if (available <= 0)
+        return reject("country_fiscal_async_reserve_cash_insufficient");
+    transaction.prepared_quantity = std::min(requested, available);
+    transaction.reserved_cash = transaction.prepared_quantity;
+    _economy_asset_reserved_cash[static_cast<size_t>(slot)] +=
+        transaction.reserved_cash;
+    transaction.status = ECONOMY_ASSET_AWAITING_PEER_PREPARED;
+    ++_economy_asset_prepare_count;
+    _economy_asset_transactions_in_flight.emplace(
+        transaction.transaction_id, transaction);
+    return economy_asset_transaction_dictionary(transaction);
+}
+
+Dictionary NativeCountryRuntime::begin_economy_fiscal_cash_credit(
+        EconomyAssetOperation operation, int64_t country_handle, int64_t offered,
+        int64_t origin_epoch, int32_t origin_stage, uint64_t request_id,
+        const char *invalid_reason) {
+    if (request_id != 0) {
+        EconomyAssetTransaction previous;
+        if (find_economy_asset_transaction(request_id, previous)) {
+            Dictionary out = economy_asset_transaction_dictionary(previous);
+            out["replayed"] = true;
+            return out;
+        }
+    }
+    EconomyAssetTransaction transaction;
+    transaction.operation = operation;
+    transaction.country_handle = static_cast<uint64_t>(country_handle);
+    transaction.requested_quantity = offered;
+    transaction.requested_cash = offered;
+    transaction.all_or_nothing = false;
+    begin_economy_asset_transaction(transaction, request_id,
+        static_cast<uint32_t>(RuntimeDomainId::ECONOMY), origin_epoch,
+        origin_stage);
+    int32_t slot = -1;
+    auto reject = [&](const char *reason) {
+        finish_economy_asset_transaction(transaction, false, reason);
+        Dictionary out = economy_asset_transaction_dictionary(transaction);
+        out["ok"] = false;
+        out["code"] = reason;
+        return out;
+    };
+    if (offered <= 0 || !validate_handle(static_cast<uint64_t>(country_handle), slot))
+        return reject(invalid_reason);
+    transaction.country_slot = slot;
+    transaction.country_generation_before = _generation;
+    transaction.country_cash_before = _countries.cash[static_cast<size_t>(slot)];
+    transaction.prepared_quantity = std::min(
+        offered, std::numeric_limits<int64_t>::max() -
+            transaction.country_cash_before);
+    if (transaction.prepared_quantity <= 0)
+        return reject("country_fiscal_async_credit_capacity_exhausted");
+    transaction.status = ECONOMY_ASSET_AWAITING_PEER_PREPARED;
+    ++_economy_asset_prepare_count;
+    _economy_asset_transactions_in_flight.emplace(
+        transaction.transaction_id, transaction);
+    return economy_asset_transaction_dictionary(transaction);
+}
+
+Dictionary NativeCountryRuntime::begin_economy_fiscal_return(
+        int64_t country_handle, int64_t offered, int64_t origin_epoch,
+        int32_t origin_stage, uint64_t request_id) {
+    return begin_economy_fiscal_cash_credit(
+        ECONOMY_ASSET_FISCAL_RETURN, country_handle, offered, origin_epoch,
+        origin_stage, request_id, "country_fiscal_async_return_target_invalid");
+}
+
+Dictionary NativeCountryRuntime::begin_economy_fiscal_collect(
+        int64_t country_handle, int64_t offered, int64_t origin_epoch,
+        int32_t origin_stage, uint64_t request_id) {
+    return begin_economy_fiscal_cash_credit(
+        ECONOMY_ASSET_FISCAL_COLLECT, country_handle, offered, origin_epoch,
+        origin_stage, request_id, "country_fiscal_async_collect_target_invalid");
+}
+
+Dictionary NativeCountryRuntime::begin_economy_cash_to_cohort(
+        int64_t country_handle, int64_t requested, int64_t origin_epoch,
+        int32_t origin_stage, uint64_t request_id) {
+    if (request_id != 0) {
+        EconomyAssetTransaction previous;
+        if (find_economy_asset_transaction(request_id, previous)) {
+            Dictionary out = economy_asset_transaction_dictionary(previous);
+            out["replayed"] = true;
+            return out;
+        }
+    }
+    EconomyAssetTransaction transaction;
+    transaction.operation = ECONOMY_ASSET_CASH_TO_COHORT;
+    transaction.country_handle = static_cast<uint64_t>(country_handle);
+    transaction.requested_quantity = requested;
+    transaction.requested_cash = requested;
+    transaction.all_or_nothing = false;
+    begin_economy_asset_transaction(transaction, request_id,
+        static_cast<uint32_t>(RuntimeDomainId::ECONOMY), origin_epoch,
+        origin_stage);
+    int32_t slot = -1;
+    auto reject = [&](const char *reason) {
+        finish_economy_asset_transaction(transaction, false, reason);
+        Dictionary out = economy_asset_transaction_dictionary(transaction);
+        out["ok"] = false;
+        out["code"] = reason;
+        return out;
+    };
+    if (requested <= 0 || !validate_handle(static_cast<uint64_t>(country_handle), slot))
+        return reject("country_cash_to_cohort_async_target_invalid");
+    transaction.country_slot = slot;
+    transaction.country_generation_before = _generation;
+    transaction.country_cash_before = _countries.cash[static_cast<size_t>(slot)];
+    const int64_t available = transaction.country_cash_before -
+        _economy_asset_reserved_cash[static_cast<size_t>(slot)];
+    if (available <= 0)
+        return reject("country_cash_to_cohort_async_cash_insufficient");
+    transaction.prepared_quantity = std::min(requested, available);
+    transaction.reserved_cash = transaction.prepared_quantity;
+    _economy_asset_reserved_cash[static_cast<size_t>(slot)] +=
+        transaction.reserved_cash;
+    transaction.status = ECONOMY_ASSET_AWAITING_PEER_PREPARED;
+    ++_economy_asset_prepare_count;
+    _economy_asset_transactions_in_flight.emplace(
+        transaction.transaction_id, transaction);
+    return economy_asset_transaction_dictionary(transaction);
+}
+
+Dictionary NativeCountryRuntime::begin_economy_cash_from_cohort(
+        int64_t country_handle, int64_t offered, int64_t origin_epoch,
+        int32_t origin_stage, uint64_t request_id) {
+    return begin_economy_fiscal_cash_credit(
+        ECONOMY_ASSET_CASH_FROM_COHORT, country_handle, offered, origin_epoch,
+        origin_stage, request_id, "country_cash_from_cohort_async_target_invalid");
+}
+
+Dictionary NativeCountryRuntime::begin_economy_good_to_market(
+        int64_t country_handle, int32_t good_id, int64_t requested,
+        int64_t origin_epoch, int32_t origin_stage, uint64_t request_id) {
+    if (request_id != 0) {
+        EconomyAssetTransaction previous;
+        if (find_economy_asset_transaction(request_id, previous)) {
+            Dictionary out = economy_asset_transaction_dictionary(previous);
+            out["replayed"] = true;
+            return out;
+        }
+    }
+    EconomyAssetTransaction transaction;
+    transaction.operation = ECONOMY_ASSET_GOOD_TO_MARKET;
+    transaction.country_handle = static_cast<uint64_t>(country_handle);
+    transaction.good_id = good_id;
+    transaction.requested_quantity = requested;
+    transaction.all_or_nothing = false;
+    begin_economy_asset_transaction(transaction, request_id,
+        static_cast<uint32_t>(RuntimeDomainId::ECONOMY), origin_epoch,
+        origin_stage);
+    int32_t slot = -1;
+    auto reject = [&](const char *reason) {
+        finish_economy_asset_transaction(transaction, false, reason);
+        Dictionary out = economy_asset_transaction_dictionary(transaction);
+        out["ok"] = false;
+        out["code"] = reason;
+        return out;
+    };
+    if (requested <= 0 || good_id < 0 ||
+        good_id >= static_cast<int32_t>(_good_ids.size()) ||
+        !validate_handle(static_cast<uint64_t>(country_handle), slot))
+        return reject("country_good_to_market_async_target_invalid");
+    transaction.country_slot = slot;
+    transaction.country_generation_before = _generation;
+    transaction.country_cash_before = _countries.cash[static_cast<size_t>(slot)];
+    const size_t index = static_cast<size_t>(slot) * _good_ids.size() +
+        static_cast<size_t>(good_id);
+    transaction.country_good_before = _country_goods[index];
+    const int64_t available = transaction.country_good_before -
+        _economy_asset_reserved_goods[index];
+    if (available <= 0)
+        return reject("country_good_to_market_async_goods_insufficient");
+    transaction.prepared_quantity = std::min(requested, available);
+    transaction.good_ids.push_back(good_id);
+    transaction.good_quantities.push_back(transaction.prepared_quantity);
+    transaction.requested_goods_total = requested;
+    transaction.reserved_goods_total = transaction.prepared_quantity;
+    _economy_asset_reserved_goods[index] += transaction.prepared_quantity;
+    transaction.status = ECONOMY_ASSET_AWAITING_PEER_PREPARED;
+    ++_economy_asset_prepare_count;
+    _economy_asset_transactions_in_flight.emplace(
+        transaction.transaction_id, transaction);
+    return economy_asset_transaction_dictionary(transaction);
+}
+
+Dictionary NativeCountryRuntime::begin_economy_good_from_market(
+        int64_t country_handle, int32_t good_id, int64_t offered,
+        int64_t origin_epoch, int32_t origin_stage, uint64_t request_id) {
+    if (request_id != 0) {
+        EconomyAssetTransaction previous;
+        if (find_economy_asset_transaction(request_id, previous)) {
+            Dictionary out = economy_asset_transaction_dictionary(previous);
+            out["replayed"] = true;
+            return out;
+        }
+    }
+    EconomyAssetTransaction transaction;
+    transaction.operation = ECONOMY_ASSET_GOOD_FROM_MARKET;
+    transaction.country_handle = static_cast<uint64_t>(country_handle);
+    transaction.good_id = good_id;
+    transaction.requested_quantity = offered;
+    transaction.all_or_nothing = false;
+    begin_economy_asset_transaction(transaction, request_id,
+        static_cast<uint32_t>(RuntimeDomainId::ECONOMY), origin_epoch,
+        origin_stage);
+    int32_t slot = -1;
+    auto reject = [&](const char *reason) {
+        finish_economy_asset_transaction(transaction, false, reason);
+        Dictionary out = economy_asset_transaction_dictionary(transaction);
+        out["ok"] = false;
+        out["code"] = reason;
+        return out;
+    };
+    if (offered <= 0 || good_id < 0 ||
+        good_id >= static_cast<int32_t>(_good_ids.size()) ||
+        !validate_handle(static_cast<uint64_t>(country_handle), slot))
+        return reject("country_good_from_market_async_target_invalid");
+    transaction.country_slot = slot;
+    transaction.country_generation_before = _generation;
+    transaction.country_cash_before = _countries.cash[static_cast<size_t>(slot)];
+    const size_t index = static_cast<size_t>(slot) * _good_ids.size() +
+        static_cast<size_t>(good_id);
+    transaction.country_good_before = _country_goods[index];
+    transaction.prepared_quantity = std::min(
+        offered, std::numeric_limits<int64_t>::max() -
+            transaction.country_good_before);
+    if (transaction.prepared_quantity <= 0)
+        return reject("country_good_from_market_async_capacity_exhausted");
+    transaction.good_ids.push_back(good_id);
+    transaction.good_quantities.push_back(transaction.prepared_quantity);
+    transaction.requested_goods_total = offered;
+    transaction.status = ECONOMY_ASSET_AWAITING_PEER_PREPARED;
+    ++_economy_asset_prepare_count;
+    _economy_asset_transactions_in_flight.emplace(
+        transaction.transaction_id, transaction);
+    return economy_asset_transaction_dictionary(transaction);
+}
+
+Dictionary NativeCountryRuntime::begin_economy_research_purchase(
+        int64_t country_handle, int64_t quantity, int64_t total_cost,
+        int64_t origin_epoch, int32_t origin_stage, uint64_t request_id) {
+    if (request_id != 0) {
+        EconomyAssetTransaction previous;
+        if (find_economy_asset_transaction(request_id, previous)) {
+            Dictionary out = economy_asset_transaction_dictionary(previous);
+            out["replayed"] = true;
+            return out;
+        }
+    }
+    EconomyAssetTransaction transaction;
+    transaction.operation = ECONOMY_ASSET_RESEARCH_PURCHASE;
+    transaction.country_handle = static_cast<uint64_t>(country_handle);
+    transaction.requested_quantity = quantity;
+    transaction.requested_cash = total_cost;
+    transaction.requested_goods_total = quantity;
+    transaction.all_or_nothing = true;
+    begin_economy_asset_transaction(transaction, request_id,
+        static_cast<uint32_t>(RuntimeDomainId::ECONOMY), origin_epoch,
+        origin_stage);
+
+    auto reject = [&](const char *reason) {
+        finish_economy_asset_transaction(transaction, false, reason);
+        Dictionary out = economy_asset_transaction_dictionary(transaction);
+        out["ok"] = false;
+        out["code"] = reason;
+        return out;
+    };
+    int32_t slot = -1;
+    if (quantity <= 0 || total_cost < 0 ||
+        _technology_points_good_id < 0 ||
+        _technology_points_good_id >= static_cast<int32_t>(_good_ids.size()) ||
+        !validate_handle(static_cast<uint64_t>(country_handle), slot))
+        return reject("country_research_purchase_async_target_invalid");
+
+    transaction.country_slot = slot;
+    transaction.good_id = _technology_points_good_id;
+    transaction.country_generation_before = _generation;
+    const size_t country_slot = static_cast<size_t>(slot);
+    const size_t good_index = country_slot * _good_ids.size() +
+        static_cast<size_t>(_technology_points_good_id);
+    transaction.country_cash_before = _countries.cash[country_slot];
+    transaction.country_good_before = _country_goods[good_index];
+    const int64_t available_cash = transaction.country_cash_before -
+        _economy_asset_reserved_cash[country_slot];
+    const int64_t reserved_points =
+        _economy_asset_reserved_research_points[country_slot];
+    const int64_t points_capacity = std::numeric_limits<int64_t>::max() -
+        transaction.country_good_before;
+    const int64_t purchased_capacity = std::numeric_limits<int64_t>::max() -
+        _country_research_purchased_total[country_slot];
+    if (available_cash < total_cost || reserved_points > points_capacity ||
+        quantity > points_capacity - reserved_points ||
+        quantity > purchased_capacity)
+        return reject("country_research_purchase_async_resources_insufficient");
+
+    transaction.good_ids.push_back(_technology_points_good_id);
+    transaction.good_quantities.push_back(quantity);
+    transaction.prepared_quantity = quantity;
+    transaction.reserved_cash = total_cost;
+    _economy_asset_reserved_cash[country_slot] += total_cost;
+    _economy_asset_reserved_research_points[country_slot] += quantity;
+    transaction.status = ECONOMY_ASSET_AWAITING_PEER_PREPARED;
+    ++_economy_asset_prepare_count;
+    _economy_asset_transactions_in_flight.emplace(
+        transaction.transaction_id, transaction);
+    return economy_asset_transaction_dictionary(transaction);
+}
+
+Dictionary NativeCountryRuntime::commit_economy_asset_transaction(
+        uint64_t transaction_id) {
+    auto it = _economy_asset_transactions_in_flight.find(transaction_id);
+    if (it == _economy_asset_transactions_in_flight.end())
+        return economy_asset_transaction_snapshot(transaction_id);
+    EconomyAssetTransaction &transaction = it->second;
+    if (transaction.status == ECONOMY_ASSET_AWAITING_PEER_APPLIED ||
+        transaction.status == ECONOMY_ASSET_COUNTRY_APPLIED ||
+        transaction.status == ECONOMY_ASSET_PEER_APPLIED) {
+        return economy_asset_transaction_dictionary(transaction);
+    }
+    if (transaction.status != ECONOMY_ASSET_PEER_PREPARED)
+        return economy_asset_failure("country_treasury_async_commit_state_invalid");
+    if (transaction.operation != ECONOMY_ASSET_TREASURY_SPEND &&
+        transaction.operation != ECONOMY_ASSET_FISCAL_RESERVE &&
+        transaction.operation != ECONOMY_ASSET_FISCAL_RETURN &&
+        transaction.operation != ECONOMY_ASSET_FISCAL_COLLECT &&
+        transaction.operation != ECONOMY_ASSET_CASH_TO_COHORT &&
+        transaction.operation != ECONOMY_ASSET_CASH_FROM_COHORT &&
+        transaction.operation != ECONOMY_ASSET_GOOD_TO_MARKET &&
+        transaction.operation != ECONOMY_ASSET_GOOD_FROM_MARKET &&
+        transaction.operation != ECONOMY_ASSET_RESEARCH_PURCHASE)
+        return economy_asset_failure("country_economy_async_commit_operation_invalid");
+    const size_t slot = static_cast<size_t>(transaction.country_slot);
+    const size_t base = slot * _good_ids.size();
+    const bool credits_country = transaction.operation == ECONOMY_ASSET_FISCAL_RETURN ||
+        transaction.operation == ECONOMY_ASSET_FISCAL_COLLECT ||
+        transaction.operation == ECONOMY_ASSET_CASH_FROM_COHORT;
+    const bool credits_goods = transaction.operation == ECONOMY_ASSET_GOOD_FROM_MARKET ||
+        transaction.operation == ECONOMY_ASSET_RESEARCH_PURCHASE;
+    const bool moves_goods = transaction.operation == ECONOMY_ASSET_GOOD_TO_MARKET ||
+        transaction.operation == ECONOMY_ASSET_GOOD_FROM_MARKET;
+    const int64_t commit_cash = transaction.operation == ECONOMY_ASSET_FISCAL_RESERVE ||
+        credits_country ? transaction.prepared_quantity : transaction.requested_cash;
+    if ((!credits_country && _countries.cash[slot] < commit_cash) ||
+        (credits_country && _countries.cash[slot] >
+            std::numeric_limits<int64_t>::max() - commit_cash))
+        return economy_asset_failure("country_treasury_async_commit_cash_invalid");
+    for (size_t i = 0; i < transaction.good_ids.size(); ++i) {
+        const size_t index = base + static_cast<size_t>(transaction.good_ids[i]);
+        if ((!credits_goods && _country_goods[index] < transaction.good_quantities[i]) ||
+            (credits_goods && _country_goods[index] >
+                std::numeric_limits<int64_t>::max() - transaction.good_quantities[i]))
+            return economy_asset_failure("country_treasury_async_commit_goods_invalid");
+    }
+    transaction.status = ECONOMY_ASSET_COMMIT_DECIDED;
+    ++_economy_asset_commit_count;
+    if (credits_country)
+        _countries.cash[slot] += commit_cash;
+    else
+        _countries.cash[slot] -= commit_cash;
+    for (size_t i = 0; i < transaction.good_ids.size(); ++i) {
+        int64_t &stock = _country_goods[base + static_cast<size_t>(transaction.good_ids[i])];
+        if (credits_goods) stock += transaction.good_quantities[i];
+        else stock -= transaction.good_quantities[i];
+    }
+    if (transaction.operation == ECONOMY_ASSET_RESEARCH_PURCHASE)
+        _country_research_purchased_total[slot] += transaction.prepared_quantity;
+    _economy_asset_reserved_cash[slot] -= transaction.reserved_cash;
+    if (transaction.operation == ECONOMY_ASSET_RESEARCH_PURCHASE &&
+        slot < _economy_asset_reserved_research_points.size())
+        _economy_asset_reserved_research_points[slot] -=
+            transaction.prepared_quantity;
+    if (!credits_goods) {
+        for (size_t i = 0; i < transaction.good_ids.size(); ++i)
+            _economy_asset_reserved_goods[base + static_cast<size_t>(
+                transaction.good_ids[i])] -= transaction.good_quantities[i];
+    }
+    transaction.reserved_cash = 0;
+    transaction.reserved_goods_total = 0;
+    transaction.committed_cash = commit_cash;
+    transaction.committed_quantity = moves_goods
+        ? transaction.prepared_quantity
+        : (transaction.operation == ECONOMY_ASSET_FISCAL_RESERVE || credits_country
+            ? commit_cash : transaction.requested_goods_total);
+    transaction.committed_goods_total = moves_goods
+        ? transaction.prepared_quantity : transaction.requested_goods_total;
+    transaction.country_cash_after = _countries.cash[slot];
+    transaction.country_goods_before.clear();
+    transaction.country_goods_after.clear();
+    transaction.country_goods_before.reserve(transaction.good_ids.size());
+    transaction.country_goods_after.reserve(transaction.good_ids.size());
+    for (size_t i = 0; i < transaction.good_ids.size(); ++i) {
+        const int64_t after = _country_goods[base + static_cast<size_t>(
+            transaction.good_ids[i])];
+        transaction.country_goods_after.push_back(after);
+        transaction.country_goods_before.push_back(credits_goods
+            ? after - transaction.good_quantities[i]
+            : after + transaction.good_quantities[i]);
+    }
+    transaction.country_good_before = transaction.country_goods_before.empty() ? 0
+        : transaction.country_goods_before[0];
+    transaction.country_good_after = transaction.country_goods_after.empty() ? 0
+        : transaction.country_goods_after[0];
     ++_countries.state_version[slot];
     ++_generation;
     _state_hash_cache_valid = false;
-    record_direct_reference_frame("research_procurement");
-    return true;
+    record_direct_reference_frame(
+        transaction.operation == ECONOMY_ASSET_TREASURY_SPEND
+            ? "treasury_spend_async"
+            : (transaction.operation == ECONOMY_ASSET_FISCAL_RESERVE
+                ? "fiscal_reserve_async"
+                : (transaction.operation == ECONOMY_ASSET_RESEARCH_PURCHASE
+                    ? "research_procurement_async"
+                    : (moves_goods ? "market_goods_async" : "fiscal_credit_async"))));
+    transaction.status = ECONOMY_ASSET_COUNTRY_APPLIED;
+    bool goods_conserved = transaction.country_goods_before.size() ==
+        transaction.good_quantities.size() &&
+        transaction.country_goods_after.size() == transaction.good_quantities.size();
+    for (size_t i = 0; goods_conserved && i < transaction.good_quantities.size(); ++i)
+        goods_conserved = credits_goods
+            ? transaction.country_goods_after[i] - transaction.country_goods_before[i] ==
+                transaction.good_quantities[i]
+            : transaction.country_goods_before[i] - transaction.country_goods_after[i] ==
+                transaction.good_quantities[i];
+    const bool cash_conserved = credits_country
+        ? transaction.country_cash_after - transaction.country_cash_before ==
+            transaction.committed_cash
+        : transaction.country_cash_before - transaction.country_cash_after ==
+            transaction.committed_cash;
+    if (!cash_conserved || !goods_conserved) {
+        transaction.conservation_ok = false;
+        transaction.status = ECONOMY_ASSET_FAULTED;
+        transaction.rejection_reason = transaction.operation ==
+                ECONOMY_ASSET_RESEARCH_PURCHASE
+            ? "research_purchase_async_conservation_failure"
+            : "country_treasury_async_conservation_failure";
+        ++_economy_asset_ledger_failures;
+        _economy_asset_request_index[transaction.request_id] = transaction_id;
+        _economy_asset_transaction_history.push_back(transaction);
+        _economy_asset_transactions_in_flight.erase(transaction_id);
+        return economy_asset_transaction_snapshot(transaction_id);
+    }
+    transaction.status = ECONOMY_ASSET_AWAITING_PEER_APPLIED;
+    return economy_asset_transaction_dictionary(transaction);
+}
+
+Dictionary NativeCountryRuntime::commit_economy_treasury_spend(
+        uint64_t transaction_id) {
+    return commit_economy_asset_transaction(transaction_id);
+}
+
+Dictionary NativeCountryRuntime::acknowledge_economy_asset_peer_applied(
+        uint64_t transaction_id, uint64_t session_epoch,
+        uint64_t country_generation, uint64_t peer_generation,
+        bool accepted, const String &reason) {
+    auto it = _economy_asset_transactions_in_flight.find(transaction_id);
+    if (it == _economy_asset_transactions_in_flight.end()) {
+        Dictionary out = economy_asset_transaction_snapshot(transaction_id);
+        if (static_cast<bool>(out.get("ok", false))) out["replayed"] = true;
+        return out;
+    }
+    EconomyAssetTransaction &transaction = it->second;
+    if (transaction.status != ECONOMY_ASSET_AWAITING_PEER_APPLIED)
+        return economy_asset_failure("country_treasury_async_apply_state_invalid");
+    if (session_epoch != transaction.session_epoch ||
+        country_generation != transaction.country_generation_before ||
+        peer_generation != transaction.peer_generation)
+        return economy_asset_failure("country_treasury_async_apply_identity_mismatch");
+    if (!accepted) {
+        transaction.status = ECONOMY_ASSET_FAULTED;
+        transaction.conservation_ok = false;
+        transaction.rejection_reason = reason.is_empty()
+            ? "country_treasury_async_peer_apply_rejected"
+            : reason.utf8().get_data();
+        ++_economy_asset_ledger_failures;
+        _economy_asset_request_index[transaction.request_id] = transaction_id;
+        _economy_asset_transaction_history.push_back(transaction);
+        _economy_asset_transactions_in_flight.erase(transaction_id);
+        return economy_asset_transaction_snapshot(transaction_id);
+    }
+    transaction.status = ECONOMY_ASSET_PEER_APPLIED;
+    finish_economy_asset_transaction(transaction, true);
+    return economy_asset_transaction_snapshot(transaction_id);
+}
+
+Dictionary NativeCountryRuntime::economy_asset_transaction_snapshot(
+        uint64_t transaction_id) const {
+    const auto pending = _economy_asset_transactions_in_flight.find(transaction_id);
+    if (pending != _economy_asset_transactions_in_flight.end())
+        return economy_asset_transaction_dictionary(pending->second);
+    for (auto it = _economy_asset_transaction_history.rbegin();
+         it != _economy_asset_transaction_history.rend(); ++it)
+        if (it->transaction_id == transaction_id)
+            return economy_asset_transaction_dictionary(*it);
+    return economy_asset_failure("country_treasury_async_transaction_unknown");
+}
+
+int64_t NativeCountryRuntime::complete_economy_asset_compatibility(
+        const Dictionary &begin) {
+    if (!static_cast<bool>(begin.get("ok", false))) return 0;
+    if (static_cast<bool>(begin.get("replayed", false)))
+        return String(begin.get("status_name", "")) == "completed"
+            ? static_cast<int64_t>(begin.get("committed_quantity", 0)) : 0;
+    const uint64_t transaction_id = static_cast<uint64_t>(
+        static_cast<int64_t>(begin.get("transaction_id", 0)));
+    const uint64_t session_epoch = static_cast<uint64_t>(
+        static_cast<int64_t>(begin.get("session_epoch", 0)));
+    const uint64_t country_generation = static_cast<uint64_t>(
+        static_cast<int64_t>(begin.get("country_generation", 0)));
+    if (transaction_id == 0 || session_epoch == 0 || country_generation == 0)
+        return 0;
+    // Legacy Economy callers remain synchronous until the real peer
+    // coordinator is connected. They still traverse the typed protocol.
+    const uint64_t peer_generation = transaction_id;
+    const Dictionary prepared = acknowledge_economy_asset_peer_prepared(
+        transaction_id, session_epoch, country_generation, peer_generation,
+        true, String());
+    if (!static_cast<bool>(prepared.get("ok", false))) return 0;
+    const Dictionary committed = commit_economy_asset_transaction(transaction_id);
+    if (!static_cast<bool>(committed.get("ok", false))) return 0;
+    const Dictionary applied = acknowledge_economy_asset_peer_applied(
+        transaction_id, session_epoch, country_generation, peer_generation,
+        true, String());
+    return static_cast<bool>(applied.get("ok", false)) &&
+            String(applied.get("status_name", "")) == "completed"
+        ? static_cast<int64_t>(applied.get("committed_quantity", 0)) : 0;
+}
+
+int64_t NativeCountryRuntime::economy_reserve_fiscal_cash(
+        int64_t country_handle, int64_t requested, int64_t origin_epoch,
+        int32_t origin_stage, uint64_t request_id) {
+    return complete_economy_asset_compatibility(begin_economy_fiscal_reserve(
+        country_handle, requested, origin_epoch, origin_stage, request_id));
+}
+
+int64_t NativeCountryRuntime::economy_return_fiscal_cash(
+        int64_t country_handle, int64_t offered, int64_t origin_epoch,
+        int32_t origin_stage, uint64_t request_id) {
+    return complete_economy_asset_compatibility(begin_economy_fiscal_return(
+        country_handle, offered, origin_epoch, origin_stage, request_id));
+}
+
+int64_t NativeCountryRuntime::economy_collect_fiscal_cash(
+        int64_t country_handle, int64_t offered, int64_t origin_epoch,
+        int32_t origin_stage, uint64_t request_id) {
+    return complete_economy_asset_compatibility(begin_economy_fiscal_collect(
+        country_handle, offered, origin_epoch, origin_stage, request_id));
+}
+
+bool NativeCountryRuntime::economy_purchase_research_points(
+        int32_t country_slot, int64_t quantity, int64_t total_cost,
+        int64_t origin_epoch, int32_t origin_stage, uint64_t request_id) {
+    if (country_slot < 0 ||
+        country_slot >= static_cast<int32_t>(_countries.active.size()))
+        return false;
+    const uint64_t handle = make_handle(country_slot);
+    // The legacy production caller is still synchronous, but it now traverses
+    // the same typed transaction state machine.  The synthetic peer ACKs are a
+    // compatibility adapter until NativeEconomyRuntime owns the real market
+    // prepare/apply coordinator; they must not be used as ACTIVE authority.
+    Dictionary begin = begin_economy_research_purchase(
+        static_cast<int64_t>(handle), quantity, total_cost, origin_epoch,
+        origin_stage, request_id);
+    if (!static_cast<bool>(begin.get("ok", false))) return false;
+    if (static_cast<bool>(begin.get("replayed", false)))
+        return String(begin.get("status_name", "")) == "completed";
+    const uint64_t transaction_id = static_cast<uint64_t>(
+        static_cast<int64_t>(begin.get("transaction_id", 0)));
+    const uint64_t session_epoch = static_cast<uint64_t>(
+        static_cast<int64_t>(begin.get("session_epoch", 0)));
+    const uint64_t country_generation = static_cast<uint64_t>(
+        static_cast<int64_t>(begin.get("country_generation", 0)));
+    const uint64_t peer_generation = transaction_id;
+    Dictionary prepared = acknowledge_economy_asset_peer_prepared(
+        transaction_id, session_epoch, country_generation, peer_generation,
+        true, String());
+    if (!static_cast<bool>(prepared.get("ok", false))) return false;
+    Dictionary committed = commit_economy_asset_transaction(transaction_id);
+    if (!static_cast<bool>(committed.get("ok", false))) return false;
+    Dictionary applied = acknowledge_economy_asset_peer_applied(
+        transaction_id, session_epoch, country_generation, peer_generation,
+        true, String());
+    return static_cast<bool>(applied.get("ok", false)) &&
+        String(applied.get("status_name", "")) == "completed";
+}
+
+Dictionary NativeCountryRuntime::economy_asset_transaction_report() const {
+    Dictionary out;
+    out["created"] = static_cast<int64_t>(_economy_asset_transactions_created);
+    out["completed"] = static_cast<int64_t>(_economy_asset_transactions_completed);
+    out["rejected"] = static_cast<int64_t>(_economy_asset_transactions_rejected);
+    out["prepared"] = static_cast<int64_t>(_economy_asset_prepare_count);
+    out["commit_decisions"] = static_cast<int64_t>(_economy_asset_commit_count);
+    out["complete"] = static_cast<int64_t>(_economy_asset_complete_count);
+    out["ledger_failures"] = _economy_asset_ledger_failures;
+    out["next_transaction_id"] = static_cast<int64_t>(_next_economy_asset_transaction_id);
+    out["operation_sequence"] = static_cast<int64_t>(_economy_asset_operation_sequence);
+    out["history_size"] = static_cast<int64_t>(_economy_asset_transaction_history.size());
+    out["in_flight"] = static_cast<int64_t>(
+        _economy_asset_transactions_in_flight.size());
+    int64_t reserved_cash = 0;
+    int64_t reserved_goods = 0;
+    int64_t reserved_research_points = 0;
+    for (const int64_t value : _economy_asset_reserved_cash)
+        if (value > 0 && reserved_cash <=
+                std::numeric_limits<int64_t>::max() - value)
+            reserved_cash += value;
+    for (const int64_t value : _economy_asset_reserved_goods)
+        if (value > 0 && reserved_goods <=
+                std::numeric_limits<int64_t>::max() - value)
+            reserved_goods += value;
+    for (const int64_t value : _economy_asset_reserved_research_points)
+        if (value > 0 && reserved_research_points <=
+                std::numeric_limits<int64_t>::max() - value)
+            reserved_research_points += value;
+    out["reserved_cash"] = reserved_cash;
+    out["reserved_goods"] = reserved_goods;
+    out["reserved_research_points"] = reserved_research_points;
+    out["faulted"] = static_cast<int64_t>(std::count_if(
+        _economy_asset_transaction_history.begin(),
+        _economy_asset_transaction_history.end(), [](const auto &transaction) {
+            return transaction.status == ECONOMY_ASSET_FAULTED;
+        }));
+    return out;
+}
+
+bool NativeCountryRuntime::purchase_research_points(int32_t country_slot,
+                                                     int64_t quantity,
+                                                     int64_t total_cost) {
+    return economy_purchase_research_points(country_slot, quantity, total_cost,
+        -1, -1);
 }
 
 PackedInt32Array NativeCountryRuntime::cell_country_snapshot() const {
@@ -5316,13 +6417,10 @@ bool NativeCountryRuntime::capture_peer_context(
             _modifier_runtime->configured()
         ? _modifier_runtime->domain_snapshot_version(ModifierRuntime::COUNTRY)
         : 0;
-    // EffectRuntime currently exposes a catalog watermark rather than a
-    // mutable store generation.  It is still a useful identity check here:
-    // the country handle generation and session epoch reject delayed ACKs,
-    // while this value rejects a result routed to a different Effect catalog.
     out.effect_generation = _effect_runtime_enabled && _effect_runtime != nullptr
-        ? _effect_runtime->catalog_hash() : 0;
-    out.economy_generation = 0;
+        ? _effect_runtime->committed_generation() : 0;
+    out.economy_generation = _economy_runtime != nullptr
+        ? _economy_runtime->committed_generation() : 0;
     out.day = day;
     out.continuation_index = continuation_index;
     out.effect_enabled = _effect_runtime_enabled && _effect_runtime != nullptr ? 1 : 0;
@@ -5513,7 +6611,359 @@ CountryPeerIntent NativeCountryRuntime::make_peer_intent(
         intent.session_epoch, intent.country_generation, intent.day,
         intent.continuation_index, slot, technology, opcode);
     intent.idempotency_key = intent.request_id ^ 0x504545525f4944ull;
+
+    // A research completion can advance Country's generation before the peer
+    // responds. Reuse the original same-day intent identity in that case;
+    // otherwise a continuation would enqueue a second Effect request for the
+    // exact same pending technology.
+    const auto same_logical_intent = [&](const CountryPeerIntent &existing) {
+        return existing.session_epoch == intent.session_epoch &&
+            existing.day == intent.day && existing.opcode == intent.opcode &&
+            existing.country_slot == intent.country_slot &&
+            existing.technology == intent.technology &&
+            existing.target_handle == intent.target_handle;
+    };
+    const CountryPeerIntent *selected_pending = nullptr;
+    for (const auto &entry : _peer_pending_intents) {
+        if (!same_logical_intent(entry.second)) continue;
+        if (selected_pending == nullptr ||
+            entry.second.request_id < selected_pending->request_id)
+            selected_pending = &entry.second;
+    }
+    if (selected_pending != nullptr) return *selected_pending;
+
+    const CountryPeerResult *selected_cached = nullptr;
+    for (const auto &entry : _peer_result_cache) {
+        const CountryPeerResult &existing = entry.second;
+        if (existing.code == CountryPeerResultCode::REJECTED)
+            continue;
+        if (existing.session_epoch != intent.session_epoch ||
+            existing.day != intent.day || existing.opcode != intent.opcode ||
+            existing.country_slot != intent.country_slot ||
+            existing.technology != intent.technology ||
+            existing.target_handle != intent.target_handle)
+            continue;
+        if (selected_cached == nullptr ||
+            existing.request_id < selected_cached->request_id)
+            selected_cached = &existing;
+    }
+    if (selected_cached != nullptr) {
+        intent.request_id = selected_cached->request_id;
+        intent.country_generation = selected_cached->country_generation;
+        intent.peer_generation = selected_cached->peer_generation;
+        intent.continuation_index = selected_cached->continuation_index;
+        intent.idempotency_key = intent.request_id ^ 0x504545525f4944ull;
+    }
     return intent;
+}
+
+void NativeCountryRuntime::set_peer_async_mode(bool enabled) {
+    _peer_async_mode = enabled;
+}
+
+CountryPeerProtocolStatus NativeCountryRuntime::peer_protocol_status() const {
+    CountryPeerProtocolStatus status;
+    status.async_mode = _peer_async_mode ? 1 : 0;
+    status.pending_intents = static_cast<uint32_t>(std::min<size_t>(
+        _peer_pending_intents.size(), std::numeric_limits<uint32_t>::max()));
+    status.queued_intents = static_cast<uint32_t>(std::min<size_t>(
+        _peer_intent_queue.size(), std::numeric_limits<uint32_t>::max()));
+    status.rejected_intents = static_cast<uint32_t>(std::min<size_t>(
+        _peer_rejected_results.size(), std::numeric_limits<uint32_t>::max()));
+
+    const CountryPeerResult *selected = nullptr;
+    bool selected_unreported = false;
+    for (const auto &entry : _peer_rejected_results) {
+        const CountryPeerResult &candidate = entry.second;
+        const bool unreported = _peer_rejection_reported.find(
+            candidate.request_id) == _peer_rejection_reported.end();
+        if (selected == nullptr ||
+            (unreported && !selected_unreported) ||
+            (unreported == selected_unreported &&
+             candidate.request_id < selected->request_id)) {
+            selected = &candidate;
+            selected_unreported = unreported;
+        }
+        const int64_t candidate_retry_day = candidate.day <
+                std::numeric_limits<int64_t>::max()
+            ? candidate.day + 1 : candidate.day;
+        if (status.retry_day < 0 || candidate_retry_day < status.retry_day)
+            status.retry_day = candidate_retry_day;
+        if (unreported)
+            status.has_unreported_rejection = 1;
+    }
+    if (selected != nullptr) {
+        status.rejected_request_id = selected->request_id;
+        status.rejected_opcode = selected->opcode;
+        status.rejection_reason = selected->reason;
+    }
+    return status;
+}
+
+void NativeCountryRuntime::remember_peer_rejection(
+        const CountryPeerResult &result) {
+    if (result.code != CountryPeerResultCode::REJECTED ||
+        result.request_id == 0)
+        return;
+    _peer_rejected_results[result.request_id] = result;
+    _peer_rejection_reported.erase(result.request_id);
+}
+
+void NativeCountryRuntime::clear_peer_rejections_for_retry(
+        const CountryPeerIntent &intent) {
+    const auto is_technology_intent = [](CountryPeerIntentCode opcode) {
+        return opcode == CountryPeerIntentCode::ENSURE_TECHNOLOGY_EFFECT ||
+            opcode == CountryPeerIntentCode::NUDGE_TECHNOLOGY_EFFECT ||
+            opcode == CountryPeerIntentCode::APPLY_TECHNOLOGY_MODIFIER;
+    };
+    std::vector<uint64_t> obsolete;
+    obsolete.reserve(_peer_rejected_results.size());
+    for (const auto &entry : _peer_rejected_results) {
+        const CountryPeerResult &rejection = entry.second;
+        if (rejection.request_id == intent.request_id ||
+            rejection.session_epoch != intent.session_epoch ||
+            rejection.day >= intent.day ||
+            rejection.country_slot != intent.country_slot ||
+            rejection.technology != intent.technology ||
+            rejection.target_handle != intent.target_handle)
+            continue;
+        const bool same_technology_retry =
+            is_technology_intent(rejection.opcode) &&
+            is_technology_intent(intent.opcode);
+        if (!same_technology_retry && rejection.opcode != intent.opcode)
+            continue;
+        obsolete.push_back(entry.first);
+    }
+    for (const uint64_t request_id : obsolete) {
+        _peer_rejected_results.erase(request_id);
+        _peer_rejection_reported.erase(request_id);
+        const auto cached = _peer_result_cache.find(request_id);
+        if (cached != _peer_result_cache.end() &&
+            cached->second.code == CountryPeerResultCode::REJECTED)
+            _peer_result_cache.erase(cached);
+    }
+}
+
+bool NativeCountryRuntime::peer_rejection_blocks_activation(
+        int32_t slot, int32_t technology, int64_t day) const {
+    for (const auto &entry : _peer_rejected_results) {
+        const CountryPeerResult &rejection = entry.second;
+        if (rejection.country_slot != slot ||
+            rejection.technology != technology ||
+            (rejection.opcode != CountryPeerIntentCode::ENSURE_TECHNOLOGY_EFFECT &&
+             rejection.opcode != CountryPeerIntentCode::NUDGE_TECHNOLOGY_EFFECT &&
+             rejection.opcode != CountryPeerIntentCode::APPLY_TECHNOLOGY_MODIFIER))
+            continue;
+        const int64_t retry_day = rejection.day <
+                std::numeric_limits<int64_t>::max()
+            ? rejection.day + 1 : rejection.day;
+        // The first pass after an ACK must consume and report the rejection.
+        // Once reported, the same logical activation is held until the next
+        // calendar day, where a new request identity is created.
+        if (_peer_rejection_reported.find(rejection.request_id) ==
+                _peer_rejection_reported.end() && day >= rejection.day)
+            return false;
+        if (day < retry_day) return true;
+    }
+    return false;
+}
+
+bool NativeCountryRuntime::peer_rejection_needs_service(int64_t day) const {
+    for (const auto &entry : _peer_rejected_results) {
+        const CountryPeerResult &rejection = entry.second;
+        if (_peer_rejection_reported.find(rejection.request_id) ==
+                _peer_rejection_reported.end() && day >= rejection.day)
+            return true;
+        const int64_t retry_day = rejection.day <
+                std::numeric_limits<int64_t>::max()
+            ? rejection.day + 1 : rejection.day;
+        if (day >= retry_day) return true;
+    }
+    return false;
+}
+
+void NativeCountryRuntime::mark_peer_rejections_reported(int64_t day) {
+    for (const auto &entry : _peer_rejected_results) {
+        if (entry.second.day <= day)
+            _peer_rejection_reported.insert(entry.first);
+    }
+}
+
+bool NativeCountryRuntime::retry_peer_rejections(
+        int64_t day, CountryPeerContext &context) {
+    std::vector<uint64_t> retry_ids;
+    retry_ids.reserve(_peer_rejected_results.size());
+    for (const auto &entry : _peer_rejected_results) {
+        const CountryPeerResult &rejection = entry.second;
+        const int64_t retry_day = rejection.day <
+                std::numeric_limits<int64_t>::max()
+            ? rejection.day + 1 : rejection.day;
+        if (day < retry_day) continue;
+        // Technology activation retries are driven by the pending bitset in
+        // run_research_day. Only post-activation peer work is retried here;
+        // otherwise the same intent would be emitted twice in one boundary.
+        if (rejection.opcode == CountryPeerIntentCode::ENSURE_TECHNOLOGY_EFFECT ||
+            rejection.opcode == CountryPeerIntentCode::NUDGE_TECHNOLOGY_EFFECT ||
+            rejection.opcode == CountryPeerIntentCode::APPLY_TECHNOLOGY_MODIFIER)
+            continue;
+        retry_ids.push_back(entry.first);
+    }
+    std::sort(retry_ids.begin(), retry_ids.end());
+    bool protocol_fault = false;
+    for (const uint64_t request_id : retry_ids) {
+        const auto found = _peer_rejected_results.find(request_id);
+        if (found == _peer_rejected_results.end()) continue;
+        const CountryPeerResult previous = found->second;
+        const CountryPeerIntent retry = make_peer_intent(
+            context, previous.opcode, previous.country_slot,
+            previous.technology, day);
+        if (retry.request_id == previous.request_id) {
+            protocol_fault = true;
+            continue;
+        }
+        // Applying a retry may insert a new rejection and rehash the map, so
+        // remove the old entry before calling apply_peer_intent().
+        _peer_rejected_results.erase(request_id);
+        _peer_rejection_reported.erase(request_id);
+        const CountryPeerResult result = apply_peer_intent(context, retry);
+        if (result.code == CountryPeerResultCode::STALE)
+            protocol_fault = true;
+    }
+    return !protocol_fault;
+}
+
+void NativeCountryRuntime::clear_peer_protocol_state() {
+    _peer_pending_intents.clear();
+    _peer_intent_queue.clear();
+    _peer_result_cache.clear();
+    _peer_rejected_results.clear();
+    _peer_rejection_reported.clear();
+    _peer_async_mode = false;
+}
+
+bool NativeCountryRuntime::poll_peer_intent(CountryPeerIntent &out) {
+    while (!_peer_intent_queue.empty()) {
+        const uint64_t request_id = _peer_intent_queue.front();
+        _peer_intent_queue.pop_front();
+        const auto found = _peer_pending_intents.find(request_id);
+        if (found == _peer_pending_intents.end()) continue;
+        out = found->second;
+        return true;
+    }
+    return false;
+}
+
+bool NativeCountryRuntime::peer_result_identity_matches(
+        const CountryPeerIntent &intent, const CountryPeerResult &result,
+        std::string &error) const {
+    error.clear();
+    if (result.protocol_version != COUNTRY_PEER_PROTOCOL_VERSION) {
+        error = "country_peer_result_protocol_invalid";
+        return false;
+    }
+    if (result.request_id != intent.request_id ||
+        result.session_epoch != intent.session_epoch ||
+        result.country_generation != intent.country_generation ||
+        result.peer_generation != intent.peer_generation ||
+        result.day != intent.day ||
+        result.continuation_index != intent.continuation_index ||
+        result.opcode != intent.opcode ||
+        result.country_slot != intent.country_slot ||
+        result.technology != intent.technology ||
+        result.target_handle != intent.target_handle) {
+        error = "country_peer_result_identity_mismatch";
+        return false;
+    }
+    return true;
+}
+
+void NativeCountryRuntime::apply_peer_result_to_context(
+        CountryPeerContext &context, const CountryPeerResult &result) {
+    if (result.committed_peer_generation != 0) {
+        switch (result.opcode) {
+        case CountryPeerIntentCode::ENSURE_TECHNOLOGY_EFFECT:
+        case CountryPeerIntentCode::NUDGE_TECHNOLOGY_EFFECT:
+        case CountryPeerIntentCode::NOTIFY_ERA_REWARD:
+            context.effect_generation = result.committed_peer_generation;
+            break;
+        case CountryPeerIntentCode::APPLY_TECHNOLOGY_MODIFIER:
+            context.modifier_generation = result.committed_peer_generation;
+            break;
+        case CountryPeerIntentCode::NOTIFY_ECONOMY_MILESTONE:
+            context.economy_generation = result.committed_peer_generation;
+            break;
+        }
+    }
+    if (!result.ok() || result.technology_flags == 0 ||
+        result.country_slot < 0 || result.technology < 0 ||
+        result.technology >= static_cast<int32_t>(_technology_ids.size()))
+        return;
+    CountryPeerTechnologyState &state = ensure_peer_technology_state(
+        context, result.country_slot, result.technology);
+    state.flags = result.technology_flags;
+}
+
+bool NativeCountryRuntime::submit_peer_result(
+        const CountryPeerResult &result, std::string &error) {
+    error.clear();
+    if (!_configured || !_bootstrapped || _mode == MODE_OFF) {
+        error = "country_peer_result_runtime_unavailable";
+        return false;
+    }
+    if (result.request_id == 0 ||
+        static_cast<uint8_t>(result.code) >
+            static_cast<uint8_t>(CountryPeerResultCode::STALE)) {
+        error = "country_peer_result_invalid";
+        return false;
+    }
+    if (result.code == CountryPeerResultCode::STALE) {
+        // STALE describes a protocol identity failure. It is not a durable
+        // business rejection and must never enter the retry queue.
+        error = "country_peer_result_stale_terminal_invalid";
+        return false;
+    }
+    const auto pending = _peer_pending_intents.find(result.request_id);
+    const auto cached = _peer_result_cache.find(result.request_id);
+    if (pending == _peer_pending_intents.end()) {
+        if (cached == _peer_result_cache.end()) {
+            error = "country_peer_result_request_unknown";
+            return false;
+        }
+        const CountryPeerResult &previous = cached->second;
+        if (previous.protocol_version != result.protocol_version ||
+            previous.request_id != result.request_id ||
+            previous.session_epoch != result.session_epoch ||
+            previous.country_generation != result.country_generation ||
+            previous.peer_generation != result.peer_generation ||
+            previous.day != result.day ||
+            previous.continuation_index != result.continuation_index ||
+            previous.opcode != result.opcode ||
+            previous.country_slot != result.country_slot ||
+            previous.technology != result.technology ||
+            previous.target_handle != result.target_handle ||
+            previous.code != result.code ||
+            previous.committed_peer_generation !=
+                result.committed_peer_generation ||
+            previous.technology_flags != result.technology_flags) {
+            error = "country_peer_result_duplicate_mismatch";
+            return false;
+        }
+        return true;
+    }
+    if (!peer_result_identity_matches(pending->second, result, error))
+        return false;
+    if (result.ok() && pending->second.peer_generation != 0 &&
+        (result.committed_peer_generation == 0 ||
+         result.committed_peer_generation < pending->second.peer_generation)) {
+        error = "country_peer_result_generation_invalid";
+        return false;
+    }
+    _peer_result_cache[result.request_id] = result;
+    if (result.code != CountryPeerResultCode::PENDING)
+        _peer_pending_intents.erase(pending);
+    if (result.code == CountryPeerResultCode::REJECTED)
+        remember_peer_rejection(result);
+    return true;
 }
 
 CountryPeerResult NativeCountryRuntime::apply_peer_intent(
@@ -5529,14 +6979,75 @@ CountryPeerResult NativeCountryRuntime::apply_peer_intent(
     result.country_slot = intent.country_slot;
     result.technology = intent.technology;
     result.target_handle = intent.target_handle;
-    ++_peer_intents_emitted;
 
     auto reject = [&](CountryPeerResultCode code, const char *reason) {
         result.code = code;
         country_peer_copy_reason(result.reason, reason);
+        if (code == CountryPeerResultCode::REJECTED)
+            remember_peer_rejection(result);
         ++_peer_results_consumed;
         return result;
     };
+    const auto intent_identity_matches = [](const CountryPeerIntent &lhs,
+                                            const CountryPeerIntent &rhs) {
+        return lhs.protocol_version == rhs.protocol_version &&
+            lhs.opcode == rhs.opcode && lhs.request_id == rhs.request_id &&
+            lhs.session_epoch == rhs.session_epoch &&
+            lhs.country_generation == rhs.country_generation &&
+            lhs.peer_generation == rhs.peer_generation && lhs.day == rhs.day &&
+            lhs.continuation_index == rhs.continuation_index &&
+            lhs.country_slot == rhs.country_slot && lhs.technology == rhs.technology &&
+            lhs.target_handle == rhs.target_handle &&
+            lhs.effect_instance_id == rhs.effect_instance_id &&
+            lhs.effect_generation == rhs.effect_generation &&
+            lhs.idempotency_key == rhs.idempotency_key;
+    };
+    const auto existing_context_valid = [&]() {
+        if (intent.protocol_version != COUNTRY_PEER_PROTOCOL_VERSION ||
+            intent.session_epoch == 0 || intent.session_epoch != _session_epoch ||
+            intent.session_epoch != context.session_epoch ||
+            intent.day != context.day)
+            return false;
+        if (intent.target_handle == 0) return true;
+        int32_t slot = -1;
+        return validate_handle(intent.target_handle, slot) &&
+            (intent.country_slot < 0 || slot == intent.country_slot);
+    };
+
+    // Existing requests deliberately outlive a Country generation change made
+    // by the same research completion. They remain safe because their session,
+    // day and target handle are checked here, and no cached result can be
+    // substituted for a different request identity.
+    const auto pending_intent = _peer_pending_intents.find(intent.request_id);
+    if (pending_intent != _peer_pending_intents.end()) {
+        if (!existing_context_valid() ||
+            !intent_identity_matches(intent, pending_intent->second)) {
+            return reject(CountryPeerResultCode::STALE,
+                          "country_peer_intent_identity_stale");
+        }
+        result.code = CountryPeerResultCode::PENDING;
+        country_peer_copy_reason(result.reason,
+                                 "country_peer_intent_waiting_for_result");
+        const CountryPeerTechnologyState *state =
+            find_peer_technology_state(context, intent.country_slot,
+                                      intent.technology);
+        if (state != nullptr) result.technology_flags = state->flags;
+        return result;
+    }
+    const auto cached_result = _peer_result_cache.find(intent.request_id);
+    if (cached_result != _peer_result_cache.end()) {
+        std::string cache_error;
+        if (!existing_context_valid() ||
+            !peer_result_identity_matches(intent, cached_result->second,
+                                          cache_error)) {
+            return reject(CountryPeerResultCode::STALE,
+                          "country_peer_intent_identity_stale");
+        }
+        result = cached_result->second;
+        apply_peer_result_to_context(context, result);
+        ++_peer_results_consumed;
+        return result;
+    }
     if (intent.protocol_version != COUNTRY_PEER_PROTOCOL_VERSION ||
         intent.session_epoch == 0 || intent.session_epoch != _session_epoch ||
         intent.session_epoch != context.session_epoch ||
@@ -5556,6 +7067,9 @@ CountryPeerResult NativeCountryRuntime::apply_peer_intent(
         intent.opcode == CountryPeerIntentCode::APPLY_TECHNOLOGY_MODIFIER;
     const bool economy_intent =
         intent.opcode == CountryPeerIntentCode::NOTIFY_ECONOMY_MILESTONE;
+    if (!effect_intent && !modifier_intent && !economy_intent)
+        return reject(CountryPeerResultCode::REJECTED,
+                      "country_peer_intent_opcode_invalid");
     const uint64_t expected_peer_generation = effect_intent
         ? context.effect_generation
         : (modifier_intent ? context.modifier_generation :
@@ -5565,57 +7079,156 @@ CountryPeerResult NativeCountryRuntime::apply_peer_intent(
                       "country_peer_intent_peer_generation_stale");
     }
 
+    // A new, identity-valid request for the same logical operation supersedes
+    // an earlier-day rejection. The current request rejection, if any, is
+    // inserted by reject() below and remains visible.
+    clear_peer_rejections_for_retry(intent);
+
+    if (_peer_async_mode) {
+        const bool technology_intent = effect_intent || modifier_intent;
+        if (technology_intent) {
+            int32_t validated_slot = -1;
+            if (intent.country_slot < 0 || intent.technology < 0 ||
+                intent.technology >= static_cast<int32_t>(_technology_ids.size()) ||
+                !validate_handle(intent.target_handle, validated_slot) ||
+                validated_slot != intent.country_slot)
+                return reject(CountryPeerResultCode::REJECTED,
+                              "country_peer_intent_target_invalid");
+            const CountryPeerTechnologyState *state =
+                find_peer_technology_state(context, intent.country_slot,
+                                           intent.technology);
+            if (state != nullptr &&
+                ((effect_intent && intent.opcode !=
+                      CountryPeerIntentCode::NOTIFY_ERA_REWARD &&
+                    state->has(COUNTRY_PEER_EFFECT_FIRE_ACKED)) ||
+                 (modifier_intent &&
+                    state->has(COUNTRY_PEER_MODIFIER_APPLIED)))) {
+                result.code = effect_intent
+                    ? CountryPeerResultCode::READY
+                    : CountryPeerResultCode::APPLIED;
+                result.committed_peer_generation = expected_peer_generation;
+                result.technology_flags = state->flags;
+                ++_peer_results_consumed;
+                return result;
+            }
+        }
+        _peer_pending_intents.emplace(intent.request_id, intent);
+        _peer_intent_queue.push_back(intent.request_id);
+        ++_peer_intents_emitted;
+        result.code = CountryPeerResultCode::PENDING;
+        country_peer_copy_reason(result.reason, "country_peer_intent_queued");
+        return result;
+    }
+    ++_peer_intents_emitted;
+    result = execute_peer_intent_main_thread(intent);
+    apply_peer_result_to_context(context, result);
+    if (result.code == CountryPeerResultCode::REJECTED)
+        remember_peer_rejection(result);
+    return result;
+}
+
+CountryPeerResult NativeCountryRuntime::execute_peer_intent_main_thread(
+        const CountryPeerIntent &intent) {
+    CountryPeerResult result;
+    result.protocol_version = intent.protocol_version;
+    result.opcode = intent.opcode;
+    result.request_id = intent.request_id;
+    result.session_epoch = intent.session_epoch;
+    result.country_generation = intent.country_generation;
+    result.peer_generation = intent.peer_generation;
+    result.day = intent.day;
+    result.continuation_index = intent.continuation_index;
+    result.country_slot = intent.country_slot;
+    result.technology = intent.technology;
+    result.target_handle = intent.target_handle;
+
+    auto reject = [&](const char *reason) {
+        result.code = CountryPeerResultCode::REJECTED;
+        country_peer_copy_reason(result.reason, reason);
+        ++_peer_results_consumed;
+        return result;
+    };
+    if (intent.protocol_version != COUNTRY_PEER_PROTOCOL_VERSION ||
+        intent.request_id == 0 || intent.session_epoch != _session_epoch ||
+        intent.country_generation == 0 || intent.country_generation > _generation ||
+        intent.day < 0)
+        return reject("country_peer_adapter_identity_invalid");
+
+    const bool effect_intent =
+        intent.opcode == CountryPeerIntentCode::ENSURE_TECHNOLOGY_EFFECT ||
+        intent.opcode == CountryPeerIntentCode::NUDGE_TECHNOLOGY_EFFECT ||
+        intent.opcode == CountryPeerIntentCode::NOTIFY_ERA_REWARD;
+    const bool modifier_intent =
+        intent.opcode == CountryPeerIntentCode::APPLY_TECHNOLOGY_MODIFIER;
+    const bool economy_intent =
+        intent.opcode == CountryPeerIntentCode::NOTIFY_ECONOMY_MILESTONE;
+    if (!effect_intent && !modifier_intent && !economy_intent)
+        return reject("country_peer_intent_opcode_invalid");
+
     if (intent.opcode == CountryPeerIntentCode::NOTIFY_ERA_REWARD) {
         if (!_effect_runtime_enabled || _effect_runtime == nullptr)
-            return reject(CountryPeerResultCode::REJECTED,
-                          "country_peer_effect_runtime_unavailable");
+            return reject("country_peer_effect_runtime_unavailable");
+        if (_effect_runtime->committed_generation() < intent.peer_generation)
+            return reject("country_peer_adapter_effect_generation_regressed");
         std::string peer_error;
         if (!_effect_runtime->notify_era_reward_technology_activated_pod(
                 intent.target_handle, intent.technology, intent.day,
                 peer_error))
-            return reject(CountryPeerResultCode::REJECTED,
-                          peer_error.empty() ? "country_peer_era_reward_rejected"
-                                              : peer_error.c_str());
+            return reject(peer_error.empty() ? "country_peer_era_reward_rejected"
+                                             : peer_error.c_str());
         result.code = CountryPeerResultCode::APPLIED;
+        result.committed_peer_generation = _effect_runtime->committed_generation();
         ++_peer_results_consumed;
         return result;
     }
     if (intent.opcode == CountryPeerIntentCode::NOTIFY_ECONOMY_MILESTONE) {
-        if (_economy_runtime != nullptr)
-            _economy_runtime->notify_era_milestone_activated(
-                intent.target_handle);
+        if (_economy_runtime == nullptr)
+            return reject("country_peer_economy_runtime_unavailable");
+        if (_economy_runtime->committed_generation() < intent.peer_generation)
+            return reject("country_peer_adapter_economy_generation_regressed");
+        _economy_runtime->notify_era_milestone_activated(intent.target_handle);
         result.code = CountryPeerResultCode::APPLIED;
+        result.committed_peer_generation = _economy_runtime->committed_generation();
         ++_peer_results_consumed;
         return result;
     }
+
     int32_t validated_slot = -1;
     if (intent.country_slot < 0 || intent.technology < 0 ||
         intent.technology >= static_cast<int32_t>(_technology_ids.size()) ||
         !validate_handle(intent.target_handle, validated_slot) ||
         validated_slot != intent.country_slot)
-        return reject(CountryPeerResultCode::REJECTED,
-                      "country_peer_intent_target_invalid");
+        return reject("country_peer_intent_target_invalid");
 
-    CountryPeerTechnologyState &state = ensure_peer_technology_state(
-        context, intent.country_slot, intent.technology);
+    const std::string &modifier_key =
+        intent.technology < static_cast<int32_t>(
+            _technology_modifier_definition_keys.size())
+        ? _technology_modifier_definition_keys[
+              static_cast<size_t>(intent.technology)]
+        : std::string{};
+    uint8_t technology_flags = 0;
+    if (_modifier_runtime != nullptr && _modifier_runtime->configured() &&
+        !modifier_key.empty() && _modifier_runtime->has_technology_effect(
+            intent.target_handle, modifier_key, intent.technology))
+        technology_flags |= COUNTRY_PEER_MODIFIER_APPLIED;
+
     if (intent.opcode == CountryPeerIntentCode::ENSURE_TECHNOLOGY_EFFECT ||
         intent.opcode == CountryPeerIntentCode::NUDGE_TECHNOLOGY_EFFECT) {
         if (!_effect_runtime_enabled || _effect_runtime == nullptr)
-            return reject(CountryPeerResultCode::REJECTED,
-                          "country_peer_effect_runtime_unavailable");
+            return reject("country_peer_effect_runtime_unavailable");
+        if (_effect_runtime->committed_generation() < intent.peer_generation)
+            return reject("country_peer_adapter_effect_generation_regressed");
         if (intent.effect_generation == 0 ||
             intent.effect_generation != static_cast<uint32_t>(
                 intent.target_handle >> 32U) ||
             intent.effect_instance_id == 0)
-            return reject(CountryPeerResultCode::STALE,
-                          "country_peer_effect_generation_invalid");
+            return reject("country_peer_effect_generation_invalid");
         const bool exists = _effect_runtime->has_instance_pod(
             static_cast<int64_t>(intent.effect_instance_id),
             intent.effect_generation);
         if (!exists) {
             if (intent.opcode == CountryPeerIntentCode::NUDGE_TECHNOLOGY_EFFECT)
-                return reject(CountryPeerResultCode::REJECTED,
-                              "country_peer_effect_instance_missing");
+                return reject("country_peer_effect_instance_missing");
             std::string peer_error;
             if (!_effect_runtime->upsert_instance_pod(
                     static_cast<int64_t>(intent.effect_instance_id),
@@ -5625,63 +7238,130 @@ CountryPeerResult NativeCountryRuntime::apply_peer_intent(
                     intent.technology + 1, intent.target_handle,
                     intent.target_handle, intent.effect_generation, 0,
                     intent.day, true, peer_error))
-                return reject(CountryPeerResultCode::REJECTED,
-                              peer_error.empty() ? "country_peer_effect_upsert_rejected"
-                                                  : peer_error.c_str());
+                return reject(peer_error.empty()
+                    ? "country_peer_effect_upsert_rejected"
+                    : peer_error.c_str());
         }
         if (!_effect_runtime->instance_fire_acked_pod(
                 static_cast<int64_t>(intent.effect_instance_id),
-                intent.effect_generation)) {
-            if (!_effect_runtime->nudge_unacked_instance_pod(
-                    static_cast<int64_t>(intent.effect_instance_id),
-                    intent.effect_generation, intent.day))
-                return reject(CountryPeerResultCode::REJECTED,
-                              "country_peer_effect_nudge_rejected");
-        }
-        state.flags |= COUNTRY_PEER_EFFECT_EXISTS;
+                intent.effect_generation) &&
+            !_effect_runtime->nudge_unacked_instance_pod(
+                static_cast<int64_t>(intent.effect_instance_id),
+                intent.effect_generation, intent.day))
+            return reject("country_peer_effect_nudge_rejected");
+
+        technology_flags |= COUNTRY_PEER_EFFECT_EXISTS;
         if (_effect_runtime->instance_fire_acked_pod(
                 static_cast<int64_t>(intent.effect_instance_id),
                 intent.effect_generation)) {
-            state.flags |= COUNTRY_PEER_EFFECT_FIRE_ACKED;
+            technology_flags |= COUNTRY_PEER_EFFECT_FIRE_ACKED;
             result.code = CountryPeerResultCode::READY;
         } else {
-            state.flags &= static_cast<uint8_t>(~COUNTRY_PEER_EFFECT_FIRE_ACKED);
-            context.effect_should_run = 1;
             result.code = CountryPeerResultCode::PENDING;
         }
-        result.technology_flags = state.flags;
+        result.technology_flags = technology_flags;
+        result.committed_peer_generation = _effect_runtime->committed_generation();
         ++_peer_results_consumed;
         return result;
     }
-    if (intent.opcode == CountryPeerIntentCode::APPLY_TECHNOLOGY_MODIFIER) {
-        if (_modifier_runtime == nullptr || !_modifier_runtime->configured() ||
-            intent.technology >= static_cast<int32_t>(
-                _technology_modifier_definition_keys.size()) ||
-            _technology_modifier_definition_keys[
-                static_cast<size_t>(intent.technology)].empty())
-            return reject(CountryPeerResultCode::REJECTED,
-                          "country_peer_modifier_runtime_unavailable");
-        if (!state.has(COUNTRY_PEER_MODIFIER_APPLIED)) {
-            std::string peer_error;
-            if (!_modifier_runtime->apply_technology_effect(
-                    intent.target_handle,
-                    _technology_modifier_definition_keys[
-                        static_cast<size_t>(intent.technology)],
-                    intent.technology, intent.day, peer_error))
-                return reject(CountryPeerResultCode::REJECTED,
-                              peer_error.empty() ? "country_peer_modifier_apply_rejected"
-                                                  : peer_error.c_str());
-            state.flags |= COUNTRY_PEER_MODIFIER_APPLIED;
-            context.modifier_generation = _modifier_runtime->domain_snapshot_version(
-                ModifierRuntime::COUNTRY);
+
+    if (_modifier_runtime == nullptr || !_modifier_runtime->configured() ||
+        modifier_key.empty())
+        return reject("country_peer_modifier_runtime_unavailable");
+    if (_modifier_runtime->domain_snapshot_version(ModifierRuntime::COUNTRY) <
+        intent.peer_generation)
+        return reject("country_peer_adapter_modifier_generation_regressed");
+    if ((technology_flags & COUNTRY_PEER_MODIFIER_APPLIED) == 0) {
+        std::string peer_error;
+        if (!_modifier_runtime->apply_technology_effect(
+                intent.target_handle, modifier_key, intent.technology,
+                intent.day, peer_error))
+            return reject(peer_error.empty()
+                ? "country_peer_modifier_apply_rejected"
+                : peer_error.c_str());
+        technology_flags |= COUNTRY_PEER_MODIFIER_APPLIED;
+    }
+    result.code = CountryPeerResultCode::APPLIED;
+    result.technology_flags = technology_flags;
+    result.committed_peer_generation =
+        _modifier_runtime->domain_snapshot_version(ModifierRuntime::COUNTRY);
+    ++_peer_results_consumed;
+    return result;
+}
+
+bool NativeCountryRuntime::service_peer_intents_main_thread(
+        int32_t max_intents, PeerAdapterServiceReport &out,
+        std::string &error) {
+    out = PeerAdapterServiceReport{};
+    error.clear();
+    if (!_configured || !_bootstrapped || _mode == MODE_OFF) {
+        error = "country_peer_adapter_runtime_unavailable";
+        return false;
+    }
+    if (!_peer_async_mode) {
+        error = "country_peer_adapter_async_mode_required";
+        return false;
+    }
+    if (max_intents <= 0 || max_intents > 4096) {
+        error = "country_peer_adapter_limit_invalid";
+        return false;
+    }
+
+    std::vector<uint64_t> request_ids;
+    request_ids.reserve(_peer_pending_intents.size());
+    for (const auto &entry : _peer_pending_intents)
+        request_ids.push_back(entry.first);
+    std::sort(request_ids.begin(), request_ids.end());
+    if (request_ids.size() > static_cast<size_t>(max_intents))
+        request_ids.resize(static_cast<size_t>(max_intents));
+
+    for (const uint64_t request_id : request_ids) {
+        const auto found = _peer_pending_intents.find(request_id);
+        if (found == _peer_pending_intents.end()) continue;
+        const CountryPeerIntent intent = found->second;
+        _peer_intent_queue.erase(std::remove(_peer_intent_queue.begin(),
+                                            _peer_intent_queue.end(), request_id),
+                                 _peer_intent_queue.end());
+        ++out.inspected;
+        out.last_request_id = request_id;
+        switch (intent.opcode) {
+        case CountryPeerIntentCode::ENSURE_TECHNOLOGY_EFFECT:
+        case CountryPeerIntentCode::NUDGE_TECHNOLOGY_EFFECT:
+        case CountryPeerIntentCode::NOTIFY_ERA_REWARD:
+            ++out.effect_intents;
+            break;
+        case CountryPeerIntentCode::APPLY_TECHNOLOGY_MODIFIER:
+            ++out.modifier_intents;
+            break;
+        case CountryPeerIntentCode::NOTIFY_ECONOMY_MILESTONE:
+            ++out.economy_intents;
+            break;
         }
-        result.code = CountryPeerResultCode::APPLIED;
-        result.technology_flags = state.flags;
-        ++_peer_results_consumed;
-        return result;
+
+        const CountryPeerResult result = execute_peer_intent_main_thread(intent);
+        out.last_reason = result.reason.data();
+        switch (result.code) {
+        case CountryPeerResultCode::READY:
+        case CountryPeerResultCode::APPLIED:
+            ++out.completed;
+            break;
+        case CountryPeerResultCode::PENDING:
+            ++out.pending;
+            break;
+        case CountryPeerResultCode::REJECTED:
+        case CountryPeerResultCode::STALE:
+            ++out.rejected;
+            break;
+        }
+        std::string submit_error;
+        if (!submit_peer_result(result, submit_error)) {
+            error = submit_error.empty()
+                ? "country_peer_adapter_result_submit_failed"
+                : submit_error;
+            return false;
+        }
     }
-    return reject(CountryPeerResultCode::REJECTED,
-                  "country_peer_intent_opcode_invalid");
+    return true;
 }
 
 bool NativeCountryRuntime::ensure_technology_effect_instance(
@@ -5703,6 +7383,7 @@ bool NativeCountryRuntime::ensure_technology_effect_instance(
 
 bool NativeCountryRuntime::ack_chain_due(
         int64_t day_index, const CountryPeerContext *peer_context) const {
+    if (!_peer_pending_intents.empty()) return true;
     if (peer_context != nullptr && peer_context->day == day_index)
         return peer_context->effect_should_run != 0 ||
             peer_context->modifier_should_run != 0;
@@ -5743,6 +7424,7 @@ int32_t NativeCountryRuntime::run_research_day(
     // exactly the facts produced by the intent it just submitted.
     CountryPeerContext working_peer_context = *peer_context;
     CountryPeerContext *working_context = &working_peer_context;
+    _peer_protocol_fault_reason.clear();
     _research_activation_ms = 0.0;
     _research_allocation_ms = 0.0;
     _research_effect_ack_ms = 0.0;
@@ -5755,6 +7437,12 @@ int32_t NativeCountryRuntime::run_research_day(
     _research_modifier_queries = 0;
     _research_modifier_cache_hits = 0;
     _research_remainder_iterations = 0;
+    if (!retry_peer_rejections(day_index, *working_context)) {
+        _peer_protocol_fault_reason = "country_peer_retry_protocol_fault";
+        if (out_peer_context != nullptr)
+            *out_peer_context = working_peer_context;
+        return 0;
+    }
     // Research allocation is once per day, but pending technologies may be
     // ACKed by Effect/Modifier later in the same day. Keep the activation
     // pass live for same-day continuations instead of making the completed
@@ -5817,6 +7505,8 @@ int32_t NativeCountryRuntime::run_research_day(
             const size_t word_index = word_base + technology / 64;
             const uint64_t bit = 1ULL << (technology % 64);
             if ((_country_pending_technologies[word_index] & bit) == 0) continue;
+            if (peer_rejection_blocks_activation(slot, technology, day_index))
+                continue;
             const std::string &technology_modifier_key =
                 _technology_modifier_definition_keys[static_cast<size_t>(technology)];
             bool modifier_ready = technology_modifier_key.empty();
@@ -6137,6 +7827,104 @@ bool NativeCountryRuntime::peer_protocol_self_test(std::string &error) {
         error = "country_peer_protocol_test_peer_generation_rejection";
         return false;
     }
+
+    auto result_for = [](const CountryPeerIntent &intent,
+                         CountryPeerResultCode code) {
+        CountryPeerResult result;
+        result.code = code;
+        result.opcode = intent.opcode;
+        result.request_id = intent.request_id;
+        result.session_epoch = intent.session_epoch;
+        result.country_generation = intent.country_generation;
+        result.peer_generation = intent.peer_generation;
+        result.day = intent.day;
+        result.continuation_index = intent.continuation_index;
+        result.country_slot = intent.country_slot;
+        result.technology = intent.technology;
+        result.target_handle = intent.target_handle;
+        return result;
+    };
+    set_peer_async_mode(true);
+    const auto async_failure = [&](const char *reason) {
+        clear_peer_protocol_state();
+        error = reason;
+        return false;
+    };
+    CountryPeerContext async_context = context;
+    const CountryPeerIntent queued_intent = make_peer_intent(
+        async_context, CountryPeerIntentCode::ENSURE_TECHNOLOGY_EFFECT,
+        slot, technology, async_context.day);
+    const CountryPeerResult queued_result = apply_peer_intent(
+        async_context, queued_intent);
+    if (queued_result.code != CountryPeerResultCode::PENDING ||
+        pending_peer_intent_count() != 1)
+        return async_failure("country_peer_protocol_test_async_queue");
+    CountryPeerIntent polled_intent;
+    if (!poll_peer_intent(polled_intent) ||
+        polled_intent.request_id != queued_intent.request_id ||
+        poll_peer_intent(polled_intent))
+        return async_failure("country_peer_protocol_test_async_poll");
+
+    CountryPeerResult unknown_result = result_for(
+        queued_intent, CountryPeerResultCode::READY);
+    unknown_result.request_id ^= 0x1ULL;
+    if (unknown_result.request_id == 0) unknown_result.request_id = 1;
+    std::string submit_error;
+    if (submit_peer_result(unknown_result, submit_error) ||
+        submit_error != "country_peer_result_request_unknown")
+        return async_failure("country_peer_protocol_test_unknown_result");
+
+    CountryPeerResult stale_result = result_for(
+        queued_intent, CountryPeerResultCode::READY);
+    ++stale_result.session_epoch;
+    if (submit_peer_result(stale_result, submit_error) ||
+        submit_error != "country_peer_result_identity_mismatch")
+        return async_failure("country_peer_protocol_test_stale_result");
+    stale_result = result_for(queued_intent, CountryPeerResultCode::READY);
+    stale_result.peer_generation ^= 0x1ULL;
+    if (submit_peer_result(stale_result, submit_error) ||
+        submit_error != "country_peer_result_identity_mismatch")
+        return async_failure("country_peer_protocol_test_stale_generation_result");
+
+    CountryPeerResult acknowledged = result_for(
+        queued_intent, CountryPeerResultCode::READY);
+    acknowledged.committed_peer_generation = queued_intent.peer_generation == 0
+        ? 0 : queued_intent.peer_generation + 1u;
+    acknowledged.technology_flags = COUNTRY_PEER_EFFECT_EXISTS |
+        COUNTRY_PEER_EFFECT_FIRE_ACKED;
+    if (!submit_peer_result(acknowledged, submit_error) ||
+        !submit_peer_result(acknowledged, submit_error) ||
+        pending_peer_intent_count() != 0)
+        return async_failure("country_peer_protocol_test_duplicate_ack");
+
+    CountryPeerContext continuation_context = context;
+    ++continuation_context.country_generation;
+    const CountryPeerIntent replayed_intent = make_peer_intent(
+        continuation_context,
+        CountryPeerIntentCode::ENSURE_TECHNOLOGY_EFFECT,
+        slot, technology, continuation_context.day);
+    const CountryPeerResult replayed_result = apply_peer_intent(
+        continuation_context, replayed_intent);
+    if (replayed_intent.request_id != queued_intent.request_id ||
+        replayed_result.code != CountryPeerResultCode::READY ||
+        !replayed_result.has(COUNTRY_PEER_EFFECT_FIRE_ACKED))
+        return async_failure("country_peer_protocol_test_same_day_continuation");
+
+    const CountryPeerIntent rejected_intent = make_peer_intent(
+        async_context, CountryPeerIntentCode::NOTIFY_ECONOMY_MILESTONE,
+        slot, technology, async_context.day);
+    if (apply_peer_intent(async_context, rejected_intent).code !=
+            CountryPeerResultCode::PENDING ||
+        !poll_peer_intent(polled_intent) ||
+        polled_intent.request_id != rejected_intent.request_id)
+        return async_failure("country_peer_protocol_test_rejection_queue");
+    CountryPeerResult rejected = result_for(
+        rejected_intent, CountryPeerResultCode::REJECTED);
+    country_peer_copy_reason(rejected.reason, "peer_rejected_for_test");
+    if (!submit_peer_result(rejected, submit_error) ||
+        apply_peer_intent(async_context, rejected_intent).ok())
+        return async_failure("country_peer_protocol_test_rejected_result");
+    clear_peer_protocol_state();
     return true;
 }
 
@@ -6157,7 +7945,7 @@ int64_t NativeCountryRuntime::debit_country_cash(
 
 int64_t NativeCountryRuntime::transfer_cash_to_cohort(
         int64_t country_handle, int64_t requested) {
-    return debit_country_cash(country_handle, requested, "cash_to_cohort");
+    return economy_transfer_cash_to_cohort(country_handle, requested, -1, -1);
 }
 
 int64_t NativeCountryRuntime::cash_for_handle(int64_t country_handle) const {
@@ -6178,33 +7966,8 @@ int64_t NativeCountryRuntime::good_for_handle(int64_t country_handle,
 bool NativeCountryRuntime::spend_treasury_assets(
         int64_t country_handle, const int32_t *good_ids,
         const int64_t *quantities, size_t good_count, int64_t cash) {
-    int32_t slot = -1;
-    if (cash < 0 || (good_count > 0 && (good_ids == nullptr || quantities == nullptr)) ||
-        !validate_handle(static_cast<uint64_t>(country_handle), slot)) return false;
-    if (_countries.cash[static_cast<size_t>(slot)] < cash) return false;
-    const size_t base = static_cast<size_t>(slot) * _good_ids.size();
-    for (size_t i = 0; i < good_count; ++i) {
-        if (good_ids[i] < 0 || good_ids[i] >= static_cast<int32_t>(_good_ids.size()) ||
-            quantities[i] < 0 ||
-            _country_goods[base + static_cast<size_t>(good_ids[i])] < quantities[i]) {
-            return false;
-        }
-        for (size_t prior = 0; prior < i; ++prior) {
-            if (good_ids[prior] == good_ids[i]) return false;
-        }
-    }
-    bool any_goods = false;
-    for (size_t i = 0; i < good_count; ++i) any_goods = any_goods || quantities[i] != 0;
-    if (cash == 0 && !any_goods) return true;
-    _countries.cash[static_cast<size_t>(slot)] -= cash;
-    for (size_t i = 0; i < good_count; ++i) {
-        _country_goods[base + static_cast<size_t>(good_ids[i])] -= quantities[i];
-    }
-    ++_countries.state_version[static_cast<size_t>(slot)];
-    ++_generation;
-    _state_hash_cache_valid = false;
-    record_direct_reference_frame("treasury_spend");
-    return true;
+    return economy_spend_treasury_assets(country_handle, good_ids, quantities,
+        good_count, cash, -1, -1);
 }
 
 int64_t NativeCountryRuntime::credit_country_cash(
@@ -6223,58 +7986,105 @@ int64_t NativeCountryRuntime::credit_country_cash(
     return moved;
 }
 
+int64_t NativeCountryRuntime::economy_transfer_cash_to_cohort(
+        int64_t country_handle, int64_t requested, int64_t origin_epoch,
+        int32_t origin_stage, uint64_t request_id) {
+    return complete_economy_asset_compatibility(begin_economy_cash_to_cohort(
+        country_handle, requested, origin_epoch, origin_stage, request_id));
+}
+
+int64_t NativeCountryRuntime::economy_transfer_cash_from_cohort(
+        int64_t country_handle, int64_t offered, int64_t origin_epoch,
+        int32_t origin_stage, uint64_t request_id) {
+    return complete_economy_asset_compatibility(begin_economy_cash_from_cohort(
+        country_handle, offered, origin_epoch, origin_stage, request_id));
+}
+
+int64_t NativeCountryRuntime::economy_transfer_good_to_market(
+        int64_t country_handle, int32_t good_id, int64_t requested,
+        int64_t origin_epoch, int32_t origin_stage, uint64_t request_id) {
+    return complete_economy_asset_compatibility(begin_economy_good_to_market(
+        country_handle, good_id, requested, origin_epoch, origin_stage,
+        request_id));
+}
+
+int64_t NativeCountryRuntime::economy_transfer_good_from_market(
+        int64_t country_handle, int32_t good_id, int64_t offered,
+        int64_t origin_epoch, int32_t origin_stage, uint64_t request_id) {
+    return complete_economy_asset_compatibility(begin_economy_good_from_market(
+        country_handle, good_id, offered, origin_epoch, origin_stage,
+        request_id));
+}
+
+bool NativeCountryRuntime::economy_spend_treasury_assets(
+        int64_t country_handle, const int32_t *good_ids,
+        const int64_t *quantities, size_t good_count, int64_t cash,
+        int64_t origin_epoch, int32_t origin_stage, uint64_t request_id) {
+    PackedInt32Array ids;
+    PackedInt64Array amounts;
+    ids.resize(static_cast<int64_t>(good_count));
+    amounts.resize(static_cast<int64_t>(good_count));
+    for (size_t i = 0; i < good_count; ++i) {
+        ids.set(static_cast<int64_t>(i), good_ids == nullptr ? -1 : good_ids[i]);
+        amounts.set(static_cast<int64_t>(i),
+            quantities == nullptr ? -1 : quantities[i]);
+    }
+    Dictionary begin = begin_economy_treasury_spend(
+        country_handle, ids, amounts, cash, origin_epoch, origin_stage,
+        request_id);
+    if (!static_cast<bool>(begin.get("ok", false))) return false;
+    if (static_cast<bool>(begin.get("replayed", false)))
+        return String(begin.get("status_name", "")) == "completed";
+    const uint64_t transaction_id = static_cast<uint64_t>(
+        static_cast<int64_t>(begin.get("transaction_id", 0)));
+    const uint64_t session_epoch = static_cast<uint64_t>(
+        static_cast<int64_t>(begin.get("session_epoch", 0)));
+    const uint64_t country_generation = static_cast<uint64_t>(
+        static_cast<int64_t>(begin.get("country_generation", 0)));
+    const uint64_t peer_generation = transaction_id;
+    Dictionary prepared = acknowledge_economy_asset_peer_prepared(
+        transaction_id, session_epoch, country_generation, peer_generation,
+        true, String());
+    if (!static_cast<bool>(prepared.get("ok", false))) return false;
+    Dictionary committed = commit_economy_treasury_spend(transaction_id);
+    if (!static_cast<bool>(committed.get("ok", false))) return false;
+    Dictionary applied = acknowledge_economy_asset_peer_applied(
+        transaction_id, session_epoch, country_generation, peer_generation,
+        true, String());
+    return static_cast<bool>(applied.get("ok", false)) &&
+        String(applied.get("status_name", "")) == "completed";
+}
+
 int64_t NativeCountryRuntime::transfer_cash_from_cohort(
         int64_t country_handle, int64_t offered) {
-    return credit_country_cash(country_handle, offered, "cash_from_cohort");
+    return economy_transfer_cash_from_cohort(country_handle, offered, -1, -1);
 }
 
 int64_t NativeCountryRuntime::reserve_fiscal_cash(int64_t country_handle,
                                                    int64_t requested) {
-    return debit_country_cash(country_handle, requested, "fiscal_reserve");
+    return economy_reserve_fiscal_cash(country_handle, requested, -1, -1);
 }
 
 int64_t NativeCountryRuntime::return_fiscal_cash(int64_t country_handle,
                                                   int64_t offered) {
-    return credit_country_cash(country_handle, offered, "fiscal_return");
+    return economy_return_fiscal_cash(country_handle, offered, -1, -1);
 }
 
 int64_t NativeCountryRuntime::collect_fiscal_cash(int64_t country_handle,
                                                    int64_t offered) {
-    return credit_country_cash(country_handle, offered, "fiscal_collect");
+    return economy_collect_fiscal_cash(country_handle, offered, -1, -1);
 }
 
 int64_t NativeCountryRuntime::transfer_good_to_market(int64_t country_handle, int32_t good_id,
                                                        int64_t requested) {
-    int32_t slot = -1;
-    if (requested <= 0 || good_id < 0 || good_id >= static_cast<int32_t>(_good_ids.size()) ||
-        !validate_handle(static_cast<uint64_t>(country_handle), slot)) return 0;
-    int64_t &stock = _country_goods[static_cast<size_t>(slot) * _good_ids.size() + static_cast<size_t>(good_id)];
-    const int64_t moved = std::min(requested, stock);
-    stock -= moved;
-    if (moved > 0) {
-        ++_countries.state_version[static_cast<size_t>(slot)];
-        ++_generation;
-        _state_hash_cache_valid = false;
-        record_direct_reference_frame("good_to_market");
-    }
-    return moved;
+    return economy_transfer_good_to_market(country_handle, good_id, requested,
+        -1, -1);
 }
 
 int64_t NativeCountryRuntime::transfer_good_from_market(int64_t country_handle, int32_t good_id,
                                                          int64_t offered) {
-    int32_t slot = -1;
-    if (offered <= 0 || good_id < 0 || good_id >= static_cast<int32_t>(_good_ids.size()) ||
-        !validate_handle(static_cast<uint64_t>(country_handle), slot)) return 0;
-    int64_t &stock = _country_goods[static_cast<size_t>(slot) * _good_ids.size() + static_cast<size_t>(good_id)];
-    const int64_t moved = std::min(offered, std::numeric_limits<int64_t>::max() - stock);
-    stock += moved;
-    if (moved > 0) {
-        ++_countries.state_version[static_cast<size_t>(slot)];
-        ++_generation;
-        _state_hash_cache_valid = false;
-        record_direct_reference_frame("good_from_market");
-    }
-    return moved;
+    return economy_transfer_good_from_market(country_handle, good_id, offered,
+        -1, -1);
 }
 
 bool NativeCountryRuntime::copy_economy_snapshot(EconomySnapshot &out) const {
@@ -7706,6 +9516,7 @@ bool NativeCountryRuntime::decode_save_in_place(
     _tax_policy_version = tax_policy_version;
     _last_research_day = last_research_day;
     _pending_commands = std::move(commands);
+    clear_peer_protocol_state();
     _effect_command_results.clear();
     _effect_command_idempotency.clear();
     _next_effect_request_id = 1;
@@ -7752,6 +9563,30 @@ bool NativeCountryRuntime::decode_save_in_place(
 
 Dictionary NativeCountryRuntime::begin_save(int32_t chunk_bytes) {
     if (_save_active) return fail("country_save_already_active");
+    if (!_economy_asset_transactions_in_flight.empty()) {
+        Dictionary out = fail("country_save_economy_asset_transaction_pending");
+        out["in_flight"] = static_cast<int64_t>(
+            _economy_asset_transactions_in_flight.size());
+        int64_t reserved_cash = 0;
+        int64_t reserved_goods = 0;
+        for (const int64_t value : _economy_asset_reserved_cash)
+            if (value > 0 && reserved_cash <=
+                    std::numeric_limits<int64_t>::max() - value)
+                reserved_cash += value;
+        for (const int64_t value : _economy_asset_reserved_goods)
+            if (value > 0 && reserved_goods <=
+                    std::numeric_limits<int64_t>::max() - value)
+                reserved_goods += value;
+        int64_t reserved_research_points = 0;
+        for (const int64_t value : _economy_asset_reserved_research_points)
+            if (value > 0 && reserved_research_points <=
+                    std::numeric_limits<int64_t>::max() - value)
+                reserved_research_points += value;
+        out["reserved_cash"] = reserved_cash;
+        out["reserved_goods"] = reserved_goods;
+        out["reserved_research_points"] = reserved_research_points;
+        return out;
+    }
     std::string error;
     if (!encode_save(_save_bytes, error)) return fail(error);
     _save_chunk_bytes = std::clamp(chunk_bytes, 4096, 16 * 1024 * 1024);

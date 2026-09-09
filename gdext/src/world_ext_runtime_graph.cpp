@@ -53,6 +53,8 @@ int DCWorldExt::configure_runtime_graph(const Dictionary &boot_config) {
     NativeParallelExecutor::instance().set_interactive(false);
     _runtime_graph_configured = false;
     _runtime_graph_enabled = bool(boot_config.get("enabled", false));
+    _runtime_graph_country_peer_adapter_enabled = _runtime_graph_enabled &&
+        bool(boot_config.get("country_peer_adapter_enabled", true));
     _runtime_graph_day = int64_t(boot_config.get("day", -1));
     _runtime_graph_generation = uint64_t(boot_config.get("generation", 0));
     _runtime_graph_dirty_mask = 0;
@@ -64,6 +66,13 @@ int DCWorldExt::configure_runtime_graph(const Dictionary &boot_config) {
     _runtime_graph_budget_yields = 0;
     _runtime_graph_economy_slices = 0;
     _runtime_graph_economy_commits = 0;
+    _runtime_graph_country_peer_service_calls = 0;
+    _runtime_graph_country_peer_intents = 0;
+    _runtime_graph_country_peer_completed = 0;
+    _runtime_graph_country_peer_pending = 0;
+    _runtime_graph_country_peer_rejected = 0;
+    _runtime_graph_country_peer_faults = 0;
+    _runtime_graph_country_peer_fault_reason.clear();
     _runtime_graph_trigger_blocked_pulses = 0;
     _runtime_graph_trigger_blocked_reason.clear();
     _runtime_graph_last_elapsed_us = 0;
@@ -73,6 +82,10 @@ int DCWorldExt::configure_runtime_graph(const Dictionary &boot_config) {
     _runtime_graph_flush_slot_count = 0;
     _runtime_graph_visual_diff_cell_count = 0;
     _runtime_graph_full_flush_count = 0;
+    if (_country_runtime != nullptr) {
+        static_cast<NativeCountryRuntime *>(_country_runtime)->set_peer_async_mode(
+            _runtime_graph_country_peer_adapter_enabled);
+    }
     _runtime_graph_configured = true;
     return 0;
 }
@@ -163,6 +176,34 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
     // pulse as soon as handoff reports blocked, and keep the reason for
     // diagnostics.
     bool trigger_handoff_blocked = false;
+    bool country_peer_adapter_fault = false;
+
+    auto service_country_peer_adapter = [&]() {
+        if (!_runtime_graph_country_peer_adapter_enabled ||
+            _country_runtime == nullptr)
+            return uint32_t{0};
+        NativeCountryRuntime *country =
+            static_cast<NativeCountryRuntime *>(_country_runtime);
+        if (!country->peer_async_mode()) country->set_peer_async_mode(true);
+        NativeCountryRuntime::PeerAdapterServiceReport peer_report;
+        std::string peer_error;
+        ++_runtime_graph_country_peer_service_calls;
+        if (!country->service_peer_intents_main_thread(
+                64, peer_report, peer_error)) {
+            ++_runtime_graph_country_peer_faults;
+            _runtime_graph_country_peer_fault_reason = peer_error.empty()
+                ? "country_peer_adapter_service_failed" : peer_error;
+            country_peer_adapter_fault = true;
+            return uint32_t{0};
+        }
+        _runtime_graph_country_peer_intents += peer_report.inspected;
+        _runtime_graph_country_peer_completed += peer_report.completed;
+        _runtime_graph_country_peer_pending += peer_report.pending;
+        _runtime_graph_country_peer_rejected += peer_report.rejected;
+        if (peer_report.rejected > 0)
+            _runtime_graph_country_peer_fault_reason = peer_report.last_reason;
+        return peer_report.inspected;
+    };
 
     // Stable order mirrors the existing GDScript ACK chain and scheduler
     // priorities. Each runtime owns its own persistent range cursor.
@@ -180,6 +221,12 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
             if (_effect_runtime != nullptr) ack_effect_native_country();
             progressed = true;
         }
+        const uint32_t peer_work_before = service_country_peer_adapter();
+        if (peer_work_before > 0) {
+            work += peer_work_before;
+            progressed = true;
+        }
+        if (country_peer_adapter_fault) break;
         if (over_budget()) break;
         const uint32_t ingested_events = ingest_trigger_events();
         if (ingested_events > 0) {
@@ -227,6 +274,13 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
             progressed = true;
         }
         if (over_budget()) break;
+        // Publish the last committed Economy opinion before synchronous
+        // Ideology runs. Economy settles later in this graph, so the worker
+        // cannot form an Ideology<->Economy same-day cycle.
+        if (_ideology_runtime != nullptr && _economy_runtime != nullptr &&
+            _runtime_host != nullptr) {
+            publish_ideology_worker_inputs();
+        }
         if (_ideology_runtime != nullptr &&
             static_cast<NativeIdeologyRuntime *>(_ideology_runtime)->should_run(day)) {
             ran(run_ideology_daily(day), DIRTY_COUNTRY_STATE | DIRTY_EVENTS);
@@ -260,6 +314,12 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
             if (_effect_runtime != nullptr) ack_effect_native_modifier();
             progressed = true;
         }
+        const uint32_t peer_work_after = service_country_peer_adapter();
+        if (peer_work_after > 0) {
+            work += peer_work_after;
+            progressed = true;
+        }
+        if (country_peer_adapter_fault) break;
         if (over_budget()) break;
         if (_effect_runtime != nullptr && gameplay_effect_should_run(day)) {
             if (_effect_runtime != nullptr) dispatch_effect_native_gameplay();
@@ -310,6 +370,7 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
         (_effect_runtime != nullptr && gameplay_effect_should_run(day)) ||
         (_economy_runtime != nullptr && economy_should_run(day));
     if (pending) status = 3;
+    if (country_peer_adapter_fault) status = 3;
     _runtime_graph_dirty_mask |= dirty;
     _runtime_graph_next_cursor += work;
     _runtime_graph_work_done += work;
@@ -531,6 +592,39 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
         out["country_pod_pending_checks"] = static_cast<int>(host.country_pod_pending_checks);
         out["country_pod_ack_pending"] = host.country_pod_ack_pending;
         out["country_pod_blocker"] = String(host.country_pod_blocker);
+        out["trigger_parity_day"] = host.trigger_parity_day;
+        out["trigger_reference_day"] = host.trigger_reference_day;
+        out["trigger_input_hash"] = static_cast<int64_t>(host.trigger_input_hash);
+        out["trigger_reference_input_hash"] = static_cast<int64_t>(host.trigger_reference_input_hash);
+        out["trigger_reference_state_hash"] = static_cast<int64_t>(host.trigger_reference_state_hash);
+        out["trigger_worker_state_hash"] = static_cast<int64_t>(host.trigger_worker_state_hash);
+        out["trigger_reference_effect_hash"] = static_cast<int64_t>(host.trigger_reference_effect_hash);
+        out["trigger_worker_effect_hash"] = static_cast<int64_t>(host.trigger_worker_effect_hash);
+        out["trigger_required_ack_count"] = static_cast<int>(host.trigger_required_ack_count);
+        out["trigger_received_ack_count"] = static_cast<int>(host.trigger_received_ack_count);
+        out["trigger_pending_ack_count"] = static_cast<int>(host.trigger_pending_ack_count);
+        out["trigger_generation"] = static_cast<int64_t>(host.trigger_generation);
+        out["trigger_committed_day"] = host.trigger_committed_day;
+        out["trigger_acked_effect_id"] = host.trigger_acked_effect_id;
+        out["trigger_pending_command_count"] = static_cast<int>(host.trigger_pending_command_count);
+        out["trigger_parity_compared"] = host.trigger_parity_compared != 0;
+        out["trigger_parity_matched"] = host.trigger_parity_matched != 0;
+        out["trigger_first_divergence_index"] = host.trigger_first_divergence_index;
+        out["trigger_first_divergence_kind"] = String(host.trigger_first_divergence_kind);
+        out["trigger_blocker"] = String(host.trigger_blocker);
+        out["modifier_pod_ready"] = host.modifier_pod_ready;
+        out["modifier_pod_plan_ms"] = host.modifier_pod_plan_ms;
+        out["modifier_pod_replay_ms"] = host.modifier_pod_replay_ms;
+        out["modifier_pod_work_units"] = static_cast<int64_t>(
+            host.modifier_pod_work_units);
+        out["modifier_pod_state_hash"] = static_cast<int64_t>(
+            host.modifier_pod_state_hash);
+        out["modifier_pod_snapshot_generation"] = static_cast<int64_t>(
+            host.modifier_pod_snapshot_generation);
+        out["modifier_pod_ack_count"] = static_cast<int>(
+            host.modifier_pod_ack_count);
+        out["modifier_pod_fallback_reason"] = String(
+            host.modifier_pod_fallback_reason);
         out["command_queue_depth"] = static_cast<int>(host.command_queue_depth);
         out["receipt_queue_depth"] = static_cast<int>(host.receipt_queue_depth);
     } else {
@@ -624,6 +718,26 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
         out["country_pod_pending_checks"] = static_cast<int>(host.country_pod_pending_checks);
         out["country_pod_ack_pending"] = host.country_pod_ack_pending;
         out["country_pod_blocker"] = String(host.country_pod_blocker);
+        out["trigger_parity_day"] = host.trigger_parity_day;
+        out["trigger_reference_day"] = host.trigger_reference_day;
+        out["trigger_input_hash"] = static_cast<int64_t>(host.trigger_input_hash);
+        out["trigger_reference_input_hash"] = static_cast<int64_t>(host.trigger_reference_input_hash);
+        out["trigger_reference_state_hash"] = static_cast<int64_t>(host.trigger_reference_state_hash);
+        out["trigger_worker_state_hash"] = static_cast<int64_t>(host.trigger_worker_state_hash);
+        out["trigger_reference_effect_hash"] = static_cast<int64_t>(host.trigger_reference_effect_hash);
+        out["trigger_worker_effect_hash"] = static_cast<int64_t>(host.trigger_worker_effect_hash);
+        out["trigger_required_ack_count"] = static_cast<int>(host.trigger_required_ack_count);
+        out["trigger_received_ack_count"] = static_cast<int>(host.trigger_received_ack_count);
+        out["trigger_pending_ack_count"] = static_cast<int>(host.trigger_pending_ack_count);
+        out["trigger_generation"] = static_cast<int64_t>(host.trigger_generation);
+        out["trigger_committed_day"] = host.trigger_committed_day;
+        out["trigger_acked_effect_id"] = host.trigger_acked_effect_id;
+        out["trigger_pending_command_count"] = static_cast<int>(host.trigger_pending_command_count);
+        out["trigger_parity_compared"] = host.trigger_parity_compared != 0;
+        out["trigger_parity_matched"] = host.trigger_parity_matched != 0;
+        out["trigger_first_divergence_index"] = host.trigger_first_divergence_index;
+        out["trigger_first_divergence_kind"] = String(host.trigger_first_divergence_kind);
+        out["trigger_blocker"] = String(host.trigger_blocker);
         out["stale_environment_rejected"] = static_cast<int64_t>(host.stale_environment_rejected);
         out["simulation_time_debt_days"] = host.time_debt_days;
         out["time_debt_days"] = host.time_debt_days;
@@ -681,6 +795,22 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
     out["budget_yields"] = static_cast<int64_t>(_runtime_graph_budget_yields);
     out["economy_slices"] = static_cast<int64_t>(_runtime_graph_economy_slices);
     out["economy_commits"] = static_cast<int64_t>(_runtime_graph_economy_commits);
+    out["country_peer_adapter_enabled"] =
+        _runtime_graph_country_peer_adapter_enabled;
+    out["country_peer_service_calls"] = static_cast<int64_t>(
+        _runtime_graph_country_peer_service_calls);
+    out["country_peer_intents"] = static_cast<int64_t>(
+        _runtime_graph_country_peer_intents);
+    out["country_peer_completed"] = static_cast<int64_t>(
+        _runtime_graph_country_peer_completed);
+    out["country_peer_pending_results"] = static_cast<int64_t>(
+        _runtime_graph_country_peer_pending);
+    out["country_peer_rejected"] = static_cast<int64_t>(
+        _runtime_graph_country_peer_rejected);
+    out["country_peer_faults"] = static_cast<int64_t>(
+        _runtime_graph_country_peer_faults);
+    out["country_peer_fault_reason"] = String(
+        _runtime_graph_country_peer_fault_reason.c_str());
     out["trigger_blocked_pulses"] =
         static_cast<int64_t>(_runtime_graph_trigger_blocked_pulses);
     out["trigger_blocked_reason"] =

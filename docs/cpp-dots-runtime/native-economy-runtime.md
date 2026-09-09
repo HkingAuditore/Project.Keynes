@@ -1,5 +1,43 @@
 # 原生阶层与本地市场运行时（Market V2 / Price V6）
 
+## 2026-09-09 Country treasury typed transaction 边界（K2-B 部分完成）
+
+Country treasury 仍由 `NativeCountryRuntime` 持有；本节新增的 typed transaction 只定义
+Economy 与 Country 之间的异步边界，不改变现有 Economy 价格、采购或财政算法。第一条已落地
+的 `treasury_spend` 流程为：
+
+`Created -> CountryPrepared / reservation -> AwaitingPeerPrepared -> PeerPrepared`
+` -> CommitDecided -> CountryApplied -> AwaitingPeerApplied -> PeerApplied -> Completed`
+
+Country 侧 reservation 按国家现金和逐商品库存累计，reservation 阶段不修改已提交余额；
+prepare ACK 必须匹配 session、Country generation 和 peer generation，拒绝时释放 reservation。
+commit decision 之后只允许使用原 transaction ID 重试，Country 现金和商品只应用一次；peer
+apply 拒绝进入 `FAULTED`，不自动回滚或伪装为成功。每个商品都记录 before/after/committed
+quantity 并执行守恒检查，业务拒绝与 ledger failure 分开统计。
+
+Country 保存入口在存在 in-flight asset transaction 时明确阻塞，拒绝捕获 reservation 或
+commit 中间态；事务完成或进入终态后才允许保存。当前 `NativeCountryRuntime` 的生产 Economy
+调用仍通过同步兼容入口，真实 Economy peer coordinator、跨帧 Host stage 和其余资产操作
+此外，`fiscal_reserve` 已复用同一状态机：Country 侧按「现金余额减去已有 reservation」
+计算 prepared quantity，允许实际准备量小于请求量；commit 只扣减 prepared quantity，之后
+等待 peer applied ACK。它目前仍是可调用的协议垂直切片，不代表现有
+`economy_reserve_fiscal_cash()` 已改为跨帧执行。
+
+Country↔cohort cash 与 Country↔market goods 也已具备同一可调用事务边界：扣款方向按未预留
+现金/商品返回实际 prepared quantity，入账方向按 Country 的现金/商品容量做溢出预检；commit
+只应用一次，商品守恒按 operation 方向分别检查。它们仍未替换生产 Economy 的同步兼容调用。
+
+research purchase 已接入统一 typed transaction state machine。政府采购现由
+`NativeEconomyRuntime::coordinate_country_research_purchase()` 负责真实 peer-side
+预检和应用：固定候选顺序下先验证市场库存、活商人和整数分账，再执行 Country
+prepare/commit、市场扣货、商人入账、withdrawal EMA 和 Country applied ACK；不再调用
+`economy_purchase_research_points()` 合成兼容入口。`GOVERNMENT_RESEARCH_PROCUREMENT`
+阶段的候选列表、预算、剩余需求和 cursor 保存于 epoch continuation，窗口未完成时不会
+推进到 `TRADE_DISPATCH`。专项证据为 `technology_procurement_runtime_test.gd`：**PASS**，
+以及 `runtime_country_economy_transaction_test.gd`：**43 checks, 0 failures**。
+财政 escrow、普通 cohort cash/market goods 的生产接线以及 construction/canal 的异步
+跨域 coordinator 仍未完成。
+
 ## 2026-09-03 Incumbent 扩容使用揭示单位经济
 
 本地已有同类型在营组且上期有产出实绩时，扩容投资的利用率取
@@ -210,8 +248,11 @@ the stale CSR. Household demography can still zero a merchant cohort immediately
 `STRUCTURAL_REMOVE_EMPTY` and merchant repair wait until after
 `government_research_procurement` and `trade_dispatch`. Procurement therefore
 pays only living merchants (`population > 0`) and skips dead lanes instead of
-debiting country treasury and then failing the epoch. Country treasury has no
-rollback for `purchase_research_points`.
+debiting country treasury and then failing the epoch. The legacy
+`purchase_research_points` caller now routes through the Country typed
+research-purchase transaction; the compatibility adapter completes it with
+synthetic peer ACKs until the real market/merchant coordinator is connected.
+ACTIVE must not use that synthetic path.
 
 Recovery liquidation remains behind the existing executable-but-unprofitable
 review gate. An approved review now retires only confirmed excess capacity,
@@ -1557,3 +1598,4 @@ Conservation is unchanged: derived demand never withdraws stock or mints money.
 
 
 Price V6 的动态上限、30 实际日确认及稀疏存档契约见 [实施与验收](price-v6-validation.md)。
+

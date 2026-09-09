@@ -5,6 +5,7 @@
 #include "runtime_country_pod.h"
 #include "country_runtime.h"
 #include "runtime_protocol_guard.h"
+#include "runtime_ideology_pod.h"
 
 #include <algorithm>
 #include <cmath>
@@ -183,6 +184,56 @@ static Dictionary runtime_report_to_dictionary(const RuntimeThreadReport &report
     out["country_pod_pending_checks"] = static_cast<int>(report.country_pod_pending_checks);
     out["country_pod_ack_pending"] = report.country_pod_ack_pending;
     out["country_pod_blocker"] = String(report.country_pod_blocker);
+    out["trigger_parity_day"] = report.trigger_parity_day;
+    out["trigger_reference_day"] = report.trigger_reference_day;
+    out["trigger_input_hash"] = static_cast<int64_t>(report.trigger_input_hash);
+    out["trigger_reference_input_hash"] = static_cast<int64_t>(report.trigger_reference_input_hash);
+    out["trigger_reference_state_hash"] = static_cast<int64_t>(report.trigger_reference_state_hash);
+    out["trigger_worker_state_hash"] = static_cast<int64_t>(report.trigger_worker_state_hash);
+    out["trigger_reference_effect_hash"] = static_cast<int64_t>(report.trigger_reference_effect_hash);
+    out["trigger_worker_effect_hash"] = static_cast<int64_t>(report.trigger_worker_effect_hash);
+    out["trigger_required_ack_count"] = static_cast<int>(report.trigger_required_ack_count);
+    out["trigger_received_ack_count"] = static_cast<int>(report.trigger_received_ack_count);
+    out["trigger_pending_ack_count"] = static_cast<int>(report.trigger_pending_ack_count);
+    out["trigger_generation"] = static_cast<int64_t>(report.trigger_generation);
+    out["trigger_committed_day"] = report.trigger_committed_day;
+    out["trigger_acked_effect_id"] = report.trigger_acked_effect_id;
+    out["trigger_pending_command_count"] = static_cast<int>(report.trigger_pending_command_count);
+    out["trigger_parity_compared"] = report.trigger_parity_compared != 0;
+    out["trigger_parity_matched"] = report.trigger_parity_matched != 0;
+    out["trigger_first_divergence_index"] = report.trigger_first_divergence_index;
+    out["trigger_first_divergence_kind"] = String(report.trigger_first_divergence_kind);
+    out["trigger_blocker"] = String(report.trigger_blocker);
+    out["modifier_pod_ready"] = report.modifier_pod_ready;
+    out["modifier_pod_plan_ms"] = report.modifier_pod_plan_ms;
+    out["modifier_pod_replay_ms"] = report.modifier_pod_replay_ms;
+    out["modifier_pod_work_units"] = static_cast<int64_t>(report.modifier_pod_work_units);
+    out["modifier_pod_state_hash"] = static_cast<int64_t>(report.modifier_pod_state_hash);
+    out["modifier_pod_snapshot_generation"] = static_cast<int64_t>(
+        report.modifier_pod_snapshot_generation);
+    out["modifier_pod_ack_count"] = static_cast<int>(report.modifier_pod_ack_count);
+    out["modifier_pod_fallback_reason"] = String(report.modifier_pod_fallback_reason);
+    out["ideology_pod_ready"] = report.ideology_pod_ready;
+    out["ideology_pod_plan_ms"] = report.ideology_pod_plan_ms;
+    out["ideology_pod_replay_ms"] = report.ideology_pod_replay_ms;
+    out["ideology_pod_state_hash"] = static_cast<int64_t>(report.ideology_pod_state_hash);
+    out["ideology_pod_snapshot_generation"] = static_cast<int64_t>(
+        report.ideology_pod_snapshot_generation);
+    out["ideology_pod_pending_transition_count"] = static_cast<int>(
+        report.ideology_pod_pending_transition_count);
+    out["ideology_pod_intent_count"] = static_cast<int>(report.ideology_pod_intent_count);
+    out["ideology_pod_fallback_reason"] = String(report.ideology_pod_fallback_reason);
+    out["events_probe_enabled"] = report.events_probe_enabled;
+    out["events_pod_ready"] = report.events_pod_ready;
+    out["events_pod_plan_ms"] = report.events_pod_plan_ms;
+    out["events_pod_replay_ms"] = report.events_pod_replay_ms;
+    out["events_pod_state_hash"] = static_cast<int64_t>(report.events_pod_state_hash);
+    out["events_pod_snapshot_generation"] = static_cast<int64_t>(
+        report.events_pod_snapshot_generation);
+    out["events_pod_event_count"] = static_cast<int>(report.events_pod_event_count);
+    out["events_pod_ack_count"] = static_cast<int>(report.events_pod_ack_count);
+    out["events_pod_drop_count"] = static_cast<int64_t>(report.events_pod_drop_count);
+    out["events_pod_fallback_reason"] = String(report.events_pod_fallback_reason);
     out["fault_code"] = String(report.fault_code);
     return out;
 }
@@ -204,6 +255,8 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
     const double requested_speed = static_cast<double>(config.get("speed_days_per_second", 1.0));
     const double speed = std::isfinite(requested_speed) ? std::max(0.0, requested_speed) : 0.0;
     const bool paused = static_cast<bool>(config.get("paused", false));
+    const bool events_probe_enabled = static_cast<bool>(
+        config.get("events_probe_enabled", false));
     if (day < 0 || !std::isfinite(requested_speed)) {
         out["ok"] = false;
         out["pending"] = false;
@@ -273,6 +326,7 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
         out["thread_report"] = runtime_report_to_dictionary(_runtime_host->report());
         return out;
     }
+    _runtime_host->set_events_probe_enabled(events_probe_enabled);
     if (!_runtime_host->start(mode, complete, day, speed, paused,
                               requested_authority_mask)) {
         out["ok"] = false;
@@ -1720,6 +1774,12 @@ Dictionary DCWorldExt::poll_runtime_save(int64_t request_id) {
     out["domain_pod_bytes"] = static_cast<int64_t>(bundle->domain_pod_bytes.size());
     out["climate_bytes"] = static_cast<int64_t>(bundle->climate_bytes.size());
     out["country_bytes"] = static_cast<int64_t>(bundle->country_bytes.size());
+    out["trigger_bytes"] = static_cast<int64_t>(bundle->trigger_bytes.size());
+    out["modifier_bytes"] = static_cast<int64_t>(bundle->modifier_bytes.size());
+    out["events_bytes"] = static_cast<int64_t>(bundle->events_bytes.size());
+    out["modifier_bytes"] = static_cast<int64_t>(bundle->modifier_bytes.size());
+    out["effect_bytes"] = static_cast<int64_t>(bundle->effect_bytes.size());
+    out["ideology_bytes"] = static_cast<int64_t>(bundle->ideology_bytes.size());
     out["country_pkcn"] = country_pkcn;
     out["checksum"] = static_cast<int64_t>(bundle->checksum);
     out["bytes"] = bytes;
@@ -1809,6 +1869,45 @@ bool DCWorldExt::runtime_country_pod_authority_self_test() const {
 bool DCWorldExt::runtime_protocol_guard_self_test() const {
     std::string error;
     return RuntimeProtocolGuard::self_test(error);
+}
+
+bool DCWorldExt::runtime_trigger_pod_self_test() const {
+    std::string error;
+    return RuntimeTriggerPodAuthority::self_test(error);
+}
+
+bool DCWorldExt::runtime_effect_pod_self_test() const {
+    std::string error;
+    const bool ok = RuntimeEffectPodAuthority::self_test(error);
+    if (!ok) {
+        godot::UtilityFunctions::printerr(
+            godot::String("runtime_effect_pod_self_test: ") +
+            godot::String(error.c_str()));
+    }
+    return ok;
+}
+
+bool DCWorldExt::runtime_ideology_pod_self_test() const {
+    std::string error;
+    const bool ok = RuntimeIdeologyPodAuthority::self_test(error);
+    if (!ok) {
+        godot::UtilityFunctions::printerr(
+            godot::String("runtime_ideology_pod_self_test: ") +
+            godot::String(error.c_str()));
+    }
+    return ok;
+}
+
+bool DCWorldExt::runtime_events_authority_self_test() const {
+    std::string error;
+    const bool ok = RuntimeEventsAuthority::self_test(error) &&
+        RuntimeEventsSnapshotRing::self_test();
+    if (!ok) {
+        godot::UtilityFunctions::printerr(
+            godot::String("runtime_events_authority_self_test: ") +
+            godot::String(error.c_str()));
+    }
+    return ok;
 }
 
 namespace {

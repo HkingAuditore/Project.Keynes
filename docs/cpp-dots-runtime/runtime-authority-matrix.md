@@ -37,6 +37,11 @@ rejected, with no precipitation, family, Modifier, or expedition defaults.
 | Configurable effects and cross-domain plans | `EffectRuntime` | PKSV `pkef` / PKEF v11 | Owns catalog IR, FamilyEffect metadata/stack groups, managed lifecycle, unique technology recipes, flat metric slabs, due/dirty candidates, transactions, durable external bindings and ACKs; never owns country/economy/Modifier stores |
 | Trigger accumulation, technology-practice breakthroughs and development duration | `TriggerRuntime` | PKSV `pktr` / PKTR v6 | Owns source cursors, aggregate/remainder/window state, last sample day, fire sequence and unhanded effects; threshold crossing hands typed Country-signal commands to Effect and never writes Country or Economy directly |
 | Country ideology collection/progression/offers/public-opinion gates/synergies | `NativeIdeologyRuntime` | PKSV `pkid` / PKID v3 | Owns sparse country idea state, slots, points, offer RNG, directional support policy, exclusion and synergy state; reads committed Economy class facts and verifies PKEF external identity rather than replaying effects |
+
+Stage G also provides a separate `RuntimeIdeologyPodAuthority` mirror for
+worker `SHADOW` diagnostics. It owns no production authority and does not
+change `implemented_domain_mask() == 0x802`; its `IDP1` section is independent
+from synchronous `PKID` and legacy composite `PDP3`.
 | Effect-originated gameplay events | native Gameplay journal | PKSV `journal` v4 | `gameplay_effect` is the POD ingress/ACK boundary; journal stores normal event IDs and `event_id=-1` custom geography-commit idempotency evidence |
 | Calendar/RNG/time mode | `WorldClock` | PKSV `world_clock` | Restore date, carry, RNG, publish indices, pause and speed |
 | Cell exploration progress | `VisionSolver` writing `cell.explored` | PKSV `pkfg` (`PKFogOfWar v1`) | Monotonic; restore after PKCN because re-solving reads territory |
@@ -344,4 +349,8 @@ the missing-domain mask must remain non-zero.
 diagnostic after the Climate trace barrier. It owns isolated shadow stores,
 emits typed intents/ACKs, and reports timing, hashes, and fallback reasons.
 It is not an authority: `capability_mask()` is zero, MapData is never written,
-and `implemented_domain_mask` remains `COMMIT (0x800)`.
+and `implemented_domain_mask` remains `CLIMATE | COMMIT (0x802)`; Modifier is SHADOW-only and is not granted ACTIVE authority.
+
+# Modifier POD authority boundary
+
+Modifier E2-E7 已完成 worker-side SHADOW plan/replay，但未执行 E8。它拥有 numeric catalog、四域 store、稳定 replay、真实 ACK、immutable snapshot 和 MDF2 persistence；生产 authority 仍是主线程 legacy ModifierRuntime。因此 implemented_domain_mask 继续是 0x802，Modifier 不授予 ACTIVE grant，snapshot 只能在下一安全日边界被消费。

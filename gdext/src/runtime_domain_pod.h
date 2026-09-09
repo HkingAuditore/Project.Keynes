@@ -1,6 +1,8 @@
 #pragma once
 
 #include "runtime_pod_protocol.h"
+#include "runtime_modifier_pod.h"
+#include "runtime_trigger_pod.h"
 
 #include <array>
 #include <cstddef>
@@ -25,22 +27,13 @@ struct RuntimeDomainPipelineReport {
 // The following stores are the worker-owned mutable state for the domains.
 // They are deliberately compact SoA-like vectors.  Main-thread catalogs are
 // not retained here and can therefore be destroyed after bootstrap.
-struct RuntimeModifierPodEntry {
-    uint64_t target_handle = 0;
-    uint32_t target_generation = 0;
-    uint32_t definition_id = 0;
-    int32_t stacks = 0;
-    int64_t expires_day = -1;
-    int64_t value_q16 = 0;
-};
-
 struct RuntimeModifierPodState {
     std::vector<RuntimeModifierPodEntry> entries;
     uint64_t generation = 0;
     uint64_t revision = 0;
 };
 
-struct RuntimeEffectPodInstance {
+struct RuntimeDomainEffectPodInstance {
     uint64_t instance_id = 0;
     uint32_t generation = 1;
     uint16_t target_domain = 0;
@@ -54,7 +47,7 @@ struct RuntimeEffectPodInstance {
 };
 
 struct RuntimeEffectPodState {
-    std::vector<RuntimeEffectPodInstance> instances;
+    std::vector<RuntimeDomainEffectPodInstance> instances;
     uint64_t next_instance_id = 1;
     uint64_t generation = 0;
 };
@@ -158,6 +151,8 @@ public:
     // boundary.
     void serialize(std::vector<uint8_t> &out) const;
     bool restore(const uint8_t *data, size_t size, std::string &error);
+    bool restored_legacy_modifier() const { return _restored_legacy_modifier; }
+    const RuntimeModifierPodState &legacy_modifier_state() const { return _modifier; }
 
     const RuntimeDomainPipelineReport &report() const { return _report; }
     uint32_t completed_domain_mask() const { return _report.completed_domain_mask; }
@@ -204,6 +199,8 @@ private:
     RuntimeEffectPodState _effect;
     RuntimeIdeologyPodState _ideology;
     RuntimeTriggerPodState _trigger;
+    RuntimeTriggerPodAuthority _trigger_authority;
+    RuntimeTriggerPodCatalog _trigger_catalog;
     RuntimeClimatePodState _climate;
     RuntimeEconomyPodState _economy;
     RuntimeEventsPodState _events;
@@ -211,6 +208,7 @@ private:
     std::vector<RuntimeDomainIntent> _intents;
     std::vector<RuntimeDomainAck> _acks;
     bool _last_execute_ok = true;
+    bool _restored_legacy_modifier = false;
 };
 
 } // namespace pk

@@ -170,6 +170,13 @@ PKID v1 is accepted only when every ideology is inactive. Save capture waits for
 `ideology_should_run(day)`, `effect_should_run(day)`, and every native
 Country/Economy/Gameplay Effect ingress to be idle, so no cross-section snapshot
 can span a preflight/commit/ACK boundary.
+
+The background worker ideology mirror is an additional PKSR `IDP1` section,
+restored transactionally only after the worker is stopped and its immutable
+catalog/bootstrap are ready. `IDP1` has an independent ABI, catalog/state hash,
+length limit, and checksum. Missing `IDP1` means bootstrap/default worker
+ideology state; it is never inferred from synchronous `PKID`, and legacy
+composite `PDP3` remains diagnostic-only for this purpose.
 PKCM v1 saves Climate modifiers. PKCN v11 embeds Country modifiers, research,
 tax policy, territory claim and native Effect ingress idempotency; PKEC v41 embeds Economy
 modifiers, BuildingIdentityStore, family traits/cell influence,

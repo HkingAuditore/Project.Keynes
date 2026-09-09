@@ -29,6 +29,27 @@ Runtime Graph dirty mask 采用真实交集：一次 `flush_runtime_visuals(mask
 `visual_diff_cell_count`、`country_territory_sync_ms`、`event_dispatch_ms` 与
 `full_flush_count`，不能只在 headless report 中观察这些边界。
 
+### Country worker read view（2026-09-09）
+
+Country 后台发布使用 DCWorldExt.get_country_worker_read_view(after_generation)，不是把
+worker store 的 vector 引用交给 GDScript。C++ host 保存 immutable Country snapshot 和与最近
+提交代次对应的 owner diff：
+
+```text
+after_generation == 0              -> bootstrap view，changed_cells/owners 为初始化 patch
+after_generation == patch_base     -> 连续代次，返回稀疏 owner patch
+after_generation != patch_base     -> full_snapshot_required=true，返回 full_cell_owners
+after_generation == generation     -> available=false，重复游标不重放
+```
+
+MapGenerator.get_country_worker_read_view 只做 facade 转发。WorldRuntimeHost 仅在实际 granted
+Country bit（authoritative_domain_mask & 0x004）存在时消费：连续代次直接写
+MapData.country_slot_arr 的变更 cell；跳代只接受形状等于当前地图 cell 数的 full snapshot。
+非法 cell、patch 长度不等或 full snapshot 形状错误会拒绝本次发布并保留原 MapData。
+消费后调用 CountryFacade.dispatch_worker_committed_view，沿用既有 country_committed 信号
+驱动视野、国界和 UI，不新增第二套通知。首次 bootstrap/restore 允许全量，稳态研究、rename
+和税务变化即使 generation 增加也不会制造 territory cell patch。
+
 后台模拟线程的硬前提是调用链完全不包含 Godot `Object`、`Variant`、`Dictionary`、
 `PackedArray` 和 `WorkerThreadPool`。当前 graph 仍有这些边界，因此线程化 ACTIVE 必须保持
 关闭，直到运行时存储迁成标准 C++ POD/vector、环境输入在启动时冻结、各 domain 提供纯 POD
@@ -1182,6 +1203,15 @@ also joins authored UniqueSource Country modifier terms into
 `level_effect_lines` so the ideology panel can show mechanical effects on
 three-card offers and collection rows without reading Modifier stores.
 
+The G2-G7 worker mirror uses the same capture boundary but never receives the
+legacy runtime pointer. `publish_ideology_worker_inputs()` copies the previous
+committed Economy opinion revision and the Country POD snapshot is validated
+against catalog shape plus exact handle/generation rows. Worker snapshots are
+immutable publication objects; worker Effect intents are typed numeric records
+with `DEFERRED | REQUIRES_ACK`, and the bridge must return a real Effect ACK
+before the worker applies the retained ideology transition. The worker-side
+`IDP1` save section is independent from synchronous `PKID` and composite `PDP3`.
+
 `EffectFacade` is an adapter transport boundary. For each transaction it asks
 adapters to preflight without mutation, marks the native transaction
 `PREFLIGHTED`, asks adapters to commit at their domain-safe boundary, marks it
@@ -1255,3 +1285,7 @@ and array sizes. Array contents stay in the native immutable snapshot and are no
 materialized as a Godot `Dictionary` on the worker path. A failed capture is
 reported synchronously before publication; publication itself is lock-free for
 the worker through an atomic shared pointer.
+
+# Modifier snapshot bridge
+
+get_runtime_modifier_snapshot(after_generation) 是非阻塞消费 API。after_generation < 0 只用于取得 restore/start 发布的 generation 0 初始 snapshot；正常消费必须严格要求 generation 单调递增，并校验 Modifier POD ABI、catalog hash、四域 entry/bucket shape。返回值是 packed numeric arrays，不写回 legacy ModifierRuntime。命令仍先走 legacy API，再以相同 request/producer/sequence 投递 Host SHADOW；capture 后的请求顺延下一安全日。

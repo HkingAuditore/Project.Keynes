@@ -655,6 +655,383 @@ void NativeEconomyRuntime::refresh_country_research_goods_consumed() {
         ? current - _country_research_consumed_opening : 0;
 }
 
+bool NativeEconomyRuntime::coordinate_country_research_purchase(
+        int32_t country, int32_t market, int32_t good, int64_t quantity,
+        int64_t cash, const std::vector<int32_t> &living_merchants,
+        std::string &error) {
+    error.clear();
+    if (_country_runtime == nullptr || !_country_runtime->economy_available()) {
+        error = "country_research_peer_unavailable";
+        return false;
+    }
+    if (country < 0 || country >= _epoch_country_count ||
+        country >= static_cast<int32_t>(_epoch_country_handles.size()) ||
+        market < 0 || market >= _cell_count || good < 0 ||
+        good >= _market.good_count || quantity <= 0 || cash <= 0) {
+        error = "country_research_peer_request_invalid";
+        return false;
+    }
+    const size_t market_index = _market.index(market, good);
+    if (market_index >= _market.stock.size() ||
+        _market.stock[market_index] < quantity) {
+        error = "country_research_peer_market_stock_changed";
+        return false;
+    }
+    if (living_merchants.empty()) {
+        error = "country_research_peer_merchant_missing";
+        return false;
+    }
+    int64_t merchant_population = 0;
+    for (const int32_t merchant : living_merchants) {
+        if (!is_merchant_slot(merchant) ||
+            merchant < 0 ||
+            merchant >= static_cast<int32_t>(_population.population.size()) ||
+            _population.population[merchant] <= 0) {
+            error = "country_research_peer_merchant_changed";
+            return false;
+        }
+        merchant_population = saturating_add(
+            merchant_population, _population.population[merchant],
+            _saturation_count);
+    }
+    if (merchant_population <= 0) {
+        error = "country_research_peer_merchant_empty";
+        return false;
+    }
+
+    const int64_t country_handle = static_cast<int64_t>(
+        _epoch_country_handles[static_cast<size_t>(country)]);
+    const godot::Dictionary begun = _country_runtime->begin_economy_research_purchase(
+        country_handle, quantity, cash, _epoch_id,
+        static_cast<int32_t>(_stage));
+    if (!static_cast<bool>(begun.get("ok", false))) {
+        error = String(begun.get("code", "country_research_peer_country_rejected")).utf8().get_data();
+        return false;
+    }
+    const uint64_t transaction_id = static_cast<uint64_t>(
+        static_cast<int64_t>(begun.get("transaction_id", 0)));
+    const uint64_t session_epoch = static_cast<uint64_t>(
+        static_cast<int64_t>(begun.get("session_epoch", 0)));
+    const uint64_t country_generation = static_cast<uint64_t>(
+        static_cast<int64_t>(begun.get("country_generation", 0)));
+    const uint64_t peer_generation = _committed_generation;
+    if (transaction_id == 0 || session_epoch == 0 || country_generation == 0 ||
+        peer_generation == 0) {
+        error = "country_research_peer_identity_invalid";
+        return false;
+    }
+
+    const auto reject_transaction = [&](const char *reason) {
+        _country_runtime->acknowledge_economy_asset_peer_prepared(
+            transaction_id, session_epoch, country_generation,
+            peer_generation, false, String(reason));
+        error = reason;
+        return false;
+    };
+    const godot::Dictionary prepared =
+        _country_runtime->acknowledge_economy_asset_peer_prepared(
+            transaction_id, session_epoch, country_generation,
+            peer_generation, true, String());
+    if (!static_cast<bool>(prepared.get("ok", false)))
+        return reject_transaction("country_research_peer_prepare_failed");
+
+    // The peer-side apply is fully preflighted before Country commit. The
+    // merchant credit path uses the same deterministic prefix allocation as
+    // the legacy production path, so an applied ACK cannot require rollback.
+    int64_t population_prefix = 0;
+    int64_t distributed = 0;
+    for (const int32_t merchant : living_merchants) {
+        population_prefix = saturating_add(
+            population_prefix, _population.population[merchant],
+            _saturation_count);
+        const int64_t next = mul_div_sat(
+            cash, population_prefix, merchant_population, _saturation_count);
+        const int64_t share = std::max<int64_t>(0, next - distributed);
+        distributed = next;
+        if (_population.funds[merchant] >
+                std::numeric_limits<int64_t>::max() - share ||
+            _population.epoch_income[merchant] >
+                std::numeric_limits<int64_t>::max() - share)
+            return reject_transaction("country_research_peer_credit_overflow");
+    }
+
+    const godot::Dictionary committed =
+        _country_runtime->commit_economy_asset_transaction(transaction_id);
+    if (!static_cast<bool>(committed.get("ok", false))) {
+        error = String(committed.get("code", "country_research_peer_commit_failed")).utf8().get_data();
+        return false;
+    }
+
+    audit_touch_market_lane(market_index);
+    _market.stock[market_index] -= quantity;
+    population_prefix = 0;
+    distributed = 0;
+    for (const int32_t merchant : living_merchants) {
+        audit_touch_population_lane(merchant);
+        touch_accounting_slot(merchant);
+        population_prefix = saturating_add(
+            population_prefix, _population.population[merchant],
+            _saturation_count);
+        const int64_t next = mul_div_sat(
+            cash, population_prefix, merchant_population, _saturation_count);
+        const int64_t share = std::max<int64_t>(0, next - distributed);
+        distributed = next;
+        _population.funds[merchant] = saturating_add(
+            _population.funds[merchant], share, _saturation_count);
+        _population.epoch_income[merchant] = saturating_add(
+            _population.epoch_income[merchant], share, _saturation_count);
+    }
+    const int32_t signal = market_signal_index(market, good);
+    if (signal >= 0) {
+        if (signal < static_cast<int32_t>(_epoch_nonhousehold_withdrawals.size()))
+            _epoch_nonhousehold_withdrawals[signal] = saturating_add(
+                _epoch_nonhousehold_withdrawals[signal], quantity,
+                _saturation_count);
+        const int64_t daily = quantity / std::max(1, _epoch_days);
+        const int64_t alpha = std::min<int64_t>(
+            Q16_ONE, static_cast<int64_t>(std::clamp<int32_t>(
+                _good_demand_ema_alpha_q16[good], 0, Q16_ONE)) *
+                std::max(1, _epoch_days));
+        const int64_t addition = mul_div_sat(
+            daily, alpha, Q16_ONE, _saturation_count);
+        _market_signals.business_demand_ema[signal] = saturating_add(
+            _market_signals.business_demand_ema[signal], addition,
+            _saturation_count);
+        _market_signals.realized_withdrawal_ema[signal] = saturating_add(
+            _market_signals.realized_withdrawal_ema[signal], addition,
+            _saturation_count);
+    }
+
+    const godot::Dictionary applied =
+        _country_runtime->acknowledge_economy_asset_peer_applied(
+            transaction_id, session_epoch, country_generation,
+            peer_generation, true, String());
+    if (!static_cast<bool>(applied.get("ok", false)) ||
+        String(applied.get("status_name", "")) != "completed") {
+        error = "country_research_peer_apply_ack_failed";
+        return false;
+    }
+    return true;
+}
+
+bool NativeEconomyRuntime::coordinate_country_fiscal_transaction(
+        int32_t country, int32_t operation, int64_t amount,
+        int64_t &committed, std::string &error) {
+    committed = 0;
+    error.clear();
+    if (_country_runtime == nullptr || !_country_runtime->economy_available()) {
+        error = "country_fiscal_peer_unavailable";
+        return false;
+    }
+    if (country < 0 || country >= _epoch_country_count ||
+        country >= static_cast<int32_t>(_epoch_country_handles.size()) ||
+        amount <= 0) {
+        error = "country_fiscal_peer_request_invalid";
+        return false;
+    }
+    const int64_t handle = static_cast<int64_t>(
+        _epoch_country_handles[static_cast<size_t>(country)]);
+    godot::Dictionary begun;
+    if (operation == NativeCountryRuntime::ECONOMY_ASSET_FISCAL_RESERVE)
+        begun = _country_runtime->begin_economy_fiscal_reserve(
+            handle, amount, _epoch_id, static_cast<int32_t>(_stage));
+    else if (operation == NativeCountryRuntime::ECONOMY_ASSET_FISCAL_RETURN)
+        begun = _country_runtime->begin_economy_fiscal_return(
+            handle, amount, _epoch_id, static_cast<int32_t>(_stage));
+    else if (operation == NativeCountryRuntime::ECONOMY_ASSET_FISCAL_COLLECT)
+        begun = _country_runtime->begin_economy_fiscal_collect(
+            handle, amount, _epoch_id, static_cast<int32_t>(_stage));
+    else {
+        error = "country_fiscal_peer_operation_invalid";
+        return false;
+    }
+    if (!static_cast<bool>(begun.get("ok", false))) {
+        error = String(begun.get("code", "country_fiscal_country_rejected")).utf8().get_data();
+        return false;
+    }
+    const uint64_t transaction_id = static_cast<uint64_t>(
+        static_cast<int64_t>(begun.get("transaction_id", 0)));
+    const uint64_t session_epoch = static_cast<uint64_t>(
+        static_cast<int64_t>(begun.get("session_epoch", 0)));
+    const uint64_t country_generation = static_cast<uint64_t>(
+        static_cast<int64_t>(begun.get("country_generation", 0)));
+    const int64_t prepared_quantity = static_cast<int64_t>(
+        begun.get("prepared_quantity", 0));
+    const uint64_t peer_generation = _committed_generation;
+    if (transaction_id == 0 || session_epoch == 0 || country_generation == 0 ||
+        prepared_quantity <= 0 || peer_generation == 0) {
+        error = "country_fiscal_peer_identity_invalid";
+        return false;
+    }
+    const size_t country_index = static_cast<size_t>(country);
+    const int64_t escrow = country_index < _fiscal_escrow_by_country.size()
+        ? _fiscal_escrow_by_country[country_index] : 0;
+    if (operation != NativeCountryRuntime::ECONOMY_ASSET_FISCAL_RESERVE &&
+        escrow < prepared_quantity) {
+        _country_runtime->acknowledge_economy_asset_peer_prepared(
+            transaction_id, session_epoch, country_generation, peer_generation,
+            false, String("country_fiscal_peer_escrow_insufficient"));
+        error = "country_fiscal_peer_escrow_insufficient";
+        return false;
+    }
+    if (operation == NativeCountryRuntime::ECONOMY_ASSET_FISCAL_RESERVE &&
+        escrow > std::numeric_limits<int64_t>::max() - prepared_quantity) {
+        _country_runtime->acknowledge_economy_asset_peer_prepared(
+            transaction_id, session_epoch, country_generation, peer_generation,
+            false, String("country_fiscal_peer_escrow_overflow"));
+        error = "country_fiscal_peer_escrow_overflow";
+        return false;
+    }
+    const godot::Dictionary prepared =
+        _country_runtime->acknowledge_economy_asset_peer_prepared(
+            transaction_id, session_epoch, country_generation, peer_generation,
+            true, String());
+    if (!static_cast<bool>(prepared.get("ok", false))) {
+        error = "country_fiscal_peer_prepare_failed";
+        return false;
+    }
+    const godot::Dictionary commit =
+        _country_runtime->commit_economy_asset_transaction(transaction_id);
+    if (!static_cast<bool>(commit.get("ok", false))) {
+        error = String(commit.get("code", "country_fiscal_country_commit_failed")).utf8().get_data();
+        return false;
+    }
+    const int64_t actual = static_cast<int64_t>(
+        commit.get("committed_quantity", prepared_quantity));
+    if (actual <= 0 || actual > prepared_quantity) {
+        error = "country_fiscal_peer_commit_quantity_invalid";
+        return false;
+    }
+    if (operation == NativeCountryRuntime::ECONOMY_ASSET_FISCAL_RESERVE)
+        _fiscal_escrow_by_country[country_index] = escrow + actual;
+    else
+        _fiscal_escrow_by_country[country_index] = escrow - actual;
+    const godot::Dictionary applied =
+        _country_runtime->acknowledge_economy_asset_peer_applied(
+            transaction_id, session_epoch, country_generation, peer_generation,
+            true, String());
+    if (!static_cast<bool>(applied.get("ok", false)) ||
+        String(applied.get("status_name", "")) != "completed") {
+        error = "country_fiscal_peer_apply_ack_failed";
+        return false;
+    }
+    committed = actual;
+    return true;
+}
+
+bool NativeEconomyRuntime::coordinate_country_cohort_cash(
+        int32_t cohort_slot, int64_t country_handle, int32_t operation,
+        int64_t amount, int64_t &committed, std::string &error) {
+    committed = 0;
+    error.clear();
+    if (_country_runtime == nullptr || !_country_runtime->economy_available()) {
+        error = "country_cohort_cash_peer_unavailable";
+        return false;
+    }
+    if (cohort_slot < 0 || cohort_slot >= static_cast<int32_t>(
+            _population.active.size()) || _population.active[cohort_slot] == 0 ||
+        country_handle == 0 || amount < 0 ||
+        (operation != NativeCountryRuntime::ECONOMY_ASSET_CASH_TO_COHORT &&
+         operation != NativeCountryRuntime::ECONOMY_ASSET_CASH_FROM_COHORT)) {
+        error = "country_cohort_cash_request_invalid";
+        return false;
+    }
+    if (amount == 0) return true;
+
+    godot::Dictionary begun;
+    if (operation == NativeCountryRuntime::ECONOMY_ASSET_CASH_TO_COHORT) {
+        begun = _country_runtime->begin_economy_cash_to_cohort(
+            country_handle, amount, _epoch_id, static_cast<int32_t>(_stage));
+    } else {
+        begun = _country_runtime->begin_economy_cash_from_cohort(
+            country_handle, amount, _epoch_id, static_cast<int32_t>(_stage));
+    }
+    if (!static_cast<bool>(begun.get("ok", false))) {
+        error = String(begun.get("code", "country_cohort_cash_country_rejected"))
+            .utf8().get_data();
+        return false;
+    }
+    const uint64_t transaction_id = static_cast<uint64_t>(
+        static_cast<int64_t>(begun.get("transaction_id", 0)));
+    const uint64_t session_epoch = static_cast<uint64_t>(
+        static_cast<int64_t>(begun.get("session_epoch", 0)));
+    const uint64_t country_generation = static_cast<uint64_t>(
+        static_cast<int64_t>(begun.get("country_generation", 0)));
+    const int64_t prepared_quantity = static_cast<int64_t>(
+        begun.get("prepared_quantity", 0));
+    const uint64_t peer_generation = _committed_generation;
+    if (transaction_id == 0 || session_epoch == 0 || country_generation == 0 ||
+        prepared_quantity <= 0 || peer_generation == 0) {
+        error = "country_cohort_cash_identity_invalid";
+        return false;
+    }
+
+    const int64_t funds_before = std::max<int64_t>(0, _population.funds[cohort_slot]);
+    const int64_t income_before = std::max<int64_t>(
+        0, _population.epoch_income[cohort_slot]);
+    if (operation == NativeCountryRuntime::ECONOMY_ASSET_CASH_TO_COHORT) {
+        if (funds_before > std::numeric_limits<int64_t>::max() - prepared_quantity ||
+            income_before > std::numeric_limits<int64_t>::max() - prepared_quantity) {
+            _country_runtime->acknowledge_economy_asset_peer_prepared(
+                transaction_id, session_epoch, country_generation, peer_generation,
+                false, String("country_cohort_cash_credit_overflow"));
+            error = "country_cohort_cash_credit_overflow";
+            return false;
+        }
+    } else if (funds_before < prepared_quantity) {
+        _country_runtime->acknowledge_economy_asset_peer_prepared(
+            transaction_id, session_epoch, country_generation, peer_generation,
+            false, String("country_cohort_cash_insufficient"));
+        error = "country_cohort_cash_insufficient";
+        return false;
+    }
+
+    const godot::Dictionary prepared =
+        _country_runtime->acknowledge_economy_asset_peer_prepared(
+            transaction_id, session_epoch, country_generation, peer_generation,
+            true, String());
+    if (!static_cast<bool>(prepared.get("ok", false))) {
+        error = "country_cohort_cash_peer_prepare_failed";
+        return false;
+    }
+    const godot::Dictionary commit =
+        _country_runtime->commit_economy_asset_transaction(transaction_id);
+    if (!static_cast<bool>(commit.get("ok", false))) {
+        error = String(commit.get("code", "country_cohort_cash_country_commit_failed"))
+            .utf8().get_data();
+        return false;
+    }
+    const int64_t actual = static_cast<int64_t>(
+        commit.get("committed_quantity", prepared_quantity));
+    if (actual <= 0 || actual > prepared_quantity) {
+        error = "country_cohort_cash_commit_quantity_invalid";
+        return false;
+    }
+
+    touch_accounting_slot(cohort_slot);
+    if (operation == NativeCountryRuntime::ECONOMY_ASSET_CASH_TO_COHORT) {
+        _population.funds[cohort_slot] = saturating_add(
+            _population.funds[cohort_slot], actual, _saturation_count);
+        _population.epoch_income[cohort_slot] = saturating_add(
+            _population.epoch_income[cohort_slot], actual, _saturation_count);
+    } else {
+        _population.funds[cohort_slot] -= actual;
+        _population.epoch_expense[cohort_slot] = saturating_add(
+            _population.epoch_expense[cohort_slot], actual, _saturation_count);
+    }
+    const godot::Dictionary applied =
+        _country_runtime->acknowledge_economy_asset_peer_applied(
+            transaction_id, session_epoch, country_generation, peer_generation,
+            true, String());
+    if (!static_cast<bool>(applied.get("ok", false)) ||
+        String(applied.get("status_name", "")) != "completed") {
+        error = "country_cohort_cash_peer_apply_ack_failed";
+        return false;
+    }
+    committed = actual;
+    return true;
+}
+
 bool NativeEconomyRuntime::run_government_research_procurement(std::string &error) {
     if (_country_runtime == nullptr || !_country_runtime->economy_available()) return true;
     const int32_t good = _country_runtime->technology_points_good_id();
@@ -662,58 +1039,79 @@ bool NativeEconomyRuntime::run_government_research_procurement(std::string &erro
         error = "government_research_good_invalid";
         return false;
     }
-    struct Candidate {
-        int32_t country = -1;
-        int32_t market = -1;
-        int64_t price = 0;
-    };
-    thread_local std::vector<Candidate> candidates;
+    constexpr size_t CANDIDATES_PER_SLICE = 32;
     thread_local std::vector<int32_t> living_merchants;
-    candidates.clear();
-    candidates.reserve(_epoch_market_ids.size());
-    for (const int32_t market : _epoch_market_ids) {
-        if (market < 0 || market >= _cell_count ||
-            market >= static_cast<int32_t>(_epoch_cell_country.size()) ||
-            !market_has_living_merchant(market)) continue;
-        const int32_t country = _epoch_cell_country[market];
-        if (country < 0 || country >= _epoch_country_count) continue;
-        const int64_t index = _market.index(market, good);
-        candidates.push_back({country, market, _market.price[index]});
+    if (!_country_research_procurement_initialized) {
+        _country_research_procurement_candidates.clear();
+        _country_research_procurement_candidates.reserve(_epoch_market_ids.size());
+        for (const int32_t market : _epoch_market_ids) {
+            if (market < 0 || market >= _cell_count ||
+                market >= static_cast<int32_t>(_epoch_cell_country.size()) ||
+                !market_has_living_merchant(market)) continue;
+            const int32_t country = _epoch_cell_country[market];
+            if (country < 0 || country >= _epoch_country_count) continue;
+            const int64_t index = _market.index(market, good);
+            _country_research_procurement_candidates.push_back({
+                country, market, good, _market.price[index]});
+        }
+        std::stable_sort(_country_research_procurement_candidates.begin(),
+            _country_research_procurement_candidates.end(),
+            [](const CountryResearchProcurementCandidate &lhs,
+               const CountryResearchProcurementCandidate &rhs) {
+                if (lhs.country != rhs.country) return lhs.country < rhs.country;
+                if (lhs.price != rhs.price) return lhs.price < rhs.price;
+                return lhs.market < rhs.market;
+            });
+        const size_t country_count = static_cast<size_t>(
+            std::max(0, _epoch_country_count));
+        _country_research_procurement_budgets.assign(country_count, 0);
+        _country_research_procurement_remaining.assign(country_count, 0);
+        _country_research_procurement_enabled.assign(country_count, 0);
+        for (int32_t country = 0; country < _epoch_country_count; ++country) {
+            bool policy_enabled = false;
+            int64_t daily_budget = 0;
+            int64_t demand = 0;
+            if (!_country_runtime->research_procurement_policy(
+                    country, policy_enabled, daily_budget, demand) ||
+                !policy_enabled || daily_budget <= 0 || demand <= 0) continue;
+            _country_research_procurement_enabled[static_cast<size_t>(country)] = 1;
+            _country_research_procurement_budgets[static_cast<size_t>(country)] =
+                std::min(_country_runtime->cash_for_slot(country),
+                    saturating_mul(daily_budget, std::max(1, _epoch_days),
+                                   _saturation_count));
+            _country_research_procurement_remaining[static_cast<size_t>(country)] =
+                demand;
+        }
+        _country_research_procurement_cursor = 0;
+        _country_research_procurement_phase = 0;
+        _country_research_procurement_initialized = true;
+        _country_research_procurement_done = false;
     }
-    std::stable_sort(candidates.begin(), candidates.end(),
-        [](const Candidate &lhs, const Candidate &rhs) {
-            if (lhs.country != rhs.country) return lhs.country < rhs.country;
-            if (lhs.price != rhs.price) return lhs.price < rhs.price;
-            return lhs.market < rhs.market;
-        });
-    std::vector<int64_t> budgets(static_cast<size_t>(std::max(0, _epoch_country_count)), 0);
-    std::vector<int64_t> remaining(static_cast<size_t>(std::max(0, _epoch_country_count)), 0);
-    std::vector<uint8_t> enabled(static_cast<size_t>(std::max(0, _epoch_country_count)), 0);
-    for (int32_t country = 0; country < _epoch_country_count; ++country) {
-        bool policy_enabled = false;
-        int64_t daily_budget = 0;
-        int64_t demand = 0;
-        if (!_country_runtime->research_procurement_policy(
-                country, policy_enabled, daily_budget, demand) ||
-            !policy_enabled || daily_budget <= 0 || demand <= 0) continue;
-        enabled[static_cast<size_t>(country)] = 1;
-        budgets[static_cast<size_t>(country)] = std::min(
-            _country_runtime->cash_for_slot(country),
-            saturating_mul(daily_budget, std::max(1, _epoch_days),
-                           _saturation_count));
-        remaining[static_cast<size_t>(country)] = demand;
-    }
-    for (const Candidate &candidate : candidates) {
+    if (_country_research_procurement_done) return true;
+    const size_t end = std::min(
+        _country_research_procurement_candidates.size(),
+        _country_research_procurement_cursor + CANDIDATES_PER_SLICE);
+    if (_country_research_procurement_phase == 0) {
+    for (; _country_research_procurement_cursor < end;
+         ++_country_research_procurement_cursor) {
+        const CountryResearchProcurementCandidate &candidate =
+            _country_research_procurement_candidates[
+                _country_research_procurement_cursor];
         const size_t country = static_cast<size_t>(candidate.country);
-        if (enabled[country] == 0 || budgets[country] <= 0 ||
-            remaining[country] <= 0 || candidate.price <= 0) continue;
-        const int64_t index = _market.index(candidate.market, good);
-        const int64_t affordable = mul_div_sat(
-            budgets[country], GOODS_SCALE, candidate.price, _saturation_count);
+        if (country >= _country_research_procurement_enabled.size() ||
+            _country_research_procurement_enabled[country] == 0 ||
+            _country_research_procurement_budgets[country] <= 0 ||
+            _country_research_procurement_remaining[country] <= 0 ||
+            candidate.price <= 0) continue;
+        const int64_t index = _market.index(candidate.market, candidate.good);
         const int64_t quantity = std::min({
-            _market.stock[index], remaining[country], affordable});
+            _market.stock[index],
+            _country_research_procurement_remaining[country],
+            mul_div_sat(_country_research_procurement_budgets[country],
+                GOODS_SCALE, candidate.price, _saturation_count)});
         if (quantity <= 0) continue;
-        const int64_t cash = goods_cost(quantity, candidate.price, _saturation_count);
+        const int64_t cash = goods_cost(
+            quantity, candidate.price, _saturation_count);
         if (cash <= 0) continue;
         // Household demography can zero a merchant cohort immediately, while
         // STRUCTURAL_REMOVE_EMPTY and merchant repair wait until after this
@@ -737,51 +1135,13 @@ bool NativeEconomyRuntime::run_government_research_procurement(std::string &erro
                 _saturation_count);
         }
         if (merchant_population <= 0) continue;
-        if (!_country_runtime->purchase_research_points(
-                candidate.country, quantity, cash)) continue;
+        if (!coordinate_country_research_purchase(
+                candidate.country, candidate.market, candidate.good, quantity, cash,
+                living_merchants, error))
+            continue;
 
-        audit_touch_market_lane(static_cast<size_t>(index));
-        _market.stock[index] -= quantity;
-        budgets[country] -= cash;
-        remaining[country] -= quantity;
-        int64_t population_prefix = 0;
-        int64_t distributed = 0;
-        for (const int32_t slot : living_merchants) {
-            audit_touch_population_lane(slot);
-            touch_accounting_slot(slot);
-            population_prefix = saturating_add(
-                population_prefix, _population.population[slot],
-                _saturation_count);
-            const int64_t next = mul_div_sat(
-                cash, population_prefix, merchant_population,
-                _saturation_count);
-            const int64_t share = std::max<int64_t>(0, next - distributed);
-            distributed = next;
-            _population.funds[slot] = saturating_add(
-                _population.funds[slot], share, _saturation_count);
-            _population.epoch_income[slot] = saturating_add(
-                _population.epoch_income[slot], share, _saturation_count);
-        }
-        const int32_t signal = market_signal_index(candidate.market, good);
-        if (signal >= 0) {
-            if (signal < static_cast<int32_t>(_epoch_nonhousehold_withdrawals.size()))
-                _epoch_nonhousehold_withdrawals[signal] = saturating_add(
-                    _epoch_nonhousehold_withdrawals[signal], quantity,
-                    _saturation_count);
-            const int64_t daily = quantity / std::max(1, _epoch_days);
-            const int64_t alpha = std::min<int64_t>(
-                Q16_ONE, static_cast<int64_t>(std::clamp<int32_t>(
-                    _good_demand_ema_alpha_q16[good], 0, Q16_ONE)) *
-                    std::max(1, _epoch_days));
-            const int64_t addition = mul_div_sat(
-                daily, alpha, Q16_ONE, _saturation_count);
-            _market_signals.business_demand_ema[signal] = saturating_add(
-                _market_signals.business_demand_ema[signal], addition,
-                _saturation_count);
-            _market_signals.realized_withdrawal_ema[signal] = saturating_add(
-                _market_signals.realized_withdrawal_ema[signal], addition,
-                _saturation_count);
-        }
+        _country_research_procurement_budgets[country] -= cash;
+        _country_research_procurement_remaining[country] -= quantity;
         _government_research_procured_points = saturating_add(
             _government_research_procured_points, quantity, _saturation_count);
         _government_research_procurement_cash = saturating_add(
@@ -791,20 +1151,49 @@ bool NativeEconomyRuntime::run_government_research_procurement(std::string &erro
         _epoch_ceiling_research_delivered[candidate.market] = saturating_add(
             _epoch_ceiling_research_delivered[candidate.market], quantity, _saturation_count);
         ++_government_research_procurement_orders;
+        ++_country_research_procurement_transactions;
     }
-    // Unspent, budget-backed demand is assigned once in the same stable price
-    // order. Never duplicate the national wallet across several empty markets.
-    for (const Candidate &candidate : candidates) {
-        const int32_t country = candidate.country;
-        if (!enabled[country] || budgets[country] <= 0 || remaining[country] <= 0) continue;
-        const int64_t quantity = std::min(remaining[country], mul_div_sat(
-            budgets[country], GOODS_SCALE, std::max<int64_t>(1, candidate.price), _saturation_count));
+    }
+    if (_country_research_procurement_cursor <
+            _country_research_procurement_candidates.size()) {
+        ++_country_research_procurement_slices;
+        return true;
+    }
+    _country_research_procurement_phase = 1;
+    _country_research_procurement_cursor = 0;
+    const size_t fallback_end = std::min(
+        _country_research_procurement_candidates.size(),
+        _country_research_procurement_cursor + CANDIDATES_PER_SLICE);
+    for (; _country_research_procurement_cursor < fallback_end;
+         ++_country_research_procurement_cursor) {
+        const CountryResearchProcurementCandidate &candidate =
+            _country_research_procurement_candidates[
+                _country_research_procurement_cursor];
+        const size_t country = static_cast<size_t>(candidate.country);
+        if (country >= _country_research_procurement_enabled.size() ||
+            _country_research_procurement_enabled[country] == 0 ||
+            _country_research_procurement_budgets[country] <= 0 ||
+            _country_research_procurement_remaining[country] <= 0) continue;
+        const int64_t quantity = std::min(
+            _country_research_procurement_remaining[country],
+            mul_div_sat(_country_research_procurement_budgets[country],
+                GOODS_SCALE, std::max<int64_t>(1, candidate.price),
+                _saturation_count));
         if (quantity <= 0) continue;
         _epoch_ceiling_research_requested[candidate.market] = saturating_add(
-            _epoch_ceiling_research_requested[candidate.market], quantity, _saturation_count);
-        remaining[country] -= quantity;
-        budgets[country] -= goods_cost(quantity, candidate.price, _saturation_count);
+            _epoch_ceiling_research_requested[candidate.market], quantity,
+            _saturation_count);
+        _country_research_procurement_remaining[country] -= quantity;
+        _country_research_procurement_budgets[country] -= goods_cost(
+            quantity, candidate.price, _saturation_count);
     }
+    if (_country_research_procurement_cursor <
+            _country_research_procurement_candidates.size()) {
+        ++_country_research_procurement_slices;
+        return true;
+    }
+    _country_research_procurement_phase = 2;
+    _country_research_procurement_done = true;
     return true;
 }
 
@@ -7983,8 +8372,16 @@ bool NativeEconomyRuntime::apply_command(const Command &cmd, std::string &error)
             const int64_t country_handle = cmd.i64_1 != 0 ? cmd.i64_1
                 : (_country_runtime == nullptr ? 0 : _country_runtime->country_handle_for_cell(event_cell));
             const int64_t treasury_before = _country_runtime == nullptr ? 0 : _country_runtime->total_cash();
-            const int64_t amount = _country_runtime == nullptr ? 0
-                : _country_runtime->transfer_cash_to_cohort(country_handle, std::max<int64_t>(0, cmd.i64_0));
+            int64_t amount = 0;
+            std::string cohort_cash_error;
+            if (!coordinate_country_cohort_cash(
+                    slot, country_handle,
+                    NativeCountryRuntime::ECONOMY_ASSET_CASH_TO_COHORT,
+                    std::max<int64_t>(0, cmd.i64_0), amount, cohort_cash_error)) {
+                error = cohort_cash_error.empty()
+                    ? "country_cohort_cash_transfer_failed" : cohort_cash_error;
+                return false;
+            }
             if (country_handle == 0) { error = "country_treasury_target_invalid"; return false; }
             const int64_t funds_before = _population.funds[slot];
             const int64_t income_before = _population.epoch_income[slot];
@@ -8173,8 +8570,16 @@ bool NativeEconomyRuntime::apply_command(const Command &cmd, std::string &error)
             const int64_t funds_before = _population.funds[slot];
             const int64_t treasury_before = _country_runtime == nullptr ? 0 : _country_runtime->total_cash();
             const int64_t expense_before = _population.epoch_expense[slot];
-            const int64_t amount = _country_runtime == nullptr ? 0
-                : _country_runtime->transfer_cash_from_cohort(country_handle, offered);
+            int64_t amount = 0;
+            std::string cohort_cash_error;
+            if (!coordinate_country_cohort_cash(
+                    slot, country_handle,
+                    NativeCountryRuntime::ECONOMY_ASSET_CASH_FROM_COHORT,
+                    offered, amount, cohort_cash_error)) {
+                error = cohort_cash_error.empty()
+                    ? "country_cohort_cash_transfer_failed" : cohort_cash_error;
+                return false;
+            }
             _population.funds[slot] -= amount;
             _population.epoch_expense[slot] = saturating_add(_population.epoch_expense[slot], amount, _saturation_count);
             trace_record_cashflow(event_cell, cmd.target_handle,
@@ -8288,8 +8693,16 @@ bool NativeEconomyRuntime::commit_structural(const StructuralCommand &cmd,
         }
         _structural_funds_to_treasury = saturating_add(
             _structural_funds_to_treasury, estate_funds, _saturation_count);
-        const int64_t moved = _country_runtime == nullptr ? 0
-            : _country_runtime->transfer_cash_from_cohort(country_handle, estate_funds);
+        int64_t moved = 0;
+        std::string cohort_cash_error;
+        if (!coordinate_country_cohort_cash(
+                source, country_handle,
+                NativeCountryRuntime::ECONOMY_ASSET_CASH_FROM_COHORT,
+                estate_funds, moved, cohort_cash_error)) {
+            error = cohort_cash_error.empty()
+                ? "country_treasury_estate_transfer_failed" : cohort_cash_error;
+            return false;
+        }
         if (moved != estate_funds) {
             error = "country_treasury_estate_transfer_failed";
             return false;
@@ -8481,8 +8894,16 @@ bool NativeEconomyRuntime::move_cohort_population(int32_t source, int32_t dest_c
             _structural_funds_to_treasury, residue_funds, _saturation_count);
         const int64_t country_handle = _country_runtime == nullptr ? 0
             : _country_runtime->country_handle_for_cell(source_cell);
-        const int64_t moved = _country_runtime == nullptr ? 0
-            : _country_runtime->transfer_cash_from_cohort(country_handle, residue_funds);
+        int64_t moved = 0;
+        std::string cohort_cash_error;
+        if (!coordinate_country_cohort_cash(
+                source, country_handle,
+                NativeCountryRuntime::ECONOMY_ASSET_CASH_FROM_COHORT,
+                residue_funds, moved, cohort_cash_error)) {
+            error = cohort_cash_error.empty()
+                ? "country_treasury_residue_transfer_failed" : cohort_cash_error;
+            return false;
+        }
         if (moved != residue_funds) {
             error = "country_treasury_residue_transfer_failed";
             return false;
@@ -10242,6 +10663,14 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                 break;
             }
             ++work_done;
+            // Candidate selection and the fallback ceiling pass are resumable.
+            // Keep the Economy stage open until both passes have consumed the
+            // sealed candidate list; no later trade stage may observe partial
+            // procurement state.
+            if (!_country_research_procurement_done) {
+                if (finish_chunk_and_should_yield()) break;
+                continue;
+            }
             commit_price_ceilings();
             _stage = Stage::TRADE_DISPATCH;
             if (finish_chunk_and_should_yield()) break;
@@ -16172,6 +16601,7 @@ int64_t NativeEconomyRuntime::state_hash() const {
 }
 
 Dictionary NativeEconomyRuntime::reset(const String &reason) {
+    if (++_committed_generation == 0) _committed_generation = 1;
     _configured = false;
     _bootstrapped = false;
     _epoch_active = false;

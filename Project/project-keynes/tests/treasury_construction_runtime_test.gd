@@ -88,6 +88,13 @@ func _test_market_funded_build(catalog: Dictionary, profile: Dictionary) -> void
 		int(report.get("population_error", 1)) == 0 and
 		int(report.get("money_error", 1)) == 0 and
 		int(report.get("goods_error", 1)) == 0)
+	var asset_report: Dictionary = ext.get_country_report().get(
+		"economy_asset_transactions", {})
+	_expect("treasury construction uses the Country asset bridge",
+		int(asset_report.get("completed", 0)) >= 1
+		and int(asset_report.get("prepared", 0)) >= 1
+		and int(asset_report.get("commit_decisions", 0)) >= 1
+		and int(asset_report.get("ledger_failures", -1)) == 0)
 
 
 func _test_cash_failure_is_atomic(catalog: Dictionary, profile: Dictionary) -> void:
@@ -129,6 +136,10 @@ func _test_cash_failure_is_atomic(catalog: Dictionary, profile: Dictionary) -> v
 		int(treasury_after.get("cash", -1)) == int(treasury_before.get("cash", -2)) and
 		goods_after == goods_before and
 		_sum_i64(buildings.get("construction_counts", PackedInt64Array())) == 0)
+	var asset_report: Dictionary = ext.get_country_report().get(
+		"economy_asset_transactions", {})
+	_expect("rejected treasury path does not report a ledger failure",
+		int(asset_report.get("ledger_failures", -1)) == 0)
 	_expect("failed construction preserves economy conservation",
 		int(report.get("population_error", 1)) == 0 and
 		int(report.get("money_error", 1)) == 0 and
@@ -365,3 +376,5 @@ func _expect(label: String, condition: bool) -> void:
 	print("  [%s] %s" % ["PASS" if condition else "FAIL", label])
 	if not condition:
 		_failures += 1
+
+

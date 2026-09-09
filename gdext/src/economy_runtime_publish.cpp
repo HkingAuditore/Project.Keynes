@@ -610,6 +610,7 @@ bool NativeEconomyRuntime::publish_epoch_slice(
             0, _rolling_due_cells - _rolling_processed_cells);
         _last_committed_day = _sample_day;
         _commit_day = _current_day;
+        if (++_committed_generation == 0) _committed_generation = 1;
         _resource_deltas_ready = std::any_of(
             _resource_touched_lanes.begin(), _resource_touched_lanes.end(),
             [&](size_t index) {

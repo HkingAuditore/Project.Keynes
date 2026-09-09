@@ -7,12 +7,14 @@
 #include <deque>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
 #include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/packed_byte_array.hpp>
 #include <godot_cpp/variant/packed_int32_array.hpp>
+#include <godot_cpp/variant/packed_int64_array.hpp>
 #include <godot_cpp/variant/string.hpp>
 
 #include "runtime_pod_protocol.h"
@@ -230,6 +232,37 @@ public:
     // technology-effect handling without changing the production authority
     // mode. This is intentionally separate from the worker authority gate.
     bool peer_protocol_self_test(std::string &error);
+    // Worker-side peer bridge.  The Country core owns the pending intent and
+    // result identity; the host owns execution of the peer runtime.
+    void set_peer_async_mode(bool enabled);
+    bool peer_async_mode() const { return _peer_async_mode; }
+    bool poll_peer_intent(CountryPeerIntent &out);
+    bool submit_peer_result(const CountryPeerResult &result,
+                            std::string &error);
+    struct PeerAdapterServiceReport {
+        uint32_t inspected = 0;
+        uint32_t completed = 0;
+        uint32_t pending = 0;
+        uint32_t rejected = 0;
+        uint32_t effect_intents = 0;
+        uint32_t modifier_intents = 0;
+        uint32_t economy_intents = 0;
+        uint64_t last_request_id = 0;
+        std::string last_reason;
+    };
+    // Main-thread adapter only. It executes queued typed intents against the
+    // attached peer runtimes and returns results through the same protocol
+    // boundary used by a future Host outbox/inbox. Worker code must not call it.
+    bool service_peer_intents_main_thread(
+        int32_t max_intents, PeerAdapterServiceReport &out,
+        std::string &error);
+    CountryPeerProtocolStatus peer_protocol_status() const;
+    bool has_peer_save_barrier() const {
+        return peer_protocol_status().has_save_barrier();
+    }
+    uint32_t pending_peer_intent_count() const {
+        return static_cast<uint32_t>(_peer_pending_intents.size());
+    }
     // Copy the numeric Country authority into a worker-safe immutable
     // projection. This method is a main-thread capture boundary; the
     // returned snapshot contains no Godot values or string references.
@@ -309,6 +342,152 @@ public:
     // that runs while the market cycle is frozen.
     int64_t research_consumed_total() const;
     int64_t good_for_handle(int64_t country_handle, int32_t good_id) const;
+
+    // K2-B typed Economy asset bridge.  The current production scheduler uses
+    // the compatibility wrappers below, which execute prepare/commit/complete
+    // in one non-blocking call.  The transaction identity and audit record are
+    // already explicit so the same contract can be resumed across a future
+    // peer ACK without changing Country business semantics.
+    enum EconomyAssetOperation : int32_t {
+        ECONOMY_ASSET_RESEARCH_PURCHASE = 1,
+        ECONOMY_ASSET_FISCAL_RESERVE = 2,
+        ECONOMY_ASSET_FISCAL_RETURN = 3,
+        ECONOMY_ASSET_FISCAL_COLLECT = 4,
+        ECONOMY_ASSET_CASH_TO_COHORT = 5,
+        ECONOMY_ASSET_CASH_FROM_COHORT = 6,
+        ECONOMY_ASSET_GOOD_TO_MARKET = 7,
+        ECONOMY_ASSET_GOOD_FROM_MARKET = 8,
+        ECONOMY_ASSET_TREASURY_SPEND = 9,
+    };
+    enum EconomyAssetTransactionStatus : int32_t {
+        ECONOMY_ASSET_CREATED = 1,
+        ECONOMY_ASSET_COUNTRY_PREPARED = 2,
+        ECONOMY_ASSET_PEER_PREPARED = 3,
+        ECONOMY_ASSET_COMMIT_DECIDED = 4,
+        ECONOMY_ASSET_COUNTRY_APPLIED = 5,
+        ECONOMY_ASSET_PEER_APPLIED = 6,
+        ECONOMY_ASSET_COMPLETED = 7,
+        ECONOMY_ASSET_REJECTED = 8,
+        // Explicit asynchronous bridge states.  The legacy values above are
+        // retained for compatibility with the synchronous accounting report.
+        ECONOMY_ASSET_AWAITING_PEER_PREPARED = 9,
+        ECONOMY_ASSET_AWAITING_PEER_APPLIED = 10,
+        ECONOMY_ASSET_FAULTED = 11,
+    };
+    struct EconomyAssetTransaction {
+        uint64_t transaction_id = 0;
+        uint64_t session_epoch = 0;
+        uint32_t origin_domain = 0;
+        int64_t origin_epoch = -1;
+        int32_t origin_stage = -1;
+        uint64_t operation_sequence = 0;
+        uint64_t request_id = 0;
+        EconomyAssetOperation operation = ECONOMY_ASSET_RESEARCH_PURCHASE;
+        EconomyAssetTransactionStatus status = ECONOMY_ASSET_CREATED;
+        uint64_t country_handle = 0;
+        int32_t country_slot = -1;
+        int32_t good_id = -1;
+        int64_t requested_quantity = 0;
+        int64_t prepared_quantity = 0;
+        int64_t committed_quantity = 0;
+        int64_t requested_cash = 0;
+        int64_t committed_cash = 0;
+        int64_t country_cash_before = 0;
+        int64_t country_cash_after = 0;
+        int64_t country_good_before = 0;
+        int64_t country_good_after = 0;
+        int64_t requested_goods_total = 0;
+        int64_t committed_goods_total = 0;
+        bool all_or_nothing = false;
+        bool conservation_ok = true;
+        uint64_t country_generation_before = 0;
+        uint64_t peer_generation = 0;
+        int64_t reserved_cash = 0;
+        int64_t reserved_goods_total = 0;
+        std::vector<int32_t> good_ids;
+        std::vector<int64_t> good_quantities;
+        std::vector<int64_t> country_goods_before;
+        std::vector<int64_t> country_goods_after;
+        std::string rejection_reason;
+    };
+
+    int64_t economy_reserve_fiscal_cash(
+        int64_t country_handle, int64_t requested, int64_t origin_epoch,
+        int32_t origin_stage, uint64_t request_id = 0);
+    int64_t economy_return_fiscal_cash(
+        int64_t country_handle, int64_t offered, int64_t origin_epoch,
+        int32_t origin_stage, uint64_t request_id = 0);
+    int64_t economy_collect_fiscal_cash(
+        int64_t country_handle, int64_t offered, int64_t origin_epoch,
+        int32_t origin_stage, uint64_t request_id = 0);
+    bool economy_purchase_research_points(
+        int32_t country_slot, int64_t quantity, int64_t total_cost,
+        int64_t origin_epoch, int32_t origin_stage, uint64_t request_id = 0);
+    int64_t economy_transfer_cash_to_cohort(
+        int64_t country_handle, int64_t requested, int64_t origin_epoch,
+        int32_t origin_stage, uint64_t request_id = 0);
+    int64_t economy_transfer_cash_from_cohort(
+        int64_t country_handle, int64_t offered, int64_t origin_epoch,
+        int32_t origin_stage, uint64_t request_id = 0);
+    int64_t economy_transfer_good_to_market(
+        int64_t country_handle, int32_t good_id, int64_t requested,
+        int64_t origin_epoch, int32_t origin_stage, uint64_t request_id = 0);
+    int64_t economy_transfer_good_from_market(
+        int64_t country_handle, int32_t good_id, int64_t offered,
+        int64_t origin_epoch, int32_t origin_stage, uint64_t request_id = 0);
+    bool economy_spend_treasury_assets(
+        int64_t country_handle, const int32_t *good_ids,
+        const int64_t *quantities, size_t good_count, int64_t cash,
+        int64_t origin_epoch, int32_t origin_stage, uint64_t request_id = 0);
+    // K2-B vertical slice. This is the first genuinely resumable Country/Economy
+    // transaction. It reserves Country assets without mutating the committed
+    // balance, waits for a typed peer prepare ACK, records a commit decision,
+    // applies the Country side once, and completes only after peer-applied ACK.
+    godot::Dictionary begin_economy_treasury_spend(
+        int64_t country_handle, const godot::PackedInt32Array &good_ids,
+        const godot::PackedInt64Array &quantities, int64_t cash,
+        int64_t origin_epoch = -1, int32_t origin_stage = -1,
+        uint64_t request_id = 0);
+    godot::Dictionary begin_economy_fiscal_reserve(
+        int64_t country_handle, int64_t requested, int64_t origin_epoch = -1,
+        int32_t origin_stage = -1, uint64_t request_id = 0);
+    godot::Dictionary begin_economy_fiscal_return(
+        int64_t country_handle, int64_t offered, int64_t origin_epoch = -1,
+        int32_t origin_stage = -1, uint64_t request_id = 0);
+    godot::Dictionary begin_economy_fiscal_collect(
+        int64_t country_handle, int64_t offered, int64_t origin_epoch = -1,
+        int32_t origin_stage = -1, uint64_t request_id = 0);
+    godot::Dictionary begin_economy_cash_to_cohort(
+        int64_t country_handle, int64_t requested, int64_t origin_epoch = -1,
+        int32_t origin_stage = -1, uint64_t request_id = 0);
+    godot::Dictionary begin_economy_cash_from_cohort(
+        int64_t country_handle, int64_t offered, int64_t origin_epoch = -1,
+        int32_t origin_stage = -1, uint64_t request_id = 0);
+    godot::Dictionary begin_economy_good_to_market(
+        int64_t country_handle, int32_t good_id, int64_t requested,
+        int64_t origin_epoch = -1, int32_t origin_stage = -1,
+        uint64_t request_id = 0);
+    godot::Dictionary begin_economy_good_from_market(
+        int64_t country_handle, int32_t good_id, int64_t offered,
+        int64_t origin_epoch = -1, int32_t origin_stage = -1,
+        uint64_t request_id = 0);
+    godot::Dictionary begin_economy_research_purchase(
+        int64_t country_handle, int64_t quantity, int64_t total_cost,
+        int64_t origin_epoch = -1, int32_t origin_stage = -1,
+        uint64_t request_id = 0);
+    godot::Dictionary acknowledge_economy_asset_peer_prepared(
+        uint64_t transaction_id, uint64_t session_epoch,
+        uint64_t country_generation, uint64_t peer_generation,
+        bool accepted, const godot::String &reason = {});
+    godot::Dictionary commit_economy_treasury_spend(uint64_t transaction_id);
+    godot::Dictionary commit_economy_asset_transaction(uint64_t transaction_id);
+    godot::Dictionary acknowledge_economy_asset_peer_applied(
+        uint64_t transaction_id, uint64_t session_epoch,
+        uint64_t country_generation, uint64_t peer_generation,
+        bool accepted, const godot::String &reason = {});
+    godot::Dictionary economy_asset_transaction_snapshot(
+        uint64_t transaction_id) const;
+    godot::Dictionary economy_asset_transaction_report() const;
     bool spend_treasury_assets(int64_t country_handle,
                                const int32_t *good_ids,
                                const int64_t *quantities,
@@ -514,9 +693,24 @@ private:
     CountryCoreStepResult run_slice_core(int64_t requested_day);
     uint64_t make_handle(int32_t slot) const;
     int64_t debit_country_cash(int64_t country_handle, int64_t requested,
-                               const char *trace_stage);
+                                const char *trace_stage);
     int64_t credit_country_cash(int64_t country_handle, int64_t offered,
                                 const char *trace_stage);
+    uint64_t begin_economy_asset_transaction(
+        EconomyAssetTransaction &transaction, uint64_t request_id,
+        uint32_t origin_domain, int64_t origin_epoch, int32_t origin_stage);
+    void finish_economy_asset_transaction(EconomyAssetTransaction &transaction,
+                                           bool completed,
+                                           const char *rejection_reason = nullptr,
+                                           bool conservation_failure = false);
+    bool find_economy_asset_transaction(uint64_t request_id,
+                                        EconomyAssetTransaction &out) const;
+    int64_t complete_economy_asset_compatibility(
+        const godot::Dictionary &begin);
+    godot::Dictionary begin_economy_fiscal_cash_credit(
+        EconomyAssetOperation operation, int64_t country_handle, int64_t offered,
+        int64_t origin_epoch, int32_t origin_stage, uint64_t request_id,
+        const char *invalid_reason);
     int32_t append_country(const std::string &stable_id,
                            const std::string &display_name, int64_t cash);
     int32_t tax_item_count(int32_t kind) const;
@@ -675,6 +869,21 @@ private:
         CountryPeerContext &context, int32_t slot, int32_t technology);
     CountryPeerResult apply_peer_intent(CountryPeerContext &context,
                                          const CountryPeerIntent &intent);
+    CountryPeerResult execute_peer_intent_main_thread(
+        const CountryPeerIntent &intent);
+    void apply_peer_result_to_context(CountryPeerContext &context,
+                                      const CountryPeerResult &result);
+    bool peer_result_identity_matches(const CountryPeerIntent &intent,
+                                      const CountryPeerResult &result,
+                                      std::string &error) const;
+    void remember_peer_rejection(const CountryPeerResult &result);
+    void clear_peer_rejections_for_retry(const CountryPeerIntent &intent);
+    bool peer_rejection_blocks_activation(int32_t slot, int32_t technology,
+                                          int64_t day) const;
+    bool peer_rejection_needs_service(int64_t day) const;
+    void mark_peer_rejections_reported(int64_t day);
+    bool retry_peer_rejections(int64_t day, CountryPeerContext &context);
+    void clear_peer_protocol_state();
     CountryPeerIntent make_peer_intent(
         const CountryPeerContext &context, CountryPeerIntentCode opcode,
         int32_t slot, int32_t technology, int64_t day_index) const;
@@ -803,6 +1012,7 @@ private:
     mutable int64_t _research_modifier_queries = 0;
     mutable int64_t _research_modifier_cache_hits = 0;
     mutable int64_t _research_remainder_iterations = 0;
+    std::string _peer_protocol_fault_reason;
     std::vector<uint64_t> _country_research_signals;
     std::vector<std::vector<uint64_t>> _country_research_signal_cells;
     std::vector<std::vector<SignalEvidence>> _country_research_signal_evidence;
@@ -821,6 +1031,12 @@ private:
     // participate in business/checkpoint hashes.
     uint64_t _peer_intents_emitted = 0;
     uint64_t _peer_results_consumed = 0;
+    bool _peer_async_mode = false;
+    std::unordered_map<uint64_t, CountryPeerIntent> _peer_pending_intents;
+    std::deque<uint64_t> _peer_intent_queue;
+    std::unordered_map<uint64_t, CountryPeerResult> _peer_result_cache;
+    std::unordered_map<uint64_t, CountryPeerResult> _peer_rejected_results;
+    std::unordered_set<uint64_t> _peer_rejection_reported;
     std::vector<int32_t> _country_tax_defaults;
     std::vector<int32_t> _country_tax_default_modes;
     std::vector<int32_t> _country_income_tax_overrides;
@@ -861,6 +1077,28 @@ private:
     // Suppresses the one legacy diagnostic write in run_research_day() while
     // the POD adapter is executing on a worker-owned runtime.
     bool _pod_execution = false;
+
+    // Diagnostic transaction ledger for the K2-B compatibility bridge.  It is
+    // deliberately excluded from the Country business hash and checkpoint;
+    // authoritative Country balances remain the only mutable business state.
+    uint64_t _next_economy_asset_transaction_id = 1;
+    uint64_t _economy_asset_operation_sequence = 0;
+    uint64_t _economy_asset_transactions_created = 0;
+    uint64_t _economy_asset_transactions_completed = 0;
+    uint64_t _economy_asset_transactions_rejected = 0;
+    uint64_t _economy_asset_prepare_count = 0;
+    uint64_t _economy_asset_commit_count = 0;
+    uint64_t _economy_asset_complete_count = 0;
+    int64_t _economy_asset_ledger_failures = 0;
+    std::deque<EconomyAssetTransaction> _economy_asset_transaction_history;
+    std::unordered_map<uint64_t, uint64_t> _economy_asset_request_index;
+    std::unordered_map<uint64_t, EconomyAssetTransaction>
+        _economy_asset_transactions_in_flight;
+    std::vector<int64_t> _economy_asset_reserved_cash;
+    std::vector<int64_t> _economy_asset_reserved_goods;
+    // Research procurement credits technology_points, so reserve remaining
+    // int64 capacity separately from debit-side goods reservations.
+    std::vector<int64_t> _economy_asset_reserved_research_points;
 
     std::vector<uint8_t> _save_bytes;
     size_t _save_cursor = 0;
