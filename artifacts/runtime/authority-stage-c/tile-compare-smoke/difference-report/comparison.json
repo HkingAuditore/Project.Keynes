@@ -1,0 +1,158 @@
+{
+  "schema": "AuthorityStageCTileComparison",
+  "schema_version": 1,
+  "status": "release_blocker",
+  "left": "D:\\Godot\\ProjectKeynes\\Project.Keynes\\artifacts\\runtime\\authority-stage-c\\tile-compare-smoke\\left\\tile_data.csv",
+  "right": "D:\\Godot\\ProjectKeynes\\Project.Keynes\\artifacts\\runtime\\authority-stage-c\\tile-compare-smoke\\right\\tile_data.csv",
+  "policy": "D:\\Godot\\ProjectKeynes\\Project.Keynes\\tools\\runtime\\authority-stage-c-field-policy.json",
+  "authority_modes": [
+    "ACTIVE",
+    "OFF"
+  ],
+  "rows": {
+    "left": 2,
+    "right": 2,
+    "aligned": 2
+  },
+  "missing": {
+    "only_left": {
+      "count": 0,
+      "examples": []
+    },
+    "only_right": {
+      "count": 0,
+      "examples": []
+    }
+  },
+  "numeric_issues": {
+    "left": {
+      "temp_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "moisture_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      }
+    },
+    "right": {
+      "temp_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "moisture_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      }
+    }
+  },
+  "field_results": [
+    {
+      "field": "temp_arr",
+      "samples": 2,
+      "different_samples": 1,
+      "max_abs_diff": 0.25,
+      "mean_abs_diff": 0.125,
+      "p95_abs_diff": 0.25,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 2,
+        "cell_index": 0,
+        "left": 2.5,
+        "right": 2.75,
+        "abs_diff": 0.25
+      },
+      "policy_declared": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 2,
+        "mean_abs_diff": 0.125
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 0,
+          "mean_abs_diff": null
+        },
+        {
+          "lag": -1,
+          "samples": 1,
+          "mean_abs_diff": 1.0
+        },
+        {
+          "lag": 0,
+          "samples": 2,
+          "mean_abs_diff": 0.125
+        },
+        {
+          "lag": 1,
+          "samples": 1,
+          "mean_abs_diff": 1.25
+        },
+        {
+          "lag": 2,
+          "samples": 0,
+          "mean_abs_diff": null
+        }
+      ]
+    },
+    {
+      "field": "moisture_arr",
+      "samples": 2,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 0,
+        "samples": 2,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 0,
+          "mean_abs_diff": null
+        },
+        {
+          "lag": -1,
+          "samples": 1,
+          "mean_abs_diff": 0.09999999999999998
+        },
+        {
+          "lag": 0,
+          "samples": 2,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 1,
+          "mean_abs_diff": 0.09999999999999998
+        },
+        {
+          "lag": 2,
+          "samples": 0,
+          "mean_abs_diff": null
+        }
+      ]
+    }
+  ],
+  "known_expected_fields": [],
+  "blockers": [
+    {
+      "field": "temp_arr",
+      "reason": "undeclared_difference"
+    }
+  ]
+}

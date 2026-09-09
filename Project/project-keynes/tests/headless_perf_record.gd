@@ -41,6 +41,10 @@ func _run() -> int:
 		args.get("synthetic_test_economy", "false"))
 	var trade_scenario := _argument_enabled(args.get("trade_scenario", "false"))
 	var label := str(args.get("label", "headless"))
+	var output_dir := str(args.get("output_dir", "")).strip_edges()
+	if not output_dir.is_empty():
+		output_dir = ProjectSettings.globalize_path(output_dir).simplify_path()
+		DirAccess.make_dir_recursive_absolute(output_dir)
 	var accuracy_mode := str(args.get("accuracy_mode", "")).to_upper()
 	var accuracy_preset := str(args.get("accuracy_preset", "")).to_upper()
 	var closing_audit_mode := str(args.get("closing_audit_mode", "")).to_upper()
@@ -272,25 +276,42 @@ func _run() -> int:
 
 	var recorder: RefCounted = PerfRecorderScript.new()
 	recorder.call("bind_main", host)
+	if not output_dir.is_empty():
+		recorder.call("configure_export", output_dir, "perf.csv")
 	host.set_perf_recorder(recorder)
 	# The benchmark deliberately requests per-tick DETAIL so performance CSV
 	# diagnosis retains every job and breakdown. Player recording defaults CORE.
 	recorder.call("start", "DETAIL", 1)
 
+	var runtime_report_start := _runtime_report_snapshot(generator)
+	var climate_diag_start: Dictionary = host.climate_authority_diagnostics() \
+		if host.has_method("climate_authority_diagnostics") else {}
 	var run_started := Time.get_ticks_usec()
 	var barrier_pulses := 0
 	var ledger_failures := 0
 	var fatal := false
+	var harness_writeback_window_us := 0
+	var harness_writeback_consume_us := 0
+	var harness_idle_wait_us := 0
+	var harness_writeback_poll_count := 0
 	for day in range(1, days + 1):
 		clock.current_day = float(day)
 		var phase := clock.season_phase_for_day(day)
 		host.run_daily_tick(day, phase)
 		host.finish_daily_tick(0.0, {})
 		if host.runtime_climate_authority_enabled:
-			var writeback_deadline := Time.get_ticks_msec() + 40
-			while Time.get_ticks_msec() < writeback_deadline:
+			var writeback_window_started := Time.get_ticks_usec()
+			var writeback_deadline := writeback_window_started + 40000
+			while Time.get_ticks_usec() < writeback_deadline:
+				var consume_started := Time.get_ticks_usec()
 				host._consume_runtime_commit_if_ready()
-				OS.delay_msec(2)
+				harness_writeback_consume_us += Time.get_ticks_usec() - consume_started
+				harness_writeback_poll_count += 1
+				if Time.get_ticks_usec() < writeback_deadline:
+					var idle_started := Time.get_ticks_usec()
+					OS.delay_msec(2)
+					harness_idle_wait_us += Time.get_ticks_usec() - idle_started
+			harness_writeback_window_us += Time.get_ticks_usec() - writeback_window_started
 
 		var drained := await _drain_hard_barrier(clock, day)
 		barrier_pulses += int(drained.get("pulses", 0))
@@ -332,6 +353,18 @@ func _run() -> int:
 	var rows_ok := rows == expected_rows
 	var tariff_totals := _tariff_totals(country, country_handles)
 	var trade_totals := _trade_totals(economy, country_handles)
+	var runtime_report_end := _runtime_report_snapshot(generator)
+	var climate_diag: Dictionary = host.climate_authority_diagnostics() \
+		if host.has_method("climate_authority_diagnostics") else {}
+	var writeback_window_ms := float(harness_writeback_window_us) / 1000.0
+	var writeback_consume_ms := float(harness_writeback_consume_us) / 1000.0
+	var idle_wait_ms := float(harness_idle_wait_us) / 1000.0
+	var adjusted_run_ms := maxf(0.0, run_ms - idle_wait_ms)
+	var lower_bound_run_ms := maxf(0.0, run_ms - writeback_window_ms)
+	var effective_days := float(expected_rows)
+	var raw_days_per_second := _days_per_second(effective_days, run_ms)
+	var adjusted_days_per_second := _days_per_second(effective_days, adjusted_run_ms)
+	var lower_bound_days_per_second := _days_per_second(effective_days, lower_bound_run_ms)
 	print("[headless-perf/result] label=%s days=%d speed=%.3f seed=%d map=%dx%d formal_start=%s trade_scenario=%s foreign_count=%d import_tariff_rate=%d export_tariff_rate=%d population_scale=%d saved_setup=%s economy_configured=%s country_count=%d population=%d generation_ms=%.1f run_ms=%.1f barrier_pulses=%d ledger_failures=%d fatal=%s population_error=%d money_error=%d goods_error=%d family_count=%d family_branch_count=%d family_trait_roll_count=%d effect_instances=%d family_effect_stack_groups=%d family_effect_group_members=%d effect_metric_slab_bytes=%d effect_instance_storage_bytes=%d city_good_output_shared_count=%d city_good_output_non_neutral_shared_count=%d city_good_output_override_count=%d city_good_output_override_cell_count=%d city_good_output_cache_bytes=%d trade_orders_dispatched=%d trade_orders_arrived=%d trade_orders_cumulative=%d trade_base_cumulative=%d trade_route_expansions=%d trade_tariff_lanes=%d trade_country_goods=%d trade_country_partners=%d tariff_collected=%d tariff_subsidy_paid=%d economy_memory_bytes=%d rows=%d expected_rows=%d path=%s" % [
 		label, days, speed, actual_seed, actual_width, actual_height,
 		str(not synthetic_test_economy), str(trade_scenario), foreign_count, import_tariff_rate,
@@ -366,8 +399,6 @@ func _run() -> int:
 		int(tariff_totals.get("subsidy_paid", 0)),
 		int(economy_report.get("memory_bytes", 0)), rows, expected_rows, output_path,
 	])
-	var climate_diag: Dictionary = host.climate_authority_diagnostics() \
-		if host.has_method("climate_authority_diagnostics") else {}
 	var climate_authority_on := host.runtime_climate_authority_enabled
 	print("[headless-perf/climate] enabled=%s worker_authoritative=%s writeback_days=%d writeback_last_day=%d mask=0x%X" % [
 		str(climate_diag.get("enabled", false)),
@@ -376,6 +407,48 @@ func _run() -> int:
 		int(climate_diag.get("writeback_last_day", -1)),
 		int(climate_diag.get("authoritative_domain_mask", 0)),
 	])
+	print("[headless-perf/harness] writeback_window_ms=%.3f consume_ms=%.3f idle_wait_ms=%.3f adjusted_run_ms=%.3f lower_bound_run_ms=%.3f raw_days_per_second=%.6f adjusted_days_per_second=%.6f lower_bound_days_per_second=%.6f polls=%d" % [
+		writeback_window_ms, writeback_consume_ms, idle_wait_ms, adjusted_run_ms,
+		lower_bound_run_ms, raw_days_per_second, adjusted_days_per_second,
+		lower_bound_days_per_second, harness_writeback_poll_count,
+	])
+	if not output_dir.is_empty():
+		_write_stage_c_outputs(output_dir, {
+			"schema": "AuthorityStageCHeadlessSession",
+			"schema_version": 1,
+			"stage": "C3",
+			"label": label,
+			"build": "Debug" if OS.is_debug_build() else "Release",
+			"seed": actual_seed,
+			"map_width": actual_width,
+			"map_height": actual_height,
+			"num_continents": 2,
+			"foreign_count": foreign_count,
+			"speed": speed,
+			"authority_mode": "ACTIVE" if climate_authority_on else "OFF",
+			"worker_mode": "ACTIVE" if climate_authority_on else "SHADOW",
+			"requested_days": days,
+			"effective_days": expected_rows,
+			"generation_ms": generation_ms,
+			"run_ms": run_ms,
+			"harness_writeback_window_ms": writeback_window_ms,
+			"harness_writeback_consume_ms": writeback_consume_ms,
+			"harness_idle_wait_ms": idle_wait_ms,
+			"harness_adjusted_run_ms": adjusted_run_ms,
+			"harness_lower_bound_run_ms": lower_bound_run_ms,
+			"raw_days_per_second": raw_days_per_second,
+			"adjusted_days_per_second": adjusted_days_per_second,
+			"lower_bound_days_per_second": lower_bound_days_per_second,
+			"harness_writeback_poll_count": harness_writeback_poll_count,
+			"barrier_pulses": barrier_pulses,
+			"worker_fault_count": int(runtime_report_end.get("worker_fault_count", 0)),
+			"main_wait_on_sim_us": int(runtime_report_end.get("main_wait_on_sim_us", 0)),
+			"perf_csv": output_path,
+			"runtime_report_start": runtime_report_start,
+			"runtime_report_end": runtime_report_end,
+			"climate_authority_start": climate_diag_start,
+			"climate_authority_end": climate_diag,
+		})
 	host.set_perf_recorder(null)
 	recorder.call("bind_main", null)
 	host.free()
@@ -446,6 +519,84 @@ func _arguments() -> Dictionary:
 
 func _argument_enabled(value) -> bool:
 	return str(value).to_lower() in ["1", "true", "yes", "on"]
+
+
+func _runtime_report_snapshot(generator) -> Dictionary:
+	var report: Dictionary = generator.get_runtime_thread_report() \
+		if generator != null and generator.has_method("get_runtime_thread_report") else {}
+	if generator != null and generator.has_method("get_runtime_perf_snapshot"):
+		var graph: Dictionary = generator.get_runtime_perf_snapshot(1)
+		for key in graph:
+			report[key] = graph[key]
+	return report
+
+
+func _days_per_second(days: float, elapsed_ms: float) -> float:
+	return days * 1000.0 / elapsed_ms if elapsed_ms > 0.000001 else 0.0
+
+
+func _write_stage_c_outputs(output_dir: String, session: Dictionary) -> void:
+	var json_file := FileAccess.open(output_dir.path_join("headless_session.json"), FileAccess.WRITE)
+	if json_file != null:
+		json_file.store_string(JSON.stringify(session, "  "))
+		json_file.close()
+	else:
+		push_error("[headless-perf] headless_session.json export failed")
+	var keys: Array = [
+		"label", "build", "seed", "map_width", "map_height", "foreign_count", "speed",
+		"authority_mode", "worker_mode", "requested_days", "effective_days", "generation_ms",
+		"run_ms", "harness_writeback_window_ms", "harness_writeback_consume_ms",
+		"harness_idle_wait_ms", "harness_adjusted_run_ms", "harness_lower_bound_run_ms",
+		"raw_days_per_second", "adjusted_days_per_second", "lower_bound_days_per_second",
+		"harness_writeback_poll_count", "barrier_pulses", "worker_fault_count",
+		"main_wait_on_sim_us",
+	]
+	var start: Dictionary = session.get("runtime_report_start", {})
+	var finish: Dictionary = session.get("runtime_report_end", {})
+	for key in ["completed_days", "pulse_count", "abi_calls", "gdscript_callbacks", "work_done",
+			"budget_yields", "day_stage_count", "day_completed_stage_count", "day_work_units",
+			"last_elapsed_us", "post_pulse_flush_ms", "flush_slot_count",
+			"climate_pod_plan_ms", "climate_pod_replay_ms", "climate_pod_work_units",
+			"domain_authority_plan_ms", "domain_authority_replay_ms",
+			"domain_authority_ack_count"]:
+		session["%s_start" % key] = start.get(key, 0)
+		session["%s_end" % key] = finish.get(key, 0)
+		if typeof(start.get(key, 0)) in [TYPE_INT, TYPE_FLOAT] \
+				and typeof(finish.get(key, 0)) in [TYPE_INT, TYPE_FLOAT]:
+			session["%s_delta" % key] = float(finish.get(key, 0)) - float(start.get(key, 0))
+		else:
+			session["%s_delta" % key] = ""
+		keys.append("%s_start" % key)
+		keys.append("%s_end" % key)
+		keys.append("%s_delta" % key)
+	var csv_file := FileAccess.open(output_dir.path_join("headless_metrics.csv"), FileAccess.WRITE)
+	if csv_file == null:
+		push_error("[headless-perf] headless_metrics.csv export failed")
+		return
+	csv_file.store_8(0xEF)
+	csv_file.store_8(0xBB)
+	csv_file.store_8(0xBF)
+	var header := PackedStringArray()
+	var values := PackedStringArray()
+	for key in keys:
+		header.append(String(key))
+		values.append(_csv_escape(session.get(key, "")))
+	csv_file.store_line(",".join(header))
+	csv_file.store_line(",".join(values))
+	csv_file.close()
+
+
+func _csv_escape(value) -> String:
+	if value == null:
+		return ""
+	if typeof(value) == TYPE_FLOAT:
+		var number := float(value)
+		if is_nan(number) or is_inf(number):
+			return ""
+	var text := str(value)
+	if text.contains(",") or text.contains("\"") or text.contains("\n") or text.contains("\r"):
+		return "\"%s\"" % text.replace("\"", "\"\"")
+	return text
 
 
 func _configure_formal_start(host: WorldRuntimeHost, map_width: int,

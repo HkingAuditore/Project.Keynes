@@ -10,6 +10,10 @@
 #include "runtime_climate_trace.h"
 #include "runtime_climate_parity.h"
 #include "runtime_domain_authorities.h"
+#include "runtime_events_authority.h"
+#include "runtime_modifier_pod.h"
+#include "runtime_effect_pod.h"
+#include "runtime_ideology_pod.h"
 
 #include <array>
 #include <atomic>
@@ -20,6 +24,8 @@
 #include <string>
 #include <thread>
 #include <memory>
+#include <deque>
+#include <unordered_map>
 #include <vector>
 
 namespace pk {
@@ -69,13 +75,106 @@ public:
             RuntimeClimateReferencePublish publish = {});
     std::shared_ptr<const RuntimeEnvironmentSnapshot> environment_snapshot() const;
     bool publish_country_snapshot(const RuntimeCountryPodSnapshot &snapshot);
+    bool publish_country_catalog(const RuntimeCountryPodCatalog &catalog,
+                                 std::string &error);
+    bool poll_country_worker_intent(CountryPeerIntent &out);
+    bool submit_country_worker_result(const CountryPeerResult &result,
+                                      std::string &error);
+    RuntimeCountryReadView country_worker_read_view(
+            uint64_t after_generation = 0) const;
+    struct CountryWorkerProtocolStatus {
+        uint32_t protocol_version = COUNTRY_PEER_PROTOCOL_VERSION;
+        bool configured = false;
+        bool plan_active = false;
+        bool waiting_for_peer = false;
+        uint32_t pending_intents = 0;
+        uint32_t queued_intents = 0;
+        uint32_t result_count = 0;
+        uint32_t rejected_results = 0;
+        uint64_t session_epoch = 0;
+        uint64_t country_generation = 0;
+        int64_t day = -1;
+        uint32_t continuation_index = 0;
+        char last_reason[64]{};
+    };
+    CountryWorkerProtocolStatus country_worker_protocol_status() const;
     bool publish_country_checkpoint(const CountryCoreCheckpoint &checkpoint,
                                     std::string &error);
     bool pending_country_checkpoint(CountryCoreCheckpoint &out,
                                     std::string &error) const;
     RuntimeCountryPodDiagnostics country_pod_diagnostics() const;
+    bool configure_trigger_pod(const RuntimeTriggerPodCatalog &catalog,
+                               std::string &error);
+    bool queue_trigger_pod_command(const RuntimeTriggerCommand &command,
+                                   std::string &error);
+    RuntimeTriggerPodDiagnostics trigger_pod_diagnostics() const;
+    bool set_trigger_reference_frame(int64_t day, uint64_t input_hash,
+                                     uint64_t state_hash, uint64_t effect_hash,
+                                     std::string &error);
+    const RuntimeTriggerPodCatalog &trigger_pod_catalog() const;
+    bool encode_trigger_pod_save(std::vector<uint8_t> &bytes,
+                                 std::string &error) const;
+    bool restore_trigger_pod_save(const uint8_t *bytes, size_t size,
+                                  std::string &error);
+    bool configure_modifier_pod(const RuntimeModifierPodCatalog &catalog,
+                                std::string &error);
+    bool encode_modifier_pod_save(std::vector<uint8_t> &bytes,
+                                  std::string &error) const;
+    bool restore_modifier_pod_save(const uint8_t *bytes, size_t size,
+                                   std::string &error);
+    bool try_acquire_modifier_snapshot(uint64_t after_generation,
+                                        uint32_t &slot);
+    const RuntimeModifierPodSnapshot &modifier_snapshot_buffer(uint32_t slot) const;
+    void release_modifier_snapshot(uint32_t slot);
+    bool modifier_pod_self_test(std::string *error = nullptr) const;
+    uint64_t modifier_pod_catalog_hash() const {
+        return _modifier_pod_configured ? _modifier_pod_catalog.catalog_hash : 0;
+    }
+    void set_events_probe_enabled(bool enabled) {
+        _events_probe_enabled.store(enabled, std::memory_order_release);
+    }
+    bool events_probe_enabled() const {
+        return _events_probe_enabled.load(std::memory_order_acquire);
+    }
+    bool try_acquire_events_snapshot(uint64_t after_generation, uint32_t &slot) {
+        return _events_snapshots.try_acquire_latest(after_generation, slot);
+    }
+    const RuntimeEventsSnapshot &events_snapshot_buffer(uint32_t slot) const {
+        return _events_snapshots.read_buffer(slot);
+    }
+    void release_events_snapshot(uint32_t slot) { _events_snapshots.release(slot); }
+    uint64_t events_snapshot_drop_count() const {
+        return _events_snapshots.publish_drop_count();
+    }
+    bool events_authority_self_test() const;
+    bool configure_effect_pod(const RuntimeEffectPodCatalog &catalog,
+                              std::string &error);
+    bool encode_effect_pod_save(std::vector<uint8_t> &bytes,
+                                std::string &error) const;
+    bool restore_effect_pod_save(const uint8_t *bytes, size_t size,
+                                 std::string &error);
+    RuntimeEffectPodReport effect_pod_report() const {
+        return _effect_pod_authority.report();
+    }
+    bool effect_pod_self_test(std::string *error = nullptr) const;
+    bool configure_ideology_pod(const RuntimeIdeologyPodCatalog &catalog,
+                                std::string &error);
+    bool publish_ideology_opinion_snapshot(
+        const RuntimeIdeologyOpinionSnapshot &snapshot, std::string &error);
+    bool queue_ideology_pod_command(const RuntimeIdeologyPodCommand &command,
+                                    std::string &error);
+    bool poll_ideology_pod_intent(RuntimeDomainIntent &intent);
+    bool submit_ideology_pod_ack(const RuntimeDomainAck &ack,
+                                 std::string &error);
+    std::shared_ptr<const RuntimeIdeologyPodSnapshot> ideology_pod_snapshot() const;
+    bool encode_ideology_pod_save(std::vector<uint8_t> &bytes,
+                                  std::string &error) const;
+    bool restore_ideology_pod_save(const uint8_t *bytes, size_t size,
+                                   std::string &error);
+    bool ideology_pod_self_test(std::string *error = nullptr) const;
 
     bool enqueue(RuntimeCommandPacket packet);
+    bool enqueue_modifier_shadow(RuntimeCommandPacket packet);
     uint64_t allocate_producer_sequence(uint32_t producer_id);
     bool next_command(RuntimeCommandPacket &out) const;
     bool poll_commit(uint64_t after_generation, RuntimeCommit &out);
@@ -185,7 +284,17 @@ private:
     void worker_main();
     RuntimeDayPlan build_day_plan(int64_t day, double speed_scale,
                                   const RuntimeEnvironmentSnapshot *environment) const;
-    RuntimeDayCommit execute_day_plan(RuntimeDayPlan &plan);
+    RuntimeDayCommit execute_day_plan(
+            RuntimeDayPlan &plan,
+            const std::vector<RuntimeCommandPacket> &day_commands,
+            std::vector<RuntimeCommandReceipt> &day_receipts);
+    bool execute_country_worker_stage(
+            int64_t day, uint64_t input_generation,
+            const std::vector<RuntimeCommandPacket> &day_commands,
+            RuntimeDayCommit &commit, std::string &error);
+    bool execute_ideology_worker_stage(int64_t day,
+                                       RuntimeDayCommit &commit,
+                                       std::string &error);
     bool pop_command(RuntimeCommandPacket &out);
     bool push_receipt(const RuntimeCommandReceipt &receipt);
     void publish_day(int64_t from_day, int64_t day,
@@ -274,6 +383,7 @@ private:
     RuntimeSnapshotRing _snapshots;
     std::shared_ptr<const RuntimeEnvironmentSnapshot> _environment_snapshot;
     std::shared_ptr<const RuntimeCountryPodSnapshot> _country_snapshot;
+    std::shared_ptr<const RuntimeCountryPodSnapshot> _country_committed_snapshot;
     std::shared_ptr<const CountryCoreCheckpoint> _country_checkpoint;
     mutable std::shared_ptr<const RuntimeCountryPodDiagnostics> _country_pod_diagnostics;
     std::atomic<uint64_t> _environment_generation{0};
@@ -290,6 +400,31 @@ private:
     // frame. The worker waits on this value at the day barrier, so a missing
     // reference never degenerates into a fixed-interval polling loop.
     std::atomic<uint64_t> _climate_trace_signal{0};
+    // Country peer transport is a bounded cooperative bridge. The worker owns
+    // the POD authority and plan; the main thread only moves typed values in
+    // and out of these queues and never touches the authority itself.
+    mutable std::mutex _country_transport_mutex;
+    RuntimeCountryPodAuthority _country_pod_authority;
+    RuntimeCountryPodCatalog _country_pod_catalog;
+    std::atomic<bool> _country_pod_configured{false};
+    std::atomic<bool> _country_pod_plan_active{false};
+    CountryPeerProtocolStatus _country_worker_protocol{};
+    RuntimeCountryPodPlan _country_pod_plan;
+    std::deque<uint64_t> _country_worker_intent_queue;
+    std::unordered_map<uint64_t, CountryPeerIntent> _country_worker_intents;
+    std::unordered_map<uint64_t, CountryPeerResult> _country_worker_results;
+    std::unordered_map<uint64_t, CountryPeerResult> _country_worker_terminal_results;
+    std::atomic<uint64_t> _country_peer_signal{0};
+    uint64_t _country_worker_session_epoch = 1;
+    uint64_t _country_worker_country_generation = 0;
+    int64_t _country_worker_day = -1;
+    uint32_t _country_worker_continuation_index = 0;
+    uint64_t _country_read_view_generation = 0;
+    uint64_t _country_read_view_patch_base_generation = 0;
+    uint32_t _country_read_view_dirty_families = 0;
+    std::vector<int32_t> _country_read_view_changed_cells;
+    std::vector<int32_t> _country_read_view_changed_owners;
+    std::atomic<bool> _events_probe_enabled{false};
 
     std::atomic<bool> _save_requested{false};
     std::atomic<uint64_t> _save_request_id{0};
@@ -304,6 +439,7 @@ private:
     // consumed exactly once at worker entry, then owned by the worker-local
     // pending command vector.
     std::vector<RuntimeCommandPacket> _worker_initial_pending_commands;
+    std::vector<RuntimeCommandPacket> _prestart_modifier_commands;
 
     std::atomic<uint64_t> _command_queue_capacity_exceeded{0};
     std::atomic<uint64_t> _receipt_queue_capacity_exceeded{0};
@@ -330,6 +466,8 @@ private:
     std::atomic<uint32_t> _domain_stage_fallback_count{0};
     std::array<std::atomic<char>, 64> _domain_stage_fallback_reason{};
     std::atomic<bool> _climate_pod_ready{false};
+    std::atomic<bool> _country_pod_ready{false};
+    std::array<std::atomic<char>, 64> _country_pod_fallback_reason{};
     std::atomic<double> _climate_pod_plan_ms{0.0};
     std::atomic<double> _climate_pod_replay_ms{0.0};
     std::atomic<uint64_t> _climate_pod_work_units{0};
@@ -377,6 +515,53 @@ private:
     // worker host; individual domains are enabled only after parity gates.
     RuntimeAuthoritativeDomainStores _authoritative_domains;
     RuntimeDomainAuthorityRunner _domain_authority_runner;
+    RuntimeModifierPodAuthority _modifier_pod_authority;
+    RuntimeModifierPodCatalog _modifier_pod_catalog;
+    bool _modifier_pod_configured = false;
+    RuntimeModifierSnapshotRing _modifier_snapshots;
+    std::atomic<bool> _modifier_pod_ready{false};
+    std::atomic<double> _modifier_pod_plan_ms{0.0};
+    std::atomic<double> _modifier_pod_replay_ms{0.0};
+    std::atomic<uint64_t> _modifier_pod_work_units{0};
+    std::atomic<uint64_t> _modifier_pod_state_hash{0};
+    std::atomic<uint64_t> _modifier_pod_snapshot_generation{0};
+    std::atomic<uint32_t> _modifier_pod_ack_count{0};
+    std::array<std::atomic<char>, 64> _modifier_pod_fallback_reason{};
+    RuntimeEventsAuthority _events_authority;
+    RuntimeEventsSnapshotRing _events_snapshots;
+    std::atomic<bool> _events_pod_ready{false};
+    std::atomic<double> _events_pod_plan_ms{0.0};
+    std::atomic<double> _events_pod_replay_ms{0.0};
+    std::atomic<uint64_t> _events_pod_state_hash{0};
+    std::atomic<uint64_t> _events_pod_snapshot_generation{0};
+    std::atomic<uint32_t> _events_pod_event_count{0};
+    std::atomic<uint32_t> _events_pod_ack_count{0};
+    std::atomic<uint64_t> _events_pod_drop_count{0};
+    std::array<std::atomic<char>, 64> _events_pod_fallback_reason{};
+    // Events is a diagnostic sidecar. Keep a worker-local watermark so a
+    // Climate input-barrier retry cannot advance its generation twice for the
+    // same host day.
+    int64_t _events_last_processed_day = -1;
+    RuntimeEffectPodAuthority _effect_pod_authority;
+    RuntimeEffectPodCatalog _effect_pod_catalog;
+    bool _effect_pod_configured = false;
+    mutable std::mutex _ideology_transport_mutex;
+    RuntimeIdeologyPodAuthority _ideology_pod_authority;
+    RuntimeIdeologyPodCatalog _ideology_pod_catalog;
+    bool _ideology_pod_configured = false;
+    std::shared_ptr<const RuntimeIdeologyOpinionSnapshot> _ideology_opinion_snapshot;
+    std::shared_ptr<const RuntimeIdeologyPodSnapshot> _ideology_snapshot;
+    std::deque<RuntimeIdeologyPodCommand> _ideology_commands;
+    std::deque<RuntimeDomainIntent> _ideology_intents;
+    std::deque<RuntimeDomainAck> _ideology_acks;
+    std::atomic<bool> _ideology_pod_ready{false};
+    std::atomic<double> _ideology_pod_plan_ms{0.0};
+    std::atomic<double> _ideology_pod_replay_ms{0.0};
+    std::atomic<uint64_t> _ideology_pod_state_hash{0};
+    std::atomic<uint64_t> _ideology_pod_snapshot_generation{0};
+    std::atomic<uint32_t> _ideology_pod_pending_transition_count{0};
+    std::atomic<uint32_t> _ideology_pod_intent_count{0};
+    std::array<std::atomic<char>, 64> _ideology_pod_fallback_reason{};
     RuntimeClimateAuthority _climate_authority;
     RuntimeClimateWritebackRing _climate_writeback;
     std::atomic<uint64_t> _climate_writeback_sequence{0};

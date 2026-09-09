@@ -17,6 +17,7 @@ try {
         'gdext/src/economy_runtime_persistence_read.cpp',
         'Project/project-keynes/scripts/country/country_facade.gd',
         'Project/project-keynes/scripts/simulation/systems/country_daily_system.gd',
+        'Project/project-keynes/tests/runtime_country_peer_bridge_test.gd',
         'Project/project-keynes/tests/runtime_country_save_roundtrip_test.gd',
         'docs/cpp-dots-runtime/native-country-runtime.md'
     )
@@ -67,6 +68,7 @@ try {
             'country_reference_trace_test.gd',
             'country_runtime_test.gd',
             'runtime_country_pod_test.gd',
+            'runtime_country_peer_bridge_test.gd',
             'runtime_country_save_roundtrip_test.gd'
         )
         foreach ($test in $tests) {

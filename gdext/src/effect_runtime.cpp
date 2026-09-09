@@ -840,6 +840,7 @@ Dictionary EffectRuntime::configure(const Dictionary &catalog) {
     out["ok"] = true;
     out["protocol_version"] = PROTOCOL_VERSION;
     out["catalog_hash"] = static_cast<int64_t>(_catalog_hash);
+    out["committed_generation"] = static_cast<int64_t>(_committed_generation);
     out["definitions"] = count;
     out["metrics"] = _metric_count;
     return out;
@@ -1549,7 +1550,12 @@ Dictionary EffectRuntime::era_reward_offer_snapshot() {
     return out;
 }
 
+void EffectRuntime::advance_committed_generation() {
+    if (++_committed_generation == 0) _committed_generation = 1;
+}
+
 void EffectRuntime::reset_runtime_state() {
+    advance_committed_generation();
     _current_day = -1;
     _last_completed_day = -1;
     _run_day = -1;
@@ -1884,6 +1890,7 @@ bool EffectRuntime::upsert_instance_pod(int64_t instance_id,
     mark_family_effect_group_dirty(index);
     schedule_instance(index, instance.next_due_day);
     _run_cursor = 0;
+    advance_committed_generation();
     ++_instances_submitted;
     return true;
 }
@@ -1928,6 +1935,7 @@ bool EffectRuntime::upsert_external_binding_pod(
         binding.active = 1;
         binding.template_signature = template_signature;
         binding.program_hash = program_hash;
+        advance_committed_generation();
         return true;
     }
     if (static_cast<int32_t>(_external_bindings.size()) >= _max_instances) {
@@ -1949,6 +1957,7 @@ bool EffectRuntime::upsert_external_binding_pod(
     binding.program_hash = program_hash;
     _external_binding_ids[binding_id] = static_cast<int32_t>(_external_bindings.size());
     _external_bindings.push_back(binding);
+    advance_committed_generation();
     return true;
 }
 
@@ -1966,7 +1975,10 @@ bool EffectRuntime::retire_external_binding_pod(int64_t binding_id,
         error = "effect_external_binding_generation_mismatch";
         return false;
     }
-    binding.active = 0;
+    if (binding.active != 0) {
+        binding.active = 0;
+        advance_committed_generation();
+    }
     return true;
 }
 
@@ -2095,6 +2107,7 @@ bool EffectRuntime::nudge_unacked_instance_pod(int64_t instance_id,
     instance.next_due_day = day_index;
     mark_family_effect_group_dirty(index);
     schedule_instance(index, day_index);
+    advance_committed_generation();
     return true;
 }
 
@@ -2121,6 +2134,7 @@ bool EffectRuntime::set_metric_pod(int64_t instance_id, int32_t metric_id,
         instance.input_revision = revision;
         mark_family_effect_group_dirty(index);
     }
+    advance_committed_generation();
     return true;
 }
 
@@ -2184,6 +2198,7 @@ bool EffectRuntime::refresh_managed_duration_pod(int64_t instance_id,
         return false;
     instance.expires_day = std::max<int64_t>(0, day_index) +
         static_cast<int64_t>(definition.duration_days);
+    advance_committed_generation();
     return true;
 }
 
@@ -3475,7 +3490,10 @@ bool EffectRuntime::acknowledge_native_domain(Transaction &transaction,
         _last_error = "effect_native_ack_domain_mask_invalid";
         return false;
     }
+    const uint32_t previous_ack_mask = transaction.received_ack_mask;
     transaction.received_ack_mask |= domain_bit;
+    if (transaction.received_ack_mask != previous_ack_mask)
+        advance_committed_generation();
     if ((transaction.received_ack_mask & transaction.required_ack_mask) !=
             transaction.required_ack_mask) {
         transaction.status = COMMITTED;
@@ -3970,6 +3988,8 @@ bool EffectRuntime::build_planned_candidate(int32_t candidate_cursor,
 Dictionary EffectRuntime::run_daily(int64_t day_index) {
     if (!_configured) return failure("effect_runtime_unconfigured");
     if (day_index < _last_completed_day) return failure("effect_day_rewind");
+    const int64_t previous_current_day = _current_day;
+    const int64_t previous_last_completed_day = _last_completed_day;
     if (_run_day >= 0 && _run_day != day_index &&
         _candidate_cursor < static_cast<int32_t>(_run_candidates.size()) &&
         _run_day != _last_completed_day) {
@@ -4009,6 +4029,9 @@ Dictionary EffectRuntime::run_daily(int64_t day_index) {
         _candidate_cursor < static_cast<int32_t>(_run_candidates.size());
     if (!has_evaluation_work) {
         _last_completed_day = day_index;
+        if (_current_day != previous_current_day ||
+            _last_completed_day != previous_last_completed_day)
+            advance_committed_generation();
         _last_evaluate_ms = std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - started).count();
         Dictionary out;
@@ -4504,6 +4527,9 @@ Dictionary EffectRuntime::run_daily(int64_t day_index) {
     }
     const bool done = _candidate_cursor >= static_cast<int32_t>(_run_candidates.size());
     if (done) _last_completed_day = day_index;
+    if (work > 0 || _current_day != previous_current_day ||
+        _last_completed_day != previous_last_completed_day)
+        advance_committed_generation();
     _last_evaluate_ms = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - started).count();
     Dictionary out;
@@ -5735,6 +5761,7 @@ Dictionary EffectRuntime::report() const {
     out["protocol_version"] = PROTOCOL_VERSION;
     out["save_schema_version"] = SAVE_SCHEMA_VERSION;
     out["catalog_hash"] = static_cast<int64_t>(_catalog_hash);
+    out["committed_generation"] = static_cast<int64_t>(_committed_generation);
     out["current_day"] = _current_day;
     out["last_completed_day"] = _last_completed_day;
     out["definitions"] = static_cast<int32_t>(_definitions.size());
@@ -6555,6 +6582,9 @@ Dictionary EffectRuntime::restore(const PackedByteArray &packed) {
     _era_reward_next_generation = restored_next_generation;
     _era_reward_offer = std::move(restored_offer);
     rebuild_command_idempotency_index();
+    // Installing a restored snapshot publishes a new peer-domain view. Keep
+    // the watermark monotonic so pre-restore ACKs cannot be reused.
+    advance_committed_generation();
     Dictionary out;
     out["ok"] = true;
     out["instances"] = static_cast<int32_t>(_instances.size());

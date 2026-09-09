@@ -11,6 +11,7 @@
 #include <godot_cpp/variant/packed_int32_array.hpp>
 
 #include "effect_runtime.h"
+#include "runtime_ideology_pod.h"
 
 namespace pk {
 
@@ -76,6 +77,9 @@ public:
     godot::PackedByteArray capture() const;
     godot::Dictionary restore(const godot::PackedByteArray &bytes);
     godot::Dictionary clear_state();
+    bool export_pod_catalog(const RuntimeCountryPodSnapshot &country,
+                            RuntimeIdeologyPodCatalog &out,
+                            std::string &error) const;
 
 private:
     struct Level {

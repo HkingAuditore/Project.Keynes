@@ -627,7 +627,11 @@ bool RuntimeCountryPodAuthority::validate_catalog(
         }
     }
     for (size_t i = 0; i < count; ++i) {
-        if (catalog.technology_costs[i] <= 0 ||
+        // Production catalogs use zero cost for non-researchable/content
+        // placeholder entries. The authoritative core already rejects such
+        // entries when they are queued; capture validation must not reject a
+        // complete catalog merely because it contains those slots.
+        if (catalog.technology_costs[i] < 0 ||
             catalog.technology_domains[i] < 0 ||
             catalog.technology_domains[i] >=
                 static_cast<int32_t>(RUNTIME_COUNTRY_RESEARCH_DOMAIN_COUNT)) {

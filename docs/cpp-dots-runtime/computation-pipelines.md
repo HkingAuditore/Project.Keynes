@@ -3182,3 +3182,7 @@ Auto execution starts one-shot through 50,000 cells, then selects by a
 complete-round 1.25 ms EMA. Slices target 0.75 ms and freeze a 2,048–32,768-cell
 range. Newly added occupancy is filtered by native vision eligibility and queued
 directly into the country observation batch.
+
+## Modifier POD pipeline
+
+Modifier stage 使用双缓冲 state：capture 当日 command，先处理 expiry，再按 (effective_day, producer_id, sequence, request_id) 排序，执行 APPLY/REMOVE/REFRESH/SET_STACKS/SET_MAGNITUDE，重建受影响 bucket，计算 state hash 和 immutable snapshot。公式为 clamp((base + sum(add)) * product(factor), min, max)；Modifier 绝不写 Climate/Country/Economy/GamePlay base state。E2-E7 为 SHADOW only，E8 未执行。

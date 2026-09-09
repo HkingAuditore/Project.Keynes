@@ -1,0 +1,41 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+=== DOTS completion gate ===
+
+─── (a) 4 巨石行数门禁 ───────────────────────────
+file                          current    target  status
+weather_system.gd                4314       400  OVER by 3914
+map_generator.gd                20133      1500  OVER by 18633
+map_baker.gd                     7770       800  OVER by 6970
+main.gd                          4319       400  OVER by 3919
+
+─── (b) hot path 直写残留 ─────────────────────────
+pattern                                     count     limit  status
+map_generator cell.x = (bake-time only)        92        10  FAIL
+weather_system out_cell.x =                     0         0  PASS
+
+─── (c) Flag registry 完整性 ──────────────────────
+declared on ClimateProfile: 6 flags
+registered in FLAGS:        6 flags
+MISSING 1 flag(s) in registry:
+  - use_climate_round_async
+
+─── (d)/(e) runtime soak [SKIP / RUNTIME-GATED] ──
+baseline metrics not yet recorded; (d)/(e) SKIPPED
+  → record fast_tick_ms_p50/p95 in baseline.json by running 100-tick scene
+
+=== summary ===
+FAILURES (6):
+  [GATE-FAIL] (a) weather_system.gd: 4314 lines > target 400 (over by 3914)
+  [GATE-FAIL] (a) map_generator.gd: 20133 lines > target 1500 (over by 18633)
+  [GATE-FAIL] (a) map_baker.gd: 7770 lines > target 800 (over by 6970)
+  [GATE-FAIL] (a) main.gd: 4319 lines > target 400 (over by 3919)
+  [GATE-FAIL] (b) map_generator cell.x = (bake-time only): hit 92 > limit 10 in res://scripts/geography/map_generator.gd
+  [GATE-FAIL] (c) feature_flags.FLAGS missing entry for 'use_climate_round_async' declared on ClimateProfile
+=> exit 1
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 111 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

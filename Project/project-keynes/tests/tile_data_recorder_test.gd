@@ -110,6 +110,19 @@ class _MockMain:
 	func get_fast_tick_count() -> int:
 		return fast_tick
 
+	func get_generator():
+		return _MockGenerator.new()
+
+	func climate_authority_diagnostics() -> Dictionary:
+		return {"writeback_last_day": 2}
+
+
+class _MockGenerator:
+	extends RefCounted
+
+	func get_runtime_thread_report() -> Dictionary:
+		return {"simulation_committed_day": 2, "worker_fault_count": 0}
+
 
 func _init() -> void:
 	_run()
@@ -133,6 +146,7 @@ func _run() -> void:
 	_test_state_machine_and_export()
 	_test_auto_stop_on_map_change()
 	_test_auto_stop_on_cell_count_change()
+	_test_sidecar_metadata_and_export_path()
 	print("=== tile_data_recorder test summary: %d checks, %d failures ===" % [_checks, _failures])
 
 
@@ -285,3 +299,38 @@ func _test_auto_stop_on_cell_count_change() -> void:
 	map._cells.append(_Cell.new(2, -2, 0))
 	rec.on_fast_tick(_sample(1))
 	_expect(not rec.is_recording(), "cell_count change auto-stops")
+
+
+func _test_sidecar_metadata_and_export_path() -> void:
+	var main := _MockMain.new()
+	main.map = _MockMap.new(2)
+	var rec := TileDataRecorder.new()
+	rec.bind_main(main)
+	var output_dir := ProjectSettings.globalize_path("user://stage_c_tests/tile")
+	var csv_path := output_dir.path_join("tile_data.csv")
+	var sidecar_path := output_dir.path_join("tile_data.sidecar.json")
+	rec.start({
+		"run_id": "test-active", "seed": 20260718, "map_width": 60,
+		"map_height": 40, "graphics_profile": "high", "authority_mode": "ACTIVE",
+		"worker_mode": "ACTIVE", "tick_stride": 1, "cell_stride": 1,
+		"compact_fields": false, "output_dir": output_dir,
+		"csv_path": csv_path, "sidecar_path": sidecar_path,
+	})
+	rec.on_fast_tick(_sample(1))
+	var exported := rec.stop_and_export()
+	_expect(exported == csv_path and FileAccess.file_exists(csv_path), "explicit tile CSV path")
+	_expect(rec.sidecar_path() == sidecar_path and FileAccess.file_exists(sidecar_path),
+		"sidecar path exported")
+	var parsed = JSON.parse_string(FileAccess.get_file_as_string(sidecar_path))
+	_expect(parsed is Dictionary, "sidecar JSON parses")
+	if not (parsed is Dictionary):
+		return
+	var sidecar: Dictionary = parsed
+	_expect(sidecar.schema == "TileDataRecorderSidecar" and sidecar.complete,
+		"sidecar schema and completion")
+	_expect(sidecar.authority_mode == "ACTIVE" and sidecar.worker_mode == "ACTIVE",
+		"sidecar authority metadata")
+	_expect(sidecar.tick_coverage.recorded_ticks == 1 and sidecar.cell_coverage.rows == 2,
+		"sidecar tick and cell coverage")
+	_expect(sidecar.soa_fields.has("temp_arr") and sidecar.runtime.committed_day == 2 \
+		and sidecar.runtime.writeback_day == 2, "sidecar fields and runtime days")

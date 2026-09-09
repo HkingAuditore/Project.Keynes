@@ -1,5 +1,6 @@
 #include "world_ext.h"
 #include "economy_runtime.h"
+#include "native_simulation_host.h"
 
 #include <godot_cpp/variant/utility_functions.hpp>
 
@@ -7,6 +8,8 @@
 #include <chrono>
 #include <limits>
 #include <unordered_set>
+#include <cstring>
+#include <type_traits>
 
 namespace pk {
 
@@ -49,6 +52,136 @@ constexpr int PK_PAYLOAD_SOCIAL_PRESSURE_V1 = 5;
 // cell=destination, entity_id=order, value=quantity; i0=source,
 // i1=source country slot, i2=destination country slot, i3=good.
 constexpr int PK_PAYLOAD_ECONOMY_TRADE_V2 = 8;
+
+constexpr uint32_t EVENTS_BRIDGE_PRODUCER_ID = 0x45564201u;
+constexpr uint64_t EVENTS_BRIDGE_REQUEST_PREFIX = 0x4556420000000000ull;
+constexpr uint64_t FNV_OFFSET = 1469598103934665603ull;
+constexpr uint64_t FNV_PRIME = 1099511628211ull;
+
+template <typename T>
+static void append_le(std::vector<uint8_t> &out, T value) {
+    using U = std::make_unsigned_t<T>;
+    const U bits = static_cast<U>(value);
+    for (size_t i = 0; i < sizeof(T); ++i)
+        out.push_back(static_cast<uint8_t>((bits >> (i * 8u)) & 0xffu));
+}
+
+static uint64_t stable_consumer_key(const StringName &consumer_id) {
+    const CharString utf8 = String(consumer_id).utf8();
+    uint64_t hash = FNV_OFFSET;
+    const char *bytes = utf8.get_data();
+    for (size_t i = 0; bytes != nullptr && bytes[i] != '\0'; ++i) {
+        hash ^= static_cast<uint8_t>(bytes[i]);
+        hash *= FNV_PRIME;
+    }
+    return hash == 0 ? 1 : hash;
+}
+
+static bool queue_events_bridge_batch(
+        NativeSimulationHost *host,
+        const std::vector<RuntimeEventsRecord> &records,
+        std::string &error) {
+    error.clear();
+    if (host == nullptr || records.empty() ||
+        records.size() > RUNTIME_EVENTS_MAX_BATCH_RECORDS) {
+        error = "events_bridge_batch_invalid";
+        return false;
+    }
+    const RuntimeThreadReport report = host->report();
+    if (report.state == RuntimeWorkerState::STOPPED ||
+        report.state == RuntimeWorkerState::STOPPING ||
+        report.state == RuntimeWorkerState::FAULTED ||
+        report.mode == RuntimeSimulationMode::OFF) {
+        error = "events_bridge_worker_unavailable";
+        return false;
+    }
+    const uint64_t sequence = host->allocate_producer_sequence(
+        EVENTS_BRIDGE_PRODUCER_ID);
+    const uint64_t request_id = EVENTS_BRIDGE_REQUEST_PREFIX | sequence;
+    RuntimeCommandPacket packet{};
+    packet.envelope.request_id = request_id;
+    packet.envelope.producer_id = EVENTS_BRIDGE_PRODUCER_ID;
+    packet.envelope.sequence = sequence;
+    packet.envelope.observed_generation = report.generation;
+    packet.envelope.requested_day = std::max<int64_t>(0, records.front().tick);
+    packet.envelope.effective_day = std::max(
+        packet.envelope.requested_day, report.committed_day + 1);
+    packet.envelope.domain = static_cast<uint16_t>(RuntimeDomainId::EVENTS);
+    packet.envelope.opcode = static_cast<uint16_t>(RuntimeEventsCommand::APPEND_BATCH);
+    std::vector<uint8_t> payload;
+    payload.reserve(8u + records.size() * 84u);
+    append_le<uint32_t>(payload, RUNTIME_EVENTS_ABI_VERSION);
+    append_le<uint32_t>(payload, static_cast<uint32_t>(records.size()));
+    for (const RuntimeEventsRecord &record : records) {
+        append_le<int64_t>(payload, record.tick);
+        append_le<int32_t>(payload, record.phase);
+        append_le<int32_t>(payload, record.type);
+        append_le<int32_t>(payload, record.source);
+        append_le<int32_t>(payload, record.flags);
+        append_le<uint64_t>(payload, record.entity_handle);
+        append_le<int32_t>(payload, record.entity_id);
+        append_le<int32_t>(payload, record.cell_idx);
+        append_le<int32_t>(payload, record.payload_schema);
+        append_le<int64_t>(payload, record.value_i64);
+        append_le<int32_t>(payload, record.payload_i0);
+        append_le<int32_t>(payload, record.payload_i1);
+        append_le<int32_t>(payload, record.payload_i2);
+        append_le<int32_t>(payload, record.payload_i3);
+        append_le<uint64_t>(payload, static_cast<uint64_t>(record.event_id));
+    }
+    if (payload.size() > RUNTIME_MAX_COMMAND_PAYLOAD) {
+        error = "events_bridge_payload_exceeded";
+        return false;
+    }
+    packet.envelope.payload_size = static_cast<uint32_t>(payload.size());
+    std::memcpy(packet.payload.data(), payload.data(), payload.size());
+    if (!host->enqueue(packet)) {
+        error = "events_bridge_queue_full";
+        return false;
+    }
+    return true;
+}
+
+static bool queue_events_bridge_ack(NativeSimulationHost *host,
+                                    const StringName &consumer_id,
+                                    int64_t event_id,
+                                    std::string &error) {
+    error.clear();
+    if (host == nullptr || event_id < 0) {
+        error = "events_bridge_ack_invalid";
+        return false;
+    }
+    const RuntimeThreadReport report = host->report();
+    if (report.state == RuntimeWorkerState::STOPPED ||
+        report.state == RuntimeWorkerState::STOPPING ||
+        report.state == RuntimeWorkerState::FAULTED ||
+        report.mode == RuntimeSimulationMode::OFF) {
+        error = "events_bridge_worker_unavailable";
+        return false;
+    }
+    const uint64_t sequence = host->allocate_producer_sequence(
+        EVENTS_BRIDGE_PRODUCER_ID);
+    RuntimeCommandPacket packet{};
+    packet.envelope.request_id = EVENTS_BRIDGE_REQUEST_PREFIX | sequence;
+    packet.envelope.producer_id = EVENTS_BRIDGE_PRODUCER_ID;
+    packet.envelope.sequence = sequence;
+    packet.envelope.observed_generation = report.generation;
+    packet.envelope.requested_day = std::max<int64_t>(0, report.committed_day + 1);
+    packet.envelope.effective_day = packet.envelope.requested_day;
+    packet.envelope.domain = static_cast<uint16_t>(RuntimeDomainId::EVENTS);
+    packet.envelope.opcode = static_cast<uint16_t>(RuntimeEventsCommand::ACK_CONSUMER);
+    std::vector<uint8_t> payload;
+    append_le<uint32_t>(payload, RUNTIME_EVENTS_ABI_VERSION);
+    append_le<uint64_t>(payload, stable_consumer_key(consumer_id));
+    append_le<int64_t>(payload, event_id);
+    packet.envelope.payload_size = static_cast<uint32_t>(payload.size());
+    std::memcpy(packet.payload.data(), payload.data(), payload.size());
+    if (!host->enqueue(packet)) {
+        error = "events_bridge_queue_full";
+        return false;
+    }
+    return true;
+}
 
 static int64_t event_i64_at(const PackedInt64Array &arr, int idx, int64_t fallback) {
     return (idx >= 0 && idx < arr.size()) ? arr[idx] : fallback;
@@ -527,6 +660,11 @@ Dictionary DCWorldExt::publish_gameplay_events(Dictionary batch) {
     int published = 0;
     int64_t first_id = 0;
     int64_t last_id = 0;
+    std::vector<RuntimeEventsRecord> bridge_records;
+    bridge_records.reserve(RUNTIME_EVENTS_MAX_BATCH_RECORDS);
+    _events_bridge_queued = 0;
+    _events_bridge_failed = 0;
+    _events_bridge_last_reason = String();
     for (int i = 0; i < count; ++i) {
         const int event_type = event_i32_at(type_arr, i, type_scalar);
         if (event_type <= 0) {
@@ -557,6 +695,44 @@ Dictionary DCWorldExt::publish_gameplay_events(Dictionary batch) {
             }
             last_id = id;
             published += 1;
+            RuntimeEventsRecord pod_record;
+            pod_record.event_id = id;
+            pod_record.tick = event_i64_at(tick_arr, i, tick_scalar);
+            pod_record.phase = event_i32_at(phase_arr, i, phase_scalar);
+            pod_record.type = event_type;
+            pod_record.source = event_i32_at(source_arr, i, source_scalar);
+            pod_record.flags = event_i32_at(flags_arr, i, flags_scalar);
+            pod_record.entity_handle = entity_handle;
+            pod_record.entity_id = entity_id;
+            pod_record.cell_idx = cell_idx;
+            pod_record.payload_schema = event_i32_at(schema_arr, i, schema_scalar);
+            pod_record.value_i64 = event_i64_at(value_arr, i, 1);
+            pod_record.payload_i0 = event_i32_at(p0_arr, i, 0);
+            pod_record.payload_i1 = event_i32_at(p1_arr, i, 0);
+            pod_record.payload_i2 = event_i32_at(p2_arr, i, 0);
+            pod_record.payload_i3 = event_i32_at(p3_arr, i, 0);
+            bridge_records.push_back(pod_record);
+            if (bridge_records.size() == RUNTIME_EVENTS_MAX_BATCH_RECORDS) {
+                std::string bridge_error;
+                if (queue_events_bridge_batch(_runtime_host.get(), bridge_records,
+                                               bridge_error)) {
+                    ++_events_bridge_queued;
+                } else {
+                    ++_events_bridge_failed;
+                    _events_bridge_last_reason = String(bridge_error.c_str());
+                }
+                bridge_records.clear();
+            }
+        }
+    }
+    if (!bridge_records.empty()) {
+        std::string bridge_error;
+        if (queue_events_bridge_batch(_runtime_host.get(), bridge_records,
+                                      bridge_error)) {
+            ++_events_bridge_queued;
+        } else {
+            ++_events_bridge_failed;
+            _events_bridge_last_reason = String(bridge_error.c_str());
         }
     }
 
@@ -569,6 +745,9 @@ Dictionary DCWorldExt::publish_gameplay_events(Dictionary batch) {
     out["dropped_event_count"] = _gameplay_dropped_event_count;
     out["native_ms"] = _gameplay_last_native_ms;
     out["fallback"] = false;
+    out["events_bridge_queued"] = static_cast<int64_t>(_events_bridge_queued);
+    out["events_bridge_failed"] = static_cast<int64_t>(_events_bridge_failed);
+    out["events_bridge_reason"] = _events_bridge_last_reason;
     return out;
 }
 
@@ -685,6 +864,152 @@ Dictionary DCWorldExt::ack_gameplay_events(StringName consumer_id, int64_t up_to
     out["previous_event_id"] = prev;
     out["acked_event_id"] = next;
     out["fallback"] = false;
+    out["events_bridge_queued"] = int64_t(0);
+    out["events_bridge_failed"] = int64_t(0);
+    out["events_bridge_reason"] = String();
+    // Legacy consumers remain authoritative. The POD ACK is only a best-effort
+    // mirror and must never make a successful legacy ACK fail.
+    if (_runtime_host && _runtime_host->events_probe_enabled() && next >= 0) {
+        std::string bridge_error;
+        if (queue_events_bridge_ack(_runtime_host.get(), consumer_id, next,
+                                    bridge_error)) {
+            out["events_bridge_queued"] = int64_t(1);
+        } else {
+            out["events_bridge_failed"] = int64_t(1);
+            out["events_bridge_reason"] = String(bridge_error.c_str());
+        }
+    }
+    return out;
+}
+
+Dictionary DCWorldExt::poll_runtime_events_snapshot(int64_t after_generation) {
+    Dictionary out;
+    if (!_runtime_host) {
+        out["ok"] = false;
+        out["available"] = false;
+        out["fallback"] = true;
+        out["reason"] = "runtime_worker_not_started";
+        return out;
+    }
+    const uint64_t after = after_generation < 0
+        ? 0u : static_cast<uint64_t>(after_generation);
+    uint32_t slot = 0;
+    if (!_runtime_host->try_acquire_events_snapshot(after, slot)) {
+        out["ok"] = true;
+        out["available"] = false;
+        out["fallback"] = false;
+        out["generation"] = static_cast<int64_t>(after);
+        return out;
+    }
+
+    const RuntimeEventsSnapshot &snapshot =
+        _runtime_host->events_snapshot_buffer(slot);
+    PackedInt64Array ids;
+    PackedInt64Array ticks;
+    PackedInt32Array phases;
+    PackedInt32Array types;
+    PackedInt32Array sources;
+    PackedInt32Array flags;
+    PackedInt64Array entity_handles;
+    PackedInt32Array entity_ids;
+    PackedInt32Array cell_indices;
+    PackedInt32Array payload_schemas;
+    PackedInt64Array values;
+    PackedInt32Array payload_i0;
+    PackedInt32Array payload_i1;
+    PackedInt32Array payload_i2;
+    PackedInt32Array payload_i3;
+    ids.resize(static_cast<int64_t>(snapshot.events.size()));
+    ticks.resize(static_cast<int64_t>(snapshot.events.size()));
+    phases.resize(static_cast<int64_t>(snapshot.events.size()));
+    types.resize(static_cast<int64_t>(snapshot.events.size()));
+    sources.resize(static_cast<int64_t>(snapshot.events.size()));
+    flags.resize(static_cast<int64_t>(snapshot.events.size()));
+    entity_handles.resize(static_cast<int64_t>(snapshot.events.size()));
+    entity_ids.resize(static_cast<int64_t>(snapshot.events.size()));
+    cell_indices.resize(static_cast<int64_t>(snapshot.events.size()));
+    payload_schemas.resize(static_cast<int64_t>(snapshot.events.size()));
+    values.resize(static_cast<int64_t>(snapshot.events.size()));
+    payload_i0.resize(static_cast<int64_t>(snapshot.events.size()));
+    payload_i1.resize(static_cast<int64_t>(snapshot.events.size()));
+    payload_i2.resize(static_cast<int64_t>(snapshot.events.size()));
+    payload_i3.resize(static_cast<int64_t>(snapshot.events.size()));
+    for (int64_t i = 0; i < static_cast<int64_t>(snapshot.events.size()); ++i) {
+        const RuntimeEventsRecord &event = snapshot.events[static_cast<size_t>(i)];
+        ids[i] = event.event_id;
+        ticks[i] = event.tick;
+        phases[i] = event.phase;
+        types[i] = event.type;
+        sources[i] = event.source;
+        flags[i] = event.flags;
+        entity_handles[i] = static_cast<int64_t>(event.entity_handle);
+        entity_ids[i] = event.entity_id;
+        cell_indices[i] = event.cell_idx;
+        payload_schemas[i] = event.payload_schema;
+        values[i] = event.value_i64;
+        payload_i0[i] = event.payload_i0;
+        payload_i1[i] = event.payload_i1;
+        payload_i2[i] = event.payload_i2;
+        payload_i3[i] = event.payload_i3;
+    }
+    PackedInt64Array ack_keys;
+    PackedInt64Array ack_event_ids;
+    ack_keys.resize(static_cast<int64_t>(snapshot.consumer_acks.size()));
+    ack_event_ids.resize(static_cast<int64_t>(snapshot.consumer_acks.size()));
+    for (int64_t i = 0; i < static_cast<int64_t>(snapshot.consumer_acks.size()); ++i) {
+        const RuntimeEventsConsumerAck &ack = snapshot.consumer_acks[static_cast<size_t>(i)];
+        ack_keys[i] = static_cast<int64_t>(ack.consumer_key);
+        ack_event_ids[i] = ack.event_id;
+    }
+    PackedInt64Array idempotency_keys;
+    PackedInt64Array idempotency_requests;
+    PackedInt64Array idempotency_events;
+    idempotency_keys.resize(static_cast<int64_t>(snapshot.idempotency.size()));
+    idempotency_requests.resize(static_cast<int64_t>(snapshot.idempotency.size()));
+    idempotency_events.resize(static_cast<int64_t>(snapshot.idempotency.size()));
+    for (int64_t i = 0; i < static_cast<int64_t>(snapshot.idempotency.size()); ++i) {
+        const RuntimeEventsIdempotencyEvidence &entry =
+            snapshot.idempotency[static_cast<size_t>(i)];
+        idempotency_keys[i] = static_cast<int64_t>(entry.key);
+        idempotency_requests[i] = static_cast<int64_t>(entry.request_id);
+        idempotency_events[i] = entry.event_id;
+    }
+
+    out["ok"] = true;
+    out["available"] = true;
+    out["fallback"] = false;
+    out["abi_version"] = static_cast<int>(snapshot.abi_version);
+    out["generation"] = static_cast<int64_t>(snapshot.generation);
+    out["state_hash"] = static_cast<int64_t>(snapshot.state_hash);
+    out["committed_day"] = snapshot.committed_day;
+    out["next_event_id"] = snapshot.next_event_id;
+    out["capacity"] = static_cast<int>(snapshot.capacity);
+    out["dropped_event_count"] = static_cast<int64_t>(snapshot.dropped_event_count);
+    out["first_dropped_event_id"] = snapshot.first_dropped_event_id;
+    out["event_id"] = ids;
+    out["tick"] = ticks;
+    out["phase"] = phases;
+    out["type"] = types;
+    out["source"] = sources;
+    out["flags"] = flags;
+    out["entity_handle"] = entity_handles;
+    out["entity_id"] = entity_ids;
+    out["cell_idx"] = cell_indices;
+    out["payload_schema"] = payload_schemas;
+    out["value_i64"] = values;
+    out["payload_i0"] = payload_i0;
+    out["payload_i1"] = payload_i1;
+    out["payload_i2"] = payload_i2;
+    out["payload_i3"] = payload_i3;
+    out["count"] = ids.size();
+    out["consumer_key"] = ack_keys;
+    out["consumer_event_id"] = ack_event_ids;
+    out["ack_count"] = ack_keys.size();
+    out["idempotency_key"] = idempotency_keys;
+    out["idempotency_request_id"] = idempotency_requests;
+    out["idempotency_event_id"] = idempotency_events;
+    out["idempotency_count"] = idempotency_keys.size();
+    _runtime_host->release_events_snapshot(slot);
     return out;
 }
 

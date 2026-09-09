@@ -33,16 +33,24 @@ New-Item -ItemType Directory -Path $logDir -Force | Out-Null
 $tests = @(
     'tests/runtime_protocol_guard_test.gd',
     'tests/runtime_domain_pod_test.gd',
+    'tests/runtime_modifier_pod_test.gd',
+    'tests/runtime_events_pod_test.gd',
     'tests/runtime_climate_authority_test.gd',
     'tests/runtime_climate_parity_test.gd',
     'tests/runtime_climate_save_roundtrip_test.gd',
     'tests/runtime_country_pod_test.gd',
+    'tests/runtime_country_peer_bridge_test.gd',
+    'tests/runtime_country_economy_transaction_test.gd',
     'tests/runtime_snapshot_ring_test.gd',
     'tests/runtime_save_domain_section_test.gd',
     'tests/runtime_worker_source_scan_test.gd',
     'tests/runtime_thread_isolation_test.gd',
     'tests/runtime_graph_country_committed_test.gd',
     'tests/runtime_generation_tick_gate_test.gd',
+    'tests/runtime_trigger_pod_test.gd',
+    'tests/runtime_trigger_parity_test.gd',
+    'tests/runtime_trigger_save_roundtrip_test.gd',
+    'tests/runtime_effect_pod_test.gd',
     'tests/dots_completion/dots_completion_gate.gd'
 )
 

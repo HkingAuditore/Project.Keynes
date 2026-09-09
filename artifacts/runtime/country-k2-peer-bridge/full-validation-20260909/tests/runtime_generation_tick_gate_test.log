@@ -1,0 +1,12 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[ui-layout-diag/bind_ui] is_web=false viewport_visible_rect=[P: (0.0, 0.0), S: (1024.0, 576.0)] window_size=(1280, 720) content_scale_factor=1.250 content_scale_mode=0 device_pixel_ratio=-1.000 top_bar_rect=[P: (0.0, 0.0), S: (1024.0, 56.0)] right_panel_rect=[P: (564.0, 68.0), S: (460.0, 496.0)] country_action_bar_rect=[P: (346.0, 494.0), S: (400.0, 74.0)]
+[building-visual] queue_probe ticks=1 queued=0 chunk=-1 camera_rect=[P: (-512.0, -288.0), S: (1024.0, 576.0)] prefetch=false zoom=1.000
+[clock/step] delta=150.0ms speed=1x target=0.15d cap=8.00d/f cost=0.00ms ran=0 pulse=0.00ms loop=0.00ms full=0.23ms carry=0.15 barrier=
+ERROR: 8 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'N13RendererDummy15MaterialStorage11DummyShaderE' were leaked at exit.
+ERROR: 7 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 236 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

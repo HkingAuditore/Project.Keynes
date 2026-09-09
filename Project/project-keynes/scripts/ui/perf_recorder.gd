@@ -24,6 +24,7 @@
 class_name PerfRecorder
 extends RefCounted
 
+const SCHEMA_VERSION: int = 1
 
 # 固定列（出现在 CSV 最左侧，写死保证跨录制 diff 友好）
 # 注意：GDScript 的 const 不允许调构造函数，因此用 Array 字面量。
@@ -238,6 +239,47 @@ const FIXED_COLUMNS: Array = [
 	"runtime_graph_day_stage_count",
 	"runtime_graph_day_completed_stage_count",
 	"runtime_graph_day_work_units",
+	"runtime_graph_completed_days",
+	"runtime_graph_pod_completed_domain_mask",
+	"runtime_graph_pod_completed_stage_count",
+	"runtime_graph_pod_work_units",
+	"runtime_graph_pod_intent_count",
+	"runtime_graph_pod_fallback_count",
+	"runtime_graph_domain_authority_planned_mask",
+	"runtime_graph_domain_authority_committed_mask",
+	"runtime_graph_domain_authority_ack_count",
+	"runtime_graph_domain_authority_input_hash",
+	"runtime_graph_domain_authority_state_hash",
+	"runtime_graph_domain_authority_plan_ms",
+	"runtime_graph_domain_authority_replay_ms",
+	"runtime_graph_domain_authority_fallback_reason",
+	"runtime_graph_domain_stage_fallback_count",
+	"runtime_graph_domain_stage_fallback_reason",
+	"runtime_graph_climate_production_stage_mask",
+	"runtime_graph_climate_worker_stage_mask",
+	"runtime_graph_climate_pod_parity_compared",
+	"runtime_graph_climate_pod_parity_matched",
+	"runtime_graph_climate_pod_parity_mismatch_count",
+	"runtime_graph_climate_pod_parity_reason",
+	"runtime_graph_climate_pod_reference_hash",
+	"runtime_graph_climate_parity_day",
+	"runtime_graph_climate_parity_stage",
+	"runtime_graph_climate_parity_cell",
+	"runtime_graph_climate_parity_field",
+	"runtime_graph_climate_parity_reference_bits",
+	"runtime_graph_climate_parity_worker_bits",
+	"runtime_graph_climate_trace_captured",
+	"runtime_graph_climate_trace_reference_ready",
+	"runtime_graph_climate_trace_consumable",
+	"runtime_graph_fault_code",
+	"runtime_graph_simulation_invalid_environment_rejected",
+	"runtime_graph_country_pod_snapshot_generation",
+	"runtime_graph_country_pod_state_hash",
+	"runtime_graph_country_pod_work_units",
+	"runtime_graph_country_pod_active_country_count",
+	"runtime_graph_country_pod_pending_checks",
+	"runtime_graph_country_pod_ack_pending",
+	"runtime_graph_country_pod_blocker",
 ]
 
 # 软上限：避免误开后台跑爆内存。约 60000 帧 ≈ 30 分钟 30FPS。
@@ -301,6 +343,8 @@ var _start_tick: int = 0
 var _hit_limit: bool = false
 var _detail_mode: String = "CORE"
 var _detail_period_days: int = 30
+var _export_dir_override: String = ""
+var _export_name_override: String = ""
 
 
 func bind_main(m) -> void:
@@ -317,6 +361,19 @@ func row_count() -> int:
 
 func hit_limit() -> bool:
 	return _hit_limit
+
+
+func schema_version() -> int:
+	return SCHEMA_VERSION
+
+
+## Optional deterministic export destination for automated evidence runs.
+## Existing GM callers keep the historical ../../tmp destination when this is
+## not configured.
+func configure_export(output_dir: String, csv_name: String = "") -> void:
+	_export_dir_override = ProjectSettings.globalize_path(output_dir).simplify_path() \
+		if not output_dir.is_empty() else ""
+	_export_name_override = csv_name.strip_edges()
 
 
 # 开始录制：清空缓冲。多次调用 start 等价于"丢弃旧录制重开"。
@@ -344,11 +401,16 @@ func stop_and_export() -> String:
 		return ""
 
 	var dt: Dictionary = Time.get_datetime_dict_from_system()
-	var export_dir: String = _export_dir_absolute()
-	var fname: String = export_dir.path_join("perf_record_%04d%02d%02d_%02d%02d%02d.csv" % [
-		int(dt.get("year", 0)), int(dt.get("month", 0)), int(dt.get("day", 0)),
-		int(dt.get("hour", 0)), int(dt.get("minute", 0)), int(dt.get("second", 0)),
-	])
+	var export_dir: String = _export_dir_override if not _export_dir_override.is_empty() \
+		else _export_dir_absolute()
+	var fname: String
+	if not _export_name_override.is_empty():
+		fname = export_dir.path_join(_export_name_override)
+	else:
+		fname = export_dir.path_join("perf_record_%04d%02d%02d_%02d%02d%02d.csv" % [
+			int(dt.get("year", 0)), int(dt.get("month", 0)), int(dt.get("day", 0)),
+			int(dt.get("hour", 0)), int(dt.get("minute", 0)), int(dt.get("second", 0)),
+		])
 	# Keep perf CSV outside res:// so Godot does not import it as csv_translation.
 	DirAccess.make_dir_recursive_absolute(export_dir)
 
@@ -433,7 +495,29 @@ func on_fast_tick(sample: Dictionary) -> void:
 				"command_queue_depth",
 				"receipt_queue_depth", "snapshot_publish_drop_count",
 				"worker_fault_count", "day_stage_count",
-				"day_completed_stage_count", "day_work_units"]:
+				"day_completed_stage_count", "day_work_units",
+				"completed_days", "pod_completed_domain_mask",
+				"pod_completed_stage_count", "pod_work_units", "pod_intent_count",
+				"pod_fallback_count", "domain_authority_planned_mask",
+				"domain_authority_committed_mask", "domain_authority_ack_count",
+				"domain_authority_input_hash", "domain_authority_state_hash",
+				"domain_authority_plan_ms", "domain_authority_replay_ms",
+				"domain_authority_fallback_reason", "domain_stage_fallback_count",
+				"domain_stage_fallback_reason", "climate_production_stage_mask",
+				"climate_worker_stage_mask", "climate_pod_parity_compared",
+				"climate_pod_parity_matched", "climate_pod_parity_mismatch_count",
+				"climate_pod_parity_reason", "climate_pod_reference_hash",
+				"climate_parity_day", "climate_parity_stage", "climate_parity_cell",
+				"climate_parity_field", "climate_parity_reference_bits",
+				"climate_parity_worker_bits", "climate_trace_captured",
+				"climate_trace_reference_ready", "climate_trace_consumable",
+				"climate_trace_capacity_exceeded", "climate_trace_reference_rejected",
+				"climate_trace_reference_pending", "fault_code",
+				"simulation_invalid_environment_rejected",
+				"country_pod_snapshot_generation", "country_pod_state_hash",
+				"country_pod_work_units", "country_pod_active_country_count",
+				"country_pod_pending_checks", "country_pod_ack_pending",
+				"country_pod_blocker"]:
 			row["runtime_graph_%s" % key] = runtime_graph.get(key, 0)
 
 	# CORE 只保留固定帧/预算/守恒字段。完整 job/breakdown 展开属于 DETAIL，

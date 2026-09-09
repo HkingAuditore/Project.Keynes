@@ -46,6 +46,29 @@ func _run() -> void:
 	_expect("numeric country catalog capture is explicit", bool(pod_catalog.get("ok", false))
 		and int(pod_catalog.get("catalog_hash", 0)) != 0
 		and bool(pod_catalog.get("research_conditions_complete", false)))
+	_expect("Country worker read view facade is exported",
+		ext.has_method("get_country_worker_read_view"))
+	var initial_view: Dictionary = ext.get_country_worker_read_view(0)
+	var initial_cells: PackedInt32Array = initial_view.get(
+		"changed_cells", PackedInt32Array())
+	var initial_owners: PackedInt32Array = initial_view.get(
+		"changed_owners", PackedInt32Array())
+	_expect("captured Country view is immediately readable",
+		bool(initial_view.get("ok", false))
+		and bool(initial_view.get("available", false))
+		and int(initial_view.get("generation", 0)) == int(captured.get("generation", -1))
+		and int(initial_view.get("cell_count", 0)) == 2)
+	_expect("bootstrap view exposes an explicit full initialization patch",
+		initial_cells.size() == 2
+		and initial_owners.size() == 2
+		and initial_cells[0] == 0 and initial_cells[1] == 1
+		and initial_owners[0] == 0 and initial_owners[1] == 0)
+	var same_cursor: Dictionary = ext.get_country_worker_read_view(
+		int(initial_view.get("generation", 0)))
+	_expect("Country view cursor suppresses duplicate reads",
+		bool(same_cursor.get("ok", false))
+		and not bool(same_cursor.get("available", true)))
+	_run_read_view_patch_contract(catalog)
 	var shadow: Dictionary = ext.start_runtime_worker({
 		"simulation_thread_mode": "SHADOW",
 		"graph_coverage_complete": true,
@@ -65,6 +88,105 @@ func _run() -> void:
 		and int(report.get("missing_domain_mask", 0)) != 0)
 	ext.request_runtime_stop()
 	OS.delay_msec(30)
+
+
+func _run_read_view_patch_contract(catalog: Dictionary) -> void:
+	var ext := DCWorldExt.new()
+	var profile := {"country_runtime_mode": "ACTIVE",
+		"starting_technology_ids": PackedStringArray(["tech.hunting"])}
+	_expect("read-view patch fixture configures",
+		bool(ext.configure_country(catalog, profile, 3, 1901).get("ok", false)))
+	_expect("read-view patch fixture bootstraps",
+		bool(ext.bootstrap_country({}, PackedByteArray([0, 0, 0])).get("ok", false)))
+	var initial_capture: Dictionary = ext.capture_country_runtime_snapshot()
+	var initial := ext.get_country_worker_read_view(0)
+	var initial_generation := int(initial.get("generation", 0))
+	_expect("read-view patch fixture publishes bootstrap",
+		bool(initial_capture.get("ok", false))
+		and bool(initial.get("available", false))
+		and not bool(initial.get("full_snapshot_required", true))
+		and (initial.get("full_cell_owners", PackedInt32Array()) as PackedInt32Array).is_empty())
+
+	var create: Dictionary = ext.submit_country_commands(_single_country_command(
+		1, 0, 0, 2, 0, "patch.country", "Patch Country"))
+	_expect("read-view CREATE command admitted", bool(create.get("ok", false)))
+	_expect("read-view CREATE commits", bool(ext.run_country_slice({
+		"day_index": 0}).get("ok", false)))
+	_expect("read-view CREATE snapshot captured",
+		bool(ext.capture_country_runtime_snapshot().get("ok", false)))
+	var created := ext.get_country_worker_read_view(initial_generation)
+	var created_cells: PackedInt32Array = created.get(
+		"changed_cells", PackedInt32Array())
+	var created_owners: PackedInt32Array = created.get(
+		"changed_owners", PackedInt32Array())
+	var created_generation := int(created.get("generation", 0))
+	_expect("single CREATE produces one sparse territory cell",
+		bool(created.get("available", false))
+		and not bool(created.get("full_snapshot_required", true))
+		and created_cells.size() == 1 and created_owners.size() == 1
+		and created_cells[0] == 2 and created_owners[0] == 1)
+	_expect("sparse patch advances the read cursor",
+		created_generation > initial_generation
+		and not bool(ext.get_country_worker_read_view(created_generation).get(
+			"available", true)))
+
+	var created_handle := int(ext.get_country_cell_summary(2).get(
+		"country_handle", 0))
+	_expect("read-view CREATE exposes a generation-safe handle", created_handle != 0)
+	var rename: Dictionary = ext.submit_country_commands(_single_country_command(
+		2, 0, 1, -1, 1, "", "Renamed Country", -1, created_handle))
+	_expect("read-view RENAME command admitted", bool(rename.get("ok", false)))
+	_expect("read-view RENAME commits", bool(ext.run_country_slice({
+		"day_index": 1}).get("ok", false)))
+	_expect("read-view RENAME snapshot captured",
+		bool(ext.capture_country_runtime_snapshot().get("ok", false)))
+	var renamed := ext.get_country_worker_read_view(created_generation)
+	var renamed_cells: PackedInt32Array = renamed.get(
+		"changed_cells", PackedInt32Array())
+	_expect("research/identity generation without territory stays sparse-empty",
+		bool(renamed.get("available", false))
+		and renamed_cells.is_empty())
+
+	var skipped := ext.get_country_worker_read_view(initial_generation)
+	var full_owners: PackedInt32Array = skipped.get(
+		"full_cell_owners", PackedInt32Array())
+	_expect("skipped generation explicitly requires full snapshot",
+		bool(skipped.get("available", false))
+		and bool(skipped.get("full_snapshot_required", false))
+		and full_owners.size() == 3
+		and full_owners[0] == 0 and full_owners[1] == 0 and full_owners[2] == 1)
+
+
+func _single_country_command(opcode: int, target_generation: int,
+		effective_day: int, cell: int, sequence: int, stable_id: String,
+		display_name: String, target_slot: int = -1,
+		target_handle_override: int = 0) -> Dictionary:
+	var target_handle := 0
+	if target_handle_override != 0:
+		target_handle = target_handle_override
+	elif target_slot >= 0:
+		target_handle = (target_generation << 32) | target_slot
+	return {
+		"opcodes": PackedInt32Array([opcode]),
+		"effective_days": PackedInt64Array([effective_day]),
+		"sequences": PackedInt64Array([sequence]),
+		"target_handles": PackedInt64Array([target_handle]),
+		"cell_indices": PackedInt32Array([cell]),
+		"aux_i32": PackedInt32Array([-1]),
+		"domain_i32": PackedInt32Array([-1]),
+		"position_i32": PackedInt32Array([-1]),
+		"weight0_bp": PackedInt32Array([0]),
+		"weight1_bp": PackedInt32Array([0]),
+		"weight2_bp": PackedInt32Array([0]),
+		"weight3_bp": PackedInt32Array([0]),
+		"value_i64": PackedInt64Array([0]),
+		"tax_kinds": PackedInt32Array([-1]),
+		"tax_item_indices": PackedInt32Array([-1]),
+		"tax_rate_basis_points": PackedInt32Array([0]),
+		"tax_assessment_modes": PackedInt32Array([0]),
+		"stable_ids": PackedStringArray([stable_id]),
+		"display_names": PackedStringArray([display_name]),
+	}
 
 func _expect(label: String, ok: bool) -> void:
 	checks += 1

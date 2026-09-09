@@ -44,11 +44,13 @@ const PAYLOAD_WEATHER_OBSERVED_V1: int = 9
 var _world_ext = null
 var _schema: Dictionary = {}
 var _last_report: Dictionary = {}
+var _runtime_snapshot_generation: int = 0
 
 
 func bind_world_ext(ext) -> void:
 	_world_ext = ext
 	_schema = {}
+	_runtime_snapshot_generation = 0
 	if is_available() and _world_ext.has_method("get_gameplay_event_schema"):
 		var res = _world_ext.get_gameplay_event_schema()
 		if res is Dictionary:
@@ -175,6 +177,23 @@ func report() -> Dictionary:
 		res["available"] = true
 		return res
 	return {"available": false, "reason": "bad_native_report"}
+
+
+func poll_runtime_snapshot() -> Dictionary:
+	if not is_available() or not _world_ext.has_method("poll_runtime_events_snapshot"):
+		return {"ok": false, "available": false, "fallback": true,
+			"reason": "runtime_events_snapshot_api_missing"}
+	var result = _world_ext.poll_runtime_events_snapshot(_runtime_snapshot_generation)
+	if not result is Dictionary:
+		return {"ok": false, "available": false, "fallback": true,
+			"reason": "bad_runtime_events_snapshot_result"}
+	if bool(result.get("available", false)):
+		_runtime_snapshot_generation = int(result.get("generation", _runtime_snapshot_generation))
+	return result
+
+
+func runtime_snapshot_generation() -> int:
+	return _runtime_snapshot_generation
 
 
 func poll_succession_cells(consumer_id: StringName = &"detail_renderer", max_events: int = 512, auto_ack: bool = true) -> PackedInt32Array:

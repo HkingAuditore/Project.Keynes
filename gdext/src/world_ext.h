@@ -231,6 +231,17 @@ public:
     godot::Dictionary set_runtime_climate_parity_forcing(bool enabled);
     godot::Dictionary capture_country_runtime_snapshot();
     godot::Dictionary capture_country_pod_catalog();
+    godot::Dictionary get_country_worker_protocol_status() const;
+    godot::Dictionary get_country_worker_read_view(
+            int64_t after_generation = 0) const;
+    godot::Dictionary poll_country_worker_intent();
+    godot::Dictionary submit_country_worker_result(
+        const godot::Dictionary &result);
+    // Main-thread transport service for the Country worker.  In SHADOW this
+    // only replays a typed, side-effect-free ACK; ACTIVE must not use this
+    // compatibility path until the peer transaction bridge is authoritative.
+    godot::Dictionary service_country_worker_peer_adapter(
+        int max_intents = 64, bool shadow_replay = true);
     godot::Dictionary configure_country_reference_trace(bool enabled,
                                                          int max_frames = 4096);
     godot::Dictionary poll_country_reference_trace(int64_t after_frame_id = 0,
@@ -238,6 +249,57 @@ public:
     godot::Dictionary capture_country_reference_checkpoint() const;
     godot::Dictionary restore_country_runtime_checkpoint(
         const godot::PackedByteArray &canonical_pkcn);
+    godot::Dictionary set_country_peer_async_mode(bool enabled);
+    godot::Dictionary get_country_peer_protocol_status() const;
+    godot::Dictionary poll_country_peer_intent();
+    godot::Dictionary submit_country_peer_result(
+        const godot::Dictionary &result);
+    godot::Dictionary service_country_peer_adapter(int max_intents = 64);
+    godot::Dictionary begin_country_economy_treasury_spend(
+        int64_t country_handle, const godot::PackedInt32Array &good_ids,
+        const godot::PackedInt64Array &quantities, int64_t cash,
+        int64_t origin_epoch = -1, int origin_stage = -1,
+        int64_t request_id = 0);
+    godot::Dictionary begin_country_economy_fiscal_reserve(
+        int64_t country_handle, int64_t requested, int64_t origin_epoch = -1,
+        int origin_stage = -1, int64_t request_id = 0);
+    godot::Dictionary begin_country_economy_fiscal_return(
+        int64_t country_handle, int64_t offered, int64_t origin_epoch = -1,
+        int origin_stage = -1, int64_t request_id = 0);
+    godot::Dictionary begin_country_economy_fiscal_collect(
+        int64_t country_handle, int64_t offered, int64_t origin_epoch = -1,
+        int origin_stage = -1, int64_t request_id = 0);
+    godot::Dictionary begin_country_economy_cash_to_cohort(
+        int64_t country_handle, int64_t requested, int64_t origin_epoch = -1,
+        int origin_stage = -1, int64_t request_id = 0);
+    godot::Dictionary begin_country_economy_cash_from_cohort(
+        int64_t country_handle, int64_t offered, int64_t origin_epoch = -1,
+        int origin_stage = -1, int64_t request_id = 0);
+    godot::Dictionary begin_country_economy_good_to_market(
+        int64_t country_handle, int good_id, int64_t requested,
+        int64_t origin_epoch = -1, int origin_stage = -1, int64_t request_id = 0);
+    godot::Dictionary begin_country_economy_good_from_market(
+        int64_t country_handle, int good_id, int64_t offered,
+        int64_t origin_epoch = -1, int origin_stage = -1, int64_t request_id = 0);
+    godot::Dictionary begin_country_economy_research_purchase(
+        int64_t country_handle, int64_t quantity, int64_t total_cost,
+        int64_t origin_epoch = -1, int origin_stage = -1, int64_t request_id = 0);
+    godot::Dictionary ack_country_economy_asset_peer_prepared(
+        int64_t transaction_id, int64_t session_epoch,
+        int64_t country_generation, int64_t peer_generation, bool accepted,
+        const godot::String &reason = {});
+    godot::Dictionary commit_country_economy_treasury_spend(
+        int64_t transaction_id);
+    godot::Dictionary commit_country_economy_fiscal_reserve(
+        int64_t transaction_id);
+    godot::Dictionary commit_country_economy_asset_transaction(
+        int64_t transaction_id);
+    godot::Dictionary ack_country_economy_asset_peer_applied(
+        int64_t transaction_id, int64_t session_epoch,
+        int64_t country_generation, int64_t peer_generation, bool accepted,
+        const godot::String &reason = {});
+    godot::Dictionary get_country_economy_asset_transaction(
+        int64_t transaction_id) const;
     godot::Dictionary submit_runtime_command(const godot::Dictionary &command);
     godot::Dictionary poll_runtime_receipts(int max_items = 128);
     godot::Dictionary set_runtime_qos_threaded(bool interactive);
@@ -277,6 +339,10 @@ public:
     bool runtime_country_core_protocol_self_test();
     bool runtime_country_peer_protocol_self_test();
     bool runtime_protocol_guard_self_test() const;
+    bool runtime_trigger_pod_self_test() const;
+    bool runtime_effect_pod_self_test() const;
+    bool runtime_ideology_pod_self_test() const;
+    bool runtime_events_authority_self_test() const;
     bool is_native_daily_visual_commit_pending() const;
     void complete_native_daily_visual_commit();
     // Compatibility alias for callers predating the full visual-snapshot barrier.
@@ -369,6 +435,8 @@ public:
     godot::Dictionary restore_modifier_domain(int domain,
                                               const godot::PackedByteArray &bytes);
     godot::Dictionary clear_modifier_domain(int domain);
+    godot::Dictionary get_runtime_modifier_snapshot(int64_t after_generation);
+    godot::Dictionary runtime_modifier_pod_self_test() const;
 
     // Generic trigger runtime. It only ingests committed facts/snapshots and
     // emits typed effects; domain stores apply those effects at their own
@@ -392,6 +460,7 @@ public:
     godot::PackedByteArray capture_trigger_state() const;
     godot::Dictionary restore_trigger_state(const godot::PackedByteArray &bytes);
     godot::Dictionary clear_trigger_state();
+    NativeSimulationHost *trigger_pod_host() const { return _runtime_host.get(); }
 
     // Generic Effect Runtime. It owns immutable effect programs, active
     // instances, plans and cross-domain ACK state; domain runtimes own all
@@ -475,6 +544,10 @@ public:
     godot::PackedByteArray capture_ideology_state() const;
     godot::Dictionary restore_ideology_state(const godot::PackedByteArray &bytes);
     godot::Dictionary clear_ideology_state();
+    godot::Dictionary publish_ideology_worker_inputs();
+    godot::Dictionary poll_ideology_worker_intent();
+    godot::Dictionary submit_ideology_worker_ack(
+        const godot::Dictionary &ack);
 
     // Native-only hot-path helpers. They resolve no strings in the consumer loop.
     float modifier_climate_radiative_target(int cell, float base_value) const;
@@ -630,6 +703,7 @@ public:
     godot::Dictionary restore_gameplay_event_journal(godot::Dictionary snapshot);
     godot::Dictionary clear_gameplay_events(godot::Dictionary opts);
     godot::Dictionary get_gameplay_event_bus_report() const;
+    godot::Dictionary poll_runtime_events_snapshot(int64_t after_generation = 0);
 
     godot::Dictionary run_native_world_generate_base_pass(int seed,
                                                           const godot::Dictionary &cfg,
@@ -2812,6 +2886,7 @@ private:
     // this state stores only scheduler cursors, counters and dirty generations.
     bool                                      _runtime_graph_configured = false;
     bool                                      _runtime_graph_enabled = false;
+    bool                                      _runtime_graph_country_peer_adapter_enabled = false;
     int64_t                                   _runtime_graph_day = -1;
     uint64_t                                  _runtime_graph_generation = 0;
     uint32_t                                  _runtime_graph_dirty_mask = 0;
@@ -2823,6 +2898,13 @@ private:
     uint64_t                                  _runtime_graph_budget_yields = 0;
     uint64_t                                  _runtime_graph_economy_slices = 0;
     uint64_t                                  _runtime_graph_economy_commits = 0;
+    uint64_t                                  _runtime_graph_country_peer_service_calls = 0;
+    uint64_t                                  _runtime_graph_country_peer_intents = 0;
+    uint64_t                                  _runtime_graph_country_peer_completed = 0;
+    uint64_t                                  _runtime_graph_country_peer_pending = 0;
+    uint64_t                                  _runtime_graph_country_peer_rejected = 0;
+    uint64_t                                  _runtime_graph_country_peer_faults = 0;
+    std::string                               _runtime_graph_country_peer_fault_reason;
     uint64_t                                  _runtime_graph_trigger_blocked_pulses = 0;
     std::string                               _runtime_graph_trigger_blocked_reason;
     uint32_t                                  _runtime_graph_last_elapsed_us = 0;
@@ -3040,6 +3122,9 @@ private:
     int                                     _gameplay_max_events = 8192;
     double                                  _gameplay_last_native_ms = 0.0;
     godot::String                           _gameplay_last_fallback_reason;
+    uint64_t                                _events_bridge_queued = 0;
+    uint64_t                                _events_bridge_failed = 0;
+    godot::String                           _events_bridge_last_reason;
     std::vector<EffectGameplayCommand>      _effect_gameplay_commands;
     std::unordered_map<int64_t, EffectGameplayCommandResult>
                                                 _effect_gameplay_results;

@@ -1,0 +1,39 @@
+{
+  "schema": "TileDataRecorderSidecar",
+  "schema_version": 1,
+  "session": {
+    "build": "Debug",
+    "seed": 20260718,
+    "map_width": 60,
+    "map_height": 40,
+    "num_continents": 2,
+    "continent_size": 0.5,
+    "foreign_count": 3,
+    "speed": 50.0,
+    "graphics_profile": "high",
+    "window_width": 1600,
+    "window_height": 960,
+    "vsync": false,
+    "max_fps": 0,
+    "day_night": true,
+    "overlay": false,
+    "warmup_seconds": 5.0,
+    "record_seconds": 30.0,
+    "tick_stride": 1,
+    "cell_stride": 1,
+    "max_rows": 50000000,
+    "compact_fields": false
+  },
+  "authority_mode": "OFF",
+  "worker_mode": "SHADOW",
+  "soa_fields": [
+    "temp_arr",
+    "moisture_arr"
+  ],
+  "tick_coverage": {
+    "tick_stride": 1
+  },
+  "cell_coverage": {
+    "cell_stride": 1
+  }
+}

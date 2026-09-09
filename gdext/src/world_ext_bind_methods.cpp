@@ -113,6 +113,19 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::capture_country_runtime_snapshot);
     ClassDB::bind_method(D_METHOD("capture_country_pod_catalog"),
                          &DCWorldExt::capture_country_pod_catalog);
+    ClassDB::bind_method(D_METHOD("get_country_worker_protocol_status"),
+                         &DCWorldExt::get_country_worker_protocol_status);
+    ClassDB::bind_method(D_METHOD("get_country_worker_read_view",
+                                  "after_generation"),
+                         &DCWorldExt::get_country_worker_read_view);
+    ClassDB::bind_method(D_METHOD("poll_country_worker_intent"),
+                         &DCWorldExt::poll_country_worker_intent);
+    ClassDB::bind_method(D_METHOD("submit_country_worker_result", "result"),
+                         &DCWorldExt::submit_country_worker_result);
+    ClassDB::bind_method(D_METHOD("service_country_worker_peer_adapter",
+                                  "max_intents", "shadow_replay"),
+                         &DCWorldExt::service_country_worker_peer_adapter,
+                         DEFVAL(64), DEFVAL(true));
     ClassDB::bind_method(D_METHOD("configure_country_reference_trace", "enabled", "max_frames"),
                          &DCWorldExt::configure_country_reference_trace,
                          DEFVAL(4096));
@@ -123,6 +136,87 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::capture_country_reference_checkpoint);
     ClassDB::bind_method(D_METHOD("restore_country_runtime_checkpoint", "canonical_pkcn"),
                          &DCWorldExt::restore_country_runtime_checkpoint);
+    ClassDB::bind_method(D_METHOD("set_country_peer_async_mode", "enabled"),
+                         &DCWorldExt::set_country_peer_async_mode);
+    ClassDB::bind_method(D_METHOD("get_country_peer_protocol_status"),
+                         &DCWorldExt::get_country_peer_protocol_status);
+    ClassDB::bind_method(D_METHOD("poll_country_peer_intent"),
+                         &DCWorldExt::poll_country_peer_intent);
+    ClassDB::bind_method(D_METHOD("submit_country_peer_result", "result"),
+                         &DCWorldExt::submit_country_peer_result);
+    ClassDB::bind_method(D_METHOD("service_country_peer_adapter", "max_intents"),
+                         &DCWorldExt::service_country_peer_adapter,
+                         DEFVAL(64));
+    ClassDB::bind_method(D_METHOD("begin_country_economy_treasury_spend",
+                                  "country_handle", "good_ids", "quantities",
+                                  "cash", "origin_epoch", "origin_stage",
+                                  "request_id"),
+                         &DCWorldExt::begin_country_economy_treasury_spend,
+                         DEFVAL(-1), DEFVAL(-1), DEFVAL(0));
+    ClassDB::bind_method(D_METHOD("begin_country_economy_fiscal_reserve",
+                                  "country_handle", "requested", "origin_epoch",
+                                  "origin_stage", "request_id"),
+                         &DCWorldExt::begin_country_economy_fiscal_reserve,
+                         DEFVAL(-1), DEFVAL(-1), DEFVAL(0));
+    ClassDB::bind_method(D_METHOD("begin_country_economy_fiscal_return",
+                                  "country_handle", "offered", "origin_epoch",
+                                  "origin_stage", "request_id"),
+                         &DCWorldExt::begin_country_economy_fiscal_return,
+                         DEFVAL(-1), DEFVAL(-1), DEFVAL(0));
+    ClassDB::bind_method(D_METHOD("begin_country_economy_fiscal_collect",
+                                  "country_handle", "offered", "origin_epoch",
+                                  "origin_stage", "request_id"),
+                         &DCWorldExt::begin_country_economy_fiscal_collect,
+                         DEFVAL(-1), DEFVAL(-1), DEFVAL(0));
+    ClassDB::bind_method(D_METHOD("begin_country_economy_cash_to_cohort",
+                                  "country_handle", "requested", "origin_epoch",
+                                  "origin_stage", "request_id"),
+                         &DCWorldExt::begin_country_economy_cash_to_cohort,
+                         DEFVAL(-1), DEFVAL(-1), DEFVAL(0));
+    ClassDB::bind_method(D_METHOD("begin_country_economy_cash_from_cohort",
+                                  "country_handle", "offered", "origin_epoch",
+                                  "origin_stage", "request_id"),
+                         &DCWorldExt::begin_country_economy_cash_from_cohort,
+                         DEFVAL(-1), DEFVAL(-1), DEFVAL(0));
+    ClassDB::bind_method(D_METHOD("begin_country_economy_good_to_market",
+                                  "country_handle", "good_id", "requested",
+                                  "origin_epoch", "origin_stage", "request_id"),
+                         &DCWorldExt::begin_country_economy_good_to_market,
+                         DEFVAL(-1), DEFVAL(-1), DEFVAL(0));
+    ClassDB::bind_method(D_METHOD("begin_country_economy_good_from_market",
+                                  "country_handle", "good_id", "offered",
+                                  "origin_epoch", "origin_stage", "request_id"),
+                         &DCWorldExt::begin_country_economy_good_from_market,
+                         DEFVAL(-1), DEFVAL(-1), DEFVAL(0));
+    ClassDB::bind_method(D_METHOD("begin_country_economy_research_purchase",
+                                  "country_handle", "quantity", "total_cost",
+                                  "origin_epoch", "origin_stage", "request_id"),
+                         &DCWorldExt::begin_country_economy_research_purchase,
+                         DEFVAL(-1), DEFVAL(-1), DEFVAL(0));
+    ClassDB::bind_method(D_METHOD("ack_country_economy_asset_peer_prepared",
+                                  "transaction_id", "session_epoch",
+                                  "country_generation", "peer_generation",
+                                  "accepted", "reason"),
+                         &DCWorldExt::ack_country_economy_asset_peer_prepared,
+                         DEFVAL(String()));
+    ClassDB::bind_method(D_METHOD("commit_country_economy_treasury_spend",
+                                  "transaction_id"),
+                         &DCWorldExt::commit_country_economy_treasury_spend);
+    ClassDB::bind_method(D_METHOD("commit_country_economy_fiscal_reserve",
+                                  "transaction_id"),
+                         &DCWorldExt::commit_country_economy_fiscal_reserve);
+    ClassDB::bind_method(D_METHOD("commit_country_economy_asset_transaction",
+                                  "transaction_id"),
+                         &DCWorldExt::commit_country_economy_asset_transaction);
+    ClassDB::bind_method(D_METHOD("ack_country_economy_asset_peer_applied",
+                                  "transaction_id", "session_epoch",
+                                  "country_generation", "peer_generation",
+                                  "accepted", "reason"),
+                         &DCWorldExt::ack_country_economy_asset_peer_applied,
+                         DEFVAL(String()));
+    ClassDB::bind_method(D_METHOD("get_country_economy_asset_transaction",
+                                  "transaction_id"),
+                         &DCWorldExt::get_country_economy_asset_transaction);
     ClassDB::bind_method(D_METHOD("submit_runtime_command", "command"),
                          &DCWorldExt::submit_runtime_command);
     ClassDB::bind_method(D_METHOD("poll_runtime_receipts", "max_items"),
@@ -166,6 +260,14 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::runtime_country_peer_protocol_self_test);
     ClassDB::bind_method(D_METHOD("runtime_protocol_guard_self_test"),
                          &DCWorldExt::runtime_protocol_guard_self_test);
+    ClassDB::bind_method(D_METHOD("runtime_trigger_pod_self_test"),
+                         &DCWorldExt::runtime_trigger_pod_self_test);
+    ClassDB::bind_method(D_METHOD("runtime_effect_pod_self_test"),
+                         &DCWorldExt::runtime_effect_pod_self_test);
+    ClassDB::bind_method(D_METHOD("runtime_ideology_pod_self_test"),
+                         &DCWorldExt::runtime_ideology_pod_self_test);
+    ClassDB::bind_method(D_METHOD("runtime_events_authority_self_test"),
+                         &DCWorldExt::runtime_events_authority_self_test);
     ClassDB::bind_method(D_METHOD("is_native_daily_visual_commit_pending"),
                          &DCWorldExt::is_native_daily_visual_commit_pending);
     ClassDB::bind_method(D_METHOD("complete_native_daily_visual_commit"),
@@ -283,6 +385,11 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::restore_modifier_domain);
     ClassDB::bind_method(D_METHOD("clear_modifier_domain", "domain"),
                          &DCWorldExt::clear_modifier_domain);
+    ClassDB::bind_method(D_METHOD("get_runtime_modifier_snapshot", "after_generation"),
+                         &DCWorldExt::get_runtime_modifier_snapshot,
+                         DEFVAL(0));
+    ClassDB::bind_method(D_METHOD("runtime_modifier_pod_self_test"),
+                         &DCWorldExt::runtime_modifier_pod_self_test);
     ClassDB::bind_method(D_METHOD("configure_triggers", "catalog"),
                          &DCWorldExt::configure_triggers);
     ClassDB::bind_method(D_METHOD("submit_trigger_events", "batch"),
@@ -405,6 +512,12 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::restore_ideology_state);
     ClassDB::bind_method(D_METHOD("clear_ideology_state"),
                          &DCWorldExt::clear_ideology_state);
+    ClassDB::bind_method(D_METHOD("publish_ideology_worker_inputs"),
+                         &DCWorldExt::publish_ideology_worker_inputs);
+    ClassDB::bind_method(D_METHOD("poll_ideology_worker_intent"),
+                         &DCWorldExt::poll_ideology_worker_intent);
+    ClassDB::bind_method(D_METHOD("submit_ideology_worker_ack", "ack"),
+                         &DCWorldExt::submit_ideology_worker_ack);
     ClassDB::bind_method(D_METHOD("ensure_modifier_building_handle", "cell", "type_id", "owner_signature_id"),
                          &DCWorldExt::ensure_modifier_building_handle);
     // Independent native PopulationCohort + local-market authority.
@@ -614,6 +727,9 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::poll_gameplay_events);
     ClassDB::bind_method(D_METHOD("ack_gameplay_events", "consumer_id", "up_to_event_id"),
                          &DCWorldExt::ack_gameplay_events);
+    ClassDB::bind_method(D_METHOD("poll_runtime_events_snapshot", "after_generation"),
+                         &DCWorldExt::poll_runtime_events_snapshot,
+                         DEFVAL(0));
     ClassDB::bind_method(D_METHOD("replay_gameplay_events", "opts"),
                          &DCWorldExt::replay_gameplay_events);
     ClassDB::bind_method(D_METHOD("snapshot_gameplay_event_journal", "opts"),

@@ -7,6 +7,7 @@
 #include <cstring>
 #include <cmath>
 #include <limits>
+#include <type_traits>
 
 #if defined(_WIN32)
 #ifndef NOMINMAX
@@ -16,6 +17,68 @@
 #endif
 
 namespace pk {
+
+namespace {
+template <typename T>
+bool read_modifier_payload(const uint8_t *data, size_t size, size_t &cursor, T &value) {
+    if (data == nullptr || cursor > size || size - cursor < sizeof(T)) return false;
+    using U = std::make_unsigned_t<T>;
+    U bits = 0;
+    for (size_t i = 0; i < sizeof(T); ++i)
+        bits |= static_cast<U>(data[cursor + i]) << (i * 8u);
+    cursor += sizeof(T);
+    value = static_cast<T>(bits);
+    return true;
+}
+
+bool decode_modifier_packet(const RuntimeCommandPacket &packet,
+                            RuntimeModifierPodCommand &command) {
+    const auto &envelope = packet.envelope;
+    if (envelope.domain != static_cast<uint16_t>(RuntimeDomainId::MODIFIER) ||
+        envelope.payload_offset > RUNTIME_MAX_COMMAND_PAYLOAD ||
+        envelope.payload_size > RUNTIME_MAX_COMMAND_PAYLOAD ||
+        envelope.payload_size > RUNTIME_MAX_COMMAND_PAYLOAD - envelope.payload_offset ||
+        envelope.payload_size != RUNTIME_MODIFIER_POD_WIRE_SIZE) {
+        return false;
+    }
+    size_t cursor = envelope.payload_offset;
+    const size_t end = cursor + envelope.payload_size;
+    uint32_t abi = 0;
+    if (!read_modifier_payload(packet.payload.data(), end, cursor, abi) ||
+        abi != RUNTIME_MODIFIER_POD_WIRE_ABI_VERSION) return false;
+    command = RuntimeModifierPodCommand{};
+    command.request_id = envelope.request_id;
+    command.producer_id = envelope.producer_id;
+    command.sequence = envelope.sequence;
+    command.requested_day = envelope.requested_day;
+    command.effective_day = envelope.effective_day;
+    command.opcode = envelope.opcode;
+    uint16_t scope = 0;
+    if (!read_modifier_payload(packet.payload.data(), end, cursor, command.domain) ||
+        !read_modifier_payload(packet.payload.data(), end, cursor, scope) ||
+        !read_modifier_payload(packet.payload.data(), end, cursor, command.definition_id) ||
+        !read_modifier_payload(packet.payload.data(), end, cursor, command.entity_handle) ||
+        !read_modifier_payload(packet.payload.data(), end, cursor, command.group_handle) ||
+        !read_modifier_payload(packet.payload.data(), end, cursor, command.source_type) ||
+        !read_modifier_payload(packet.payload.data(), end, cursor, command.source_id) ||
+        !read_modifier_payload(packet.payload.data(), end, cursor, command.duration_days) ||
+        !read_modifier_payload(packet.payload.data(), end, cursor, command.stacks) ||
+        !read_modifier_payload(packet.payload.data(), end, cursor, command.magnitude_q16) ||
+        !read_modifier_payload(packet.payload.data(), end, cursor, command.modifier_handle) ||
+        !read_modifier_payload(packet.payload.data(), end, cursor, command.target_generation) ||
+        !read_modifier_payload(packet.payload.data(), end, cursor, command.input_generation) ||
+        cursor != end) return false;
+    command.scope = static_cast<int32_t>(scope);
+    return true;
+}
+
+bool modifier_packet_shape_valid(const RuntimeModifierPodCommand &command) {
+    return command.opcode >= static_cast<uint16_t>(RuntimeModifierPodOpcode::APPLY) &&
+        command.opcode <= static_cast<uint16_t>(RuntimeModifierPodOpcode::SET_MAGNITUDE) &&
+        command.domain < 4u && command.scope >= 0 && command.scope < 3 &&
+        command.effective_day >= 0;
+}
+}
 
 NativeSimulationHost::NativeSimulationHost() {
     _pod_visual_intents.reserve(RUNTIME_DOMAIN_INTENT_CAPACITY);
@@ -32,6 +95,37 @@ NativeSimulationHost::NativeSimulationHost() {
     for (auto &character : _fault_code) character.store('\0', std::memory_order_relaxed);
     for (auto &character : _domain_authority_fallback_reason) {
         character.store('\0', std::memory_order_relaxed);
+    }
+    for (auto &character : _modifier_pod_fallback_reason) {
+        character.store('\0', std::memory_order_relaxed);
+    }
+    _ideology_pod_ready.store(false, std::memory_order_release);
+    _ideology_pod_plan_ms.store(0.0, std::memory_order_release);
+    _ideology_pod_replay_ms.store(0.0, std::memory_order_release);
+    _ideology_pod_state_hash.store(0, std::memory_order_release);
+    _ideology_pod_snapshot_generation.store(0, std::memory_order_release);
+    _ideology_pod_pending_transition_count.store(0, std::memory_order_release);
+    _ideology_pod_intent_count.store(0, std::memory_order_release);
+    for (auto &character : _ideology_pod_fallback_reason)
+        character.store('\0', std::memory_order_relaxed);
+    for (auto &character : _events_pod_fallback_reason) {
+        character.store('\0', std::memory_order_relaxed);
+    }
+    for (auto &character : _ideology_pod_fallback_reason) {
+        character.store('\0', std::memory_order_relaxed);
+    }
+    _country_pod_ready.store(false, std::memory_order_relaxed);
+    for (auto &character : _country_pod_fallback_reason) {
+        character.store('\0', std::memory_order_relaxed);
+    }
+    // Keep the PKSR contract uniform even before the main-thread Effect
+    // catalog is loaded. An empty catalog is a valid cold-start POD authority;
+    // configure_effects() replaces it before any Effect instance can run.
+    std::string effect_config_error;
+    if (_effect_pod_authority.configure(_effect_pod_catalog,
+                                        effect_config_error)) {
+        _effect_pod_catalog.catalog_hash = _effect_pod_authority.catalog_hash();
+        _effect_pod_configured = true;
     }
 }
 
@@ -156,6 +250,23 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     } else {
         _worker_initial_pending_commands.clear();
     }
+    {
+        std::lock_guard<std::mutex> lock(_control_mutex);
+        if (mode == RuntimeSimulationMode::SHADOW) {
+            if (_worker_initial_pending_commands.size() +
+                    _prestart_modifier_commands.size() >
+                RUNTIME_COMMAND_QUEUE_CAPACITY) {
+                set_fault("modifier_prestart_queue_capacity_exceeded");
+                _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
+                return false;
+            }
+            _worker_initial_pending_commands.insert(
+                _worker_initial_pending_commands.end(),
+                _prestart_modifier_commands.begin(),
+                _prestart_modifier_commands.end());
+        }
+        _prestart_modifier_commands.clear();
+    }
     // The caller's flag is only an eligibility request.  Coverage is proven
     // by the worker after a complete RuntimeDayPlan barrier; accepting an
     // external `true` here must never make the facade report ACTIVE.
@@ -209,6 +320,10 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     for (auto &character : _domain_stage_fallback_reason) {
         character.store('\0', std::memory_order_relaxed);
     }
+    _country_pod_ready.store(false, std::memory_order_release);
+    for (auto &character : _country_pod_fallback_reason) {
+        character.store('\0', std::memory_order_relaxed);
+    }
     _climate_pod_ready.store(false, std::memory_order_release);
     _climate_pod_plan_ms.store(0.0, std::memory_order_release);
     _climate_pod_replay_ms.store(0.0, std::memory_order_release);
@@ -236,6 +351,16 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     for (auto &character : _climate_parity_reference_bits) character.store('\0', std::memory_order_relaxed);
     for (auto &character : _climate_parity_worker_bits) character.store('\0', std::memory_order_relaxed);
     for (auto &character : _climate_pod_fallback_reason) {
+        character.store('\0', std::memory_order_relaxed);
+    }
+    _modifier_pod_ready.store(false, std::memory_order_release);
+    _modifier_pod_plan_ms.store(0.0, std::memory_order_release);
+    _modifier_pod_replay_ms.store(0.0, std::memory_order_release);
+    _modifier_pod_work_units.store(0, std::memory_order_release);
+    _modifier_pod_state_hash.store(0, std::memory_order_release);
+    _modifier_pod_snapshot_generation.store(0, std::memory_order_release);
+    _modifier_pod_ack_count.store(0, std::memory_order_release);
+    for (auto &character : _modifier_pod_fallback_reason) {
         character.store('\0', std::memory_order_relaxed);
     }
     _time_debt_days.store(std::clamp(start_time_debt, 0.0, 100.0),
@@ -310,8 +435,125 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     _domain_authority_runner.reset(
         bootstrap_environment != nullptr ? bootstrap_environment->cell_count : 0u,
         bootstrap_country != nullptr ? bootstrap_country->country_count : 0u);
+    _modifier_snapshots.reset();
+    _events_authority.reset();
+    _events_snapshots.reset();
+    _events_last_processed_day = -1;
+    _events_pod_ready.store(false, std::memory_order_release);
+    _events_pod_plan_ms.store(0.0, std::memory_order_release);
+    _events_pod_replay_ms.store(0.0, std::memory_order_release);
+    _events_pod_state_hash.store(0, std::memory_order_release);
+    _events_pod_snapshot_generation.store(0, std::memory_order_release);
+    _events_pod_event_count.store(0, std::memory_order_release);
+    _events_pod_ack_count.store(0, std::memory_order_release);
+    _events_pod_drop_count.store(0, std::memory_order_release);
+    for (auto &character : _events_pod_fallback_reason) {
+        character.store('\0', std::memory_order_relaxed);
+    }
+    RuntimeModifierPodAuthority modifier_candidate;
+    bool modifier_candidate_ready = false;
+    if (_modifier_pod_configured) {
+        std::string modifier_config_error;
+        if (!modifier_candidate.configure(_modifier_pod_catalog,
+                                          modifier_config_error)) {
+            set_fault(modifier_config_error.empty() ? "modifier_pod_configure_failed" :
+                      modifier_config_error.c_str());
+            _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
+            return false;
+        }
+        modifier_candidate_ready = true;
+    }
+    RuntimeEffectPodAuthority effect_candidate;
+    bool effect_candidate_ready = false;
+    if (_effect_pod_configured) {
+        std::string effect_config_error;
+        if (!effect_candidate.configure(_effect_pod_catalog, effect_config_error)) {
+            set_fault(effect_config_error.empty() ? "effect_pod_configure_failed" :
+                      effect_config_error.c_str());
+            _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
+            return false;
+        }
+        effect_candidate_ready = true;
+    }
+    RuntimeIdeologyPodAuthority ideology_candidate;
+    bool ideology_candidate_ready = false;
+    if (_ideology_pod_configured) {
+        std::string ideology_config_error;
+        if (!ideology_candidate.configure(_ideology_pod_catalog,
+                                          ideology_config_error)) {
+            set_fault(ideology_config_error.empty()
+                ? "ideology_pod_configure_failed"
+                : ideology_config_error.c_str());
+            _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
+            return false;
+        }
+        ideology_candidate_ready = true;
+    }
+    if (ideology_candidate_ready) {
+        const auto ideology_country = std::atomic_load_explicit(
+            &_country_snapshot, std::memory_order_acquire);
+        const auto ideology_opinion = std::atomic_load_explicit(
+            &_ideology_opinion_snapshot, std::memory_order_acquire);
+        if (ideology_country != nullptr && ideology_opinion != nullptr) {
+            std::string ideology_bootstrap_error;
+            if (!ideology_candidate.bootstrap(*ideology_country,
+                                               *ideology_opinion,
+                                               ideology_bootstrap_error)) {
+                set_fault(ideology_bootstrap_error.empty()
+                    ? "ideology_pod_bootstrap_failed"
+                    : ideology_bootstrap_error.c_str());
+                _state.store(RuntimeWorkerState::STOPPED,
+                             std::memory_order_release);
+                return false;
+            }
+        }
+    }
     _climate_authority.reset(
         bootstrap_environment != nullptr ? bootstrap_environment->cell_count : 0u);
+    if (restore_pending && !_pending_restore_bundle.modifier_bytes.empty()) {
+        std::string modifier_restore_error;
+        if (!modifier_candidate_ready ||
+            !modifier_candidate.restore(
+                _pending_restore_bundle.modifier_bytes.data(),
+                _pending_restore_bundle.modifier_bytes.size(),
+                modifier_restore_error)) {
+            set_fault(modifier_restore_error.empty() ? "modifier_pod_restore_failed" :
+                      modifier_restore_error.c_str());
+            _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
+            return false;
+        }
+    }
+    if (restore_pending) {
+        if (!_pending_restore_bundle.effect_bytes.empty() && effect_candidate_ready) {
+            std::string effect_restore_error;
+            if (!effect_candidate.restore(
+                    _pending_restore_bundle.effect_bytes.data(),
+                    _pending_restore_bundle.effect_bytes.size(),
+                    effect_restore_error)) {
+                set_fault(effect_restore_error.empty() ? "effect_pod_restore_failed" :
+                          effect_restore_error.c_str());
+                _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
+                return false;
+            }
+        } else {
+            set_fault("effect_pod_section_missing");
+            _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
+            return false;
+        }
+    }
+    if (restore_pending && !_pending_restore_bundle.ideology_bytes.empty()) {
+        std::string ideology_restore_error;
+        if (!ideology_candidate_ready || !ideology_candidate.restore(
+                _pending_restore_bundle.ideology_bytes.data(),
+                _pending_restore_bundle.ideology_bytes.size(),
+                ideology_restore_error)) {
+            set_fault(ideology_restore_error.empty()
+                ? "ideology_pod_restore_failed"
+                : ideology_restore_error.c_str());
+            _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
+            return false;
+        }
+    }
     if (restore_pending && !_pending_restore_bundle.domain_pod_bytes.empty()) {
         std::string pod_restore_error;
         if (!_pod_pipeline.restore(_pending_restore_bundle.domain_pod_bytes.data(),
@@ -321,6 +563,44 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
             _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
             return false;
         }
+        if (_pod_pipeline.restored_legacy_modifier() &&
+            _pending_restore_bundle.modifier_bytes.empty()) {
+            if (!modifier_candidate_ready) {
+                set_fault("modifier_pod_catalog_required_for_pdp3");
+                _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
+                return false;
+            }
+            const RuntimeModifierPodState &legacy =
+                _pod_pipeline.legacy_modifier_state();
+            std::vector<std::pair<uint16_t, RuntimeModifierPodEntry>> entries;
+            entries.reserve(legacy.entries.size());
+            for (const RuntimeModifierPodEntry &entry : legacy.entries) {
+                if (entry.definition_id < 0 ||
+                    entry.definition_id >= static_cast<int32_t>(
+                        _modifier_pod_catalog.definitions.size())) {
+                    set_fault("modifier_pdp3_definition_invalid");
+                    _state.store(RuntimeWorkerState::STOPPED,
+                                 std::memory_order_release);
+                    return false;
+                }
+                const uint16_t domain = static_cast<uint16_t>(
+                    _modifier_pod_catalog.definitions[
+                        static_cast<size_t>(entry.definition_id)].domain);
+                entries.emplace_back(domain, entry);
+            }
+            std::array<uint64_t, 4> domain_versions{};
+            domain_versions.fill(legacy.revision);
+            std::string migration_error;
+            if (!modifier_candidate.restore_legacy_entries(
+                    entries, legacy.generation, 0, start_day,
+                    domain_versions, migration_error)) {
+                set_fault(migration_error.empty()
+                    ? "modifier_pdp3_migration_failed" : migration_error.c_str());
+                _state.store(RuntimeWorkerState::STOPPED,
+                             std::memory_order_release);
+                return false;
+            }
+        }
     }
     if (restore_pending && !_pending_restore_bundle.climate_bytes.empty()) {
         std::string climate_restore_error;
@@ -329,6 +609,28 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
                                         climate_restore_error)) {
             set_fault(climate_restore_error.empty() ? "climate_restore_failed" :
                       climate_restore_error.c_str());
+            _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
+            return false;
+        }
+    }
+    if (restore_pending && !_pending_restore_bundle.trigger_bytes.empty()) {
+        std::string trigger_restore_error;
+        if (!restore_trigger_pod_save(_pending_restore_bundle.trigger_bytes.data(),
+                                     _pending_restore_bundle.trigger_bytes.size(),
+                                     trigger_restore_error)) {
+            set_fault(trigger_restore_error.empty() ? "trigger_restore_failed" :
+                      trigger_restore_error.c_str());
+            _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
+            return false;
+        }
+    }
+    if (restore_pending && !_pending_restore_bundle.events_bytes.empty()) {
+        std::string events_restore_error;
+        if (!_events_authority.restore(_pending_restore_bundle.events_bytes.data(),
+                                       _pending_restore_bundle.events_bytes.size(),
+                                       events_restore_error)) {
+            set_fault(events_restore_error.empty() ? "events_restore_failed" :
+                      events_restore_error.c_str());
             _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
             return false;
         }
@@ -351,6 +653,86 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         std::atomic_store_explicit(&_country_checkpoint,
             std::shared_ptr<const CountryCoreCheckpoint>(std::move(copy)),
             std::memory_order_release);
+    }
+    // Country is initialized from the immutable main-thread capture exactly
+    // once per worker lifetime. The worker never calls NativeCountryRuntime;
+    // it owns this POD authority and its continuation state after bootstrap.
+    RuntimeCountryPodAuthority country_candidate;
+    bool country_candidate_ready = false;
+    {
+        std::lock_guard<std::mutex> lock(_country_transport_mutex);
+        const auto country_snapshot = std::atomic_load_explicit(
+            &_country_snapshot, std::memory_order_acquire);
+        if (country_snapshot != nullptr && _country_pod_catalog.catalog_hash != 0) {
+            std::string country_config_error;
+            country_candidate_ready = country_candidate.bootstrap(
+                *country_snapshot, _country_pod_catalog, country_config_error);
+            if (!country_candidate_ready && mode == RuntimeSimulationMode::ACTIVE &&
+                (wanted & runtime_domain_mask(RuntimeDomainId::COUNTRY)) != 0u) {
+                set_fault(country_config_error.empty()
+                    ? "country_pod_bootstrap_failed" : country_config_error.c_str());
+                _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
+                return false;
+            }
+        }
+        _country_worker_session_epoch += 1u;
+        if (_country_worker_session_epoch == 0) _country_worker_session_epoch = 1u;
+        _country_worker_intent_queue.clear();
+        _country_worker_intents.clear();
+        _country_worker_results.clear();
+        _country_worker_terminal_results.clear();
+        _country_pod_plan = RuntimeCountryPodPlan{};
+        _country_pod_plan_active.store(false, std::memory_order_release);
+        _country_worker_protocol = CountryPeerProtocolStatus{};
+        _country_worker_protocol.async_mode = 1;
+        _country_worker_protocol.retry_day = -1;
+    }
+    if (country_candidate_ready) {
+        _country_pod_authority = std::move(country_candidate);
+        std::lock_guard<std::mutex> lock(_country_transport_mutex);
+    }
+    _country_pod_configured.store(country_candidate_ready,
+                                  std::memory_order_release);
+    _country_pod_ready.store(false, std::memory_order_release);
+    if (modifier_candidate_ready) {
+        _modifier_pod_authority = std::move(modifier_candidate);
+        uint32_t initial_slot = 0;
+        if (!_modifier_snapshots.try_begin_write(initial_slot)) {
+            set_fault("modifier_initial_snapshot_ring_full");
+            _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
+            return false;
+        }
+        _modifier_snapshots.write_buffer(initial_slot) =
+            _modifier_pod_authority.snapshot();
+        _modifier_snapshots.publish(initial_slot);
+        _modifier_pod_snapshot_generation.store(
+            _modifier_pod_authority.snapshot().generation,
+            std::memory_order_release);
+        _modifier_pod_state_hash.store(
+            _modifier_pod_authority.snapshot().state_hash,
+            std::memory_order_release);
+        _modifier_pod_ready.store(true, std::memory_order_release);
+    } else {
+        _modifier_pod_ready.store(false, std::memory_order_release);
+    }
+    if (effect_candidate_ready) {
+        _effect_pod_authority = std::move(effect_candidate);
+    }
+    if (ideology_candidate_ready) {
+        _ideology_pod_authority = std::move(ideology_candidate);
+        const RuntimeIdeologyPodSnapshot &initial =
+            _ideology_pod_authority.snapshot();
+        if (!initial.countries.empty()) {
+            auto copy = std::make_shared<RuntimeIdeologyPodSnapshot>(initial);
+            std::atomic_store_explicit(&_ideology_snapshot,
+                std::shared_ptr<const RuntimeIdeologyPodSnapshot>(
+                    std::move(copy)), std::memory_order_release);
+            _ideology_pod_state_hash.store(initial.state_hash,
+                                            std::memory_order_release);
+            _ideology_pod_snapshot_generation.store(initial.generation,
+                                                     std::memory_order_release);
+            _ideology_pod_ready.store(true, std::memory_order_release);
+        }
     }
     _pod_visual_intents.clear();
     _pod_receipts.clear();
@@ -686,9 +1068,223 @@ bool NativeSimulationHost::publish_country_snapshot(
     if (!RuntimeCountryPodAdapter::validate_snapshot(snapshot, error)) return false;
     auto copy = std::make_shared<RuntimeCountryPodSnapshot>(snapshot);
     std::atomic_store_explicit(&_country_snapshot,
-        std::shared_ptr<const RuntimeCountryPodSnapshot>(std::move(copy)),
+        std::shared_ptr<const RuntimeCountryPodSnapshot>(copy),
         std::memory_order_release);
+    {
+        std::lock_guard<std::mutex> lock(_country_transport_mutex);
+        const std::shared_ptr<const RuntimeCountryPodSnapshot> previous =
+            _country_committed_snapshot;
+        const bool same_cell_shape = previous != nullptr &&
+            previous->cell_country_slot.size() == snapshot.cell_country_slot.size();
+        bool territory_changed = !same_cell_shape;
+        _country_committed_snapshot = copy;
+        _country_read_view_generation = snapshot.generation;
+        _country_read_view_patch_base_generation = previous != nullptr
+            ? previous->generation : 0;
+        _country_read_view_dirty_families = RUNTIME_DIRTY_COUNTRY_STATE |
+            RUNTIME_DIRTY_COUNTRY_VISUAL_ERA;
+        _country_read_view_changed_cells.clear();
+        _country_read_view_changed_owners.clear();
+        _country_read_view_changed_cells.reserve(snapshot.cell_country_slot.size());
+        _country_read_view_changed_owners.reserve(snapshot.cell_country_slot.size());
+        for (size_t cell = 0; cell < snapshot.cell_country_slot.size(); ++cell) {
+            if (same_cell_shape &&
+                previous->cell_country_slot[cell] == snapshot.cell_country_slot[cell]) {
+                continue;
+            }
+            territory_changed = true;
+            _country_read_view_changed_cells.push_back(static_cast<int32_t>(cell));
+            _country_read_view_changed_owners.push_back(snapshot.cell_country_slot[cell]);
+        }
+        if (territory_changed) {
+            _country_read_view_dirty_families |= RUNTIME_DIRTY_COUNTRY_TERRITORY;
+        }
+    }
     return true;
+}
+
+bool NativeSimulationHost::publish_country_catalog(
+        const RuntimeCountryPodCatalog &catalog, std::string &error) {
+    error.clear();
+    RuntimeCountryPodAuthority validator;
+    if (!validator.validate_catalog(catalog, error)) return false;
+    const RuntimeWorkerState current = _state.load(std::memory_order_acquire);
+    if (current != RuntimeWorkerState::STOPPED &&
+        current != RuntimeWorkerState::FAULTED) {
+        error = "country_catalog_publish_while_running";
+        return false;
+    }
+    std::lock_guard<std::mutex> lock(_country_transport_mutex);
+    _country_pod_catalog = catalog;
+    _country_pod_configured.store(false, std::memory_order_release);
+    _country_pod_plan_active.store(false, std::memory_order_release);
+    _country_pod_ready.store(false, std::memory_order_release);
+    _country_worker_intent_queue.clear();
+    _country_worker_intents.clear();
+    _country_worker_results.clear();
+    _country_worker_terminal_results.clear();
+    _country_pod_plan = RuntimeCountryPodPlan{};
+    _country_worker_protocol = CountryPeerProtocolStatus{};
+    _country_worker_protocol.async_mode = 1;
+    _country_worker_protocol.retry_day = -1;
+    for (auto &character : _country_pod_fallback_reason) {
+        character.store('\0', std::memory_order_relaxed);
+    }
+    return true;
+}
+
+bool NativeSimulationHost::poll_country_worker_intent(CountryPeerIntent &out) {
+    std::lock_guard<std::mutex> lock(_country_transport_mutex);
+    while (!_country_worker_intent_queue.empty()) {
+        const uint64_t request_id = _country_worker_intent_queue.front();
+        _country_worker_intent_queue.pop_front();
+        const auto it = _country_worker_intents.find(request_id);
+        if (it == _country_worker_intents.end()) continue;
+        out = it->second;
+        _country_worker_protocol.queued_intents = static_cast<uint32_t>(
+            std::min<size_t>(_country_worker_intent_queue.size(),
+                             std::numeric_limits<uint32_t>::max()));
+        return true;
+    }
+    _country_worker_protocol.queued_intents = static_cast<uint32_t>(
+        std::min<size_t>(_country_worker_intent_queue.size(),
+                         std::numeric_limits<uint32_t>::max()));
+    return false;
+}
+
+bool NativeSimulationHost::submit_country_worker_result(
+        const CountryPeerResult &result, std::string &error) {
+    error.clear();
+    if (result.protocol_version != COUNTRY_PEER_PROTOCOL_VERSION) {
+        error = "country_worker_result_protocol_mismatch";
+        return false;
+    }
+    if (result.request_id == 0 || result.code == CountryPeerResultCode::STALE) {
+        error = result.request_id == 0
+            ? "country_worker_result_request_invalid"
+            : "country_worker_result_stale_terminal_invalid";
+        return false;
+    }
+    std::lock_guard<std::mutex> lock(_country_transport_mutex);
+    const auto intent = _country_worker_intents.find(result.request_id);
+    const auto terminal = _country_worker_terminal_results.find(result.request_id);
+    if (intent == _country_worker_intents.end()) {
+        if (terminal != _country_worker_terminal_results.end()) {
+            const CountryPeerResult &previous = terminal->second;
+            if (previous.code == result.code &&
+                previous.session_epoch == result.session_epoch &&
+                previous.country_generation == result.country_generation &&
+                previous.peer_generation == result.peer_generation &&
+                previous.technology_flags == result.technology_flags) {
+                return true;
+            }
+            error = "country_worker_result_duplicate_mismatch";
+            return false;
+        }
+        error = "country_worker_result_request_unknown";
+        return false;
+    }
+    const CountryPeerIntent &expected = intent->second;
+    if (expected.session_epoch != result.session_epoch ||
+        expected.country_generation != result.country_generation ||
+        expected.peer_generation != result.peer_generation ||
+        expected.day != result.day ||
+        expected.continuation_index != result.continuation_index ||
+        expected.country_slot != result.country_slot ||
+        expected.technology != result.technology ||
+        expected.target_handle != result.target_handle ||
+        expected.opcode != result.opcode) {
+        error = "country_worker_result_identity_mismatch";
+        return false;
+    }
+    if (result.committed_peer_generation < result.peer_generation) {
+        error = "country_worker_result_generation_invalid";
+        return false;
+    }
+    const auto existing = _country_worker_results.find(result.request_id);
+    if (existing != _country_worker_results.end()) {
+        const CountryPeerResult &previous = existing->second;
+        if (previous.code == result.code &&
+            previous.committed_peer_generation == result.committed_peer_generation &&
+            previous.technology_flags == result.technology_flags) {
+            return true;
+        }
+        if (previous.code != CountryPeerResultCode::PENDING) {
+            error = "country_worker_result_duplicate_mismatch";
+            return false;
+        }
+    }
+    _country_worker_results[result.request_id] = result;
+    if (result.code != CountryPeerResultCode::PENDING) {
+        _country_worker_terminal_results[result.request_id] = result;
+    }
+    if (result.code == CountryPeerResultCode::REJECTED) {
+        ++_country_worker_protocol.rejected_intents;
+        country_peer_copy_reason(_country_worker_protocol.rejection_reason,
+                                 result.reason.data());
+    }
+    _country_peer_signal.fetch_add(1, std::memory_order_acq_rel);
+    _control_cv.notify_all();
+    return true;
+}
+
+NativeSimulationHost::CountryWorkerProtocolStatus
+NativeSimulationHost::country_worker_protocol_status() const {
+    std::lock_guard<std::mutex> lock(_country_transport_mutex);
+    CountryWorkerProtocolStatus out;
+    out.protocol_version = _country_worker_protocol.protocol_version;
+    out.configured = _country_pod_configured;
+    out.plan_active = _country_pod_plan_active;
+    out.waiting_for_peer = _country_worker_protocol.pending_intents != 0;
+    out.pending_intents = _country_worker_protocol.pending_intents;
+    out.queued_intents = static_cast<uint32_t>(
+        std::min<size_t>(_country_worker_intent_queue.size(),
+                         std::numeric_limits<uint32_t>::max()));
+    out.result_count = static_cast<uint32_t>(
+        std::min<size_t>(_country_worker_results.size(),
+                         std::numeric_limits<uint32_t>::max()));
+    out.rejected_results = _country_worker_protocol.rejected_intents;
+    out.session_epoch = _country_worker_session_epoch;
+    out.country_generation = _country_worker_country_generation;
+    out.day = _country_worker_day;
+    out.continuation_index = _country_worker_continuation_index;
+    runtime_copy_text(out.last_reason,
+                      _country_worker_protocol.rejection_reason.data());
+    return out;
+}
+
+RuntimeCountryReadView NativeSimulationHost::country_worker_read_view(
+        uint64_t after_generation) const {
+    std::lock_guard<std::mutex> lock(_country_transport_mutex);
+    RuntimeCountryReadView out;
+    out.generation = _country_read_view_generation;
+    out.patch_base_generation = _country_read_view_patch_base_generation;
+    out.dirty_families = _country_read_view_dirty_families;
+    out.territory_watermark =
+        (_country_read_view_dirty_families & RUNTIME_DIRTY_COUNTRY_TERRITORY) != 0
+            ? _country_read_view_generation : 0;
+    out.research_watermark =
+        (_country_read_view_dirty_families & RUNTIME_DIRTY_COUNTRY_STATE) != 0
+            ? _country_read_view_generation : 0;
+    out.tax_watermark = 0;
+    out.visual_watermark =
+        (_country_read_view_dirty_families & RUNTIME_DIRTY_COUNTRY_VISUAL_ERA) != 0
+            ? _country_read_view_generation : 0;
+    out.changed_cells = _country_read_view_changed_cells;
+    out.changed_owners = _country_read_view_changed_owners;
+    out.snapshot = _country_committed_snapshot;
+    if (out.snapshot != nullptr) {
+        out.committed_day = out.snapshot->committed_day;
+        out.state_hash = out.snapshot->state_hash;
+        out.country_count = out.snapshot->country_count;
+        out.cell_count = out.snapshot->cell_count;
+    }
+    out.available = out.snapshot != nullptr &&
+        out.generation > after_generation;
+    out.full_snapshot_required = out.available &&
+        after_generation != 0 &&
+        after_generation != out.patch_base_generation;
+    return out;
 }
 
 bool NativeSimulationHost::publish_country_checkpoint(
@@ -716,6 +1312,378 @@ RuntimeCountryPodDiagnostics NativeSimulationHost::country_pod_diagnostics() con
     const auto value = std::atomic_load_explicit(&_country_pod_diagnostics,
         std::memory_order_acquire);
     return value != nullptr ? *value : RuntimeCountryPodDiagnostics{};
+}
+
+bool NativeSimulationHost::configure_trigger_pod(
+        const RuntimeTriggerPodCatalog &catalog, std::string &error) {
+    return _domain_authority_runner.configure_trigger_pod(catalog, error);
+}
+
+bool NativeSimulationHost::queue_trigger_pod_command(
+        const RuntimeTriggerCommand &command, std::string &error) {
+    return _domain_authority_runner.queue_trigger_command(command, error);
+}
+
+RuntimeTriggerPodDiagnostics NativeSimulationHost::trigger_pod_diagnostics() const {
+    return _domain_authority_runner.trigger_pod_diagnostics();
+}
+
+bool NativeSimulationHost::set_trigger_reference_frame(
+        int64_t day, uint64_t input_hash, uint64_t state_hash,
+        uint64_t effect_hash, std::string &error) {
+    return _domain_authority_runner.set_trigger_reference_frame(
+        day, input_hash, state_hash, effect_hash, error);
+}
+
+const RuntimeTriggerPodCatalog &NativeSimulationHost::trigger_pod_catalog() const {
+    return _domain_authority_runner.trigger_catalog();
+}
+
+bool NativeSimulationHost::encode_trigger_pod_save(std::vector<uint8_t> &bytes,
+                                                   std::string &error) const {
+    RuntimeTriggerPodSaveSection section;
+    if (!_domain_authority_runner.encode_trigger_save(section, error)) return false;
+    bytes = std::move(section.payload);
+    return true;
+}
+
+bool NativeSimulationHost::restore_trigger_pod_save(const uint8_t *bytes,
+                                                    size_t size,
+                                                    std::string &error) {
+    // TPD1 has a fixed header through state_hash plus the four bounded
+    // capacity scalars: 80 bytes before any vector payload is decoded.
+    if (bytes == nullptr || size < 80u) {
+        error = "trigger_save_truncated";
+        return false;
+    }
+    RuntimeTriggerPodSaveSection section;
+    section.descriptor.domain = static_cast<uint16_t>(RuntimeDomainId::TRIGGER_INPUT);
+    section.descriptor.version = RUNTIME_TRIGGER_POD_ABI_VERSION;
+    section.descriptor.payload_size = static_cast<uint32_t>(size);
+    section.payload.assign(bytes, bytes + size);
+    const auto read_u64 = [bytes, size](size_t offset) {
+        uint64_t value = 0;
+        if (offset + sizeof(value) > size) return value;
+        for (size_t i = 0; i < sizeof(value); ++i)
+            value |= static_cast<uint64_t>(bytes[offset + i]) << (i * 8u);
+        return value;
+    };
+    const auto read_i64 = [&read_u64](size_t offset) {
+        const uint64_t bits = read_u64(offset);
+        int64_t value = 0;
+        std::memcpy(&value, &bits, sizeof(value));
+        return value;
+    };
+    section.catalog_hash = read_u64(12u);
+    section.generation = read_u64(20u);
+    section.committed_day = read_i64(28u);
+    section.state_hash = read_u64(36u);
+    section.descriptor.checksum = 1469598103934665603ull;
+    for (const uint8_t byte : section.payload) {
+        section.descriptor.checksum ^= static_cast<uint64_t>(byte);
+        section.descriptor.checksum *= 1099511628211ull;
+    }
+    const auto &catalog = _domain_authority_runner.trigger_catalog();
+    return _domain_authority_runner.restore_trigger_save(section, catalog, error);
+}
+
+bool NativeSimulationHost::configure_modifier_pod(
+        const RuntimeModifierPodCatalog &catalog, std::string &error) {
+    const RuntimeWorkerState worker_state = state();
+    if (worker_state != RuntimeWorkerState::STOPPED &&
+        worker_state != RuntimeWorkerState::FAULTED) {
+        error = "modifier_pod_configure_while_running";
+        return false;
+    }
+    if (!_modifier_pod_authority.configure(catalog, error)) {
+        _modifier_pod_configured = false;
+        return false;
+    }
+    _modifier_pod_catalog = catalog;
+    _modifier_pod_catalog.catalog_hash = _modifier_pod_authority.catalog_hash();
+    _modifier_pod_configured = true;
+    return true;
+}
+
+bool NativeSimulationHost::configure_effect_pod(
+        const RuntimeEffectPodCatalog &catalog, std::string &error) {
+    const RuntimeWorkerState worker_state = state();
+    if (worker_state != RuntimeWorkerState::STOPPED &&
+        worker_state != RuntimeWorkerState::FAULTED) {
+        error = "effect_pod_configure_while_running";
+        return false;
+    }
+    RuntimeEffectPodAuthority candidate;
+    if (!candidate.configure(catalog, error)) {
+        return false;
+    }
+    _effect_pod_authority = std::move(candidate);
+    _effect_pod_catalog = catalog;
+    _effect_pod_catalog.catalog_hash = _effect_pod_authority.catalog_hash();
+    _effect_pod_configured = true;
+    return true;
+}
+
+bool NativeSimulationHost::encode_effect_pod_save(
+        std::vector<uint8_t> &bytes, std::string &error) const {
+    if (!_effect_pod_configured) {
+        error = "effect_pod_not_configured";
+        return false;
+    }
+    _effect_pod_authority.serialize(bytes);
+    if (bytes.empty()) {
+        error = "effect_pod_save_encode_failed";
+        return false;
+    }
+    return true;
+}
+
+bool NativeSimulationHost::restore_effect_pod_save(
+        const uint8_t *bytes, size_t size, std::string &error) {
+    if (!_effect_pod_configured) {
+        error = "effect_pod_not_configured";
+        return false;
+    }
+    RuntimeEffectPodAuthority candidate;
+    if (!candidate.configure(_effect_pod_catalog, error)) return false;
+    if (!candidate.restore(bytes, size, error)) return false;
+    _effect_pod_authority = std::move(candidate);
+    return true;
+}
+
+bool NativeSimulationHost::effect_pod_self_test(std::string *out_error) const {
+    std::string error;
+    const bool ok = RuntimeEffectPodAuthority::self_test(error);
+    if (!ok && out_error != nullptr) *out_error = error;
+    return ok;
+}
+
+bool NativeSimulationHost::configure_ideology_pod(
+        const RuntimeIdeologyPodCatalog &catalog, std::string &error) {
+    const RuntimeWorkerState worker_state = state();
+    if (worker_state != RuntimeWorkerState::STOPPED &&
+        worker_state != RuntimeWorkerState::FAULTED) {
+        error = "ideology_pod_configure_while_running";
+        return false;
+    }
+    RuntimeIdeologyPodAuthority candidate;
+    if (!candidate.configure(catalog, error)) return false;
+    std::lock_guard<std::mutex> lock(_ideology_transport_mutex);
+    _ideology_pod_authority = std::move(candidate);
+    _ideology_pod_catalog = catalog;
+    _ideology_pod_catalog.catalog_hash = _ideology_pod_authority.catalog_hash();
+    _ideology_pod_configured = true;
+    _ideology_commands.clear();
+    _ideology_intents.clear();
+    _ideology_acks.clear();
+    return true;
+}
+
+bool NativeSimulationHost::publish_ideology_opinion_snapshot(
+        const RuntimeIdeologyOpinionSnapshot &snapshot, std::string &error) {
+    if (snapshot.revision == 0 || snapshot.class_hash == 0 ||
+        snapshot.country_count == 0 || snapshot.class_count == 0) {
+        error = "ideology_opinion_snapshot_invalid";
+        return false;
+    }
+    const size_t lanes = static_cast<size_t>(snapshot.country_count) *
+        snapshot.class_count;
+    if (snapshot.country_handles.size() != snapshot.country_count ||
+        snapshot.country_generations.size() != snapshot.country_count ||
+        snapshot.population.size() != lanes || snapshot.funds.size() != lanes ||
+        snapshot.owner_employed.size() != lanes ||
+        snapshot.satisfaction_weighted.size() != lanes ||
+        snapshot.satisfaction_q16.size() != lanes) {
+        error = "ideology_opinion_snapshot_shape_invalid";
+        return false;
+    }
+    auto copy = std::make_shared<RuntimeIdeologyOpinionSnapshot>(snapshot);
+    std::atomic_store_explicit(&_ideology_opinion_snapshot,
+        std::shared_ptr<const RuntimeIdeologyOpinionSnapshot>(std::move(copy)),
+        std::memory_order_release);
+    return true;
+}
+
+bool NativeSimulationHost::queue_ideology_pod_command(
+        const RuntimeIdeologyPodCommand &command, std::string &error) {
+    if (!_ideology_pod_configured) { error = "ideology_pod_not_configured"; return false; }
+    std::lock_guard<std::mutex> lock(_ideology_transport_mutex);
+    if (_ideology_commands.size() >= RUNTIME_COMMAND_QUEUE_CAPACITY) {
+        error = "ideology_command_capacity_exceeded";
+        return false;
+    }
+    _ideology_commands.push_back(command);
+    return true;
+}
+
+bool NativeSimulationHost::poll_ideology_pod_intent(RuntimeDomainIntent &intent) {
+    std::lock_guard<std::mutex> lock(_ideology_transport_mutex);
+    if (_ideology_intents.empty()) return false;
+    intent = _ideology_intents.front();
+    _ideology_intents.pop_front();
+    return true;
+}
+
+bool NativeSimulationHost::submit_ideology_pod_ack(
+        const RuntimeDomainAck &ack, std::string &error) {
+    if (ack.domain != static_cast<uint16_t>(RuntimeDomainId::EFFECT) ||
+        (ack.transaction_id == 0 && ack.request_id == 0)) {
+        error = "ideology_ack_invalid";
+        return false;
+    }
+    std::lock_guard<std::mutex> lock(_ideology_transport_mutex);
+    if (_ideology_acks.size() >= RUNTIME_DOMAIN_INTENT_CAPACITY) {
+        error = "ideology_ack_capacity_exceeded";
+        return false;
+    }
+    _ideology_acks.push_back(ack);
+    return true;
+}
+
+std::shared_ptr<const RuntimeIdeologyPodSnapshot>
+NativeSimulationHost::ideology_pod_snapshot() const {
+    return std::atomic_load_explicit(&_ideology_snapshot,
+                                     std::memory_order_acquire);
+}
+
+bool NativeSimulationHost::encode_ideology_pod_save(
+        std::vector<uint8_t> &bytes, std::string &error) const {
+    if (!_ideology_pod_configured) { error = "ideology_pod_not_configured"; return false; }
+    _ideology_pod_authority.serialize(bytes);
+    if (bytes.empty()) { error = "ideology_pod_save_encode_failed"; return false; }
+    return true;
+}
+
+bool NativeSimulationHost::restore_ideology_pod_save(
+        const uint8_t *bytes, size_t size, std::string &error) {
+    if (!_ideology_pod_configured) { error = "ideology_pod_not_configured"; return false; }
+    RuntimeIdeologyPodAuthority candidate;
+    if (!candidate.configure(_ideology_pod_catalog, error) ||
+        !candidate.restore(bytes, size, error)) return false;
+    _ideology_pod_authority = std::move(candidate);
+    return true;
+}
+
+bool NativeSimulationHost::ideology_pod_self_test(std::string *out_error) const {
+    std::string error;
+    const bool ok = RuntimeIdeologyPodAuthority::self_test(error);
+    if (!ok && out_error != nullptr) *out_error = error;
+    return ok;
+}
+
+bool NativeSimulationHost::encode_modifier_pod_save(
+        std::vector<uint8_t> &bytes, std::string &error) const {
+    if (!_modifier_pod_configured) { error = "modifier_pod_not_configured"; return false; }
+    _modifier_pod_authority.serialize(bytes);
+    return !bytes.empty();
+}
+
+bool NativeSimulationHost::restore_modifier_pod_save(
+        const uint8_t *bytes, size_t size, std::string &error) {
+    if (!_modifier_pod_configured) { error = "modifier_pod_not_configured"; return false; }
+    return _modifier_pod_authority.restore(bytes, size, error);
+}
+
+bool NativeSimulationHost::try_acquire_modifier_snapshot(
+        uint64_t after_generation, uint32_t &slot) {
+    if (!_modifier_snapshots.try_acquire_latest(after_generation, slot)) return false;
+    const RuntimeModifierPodSnapshot &snapshot =
+        _modifier_snapshots.read_buffer(slot);
+    bool valid = _modifier_pod_configured &&
+        snapshot.abi_version == RUNTIME_MODIFIER_POD_ABI_VERSION &&
+        snapshot.catalog_hash == _modifier_pod_catalog.catalog_hash;
+    for (const RuntimeModifierPodEntry &entry : snapshot.entries)
+        valid = valid && entry.domain < 4;
+    for (const RuntimeModifierPodBucket &bucket : snapshot.buckets)
+        valid = valid && bucket.domain < 4 && bucket.scope < 3;
+    if (!valid) {
+        _modifier_snapshots.release(slot);
+        return false;
+    }
+    return true;
+}
+
+const RuntimeModifierPodSnapshot &NativeSimulationHost::modifier_snapshot_buffer(
+        uint32_t slot) const { return _modifier_snapshots.read_buffer(slot); }
+
+void NativeSimulationHost::release_modifier_snapshot(uint32_t slot) {
+    _modifier_snapshots.release(slot);
+}
+
+bool NativeSimulationHost::modifier_pod_self_test(std::string *out_error) const {
+    const auto fail = [out_error](const char *reason) {
+        if (out_error != nullptr) *out_error = reason;
+        return false;
+    };
+    std::string authority_error;
+    if (!RuntimeModifierPodAuthority::self_test(authority_error)) {
+        if (out_error != nullptr) *out_error = authority_error;
+        return false;
+    }
+    if (!RuntimeModifierSnapshotRing::self_test())
+        return fail("modifier_pod_snapshot_ring_self_test_failed");
+    RuntimeCommandPacket packet;
+    packet.envelope.request_id = 11;
+    packet.envelope.producer_id = 7;
+    packet.envelope.sequence = 9;
+    packet.envelope.requested_day = 3;
+    packet.envelope.effective_day = 4;
+    packet.envelope.domain = static_cast<uint16_t>(RuntimeDomainId::MODIFIER);
+    packet.envelope.opcode = static_cast<uint16_t>(RuntimeModifierPodOpcode::APPLY);
+    packet.envelope.payload_size = RUNTIME_MODIFIER_POD_WIRE_SIZE;
+    // Keep the protocol self-test coupled to the fixed little-endian payload ABI.
+    size_t cursor = 0;
+    const auto append = [&packet, &cursor](auto value) {
+        using T = decltype(value);
+        using U = std::make_unsigned_t<T>;
+        U bits = static_cast<U>(value);
+        for (size_t i = 0; i < sizeof(T); ++i) {
+            packet.payload[cursor++] = static_cast<uint8_t>(bits & static_cast<U>(0xffu));
+            bits >>= 8u;
+        }
+    };
+    append(static_cast<uint32_t>(RUNTIME_MODIFIER_POD_WIRE_ABI_VERSION));
+    append(static_cast<uint16_t>(2));
+    append(static_cast<uint16_t>(2));
+    append(static_cast<int32_t>(5));
+    append(static_cast<uint64_t>(0x0000000300000004ull));
+    append(static_cast<uint64_t>(6));
+    append(static_cast<uint64_t>(7));
+    append(static_cast<uint64_t>(8));
+    append(static_cast<int32_t>(10));
+    append(static_cast<int32_t>(2));
+    append(static_cast<int32_t>(32768));
+    append(static_cast<uint64_t>(0));
+    append(static_cast<uint32_t>(3));
+    append(static_cast<uint64_t>(12));
+    RuntimeModifierPodCommand decoded;
+    if (cursor != RUNTIME_MODIFIER_POD_WIRE_SIZE ||
+        !decode_modifier_packet(packet, decoded) ||
+        !modifier_packet_shape_valid(decoded) || decoded.request_id != 11 ||
+        decoded.domain != 2 || decoded.scope != 2 || decoded.definition_id != 5 ||
+        decoded.target_generation != 3 || decoded.input_generation != 12)
+        return fail("modifier_pod_wire_decode_self_test_failed");
+    RuntimeCommandPacket malformed = packet;
+    --malformed.envelope.payload_size;
+    if (decode_modifier_packet(malformed, decoded))
+        return fail("modifier_pod_wire_size_self_test_failed");
+    malformed = packet;
+    malformed.payload[0] ^= 0xffu;
+    if (decode_modifier_packet(malformed, decoded))
+        return fail("modifier_pod_wire_abi_self_test_failed");
+    malformed = packet;
+    malformed.envelope.opcode = 0;
+    if (!decode_modifier_packet(malformed, decoded) ||
+        modifier_packet_shape_valid(decoded))
+        return fail("modifier_pod_wire_opcode_self_test_failed");
+    malformed = packet;
+    malformed.payload[4] = 4;
+    malformed.payload[5] = 0;
+    if (!decode_modifier_packet(malformed, decoded) ||
+        modifier_packet_shape_valid(decoded))
+        return fail("modifier_pod_wire_domain_self_test_failed");
+    if (out_error != nullptr) out_error->clear();
+    return true;
 }
 
 std::shared_ptr<const RuntimeEnvironmentSnapshot>
@@ -750,6 +1718,29 @@ bool NativeSimulationHost::enqueue(RuntimeCommandPacket packet) {
     slot->packet = packet;
     slot->sequence.store(position + 1, std::memory_order_release);
     _control_cv.notify_one();
+    return true;
+}
+
+bool NativeSimulationHost::enqueue_modifier_shadow(RuntimeCommandPacket packet) {
+    if (packet.envelope.domain !=
+            static_cast<uint16_t>(RuntimeDomainId::MODIFIER)) return false;
+    const RuntimeWorkerState current = _state.load(std::memory_order_acquire);
+    if (current != RuntimeWorkerState::STOPPED) {
+        if (_mode.load(std::memory_order_acquire) != RuntimeSimulationMode::SHADOW)
+            return false;
+        return enqueue(std::move(packet));
+    }
+    std::lock_guard<std::mutex> lock(_control_mutex);
+    if (_state.load(std::memory_order_acquire) != RuntimeWorkerState::STOPPED) {
+        if (_mode.load(std::memory_order_acquire) != RuntimeSimulationMode::SHADOW)
+            return false;
+        return enqueue(std::move(packet));
+    }
+    if (_prestart_modifier_commands.size() >= RUNTIME_COMMAND_QUEUE_CAPACITY) {
+        _command_queue_capacity_exceeded.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    _prestart_modifier_commands.push_back(std::move(packet));
     return true;
 }
 
@@ -900,9 +1891,404 @@ RuntimeDayPlan NativeSimulationHost::build_day_plan(
     return plan;
 }
 
+bool NativeSimulationHost::execute_country_worker_stage(
+        int64_t day, uint64_t input_generation,
+        const std::vector<RuntimeCommandPacket> &day_commands,
+        RuntimeDayCommit &commit, std::string &error) {
+    error.clear();
+    if (!_country_pod_configured) return true;
+
+    if (!_country_pod_plan_active) {
+        for (const RuntimeCommandPacket &packet : day_commands) {
+            if (packet.envelope.domain != static_cast<uint16_t>(RuntimeDomainId::COUNTRY))
+                continue;
+            RuntimeCountryCommand command;
+            std::string command_error;
+            if (!RuntimeCountryPodAdapter::decode_command(
+                    packet, command, command_error) ||
+                !_country_pod_authority.queue_command(command, command_error)) {
+                error = command_error.empty()
+                    ? "country_worker_command_rejected" : command_error;
+                return false;
+            }
+        }
+        if (!_country_pod_authority.plan_day(
+                day, input_generation, _country_pod_plan, error)) {
+            if (error.empty()) error = "country_worker_plan_failed";
+            return false;
+        }
+        _country_pod_plan_active = true;
+        {
+            std::lock_guard<std::mutex> lock(_country_transport_mutex);
+            _country_worker_country_generation =
+                _country_pod_plan.header.base_generation;
+            _country_worker_day = day;
+            _country_worker_continuation_index = 0;
+            _country_worker_protocol.retry_day = day;
+            _country_worker_protocol.rejected_intents = 0;
+            for (const RuntimeDomainIntent &intent : _country_pod_plan.intents) {
+                if (intent.target_domain !=
+                        static_cast<uint16_t>(RuntimeDomainId::EFFECT)) {
+                    error = "country_worker_peer_intent_domain_unsupported";
+                    break;
+                }
+                CountryPeerIntent peer;
+                peer.opcode = CountryPeerIntentCode::ENSURE_TECHNOLOGY_EFFECT;
+                peer.request_id = intent.request_id != 0
+                    ? intent.request_id : intent.source_id;
+                peer.session_epoch = _country_worker_session_epoch;
+                peer.country_generation = _country_pod_plan.header.base_generation;
+                peer.peer_generation = 0;
+                peer.day = intent.effective_day;
+                peer.continuation_index = _country_worker_continuation_index;
+                peer.country_slot = static_cast<int32_t>(
+                    intent.target_handle & 0xffffffffULL);
+                peer.technology = intent.payload[0] >= 0
+                    ? static_cast<int32_t>(intent.payload[0]) : -1;
+                peer.target_handle = intent.target_handle;
+                peer.effect_instance_id = peer.request_id;
+                peer.effect_generation = intent.target_generation;
+                peer.idempotency_key = intent.idempotency_key != 0
+                    ? intent.idempotency_key : peer.request_id;
+                if (peer.request_id == 0) {
+                    error = "country_worker_peer_intent_identity_invalid";
+                    break;
+                }
+                if (_country_worker_intents.find(peer.request_id) !=
+                    _country_worker_intents.end()) {
+                    error = "country_worker_peer_intent_duplicate";
+                    break;
+                }
+                if (_country_worker_intent_queue.size() >=
+                    RUNTIME_DOMAIN_INTENT_CAPACITY) {
+                    error = "country_worker_intent_capacity_exceeded";
+                    break;
+                }
+                _country_worker_intents[peer.request_id] = peer;
+                _country_worker_intent_queue.push_back(peer.request_id);
+                ++_country_worker_continuation_index;
+            }
+            if (error.empty()) {
+                _country_worker_protocol.pending_intents = static_cast<uint32_t>(
+                    std::min<size_t>(_country_worker_intents.size(),
+                                     std::numeric_limits<uint32_t>::max()));
+                _country_worker_protocol.queued_intents = static_cast<uint32_t>(
+                    std::min<size_t>(_country_worker_intent_queue.size(),
+                                     std::numeric_limits<uint32_t>::max()));
+                _country_worker_protocol.has_unreported_rejection = 0;
+                _country_peer_signal.fetch_add(1, std::memory_order_acq_rel);
+            }
+        }
+        if (!error.empty()) {
+            _country_pod_authority.discard_plan();
+            _country_pod_plan_active.store(false, std::memory_order_release);
+            return false;
+        }
+    }
+
+    std::vector<RuntimeDomainAck> acks;
+    acks.reserve(_country_pod_plan.intents.size());
+    bool waiting = false;
+    bool rejected = false;
+    std::string rejection_reason;
+    {
+        std::lock_guard<std::mutex> lock(_country_transport_mutex);
+        for (const RuntimeDomainIntent &intent : _country_pod_plan.intents) {
+            const uint64_t request_id = intent.request_id != 0
+                ? intent.request_id : intent.source_id;
+            const auto result_it = _country_worker_results.find(request_id);
+            if (result_it == _country_worker_results.end() ||
+                result_it->second.code == CountryPeerResultCode::PENDING) {
+                waiting = true;
+                continue;
+            }
+            const CountryPeerResult &result = result_it->second;
+            RuntimeDomainAck ack;
+            ack.request_id = request_id;
+            ack.transaction_id = request_id;
+            ack.target_handle = intent.target_handle;
+            ack.target_generation = intent.target_generation;
+            ack.domain = intent.target_domain;
+            ack.effective_day = intent.effective_day;
+            ack.producer_id = intent.producer_id;
+            ack.sequence = intent.sequence;
+            if (result.code == CountryPeerResultCode::READY ||
+                result.code == CountryPeerResultCode::APPLIED) {
+                ack.code = RuntimeDomainAckCode::OK;
+            } else {
+                ack.code = result.code == CountryPeerResultCode::STALE
+                    ? RuntimeDomainAckCode::STALE_GENERATION
+                    : RuntimeDomainAckCode::REJECTED;
+                rejected = true;
+                rejection_reason = result.reason.data();
+            }
+            acks.push_back(ack);
+        }
+        _country_worker_protocol.pending_intents = static_cast<uint32_t>(
+            std::min<size_t>(_country_worker_intents.size(),
+                             std::numeric_limits<uint32_t>::max()));
+        _country_worker_protocol.queued_intents = static_cast<uint32_t>(
+            std::min<size_t>(_country_worker_intent_queue.size(),
+                             std::numeric_limits<uint32_t>::max()));
+    }
+    if (waiting) {
+        error = "country_worker_peer_results_pending";
+        commit.preflight_ok = 0;
+        return false;
+    }
+    if (rejected) {
+        // Keep the staged plan and its terminal rejection visible. The worker
+        // remains parked until an explicit lifecycle action replaces the
+        // session; it must not turn the rejected batch into an empty commit.
+        _country_pod_plan_active.store(true, std::memory_order_release);
+        {
+            std::lock_guard<std::mutex> lock(_country_transport_mutex);
+            _country_worker_protocol.has_unreported_rejection = 1;
+            _country_worker_protocol.rejected_intents = 1;
+            _country_worker_protocol.rejected_request_id =
+                acks.empty() ? 0 : acks.front().request_id;
+            country_peer_copy_reason(_country_worker_protocol.rejection_reason,
+                                     rejection_reason.c_str());
+        }
+        error = rejection_reason.empty() ? "country_worker_peer_rejected" :
+            rejection_reason;
+        commit.preflight_ok = 0;
+        return false;
+    }
+    if (!_country_pod_authority.commit_day(_country_pod_plan, acks, error)) {
+        _country_pod_authority.discard_plan();
+        _country_pod_plan_active.store(false, std::memory_order_release);
+        set_fault(error.empty() ? "country_worker_commit_failed" : error.c_str());
+        if (error.empty()) error = "country_worker_commit_failed";
+        commit.preflight_ok = 0;
+        return false;
+    }
+    _country_pod_plan_active.store(false, std::memory_order_release);
+    RuntimeCountryPodSnapshot committed_snapshot;
+    std::string snapshot_error;
+    if (!_country_pod_authority.snapshot(committed_snapshot, snapshot_error)) {
+        error = snapshot_error.empty() ? "country_worker_snapshot_failed" :
+            snapshot_error;
+        commit.preflight_ok = 0;
+        return false;
+    }
+    {
+        std::lock_guard<std::mutex> lock(_country_transport_mutex);
+        const std::shared_ptr<const RuntimeCountryPodSnapshot> previous =
+            _country_committed_snapshot;
+        _country_read_view_generation = committed_snapshot.generation;
+        _country_read_view_patch_base_generation = previous != nullptr
+            ? previous->generation : 0;
+        _country_read_view_dirty_families = _country_pod_plan.header.dirty_families;
+        _country_read_view_changed_cells.clear();
+        _country_read_view_changed_owners.clear();
+        const bool same_cell_shape = previous != nullptr &&
+            previous->cell_country_slot.size() ==
+                committed_snapshot.cell_country_slot.size();
+        for (size_t cell = 0; cell < committed_snapshot.cell_country_slot.size();
+             ++cell) {
+            if (same_cell_shape &&
+                previous->cell_country_slot[cell] ==
+                    committed_snapshot.cell_country_slot[cell]) {
+                continue;
+            }
+            _country_read_view_changed_cells.push_back(static_cast<int32_t>(cell));
+            _country_read_view_changed_owners.push_back(
+                committed_snapshot.cell_country_slot[cell]);
+        }
+        auto committed_copy = std::make_shared<RuntimeCountryPodSnapshot>(
+            std::move(committed_snapshot));
+        _country_committed_snapshot = committed_copy;
+        std::shared_ptr<const RuntimeCountryPodSnapshot> committed_view =
+            committed_copy;
+        std::atomic_store_explicit(&_country_snapshot, committed_view,
+                                   std::memory_order_release);
+        for (const RuntimeDomainIntent &intent : _country_pod_plan.intents) {
+            const uint64_t request_id = intent.request_id != 0
+                ? intent.request_id : intent.source_id;
+            _country_worker_intents.erase(request_id);
+            _country_worker_results.erase(request_id);
+        }
+        _country_worker_protocol.pending_intents = 0;
+        _country_worker_protocol.queued_intents = static_cast<uint32_t>(
+            std::min<size_t>(_country_worker_intent_queue.size(),
+                             std::numeric_limits<uint32_t>::max()));
+        _country_worker_protocol.retry_day = -1;
+        _country_worker_protocol.rejected_intents = 0;
+        _country_worker_protocol.has_unreported_rejection = 0;
+        _country_worker_protocol.rejected_request_id = 0;
+        country_peer_copy_reason(_country_worker_protocol.rejection_reason, "");
+    }
+    commit.completed_domain_mask |= runtime_domain_mask(RuntimeDomainId::COUNTRY);
+    commit.dirty_families |= _country_pod_plan.header.dirty_families;
+    commit.work_units += _country_pod_plan.header.work_units;
+    ++commit.completed_stage_count;
+    (void)committed_snapshot;
+    return true;
+}
+
+bool NativeSimulationHost::execute_ideology_worker_stage(
+        int64_t day, RuntimeDayCommit &commit, std::string &error) {
+    (void)commit;
+    error.clear();
+    if (!_ideology_pod_configured) {
+        error = "ideology_pod_not_configured";
+        return false;
+    }
+    const auto country = std::atomic_load_explicit(
+        &_country_snapshot, std::memory_order_acquire);
+    const auto opinion = std::atomic_load_explicit(
+        &_ideology_opinion_snapshot, std::memory_order_acquire);
+    if (country == nullptr || opinion == nullptr) {
+        error = country == nullptr ? "ideology_country_snapshot_missing" :
+            "ideology_opinion_snapshot_missing";
+        return false;
+    }
+    if (_ideology_pod_authority.snapshot().countries.empty()) {
+        if (!_ideology_pod_authority.bootstrap(*country, *opinion, error))
+            return false;
+    }
+    std::deque<RuntimeIdeologyPodCommand> commands;
+    std::vector<RuntimeDomainAck> acks;
+    {
+        std::lock_guard<std::mutex> lock(_ideology_transport_mutex);
+        commands.swap(_ideology_commands);
+        acks.assign(_ideology_acks.begin(), _ideology_acks.end());
+        _ideology_acks.clear();
+    }
+    while (!commands.empty()) {
+        const RuntimeIdeologyPodCommand command = commands.front();
+        commands.pop_front();
+        if (!_ideology_pod_authority.queue_command(command, error)) {
+            std::lock_guard<std::mutex> lock(_ideology_transport_mutex);
+            _ideology_commands.push_front(command);
+            while (!commands.empty()) {
+                _ideology_commands.push_front(commands.back());
+                commands.pop_back();
+            }
+            return false;
+        }
+    }
+
+    const auto plan_started = std::chrono::steady_clock::now();
+    double replay_ms = 0.0;
+    uint32_t emitted = 0;
+    RuntimeIdeologyPodPlan plan;
+    bool first_slice = true;
+    for (uint32_t slice = 0; slice < RUNTIME_IDEOLOGY_POD_MAX_COMMANDS; ++slice) {
+        static const std::vector<RuntimeDomainAck> empty_acks;
+        const auto &effective_acks = first_slice ? acks : empty_acks;
+        first_slice = false;
+        if (!_ideology_pod_authority.plan_day(
+                day, *country, *opinion, effective_acks, plan, error)) {
+            _ideology_pod_authority.discard_plan();
+            return false;
+        }
+        {
+            std::lock_guard<std::mutex> lock(_ideology_transport_mutex);
+            for (const RuntimeDomainIntent &intent : plan.intents) {
+                if (_ideology_intents.size() >= RUNTIME_DOMAIN_INTENT_CAPACITY) {
+                    _ideology_pod_authority.discard_plan();
+                    error = "ideology_intent_capacity_exceeded";
+                    return false;
+                }
+                _ideology_intents.push_back(intent);
+                ++emitted;
+            }
+        }
+        const auto replay_started = std::chrono::steady_clock::now();
+        if (!_ideology_pod_authority.commit_day(plan, error)) return false;
+        replay_ms += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - replay_started).count();
+        if (plan.completed_day != 0) break;
+        if (slice + 1u == RUNTIME_IDEOLOGY_POD_MAX_COMMANDS) {
+            error = "ideology_same_day_continuation_limit_exceeded";
+            return false;
+        }
+    }
+    const RuntimeIdeologyPodSnapshot &snapshot =
+        _ideology_pod_authority.snapshot();
+    auto copy = std::make_shared<RuntimeIdeologyPodSnapshot>(snapshot);
+    std::atomic_store_explicit(&_ideology_snapshot,
+        std::shared_ptr<const RuntimeIdeologyPodSnapshot>(std::move(copy)),
+        std::memory_order_release);
+    _ideology_pod_plan_ms.store(
+        std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - plan_started).count(),
+        std::memory_order_release);
+    _ideology_pod_replay_ms.store(replay_ms, std::memory_order_release);
+    _ideology_pod_state_hash.store(snapshot.state_hash, std::memory_order_release);
+    _ideology_pod_snapshot_generation.store(snapshot.generation,
+                                            std::memory_order_release);
+    _ideology_pod_pending_transition_count.store(
+        static_cast<uint32_t>(snapshot.pending_transitions.size()),
+        std::memory_order_release);
+    _ideology_pod_intent_count.store(emitted, std::memory_order_release);
+    return true;
+}
+
 RuntimeDayCommit NativeSimulationHost::execute_day_plan(
-        RuntimeDayPlan &plan) {
+        RuntimeDayPlan &plan,
+        const std::vector<RuntimeCommandPacket> &day_commands,
+        std::vector<RuntimeCommandReceipt> &day_receipts) {
     RuntimeDayCommit commit;
+    const auto run_events_probe = [&](int64_t event_day) {
+        if (!_events_probe_enabled.load(std::memory_order_acquire) ||
+            _events_last_processed_day >= event_day) {
+            return;
+        }
+        RuntimeEventsSnapshot events_snapshot;
+        RuntimeEventsReport events_report;
+        std::string events_error;
+        // RuntimeEventsAuthority owns its receipt vector. Keep that vector
+        // separate from the host's ordinary command receipts: plan_day()
+        // intentionally clears its output before replaying Events commands.
+        std::vector<RuntimeCommandReceipt> event_receipts;
+        const auto events_plan_started = std::chrono::steady_clock::now();
+        bool events_ok = _events_authority.plan_day(
+            event_day, day_commands, events_snapshot, event_receipts,
+            events_report, events_error);
+        const double events_plan_ms = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - events_plan_started).count();
+        double events_replay_ms = 0.0;
+        if (events_ok) {
+            const auto events_replay_started = std::chrono::steady_clock::now();
+            events_ok = _events_authority.commit_day(events_snapshot, events_error);
+            events_replay_ms = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - events_replay_started).count();
+        } else {
+            _events_authority.discard_plan();
+        }
+        // Mark the attempt even on a rejected payload. Events is probe-only and
+        // must not be replayed by a Climate barrier retry for the same day.
+        _events_last_processed_day = event_day;
+        _events_pod_ready.store(events_ok, std::memory_order_release);
+        _events_pod_plan_ms.store(events_plan_ms, std::memory_order_release);
+        _events_pod_replay_ms.store(events_replay_ms, std::memory_order_release);
+        _events_pod_state_hash.store(_events_authority.snapshot().state_hash,
+                                     std::memory_order_release);
+        _events_pod_snapshot_generation.store(
+            _events_authority.snapshot().generation, std::memory_order_release);
+        _events_pod_event_count.store(events_report.appended_events,
+                                      std::memory_order_release);
+        _events_pod_ack_count.store(events_report.acknowledged_consumers,
+                                    std::memory_order_release);
+        _events_pod_drop_count.store(_events_authority.snapshot().dropped_event_count,
+                                     std::memory_order_release);
+        for (size_t i = 0; i < _events_pod_fallback_reason.size(); ++i) {
+            _events_pod_fallback_reason[i].store(
+                events_report.fallback_reason[i], std::memory_order_release);
+            if (events_report.fallback_reason[i] == '\0') break;
+        }
+        if (!events_ok) return;
+        uint32_t events_slot = 0;
+        if (_events_snapshots.try_begin_write(events_slot)) {
+            _events_snapshots.write_buffer(events_slot) = _events_authority.snapshot();
+            _events_snapshots.publish(events_slot);
+        } else {
+            _events_pod_ready.store(false, std::memory_order_release);
+        }
+    };
     // SHADOW runs the worker-safe POD pipeline for measurement and parity
     // diagnostics. The legacy synchronous graph remains authoritative until
     // every domain has a verified state/ACK adapter, so ACTIVE stays gated.
@@ -1190,6 +2576,58 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
         diagnostic_context.input_generation = climate_environment != nullptr
             ? climate_environment->generation : 0;
 
+        // K2-A vertical slice: when a Country capture/catalog pair was
+        // published before this worker started, the worker owns a persistent
+        // Country POD plan. A missing peer result parks this whole semantic
+        // boundary; it must not fall through to the old per-call diagnostic
+        // adapter or advance the worker clock.
+        if (climate_ok && _country_pod_configured) {
+            std::string country_error;
+            if (!execute_country_worker_stage(
+                    plan.context.day, diagnostic_context.input_generation,
+                    day_commands, commit, country_error)) {
+                _country_pod_ready.store(false, std::memory_order_release);
+                const char *reason = country_error.empty()
+                    ? "country_worker_stage_pending" : country_error.c_str();
+                for (size_t i = 0; i + 1 < _country_pod_fallback_reason.size(); ++i) {
+                    _country_pod_fallback_reason[i].store(reason[i],
+                                                         std::memory_order_release);
+                    if (reason[i] == '\0') break;
+                }
+                _country_pod_fallback_reason[_country_pod_fallback_reason.size() - 1]
+                    .store('\0', std::memory_order_release);
+                commit.preflight_ok = 0;
+                return commit;
+            }
+            _country_pod_ready.store(true, std::memory_order_release);
+        }
+
+        // G7 SHADOW stage. It consumes the Country snapshot committed above
+        // and the previous main-thread Economy opinion publication. Failure
+        // is diagnostic only and never stalls Climate or promotes IDEOLOGY.
+        std::string ideology_error;
+        const bool ideology_ok = climate_ok && execute_ideology_worker_stage(
+            plan.context.day, commit, ideology_error);
+        _ideology_pod_ready.store(ideology_ok, std::memory_order_release);
+        const char *ideology_reason = ideology_ok
+            ? (_ideology_pod_pending_transition_count.load(
+                    std::memory_order_acquire) > 0
+                ? "ideology_effect_ack_pending" : "")
+            : (ideology_error.empty() ? "ideology_pod_plan_failed" :
+                                      ideology_error.c_str());
+        size_t ideology_reason_index = 0;
+        for (; ideology_reason_index + 1 < _ideology_pod_fallback_reason.size() &&
+               ideology_reason[ideology_reason_index] != '\0';
+             ++ideology_reason_index) {
+            _ideology_pod_fallback_reason[ideology_reason_index].store(
+                ideology_reason[ideology_reason_index], std::memory_order_release);
+        }
+        for (; ideology_reason_index < _ideology_pod_fallback_reason.size();
+             ++ideology_reason_index) {
+            _ideology_pod_fallback_reason[ideology_reason_index].store(
+                '\0', std::memory_order_release);
+        }
+
         // Run the consolidated worker-only domain transaction after the
         // Climate trace barrier. This is deliberately a SHADOW diagnostic:
         // it owns an isolated aggregate and never contributes to the
@@ -1220,11 +2658,136 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             authority_plan_ms = std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - plan_started).count();
             if (authority_ok) {
+                std::vector<RuntimeModifierPodCommand> modifier_commands;
+                modifier_commands.reserve(day_commands.size());
+                for (const RuntimeCommandPacket &packet : day_commands) {
+                    RuntimeModifierPodCommand command;
+                    if (decode_modifier_packet(packet, command))
+                        modifier_commands.push_back(command);
+                }
+                std::vector<RuntimeModifierPodCommand> modifier_intents;
+                modifier_intents.reserve(authority_plan.intents.size());
+                for (const RuntimeDomainIntent &intent : authority_plan.intents) {
+                    if (intent.target_domain != static_cast<uint16_t>(RuntimeDomainId::MODIFIER)) continue;
+                    RuntimeModifierPodCommand command;
+                    command.request_id = intent.request_id != 0 ? intent.request_id : intent.source_id;
+                    command.producer_id = intent.producer_id;
+                    command.sequence = intent.sequence;
+                    command.effective_day = intent.effective_day;
+                    command.requested_day = intent.effective_day;
+                    command.opcode = intent.opcode;
+                    command.domain = intent.payload[1] >= 0 && intent.payload[1] < 4
+                        ? static_cast<uint16_t>(intent.payload[1]) : 0;
+                    command.definition_id = intent.payload[0] >= 0
+                        ? static_cast<int32_t>(intent.payload[0]) : 0;
+                    command.scope = intent.payload[2] >= 0 && intent.payload[2] <= 2
+                        ? static_cast<int32_t>(intent.payload[2]) : 2;
+                    command.entity_handle = intent.target_handle;
+                    command.target_generation = intent.target_generation;
+                    command.group_handle = intent.group_handle;
+                    command.modifier_handle = intent.modifier_handle;
+                    command.duration_days = intent.duration_days;
+                    command.stacks = intent.stacks;
+                    command.magnitude_q16 = intent.magnitude_q16;
+                    command.source_type = static_cast<uint64_t>(RuntimeDomainId::EFFECT);
+                    command.source_id = intent.source_id;
+                    command.input_generation = diagnostic_context.input_generation;
+                    modifier_intents.push_back(command);
+                }
+                bool modifier_ok = true;
+                std::string modifier_error;
+                RuntimeModifierPodSnapshot modifier_snapshot;
+                RuntimeModifierPodReport modifier_report;
+                std::vector<RuntimeDomainAck> modifier_acks;
+                double modifier_plan_ms = 0.0;
+                double modifier_replay_ms = 0.0;
+                if (_modifier_pod_configured) {
+                    const auto modifier_plan_started = std::chrono::steady_clock::now();
+                    modifier_ok = _modifier_pod_authority.plan_day(
+                        plan.context.day, diagnostic_context.input_generation,
+                        modifier_commands, modifier_intents, modifier_snapshot,
+                        modifier_acks, modifier_report, modifier_error);
+                    modifier_plan_ms = std::chrono::duration<double, std::milli>(
+                        std::chrono::steady_clock::now() - modifier_plan_started).count();
+                    if (!modifier_ok) {
+                        _modifier_pod_authority.discard_plan();
+                    }
+                } else if (!modifier_commands.empty() || !modifier_intents.empty()) {
+                    modifier_ok = false;
+                    modifier_error = "modifier_pod_not_configured";
+                }
+                if (modifier_ok) {
+                    modifier_ok = _domain_authority_runner.accept_modifier_acks(
+                        authority_plan, modifier_acks, modifier_error);
+                }
+                uint32_t modifier_slot = 0;
+                bool modifier_slot_reserved = false;
+                if (modifier_ok && _modifier_pod_configured) {
+                    if (!_modifier_snapshots.try_begin_write(modifier_slot)) {
+                        modifier_ok = false;
+                        modifier_error = "modifier_snapshot_ring_full";
+                    } else {
+                        _modifier_snapshots.write_buffer(modifier_slot) = modifier_snapshot;
+                        modifier_slot_reserved = true;
+                    }
+                }
                 const auto replay_started = std::chrono::steady_clock::now();
-                authority_ok = _domain_authority_runner.commit_day(
-                    authority_plan, authority_error);
+                if (modifier_ok) {
+                    modifier_ok = !_modifier_pod_configured ||
+                        _modifier_pod_authority.commit_day(
+                            modifier_snapshot, modifier_error);
+                    if (modifier_ok) {
+                        authority_ok = _domain_authority_runner.commit_day(
+                            authority_plan, authority_error);
+                    }
+                    if (modifier_ok && authority_ok && modifier_slot_reserved) {
+                        _modifier_snapshots.publish(modifier_slot);
+                        modifier_slot_reserved = false;
+                        _modifier_pod_snapshot_generation.store(
+                            modifier_snapshot.generation, std::memory_order_release);
+                    }
+                } else {
+                    authority_ok = false;
+                    _modifier_pod_authority.discard_plan();
+                    _domain_authority_runner.discard_plan();
+                    if (authority_error.empty()) authority_error = modifier_error;
+                }
+                if ((!modifier_ok || !authority_ok) && modifier_slot_reserved)
+                    _modifier_snapshots.release(modifier_slot);
                 authority_replay_ms = std::chrono::duration<double, std::milli>(
                     std::chrono::steady_clock::now() - replay_started).count();
+                modifier_replay_ms = authority_replay_ms;
+                const bool modifier_committed = modifier_ok && authority_ok &&
+                    _modifier_pod_configured;
+                _modifier_pod_ready.store(modifier_committed,
+                                          std::memory_order_release);
+                _modifier_pod_plan_ms.store(modifier_plan_ms, std::memory_order_release);
+                _modifier_pod_replay_ms.store(modifier_replay_ms, std::memory_order_release);
+                _modifier_pod_work_units.store(modifier_report.work_units, std::memory_order_release);
+                _modifier_pod_state_hash.store(modifier_committed
+                    ? modifier_snapshot.state_hash
+                    : _modifier_pod_authority.snapshot().state_hash,
+                    std::memory_order_release);
+                _modifier_pod_ack_count.store(modifier_committed
+                    ? static_cast<uint32_t>(modifier_acks.size()) : 0u,
+                    std::memory_order_release);
+                const char *modifier_reason = modifier_committed ? "" :
+                    (!_modifier_pod_configured && modifier_error.empty()
+                        ? "modifier_pod_not_configured"
+                        : (modifier_error.empty() ? "modifier_pod_plan_failed" :
+                           modifier_error.c_str()));
+                size_t modifier_reason_index = 0;
+                for (; modifier_reason_index + 1 < _modifier_pod_fallback_reason.size() &&
+                        modifier_reason[modifier_reason_index] != '\0';
+                     ++modifier_reason_index) {
+                    _modifier_pod_fallback_reason[modifier_reason_index].store(
+                        modifier_reason[modifier_reason_index], std::memory_order_release);
+                }
+                for (; modifier_reason_index < _modifier_pod_fallback_reason.size();
+                     ++modifier_reason_index) {
+                    _modifier_pod_fallback_reason[modifier_reason_index].store(
+                        '\0', std::memory_order_release);
+                }
             } else {
                 _domain_authority_runner.discard_plan();
             }
@@ -1322,6 +2885,7 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
         commit.dirty_families = RUNTIME_DIRTY_CLOCK;
         commit.work_units = std::max<uint64_t>(1, pipeline_report.work_units);
         commit.preflight_ok = climate_ok ? 1u : 0u;
+        run_events_probe(plan.context.day);
         return commit;
     }
     // Phase B boundary: the clock commit is the only complete handler until
@@ -1448,7 +3012,35 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             continue;
         }
         if (stage.domain == RuntimeDomainId::COUNTRY &&
-            _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::SHADOW) {
+            (_mode.load(std::memory_order_acquire) == RuntimeSimulationMode::SHADOW ||
+             (_mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE &&
+              (_requested_authority_mask.load(std::memory_order_acquire) &
+               runtime_domain_mask(RuntimeDomainId::COUNTRY)) != 0u))) {
+            if (_country_pod_configured) {
+                const uint32_t dirty_before = commit.dirty_families;
+                const uint64_t work_before = commit.work_units;
+                std::string country_error;
+                if (execute_country_worker_stage(
+                        plan.context.day, plan.context.input_generation,
+                        day_commands, commit, country_error)) {
+                    stage.dirty_families = (commit.dirty_families |
+                        dirty_before) &
+                        (RUNTIME_DIRTY_COUNTRY_STATE |
+                         RUNTIME_DIRTY_COUNTRY_TERRITORY |
+                         RUNTIME_DIRTY_COUNTRY_VISUAL_ERA);
+                    stage.work_units = commit.work_units >= work_before
+                        ? commit.work_units - work_before : 0;
+                    stage.completed = (commit.completed_domain_mask &
+                        runtime_domain_mask(RuntimeDomainId::COUNTRY)) != 0u;
+                } else {
+                    if (country_error == "country_worker_peer_results_pending" ||
+                        country_error == "country_peer_results_pending") {
+                        stage.completed = 0;
+                    }
+                    commit.preflight_ok = 0;
+                }
+                continue;
+            }
             RuntimeCountryDayContext country_context;
             country_context.day = plan.context.day;
             country_context.speed_scale = plan.context.speed_scale;
@@ -1485,6 +3077,7 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
         commit.completed_domain_mask |= runtime_domain_mask(stage.domain);
         ++commit.completed_stage_count;
     }
+    run_events_probe(plan.context.day);
     // A failed authoritative Climate day must not advance the clock. The main
     // thread is suppressed, so advancing anyway would silently drop that day:
     // nobody computed it and nothing would ever go back for it. Zero here parks
@@ -1745,8 +3338,17 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
         (parsed.section_mask & ~(RUNTIME_SAVE_SECTION_RUNTIME_ENVELOPE |
                                  RUNTIME_SAVE_SECTION_DOMAIN_POD |
                                  RUNTIME_SAVE_SECTION_CLIMATE |
-                                 RUNTIME_SAVE_SECTION_COUNTRY)) != 0) {
+                                 RUNTIME_SAVE_SECTION_COUNTRY |
+                                 RUNTIME_SAVE_SECTION_MODIFIER |
+                                 RUNTIME_SAVE_SECTION_TRIGGER |
+                                 RUNTIME_SAVE_SECTION_EVENTS |
+                                 RUNTIME_SAVE_SECTION_EFFECT |
+                                 RUNTIME_SAVE_SECTION_IDEOLOGY)) != 0) {
         error = "runtime_bundle_section_mask_invalid";
+        return false;
+    }
+    if ((parsed.section_mask & RUNTIME_SAVE_SECTION_EFFECT) == 0) {
+        error = "runtime_bundle_effect_section_missing";
         return false;
     }
     if (size < MIN_BUNDLE_SIZE) {
@@ -1923,6 +3525,222 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
         }
         parsed.country_pkcn_bytes = checkpoint.canonical_pkcn;
     }
+    if ((parsed.section_mask & RUNTIME_SAVE_SECTION_TRIGGER) != 0) {
+        constexpr uint32_t TRIGGER_SECTION_MARKER = 0x31445054u; // TPD1
+        uint32_t trigger_marker = 0;
+        uint32_t trigger_size = 0;
+        if (cursor > payload_end || payload_end - cursor < 16u ||
+            !read_u32(cursor, trigger_marker) ||
+            !read_u32(cursor + 4u, trigger_size) ||
+            trigger_marker != TRIGGER_SECTION_MARKER ||
+            trigger_size > 64u * 1024u * 1024u ||
+            trigger_size > payload_end - cursor - 16u) {
+            error = "runtime_bundle_trigger_section_invalid";
+            return false;
+        }
+        cursor += 8u;
+        parsed.trigger_bytes.assign(bytes + cursor, bytes + cursor + trigger_size);
+        cursor += trigger_size;
+        uint64_t trigger_checksum = 0;
+        if (!read_u64(cursor, trigger_checksum)) {
+            error = "runtime_bundle_trigger_section_checksum_missing";
+            return false;
+        }
+        uint64_t computed = 1469598103934665603ull;
+        for (const uint8_t byte : parsed.trigger_bytes) {
+            computed ^= static_cast<uint64_t>(byte);
+            computed *= 1099511628211ull;
+        }
+        if (computed != trigger_checksum) {
+            error = "runtime_bundle_trigger_section_checksum_failed";
+            return false;
+        }
+        cursor += 8u;
+    }
+    if ((parsed.section_mask & RUNTIME_SAVE_SECTION_MODIFIER) != 0) {
+        constexpr uint32_t MODIFIER_SECTION_MARKER = 0x3246444Du; // MDF2
+        uint32_t modifier_marker = 0;
+        uint32_t modifier_size = 0;
+        if (cursor > payload_end || payload_end - cursor < 16u ||
+            !read_u32(cursor, modifier_marker) ||
+            !read_u32(cursor + 4u, modifier_size) ||
+            modifier_marker != MODIFIER_SECTION_MARKER ||
+            modifier_size > 64u * 1024u * 1024u ||
+            modifier_size > payload_end - cursor - 16u) {
+            error = "runtime_bundle_modifier_section_invalid";
+            return false;
+        }
+        cursor += 8u;
+        parsed.modifier_bytes.assign(bytes + cursor, bytes + cursor + modifier_size);
+        cursor += modifier_size;
+        uint64_t modifier_checksum = 0;
+        if (!read_u64(cursor, modifier_checksum)) {
+            error = "runtime_bundle_modifier_section_checksum_missing";
+            return false;
+        }
+        uint64_t computed_modifier = 1469598103934665603ull;
+        for (const uint8_t byte : parsed.modifier_bytes) {
+            computed_modifier ^= static_cast<uint64_t>(byte);
+            computed_modifier *= 1099511628211ull;
+        }
+        if (computed_modifier != modifier_checksum) {
+            error = "runtime_bundle_modifier_section_checksum_failed";
+            return false;
+        }
+        cursor += 8u;
+        if (parsed.modifier_bytes.size() < 4u ||
+            std::memcmp(parsed.modifier_bytes.data(), "MDF2", 4u) != 0) {
+            error = "runtime_bundle_modifier_section_marker_invalid";
+            return false;
+        }
+    }
+    if ((parsed.section_mask & RUNTIME_SAVE_SECTION_EVENTS) != 0) {
+        constexpr uint32_t EVENTS_SECTION_MARKER = 0x31545645u; // EVT1
+        uint32_t events_marker = 0;
+        uint32_t events_size = 0;
+        if (cursor > payload_end || payload_end - cursor < 16u ||
+            !read_u32(cursor, events_marker) ||
+            !read_u32(cursor + 4u, events_size) ||
+            events_marker != EVENTS_SECTION_MARKER ||
+            events_size > 64u * 1024u * 1024u ||
+            events_size > payload_end - cursor - 16u) {
+            error = "runtime_bundle_events_section_invalid";
+            return false;
+        }
+        cursor += 8u;
+        parsed.events_bytes.assign(bytes + cursor, bytes + cursor + events_size);
+        cursor += events_size;
+        uint64_t events_checksum = 0;
+        if (!read_u64(cursor, events_checksum)) {
+            error = "runtime_bundle_events_section_checksum_missing";
+            return false;
+        }
+        uint64_t computed_events = 1469598103934665603ull;
+        for (const uint8_t byte : parsed.events_bytes) {
+            computed_events ^= static_cast<uint64_t>(byte);
+            computed_events *= 1099511628211ull;
+        }
+        if (computed_events != events_checksum) {
+            error = "runtime_bundle_events_section_checksum_failed";
+            return false;
+        }
+        cursor += 8u;
+        if (parsed.events_bytes.size() < 4u ||
+            std::memcmp(parsed.events_bytes.data(), "EVT1", 4u) != 0) {
+            error = "runtime_bundle_events_section_marker_invalid";
+            return false;
+        }
+        RuntimeEventsAuthority candidate;
+        std::string events_restore_error;
+        if (!candidate.restore(parsed.events_bytes.data(),
+                               parsed.events_bytes.size(), events_restore_error)) {
+            error = events_restore_error.empty()
+                ? "runtime_bundle_events_restore_invalid" : events_restore_error;
+            return false;
+        }
+    }
+    if ((parsed.section_mask & RUNTIME_SAVE_SECTION_EFFECT) != 0) {
+        constexpr uint32_t EFFECT_SECTION_MARKER = 0x31504645u; // EFP1
+        uint32_t effect_marker = 0;
+        uint32_t effect_size = 0;
+        if (cursor > payload_end || payload_end - cursor < 16u ||
+            !read_u32(cursor, effect_marker) ||
+            !read_u32(cursor + 4u, effect_size) ||
+            effect_marker != EFFECT_SECTION_MARKER ||
+            effect_size > 64u * 1024u * 1024u ||
+            effect_size > payload_end - cursor - 16u) {
+            error = "runtime_bundle_effect_section_invalid";
+            return false;
+        }
+        cursor += 8u;
+        parsed.effect_bytes.assign(bytes + cursor, bytes + cursor + effect_size);
+        cursor += effect_size;
+        uint64_t effect_checksum = 0;
+        if (!read_u64(cursor, effect_checksum)) {
+            error = "runtime_bundle_effect_section_checksum_missing";
+            return false;
+        }
+        uint64_t computed_effect = 1469598103934665603ull;
+        for (const uint8_t byte : parsed.effect_bytes) {
+            computed_effect ^= static_cast<uint64_t>(byte);
+            computed_effect *= 1099511628211ull;
+        }
+        if (computed_effect != effect_checksum) {
+            error = "runtime_bundle_effect_section_checksum_failed";
+            return false;
+        }
+        cursor += 8u;
+        if (parsed.effect_bytes.size() < 4u ||
+            std::memcmp(parsed.effect_bytes.data(), "EFP1", 4u) != 0) {
+            error = "runtime_bundle_effect_section_marker_invalid";
+            return false;
+        }
+        if (!_effect_pod_configured) {
+            error = "runtime_bundle_effect_catalog_missing";
+            return false;
+        }
+        RuntimeEffectPodAuthority candidate;
+        std::string effect_restore_error;
+        if (!candidate.configure(_effect_pod_catalog, effect_restore_error) ||
+            !candidate.restore(parsed.effect_bytes.data(),
+                               parsed.effect_bytes.size(), effect_restore_error)) {
+            error = effect_restore_error.empty()
+                ? "runtime_bundle_effect_restore_invalid" : effect_restore_error;
+            return false;
+        }
+    }
+    if ((parsed.section_mask & RUNTIME_SAVE_SECTION_IDEOLOGY) != 0) {
+        constexpr uint32_t IDEOLOGY_SECTION_MARKER = 0x31504449u; // IDP1
+        uint32_t ideology_marker = 0;
+        uint32_t ideology_size = 0;
+        if (cursor > payload_end || payload_end - cursor < 16u ||
+            !read_u32(cursor, ideology_marker) ||
+            !read_u32(cursor + 4u, ideology_size) ||
+            ideology_marker != IDEOLOGY_SECTION_MARKER ||
+            ideology_size > 64u * 1024u * 1024u ||
+            ideology_size > payload_end - cursor - 16u) {
+            error = "runtime_bundle_ideology_section_invalid";
+            return false;
+        }
+        cursor += 8u;
+        parsed.ideology_bytes.assign(bytes + cursor, bytes + cursor + ideology_size);
+        cursor += ideology_size;
+        uint64_t ideology_checksum = 0;
+        if (!read_u64(cursor, ideology_checksum)) {
+            error = "runtime_bundle_ideology_section_checksum_missing";
+            return false;
+        }
+        uint64_t computed = 1469598103934665603ull;
+        for (const uint8_t byte : parsed.ideology_bytes) {
+            computed ^= static_cast<uint64_t>(byte);
+            computed *= 1099511628211ull;
+        }
+        if (computed != ideology_checksum) {
+            error = "runtime_bundle_ideology_section_checksum_failed";
+            return false;
+        }
+        cursor += 8u;
+        if (parsed.ideology_bytes.size() < 4u ||
+            std::memcmp(parsed.ideology_bytes.data(), "IDP1", 4u) != 0 ||
+            !_ideology_pod_configured) {
+            error = !_ideology_pod_configured
+                ? "runtime_bundle_ideology_catalog_missing"
+                : "runtime_bundle_ideology_section_marker_invalid";
+            return false;
+        }
+        RuntimeIdeologyPodAuthority candidate;
+        std::string ideology_restore_error;
+        if (!candidate.configure(_ideology_pod_catalog,
+                                 ideology_restore_error) ||
+            !candidate.restore(parsed.ideology_bytes.data(),
+                               parsed.ideology_bytes.size(),
+                               ideology_restore_error)) {
+            error = ideology_restore_error.empty()
+                ? "runtime_bundle_ideology_restore_invalid"
+                : ideology_restore_error;
+            return false;
+        }
+    }
     if (cursor != payload_end) {
         error = "runtime_bundle_producer_cursor_invalid";
         return false;
@@ -1984,6 +3802,58 @@ void NativeSimulationHost::build_save_bundle(
         }
         bundle->country_pkcn_bytes = country_checkpoint->canonical_pkcn;
         bundle->section_mask |= RUNTIME_SAVE_SECTION_COUNTRY;
+    }
+    RuntimeTriggerPodSaveSection trigger_save;
+    std::string trigger_save_error;
+    if (_domain_authority_runner.encode_trigger_save(trigger_save,
+                                                     trigger_save_error)) {
+        bundle->trigger_bytes = std::move(trigger_save.payload);
+        bundle->section_mask |= RUNTIME_SAVE_SECTION_TRIGGER;
+    }
+    if (_modifier_pod_configured) {
+        std::vector<RuntimeModifierPodCommand> modifier_pending;
+        modifier_pending.reserve(pending_commands.size());
+        for (const RuntimeCommandPacket &packet : pending_commands) {
+            RuntimeModifierPodCommand command;
+            if (decode_modifier_packet(packet, command))
+                modifier_pending.push_back(command);
+        }
+        _modifier_pod_authority.set_pending_command_identities(modifier_pending);
+        _modifier_pod_authority.serialize(bundle->modifier_bytes);
+        if (bundle->modifier_bytes.empty()) {
+            set_fault("modifier_save_encode_failed");
+            return;
+        }
+        bundle->section_mask |= RUNTIME_SAVE_SECTION_MODIFIER;
+    }
+    {
+        std::string events_save_error;
+        if (!_events_authority.serialize(bundle->events_bytes, events_save_error)) {
+            set_fault(events_save_error.empty() ? "events_save_encode_failed" :
+                      events_save_error.c_str());
+            return;
+        }
+        bundle->section_mask |= RUNTIME_SAVE_SECTION_EVENTS;
+    }
+    if (_effect_pod_configured) {
+        std::string effect_save_error;
+        if (!encode_effect_pod_save(bundle->effect_bytes, effect_save_error)) {
+            set_fault(effect_save_error.empty() ? "effect_save_encode_failed" :
+                      effect_save_error.c_str());
+            return;
+        }
+        bundle->section_mask |= RUNTIME_SAVE_SECTION_EFFECT;
+    }
+    if (_ideology_pod_configured) {
+        std::string ideology_save_error;
+        if (!encode_ideology_pod_save(bundle->ideology_bytes,
+                                      ideology_save_error)) {
+            set_fault(ideology_save_error.empty()
+                ? "ideology_save_encode_failed"
+                : ideology_save_error.c_str());
+            return;
+        }
+        bundle->section_mask |= RUNTIME_SAVE_SECTION_IDEOLOGY;
     }
 
     // PKSR v2 is an endian-stable runtime envelope. The fixed scalar header
@@ -2118,6 +3988,83 @@ void NativeSimulationHost::build_save_bundle(
             append_bytes(bundle->country_bytes.data(), country_section_size);
         append_u64_le(country_checkpoint_checksum(bundle->country_bytes.data(),
                                                    country_section_size));
+    }
+
+    if (!bundle->trigger_bytes.empty()) {
+        constexpr uint32_t TRIGGER_SECTION_MARKER = 0x31445054u; // TPD1
+        append_u32_le(TRIGGER_SECTION_MARKER);
+        const uint32_t trigger_section_size = static_cast<uint32_t>(std::min<size_t>(
+            bundle->trigger_bytes.size(), 64u * 1024u * 1024u));
+        append_u32_le(trigger_section_size);
+        append_bytes(bundle->trigger_bytes.data(), trigger_section_size);
+        uint64_t trigger_checksum = 1469598103934665603ull;
+        for (uint32_t i = 0; i < trigger_section_size; ++i) {
+            trigger_checksum ^= static_cast<uint64_t>(bundle->trigger_bytes[i]);
+            trigger_checksum *= 1099511628211ull;
+        }
+        append_u64_le(trigger_checksum);
+    }
+
+    if (!bundle->modifier_bytes.empty()) {
+        constexpr uint32_t MODIFIER_SECTION_MARKER = 0x3246444Du; // MDF2
+        append_u32_le(MODIFIER_SECTION_MARKER);
+        const uint32_t modifier_section_size = static_cast<uint32_t>(
+            std::min<size_t>(bundle->modifier_bytes.size(),
+                             64u * 1024u * 1024u));
+        append_u32_le(modifier_section_size);
+        append_bytes(bundle->modifier_bytes.data(), modifier_section_size);
+        uint64_t modifier_checksum = 1469598103934665603ull;
+        for (uint32_t i = 0; i < modifier_section_size; ++i) {
+            modifier_checksum ^= static_cast<uint64_t>(bundle->modifier_bytes[i]);
+            modifier_checksum *= 1099511628211ull;
+        }
+        append_u64_le(modifier_checksum);
+    }
+
+    if (!bundle->events_bytes.empty()) {
+        constexpr uint32_t EVENTS_SECTION_MARKER = 0x31545645u; // EVT1
+        append_u32_le(EVENTS_SECTION_MARKER);
+        const uint32_t events_section_size = static_cast<uint32_t>(
+            std::min<size_t>(bundle->events_bytes.size(), 64u * 1024u * 1024u));
+        append_u32_le(events_section_size);
+        append_bytes(bundle->events_bytes.data(), events_section_size);
+        uint64_t events_checksum = 1469598103934665603ull;
+        for (uint32_t i = 0; i < events_section_size; ++i) {
+            events_checksum ^= static_cast<uint64_t>(bundle->events_bytes[i]);
+            events_checksum *= 1099511628211ull;
+        }
+        append_u64_le(events_checksum);
+    }
+
+    if (!bundle->effect_bytes.empty()) {
+        constexpr uint32_t EFFECT_SECTION_MARKER = 0x31504645u; // EFP1
+        append_u32_le(EFFECT_SECTION_MARKER);
+        const uint32_t effect_section_size = static_cast<uint32_t>(
+            std::min<size_t>(bundle->effect_bytes.size(), 64u * 1024u * 1024u));
+        append_u32_le(effect_section_size);
+        append_bytes(bundle->effect_bytes.data(), effect_section_size);
+        uint64_t effect_checksum = 1469598103934665603ull;
+        for (uint32_t i = 0; i < effect_section_size; ++i) {
+            effect_checksum ^= static_cast<uint64_t>(bundle->effect_bytes[i]);
+            effect_checksum *= 1099511628211ull;
+        }
+        append_u64_le(effect_checksum);
+    }
+
+    if (!bundle->ideology_bytes.empty()) {
+        constexpr uint32_t IDEOLOGY_SECTION_MARKER = 0x31504449u; // IDP1
+        append_u32_le(IDEOLOGY_SECTION_MARKER);
+        const uint32_t ideology_section_size = static_cast<uint32_t>(
+            std::min<size_t>(bundle->ideology_bytes.size(),
+                             64u * 1024u * 1024u));
+        append_u32_le(ideology_section_size);
+        append_bytes(bundle->ideology_bytes.data(), ideology_section_size);
+        uint64_t ideology_checksum = 1469598103934665603ull;
+        for (uint32_t i = 0; i < ideology_section_size; ++i) {
+            ideology_checksum ^= static_cast<uint64_t>(bundle->ideology_bytes[i]);
+            ideology_checksum *= 1099511628211ull;
+        }
+        append_u64_le(ideology_checksum);
     }
 
     uint64_t checksum = 1469598103934665603ull;
@@ -2257,9 +4204,12 @@ void NativeSimulationHost::worker_main() {
                     pending_commands_dirty = false;
                 }
                 size_t consumed_commands = pending_begin;
+                std::vector<RuntimeCommandPacket> day_commands;
+                day_commands.reserve(16u);
                 for (; consumed_commands < pending_commands.size(); ++consumed_commands) {
                     const RuntimeCommandPacket &command = pending_commands[consumed_commands];
                     if (command.envelope.effective_day > day) break;
+                    day_commands.push_back(command);
                     RuntimeCommandReceipt receipt;
                     receipt.request_id = command.envelope.request_id;
                     receipt.producer_id = command.envelope.producer_id;
@@ -2269,15 +4219,32 @@ void NativeSimulationHost::worker_main() {
                     const bool domain_valid =
                         command.envelope.domain >= static_cast<uint16_t>(RuntimeDomainId::COUNTRY) &&
                         command.envelope.domain <= static_cast<uint16_t>(RuntimeDomainId::COMMIT);
+                    const bool events_probe = domain_valid &&
+                        static_cast<RuntimeDomainId>(command.envelope.domain) ==
+                            RuntimeDomainId::EVENTS &&
+                        (_mode.load(std::memory_order_acquire) == RuntimeSimulationMode::SHADOW ||
+                         _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE) &&
+                        _events_probe_enabled.load(std::memory_order_acquire);
+                    const bool modifier_shadow = domain_valid &&
+                        static_cast<RuntimeDomainId>(command.envelope.domain) ==
+                            RuntimeDomainId::MODIFIER &&
+                        _mode.load(std::memory_order_acquire) ==
+                            RuntimeSimulationMode::SHADOW &&
+                        _modifier_pod_configured;
                     const bool domain_implemented = domain_valid &&
-                        (implemented_domain_mask() & runtime_domain_mask(
-                            static_cast<RuntimeDomainId>(command.envelope.domain))) != 0;
+                        ((implemented_domain_mask() & runtime_domain_mask(
+                            static_cast<RuntimeDomainId>(command.envelope.domain))) != 0u ||
+                         events_probe || modifier_shadow);
                     const bool payload_valid =
                         command.envelope.payload_offset <= RUNTIME_MAX_COMMAND_PAYLOAD &&
                         command.envelope.payload_size <= RUNTIME_MAX_COMMAND_PAYLOAD &&
                         command.envelope.payload_offset + command.envelope.payload_size <=
                             RUNTIME_MAX_COMMAND_PAYLOAD;
-                    if (!payload_valid) {
+                    RuntimeModifierPodCommand modifier_command;
+                    const bool modifier_payload_valid = !modifier_shadow ||
+                        (decode_modifier_packet(command, modifier_command) &&
+                         modifier_packet_shape_valid(modifier_command));
+                    if (!payload_valid || !modifier_payload_valid) {
                         receipt.code = RuntimeReceiptCode::INVALID_PAYLOAD;
                     } else if (!domain_implemented || command.envelope.opcode == 0) {
                         // Unknown domain/opcode is a deterministic preflight
@@ -2297,8 +4264,13 @@ void NativeSimulationHost::worker_main() {
                 const auto environment = environment_snapshot();
                 RuntimeDayPlan day_plan = build_day_plan(
                     day, speed, environment.get());
-                const RuntimeDayCommit day_commit = execute_day_plan(day_plan);
+                const RuntimeDayCommit day_commit = execute_day_plan(
+                    day_plan, day_commands, day_receipts);
                 if (day_commit.preflight_ok == 0) {
+                    if (_state.load(std::memory_order_acquire) ==
+                        RuntimeWorkerState::FAULTED) {
+                        break;
+                    }
                     // An input/reference barrier failure must not advance the
                     // committed clock. Wait for the main thread to publish
                     // the matching reference or for a control message; this
@@ -2316,6 +4288,8 @@ void NativeSimulationHost::worker_main() {
                     // is not yet available.
                     const uint64_t environment_signal =
                         _environment_generation.load(std::memory_order_acquire);
+                    const uint64_t country_peer_signal =
+                        _country_peer_signal.load(std::memory_order_acquire);
                     std::unique_lock<std::mutex> lock(_control_mutex);
                     _control_cv.wait(lock, [&] {
                         return _stop_requested.load(std::memory_order_acquire) ||
@@ -2325,6 +4299,8 @@ void NativeSimulationHost::worker_main() {
                                 trace_signal ||
                             _environment_generation.load(
                                 std::memory_order_acquire) != environment_signal ||
+                            _country_peer_signal.load(std::memory_order_acquire) !=
+                                country_peer_signal ||
                             _climate_trace.consumable_depth() != 0;
                     });
                     break;
@@ -2593,6 +4569,80 @@ RuntimeThreadReport NativeSimulationHost::report() const {
     out.country_pod_pending_checks = country_diag.pending_checks;
     out.country_pod_ack_pending = country_diag.ack_pending != 0;
     runtime_copy_text(out.country_pod_blocker, country_diag.blocker);
+    const RuntimeTriggerPodDiagnostics trigger_diag = trigger_pod_diagnostics();
+    out.trigger_parity_day = trigger_diag.day;
+    out.trigger_reference_day = trigger_diag.reference_day;
+    out.trigger_input_hash = trigger_diag.input_hash;
+    out.trigger_reference_input_hash = trigger_diag.reference_input_hash;
+    out.trigger_reference_state_hash = trigger_diag.reference_state_hash;
+    out.trigger_worker_state_hash = trigger_diag.worker_state_hash;
+    out.trigger_reference_effect_hash = trigger_diag.reference_effect_hash;
+    out.trigger_worker_effect_hash = trigger_diag.worker_effect_hash;
+    out.trigger_required_ack_count = trigger_diag.required_ack_count;
+    out.trigger_received_ack_count = trigger_diag.received_ack_count;
+    out.trigger_pending_ack_count = trigger_diag.pending_ack_count;
+    out.trigger_generation = trigger_diag.generation;
+    out.trigger_committed_day = trigger_diag.committed_day;
+    out.trigger_acked_effect_id = trigger_diag.acked_effect_id;
+    out.trigger_pending_command_count = trigger_diag.pending_command_count;
+    out.trigger_parity_compared = trigger_diag.parity_compared;
+    out.trigger_parity_matched = trigger_diag.parity_matched;
+    out.trigger_first_divergence_index = trigger_diag.first_divergence_index;
+    std::memcpy(out.trigger_first_divergence_kind,
+                trigger_diag.first_divergence_kind,
+                sizeof(out.trigger_first_divergence_kind));
+    runtime_copy_text(out.trigger_blocker, trigger_diag.blocker);
+    out.modifier_pod_ready = _modifier_pod_ready.load(std::memory_order_acquire);
+    out.modifier_pod_plan_ms = _modifier_pod_plan_ms.load(std::memory_order_acquire);
+    out.modifier_pod_replay_ms = _modifier_pod_replay_ms.load(std::memory_order_acquire);
+    out.modifier_pod_work_units = _modifier_pod_work_units.load(std::memory_order_acquire);
+    out.modifier_pod_state_hash = _modifier_pod_state_hash.load(std::memory_order_acquire);
+    out.modifier_pod_snapshot_generation = _modifier_pod_snapshot_generation.load(
+        std::memory_order_acquire);
+    out.modifier_pod_ack_count = _modifier_pod_ack_count.load(std::memory_order_acquire);
+    for (size_t i = 0; i + 1 < sizeof(out.modifier_pod_fallback_reason); ++i) {
+        const char value = _modifier_pod_fallback_reason[i].load(
+            std::memory_order_acquire);
+        out.modifier_pod_fallback_reason[i] = value;
+        if (value == '\0') break;
+    }
+    out.modifier_pod_fallback_reason[
+        sizeof(out.modifier_pod_fallback_reason) - 1] = '\0';
+    out.ideology_pod_ready = _ideology_pod_ready.load(std::memory_order_acquire);
+    out.ideology_pod_plan_ms = _ideology_pod_plan_ms.load(std::memory_order_acquire);
+    out.ideology_pod_replay_ms = _ideology_pod_replay_ms.load(std::memory_order_acquire);
+    out.ideology_pod_state_hash = _ideology_pod_state_hash.load(std::memory_order_acquire);
+    out.ideology_pod_snapshot_generation = _ideology_pod_snapshot_generation.load(
+        std::memory_order_acquire);
+    out.ideology_pod_pending_transition_count =
+        _ideology_pod_pending_transition_count.load(std::memory_order_acquire);
+    out.ideology_pod_intent_count = _ideology_pod_intent_count.load(
+        std::memory_order_acquire);
+    for (size_t i = 0; i + 1 < sizeof(out.ideology_pod_fallback_reason); ++i) {
+        const char value = _ideology_pod_fallback_reason[i].load(
+            std::memory_order_acquire);
+        out.ideology_pod_fallback_reason[i] = value;
+        if (value == '\0') break;
+    }
+    out.ideology_pod_fallback_reason[
+        sizeof(out.ideology_pod_fallback_reason) - 1] = '\0';
+    out.events_probe_enabled = _events_probe_enabled.load(std::memory_order_acquire);
+    out.events_pod_ready = _events_pod_ready.load(std::memory_order_acquire);
+    out.events_pod_plan_ms = _events_pod_plan_ms.load(std::memory_order_acquire);
+    out.events_pod_replay_ms = _events_pod_replay_ms.load(std::memory_order_acquire);
+    out.events_pod_state_hash = _events_pod_state_hash.load(std::memory_order_acquire);
+    out.events_pod_snapshot_generation = _events_pod_snapshot_generation.load(
+        std::memory_order_acquire);
+    out.events_pod_event_count = _events_pod_event_count.load(std::memory_order_acquire);
+    out.events_pod_ack_count = _events_pod_ack_count.load(std::memory_order_acquire);
+    out.events_pod_drop_count = _events_pod_drop_count.load(std::memory_order_acquire);
+    for (size_t i = 0; i + 1 < sizeof(out.events_pod_fallback_reason); ++i) {
+        const char value = _events_pod_fallback_reason[i].load(
+            std::memory_order_acquire);
+        out.events_pod_fallback_reason[i] = value;
+        if (value == '\0') break;
+    }
+    out.events_pod_fallback_reason[sizeof(out.events_pod_fallback_reason) - 1] = '\0';
     out.environment_generation = _environment_generation.load(std::memory_order_acquire);
     out.environment_day = _environment_day.load(std::memory_order_acquire);
     out.environment_cell_count = _environment_cell_count.load(std::memory_order_acquire);

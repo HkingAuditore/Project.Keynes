@@ -1909,3 +1909,85 @@ plan/replay 成本和日级 state hash 纳入同一份 CSV；不得据此将 Cli
 看到 `simulation_worker_blocker=runtime_graph_still_uses_godot_containers_and_object_boundaries`
 或 `runtime_graph_not_thread_safe` 时，说明 graph 尚未完成输入冻结和 POD ABI 迁移，
 应继续使用 OFF/SHADOW，而不是绕过 readiness gate。
+
+## Authority Stage C client/headless measurement
+
+Stage C 的固定开发基线是 `60x40`、seed `20260718`、双大陆、3 个 foreign countries、x50、
+预热 5 秒、录制 30 秒。客户端固定为 Debug、`1600x960` 窗口、高画质、昼夜开启、overlay
+关闭、VSync 关闭、`max_fps=0`。这些结果只用于开发诊断，不代替 Release 验收。
+
+### C1 visible client frame pairs
+
+在仓库根目录运行：
+
+```powershell
+.\tools\runtime\Invoke-AuthorityStageCClient.ps1
+```
+
+脚本按 `OFF->ACTIVE`、`ACTIVE->OFF`、`OFF->ACTIVE` 启动六个独立可见进程。runner 是
+detached root，但世界创建仍调用正式 `GameFlow.begin_new_game()` 和 `player_game.tscn`。
+每个 run 生成 `frame_samples.csv`、`perf.csv`、`session.json`；总目录生成
+`summary.csv/json/md`。OFF 的准确含义是 `Climate authority off / worker SHADOW`，不是关闭
+worker 诊断。只有三个配对方向一致，且三对全帧 p50 的中位差同时达到 `0.25ms` 和 `3%`，报告才标记
+稳定改善或稳定回归；其他结果均为 `mixed_or_no_material_evidence`。
+
+### C2 manual full-SoA parity SOP
+
+先启动 OFF 干净进程：
+
+```powershell
+.\tools\runtime\Start-AuthorityStageCManual.ps1 -Mode OFF -RunId c2-off
+```
+
+看到 `[stage-c/client] manual ready` 后，打开 GM 并确认性能录制关闭。在地块数据录制器中保持
+`tick_stride=1`、`cell_stride=1`、`compact_fields=false`，开始录制，然后恢复时钟并选择 x50；
+运行 30 秒后停止并导出，再关闭进程。随后用新的 ACTIVE 进程重复完全相同步骤：
+
+```powershell
+.\tools\runtime\Start-AuthorityStageCManual.ps1 -Mode ACTIVE -RunId c2-active
+```
+
+录制期间不得同时开启 `PerfRecorder`。两份 sidecar 的 seed、地图、字段 schema、图形档和录制
+配置必须一致。比较命令：
+
+```powershell
+.\tools\runtime\Compare-AuthorityStageCTiles.ps1 `
+  -LeftCsv .\artifacts\runtime\authority-stage-c\c2-off\tile_data.csv `
+  -RightCsv .\artifacts\runtime\authority-stage-c\c2-active\tile_data.csv
+```
+
+默认策略文件是 `tools/runtime/authority-stage-c-field-policy.json`。差异只有在 `fields` 中显式
+登记 `reason` 和 tolerance 后才属于已知差异；未登记差异、缺失 tick/cell、空值、NaN 或 Inf
+均为 release blocker。逐字段 mean/max 为精确流式统计；p95 使用报告中声明的固定种子有界
+reservoir，避免全量 CSV 常驻内存。
+
+策略条目必须同时给出原因与绝对容差；可选的 mean/p95 容差未填写时继承绝对容差：
+
+```json
+{
+  "fields": {
+    "example_field": {
+      "reason": "Documented domain-specific difference",
+      "absolute_tolerance": 0.000001,
+      "mean_tolerance": 0.0000001,
+      "p95_tolerance": 0.0000005
+    }
+  }
+}
+```
+
+### C3 headless adjusted throughput
+
+```powershell
+.\tools\runtime\Invoke-AuthorityStageCHeadless.ps1
+```
+
+`run_ms` 保留历史定义。`harness_adjusted_run_ms` 只扣除 40ms writeback 窗口里的实测 idle
+delay，保留 `_consume_runtime_commit_if_ready()` 的主线程工作；
+`harness_lower_bound_run_ms` 才扣除整个实测窗口。报告把 ACTIVE worker timing、主线程 native
+graph timing 与 OFF/SHADOW diagnostic timing 分列；零值不应解释为 ACTIVE worker compute。
+C3 只衡量调整后 days-per-second，任何帧延迟判断必须回到 C1。
+
+### Modifier POD diagnostics
+
+报告字段 modifier_pod_ready、modifier_pod_plan_ms、modifier_pod_replay_ms、modifier_pod_work_units、modifier_pod_state_hash、modifier_pod_snapshot_generation、modifier_pod_ack_count 与 modifier_pod_fallback_reason 只描述 SHADOW worker。它们不能被解释为 Modifier ACTIVE authority；生产仍由 legacy ModifierRuntime 驱动。snapshot generation 必须单调，capture 后命令顺延下一安全日，任何 ACK/snapshot 失败都应优先检查 fallback reason 而不是吞掉为空 ACK。

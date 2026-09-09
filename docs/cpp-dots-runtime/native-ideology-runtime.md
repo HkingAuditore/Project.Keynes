@@ -6,6 +6,29 @@ three-card offers, gates, and queued ideology commands. It intentionally does
 not own Country technology/signals, Effect transactions, Modifier instances,
 economy state, or a Godot UI mirror.
 
+## Worker shadow authority (G2-G7)
+
+`RuntimeIdeologyPodAuthority` is the worker-only numeric mirror used by
+`NativeSimulationHost` in `SHADOW`. Its catalog contains immutable CSR/array
+definitions for levels, Country technology/research requirements, class stance
+gates, exclusions, capacities, and reverse-CSR synergy candidates. The worker
+does not retain Godot objects, strings, runtime pointers, or writable UI state.
+
+The nine legacy operations are replayed through a copy-on-write plan with
+stable command ordering, producer high-water idempotency, bounded cursors, and
+same-day continuation. Country input is the captured technology/discovery/
+pending-technology/research-signal snapshot. Opinion input is the previously
+committed Economy class-opinion snapshot; revision, class hash, lane shape, and
+Country handle/generation are fail-closed checks on every plan.
+
+Effect-dependent changes emit typed `RuntimeDomainIntent` records marked
+`DEFERRED | REQUIRES_ACK`. The worker never synthesizes an ACK and does not
+publish final location, level, slot, ACTIVE, or synergy state until a real
+Effect `OK` ACK is matched to the stable transition identity, target generation,
+and effective day. The mirror is bootstrapped and published at worker start
+when its immutable Country and Economy inputs are available, then is not fed
+back into the synchronous `NativeIdeologyRuntime`.
+
 ## Authority and order
 
 The production chain is `trigger_runtime` (80) -> `ideology_runtime` (82) ->
@@ -98,6 +121,13 @@ modifier keys or term values changes the Modifier and Effect catalog
 hashes; existing PKCM/PKEF saves fail closed.
 
 ## Save and restore
+
+The worker mirror has an independent `IDP1` section and ABI. It is restored
+only after worker stop and catalog/bootstrap validation; checksum, catalog hash,
+state hash, shape, and version failures reject the complete worker state. The
+legacy composite diagnostic `PDP3` and synchronous `PKID` remain separate;
+absence of `IDP1` bootstraps default worker state and never derives it from
+`PKID`.
 
 `PKID v3` persists known/gate bitsets, sparse authoritative idea state,
 entered-level bits, points, offer and RNG state, producer high-water marks,

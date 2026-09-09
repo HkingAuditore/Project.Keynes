@@ -6,6 +6,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "runtime_trigger_pod.h"
+
 #include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/packed_byte_array.hpp>
 
@@ -13,6 +15,7 @@ namespace pk {
 
 class EffectRuntime;
 class NativeIdeologyRuntime;
+class NativeSimulationHost;
 
 // Native trigger authority. Catalog parsing is a cold boundary; event ingest,
 // aggregation, condition evaluation, and effect generation use dense POD data.
@@ -108,6 +111,7 @@ public:
     // state/cursors remain owned here; EffectRuntime owns the resulting ACK.
     godot::Dictionary handoff_effects(EffectRuntime *effect_runtime,
                                       NativeIdeologyRuntime *ideology_runtime,
+                                      NativeSimulationHost *ideology_pod_host,
                                       int32_t limit);
     godot::Dictionary set_enabled(const godot::Dictionary &batch);
     godot::Dictionary reconcile_branch_bindings(const godot::Dictionary &batch);
@@ -121,6 +125,12 @@ public:
     godot::PackedByteArray capture() const;
     godot::Dictionary restore(const godot::PackedByteArray &bytes);
     godot::Dictionary clear_state();
+    bool export_pod_catalog(RuntimeTriggerPodCatalog &out,
+                            std::string &error) const;
+    bool export_pod_snapshot(RuntimeTriggerSnapshot &out,
+                             std::string &error) const;
+    uint64_t pod_state_hash() const;
+    uint64_t pod_effect_hash() const;
 
 private:
     struct Definition {
@@ -185,6 +195,7 @@ private:
         int64_t effective_day = 0;
         int32_t source_priority = 0;
         int32_t trigger_id = -1;
+        int32_t effect_definition_id = -1;
         uint64_t target_handle = 0;
         uint32_t target_generation = 0;
         uint64_t fire_sequence = 0;

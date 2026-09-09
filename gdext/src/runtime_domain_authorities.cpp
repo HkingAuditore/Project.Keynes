@@ -10,6 +10,54 @@
 #include <limits>
 
 namespace pk {
+
+bool RuntimeDomainAuthorityRunner::configure_trigger_pod(
+        const RuntimeTriggerPodCatalog &catalog, std::string &error) {
+    std::lock_guard<std::mutex> lock(_trigger_mutex);
+    RuntimeTriggerSnapshot initial;
+    if (_trigger_configured && !_trigger_authority.snapshot(initial, error)) return false;
+    if (!_trigger_authority.bootstrap(initial, catalog, error)) return false;
+    _trigger_catalog = catalog;
+    _trigger_configured = true;
+    return true;
+}
+
+bool RuntimeDomainAuthorityRunner::queue_trigger_command(
+        const RuntimeTriggerCommand &command, std::string &error) {
+    std::lock_guard<std::mutex> lock(_trigger_mutex);
+    return _trigger_authority.queue_command(command, error);
+}
+
+RuntimeTriggerPodDiagnostics RuntimeDomainAuthorityRunner::trigger_pod_diagnostics() const {
+    std::lock_guard<std::mutex> lock(_trigger_mutex);
+    return _trigger_authority.diagnostics();
+}
+
+bool RuntimeDomainAuthorityRunner::set_trigger_reference_frame(
+        int64_t day, uint64_t input_hash, uint64_t state_hash,
+        uint64_t effect_hash, std::string &error) {
+    std::lock_guard<std::mutex> lock(_trigger_mutex);
+    if (!_trigger_configured) { error = "trigger_pod_not_configured"; return false; }
+    return _trigger_authority.set_reference_frame(
+        day, input_hash, state_hash, effect_hash, error);
+}
+
+bool RuntimeDomainAuthorityRunner::encode_trigger_save(
+        RuntimeTriggerPodSaveSection &section, std::string &error) const {
+    std::lock_guard<std::mutex> lock(_trigger_mutex);
+    if (!_trigger_configured) { error = "trigger_pod_not_configured"; return false; }
+    return _trigger_authority.encode_save(section, error);
+}
+
+bool RuntimeDomainAuthorityRunner::restore_trigger_save(
+        const RuntimeTriggerPodSaveSection &section,
+        const RuntimeTriggerPodCatalog &catalog, std::string &error) {
+    std::lock_guard<std::mutex> lock(_trigger_mutex);
+    if (!_trigger_authority.restore_save(section, catalog, error)) return false;
+    _trigger_catalog = catalog;
+    _trigger_configured = true;
+    return true;
+}
 namespace {
 
 constexpr uint64_t FNV_OFFSET = 1469598103934665603ull;
@@ -319,6 +367,31 @@ RuntimeDomainReport RuntimeDomainAuthorityRunner::run_trigger_input(
     out.day = context.day;
     out.input_generation = context.input_generation;
     const auto started = std::chrono::steady_clock::now();
+    if (_trigger_configured) {
+        std::lock_guard<std::mutex> lock(_trigger_mutex);
+        std::string trigger_error;
+        if (!_trigger_authority.plan_day(context.day, context.input_generation,
+                                         _trigger_plan, trigger_error) ||
+            !_trigger_authority.commit_day(_trigger_plan, _trigger_plan.acks,
+                                           trigger_error)) {
+            set_report_error(out, trigger_error.empty()
+                ? "trigger_pod_transaction_failed" : trigger_error.c_str());
+            out.timing.elapsed_ms = elapsed_ms(started);
+            return out;
+        }
+        work_units += _trigger_plan.intents.size() +
+            _trigger_plan.next_state.states.size();
+        out.completed = 1;
+        out.preflight_ok = 1;
+        out.dirty_families = RUNTIME_DIRTY_EVENTS;
+        out.timing.work_units = _trigger_plan.intents.size() +
+            _trigger_plan.next_state.states.size();
+        out.timing.intent_count = static_cast<uint32_t>(_trigger_plan.intents.size());
+        out.timing.ack_count = _trigger_plan.required_ack_count;
+        out.timing.state_hash = _trigger_authority.state_hash();
+        out.timing.elapsed_ms = elapsed_ms(started);
+        return out;
+    }
     uint64_t last_event = 0;
     for (RuntimeTriggerState &state : _next.trigger.states) {
         for (const RuntimeEventRecord &event : _next.events.journal) {
@@ -422,17 +495,22 @@ RuntimeDomainReport RuntimeDomainAuthorityRunner::run_effect(
         intent.target_generation = instance.target_generation;
         intent.effective_day = context.day;
         intent.value = 1;
+        intent.request_id = hash_mix(instance.instance_id,
+                                     instance.fire_sequence + 1u);
+        intent.producer_id = static_cast<uint32_t>(RuntimeDomainId::EFFECT);
+        intent.sequence = instance.fire_sequence + 1u;
+        // The compact runner's fixture effect is an APPLY intent. Real effect
+        // adapters may replace these numeric lanes with their compiled IR.
+        intent.payload[0] = 0; // definition_id
+        intent.payload[1] = 0; // Modifier domain
+        intent.payload[2] = 2; // entity scope
+        intent.payload[3] = 1; // stacks
+        intent.duration_days = -2;
+        intent.stacks = 1;
+        intent.magnitude_q16 = 65536;
         _intents.push_back(intent);
         ++instance.fire_sequence;
         instance.next_due_day = context.day + 1;
-        if (_active_plan == nullptr ||
-            !add_ack(*_active_plan, intent.target_domain, instance.instance_id,
-                     instance.target_handle, context.day,
-                     RuntimeDomainAckCode::OK)) {
-            set_report_error(out, "domain_ack_capacity_exceeded");
-            out.timing.elapsed_ms = elapsed_ms(started);
-            return out;
-        }
     }
     _next.effect.committed_day = context.day;
     _next.effect.generation = _current.effect.generation + 1u;
@@ -454,64 +532,22 @@ RuntimeDomainReport RuntimeDomainAuthorityRunner::run_modifier(
     out.day = context.day;
     out.input_generation = context.input_generation;
     const auto started = std::chrono::steady_clock::now();
-    std::stable_sort(_next.modifier.entries.begin(),
-                     _next.modifier.entries.end(),
-        [](const RuntimeModifierEntry &a, const RuntimeModifierEntry &b) {
-            const int64_t ae = a.expiry_day < 0
-                ? std::numeric_limits<int64_t>::max() : a.expiry_day;
-            const int64_t be = b.expiry_day < 0
-                ? std::numeric_limits<int64_t>::max() : b.expiry_day;
-            if (ae != be) return ae < be;
-            if (a.target_handle != b.target_handle)
-                return a.target_handle < b.target_handle;
-            if (a.definition_id != b.definition_id)
-                return a.definition_id < b.definition_id;
-            return a.creation_sequence < b.creation_sequence;
-        });
-    _next.modifier.entries.erase(std::remove_if(
-        _next.modifier.entries.begin(), _next.modifier.entries.end(),
-        [day = context.day](const RuntimeModifierEntry &entry) {
-            return entry.expiry_day >= 0 && entry.expiry_day < day;
-        }), _next.modifier.entries.end());
+    uint64_t modifier_intents = 0;
     for (const RuntimeDomainIntent &intent : _intents) {
         if (intent.target_domain != static_cast<uint16_t>(RuntimeDomainId::MODIFIER))
             continue;
-        auto found = std::find_if(_next.modifier.entries.begin(),
-                                  _next.modifier.entries.end(),
-            [&intent](const RuntimeModifierEntry &entry) {
-                return entry.target_handle == intent.target_handle &&
-                    entry.definition_id == intent.opcode;
-            });
-        if (found == _next.modifier.entries.end()) {
-            if (_next.modifier.entries.size() >=
-                    _next.modifier.entries.capacity()) {
-                set_report_error(out, "modifier_capacity_exceeded");
-                out.timing.elapsed_ms = elapsed_ms(started);
-                return out;
-            }
-            RuntimeModifierEntry entry{};
-            entry.target_handle = intent.target_handle;
-            entry.target_generation = intent.target_generation;
-            entry.definition_id = intent.opcode;
-            entry.stacks = 1;
-            entry.value_q16 = intent.value;
-            entry.creation_sequence = intent.source_id;
-            found = _next.modifier.entries.insert(_next.modifier.entries.end(), entry);
-        } else {
-            ++found->stacks;
-            found->value_q16 += intent.value;
-        }
-        ++_next.modifier.bucket_revision;
+        ++modifier_intents;
     }
-    _next.modifier.committed_day = context.day;
-    _next.modifier.generation = _current.modifier.generation + 1u;
-    work_units += _next.modifier.entries.size();
+    // The dedicated RuntimeModifierPodAuthority owns all Modifier mutation.
+    // This shared runner only records the stage and waits for its real ACKs.
+    work_units += modifier_intents;
     out.completed = 1;
     out.preflight_ok = 1;
-    out.dirty_families = RUNTIME_DIRTY_COUNTRY_STATE;
-    out.timing.work_units = _next.modifier.entries.size();
-    out.timing.state_hash = _next.modifier.state_hash();
-    out.timing.ack_count = static_cast<uint32_t>(_acks.size());
+    out.dirty_families = modifier_intents != 0 ? RUNTIME_DIRTY_COUNTRY_STATE : 0;
+    out.timing.work_units = modifier_intents;
+    out.timing.intent_count = static_cast<uint32_t>(modifier_intents);
+    out.timing.state_hash = _current.modifier.state_hash();
+    out.timing.ack_count = 0;
     out.timing.elapsed_ms = elapsed_ms(started);
     return out;
 }
@@ -744,16 +780,18 @@ bool RuntimeDomainAuthorityRunner::plan_day(
     }
     plan.intents = _intents;
     plan.acks = _acks;
+    for (const RuntimeDomainIntent &intent : plan.intents) {
+        if (intent.target_domain == static_cast<uint16_t>(RuntimeDomainId::MODIFIER)) {
+            plan.ack_required_mask |= runtime_domain_mask(RuntimeDomainId::MODIFIER);
+        }
+    }
     plan.input_hash = input_hash;
     plan.base_hash = _current.state_hash();
     plan.next_hash = _next.state_hash();
-    plan.preflight_ok = (plan.ack_required_mask == plan.ack_received_mask) ? 1 : 0;
-    if (plan.preflight_ok == 0) {
-        error = "domain_ack_barrier_incomplete";
-        copy_text(plan.error, error.c_str());
-        _active_plan = nullptr;
-        return false;
-    }
+    // External domain ACKs are attached by NativeSimulationHost after the
+    // dedicated stage has planned successfully. The plan remains uncommitted
+    // until accept_modifier_acks() closes this barrier.
+    plan.preflight_ok = 1;
     // A successful plan is not a commit.  Keep the committed mask at zero
     // until the explicit commit barrier swaps the stores; conflating these
     // states makes diagnostics look authoritative after a discarded plan.
@@ -768,6 +806,73 @@ bool RuntimeDomainAuthorityRunner::plan_day(
     _report.changed_cells = changed_cells;
     _report.preflight_ok = 1;
     _plan_ready = true;
+    return true;
+}
+
+bool RuntimeDomainAuthorityRunner::accept_modifier_acks(
+        RuntimeDomainAuthorityPlan &plan,
+        const std::vector<RuntimeDomainAck> &acks, std::string &error) {
+    error.clear();
+    if (!_plan_ready || _active_plan != &plan || plan.preflight_ok == 0) {
+        error = "domain_plan_missing";
+        return false;
+    }
+    std::vector<const RuntimeDomainIntent *> expected;
+    expected.reserve(plan.intents.size());
+    for (const RuntimeDomainIntent &intent : plan.intents) {
+        if (intent.target_domain == static_cast<uint16_t>(RuntimeDomainId::MODIFIER))
+            expected.push_back(&intent);
+    }
+    if (expected.size() > RUNTIME_DOMAIN_INTENT_CAPACITY ||
+        acks.size() != expected.size() ||
+        plan.acks.size() + acks.size() > RUNTIME_DOMAIN_INTENT_CAPACITY) {
+        error = expected.size() == acks.size()
+            ? "domain_ack_capacity_exceeded" : "modifier_ack_missing";
+        copy_text(plan.error, error.c_str());
+        plan.preflight_ok = 0;
+        return false;
+    }
+    std::vector<uint8_t> matched(acks.size(), 0u);
+    for (const RuntimeDomainIntent *intent : expected) {
+        size_t found = acks.size();
+        for (size_t i = 0; i < acks.size(); ++i) {
+            if (matched[i] != 0) continue;
+            const RuntimeDomainAck &ack = acks[i];
+            if (ack.domain == static_cast<uint16_t>(RuntimeDomainId::MODIFIER) &&
+                ack.request_id == intent->request_id &&
+                ack.transaction_id == intent->request_id &&
+                ack.producer_id == intent->producer_id &&
+                ack.sequence == intent->sequence &&
+                ack.target_handle == intent->target_handle &&
+                ack.target_generation == intent->target_generation &&
+                ack.effective_day == intent->effective_day) {
+                found = i;
+                break;
+            }
+        }
+        if (found == acks.size()) {
+            error = "modifier_ack_identity_mismatch";
+            copy_text(plan.error, error.c_str());
+            plan.preflight_ok = 0;
+            return false;
+        }
+        if (acks[found].code != RuntimeDomainAckCode::OK) {
+            error = acks[found].code == RuntimeDomainAckCode::STALE_GENERATION
+                ? "modifier_ack_stale_generation"
+                : (acks[found].code == RuntimeDomainAckCode::RETRY
+                    ? "modifier_ack_retry" : "modifier_ack_rejected");
+            copy_text(plan.error, error.c_str());
+            plan.preflight_ok = 0;
+            return false;
+        }
+        matched[found] = 1u;
+        plan.acks.push_back(acks[found]);
+    }
+    if (!expected.empty())
+        plan.ack_received_mask |= runtime_domain_mask(RuntimeDomainId::MODIFIER);
+    _acks = plan.acks;
+    _report.ack_received_mask = plan.ack_received_mask;
+    _report.ack_count = static_cast<uint32_t>(plan.acks.size());
     return true;
 }
 

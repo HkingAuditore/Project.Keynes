@@ -1,0 +1,90 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] modifier catalog configures
+  [PASS] effect catalog configures
+  [PASS] country configures
+  [PASS] country bootstraps
+  [PASS] research evidence queues
+  [PASS] effect day 0
+  [PASS] modifier day 0
+  [PASS] country day 0
+  [PASS] single-domain completion queues
+  [PASS] effect day 1
+  [PASS] modifier day 1
+  [PASS] country day 1
+  [PASS] effect drain day 1 pass
+  [PASS] modifier drain day 1 pass
+  [PASS] research completion stays pending on the completion day
+  [PASS] pending activation queue contains only the completed technology
+  [PASS] effect day 2
+  [PASS] modifier day 2
+  [PASS] country day 2
+  [PASS] next production morning activates after Effect ACK
+  [PASS] activation removes the technology from the pending queue
+  [PASS] activation updates the queue incrementally
+  [PASS] effect day 3
+  [PASS] modifier day 3
+  [PASS] country day 3
+  [PASS] later production days keep the completed tag
+  [PASS] idle research day does not rebuild the full queue index
+  [PASS] single-item modifier catalog configures
+  [PASS] single-item effect catalog configures
+  [PASS] single-item country configures
+  [PASS] single-item country bootstraps
+  [PASS] single-item maize evidence commits
+  [PASS] effect day 0
+  [PASS] modifier day 0
+  [PASS] country day 0
+  [PASS] single-item queue accepts one technology
+  [PASS] effect day 1
+  [PASS] modifier day 1
+  [PASS] country day 1
+  [PASS] effect drain day 1 pass
+  [PASS] modifier drain day 1 pass
+  [PASS] single-item completion is pending before ACK drain
+  [PASS] pending completion keeps the country scheduled on the same day
+  [PASS] same-day country continuation commits
+  [PASS] single-item research completes without a new command
+  [PASS] recovery modifier configures
+  [PASS] recovery effect configures
+  [PASS] recovery country configures
+  [PASS] recovery bootstraps
+  [PASS] recovery livestock evidence queues
+  [PASS] effect day 0
+  [PASS] modifier day 0
+  [PASS] country day 0
+  [PASS] recovery queues animal husbandry
+  [PASS] effect day 1
+  [PASS] modifier day 1
+  [PASS] country day 1
+  [PASS] effect drain day 1 pass
+  [PASS] modifier drain day 1 pass
+  [PASS] animal husbandry completion stays pending
+  [PASS] country-only day 2
+  [PASS] UNIQUE_SOURCE already applied completes without another Effect morning
+  [PASS] nudge modifier configures
+  [PASS] nudge effect configures
+  [PASS] nudge country configures
+  [PASS] nudge bootstraps
+  [PASS] nudge livestock evidence queues
+  [PASS] effect no-drain day 0
+  [PASS] modifier no-drain day 0
+  [PASS] country no-drain day 0
+  [PASS] nudge queues animal husbandry
+  [PASS] effect no-drain day 1
+  [PASS] modifier no-drain day 1
+  [PASS] country no-drain day 1
+  [PASS] nudge completion stays pending
+  [PASS] nudge country-only day 2
+  [PASS] missed ACK remains pending until the chain is serviced
+  [PASS] effect day 2
+  [PASS] modifier day 2
+  [PASS] country day 2
+  [PASS] nudge activation completes without a new research command
+technology_pending_activation_scheduler_test: PASS
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 297 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

@@ -314,6 +314,9 @@ public:
     godot::Dictionary ack_native_gameplay(DCWorldExt *world_ext);
     bool should_run(int64_t day_index) const;
     uint64_t catalog_hash() const { return _catalog_hash; }
+    // Mutable peer-domain watermark.  This is deliberately distinct from the
+    // immutable catalog hash and advances at Effect state commit boundaries.
+    uint64_t committed_generation() const { return _committed_generation; }
     godot::Dictionary poll_transactions(int64_t after_transaction_id,
                                          int32_t limit) const;
     godot::Dictionary preflight_transactions(const godot::Dictionary &batch);
@@ -661,6 +664,7 @@ private:
     std::string command_definition_key_for(const Transaction &transaction,
                                            const Command &command) const;
     void reset_runtime_state();
+    void advance_committed_generation();
     bool compile_era_reward_catalog(const godot::Dictionary &catalog,
                                     std::string &error);
     bool plan_era_reward_offer(int32_t pool_index, uint64_t country_handle,
@@ -679,6 +683,7 @@ private:
 
     bool _configured = false;
     uint64_t _catalog_hash = 0;
+    uint64_t _committed_generation = 1;
     int32_t _metric_count = 0;
     int32_t _max_instances = 4096;
     int32_t _max_transactions = 8192;

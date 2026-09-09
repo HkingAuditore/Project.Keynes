@@ -61,6 +61,13 @@ in `rendering/bakers/climate_baker.gd`. Both modules receive explicit inputs and
 return data packages; neither registers systems, writes slots, or owns Godot
 rendering objects.
 
+Ideology migration stage G is currently a SHADOW worker mirror. Its
+`RuntimeIdeologyPodAuthority` consumes immutable Country technology/research
+and previous-day Economy opinion snapshots, replays the nine numeric commands
+deterministically, and publishes deferred Effect intents plus immutable
+diagnostic snapshots. It does not enter the ACTIVE authority mask, does not
+write MapData, and does not replace synchronous `NativeIdeologyRuntime` state.
+
 `MapData` 另持三个视野数组（`visible_arr` / `explored_arr` / `fog_k_arr`），
 `WorldData` 另持两个生成期烘死的静态视野场（`cell_view_height` /
 `cell_view_block`）；它们由 `VisionSolver` 而非任何 C++ pass 维护。

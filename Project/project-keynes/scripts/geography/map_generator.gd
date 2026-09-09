@@ -2028,6 +2028,14 @@ func start_runtime_worker(config: Dictionary) -> Dictionary:
 	return _data_core_world_ext.start_runtime_worker(config)
 
 
+func poll_runtime_events_snapshot(after_generation: int = 0) -> Dictionary:
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
+			"poll_runtime_events_snapshot"):
+		return {"ok": false, "available": false, "fallback": true,
+			"reason": "runtime_events_snapshot_api_missing"}
+	return _data_core_world_ext.poll_runtime_events_snapshot(after_generation)
+
+
 func set_runtime_clock_threaded(paused: bool, speed_days_per_second: float) -> Dictionary:
 	if _data_core_world_ext == null or not _data_core_world_ext.has_method("set_runtime_clock"):
 		return {"ok": false, "code": "runtime_worker_api_missing"}
@@ -2038,6 +2046,49 @@ func capture_runtime_inputs(inputs: Dictionary) -> Dictionary:
 	if _data_core_world_ext == null or not _data_core_world_ext.has_method("capture_runtime_inputs"):
 		return {"ok": false, "code": "runtime_worker_api_missing"}
 	return _data_core_world_ext.capture_runtime_inputs(inputs)
+
+
+## Captures the complete Country POD input only after Country and Economy
+## bootstrap/restore have settled.  This is a diagnostics/SHADOW boundary;
+## it must not be called before starter settlements or PKCN restore is done.
+func capture_country_worker_inputs() -> Dictionary:
+	if _data_core_world_ext == null:
+		return {"ok": false, "code": "runtime_worker_api_missing"}
+	if not _data_core_world_ext.has_method("capture_country_runtime_snapshot") \
+			or not _data_core_world_ext.has_method("capture_country_pod_catalog"):
+		return {"ok": false, "code": "country_worker_capture_api_missing"}
+	if _country_facade == null or not _country_facade.is_configured():
+		return {"ok": false, "code": "country_runtime_unavailable"}
+	var catalog: Dictionary = _data_core_world_ext.capture_country_pod_catalog()
+	if not bool(catalog.get("ok", false)):
+		return {"ok": false, "code": String(catalog.get("code", "country_catalog_capture_failed")),
+			"catalog": catalog}
+	var snapshot: Dictionary = _data_core_world_ext.capture_country_runtime_snapshot()
+	if not bool(snapshot.get("ok", false)):
+		return {"ok": false, "code": String(snapshot.get("code", "country_snapshot_capture_failed")),
+			"catalog": catalog, "snapshot": snapshot}
+	return {"ok": true, "code": "ok", "catalog": catalog, "snapshot": snapshot,
+		"generation": int(snapshot.get("generation", 0)),
+		"state_hash": int(snapshot.get("state_hash", 0))}
+
+
+## Pulls one immutable Country worker read view.  The host owns the cursor and
+## applies the returned sparse territory patch; this wrapper deliberately does
+## not expose the worker store or retain references to native vectors.
+func get_country_worker_read_view(after_generation: int = 0) -> Dictionary:
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
+			"get_country_worker_read_view"):
+		return {"ok": false, "code": "country_worker_read_view_api_missing"}
+	return _data_core_world_ext.get_country_worker_read_view(maxi(after_generation, 0))
+
+
+func service_country_worker_peer_adapter(max_intents: int = 64,
+		shadow_replay: bool = true) -> Dictionary:
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
+			"service_country_worker_peer_adapter"):
+		return {"ok": false, "code": "country_worker_adapter_api_missing"}
+	return _data_core_world_ext.service_country_worker_peer_adapter(
+		clampi(max_intents, 1, 4096), shadow_replay)
 
 
 func _runtime_climate_failure(code: String, reason: String = "", day: int = -1) -> Dictionary:

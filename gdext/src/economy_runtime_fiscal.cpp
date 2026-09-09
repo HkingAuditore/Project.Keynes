@@ -626,8 +626,15 @@ bool NativeEconomyRuntime::prepare_fiscal_budgets(int64_t day_index,
     for (int32_t country = 0; country < _epoch_country_count; ++country) {
         const int64_t requested = requested_by_country[country];
         if (requested <= 0) continue;
-        const int64_t reserved = _country_runtime->reserve_fiscal_cash(
-            static_cast<int64_t>(_epoch_country_handles[country]), requested);
+        int64_t reserved = 0;
+        std::string fiscal_transaction_error;
+        if (!coordinate_country_fiscal_transaction(
+                country, NativeCountryRuntime::ECONOMY_ASSET_FISCAL_RESERVE,
+                requested, reserved, fiscal_transaction_error)) {
+            error = fiscal_transaction_error.empty()
+                ? "fiscal_reserve_transaction_failed" : fiscal_transaction_error;
+            return false;
+        }
         _fiscal_escrow_by_country[country] = reserved;
         int64_t prefix = 0;
         int64_t allocated = 0;
@@ -1256,17 +1263,23 @@ bool NativeEconomyRuntime::commit_fiscal(std::string &error) {
         }
         const int64_t handle = static_cast<int64_t>(_epoch_country_handles[country]);
         if (unused_total > 0) {
-            const int64_t returned =
-                _country_runtime->return_fiscal_cash(handle, unused_total);
-            if (returned != unused_total) {
+            int64_t returned = 0;
+            std::string fiscal_transaction_error;
+            if (!coordinate_country_fiscal_transaction(
+                    country, NativeCountryRuntime::ECONOMY_ASSET_FISCAL_RETURN,
+                    unused_total, returned, fiscal_transaction_error) ||
+                returned != unused_total) {
                 error = "fiscal_escrow_return_drift";
                 return false;
             }
         }
         if (collected_total > 0) {
-            const int64_t collected =
-                _country_runtime->collect_fiscal_cash(handle, collected_total);
-            if (collected != collected_total) {
+            int64_t collected = 0;
+            std::string fiscal_transaction_error;
+            if (!coordinate_country_fiscal_transaction(
+                    country, NativeCountryRuntime::ECONOMY_ASSET_FISCAL_COLLECT,
+                    collected_total, collected, fiscal_transaction_error) ||
+                collected != collected_total) {
                 error = "fiscal_tax_collection_drift";
                 return false;
             }

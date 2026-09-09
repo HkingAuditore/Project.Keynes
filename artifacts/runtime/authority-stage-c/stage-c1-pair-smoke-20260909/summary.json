@@ -1,0 +1,132 @@
+{
+  "schema": "AuthorityStageCClientSummary",
+  "schema_version": 1,
+  "classification": "Debug development profile only",
+  "baseline": {
+    "seed": 20260718,
+    "map": "60x40",
+    "continents": 2,
+    "foreign_count": 3,
+    "speed": 50.0,
+    "warmup_seconds": 0.1,
+    "record_seconds": 0.5,
+    "window": "1600x960",
+    "graphics": "high",
+    "day_night": true,
+    "overlay": false,
+    "vsync": false,
+    "max_fps": 0
+  },
+  "verdict": "mixed_or_no_material_evidence",
+  "threshold": {
+    "median_ms": 0.25,
+    "median_percent": 3.0,
+    "required_pairs": 3
+  },
+  "runs": [
+    {
+      "run_index": 1,
+      "run_name": "run-01-off",
+      "mode": "OFF",
+      "directory": "D:\\Godot\\ProjectKeynes\\Project.Keynes\\artifacts\\runtime\\authority-stage-c\\stage-c1-pair-smoke-20260909\\run-01-off",
+      "all_frames": {
+        "count": 1,
+        "mean": 3208.516,
+        "p50": 3208.516,
+        "p95": 3208.516,
+        "p99": 3208.516,
+        "max": 3208.516,
+        "ge_16_67_ms_ratio": 1.0,
+        "ge_33_33_ms_ratio": 1.0
+      },
+      "fast_tick_frames": {
+        "count": 0,
+        "mean": 0.0,
+        "p50": 0.0,
+        "p95": 0.0,
+        "p99": 0.0,
+        "max": 0.0,
+        "ge_16_67_ms_ratio": 0.0,
+        "ge_33_33_ms_ratio": 0.0
+      },
+      "non_fast_tick_frames": {
+        "count": 1,
+        "mean": 3208.516,
+        "p50": 3208.516,
+        "p95": 3208.516,
+        "p99": 3208.516,
+        "max": 3208.516,
+        "ge_16_67_ms_ratio": 1.0,
+        "ge_33_33_ms_ratio": 1.0
+      },
+      "effective_days_per_second": 0.0,
+      "writeback_lag_days": -1,
+      "main_wait_on_sim_us": 0,
+      "worker_fault_count": 0,
+      "completed_days": 0,
+      "runtime_graph_last_elapsed_us": 0,
+      "active_worker_plan_ms": 0.0,
+      "active_worker_replay_ms": 0.0,
+      "shadow_diagnostic_plan_ms": 0.0,
+      "shadow_diagnostic_replay_ms": 0.0
+    },
+    {
+      "run_index": 2,
+      "run_name": "run-02-active",
+      "mode": "ACTIVE",
+      "directory": "D:\\Godot\\ProjectKeynes\\Project.Keynes\\artifacts\\runtime\\authority-stage-c\\stage-c1-pair-smoke-20260909\\run-02-active",
+      "all_frames": {
+        "count": 3,
+        "mean": 175.95933333333335,
+        "p50": 168.795,
+        "p95": 323.595,
+        "p99": 323.595,
+        "max": 323.595,
+        "ge_16_67_ms_ratio": 1.0,
+        "ge_33_33_ms_ratio": 1.0
+      },
+      "fast_tick_frames": {
+        "count": 2,
+        "mean": 102.1415,
+        "p50": 35.488,
+        "p95": 168.795,
+        "p99": 168.795,
+        "max": 168.795,
+        "ge_16_67_ms_ratio": 1.0,
+        "ge_33_33_ms_ratio": 1.0
+      },
+      "non_fast_tick_frames": {
+        "count": 1,
+        "mean": 323.595,
+        "p50": 323.595,
+        "p95": 323.595,
+        "p99": 323.595,
+        "max": 323.595,
+        "ge_16_67_ms_ratio": 1.0,
+        "ge_33_33_ms_ratio": 1.0
+      },
+      "effective_days_per_second": 3.78698224852071,
+      "writeback_lag_days": -1,
+      "main_wait_on_sim_us": 0,
+      "worker_fault_count": 0,
+      "completed_days": 2,
+      "runtime_graph_last_elapsed_us": 1390,
+      "active_worker_plan_ms": 0.0,
+      "active_worker_replay_ms": 0.0,
+      "shadow_diagnostic_plan_ms": 0.0,
+      "shadow_diagnostic_replay_ms": 0.0
+    }
+  ],
+  "pairs": [
+    {
+      "pair": 1,
+      "direction": "OFF->ACTIVE",
+      "off_run": "run-01-off",
+      "active_run": "run-02-active",
+      "off_p50_ms": 3208.516,
+      "active_p50_ms": 168.795,
+      "active_minus_off_ms": -3039.721,
+      "active_minus_off_percent": -94.73915666931379
+    }
+  ]
+}

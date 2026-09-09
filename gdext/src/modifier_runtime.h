@@ -15,6 +15,8 @@
 #include <godot_cpp/variant/string_name.hpp>
 #include <godot_cpp/variant/variant.hpp>
 
+#include "runtime_modifier_pod.h"
+
 namespace pk {
 
 class NativeCountryRuntime;
@@ -176,6 +178,11 @@ public:
                         bool allow_tax_catalog_extension = false);
     void clear_domain(int32_t domain);
     uint64_t catalog_hash() const { return _catalog_hash; }
+    int32_t definition_id_for_key(const std::string &key) const {
+        return definition_id(key);
+    }
+    bool export_pod_catalog(RuntimeModifierPodCatalog &out,
+                            std::string &error) const;
     // Bumps on every apply/remove/expire/set-stacks mutation of the domain
     // store. Callers may use it as an exact invalidation token for caches keyed
     // on that domain's effective values.

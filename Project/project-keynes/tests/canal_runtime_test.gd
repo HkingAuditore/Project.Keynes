@@ -97,6 +97,13 @@ func _run() -> void:
 		and int(rows[0].get("project_handle", 0)) != 0
 		and int(rows[0].get("treasury_goods_used", 0)) > 0
 		and int(rows[0].get("market_goods_used", -1)) == 0)
+	var asset_report: Dictionary = ext.get_country_report().get(
+		"economy_asset_transactions", {})
+	_expect("canal treasury payment uses the Country asset bridge",
+		int(asset_report.get("completed", 0)) >= 1
+		and int(asset_report.get("prepared", 0)) >= 1
+		and int(asset_report.get("commit_decisions", 0)) >= 1
+		and int(asset_report.get("ledger_failures", -1)) == 0)
 
 	# Save and restore the building project on the same configured domain.  The
 	# country treasury remains at the post-payment state, matching production's

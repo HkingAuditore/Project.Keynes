@@ -47,6 +47,7 @@ func _run() -> void:
 	_test_recorder_default_core_sampling()
 	_test_recorder_skipped_day_no_job_columns()
 	_test_recorder_state_machine()
+	_test_schema_and_custom_export()
 	print("=== perf_recorder test summary: %d checks, %d failures ===" % [_checks, _failures])
 
 
@@ -348,3 +349,24 @@ func _test_recorder_state_machine() -> void:
 	var path: String = rec.stop_and_export()
 	_expect(path == "", "stop with empty rows → empty path")
 	_expect(not rec.is_recording(), "after stop: recording=false")
+
+
+func _test_schema_and_custom_export() -> void:
+	var fixed_seen := {}
+	for column in PerfRecorder.FIXED_COLUMNS:
+		fixed_seen[String(column)] = true
+	_expect(fixed_seen.size() == PerfRecorder.FIXED_COLUMNS.size(), "fixed columns are unique")
+	var rec = PerfRecorder.new()
+	var mock = _MockMain.new()
+	rec.bind_main(mock)
+	var output_dir := ProjectSettings.globalize_path("user://stage_c_tests/perf")
+	rec.configure_export(output_dir, "stage_c_perf.csv")
+	rec.start()
+	rec.on_fast_tick({
+		"tick_idx": 1, "timestamp_ms": 100, "was_skipped_day": false,
+		"fps": 60, "fast_ms": 1.0, "t_sus_ms": 0.5, "t_render_ms": 0.2, "t_ui_ms": 0.1,
+	})
+	var path: String = rec.stop_and_export()
+	_expect(rec.schema_version() == PerfRecorder.SCHEMA_VERSION, "schema version accessor")
+	_expect(path == output_dir.path_join("stage_c_perf.csv"), "custom export path is stable")
+	_expect(FileAccess.file_exists(path), "custom export exists")

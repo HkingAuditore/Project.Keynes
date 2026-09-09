@@ -575,6 +575,7 @@ Dictionary NativeEconomyRuntime::compact_report() const {
     out["bootstrapped"] = _bootstrapped;
     out["epoch_active"] = _epoch_active;
     out["epoch_id"] = _epoch_id;
+    out["committed_generation"] = static_cast<int64_t>(_committed_generation);
     out["sample_day"] = _sample_day;
     out["current_day"] = _current_day;
     out["commit_day"] = _commit_day;
@@ -976,6 +977,7 @@ Dictionary NativeEconomyRuntime::report() const {
     out["bootstrapped"] = _bootstrapped;
     out["epoch_active"] = _epoch_active;
     out["epoch_id"] = _epoch_id;
+    out["committed_generation"] = static_cast<int64_t>(_committed_generation);
     write_cadence_report(out);
     out["sample_day"] = _sample_day;
     out["current_day"] = _current_day;
@@ -2004,6 +2006,20 @@ Dictionary NativeEconomyRuntime::report() const {
         _government_research_procurement_cash;
     out["government_research_procurement_orders"] =
         _government_research_procurement_orders;
+    out["country_research_procurement_cursor"] =
+        static_cast<int64_t>(_country_research_procurement_cursor);
+    out["country_research_procurement_candidate_count"] =
+        static_cast<int64_t>(_country_research_procurement_candidates.size());
+    out["country_research_procurement_phase"] =
+        _country_research_procurement_phase;
+    out["country_research_procurement_done"] =
+        _country_research_procurement_done;
+    out["country_research_procurement_slices"] =
+        _country_research_procurement_slices;
+    out["country_research_procurement_transactions"] =
+        _country_research_procurement_transactions;
+    out["country_research_procurement_rejections"] =
+        _country_research_procurement_rejections;
     out["merchant_operating_outflow"] = merchant_operating_outflow;
     out["merchant_liquidity_coverage_q16"] =
         merchant_operating_outflow > 0

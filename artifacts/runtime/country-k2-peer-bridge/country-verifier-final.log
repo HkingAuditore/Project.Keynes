@@ -1,0 +1,252 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [OK] catalog compiles
+  [OK] reference transcript completes
+  [OK] bootstrap, command, and idle boundaries are captured
+  [OK] bootstrap frame is an explicit semantic commit
+  [OK] command boundary records the admitted command
+  [OK] per-family hashes are populated
+  [OK] same input produces the same reference frames
+  [OK] reference checkpoint is canonical PKCN v13
+  [OK] late invalid command rejects the whole admission batch
+country reference trace: 9 checks, 0 failures
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 276 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [OK] catalog compiles
+  [OK] default country configures
+  [OK] default country owns every land cell
+  [OK] all-water default bootstrap is rejected precisely
+  [OK] duplicate territory bootstrap is rejected precisely
+  [OK] water territory bootstrap is rejected precisely
+  [OK] country configures
+  [OK] explicit country bootstraps
+  [OK] single owner and neutral land are represented
+  [OK] unowned land displays as 无主之地
+  [OK] country treasury is sparse and scaled
+  [OK] country UI bridge returns compact revisioned technology section
+  [OK] discovered-but-not-completed bootstrap succeeds
+  [OK] bootstrap can reveal a knowledge practice while its institution prerequisite is incomplete
+  [OK] CLAIM_UNOWNED_TERRITORY queues through the country authority
+  [OK] claim commits only the neutral target
+  [OK] create command queues
+  [OK] create atomically transfers first territory
+  [OK] new country inherits source technology
+  [OK] last territory is protected
+  [OK] rename and country technology commit
+  [OK] country-wide metadata query reflects ACK-gated commit
+  [OK] tax defaults and sparse override queue
+  [OK] tax policy commits at country day boundary
+  [OK] income profession override and tariff placeholder resolve
+  [OK] cleared override inherits current default
+  [OK] absolute tax defaults and overrides queue
+  [OK] absolute tax policy commits
+  [OK] absolute assessment modes round-trip
+  [OK] all five tax defaults and overrides queue
+  [OK] all five tax defaults and overrides commit
+  [OK] five tax kinds route to profession/good/building lanes
+  [OK] all five cleared overrides inherit current defaults
+  [OK] illegal tax rates and dense ids reject at command boundary
+  [OK] cell defaults and item overrides queue
+  [OK] cell tax policy commits atomically
+  [OK] four-level inheritance resolves cell item and cell default first
+  [OK] cells without local policy resolve national item then national default
+  [OK] explicit local value equal to parent remains explicit
+  [OK] clearing local item restores national item inheritance
+  [OK] mixed valid and invalid cell tax commands reject atomically
+  [OK] identical cell policies are interned and diagnostics expose sharing
+  [OK] territory transfer clears the old owner's local tax policy
+  [OK] PKCN sparse cell policies round-trip with exact replay hash
+  [OK] research signal commands queue
+  [OK] research signal discovery commits once per cell
+  [OK] research signal evidence keeps distinct count and provenance
+  [OK] dense observation batch configures
+  [OK] dense observation batch sort/unique merges linearly
+  [OK] dense observation batch emits one aggregate signal event
+  [OK] cross-slice country batch keeps committed state private
+  [OK] cross-slice country batch publishes atomically on final slice
+  [OK] pending research signal command queues before PKCN capture
+  [OK] PKCN v13 begins
+  [OK] PKCN stream ends
+  [OK] PKCN round-trip hash exact
+  [OK] truncated PKCN stream is rejected
+  [OK] PKCN catalog mismatch is rejected precisely
+country runtime: 58 checks, 0 failures
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 276 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+runtime country POD: 16 checks, 0 failures
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 276 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] catalog compiles
+  [PASS] peer-valid DCWorldExt instantiates
+  [PASS] peer-valid modifier catalog configures
+  [PASS] peer-valid effect catalog configures
+  [PASS] peer-valid country configures
+  [PASS] peer-valid peer research catalog entries exist
+  [PASS] peer-valid country bootstraps
+  [PASS] peer-valid exposes a valid Country handle
+  [PASS] valid queues sheep evidence
+  [PASS] valid commits evidence boundary
+  [PASS] valid enables async peer mode
+  [PASS] valid queues research weights
+  [PASS] valid queues animal husbandry
+  [PASS] valid completion boundary runs
+  [PASS] valid emits a peer intent
+  [PASS] pending technology is not completed before peer ACK
+  [PASS] peer intent has complete identity
+  [PASS] valid paused save worker starts
+  [PASS] pending peer intent blocks runtime save
+  [PASS] wrong session ACK is rejected
+  [PASS] wrong Country generation ACK is rejected
+  [PASS] wrong peer generation ACK is rejected
+  [PASS] unknown request ACK is rejected
+  [PASS] terminal STALE result is rejected without mutation
+  [PASS] ACK below captured peer generation is rejected
+  [PASS] PENDING ACK keeps the intent outstanding
+  [PASS] valid Effect ACK is accepted
+  [PASS] identical ACK retry is idempotent
+  [PASS] different duplicate ACK is rejected
+  [PASS] valid ACK closes the pending protocol item
+  [PASS] same-day continuation 0 runs
+  [PASS] valid continuation 0 intent opcode is known
+  [PASS] valid continuation 0 ACK 0 is accepted
+  [PASS] same-day continuation activates the technology
+  [PASS] same-day continuation does not consume research twice
+  [PASS] Effect reward intent is emitted after activation
+  [PASS] unconfigured Economy does not fabricate a milestone intent
+  [PASS] valid bridge flow leaves no peer save barrier
+  [PASS] modifier peer day is quiescent before checkpoint
+  [PASS] valid bridge flow remains synchronously saveable
+  [PASS] peer-reject DCWorldExt instantiates
+  [PASS] peer-reject modifier catalog configures
+  [PASS] peer-reject effect catalog configures
+  [PASS] peer-reject country configures
+  [PASS] peer-reject peer research catalog entries exist
+  [PASS] peer-reject country bootstraps
+  [PASS] peer-reject exposes a valid Country handle
+  [PASS] rejection queues sheep evidence
+  [PASS] rejection commits evidence boundary
+  [PASS] rejection enables async peer mode
+  [PASS] rejection queues research weights
+  [PASS] rejection queues animal husbandry
+  [PASS] rejection completion boundary runs
+  [PASS] rejection emits a peer intent
+  [PASS] peer rejection is durably recorded
+  [PASS] rejection paused save worker starts
+  [PASS] rejected peer retry barrier blocks runtime save
+  [PASS] rejection is surfaced as a terminal Country step
+  [PASS] rejection reporting does not advance Country generation
+  [PASS] same-day rejection barrier holds pending activation
+  [PASS] next-day retry boundary runs
+  [PASS] next-day retry emits a new request identity
+  [PASS] new retry clears the old rejection barrier
+  [PASS] next-day retry ACK is accepted
+  [PASS] retry continuation 0 runs
+  [PASS] retry continuation 0 intent opcode is known
+  [PASS] retry continuation 0 ACK 0 is accepted
+  [PASS] rejected technology completes after next-day retry
+  [PASS] retry flow ends without a protocol barrier
+  [PASS] retry modifier peer day is quiescent before checkpoint
+  [PASS] retry flow can capture a Country checkpoint
+runtime country peer bridge: 71 checks, 0 failures
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 276 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [OK] catalog compiles
+  [OK] country configures
+  [OK] country bootstraps
+  [OK] bootstrap exposes a country handle
+  [OK] saved rename queues
+  [OK] saved rename commits
+  [OK] future rename queues before capture
+  [OK] direct checkpoint is canonical PKCN v13
+  [OK] SHADOW worker starts for save
+  [OK] runtime save becomes ready (ok)
+  [OK] PKSR v2 header accepts the Country bundle
+  [OK] Country section bit 0x8 is present
+  [OK] Country section payload is non-empty
+  [OK] Country provider returns PKCN v13
+  [OK] save provider reuses the exact canonical PKCN capture
+  [OK] CPD2 section is locatable and uses ABI v2
+  [OK] CPD2 embeds the same canonical PKCN
+  [OK] worker stops before restore
+  [OK] post-save mutation queues
+  [OK] post-save mutation commits
+  [OK] post-save mutation changes the state hash
+  [OK] PKSR restore prepares the Country checkpoint (ok)
+  [OK] mismatched PKCN is rejected precisely
+  [OK] rejected restore leaves the live Country unchanged
+  [OK] matching CPD2/PKCN restores atomically (ok)
+  [OK] Country business hash round-trips exactly
+  [OK] Country generation and day round-trip exactly
+  [OK] saved identity is restored
+  [OK] pre-save events are not replayed during restore
+  [OK] worker restarts on the restored bundle
+  [OK] restored Country can be saved again
+  [OK] save -> restore -> save keeps canonical PKCN unchanged
+  [OK] re-saved CPD2 embeds the same canonical PKCN
+  [OK] restarted worker stops
+  [OK] restored future command commits
+  [OK] event cursor resumes without replaying the saved rename
+runtime country save roundtrip: 36 checks, 0 failures
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 276 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
+warning: in the working copy of '.agents/skills/project-keynes-country-runtime/scripts/verify_country_runtime.ps1', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of '.codex/skills/project-keynes-country-runtime/scripts/verify_country_runtime.ps1', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'Project/project-keynes/scripts/game/pksr_bundle_header.gd', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'docs/cpp-dots-runtime/full-authoritative-runtime-status.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'gdext/src/country_core.cpp', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'gdext/src/country_core.h', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'gdext/src/country_runtime.cpp', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'gdext/src/country_runtime.h', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'gdext/src/economy_runtime_publish.cpp', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'gdext/src/effect_runtime.cpp', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'gdext/src/effect_runtime.h', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'gdext/src/modifier_runtime.cpp', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'gdext/src/modifier_runtime.h', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'gdext/src/native_simulation_host.cpp', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'gdext/src/native_simulation_host.h', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'gdext/src/runtime_domain_authorities.cpp', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'gdext/src/runtime_domain_authorities.h', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'gdext/src/runtime_domain_pod.cpp', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'gdext/src/runtime_domain_pod.h', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'gdext/src/runtime_pod_protocol.h', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'gdext/src/trigger_runtime.cpp', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'gdext/src/trigger_runtime.h', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'gdext/src/world_ext.h', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'gdext/src/world_ext_bind_methods.cpp', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'gdext/src/world_ext_country.cpp', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'gdext/src/world_ext_generate.cpp', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'gdext/src/world_ext_simulation_host.cpp', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'gdext/src/world_ext_trigger.cpp', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tmp/perf_csv_analysis/node_modules/.modules.yaml', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tmp/perf_csv_analysis/node_modules/.pnpm-workspace-state-v1.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tmp/perf_csv_analysis/node_modules/@oai/artifact-tool/node_modules/.pnpm-workspace-state-v1.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tools/runtime/Invoke-RuntimeTests.ps1', LF will be replaced by CRLF the next time Git touches it
+Country runtime verification passed.

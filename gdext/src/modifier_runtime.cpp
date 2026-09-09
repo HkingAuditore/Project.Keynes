@@ -336,6 +336,45 @@ Dictionary ModifierRuntime::configure(const Dictionary &catalog, int32_t cell_co
     return out;
 }
 
+bool ModifierRuntime::export_pod_catalog(RuntimeModifierPodCatalog &out,
+                                         std::string &error) const {
+    error.clear();
+    if (!_configured) {
+        error = "modifier_runtime_not_configured";
+        return false;
+    }
+    out = RuntimeModifierPodCatalog{};
+    out.stats.reserve(_stats.size());
+    out.definitions.reserve(_definitions.size());
+    out.terms.reserve(_terms.size());
+    for (const StatDefinition &stat : _stats) {
+        RuntimeModifierPodStat pod;
+        pod.domain = stat.domain;
+        pod.min_value = stat.min_value;
+        pod.max_value = stat.max_value;
+        pod.persistable = stat.persistable ? 1u : 0u;
+        out.stats.push_back(pod);
+    }
+    for (const Definition &definition : _definitions) {
+        RuntimeModifierPodDefinition pod;
+        pod.version = definition.version;
+        pod.domain = definition.domain;
+        pod.policy = definition.policy;
+        pod.max_stacks = definition.max_stacks;
+        pod.default_duration = definition.default_duration;
+        pod.term_begin = definition.term_begin;
+        pod.term_count = definition.term_count;
+        out.definitions.push_back(pod);
+    }
+    for (const TermDefinition &term : _terms) {
+        out.terms.push_back({term.stat_id, term.add, term.factor});
+    }
+    // The POD catalog intentionally hashes only numeric normalized data. Its
+    // identity is independent from the legacy string-bearing catalog hash.
+    out.catalog_hash = 0;
+    return true;
+}
+
 Dictionary ModifierRuntime::submit_commands(const Dictionary &batch) {
     if (!_configured) return fail_dict("modifier_runtime_not_configured");
     const int32_t protocol = batch.get("protocol_version", 0);

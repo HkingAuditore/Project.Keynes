@@ -573,6 +573,29 @@ func dispatch_committed_events(result: Dictionary) -> void:
 		return
 	country_committed.emit(normalized)
 
+
+## Worker-side Country commits enter through the same public signal as the
+## synchronous facade.  The worker view already carries the committed
+## generation and sparse territory count, so this method never polls or reads
+## the mutable legacy Country store.
+func dispatch_worker_committed_view(view: Dictionary) -> void:
+	if not _configured:
+		return
+	var normalized := view.duplicate(true)
+	normalized["worker_read_view"] = true
+	var changed_cells: PackedInt32Array = normalized.get(
+		"changed_cells", PackedInt32Array())
+	normalized["changed_cells"] = changed_cells.size()
+	normalized["changed_countries"] = maxi(
+		int(normalized.get("changed_countries", 0)),
+		1 if changed_cells.size() > 0 else 0)
+	if int(normalized.get("generation", 0)) <= 0:
+		return
+	if int(normalized.get("changed_countries", 0)) <= 0 \
+			and int(normalized.get("dirty_families", 0)) <= 0:
+		return
+	country_committed.emit(normalized)
+
 func is_configured() -> bool:
 	return _configured
 

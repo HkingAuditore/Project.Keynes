@@ -1,0 +1,22 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] modifier catalog configures
+  [PASS] country configures
+  [PASS] country bootstraps
+  [PASS] research evidence queues
+  [PASS] research evidence commits
+  [PASS] single-domain completion queues
+  [PASS] completion enters pending state
+  [PASS] pending state does not expose completion tag
+  [PASS] pending state has no numerical effect
+  [PASS] next day activates technology atomically
+  [PASS] completion tag and modifier become visible together
+  [PASS] technology modifier remains explainable
+  [PASS] later days do not double-apply UNIQUE_SOURCE
+technology modifier activation: PASS
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 284 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

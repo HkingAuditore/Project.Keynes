@@ -1112,6 +1112,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
     rebuild_family_behavior_cache();
     rebuild_person_indices();
     _bootstrapped = true;
+    if (++_committed_generation == 0) _committed_generation = 1;
     _fatal = false;
     _fatal_reason.clear();
     _epoch_active = false;

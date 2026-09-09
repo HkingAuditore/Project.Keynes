@@ -1,0 +1,604 @@
+﻿==============================================================================
+TEST   : runtime_protocol_guard_test
+SCRIPT : tests/runtime_protocol_guard_test.gd
+EXIT   : 0   PASSED: True   3.87s
+==============================================================================
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+=== runtime protocol guard ===
+=== runtime protocol guard: 8 checks, 0 failures ===
+Godot_v4.6.2-stable_win64_console.exe : ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyText
+ureE' were leaked at exit.
+At D:\Godot\ProjectKeynes\Project.Keynes\tools\runtime\Invoke-RuntimeTests.ps1:74 char:9
++         & $godot @godotArgs 2>&1 | Tee-Object -FilePath $logPath | Ou ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (ERROR: 11 RID a...leaked at exit.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 111 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
+
+
+==============================================================================
+TEST   : runtime_domain_pod_test
+SCRIPT : tests/runtime_domain_pod_test.gd
+EXIT   : 0   PASSED: True   4.21s
+==============================================================================
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+=== runtime domain POD: 11 checks, 0 failures ===
+Godot_v4.6.2-stable_win64_console.exe : ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyText
+ureE' were leaked at exit.
+At D:\Godot\ProjectKeynes\Project.Keynes\tools\runtime\Invoke-RuntimeTests.ps1:74 char:9
++         & $godot @godotArgs 2>&1 | Tee-Object -FilePath $logPath | Ou ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (ERROR: 11 RID a...leaked at exit.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 111 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
+
+
+==============================================================================
+TEST   : runtime_climate_authority_test
+SCRIPT : tests/runtime_climate_authority_test.gd
+EXIT   : 0   PASSED: True   3.93s
+==============================================================================
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+runtime climate authority: PASS
+Godot_v4.6.2-stable_win64_console.exe : ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyText
+ureE' were leaked at exit.
+At D:\Godot\ProjectKeynes\Project.Keynes\tools\runtime\Invoke-RuntimeTests.ps1:74 char:9
++         & $godot @godotArgs 2>&1 | Tee-Object -FilePath $logPath | Ou ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (ERROR: 11 RID a...leaked at exit.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 112 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
+
+
+==============================================================================
+TEST   : runtime_climate_parity_test
+SCRIPT : tests/runtime_climate_parity_test.gd
+EXIT   : 0   PASSED: True   4.04s
+==============================================================================
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+=== runtime climate parity contract ===
+field table: 33 comparable of 35, parity version 2
+  excluded riparian_moisture                no_reference   map_data.gd declares no riparian_moisture_arr
+  excluded vegetation_succession_candidate  type_mismatch  store is a uint8 flag but vegetation_regen_score_arr is a float score
+excluded fields: 2
+checks: 159, failures: 0
+runtime climate parity: PASS
+Godot_v4.6.2-stable_win64_console.exe : ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyText
+ureE' were leaked at exit.
+At D:\Godot\ProjectKeynes\Project.Keynes\tools\runtime\Invoke-RuntimeTests.ps1:74 char:9
++         & $godot @godotArgs 2>&1 | Tee-Object -FilePath $logPath | Ou ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (ERROR: 11 RID a...leaked at exit.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 111 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
+
+
+==============================================================================
+TEST   : runtime_climate_save_roundtrip_test
+SCRIPT : tests/runtime_climate_save_roundtrip_test.gd
+EXIT   : 1   PASSED: False   50.27s
+==============================================================================
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+=== CLM2 save roundtrip (GDScript layer) ===
+[native_generation/base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=600 native_ms=1.763 water=340 land=260
+[native_generation/post_base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=600 native_ms=0.484 lakes=0 rivers=31 volcanoes=0
+[native_generation/vegetation] native_ms=0.172 candidates=260 none=234 score=[0.320,1.144,1.040] plant_water_land=258 river_adjacent_desert=0 coastal_highland_desert=0 terrain_weight=[0.180,1.200]
+[native_generation/qa] single_water=0 tiny<=3=0 small<=5=0 bodies=2 largest=219 | land_below_sea=0.0% | terr_distinct=18 entropy=3.370bit | river_ratio=5.167%
+MapGenerator v7: per-cell 28ms (600 cells, path=gdext)
+MapBaker v6: hm=(1024, 622) seed=20260906
+    [fused] terrain=77.5ms erosion=2.1ms(ok=true) river=11.0ms(ok=true) latitude=0.1ms coast_sdf=4.0ms(ok=true)
+  geometry fields (fused C++): 152ms
+  physical circulation hex solve: deferred until DCWorldExt bind (ext=true idx=true soa=false)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+  visual tiles: {"degradation_reason":"","effective_budget_px":359168,"effective_texels_per_hex":14.1546235227872,"effective_world_units_per_texel":"(1.553198, 1.555328)","estimated_peak_bytes":14275872,"estimated_resident_bytes":8419104,"fallback_reason":"","generation_id":1,"grid_size":"(2, 1)","gutter_px":2,"hex_size":22.0,"horizon_path":"neutral_pending","interior_size":"(368, 488)","layer_size":"(372, 492)","layers":[{"bake_ms":75.7329,"coast_sdf_max_dist_px":6.28249503288226,"distance_scale":0.785311879110282,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-503819778795721376,"edge_neighbor":2788898301966283904,"height":-5381106427102642380,"map_index":8964687348077319449,"terrain_detail":6350920819943345201,"terrain_normal":7663629276374855693,"water_depth":-8241205024263498032},"layer":0,"normal_radius_px":"(19, 19)","raster_scale":"(0.786059, 0.784566)","river_sdf_max_dist_px":2.74859157688599,"shore_carve_band_px":5,"upload_ms":0.071,"wall_ms":75.947},{"bake_ms":94.0092,"coast_sdf_max_dist_px":6.28249503288226,"distance_scale":0.785311879110282,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":2799077768049252036,"edge_neighbor":157152926490831992,"height":-4629148472821352087,"map_index":8951332772122235877,"terrain_detail":-6003894515352276799,"terrain_normal":-8341904392566595311,"water_depth":-3909871321269033544},"layer":1,"normal_radius_px":"(19, 19)","raster_scale":"(0.786059, 0.784566)","river_sdf_max_dist_px":2.74859157688599,"shore_carve_band_px":5,"upload_ms":0.07,"wall_ms":94.229}],"logical_size":"(736, 488)","mode":"tiled","path":"visual_tiled_static","profile":"desktop_auto","renderer":"mobile","requested_budget_px":351624,"requested_texels_per_hex":14.0,"requested_tile_world_span":"(804.5714, 804.5714)","requested_world_units_per_texel":1.57142857142857,"tile_world_area":433826.777709961,"tile_world_span":"(571.5768, 759.0)","total_ms":171.43,"visual_domain":"[P: (0.0, -44.0), S: (1143.154, 759.0)]","wrap_period_x":1143.15353299546,"wrap_x":true}
+Godot_v4.6.2-stable_win64_console.exe : WARNING: Loaded resource as image file, this will not work on export: 'res://as
+sets/textures/terrain_materials/organic.png'. Instead, import the image file as an Image resource and load it normally 
+as a resource.
+At D:\Godot\ProjectKeynes\Project.Keynes\tools\runtime\Invoke-RuntimeTests.ps1:74 char:9
++         & $godot @godotArgs 2>&1 | Tee-Object -FilePath $logPath | Ou ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (WARNING: Loaded... as a resource.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1179)
+       [3] generate (res://scripts/geography/map_generator.gd:1474)
+       [4] generate_world (res://scripts/game/world_runtime_host.gd:440)
+       [5] _run (res://tests/runtime_climate_save_roundtrip_test.gd:86)
+       [6] _init (res://tests/runtime_climate_save_roundtrip_test.gd:46)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/dry_sand
+.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1179)
+       [3] generate (res://scripts/geography/map_generator.gd:1474)
+       [4] generate_world (res://scripts/game/world_runtime_host.gd:440)
+       [5] _run (res://tests/runtime_climate_save_roundtrip_test.gd:86)
+       [6] _init (res://tests/runtime_climate_save_roundtrip_test.gd:46)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/rock.png
+'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1179)
+       [3] generate (res://scripts/geography/map_generator.gd:1474)
+       [4] generate_world (res://scripts/game/world_runtime_host.gd:440)
+       [5] _run (res://tests/runtime_climate_save_roundtrip_test.gd:86)
+       [6] _init (res://tests/runtime_climate_save_roundtrip_test.gd:46)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/snow_wet
+.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1179)
+       [3] generate (res://scripts/geography/map_generator.gd:1474)
+       [4] generate_world (res://scripts/game/world_runtime_host.gd:440)
+       [5] _run (res://tests/runtime_climate_save_roundtrip_test.gd:86)
+       [6] _init (res://tests/runtime_climate_save_roundtrip_test.gd:46)
+  cell LUT encode: deferred until DCWorldExt bind
+  encode: 3086ms
+MapBaker v6: total 3238ms
+MapGenerator v7: bake 3245ms
+MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)
+MapGenerator: skip _compute_terrain_perturbed_wind (physical-hex solver writes per-cell)
+[SUS] sim budget strict=false frame=8.00ms warn=2.00ms slice=0.75ms upload=1.50ms scheduler=DCSystemScheduler native_sus=auto
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+[DataCore] _data_core_world_ext bound=true (climate co-processor; class=DCWorldExt)
+[native_world] configure rc=0 reason=configured cells=600 wrap_period_x=51.962
+[native_generation] path=gdext n=600 published=9 native_ms=0.059 compute_ms=0.018 flush_ms=0.041
+[hex_cell] facade ENABLED (600 cells bound; ext=true)
+[DataCore] _baker climate_profile injected=true (fixes WorldData.config==null sea_ice prepare path)
+[phys_solve][oneshot] OK slp=0.84ms wind=0.17ms psi=0.08ms(ran=true) upwelling=0.01ms total=1.29ms
+PhysicalCirculation solve@phase=1.50 total=2ms (C++ one-shot run_physical_solve_pass)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+[physical_init] deferred native refresh complete: 2ms
+[cell_lut] deferred encode: 0ms path=gdext
+[bio-occupancy] seed landmasses=2 provinces=2 species=20 secondary_hearths=0
+[bio-occupancy]   bio.maize envelope=50 hearth=19 seeded_landmasses=1 primary_landmass=1 primary_envelope=50 occupied=19 occupied/envelope=0.38
+[bio-occupancy]   bio.wheat envelope=53 hearth=12 seeded_landmasses=1 primary_landmass=1 primary_envelope=53 occupied=12 occupied/envelope=0.23
+[bio-occupancy]   bio.rice envelope=33 hearth=13 seeded_landmasses=1 primary_landmass=1 primary_envelope=33 occupied=13 occupied/envelope=0.39
+[bio-occupancy]   bio.potato envelope=33 hearth=17 seeded_landmasses=1 primary_landmass=1 primary_envelope=33 occupied=17 occupied/envelope=0.52
+[bio-occupancy]   bio.horse envelope=62 hearth=24 seeded_landmasses=1 primary_landmass=1 primary_envelope=62 occupied=24 occupied/envelope=0.39
+[bio-occupancy]   bio.cotton envelope=66 hearth=7 seeded_landmasses=1 primary_landmass=1 primary_envelope=66 occupied=7 occupied/envelope=0.11
+[bio-occupancy]   bio.flax envelope=52 hearth=14 seeded_landmasses=1 primary_landmass=1 primary_envelope=52 occupied=14 occupied/envelope=0.27
+[bio-occupancy]   bio.spice envelope=48 hearth=6 seeded_landmasses=1 primary_landmass=1 primary_envelope=48 occupied=6 occupied/envelope=0.13
+[bio-occupancy]   bio.rubber envelope=33 hearth=2 seeded_landmasses=1 primary_landmass=1 primary_envelope=33 occupied=2 occupied/envelope=0.06
+[bio-occupancy]   bio.sheep envelope=34 hearth=3 seeded_landmasses=1 primary_landmass=1 primary_envelope=34 occupied=3 occupied/envelope=0.09
+[bio-occupancy]   bio.goat envelope=117 hearth=40 seeded_landmasses=1 primary_landmass=1 primary_envelope=117 occupied=40 occupied/envelope=0.34
+[bio-occupancy]   bio.cattle envelope=14 hearth=7 seeded_landmasses=1 primary_landmass=1 primary_envelope=14 occupied=7 occupied/envelope=0.50
+[bio-occupancy]   bio.pig envelope=53 hearth=7 seeded_landmasses=1 primary_landmass=1 primary_envelope=53 occupied=7 occupied/envelope=0.13
+[bio-occupancy]   bio.camel envelope=35 hearth=9 seeded_landmasses=1 primary_landmass=1 primary_envelope=35 occupied=9 occupied/envelope=0.26
+[bio-occupancy]   bio.yak envelope=21 hearth=10 seeded_landmasses=1 primary_landmass=1 primary_envelope=21 occupied=10 occupied/envelope=0.48
+[bio-occupancy]   bio.silkworm envelope=65 hearth=29 seeded_landmasses=1 primary_landmass=1 primary_envelope=65 occupied=29 occupied/envelope=0.45
+[bio-occupancy]   bio.reed envelope=39 hearth=2 seeded_landmasses=1 primary_landmass=1 primary_envelope=39 occupied=2 occupied/envelope=0.05
+[bio-occupancy]   bio.bast_fiber envelope=44 hearth=4 seeded_landmasses=1 primary_landmass=1 primary_envelope=44 occupied=4 occupied/envelope=0.09
+[bio-occupancy]   bio.dye_plant envelope=74 hearth=34 seeded_landmasses=1 primary_landmass=1 primary_envelope=74 occupied=34 occupied/envelope=0.46
+[bio-occupancy]   bio.medicinal_herb envelope=59 hearth=15 seeded_landmasses=1 primary_landmass=1 primary_envelope=59 occupied=15 occupied/envelope=0.25
+[bio-occupancy]   landmass 1 classes=cold_grazer, dry_grazer, highland_food, fiber_forest, open_grazer, open_food, fiber_open, fiber_wet, tropical, forest_grazer, wetland_food foods=potato, wheat, maize, rice
+[bio-occupancy]   landmass 2 classes=none foods=none
+[weather] gdext acceleration ON (class=DCWorldExt)
+[weather] gdext field commit ON
+[weather] gdext distribute ON
+[weather] gdext summary ON
+[weather] hexcell facade ON (skip AoS double-write in hot loop)
+[weather] gdext resident knobs ON (class=KnobsHandle)
+ERROR: [economy] test bootstrap failed: bootstrap_construction_source_missing candidate_regions=2 skipped_regions=2 det
+ails=[{ "component_index": 0, "missing_timber": true, "missing_stone": true, "cell_count": 259, "first_cell": 49 }, { "
+component_index": 1, "missing_timber": true, "missing_stone": true, "cell_count": 1, "first_cell": 554 }] diagnostics={
+ "passable_cells": 260, "resource_positive_cells": { "fertile_soil": 257, "timber": 0, "stone": 0 }, "resource_peaks": 
+{ "fertile_soil": 350000.0, "timber": 0.0, "stone": 0.0 }, "root_buildings": { "timber_collector": 0, "stone_collector"
+: 0 }, "fallback_roots": { "timber_collector": 0, "stone_collector": 0 } }
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _setup_economy_runtime (res://scripts/geography/map_generator.gd:1748)
+       [1] _setup_sus (res://scripts/geography/map_generator.gd:3629)
+       [2] generate (res://scripts/geography/map_generator.gd:1602)
+       [3] generate_world (res://scripts/game/world_runtime_host.gd:440)
+       [4] _run (res://tests/runtime_climate_save_roundtrip_test.gd:86)
+       [5] _init (res://tests/runtime_climate_save_roundtrip_test.gd:46)
+[weather/knobs] resident KnobsHandle path ACTIVE — first to_*_knobs_dict hit (field_rebuild_count=1 expected ≤1; stable Hz target ≤1 Hz)
+[native_daily] ACTIVE: registered native_daily_sim + natural_resource_daily + bio_occupancy_daily; retained season_refresh + ocean_currents boundary jobs
+[DCSystemScheduler] topology: ["season_refresh", "effect_runtime", "gameplay_effect", "natural_resource_daily", "bio_occupancy_daily", "enum_atlas_upload", "ocean_currents", "native_daily_sim", "dynamic_visual_atlas_upload"]
+WARNING: [runtime-climate-round] no ClimateDailySystem; SHADOW capture carries no shared pass input
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _build_runtime_climate_round_input (res://scripts/geography/map_generator.gd:4531)
+       [1] capture_runtime_inputs_for_worker (res://scripts/geography/map_generator.gd:2274)
+       [2] generate_world (res://scripts/game/world_runtime_host.gd:494)
+       [3] _run (res://tests/runtime_climate_save_roundtrip_test.gd:86)
+       [4] _init (res://tests/runtime_climate_save_roundtrip_test.gd:46)
+[DCSystemScheduler][RT] ocean_skip#1 tick=1 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#2 tick=2 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#3 tick=3 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[phys_solve][RT] start#1 phase=0.0438 pending=nan solve_ocean=true ext=true idx=true soa=true
+[slp_field] path-decision call#1: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true -> cpp_gate=true
+[slp_field] commit-diag call#1: rc=0.092 slp_out=600 n_cells=600 map_slp=600 slice=0:75 final=false published=false slot=19/600 reason=intermediate_slice
+[slp_field][RT-DIAG] call#1 phase=0.0438 rc=0.092 slp_out=600 n=600 slice=0:75 final=false published=false slot=19/600 slot_reason=intermediate_slice -> intermediate_slice
+[natural_resource/slow-dump] tick=5 day=5 wall=1.87 cpp=0.112 compute=0.092 loop=0.004 flush=0.051 wrapper=1.645 layout=cell_indices dispatches=0 resources=13/31 skipped_static=18 published=true total_delta=802998.82884
+[DCSystemScheduler][RT] ocean_skip#4 tick=5 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[DCSystemScheduler][RT] ocean_skip#5 tick=7 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[climate][publish] day=0 round_ran=1 prod_stage=0xff scalar_mask=0x7f alb=0 veg=0 fb=0 weather=0 sr=0 ok=1
+[climate][publish] day=1 round_ran=0 prod_stage=0x0 scalar_mask=0x0 alb=0 veg=0 fb=0 weather=0 sr=0 ok=1
+[climate][publish] day=2 round_ran=0 prod_stage=0x0 scalar_mask=0x0 alb=0 veg=0 fb=0 weather=0 sr=0 ok=1
+[climate][publish] day=3 round_ran=0 prod_stage=0x0 scalar_mask=0x0 alb=0 veg=0 fb=0 weather=0 sr=0 ok=1
+[climate][publish] day=4 round_ran=0 prod_stage=0x0 scalar_mask=0x0 alb=0 veg=0 fb=0 weather=0 sr=0 ok=1
+[climate][publish] day=5 round_ran=0 prod_stage=0x0 scalar_mask=0x0 alb=0 veg=0 fb=0 weather=0 sr=0 ok=1
+[climate][publish] day=6 round_ran=0 prod_stage=0x0 scalar_mask=0x0 alb=0 veg=0 fb=0 weather=0 sr=0 ok=1
+[climate][boundary] cold-start day=1 ok=1 ref_hash=15864837856752618639 adopted_parity=15864837856752618639 round_ran=1
+[slp_field] path-decision call#2: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true -> cpp_gate=true
+[slp_field] commit-diag call#2: rc=0.053 slp_out=600 n_cells=600 map_slp=600 slice=75:150 final=false published=false slot=19/600 reason=intermediate_slice
+[slp_field][RT-DIAG] call#2 phase=0.0438 rc=0.053 slp_out=600 n=600 slice=75:150 final=false published=false slot=19/600 slot_reason=intermediate_slice -> intermediate_slice
+[climate][boundary] day=2 planned=0 compared=0 matched=0 worker_parity=0 ref=15864837856752618639 stage_ran=0x0 prod_st
+age=0x0 round_ran=0 alb=0 veg=0 fb=0 err=climate_environment_day_mismatch
+[DCSystemScheduler][RT] ocean_skip#6 tick=9 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[climate][boundary] day=2 planned=1 compared=1 matched=1 worker_parity=15864837856752618639 ref=15864837856752618639 st
+age_ran=0x0 prod_stage=0x0 round_ran=0 alb=0 veg=0 fb=0 err=
+[DCSystemScheduler][RT] ocean_skip#7 tick=10 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[climate][boundary] day=3 planned=1 compared=1 matched=1 worker_parity=15864837856752618639 ref=15864837856752618639 st
+age_ran=0x0 prod_stage=0x0 round_ran=0 alb=0 veg=0 fb=0 err=
+[DCSystemScheduler][RT] ocean_skip#8 tick=11 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[climate][boundary] day=4 planned=1 compared=1 matched=1 worker_parity=15864837856752618639 ref=15864837856752618639 st
+age_ran=0x0 prod_stage=0x0 round_ran=0 alb=0 veg=0 fb=0 err=
+[slp_field] path-decision call#3: prof=true pflag_attr=true pflag_val=true ext=true method=true idx=true -> cpp_gate=true
+[slp_field] commit-diag call#3: rc=0.089 slp_out=600 n_cells=600 map_slp=600 slice=150:225 final=false published=false slot=19/600 reason=intermediate_slice
+[slp_field][RT-DIAG] call#3 phase=0.0438 rc=0.089 slp_out=600 n=600 slice=150:225 final=false published=false slot=19/600 slot_reason=intermediate_slice -> intermediate_slice
+[climate][boundary] day=5 planned=1 compared=1 matched=1 worker_parity=15864837856752618639 ref=15864837856752618639 st
+age_ran=0x0 prod_stage=0x0 round_ran=0 alb=0 veg=0 fb=0 err=
+  section_mask=0x1F climate_bytes=953080 country_bytes=40376 domain_pod_bytes=19848 committed_day=5
+FAIL: the validator accepts a bundle carrying the CLIMATE section
+FAIL: the validator accepts the bundle without a cross-check dictionary
+  CLM2 roundtrip: 953080 bytes, saved_day=5, pre_save_climate_hash=6873187350702602518
+checks: 40, failures: 2
+ERROR: 24 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 310 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
+
+
+==============================================================================
+TEST   : runtime_country_pod_test
+SCRIPT : tests/runtime_country_pod_test.gd
+EXIT   : 0   PASSED: True   6.95s
+==============================================================================
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+runtime country POD: 16 checks, 0 failures
+Godot_v4.6.2-stable_win64_console.exe : ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyText
+ureE' were leaked at exit.
+At D:\Godot\ProjectKeynes\Project.Keynes\tools\runtime\Invoke-RuntimeTests.ps1:74 char:9
++         & $godot @godotArgs 2>&1 | Tee-Object -FilePath $logPath | Ou ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (ERROR: 11 RID a...leaked at exit.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 276 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
+
+
+==============================================================================
+TEST   : runtime_snapshot_ring_test
+SCRIPT : tests/runtime_snapshot_ring_test.gd
+EXIT   : 0   PASSED: True   4.13s
+==============================================================================
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+runtime snapshot ring: PASS
+Godot_v4.6.2-stable_win64_console.exe : ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyText
+ureE' were leaked at exit.
+At D:\Godot\ProjectKeynes\Project.Keynes\tools\runtime\Invoke-RuntimeTests.ps1:74 char:9
++         & $godot @godotArgs 2>&1 | Tee-Object -FilePath $logPath | Ou ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (ERROR: 11 RID a...leaked at exit.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 112 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
+
+
+==============================================================================
+TEST   : runtime_save_domain_section_test
+SCRIPT : tests/runtime_save_domain_section_test.gd
+EXIT   : 0   PASSED: True   4.11s
+==============================================================================
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+=== runtime save domain section: 8 checks, 0 failures ===
+Godot_v4.6.2-stable_win64_console.exe : ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyText
+ureE' were leaked at exit.
+At D:\Godot\ProjectKeynes\Project.Keynes\tools\runtime\Invoke-RuntimeTests.ps1:74 char:9
++         & $godot @godotArgs 2>&1 | Tee-Object -FilePath $logPath | Ou ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (ERROR: 11 RID a...leaked at exit.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 111 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
+
+
+==============================================================================
+TEST   : runtime_worker_source_scan_test
+SCRIPT : tests/runtime_worker_source_scan_test.gd
+EXIT   : 0   PASSED: True   4.29s
+==============================================================================
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+runtime worker source scan: PASS
+Godot_v4.6.2-stable_win64_console.exe : ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyText
+ureE' were leaked at exit.
+At D:\Godot\ProjectKeynes\Project.Keynes\tools\runtime\Invoke-RuntimeTests.ps1:74 char:9
++         & $godot @godotArgs 2>&1 | Tee-Object -FilePath $logPath | Ou ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (ERROR: 11 RID a...leaked at exit.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 111 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
+
+
+==============================================================================
+TEST   : runtime_thread_isolation_test
+SCRIPT : tests/runtime_thread_isolation_test.gd
+EXIT   : 0   PASSED: True   4.49s
+==============================================================================
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+=== runtime thread isolation smoke ===
+  [PASS] thread API exported
+  [PASS] commit API exported
+  [PASS] stop API exported
+  [PASS] thread QoS API exported
+  [PASS] runtime restore API exported
+  [PASS] partial graph is rejected
+  [PASS] rejection is explicit
+  [PASS] ACTIVE is blocked until every native domain handler exists
+  [PASS] shadow graph starts asynchronously
+  [PASS] domain POD ABI version is exposed
+  [PASS] worker reaches running state
+  [PASS] worker waits for OFF reference trace at day barrier
+  [PASS] main thread never waits for simulation
+  [PASS] time debt remains bounded
+  [PASS] coverage reports missing native domain handlers
+  [PASS] barrier pause remains non-blocking
+  [PASS] barrier stop remains non-blocking
+  [PASS] barrier worker stops cleanly
+=== done: 18 checks, 0 failures ===
+Godot_v4.6.2-stable_win64_console.exe : ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyText
+ureE' were leaked at exit.
+At D:\Godot\ProjectKeynes\Project.Keynes\tools\runtime\Invoke-RuntimeTests.ps1:74 char:9
++         & $godot @godotArgs 2>&1 | Tee-Object -FilePath $logPath | Ou ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (ERROR: 11 RID a...leaked at exit.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 111 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
+
+
+==============================================================================
+TEST   : runtime_graph_country_committed_test
+SCRIPT : tests/runtime_graph_country_committed_test.gd
+EXIT   : 0   PASSED: True   4.47s
+==============================================================================
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[runtime-graph-country] ok: first pulse consumes bootstrap generation without emit
+[runtime-graph-country] ok: same generation does not redispatch
+[runtime-graph-country] ok: CLAIM generation emits country_committed once
+[runtime-graph-country] ok: repeat pulse after CLAIM stays quiet
+[runtime-graph-country] ok: zero-count generation still reaches event normalization
+[runtime-graph-country] ok: facade emits when only changed_cells is set
+[runtime-graph-country] ok: facade stays quiet when nothing changed
+[runtime-graph-country] ok: stale 0/0 report recovers CLAIM from native event stream
+[runtime-graph-country] PASS
+Godot_v4.6.2-stable_win64_console.exe : ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyText
+ureE' were leaked at exit.
+At D:\Godot\ProjectKeynes\Project.Keynes\tools\runtime\Invoke-RuntimeTests.ps1:74 char:9
++         & $godot @godotArgs 2>&1 | Tee-Object -FilePath $logPath | Ou ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (ERROR: 11 RID a...leaked at exit.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 111 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
+
+
+==============================================================================
+TEST   : runtime_generation_tick_gate_test
+SCRIPT : tests/runtime_generation_tick_gate_test.gd
+EXIT   : 0   PASSED: True   10.51s
+==============================================================================
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[ui-layout-diag/bind_ui] is_web=false viewport_visible_rect=[P: (0.0, 0.0), S: (1024.0, 576.0)] window_size=(1280, 720) content_scale_factor=1.250 content_scale_mode=0 device_pixel_ratio=-1.000 top_bar_rect=[P: (0.0, 0.0), S: (1024.0, 56.0)] right_panel_rect=[P: (564.0, 68.0), S: (460.0, 496.0)] country_action_bar_rect=[P: (346.0, 494.0), S: (400.0, 74.0)]
+[building-visual] queue_probe ticks=1 queued=0 chunk=-1 camera_rect=[P: (-512.0, -288.0), S: (1024.0, 576.0)] prefetch=false zoom=1.000
+[clock/step] delta=142.7ms speed=1x target=0.14d cap=8.00d/f cost=0.00ms ran=0 pulse=0.00ms loop=0.00ms full=0.32ms carry=0.14 barrier=
+Godot_v4.6.2-stable_win64_console.exe : ERROR: 8 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextu
+reE' were leaked at exit.
+At D:\Godot\ProjectKeynes\Project.Keynes\tools\runtime\Invoke-RuntimeTests.ps1:74 char:9
++         & $godot @godotArgs 2>&1 | Tee-Object -FilePath $logPath | Ou ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (ERROR: 8 RID al...leaked at exit.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ERROR: 1 RID allocations of type 'N13RendererDummy15MaterialStorage11DummyShaderE' were leaked at exit.
+ERROR: 7 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 236 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
+
+
+==============================================================================
+TEST   : runtime_trigger_pod_test
+SCRIPT : tests/runtime_trigger_pod_test.gd
+EXIT   : 0   PASSED: True   4.02s
+==============================================================================
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+runtime trigger pod: PASS
+Godot_v4.6.2-stable_win64_console.exe : ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyText
+ureE' were leaked at exit.
+At D:\Godot\ProjectKeynes\Project.Keynes\tools\runtime\Invoke-RuntimeTests.ps1:74 char:9
++         & $godot @godotArgs 2>&1 | Tee-Object -FilePath $logPath | Ou ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (ERROR: 11 RID a...leaked at exit.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 112 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
+
+
+==============================================================================
+TEST   : runtime_trigger_parity_test
+SCRIPT : tests/runtime_trigger_parity_test.gd
+EXIT   : 0   PASSED: True   4.02s
+==============================================================================
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+Godot_v4.6.2-stable_win64_console.exe : ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyText
+ureE' were leaked at exit.
+At D:\Godot\ProjectKeynes\Project.Keynes\tools\runtime\Invoke-RuntimeTests.ps1:74 char:9
++         & $godot @godotArgs 2>&1 | Tee-Object -FilePath $logPath | Ou ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (ERROR: 11 RID a...leaked at exit.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 112 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
+
+
+==============================================================================
+TEST   : runtime_trigger_save_roundtrip_test
+SCRIPT : tests/runtime_trigger_save_roundtrip_test.gd
+EXIT   : 0   PASSED: True   3.92s
+==============================================================================
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+Godot_v4.6.2-stable_win64_console.exe : ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyText
+ureE' were leaked at exit.
+At D:\Godot\ProjectKeynes\Project.Keynes\tools\runtime\Invoke-RuntimeTests.ps1:74 char:9
++         & $godot @godotArgs 2>&1 | Tee-Object -FilePath $logPath | Ou ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (ERROR: 11 RID a...leaked at exit.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 112 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
+
+
+==============================================================================
+TEST   : dots_completion_gate
+SCRIPT : tests/dots_completion/dots_completion_gate.gd
+EXIT   : 1   PASSED: False   4.12s
+==============================================================================
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+=== DOTS completion gate ===
+
+─── (a) 4 巨石行数门禁 ───────────────────────────
+file                          current    target  status
+weather_system.gd                4314       400  OVER by 3914
+map_generator.gd                20133      1500  OVER by 18633
+map_baker.gd                     7770       800  OVER by 6970
+main.gd                          4319       400  OVER by 3919
+
+─── (b) hot path 直写残留 ─────────────────────────
+pattern                                     count     limit  status
+map_generator cell.x = (bake-time only)        92        10  FAIL
+weather_system out_cell.x =                     0         0  PASS
+
+─── (c) Flag registry 完整性 ──────────────────────
+declared on ClimateProfile: 6 flags
+registered in FLAGS:        6 flags
+MISSING 1 flag(s) in registry:
+  - use_climate_round_async
+
+─── (d)/(e) runtime soak [SKIP / RUNTIME-GATED] ──
+baseline metrics not yet recorded; (d)/(e) SKIPPED
+  → record fast_tick_ms_p50/p95 in baseline.json by running 100-tick scene
+
+=== summary ===
+FAILURES (6):
+  [GATE-FAIL] (a) weather_system.gd: 4314 lines > target 400 (over by 3914)
+  [GATE-FAIL] (a) map_generator.gd: 20133 lines > target 1500 (over by 18633)
+  [GATE-FAIL] (a) map_baker.gd: 7770 lines > target 800 (over by 6970)
+  [GATE-FAIL] (a) main.gd: 4319 lines > target 400 (over by 3919)
+  [GATE-FAIL] (b) map_generator cell.x = (bake-time only): hit 92 > limit 10 in res://scripts/geography/map_generator.gd
+  [GATE-FAIL] (c) feature_flags.FLAGS missing entry for 'use_climate_round_async' declared on ClimateProfile
+=> exit 1
+Godot_v4.6.2-stable_win64_console.exe : ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyText
+ureE' were leaked at exit.
+At D:\Godot\ProjectKeynes\Project.Keynes\tools\runtime\Invoke-RuntimeTests.ps1:74 char:9
++         & $godot @godotArgs 2>&1 | Tee-Object -FilePath $logPath | Ou ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (ERROR: 11 RID a...leaked at exit.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 111 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
+
+
+

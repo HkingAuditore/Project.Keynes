@@ -1586,6 +1586,98 @@ bool NativeIdeologyRuntime::should_run(int64_t day) const {
     return _configured && ((command != nullptr && command->effective_day <= day) ||
         !_pending_transitions.empty() || _active_progress_day == day || _last_day < day);
 }
+
+bool NativeIdeologyRuntime::export_pod_catalog(
+        const RuntimeCountryPodSnapshot &country,
+        RuntimeIdeologyPodCatalog &out, std::string &error) const {
+    error.clear();
+    if (!_configured || !country.bootstrapped || country.catalog_hash == 0) {
+        error = "ideology_pod_export_unavailable";
+        return false;
+    }
+    RuntimeIdeologyPodCatalog catalog;
+    catalog.country_catalog_hash = country.catalog_hash;
+    catalog.class_hash = _political_class_hash;
+    catalog.class_count = static_cast<uint32_t>(std::max(0, _political_class_count));
+    catalog.technology_count = country.technology_count;
+    catalog.research_signal_count = country.research_signal_count;
+    catalog.gate_count = static_cast<uint32_t>(std::max(0, _gate_count));
+    catalog.ideology_capacity = _ideology_capacity;
+    catalog.spirit_capacity = _spirit_capacity;
+    catalog.offer_cost_q16 = _offer_cost_q16;
+    catalog.starting_points_q16 = _starting_points_q16;
+    catalog.owner_influence_weight = _opinion_owner_influence_weight;
+    catalog.funds_per_influence = _opinion_funds_per_influence;
+    catalog.max_commands_per_slice = static_cast<uint32_t>(
+        std::max(1, _max_commands_per_slice));
+    catalog.max_transition_commands = static_cast<uint32_t>(
+        std::max(1, _max_transition_commands));
+    catalog.max_transition_polls_per_slice = static_cast<uint32_t>(
+        std::max(1, _max_transition_polls_per_slice));
+    catalog.max_active_visits_per_slice = static_cast<uint32_t>(
+        std::max(1, _max_active_visits_per_slice));
+    catalog.levels.reserve(_levels.size());
+    for (const Level &level : _levels)
+        catalog.levels.push_back({level.threshold_q16,
+                                  level.daily_understanding_q16});
+    catalog.definitions.reserve(_definitions.size());
+    for (const Definition &definition : _definitions) {
+        RuntimeIdeologyPodDefinition row;
+        row.acquisition = definition.acquisition;
+        row.rarity_weight = definition.rarity_weight;
+        row.ideology_cost = definition.ideology_cost;
+        row.spirit_cost = definition.spirit_cost;
+        row.min_spirit_level = definition.min_spirit_level;
+        row.level_begin = static_cast<uint32_t>(definition.level_begin);
+        row.level_count = static_cast<uint32_t>(definition.level_count);
+        row.technology_begin = static_cast<uint32_t>(definition.technology_requirement_begin);
+        row.technology_count = static_cast<uint32_t>(definition.technology_requirement_count);
+        row.signal_begin = static_cast<uint32_t>(definition.signal_requirement_begin);
+        row.signal_count = static_cast<uint32_t>(definition.signal_requirement_count);
+        row.gate_begin = static_cast<uint32_t>(definition.gate_requirement_begin);
+        row.gate_count = static_cast<uint32_t>(definition.gate_requirement_count);
+        row.stance_begin = static_cast<uint32_t>(definition.stance_begin);
+        row.stance_count = static_cast<uint32_t>(definition.stance_count);
+        row.support_threshold_q16 = definition.support_threshold_q16;
+        row.exclusion_group_id = definition.exclusion_group_id;
+        catalog.definitions.push_back(row);
+    }
+    catalog.technology_requirements = _technology_requirements;
+    catalog.signal_requirements = _signal_requirements;
+    catalog.gate_requirements = _gate_requirements;
+    catalog.class_stances.reserve(_class_stances.size());
+    for (const ClassStance &stance : _class_stances) {
+        RuntimeIdeologyPodClassStance row;
+        row.class_index = stance.class_index;
+        row.stance_q16 = stance.stance_q16;
+        row.critical_min_q16 = stance.critical_min_q16;
+        catalog.class_stances.push_back(row);
+    }
+    catalog.synergy_requirements.reserve(_synergy_requirements.size());
+    for (const SynergyRequirement &requirement : _synergy_requirements) {
+        RuntimeIdeologyPodSynergyRequirement row;
+        row.ideology_id = requirement.ideology_id;
+        row.minimum_level = requirement.minimum_level;
+        row.location_mask = requirement.location_mask;
+        catalog.synergy_requirements.push_back(row);
+    }
+    catalog.synergies.reserve(_synergies.size());
+    for (const Synergy &synergy : _synergies) {
+        RuntimeIdeologyPodSynergy row;
+        row.requirement_begin = static_cast<uint32_t>(synergy.requirement_begin);
+        row.requirement_count = static_cast<uint32_t>(synergy.requirement_count);
+        catalog.synergies.push_back(row);
+    }
+    catalog.ideology_synergy_offsets.reserve(_ideology_synergy_offsets.size());
+    for (const int32_t offset : _ideology_synergy_offsets)
+        catalog.ideology_synergy_offsets.push_back(static_cast<uint32_t>(offset));
+    catalog.ideology_synergy_ids = _ideology_synergy_ids;
+    RuntimeIdeologyPodAuthority validator;
+    if (!validator.configure(catalog, error)) return false;
+    catalog.catalog_hash = validator.catalog_hash();
+    out = std::move(catalog);
+    return true;
+}
 Dictionary NativeIdeologyRuntime::snapshot(int64_t handle) const {
     if (!_configured) return fail("ideology_runtime_unconfigured");
     const CountryState *country = country_state_for(static_cast<uint64_t>(handle));

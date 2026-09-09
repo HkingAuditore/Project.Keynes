@@ -491,6 +491,20 @@ Climate 当时不能加入 `implemented_domain_mask`，原因是：
   PKCN、checksum、catalog、generation/day/hash 或协议元数据不会污染在线状态；
 - `runtime_country_save_roundtrip_test.gd` 已覆盖真实 Host bundle、错误输入拒绝、二次保存、
   future command 和事件游标恢复。
+- K2-A 的 Country→Effect/Modifier peer bridge 已形成可调用的协议垂直切片：
+  `CountryPeerContext` 是一次边界的不可变数值输入，`CountryPeerIntent` / `CountryPeerResult`
+  携带 `session_epoch`、Country/peer generation、day、continuation、target handle 和
+  idempotency identity；`PENDING`、`READY/APPLIED`、`REJECTED` 的终态与保存 barrier 已明确。
+- `DCWorldExt` 已导出 `set_country_peer_async_mode()`、`poll_country_peer_intent()`、
+  `submit_country_peer_result()` 和 `get_country_peer_protocol_status()`，但这些入口目前只
+  用于协议/黑盒验证和后续 Host adapter 接线，不代表 worker 已获得 Country 权威。
+- `runtime_country_peer_bridge_test.gd` 当前为 **71 checks, 0 failures**，覆盖同日完成不重复
+  消耗研究资源、身份错误、peer generation 校验、重复 ACK 幂等、拒绝后次日重试、保存阻塞和
+  研究完成后的 Effect reward intent。既有五项回归也已通过：研究 pending scheduler、
+  technology Modifier activation、Effect native Modifier bridge、technology research runtime、
+  Country save roundtrip。
+- 修正了 GDScript `int64` 边界：`country_peer_request_id()` 保留非零 63-bit ID，避免无符号
+  ID 跨 Godot `Variant` 后变成负数并在 ACK 回传时被误判为非法。
 
 ### 7.2 尚未完成内容
 
@@ -500,9 +514,13 @@ Country 尚未成为 Host 的真实 COUNTRY authority：
 - 尚未替代同步 Country daily；
 - typed command、seal、receipt 尚未接入 Host transport/inbox/outbox；
 - 尚未完成 Country 1000 日 OFF/SHADOW parity；
-- 尚未完成 Country 与 Economy/Modifier/Effect 的真实 ACK barrier；
-- 尚未完成全部 Country 资产写入的跨域事务桥；
-- 尚未完成不可变 CountryReadView 与稀疏发布；
+- K2-A 已完成 Country peer ACK 的协议和研究续跑语义验证，并接入现有
+  `EffectRuntime` / `ModifierRuntime` / gameplay publication adapter；尚未把 ACK 作为
+  `NativeSimulationHost` 的持久 worker barrier；
+- Country 资产事务桥已完成 9 条 operation path 的异步协议切片（treasury/fiscal/cohort/market/research purchase）；
+  其余真实 Economy coordinator 接入仍未完成；
+- immutable CountryReadView 与稀疏 owner patch 已有协议切片和主线程消费入口，但尚未成为
+  ACTIVE Host 的完整发布生命周期；
 - 尚未证明研究变化不会触发 territory sync；
 - 尚未允许增加 COUNTRY bit。
 
@@ -569,13 +587,35 @@ capability_mask() == 0
 - RuntimeDomainAuthorityRunner standalone self-test；
 - 关键 C++ 文件 MSVC C++17 单文件编译。
 
-Debug/Release DLL 曾成功构建过，构建产物位于：
+Country K2-A 的新增验证记录在：
+
+```text
+artifacts/runtime/country-k2-peer-bridge/tests/runtime_country_peer_bridge_test.log
+artifacts/runtime/country-k2-peer-bridge/existing-regressions/
+artifacts/runtime/country-k2-peer-bridge/test-summary.json
+artifacts/runtime/country-k2-peer-bridge/full-validation-final-20260909/
+```
+
+2026-09-09 使用当前 Debug DLL 重跑 `runtime_country_peer_bridge_test.gd`，结果为
+**71 checks, 0 failures**。同一 DLL 上的研究 pending scheduler、technology Modifier
+activation、Effect native Modifier bridge、technology research runtime 和 Country save
+roundtrip 五项直接回归全部通过。专项测试已同时接入 `tools/runtime/Invoke-RuntimeTests.ps1`
+和 Country 专用 `verify_country_runtime.ps1 -Godot` 入口。后者的最终验证依次通过
+Country reference trace `9/0`、Country runtime `58/0`、Country POD `16/0`、peer bridge
+`71/0` 和 save roundtrip `36/0`，完整日志为
+`artifacts/runtime/country-k2-peer-bridge/country-verifier-final.log`。
+
+统一 runtime runner 的最终结果为 **16/17 passed**。唯一失败仍是仓库级
+`dots_completion_gate`：本轮已经补齐 `use_climate_round_async` 的 flag registry，相关子门禁
+现已通过；剩余失败为四个既有 GDScript 巨石文件行数门禁及 MapGenerator bake-time 直写
+数量门禁，与 Country peer bridge 无关。该失败不能计入 Country 通过，也不能用来宣布全域
+门禁通过。
+
+2026-09-09 已重新执行完整 GDExtension Debug/Release 构建，构建产物位于：
 
 ```text
 Project/project-keynes/addons/dots_ext/bin/windows/
 ```
-
-需要注意：最近新增 parity report 字段后，必须重新执行完整 GDExtension Debug/Release 构建和 headless suite，不能只依赖旧 DLL。
 
 ## 10. 尚未完成的 domain 清单
 
@@ -1050,7 +1090,7 @@ UI/frame/performance gates passed
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | COMMIT | 是 | 是 | 基础 | 基础 | 是 | 部分 | 未完成 | 仅协议 | 已加入 |
 | CLIMATE | 是 | 是 | 是 | 是 | 是 | CLM2 | 90 日双 seed 稳态绿；day7/28 见 S4 | per-domain ACTIVE | 已加入 |
-| COUNTRY | 是 | 共享生产核心 | 20 opcode 核心完成；Host transport 未接 | 部分 | 同步 snapshot；ReadView 未完成 | CPD2 v2 已编入 PKSR | 未完成 | SHADOW probe | 未加入 |
+| COUNTRY | 是 | 共享生产核心 | 20 opcode 核心完成；K2-A peer protocol 已验证，Host transport 未接 | Effect/Modifier adapter 与 K2-B 资产协议切片已验证；真实 Economy coordinator 未接 | immutable ReadView/稀疏 patch 已验证 | CPD2 v2 已编入 PKSR | 未完成 | SHADOW/protocol probe | 未加入 |
 | MODIFIER | store/诊断 | 诊断 | 未完成 | 诊断 | 诊断 | 未完成 | 未完成 | 未接入 | 未加入 |
 | EFFECT | store/诊断 | 诊断 | 未完成 | 诊断 | 诊断 | 未完成 | 未完成 | 未接入 | 未加入 |
 | IDEOLOGY | store/诊断 | 诊断 | 未完成 | 诊断 | 诊断 | 未完成 | 未完成 | 未接入 | 未加入 |
@@ -1319,7 +1359,102 @@ ACK
 
 ### K2：真实 Host stage
 
-Country stage 只能读取：
+#### K2-A：研究与 Effect/Modifier peer bridge（协议切片已完成，生产接线未完成）
+
+已完成的边界是：
+
+```text
+capture_peer_context(day, continuation)
+  -> Country research/activation
+  -> typed peer intent
+  -> PENDING 或 ACK/REJECTED
+  -> same-day continuation 或 next-day retry
+```
+
+当前实现保证：
+
+- peer context 只包含数值向量和稀疏 technology state，不持有 Godot 对象或 runtime 指针；
+- request identity 由 session、Country generation、day、continuation、slot、technology 和
+  opcode 确定，重复逻辑请求不会因 Country generation 变化而重复创建 Effect 请求；
+- ACK 必须匹配完整 identity，并且成功结果的 `committed_peer_generation` 不得低于 intent
+  捕获的 peer generation；
+- `PENDING` 不关闭 intent，`REJECTED` 形成可报告的 next-day retry barrier，`STALE` 不进入
+  重试队列，重复相同 ACK 幂等，重复但内容不同的 ACK 被拒绝；
+- `research_due` 只在日边界消耗一次研究资源；同日只续跑 activation/ACK 链，不重复分配资源。
+
+K2-A 的黑盒测试由 GDScript 模拟 peer adapter，因此还不能证明真实 Effect/Modifier adapter
+执行、跨线程 outbox/inbox 或资产守恒。下一步必须先完成 K2-B 的真实 peer/资产事务边界，再做
+K2-C Host 接入。
+
+#### K2-B：真实 peer adapter 与 Country/Economy 事务桥（部分完成）
+
+- 把 Effect/Modifier 的 intent 消费从测试 adapter 接到其真实安全提交边界；
+- 把国库现金、商品、研究采购、财政 escrow、市场/商人入账改为带事务 identity 的 typed
+  prepare/commit/complete 流程；
+- 在 commit decision 前拒绝并释放 reservation，commit 后只允许原事务 ID 幂等重试；
+- 对每个资产操作记录两侧 generation、准备数量、实际提交数量和守恒审计；
+- 禁止 Economy 直接写 Country store，新增 source scan 和运行时 owner 断言。
+
+截至 2026-09-09，已落地 Country/Economy treasury spend、fiscal reserve/return/collect、
+Country↔cohort cash、Country↔market goods 和 research purchase 九条异步 operation path：
+
+- `begin_country_economy_treasury_spend()` 在 Country 侧校验 handle、现金、商品 ID/数量和重复
+  商品，并按国家/商品累计 reservation；reservation 不改变已提交 treasury；
+- `ack_country_economy_asset_peer_prepared()` 校验 session、Country generation、peer generation，
+  支持重复相同 ACK 幂等，prepare 拒绝释放全部 reservation；
+- `commit_country_economy_treasury_spend()` 记录 commit decision，只应用 Country 侧一次，现金和
+  每个商品逐项扣减并执行 conservation audit；
+- `ack_country_economy_asset_peer_applied()` 在 peer 侧确认后完成事务；commit 后 peer 拒绝进入
+  `FAULTED`，不被静默改成 `COMPLETED`，旧 transaction ID 只能得到终态重放；
+- `begin_country_economy_fiscal_reserve()` 复用相同 reservation/ACK/commit 状态机，按可用
+  未预留现金决定 prepared quantity，支持部分准备量但不改变原有财政调用的实际数量语义；
+  `commit_country_economy_fiscal_reserve()` 只扣减已准备数量，完成后同样通过原 request ID
+  幂等重放；
+- `begin_country_economy_fiscal_return/collect()` 与 `begin_country_economy_cash_from_cohort()`
+  复用 credit-side commit，先做 Country 可容纳上限预检，再按现金增加方向执行守恒审计；
+- `begin_country_economy_cash_to_cohort()` 对 Country 现金使用 reservation 和实际可用量
+  准备；`begin_country_economy_good_to_market/from_market()` 对商品分别执行 reservation 扣货
+  与溢出预检加货，统一记录实际 prepared/committed quantity；
+- `begin_country_economy_research_purchase()` 对研究采购执行全有或全无的现金 reservation，
+  在 commit 中一次性扣除现金、增加 `technology_points` 和 `purchased_total`，并等待 peer
+  applied ACK；旧的 `NativeEconomyRuntime` 采购入口已经改为通过该状态机的合成 ACK 兼容桥，
+  但真实 market/merchant peer coordinator 尚未接入；
+- `NativeCountryRuntime::begin_save()` 在存在 in-flight asset transaction 时返回明确的
+  `country_save_economy_asset_transaction_pending`，避免保存 reservation 或 commit 中间态；
+- `runtime_country_economy_transaction_test.gd` 覆盖正常完成、重复 request/ACK、错误
+  session/generation、prepare 拒绝、保存阻塞、peer apply 故障、fiscal reserve/return/collect、Country↔cohort cash、Country↔market goods、research purchase、reservation 清零和终态重放，当前为 **43 checks,
+  0 failures**。
+
+本轮后，`NativeEconomyRuntime::run_government_research_procurement()` 已增加真实的
+Economy-owned 研究采购 coordinator/continuation：epoch begin 时冻结候选市场、价格、预算和
+需求；候选消费按固定 cursor 分片，跨 slice 保留 phase/cursor/budget/remaining；只有采购
+候选 pass 与未满足需求的 ceiling pass 都完成后，才推进到 `TRADE_DISPATCH`。每笔成交会在
+Country typed prepare/commit 前完成市场库存、活商人和商人分账预检，commit 后再应用市场扣货、
+商人现金/收入与 withdrawal EMA，并提交 peer-applied ACK。`technology_procurement_runtime_test.gd`
+继续 PASS，说明原有采购完成日、库存守恒和 dead-merchant repair 语义未回退。
+
+该切片仍是 Country API/核心纵向切片，尚未由 `NativeSimulationHost` 持久 stage 驱动，也尚未
+把真实 Economy 的 market/merchant coordinator、fiscal escrow、Country↔cohort 现金、Country↔market
+商品、construction/canal 支出完全接入同一跨域 coordinator；因此 K2-B 总体仍未完成，不能提升
+Country authority 或修改 `implemented_domain_mask`。
+
+#### K2-C：Host stage 与唯一写者门控（未完成）
+
+- `NativeSimulationHost` 持有持久 Country state、未完成 boundary、peer result inbox 和
+  typed receipt outbox；
+- `NeedPeerResults` 让出 worker，不阻塞主线程，不占 executor group 或 mutex；
+- SYNC/SHADOW/ACTIVE 三种模式使用同一 CountryCore，SHADOW 只重放录制 peer 结果，ACTIVE
+  才由主线程 peer adapter 执行 intent；
+- 只有实际授予的 Country authority 才能抑制同步 Country 写者，失败不得自动热切到旧状态。
+
+#### K2-D/K2-E：ReadView、发布、存档与交接（未完成）
+
+- 发布不可变 `CountryReadView` 与 territory/research/tax/visual 独立水位；
+- 仅对实际 owner 变化发布稀疏 cell patch，研究/税务/国库变化不重建 territory CSR；
+- CPD2 已能做同步/Host bundle roundtrip，但 worker continuation、真实事务中间态和交接
+  checkpoint 仍未纳入 Host 生命周期。
+
+Country stage 最终只能读取：
 
 ```text
 上一日 Country snapshot
@@ -2664,3 +2799,4 @@ Dictionary 是无类型边界，两侧各写一个名字不会有任何人报错
 **十九、"墙钟变长"本身是一条诊断信号。** parity probe 从 75 秒变成 700 秒，因为它在
 `tick_budget = days * 4 + 16` 里一直重试一个永不成功的比较。用时反常时先看它是不是在重试，
 比读结果更快定位。
+

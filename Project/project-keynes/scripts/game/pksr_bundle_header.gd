@@ -39,8 +39,14 @@ const SECTION_RUNTIME_ENVELOPE := 1
 const SECTION_DOMAIN_POD := 2
 const SECTION_CLIMATE := 4
 const SECTION_COUNTRY := 8
+const SECTION_TRIGGER := 16
+const SECTION_MODIFIER := 32
+const SECTION_EVENTS := 64
+const SECTION_EFFECT := 128
+const SECTION_IDEOLOGY := 256
 const SECTION_KNOWN := SECTION_RUNTIME_ENVELOPE | SECTION_DOMAIN_POD | SECTION_CLIMATE \
-	| SECTION_COUNTRY
+	| SECTION_COUNTRY | SECTION_TRIGGER | SECTION_MODIFIER | SECTION_EVENTS | SECTION_EFFECT \
+	| SECTION_IDEOLOGY
 
 
 static func section_mask(bytes: PackedByteArray) -> int:
@@ -55,6 +61,13 @@ static func has_climate_section(bytes: PackedByteArray) -> bool:
 
 static func has_country_section(bytes: PackedByteArray) -> bool:
 	return (section_mask(bytes) & SECTION_COUNTRY) != 0
+
+
+static func has_trigger_section(bytes: PackedByteArray) -> bool:
+	return (section_mask(bytes) & SECTION_TRIGGER) != 0
+
+static func has_modifier_section(bytes: PackedByteArray) -> bool:
+	return (section_mask(bytes) & SECTION_MODIFIER) != 0
 
 
 # Validates the fixed ABI header before the bytes reach a restore provider. The
