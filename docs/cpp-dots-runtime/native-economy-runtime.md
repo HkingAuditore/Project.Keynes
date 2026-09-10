@@ -1,5 +1,22 @@
 # 原生阶层与本地市场运行时（Market V2 / Price V6）
 
+## Fiscal reserve 跨 slice continuation（K2-B 部分完成）
+
+财政 reserve 现在由两个明确阶段组成：`prepare_fiscal_budgets()` 一次性构造并冻结
+fiscal/tariff lane 的 `requested_by_country` 计划；`advance_fiscal_reservation()` 按稳定
+Country 顺序逐国执行 `fiscal_reserve` typed transaction。单个 `run_economy_slice()` 最多
+推进一个 Country，并持续报告 cursor、Country 数、day、最后请求量和实际预留量。
+
+reserve continuation 活跃时，Economy 保持在 `EPOCH_BEGIN`，不刷新 research demand、
+bullion quota 或开始后续 stage；完成后才进入 `finish_epoch_start_after_fiscal()` 的原有
+研究/生产路径。day 不匹配会进入 fatal，不自动切换同步权威。保存/恢复在 continuation 或
+`epoch_begin_post_fiscal_pending` 状态下明确失败，不编码财政事务中间态。
+
+回归：`economy_fiscal_reservation_continuation_test.gd` **40/0**；当前 PKEC schema 为 51，
+`economy_cadence_runtime_test.gd` 已通过。该边界仍由 Economy-owned coordinator 在同步
+Economy stage 内执行，尚未形成持久 Country Host outbox/inbox；正式 authority 仍为 SYNC，
+`implemented_domain_mask` 仍为 `0x802`。
+
 ## 2026-09-09 Country treasury typed transaction 边界（K2-B 部分完成）
 
 Country treasury 仍由 `NativeCountryRuntime` 持有；本节新增的 typed transaction 只定义
@@ -16,8 +33,9 @@ apply 拒绝进入 `FAULTED`，不自动回滚或伪装为成功。每个商品�
 quantity 并执行守恒检查，业务拒绝与 ledger failure 分开统计。
 
 Country 保存入口在存在 in-flight asset transaction 时明确阻塞，拒绝捕获 reservation 或
-commit 中间态；事务完成或进入终态后才允许保存。当前 `NativeCountryRuntime` 的生产 Economy
-调用仍通过同步兼容入口，真实 Economy peer coordinator、跨帧 Host stage 和其余资产操作
+commit 中间态；事务完成或进入终态后才允许保存。当前生产 Economy 已调用
+Economy-owned coordinator，但仍在同一同步调用内完成 peer prepare/commit/apply/ACK，尚未移到
+持久 Host 的跨帧 outbox/inbox。
 此外，`fiscal_reserve` 已复用同一状态机：Country 侧按「现金余额减去已有 reservation」
 计算 prepared quantity，允许实际准备量小于请求量；commit 只扣减 prepared quantity，之后
 等待 peer applied ACK。它目前仍是可调用的协议垂直切片，不代表现有
@@ -25,7 +43,9 @@ commit 中间态；事务完成或进入终态后才允许保存。当前 `Nativ
 
 Country↔cohort cash 与 Country↔market goods 也已具备同一可调用事务边界：扣款方向按未预留
 现金/商品返回实际 prepared quantity，入账方向按 Country 的现金/商品容量做溢出预检；commit
-只应用一次，商品守恒按 operation 方向分别检查。它们仍未替换生产 Economy 的同步兼容调用。
+只应用一次，商品守恒按 operation 方向分别检查。生产 Economy 的 cohort cash 与 market goods
+命令已改为分别调用 `coordinate_country_cohort_cash()` /
+`coordinate_country_market_goods()`；结构性空 cohort 清理和迁移余数也经过同一 cash coordinator。
 
 research purchase 已接入统一 typed transaction state machine。政府采购现由
 `NativeEconomyRuntime::coordinate_country_research_purchase()` 负责真实 peer-side
@@ -35,8 +55,11 @@ prepare/commit、市场扣货、商人入账、withdrawal EMA 和 Country applie
 阶段的候选列表、预算、剩余需求和 cursor 保存于 epoch continuation，窗口未完成时不会
 推进到 `TRADE_DISPATCH`。专项证据为 `technology_procurement_runtime_test.gd`：**PASS**，
 以及 `runtime_country_economy_transaction_test.gd`：**43 checks, 0 failures**。
-财政 escrow、普通 cohort cash/market goods 的生产接线以及 construction/canal 的异步
-跨域 coordinator 仍未完成。
+财政 reserve/return/collect 已由 `coordinate_country_fiscal_transaction()` 驱动；
+construction/canal treasury material/cash 已由 `coordinate_country_treasury_spend()` 统一
+完成 Country 多商品扣款、market 扣货、merchant 分账与 peer ACK，调用方不再重复应用
+market/merchant 副作用。上述 coordinator 仍是同步 Economy stage 内的纵向切片，持久 Host
+跨帧 continuation、正式 Country ACTIVE 和 `0x806` mask 提升仍未完成。
 
 ## 2026-09-03 Incumbent 扩容使用揭示单位经济
 

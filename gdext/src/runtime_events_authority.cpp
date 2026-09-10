@@ -180,8 +180,9 @@ bool RuntimeEventsAuthority::packet_less(const RuntimeCommandPacket &lhs,
     const RuntimeCommandEnvelope &a = lhs.envelope;
     const RuntimeCommandEnvelope &b = rhs.envelope;
     if (a.effective_day != b.effective_day) return a.effective_day < b.effective_day;
-    if (a.producer_id != b.producer_id) return a.producer_id < b.producer_id;
     if (a.sequence != b.sequence) return a.sequence < b.sequence;
+    if (lhs.submit_order != rhs.submit_order)
+        return lhs.submit_order < rhs.submit_order;
     return a.request_id < b.request_id;
 }
 

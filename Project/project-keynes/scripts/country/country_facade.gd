@@ -133,6 +133,19 @@ func submit(commands: Array[Dictionary]) -> Dictionary:
 	return _world_ext.submit_country_commands(batch)
 
 
+## Returns only terminal worker receipts for Country commands admitted through
+## the Host. Admission is reported by submit(); this cursor closes the
+## Accepted -> Committed/RejectedAtExecution lifecycle without consuming the
+## generic runtime receipt queue used by other domains.
+func poll_worker_command_receipts(after_request_id: int = 0,
+		limit: int = 128) -> Dictionary:
+	if _world_ext == null or not _world_ext.has_method(
+			"poll_country_command_receipts"):
+		return {"ok": false, "code": "country_worker_receipt_api_missing"}
+	return _world_ext.poll_country_command_receipts(maxi(after_request_id, 0),
+		clampi(limit, 1, 4096))
+
+
 func submit_observation_batch(handle: int, cells: PackedInt32Array,
 		signals: PackedInt32Array, effective_day: int) -> Dictionary:
 	if not _configured or cells.size() != signals.size():

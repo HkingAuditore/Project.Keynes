@@ -46,6 +46,23 @@ func _run() -> void:
 	_expect("numeric country catalog capture is explicit", bool(pod_catalog.get("ok", false))
 		and int(pod_catalog.get("catalog_hash", 0)) != 0
 		and bool(pod_catalog.get("research_conditions_complete", false)))
+	var effect_required: PackedByteArray = pod_catalog.get(
+		"technology_effect_required", PackedByteArray())
+	var modifier_keys: PackedStringArray = catalog.get(
+		"technology_modifier_definition_keys", PackedStringArray())
+	var effect_shape_matches := effect_required.size() == int(
+		pod_catalog.get("technology_count", 0))
+	var effect_values_valid := true
+	var effect_values_match_source := modifier_keys.size() == effect_required.size()
+	for index in range(effect_required.size()):
+		if effect_required[index] > 1:
+			effect_values_valid = false
+		if effect_values_match_source:
+			var expected := 1 if not String(modifier_keys[index]).is_empty() else 0
+			if int(effect_required[index]) != expected:
+				effect_values_match_source = false
+	_expect("catalog exports typed technology Effect requirements",
+		effect_shape_matches and effect_values_valid and effect_values_match_source)
 	_expect("Country worker read view facade is exported",
 		ext.has_method("get_country_worker_read_view"))
 	var initial_view: Dictionary = ext.get_country_worker_read_view(0)

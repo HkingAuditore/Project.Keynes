@@ -511,17 +511,31 @@ bool RuntimeTriggerPodAuthority::validate_state(
         snapshot.states.size() > static_cast<size_t>(_catalog.max_states) ||
         snapshot.pending_events.size() > static_cast<size_t>(_catalog.max_pending_events) ||
         snapshot.pending_effects.size() > RUNTIME_TRIGGER_MAX_PENDING_EFFECTS ||
-        snapshot.next_effect_id <= 0 || snapshot.acked_effect_id < 0) {
+        snapshot.next_effect_id <= 0 || snapshot.acked_effect_id < 0 ||
+        snapshot.current_day < snapshot.committed_day) {
         error = "trigger_snapshot_shape_invalid";
         return false;
     }
-    for (const uint8_t value : snapshot.source_needs_resync) {
+    for (size_t source = 0; source < snapshot.source_needs_resync.size(); ++source) {
+        const uint8_t value = snapshot.source_needs_resync[source];
         if (value > 1) { error = "trigger_source_resync_flag_invalid"; return false; }
+        if (value == 0 && (snapshot.source_gap_begin[source] != 0 ||
+                           snapshot.source_gap_end[source] != 0)) {
+            error = "trigger_source_gap_without_resync";
+            return false;
+        }
+        if (value != 0 && (snapshot.source_gap_begin[source] <= 0 ||
+                           snapshot.source_gap_end[source] <
+                               snapshot.source_gap_begin[source])) {
+            error = "trigger_source_gap_invalid";
+            return false;
+        }
     }
     for (const uint8_t value : snapshot.enabled) {
         if (value > 1) { error = "trigger_enabled_value_invalid"; return false; }
     }
-    for (const RuntimeTriggerPodSnapshotState &state : snapshot.states) {
+    for (size_t i = 0; i < snapshot.states.size(); ++i) {
+        const RuntimeTriggerPodSnapshotState &state = snapshot.states[i];
         if (state.trigger_id < 0 || state.trigger_id >= static_cast<int32_t>(_catalog.definitions.size()) ||
             state.distinct_keys.size() != static_cast<size_t>(_catalog.distinct_capacity) ||
             state.target_generation != static_cast<uint32_t>(state.target_handle >> 32u) ||
@@ -529,14 +543,35 @@ bool RuntimeTriggerPodAuthority::validate_state(
             error = "trigger_state_shape_invalid";
             return false;
         }
+        if (i > 0 && !state_less(snapshot.states[i - 1], state)) {
+            error = "trigger_state_order_invalid";
+            return false;
+        }
+        if (i > 0 && snapshot.states[i - 1].trigger_id == state.trigger_id &&
+            snapshot.states[i - 1].target_handle == state.target_handle) {
+            error = "trigger_state_duplicate";
+            return false;
+        }
     }
-    for (const RuntimeTriggerEvent &event : snapshot.pending_events) {
+    for (size_t i = 0; i < snapshot.pending_events.size(); ++i) {
+        const RuntimeTriggerEvent &event = snapshot.pending_events[i];
         if (!valid_event(event, _catalog) || event.snapshot > 1) {
             error = "trigger_pending_event_invalid";
             return false;
         }
+        if (i > 0 && !event_less(snapshot.pending_events[i - 1], event)) {
+            error = "trigger_pending_event_order_invalid";
+            return false;
+        }
+        if (i > 0 && snapshot.pending_events[i - 1].source_id == event.source_id &&
+            snapshot.pending_events[i - 1].event_id == event.event_id) {
+            error = "trigger_pending_event_duplicate";
+            return false;
+        }
     }
-    for (const RuntimeTriggerEffectIntent &effect : snapshot.pending_effects) {
+    int64_t maximum_effect_id = 0;
+    for (size_t i = 0; i < snapshot.pending_effects.size(); ++i) {
+        const RuntimeTriggerEffectIntent &effect = snapshot.pending_effects[i];
         if (effect.id <= 0 || effect.effective_day < 0 ||
             effect.trigger_id < 0 ||
             effect.trigger_id >= static_cast<int32_t>(_catalog.definitions.size()) ||
@@ -544,6 +579,42 @@ bool RuntimeTriggerPodAuthority::validate_state(
             effect.effect_definition_id >= static_cast<int32_t>(_catalog.effects.size()) ||
             effect.target_generation != static_cast<uint32_t>(effect.target_handle >> 32u)) {
             error = "trigger_pending_effect_invalid";
+            return false;
+        }
+        maximum_effect_id = std::max(maximum_effect_id, effect.id);
+        if (i > 0 && !effect_less(snapshot.pending_effects[i - 1], effect)) {
+            error = "trigger_pending_effect_order_invalid";
+            return false;
+        }
+        if (i > 0 && snapshot.pending_effects[i - 1].id == effect.id) {
+            error = "trigger_pending_effect_duplicate";
+            return false;
+        }
+    }
+    if (snapshot.acked_effect_id >= snapshot.next_effect_id ||
+        maximum_effect_id >= snapshot.next_effect_id) {
+        error = "trigger_effect_cursor_invalid";
+        return false;
+    }
+    for (size_t i = 0; i < snapshot.branch_bindings.size(); ++i) {
+        const RuntimeTriggerBranchBinding &binding = snapshot.branch_bindings[i];
+        if (binding.trigger_id < 0 ||
+            binding.trigger_id >= static_cast<int32_t>(_catalog.definitions.size()) ||
+            _catalog.definitions[binding.trigger_id].dynamic_binding == 0 ||
+            binding.branch_handle == 0 || binding.cell < 0 ||
+            binding.reward_target < 0 || binding.reward_target > 1 ||
+            binding.enabled > 1) {
+            error = "trigger_branch_binding_invalid";
+            return false;
+        }
+        if (i > 0 && !binding_less(snapshot.branch_bindings[i - 1], binding)) {
+            error = "trigger_branch_binding_order_invalid";
+            return false;
+        }
+        if (i > 0 && snapshot.branch_bindings[i - 1].trigger_id == binding.trigger_id &&
+            snapshot.branch_bindings[i - 1].branch_handle == binding.branch_handle &&
+            snapshot.branch_bindings[i - 1].cell == binding.cell) {
+            error = "trigger_branch_binding_duplicate";
             return false;
         }
     }
@@ -568,6 +639,10 @@ bool RuntimeTriggerPodAuthority::bootstrap(
             initial.enabled[i] = catalog.definitions[i].enabled;
     }
     if (initial.next_effect_id <= 0) initial.next_effect_id = 1;
+    // Facade exports are dense snapshots, but their state insertion order is
+    // an implementation detail of the legacy lookup table. Normalize it at
+    // the worker boundary so validation and every later hash use one order.
+    initial = canonicalize_snapshot(initial, true);
     if (!validate_state(initial, error)) return false;
     _state = std::move(initial);
     _pending_commands.clear();
@@ -799,7 +874,7 @@ bool RuntimeTriggerPodAuthority::plan_day(int64_t day, uint64_t input_generation
     _diagnostics.committed_day = _state.committed_day;
     _diagnostics.acked_effect_id = _state.acked_effect_id;
     _diagnostics.pending_command_count = static_cast<uint32_t>(_pending_commands.size());
-    _diagnostics.worker_state_hash = plan.header.state_hash;
+    _diagnostics.worker_state_hash = canonical_state_hash(plan.next_state);
     _diagnostics.worker_effect_hash = hash_effects(plan.intents);
     _diagnostics.required_ack_count = plan.required_ack_count;
     _diagnostics.received_ack_count = 0;
@@ -866,7 +941,7 @@ bool RuntimeTriggerPodAuthority::commit_day(RuntimeTriggerPodPlan &plan,
     plan.committed = 1;
     _plan_active = false;
     _active_plan = nullptr;
-    _diagnostics.worker_state_hash = _state_hash;
+    _diagnostics.worker_state_hash = canonical_state_hash(_state);
     _diagnostics.worker_effect_hash = hash_effects(_state.pending_effects);
     _diagnostics.generation = _state.generation;
     _diagnostics.committed_day = _state.committed_day;
@@ -898,7 +973,8 @@ bool RuntimeTriggerPodAuthority::snapshot(RuntimeTriggerSnapshot &out,
     return true;
 }
 
-uint64_t RuntimeTriggerPodAuthority::hash_snapshot(const RuntimeTriggerSnapshot &snapshot) {
+uint64_t RuntimeTriggerPodAuthority::hash_snapshot_impl(
+        const RuntimeTriggerSnapshot &snapshot) {
     uint64_t hash = FNV_OFFSET;
     hash = mix_value(hash, snapshot.generation);
     hash = mix_value(hash, snapshot.catalog_hash);
@@ -954,6 +1030,11 @@ uint64_t RuntimeTriggerPodAuthority::hash_snapshot(const RuntimeTriggerSnapshot 
     return hash;
 }
 
+uint64_t RuntimeTriggerPodAuthority::hash_snapshot(
+        const RuntimeTriggerSnapshot &snapshot) {
+    return hash_snapshot_impl(canonicalize_snapshot(snapshot, true));
+}
+
 uint64_t RuntimeTriggerPodAuthority::hash_effects(
         const std::vector<RuntimeTriggerEffectIntent> &effects) {
     return canonical_effect_hash(effects);
@@ -961,14 +1042,19 @@ uint64_t RuntimeTriggerPodAuthority::hash_effects(
 
 uint64_t RuntimeTriggerPodAuthority::canonical_state_hash(
         const RuntimeTriggerSnapshot &snapshot) {
-    return hash_snapshot(snapshot);
+    // Generation is a worker transaction detail. The facade exports zero
+    // because it has no corresponding POD commit generation; excluding it
+    // makes the reference and worker hashes describe the same semantic state.
+    return hash_snapshot_impl(canonicalize_snapshot(snapshot, false));
 }
 
 uint64_t RuntimeTriggerPodAuthority::canonical_effect_hash(
         const std::vector<RuntimeTriggerEffectIntent> &effects) {
+    std::vector<RuntimeTriggerEffectIntent> ordered = effects;
+    std::stable_sort(ordered.begin(), ordered.end(), effect_less);
     uint64_t hash = FNV_OFFSET;
-    hash = mix_value(hash, static_cast<uint64_t>(effects.size()));
-    for (const RuntimeTriggerEffectIntent &effect : effects) {
+    hash = mix_value(hash, static_cast<uint64_t>(ordered.size()));
+    for (const RuntimeTriggerEffectIntent &effect : ordered) {
         hash = mix_value(hash, effect.id);
         hash = mix_value(hash, effect.effective_day);
         hash = mix_value(hash, effect.source_priority);
@@ -1079,8 +1165,11 @@ bool RuntimeTriggerPodAuthority::encode_save(RuntimeTriggerPodSaveSection &out,
     for (const RuntimeTriggerEvent &event : _state.pending_events) append_event(payload, event);
     append_le<uint32_t>(payload, static_cast<uint32_t>(_state.pending_effects.size()));
     for (const RuntimeTriggerEffectIntent &effect : _state.pending_effects) append_effect(payload, effect);
-    append_le<uint32_t>(payload, static_cast<uint32_t>(_pending_commands.size()));
-    for (const RuntimeTriggerCommand &command : _pending_commands) append_command(payload, command);
+    std::vector<RuntimeTriggerCommand> ordered_commands = _pending_commands;
+    std::stable_sort(ordered_commands.begin(), ordered_commands.end(), command_less);
+    append_le<uint32_t>(payload, static_cast<uint32_t>(ordered_commands.size()));
+    for (const RuntimeTriggerCommand &command : ordered_commands)
+        append_command(payload, command);
     append_le<uint32_t>(payload, SAVE_END);
     if (payload.size() > MAX_SAVE_BYTES) { error = "trigger_save_size_exceeded"; return false; }
     out.payload = std::move(payload);

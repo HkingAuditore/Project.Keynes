@@ -1,0 +1,38 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] construction catalog compiles
+  [PASS] construction catalog excludes technology-locked buildings
+  [PASS] technology-filtered construction catalog paginates unlocked rows
+  [PASS] funded fixture bootstraps
+  [PASS] funded fixture publishes its initial resource snapshot
+  [PASS] at least one quoted building is eligible
+  [PASS] treasury-sponsored build queues
+  [FAIL] funded command settles successfully
+  [PASS] successful command leaves one pending or completed building
+  [FAIL] funded construction preserves economy conservation
+  [PASS] treasury construction uses the Country asset bridge
+  [PASS] cashless fixture bootstraps
+  [PASS] cashless fixture publishes its initial resource snapshot
+  [PASS] quote exposes treasury cash insufficiency
+  [PASS] cashless command still queues for boundary revalidation
+  [PASS] cashless command settles with stable failure code and zero spend
+  [PASS] failed command does not change treasury or start construction
+  [PASS] rejected treasury path does not report a ledger failure
+  [PASS] failed construction preserves economy conservation
+  [PASS] grouped-material fixture IDs exist
+  [PASS] grouped-material funded fixture bootstraps
+  [FAIL] AND/OR planner selects one shared substitute and aggregates both groups
+  [PASS] grouped-material command queues
+  [FAIL] 50-percent structure efficiency and cross-group total deduct exactly 60
+  [PASS] grouped-material success preserves economy conservation
+  [PASS] grouped-material blocked fixture bootstraps
+  [PASS] insufficient second group command queues for boundary revalidation
+  [PASS] one missing material group rejects atomically without stock or cash mutation
+  [PASS] grouped-material failure preserves economy conservation
+=== treasury construction runtime: 4 failures ===
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 276 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

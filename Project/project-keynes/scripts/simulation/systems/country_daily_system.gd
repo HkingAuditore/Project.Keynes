@@ -29,6 +29,8 @@ func declare_writes() -> Array[StringName]:
 	return [DCComponentIds.CELL_COUNTRY_SLOT]
 
 func should_run(ctx: SusTickContext) -> bool:
+	if _country_worker_authoritative():
+		return false
 	if generator != null and generator.has_method("runtime_graph_active") \
 			and bool(generator.runtime_graph_active()):
 		return false
@@ -43,6 +45,10 @@ func is_deadline_critical(ctx: SusTickContext) -> bool:
 
 func tick(ctx) -> Dictionary:
 	var started_us := Time.get_ticks_usec()
+	if _country_worker_authoritative():
+		return {"done": true, "elapsed_ms": 0.0,
+			"stage_name": "country_owned_by_worker",
+			"path": "native_country_worker"}
 	if generator != null and generator.has_method("runtime_graph_active") \
 			and bool(generator.runtime_graph_active()):
 		return {"done": true, "elapsed_ms": 0.0,
@@ -88,3 +94,10 @@ func reset_progress() -> void:
 	_last_report.clear()
 	if world_clock != null and world_clock.has_method("request_simulation_backpressure"):
 		world_clock.request_simulation_backpressure(&"country_day_barrier", false)
+
+
+func _country_worker_authoritative() -> bool:
+	if generator == null or not generator.has_method("get_runtime_thread_report"):
+		return false
+	var report: Dictionary = generator.get_runtime_thread_report()
+	return (int(report.get("authoritative_domain_mask", 0)) & 0x004) != 0

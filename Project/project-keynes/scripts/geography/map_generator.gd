@@ -2091,6 +2091,32 @@ func service_country_worker_peer_adapter(max_intents: int = 64,
 		clampi(max_intents, 1, 4096), shadow_replay)
 
 
+## Country -> Economy typed transport. These methods only move immutable
+## request/result dictionaries across the GDExtension boundary; they do not
+## read or mutate the worker's Economy state. The real Economy adapter is a
+## later K2-B continuation and must use this queue rather than a direct store
+## call when Country eventually becomes ACTIVE.
+func get_country_economy_asset_protocol_status() -> Dictionary:
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
+			"get_country_economy_asset_protocol_status"):
+		return {"ok": false, "code": "country_economy_asset_protocol_api_missing"}
+	return _data_core_world_ext.get_country_economy_asset_protocol_status()
+
+
+func poll_country_economy_asset_request() -> Dictionary:
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
+			"poll_country_economy_asset_request"):
+		return {"ok": false, "code": "country_economy_asset_protocol_api_missing"}
+	return _data_core_world_ext.poll_country_economy_asset_request()
+
+
+func submit_country_economy_asset_result(result: Dictionary) -> Dictionary:
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
+			"submit_country_economy_asset_result"):
+		return {"ok": false, "code": "country_economy_asset_protocol_api_missing"}
+	return _data_core_world_ext.submit_country_economy_asset_result(result)
+
+
 func _runtime_climate_failure(code: String, reason: String = "", day: int = -1) -> Dictionary:
 	_runtime_climate_reference_failures += 1
 	_runtime_climate_reference_last_error = reason if not reason.is_empty() else code

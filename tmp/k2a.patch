@@ -1,0 +1,25 @@
+*** Begin Patch
+*** Update File: Project/project-keynes/tests/runtime_country_peer_bridge_test.gd
+@@
+ 	var modifier_ack: Dictionary = ext.ack_effect_native_modifier()
+ 	_expect("real Modifier ACK reaches Effect",
+ 		bool(modifier_ack.get("ok", false))
+ 		and int(modifier_ack.get("acknowledged", 0)) >= 1)
++	var gameplay_dispatch: Dictionary = ext.dispatch_effect_native_gameplay()
++	_expect("real Effect dispatches its publication transaction",
++		bool(gameplay_dispatch.get("ok", false))
++		and int(gameplay_dispatch.get("submitted_transactions", 0)) >= 1)
++	var gameplay_ack: Dictionary = ext.ack_effect_native_gameplay()
++	_expect("real publication ACK reaches Effect",
++		bool(gameplay_ack.get("ok", false))
++		and int(gameplay_ack.get("acknowledged", 0)) >= 1)
+@@
+ 	var service_after_peer_commit: Dictionary = ext.service_country_peer_adapter(64)
+ 	var status_after_peer_commit: Dictionary = ext.get_country_peer_protocol_status()
+-	print("peer-real adapter-after-ack service=%s status=%s effect=%s native=%s modifier_ack=%s" % [
+-		service_after_peer_commit,
+-		status_after_peer_commit,
+-		ext.get_effect_report(),
+-		ext.get_effect_native_adapter_report(),
+-		modifier_ack])
+*** End Patch

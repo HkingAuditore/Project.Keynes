@@ -73,6 +73,57 @@ func _init() -> void:
 	}, {"stock": stock}).get("ok", false)))
 	var before := country.research_snapshot(handle)
 	var before_cash := int(country.snapshot(handle).cash)
+	var continuation_trace: Array[Dictionary] = []
+	var trace_report := {}
+	for slice in range(12):
+		trace_report = ext.run_economy_slice({
+			"day_index": 0, "tick_index": 5000 + slice,
+			"slice_budget_ms": 8.0})
+		var trace := {
+			"stage": String(trace_report.get("stage", "")),
+			"phase": int(trace_report.get(
+				"country_research_procurement_continuation_phase", 0)),
+			"active": bool(trace_report.get(
+				"country_research_procurement_continuation_active", false)),
+			"transaction_id": int(trace_report.get(
+				"country_research_procurement_continuation_transaction_id", 0)),
+			"country_cash": int(country.snapshot(handle).cash),
+			"procured": int(trace_report.get(
+				"government_research_procured_points", 0)),
+		}
+		continuation_trace.append(trace)
+		if bool(trace_report.get("fatal", false)) or \
+				int(trace_report.get("government_research_procured_points", 0)) > 0:
+			break
+	var trace_phases: Array[int] = []
+	var trace_transaction_ids: Array[int] = []
+	for trace in continuation_trace:
+		if bool(trace.active):
+			trace_phases.append(int(trace.phase))
+			trace_transaction_ids.append(int(trace.transaction_id))
+	_expect("research procurement persists its phase across Economy slices",
+		trace_phases.size() >= 4
+		and trace_phases[0] == 1
+		and trace_phases[1] == 2
+		and trace_phases[2] == 3
+		and trace_phases[3] == 4)
+	_expect("research procurement keeps one transaction identity while yielding",
+		trace_transaction_ids.size() >= 2
+		and trace_transaction_ids[0] == 0
+		and trace_transaction_ids[1] > 0
+		and trace_transaction_ids.slice(1).all(func(value: int) -> bool:
+			return value == trace_transaction_ids[1]))
+	var first_committed_cash := before_cash
+	for trace in continuation_trace:
+		if int(trace.phase) >= 4 and bool(trace.active):
+			first_committed_cash = int(trace.country_cash)
+			break
+	_expect("Country assets remain reserved until commit phase",
+		continuation_trace.size() >= 3
+		and int(continuation_trace[0].country_cash) == before_cash
+		and int(continuation_trace[1].country_cash) == before_cash
+		and int(continuation_trace[2].country_cash) == before_cash
+		and first_committed_cash < before_cash)
 	# A newly bootstrapped economy begins at its own sample day zero even when
 	# the country fixture used an earlier day to commit discovery evidence.
 	var report := _run_until_procurement(ext, 0)

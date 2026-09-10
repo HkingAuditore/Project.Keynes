@@ -8,6 +8,7 @@
 #include <cmath>
 #include <limits>
 #include <type_traits>
+#include <unordered_set>
 
 #if defined(_WIN32)
 #ifndef NOMINMAX
@@ -77,6 +78,254 @@ bool modifier_packet_shape_valid(const RuntimeModifierPodCommand &command) {
         command.opcode <= static_cast<uint16_t>(RuntimeModifierPodOpcode::SET_MAGNITUDE) &&
         command.domain < 4u && command.scope >= 0 && command.scope < 3 &&
         command.effective_day >= 0;
+}
+
+bool map_country_peer_intent(const RuntimeDomainIntent &intent,
+                             CountryPeerIntentCode &opcode,
+                             std::string &error) {
+    error.clear();
+    if (intent.source_domain !=
+            static_cast<uint16_t>(RuntimeDomainId::COUNTRY)) {
+        error = "country_worker_peer_intent_source_domain_invalid";
+        return false;
+    }
+
+    const uint16_t effect_domain =
+        static_cast<uint16_t>(RuntimeDomainId::EFFECT);
+    const uint16_t modifier_domain =
+        static_cast<uint16_t>(RuntimeDomainId::MODIFIER);
+    const uint16_t economy_domain =
+        static_cast<uint16_t>(RuntimeDomainId::ECONOMY);
+    opcode = static_cast<CountryPeerIntentCode>(intent.opcode);
+    switch (opcode) {
+    case CountryPeerIntentCode::ENSURE_TECHNOLOGY_EFFECT:
+    case CountryPeerIntentCode::NUDGE_TECHNOLOGY_EFFECT:
+    case CountryPeerIntentCode::NOTIFY_ERA_REWARD:
+        if (intent.target_domain != effect_domain) {
+            error = "country_worker_peer_intent_target_domain_mismatch";
+            return false;
+        }
+        return true;
+    case CountryPeerIntentCode::APPLY_TECHNOLOGY_MODIFIER:
+        if (intent.target_domain != modifier_domain) {
+            error = "country_worker_peer_intent_target_domain_mismatch";
+            return false;
+        }
+        return true;
+    case CountryPeerIntentCode::NOTIFY_ECONOMY_MILESTONE:
+        if (intent.target_domain != economy_domain) {
+            error = "country_worker_peer_intent_target_domain_mismatch";
+            return false;
+        }
+        return true;
+    default:
+        error = "country_worker_peer_intent_opcode_invalid";
+        return false;
+    }
+}
+
+bool economy_asset_operation_valid(RuntimeEconomyAssetOperation operation) {
+    switch (operation) {
+    case RuntimeEconomyAssetOperation::RESEARCH_PURCHASE:
+    case RuntimeEconomyAssetOperation::FISCAL_RESERVE:
+    case RuntimeEconomyAssetOperation::FISCAL_RETURN:
+    case RuntimeEconomyAssetOperation::FISCAL_COLLECT:
+    case RuntimeEconomyAssetOperation::CASH_TO_COHORT:
+    case RuntimeEconomyAssetOperation::CASH_FROM_COHORT:
+    case RuntimeEconomyAssetOperation::GOOD_TO_MARKET:
+    case RuntimeEconomyAssetOperation::GOOD_FROM_MARKET:
+    case RuntimeEconomyAssetOperation::TREASURY_SPEND:
+        return true;
+    default:
+        return false;
+    }
+}
+
+bool economy_asset_state_valid(RuntimeEconomyAssetState state) {
+    switch (state) {
+    case RuntimeEconomyAssetState::CREATED:
+    case RuntimeEconomyAssetState::COUNTRY_PREPARED:
+    case RuntimeEconomyAssetState::PEER_PREPARED:
+    case RuntimeEconomyAssetState::COMMIT_DECIDED:
+    case RuntimeEconomyAssetState::COUNTRY_APPLIED:
+    case RuntimeEconomyAssetState::PEER_APPLIED:
+    case RuntimeEconomyAssetState::COMPLETED:
+    case RuntimeEconomyAssetState::REJECTED:
+    case RuntimeEconomyAssetState::AWAITING_PEER_PREPARED:
+    case RuntimeEconomyAssetState::AWAITING_PEER_APPLIED:
+    case RuntimeEconomyAssetState::FAULTED:
+        return true;
+    default:
+        return false;
+    }
+}
+
+bool economy_asset_result_terminal(const RuntimeEconomyAssetResult &result) {
+    return result.code == RuntimeEconomyAssetResultCode::COMPLETED ||
+        result.code == RuntimeEconomyAssetResultCode::REJECTED ||
+        result.code == RuntimeEconomyAssetResultCode::FAULTED ||
+        result.state == RuntimeEconomyAssetState::COMPLETED ||
+        result.state == RuntimeEconomyAssetState::REJECTED ||
+        result.state == RuntimeEconomyAssetState::FAULTED;
+}
+
+int economy_asset_state_rank(RuntimeEconomyAssetState state) {
+    switch (state) {
+    case RuntimeEconomyAssetState::CREATED: return 0;
+    case RuntimeEconomyAssetState::COUNTRY_PREPARED: return 1;
+    case RuntimeEconomyAssetState::AWAITING_PEER_PREPARED: return 2;
+    case RuntimeEconomyAssetState::PEER_PREPARED: return 3;
+    case RuntimeEconomyAssetState::COMMIT_DECIDED: return 4;
+    case RuntimeEconomyAssetState::AWAITING_PEER_APPLIED: return 5;
+    case RuntimeEconomyAssetState::COUNTRY_APPLIED: return 6;
+    case RuntimeEconomyAssetState::PEER_APPLIED: return 7;
+    case RuntimeEconomyAssetState::COMPLETED: return 8;
+    case RuntimeEconomyAssetState::REJECTED:
+    case RuntimeEconomyAssetState::FAULTED: return 9;
+    default: return -1;
+    }
+}
+
+bool economy_asset_result_code_state_valid(
+        const RuntimeEconomyAssetResult &result) {
+    switch (result.code) {
+    case RuntimeEconomyAssetResultCode::ACCEPTED:
+        return result.state == RuntimeEconomyAssetState::CREATED ||
+            result.state == RuntimeEconomyAssetState::COUNTRY_PREPARED;
+    case RuntimeEconomyAssetResultCode::PENDING:
+        return result.state == RuntimeEconomyAssetState::COUNTRY_PREPARED ||
+            result.state == RuntimeEconomyAssetState::AWAITING_PEER_PREPARED ||
+            result.state == RuntimeEconomyAssetState::COMMIT_DECIDED ||
+            result.state == RuntimeEconomyAssetState::AWAITING_PEER_APPLIED ||
+            result.state == RuntimeEconomyAssetState::COUNTRY_APPLIED;
+    case RuntimeEconomyAssetResultCode::PEER_PREPARED:
+        return result.state == RuntimeEconomyAssetState::PEER_PREPARED;
+    case RuntimeEconomyAssetResultCode::COMMIT_DECIDED:
+        return result.state == RuntimeEconomyAssetState::COMMIT_DECIDED;
+    case RuntimeEconomyAssetResultCode::PEER_APPLIED:
+        return result.state == RuntimeEconomyAssetState::PEER_APPLIED;
+    case RuntimeEconomyAssetResultCode::COMPLETED:
+        return result.state == RuntimeEconomyAssetState::COMPLETED;
+    case RuntimeEconomyAssetResultCode::REJECTED:
+        return result.state == RuntimeEconomyAssetState::REJECTED;
+    case RuntimeEconomyAssetResultCode::FAULTED:
+        return result.state == RuntimeEconomyAssetState::FAULTED;
+    default:
+        return false;
+    }
+}
+
+bool economy_asset_request_equal(const RuntimeEconomyAssetRequest &lhs,
+                                 const RuntimeEconomyAssetRequest &rhs) {
+    return lhs.protocol_version == rhs.protocol_version &&
+        lhs.operation == rhs.operation && lhs.state == rhs.state &&
+        lhs.all_or_nothing == rhs.all_or_nothing &&
+        lhs.reserved0 == rhs.reserved0 && lhs.reserved1 == rhs.reserved1 &&
+        lhs.session_epoch == rhs.session_epoch &&
+        lhs.transaction_id == rhs.transaction_id &&
+        lhs.request_id == rhs.request_id &&
+        lhs.origin_domain == rhs.origin_domain &&
+        lhs.origin_epoch == rhs.origin_epoch &&
+        lhs.origin_stage == rhs.origin_stage &&
+        lhs.continuation_index == rhs.continuation_index &&
+        lhs.day == rhs.day &&
+        lhs.operation_sequence == rhs.operation_sequence &&
+        lhs.country_generation == rhs.country_generation &&
+        lhs.peer_generation == rhs.peer_generation &&
+        lhs.country_handle == rhs.country_handle &&
+        lhs.country_slot == rhs.country_slot &&
+        lhs.target_slot == rhs.target_slot &&
+        lhs.target_handle == rhs.target_handle &&
+        lhs.good_id == rhs.good_id && lhs.good_count == rhs.good_count &&
+        lhs.good_ids == rhs.good_ids &&
+        lhs.good_quantities == rhs.good_quantities &&
+        lhs.requested_quantity == rhs.requested_quantity &&
+        lhs.prepared_quantity == rhs.prepared_quantity &&
+        lhs.requested_cash == rhs.requested_cash &&
+        lhs.reserved_cash == rhs.reserved_cash &&
+        lhs.requested_goods_total == rhs.requested_goods_total &&
+        lhs.reserved_goods_total == rhs.reserved_goods_total;
+}
+
+bool economy_asset_result_equal(const RuntimeEconomyAssetResult &lhs,
+                                const RuntimeEconomyAssetResult &rhs) {
+    return lhs.protocol_version == rhs.protocol_version &&
+        lhs.code == rhs.code && lhs.state == rhs.state &&
+        lhs.accepted == rhs.accepted && lhs.reserved0 == rhs.reserved0 &&
+        lhs.reserved1 == rhs.reserved1 &&
+        lhs.session_epoch == rhs.session_epoch &&
+        lhs.transaction_id == rhs.transaction_id &&
+        lhs.request_id == rhs.request_id && lhs.operation == rhs.operation &&
+        lhs.continuation_index == rhs.continuation_index &&
+        lhs.day == rhs.day &&
+        lhs.country_generation == rhs.country_generation &&
+        lhs.peer_generation == rhs.peer_generation &&
+        lhs.committed_peer_generation == rhs.committed_peer_generation &&
+        lhs.country_slot == rhs.country_slot &&
+        lhs.target_slot == rhs.target_slot &&
+        lhs.committed_quantity == rhs.committed_quantity &&
+        lhs.committed_cash == rhs.committed_cash &&
+        lhs.committed_goods_total == rhs.committed_goods_total &&
+        lhs.reason == rhs.reason;
+}
+
+bool economy_asset_request_shape_valid(
+        const RuntimeEconomyAssetRequest &request, std::string &error) {
+    error.clear();
+    if (request.protocol_version != RUNTIME_ECONOMY_ASSET_PROTOCOL_VERSION) {
+        error = "country_economy_asset_request_protocol_mismatch";
+        return false;
+    }
+    if (request.request_id == 0 || request.transaction_id == 0) {
+        error = "country_economy_asset_request_identity_invalid";
+        return false;
+    }
+    if (!economy_asset_operation_valid(request.operation) ||
+        !economy_asset_state_valid(request.state) ||
+        (request.state != RuntimeEconomyAssetState::CREATED &&
+         request.state != RuntimeEconomyAssetState::COUNTRY_PREPARED)) {
+        error = "country_economy_asset_request_state_invalid";
+        return false;
+    }
+    if (request.day < 0 || request.good_count > RUNTIME_ECONOMY_ASSET_GOOD_CAPACITY) {
+        error = "country_economy_asset_request_shape_invalid";
+        return false;
+    }
+    if (request.country_slot < -1 || request.target_slot < -1 ||
+        request.good_id < -1 || request.origin_domain !=
+            static_cast<uint32_t>(RuntimeDomainId::COUNTRY)) {
+        error = "country_economy_asset_request_reference_invalid";
+        return false;
+    }
+    const size_t count = static_cast<size_t>(request.good_count);
+    for (size_t i = 0; i < count; ++i) {
+        if (request.good_ids[i] < 0 || request.good_quantities[i] < 0) {
+            error = "country_economy_asset_request_goods_invalid";
+            return false;
+        }
+    }
+    if (request.requested_quantity < 0 || request.prepared_quantity < 0 ||
+        request.requested_cash < 0 || request.reserved_cash < 0 ||
+        request.requested_goods_total < 0 || request.reserved_goods_total < 0) {
+        error = "country_economy_asset_request_amount_invalid";
+        return false;
+    }
+    if (request.prepared_quantity > request.requested_quantity &&
+        request.requested_quantity != 0) {
+        error = "country_economy_asset_request_prepared_quantity_invalid";
+        return false;
+    }
+    if (request.reserved_cash > request.requested_cash &&
+        request.requested_cash != 0) {
+        error = "country_economy_asset_request_reserved_cash_invalid";
+        return false;
+    }
+    if (request.reserved_goods_total > request.requested_goods_total &&
+        request.requested_goods_total != 0) {
+        error = "country_economy_asset_request_reserved_goods_invalid";
+        return false;
+    }
+    return true;
 }
 }
 
@@ -635,6 +884,8 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
             return false;
         }
     }
+    CountryCoreCheckpoint restored_country_checkpoint;
+    bool restored_country_checkpoint_valid = false;
     if (restore_pending && !_pending_restore_bundle.country_bytes.empty()) {
         CountryCoreCheckpoint checkpoint;
         std::string country_restore_error;
@@ -650,9 +901,27 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         }
         auto copy = std::make_shared<CountryCoreCheckpoint>(
             std::move(checkpoint));
+        restored_country_checkpoint = *copy;
+        restored_country_checkpoint_valid = true;
         std::atomic_store_explicit(&_country_checkpoint,
             std::shared_ptr<const CountryCoreCheckpoint>(std::move(copy)),
             std::memory_order_release);
+    }
+    if (restore_pending) {
+        uint64_t restored_request_id = _command_request_id.load(
+            std::memory_order_relaxed);
+        for (const RuntimeCommandPacket &packet : _worker_initial_pending_commands)
+            restored_request_id = std::max(restored_request_id,
+                                           packet.envelope.request_id);
+        if (restored_country_checkpoint_valid) {
+            for (const CountryCommandReceipt &receipt :
+                     restored_country_checkpoint.request_states) {
+                restored_request_id = std::max(restored_request_id,
+                                               receipt.request_id);
+            }
+        }
+        _command_request_id.store(restored_request_id,
+                                  std::memory_order_release);
     }
     // Country is initialized from the immutable main-thread capture exactly
     // once per worker lifetime. The worker never calls NativeCountryRuntime;
@@ -681,11 +950,29 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         _country_worker_intents.clear();
         _country_worker_results.clear();
         _country_worker_terminal_results.clear();
+        _country_economy_asset_request_queue.clear();
+        _country_economy_asset_requests.clear();
+        _country_economy_asset_results.clear();
+        _country_economy_asset_terminal_results.clear();
+        _country_economy_asset_protocol = RuntimeEconomyAssetProtocolStatus{};
+        _country_command_terminals.clear();
+        _country_command_states.clear();
+        if (restored_country_checkpoint_valid) {
+            for (const CountryCommandReceipt &receipt :
+                     restored_country_checkpoint.request_states) {
+                _country_command_states.emplace(receipt.request_id, receipt);
+            }
+            for (const CountryCommandReceipt &receipt :
+                     restored_country_checkpoint.terminal_receipts) {
+                _country_command_terminals.emplace(receipt.request_id, receipt);
+            }
+        }
         _country_pod_plan = RuntimeCountryPodPlan{};
         _country_pod_plan_active.store(false, std::memory_order_release);
         _country_worker_protocol = CountryPeerProtocolStatus{};
         _country_worker_protocol.async_mode = 1;
         _country_worker_protocol.retry_day = -1;
+        _country_worker_seal = CountryBoundarySeal{};
     }
     if (country_candidate_ready) {
         _country_pod_authority = std::move(country_candidate);
@@ -1103,6 +1390,50 @@ bool NativeSimulationHost::publish_country_snapshot(
     return true;
 }
 
+bool NativeSimulationHost::publish_country_worker_snapshot(
+        uint32_t dirty_families, std::string &error) {
+    error.clear();
+    RuntimeCountryPodSnapshot snapshot;
+    if (!_country_pod_authority.snapshot(snapshot, error)) {
+        if (error.empty()) error = "country_worker_snapshot_failed";
+        return false;
+    }
+    std::lock_guard<std::mutex> lock(_country_transport_mutex);
+    const std::shared_ptr<const RuntimeCountryPodSnapshot> previous =
+        _country_committed_snapshot;
+    const uint64_t previous_view_generation = _country_read_view_generation;
+    uint64_t next_view_generation = previous_view_generation + 1u;
+    if (next_view_generation == 0) next_view_generation = 1;
+    if (next_view_generation < snapshot.generation)
+        next_view_generation = snapshot.generation;
+    _country_read_view_generation = next_view_generation;
+    _country_read_view_patch_base_generation = previous_view_generation;
+    _country_read_view_dirty_families = dirty_families;
+    _country_read_view_changed_cells.clear();
+    _country_read_view_changed_owners.clear();
+    const bool same_cell_shape = previous != nullptr &&
+        previous->cell_country_slot.size() == snapshot.cell_country_slot.size();
+    for (size_t cell = 0; cell < snapshot.cell_country_slot.size(); ++cell) {
+        if (same_cell_shape && previous->cell_country_slot[cell] ==
+                snapshot.cell_country_slot[cell]) {
+            continue;
+        }
+        _country_read_view_changed_cells.push_back(static_cast<int32_t>(cell));
+        _country_read_view_changed_owners.push_back(
+            snapshot.cell_country_slot[cell]);
+    }
+    auto committed_copy = std::make_shared<RuntimeCountryPodSnapshot>(
+        std::move(snapshot));
+    _country_committed_snapshot = committed_copy;
+    std::shared_ptr<const RuntimeCountryPodSnapshot> committed_view =
+        committed_copy;
+    std::atomic_store_explicit(&_country_snapshot, committed_view,
+                               std::memory_order_release);
+    _country_worker_country_generation = committed_copy->generation;
+    _country_worker_day = committed_copy->committed_day;
+    return true;
+}
+
 bool NativeSimulationHost::publish_country_catalog(
         const RuntimeCountryPodCatalog &catalog, std::string &error) {
     error.clear();
@@ -1123,12 +1454,418 @@ bool NativeSimulationHost::publish_country_catalog(
     _country_worker_intents.clear();
     _country_worker_results.clear();
     _country_worker_terminal_results.clear();
+    _country_economy_asset_request_queue.clear();
+    _country_economy_asset_requests.clear();
+    _country_economy_asset_results.clear();
+    _country_economy_asset_terminal_results.clear();
+    _country_economy_asset_protocol = RuntimeEconomyAssetProtocolStatus{};
+    _country_command_terminals.clear();
+    _country_command_states.clear();
     _country_pod_plan = RuntimeCountryPodPlan{};
     _country_worker_protocol = CountryPeerProtocolStatus{};
     _country_worker_protocol.async_mode = 1;
     _country_worker_protocol.retry_day = -1;
+    _country_worker_seal = CountryBoundarySeal{};
     for (auto &character : _country_pod_fallback_reason) {
         character.store('\0', std::memory_order_relaxed);
+    }
+    return true;
+}
+
+void NativeSimulationHost::set_country_economy_asset_protocol_error_locked(
+        RuntimeEconomyAssetProtocolError code, uint64_t transaction_id,
+        uint64_t request_id, const char *reason) noexcept {
+    _country_economy_asset_protocol.last_error = code;
+    _country_economy_asset_protocol.last_transaction_id = transaction_id;
+    _country_economy_asset_protocol.last_request_id = request_id;
+    country_peer_copy_reason(_country_economy_asset_protocol.last_reason,
+                             reason == nullptr ? "" : reason);
+}
+
+bool NativeSimulationHost::publish_country_economy_asset_requests(
+        const std::vector<RuntimeEconomyAssetRequest> &requests,
+        std::string &error) {
+    error.clear();
+    if (requests.empty()) return true;
+
+    std::lock_guard<std::mutex> lock(_country_transport_mutex);
+    std::unordered_set<uint64_t> batch_ids;
+    batch_ids.reserve(requests.size());
+    size_t queue_additions = 0;
+    const auto queued = [this](uint64_t request_id) {
+        return std::find(_country_economy_asset_request_queue.begin(),
+                         _country_economy_asset_request_queue.end(),
+                         request_id) != _country_economy_asset_request_queue.end();
+    };
+
+    // Validate the complete vector before publishing any element.  A worker
+    // plan is a semantic batch; transport capacity or one malformed request
+    // must never leave a partially visible Economy batch behind.
+    for (const RuntimeEconomyAssetRequest &request : requests) {
+        std::string shape_error;
+        if (!economy_asset_request_shape_valid(request, shape_error)) {
+            error = shape_error.empty()
+                ? "country_economy_asset_request_invalid" : shape_error;
+            set_country_economy_asset_protocol_error_locked(
+                request.protocol_version == RUNTIME_ECONOMY_ASSET_PROTOCOL_VERSION
+                    ? RuntimeEconomyAssetProtocolError::REQUEST_INVALID
+                    : RuntimeEconomyAssetProtocolError::PROTOCOL_MISMATCH,
+                request.transaction_id, request.request_id, error.c_str());
+            return false;
+        }
+        if (request.session_epoch != _country_worker_session_epoch) {
+            error = "country_economy_asset_request_session_mismatch";
+            set_country_economy_asset_protocol_error_locked(
+                RuntimeEconomyAssetProtocolError::SESSION_MISMATCH,
+                request.transaction_id, request.request_id, error.c_str());
+            return false;
+        }
+        if (!batch_ids.insert(request.request_id).second) {
+            error = "country_economy_asset_request_duplicate_mismatch";
+            set_country_economy_asset_protocol_error_locked(
+                RuntimeEconomyAssetProtocolError::REQUEST_DUPLICATE_MISMATCH,
+                request.transaction_id, request.request_id, error.c_str());
+            return false;
+        }
+        const auto existing = _country_economy_asset_requests.find(
+            request.request_id);
+        if (existing != _country_economy_asset_requests.end()) {
+            if (!economy_asset_request_equal(existing->second, request)) {
+                error = "country_economy_asset_request_duplicate_mismatch";
+                set_country_economy_asset_protocol_error_locked(
+                    RuntimeEconomyAssetProtocolError::REQUEST_DUPLICATE_MISMATCH,
+                    request.transaction_id, request.request_id, error.c_str());
+                return false;
+            }
+            if (_country_economy_asset_terminal_results.find(request.request_id) ==
+                    _country_economy_asset_terminal_results.end() &&
+                !queued(request.request_id)) {
+                ++queue_additions;
+            }
+            continue;
+        }
+        if (_country_economy_asset_terminal_results.find(request.request_id) !=
+                _country_economy_asset_terminal_results.end()) {
+            error = "country_economy_asset_request_duplicate_mismatch";
+            set_country_economy_asset_protocol_error_locked(
+                RuntimeEconomyAssetProtocolError::REQUEST_DUPLICATE_MISMATCH,
+                request.transaction_id, request.request_id, error.c_str());
+            return false;
+        }
+        ++queue_additions;
+    }
+    if (_country_economy_asset_request_queue.size() + queue_additions >
+            RUNTIME_ECONOMY_ASSET_QUEUE_CAPACITY) {
+        error = "country_economy_asset_request_capacity_exceeded";
+        set_country_economy_asset_protocol_error_locked(
+            RuntimeEconomyAssetProtocolError::CAPACITY_EXCEEDED, 0, 0,
+            error.c_str());
+        return false;
+    }
+
+    for (const RuntimeEconomyAssetRequest &request : requests) {
+        auto existing = _country_economy_asset_requests.find(
+            request.request_id);
+        if (existing == _country_economy_asset_requests.end()) {
+            _country_economy_asset_requests.emplace(request.request_id, request);
+            ++_country_economy_asset_protocol.pending_requests;
+            existing = _country_economy_asset_requests.find(request.request_id);
+        }
+        if (_country_economy_asset_terminal_results.find(request.request_id) ==
+                _country_economy_asset_terminal_results.end() &&
+            !queued(request.request_id)) {
+            _country_economy_asset_request_queue.push_back(request.request_id);
+        }
+        _country_economy_asset_protocol.last_transaction_id =
+            request.transaction_id;
+        _country_economy_asset_protocol.last_request_id = request.request_id;
+    }
+    _country_economy_asset_protocol.queued_requests = static_cast<uint32_t>(
+        std::min<size_t>(_country_economy_asset_request_queue.size(),
+                         std::numeric_limits<uint32_t>::max()));
+    _country_economy_asset_protocol.last_error =
+        RuntimeEconomyAssetProtocolError::NONE;
+    country_peer_copy_reason(_country_economy_asset_protocol.last_reason, "");
+    _country_peer_signal.fetch_add(1, std::memory_order_acq_rel);
+    _control_cv.notify_all();
+    return true;
+}
+
+void NativeSimulationHost::discard_country_economy_asset_requests(
+        const std::vector<uint64_t> &request_ids) noexcept {
+    if (request_ids.empty()) return;
+    std::lock_guard<std::mutex> lock(_country_transport_mutex);
+    for (const uint64_t request_id : request_ids) {
+        _country_economy_asset_request_queue.erase(
+            std::remove(_country_economy_asset_request_queue.begin(),
+                        _country_economy_asset_request_queue.end(), request_id),
+            _country_economy_asset_request_queue.end());
+        const auto request = _country_economy_asset_requests.find(request_id);
+        if (request == _country_economy_asset_requests.end()) continue;
+        _country_economy_asset_requests.erase(request);
+        _country_economy_asset_results.erase(request_id);
+        _country_economy_asset_terminal_results.erase(request_id);
+        if (_country_economy_asset_protocol.pending_requests > 0)
+            --_country_economy_asset_protocol.pending_requests;
+    }
+    _country_economy_asset_protocol.queued_requests = static_cast<uint32_t>(
+        std::min<size_t>(_country_economy_asset_request_queue.size(),
+                         std::numeric_limits<uint32_t>::max()));
+    _country_economy_asset_protocol.terminal_requests = static_cast<uint32_t>(
+        std::min<size_t>(_country_economy_asset_terminal_results.size(),
+                         std::numeric_limits<uint32_t>::max()));
+}
+
+bool NativeSimulationHost::poll_country_economy_asset_request(
+        RuntimeEconomyAssetRequest &out) {
+    std::lock_guard<std::mutex> lock(_country_transport_mutex);
+    while (!_country_economy_asset_request_queue.empty()) {
+        const uint64_t request_id =
+            _country_economy_asset_request_queue.front();
+        _country_economy_asset_request_queue.pop_front();
+        const auto it = _country_economy_asset_requests.find(request_id);
+        if (it == _country_economy_asset_requests.end()) continue;
+        out = it->second;
+        _country_economy_asset_protocol.queued_requests = static_cast<uint32_t>(
+            std::min<size_t>(_country_economy_asset_request_queue.size(),
+                             std::numeric_limits<uint32_t>::max()));
+        _country_economy_asset_protocol.last_transaction_id =
+            out.transaction_id;
+        _country_economy_asset_protocol.last_request_id = out.request_id;
+        return true;
+    }
+    _country_economy_asset_protocol.queued_requests = static_cast<uint32_t>(
+        std::min<size_t>(_country_economy_asset_request_queue.size(),
+                         std::numeric_limits<uint32_t>::max()));
+    return false;
+}
+
+bool NativeSimulationHost::submit_country_economy_asset_result(
+        const RuntimeEconomyAssetResult &result, std::string &error) {
+    error.clear();
+    std::lock_guard<std::mutex> lock(_country_transport_mutex);
+    const auto reject = [&](RuntimeEconomyAssetProtocolError code,
+                            const char *reason) {
+        error = reason == nullptr ? "country_economy_asset_result_rejected" : reason;
+        set_country_economy_asset_protocol_error_locked(
+            code, result.transaction_id, result.request_id, error.c_str());
+        return false;
+    };
+    if (result.protocol_version != RUNTIME_ECONOMY_ASSET_PROTOCOL_VERSION)
+        return reject(RuntimeEconomyAssetProtocolError::PROTOCOL_MISMATCH,
+                      "country_economy_asset_result_protocol_mismatch");
+    if (result.request_id == 0 || result.transaction_id == 0)
+        return reject(RuntimeEconomyAssetProtocolError::REQUEST_INVALID,
+                      "country_economy_asset_result_identity_invalid");
+
+    const auto request = _country_economy_asset_requests.find(result.request_id);
+    if (request == _country_economy_asset_requests.end()) {
+        const auto terminal = _country_economy_asset_terminal_results.find(
+            result.request_id);
+        if (terminal != _country_economy_asset_terminal_results.end() &&
+            economy_asset_result_equal(terminal->second, result)) {
+            return true;
+        }
+        return reject(RuntimeEconomyAssetProtocolError::REQUEST_UNKNOWN,
+                      terminal == _country_economy_asset_terminal_results.end()
+                          ? "country_economy_asset_result_request_unknown"
+                          : "country_economy_asset_result_duplicate_mismatch");
+    }
+    const RuntimeEconomyAssetRequest &expected = request->second;
+    if (expected.session_epoch != _country_worker_session_epoch ||
+        result.session_epoch != expected.session_epoch)
+        return reject(RuntimeEconomyAssetProtocolError::SESSION_MISMATCH,
+                      "country_economy_asset_result_session_mismatch");
+    if (result.transaction_id != expected.transaction_id ||
+        result.operation != expected.operation ||
+        result.continuation_index != expected.continuation_index ||
+        result.day != expected.day ||
+        result.country_slot != expected.country_slot ||
+        result.target_slot != expected.target_slot)
+        return reject(RuntimeEconomyAssetProtocolError::RESULT_IDENTITY_MISMATCH,
+                      "country_economy_asset_result_identity_mismatch");
+    if (result.country_generation != expected.country_generation ||
+        result.peer_generation != expected.peer_generation ||
+        result.committed_peer_generation < result.peer_generation)
+        return reject(RuntimeEconomyAssetProtocolError::GENERATION_MISMATCH,
+                      "country_economy_asset_result_generation_mismatch");
+    if (!economy_asset_operation_valid(result.operation) ||
+        !economy_asset_state_valid(result.state) ||
+        !economy_asset_result_code_state_valid(result))
+        return reject(RuntimeEconomyAssetProtocolError::RESULT_STATE_INVALID,
+                      "country_economy_asset_result_state_invalid");
+    if (result.committed_quantity < 0 || result.committed_cash < 0 ||
+        result.committed_goods_total < 0 ||
+        (expected.requested_quantity != 0 &&
+         result.committed_quantity > expected.requested_quantity) ||
+        (expected.requested_cash != 0 &&
+         result.committed_cash > expected.requested_cash) ||
+        (expected.requested_goods_total != 0 &&
+         result.committed_goods_total > expected.requested_goods_total))
+        return reject(RuntimeEconomyAssetProtocolError::RESULT_STATE_INVALID,
+                      "country_economy_asset_result_amount_invalid");
+
+    const auto existing = _country_economy_asset_results.find(
+        result.request_id);
+    if (existing != _country_economy_asset_results.end()) {
+        if (economy_asset_result_equal(existing->second, result)) return true;
+        if (economy_asset_result_terminal(existing->second) ||
+            economy_asset_state_rank(result.state) <=
+                economy_asset_state_rank(existing->second.state)) {
+            return reject(RuntimeEconomyAssetProtocolError::RESULT_DUPLICATE_MISMATCH,
+                          "country_economy_asset_result_duplicate_mismatch");
+        }
+    }
+
+    const bool was_terminal = existing != _country_economy_asset_results.end() &&
+        economy_asset_result_terminal(existing->second);
+    _country_economy_asset_results[result.request_id] = result;
+    if (economy_asset_result_terminal(result)) {
+        _country_economy_asset_terminal_results[result.request_id] = result;
+        if (!was_terminal && _country_economy_asset_protocol.pending_requests > 0)
+            --_country_economy_asset_protocol.pending_requests;
+        _country_economy_asset_protocol.terminal_requests = static_cast<uint32_t>(
+            std::min<size_t>(_country_economy_asset_terminal_results.size(),
+                             std::numeric_limits<uint32_t>::max()));
+        if (result.code == RuntimeEconomyAssetResultCode::REJECTED)
+            ++_country_economy_asset_protocol.rejected_results;
+    }
+    _country_economy_asset_protocol.last_transaction_id = result.transaction_id;
+    _country_economy_asset_protocol.last_request_id = result.request_id;
+    _country_economy_asset_protocol.last_error =
+        RuntimeEconomyAssetProtocolError::NONE;
+    country_peer_copy_reason(_country_economy_asset_protocol.last_reason, "");
+    _country_peer_signal.fetch_add(1, std::memory_order_acq_rel);
+    _control_cv.notify_all();
+    return true;
+}
+
+RuntimeEconomyAssetProtocolStatus
+NativeSimulationHost::country_economy_asset_protocol_status() const {
+    std::lock_guard<std::mutex> lock(_country_transport_mutex);
+    RuntimeEconomyAssetProtocolStatus out = _country_economy_asset_protocol;
+    out.queued_requests = static_cast<uint32_t>(
+        std::min<size_t>(_country_economy_asset_request_queue.size(),
+                         std::numeric_limits<uint32_t>::max()));
+    size_t pending = 0;
+    for (const auto &entry : _country_economy_asset_requests) {
+        if (_country_economy_asset_terminal_results.find(entry.first) ==
+                _country_economy_asset_terminal_results.end()) {
+            ++pending;
+        }
+    }
+    out.pending_requests = static_cast<uint32_t>(
+        std::min<size_t>(pending, std::numeric_limits<uint32_t>::max()));
+    out.terminal_requests = static_cast<uint32_t>(
+        std::min<size_t>(_country_economy_asset_terminal_results.size(),
+                         std::numeric_limits<uint32_t>::max()));
+    out.session_epoch = _country_worker_session_epoch;
+    return out;
+}
+
+bool NativeSimulationHost::country_economy_asset_protocol_self_test(
+        std::string &error) const {
+    error.clear();
+    NativeSimulationHost probe;
+    probe._country_worker_session_epoch = 41;
+
+    RuntimeEconomyAssetRequest request;
+    request.operation = RuntimeEconomyAssetOperation::TREASURY_SPEND;
+    request.state = RuntimeEconomyAssetState::COUNTRY_PREPARED;
+    request.session_epoch = 41;
+    request.transaction_id = 7001;
+    request.request_id = 7101;
+    request.origin_epoch = 2;
+    request.origin_stage = 9;
+    request.continuation_index = 3;
+    request.day = 12;
+    request.operation_sequence = 99;
+    request.country_generation = 5;
+    request.peer_generation = 9;
+    request.country_handle = 0x100000001ULL;
+    request.country_slot = 0;
+    request.target_slot = 2;
+    request.good_count = 1;
+    request.good_ids[0] = 4;
+    request.good_quantities[0] = 7;
+    request.requested_cash = 10;
+    request.reserved_cash = 10;
+    std::string publish_error;
+    if (!probe.publish_country_economy_asset_requests({request}, publish_error)) {
+        error = publish_error.empty()
+            ? "country_economy_asset_self_test_publish_failed" : publish_error;
+        return false;
+    }
+    RuntimeEconomyAssetRequest polled;
+    if (!probe.poll_country_economy_asset_request(polled) ||
+        !economy_asset_request_equal(polled, request)) {
+        error = "country_economy_asset_self_test_poll_mismatch";
+        return false;
+    }
+    RuntimeEconomyAssetRequest mismatch = request;
+    mismatch.requested_cash = 11;
+    if (probe.publish_country_economy_asset_requests({mismatch}, publish_error) ||
+        publish_error != "country_economy_asset_request_duplicate_mismatch") {
+        error = "country_economy_asset_self_test_duplicate_admission_failed";
+        return false;
+    }
+
+    RuntimeEconomyAssetResult prepared;
+    prepared.code = RuntimeEconomyAssetResultCode::PEER_PREPARED;
+    prepared.state = RuntimeEconomyAssetState::PEER_PREPARED;
+    prepared.accepted = 1;
+    prepared.session_epoch = request.session_epoch;
+    prepared.transaction_id = request.transaction_id;
+    prepared.request_id = request.request_id;
+    prepared.operation = request.operation;
+    prepared.continuation_index = request.continuation_index;
+    prepared.day = request.day;
+    prepared.country_generation = request.country_generation;
+    prepared.peer_generation = request.peer_generation;
+    prepared.committed_peer_generation = 10;
+    prepared.country_slot = request.country_slot;
+    prepared.target_slot = request.target_slot;
+    std::string result_error;
+    if (!probe.submit_country_economy_asset_result(prepared, result_error) ||
+        !probe.submit_country_economy_asset_result(prepared, result_error)) {
+        error = result_error.empty()
+            ? "country_economy_asset_self_test_prepare_failed" : result_error;
+        return false;
+    }
+    RuntimeEconomyAssetResult bad_generation = prepared;
+    bad_generation.committed_peer_generation = 8;
+    if (probe.submit_country_economy_asset_result(
+            bad_generation, result_error) ||
+        result_error != "country_economy_asset_result_generation_mismatch") {
+        error = "country_economy_asset_self_test_generation_guard_failed";
+        return false;
+    }
+
+    RuntimeEconomyAssetResult completed = prepared;
+    completed.code = RuntimeEconomyAssetResultCode::COMPLETED;
+    completed.state = RuntimeEconomyAssetState::COMPLETED;
+    completed.committed_cash = 10;
+    completed.committed_goods_total = 7;
+    if (!probe.submit_country_economy_asset_result(completed, result_error) ||
+        !probe.submit_country_economy_asset_result(completed, result_error)) {
+        error = result_error.empty()
+            ? "country_economy_asset_self_test_complete_failed" : result_error;
+        return false;
+    }
+    RuntimeEconomyAssetResult mismatched_terminal = completed;
+    mismatched_terminal.reason[0] = 'x';
+    if (probe.submit_country_economy_asset_result(
+            mismatched_terminal, result_error) ||
+        result_error != "country_economy_asset_result_duplicate_mismatch") {
+        error = "country_economy_asset_self_test_terminal_guard_failed";
+        return false;
+    }
+    const RuntimeEconomyAssetProtocolStatus status =
+        probe.country_economy_asset_protocol_status();
+    if (status.queued_requests != 0 || status.pending_requests != 0 ||
+        status.terminal_requests != 1 || status.rejected_results != 0) {
+        error = "country_economy_asset_self_test_status_mismatch";
+        return false;
     }
     return true;
 }
@@ -1244,10 +1981,20 @@ NativeSimulationHost::country_worker_protocol_status() const {
         std::min<size_t>(_country_worker_results.size(),
                          std::numeric_limits<uint32_t>::max()));
     out.rejected_results = _country_worker_protocol.rejected_intents;
+    out.rejected_intents = _country_worker_protocol.rejected_intents;
+    out.has_unreported_rejection =
+        _country_worker_protocol.has_unreported_rejection != 0;
+    out.retry_day = _country_worker_protocol.retry_day;
+    out.rejected_request_id = _country_worker_protocol.rejected_request_id;
     out.session_epoch = _country_worker_session_epoch;
     out.country_generation = _country_worker_country_generation;
     out.day = _country_worker_day;
     out.continuation_index = _country_worker_continuation_index;
+    out.boundary_id = _country_worker_seal.boundary_id;
+    out.last_admitted_submit_order =
+        _country_worker_seal.last_admitted_submit_order;
+    out.expected_base_generation = _country_worker_seal.expected_base_generation;
+    out.catalog_hash = _country_worker_seal.catalog_hash;
     runtime_copy_text(out.last_reason,
                       _country_worker_protocol.rejection_reason.data());
     return out;
@@ -1692,33 +2439,92 @@ NativeSimulationHost::environment_snapshot() const {
 }
 
 bool NativeSimulationHost::enqueue(RuntimeCommandPacket packet) {
+    std::vector<RuntimeCommandPacket> packets;
+    packets.reserve(1);
+    packets.push_back(std::move(packet));
+    return enqueue_batch(std::move(packets));
+}
+
+bool NativeSimulationHost::enqueue_batch(
+        std::vector<RuntimeCommandPacket> packets) {
+    if (packets.empty()) return false;
     const RuntimeWorkerState current = _state.load(std::memory_order_acquire);
     if (current == RuntimeWorkerState::STOPPED ||
         current == RuntimeWorkerState::STOPPING ||
         current == RuntimeWorkerState::FAULTED) return false;
-    uint64_t position = _command_enqueue_pos.load(std::memory_order_relaxed);
-    CommandQueueSlot *slot = nullptr;
-    for (;;) {
-        slot = &_command_slots[position % RUNTIME_COMMAND_QUEUE_CAPACITY];
-        const uint64_t sequence = slot->sequence.load(std::memory_order_acquire);
-        const int64_t difference = static_cast<int64_t>(sequence - position);
-        if (difference == 0) {
-            if (_command_enqueue_pos.compare_exchange_weak(
-                    position, position + 1, std::memory_order_relaxed,
-                    std::memory_order_relaxed)) {
-                break;
-            }
-        } else if (difference < 0) {
+
+    // Serialise producers for the batch path. The consumer remains lock-free
+    // and may advance dequeue_pos while this lock is held.
+    std::lock_guard<std::mutex> lock(_command_enqueue_mutex);
+    const uint64_t write = _command_enqueue_pos.load(std::memory_order_relaxed);
+    const uint64_t read = _command_dequeue_pos.load(std::memory_order_acquire);
+    if (packets.size() > RUNTIME_COMMAND_QUEUE_CAPACITY ||
+        write - read > RUNTIME_COMMAND_QUEUE_CAPACITY - packets.size()) {
+        _command_queue_capacity_exceeded.fetch_add(1, std::memory_order_relaxed);
+        return false;
+    }
+    for (size_t index = 0; index < packets.size(); ++index) {
+        const uint64_t position = write + static_cast<uint64_t>(index);
+        CommandQueueSlot &slot = _command_slots[
+            position % RUNTIME_COMMAND_QUEUE_CAPACITY];
+        const uint64_t sequence = slot.sequence.load(std::memory_order_acquire);
+        if (sequence != position) {
             _command_queue_capacity_exceeded.fetch_add(1, std::memory_order_relaxed);
             return false;
-        } else {
-            position = _command_enqueue_pos.load(std::memory_order_relaxed);
         }
     }
-    slot->packet = packet;
-    slot->sequence.store(position + 1, std::memory_order_release);
+    for (size_t index = 0; index < packets.size(); ++index) {
+        RuntimeCommandPacket &packet = packets[index];
+        if (packet.submit_order == 0) {
+            packet.submit_order = _command_submit_order.fetch_add(
+                1u, std::memory_order_relaxed) + 1u;
+        }
+        const uint64_t position = write + static_cast<uint64_t>(index);
+        CommandQueueSlot &slot = _command_slots[
+            position % RUNTIME_COMMAND_QUEUE_CAPACITY];
+        slot.packet = packet;
+        slot.sequence.store(position + 1, std::memory_order_release);
+    }
+    // Country's typed lifecycle begins at Host admission. Keep this state
+    // under the same transport mutex used by terminal publication so a save
+    // boundary cannot observe a pending packet without its Accepted record.
+    {
+        std::lock_guard<std::mutex> country_lock(_country_transport_mutex);
+        for (const RuntimeCommandPacket &packet : packets) {
+            if (packet.envelope.domain !=
+                    static_cast<uint16_t>(RuntimeDomainId::COUNTRY) ||
+                packet.envelope.request_id == 0) {
+                continue;
+            }
+            if (_country_command_states.find(packet.envelope.request_id) !=
+                    _country_command_states.end()) {
+                continue;
+            }
+            CountryCommandReceipt receipt;
+            receipt.request_id = packet.envelope.request_id;
+            receipt.producer_id = packet.envelope.producer_id;
+            receipt.sequence = packet.envelope.sequence;
+            receipt.effective_day = packet.envelope.effective_day;
+            receipt.generation = _generation.load(std::memory_order_acquire);
+            receipt.code = CountryCommandReceiptCode::ACCEPTED;
+            _country_command_states.emplace(receipt.request_id,
+                                             std::move(receipt));
+        }
+    }
+    _command_enqueue_pos.store(write + packets.size(),
+                               std::memory_order_release);
     _control_cv.notify_one();
     return true;
+}
+
+uint64_t NativeSimulationHost::allocate_command_request_id() {
+    uint64_t value = _command_request_id.fetch_add(
+        1u, std::memory_order_relaxed) + 1u;
+    if (value == 0) {
+        value = _command_request_id.fetch_add(
+            1u, std::memory_order_relaxed) + 1u;
+    }
+    return value;
 }
 
 bool NativeSimulationHost::enqueue_modifier_shadow(RuntimeCommandPacket packet) {
@@ -1729,6 +2535,10 @@ bool NativeSimulationHost::enqueue_modifier_shadow(RuntimeCommandPacket packet) 
         if (_mode.load(std::memory_order_acquire) != RuntimeSimulationMode::SHADOW)
             return false;
         return enqueue(std::move(packet));
+    }
+    if (packet.submit_order == 0) {
+        packet.submit_order = _command_submit_order.fetch_add(
+            1u, std::memory_order_relaxed) + 1u;
     }
     std::lock_guard<std::mutex> lock(_control_mutex);
     if (_state.load(std::memory_order_acquire) != RuntimeWorkerState::STOPPED) {
@@ -1803,6 +2613,372 @@ bool NativeSimulationHost::poll_receipt(RuntimeCommandReceipt &out) {
     if (read == write) return false;
     out = _receipts[read % RUNTIME_RECEIPT_QUEUE_CAPACITY];
     _receipt_read.store(read + 1, std::memory_order_release);
+    return true;
+}
+
+void NativeSimulationHost::publish_country_command_terminals(
+        const std::vector<RuntimeCountryCommand> &commands,
+        CountryCommandReceiptCode code, uint64_t generation,
+        const char *reason) {
+    std::lock_guard<std::mutex> lock(_country_transport_mutex);
+    for (const RuntimeCountryCommand &command : commands) {
+        if (command.request_id == 0 ||
+            _country_command_terminals.find(command.request_id) !=
+                _country_command_terminals.end()) {
+            continue;
+        }
+        CountryCommandReceipt receipt;
+        receipt.request_id = command.request_id;
+        receipt.producer_id = command.producer_id;
+        receipt.sequence = command.sequence;
+        receipt.effective_day = command.effective_day;
+        receipt.generation = generation;
+        receipt.code = code;
+        if (reason != nullptr) receipt.reason = reason;
+        _country_command_states[receipt.request_id] = receipt;
+        _country_command_terminals.emplace(receipt.request_id,
+                                           std::move(receipt));
+    }
+}
+
+bool NativeSimulationHost::poll_country_command_receipts(
+        uint64_t after_request_id, uint32_t limit,
+        std::vector<CountryCommandReceipt> &out) {
+    out.clear();
+    const uint32_t bounded_limit = std::min<uint32_t>(limit, 4096u);
+    if (bounded_limit == 0) return true;
+    std::lock_guard<std::mutex> lock(_country_transport_mutex);
+    auto it = _country_command_terminals.upper_bound(after_request_id);
+    for (; it != _country_command_terminals.end() &&
+           out.size() < bounded_limit; ++it) {
+        out.push_back(it->second);
+    }
+    return true;
+}
+
+bool NativeSimulationHost::country_command_receipt_self_test(
+        std::string &error) const {
+    error.clear();
+    const auto snapshot = std::atomic_load_explicit(
+        &_country_snapshot, std::memory_order_acquire);
+    if (snapshot == nullptr || _country_pod_catalog.catalog_hash == 0) {
+        error = "country_receipt_self_test_capture_missing";
+        return false;
+    }
+
+    // Run the protocol against a temporary Host so this test never mutates a
+    // live worker, clock, queue, or peer adapter. It deliberately stops at the
+    // Country boundary: the packet was admitted by transport but cannot be
+    // decoded by the worker, which must become RejectedAtExecution exactly
+    // once and remain queryable by cursor.
+    NativeSimulationHost probe;
+    probe._country_pod_catalog = _country_pod_catalog;
+    std::string bootstrap_error;
+    if (!probe._country_pod_authority.bootstrap(
+            *snapshot, probe._country_pod_catalog, bootstrap_error)) {
+        error = bootstrap_error.empty()
+            ? "country_receipt_self_test_bootstrap_failed" : bootstrap_error;
+        return false;
+    }
+    probe._country_pod_configured.store(true, std::memory_order_release);
+    probe._country_worker_session_epoch = 1;
+
+    RuntimeCountryCommand valid_command;
+    valid_command.request_id = 9901;
+    valid_command.producer_id = 0;
+    valid_command.sequence = 1;
+    valid_command.submit_order = 1;
+    valid_command.requested_day = snapshot->committed_day;
+    valid_command.effective_day = snapshot->committed_day + 1;
+    valid_command.opcode = 5; // SET_RESEARCH_WEIGHTS
+    // The command is intentionally queue-admission-valid but execution-invalid
+    // for this protocol-only fixture. The second malformed packet must reject
+    // the whole semantic batch and remove this first packet from POD pending.
+    valid_command.target_handle = 0;
+
+    RuntimeCommandPacket valid_packet;
+    valid_packet.envelope.request_id = valid_command.request_id;
+    valid_packet.envelope.producer_id = valid_command.producer_id;
+    valid_packet.envelope.sequence = valid_command.sequence;
+    valid_packet.envelope.requested_day = valid_command.requested_day;
+    valid_packet.envelope.effective_day = valid_command.effective_day;
+    valid_packet.envelope.domain = static_cast<uint16_t>(RuntimeDomainId::COUNTRY);
+    valid_packet.envelope.opcode = valid_command.opcode;
+    valid_packet.envelope.payload_offset = 0;
+    valid_packet.envelope.payload_size = sizeof(RuntimeCountryCommand);
+    std::memcpy(valid_packet.payload.data(), &valid_command,
+                sizeof(valid_command));
+
+    RuntimeCommandPacket malformed_packet;
+    malformed_packet.envelope.request_id = 9902;
+    malformed_packet.envelope.producer_id = 0;
+    malformed_packet.envelope.sequence = 2;
+    malformed_packet.envelope.requested_day = snapshot->committed_day;
+    malformed_packet.envelope.effective_day = snapshot->committed_day + 1;
+    malformed_packet.envelope.domain = static_cast<uint16_t>(RuntimeDomainId::COUNTRY);
+    malformed_packet.envelope.opcode = 3;
+    malformed_packet.envelope.payload_offset = 0;
+    malformed_packet.envelope.payload_size = 0;
+    std::vector<RuntimeCommandPacket> commands{valid_packet, malformed_packet};
+    RuntimeDayCommit commit;
+    std::string stage_error;
+    if (probe.execute_country_worker_stage(
+            valid_packet.envelope.effective_day, 1, commands, commit,
+            stage_error, 1)) {
+        error = "country_receipt_self_test_expected_execution_rejection";
+        return false;
+    }
+    std::vector<CountryCommandReceipt> receipts;
+    probe.poll_country_command_receipts(0, 8, receipts);
+    if (receipts.size() != 2 || receipts[0].request_id != 9901 ||
+        receipts[1].request_id != 9902 ||
+        receipts[0].code != CountryCommandReceiptCode::REJECTED_AT_EXECUTION ||
+        receipts[1].code != CountryCommandReceiptCode::REJECTED_AT_EXECUTION ||
+        receipts[0].reason.empty() || receipts[1].reason.empty() ||
+        probe._country_pod_authority.pending_command_count() != 0) {
+        error = "country_receipt_self_test_terminal_missing:" +
+            std::to_string(receipts.size()) + ":" +
+            std::to_string(probe._country_pod_authority.pending_command_count());
+        return false;
+    }
+    std::vector<CountryCommandReceipt> continuation;
+    probe.poll_country_command_receipts(9901, 8, continuation);
+    if (continuation.size() != 1 || continuation[0].request_id != 9902) {
+        error = "country_receipt_self_test_cursor_continuation_invalid";
+        return false;
+    }
+    std::vector<CountryCommandReceipt> replay;
+    probe.poll_country_command_receipts(9902, 8, replay);
+    if (!replay.empty()) {
+        error = "country_receipt_self_test_cursor_replayed";
+        return false;
+    }
+    return true;
+}
+
+bool NativeSimulationHost::country_peer_rejection_self_test(
+        std::string &error) const {
+    error.clear();
+    const auto captured = std::atomic_load_explicit(
+        &_country_snapshot, std::memory_order_acquire);
+    if (captured == nullptr || _country_pod_catalog.catalog_hash == 0) {
+        error = "country_rejection_self_test_capture_missing";
+        return false;
+    }
+
+    RuntimeCountryPodSnapshot fixture = *captured;
+    int32_t slot = -1;
+    for (uint32_t candidate = 0; candidate < fixture.country_count; ++candidate) {
+        if (fixture.country_active[candidate] != 0 &&
+            fixture.territory_count[candidate] > 0) {
+            slot = static_cast<int32_t>(candidate);
+            break;
+        }
+    }
+    if (slot < 0) {
+        error = "country_rejection_self_test_active_country_missing";
+        return false;
+    }
+    int32_t technology = -1;
+    for (uint32_t candidate = 0;
+         candidate < _country_pod_catalog.technology_count; ++candidate) {
+        if (_country_pod_catalog.technology_effect_required[candidate] != 0) {
+            technology = static_cast<int32_t>(candidate);
+            break;
+        }
+    }
+    if (technology < 0) {
+        error = "country_rejection_self_test_effect_technology_missing";
+        return false;
+    }
+    const size_t word_base = static_cast<size_t>(slot) * fixture.technology_words;
+    for (uint32_t candidate = 0;
+         candidate < fixture.technology_count; ++candidate) {
+        const size_t word = word_base + candidate / 64u;
+        const uint64_t bit = uint64_t{1} << (candidate % 64u);
+        fixture.country_discovered[word] |= bit;
+        fixture.country_pending_technologies[word] &= ~bit;
+        if (static_cast<int32_t>(candidate) == technology)
+            fixture.country_technologies[word] &= ~bit;
+        else
+            fixture.country_technologies[word] |= bit;
+        fixture.research_progress[static_cast<size_t>(slot) *
+            fixture.technology_count + candidate] = 0;
+    }
+    fixture.country_pending_technologies[word_base + static_cast<size_t>(
+        technology / 64)] |= uint64_t{1} << (technology % 64);
+    const int32_t domain = _country_pod_catalog.technology_domains[
+        static_cast<size_t>(technology)];
+    if (domain < 0 || domain >= static_cast<int32_t>(
+            RUNTIME_COUNTRY_RESEARCH_DOMAIN_COUNT)) {
+        error = "country_rejection_self_test_domain_invalid";
+        return false;
+    }
+    const size_t research_base = static_cast<size_t>(slot) *
+        RUNTIME_COUNTRY_RESEARCH_DOMAIN_COUNT;
+    for (uint32_t lane = 0; lane < RUNTIME_COUNTRY_RESEARCH_DOMAIN_COUNT; ++lane)
+        fixture.research_weights_bp[research_base + lane] =
+            lane == static_cast<uint32_t>(domain) ? 10000 : 0;
+    for (uint32_t lane = 0; lane < RUNTIME_COUNTRY_RESEARCH_DOMAIN_COUNT; ++lane) {
+        const size_t queue_index = research_base + lane;
+        fixture.research_queue_lengths[queue_index] = 0;
+        const size_t queue_base = queue_index * 8u;
+        for (uint32_t position = 0; position < 8u; ++position)
+            fixture.research_queues[queue_base + position] = -1;
+    }
+    const size_t queue_index = research_base + static_cast<size_t>(domain);
+    fixture.research_queue_lengths[queue_index] = 1;
+    fixture.research_queues[queue_index * 8u] = technology;
+    const size_t stock_index = static_cast<size_t>(slot) * fixture.good_count +
+        static_cast<size_t>(_country_pod_catalog.technology_points_good_id);
+    fixture.country_goods[stock_index] = 0;
+    fixture.research_cost_factor[static_cast<size_t>(slot)] = 1.0;
+    for (uint32_t lane = 0; lane < 4u; ++lane)
+        fixture.research_efficiency[static_cast<size_t>(slot) * 4u + lane] = 1.0;
+    fixture.research_active_index_valid = 1;
+    fixture.research_active_country_slots = {slot};
+
+    NativeSimulationHost probe;
+    probe._country_pod_catalog = _country_pod_catalog;
+    std::string bootstrap_error;
+    if (!probe._country_pod_authority.bootstrap(
+            fixture, probe._country_pod_catalog, bootstrap_error)) {
+        error = bootstrap_error.empty()
+            ? "country_rejection_self_test_bootstrap_failed" : bootstrap_error;
+        return false;
+    }
+    probe._country_pod_configured.store(true, std::memory_order_release);
+    probe._country_worker_session_epoch = 17;
+    const int64_t rejected_day = fixture.committed_day + 1;
+    RuntimeDayCommit first_commit;
+    std::string stage_error;
+    if (probe.execute_country_worker_stage(
+            rejected_day, 1, {}, first_commit, stage_error, 1) ||
+        probe._country_worker_intents.empty()) {
+        error = "country_rejection_self_test_intent_missing";
+        return false;
+    }
+    CountryPeerIntent intent;
+    if (!probe.poll_country_worker_intent(intent)) {
+        error = "country_rejection_self_test_poll_missing";
+        return false;
+    }
+    CountryPeerResult rejected;
+    rejected.code = CountryPeerResultCode::REJECTED;
+    rejected.opcode = intent.opcode;
+    rejected.request_id = intent.request_id;
+    rejected.session_epoch = intent.session_epoch;
+    rejected.country_generation = intent.country_generation;
+    rejected.committed_peer_generation = intent.peer_generation;
+    rejected.peer_generation = intent.peer_generation;
+    rejected.day = intent.day;
+    rejected.continuation_index = intent.continuation_index;
+    rejected.country_slot = intent.country_slot;
+    rejected.technology = intent.technology;
+    rejected.target_handle = intent.target_handle;
+    country_peer_copy_reason(rejected.reason, "self_test_peer_rejected");
+    if (!probe.submit_country_worker_result(rejected, stage_error)) {
+        error = stage_error.empty() ? "country_rejection_self_test_submit_failed" :
+            stage_error;
+        return false;
+    }
+    const uint64_t generation_before = probe._country_pod_authority.generation();
+    RuntimeDayCommit rejected_commit;
+    if (!probe.execute_country_worker_stage(
+            rejected_day, 1, {}, rejected_commit, stage_error, 1) ||
+        (rejected_commit.completed_domain_mask &
+            runtime_domain_mask(RuntimeDomainId::COUNTRY)) == 0u) {
+        error = stage_error.empty() ? "country_rejection_self_test_not_committed" :
+            stage_error;
+        return false;
+    }
+    const CountryWorkerProtocolStatus rejected_status =
+        probe.country_worker_protocol_status();
+    RuntimeCountryPodSnapshot rejected_snapshot;
+    if (!probe._country_pod_authority.snapshot(rejected_snapshot, stage_error)) {
+        error = stage_error.empty() ? "country_rejection_self_test_snapshot_failed" :
+            stage_error;
+        return false;
+    }
+    const size_t target_bit_word = word_base + static_cast<size_t>(technology / 64);
+    const uint64_t target_bit = uint64_t{1} << (technology % 64);
+    const int64_t consumed_before_rejection = fixture.research_consumed_total[
+        static_cast<size_t>(slot)];
+    const int64_t consumed_after_rejection = rejected_snapshot.research_consumed_total[
+        static_cast<size_t>(slot)];
+    if (rejected_status.rejected_intents != 1 ||
+        !rejected_status.has_unreported_rejection ||
+        rejected_status.retry_day != rejected_day + 1 ||
+        rejected_status.rejected_request_id != intent.request_id ||
+        rejected_status.pending_intents != 0 ||
+        probe._country_pod_authority.committed_day() != rejected_day ||
+        probe._country_pod_authority.generation() != generation_before ||
+        (rejected_snapshot.country_pending_technologies[target_bit_word] &
+            target_bit) == 0 || consumed_after_rejection !=
+            consumed_before_rejection ||
+        !(rejected_status.plan_active || rejected_status.pending_intents != 0 ||
+          rejected_status.result_count != 0 ||
+          rejected_status.rejected_intents != 0 ||
+          rejected_status.has_unreported_rejection)) {
+        error = "country_rejection_self_test_barrier_state_invalid";
+        return false;
+    }
+    CountryPeerResult duplicate = rejected;
+    if (!probe.submit_country_worker_result(duplicate, stage_error)) {
+        error = stage_error.empty() ? "country_rejection_self_test_duplicate_not_idempotent" :
+            stage_error;
+        return false;
+    }
+    CountryPeerIntent retry;
+    RuntimeDayCommit retry_wait;
+    if (probe.execute_country_worker_stage(
+            rejected_day + 1, 1, {}, retry_wait, stage_error, 1) ||
+        !probe.poll_country_worker_intent(retry) ||
+        retry.request_id == intent.request_id) {
+        error = "country_rejection_self_test_retry_identity_invalid";
+        return false;
+    }
+    CountryPeerResult applied = rejected;
+    applied.code = CountryPeerResultCode::APPLIED;
+    applied.request_id = retry.request_id;
+    applied.opcode = retry.opcode;
+    applied.session_epoch = retry.session_epoch;
+    applied.country_generation = retry.country_generation;
+    applied.day = retry.day;
+    applied.continuation_index = retry.continuation_index;
+    applied.country_slot = retry.country_slot;
+    applied.technology = retry.technology;
+    applied.target_handle = retry.target_handle;
+    applied.technology_flags = COUNTRY_PEER_EFFECT_FIRE_ACKED;
+    if (!probe.submit_country_worker_result(applied, stage_error)) {
+        error = stage_error.empty() ? "country_rejection_self_test_retry_submit_failed" :
+            stage_error;
+        return false;
+    }
+    RuntimeDayCommit retry_commit;
+    if (!probe.execute_country_worker_stage(
+            rejected_day + 1, 1, {}, retry_commit, stage_error, 1)) {
+        error = stage_error.empty() ? "country_rejection_self_test_retry_commit_failed" :
+            stage_error;
+        return false;
+    }
+    RuntimeCountryPodSnapshot final_snapshot;
+    if (!probe._country_pod_authority.snapshot(final_snapshot, stage_error)) {
+        error = stage_error.empty() ? "country_rejection_self_test_final_snapshot_failed" :
+            stage_error;
+        return false;
+    }
+    const CountryWorkerProtocolStatus final_status =
+        probe.country_worker_protocol_status();
+    if ((final_snapshot.country_technologies[target_bit_word] & target_bit) == 0 ||
+        final_snapshot.research_consumed_total[static_cast<size_t>(slot)] !=
+            consumed_after_rejection || final_status.plan_active ||
+        final_status.pending_intents != 0 || final_status.result_count != 0 ||
+        final_status.rejected_intents != 0 ||
+        final_status.has_unreported_rejection) {
+        error = "country_rejection_self_test_final_state_invalid";
+        return false;
+    }
     return true;
 }
 
@@ -1894,9 +3070,42 @@ RuntimeDayPlan NativeSimulationHost::build_day_plan(
 bool NativeSimulationHost::execute_country_worker_stage(
         int64_t day, uint64_t input_generation,
         const std::vector<RuntimeCommandPacket> &day_commands,
-        RuntimeDayCommit &commit, std::string &error) {
+        RuntimeDayCommit &commit, std::string &error,
+        uint64_t admitted_submit_order) {
     error.clear();
     if (!_country_pod_configured) return true;
+
+    // Convert the sealed Country packet set once for terminal reporting. The
+    // worker may reject the whole semantic batch before a POD plan exists, so
+    // terminal receipts cannot depend only on RuntimeCountryPodPlan.commands.
+    // A malformed packet still gets an execution rejection identified by its
+    // transport envelope; it is never silently lost after admission.
+    std::vector<RuntimeCountryCommand> sealed_country_commands;
+    sealed_country_commands.reserve(day_commands.size());
+    for (const RuntimeCommandPacket &packet : day_commands) {
+        if (packet.envelope.domain !=
+                static_cast<uint16_t>(RuntimeDomainId::COUNTRY)) {
+            continue;
+        }
+        RuntimeCountryCommand command;
+        std::string command_error;
+        if (!RuntimeCountryPodAdapter::decode_command(
+                packet, command, command_error)) {
+            command.request_id = packet.envelope.request_id;
+            command.producer_id = packet.envelope.producer_id;
+            command.sequence = packet.envelope.sequence;
+            command.requested_day = packet.envelope.requested_day;
+            command.effective_day = packet.envelope.effective_day;
+            command.opcode = packet.envelope.opcode;
+            command.submit_order = packet.submit_order;
+        }
+        sealed_country_commands.push_back(command);
+    }
+    std::vector<uint64_t> sealed_request_ids;
+    sealed_request_ids.reserve(sealed_country_commands.size());
+    for (const RuntimeCountryCommand &command : sealed_country_commands) {
+        if (command.request_id != 0) sealed_request_ids.push_back(command.request_id);
+    }
 
     if (!_country_pod_plan_active) {
         for (const RuntimeCommandPacket &packet : day_commands) {
@@ -1909,31 +3118,52 @@ bool NativeSimulationHost::execute_country_worker_stage(
                 !_country_pod_authority.queue_command(command, command_error)) {
                 error = command_error.empty()
                     ? "country_worker_command_rejected" : command_error;
+                _country_pod_authority.remove_pending_commands(sealed_request_ids);
+                publish_country_command_terminals(
+                    sealed_country_commands,
+                    CountryCommandReceiptCode::REJECTED_AT_EXECUTION,
+                    _country_pod_authority.generation(), error.c_str());
                 return false;
             }
         }
         if (!_country_pod_authority.plan_day(
                 day, input_generation, _country_pod_plan, error)) {
             if (error.empty()) error = "country_worker_plan_failed";
+            _country_pod_authority.remove_pending_commands(sealed_request_ids);
+            publish_country_command_terminals(
+                sealed_country_commands,
+                CountryCommandReceiptCode::REJECTED_AT_EXECUTION,
+                _country_pod_authority.generation(), error.c_str());
             return false;
         }
         _country_pod_plan_active = true;
         {
             std::lock_guard<std::mutex> lock(_country_transport_mutex);
+            ++_country_worker_seal.boundary_id;
+            if (_country_worker_seal.boundary_id == 0)
+                _country_worker_seal.boundary_id = 1;
+            _country_worker_seal.session_epoch = _country_worker_session_epoch;
+            _country_worker_seal.day = day;
+            _country_worker_seal.last_admitted_submit_order = admitted_submit_order;
+            _country_worker_seal.expected_base_generation =
+                _country_pod_plan.header.base_generation;
+            _country_worker_seal.catalog_hash = _country_pod_catalog.catalog_hash;
             _country_worker_country_generation =
                 _country_pod_plan.header.base_generation;
             _country_worker_day = day;
             _country_worker_continuation_index = 0;
-            _country_worker_protocol.retry_day = day;
-            _country_worker_protocol.rejected_intents = 0;
             for (const RuntimeDomainIntent &intent : _country_pod_plan.intents) {
-                if (intent.target_domain !=
-                        static_cast<uint16_t>(RuntimeDomainId::EFFECT)) {
-                    error = "country_worker_peer_intent_domain_unsupported";
+                CountryPeerIntentCode peer_opcode;
+                std::string peer_opcode_error;
+                if (!map_country_peer_intent(intent, peer_opcode,
+                                              peer_opcode_error)) {
+                    error = peer_opcode_error.empty()
+                        ? "country_worker_peer_intent_invalid"
+                        : peer_opcode_error;
                     break;
                 }
                 CountryPeerIntent peer;
-                peer.opcode = CountryPeerIntentCode::ENSURE_TECHNOLOGY_EFFECT;
+                peer.opcode = peer_opcode;
                 peer.request_id = intent.request_id != 0
                     ? intent.request_id : intent.source_id;
                 peer.session_epoch = _country_worker_session_epoch;
@@ -1975,13 +3205,17 @@ bool NativeSimulationHost::execute_country_worker_stage(
                 _country_worker_protocol.queued_intents = static_cast<uint32_t>(
                     std::min<size_t>(_country_worker_intent_queue.size(),
                                      std::numeric_limits<uint32_t>::max()));
-                _country_worker_protocol.has_unreported_rejection = 0;
                 _country_peer_signal.fetch_add(1, std::memory_order_acq_rel);
             }
         }
         if (!error.empty()) {
             _country_pod_authority.discard_plan();
+            _country_pod_authority.remove_pending_commands(sealed_request_ids);
             _country_pod_plan_active.store(false, std::memory_order_release);
+            publish_country_command_terminals(
+                _country_pod_plan.commands,
+                CountryCommandReceiptCode::REJECTED_AT_EXECUTION,
+                _country_pod_authority.generation(), error.c_str());
             return false;
         }
     }
@@ -1991,6 +3225,9 @@ bool NativeSimulationHost::execute_country_worker_stage(
     bool waiting = false;
     bool rejected = false;
     std::string rejection_reason;
+    uint64_t rejected_request_id = 0;
+    CountryPeerIntentCode rejected_opcode =
+        CountryPeerIntentCode::ENSURE_TECHNOLOGY_EFFECT;
     {
         std::lock_guard<std::mutex> lock(_country_transport_mutex);
         for (const RuntimeDomainIntent &intent : _country_pod_plan.intents) {
@@ -2012,6 +3249,7 @@ bool NativeSimulationHost::execute_country_worker_stage(
             ack.effective_day = intent.effective_day;
             ack.producer_id = intent.producer_id;
             ack.sequence = intent.sequence;
+            ack.technology_flags = result.technology_flags;
             if (result.code == CountryPeerResultCode::READY ||
                 result.code == CountryPeerResultCode::APPLIED) {
                 ack.code = RuntimeDomainAckCode::OK;
@@ -2021,6 +3259,11 @@ bool NativeSimulationHost::execute_country_worker_stage(
                     : RuntimeDomainAckCode::REJECTED;
                 rejected = true;
                 rejection_reason = result.reason.data();
+                if (rejected_request_id == 0) {
+                    rejected_request_id = request_id;
+                    rejected_opcode = static_cast<CountryPeerIntentCode>(
+                        intent.opcode);
+                }
             }
             acks.push_back(ack);
         }
@@ -2037,32 +3280,84 @@ bool NativeSimulationHost::execute_country_worker_stage(
         return false;
     }
     if (rejected) {
-        // Keep the staged plan and its terminal rejection visible. The worker
-        // remains parked until an explicit lifecycle action replaces the
-        // session; it must not turn the rejected batch into an empty commit.
-        _country_pod_plan_active.store(true, std::memory_order_release);
+        // A peer rejection closes the Country semantic boundary. Country-side
+        // commands, research consumption and pending activation remain
+        // committed, while the peer operation is retained as a next-day retry
+        // barrier. This is deliberately different from discard_plan():
+        // discarding would replay the same research spend on the next day.
+        if (!_country_pod_authority.commit_rejected_day(
+                _country_pod_plan, error)) {
+            _country_pod_authority.discard_plan();
+            _country_pod_plan_active.store(false, std::memory_order_release);
+            set_fault(error.empty() ? "country_worker_rejection_commit_failed" :
+                      error.c_str());
+            if (error.empty()) error = "country_worker_rejection_commit_failed";
+            commit.preflight_ok = 0;
+            return false;
+        }
+        publish_country_command_terminals(
+            _country_pod_plan.commands, CountryCommandReceiptCode::COMMITTED,
+            _country_pod_authority.generation(), nullptr);
+        _country_pod_plan_active.store(false, std::memory_order_release);
         {
             std::lock_guard<std::mutex> lock(_country_transport_mutex);
             _country_worker_protocol.has_unreported_rejection = 1;
-            _country_worker_protocol.rejected_intents = 1;
-            _country_worker_protocol.rejected_request_id =
-                acks.empty() ? 0 : acks.front().request_id;
+            _country_worker_protocol.rejected_intents = std::max<uint32_t>(
+                1u, _country_worker_protocol.rejected_intents);
+            _country_worker_protocol.retry_day = day < INT64_MAX ? day + 1 : day;
+            _country_worker_protocol.rejected_request_id = rejected_request_id;
+            _country_worker_protocol.rejected_opcode = rejected_opcode;
             country_peer_copy_reason(_country_worker_protocol.rejection_reason,
                                      rejection_reason.c_str());
+            for (const RuntimeDomainIntent &intent : _country_pod_plan.intents) {
+                const uint64_t request_id = intent.request_id != 0
+                    ? intent.request_id : intent.source_id;
+                _country_worker_intents.erase(request_id);
+                _country_worker_results.erase(request_id);
+            }
+            _country_worker_intent_queue.erase(
+                std::remove_if(_country_worker_intent_queue.begin(),
+                               _country_worker_intent_queue.end(),
+                    [&](uint64_t request_id) {
+                        return _country_worker_intents.find(request_id) ==
+                            _country_worker_intents.end();
+                    }), _country_worker_intent_queue.end());
+            _country_worker_protocol.pending_intents = 0;
+            _country_worker_protocol.queued_intents = static_cast<uint32_t>(
+                std::min<size_t>(_country_worker_intent_queue.size(),
+                                 std::numeric_limits<uint32_t>::max()));
         }
-        error = rejection_reason.empty() ? "country_worker_peer_rejected" :
-            rejection_reason;
-        commit.preflight_ok = 0;
-        return false;
+        std::string snapshot_error;
+        if (!publish_country_worker_snapshot(
+                _country_pod_plan.header.dirty_families, snapshot_error)) {
+            error = snapshot_error.empty() ? "country_worker_snapshot_failed" :
+                snapshot_error;
+            commit.preflight_ok = 0;
+            return false;
+        }
+        commit.completed_domain_mask |= runtime_domain_mask(
+            RuntimeDomainId::COUNTRY);
+        commit.dirty_families |= _country_pod_plan.header.dirty_families;
+        commit.work_units += _country_pod_plan.header.work_units;
+        ++commit.completed_stage_count;
+        error.clear();
+        return true;
     }
     if (!_country_pod_authority.commit_day(_country_pod_plan, acks, error)) {
         _country_pod_authority.discard_plan();
         _country_pod_plan_active.store(false, std::memory_order_release);
         set_fault(error.empty() ? "country_worker_commit_failed" : error.c_str());
         if (error.empty()) error = "country_worker_commit_failed";
+        publish_country_command_terminals(
+            _country_pod_plan.commands,
+            CountryCommandReceiptCode::REJECTED_AT_EXECUTION,
+            _country_pod_authority.generation(), error.c_str());
         commit.preflight_ok = 0;
         return false;
     }
+    publish_country_command_terminals(
+        _country_pod_plan.commands, CountryCommandReceiptCode::COMMITTED,
+        _country_pod_authority.generation(), nullptr);
     _country_pod_plan_active.store(false, std::memory_order_release);
     RuntimeCountryPodSnapshot committed_snapshot;
     std::string snapshot_error;
@@ -2099,6 +3394,8 @@ bool NativeSimulationHost::execute_country_worker_stage(
         auto committed_copy = std::make_shared<RuntimeCountryPodSnapshot>(
             std::move(committed_snapshot));
         _country_committed_snapshot = committed_copy;
+        _country_worker_country_generation = committed_copy->generation;
+        _country_worker_day = committed_copy->committed_day;
         std::shared_ptr<const RuntimeCountryPodSnapshot> committed_view =
             committed_copy;
         std::atomic_store_explicit(&_country_snapshot, committed_view,
@@ -2118,6 +3415,9 @@ bool NativeSimulationHost::execute_country_worker_stage(
         _country_worker_protocol.has_unreported_rejection = 0;
         _country_worker_protocol.rejected_request_id = 0;
         country_peer_copy_reason(_country_worker_protocol.rejection_reason, "");
+        const uint64_t boundary_id = _country_worker_seal.boundary_id;
+        _country_worker_seal = CountryBoundarySeal{};
+        _country_worker_seal.boundary_id = boundary_id;
     }
     commit.completed_domain_mask |= runtime_domain_mask(RuntimeDomainId::COUNTRY);
     commit.dirty_families |= _country_pod_plan.header.dirty_families;
@@ -2230,7 +3530,8 @@ bool NativeSimulationHost::execute_ideology_worker_stage(
 RuntimeDayCommit NativeSimulationHost::execute_day_plan(
         RuntimeDayPlan &plan,
         const std::vector<RuntimeCommandPacket> &day_commands,
-        std::vector<RuntimeCommandReceipt> &day_receipts) {
+        std::vector<RuntimeCommandReceipt> &day_receipts,
+        uint64_t admitted_submit_order) {
     RuntimeDayCommit commit;
     const auto run_events_probe = [&](int64_t event_day) {
         if (!_events_probe_enabled.load(std::memory_order_acquire) ||
@@ -2585,7 +3886,8 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             std::string country_error;
             if (!execute_country_worker_stage(
                     plan.context.day, diagnostic_context.input_generation,
-                    day_commands, commit, country_error)) {
+                    day_commands, commit, country_error,
+                    admitted_submit_order)) {
                 _country_pod_ready.store(false, std::memory_order_release);
                 const char *reason = country_error.empty()
                     ? "country_worker_stage_pending" : country_error.c_str();
@@ -3022,7 +4324,8 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                 std::string country_error;
                 if (execute_country_worker_stage(
                         plan.context.day, plan.context.input_generation,
-                        day_commands, commit, country_error)) {
+                        day_commands, commit, country_error,
+                        admitted_submit_order)) {
                     stage.dirty_families = (commit.dirty_families |
                         dirty_before) &
                         (RUNTIME_DIRTY_COUNTRY_STATE |
@@ -3523,6 +4826,28 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
             error = "runtime_bundle_country_section_invalid:" + error;
             return false;
         }
+        std::unordered_map<uint64_t, CountryCommandReceiptCode> country_states;
+        country_states.reserve(checkpoint.request_states.size());
+        for (const CountryCommandReceipt &receipt : checkpoint.request_states)
+            country_states.emplace(receipt.request_id, receipt.code);
+        std::unordered_set<uint64_t> country_terminals;
+        country_terminals.reserve(checkpoint.terminal_receipts.size());
+        for (const CountryCommandReceipt &receipt : checkpoint.terminal_receipts)
+            country_terminals.insert(receipt.request_id);
+        for (const RuntimeCommandPacket &packet : parsed.pending_commands) {
+            if (packet.envelope.domain !=
+                    static_cast<uint16_t>(RuntimeDomainId::COUNTRY)) {
+                continue;
+            }
+            const auto state = country_states.find(packet.envelope.request_id);
+            if (state == country_states.end() ||
+                state->second != CountryCommandReceiptCode::ACCEPTED ||
+                country_terminals.find(packet.envelope.request_id) !=
+                    country_terminals.end()) {
+                error = "runtime_bundle_country_pending_receipt_invalid";
+                return false;
+            }
+        }
         parsed.country_pkcn_bytes = checkpoint.canonical_pkcn;
     }
     if ((parsed.section_mask & RUNTIME_SAVE_SECTION_TRIGGER) != 0) {
@@ -3792,15 +5117,79 @@ void NativeSimulationHost::build_save_bundle(
     const auto country_checkpoint = std::atomic_load_explicit(
         &_country_checkpoint, std::memory_order_acquire);
     if (country_checkpoint != nullptr) {
+        // The synchronous checkpoint carries the canonical PKCN business
+        // payload. Host protocol state is merged here at the same save
+        // boundary, so pending worker packets and terminal receipts cannot
+        // drift from the PKCN generation/day/hash they accompany.
+        CountryCoreCheckpoint checkpoint = *country_checkpoint;
+        {
+            std::lock_guard<std::mutex> lock(_country_transport_mutex);
+            std::map<uint64_t, CountryCommandReceipt> states;
+            for (const CountryCommandReceipt &receipt : checkpoint.request_states)
+                states.emplace(receipt.request_id, receipt);
+            std::map<uint64_t, CountryCommandReceipt> terminals;
+            for (const CountryCommandReceipt &receipt : checkpoint.terminal_receipts)
+                terminals.emplace(receipt.request_id, receipt);
+
+            for (const auto &entry : _country_command_states) {
+                const CountryCommandReceipt &receipt = entry.second;
+                const auto existing = states.find(receipt.request_id);
+                if (existing == states.end()) {
+                    states.emplace(receipt.request_id, receipt);
+                } else if (existing->second.code != receipt.code ||
+                           existing->second.effective_day != receipt.effective_day) {
+                    set_fault("country_save_request_state_conflict");
+                    return;
+                }
+            }
+            for (const RuntimeCommandPacket &packet : pending_commands) {
+                if (packet.envelope.domain !=
+                        static_cast<uint16_t>(RuntimeDomainId::COUNTRY) ||
+                    packet.envelope.request_id == 0) {
+                    continue;
+                }
+                const auto existing = states.find(packet.envelope.request_id);
+                if (existing == states.end()) {
+                    CountryCommandReceipt accepted;
+                    accepted.request_id = packet.envelope.request_id;
+                    accepted.producer_id = packet.envelope.producer_id;
+                    accepted.sequence = packet.envelope.sequence;
+                    accepted.effective_day = packet.envelope.effective_day;
+                    accepted.generation = checkpoint.generation;
+                    accepted.code = CountryCommandReceiptCode::ACCEPTED;
+                    states.emplace(accepted.request_id, std::move(accepted));
+                } else if (existing->second.code != CountryCommandReceiptCode::ACCEPTED) {
+                    set_fault("country_save_pending_receipt_not_accepted");
+                    return;
+                }
+            }
+            for (const auto &entry : _country_command_terminals) {
+                const CountryCommandReceipt &receipt = entry.second;
+                const auto existing = states.find(receipt.request_id);
+                if (existing == states.end() || existing->second.code != receipt.code) {
+                    set_fault("country_save_terminal_receipt_state_mismatch");
+                    return;
+                }
+                terminals.emplace(receipt.request_id, receipt);
+            }
+            checkpoint.request_states.clear();
+            checkpoint.request_states.reserve(states.size());
+            for (const auto &entry : states)
+                checkpoint.request_states.push_back(entry.second);
+            checkpoint.terminal_receipts.clear();
+            checkpoint.terminal_receipts.reserve(terminals.size());
+            for (const auto &entry : terminals)
+                checkpoint.terminal_receipts.push_back(entry.second);
+        }
         std::string country_save_error;
-        if (!encode_country_core_checkpoint(*country_checkpoint,
+        if (!encode_country_core_checkpoint(checkpoint,
                                             bundle->country_bytes,
                                             country_save_error)) {
             set_fault(country_save_error.empty() ? "country_save_encode_failed" :
                       country_save_error.c_str());
             return;
         }
-        bundle->country_pkcn_bytes = country_checkpoint->canonical_pkcn;
+        bundle->country_pkcn_bytes = checkpoint.canonical_pkcn;
         bundle->section_mask |= RUNTIME_SAVE_SECTION_COUNTRY;
     }
     RuntimeTriggerPodSaveSection trigger_save;
@@ -4098,6 +5487,24 @@ void NativeSimulationHost::worker_main() {
     if (!_worker_initial_pending_commands.empty()) {
         pending_commands = std::move(_worker_initial_pending_commands);
     }
+    // PKSR v2 predates the explicit live admission watermark. Reconstruct
+    // missing values in saved order, while preserving values already assigned
+    // by the accepting queue in the current session.
+    for (RuntimeCommandPacket &packet : pending_commands) {
+        if (packet.submit_order == 0) {
+            packet.submit_order = _command_submit_order.fetch_add(
+                1u, std::memory_order_relaxed) + 1u;
+        } else {
+            uint64_t current_order = _command_submit_order.load(
+                std::memory_order_relaxed);
+            while (current_order < packet.submit_order &&
+                   !_command_submit_order.compare_exchange_weak(
+                       current_order, packet.submit_order,
+                       std::memory_order_relaxed,
+                       std::memory_order_relaxed)) {
+            }
+        }
+    }
     std::vector<RuntimeCommandReceipt> day_receipts;
     day_receipts.reserve(RUNTIME_RECEIPT_QUEUE_CAPACITY);
     bool pending_commands_dirty = !pending_commands.empty();
@@ -4197,8 +5604,9 @@ void NativeSimulationHost::worker_main() {
                         const RuntimeCommandEnvelope &a = lhs.envelope;
                         const RuntimeCommandEnvelope &b = rhs.envelope;
                         if (a.effective_day != b.effective_day) return a.effective_day < b.effective_day;
-                        if (a.producer_id != b.producer_id) return a.producer_id < b.producer_id;
                         if (a.sequence != b.sequence) return a.sequence < b.sequence;
+                        if (lhs.submit_order != rhs.submit_order)
+                            return lhs.submit_order < rhs.submit_order;
                         return a.request_id < b.request_id;
                     });
                     pending_commands_dirty = false;
@@ -4206,6 +5614,13 @@ void NativeSimulationHost::worker_main() {
                 size_t consumed_commands = pending_begin;
                 std::vector<RuntimeCommandPacket> day_commands;
                 day_commands.reserve(16u);
+                uint64_t admitted_submit_order = 0;
+                for (size_t index = pending_begin;
+                     index < pending_commands.size(); ++index) {
+                    admitted_submit_order = std::max(
+                        admitted_submit_order,
+                        pending_commands[index].submit_order);
+                }
                 for (; consumed_commands < pending_commands.size(); ++consumed_commands) {
                     const RuntimeCommandPacket &command = pending_commands[consumed_commands];
                     if (command.envelope.effective_day > day) break;
@@ -4265,7 +5680,8 @@ void NativeSimulationHost::worker_main() {
                 RuntimeDayPlan day_plan = build_day_plan(
                     day, speed, environment.get());
                 const RuntimeDayCommit day_commit = execute_day_plan(
-                    day_plan, day_commands, day_receipts);
+                    day_plan, day_commands, day_receipts,
+                    admitted_submit_order);
                 if (day_commit.preflight_ok == 0) {
                     if (_state.load(std::memory_order_acquire) ==
                         RuntimeWorkerState::FAULTED) {
@@ -4569,6 +5985,30 @@ RuntimeThreadReport NativeSimulationHost::report() const {
     out.country_pod_pending_checks = country_diag.pending_checks;
     out.country_pod_ack_pending = country_diag.ack_pending != 0;
     runtime_copy_text(out.country_pod_blocker, country_diag.blocker);
+    const CountryWorkerProtocolStatus country_worker =
+        country_worker_protocol_status();
+    out.country_worker_configured = country_worker.configured;
+    out.country_worker_plan_active = country_worker.plan_active;
+    out.country_worker_waiting_for_peer = country_worker.waiting_for_peer;
+    out.country_worker_pending_intents = country_worker.pending_intents;
+    out.country_worker_queued_intents = country_worker.queued_intents;
+    out.country_worker_result_count = country_worker.result_count;
+    out.country_worker_rejected_results = country_worker.rejected_results;
+    out.country_worker_session_epoch = country_worker.session_epoch;
+    out.country_worker_country_generation = country_worker.country_generation;
+    out.country_worker_day = country_worker.day;
+    out.country_worker_continuation_index = country_worker.continuation_index;
+    out.country_worker_boundary_id = country_worker.boundary_id;
+    out.country_worker_last_admitted_submit_order =
+        country_worker.last_admitted_submit_order;
+    out.country_worker_expected_base_generation =
+        country_worker.expected_base_generation;
+    out.country_worker_catalog_hash = country_worker.catalog_hash;
+    out.country_worker_authoritative =
+        (out.authoritative_domain_mask & runtime_domain_mask(
+            RuntimeDomainId::COUNTRY)) != 0u;
+    runtime_copy_text(out.country_worker_last_reason,
+                      country_worker.last_reason);
     const RuntimeTriggerPodDiagnostics trigger_diag = trigger_pod_diagnostics();
     out.trigger_parity_day = trigger_diag.day;
     out.trigger_reference_day = trigger_diag.reference_day;

@@ -18,6 +18,43 @@ using namespace persistence_codec;
 
 Dictionary NativeEconomyRuntime::begin_save(int32_t chunk_bytes) {
     Dictionary out;
+    if (_fiscal_reservation_continuation.active ||
+        _epoch_begin_post_fiscal_pending) {
+        out["ok"] = false;
+        out["reason"] = "economy_save_fiscal_reservation_pending";
+        out["country_cursor"] =
+            _fiscal_reservation_continuation.country_cursor;
+        out["country_count"] =
+            _fiscal_reservation_continuation.country_count;
+        out["day"] = _fiscal_reservation_continuation.day_index;
+        out["phase"] = _fiscal_reservation_continuation.phase;
+        out["last_requested"] =
+            _fiscal_reservation_continuation.last_requested;
+        out["last_reserved"] =
+            _fiscal_reservation_continuation.last_reserved;
+        out["last_error"] = String::utf8(
+            _fiscal_reservation_continuation.last_error.c_str());
+        out["epoch_begin_pending"] = _epoch_begin_post_fiscal_pending;
+        return out;
+    }
+    if (_country_research_procurement_continuation.active) {
+        out["ok"] = false;
+        out["reason"] = "economy_save_research_procurement_pending";
+        out["transaction_id"] = static_cast<int64_t>(
+            _country_research_procurement_continuation.transaction_id);
+        out["phase"] = _country_research_procurement_continuation.phase;
+        return out;
+    }
+    if (_fiscal_settlement_continuation.active) {
+        out["ok"] = false;
+        out["reason"] = "economy_save_fiscal_settlement_pending";
+        out["country_cursor"] = _fiscal_settlement_continuation.country_cursor;
+        out["country_count"] = _fiscal_settlement_continuation.country_count;
+        out["phase"] = _fiscal_settlement_continuation.phase;
+        out["last_unused"] = _fiscal_settlement_continuation.last_unused;
+        out["last_collected"] = _fiscal_settlement_continuation.last_collected;
+        return out;
+    }
     if (!_bootstrapped || _epoch_active || _fatal || _save.active || _restore.active) {
         out["ok"] = false;
         out["reason"] = !_bootstrapped ? "economy_not_bootstrapped"
@@ -159,11 +196,42 @@ Dictionary NativeEconomyRuntime::end_save() {
 
 Dictionary NativeEconomyRuntime::begin_restore() {
     Dictionary out;
-    if (!_configured || _epoch_active || _save.active || _restore.active) {
+    if (!_configured || _epoch_active || _save.active || _restore.active ||
+        _fiscal_reservation_continuation.active ||
+        _epoch_begin_post_fiscal_pending ||
+        _fiscal_settlement_continuation.active ||
+        _country_research_procurement_continuation.active) {
         out["ok"] = false;
         out["reason"] = !_configured ? "configure_catalog_before_restore"
+                         : (_fiscal_reservation_continuation.active ||
+                            _epoch_begin_post_fiscal_pending
+                             ? "restore_fiscal_reservation_pending"
+                         : (_fiscal_settlement_continuation.active
+                             ? "restore_fiscal_settlement_pending"
+                         : (_country_research_procurement_continuation.active
+                             ? "restore_research_procurement_pending"
                          : (_epoch_active ? "restore_requires_committed_boundary"
-                                          : "save_restore_already_active");
+                             : "save_restore_already_active"))));
+        if (_fiscal_reservation_continuation.active ||
+            _epoch_begin_post_fiscal_pending) {
+            out["country_cursor"] =
+                _fiscal_reservation_continuation.country_cursor;
+            out["country_count"] =
+                _fiscal_reservation_continuation.country_count;
+            out["day"] = _fiscal_reservation_continuation.day_index;
+            out["phase"] = _fiscal_reservation_continuation.phase;
+            out["epoch_begin_pending"] = _epoch_begin_post_fiscal_pending;
+        } else if (_fiscal_settlement_continuation.active) {
+            out["country_cursor"] =
+                _fiscal_settlement_continuation.country_cursor;
+            out["country_count"] =
+                _fiscal_settlement_continuation.country_count;
+            out["phase"] = _fiscal_settlement_continuation.phase;
+            out["last_unused"] =
+                _fiscal_settlement_continuation.last_unused;
+            out["last_collected"] =
+                _fiscal_settlement_continuation.last_collected;
+        }
         return out;
     }
     _restore = {};
@@ -261,6 +329,10 @@ Dictionary NativeEconomyRuntime::begin_restore() {
         static_cast<size_t>(_cell_count), 0);
     _fiscal_previous_requests.assign(
         static_cast<size_t>(_cell_count) * ACTIVE_TAX_KIND_COUNT, 0);
+    _fiscal_reservation_continuation = {};
+    _fiscal_settlement_continuation = {};
+    _epoch_begin_post_fiscal_pending = false;
+    _epoch_begin_pending_day = -1;
     _fiscal_last_events.clear();
     _tariff_epoch_cells.clear();
     _tariff_epoch_kinds.clear();

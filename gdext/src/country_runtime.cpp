@@ -2149,11 +2149,15 @@ bool NativeCountryRuntime::export_pod_snapshot(
     out.generation = _generation;
     out.state_hash = static_cast<uint64_t>(state_hash());
     out.committed_day = _last_committed_day;
+    out.last_research_day = _last_research_day;
+    out.session_epoch = _session_epoch;
     out.cell_count = static_cast<uint32_t>(std::max(0, _cell_count));
     out.country_count = static_cast<uint32_t>(_countries.active.size());
     out.technology_words = static_cast<uint32_t>(std::max(0, _technology_words));
     out.technology_count = static_cast<uint32_t>(_technology_ids.size());
     out.good_count = static_cast<uint32_t>(_good_ids.size());
+    out.profession_count = static_cast<uint32_t>(_profession_ids.size());
+    out.building_type_count = static_cast<uint32_t>(_building_type_ids.size());
     out.research_signal_words = static_cast<uint32_t>(std::max(0, _research_signal_words));
     out.research_signal_count = static_cast<uint32_t>(_research_signal_ids.size());
     out.catalog_hash = _technology_catalog_identity_hash;
@@ -2161,6 +2165,8 @@ bool NativeCountryRuntime::export_pod_snapshot(
     out.research_active_index_valid = true;
     out.country_active = _countries.active;
     out.country_generation = _countries.generation;
+    out.country_stable_ids = _countries.stable_id;
+    out.country_display_names = _countries.display_name;
     out.research_active_country_slots = _research_active_country_slots;
     out.territory_count = _countries.territory_count;
     out.country_state_version = _countries.state_version;
@@ -2173,6 +2179,16 @@ bool NativeCountryRuntime::export_pod_snapshot(
     out.country_discovered = _country_discovered;
     out.country_pending_technologies = _country_pending_technologies;
     out.country_research_signals = _country_research_signals;
+    out.research_signal_cell_offsets.assign(
+        _country_research_signal_cells.size() + 1u, 0);
+    for (size_t slot = 0; slot < _country_research_signal_cells.size(); ++slot) {
+        out.research_signal_cell_offsets[slot + 1u] =
+            out.research_signal_cell_offsets[slot] +
+            static_cast<int32_t>(_country_research_signal_cells[slot].size());
+        out.research_signal_cells.insert(out.research_signal_cells.end(),
+            _country_research_signal_cells[slot].begin(),
+            _country_research_signal_cells[slot].end());
+    }
     out.research_signal_evidence_offsets.assign(
         _country_research_signal_evidence.size() + 1u, 0);
     for (size_t slot = 0; slot < _country_research_signal_evidence.size(); ++slot) {
@@ -2200,6 +2216,32 @@ bool NativeCountryRuntime::export_pod_snapshot(
     out.research_auto_purchase = _country_research_auto_purchase;
     out.research_purchased_total = _country_research_purchased_total;
     out.research_consumed_total = _country_research_consumed_total;
+    out.country_tax_defaults = _country_tax_defaults;
+    out.country_tax_default_modes = _country_tax_default_modes;
+    out.country_income_tax_overrides = _country_income_tax_overrides;
+    out.country_consumption_tax_overrides = _country_consumption_tax_overrides;
+    out.country_business_tax_overrides = _country_business_tax_overrides;
+    out.country_import_tax_overrides = _country_import_tax_overrides;
+    out.country_export_tax_overrides = _country_export_tax_overrides;
+    out.country_income_tax_mode_overrides = _country_income_tax_mode_overrides;
+    out.country_consumption_tax_mode_overrides = _country_consumption_tax_mode_overrides;
+    out.country_business_tax_mode_overrides = _country_business_tax_mode_overrides;
+    out.country_import_tax_mode_overrides = _country_import_tax_mode_overrides;
+    out.country_export_tax_mode_overrides = _country_export_tax_mode_overrides;
+    out.cell_tax_policy_ids = _cell_tax_policy_ids;
+    out.cell_tax_policies.resize(_cell_tax_policies.size());
+    for (size_t index = 0; index < _cell_tax_policies.size(); ++index) {
+        for (uint32_t kind = 0; kind < RuntimeCountryPodSnapshot::TAX_KIND_COUNT; ++kind) {
+            out.cell_tax_policies[index].defaults[kind] =
+                _cell_tax_policies[index].defaults[kind];
+            out.cell_tax_policies[index].modes[kind] =
+                _cell_tax_policies[index].default_modes[kind];
+        }
+        for (const CellTaxOverride &entry : _cell_tax_policies[index].overrides) {
+            out.cell_tax_policies[index].overrides.push_back({
+                entry.kind, entry.item, entry.rate, entry.mode});
+        }
+    }
     out.research_progress.resize(_country_research_progress.size() *
                                  static_cast<size_t>(out.technology_count), 0);
     for (size_t slot = 0; slot < _country_research_progress.size(); ++slot) {
@@ -2210,16 +2252,85 @@ bool NativeCountryRuntime::export_pod_snapshot(
                                    static_cast<size_t>(entry.first)] = entry.second;
         }
     }
+    out.research_cost_factor.assign(out.country_count, 1.0);
+    out.research_efficiency.assign(
+        static_cast<size_t>(out.country_count) * 4u, 1.0);
+    if (_modifier_runtime != nullptr && _modifier_runtime->configured()) {
+        static constexpr const char *EFFICIENCY_STATS[4] = {
+            "country.research.agriculture_efficiency",
+            "country.research.engineering_efficiency",
+            "country.research.science_efficiency",
+            "country.research.society_efficiency",
+        };
+        for (uint32_t slot = 0; slot < out.country_count; ++slot) {
+            if (_countries.active[slot] == 0) continue;
+            const uint64_t handle = make_handle(static_cast<int32_t>(slot));
+            double cost_factor = _modifier_runtime->effective_value(
+                ModifierRuntime::COUNTRY, "country.research.cost_factor",
+                handle, 0, 1.0);
+            if (!(cost_factor > 0.0) || !std::isfinite(cost_factor))
+                cost_factor = 1.0;
+            out.research_cost_factor[slot] = cost_factor;
+            for (uint32_t domain = 0; domain < 4u; ++domain) {
+                double efficiency = _modifier_runtime->effective_value(
+                    ModifierRuntime::COUNTRY, EFFICIENCY_STATS[domain],
+                    handle, 0, 1.0);
+                if (!(efficiency > 0.0) || !std::isfinite(efficiency))
+                    efficiency = 1.0;
+                out.research_efficiency[static_cast<size_t>(slot) * 4u + domain] =
+                    efficiency;
+            }
+        }
+    }
+    out.research_peer_flags.assign(
+        static_cast<size_t>(out.country_count) * out.technology_count, 0);
+    for (uint32_t slot = 0; slot < out.country_count; ++slot) {
+        for (uint32_t technology = 0; technology < out.technology_count; ++technology) {
+            const size_t word = static_cast<size_t>(slot) * out.technology_words +
+                technology / 64u;
+            const uint64_t bit = uint64_t{1} << (technology % 64u);
+            if ((out.country_pending_technologies[word] & bit) == 0) continue;
+            uint8_t flags = 0;
+            if (_effect_runtime_enabled && _effect_runtime != nullptr) {
+                const uint64_t target = make_handle(static_cast<int32_t>(slot));
+                const uint64_t effect_id = ((target & 0x00007fffffffffffULL) << 16U) +
+                    static_cast<uint64_t>(technology + 1u);
+                const uint32_t effect_generation = static_cast<uint32_t>(target >> 32U);
+                if (_effect_runtime->has_instance_pod(
+                        static_cast<int64_t>(effect_id), effect_generation))
+                    flags |= COUNTRY_PEER_EFFECT_EXISTS;
+                if (_effect_runtime->instance_fire_acked_pod(
+                        static_cast<int64_t>(effect_id), effect_generation))
+                    flags |= COUNTRY_PEER_EFFECT_FIRE_ACKED;
+            }
+            if (_modifier_runtime != nullptr && _modifier_runtime->configured() &&
+                technology < _technology_modifier_definition_keys.size() &&
+                !_technology_modifier_definition_keys[technology].empty() &&
+                _modifier_runtime->has_technology_effect(
+                    make_handle(static_cast<int32_t>(slot)),
+                    _technology_modifier_definition_keys[technology],
+                    static_cast<int32_t>(technology)))
+                flags |= COUNTRY_PEER_MODIFIER_APPLIED;
+            out.research_peer_flags[static_cast<size_t>(slot) * out.technology_count +
+                                    technology] = flags;
+        }
+    }
     out.is_water = _is_water;
     if (out.cell_count != out.cell_country_slot.size() ||
         out.country_count != out.country_generation.size() ||
         out.country_count != out.country_active.size() ||
         out.country_count != out.country_state_version.size() ||
         out.country_count * out.good_count != out.country_goods.size() ||
+        out.research_cost_factor.size() != out.country_count ||
+        out.research_efficiency.size() != out.country_count * 4u ||
+        out.research_peer_flags.size() !=
+            static_cast<size_t>(out.country_count) * out.technology_count ||
         (out.research_signal_words > 0 &&
          out.country_count * out.research_signal_words !=
              out.country_research_signals.size()) ||
         out.research_signal_evidence_offsets.size() !=
+            static_cast<size_t>(out.country_count) + 1u ||
+        out.research_signal_cell_offsets.size() !=
             static_cast<size_t>(out.country_count) + 1u ||
         out.territory_offsets.size() != static_cast<size_t>(out.country_count) + 1u ||
         out.territory_offsets.back() != static_cast<int32_t>(out.territory_cells.size())) {
@@ -2245,6 +2356,11 @@ bool NativeCountryRuntime::export_pod_catalog(
     out.technology_costs = _technology_costs;
     out.technology_domains = _technology_domains;
     out.technology_flags = _technology_flags;
+    out.technology_effect_required.resize(out.technology_count, 0);
+    for (size_t technology = 0; technology < out.technology_count; ++technology)
+        out.technology_effect_required[technology] =
+            technology < _technology_modifier_definition_keys.size() &&
+            !_technology_modifier_definition_keys[technology].empty() ? 1u : 0u;
     out.prerequisite_offsets = _technology_prerequisite_offsets;
     out.prerequisites = _technology_prerequisites;
     out.milestone_offsets = _technology_milestone_offsets;
@@ -2255,6 +2371,7 @@ bool NativeCountryRuntime::export_pod_catalog(
     out.research_condition_ops = _technology_research_condition_ops;
     out.research_condition_refs = _technology_research_condition_refs;
     out.research_condition_values = _technology_research_condition_values;
+    out.starting_technologies = _starting_technologies;
     out.research_conditions_complete =
         out.research_condition_offsets.size() ==
             static_cast<size_t>(out.technology_count) + 1u &&
@@ -6217,9 +6334,8 @@ int64_t NativeCountryRuntime::effective_research_cost(
     const double cost_factor = slot >= 0 &&
         slot < static_cast<int32_t>(_research_modifier_cache.size())
         ? _research_modifier_cache[static_cast<size_t>(slot)].cost_factor : 1.0;
-    return std::max<int64_t>(1, static_cast<int64_t>(std::llround(
-        static_cast<double>(_technology_costs[static_cast<size_t>(technology)]) *
-        cost_factor)));
+    return country_effective_research_cost(
+        _technology_costs[static_cast<size_t>(technology)], cost_factor);
 }
 
 void NativeCountryRuntime::ensure_research_modifier_cache(
@@ -7128,7 +7244,7 @@ CountryPeerResult NativeCountryRuntime::apply_peer_intent(
 }
 
 CountryPeerResult NativeCountryRuntime::execute_peer_intent_main_thread(
-        const CountryPeerIntent &intent) {
+        const CountryPeerIntent &intent, bool validate_local_identity) {
     CountryPeerResult result;
     result.protocol_version = intent.protocol_version;
     result.opcode = intent.opcode;
@@ -7149,9 +7265,11 @@ CountryPeerResult NativeCountryRuntime::execute_peer_intent_main_thread(
         return result;
     };
     if (intent.protocol_version != COUNTRY_PEER_PROTOCOL_VERSION ||
-        intent.request_id == 0 || intent.session_epoch != _session_epoch ||
-        intent.country_generation == 0 || intent.country_generation > _generation ||
-        intent.day < 0)
+        intent.request_id == 0 || intent.day < 0 ||
+        (validate_local_identity &&
+         (intent.session_epoch != _session_epoch ||
+          intent.country_generation == 0 ||
+          intent.country_generation > _generation)))
         return reject("country_peer_adapter_identity_invalid");
 
     const bool effect_intent =
@@ -7287,6 +7405,11 @@ CountryPeerResult NativeCountryRuntime::execute_peer_intent_main_thread(
         _modifier_runtime->domain_snapshot_version(ModifierRuntime::COUNTRY);
     ++_peer_results_consumed;
     return result;
+}
+
+CountryPeerResult NativeCountryRuntime::execute_peer_intent_from_worker(
+        const CountryPeerIntent &intent) {
+    return execute_peer_intent_main_thread(intent, false);
 }
 
 bool NativeCountryRuntime::service_peer_intents_main_thread(
@@ -7620,36 +7743,20 @@ int32_t NativeCountryRuntime::run_research_day(
 
         const Clock::time_point allocation_started = Clock::now();
 
-        int64_t shares[4] = {0, 0, 0, 0};
-        int64_t remainders[4] = {0, 0, 0, 0};
-        int64_t assigned = 0;
-        for (int32_t domain = 0; domain < 4; ++domain) {
-            const int32_t weight = _country_research_weights_bp[
+        std::array<int32_t, COUNTRY_RESEARCH_DOMAIN_COUNT> weights{{0, 0, 0, 0}};
+        for (int32_t domain = 0; domain < 4; ++domain)
+            weights[static_cast<size_t>(domain)] = _country_research_weights_bp[
                 static_cast<size_t>(slot) * 4U + static_cast<size_t>(domain)];
-            const int64_t quotient = available / 10000;
-            const int64_t remainder = available % 10000;
-            shares[domain] = quotient * weight + (remainder * weight) / 10000;
-            remainders[domain] = (remainder * weight) % 10000;
-            assigned += shares[domain];
-        }
-        std::array<int32_t, 4> remainder_order{{0, 1, 2, 3}};
-        std::stable_sort(remainder_order.begin(), remainder_order.end(),
-            [&](int32_t lhs, int32_t rhs) {
-                if (remainders[lhs] != remainders[rhs])
-                    return remainders[lhs] > remainders[rhs];
-                return lhs < rhs;
-            });
-        const int64_t remainder_units = std::clamp<int64_t>(
-            available - assigned, 0, 3);
-        for (int64_t i = 0; i < remainder_units; ++i) {
-            ++shares[remainder_order[static_cast<size_t>(i)]];
-            ++_research_remainder_iterations;
-        }
+        uint64_t remainder_iterations = 0;
+        const CountryResearchAllocation allocation =
+            country_allocate_research_points(available, weights,
+                                              &remainder_iterations);
+        _research_remainder_iterations += remainder_iterations;
 
         int64_t consumed = 0;
         int64_t newly_deferred = 0;
         for (int32_t domain = 0; domain < 4; ++domain) {
-            int64_t domain_points = shares[domain];
+            int64_t domain_points = allocation.shares[static_cast<size_t>(domain)];
             const size_t length_index = static_cast<size_t>(slot) * 4U +
                 static_cast<size_t>(domain);
             const uint8_t initial_length =
@@ -7673,23 +7780,20 @@ int32_t NativeCountryRuntime::run_research_day(
                 const double efficiency =
                     _research_modifier_cache[static_cast<size_t>(slot)]
                         .efficiency[static_cast<size_t>(domain)];
-                const int64_t effective_cost = effective_research_cost(
-                    slot, technology, working_context);
-                const int64_t remaining = std::max<int64_t>(
-                    0, effective_cost - progress);
-                const int64_t spend_needed = std::max<int64_t>(
-                    1, static_cast<int64_t>(std::ceil(
-                        static_cast<double>(remaining) /
-                        std::max(0.000001, efficiency))));
-                const int64_t spend = std::min(domain_points, spend_needed);
-                const int64_t progress_gain = std::min<int64_t>(
-                    remaining, std::max<int64_t>(1, static_cast<int64_t>(
-                        std::floor(static_cast<double>(spend) * efficiency))));
-                set_progress(slot, technology, progress + progress_gain);
-                domain_points -= spend;
-                consumed += spend;
-                _country_research_progress_total[static_cast<size_t>(slot)] += progress_gain;
-                if (progress + progress_gain >= effective_cost) {
+                const double cost_factor = _research_modifier_cache[
+                    static_cast<size_t>(slot)].cost_factor;
+                const CountryResearchProgress step =
+                    country_advance_research_progress(
+                        progress,
+                        _technology_costs[static_cast<size_t>(technology)],
+                        cost_factor, efficiency, domain_points);
+                if (!step.valid || step.spend <= 0) break;
+                set_progress(slot, technology, progress + step.progress_gain);
+                domain_points -= step.spend;
+                consumed += step.spend;
+                _country_research_progress_total[static_cast<size_t>(slot)] +=
+                    step.progress_gain;
+                if (step.completed) {
                     _country_pending_technologies[word_base + technology / 64] |=
                         1ULL << (technology % 64);
                     if (use_pending_queue)

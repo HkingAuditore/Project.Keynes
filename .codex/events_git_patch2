@@ -1,0 +1,18 @@
+diff --git a/gdext/src/native_simulation_host.cpp b/gdext/src/native_simulation_host.cpp
+--- a/gdext/src/native_simulation_host.cpp
++++ b/gdext/src/native_simulation_host.cpp
+@@ -431,6 +431,17 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
+     _events_authority.reset();
+     _events_snapshots.reset();
++    _events_last_processed_day = -1;
++    _events_pod_ready.store(false, std::memory_order_release);
++    _events_pod_plan_ms.store(0.0, std::memory_order_release);
++    _events_pod_replay_ms.store(0.0, std::memory_order_release);
++    _events_pod_state_hash.store(0, std::memory_order_release);
++    _events_pod_snapshot_generation.store(0, std::memory_order_release);
++    _events_pod_event_count.store(0, std::memory_order_release);
++    _events_pod_ack_count.store(0, std::memory_order_release);
++    _events_pod_drop_count.store(0, std::memory_order_release);
++    for (auto &character : _events_pod_fallback_reason) {
++        character.store('\0', std::memory_order_relaxed);
++    }

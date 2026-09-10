@@ -388,8 +388,19 @@ RuntimeDomainReport RuntimeDomainPodPipeline::run_trigger(
     const auto begin = std::chrono::steady_clock::now();
     RuntimeTriggerPodPlan plan;
     std::string error;
-    if (!_trigger_authority.plan_day(context.day, context.input_generation, plan, error) ||
-        !_trigger_authority.commit_day(plan, plan.acks, error)) {
+    if (!_trigger_authority.plan_day(context.day, context.input_generation, plan, error)) {
+        out.preflight_ok = 0;
+        runtime_copy_text(out.fallback_reason, error.empty()
+            ? "trigger_pod_transaction_failed" : error.c_str());
+        out.timing.elapsed_ms = elapsed_ms(begin);
+        return out;
+    }
+    // Required ACK identities are not received ACKs. This compatibility
+    // pipeline has no Trigger peer adapter, so an emitted intent must leave
+    // the transaction uncommitted until a real receipt is supplied.
+    static const std::vector<RuntimeDomainAck> no_trigger_acks;
+    if (!_trigger_authority.commit_day(plan, no_trigger_acks, error)) {
+        _trigger_authority.discard_plan();
         out.preflight_ok = 0;
         runtime_copy_text(out.fallback_reason, error.empty()
             ? "trigger_pod_transaction_failed" : error.c_str());

@@ -237,6 +237,12 @@ public:
     godot::Dictionary poll_country_worker_intent();
     godot::Dictionary submit_country_worker_result(
         const godot::Dictionary &result);
+    godot::Dictionary get_country_economy_asset_protocol_status() const;
+    godot::Dictionary poll_country_economy_asset_request();
+    godot::Dictionary submit_country_economy_asset_result(
+        const godot::Dictionary &result);
+    bool runtime_country_host_economy_protocol_self_test() const;
+    bool runtime_country_host_rejection_self_test() const;
     // Main-thread transport service for the Country worker.  In SHADOW this
     // only replays a typed, side-effect-free ACK; ACTIVE must not use this
     // compatibility path until the peer transaction bridge is authoritative.
@@ -368,6 +374,9 @@ public:
     godot::Dictionary bootstrap_country(const godot::Dictionary &packet,
                                         const godot::PackedByteArray &is_water);
     godot::Dictionary submit_country_commands(const godot::Dictionary &packed_batch);
+    godot::Dictionary poll_country_command_receipts(
+            int64_t after_request_id = 0, int limit = 128);
+    bool runtime_country_host_receipt_self_test() const;
     godot::Dictionary run_country_slice(const godot::Dictionary &ctx);
     /// Push NativeCountryRuntime territory into DataCore + MapData before
     /// vision/borders consume country_slot_arr. CLAIM can bump native ownership

@@ -1,6 +1,6 @@
 {
   "stage": "K2-B",
-  "generated_local": "2026-09-09T17:10:00+08:00",
+  "generated_local": "2026-09-09",
   "status": "partial",
   "authority_mask_before": "0x802",
   "authority_mask_after": "0x802",
@@ -15,6 +15,11 @@
     "good_to_market",
     "good_from_market",
     "research_purchase"
+  ],
+  "continuations": [
+    "fiscal_reservation_per_country",
+    "fiscal_settlement_per_country",
+    "research_purchase_per_candidate"
   ],
   "transaction_states": [
     "Created",
@@ -32,13 +37,15 @@
     "runtime_country_peer_bridge_test.gd: 106 checks, 0 failures",
     "runtime_country_save_roundtrip_test.gd: 36 checks, 0 failures",
     "runtime_country_pod_test.gd: 34 checks, 0 failures",
+    "economy_fiscal_reservation_continuation_test.gd: 40 checks, 0 failures",
+    "economy_cadence_runtime_test.gd: PASS on PKEC schema 51",
     "canal_runtime_test.gd: 28 checks, 0 failures",
     "treasury_construction_runtime_test.gd: 2 grouped-material planner failures; bridge-specific assertions passed"
   ],
   "known_limitations": [
     "persistent NativeSimulationHost Country stage not ACTIVE",
     "NativeSimulationHost persistent Country stage not ACTIVE",
-    "fiscal escrow, cohort cash and ordinary market-goods production callers remain compatibility bridges; construction/canal use synchronous compatibility adapters over the typed Country transaction state machine",
+    "coordinators still execute synchronously inside the Economy stage; persistent Host outbox/inbox continuation and formal Country ACTIVE promotion remain incomplete",
     "no Country authority mask promotion"
   ]
 }

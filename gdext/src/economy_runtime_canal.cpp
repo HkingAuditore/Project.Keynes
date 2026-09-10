@@ -513,23 +513,24 @@ bool NativeEconomyRuntime::apply_canal_build_command(
         stage_canal_receipt(cmd, false, "canal_market_unavailable");
         return true;
     }
-    if (!_country_runtime->spend_treasury_assets(
-            static_cast<int64_t>(cmd.target_handle), quote.material_good_ids.data(),
-            treasury_used.data(), 2, cash)) {
-        stage_canal_receipt(cmd, false, "canal_treasury_preflight_drift");
+    const std::vector<int32_t> treasury_good_ids(
+        quote.material_good_ids.begin(), quote.material_good_ids.end());
+    const std::vector<int64_t> treasury_quantities(
+        treasury_used.begin(), treasury_used.end());
+    const std::vector<int64_t> market_quantities(
+        market_used.begin(), market_used.end());
+    int64_t committed_cash = 0;
+    if (!coordinate_country_treasury_spend(
+            quote.route_cells.front(), market,
+            static_cast<int64_t>(cmd.target_handle), treasury_good_ids,
+            treasury_quantities, market_quantities, cash, committed_cash, error)) {
+        stage_canal_receipt(cmd, false, error.empty()
+            ? "canal_treasury_preflight_drift" : error.c_str());
         return true;
     }
     for (int i = 0; i < 2; ++i) {
-        const int64_t lane = _market.index(market, quote.material_good_ids[i]);
-        audit_touch_market_lane(static_cast<size_t>(lane));
-        _market.stock[lane] -= market_used[i];
         _construction_goods_consumed = saturating_add(_construction_goods_consumed,
             quote.material_quantities[i], _saturation_count);
-    }
-    if (cash > 0 && credit_local_merchants(quote.route_cells.front(), cash,
-            CASHFLOW_MERCHANT_BUSINESS) != cash) {
-        error = "canal_merchant_credit_invariant_failed";
-        return false;
     }
     const uint32_t stable_id = static_cast<uint32_t>(_next_canal_project_id++);
     const uint64_t handle = (uint64_t{1} << 32U) | stable_id;

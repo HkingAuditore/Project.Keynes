@@ -1,0 +1,11 @@
+*** Begin Patch
+*** Update File: gdext/src/native_simulation_host.h
+@@
+     std::atomic<uint64_t> _events_pod_drop_count{0};
+     std::array<std::atomic<char>, 64> _events_pod_fallback_reason{};
++    // Events is a diagnostic sidecar. Keep a worker-local watermark so a
++    // Climate input-barrier retry cannot advance its generation twice for the
++    // same host day.
++    int64_t _events_last_processed_day = -1;
+     RuntimeEffectPodAuthority _effect_pod_authority;
+*** End Patch

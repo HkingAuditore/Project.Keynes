@@ -310,15 +310,15 @@ bool NativeEconomyRuntime::apply_treasury_sponsored_build_command(
     if (_country_runtime->cash_for_handle(
             static_cast<int64_t>(cmd.target_handle)) < total_cash)
         return reject("construction_treasury_cash_insufficient");
-    if (!_country_runtime->spend_treasury_assets(
-            static_cast<int64_t>(cmd.target_handle), good_ids.data(),
-            treasury_used.data(), good_ids.size(), total_cash))
-        return reject("construction_treasury_preflight_drift");
+    int64_t committed_cash = 0;
+    if (!coordinate_country_treasury_spend(
+            cell, market, static_cast<int64_t>(cmd.target_handle), good_ids,
+            treasury_used, market_used, total_cash, committed_cash, error))
+        return reject(error.empty() ? "construction_treasury_preflight_drift"
+                                    : error.c_str());
 
     for (size_t i = 0; i < good_ids.size(); ++i) {
         const int64_t lane = _market.index(market, good_ids[i]);
-        audit_touch_market_lane(static_cast<size_t>(lane));
-        _market.stock[lane] -= market_used[i];
         _construction_goods_consumed = saturating_add(
             _construction_goods_consumed, required[i], _saturation_count);
         const int32_t signal = ensure_market_signal_index(cell, good_ids[i]);
@@ -328,11 +328,6 @@ bool NativeEconomyRuntime::apply_treasury_sponsored_build_command(
                 _epoch_nonhousehold_withdrawals[signal], required[i],
                 _saturation_count);
         }
-    }
-    if (total_cash > 0 && credit_local_merchants(
-            cell, total_cash, CASHFLOW_MERCHANT_BUSINESS) != total_cash) {
-        error = "construction_merchant_credit_invariant_failed";
-        return false;
     }
     const int32_t time_factor = country_slot >= 0 && country_slot <
             static_cast<int32_t>(_epoch_country_construction_time_factor_q16.size())

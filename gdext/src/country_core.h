@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -157,6 +158,43 @@ uint64_t country_peer_request_id(uint64_t session_epoch,
 void country_peer_copy_reason(
     std::array<char, COUNTRY_PEER_REASON_CAPACITY> &destination,
     const char *source) noexcept;
+
+// Shared Country research math.  These functions intentionally contain no
+// Godot/runtime references so the synchronous reference authority and the POD
+// authority cannot drift in the completion-day calculation.  The callers own
+// queue traversal, prerequisite predicates and peer intents; this layer owns
+// only the fixed-point/integer arithmetic and deterministic remainder order.
+constexpr uint32_t COUNTRY_RESEARCH_DOMAIN_COUNT = 4u;
+
+struct CountryResearchAllocation {
+    std::array<int64_t, COUNTRY_RESEARCH_DOMAIN_COUNT> shares{{0, 0, 0, 0}};
+    std::array<int64_t, COUNTRY_RESEARCH_DOMAIN_COUNT> remainders{{0, 0, 0, 0}};
+    int64_t available = 0;
+    int64_t assigned = 0;
+    int64_t remainder_units = 0;
+};
+
+CountryResearchAllocation country_allocate_research_points(
+    int64_t available,
+    const std::array<int32_t, COUNTRY_RESEARCH_DOMAIN_COUNT> &weights,
+    uint64_t *remainder_iterations = nullptr) noexcept;
+
+struct CountryResearchProgress {
+    bool valid = false;
+    int64_t effective_cost = 0;
+    int64_t remaining = 0;
+    int64_t spend_needed = 0;
+    int64_t spend = 0;
+    int64_t progress_gain = 0;
+    bool completed = false;
+};
+
+int64_t country_effective_research_cost(
+    int64_t base_cost, double cost_factor) noexcept;
+
+CountryResearchProgress country_advance_research_progress(
+    int64_t progress, int64_t base_cost, double cost_factor,
+    double efficiency, int64_t available_points) noexcept;
 
 enum class CountryCommandReceiptCode : uint8_t {
     ADMISSION_REJECTED = 0,

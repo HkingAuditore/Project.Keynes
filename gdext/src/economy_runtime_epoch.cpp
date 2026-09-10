@@ -17,6 +17,9 @@ double elapsed_ms(const Clock::time_point &start) {
 } // namespace
 
 void NativeEconomyRuntime::clear_epoch_metrics() {
+    _epoch_begin_post_fiscal_pending = false;
+    _epoch_begin_pending_day = -1;
+    _fiscal_reservation_continuation = {};
     _families_formed = 0;
     _families_dissolved = 0;
     _family_membership_edges_processed = 0;
@@ -138,6 +141,7 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _building_investment_candidates = 0;
     _fiscal_business_prospective_lanes = 0;
     _fiscal_business_prospective_request = 0;
+    _fiscal_settlement_continuation = {};
     _building_owner_mobility = 0;
     _building_owner_job_reallocations = 0;
     _building_owner_understaffed_reallocations = 0;
@@ -262,6 +266,7 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _country_research_procurement_slices = 0;
     _country_research_procurement_transactions = 0;
     _country_research_procurement_rejections = 0;
+    _country_research_procurement_continuation = {};
     auto reset_cell_metric = [&](std::vector<int64_t> &metric) {
         if (metric.size() != static_cast<size_t>(_cell_count)) {
             metric.assign(static_cast<size_t>(_cell_count), 0);
@@ -820,6 +825,7 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
                 static_cast<size_t>(resource) * _cell_count + cell);
         }
     }
+    _epoch_begin_resource_lane_ms = elapsed_ms(resource_lane_started);
     // Freeze the deterministic cost model once per epoch. Recomputing these
     // cohort/building scans in every household continuation was measurable
     // scheduler-side overhead and provided no newer information.
@@ -859,6 +865,32 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
     _epoch_begin_workset_ms = elapsed_ms(workset_started);
     const auto fiscal_started = Clock::now();
     if (!prepare_fiscal_budgets(day_index, error)) return false;
+    _epoch_begin_fiscal_ms += elapsed_ms(fiscal_started);
+    if (_fiscal_reservation_continuation.active) {
+        _epoch_begin_post_fiscal_pending = true;
+        _epoch_begin_pending_day = day_index;
+        _prepare_ms = elapsed_ms(prepare_started);
+        _epoch_begin_ms = elapsed_ms(epoch_started);
+        return true;
+    }
+    if (!finish_epoch_start_after_fiscal(day_index, error)) return false;
+    _prepare_ms = elapsed_ms(prepare_started);
+    _epoch_begin_ms = elapsed_ms(epoch_started);
+    return true;
+}
+
+bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
+        int64_t day_index, std::string &error) {
+    if (_fiscal_reservation_continuation.active) {
+        error = "fiscal_reservation_still_active";
+        return false;
+    }
+    if (_fiscal_reservation_continuation.phase == 3) {
+        error = _fiscal_reservation_continuation.last_error.empty()
+            ? "fiscal_reservation_faulted"
+            : _fiscal_reservation_continuation.last_error;
+        return false;
+    }
     // Fiscal escrow is removed from the country treasury by the reservation
     // pass. Research demand must see the remaining cash, so freeze it only
     // after fiscal budgets are prepared.
@@ -867,7 +899,6 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
     // quota routine excludes fiscal/trade escrow, so refresh it after fiscal
     // reservation and before production/investment planning.
     refresh_epoch_bullion_quota();
-    _epoch_begin_fiscal_ms = elapsed_ms(fiscal_started);
     const auto resource_lane_2_started = Clock::now();
     for (int32_t resource = 0;
          resource < static_cast<int32_t>(_resource_ids.size()); ++resource) {
@@ -876,8 +907,7 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
                 static_cast<size_t>(resource) * _cell_count + cell);
         }
     }
-    _epoch_begin_resource_lane_ms = elapsed_ms(resource_lane_started) +
-        elapsed_ms(resource_lane_2_started);
+    _epoch_begin_resource_lane_ms += elapsed_ms(resource_lane_2_started);
     const auto construction_csr_started = Clock::now();
     _pending_construction_cell_offsets.assign(
         static_cast<size_t>(_cell_count) + 1, 0);
@@ -1022,7 +1052,6 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
     // and every good at epoch open while preserving the incremental audit
     // shadow for all actual mutation lanes.
     _epoch_begin_audit_lane_ms = 0.0;
-    _prepare_ms = elapsed_ms(prepare_started);
     ++_epoch_id;
     trace_begin_epoch();
     const auto commands_started = Clock::now();
@@ -1126,7 +1155,8 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
     }), _epoch_commands.end());
     _epoch_begin_commands_ms = elapsed_ms(commands_started);
     _stage = _buildings.empty() ? Stage::TRADE_SETTLE : Stage::BUILDING_PLAN;
-    _epoch_begin_ms = elapsed_ms(epoch_started);
+    _epoch_begin_post_fiscal_pending = false;
+    _epoch_begin_pending_day = -1;
     return true;
 }
 

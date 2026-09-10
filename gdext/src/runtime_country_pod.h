@@ -16,6 +16,11 @@ struct RuntimeCountryPodPlan {
     std::vector<RuntimeCountryCommand> commands;
     std::vector<RuntimeCommandReceipt> receipts;
     std::vector<RuntimeDomainIntent> intents;
+    // Country-owned Economy transactions are published as a separate typed
+    // outbox.  The vector is intentionally independent from `intents`: an
+    // asset transaction has its own prepare/commit/complete lifecycle and
+    // must not be coerced into a generic peer ACK.
+    std::vector<RuntimeEconomyAssetRequest> economy_requests;
     std::vector<RuntimeDomainAck> acks;
     uint32_t required_ack_count = 0;
     uint8_t preflight_ok = 0;
@@ -57,11 +62,21 @@ public:
                    std::string &error);
     bool queue_command(const RuntimeCountryCommand &command,
                        std::string &error);
+    // Remove only commands belonging to a rejected semantic batch. This is
+    // used when transport admission succeeded but worker decode/preflight
+    // rejects the batch before a committed plan exists.
+    void remove_pending_commands(const std::vector<uint64_t> &request_ids) noexcept;
     bool plan_day(int64_t day, uint64_t input_generation,
                   RuntimeCountryPodPlan &plan, std::string &error);
     bool commit_day(RuntimeCountryPodPlan &plan,
                     const std::vector<RuntimeDomainAck> &acks,
                     std::string &error);
+    // Commit the Country-side semantic work of a boundary whose peer intent
+    // was rejected. Research consumption, pending activation and already
+    // ordered Country commands remain durable; generation does not advance
+    // and the pending technology stays blocked until a later-day retry.
+    bool commit_rejected_day(RuntimeCountryPodPlan &plan,
+                             std::string &error);
     // Abandon a prepared plan after a rejected ACK or a scheduler fault. The
     // committed state and pending command queue remain untouched, allowing a
     // deterministic retry or an explicit fault transition.
@@ -104,8 +119,16 @@ private:
                                 int32_t slot, int32_t technology) const;
     bool technology_prerequisites_met(const RuntimeCountryPodSnapshot &state,
                                       int32_t slot, int32_t technology) const;
+    bool run_research_day(RuntimeCountryPodSnapshot &state,
+                          int64_t day, RuntimeCountryPodPlan &plan,
+                          std::string &error) const;
+    bool activate_pending_technology(RuntimeCountryPodSnapshot &state,
+                                     int32_t slot, int32_t technology,
+                                     const RuntimeCountryPodPlan &plan,
+                                     uint8_t peer_flags,
+                                     std::string &error) const;
     void rebuild_territory_csr(RuntimeCountryPodSnapshot &state) const;
-    static uint64_t hash_state(const RuntimeCountryPodSnapshot &state);
+    static uint64_t hash_business_state(const RuntimeCountryPodSnapshot &state);
 };
 
 // Research/territory probe that can run on a worker without touching the
