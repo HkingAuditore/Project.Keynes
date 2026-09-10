@@ -371,9 +371,21 @@ RuntimeDomainReport RuntimeDomainAuthorityRunner::run_trigger_input(
         std::lock_guard<std::mutex> lock(_trigger_mutex);
         std::string trigger_error;
         if (!_trigger_authority.plan_day(context.day, context.input_generation,
-                                         _trigger_plan, trigger_error) ||
-            !_trigger_authority.commit_day(_trigger_plan, _trigger_plan.acks,
+                                         _trigger_plan, trigger_error)) {
+            set_report_error(out, trigger_error.empty()
+                ? "trigger_pod_transaction_failed" : trigger_error.c_str());
+            out.timing.elapsed_ms = elapsed_ms(started);
+            return out;
+        }
+        // plan.acks describes the ACK identities required by the plan; it is
+        // not a receipt from Effect/another domain. In the SHADOW runner no
+        // peer adapter is wired for Trigger yet, so pass only real receipts
+        // (currently none). This keeps missing ACKs visible instead of
+        // turning the requirement list into a synthetic success.
+        static const std::vector<RuntimeDomainAck> no_trigger_acks;
+        if (!_trigger_authority.commit_day(_trigger_plan, no_trigger_acks,
                                            trigger_error)) {
+            _trigger_authority.discard_plan();
             set_report_error(out, trigger_error.empty()
                 ? "trigger_pod_transaction_failed" : trigger_error.c_str());
             out.timing.elapsed_ms = elapsed_ms(started);

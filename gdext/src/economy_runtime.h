@@ -678,6 +678,7 @@ private:
         GOVERNMENT_RESEARCH_PROCUREMENT = 15,
         FAMILY_COMMIT = 16,
         PERSON_COMMIT = 17,
+        FISCAL_SETTLEMENT = 18,
     };
 
     struct CountryResearchProcurementCandidate {
@@ -685,6 +686,68 @@ private:
         int32_t market = -1;
         int32_t good = -1;
         int64_t price = 0;
+    };
+
+    // Durable-in-epoch continuation for the Country/Economy research
+    // procurement outbox.  The phase is intentionally explicit: a call may
+    // end after any transition without losing the selected market, merchant
+    // allocation or transaction identity.
+    struct CountryResearchProcurementContinuation {
+        bool active = false;
+        // 0=idle, 1=country_prepare, 2=peer_prepared,
+        // 3=country_applied, 4=peer_apply, 5=completed,
+        // 6=rejected, 7=faulted.
+        int32_t phase = 0;
+        int32_t candidate_index = -1;
+        int32_t country = -1;
+        int32_t market = -1;
+        int32_t good = -1;
+        int64_t quantity = 0;
+        int64_t cash = 0;
+        int64_t merchant_population = 0;
+        int64_t merchant_population_prefix = 0;
+        int64_t merchant_distributed = 0;
+        uint64_t transaction_id = 0;
+        uint64_t session_epoch = 0;
+        uint64_t country_generation = 0;
+        uint64_t peer_generation = 0;
+        size_t merchant_cursor = 0;
+        bool market_applied = false;
+        std::vector<int32_t> living_merchants;
+        std::string last_error;
+    };
+
+    // Fiscal settlement is a peer boundary too. Keep the per-country
+    // return/collect work outside the stack so a large country set can yield
+    // without rebuilding the already aggregated fiscal rows.
+    struct FiscalSettlementContinuation {
+        bool active = false;
+        // 0=idle, 1=settling countries, 2=completed, 3=faulted.
+        int32_t phase = 0;
+        int32_t country_cursor = 0;
+        int32_t country_count = 0;
+        int64_t last_unused = 0;
+        int64_t last_collected = 0;
+        std::vector<int64_t> unused_by_country;
+        std::vector<int64_t> collected_by_country;
+        std::string last_error;
+    };
+
+    // Epoch-open fiscal reservation is a peer transaction boundary as well.
+    // Keep the request plan immutable while countries are reserved one at a
+    // time so an epoch can yield without recomputing tax lanes or changing
+    // the order in which treasury reservations are admitted.
+    struct FiscalReservationContinuation {
+        bool active = false;
+        // 0=idle, 1=reserving countries, 2=completed, 3=faulted.
+        int32_t phase = 0;
+        int32_t country_cursor = 0;
+        int32_t country_count = 0;
+        int64_t day_index = -1;
+        int64_t last_requested = 0;
+        int64_t last_reserved = 0;
+        std::vector<int64_t> requested_by_country;
+        std::string last_error;
     };
 
     enum class PublishPhase : uint8_t {
@@ -3057,6 +3120,8 @@ private:
     bool _fatal = false;
     std::string _fatal_reason;
     Stage _stage = Stage::IDLE;
+    bool _epoch_begin_post_fiscal_pending = false;
+    int64_t _epoch_begin_pending_day = -1;
     Stage _executed_stage = Stage::IDLE;
     std::string _executed_substage;
     PublishPhase _publish_phase = PublishPhase::PREPARE;
@@ -3520,6 +3585,7 @@ private:
     int64_t _country_research_procurement_slices = 0;
     int64_t _country_research_procurement_transactions = 0;
     int64_t _country_research_procurement_rejections = 0;
+    CountryResearchProcurementContinuation _country_research_procurement_continuation;
     std::vector<int64_t> _merchant_procurement_paid_by_cell;
     std::vector<int64_t> _merchant_procurement_retail_by_cell;
     std::vector<int64_t> _merchant_procurement_factor_weighted_cash_by_cell;
@@ -4636,6 +4702,8 @@ private:
     std::vector<int64_t> _fiscal_cumulative_collected;
     std::vector<int64_t> _fiscal_cumulative_requests;
     std::vector<int64_t> _fiscal_cumulative_paid;
+    FiscalReservationContinuation _fiscal_reservation_continuation;
+    FiscalSettlementContinuation _fiscal_settlement_continuation;
     // Tariffs stay on a sparse cell x {import, export} lane separate from the
     // domestic cell x 3 fiscal arrays. The dense generation-stamped lookup is
     // transient metadata; monetary columns exist only for endpoint lanes
@@ -4986,6 +5054,8 @@ private:
     godot::Dictionary household_slice_breakdown_ms() const;
     godot::Dictionary household_slice_breakdown_work() const;
     bool start_epoch(int64_t day_index, std::string &error);
+    bool finish_epoch_start_after_fiscal(int64_t day_index,
+                                         std::string &error);
     bool trade_planner_should_run() const;
     bool run_trade_planner_slice(int64_t &work_done, std::string &error);
     bool begin_trade_plan_slice(int64_t &work_done, std::string &error);
@@ -5333,6 +5403,8 @@ private:
     void settle_absolute_daily_taxes_for_cell(int32_t cell,
                                               int64_t &saturation_count);
     bool commit_fiscal(std::string &error);
+    bool advance_fiscal_reservation(std::string &error);
+    bool advance_fiscal_settlement(std::string &error);
     int32_t frozen_tax_rate(int32_t cell, int32_t kind, int32_t item) const;
     int32_t frozen_tax_mode(int32_t cell, int32_t kind, int32_t item) const;
     int64_t apply_fiscal_tax(int32_t cell, int32_t kind, int64_t base,
@@ -5607,12 +5679,8 @@ private:
     bool rebuild_merchant_ranges(std::string &error);
     bool repair_cell_merchant_and_rebuild(int32_t cell, std::string &error);
     bool run_government_research_procurement(std::string &error);
-    // Economy-owned peer coordinator for Country treasury research purchases.
-    // The caller keeps deterministic candidate ordering; this helper owns the
-    // typed prepare/commit/apply/ACK boundary and the peer-side mutations.
-    bool coordinate_country_research_purchase(
-        int32_t country, int32_t market, int32_t good, int64_t quantity,
-        int64_t cash, const std::vector<int32_t> &living_merchants,
+    bool advance_country_research_procurement(
+        CountryResearchProcurementContinuation &continuation,
         std::string &error);
     bool coordinate_country_fiscal_transaction(
         int32_t country, int32_t operation, int64_t amount,
@@ -5623,6 +5691,19 @@ private:
     bool coordinate_country_cohort_cash(
         int32_t cohort_slot, int64_t country_handle, int32_t operation,
         int64_t amount, int64_t &committed, std::string &error);
+    // Economy-owned coordinator for Country/market inventory transfers. The
+    // market lane is preflighted before Country commit and mutated once after
+    // the commit decision.
+    bool coordinate_country_market_goods(
+        int32_t market, int32_t good, int64_t country_handle,
+        int32_t operation, int64_t amount, int64_t &committed,
+        std::string &error);
+    bool coordinate_country_treasury_spend(
+        int32_t merchant_cell, int32_t market, int64_t country_handle,
+        const std::vector<int32_t> &good_ids,
+        const std::vector<int64_t> &treasury_quantities,
+        const std::vector<int64_t> &market_quantities, int64_t cash,
+        int64_t &committed_cash, std::string &error);
     void refresh_country_research_goods_consumed();
     bool compile_family_catalog(const godot::Dictionary &catalog,
                                 std::string &error);
@@ -5817,6 +5898,7 @@ private:
     int64_t memory_bytes() const;
     int32_t choose_epoch_days(int64_t cohort_count);
     void write_cadence_report(godot::Dictionary &out) const;
+    void write_fiscal_continuation_report(godot::Dictionary &out) const;
     int32_t locked_market_cycle_days() const;
     int32_t locked_slow_cycle_days() const;
     int32_t locked_plan_cycle_days() const;

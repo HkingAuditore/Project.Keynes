@@ -210,7 +210,10 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
     while (iterations++ < 64 && !over_budget()) {
         bool progressed = false;
         Dictionary ctx = ctx_for();
-        if (_country_runtime != nullptr &&
+        const bool country_worker_authoritative = _runtime_host != nullptr &&
+            _runtime_host->domain_is_worker_authoritative(
+                RuntimeDomainId::COUNTRY);
+        if (!country_worker_authoritative && _country_runtime != nullptr &&
             static_cast<NativeCountryRuntime *>(_country_runtime)->should_run(day)) {
             if (_effect_runtime != nullptr) dispatch_effect_native_country();
             Dictionary country_result = run_country_slice(ctx);
@@ -361,6 +364,8 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
     // budget yield alone froze the calendar for as long as trigger stayed
     // busy, because the frozen day kept trigger's own work queued.
     const bool pending =
+        (_runtime_host == nullptr || !_runtime_host->domain_is_worker_authoritative(
+            RuntimeDomainId::COUNTRY)) &&
         (_country_runtime != nullptr &&
          static_cast<NativeCountryRuntime *>(_country_runtime)->should_run(day)) ||
         (_effect_runtime != nullptr &&
@@ -592,6 +597,34 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
         out["country_pod_pending_checks"] = static_cast<int>(host.country_pod_pending_checks);
         out["country_pod_ack_pending"] = host.country_pod_ack_pending;
         out["country_pod_blocker"] = String(host.country_pod_blocker);
+        out["country_worker_configured"] = host.country_worker_configured;
+        out["country_worker_plan_active"] = host.country_worker_plan_active;
+        out["country_worker_waiting_for_peer"] = host.country_worker_waiting_for_peer;
+        out["country_worker_pending_intents"] = static_cast<int64_t>(
+            host.country_worker_pending_intents);
+        out["country_worker_queued_intents"] = static_cast<int64_t>(
+            host.country_worker_queued_intents);
+        out["country_worker_result_count"] = static_cast<int64_t>(
+            host.country_worker_result_count);
+        out["country_worker_rejected_results"] = static_cast<int64_t>(
+            host.country_worker_rejected_results);
+        out["country_worker_session_epoch"] = static_cast<int64_t>(
+            host.country_worker_session_epoch);
+        out["country_worker_country_generation"] = static_cast<int64_t>(
+            host.country_worker_country_generation);
+        out["country_worker_day"] = host.country_worker_day;
+        out["country_worker_continuation_index"] = static_cast<int64_t>(
+            host.country_worker_continuation_index);
+        out["country_worker_boundary_id"] = static_cast<int64_t>(
+            host.country_worker_boundary_id);
+        out["country_worker_last_admitted_submit_order"] = static_cast<int64_t>(
+            host.country_worker_last_admitted_submit_order);
+        out["country_worker_expected_base_generation"] = static_cast<int64_t>(
+            host.country_worker_expected_base_generation);
+        out["country_worker_catalog_hash"] = static_cast<int64_t>(
+            host.country_worker_catalog_hash);
+        out["country_worker_last_reason"] = String(host.country_worker_last_reason);
+        out["country_worker_authoritative"] = host.country_worker_authoritative;
         out["trigger_parity_day"] = host.trigger_parity_day;
         out["trigger_reference_day"] = host.trigger_reference_day;
         out["trigger_input_hash"] = static_cast<int64_t>(host.trigger_input_hash);
@@ -625,6 +658,22 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
             host.modifier_pod_ack_count);
         out["modifier_pod_fallback_reason"] = String(
             host.modifier_pod_fallback_reason);
+        out["events_probe_enabled"] = host.events_probe_enabled;
+        out["events_pod_ready"] = host.events_pod_ready;
+        out["events_pod_plan_ms"] = host.events_pod_plan_ms;
+        out["events_pod_replay_ms"] = host.events_pod_replay_ms;
+        out["events_pod_state_hash"] = static_cast<int64_t>(
+            host.events_pod_state_hash);
+        out["events_pod_snapshot_generation"] = static_cast<int64_t>(
+            host.events_pod_snapshot_generation);
+        out["events_pod_event_count"] = static_cast<int>(
+            host.events_pod_event_count);
+        out["events_pod_ack_count"] = static_cast<int>(
+            host.events_pod_ack_count);
+        out["events_pod_drop_count"] = static_cast<int64_t>(
+            host.events_pod_drop_count);
+        out["events_pod_fallback_reason"] = String(
+            host.events_pod_fallback_reason);
         out["command_queue_depth"] = static_cast<int>(host.command_queue_depth);
         out["receipt_queue_depth"] = static_cast<int>(host.receipt_queue_depth);
     } else {
@@ -718,6 +767,34 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
         out["country_pod_pending_checks"] = static_cast<int>(host.country_pod_pending_checks);
         out["country_pod_ack_pending"] = host.country_pod_ack_pending;
         out["country_pod_blocker"] = String(host.country_pod_blocker);
+        out["country_worker_configured"] = host.country_worker_configured;
+        out["country_worker_plan_active"] = host.country_worker_plan_active;
+        out["country_worker_waiting_for_peer"] = host.country_worker_waiting_for_peer;
+        out["country_worker_pending_intents"] = static_cast<int64_t>(
+            host.country_worker_pending_intents);
+        out["country_worker_queued_intents"] = static_cast<int64_t>(
+            host.country_worker_queued_intents);
+        out["country_worker_result_count"] = static_cast<int64_t>(
+            host.country_worker_result_count);
+        out["country_worker_rejected_results"] = static_cast<int64_t>(
+            host.country_worker_rejected_results);
+        out["country_worker_session_epoch"] = static_cast<int64_t>(
+            host.country_worker_session_epoch);
+        out["country_worker_country_generation"] = static_cast<int64_t>(
+            host.country_worker_country_generation);
+        out["country_worker_day"] = host.country_worker_day;
+        out["country_worker_continuation_index"] = static_cast<int64_t>(
+            host.country_worker_continuation_index);
+        out["country_worker_boundary_id"] = static_cast<int64_t>(
+            host.country_worker_boundary_id);
+        out["country_worker_last_admitted_submit_order"] = static_cast<int64_t>(
+            host.country_worker_last_admitted_submit_order);
+        out["country_worker_expected_base_generation"] = static_cast<int64_t>(
+            host.country_worker_expected_base_generation);
+        out["country_worker_catalog_hash"] = static_cast<int64_t>(
+            host.country_worker_catalog_hash);
+        out["country_worker_last_reason"] = String(host.country_worker_last_reason);
+        out["country_worker_authoritative"] = host.country_worker_authoritative;
         out["trigger_parity_day"] = host.trigger_parity_day;
         out["trigger_reference_day"] = host.trigger_reference_day;
         out["trigger_input_hash"] = static_cast<int64_t>(host.trigger_input_hash);

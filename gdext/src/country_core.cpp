@@ -1,6 +1,7 @@
 #include "country_core.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <limits>
 #include <unordered_map>
@@ -54,6 +55,93 @@ void country_peer_copy_reason(
     if (index < destination.size()) destination[index] = '\0';
     for (++index; index < destination.size(); ++index)
         destination[index] = '\0';
+}
+
+CountryResearchAllocation country_allocate_research_points(
+        int64_t available,
+        const std::array<int32_t, COUNTRY_RESEARCH_DOMAIN_COUNT> &weights,
+        uint64_t *remainder_iterations) noexcept {
+    CountryResearchAllocation result;
+    result.available = std::max<int64_t>(0, available);
+    if (remainder_iterations != nullptr) *remainder_iterations = 0;
+
+    // Keep this arithmetic in the same order as the production reference:
+    // split the quotient and remainder separately, then distribute at most
+    // one extra point per research lane by descending fractional remainder.
+    const int64_t quotient = result.available / 10000;
+    const int64_t remainder = result.available % 10000;
+    for (uint32_t domain = 0; domain < COUNTRY_RESEARCH_DOMAIN_COUNT; ++domain) {
+        const int32_t weight = weights[domain];
+        result.shares[domain] = quotient * weight +
+            (remainder * weight) / 10000;
+        result.remainders[domain] = (remainder * weight) % 10000;
+        result.assigned += result.shares[domain];
+    }
+
+    std::array<uint32_t, COUNTRY_RESEARCH_DOMAIN_COUNT> order{{0, 1, 2, 3}};
+    std::stable_sort(order.begin(), order.end(),
+        [&result](uint32_t lhs, uint32_t rhs) {
+            if (result.remainders[lhs] != result.remainders[rhs])
+                return result.remainders[lhs] > result.remainders[rhs];
+            return lhs < rhs;
+        });
+    result.remainder_units = std::clamp<int64_t>(
+        result.available - result.assigned, 0,
+        static_cast<int64_t>(COUNTRY_RESEARCH_DOMAIN_COUNT - 1u));
+    for (int64_t index = 0; index < result.remainder_units; ++index) {
+        ++result.shares[order[static_cast<size_t>(index)]];
+        if (remainder_iterations != nullptr) ++*remainder_iterations;
+    }
+    return result;
+}
+
+int64_t country_effective_research_cost(
+        int64_t base_cost, double cost_factor) noexcept {
+    if (base_cost < 1) base_cost = 1;
+    if (!(cost_factor > 0.0) || !std::isfinite(cost_factor))
+        cost_factor = 1.0;
+    const double scaled = static_cast<double>(base_cost) * cost_factor;
+    if (!std::isfinite(scaled) || scaled >= static_cast<double>(
+            std::numeric_limits<int64_t>::max()))
+        return std::numeric_limits<int64_t>::max();
+    return std::max<int64_t>(1, static_cast<int64_t>(std::llround(scaled)));
+}
+
+CountryResearchProgress country_advance_research_progress(
+        int64_t progress, int64_t base_cost, double cost_factor,
+        double efficiency, int64_t available_points) noexcept {
+    CountryResearchProgress result;
+    if (progress < 0 || available_points < 0 || base_cost < 0)
+        return result;
+    result.valid = true;
+    result.effective_cost = country_effective_research_cost(
+        base_cost, cost_factor);
+    result.remaining = std::max<int64_t>(
+        0, result.effective_cost - progress);
+    if (result.remaining == 0) {
+        result.completed = true;
+        return result;
+    }
+    if (!(efficiency > 0.0) || !std::isfinite(efficiency))
+        efficiency = 1.0;
+    const double spend_as_double = std::ceil(
+        static_cast<double>(result.remaining) / std::max(0.000001, efficiency));
+    result.spend_needed = spend_as_double >= static_cast<double>(
+            std::numeric_limits<int64_t>::max())
+        ? std::numeric_limits<int64_t>::max()
+        : std::max<int64_t>(1, static_cast<int64_t>(spend_as_double));
+    result.spend = std::min(available_points, result.spend_needed);
+    if (result.spend <= 0) return result;
+    const double gain_as_double = std::floor(
+        static_cast<double>(result.spend) * efficiency);
+    const int64_t gain = gain_as_double >= static_cast<double>(
+            std::numeric_limits<int64_t>::max())
+        ? std::numeric_limits<int64_t>::max()
+        : static_cast<int64_t>(gain_as_double);
+    result.progress_gain = std::min<int64_t>(
+        result.remaining, std::max<int64_t>(1, gain));
+    result.completed = progress + result.progress_gain >= result.effective_cost;
+    return result;
 }
 
 namespace {
@@ -255,14 +343,29 @@ bool validate_country_core_checkpoint(const CountryCoreCheckpoint &checkpoint,
             return false;
         }
     }
+    std::unordered_set<uint64_t> terminal_requests;
+    terminal_requests.reserve(checkpoint.terminal_receipts.size());
     for (const CountryCommandReceipt &receipt : checkpoint.terminal_receipts) {
         const auto found = state_codes.find(receipt.request_id);
         if (receipt.request_id == 0 || receipt.effective_day < 0 ||
             receipt.reason.size() > MAX_REASON_BYTES ||
             (receipt.code != CountryCommandReceiptCode::COMMITTED &&
              receipt.code != CountryCommandReceiptCode::REJECTED_AT_EXECUTION) ||
+            !terminal_requests.insert(receipt.request_id).second ||
             found == state_codes.end() || found->second != receipt.code) {
             error = "country_checkpoint_terminal_receipt_invalid";
+            return false;
+        }
+        const auto state_it = std::find_if(
+            checkpoint.request_states.begin(), checkpoint.request_states.end(),
+            [&](const CountryCommandReceipt &state) {
+                return state.request_id == receipt.request_id;
+            });
+        if (state_it == checkpoint.request_states.end() ||
+            state_it->producer_id != receipt.producer_id ||
+            state_it->sequence != receipt.sequence ||
+            state_it->effective_day != receipt.effective_day) {
+            error = "country_checkpoint_terminal_identity_mismatch";
             return false;
         }
     }

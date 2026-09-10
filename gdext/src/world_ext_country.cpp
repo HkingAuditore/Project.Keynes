@@ -5,8 +5,10 @@
 #include "economy_runtime.h"
 #include "native_simulation_host.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <vector>
 
 namespace pk {
 
@@ -81,8 +83,232 @@ Dictionary DCWorldExt::bootstrap_country(const Dictionary &packet,
 }
 
 Dictionary DCWorldExt::submit_country_commands(const Dictionary &packed_batch) {
-    return _country_runtime == nullptr ? country_unavailable()
-        : country_runtime_from(_country_runtime)->submit_commands(packed_batch);
+    if (_country_runtime == nullptr) return country_unavailable();
+    if (_runtime_host == nullptr ||
+        !_runtime_host->domain_is_worker_authoritative(
+            RuntimeDomainId::COUNTRY)) {
+        return country_runtime_from(_country_runtime)->submit_commands(
+            packed_batch);
+    }
+
+    const PackedInt32Array opcodes = packed_batch.get(
+        "opcodes", PackedInt32Array());
+    const PackedInt64Array effective_days = packed_batch.get(
+        "effective_days", PackedInt64Array());
+    const PackedInt64Array sequences = packed_batch.get(
+        "sequences", PackedInt64Array());
+    const PackedInt64Array target_handles = packed_batch.get(
+        "target_handles", PackedInt64Array());
+    const PackedInt32Array cells = packed_batch.get(
+        "cell_indices", PackedInt32Array());
+    const PackedInt32Array aux = packed_batch.get(
+        "aux_i32", PackedInt32Array());
+    const PackedInt32Array domains = packed_batch.get(
+        "domain_i32", PackedInt32Array());
+    const PackedInt32Array positions = packed_batch.get(
+        "position_i32", PackedInt32Array());
+    const PackedInt32Array weights[4] = {
+        packed_batch.get("weight0_bp", PackedInt32Array()),
+        packed_batch.get("weight1_bp", PackedInt32Array()),
+        packed_batch.get("weight2_bp", PackedInt32Array()),
+        packed_batch.get("weight3_bp", PackedInt32Array()),
+    };
+    const PackedInt64Array values = packed_batch.get(
+        "value_i64", PackedInt64Array());
+    const PackedInt32Array tax_kinds = packed_batch.get(
+        "tax_kinds", PackedInt32Array());
+    const PackedInt32Array tax_items = packed_batch.get(
+        "tax_item_indices", PackedInt32Array());
+    const PackedInt32Array tax_rates = packed_batch.get(
+        "tax_rate_basis_points", PackedInt32Array());
+    const PackedInt32Array tax_modes = packed_batch.get(
+        "tax_assessment_modes", PackedInt32Array());
+    const PackedStringArray stable_ids = packed_batch.get(
+        "stable_ids", PackedStringArray());
+    const PackedStringArray display_names = packed_batch.get(
+        "display_names", PackedStringArray());
+    const int64_t count = opcodes.size();
+    Dictionary out;
+    if (count <= 0 || count > static_cast<int64_t>(RUNTIME_COUNTRY_COMMAND_BATCH_CAPACITY)) {
+        out["ok"] = false;
+        out["code"] = count <= 0 ? "country_command_batch_empty"
+                                 : "country_command_batch_capacity_exceeded";
+        return out;
+    }
+    const auto shape_ok = [count](int64_t size) {
+        return size == count;
+    };
+    if (!shape_ok(effective_days.size()) || !shape_ok(sequences.size()) ||
+        !shape_ok(target_handles.size()) || !shape_ok(cells.size()) ||
+        !shape_ok(aux.size()) || !shape_ok(domains.size()) ||
+        !shape_ok(positions.size()) || !shape_ok(values.size()) ||
+        !shape_ok(tax_kinds.size()) || !shape_ok(tax_items.size()) ||
+        !shape_ok(tax_rates.size()) || !shape_ok(tax_modes.size()) ||
+        !shape_ok(stable_ids.size()) || !shape_ok(display_names.size())) {
+        out["ok"] = false;
+        out["code"] = "country_command_batch_shape_invalid";
+        return out;
+    }
+    for (const PackedInt32Array &weight : weights) {
+        if (!shape_ok(weight.size())) {
+            out["ok"] = false;
+            out["code"] = "country_command_batch_shape_invalid";
+            return out;
+        }
+    }
+
+    const RuntimeThreadReport report = _runtime_host->report();
+    const int64_t first_allowed_day = report.committed_day + 1;
+    std::vector<RuntimeCommandPacket> packets;
+    packets.reserve(static_cast<size_t>(count));
+    PackedInt64Array request_ids;
+    request_ids.resize(count);
+    for (int64_t index = 0; index < count; ++index) {
+        const uint16_t opcode = static_cast<uint16_t>(opcodes[index]);
+        if (opcode < 1 || opcode > 20) {
+            out["ok"] = false;
+            out["code"] = "country_worker_command_opcode_invalid";
+            out["opcode"] = static_cast<int64_t>(opcode);
+            return out;
+        }
+        if (effective_days[index] < first_allowed_day ||
+            effective_days[index] < 0 || sequences[index] < 0) {
+            out["ok"] = false;
+            out["code"] = "country_worker_command_day_invalid";
+            return out;
+        }
+        RuntimeCountryCommand command;
+        command.request_id = _runtime_host->allocate_command_request_id();
+        request_ids[index] = static_cast<int64_t>(command.request_id);
+        command.producer_id = 0;
+        command.sequence = sequences[index] > 0
+            ? static_cast<uint64_t>(sequences[index])
+            : _runtime_host->allocate_producer_sequence(0);
+        command.observed_generation = 0;
+        command.requested_day = effective_days[index];
+        command.effective_day = effective_days[index];
+        command.opcode = opcode;
+        command.target_handle = static_cast<uint64_t>(target_handles[index]);
+        command.cell = cells[index];
+        command.aux = aux[index];
+        command.domain = domains[index];
+        command.position = positions[index];
+        for (uint32_t domain = 0; domain < 4; ++domain)
+            command.weights_bp[domain] = weights[domain][index];
+        command.tax_kind = tax_kinds[index];
+        command.tax_item = tax_items[index];
+        command.tax_rate_basis_points = tax_rates[index];
+        command.tax_assessment_mode = tax_modes[index];
+        command.value = values[index];
+        country_copy_fixed(command.stable_id, stable_ids[index]);
+        country_copy_fixed(command.display_name, display_names[index]);
+        RuntimeCommandPacket packet;
+        packet.envelope.request_id = command.request_id;
+        packet.envelope.producer_id = command.producer_id;
+        packet.envelope.sequence = command.sequence;
+        packet.envelope.observed_generation = command.observed_generation;
+        packet.envelope.requested_day = command.requested_day;
+        packet.envelope.effective_day = command.effective_day;
+        packet.envelope.domain = static_cast<uint16_t>(
+            RuntimeDomainId::COUNTRY);
+        packet.envelope.opcode = opcode;
+        packet.envelope.payload_offset = 0;
+        packet.envelope.payload_size = sizeof(RuntimeCountryCommand);
+        std::memcpy(packet.payload.data(), &command, sizeof(command));
+        packets.push_back(packet);
+    }
+    if (!_runtime_host->enqueue_batch(std::move(packets))) {
+        out["ok"] = false;
+        out["code"] = "country_worker_command_queue_capacity_exceeded";
+        return out;
+    }
+    out["ok"] = true;
+    out["code"] = "accepted";
+    out["status"] = "Accepted";
+    out["receipt_code"] = static_cast<int>(
+        CountryCommandReceiptCode::ACCEPTED);
+    out["submitted"] = count;
+    out["accepted"] = count;
+    out["pending"] = count;
+    out["request_ids"] = request_ids;
+    return out;
+}
+
+namespace {
+
+const char *country_command_receipt_code_name(
+        CountryCommandReceiptCode code) {
+    switch (code) {
+    case CountryCommandReceiptCode::ADMISSION_REJECTED:
+        return "AdmissionRejected";
+    case CountryCommandReceiptCode::ACCEPTED:
+        return "Accepted";
+    case CountryCommandReceiptCode::COMMITTED:
+        return "Committed";
+    case CountryCommandReceiptCode::REJECTED_AT_EXECUTION:
+        return "RejectedAtExecution";
+    }
+    return "Unknown";
+}
+
+} // namespace
+
+Dictionary DCWorldExt::poll_country_command_receipts(
+        int64_t after_request_id, int limit) {
+    Dictionary out;
+    if (_runtime_host == nullptr) {
+        out["ok"] = false;
+        out["code"] = "runtime_worker_not_started";
+        return out;
+    }
+    std::vector<CountryCommandReceipt> receipts;
+    _runtime_host->poll_country_command_receipts(
+        static_cast<uint64_t>(std::max<int64_t>(0, after_request_id)),
+        static_cast<uint32_t>(std::clamp(limit, 0, 4096)), receipts);
+    Array rows;
+    uint64_t last_request_id = static_cast<uint64_t>(
+        std::max<int64_t>(0, after_request_id));
+    for (const CountryCommandReceipt &receipt : receipts) {
+        Dictionary row;
+        row["request_id"] = static_cast<int64_t>(receipt.request_id);
+        row["producer_id"] = static_cast<int>(receipt.producer_id);
+        row["sequence"] = static_cast<int64_t>(receipt.sequence);
+        row["effective_day"] = receipt.effective_day;
+        row["generation"] = static_cast<int64_t>(receipt.generation);
+        row["code"] = static_cast<int>(receipt.code);
+        row["status"] = country_command_receipt_code_name(receipt.code);
+        row["reason"] = String(receipt.reason.c_str());
+        rows.push_back(row);
+        last_request_id = std::max(last_request_id, receipt.request_id);
+    }
+    out["ok"] = true;
+    out["available"] = !receipts.empty();
+    out["receipts"] = rows;
+    out["count"] = rows.size();
+    out["last_request_id"] = static_cast<int64_t>(last_request_id);
+    return out;
+}
+
+bool DCWorldExt::runtime_country_host_receipt_self_test() const {
+    if (_runtime_host == nullptr) return false;
+    std::string error;
+    const bool ok = _runtime_host->country_command_receipt_self_test(error);
+    if (!ok) {
+        UtilityFunctions::printerr(
+            String("[country receipt self-test] ") + String(error.c_str()));
+    }
+    return ok;
+}
+
+bool DCWorldExt::runtime_country_host_rejection_self_test() const {
+    if (_runtime_host == nullptr) return false;
+    std::string error;
+    const bool ok = _runtime_host->country_peer_rejection_self_test(error);
+    if (!ok) {
+        UtilityFunctions::printerr(
+            String("[country rejection self-test] ") + String(error.c_str()));
+    }
+    return ok;
 }
 
 namespace {
@@ -98,6 +324,18 @@ uint32_t country_peer_u32(const Dictionary &value, const char *key,
     const int64_t parsed = country_peer_i64(value, key,
                                              static_cast<int64_t>(fallback));
     return parsed < 0 ? fallback : static_cast<uint32_t>(parsed);
+}
+
+template <size_t N>
+void country_copy_fixed(std::array<char, N> &destination, const String &value) {
+    const CharString utf8 = value.utf8();
+    const char *source = utf8.get_data();
+    size_t index = 0;
+    if (source != nullptr) {
+        for (; index + 1u < N && source[index] != '\0'; ++index)
+            destination[index] = source[index];
+    }
+    destination[index] = '\0';
 }
 
 uint64_t country_peer_u64(const Dictionary &value, const char *key,
@@ -150,6 +388,178 @@ Dictionary country_peer_intent_dictionary(const CountryPeerIntent &intent) {
     out["effect_instance_id"] = static_cast<int64_t>(intent.effect_instance_id);
     out["effect_generation"] = static_cast<int64_t>(intent.effect_generation);
     out["idempotency_key"] = static_cast<int64_t>(intent.idempotency_key);
+    return out;
+}
+
+const char *country_economy_asset_operation_name(
+        RuntimeEconomyAssetOperation operation) {
+    switch (operation) {
+    case RuntimeEconomyAssetOperation::RESEARCH_PURCHASE: return "research_purchase";
+    case RuntimeEconomyAssetOperation::FISCAL_RESERVE: return "fiscal_reserve";
+    case RuntimeEconomyAssetOperation::FISCAL_RETURN: return "fiscal_return";
+    case RuntimeEconomyAssetOperation::FISCAL_COLLECT: return "fiscal_collect";
+    case RuntimeEconomyAssetOperation::CASH_TO_COHORT: return "cash_to_cohort";
+    case RuntimeEconomyAssetOperation::CASH_FROM_COHORT: return "cash_from_cohort";
+    case RuntimeEconomyAssetOperation::GOOD_TO_MARKET: return "good_to_market";
+    case RuntimeEconomyAssetOperation::GOOD_FROM_MARKET: return "good_from_market";
+    case RuntimeEconomyAssetOperation::TREASURY_SPEND: return "treasury_spend";
+    default: return "unknown";
+    }
+}
+
+const char *country_economy_asset_state_name(RuntimeEconomyAssetState state) {
+    switch (state) {
+    case RuntimeEconomyAssetState::CREATED: return "created";
+    case RuntimeEconomyAssetState::COUNTRY_PREPARED: return "country_prepared";
+    case RuntimeEconomyAssetState::PEER_PREPARED: return "peer_prepared";
+    case RuntimeEconomyAssetState::COMMIT_DECIDED: return "commit_decided";
+    case RuntimeEconomyAssetState::COUNTRY_APPLIED: return "country_applied";
+    case RuntimeEconomyAssetState::PEER_APPLIED: return "peer_applied";
+    case RuntimeEconomyAssetState::COMPLETED: return "completed";
+    case RuntimeEconomyAssetState::REJECTED: return "rejected";
+    case RuntimeEconomyAssetState::AWAITING_PEER_PREPARED:
+        return "awaiting_peer_prepared";
+    case RuntimeEconomyAssetState::AWAITING_PEER_APPLIED:
+        return "awaiting_peer_applied";
+    case RuntimeEconomyAssetState::FAULTED: return "faulted";
+    default: return "unknown";
+    }
+}
+
+const char *country_economy_asset_result_code_name(
+        RuntimeEconomyAssetResultCode code) {
+    switch (code) {
+    case RuntimeEconomyAssetResultCode::ACCEPTED: return "accepted";
+    case RuntimeEconomyAssetResultCode::PENDING: return "pending";
+    case RuntimeEconomyAssetResultCode::PEER_PREPARED: return "peer_prepared";
+    case RuntimeEconomyAssetResultCode::COMMIT_DECIDED: return "commit_decided";
+    case RuntimeEconomyAssetResultCode::PEER_APPLIED: return "peer_applied";
+    case RuntimeEconomyAssetResultCode::COMPLETED: return "completed";
+    case RuntimeEconomyAssetResultCode::REJECTED: return "rejected";
+    case RuntimeEconomyAssetResultCode::FAULTED: return "faulted";
+    default: return "unknown";
+    }
+}
+
+const char *country_economy_asset_protocol_error_name(
+        RuntimeEconomyAssetProtocolError error) {
+    switch (error) {
+    case RuntimeEconomyAssetProtocolError::NONE: return "none";
+    case RuntimeEconomyAssetProtocolError::PROTOCOL_MISMATCH:
+        return "protocol_mismatch";
+    case RuntimeEconomyAssetProtocolError::REQUEST_INVALID:
+        return "request_invalid";
+    case RuntimeEconomyAssetProtocolError::REQUEST_UNKNOWN:
+        return "request_unknown";
+    case RuntimeEconomyAssetProtocolError::REQUEST_DUPLICATE_MISMATCH:
+        return "request_duplicate_mismatch";
+    case RuntimeEconomyAssetProtocolError::RESULT_IDENTITY_MISMATCH:
+        return "result_identity_mismatch";
+    case RuntimeEconomyAssetProtocolError::RESULT_STATE_INVALID:
+        return "result_state_invalid";
+    case RuntimeEconomyAssetProtocolError::RESULT_DUPLICATE_MISMATCH:
+        return "result_duplicate_mismatch";
+    case RuntimeEconomyAssetProtocolError::SESSION_MISMATCH:
+        return "session_mismatch";
+    case RuntimeEconomyAssetProtocolError::GENERATION_MISMATCH:
+        return "generation_mismatch";
+    case RuntimeEconomyAssetProtocolError::CAPACITY_EXCEEDED:
+        return "capacity_exceeded";
+    default: return "unknown";
+    }
+}
+
+Dictionary country_economy_asset_request_dictionary(
+        const RuntimeEconomyAssetRequest &request) {
+    Dictionary out;
+    out["protocol_version"] = static_cast<int64_t>(request.protocol_version);
+    out["operation"] = static_cast<int64_t>(request.operation);
+    out["operation_name"] = country_economy_asset_operation_name(request.operation);
+    out["state"] = static_cast<int64_t>(request.state);
+    out["state_name"] = country_economy_asset_state_name(request.state);
+    out["all_or_nothing"] = request.all_or_nothing != 0;
+    out["session_epoch"] = static_cast<int64_t>(request.session_epoch);
+    out["transaction_id"] = static_cast<int64_t>(request.transaction_id);
+    out["request_id"] = static_cast<int64_t>(request.request_id);
+    out["origin_domain"] = static_cast<int64_t>(request.origin_domain);
+    out["origin_epoch"] = request.origin_epoch;
+    out["origin_stage"] = request.origin_stage;
+    out["continuation_index"] = static_cast<int64_t>(request.continuation_index);
+    out["day"] = request.day;
+    out["operation_sequence"] = static_cast<int64_t>(request.operation_sequence);
+    out["country_generation"] = static_cast<int64_t>(request.country_generation);
+    out["peer_generation"] = static_cast<int64_t>(request.peer_generation);
+    out["country_handle"] = static_cast<int64_t>(request.country_handle);
+    out["country_slot"] = request.country_slot;
+    out["target_slot"] = request.target_slot;
+    out["target_handle"] = static_cast<int64_t>(request.target_handle);
+    out["good_id"] = request.good_id;
+    out["good_count"] = static_cast<int>(request.good_count);
+    PackedInt32Array good_ids;
+    PackedInt64Array good_quantities;
+    good_ids.resize(static_cast<int64_t>(request.good_count));
+    good_quantities.resize(static_cast<int64_t>(request.good_count));
+    for (int64_t i = 0; i < good_ids.size(); ++i) {
+        good_ids.set(i, request.good_ids[static_cast<size_t>(i)]);
+        good_quantities.set(i, request.good_quantities[static_cast<size_t>(i)]);
+    }
+    out["good_ids"] = good_ids;
+    out["good_quantities"] = good_quantities;
+    out["requested_quantity"] = request.requested_quantity;
+    out["prepared_quantity"] = request.prepared_quantity;
+    out["requested_cash"] = request.requested_cash;
+    out["reserved_cash"] = request.reserved_cash;
+    out["requested_goods_total"] = request.requested_goods_total;
+    out["reserved_goods_total"] = request.reserved_goods_total;
+    return out;
+}
+
+Dictionary country_economy_asset_result_dictionary(
+        const RuntimeEconomyAssetResult &result) {
+    Dictionary out;
+    out["protocol_version"] = static_cast<int64_t>(result.protocol_version);
+    out["code"] = static_cast<int64_t>(result.code);
+    out["result_code"] = country_economy_asset_result_code_name(result.code);
+    out["state"] = static_cast<int64_t>(result.state);
+    out["state_name"] = country_economy_asset_state_name(result.state);
+    out["accepted"] = result.accepted != 0;
+    out["session_epoch"] = static_cast<int64_t>(result.session_epoch);
+    out["transaction_id"] = static_cast<int64_t>(result.transaction_id);
+    out["request_id"] = static_cast<int64_t>(result.request_id);
+    out["operation"] = static_cast<int64_t>(result.operation);
+    out["operation_name"] = country_economy_asset_operation_name(result.operation);
+    out["continuation_index"] = static_cast<int64_t>(result.continuation_index);
+    out["day"] = result.day;
+    out["country_generation"] = static_cast<int64_t>(result.country_generation);
+    out["peer_generation"] = static_cast<int64_t>(result.peer_generation);
+    out["committed_peer_generation"] = static_cast<int64_t>(
+        result.committed_peer_generation);
+    out["country_slot"] = result.country_slot;
+    out["target_slot"] = result.target_slot;
+    out["committed_quantity"] = result.committed_quantity;
+    out["committed_cash"] = result.committed_cash;
+    out["committed_goods_total"] = result.committed_goods_total;
+    out["reason"] = String(result.reason.data());
+    return out;
+}
+
+Dictionary country_economy_asset_protocol_status_dictionary(
+        const RuntimeEconomyAssetProtocolStatus &status) {
+    Dictionary out;
+    out["protocol_version"] = static_cast<int64_t>(status.protocol_version);
+    out["queued_requests"] = static_cast<int64_t>(status.queued_requests);
+    out["pending_requests"] = static_cast<int64_t>(status.pending_requests);
+    out["terminal_requests"] = static_cast<int64_t>(status.terminal_requests);
+    out["rejected_results"] = static_cast<int64_t>(status.rejected_results);
+    out["session_epoch"] = static_cast<int64_t>(status.session_epoch);
+    out["last_transaction_id"] = static_cast<int64_t>(status.last_transaction_id);
+    out["last_request_id"] = static_cast<int64_t>(status.last_request_id);
+    out["last_error"] = static_cast<int64_t>(status.last_error);
+    out["last_error_name"] = country_economy_asset_protocol_error_name(
+        status.last_error);
+    out["last_reason"] = String(status.last_reason.data());
+    out["has_save_barrier"] = status.pending_requests != 0 ||
+        status.queued_requests != 0;
     return out;
 }
 
@@ -457,12 +867,15 @@ Dictionary DCWorldExt::capture_country_pod_catalog() {
     costs.resize(static_cast<int64_t>(catalog.technology_costs.size()));
     for (int64_t i = 0; i < costs.size(); ++i) costs.set(i, catalog.technology_costs[static_cast<size_t>(i)]);
     PackedInt32Array domains, flags, prereq_offsets, prerequisites;
+    PackedByteArray effect_required;
     domains.resize(static_cast<int64_t>(catalog.technology_domains.size()));
     flags.resize(static_cast<int64_t>(catalog.technology_flags.size()));
+    effect_required.resize(static_cast<int64_t>(catalog.technology_effect_required.size()));
     prereq_offsets.resize(static_cast<int64_t>(catalog.prerequisite_offsets.size()));
     prerequisites.resize(static_cast<int64_t>(catalog.prerequisites.size()));
     for (int64_t i = 0; i < domains.size(); ++i) domains.set(i, catalog.technology_domains[static_cast<size_t>(i)]);
     for (int64_t i = 0; i < flags.size(); ++i) flags.set(i, catalog.technology_flags[static_cast<size_t>(i)]);
+    for (int64_t i = 0; i < effect_required.size(); ++i) effect_required.set(i, catalog.technology_effect_required[static_cast<size_t>(i)]);
     for (int64_t i = 0; i < prereq_offsets.size(); ++i) prereq_offsets.set(i, catalog.prerequisite_offsets[static_cast<size_t>(i)]);
     for (int64_t i = 0; i < prerequisites.size(); ++i) prerequisites.set(i, catalog.prerequisites[static_cast<size_t>(i)]);
     PackedInt32Array condition_offsets, condition_ops, condition_refs;
@@ -493,6 +906,7 @@ Dictionary DCWorldExt::capture_country_pod_catalog() {
     out["technology_costs"] = costs;
     out["technology_domains"] = domains;
     out["technology_flags"] = flags;
+    out["technology_effect_required"] = effect_required;
     out["prerequisite_offsets"] = prereq_offsets;
     out["prerequisites"] = prerequisites;
     out["milestone_offsets"] = milestone_offsets;
@@ -536,13 +950,25 @@ Dictionary DCWorldExt::get_country_worker_protocol_status() const {
     out["queued_intents"] = static_cast<int64_t>(status.queued_intents);
     out["result_count"] = static_cast<int64_t>(status.result_count);
     out["rejected_results"] = static_cast<int64_t>(status.rejected_results);
+    out["rejected_intents"] = static_cast<int64_t>(status.rejected_intents);
+    out["has_unreported_rejection"] = status.has_unreported_rejection;
+    out["retry_day"] = status.retry_day;
+    out["rejected_request_id"] = static_cast<int64_t>(
+        status.rejected_request_id);
     out["session_epoch"] = static_cast<int64_t>(status.session_epoch);
     out["country_generation"] = static_cast<int64_t>(status.country_generation);
     out["day"] = status.day;
     out["continuation_index"] = static_cast<int64_t>(status.continuation_index);
+    out["boundary_id"] = static_cast<int64_t>(status.boundary_id);
+    out["last_admitted_submit_order"] = static_cast<int64_t>(
+        status.last_admitted_submit_order);
+    out["expected_base_generation"] = static_cast<int64_t>(
+        status.expected_base_generation);
+    out["catalog_hash"] = static_cast<int64_t>(status.catalog_hash);
     out["last_reason"] = String(status.last_reason);
     out["has_save_barrier"] = status.plan_active || status.pending_intents != 0 ||
-        status.result_count != 0;
+        status.result_count != 0 || status.rejected_intents != 0 ||
+        status.has_unreported_rejection;
     return out;
 }
 
@@ -659,6 +1085,105 @@ Dictionary DCWorldExt::submit_country_worker_result(const Dictionary &input) {
     return out;
 }
 
+Dictionary DCWorldExt::get_country_economy_asset_protocol_status() const {
+    if (_runtime_host == nullptr) {
+        Dictionary out;
+        out["ok"] = false;
+        out["code"] = "runtime_worker_not_started";
+        return out;
+    }
+    Dictionary out = country_economy_asset_protocol_status_dictionary(
+        _runtime_host->country_economy_asset_protocol_status());
+    out["ok"] = true;
+    out["code"] = "ok";
+    return out;
+}
+
+Dictionary DCWorldExt::poll_country_economy_asset_request() {
+    if (_runtime_host == nullptr) {
+        Dictionary out;
+        out["ok"] = false;
+        out["code"] = "runtime_worker_not_started";
+        return out;
+    }
+    RuntimeEconomyAssetRequest request;
+    if (!_runtime_host->poll_country_economy_asset_request(request)) {
+        Dictionary out = country_economy_asset_protocol_status_dictionary(
+            _runtime_host->country_economy_asset_protocol_status());
+        out["ok"] = true;
+        out["available"] = false;
+        out["code"] = "country_economy_asset_request_empty";
+        return out;
+    }
+    Dictionary out = country_economy_asset_request_dictionary(request);
+    out["ok"] = true;
+    out["available"] = true;
+    out["code"] = "ok";
+    return out;
+}
+
+Dictionary DCWorldExt::submit_country_economy_asset_result(
+        const Dictionary &input) {
+    if (_runtime_host == nullptr) {
+        Dictionary out;
+        out["ok"] = false;
+        out["code"] = "runtime_worker_not_started";
+        return out;
+    }
+    RuntimeEconomyAssetResult result;
+    result.protocol_version = country_peer_u32(
+        input, "protocol_version", RUNTIME_ECONOMY_ASSET_PROTOCOL_VERSION);
+    result.code = static_cast<RuntimeEconomyAssetResultCode>(
+        country_peer_u32(input, "code"));
+    result.state = static_cast<RuntimeEconomyAssetState>(
+        country_peer_u32(input, "state"));
+    result.accepted = static_cast<uint8_t>(country_peer_u32(
+        input, "accepted"));
+    result.session_epoch = country_peer_u64(input, "session_epoch");
+    result.transaction_id = country_peer_u64(input, "transaction_id");
+    result.request_id = country_peer_u64(input, "request_id");
+    result.operation = static_cast<RuntimeEconomyAssetOperation>(
+        country_peer_u32(input, "operation"));
+    result.continuation_index = country_peer_u32(input, "continuation_index");
+    result.day = country_peer_i64(input, "day", -1);
+    result.country_generation = country_peer_u64(input, "country_generation");
+    result.peer_generation = country_peer_u64(input, "peer_generation");
+    result.committed_peer_generation = country_peer_u64(
+        input, "committed_peer_generation");
+    result.country_slot = country_peer_i32(input, "country_slot");
+    result.target_slot = country_peer_i32(input, "target_slot");
+    result.committed_quantity = country_peer_i64(
+        input, "committed_quantity");
+    result.committed_cash = country_peer_i64(input, "committed_cash");
+    result.committed_goods_total = country_peer_i64(
+        input, "committed_goods_total");
+    const std::string reason = country_peer_string(input, "reason")
+        .utf8().get_data();
+    country_peer_copy_reason(result.reason, reason.c_str());
+
+    std::string error;
+    if (!_runtime_host->submit_country_economy_asset_result(result, error)) {
+        Dictionary out = country_economy_asset_protocol_status_dictionary(
+            _runtime_host->country_economy_asset_protocol_status());
+        out["ok"] = false;
+        out["code"] = error.empty()
+            ? "country_economy_asset_result_rejected" : error.c_str();
+        out["request_id"] = static_cast<int64_t>(result.request_id);
+        out["transaction_id"] = static_cast<int64_t>(result.transaction_id);
+        return out;
+    }
+    Dictionary out = country_economy_asset_result_dictionary(result);
+    out["ok"] = true;
+    out["code"] = "ok";
+    return out;
+}
+
+bool DCWorldExt::runtime_country_host_economy_protocol_self_test() const {
+    if (_runtime_host == nullptr) return false;
+    std::string error;
+    return _runtime_host->country_economy_asset_protocol_self_test(error);
+}
+
 Dictionary DCWorldExt::service_country_worker_peer_adapter(
         int max_intents, bool shadow_replay) {
     Dictionary out;
@@ -672,12 +1197,21 @@ Dictionary DCWorldExt::service_country_worker_peer_adapter(
         out["code"] = "country_worker_adapter_limit_invalid";
         return out;
     }
-    if (!shadow_replay) {
-        // The real peer transaction coordinator is a later K2-B/K2-C gate.
-        // Refuse instead of accidentally executing a synchronous peer write
-        // against the worker's independent session identity.
+    const RuntimeThreadReport host_report = _runtime_host->report();
+    if (!shadow_replay &&
+        (host_report.mode != RuntimeSimulationMode::ACTIVE ||
+         (host_report.requested_authority_mask &
+          runtime_domain_mask(RuntimeDomainId::COUNTRY)) == 0u)) {
+        // A real peer write is legal only for a worker that was explicitly
+        // admitted in ACTIVE Country mode. In particular, SHADOW callers
+        // must never accidentally mutate the legacy peer stores.
         out["ok"] = false;
         out["code"] = "country_worker_real_peer_adapter_not_authoritative";
+        return out;
+    }
+    if (!shadow_replay && _country_runtime == nullptr) {
+        out["ok"] = false;
+        out["code"] = "country_worker_real_peer_adapter_country_missing";
         return out;
     }
 
@@ -702,35 +1236,41 @@ Dictionary DCWorldExt::service_country_worker_peer_adapter(
         result.technology = intent.technology;
         result.target_handle = intent.target_handle;
 
-        // This is deliberately a replay result, not an Effect/Modifier call.
-        // It preserves the Country continuation protocol while proving that
-        // SHADOW transport itself has no peer side effects.
-        switch (intent.opcode) {
-        case CountryPeerIntentCode::ENSURE_TECHNOLOGY_EFFECT:
-        case CountryPeerIntentCode::NUDGE_TECHNOLOGY_EFFECT:
-            result.code = CountryPeerResultCode::READY;
-            result.technology_flags = static_cast<uint8_t>(
-                COUNTRY_PEER_EFFECT_EXISTS | COUNTRY_PEER_EFFECT_FIRE_ACKED);
-            country_peer_copy_reason(result.reason, "shadow_peer_replay");
-            break;
-        case CountryPeerIntentCode::APPLY_TECHNOLOGY_MODIFIER:
-            result.code = CountryPeerResultCode::APPLIED;
-            result.technology_flags = COUNTRY_PEER_MODIFIER_APPLIED;
-            country_peer_copy_reason(result.reason, "shadow_peer_replay");
-            break;
-        case CountryPeerIntentCode::NOTIFY_ERA_REWARD:
-        case CountryPeerIntentCode::NOTIFY_ECONOMY_MILESTONE:
-            result.code = CountryPeerResultCode::APPLIED;
-            country_peer_copy_reason(result.reason, "shadow_peer_replay");
-            break;
-        default:
-            result.code = CountryPeerResultCode::REJECTED;
-            country_peer_copy_reason(result.reason,
-                                     "country_worker_peer_opcode_invalid");
-            ++rejected;
-            break;
+        if (shadow_replay) {
+            // This is deliberately a replay result, not an Effect/Modifier
+            // call. It proves the transport while keeping SHADOW free of
+            // peer side effects.
+            switch (intent.opcode) {
+            case CountryPeerIntentCode::ENSURE_TECHNOLOGY_EFFECT:
+            case CountryPeerIntentCode::NUDGE_TECHNOLOGY_EFFECT:
+                result.code = CountryPeerResultCode::READY;
+                result.technology_flags = static_cast<uint8_t>(
+                    COUNTRY_PEER_EFFECT_EXISTS | COUNTRY_PEER_EFFECT_FIRE_ACKED);
+                country_peer_copy_reason(result.reason, "shadow_peer_replay");
+                break;
+            case CountryPeerIntentCode::APPLY_TECHNOLOGY_MODIFIER:
+                result.code = CountryPeerResultCode::APPLIED;
+                result.technology_flags = COUNTRY_PEER_MODIFIER_APPLIED;
+                country_peer_copy_reason(result.reason, "shadow_peer_replay");
+                break;
+            case CountryPeerIntentCode::NOTIFY_ERA_REWARD:
+            case CountryPeerIntentCode::NOTIFY_ECONOMY_MILESTONE:
+                result.code = CountryPeerResultCode::APPLIED;
+                country_peer_copy_reason(result.reason, "shadow_peer_replay");
+                break;
+            default:
+                result.code = CountryPeerResultCode::REJECTED;
+                country_peer_copy_reason(result.reason,
+                                         "country_worker_peer_opcode_invalid");
+                break;
+            }
+        } else {
+            result = country_runtime_from(_country_runtime)
+                ->execute_peer_intent_from_worker(intent);
         }
-        result.committed_peer_generation = intent.peer_generation;
+        if (result.code == CountryPeerResultCode::REJECTED) ++rejected;
+        if (shadow_replay)
+            result.committed_peer_generation = intent.peer_generation;
         std::string error;
         if (!_runtime_host->submit_country_worker_result(result, error)) {
             out["ok"] = false;
@@ -750,7 +1290,8 @@ Dictionary DCWorldExt::service_country_worker_peer_adapter(
         _runtime_host->country_worker_protocol_status();
     out["ok"] = true;
     out["code"] = "ok";
-    out["shadow_replay"] = true;
+    out["shadow_replay"] = shadow_replay;
+    out["real_adapter"] = !shadow_replay;
     out["inspected"] = inspected;
     out["replayed"] = replayed;
     out["rejected"] = rejected;
@@ -838,6 +1379,16 @@ Dictionary DCWorldExt::capture_country_reference_checkpoint() const {
 
 Dictionary DCWorldExt::run_country_slice(const Dictionary &ctx) {
     if (_country_runtime == nullptr) return country_unavailable();
+    if (_runtime_host != nullptr && _runtime_host->domain_is_worker_authoritative(
+            RuntimeDomainId::COUNTRY)) {
+        Dictionary out;
+        out["ok"] = false;
+        out["done"] = true;
+        out["code"] = "country_worker_authoritative";
+        out["path"] = "native_country_worker";
+        out["authoritative"] = true;
+        return out;
+    }
     NativeCountryRuntime *runtime = country_runtime_from(_country_runtime);
     Dictionary out = runtime->run_slice(ctx);
     if (static_cast<bool>(out.get("ok", false)) &&

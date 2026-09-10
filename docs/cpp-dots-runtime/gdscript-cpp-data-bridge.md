@@ -50,6 +50,25 @@ MapData.country_slot_arr 的变更 cell；跳代只接受形状等于当前地�
 驱动视野、国界和 UI，不新增第二套通知。首次 bootstrap/restore 允许全量，稳态研究、rename
 和税务变化即使 generation 增加也不会制造 territory cell patch。
 
+### Country worker command receipt（2026-09-09）
+
+Country worker 命令区分 admission 与业务终态。`submit_country_commands()` 只在实际 granted
+Country bit 下进入 Host queue；整批成功入队返回 `status=Accepted`、`receipt_code=1` 和
+`request_ids`，这不表示 Country state 已提交。GDScript 通过
+`CountryFacade.poll_worker_command_receipts(after_request_id, limit)` 转发
+`DCWorldExt.poll_country_command_receipts(...)`，按 request-id cursor 获取唯一终态：
+
+```text
+Accepted -> Committed
+Accepted -> RejectedAtExecution
+```
+
+返回行包含 `request_id/producer_id/sequence/effective_day/generation/code/status/reason`。
+peer ACK 未完成时没有终态；cursor 之后只返回更大的 request id。Host 在批内 decode 或 preflight
+失败时按本批 request id 清除已排入 POD pending 的命令，禁止已经发布
+`RejectedAtExecution` 的请求在下一边界重放。当前 receipt history 仍是进程内 Host 状态，尚未
+完成恢复安装，因此不能据此放行 Country ACTIVE。
+
 后台模拟线程的硬前提是调用链完全不包含 Godot `Object`、`Variant`、`Dictionary`、
 `PackedArray` 和 `WorkerThreadPool`。当前 graph 仍有这些边界，因此线程化 ACTIVE 必须保持
 关闭，直到运行时存储迁成标准 C++ POD/vector、环境输入在启动时冻结、各 domain 提供纯 POD
@@ -239,6 +258,10 @@ Godot `PackedFloat32Array` / `PackedInt32Array` / `PackedByteArray` 是 Copy-on-
 - 第一批类型包括 `VEGETATION_SUCCESSION`、`TERRAIN_FLIP`、`WEATHER_FRONT_CHANGED`、`VISUAL_DIRTY_INTENT`。`VEGETATION_SUCCESSION` 的 payload 约定为 `cell_idx` + `old_veg/new_veg`。
 - 消费端必须使用 consumer cursor：`poll_gameplay_events({"consumer_id": ...})` 读取，`ack_gameplay_events(consumer_id, up_to_event_id)` 确认。renderer、UI、debug 不应共用一个 consumer id。
 - 持久化使用 `snapshot_gameplay_event_journal()`，恢复使用 `restore_gameplay_event_journal()`，回放使用 `replay_gameplay_events()`。快照只含 POD/packed payload，不含 Godot Object 引用。
+- Stage I 的 `RuntimeEventsAuthority` 是独立 SHADOW/PROBE 镜像，不替代 legacy journal。启用
+  `runtime_events_probe_enabled` 后，legacy append/ack 会以固定 little-endian command bridge
+  镜像到 worker；`poll_runtime_events_snapshot(after_generation)` 返回 generation/hash、事件
+  列、ACK 列和幂等证据列，GDScript 使用独立 generation cursor，不能把它重新注入 legacy event bus。
 - ring buffer 溢出不静默：report 必须显示 `dropped_event_count` / `first_dropped_event_id`，consumer 落后看 `consumer_lag`。
 - native 有界日志使用 `std::deque` 保持稳定顺序和 O(1) 尾插/头部淘汰。禁止改回
   `std::vector.erase(begin())`：到达 8192 条默认上限后，该写法会让每条新事件搬移整个日志，造成

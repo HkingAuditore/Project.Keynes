@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <limits>
 #include <string>
 #include <type_traits>
 #include <vector>
@@ -38,6 +39,12 @@ constexpr uint32_t RUNTIME_SNAPSHOT_RING_SIZE = 3u;
 constexpr uint32_t RUNTIME_DIRTY_FAMILY_COUNT = 9u;
 constexpr uint32_t RUNTIME_DOMAIN_INTENT_CAPACITY = 8192u;
 constexpr uint32_t RUNTIME_DOMAIN_EVENT_CAPACITY = 8192u;
+// Country -> Economy asset requests use a separate bounded transport.  The
+// request is a semantic transaction record, not a copy of the Economy store;
+// large/variable data stays in the main-thread Economy coordinator until the
+// operation is explicitly admitted.
+constexpr uint32_t RUNTIME_ECONOMY_ASSET_QUEUE_CAPACITY = 8192u;
+constexpr uint32_t RUNTIME_ECONOMY_ASSET_GOOD_CAPACITY = 32u;
 // Stage layout v3 adds an explicit input-capture barrier and gives Climate
 // its own domain bit.  Keep this independent from the legacy host envelope.
 constexpr uint32_t RUNTIME_DOMAIN_STAGE_COUNT = 12u;
@@ -119,6 +126,10 @@ struct RuntimeCommandEnvelope {
 
 struct RuntimeCommandPacket {
     RuntimeCommandEnvelope envelope;
+    // Assigned exactly once by the accepting Host queue. It is deliberately
+    // outside the legacy wire envelope so PKSR v2 remains readable while the
+    // live worker preserves Country's production ordering.
+    uint64_t submit_order = 0;
     std::array<uint8_t, RUNTIME_MAX_COMMAND_PAYLOAD> payload{};
 };
 
@@ -498,6 +509,11 @@ struct RuntimeDomainAck {
     int64_t effective_day = 0;
     uint32_t producer_id = 0;
     uint64_t sequence = 0;
+    // Country peer ACKs may carry the committed technology state so the
+    // worker can complete a pending activation without reaching into the
+    // Effect/Modifier store. Other domains leave this at zero.
+    uint8_t technology_flags = 0;
+    uint8_t reserved_technology_flags[7]{};
 };
 
 constexpr uint16_t RUNTIME_DOMAIN_INTENT_DEFERRED = 1u << 0;
@@ -534,6 +550,140 @@ struct RuntimeDomainIntent {
     uint64_t idempotency_key = 0;
 };
 
+// K2-B Country/Economy transaction wire contract.  These records are fixed
+// size and trivially copyable so the worker can publish them without exposing
+// a Godot value or a mutable Economy container.  The business state machine
+// is intentionally explicit: after Country has prepared its side, the peer
+// may only advance the same transaction identity; it must never create a new
+// transaction to retry a post-decision step.
+enum class RuntimeEconomyAssetOperation : uint16_t {
+    RESEARCH_PURCHASE = 1,
+    FISCAL_RESERVE = 2,
+    FISCAL_RETURN = 3,
+    FISCAL_COLLECT = 4,
+    CASH_TO_COHORT = 5,
+    CASH_FROM_COHORT = 6,
+    GOOD_TO_MARKET = 7,
+    GOOD_FROM_MARKET = 8,
+    TREASURY_SPEND = 9,
+};
+
+enum class RuntimeEconomyAssetState : uint8_t {
+    CREATED = 1,
+    COUNTRY_PREPARED = 2,
+    PEER_PREPARED = 3,
+    COMMIT_DECIDED = 4,
+    COUNTRY_APPLIED = 5,
+    PEER_APPLIED = 6,
+    COMPLETED = 7,
+    REJECTED = 8,
+    AWAITING_PEER_PREPARED = 9,
+    AWAITING_PEER_APPLIED = 10,
+    FAULTED = 11,
+};
+
+enum class RuntimeEconomyAssetResultCode : uint8_t {
+    ACCEPTED = 0,
+    PENDING = 1,
+    PEER_PREPARED = 2,
+    COMMIT_DECIDED = 3,
+    PEER_APPLIED = 4,
+    COMPLETED = 5,
+    REJECTED = 6,
+    FAULTED = 7,
+};
+
+enum class RuntimeEconomyAssetProtocolError : uint16_t {
+    NONE = 0,
+    PROTOCOL_MISMATCH = 1,
+    REQUEST_INVALID = 2,
+    REQUEST_UNKNOWN = 3,
+    REQUEST_DUPLICATE_MISMATCH = 4,
+    RESULT_IDENTITY_MISMATCH = 5,
+    RESULT_STATE_INVALID = 6,
+    RESULT_DUPLICATE_MISMATCH = 7,
+    SESSION_MISMATCH = 8,
+    GENERATION_MISMATCH = 9,
+    CAPACITY_EXCEEDED = 10,
+};
+
+constexpr uint32_t RUNTIME_ECONOMY_ASSET_PROTOCOL_VERSION = 1u;
+constexpr size_t RUNTIME_ECONOMY_ASSET_REASON_CAPACITY = 64u;
+
+struct RuntimeEconomyAssetRequest {
+    uint32_t protocol_version = RUNTIME_ECONOMY_ASSET_PROTOCOL_VERSION;
+    RuntimeEconomyAssetOperation operation =
+        RuntimeEconomyAssetOperation::RESEARCH_PURCHASE;
+    RuntimeEconomyAssetState state = RuntimeEconomyAssetState::COUNTRY_PREPARED;
+    uint8_t all_or_nothing = 0;
+    uint8_t reserved0 = 0;
+    uint16_t reserved1 = 0;
+    uint64_t session_epoch = 0;
+    uint64_t transaction_id = 0;
+    uint64_t request_id = 0;
+    uint32_t origin_domain = static_cast<uint32_t>(RuntimeDomainId::COUNTRY);
+    int64_t origin_epoch = -1;
+    int32_t origin_stage = -1;
+    uint32_t continuation_index = 0;
+    int64_t day = -1;
+    uint64_t operation_sequence = 0;
+    uint64_t country_generation = 0;
+    uint64_t peer_generation = 0;
+    uint64_t country_handle = 0;
+    int32_t country_slot = -1;
+    int32_t target_slot = -1;
+    uint64_t target_handle = 0;
+    int32_t good_id = -1;
+    uint32_t good_count = 0;
+    std::array<int32_t, RUNTIME_ECONOMY_ASSET_GOOD_CAPACITY> good_ids{};
+    std::array<int64_t, RUNTIME_ECONOMY_ASSET_GOOD_CAPACITY> good_quantities{};
+    int64_t requested_quantity = 0;
+    int64_t prepared_quantity = 0;
+    int64_t requested_cash = 0;
+    int64_t reserved_cash = 0;
+    int64_t requested_goods_total = 0;
+    int64_t reserved_goods_total = 0;
+};
+
+struct RuntimeEconomyAssetResult {
+    uint32_t protocol_version = RUNTIME_ECONOMY_ASSET_PROTOCOL_VERSION;
+    RuntimeEconomyAssetResultCode code = RuntimeEconomyAssetResultCode::REJECTED;
+    RuntimeEconomyAssetState state = RuntimeEconomyAssetState::REJECTED;
+    uint8_t accepted = 0;
+    uint8_t reserved0 = 0;
+    uint16_t reserved1 = 0;
+    uint64_t session_epoch = 0;
+    uint64_t transaction_id = 0;
+    uint64_t request_id = 0;
+    RuntimeEconomyAssetOperation operation =
+        RuntimeEconomyAssetOperation::RESEARCH_PURCHASE;
+    uint32_t continuation_index = 0;
+    int64_t day = -1;
+    uint64_t country_generation = 0;
+    uint64_t peer_generation = 0;
+    uint64_t committed_peer_generation = 0;
+    int32_t country_slot = -1;
+    int32_t target_slot = -1;
+    int64_t committed_quantity = 0;
+    int64_t committed_cash = 0;
+    int64_t committed_goods_total = 0;
+    std::array<char, RUNTIME_ECONOMY_ASSET_REASON_CAPACITY> reason{};
+};
+
+struct RuntimeEconomyAssetProtocolStatus {
+    uint32_t protocol_version = RUNTIME_ECONOMY_ASSET_PROTOCOL_VERSION;
+    uint32_t queued_requests = 0;
+    uint32_t pending_requests = 0;
+    uint32_t terminal_requests = 0;
+    uint32_t rejected_results = 0;
+    uint64_t session_epoch = 0;
+    uint64_t last_transaction_id = 0;
+    uint64_t last_request_id = 0;
+    RuntimeEconomyAssetProtocolError last_error =
+        RuntimeEconomyAssetProtocolError::NONE;
+    std::array<char, RUNTIME_ECONOMY_ASSET_REASON_CAPACITY> last_reason{};
+};
+
 struct RuntimeDomainTiming {
     uint64_t work_units = 0;
     uint32_t intent_count = 0;
@@ -563,6 +713,9 @@ struct RuntimeDomainSnapshot {
 
 static_assert(std::is_trivially_copyable_v<RuntimeDomainAck>);
 static_assert(std::is_trivially_copyable_v<RuntimeDomainIntent>);
+static_assert(std::is_trivially_copyable_v<RuntimeEconomyAssetRequest>);
+static_assert(std::is_trivially_copyable_v<RuntimeEconomyAssetResult>);
+static_assert(std::is_trivially_copyable_v<RuntimeEconomyAssetProtocolStatus>);
 static_assert(std::is_trivially_copyable_v<RuntimeDomainTiming>);
 static_assert(std::is_trivially_copyable_v<RuntimeDomainReport>);
 
@@ -631,14 +784,20 @@ struct RuntimeCountryDayCommit {
 // copied once at a main-thread capture boundary and then treated as const by
 // the POD adapter.
 struct RuntimeCountryPodSnapshot {
+    // Transport identity captured with the immutable input. Zero is retained
+    // for older diagnostic fixtures and normalized by the worker authority.
+    uint64_t session_epoch = 0;
     uint64_t generation = 0;
     uint64_t state_hash = 0;
     int64_t committed_day = -1;
+    int64_t last_research_day = -1;
     uint32_t cell_count = 0;
     uint32_t country_count = 0;
     uint32_t technology_words = 0;
     uint32_t technology_count = 0;
     uint32_t good_count = 0;
+    uint32_t profession_count = 0;
+    uint32_t building_type_count = 0;
     uint32_t research_signal_words = 0;
     uint32_t research_signal_count = 0;
     // Catalog identity is captured with the immutable country projection. A
@@ -650,6 +809,11 @@ struct RuntimeCountryPodSnapshot {
     bool research_active_index_valid = false;
     std::vector<uint8_t> country_active;
     std::vector<uint32_t> country_generation;
+    // Identity strings are copied once at the command/snapshot boundary. They
+    // never participate in the numeric hot loop, but CREATE/RENAME must still
+    // have the same durable semantics as the synchronous core.
+    std::vector<std::string> country_stable_ids;
+    std::vector<std::string> country_display_names;
     // Sorted dense slots whose research state can make progress on the next
     // day.  This is a derived membership index captured from Country's
     // native hot loop; an empty vector is accepted for compatibility and
@@ -666,6 +830,8 @@ struct RuntimeCountryPodSnapshot {
     std::vector<uint64_t> country_discovered;
     std::vector<uint64_t> country_pending_technologies;
     std::vector<uint64_t> country_research_signals;
+    std::vector<int32_t> research_signal_cell_offsets;
+    std::vector<uint64_t> research_signal_cells;
     std::vector<int32_t> research_signal_evidence_offsets;
     struct SignalEvidence {
         int32_t signal = -1;
@@ -686,15 +852,52 @@ struct RuntimeCountryPodSnapshot {
     // legacy probe only exported aggregate totals; a worker authority must
     // reject captures that omit this matrix.
     std::vector<int64_t> research_progress;
+    // Peer modifier inputs captured at the same semantic boundary. They are
+    // required for deterministic completion-day arithmetic and are not a
+    // second mutable authority.
+    std::vector<double> research_cost_factor;
+    std::vector<double> research_efficiency;
+    // Dense numeric flags for pending technology peer state. A value is the
+    // OR of CountryPeerTechnologyState flags for (country, technology).
+    std::vector<uint8_t> research_peer_flags;
     std::vector<uint8_t> research_auto_purchase;
     std::vector<int64_t> research_purchased_total;
     std::vector<int64_t> research_consumed_total;
+    static constexpr uint32_t TAX_KIND_COUNT = 5u;
+    std::vector<int32_t> country_tax_defaults;
+    std::vector<int32_t> country_tax_default_modes;
+    std::vector<int32_t> country_income_tax_overrides;
+    std::vector<int32_t> country_consumption_tax_overrides;
+    std::vector<int32_t> country_business_tax_overrides;
+    std::vector<int32_t> country_import_tax_overrides;
+    std::vector<int32_t> country_export_tax_overrides;
+    std::vector<int32_t> country_income_tax_mode_overrides;
+    std::vector<int32_t> country_consumption_tax_mode_overrides;
+    std::vector<int32_t> country_business_tax_mode_overrides;
+    std::vector<int32_t> country_import_tax_mode_overrides;
+    std::vector<int32_t> country_export_tax_mode_overrides;
+    struct CellTaxOverride {
+        int32_t kind = -1;
+        int32_t item = -1;
+        int32_t rate = std::numeric_limits<int32_t>::min();
+        int32_t mode = std::numeric_limits<int32_t>::min();
+    };
+    struct CellTaxPolicy {
+        std::array<int32_t, TAX_KIND_COUNT> defaults{};
+        std::array<int32_t, TAX_KIND_COUNT> modes{};
+        std::vector<CellTaxOverride> overrides;
+    };
+    std::vector<uint32_t> cell_tax_policy_ids;
+    std::vector<CellTaxPolicy> cell_tax_policies;
     std::vector<uint8_t> is_water;
 };
 
-// Main-thread read view for a committed worker Country state. The snapshot
-// remains immutable and owned by the host; the patch is the only territory
-// payload copied for the normal publish path. `full_snapshot_required` is
+// Main-thread read view for a committed worker Country state. `generation` is
+// the monotonic publication cursor, not necessarily the Country business
+// generation: a rejected peer boundary may commit Country-side state without
+// advancing the business generation, and must still be visible to readers.
+// The snapshot remains immutable and owned by the host; the patch is the only
+// territory payload copied for the normal publish path. `full_snapshot_required` is
 // set when a consumer has missed the immediately preceding generation and
 // therefore cannot safely apply the retained sparse patch by itself.
 struct RuntimeCountryReadView {
@@ -729,6 +932,10 @@ struct RuntimeCountryPodCatalog {
     std::vector<int64_t> technology_costs;
     std::vector<int32_t> technology_domains;
     std::vector<int32_t> technology_flags;
+    // Stable numeric projection of whether a technology has a peer Effect /
+    // Modifier activation requirement. String definition keys stay main-thread
+    // catalog data and never cross into the worker.
+    std::vector<uint8_t> technology_effect_required;
     std::vector<int32_t> prerequisite_offsets;
     std::vector<int32_t> prerequisites;
     std::vector<int32_t> milestone_offsets;
@@ -739,6 +946,7 @@ struct RuntimeCountryPodCatalog {
     std::vector<int32_t> research_condition_ops;
     std::vector<int32_t> research_condition_refs;
     std::vector<int64_t> research_condition_values;
+    std::vector<int32_t> starting_technologies;
 };
 
 struct RuntimeCountryPodDiagnostics {
@@ -762,11 +970,14 @@ struct RuntimeCountryPodDiagnostics {
 // behind NativeSimulationHost.
 constexpr uint32_t RUNTIME_COUNTRY_COMMAND_BATCH_CAPACITY = 256u;
 constexpr uint32_t RUNTIME_COUNTRY_RESEARCH_DOMAIN_COUNT = 4u;
+constexpr size_t RUNTIME_COUNTRY_STABLE_ID_CAPACITY = 96u;
+constexpr size_t RUNTIME_COUNTRY_DISPLAY_NAME_CAPACITY = 192u;
 
 struct RuntimeCountryCommand {
     uint64_t request_id = 0;
     uint32_t producer_id = 0;
     uint64_t sequence = 0;
+    uint64_t submit_order = 0;
     uint64_t observed_generation = 0;
     int64_t requested_day = 0;
     int64_t effective_day = 0;
@@ -784,6 +995,8 @@ struct RuntimeCountryCommand {
     int32_t tax_rate_basis_points = 0;
     int32_t tax_assessment_mode = 0;
     int64_t value = 0;
+    std::array<char, RUNTIME_COUNTRY_STABLE_ID_CAPACITY> stable_id{};
+    std::array<char, RUNTIME_COUNTRY_DISPLAY_NAME_CAPACITY> display_name{};
 };
 
 struct RuntimeCountryCommandBatch {
@@ -803,6 +1016,7 @@ inline bool runtime_country_research_weights_valid(
 }
 
 static_assert(std::is_trivially_copyable_v<RuntimeCommandEnvelope>);
+static_assert(std::is_trivially_copyable_v<RuntimeCommandPacket>);
 static_assert(std::is_trivially_copyable_v<RuntimeDomainHeader>);
 static_assert(std::is_trivially_copyable_v<RuntimeDomainSaveSection>);
 static_assert(std::is_trivially_copyable_v<RuntimeDayContext>);
@@ -980,9 +1194,29 @@ struct RuntimeThreadReport {
       uint64_t country_pod_work_units = 0;
       uint32_t country_pod_active_country_count = 0;
       uint32_t country_pod_active_index_count = 0;
-      uint32_t country_pod_pending_checks = 0;
-      bool country_pod_ack_pending = false;
+    uint32_t country_pod_pending_checks = 0;
+    bool country_pod_ack_pending = false;
     char country_pod_blocker[64]{};
+    // Country worker transport status is copied into the immutable report
+    // snapshot by NativeSimulationHost::report().  The Godot formatter must
+    // only consume these fields; it cannot reach back into the host object.
+    bool country_worker_configured = false;
+    bool country_worker_plan_active = false;
+    bool country_worker_waiting_for_peer = false;
+    uint32_t country_worker_pending_intents = 0;
+    uint32_t country_worker_queued_intents = 0;
+    uint32_t country_worker_result_count = 0;
+    uint32_t country_worker_rejected_results = 0;
+    uint64_t country_worker_session_epoch = 0;
+    uint64_t country_worker_country_generation = 0;
+    int64_t country_worker_day = -1;
+    uint32_t country_worker_continuation_index = 0;
+    uint64_t country_worker_boundary_id = 0;
+    uint64_t country_worker_last_admitted_submit_order = 0;
+    uint64_t country_worker_expected_base_generation = 0;
+    uint64_t country_worker_catalog_hash = 0;
+    bool country_worker_authoritative = false;
+    char country_worker_last_reason[64]{};
     bool modifier_pod_ready = false;
     double modifier_pod_plan_ms = 0.0;
     double modifier_pod_replay_ms = 0.0;

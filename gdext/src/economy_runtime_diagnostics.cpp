@@ -15,10 +15,48 @@ namespace pk {
 using namespace godot;
 using namespace variant_helpers;
 
+void NativeEconomyRuntime::write_fiscal_continuation_report(
+        Dictionary &out) const {
+    out["fiscal_reservation_continuation_active"] =
+        _fiscal_reservation_continuation.active;
+    out["fiscal_reservation_continuation_phase"] =
+        _fiscal_reservation_continuation.phase;
+    out["fiscal_reservation_country_cursor"] =
+        _fiscal_reservation_continuation.country_cursor;
+    out["fiscal_reservation_country_count"] =
+        _fiscal_reservation_continuation.country_count;
+    out["fiscal_reservation_day"] =
+        _fiscal_reservation_continuation.day_index;
+    out["fiscal_reservation_last_requested"] =
+        _fiscal_reservation_continuation.last_requested;
+    out["fiscal_reservation_last_reserved"] =
+        _fiscal_reservation_continuation.last_reserved;
+    out["fiscal_reservation_last_error"] = String::utf8(
+        _fiscal_reservation_continuation.last_error.c_str());
+    out["epoch_begin_post_fiscal_pending"] =
+        _epoch_begin_post_fiscal_pending;
+    out["epoch_begin_pending_day"] = _epoch_begin_pending_day;
+}
+
 // Read-only report diagnostics; stage and scheduler authority stays in the root.
 int32_t NativeEconomyRuntime::stage_progress_q16() const {
-    if (!_epoch_active) return _fatal ? 0 : static_cast<int32_t>(Q16_ONE - 1);
+    if (!_epoch_active) {
+        if (_fiscal_reservation_continuation.active) {
+            const int64_t count = std::max<int32_t>(
+                1, _fiscal_reservation_continuation.country_count);
+            const int64_t cursor = std::clamp<int64_t>(
+                _fiscal_reservation_continuation.country_cursor, 0, count);
+            return static_cast<int32_t>(std::clamp<int64_t>(
+                (cursor * (Q16_ONE / 10)) / count,
+                0, Q16_ONE / 10));
+        }
+        if (_epoch_begin_post_fiscal_pending)
+            return static_cast<int32_t>(Q16_ONE / 10);
+        return _fatal ? 0 : static_cast<int32_t>(Q16_ONE - 1);
+    }
     switch (_stage) {
+        case Stage::EPOCH_BEGIN:
+            return static_cast<int32_t>(Q16_ONE / 10);
         case Stage::BUILDING_PLAN: {
             const int64_t phase_base = _building_plan_phase == 0 ? 0 : Q16_ONE / 20;
             const int64_t phase_progress =
@@ -263,6 +301,9 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_fiscal_previous_requests);
     cap(_fiscal_previous_country_handles);
     cap(_fiscal_reservation_requests);
+    cap(_fiscal_reservation_continuation.requested_by_country);
+    cap(_fiscal_settlement_continuation.unused_by_country);
+    cap(_fiscal_settlement_continuation.collected_by_country);
     cap(_fiscal_current_requests); cap(_fiscal_budgets);
     cap(_fiscal_remaining); cap(_fiscal_epoch_bases);
     cap(_fiscal_epoch_assessed); cap(_fiscal_epoch_collected);
@@ -942,6 +983,7 @@ Dictionary NativeEconomyRuntime::compact_report() const {
     out["commit_over_budget"] = _epoch_active && age_days > _commit_lag_budget_days;
     out["commit_due"] = commit_due;
     out["boundary_continuation_required"] = false;
+    write_fiscal_continuation_report(out);
     out["cycle_deadline_day"] = deadline_day;
     write_cadence_report(out);
     out["workload_deadline_feasible"] = _workload_deadline_feasible;
@@ -2020,6 +2062,52 @@ Dictionary NativeEconomyRuntime::report() const {
         _country_research_procurement_transactions;
     out["country_research_procurement_rejections"] =
         _country_research_procurement_rejections;
+    out["country_research_procurement_continuation_active"] =
+        _country_research_procurement_continuation.active;
+    out["country_research_procurement_continuation_phase"] =
+        _country_research_procurement_continuation.phase;
+    out["country_research_procurement_continuation_candidate"] =
+        _country_research_procurement_continuation.candidate_index;
+    out["country_research_procurement_continuation_country"] =
+        _country_research_procurement_continuation.country;
+    out["country_research_procurement_continuation_market"] =
+        _country_research_procurement_continuation.market;
+    out["country_research_procurement_continuation_good"] =
+        _country_research_procurement_continuation.good;
+    out["country_research_procurement_continuation_quantity"] =
+        _country_research_procurement_continuation.quantity;
+    out["country_research_procurement_continuation_cash"] =
+        _country_research_procurement_continuation.cash;
+    out["country_research_procurement_continuation_transaction_id"] =
+        static_cast<int64_t>(_country_research_procurement_continuation.transaction_id);
+    out["country_research_procurement_continuation_merchants"] =
+        static_cast<int64_t>(_country_research_procurement_continuation.living_merchants.size());
+    out["country_research_procurement_continuation_merchant_cursor"] =
+        static_cast<int64_t>(_country_research_procurement_continuation.merchant_cursor);
+    out["country_research_procurement_continuation_market_applied"] =
+        _country_research_procurement_continuation.market_applied;
+    out["country_research_procurement_continuation_session_epoch"] =
+        static_cast<int64_t>(_country_research_procurement_continuation.session_epoch);
+    out["country_research_procurement_continuation_country_generation"] =
+        static_cast<int64_t>(_country_research_procurement_continuation.country_generation);
+    out["country_research_procurement_continuation_peer_generation"] =
+        static_cast<int64_t>(_country_research_procurement_continuation.peer_generation);
+    out["country_research_procurement_last_error"] =
+        String::utf8(_country_research_procurement_continuation.last_error.c_str());
+    out["fiscal_settlement_continuation_active"] =
+        _fiscal_settlement_continuation.active;
+    out["fiscal_settlement_continuation_phase"] =
+        _fiscal_settlement_continuation.phase;
+    out["fiscal_settlement_country_cursor"] =
+        _fiscal_settlement_continuation.country_cursor;
+    out["fiscal_settlement_country_count"] =
+        _fiscal_settlement_continuation.country_count;
+    out["fiscal_settlement_last_unused"] =
+        _fiscal_settlement_continuation.last_unused;
+    out["fiscal_settlement_last_collected"] =
+        _fiscal_settlement_continuation.last_collected;
+    out["fiscal_settlement_last_error"] = String::utf8(
+        _fiscal_settlement_continuation.last_error.c_str());
     out["merchant_operating_outflow"] = merchant_operating_outflow;
     out["merchant_liquidity_coverage_q16"] =
         merchant_operating_outflow > 0
@@ -2265,6 +2353,7 @@ Dictionary NativeEconomyRuntime::report() const {
     out["commit_over_budget"] = _epoch_active && age_days > _commit_lag_budget_days;
     out["commit_due"] = commit_due;
     out["boundary_continuation_required"] = false;
+    write_fiscal_continuation_report(out);
     out["cycle_deadline_day"] = deadline_day;
     out["days_until_commit"] = _epoch_active
         ? std::max<int64_t>(0, deadline_day - _current_day) : 0;

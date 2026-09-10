@@ -135,8 +135,9 @@ bool RuntimeProtocolGuard::command_less(const RuntimeCommandPacket &lhs,
     const RuntimeCommandEnvelope &a = lhs.envelope;
     const RuntimeCommandEnvelope &b = rhs.envelope;
     if (a.effective_day != b.effective_day) return a.effective_day < b.effective_day;
-    if (a.producer_id != b.producer_id) return a.producer_id < b.producer_id;
     if (a.sequence != b.sequence) return a.sequence < b.sequence;
+    if (lhs.submit_order != rhs.submit_order)
+        return lhs.submit_order < rhs.submit_order;
     return a.request_id < b.request_id;
 }
 
@@ -277,6 +278,7 @@ bool RuntimeProtocolGuard::self_test(std::string &error) {
         commands[i].envelope.producer_id = producers[i];
         commands[i].envelope.sequence = sequences[i];
         commands[i].envelope.request_id = requests[i];
+        commands[i].submit_order = static_cast<uint64_t>(4u - i);
     }
     std::stable_sort(commands.begin(), commands.end(), command_less);
     if (commands[0].envelope.request_id != 1 ||
@@ -284,6 +286,26 @@ bool RuntimeProtocolGuard::self_test(std::string &error) {
         commands[2].envelope.request_id != 3 ||
         commands[3].envelope.request_id != 4) {
         fail(error, "runtime_command_stable_sort_invalid");
+        return false;
+    }
+
+    // Producer ids are routing metadata, not the Country semantic order.
+    // With equal day and sequence the accepting queue's submit watermark must
+    // decide the order even when the later submission has the lower producer.
+    RuntimeCommandPacket first = valid;
+    RuntimeCommandPacket second = valid;
+    first.envelope.request_id = 101;
+    first.envelope.producer_id = 99;
+    first.envelope.sequence = 7;
+    first.envelope.effective_day = 12;
+    first.submit_order = 20;
+    second.envelope.request_id = 102;
+    second.envelope.producer_id = 1;
+    second.envelope.sequence = 7;
+    second.envelope.effective_day = 12;
+    second.submit_order = 19;
+    if (!command_less(second, first) || command_less(first, second)) {
+        fail(error, "runtime_command_submit_order_tie_break_invalid");
         return false;
     }
 

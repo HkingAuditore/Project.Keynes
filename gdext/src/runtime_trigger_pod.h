@@ -342,6 +342,7 @@ private:
     bool apply_command(RuntimeTriggerSnapshot &state,
                        const RuntimeTriggerCommand &command,
                        std::string &error) const;
+    static uint64_t hash_snapshot_impl(const RuntimeTriggerSnapshot &snapshot);
     static uint64_t hash_snapshot(const RuntimeTriggerSnapshot &snapshot);
     static uint64_t hash_effects(const std::vector<RuntimeTriggerEffectIntent> &effects);
     bool compare_reference_frame();

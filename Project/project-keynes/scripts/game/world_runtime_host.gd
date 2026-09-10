@@ -712,9 +712,10 @@ func _process(_delta: float) -> void:
 	_refresh_map_overlay(false)
 
 
-## Host-side Country intent drain.  SHADOW replays typed results without
-## touching Effect/Modifier/Economy.  ACTIVE deliberately remains disabled
-## until K2-B/K2-C installs the real transaction coordinator.
+## Host-side Country intent drain. SHADOW replays typed results without
+## touching Effect/Modifier/Economy. ACTIVE invokes the already-attached
+## production peer adapter and returns its typed result to the worker; the
+## adapter itself does not mutate Country state.
 func _service_country_worker_transport() -> void:
 	if not _runtime_ready_for_ticks or _generator == null \
 			or not _generator.has_method("service_country_worker_peer_adapter"):
@@ -723,10 +724,11 @@ func _service_country_worker_transport() -> void:
 		if _generator.has_method("get_runtime_thread_report") else {}
 	var mode := String(report.get("simulation_thread_mode",
 		report.get("requested_simulation_thread_mode", "OFF")))
-	if mode != "SHADOW":
+	if mode != "SHADOW" and mode != "ACTIVE":
 		return
+	var shadow_replay := mode != "ACTIVE"
 	_country_worker_transport_last_service = \
-		_generator.service_country_worker_peer_adapter(64, true)
+		_generator.service_country_worker_peer_adapter(64, shadow_replay)
 
 
 ## ACTIVE Country's only MapData read-back boundary.  The worker snapshot is

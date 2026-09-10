@@ -256,6 +256,13 @@ public:
     bool service_peer_intents_main_thread(
         int32_t max_intents, PeerAdapterServiceReport &out,
         std::string &error);
+    // Host-owned Country worker adapter. This reuses the production peer
+    // semantics above, but validates the worker session/generation at the
+    // Host boundary instead of comparing it with the legacy synchronous
+    // Country runtime session. No Country state is mutated by this call;
+    // only the attached peer runtimes may enqueue/apply their own work.
+    CountryPeerResult execute_peer_intent_from_worker(
+        const CountryPeerIntent &intent);
     CountryPeerProtocolStatus peer_protocol_status() const;
     bool has_peer_save_barrier() const {
         return peer_protocol_status().has_save_barrier();
@@ -870,7 +877,8 @@ private:
     CountryPeerResult apply_peer_intent(CountryPeerContext &context,
                                          const CountryPeerIntent &intent);
     CountryPeerResult execute_peer_intent_main_thread(
-        const CountryPeerIntent &intent);
+        const CountryPeerIntent &intent,
+        bool validate_local_identity = true);
     void apply_peer_result_to_context(CountryPeerContext &context,
                                       const CountryPeerResult &result);
     bool peer_result_identity_matches(const CountryPeerIntent &intent,

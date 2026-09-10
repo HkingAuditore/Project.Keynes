@@ -122,6 +122,16 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::poll_country_worker_intent);
     ClassDB::bind_method(D_METHOD("submit_country_worker_result", "result"),
                          &DCWorldExt::submit_country_worker_result);
+    ClassDB::bind_method(D_METHOD("get_country_economy_asset_protocol_status"),
+                         &DCWorldExt::get_country_economy_asset_protocol_status);
+    ClassDB::bind_method(D_METHOD("poll_country_economy_asset_request"),
+                         &DCWorldExt::poll_country_economy_asset_request);
+    ClassDB::bind_method(D_METHOD("submit_country_economy_asset_result", "result"),
+                         &DCWorldExt::submit_country_economy_asset_result);
+    ClassDB::bind_method(D_METHOD("runtime_country_host_economy_protocol_self_test"),
+                         &DCWorldExt::runtime_country_host_economy_protocol_self_test);
+    ClassDB::bind_method(D_METHOD("runtime_country_host_rejection_self_test"),
+                         &DCWorldExt::runtime_country_host_rejection_self_test);
     ClassDB::bind_method(D_METHOD("service_country_worker_peer_adapter",
                                   "max_intents", "shadow_replay"),
                          &DCWorldExt::service_country_worker_peer_adapter,
@@ -300,6 +310,12 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::bootstrap_country);
     ClassDB::bind_method(D_METHOD("submit_country_commands", "packed_batch"),
                          &DCWorldExt::submit_country_commands);
+    ClassDB::bind_method(D_METHOD("poll_country_command_receipts",
+                                  "after_request_id", "limit"),
+                         &DCWorldExt::poll_country_command_receipts,
+                         DEFVAL(0), DEFVAL(128));
+    ClassDB::bind_method(D_METHOD("runtime_country_host_receipt_self_test"),
+                         &DCWorldExt::runtime_country_host_receipt_self_test);
     ClassDB::bind_method(D_METHOD("run_country_slice", "ctx"),
                          &DCWorldExt::run_country_slice);
     ClassDB::bind_method(D_METHOD("sync_country_territory_to_map"),

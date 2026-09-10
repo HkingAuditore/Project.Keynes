@@ -24,6 +24,7 @@
 #include <string>
 #include <thread>
 #include <memory>
+#include <map>
 #include <deque>
 #include <unordered_map>
 #include <vector>
@@ -80,6 +81,13 @@ public:
     bool poll_country_worker_intent(CountryPeerIntent &out);
     bool submit_country_worker_result(const CountryPeerResult &result,
                                       std::string &error);
+    bool poll_country_economy_asset_request(
+            RuntimeEconomyAssetRequest &out);
+    bool submit_country_economy_asset_result(
+            const RuntimeEconomyAssetResult &result, std::string &error);
+    RuntimeEconomyAssetProtocolStatus
+    country_economy_asset_protocol_status() const;
+    bool country_economy_asset_protocol_self_test(std::string &error) const;
     RuntimeCountryReadView country_worker_read_view(
             uint64_t after_generation = 0) const;
     struct CountryWorkerProtocolStatus {
@@ -91,10 +99,18 @@ public:
         uint32_t queued_intents = 0;
         uint32_t result_count = 0;
         uint32_t rejected_results = 0;
+        uint32_t rejected_intents = 0;
+        bool has_unreported_rejection = false;
+        int64_t retry_day = -1;
+        uint64_t rejected_request_id = 0;
         uint64_t session_epoch = 0;
         uint64_t country_generation = 0;
         int64_t day = -1;
         uint32_t continuation_index = 0;
+        uint64_t boundary_id = 0;
+        uint64_t last_admitted_submit_order = 0;
+        uint64_t expected_base_generation = 0;
+        uint64_t catalog_hash = 0;
         char last_reason[64]{};
     };
     CountryWorkerProtocolStatus country_worker_protocol_status() const;
@@ -174,12 +190,31 @@ public:
     bool ideology_pod_self_test(std::string *error = nullptr) const;
 
     bool enqueue(RuntimeCommandPacket packet);
+    // Country facade batches are a semantic admission unit. The Host checks
+    // capacity before publishing any packet and assigns submit_order in the
+    // same critical section, so transport chunking cannot split a business
+    // batch or change its tie-break order.
+    bool enqueue_batch(std::vector<RuntimeCommandPacket> packets);
     bool enqueue_modifier_shadow(RuntimeCommandPacket packet);
+    uint64_t allocate_command_request_id();
     uint64_t allocate_producer_sequence(uint32_t producer_id);
     bool next_command(RuntimeCommandPacket &out) const;
     bool poll_commit(uint64_t after_generation, RuntimeCommit &out);
     bool poll_commit_generation(uint64_t generation, RuntimeCommit &out);
     bool poll_receipt(RuntimeCommandReceipt &out);
+    bool poll_country_command_receipts(
+            uint64_t after_request_id, uint32_t limit,
+            std::vector<CountryCommandReceipt> &out);
+    bool country_command_receipt_self_test(std::string &error) const;
+    bool country_peer_rejection_self_test(std::string &error) const;
+    bool publish_country_economy_asset_requests(
+            const std::vector<RuntimeEconomyAssetRequest> &requests,
+            std::string &error);
+    void discard_country_economy_asset_requests(
+            const std::vector<uint64_t> &request_ids) noexcept;
+    void set_country_economy_asset_protocol_error_locked(
+            RuntimeEconomyAssetProtocolError code, uint64_t transaction_id,
+            uint64_t request_id, const char *reason) noexcept;
     bool request_save(uint64_t request_id);
     std::shared_ptr<const RuntimeSaveBundle> poll_save(uint64_t request_id) const;
     bool restore_bundle(const uint8_t *bytes, size_t size, std::string &error);
@@ -287,14 +322,22 @@ private:
     RuntimeDayCommit execute_day_plan(
             RuntimeDayPlan &plan,
             const std::vector<RuntimeCommandPacket> &day_commands,
-            std::vector<RuntimeCommandReceipt> &day_receipts);
+            std::vector<RuntimeCommandReceipt> &day_receipts,
+            uint64_t admitted_submit_order);
     bool execute_country_worker_stage(
             int64_t day, uint64_t input_generation,
             const std::vector<RuntimeCommandPacket> &day_commands,
-            RuntimeDayCommit &commit, std::string &error);
+            RuntimeDayCommit &commit, std::string &error,
+            uint64_t admitted_submit_order);
+    bool publish_country_worker_snapshot(uint32_t dirty_families,
+                                         std::string &error);
     bool execute_ideology_worker_stage(int64_t day,
                                        RuntimeDayCommit &commit,
                                        std::string &error);
+    void publish_country_command_terminals(
+            const std::vector<RuntimeCountryCommand> &commands,
+            CountryCommandReceiptCode code, uint64_t generation,
+            const char *reason);
     bool pop_command(RuntimeCommandPacket &out);
     bool push_receipt(const RuntimeCommandReceipt &receipt);
     void publish_day(int64_t from_day, int64_t day,
@@ -369,6 +412,12 @@ private:
     // producers reserve distinct slots without a mutex or a blocking retry.
     std::atomic<uint64_t> _command_enqueue_pos{0};
     std::atomic<uint64_t> _command_dequeue_pos{0};
+    mutable std::mutex _command_enqueue_mutex;
+    // Monotonic admission order for the shared command boundary. This is
+    // independent of producer-local sequence numbers and is Country's final
+    // same-day tie-breaker.
+    std::atomic<uint64_t> _command_submit_order{0};
+    std::atomic<uint64_t> _command_request_id{0};
     std::array<CommandQueueSlot, RUNTIME_COMMAND_QUEUE_CAPACITY> _command_slots{};
     std::array<std::atomic<uint64_t>, 256> _producer_sequences{};
     std::atomic<uint64_t> _fallback_producer_sequence{0};
@@ -414,11 +463,34 @@ private:
     std::unordered_map<uint64_t, CountryPeerIntent> _country_worker_intents;
     std::unordered_map<uint64_t, CountryPeerResult> _country_worker_results;
     std::unordered_map<uint64_t, CountryPeerResult> _country_worker_terminal_results;
+    // Country -> Economy is a separate bounded transport.  Requests remain
+    // addressable after polling so a delayed/duplicate result can be checked
+    // against the original transaction identity; only terminal results are
+    // retained in the terminal cache after the worker consumes the request.
+    std::deque<uint64_t> _country_economy_asset_request_queue;
+    std::unordered_map<uint64_t, RuntimeEconomyAssetRequest>
+        _country_economy_asset_requests;
+    std::unordered_map<uint64_t, RuntimeEconomyAssetResult>
+        _country_economy_asset_results;
+    std::unordered_map<uint64_t, RuntimeEconomyAssetResult>
+        _country_economy_asset_terminal_results;
+    RuntimeEconomyAssetProtocolStatus _country_economy_asset_protocol{};
+    // Country command lifecycle is separate from the legacy generic receipt
+    // queue. The generic queue reports transport/preflight admission for all
+    // domains; this ordered map carries Country's typed terminal state and is
+    // drained by a request-id cursor so a terminal result cannot be confused
+    // with an admission acknowledgement.
+    std::map<uint64_t, CountryCommandReceipt> _country_command_terminals;
+    // Complete Host-side request lifecycle. The terminal map is only the
+    // cursor-visible projection; this map also retains Accepted requests so a
+    // save can prove that every restored Country pending packet is admissible.
+    std::map<uint64_t, CountryCommandReceipt> _country_command_states;
     std::atomic<uint64_t> _country_peer_signal{0};
     uint64_t _country_worker_session_epoch = 1;
     uint64_t _country_worker_country_generation = 0;
     int64_t _country_worker_day = -1;
     uint32_t _country_worker_continuation_index = 0;
+    CountryBoundarySeal _country_worker_seal{};
     uint64_t _country_read_view_generation = 0;
     uint64_t _country_read_view_patch_base_generation = 0;
     uint32_t _country_read_view_dirty_families = 0;

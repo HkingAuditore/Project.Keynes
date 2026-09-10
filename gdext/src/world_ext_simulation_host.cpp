@@ -184,6 +184,34 @@ static Dictionary runtime_report_to_dictionary(const RuntimeThreadReport &report
     out["country_pod_pending_checks"] = static_cast<int>(report.country_pod_pending_checks);
     out["country_pod_ack_pending"] = report.country_pod_ack_pending;
     out["country_pod_blocker"] = String(report.country_pod_blocker);
+    out["country_worker_configured"] = report.country_worker_configured;
+    out["country_worker_plan_active"] = report.country_worker_plan_active;
+    out["country_worker_waiting_for_peer"] = report.country_worker_waiting_for_peer;
+    out["country_worker_pending_intents"] = static_cast<int64_t>(
+        report.country_worker_pending_intents);
+    out["country_worker_queued_intents"] = static_cast<int64_t>(
+        report.country_worker_queued_intents);
+    out["country_worker_result_count"] = static_cast<int64_t>(
+        report.country_worker_result_count);
+    out["country_worker_rejected_results"] = static_cast<int64_t>(
+        report.country_worker_rejected_results);
+    out["country_worker_session_epoch"] = static_cast<int64_t>(
+        report.country_worker_session_epoch);
+    out["country_worker_country_generation"] = static_cast<int64_t>(
+        report.country_worker_country_generation);
+    out["country_worker_day"] = report.country_worker_day;
+    out["country_worker_continuation_index"] = static_cast<int64_t>(
+        report.country_worker_continuation_index);
+    out["country_worker_boundary_id"] = static_cast<int64_t>(
+        report.country_worker_boundary_id);
+    out["country_worker_last_admitted_submit_order"] = static_cast<int64_t>(
+        report.country_worker_last_admitted_submit_order);
+    out["country_worker_expected_base_generation"] = static_cast<int64_t>(
+        report.country_worker_expected_base_generation);
+    out["country_worker_catalog_hash"] = static_cast<int64_t>(
+        report.country_worker_catalog_hash);
+    out["country_worker_last_reason"] = String(report.country_worker_last_reason);
+    out["country_worker_authoritative"] = report.country_worker_authoritative;
     out["trigger_parity_day"] = report.trigger_parity_day;
     out["trigger_reference_day"] = report.trigger_reference_day;
     out["trigger_input_hash"] = static_cast<int64_t>(report.trigger_input_hash);
@@ -1688,6 +1716,18 @@ Dictionary DCWorldExt::request_runtime_save(int64_t request_id) {
             return out;
         }
     }
+    const NativeSimulationHost::CountryWorkerProtocolStatus country_protocol =
+        _runtime_host->country_worker_protocol_status();
+    if (country_protocol.configured &&
+        (country_protocol.plan_active || country_protocol.pending_intents != 0 ||
+         country_protocol.result_count != 0 ||
+         country_protocol.rejected_intents != 0 ||
+         country_protocol.has_unreported_rejection)) {
+        out["ok"] = false;
+        out["pending"] = false;
+        out["code"] = "country_worker_save_barrier";
+        return out;
+    }
     if (!_runtime_host->request_save(static_cast<uint64_t>(request_id))) {
         out["ok"] = false;
         out["pending"] = false;
@@ -1863,7 +1903,12 @@ bool DCWorldExt::runtime_climate_trace_self_test() const {
 
 bool DCWorldExt::runtime_country_pod_authority_self_test() const {
     std::string error;
-    return RuntimeCountryPodAuthority::self_test(error);
+    const bool ok = RuntimeCountryPodAuthority::self_test(error);
+    if (!ok && !error.empty())
+        godot::UtilityFunctions::printerr(
+            godot::String("runtime_country_pod_self_test: ") +
+            godot::String(error.c_str()));
+    return ok;
 }
 
 bool DCWorldExt::runtime_protocol_guard_self_test() const {

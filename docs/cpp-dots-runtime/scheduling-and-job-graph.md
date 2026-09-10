@@ -3,9 +3,11 @@
 ## 2026-09 单一 Country authority 与发布确认
 
 Native Runtime Graph ACTIVE 时，已注册的旧 SUS `country_daily` 仅保留 topology/调试可见性，
-其 `should_run()` 与 `tick()` 都永久 no-op。Country、Effect、Modifier、Ideology、Trigger、
-Economy 只能在同一 graph day barrier 内按稳定顺序推进，GDScript 不得因 `day_changed` 再补跑
-同一天。
+其 `should_run()` 与 `tick()` 在 runtime graph 接管时 no-op；若 Country worker 实际获得
+`authoritative_domain_mask & 0x004`，即使同步 graph 仍负责 peer 调度，该 SUS 写者也同样 no-op。
+native runtime graph 的 Country 业务 stage 和 `run_country_slice()` facade 使用相同的实际 granted
+bit 抑制同步 Country 写入。Country、Effect、Modifier、Ideology、Trigger、Economy 必须在同一
+day barrier 内按稳定顺序推进，GDScript 不得因 `day_changed` 再补跑同一天。
 
 Country worker 的 read-view 消费不属于新的调度 job，也不推进模拟日。WorldRuntimeHost._process()
 在 Country transport service 后执行一次非阻塞 get_country_worker_read_view(cursor)：连续
@@ -483,6 +485,9 @@ worker 内变更；async climate 只接收主线程冻结的 add/factor 数组�
 
 - native jobs/stages（例如 vegetation dynamics / Stage-B）在执行中发布事件；发布本身计入对应 native pass 的耗时。
 - renderer/UI/debug 用独立 consumer cursor poll，不参与 simulation authority，也不影响 C++ scheduler 的依赖图。
+- Events POD probe 在 worker 的日 barrier 执行，但不计入 `implemented_domain_mask`、ACTIVE
+  authority grant 或 `completed_domain_mask`；snapshot ring 饱和时回收最旧 READY frame，
+  读取方必须用自己的 generation cursor 处理“只看最新”语义。
 - chunked detail apply 由 `HexRenderer._drain_detail_refresh_queue()` 在渲染帧中按 `detail_scatter_refresh_layers_per_frame` 推进；这是 Godot object/MultiMesh 提交，不应放进 C++ SUS job。
 - 诊断时把 `event_bus_ms` / native pass ms / `gd_chunk_apply_ms` 分开看：事件产生慢看 native stage，consumer lag 看 event bus report，chunk apply 慢看 `[detail_scatter/SLOW_LAYER] chunks=...`。
 - gameplay journal 达到容量上限后的淘汰必须是 O(1) `pop_front`；当前底层为 `std::deque`。
@@ -1197,6 +1202,14 @@ coverage 不完整的 `ACTIVE` 启动请求（`SHADOW` 是只读对照例外）�
 `Variant` 或 `MapData` 的 `advance_runtime_pulse()` 放入 worker。真实 Country、
 Economy、Effect、Modifier、Climate、Trigger domain 迁移完成并通过 SHADOW 逐日
 hash 对拍前，生产模式必须保持 OFF；这不是性能失败，而是线程安全门禁。
+
+Economy 的 Country fiscal reserve 位于 epoch-open 的硬 barrier：请求计划由
+`prepare_fiscal_budgets()` 冻结，随后 `advance_fiscal_reservation()` 按 Country cursor
+跨 `run_economy_slice()` 继续，每个 slice 最多处理一个 Country。continuation 活跃时报告
+`executed_stage=epoch_begin`、`done=false`、`epoch_begin_post_fiscal_pending=true`；主线程
+只重新调度同一逻辑日，不等待 worker，也不允许研究需求或 bullion quota 读取半完成财政
+预算。保存/恢复请求在 barrier 未闭合时明确失败。该 barrier 目前仍在同步 Economy-owned
+coordinator 内，不改变 Country ACTIVE 门禁。
 
 保存边界会在 worker 内先吸收 ingress 队列，再编码当前 pending command 列表和
 producer sequence。这样 `request_runtime_save()` 已接受的命令不会因为尚未执行而丢失；
