@@ -43,6 +43,7 @@ class _MockMap:
 	var ocean_current_y_arr: PackedFloat32Array = PackedFloat32Array()
 	var upwelling_strength_arr: PackedFloat32Array = PackedFloat32Array()
 	var terrain_arr: PackedByteArray = PackedByteArray()
+	var country_slot_arr: PackedInt32Array = PackedInt32Array()
 	var _neighbor_indices: PackedInt32Array = PackedInt32Array()
 	var demo_thermal_gradient_arr: PackedFloat32Array = PackedFloat32Array()
 
@@ -67,6 +68,7 @@ class _MockMap:
 		ocean_current_y_arr.resize(n)
 		upwelling_strength_arr.resize(n)
 		terrain_arr.resize(n)
+		country_slot_arr.resize(n)
 		_neighbor_indices.resize(n * 6)
 		for i in range(n):
 			temp_arr[i] = 10.0 + float(i)
@@ -86,6 +88,7 @@ class _MockMap:
 			ocean_current_y_arr[i] = 0.20 * float(i)
 			upwelling_strength_arr[i] = -0.10 * float(i)
 			terrain_arr[i] = i + 3
+			country_slot_arr[i] = 0
 
 	func has_soa() -> bool:
 		return _has_soa
@@ -103,6 +106,7 @@ class _MockMain:
 	extends RefCounted
 	var map = null
 	var fast_tick: int = 0
+	var generator = _MockGenerator.new()
 
 	func get_current_map():
 		return map
@@ -111,7 +115,7 @@ class _MockMain:
 		return fast_tick
 
 	func get_generator():
-		return _MockGenerator.new()
+		return generator
 
 	func climate_authority_diagnostics() -> Dictionary:
 		return {"writeback_last_day": 2}
@@ -119,9 +123,74 @@ class _MockMain:
 
 class _MockGenerator:
 	extends RefCounted
+	var country = _MockCountryFacade.new()
 
 	func get_runtime_thread_report() -> Dictionary:
 		return {"simulation_committed_day": 2, "worker_fault_count": 0}
+
+	func get_country_facade():
+		return country
+
+
+class _MockCountryWorldExt:
+	extends RefCounted
+
+	func get_country_worker_read_view(_after_generation: int) -> Dictionary:
+		return {
+			"ok": true, "available": true, "generation": 3,
+			"committed_day": 2, "state_hash": 222,
+			"territory_watermark": 1, "research_watermark": 2,
+			"tax_watermark": 3,
+		}
+
+
+class _MockCountryFacade:
+	extends RefCounted
+	var ext = _MockCountryWorldExt.new()
+
+	func report() -> Dictionary:
+		return {
+			"configured": true, "bootstrapped": true,
+			"generation": 3, "state_hash": 111,
+		}
+
+	func cell_summary(_cell: int) -> Dictionary:
+		return {
+			"country_handle": 4294967296, "country_id": "country.test",
+			"state_version": 4, "territory_count": 2, "cash": 100,
+		}
+
+	func snapshot(_handle: int) -> Dictionary:
+		return {"technology_ids": PackedStringArray(["tech.hunting"])}
+
+	func treasury_snapshot(_handle: int) -> Dictionary:
+		return {
+			"cash": 100, "good_ids": PackedStringArray(["grain"]),
+			"quantities": PackedInt64Array([25]),
+		}
+
+	func research_snapshot(_handle: int) -> Dictionary:
+		return {
+			"technology_states": PackedInt32Array([4]),
+			"queue_technology_indices": PackedInt32Array(),
+		}
+
+	func world_ext():
+		return ext
+
+	func poll_worker_command_receipts(after_request_id: int,
+			_limit: int) -> Dictionary:
+		if after_request_id > 0:
+			return {
+				"ok": true, "available": false, "receipts": [],
+				"last_request_id": after_request_id,
+			}
+		return {
+			"ok": true, "available": true, "last_request_id": 7,
+			"receipts": [{
+				"request_id": 7, "status": "Committed", "code": 2,
+			}],
+		}
 
 
 func _init() -> void:
@@ -183,6 +252,8 @@ func _test_collect_soa_fields() -> void:
 	_expect(fields.find("water_balance_30d_arr") != -1, "water_balance_30d_arr included")
 	_expect(fields.find("slp_arr") != -1 and fields.find("wind_x_arr") != -1, "physical field SoA columns included")
 	_expect(fields.find("terrain_arr") != -1, "terrain_arr included")
+	_expect(fields.find("country_slot_arr") != -1,
+		"country ownership SoA column included")
 	_expect(fields.find("demo_thermal_gradient_arr") == -1, "size 0 demo array excluded")
 	_expect(fields.find("_neighbor_indices") == -1, "neighbor topology excluded")
 
@@ -259,6 +330,8 @@ func _test_state_machine_and_export() -> void:
 	_expect(cols.find("cell_index") != -1, "cell_index column present")
 	_expect(cols.find("q") != -1 and cols.find("r") != -1 and cols.find("s") != -1, "cube columns present")
 	_expect(cols.find("temp_arr") != -1 and cols.find("temp_arr_prev") != -1 and cols.find("terrain_arr") != -1, "SoA columns present")
+	_expect(cols.find("country_slot_arr") != -1,
+		"country ownership column present")
 	_expect(cols.find("snowpack_arr") != -1 and cols.find("water_balance_30d_arr") != -1, "new climate closure columns present")
 	_expect(cols.find("climate_slp_abs_p95") != -1, "slp p95 column present")
 	_expect(cols.find("climate_wind_mag_p95") != -1, "wind magnitude p95 column present")
@@ -334,3 +407,21 @@ func _test_sidecar_metadata_and_export_path() -> void:
 		"sidecar tick and cell coverage")
 	_expect(sidecar.soa_fields.has("temp_arr") and sidecar.runtime.committed_day == 2 \
 		and sidecar.runtime.writeback_day == 2, "sidecar fields and runtime days")
+	var country_evidence: Dictionary = sidecar.get("country_evidence", {})
+	var country_samples: Array = country_evidence.get("samples", [])
+	var receipts: Array = country_evidence.get("terminal_receipts", [])
+	_expect(country_evidence.get("schema", "") == "CountryClientEvidence" \
+		and country_samples.size() == 1,
+		"sidecar includes one Country client evidence sample")
+	if country_samples.size() == 1:
+		var country_sample: Dictionary = country_samples[0]
+		var countries: Array = country_sample.get("countries", [])
+		_expect(int(country_sample.get("reference_state_hash", 0)) == 111 \
+			and int(country_sample.get("worker_state_hash", 0)) == 222 \
+			and countries.size() == 1 \
+			and int((countries[0] as Dictionary).get("cash", 0)) == 100,
+			"Country evidence records reference/worker hash and treasury")
+	_expect(receipts.size() == 1 \
+		and String((receipts[0] as Dictionary).get("status", "")) == "Committed" \
+		and int(country_evidence.get("last_receipt_request_id", 0)) == 7,
+		"Country evidence records terminal receipt lifecycle")

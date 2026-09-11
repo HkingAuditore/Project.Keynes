@@ -116,6 +116,9 @@ func _run() -> void:
 	_expect("Country Host rejection retry self-test is exported and passes",
 		ext.has_method("runtime_country_host_rejection_self_test")
 		and bool(ext.runtime_country_host_rejection_self_test()))
+	_expect("Country SHADOW formula parity self-test is exported and passes",
+		ext.has_method("runtime_country_shadow_parity_self_test")
+		and bool(ext.runtime_country_shadow_parity_self_test()))
 	_expect("Country Economy transport API is exported",
 		ext.has_method("get_country_economy_asset_protocol_status")
 		and ext.has_method("poll_country_economy_asset_request")
@@ -123,9 +126,73 @@ func _run() -> void:
 		and ext.has_method("runtime_country_host_economy_protocol_self_test"))
 	_expect("Country Economy transport self-test passes",
 		bool(ext.runtime_country_host_economy_protocol_self_test()))
+	_expect("Country Host handoff self-test is exported and passes",
+		ext.has_method("runtime_country_host_handoff_self_test")
+		and bool(ext.runtime_country_host_handoff_self_test()))
+	var host_country: Dictionary = ext.get_country_cell_summary(0)
+	ext.set_country_sync_store_writes_forbidden(true)
+	var unique_writer: Dictionary = ext.begin_country_economy_fiscal_reserve(
+		int(host_country.get("country_handle", 0)), 1000, 0, 0)
+	_expect("unique writer forbids sync Country treasury writes",
+		not bool(unique_writer.get("ok", true))
+		and String(unique_writer.get("code", "")) == "country_worker_unique_writer")
+	ext.set_country_sync_store_writes_forbidden(false)
+	_expect("handoff prepare API is exported",
+		ext.has_method("prepare_country_authority_handoff")
+		and ext.has_method("install_country_authority_handoff")
+		and ext.has_method("abort_country_authority_handoff")
+		and ext.has_method("get_country_authority_handoff_status"))
+	var handoff_status: Dictionary = ext.get_country_authority_handoff_status()
+	_expect("handoff status reports sync owner by default",
+		bool(handoff_status.get("ok", false))
+		and int(handoff_status.get("owner", -1)) == 0)
+	_expect("implemented mask includes Country after D12",
+		int(ext.get_runtime_thread_report().get(
+			"implemented_domain_mask", 0)) & 0x004 != 0)
+	_expect("SHADOW session still does not grant Country authority",
+		int(ext.get_runtime_thread_report().get(
+			"authoritative_domain_mask", 0)) & 0x004 == 0)
+	var prepare_worker: Dictionary = ext.prepare_country_authority_handoff(1)
+	_expect("prepare handoff to WORKER succeeds while drained",
+		bool(prepare_worker.get("ok", false)))
+	var aborted: Dictionary = ext.abort_country_authority_handoff()
+	_expect("abort clears prepare without flipping owner",
+		bool(aborted.get("ok", false))
+		and not bool(aborted.get("prepare_pending", true))
+		and int(aborted.get("owner", -1)) == 0)
+	var epoch_before := int(ext.get_country_authority_handoff_status().get(
+		"session_epoch", 0))
+	_expect("prepare again after abort",
+		bool(ext.prepare_country_authority_handoff(1).get("ok", false)))
+	var installed: Dictionary = ext.install_country_authority_handoff()
+	_expect("install SYNC→WORKER publishes checkpoint and flips owner",
+		bool(installed.get("ok", false))
+		and int(installed.get("owner", -1)) == 1
+		and int(installed.get("session_epoch", 0)) > epoch_before
+		and int(installed.get("implemented_domain_mask", 0)) & 0x004 != 0)
+	var handoff_fiscal: Dictionary = ext.begin_country_economy_fiscal_reserve(
+		int(ext.get_country_cell_summary(0).get("country_handle", 0)), 10, -1, -1, 0)
+	_expect("handoff WORKER owner forbids sync treasury writes",
+		not bool(handoff_fiscal.get("ok", true))
+		and String(handoff_fiscal.get("code", "")) == "country_worker_unique_writer")
+	var epoch_worker := int(ext.get_country_authority_handoff_status().get(
+		"session_epoch", 0))
+	_expect("prepare handoff back to SYNC",
+		bool(ext.prepare_country_authority_handoff(0).get("ok", false)))
+	var restored: Dictionary = ext.install_country_authority_handoff()
+	_expect("install WORKER→SYNC restores sync owner without Country grant",
+		bool(restored.get("ok", false))
+		and int(restored.get("owner", -1)) == 0
+		and int(restored.get("session_epoch", 0)) > epoch_worker
+		and int(restored.get("implemented_domain_mask", 0)) & 0x004 != 0
+		and int(ext.get_runtime_thread_report().get(
+			"authoritative_domain_mask", 0)) & 0x004 == 0)
 	var economy_status: Dictionary = ext.get_country_economy_asset_protocol_status()
 	_expect("empty Economy transport reports no pending work",
 		bool(economy_status.get("ok", false))
+		and economy_status.has("faulted_transactions")
+		and economy_status.has("recovered_transactions")
+		and economy_status.has("duplicate_messages")
 		and int(economy_status.get("queued_requests", -1)) == 0
 		and int(economy_status.get("pending_requests", -1)) == 0
 		and int(economy_status.get("terminal_requests", -1)) == 0)
@@ -140,6 +207,27 @@ func _run() -> void:
 		bool(empty_receipts.get("ok", false))
 		and not bool(empty_receipts.get("available", true))
 		and int(empty_receipts.get("count", -1)) == 0)
+
+	var handle := int(ext.get_country_cell_summary(0).get("country_handle", 0))
+	var renamed: Dictionary = country.rename_country(
+		handle, "Shadow Dual Write", 1, 1)
+	_expect("SHADOW dual-write admits the sync command",
+		bool(renamed.get("ok", false)))
+	_expect("SHADOW command mirror reaches the Host queue",
+		bool(renamed.get("shadow_mirror_ok", false))
+		or int(ext.get_runtime_thread_report().get("command_queue_depth", 0)) > 0
+		or int(renamed.get("shadow_request_ids", PackedInt64Array()).size()) > 0)
+	_expect("SHADOW dual-write does not grant Country authority",
+		int(ext.get_runtime_thread_report().get(
+			"authoritative_domain_mask", 0)) & 0x004 == 0)
+
+	ext.set_country_sync_store_writes_forbidden(true)
+	var blocked_fiscal: Dictionary = ext.begin_country_economy_fiscal_reserve(
+		handle, 10, -1, -1, 0)
+	_expect("test unique-writer blocks sync fiscal writes",
+		not bool(blocked_fiscal.get("ok", true))
+		and String(blocked_fiscal.get("code", "")) == "country_worker_unique_writer")
+	ext.set_country_sync_store_writes_forbidden(false)
 
 	ext.request_runtime_stop()
 	var stopped := false

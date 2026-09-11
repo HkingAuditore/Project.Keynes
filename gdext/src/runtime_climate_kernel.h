@@ -183,6 +183,12 @@ public:
         return _distribute_soil_scratch;
     }
 
+    // weather_commit 写完的 field_init。没有 store 成员，必须走 snapshot extras
+    // 才能回到 MapData；理由见 RuntimeClimateSnapshot::weather_field_init。
+    const std::vector<uint8_t> &weather_field_init() const {
+        return _weather_field_init_scratch;
+    }
+
     // pass_a 的日照/热量输出，同样没有 store 成员、同样在 ACTIVE 下失去主线程写者。
     // 直接给 _round_out 的引用：这些 lane 每天被共享 round 重写，不跨天累积。
     const pk_async_climate::ClimateOutputBuf &round_output() const {
@@ -215,7 +221,7 @@ private:
     mutable std::vector<float> _weather_prev_cloud;
     mutable std::vector<float> _weather_prev_convergence;
     // conv_inhib 与 field_init 没有 store 成员：前者每天从生产记录播种、输出丢弃，
-    // 后者纯粹是"这格初始化过没有"的一次性标记。
+    // 后者是"这格初始化过没有"的一次性标记，经 snapshot extras 回灌 MapData。
     mutable std::vector<float> _weather_conv_inhib;
     mutable std::vector<uint8_t> _weather_field_init_scratch;
     // staged next buffer：生产 weather_advance → weather_commit 两步之间的中转。

@@ -16,6 +16,7 @@ COMPAT_KEYS = (
     "build", "seed", "map_width", "map_height", "num_continents", "continent_size",
     "foreign_count", "speed", "graphics_profile", "window_width", "window_height",
     "vsync", "max_fps", "day_night", "overlay", "warmup_seconds", "record_seconds",
+    "warmup_until_tick", "record_ticks",
     "tick_stride", "cell_stride", "max_rows", "compact_fields",
 )
 RESERVOIR_SIZE = 50_000
@@ -129,6 +130,78 @@ def missing_summary(connection, source: str, other: str):
     return {"count": count, "examples": examples}
 
 
+def country_evidence_index(sidecar: dict):
+    evidence = sidecar.get("country_evidence", {})
+    if evidence.get("schema") != "CountryClientEvidence" or evidence.get("schema_version") != 1:
+        return None, {"reason": "country_evidence_schema_missing_or_invalid"}
+    indexed = {}
+    for sample in evidence.get("samples", []):
+        tick = int(sample.get("tick_idx", -1))
+        for country in sample.get("countries", []):
+            country_id = str(country.get("country_id", ""))
+            if tick < 0 or not country_id:
+                continue
+            indexed[(tick, country_id)] = {
+                "territory_count": int(country.get("territory_count", -1)),
+                "cash": int(country.get("cash", 0)),
+                "goods": list(zip(country.get("good_ids", []), country.get("good_quantities", []))),
+                "technology_ids": list(country.get("technology_ids", [])),
+                "research_states": list(country.get("research_states", [])),
+                "research_queue": list(country.get("research_queue", [])),
+            }
+    receipts = [{
+        key: row.get(key) for key in (
+            "request_id", "producer_id", "sequence", "effective_day",
+            "generation", "code", "status", "reason")
+    } for row in evidence.get("terminal_receipts", [])]
+    return {"countries": indexed, "receipts": receipts}, None
+
+
+def compare_country_evidence(left_meta: dict, right_meta: dict):
+    left, left_error = country_evidence_index(left_meta)
+    right, right_error = country_evidence_index(right_meta)
+    if left_error or right_error:
+        return {
+            "status": "release_blocker",
+            "left_error": left_error,
+            "right_error": right_error,
+            "missing_left": [],
+            "missing_right": [],
+            "differences": [],
+            "receipt_match": False,
+        }
+    left_keys = set(left["countries"])
+    right_keys = set(right["countries"])
+    differences = []
+    for key in sorted(left_keys & right_keys):
+        if left["countries"][key] != right["countries"][key]:
+            differences.append({
+                "tick_idx": key[0],
+                "country_id": key[1],
+                "left": left["countries"][key],
+                "right": right["countries"][key],
+            })
+            if len(differences) >= 100:
+                break
+    missing_left = [{"tick_idx": key[0], "country_id": key[1]}
+                    for key in sorted(right_keys - left_keys)[:100]]
+    missing_right = [{"tick_idx": key[0], "country_id": key[1]}
+                     for key in sorted(left_keys - right_keys)[:100]]
+    receipt_match = left["receipts"] == right["receipts"]
+    status = "pass" if not differences and not missing_left and not missing_right and receipt_match else "release_blocker"
+    return {
+        "status": status,
+        "left_country_rows": len(left_keys),
+        "right_country_rows": len(right_keys),
+        "missing_left": missing_left,
+        "missing_right": missing_right,
+        "differences": differences,
+        "receipt_match": receipt_match,
+        "left_receipts": left["receipts"],
+        "right_receipts": right["receipts"],
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--left-csv", required=True, type=Path)
@@ -240,6 +313,11 @@ def main() -> int:
         blockers.append({"reason": "missing_tick_or_cell"})
     if issue_total(left_issues) or issue_total(right_issues):
         blockers.append({"reason": "empty_invalid_or_nonfinite_value"})
+    country_evidence = None
+    if "country_slot_arr" in fields:
+        country_evidence = compare_country_evidence(left_meta, right_meta)
+        if country_evidence["status"] != "pass":
+            blockers.append({"reason": "country_client_evidence_mismatch"})
     status = "pass" if not blockers else "release_blocker"
     report = {"schema": "AuthorityStageCTileComparison", "schema_version": 1, "status": status,
               "left": str(args.left_csv), "right": str(args.right_csv), "policy": str(args.policy),
@@ -247,7 +325,8 @@ def main() -> int:
               "rows": {"left": left_rows, "right": right_rows, "aligned": aligned_rows},
               "missing": {"only_left": only_left, "only_right": only_right},
               "numeric_issues": {"left": left_issues, "right": right_issues},
-              "field_results": results, "known_expected_fields": [row["field"] for row in known_expected], "blockers": blockers}
+              "field_results": results, "country_evidence": country_evidence,
+              "known_expected_fields": [row["field"] for row in known_expected], "blockers": blockers}
     (args.output_dir / "comparison.json").write_text(json.dumps(report, indent=2, allow_nan=False), encoding="utf-8")
     with (args.output_dir / "comparison.csv").open("w", encoding="utf-8-sig", newline="") as stream:
         writer = csv.DictWriter(stream, fieldnames=("field", "samples", "different_samples", "max_abs_diff", "mean_abs_diff", "p95_abs_diff", "p95_method", "policy_declared", "policy_exceeded", "best_lag", "best_lag_mean_abs_diff", "first_tick", "first_cell"))

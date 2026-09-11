@@ -562,18 +562,30 @@ func _start_production_shadow_worker() -> void:
 	}
 	if runtime_climate_authority_enabled:
 		# graph_coverage_complete 在 per-domain ACTIVE 下的含义是"请求的这些域
-		# 线程安全"，不是整图。CLIMATE(0x2) | COMMIT(0x800)：COMMIT 是 barrier
-		# 域本身，C++ 侧也会补上，这里显式写出让配置自解释。
+		# 线程安全"，不是整图。CLIMATE(0x2)|COUNTRY(0x4)|COMMIT(0x800)=0x806：
+		# COMMIT 是 barrier 域本身，C++ 侧也会补上，这里显式写出让配置自解释。
+		# D12：Country 与 Climate 同开关进入生产 ACTIVE；不得用 handoff /
+		# set_country_sync_store_writes_forbidden 冒充本路径。
+		if not bool(_country_worker_transport_capture.get("ok", false)) \
+				and _generator != null \
+				and _generator.has_method("capture_country_worker_inputs"):
+			_country_worker_transport_capture = \
+				_generator.capture_country_worker_inputs()
+		if not bool(_country_worker_transport_capture.get("ok", false)):
+			push_error(
+				"[runtime-worker] Climate|Country ACTIVE refused: Country capture incomplete (%s)" % [
+					String(_country_worker_transport_capture.get("code", "missing"))])
+			return
 		config["simulation_thread_mode"] = "ACTIVE"
 		config["graph_coverage_complete"] = true
-		config["authoritative_domain_mask"] = 0x802
+		config["authoritative_domain_mask"] = 0x806
 	var started: Dictionary = _generator.start_runtime_worker(config)
 	if not bool(started.get("ok", false)):
 		if runtime_climate_authority_enabled:
-			# 权威启动失败不能静默退回 SHADOW：主线程的 climate 抑制门读的是
-			# worker 侧的授予位，授予没发生就不会抑制，于是主线程仍在算 climate。
+			# 权威启动失败不能静默退回 SHADOW：主线程的 climate/country 抑制门读的是
+			# worker 侧的授予位，授予没发生就不会抑制，于是主线程仍在算。
 			# 但调用方以为已经转权威了，所以这里必须响。
-			push_error("[runtime-worker] CLIMATE authority start refused: %s (%s)" % [
+			push_error("[runtime-worker] Climate|Country authority start refused: %s (%s)" % [
 				String(started.get("code", "unknown")),
 				String(started.get("message", ""))])
 		else:
@@ -617,6 +629,11 @@ func run_daily_tick(day_idx: int, season_phase: float) -> Dictionary:
 	var t_sus_usec := Time.get_ticks_usec()
 	var report: Dictionary = _generator.sus_tick_daily(_world_clock, day_idx, season_phase)
 	_pending_tick_sus_ms = (Time.get_ticks_usec() - t_sus_usec) / 1000.0
+	# Country ACTIVE day barriers park on peer intents. Callers that drive
+	# ticks without idling WorldRuntimeHost._process (headless tests, catch-up
+	# batches) still need the transport drained on every day boundary.
+	_service_country_worker_transport()
+	_consume_country_worker_read_view_if_authoritative()
 	_fast_tick_count += 1
 	if _renderer != null and _generator.has_method("has_pending_detail_scatter_refresh") \
 			and bool(_generator.has_pending_detail_scatter_refresh()) \
@@ -939,8 +956,8 @@ func _apply_climate_writeback_if_authoritative(report: Dictionary) -> void:
 	_runtime_climate_writeback_skipped = applied.get("skipped_fields", [])
 
 
-## 运行时开关 Climate 权威。关掉后停掉 ACTIVE worker、改以 SHADOW 重启，
-## 主线程立刻恢复算 climate。打开则相反。不需要重新生成世界。
+## 运行时开关 Climate|Country 权威。关掉后停掉 ACTIVE worker、改以 SHADOW 重启，
+## 主线程立刻恢复算 climate/country。打开则相反。不需要重新生成世界。
 func set_runtime_climate_authority_enabled(enabled: bool) -> Dictionary:
 	runtime_climate_authority_enabled = enabled
 	if _generator == null or not _generator.has_method("request_runtime_stop"):
@@ -955,11 +972,13 @@ func set_runtime_climate_authority_enabled(enabled: bool) -> Dictionary:
 		if state in ["STOPPED", "FAULTED"]:
 			break
 		OS.delay_msec(4)
+	if enabled and _generator.has_method("capture_country_worker_inputs"):
+		_country_worker_transport_capture = _generator.capture_country_worker_inputs()
 	_start_production_shadow_worker()
 	return climate_authority_diagnostics()
 
 
-## Climate 权威诊断。供 dev console / 对拍场景读，不参与调度决策。
+## Climate|Country 权威诊断。供 dev console / 对拍场景读，不参与调度决策。
 func climate_authority_diagnostics() -> Dictionary:
 	var report: Dictionary = _generator.get_runtime_thread_report() \
 		if _generator != null and _generator.has_method("get_runtime_thread_report") \
@@ -967,6 +986,8 @@ func climate_authority_diagnostics() -> Dictionary:
 	return {
 		"enabled": runtime_climate_authority_enabled,
 		"worker_authoritative": bool(report.get("climate_worker_authoritative", false)),
+		"country_worker_authoritative": bool(report.get(
+			"country_worker_authoritative", false)),
 		"authoritative_domain_mask": int(report.get("authoritative_domain_mask", 0)),
 		"requested_authority_mask": int(report.get("requested_authority_mask", 0)),
 		"writeback_generation": _runtime_climate_writeback_generation,

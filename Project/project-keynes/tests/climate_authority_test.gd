@@ -26,7 +26,8 @@ const MAP_WIDTH := 60
 const MAP_HEIGHT := 40
 const AUTHORITY_WAIT_TIMEOUT_MSEC := 8000
 const POLL_MSEC := 4
-const CLIMATE_AUTHORITY_MASK := 0x802 # CLIMATE(0x2) | COMMIT(0x800)
+const PRODUCTION_AUTHORITY_MASK := 0x806 # CLIMATE(0x2)|COUNTRY(0x4)|COMMIT(0x800)
+const CLIMATE_ONLY_AUTHORITY_MASK := 0x802 # retained for documentation of Climate-only subset
 
 var _checks := 0
 var _failures := 0
@@ -91,12 +92,14 @@ func _run() -> int:
 	# 1. The gate. A whole-graph ACTIVE request must still be refused; the fact
 	#    that Climate was granted must not have opened the general promotion.
 	var report: Dictionary = ext.get_runtime_thread_report()
-	_expect("worker requested CLIMATE|COMMIT authority",
-		int(report.get("requested_authority_mask", 0)) == CLIMATE_AUTHORITY_MASK)
+	_expect("worker requested Climate|Country|COMMIT authority",
+		int(report.get("requested_authority_mask", 0)) == PRODUCTION_AUTHORITY_MASK)
 	_expect("whole-graph gate still shut",
 		int(report.get("implemented_domain_mask", 0)) != int(
 			report.get("required_domain_mask", 0)) \
 		and not bool(report.get("authority_ready", true)))
+	_expect("implemented mask includes Country after D12",
+		int(report.get("implemented_domain_mask", 0)) == PRODUCTION_AUTHORITY_MASK)
 
 	# The grant lands on the worker's first completed day, and that day needs an
 	# environment whose own day matches it. The main thread captures the *previous*
@@ -120,6 +123,13 @@ func _run() -> int:
 		host.finish_daily_tick(0.0, {})
 		var inner := Time.get_ticks_msec() + 1000
 		while Time.get_ticks_msec() < inner:
+			# D12 ACTIVE Country parks on peer intents; headless SceneTree
+			# scripts do not idle-process WorldRuntimeHost._process, so the
+			# host transport must be pumped explicitly while waiting.
+			# Do not await process_frame here: --quit headless runs exit after
+			# the first idle frame and would abort the grant wait early.
+			if ext.has_method("service_country_worker_peer_adapter"):
+				ext.service_country_worker_peer_adapter(64, false)
 			report = ext.get_runtime_thread_report()
 			if bool(report.get("climate_worker_authoritative", false)):
 				granted = true
@@ -131,9 +141,12 @@ func _run() -> int:
 	if granted:
 		print("  note: authority granted on main-thread tick %d" % grant_tick)
 	if not granted:
-		print("  diag: fallback=%s pod_ready=%s env_gen=%s env_day=%s committed_day=%s completed_days=%s state=%s fault=%s worker_stage_mask=0x%X" % [
+		print("  diag: fallback=%s country_reason=%s pod_ready=%s country_ready=%s env_gen=%s env_day=%s committed_day=%s completed_days=%s state=%s fault=%s worker_stage_mask=0x%X auth=0x%X" % [
 			String(report.get("climate_pod_fallback_reason", "")),
+			String(report.get("country_worker_last_reason",
+				report.get("country_pod_fallback_reason", ""))),
 			str(report.get("climate_pod_ready", false)),
+			str(report.get("country_pod_ready", false)),
 			str(report.get("simulation_environment_generation",
 				report.get("environment_generation", -1))),
 			str(report.get("environment_day", -1)),
@@ -141,12 +154,18 @@ func _run() -> int:
 			str(report.get("completed_days", -1)),
 			String(report.get("simulation_host_state", "")),
 			String(report.get("simulation_worker_blocker", "")),
-			int(report.get("climate_worker_stage_mask", 0))])
+			int(report.get("climate_worker_stage_mask", 0)),
+			int(report.get("authoritative_domain_mask", 0))])
 	_expect("CLIMATE authority granted after a committed day", granted)
-	_expect("authoritative mask names CLIMATE only",
-		int(report.get("authoritative_domain_mask", 0)) == CLIMATE_AUTHORITY_MASK)
+	_expect("authoritative mask names Climate|Country|COMMIT",
+		int(report.get("authoritative_domain_mask", 0)) == PRODUCTION_AUTHORITY_MASK)
+	_expect("Country worker authority granted with Climate",
+		bool(report.get("country_worker_authoritative", false)))
 	_expect("effective mode is ACTIVE under partial promotion",
 		String(report.get("simulation_thread_mode", "")) == "ACTIVE")
+	_expect("Climate-only subset remains a legal implemented subset",
+		(PRODUCTION_AUTHORITY_MASK & CLIMATE_ONLY_AUTHORITY_MASK)
+			== CLIMATE_ONLY_AUTHORITY_MASK)
 	if not granted:
 		host.free()
 		clock.free()

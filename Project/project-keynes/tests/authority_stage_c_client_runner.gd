@@ -5,6 +5,7 @@ extends Node
 # the real player_game scene without adding any measurement-only node to it.
 
 const PerfRecorderScript = preload("res://scripts/ui/perf_recorder.gd")
+const TileDataRecorderScript = preload("res://scripts/ui/tile_data_recorder.gd")
 
 const DEFAULT_SEED := 20260718
 const DEFAULT_MAP_WIDTH := 60
@@ -21,8 +22,11 @@ var _worker_mode := "SHADOW"
 var _output_dir := ""
 var _run_id := ""
 var _manual := false
+var _auto_tile := false
 var _warmup_seconds := DEFAULT_WARMUP_SECONDS
 var _record_seconds := DEFAULT_RECORD_SECONDS
+var _warmup_until_tick := -1
+var _record_ticks := 0
 var _player: PlayerGame = null
 var _host: WorldRuntimeHost = null
 var _clock: WorldClock = null
@@ -57,8 +61,11 @@ func _ready() -> void:
 		return
 	_worker_mode = "ACTIVE" if _mode == "ACTIVE" else "SHADOW"
 	_manual = _enabled(_args.get("manual", "false"))
+	_auto_tile = _enabled(_args.get("auto_tile", "false"))
 	_warmup_seconds = maxf(0.0, float(_args.get("warmup_seconds", DEFAULT_WARMUP_SECONDS)))
 	_record_seconds = maxf(0.0, float(_args.get("record_seconds", DEFAULT_RECORD_SECONDS)))
+	_warmup_until_tick = int(_args.get("warmup_until_tick", -1))
+	_record_ticks = maxi(0, int(_args.get("record_ticks", 0)))
 	_run_id = String(_args.get("run_id", "")).strip_edges()
 	if _run_id.is_empty():
 		_run_id = "client-%s-%s" % [_mode.to_lower(), _timestamp_id()]
@@ -127,15 +134,59 @@ func _on_world_ready(_map, _world_data, _generator, _view_adapter) -> void:
 	_session["climate_authority_start"] = _climate_start.duplicate(true)
 	_write_session("world_ready")
 	if _manual:
-		await _wait_realtime(_warmup_seconds)
+		if _auto_tile and _warmup_until_tick >= 0:
+			await _wait_fast_tick_target(_warmup_until_tick)
+		else:
+			await _wait_realtime(_warmup_seconds)
 		_clock.pause(true)
 		_host.on_clock_running_changed(false)
+		if _auto_tile:
+			await _run_automated_tile_recording()
+			return
 		_write_session("manual_ready")
 		print("[stage-c/client] manual ready mode=%s worker=%s output=%s; start/stop TileDataRecorder in GM, then run x50 for 30 seconds." % [
 			_mode, _worker_mode, _output_dir])
 		return
 	await _wait_realtime(_warmup_seconds)
 	_start_recording()
+
+
+func _run_automated_tile_recording() -> void:
+	_recorder = TileDataRecorderScript.new()
+	_recorder.bind_main(_host)
+	_host.set_tile_data_recorder(_recorder)
+	_recorder.start()
+	if not _recorder.is_recording():
+		_fail("TileDataRecorder failed to start")
+		return
+	_write_session("tile_recording")
+	_clock.pause(false)
+	_host.on_clock_running_changed(true)
+	print("[stage-c/client] tile recording mode=%s worker=%s seconds=%.2f output=%s" % [
+		_mode, _worker_mode, _record_seconds, _output_dir])
+	if _record_ticks > 0:
+		while _recorder.recorded_tick_count() < _record_ticks:
+			await get_tree().process_frame
+	else:
+		await _wait_realtime(_record_seconds)
+	_clock.pause(true)
+	_host.on_clock_running_changed(false)
+	var tile_path: String = String(_recorder.stop_and_export())
+	var sidecar_path: String = String(_recorder.sidecar_path())
+	var summary: Dictionary = _recorder.sampling_summary()
+	_session["tile_csv"] = tile_path
+	_session["tile_sidecar"] = sidecar_path
+	_session["tile_ticks_seen"] = int(_recorder.tick_count())
+	_session["tile_ticks_recorded"] = int(_recorder.recorded_tick_count())
+	_session["tile_rows"] = int(_recorder.row_count())
+	_session["tile_sampling"] = summary.duplicate(true)
+	_write_session("complete")
+	_host.set_tile_data_recorder(null)
+	Engine.remove_meta(&"stage_c_authority_mode")
+	Engine.remove_meta(&"stage_c_tile_metadata")
+	print("[stage-c/client] tile complete mode=%s ticks=%d rows=%d csv=%s" % [
+		_mode, int(_recorder.recorded_tick_count()), int(_recorder.row_count()), tile_path])
+	get_tree().quit(0 if not tile_path.is_empty() else 2)
 
 
 func _apply_fixed_client_settings() -> void:
@@ -310,8 +361,11 @@ func _build_session_metadata() -> void:
 		"overlay": false,
 		"authority_mode": _mode,
 		"worker_mode": _worker_mode,
+		"automated_tile_recording": _auto_tile,
 		"warmup_seconds": _warmup_seconds,
 		"record_seconds": _record_seconds,
+		"warmup_until_tick": _warmup_until_tick,
+		"record_ticks": _record_ticks,
 		"recorder_schema_version": PerfRecorderScript.SCHEMA_VERSION,
 		"frame_schema_version": 1,
 		"output_dir": _output_dir,
@@ -344,6 +398,11 @@ func _wait_realtime(seconds: float) -> void:
 	if seconds <= 0.0:
 		return
 	await get_tree().create_timer(seconds).timeout
+
+
+func _wait_fast_tick_target(target: int) -> void:
+	while _host != null and _host.get_fast_tick_count() < target:
+		await get_tree().process_frame
 
 
 func _fail(message: String) -> void:

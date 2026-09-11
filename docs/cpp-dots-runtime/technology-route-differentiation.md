@@ -358,7 +358,7 @@ Effect 再应用专属 Modifier 或发布下一项研究机会。
 - Economy 在提交边界扫描稀疏 BuildingGroup，并发布已经资格化的实践事实。
 - Trigger 维护计数、来源、fire sequence 和幂等；Effect 将结果转成
   `DISCOVER_COUNTRY_SIGNAL`，第一实践格保留为证据来源。
-- PKCN v12、PKEF v11、PKTR v6 与 PKEC v51 使用严格当前 schema 与 catalog identity round-trip；
+- PKCN v12、PKEF v11、PKTR v6 与 PKEC v52 使用严格当前 schema 与 catalog identity round-trip；
   provider manifest 另保存 `technology_industry_revision = 2`，revision 1 只允许预览。
 
 ### 已完成：专属数值效果

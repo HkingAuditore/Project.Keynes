@@ -187,7 +187,7 @@ func _check_coordinator_validator(bytes: PackedByteArray, polled: Dictionary) ->
 	# not, so it has to be refused rather than partially restored.
 	var unknown_section := bytes.duplicate()
 	unknown_section.encode_u32(OFFSET_SECTION_MASK,
-		int(bytes.decode_u32(OFFSET_SECTION_MASK)) | 0x100)
+		int(bytes.decode_u32(OFFSET_SECTION_MASK)) | (~Header.SECTION_KNOWN))
 	_expect("the validator rejects an unknown section bit",
 		not Header.valid(unknown_section))
 

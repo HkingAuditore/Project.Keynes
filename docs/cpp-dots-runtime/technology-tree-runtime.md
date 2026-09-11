@@ -405,7 +405,8 @@ section tab；section 切换只由底栏 `CountryActionBar` 驱动。经济 sect
   Trigger 定义摘要和全部内容绑定摘要混入 catalog identity。
 - PKEF v11 保存 Effect program hash、实例、事务/ACK 和时代奖励冻结计划；PKTR v6 保存突破
   与发展成就阈值累计、最后采样日、连续进度、来源游标和未派发效果。
-- PKEC v51 保存采购累计、科技值市场/在途状态、实践发布所需的经济权威与联合审计基线。
+- PKEC v52 保存采购累计、科技值市场/在途状态、实践发布所需的经济权威、联合审计基线，
+  以及 D7 M1 的 Economy-owned fiscal peer escrow。
 - PKSV 恢复顺序保持 PKCN 在 PKEC 之前。
 - provider manifest 保存 `technology_industry_revision = 2`；缺失按 revision 1 预览，但禁止载入。
   PKCN/PKEF/PKTR 的旧 schema 或任何相关 catalog identity 变化统一返回

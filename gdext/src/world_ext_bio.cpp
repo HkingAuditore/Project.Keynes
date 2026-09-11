@@ -715,9 +715,62 @@ Dictionary DCWorldExt::_queue_bio_observations(
         out["submitted"] = 0;
         return out;
     }
-    return static_cast<NativeCountryRuntime *>(_country_runtime)
-        ->submit_observation_batch(country_handle, eligible_cells,
-                                   eligible_signals, effective_day);
+    // Use the canonical Country ingress so SHADOW receives the same discovery
+    // commands as the synchronous production runtime. Calling
+    // NativeCountryRuntime::submit_observation_batch directly bypassed the
+    // Host mirror; the first bio discovery (typically day 7) therefore made
+    // country_research_signals diverge permanently.
+    const int64_t count = eligible_cells.size();
+    PackedInt32Array opcodes, aux, domains, positions;
+    PackedInt32Array weight0, weight1, weight2, weight3;
+    PackedInt32Array tax_kinds, tax_items, tax_rates, tax_modes;
+    PackedInt64Array days, sequences, handles, values;
+    PackedStringArray stable_ids, display_names;
+    for (PackedInt32Array *array : {
+             &opcodes, &aux, &domains, &positions,
+             &weight0, &weight1, &weight2, &weight3,
+             &tax_kinds, &tax_items, &tax_rates, &tax_modes}) {
+        array->resize(count);
+    }
+    for (PackedInt64Array *array : {
+             &days, &sequences, &handles, &values}) {
+        array->resize(count);
+    }
+    stable_ids.resize(count);
+    display_names.resize(count);
+    for (int64_t i = 0; i < count; ++i) {
+        opcodes.set(i, 14); // DISCOVER_COUNTRY_SIGNAL
+        days.set(i, effective_day);
+        sequences.set(i, i);
+        handles.set(i, country_handle);
+        aux.set(i, eligible_signals[i]);
+        domains.set(i, -1);
+        positions.set(i, -1);
+        values.set(i, 1);
+        tax_kinds.set(i, -1);
+        tax_items.set(i, -1);
+    }
+    Dictionary batch;
+    batch["opcodes"] = opcodes;
+    batch["effective_days"] = days;
+    batch["sequences"] = sequences;
+    batch["target_handles"] = handles;
+    batch["cell_indices"] = eligible_cells;
+    batch["aux_i32"] = aux;
+    batch["domain_i32"] = domains;
+    batch["position_i32"] = positions;
+    batch["weight0_bp"] = weight0;
+    batch["weight1_bp"] = weight1;
+    batch["weight2_bp"] = weight2;
+    batch["weight3_bp"] = weight3;
+    batch["value_i64"] = values;
+    batch["tax_kinds"] = tax_kinds;
+    batch["tax_item_indices"] = tax_items;
+    batch["tax_rate_basis_points"] = tax_rates;
+    batch["tax_assessment_modes"] = tax_modes;
+    batch["stable_ids"] = stable_ids;
+    batch["display_names"] = display_names;
+    return submit_country_commands(batch);
 }
 
 Dictionary DCWorldExt::configure_bio_occupancy(const Dictionary &config) {

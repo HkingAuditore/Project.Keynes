@@ -72,6 +72,9 @@ constexpr uint32_t RUNTIME_SAVE_SECTION_EVENTS = 1u << 6;
 // separate from the legacy PKEF facade section and is not an ACTIVE gate.
 constexpr uint32_t RUNTIME_SAVE_SECTION_EFFECT = 1u << 7;
 constexpr uint32_t RUNTIME_SAVE_SECTION_IDEOLOGY = 1u << 8;
+// D7 Country/Economy transaction journal section. Orthogonal to Economy POD
+// authority; persists Host peer request/result continuation state only.
+constexpr uint32_t RUNTIME_SAVE_SECTION_ECONOMY_ASSET = 1u << 9;
 
 static_assert(RUNTIME_COMMAND_QUEUE_CAPACITY == 4096u,
               "runtime command queue capacity is part of the ABI");
@@ -469,6 +472,10 @@ struct RuntimeDayCommit {
     uint32_t completed_domain_mask = 0;
     uint64_t state_hash = 0;
     uint8_t preflight_ok = 1;
+    // Country/Economy peer barriers may leave the day incomplete while the
+    // worker keeps ownership. The host uses this to keep the day open without
+    // advancing the authoritative committed watermark.
+    uint8_t continuation_pending = 0;
 };
 
 // Domain ABI result. A handler must fill this record without constructing a
@@ -676,6 +683,9 @@ struct RuntimeEconomyAssetProtocolStatus {
     uint32_t pending_requests = 0;
     uint32_t terminal_requests = 0;
     uint32_t rejected_results = 0;
+    uint32_t faulted_transactions = 0;
+    uint32_t recovered_transactions = 0;
+    uint32_t duplicate_messages = 0;
     uint64_t session_epoch = 0;
     uint64_t last_transaction_id = 0;
     uint64_t last_request_id = 0;
@@ -946,6 +956,13 @@ struct RuntimeCountryPodCatalog {
     std::vector<int32_t> research_condition_ops;
     std::vector<int32_t> research_condition_refs;
     std::vector<int64_t> research_condition_values;
+    // Discovery/reveal conditions are distinct from queue eligibility. They
+    // must cross the worker boundary because DISCOVER_COUNTRY_SIGNAL can make
+    // technologies visible before they are researchable.
+    std::vector<int32_t> reveal_condition_offsets;
+    std::vector<int32_t> reveal_condition_ops;
+    std::vector<int32_t> reveal_condition_refs;
+    std::vector<int64_t> reveal_condition_values;
     std::vector<int32_t> starting_technologies;
 };
 
@@ -1217,6 +1234,16 @@ struct RuntimeThreadReport {
     uint64_t country_worker_catalog_hash = 0;
     bool country_worker_authoritative = false;
     char country_worker_last_reason[64]{};
+    uint8_t country_parity_compared = 0;
+    uint8_t country_parity_matched = 0;
+    uint64_t country_parity_compared_count = 0;
+    uint64_t country_parity_matched_count = 0;
+    int64_t country_parity_first_mismatch_day = -1;
+    uint64_t country_parity_reference_hash = 0;
+    uint64_t country_parity_worker_hash = 0;
+    int32_t country_parity_index = -1;
+    char country_parity_status[64]{};
+    char country_parity_field[48]{};
     bool modifier_pod_ready = false;
     double modifier_pod_plan_ms = 0.0;
     double modifier_pod_replay_ms = 0.0;
@@ -1225,6 +1252,17 @@ struct RuntimeThreadReport {
     uint64_t modifier_pod_snapshot_generation = 0;
     uint32_t modifier_pod_ack_count = 0;
     char modifier_pod_fallback_reason[64]{};
+    // F7 SHADOW Effect Host stage telemetry. Effect remains outside
+    // implemented_domain_mask until F8; these fields only prove the worker
+    // day stage ran and never grant ACTIVE authority.
+    bool effect_pod_ready = false;
+    double effect_pod_plan_ms = 0.0;
+    double effect_pod_replay_ms = 0.0;
+    uint64_t effect_pod_state_hash = 0;
+    uint64_t effect_pod_snapshot_generation = 0;
+    uint32_t effect_pod_ack_count = 0;
+    uint32_t effect_pod_intent_count = 0;
+    char effect_pod_fallback_reason[64]{};
     bool ideology_pod_ready = false;
     double ideology_pod_plan_ms = 0.0;
     double ideology_pod_replay_ms = 0.0;
@@ -1305,6 +1343,10 @@ struct RuntimeSaveBundle {
     std::vector<uint8_t> events_bytes;
     std::vector<uint8_t> effect_bytes;
     std::vector<uint8_t> ideology_bytes;
+    // D7T1 Host Country/Economy asset journal. Independent of Economy POD
+    // section ownership; restores peer continuation without granting Economy
+    // ACTIVE authority.
+    std::vector<uint8_t> economy_asset_bytes;
     std::array<uint64_t, 256> producer_sequences{};
     uint64_t fallback_producer_sequence = 0;
 };

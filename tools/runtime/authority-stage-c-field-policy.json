@@ -1,5 +1,462 @@
 {
   "schema": "AuthorityStageCFieldPolicy",
   "schema_version": 1,
-  "fields": {}
+  "notes": "Declared Climate/Weather C2 divergences after weather_field_init extras writeback. weather_field_init_arr is NOT declared and matched 0/240000 on stage-c2-fieldinit-20260910. Tolerances are 15% headroom on that post-fix recording. Do not treat this as Climate numeric parity or D12 Country release.",
+  "fields": {
+    "temp_arr": {
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 0.294475901,
+      "mean_tolerance": 0.02983400135,
+      "p95_tolerance": 0.141210801,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "temp_arr_prev": {
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 0.293095901,
+      "mean_tolerance": 0.030150261441,
+      "p95_tolerance": 0.143371651,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "moisture_arr": {
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 1.139227951,
+      "mean_tolerance": 0.024282432724,
+      "p95_tolerance": 0.169415701,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "moisture_arr_prev": {
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 1.139227951,
+      "mean_tolerance": 0.024480833819,
+      "p95_tolerance": 0.166258951,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "snow_cover_arr": {
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 1.150000001,
+      "mean_tolerance": 0.004427100326,
+      "p95_tolerance": 1.150000001,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "snow_cover_arr_prev": {
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 1.150000001,
+      "mean_tolerance": 0.004445325554,
+      "p95_tolerance": 1.150000001,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "temp_baseline_arr": {
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 0.032089601,
+      "mean_tolerance": 0.002958198162,
+      "p95_tolerance": 0.014515301,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "temp_30d_arr": {
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 0.039489851,
+      "mean_tolerance": 0.006211549264,
+      "p95_tolerance": 0.021120901,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "temp_365d_arr": {
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 0.008375451,
+      "mean_tolerance": 0.002079624425,
+      "p95_tolerance": 0.005455601,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "temp_anomaly_arr": {
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 0.303639101,
+      "mean_tolerance": 0.074448372526,
+      "p95_tolerance": 0.204263001,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "sea_ice_frac_arr": {
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 1.110066251,
+      "mean_tolerance": 0.007100838457,
+      "p95_tolerance": 0.018879551,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "sea_ice_frac_arr_prev": {
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 1.110066251,
+      "mean_tolerance": 0.006916267127,
+      "p95_tolerance": 0.019248701,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "weather_intensity_arr": {
+      "reason": "climate_sliced_weather_or_b8: Climate ACTIVE weather is worker+1-day writeback plus sliced weather vs main-thread; B8 also notes feedback-before-weather order. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 1.012208151,
+      "mean_tolerance": 0.059446447338,
+      "p95_tolerance": 0.206899951,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "weather_cloud_arr": {
+      "reason": "climate_sliced_weather_or_b8: Climate ACTIVE weather is worker+1-day writeback plus sliced weather vs main-thread; B8 also notes feedback-before-weather order. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 0.409107901,
+      "mean_tolerance": 0.053754955812,
+      "p95_tolerance": 0.186236751,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "weather_cloud_water_arr": {
+      "reason": "climate_sliced_weather_or_b8: Climate ACTIVE weather is worker+1-day writeback plus sliced weather vs main-thread; B8 also notes feedback-before-weather order. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 0.202158501,
+      "mean_tolerance": 0.025021397611,
+      "p95_tolerance": 0.070335151,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "weather_precip_arr": {
+      "reason": "climate_sliced_weather_or_b8: Climate ACTIVE weather is worker+1-day writeback plus sliced weather vs main-thread; B8 also notes feedback-before-weather order. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 0.185081001,
+      "mean_tolerance": 0.022203647716,
+      "p95_tolerance": 0.096075601,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "weather_classification_temp_arr": {
+      "reason": "climate_sliced_weather_or_b8: Climate ACTIVE weather is worker+1-day writeback plus sliced weather vs main-thread; B8 also notes feedback-before-weather order. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 0.293095901,
+      "mean_tolerance": 0.030150261441,
+      "p95_tolerance": 0.141555801,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "weather_classification_moisture_arr": {
+      "reason": "climate_sliced_weather_or_b8: Climate ACTIVE weather is worker+1-day writeback plus sliced weather vs main-thread; B8 also notes feedback-before-weather order. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 1.139227951,
+      "mean_tolerance": 0.024480833819,
+      "p95_tolerance": 0.168576201,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "weather_vapor_arr": {
+      "reason": "climate_sliced_weather_or_b8: Climate ACTIVE weather is worker+1-day writeback plus sliced weather vs main-thread; B8 also notes feedback-before-weather order. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 0.503525201,
+      "mean_tolerance": 0.096584895137,
+      "p95_tolerance": 0.259312351,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "weather_convergence_arr": {
+      "reason": "climate_sliced_weather_or_b8: Climate ACTIVE weather is worker+1-day writeback plus sliced weather vs main-thread; B8 also notes feedback-before-weather order. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 1.150000001,
+      "mean_tolerance": 0.429978188802,
+      "p95_tolerance": 0.704250801,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "weather_instability_arr": {
+      "reason": "climate_sliced_weather_or_b8: Climate ACTIVE weather is worker+1-day writeback plus sliced weather vs main-thread; B8 also notes feedback-before-weather order. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 0.994114051,
+      "mean_tolerance": 0.187195072354,
+      "p95_tolerance": 0.474674001,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "air_mass_temp_anomaly_arr": {
+      "reason": "climate_b8_psi_wind_ocean: B8 leftover — psi/cyclone/monsoon unwired and wind pass after weather; ACTIVE vs OFF magnitude/order divergence. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 0.126168801,
+      "mean_tolerance": 0.051641169859,
+      "p95_tolerance": 0.108070101,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "ocean_thermal_anomaly_arr": {
+      "reason": "climate_b8_psi_wind_ocean: B8 leftover — psi/cyclone/monsoon unwired and wind pass after weather; ACTIVE vs OFF magnitude/order divergence. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 0.184000001,
+      "mean_tolerance": 0.03943892394,
+      "p95_tolerance": 0.111177401,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "local_thermal_anomaly_arr": {
+      "reason": "climate_b8_psi_wind_ocean: B8 leftover — psi/cyclone/monsoon unwired and wind pass after weather; ACTIVE vs OFF magnitude/order divergence. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 0.130817101,
+      "mean_tolerance": 0.006271699434,
+      "p95_tolerance": 0.041310301,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "river_discharge_arr": {
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 356.952342151,
+      "mean_tolerance": 4.341839231637,
+      "p95_tolerance": 12.872930951,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "river_discharge_30d_arr": {
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 1.149971251,
+      "mean_tolerance": 0.120506884656,
+      "p95_tolerance": 0.580234801,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "river_storage_arr": {
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 56.051269101,
+      "mean_tolerance": 0.168360098098,
+      "p95_tolerance": 0.326304451,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "groundwater_storage_arr": {
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 0.752422001,
+      "mean_tolerance": 0.036057097991,
+      "p95_tolerance": 0.257674751,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "surface_runoff_arr": {
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 2.641421201,
+      "mean_tolerance": 0.155408202379,
+      "p95_tolerance": 0.947355051,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "temp_season_offset_arr": {
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 0.014542901,
+      "mean_tolerance": 0.000518112843,
+      "p95_tolerance": 0.003805351,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "insolation_now_arr": {
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 0.021354351,
+      "mean_tolerance": 0.000922997325,
+      "p95_tolerance": 0.005583251,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "insolation_dev_arr": {
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 0.021353201,
+      "mean_tolerance": 0.00092300135,
+      "p95_tolerance": 0.005617751,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "day_length_arr": {
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 0.036151401,
+      "mean_tolerance": 0.000626544,
+      "p95_tolerance": 0.003147551,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "heat_input_arr": {
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 0.021354351,
+      "mean_tolerance": 0.000922997325,
+      "p95_tolerance": 0.005441801,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "thermal_energy_arr": {
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 0.032089601,
+      "mean_tolerance": 0.002958198162,
+      "p95_tolerance": 0.014813151,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "snowpack_arr": {
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 0.368000001,
+      "mean_tolerance": 0.001287212177,
+      "p95_tolerance": 0.368000001,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "water_balance_30d_arr": {
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 0.356679401,
+      "mean_tolerance": 0.011532909937,
+      "p95_tolerance": 0.059881651,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "vegetation_vitality_arr": {
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 0.688907501,
+      "mean_tolerance": 0.01218122673,
+      "p95_tolerance": 0.060790151,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "vitality_low_streak_arr": {
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 218.500000001,
+      "mean_tolerance": 3.441375001,
+      "p95_tolerance": 218.500000001,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "vitality_high_streak_arr": {
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 218.500000001,
+      "mean_tolerance": 1.555375001,
+      "p95_tolerance": 218.500000001,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "soil_moisture_arr": {
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 0.406718201,
+      "mean_tolerance": 0.031609739681,
+      "p95_tolerance": 0.120674101,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "vegetation_growth_pressure_arr": {
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 0.945090701,
+      "mean_tolerance": 0.020912485101,
+      "p95_tolerance": 0.116309851,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "temperature_transport_anomaly_arr": {
+      "reason": "climate_b8_psi_wind_ocean: B8 leftover — psi/cyclone/monsoon unwired and wind pass after weather; ACTIVE vs OFF magnitude/order divergence. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 0.391808451,
+      "mean_tolerance": 0.060148743062,
+      "p95_tolerance": 0.190739001,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "vegetation_heat_stress_arr": {
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 0.615608801,
+      "mean_tolerance": 0.001179384343,
+      "p95_tolerance": 0.615608801,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "vegetation_drought_stress_arr": {
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 0.364437301,
+      "mean_tolerance": 0.000522578576,
+      "p95_tolerance": 0.364437301,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "vegetation_cold_stress_arr": {
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 0.195266551,
+      "mean_tolerance": 0.000355964123,
+      "p95_tolerance": 0.195266551,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "vegetation_regen_score_arr": {
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 1.148695901,
+      "mean_tolerance": 0.246790461383,
+      "p95_tolerance": 1.099518451,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "base_moisture_arr": {
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 0.183103001,
+      "mean_tolerance": 0.007038268442,
+      "p95_tolerance": 0.048143601,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "ocean_current_x_arr": {
+      "reason": "climate_b8_psi_wind_ocean: B8 leftover — psi/cyclone/monsoon unwired and wind pass after weather; ACTIVE vs OFF magnitude/order divergence. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 0.747500001,
+      "mean_tolerance": 0.093827755158,
+      "p95_tolerance": 0.462785301,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "ocean_current_y_arr": {
+      "reason": "climate_b8_psi_wind_ocean: B8 leftover — psi/cyclone/monsoon unwired and wind pass after weather; ACTIVE vs OFF magnitude/order divergence. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 0.373930551,
+      "mean_tolerance": 0.019399310386,
+      "p95_tolerance": 0.100450201,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "wind_x_arr": {
+      "reason": "climate_b8_psi_wind_ocean: B8 leftover — psi/cyclone/monsoon unwired and wind pass after weather; ACTIVE vs OFF magnitude/order divergence. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 2.245258851,
+      "mean_tolerance": 0.099852419816,
+      "p95_tolerance": 0.427852901,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "wind_y_arr": {
+      "reason": "climate_b8_psi_wind_ocean: B8 leftover — psi/cyclone/monsoon unwired and wind pass after weather; ACTIVE vs OFF magnitude/order divergence. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 2.283665401,
+      "mean_tolerance": 0.102969199525,
+      "p95_tolerance": 0.335858651,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "slp_arr": {
+      "reason": "climate_b8_psi_wind_ocean: B8 leftover — psi/cyclone/monsoon unwired and wind pass after weather; ACTIVE vs OFF magnitude/order divergence. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 0.124011401,
+      "mean_tolerance": 0.013044645158,
+      "p95_tolerance": 0.037201351,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "wind_speed_arr": {
+      "reason": "climate_b8_psi_wind_ocean: B8 leftover — psi/cyclone/monsoon unwired and wind pass after weather; ACTIVE vs OFF magnitude/order divergence. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 0.870292401,
+      "mean_tolerance": 0.057201295898,
+      "p95_tolerance": 0.272700651,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "upwelling_strength_arr": {
+      "reason": "climate_b8_psi_wind_ocean: B8 leftover — psi/cyclone/monsoon unwired and wind pass after weather; ACTIVE vs OFF magnitude/order divergence. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 1.685684951,
+      "mean_tolerance": 0.089857674788,
+      "p95_tolerance": 0.714889451,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "wind_stress_curl_arr": {
+      "reason": "climate_b8_psi_wind_ocean: B8 leftover — psi/cyclone/monsoon unwired and wind pass after weather; ACTIVE vs OFF magnitude/order divergence. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 4.570141401,
+      "mean_tolerance": 0.352102277356,
+      "p95_tolerance": 1.793737801,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "ocean_psi_arr": {
+      "reason": "climate_b8_psi_wind_ocean: B8 leftover — psi/cyclone/monsoon unwired and wind pass after weather; ACTIVE vs OFF magnitude/order divergence. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 11.395356901,
+      "mean_tolerance": 1.099673362689,
+      "p95_tolerance": 5.773382951,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "terrain_arr": {
+      "reason": "climate_main_thread_succession_not_writeback: ACTIVE suppresses GDScript vegetation/cover/terrain succession writers; worker only publishes succession_candidate. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 23.000000001,
+      "mean_tolerance": 3.374569584333,
+      "p95_tolerance": 23.000000001,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "vegetation_arr": {
+      "reason": "climate_main_thread_succession_not_writeback: ACTIVE suppresses GDScript vegetation/cover/terrain succession writers; worker only publishes succession_candidate. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 25.300000001,
+      "mean_tolerance": 0.081458334333,
+      "p95_tolerance": 25.300000001,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "base_vegetation_arr": {
+      "reason": "climate_main_thread_succession_not_writeback: ACTIVE suppresses GDScript vegetation/cover/terrain succession writers; worker only publishes succession_candidate. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 25.300000001,
+      "mean_tolerance": 0.081458334333,
+      "p95_tolerance": 25.300000001,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "cover_arr": {
+      "reason": "climate_main_thread_succession_not_writeback: ACTIVE suppresses GDScript vegetation/cover/terrain succession writers; worker only publishes succession_candidate. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 4.600000001,
+      "mean_tolerance": 0.529771459333,
+      "p95_tolerance": 3.450000001,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "weather_type_arr": {
+      "reason": "climate_sliced_weather_or_b8: Climate ACTIVE weather is worker+1-day writeback plus sliced weather vs main-thread; B8 also notes feedback-before-weather order. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 8.050000001,
+      "mean_tolerance": 1.096180001,
+      "p95_tolerance": 6.900000001,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "weather_prev_type_arr": {
+      "reason": "climate_sliced_weather_or_b8: Climate ACTIVE weather is worker+1-day writeback plus sliced weather vs main-thread; B8 also notes feedback-before-weather order. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 8.050000001,
+      "mean_tolerance": 1.096180001,
+      "p95_tolerance": 6.900000001,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "weather_target_type_arr": {
+      "reason": "climate_sliced_weather_or_b8: Climate ACTIVE weather is worker+1-day writeback plus sliced weather vs main-thread; B8 also notes feedback-before-weather order. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "absolute_tolerance": 8.050000001,
+      "mean_tolerance": 1.096180001,
+      "p95_tolerance": 6.900000001,
+      "source": "stage-c2-fieldinit-20260910"
+    },
+    "weather_dirty_mask": {
+      "reason": "climate_transient_dirty_mask: weather_dirty_mask is a visual dirty bit, not a persisted climate state; ACTIVE/OFF cadence differs. Measured on C2 tick 121-220 after weather_field_init extras writeback.",
+      "absolute_tolerance": 1.150000001,
+      "mean_tolerance": 1.136583334333,
+      "p95_tolerance": 1.150000001,
+      "source": "stage-c2-fieldinit-20260910"
+    }
+  }
 }

@@ -6,6 +6,7 @@
 #include "native_simulation_host.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstring>
 #include <vector>
@@ -29,68 +30,22 @@ Dictionary country_unavailable() {
     out["reason"] = "country_runtime_unavailable";
     return out;
 }
-} // namespace
 
-Dictionary DCWorldExt::configure_country(const Dictionary &catalog,
-                                         const Dictionary &profile,
-                                         int cell_count, int64_t seed) {
-    if (_country_runtime == nullptr) _country_runtime = new NativeCountryRuntime();
-    if (_modifier_runtime != nullptr)
-        static_cast<ModifierRuntime *>(_modifier_runtime)->attach_country_runtime(
-            country_runtime_from(_country_runtime));
-    if (_effect_runtime != nullptr) {
-        static_cast<EffectRuntime *>(_effect_runtime)->attach_country_runtime(
-            country_runtime_from(_country_runtime));
-        country_runtime_from(_country_runtime)->attach_effect_runtime(
-            static_cast<EffectRuntime *>(_effect_runtime));
+template <size_t N>
+void country_copy_fixed(std::array<char, N> &destination, const String &value) {
+    const CharString utf8 = value.utf8();
+    const char *source = utf8.get_data();
+    size_t index = 0;
+    if (source != nullptr) {
+        for (; index + 1u < N && source[index] != '\0'; ++index)
+            destination[index] = source[index];
     }
-    country_runtime_from(_country_runtime)->attach_modifier_runtime(
-        static_cast<ModifierRuntime *>(_modifier_runtime));
-    Dictionary out = country_runtime_from(_country_runtime)->configure(catalog, profile, cell_count, seed);
-    if (_economy_runtime != nullptr) {
-        static_cast<NativeEconomyRuntime *>(_economy_runtime)->attach_country_runtime(
-            country_runtime_from(_country_runtime));
-        country_runtime_from(_country_runtime)->attach_economy_runtime(
-            static_cast<NativeEconomyRuntime *>(_economy_runtime));
-    }
-    return out;
+    destination[index] = '\0';
 }
 
-Dictionary DCWorldExt::bootstrap_country(const Dictionary &packet,
-                                         const PackedByteArray &is_water) {
-    if (_country_runtime == nullptr) return country_unavailable();
-    Dictionary out = country_runtime_from(_country_runtime)->bootstrap(packet, is_water);
-    if (static_cast<bool>(out.get("ok", false)) &&
-        String(out.get("runtime_mode", "ACTIVE")) == "ACTIVE") {
-        NativeCountryRuntime *runtime = country_runtime_from(_country_runtime);
-        const auto publish_start = std::chrono::steady_clock::now();
-        const int slot = component_id(StringName("cell_country_slot"));
-        if (slot >= 0) {
-            write_i32_range(slot, 0, runtime->cell_country_snapshot());
-            _flush_slot_to_map(slot);
-            const double publish_ms = std::chrono::duration<double, std::milli>(
-                std::chrono::steady_clock::now() - publish_start).count();
-            runtime->mark_slot_publication(true, publish_ms);
-            out["published_to_slot"] = true;
-            out["slot_publish_ms"] = publish_ms;
-        } else {
-            runtime->mark_slot_publication(false, 0.0, "country_slot_unavailable");
-            out["published_to_slot"] = false;
-            out["publish_reason"] = "country_slot_unavailable";
-        }
-    }
-    return out;
-}
-
-Dictionary DCWorldExt::submit_country_commands(const Dictionary &packed_batch) {
-    if (_country_runtime == nullptr) return country_unavailable();
-    if (_runtime_host == nullptr ||
-        !_runtime_host->domain_is_worker_authoritative(
-            RuntimeDomainId::COUNTRY)) {
-        return country_runtime_from(_country_runtime)->submit_commands(
-            packed_batch);
-    }
-
+Dictionary enqueue_country_host_command_batch(
+        NativeSimulationHost &host, const Dictionary &packed_batch,
+        bool enforce_committed_day) {
     const PackedInt32Array opcodes = packed_batch.get(
         "opcodes", PackedInt32Array());
     const PackedInt64Array effective_days = packed_batch.get(
@@ -157,7 +112,7 @@ Dictionary DCWorldExt::submit_country_commands(const Dictionary &packed_batch) {
         }
     }
 
-    const RuntimeThreadReport report = _runtime_host->report();
+    const RuntimeThreadReport report = host.report();
     const int64_t first_allowed_day = report.committed_day + 1;
     std::vector<RuntimeCommandPacket> packets;
     packets.reserve(static_cast<size_t>(count));
@@ -171,19 +126,19 @@ Dictionary DCWorldExt::submit_country_commands(const Dictionary &packed_batch) {
             out["opcode"] = static_cast<int64_t>(opcode);
             return out;
         }
-        if (effective_days[index] < first_allowed_day ||
-            effective_days[index] < 0 || sequences[index] < 0) {
+        if (effective_days[index] < 0 || sequences[index] < 0 ||
+            (enforce_committed_day && effective_days[index] < first_allowed_day)) {
             out["ok"] = false;
             out["code"] = "country_worker_command_day_invalid";
             return out;
         }
         RuntimeCountryCommand command;
-        command.request_id = _runtime_host->allocate_command_request_id();
+        command.request_id = host.allocate_command_request_id();
         request_ids[index] = static_cast<int64_t>(command.request_id);
         command.producer_id = 0;
         command.sequence = sequences[index] > 0
             ? static_cast<uint64_t>(sequences[index])
-            : _runtime_host->allocate_producer_sequence(0);
+            : host.allocate_producer_sequence(0);
         command.observed_generation = 0;
         command.requested_day = effective_days[index];
         command.effective_day = effective_days[index];
@@ -217,7 +172,7 @@ Dictionary DCWorldExt::submit_country_commands(const Dictionary &packed_batch) {
         std::memcpy(packet.payload.data(), &command, sizeof(command));
         packets.push_back(packet);
     }
-    if (!_runtime_host->enqueue_batch(std::move(packets))) {
+    if (!host.enqueue_batch(std::move(packets))) {
         out["ok"] = false;
         out["code"] = "country_worker_command_queue_capacity_exceeded";
         return out;
@@ -231,6 +186,97 @@ Dictionary DCWorldExt::submit_country_commands(const Dictionary &packed_batch) {
     out["accepted"] = count;
     out["pending"] = count;
     out["request_ids"] = request_ids;
+    return out;
+}
+} // namespace
+
+Dictionary DCWorldExt::configure_country(const Dictionary &catalog,
+                                         const Dictionary &profile,
+                                         int cell_count, int64_t seed) {
+    if (_country_runtime == nullptr) _country_runtime = new NativeCountryRuntime();
+    if (_modifier_runtime != nullptr)
+        static_cast<ModifierRuntime *>(_modifier_runtime)->attach_country_runtime(
+            country_runtime_from(_country_runtime));
+    if (_effect_runtime != nullptr) {
+        static_cast<EffectRuntime *>(_effect_runtime)->attach_country_runtime(
+            country_runtime_from(_country_runtime));
+        country_runtime_from(_country_runtime)->attach_effect_runtime(
+            static_cast<EffectRuntime *>(_effect_runtime));
+    }
+    country_runtime_from(_country_runtime)->attach_modifier_runtime(
+        static_cast<ModifierRuntime *>(_modifier_runtime));
+    Dictionary out = country_runtime_from(_country_runtime)->configure(catalog, profile, cell_count, seed);
+        if (_economy_runtime != nullptr) {
+            static_cast<NativeEconomyRuntime *>(_economy_runtime)->attach_country_runtime(
+                country_runtime_from(_country_runtime));
+            country_runtime_from(_country_runtime)->attach_economy_runtime(
+                static_cast<NativeEconomyRuntime *>(_economy_runtime));
+            if (_runtime_host != nullptr)
+                static_cast<NativeEconomyRuntime *>(_economy_runtime)
+                    ->attach_simulation_host(_runtime_host.get());
+        }
+    if (_runtime_host != nullptr)
+        country_runtime_from(_country_runtime)->attach_simulation_host(
+            _runtime_host.get());
+    return out;
+}
+
+Dictionary DCWorldExt::bootstrap_country(const Dictionary &packet,
+                                         const PackedByteArray &is_water) {
+    if (_country_runtime == nullptr) return country_unavailable();
+    Dictionary out = country_runtime_from(_country_runtime)->bootstrap(packet, is_water);
+    if (static_cast<bool>(out.get("ok", false)) &&
+        String(out.get("runtime_mode", "ACTIVE")) == "ACTIVE") {
+        NativeCountryRuntime *runtime = country_runtime_from(_country_runtime);
+        const auto publish_start = std::chrono::steady_clock::now();
+        const int slot = component_id(StringName("cell_country_slot"));
+        if (slot >= 0) {
+            write_i32_range(slot, 0, runtime->cell_country_snapshot());
+            _flush_slot_to_map(slot);
+            const double publish_ms = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - publish_start).count();
+            runtime->mark_slot_publication(true, publish_ms);
+            out["published_to_slot"] = true;
+            out["slot_publish_ms"] = publish_ms;
+        } else {
+            runtime->mark_slot_publication(false, 0.0, "country_slot_unavailable");
+            out["published_to_slot"] = false;
+            out["publish_reason"] = "country_slot_unavailable";
+        }
+    }
+    return out;
+}
+
+Dictionary DCWorldExt::submit_country_commands(const Dictionary &packed_batch) {
+    if (_country_runtime == nullptr) return country_unavailable();
+    const bool worker_authoritative = _runtime_host != nullptr &&
+        _runtime_host->domain_is_worker_authoritative(
+            RuntimeDomainId::COUNTRY);
+    if (worker_authoritative) {
+        return enqueue_country_host_command_batch(
+            *_runtime_host, packed_batch, true);
+    }
+
+    Dictionary out = country_runtime_from(_country_runtime)->submit_commands(
+        packed_batch);
+    if (!static_cast<bool>(out.get("ok", false))) return out;
+    if (_runtime_host == nullptr) return out;
+    const RuntimeWorkerState host_state = _runtime_host->state();
+    const bool host_live = host_state != RuntimeWorkerState::STOPPED &&
+        host_state != RuntimeWorkerState::FAULTED;
+    if (!host_live || !_runtime_host->country_pod_configured()) return out;
+    Dictionary mirrored = enqueue_country_host_command_batch(
+        *_runtime_host, packed_batch, false);
+    if (!static_cast<bool>(mirrored.get("ok", false))) {
+        out["shadow_mirror_ok"] = false;
+        out["shadow_mirror_code"] = String(mirrored.get("code",
+            "country_shadow_command_mirror_failed"));
+        if (String(out.get("shadow_mirror_code", "")).is_empty())
+            out["shadow_mirror_code"] = "country_shadow_command_mirror_failed";
+        return out;
+    }
+    out["shadow_mirror_ok"] = true;
+    out["shadow_request_ids"] = mirrored.get("request_ids", PackedInt64Array());
     return out;
 }
 
@@ -311,6 +357,17 @@ bool DCWorldExt::runtime_country_host_rejection_self_test() const {
     return ok;
 }
 
+bool DCWorldExt::runtime_country_shadow_parity_self_test() const {
+    if (_runtime_host == nullptr) return false;
+    std::string error;
+    const bool ok = _runtime_host->country_shadow_parity_self_test(error);
+    if (!ok) {
+        UtilityFunctions::printerr(
+            String("[country shadow parity self-test] ") + String(error.c_str()));
+    }
+    return ok;
+}
+
 namespace {
 
 int64_t country_peer_i64(const Dictionary &value, const char *key,
@@ -324,18 +381,6 @@ uint32_t country_peer_u32(const Dictionary &value, const char *key,
     const int64_t parsed = country_peer_i64(value, key,
                                              static_cast<int64_t>(fallback));
     return parsed < 0 ? fallback : static_cast<uint32_t>(parsed);
-}
-
-template <size_t N>
-void country_copy_fixed(std::array<char, N> &destination, const String &value) {
-    const CharString utf8 = value.utf8();
-    const char *source = utf8.get_data();
-    size_t index = 0;
-    if (source != nullptr) {
-        for (; index + 1u < N && source[index] != '\0'; ++index)
-            destination[index] = source[index];
-    }
-    destination[index] = '\0';
 }
 
 uint64_t country_peer_u64(const Dictionary &value, const char *key,
@@ -551,6 +596,12 @@ Dictionary country_economy_asset_protocol_status_dictionary(
     out["pending_requests"] = static_cast<int64_t>(status.pending_requests);
     out["terminal_requests"] = static_cast<int64_t>(status.terminal_requests);
     out["rejected_results"] = static_cast<int64_t>(status.rejected_results);
+    out["faulted_transactions"] = static_cast<int64_t>(
+        status.faulted_transactions);
+    out["recovered_transactions"] = static_cast<int64_t>(
+        status.recovered_transactions);
+    out["duplicate_messages"] = static_cast<int64_t>(
+        status.duplicate_messages);
     out["session_epoch"] = static_cast<int64_t>(status.session_epoch);
     out["last_transaction_id"] = static_cast<int64_t>(status.last_transaction_id);
     out["last_request_id"] = static_cast<int64_t>(status.last_request_id);
@@ -888,6 +939,16 @@ Dictionary DCWorldExt::capture_country_pod_catalog() {
     for (int64_t i = 0; i < condition_ops.size(); ++i) condition_ops.set(i, catalog.research_condition_ops[static_cast<size_t>(i)]);
     for (int64_t i = 0; i < condition_refs.size(); ++i) condition_refs.set(i, catalog.research_condition_refs[static_cast<size_t>(i)]);
     for (int64_t i = 0; i < condition_values.size(); ++i) condition_values.set(i, catalog.research_condition_values[static_cast<size_t>(i)]);
+    PackedInt32Array reveal_offsets, reveal_ops, reveal_refs;
+    PackedInt64Array reveal_values;
+    reveal_offsets.resize(static_cast<int64_t>(catalog.reveal_condition_offsets.size()));
+    reveal_ops.resize(static_cast<int64_t>(catalog.reveal_condition_ops.size()));
+    reveal_refs.resize(static_cast<int64_t>(catalog.reveal_condition_refs.size()));
+    reveal_values.resize(static_cast<int64_t>(catalog.reveal_condition_values.size()));
+    for (int64_t i = 0; i < reveal_offsets.size(); ++i) reveal_offsets.set(i, catalog.reveal_condition_offsets[static_cast<size_t>(i)]);
+    for (int64_t i = 0; i < reveal_ops.size(); ++i) reveal_ops.set(i, catalog.reveal_condition_ops[static_cast<size_t>(i)]);
+    for (int64_t i = 0; i < reveal_refs.size(); ++i) reveal_refs.set(i, catalog.reveal_condition_refs[static_cast<size_t>(i)]);
+    for (int64_t i = 0; i < reveal_values.size(); ++i) reveal_values.set(i, catalog.reveal_condition_values[static_cast<size_t>(i)]);
     PackedInt32Array milestone_offsets, milestone_candidates, milestone_required, entry_milestones;
     milestone_offsets.resize(static_cast<int64_t>(catalog.milestone_offsets.size()));
     milestone_candidates.resize(static_cast<int64_t>(catalog.milestone_candidates.size()));
@@ -917,6 +978,10 @@ Dictionary DCWorldExt::capture_country_pod_catalog() {
     out["research_condition_ops"] = condition_ops;
     out["research_condition_refs"] = condition_refs;
     out["research_condition_values"] = condition_values;
+    out["reveal_condition_offsets"] = reveal_offsets;
+    out["reveal_condition_ops"] = reveal_ops;
+    out["reveal_condition_refs"] = reveal_refs;
+    out["reveal_condition_values"] = reveal_values;
     if (!_runtime_host) _runtime_host = std::make_unique<NativeSimulationHost>();
     std::string publish_error;
     if (!_runtime_host->publish_country_catalog(catalog, publish_error)) {
@@ -1019,6 +1084,26 @@ Dictionary DCWorldExt::get_country_worker_read_view(
     } else {
         out["full_cell_owners"] = PackedInt32Array();
     }
+    PackedInt64Array country_cash;
+    PackedInt64Array country_state_versions;
+    if (view.snapshot != nullptr) {
+        country_cash.resize(static_cast<int64_t>(view.snapshot->country_cash.size()));
+        country_state_versions.resize(static_cast<int64_t>(
+            view.snapshot->country_state_version.size()));
+        for (int64_t i = 0; i < country_cash.size(); ++i) {
+            country_cash.set(i, view.snapshot->country_cash[
+                static_cast<size_t>(i)]);
+        }
+        for (int64_t i = 0; i < country_state_versions.size(); ++i) {
+            country_state_versions.set(i, static_cast<int64_t>(
+                view.snapshot->country_state_version[static_cast<size_t>(i)]));
+        }
+    }
+    // Country ACTIVE consumers read these immutable snapshot fields instead
+    // of consulting the synchronous Country store, which is deliberately not
+    // mutated by the worker.
+    out["country_cash"] = country_cash;
+    out["country_state_versions"] = country_state_versions;
     return out;
 }
 
@@ -1182,6 +1267,130 @@ bool DCWorldExt::runtime_country_host_economy_protocol_self_test() const {
     if (_runtime_host == nullptr) return false;
     std::string error;
     return _runtime_host->country_economy_asset_protocol_self_test(error);
+}
+
+bool DCWorldExt::runtime_country_host_handoff_self_test() const {
+    if (_runtime_host == nullptr) return false;
+    std::string error;
+    const bool ok = _runtime_host->country_authority_handoff_self_test(error);
+    if (!ok) {
+        UtilityFunctions::printerr(
+            String("[country handoff self-test] ") + String(error.c_str()));
+    }
+    return ok;
+}
+
+Dictionary DCWorldExt::prepare_country_authority_handoff(int target_owner) {
+    Dictionary out;
+    if (_runtime_host == nullptr) {
+        out["ok"] = false;
+        out["code"] = "runtime_worker_not_started";
+        return out;
+    }
+    if (_country_runtime != nullptr) {
+        const Dictionary ledger =
+            country_runtime_from(_country_runtime)->economy_asset_transaction_report();
+        if (int64_t(ledger.get("in_flight", 0)) > 0) {
+            out["ok"] = false;
+            out["code"] = "country_authority_handoff_busy";
+            out["in_flight"] = ledger.get("in_flight", 0);
+            return out;
+        }
+    }
+    std::string error;
+    const auto target = target_owner == 1
+        ? NativeSimulationHost::CountryAuthorityOwner::WORKER
+        : NativeSimulationHost::CountryAuthorityOwner::SYNC;
+    const bool ok = _runtime_host->prepare_country_authority_handoff(target, error);
+    out["ok"] = ok;
+    out["code"] = ok ? "ok" : (error.empty() ? "country_authority_handoff_failed" : error.c_str());
+    return out;
+}
+
+Dictionary DCWorldExt::install_country_authority_handoff() {
+    Dictionary out;
+    if (_runtime_host == nullptr) {
+        out["ok"] = false;
+        out["code"] = "runtime_worker_not_started";
+        return out;
+    }
+    const auto before = _runtime_host->country_authority_handoff_status();
+    if (!before.prepare_pending) {
+        out["ok"] = false;
+        out["code"] = "country_authority_handoff_not_prepared";
+        return out;
+    }
+    // SYNC→WORKER: publish the live sync store as the handoff checkpoint before
+    // flipping unique-writer ownership. Missing capture fails closed in Host.
+    if (before.prepared_target ==
+            NativeSimulationHost::CountryAuthorityOwner::WORKER &&
+        _country_runtime != nullptr) {
+        const Dictionary captured = capture_country_runtime_snapshot();
+        if (!bool(captured.get("ok", false))) {
+            out["ok"] = false;
+            out["code"] = String(captured.get("code",
+                "country_authority_handoff_checkpoint_missing"));
+            std::string abort_error;
+            _runtime_host->abort_country_authority_handoff(abort_error);
+            return out;
+        }
+        out["checkpoint_generation"] = captured.get("generation", 0);
+        out["checkpoint_state_hash"] = captured.get("state_hash", 0);
+    }
+    std::string error;
+    const bool ok = _runtime_host->install_country_authority_handoff(error);
+    if (!ok) {
+        out["ok"] = false;
+        out["code"] = error.empty() ? "country_authority_handoff_failed" : error.c_str();
+        return out;
+    }
+    const auto after = _runtime_host->country_authority_handoff_status();
+    if (_country_runtime != nullptr) {
+        country_runtime_from(_country_runtime)->set_sync_store_writes_forbidden(
+            after.owner == NativeSimulationHost::CountryAuthorityOwner::WORKER);
+    }
+    out["ok"] = true;
+    out["code"] = "ok";
+    out["owner"] = static_cast<int>(after.owner);
+    out["session_epoch"] = static_cast<int64_t>(after.session_epoch);
+    out["implemented_domain_mask"] = static_cast<int64_t>(
+        _runtime_host->implemented_domain_mask());
+    return out;
+}
+
+Dictionary DCWorldExt::abort_country_authority_handoff() {
+    Dictionary out;
+    if (_runtime_host == nullptr) {
+        out["ok"] = false;
+        out["code"] = "runtime_worker_not_started";
+        return out;
+    }
+    std::string error;
+    const bool ok = _runtime_host->abort_country_authority_handoff(error);
+    const auto status = _runtime_host->country_authority_handoff_status();
+    out["ok"] = ok;
+    out["code"] = ok ? "ok" : (error.empty() ? "country_authority_handoff_failed" : error.c_str());
+    out["owner"] = static_cast<int>(status.owner);
+    out["prepare_pending"] = status.prepare_pending;
+    out["reason"] = String(status.last_reason);
+    return out;
+}
+
+Dictionary DCWorldExt::get_country_authority_handoff_status() const {
+    Dictionary out;
+    if (_runtime_host == nullptr) {
+        out["ok"] = false;
+        out["code"] = "runtime_worker_not_started";
+        return out;
+    }
+    const auto status = _runtime_host->country_authority_handoff_status();
+    out["ok"] = true;
+    out["owner"] = static_cast<int>(status.owner);
+    out["prepared_target"] = static_cast<int>(status.prepared_target);
+    out["prepare_pending"] = status.prepare_pending;
+    out["session_epoch"] = static_cast<int64_t>(status.session_epoch);
+    out["reason"] = String(status.last_reason);
+    return out;
 }
 
 Dictionary DCWorldExt::service_country_worker_peer_adapter(
@@ -1377,6 +1586,12 @@ Dictionary DCWorldExt::capture_country_reference_checkpoint() const {
         : country_runtime_from(_country_runtime)->capture_reference_checkpoint();
 }
 
+void DCWorldExt::set_country_sync_store_writes_forbidden(bool forbidden) {
+    if (_country_runtime != nullptr)
+        country_runtime_from(_country_runtime)->set_sync_store_writes_forbidden(
+            forbidden);
+}
+
 Dictionary DCWorldExt::run_country_slice(const Dictionary &ctx) {
     if (_country_runtime == nullptr) return country_unavailable();
     if (_runtime_host != nullptr && _runtime_host->domain_is_worker_authoritative(
@@ -1420,6 +1635,25 @@ Dictionary DCWorldExt::run_country_slice(const Dictionary &ctx) {
             runtime->mark_slot_publication(false, publish_ms, "country_slot_unavailable");
             out["published_to_slot"] = false;
             out["publish_reason"] = "country_slot_unavailable";
+        }
+    }
+    if (static_cast<bool>(out.get("ok", false)) &&
+        static_cast<bool>(out.get("done", false)) &&
+        _runtime_host != nullptr &&
+        _runtime_host->country_pod_configured()) {
+        RuntimeCountryPodSnapshot snapshot;
+        std::string error;
+        if (runtime->export_pod_snapshot(snapshot, error) && snapshot.state_hash != 0) {
+            std::string publish_error;
+            if (!_runtime_host->publish_country_reference(
+                    snapshot.committed_day, snapshot.state_hash,
+                    publish_error, &snapshot)) {
+                out["country_reference_ok"] = false;
+                out["country_reference_code"] = String(publish_error.c_str());
+            } else {
+                out["country_reference_ok"] = true;
+                out["country_reference_hash"] = static_cast<int64_t>(snapshot.state_hash);
+            }
         }
     }
     out.erase("_changed_cell_indices");

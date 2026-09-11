@@ -277,6 +277,7 @@ const SOA_FIELD_CANDIDATES: Array = [
 	"weather_prev_type_arr",
 	"weather_target_type_arr",
 	"is_water_arr",
+	"country_slot_arr",
 	"climate_dirty_mask",
 	"weather_dirty_mask",
 ]
@@ -320,6 +321,7 @@ const COMPACT_SOA_FIELD_CANDIDATES: Array = [
 	"weather_type_arr",
 	"weather_target_type_arr",
 	"is_water_arr",
+	"country_slot_arr",
 	"climate_dirty_mask",
 	"weather_dirty_mask",
 ]
@@ -358,6 +360,9 @@ var _last_tick_flush_ms: float = 0.0
 var _last_tick_encoder_path: String = "gdscript"
 var _session_metadata: Dictionary = {}
 var _sidecar_path: String = ""
+var _country_samples: Array[Dictionary] = []
+var _country_receipts: Array[Dictionary] = []
+var _country_receipt_cursor: int = 0
 var _runtime_report_start: Dictionary = {}
 var _runtime_report_end: Dictionary = {}
 var _first_seen_tick: int = -1
@@ -464,6 +469,9 @@ func start(metadata: Dictionary = {}) -> void:
 	_csv_encoder_ext = null
 	_path = ""
 	_sidecar_path = ""
+	_country_samples.clear()
+	_country_receipts.clear()
+	_country_receipt_cursor = 0
 	_runtime_report_start = {}
 	_runtime_report_end = {}
 	_first_seen_tick = -1
@@ -670,6 +678,7 @@ func on_fast_tick(sample: Dictionary) -> Dictionary:
 	for key in transition_stats.keys():
 		weather[key] = transition_stats[key]
 	sample["weather"] = weather
+	_capture_country_evidence(global_tick, map_data)
 	_last_tick_stats_ms = (Time.get_ticks_usec() - t_stats_us0) / 1000.0
 	var first_cell = map_data.cell_at(0)
 	if first_cell == null:
@@ -738,6 +747,94 @@ static func _collect_soa_fields(map_data, cell_count: int, compact_fields: bool 
 		if _array_size(arr) == cell_count:
 			fields.append(field)
 	return fields
+
+
+func _capture_country_evidence(tick_idx: int, map_data) -> void:
+	if _main == null or not _main.has_method("get_generator"):
+		return
+	var generator = _main.get_generator()
+	if generator == null or not generator.has_method("get_country_facade"):
+		return
+	var facade = generator.get_country_facade()
+	if facade == null or not facade.has_method("report") \
+			or not facade.has_method("cell_summary"):
+		return
+	var report: Dictionary = facade.report()
+	if not bool(report.get("bootstrapped", false)):
+		return
+
+	var first_cell_by_slot := {}
+	var owners = map_data.get("country_slot_arr")
+	if _array_size(owners) == _cell_count:
+		for cell_idx in range(_cell_count):
+			var slot := int(owners[cell_idx])
+			if slot >= 0 and not first_cell_by_slot.has(slot):
+				first_cell_by_slot[slot] = cell_idx
+	var slots: Array = first_cell_by_slot.keys()
+	slots.sort()
+	var countries: Array[Dictionary] = []
+	for slot_value in slots:
+		var cell_idx := int(first_cell_by_slot[slot_value])
+		var summary: Dictionary = facade.cell_summary(cell_idx)
+		var handle := int(summary.get("country_handle", 0))
+		if handle == 0:
+			continue
+		var snapshot: Dictionary = facade.snapshot(handle) \
+			if facade.has_method("snapshot") else {}
+		var treasury: Dictionary = facade.treasury_snapshot(handle) \
+			if facade.has_method("treasury_snapshot") else {}
+		var research: Dictionary = facade.research_snapshot(handle) \
+			if facade.has_method("research_snapshot") else {}
+		countries.append({
+			"country_slot": int(slot_value),
+			"country_handle": handle,
+			"country_id": String(summary.get("country_id", "")),
+			"state_version": int(summary.get("state_version", -1)),
+			"territory_count": int(summary.get("territory_count", -1)),
+			"cash": int(treasury.get("cash", summary.get("cash", 0))),
+			"good_ids": Array(treasury.get("good_ids", PackedStringArray())),
+			"good_quantities": Array(treasury.get(
+				"quantities", PackedInt64Array())),
+			"technology_ids": Array(snapshot.get(
+				"technology_ids", PackedStringArray())),
+			"research_states": Array(research.get(
+				"technology_states", PackedInt32Array())),
+			"research_queue": Array(research.get(
+				"queue_technology_indices", PackedInt32Array())),
+		})
+
+	var worker_view: Dictionary = {}
+	var world_ext = facade.world_ext() if facade.has_method("world_ext") else null
+	if world_ext != null and world_ext.has_method("get_country_worker_read_view"):
+		worker_view = world_ext.get_country_worker_read_view(0)
+	_country_samples.append({
+		"tick_idx": tick_idx,
+		"reference_generation": int(report.get("generation", -1)),
+		"reference_state_hash": int(report.get("state_hash", 0)),
+		"worker_available": bool(worker_view.get("available", false)),
+		"worker_generation": int(worker_view.get("generation", -1)),
+		"worker_committed_day": int(worker_view.get("committed_day", -1)),
+		"worker_state_hash": int(worker_view.get("state_hash", 0)),
+		"worker_territory_watermark": int(worker_view.get(
+			"territory_watermark", -1)),
+		"worker_research_watermark": int(worker_view.get(
+			"research_watermark", -1)),
+		"worker_tax_watermark": int(worker_view.get("tax_watermark", -1)),
+		"countries": countries,
+	})
+
+	if facade.has_method("poll_worker_command_receipts"):
+		var receipt_batch: Dictionary = facade.poll_worker_command_receipts(
+			_country_receipt_cursor, 4096)
+		if bool(receipt_batch.get("ok", false)):
+			for value in receipt_batch.get("receipts", []):
+				if value is Dictionary:
+					var receipt: Dictionary = value.duplicate(true)
+					receipt["observed_tick_idx"] = tick_idx
+					_country_receipts.append(receipt)
+			_country_receipt_cursor = maxi(_country_receipt_cursor,
+				int(receipt_batch.get("last_request_id",
+					_country_receipt_cursor)))
 
 
 func _current_map():
@@ -1076,6 +1173,13 @@ func _write_sidecar(final: bool, stop_reason: String = "") -> void:
 			"rows": _row_count,
 		},
 		"sampling": sampling_summary(),
+		"country_evidence": {
+			"schema": "CountryClientEvidence",
+			"schema_version": 1,
+			"samples": _country_samples.duplicate(true),
+			"terminal_receipts": _country_receipts.duplicate(true),
+			"last_receipt_request_id": _country_receipt_cursor,
+		},
 		"runtime": {
 			"committed_day": int(report.get("simulation_committed_day", -1)),
 			"writeback_day": int(climate_diag.get("writeback_last_day", -1)),

@@ -112,7 +112,7 @@ func _run() -> void:
 	var saved := _save_economy(ext)
 	var restored: Dictionary = _restore_economy(ext, saved.get("chunks", []))
 	var restored_report: Dictionary = ext.get_economy_report()
-	if int(saved.get("schema", 0)) != 51 or not bool(restored.get("ok", false)) \
+	if int(saved.get("schema", 0)) != 52 or not bool(restored.get("ok", false)) \
 			or int(restored_report.get("canal_project_building_count", 0)) != 1:
 		print("restore debug saved=", saved.get("schema", 0), " result=", restored,
 			" hash_before=", hash_before_restore, " hash_after=",
@@ -125,7 +125,7 @@ func _run() -> void:
 	# full-state hash is not stable across this schema (restore rebuilds
 	# derived pages), so the contract is the project itself, not the hash.
 	_expect("PKEC restores an in-flight canal project",
-		int(saved.get("schema", 0)) == 51 and bool(restored.get("ok", false))
+		int(saved.get("schema", 0)) == 52 and bool(restored.get("ok", false))
 		and int(restored_report.get("canal_project_building_count", 0)) == 1
 		and int(restored_report.get("canal_project_count", 0)) == 1)
 

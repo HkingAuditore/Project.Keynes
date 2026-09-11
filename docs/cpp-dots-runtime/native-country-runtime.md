@@ -41,6 +41,42 @@ PKCN v13 保留 Effect/POD `CLAIM_UNOWNED_TERRITORY` 与时代奖励引用。
 当前为 neutral，供[家族远程开拓事务](./family-colonization-runtime.md)在
 Country priority 255 提交；侵略、吞并与通行权不复用该 opcode。
 
+## 2026-09-10 worker 接线与 SHADOW 对拍
+
+Worker 命令公式收口到 `country_core_apply_command()`；业务投影 hash 收口到
+`country_core_hash_business_state()`。`export_pod_snapshot` 填完字段后必须用该函数写
+`state_hash`，**禁止**用 `compute_state_hash()` / PKCN hash 顶替 SHADOW 对拍字段。
+`RuntimeCountryPodAuthority` 只做 worker plan/commit 适配。生产默认在
+`runtime_climate_authority_enabled` 且 Country grant 成功时由 Host worker 写入 Country；
+主线程消费 immutable read-view。关掉开关、启动失败或未取得 grant 时才由同步
+`NativeCountryRuntime::run_slice_core()`（大规模领土批走 staged SoA）写入。
+
+**SHADOW 对拍 ≠ 默认生产路径。** 生产默认（authority 开）下 `implemented` /
+`requested` 为 `CLIMATE|COUNTRY|COMMIT`（`0x806`）；首日 grant 后 Country 由 worker
+经 Host read-view 回写。SHADOW 会话仍会：
+
+1. 把生产命令镜像进 Host packet（同步仍是权威）。
+2. 在同步 Country 日边界发布 reference hash。
+3. 把同步已发生的 peer 终态与九条 Economy 资产终态镜像给 POD，供 worker 追上投影。
+4. 只比 hash/字段诊断，**不**把 worker read-view 写进 `MapData.country_slot_arr`。
+
+测试会话可用 `set_country_sync_store_writes_forbidden(true)` 模拟唯一写者；这不是 D12
+本身。D11 客户端 C2 录制清单：`cash`、`cell.country_slot` / territory CSR、
+`country_technologies` bits、command receipt codes。Headless harness 见
+`runtime_country_parity_test.gd`。
+
+Host 有 Economy-origin 入队、unique-writer 门禁和 ACTIVE↔SYNC handoff
+`prepare/install/abort`（D10）。**D12（2026-09-11）** 已放行生产 Country ACTIVE：
+`implemented_domain_mask = 0x806`，`climate_authority_test` **16/0**，Host protocol **42/0**。
+
+Country/Economy 资产事务另有 Host `D7T1` journal：它保存 request/result、队列标记、
+dispatch/commit 幂等标记、terminal result、协议计数和恢复后的新 session rebinding。
+Economy-owned fiscal peer journal 已在 PKEC v52 持久化 terminal result 与 escrow；当前它仍
+不等于 Economy 已完成正式持久 owner。M1 只覆盖 fiscal reserve/return/collect；其它
+operation 的 peer journal、跨帧 continuation 和 operation gate 验收仍未完成。
+未迁移 operation 在
+Country worker 唯一写者模式下必须显式返回 gate-closed，而不是成功完成。
+
 > v7 adds the authoritative `CellTaxPolicyStore`: `cell_policy_id[cell]` uses
 > `0` for full national inheritance, while identical non-empty policies are
 > content-interned. Commands 15..19 stage only touched cells. Territory transfer
@@ -67,6 +103,9 @@ submits `DISCOVER` again. Local extinction does not revoke country evidence. The
 signal IDs, distinct counts, first/last days, and first cells. A signal catalog mismatch, malformed
 dense ID, invalid cell, or legacy PKCN schema is rejected rather than defaulted; schema/catalog
 identity failures use `catalog_hash_mismatch`, while malformed commands keep their precise reason.
+Evidence first/last days use the command `effective_day`, not the later scheduler slice day.
+Country POD catalog therefore carries reveal-condition CSR separately from research-eligibility CSR；
+signal ingress and technology activation both call the shared CountryCore discovery refresh.
 
 `NativeCountryRuntime` 是国家身份、领土、国家科技、税务政策与国家国库的唯一可变权威。它与
 `NativeEconomyRuntime` 同级，由 `DCWorldExt` 组合持有；GDScript 不维护第二份国家状态。

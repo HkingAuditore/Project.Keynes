@@ -3131,6 +3131,8 @@ func _continue_economy_inflight(day_index: int) -> void:
 	# allows it. Release barriers only after the final publish, and never let a
 	# diagnostic/economy drain run ahead of a still-open climate transaction.
 	if native_daily_round_active():
+		var native_round_was_active := true
+		var native_last_result: Dictionary = {}
 		# A pending first slice is not yet represented by the job's own
 		# _native_round_active flag.  Once this pulse starts run_slice(), the job
 		# becomes the authoritative owner of the barrier state.
@@ -3139,6 +3141,7 @@ func _continue_economy_inflight(day_index: int) -> void:
 				and continuation_count < ECONOMY_CONTINUATION_MAX_SLICES_PER_FRAME:
 			var native_started_us := Time.get_ticks_usec()
 			var native_result: Dictionary = _sus.continue_system(&"native_daily_sim", ctx)
+			native_last_result = native_result
 			var native_slice_ms: float = float(Time.get_ticks_usec() - native_started_us) / 1000.0
 			frame_max_slice_ms = maxf(frame_max_slice_ms,
 				_record_continuation_slice("native_daily", native_result, native_slice_ms))
@@ -3147,6 +3150,15 @@ func _continue_economy_inflight(day_index: int) -> void:
 					or float(Time.get_ticks_usec() - started_us) / 1000.0 \
 						>= native_launch_deadline_ms:
 				break
+		# sus_tick_daily() advances this generation when a round completes in
+		# the ordinary scheduler visit. A round finalized by continuation owns
+		# the same immutable Climate commit boundary and must advance it once as
+		# well, otherwise captured SHADOW frames remain reference-pending
+		# forever despite the day barrier having been released.
+		if native_round_was_active and not native_daily_round_active() \
+				and bool(native_last_result.get("done", false)) \
+				and not bool(native_last_result.get("fatal", false)):
+			_native_daily_climate_round_generation += 1
 		if _world_clock_ref != null:
 			_world_clock_ref.request_simulation_backpressure(
 				&"native_daily_day_barrier", native_daily_round_active())

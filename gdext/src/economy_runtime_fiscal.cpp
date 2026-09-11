@@ -675,11 +675,15 @@ bool NativeEconomyRuntime::advance_fiscal_reservation(std::string &error) {
         std::string fiscal_transaction_error;
         if (!coordinate_country_fiscal_transaction(
                 country, NativeCountryRuntime::ECONOMY_ASSET_FISCAL_RESERVE,
-                requested, reserved, fiscal_transaction_error)) {
+                requested, reserved, fiscal_transaction_error,
+                &continuation.pending_request_id)) {
+            if (fiscal_transaction_error == "country_economy_asset_host_pending")
+                return true;
             return fail(fiscal_transaction_error.empty()
                 ? "fiscal_reserve_transaction_failed"
                 : fiscal_transaction_error.c_str());
         }
+        continuation.pending_request_id = 0;
         if (reserved <= 0 || reserved > requested)
             return fail("fiscal_reserve_quantity_invalid");
     }
@@ -1193,6 +1197,7 @@ bool NativeEconomyRuntime::commit_fiscal(std::string &error) {
     _fiscal_cumulative_paid.resize(summary_count, 0);
     _fiscal_settlement_continuation = {};
     _fiscal_settlement_continuation.country_count = _epoch_country_count;
+    _fiscal_settlement_continuation.day_index = _current_day;
     _fiscal_settlement_continuation.unused_by_country.assign(
         static_cast<size_t>(std::max(0, _epoch_country_count)), 0);
     _fiscal_settlement_continuation.collected_by_country.assign(
@@ -1376,7 +1381,19 @@ bool NativeEconomyRuntime::advance_fiscal_settlement(std::string &error) {
             std::string transaction_error;
             if (!coordinate_country_fiscal_transaction(
                     country, NativeCountryRuntime::ECONOMY_ASSET_FISCAL_RETURN,
-                    unused, returned, transaction_error) || returned != unused) {
+                    unused, returned, transaction_error,
+                    &continuation.pending_request_id)) {
+                if (transaction_error == "country_economy_asset_host_pending")
+                    return true;
+                continuation.phase = 3;
+                continuation.last_error = transaction_error.empty()
+                    ? "fiscal_escrow_return_drift" : transaction_error;
+                continuation.active = false;
+                error = continuation.last_error;
+                return false;
+            }
+            continuation.pending_request_id = 0;
+            if (returned != unused) {
                 continuation.phase = 3;
                 continuation.last_error = transaction_error.empty()
                     ? "fiscal_escrow_return_drift" : transaction_error;
@@ -1390,8 +1407,19 @@ bool NativeEconomyRuntime::advance_fiscal_settlement(std::string &error) {
             std::string transaction_error;
             if (!coordinate_country_fiscal_transaction(
                     country, NativeCountryRuntime::ECONOMY_ASSET_FISCAL_COLLECT,
-                    collected_total, collected, transaction_error) ||
-                collected != collected_total) {
+                    collected_total, collected, transaction_error,
+                    &continuation.pending_request_id)) {
+                if (transaction_error == "country_economy_asset_host_pending")
+                    return true;
+                continuation.phase = 3;
+                continuation.last_error = transaction_error.empty()
+                    ? "fiscal_tax_collection_drift" : transaction_error;
+                continuation.active = false;
+                error = continuation.last_error;
+                return false;
+            }
+            continuation.pending_request_id = 0;
+            if (collected != collected_total) {
                 continuation.phase = 3;
                 continuation.last_error = transaction_error.empty()
                     ? "fiscal_tax_collection_drift" : transaction_error;

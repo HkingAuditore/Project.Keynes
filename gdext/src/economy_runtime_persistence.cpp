@@ -153,12 +153,28 @@ Dictionary NativeEconomyRuntime::begin_save(int32_t chunk_bytes) {
         out["reason"] = "economy_save_state_shape_invalid";
         return out;
     }
+    NativeCountryRuntime::EconomySnapshot country_snapshot;
+    if (!_country_runtime->copy_economy_snapshot(country_snapshot) ||
+        country_snapshot.country_count < 0) {
+        out["ok"] = false;
+        out["reason"] = "economy_save_fiscal_country_snapshot_unavailable";
+        return out;
+    }
+    const size_t fiscal_country_count = static_cast<size_t>(
+        country_snapshot.country_count);
+    if (!_fiscal_escrow_by_country.empty() &&
+        _fiscal_escrow_by_country.size() != fiscal_country_count) {
+        out["ok"] = false;
+        out["reason"] = "economy_save_fiscal_escrow_shape_invalid";
+        return out;
+    }
     // A capture must not serialize need rows whose person was already retired,
     // because restore would prune them and change the row count.
     compact_person_needs();
     _save = {};
     _save.active = true;
     _save.chunk_bytes = std::clamp(chunk_bytes, 64 * 1024, 16 * 1024 * 1024);
+    _save.fiscal_country_count = country_snapshot.country_count;
     std::string modifier_error;
     if (_modifier_runtime != nullptr &&
         !_modifier_runtime->serialize_domain(ModifierRuntime::ECONOMY,
@@ -331,6 +347,7 @@ Dictionary NativeEconomyRuntime::begin_restore() {
         static_cast<size_t>(_cell_count) * ACTIVE_TAX_KIND_COUNT, 0);
     _fiscal_reservation_continuation = {};
     _fiscal_settlement_continuation = {};
+    _fiscal_peer_journal.clear();
     _epoch_begin_post_fiscal_pending = false;
     _epoch_begin_pending_day = -1;
     _fiscal_last_events.clear();
@@ -425,6 +442,11 @@ Dictionary NativeEconomyRuntime::end_restore() {
           _restore.restored_canal_projects != _restore.expected_canal_projects)) ||
         (_restore.schema_version >= 20 && !_restore.modifier_seen) ||
         (_restore.schema_version >= 23 && !_restore.fiscal_seen) ||
+        (_restore.schema_version >= 52 &&
+         (_restore.expected_fiscal < 0 ||
+          _restore.restored_fiscal != _restore.expected_fiscal ||
+          !_restore.fiscal_peer_seen ||
+          _restore.restored_fiscal_peer != _restore.expected_fiscal_peer)) ||
         (_restore.schema_version >= 24 &&
          !_restore.settlement_names_seen) ||
         (_restore.schema_version >= 26 &&

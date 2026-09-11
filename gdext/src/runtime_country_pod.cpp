@@ -1,4 +1,5 @@
 #include "runtime_country_pod.h"
+#include "country_core_apply.h"
 #include "country_core.h"
 
 #include <algorithm>
@@ -95,9 +96,18 @@ void append_vector<int64_t>(std::vector<uint8_t> &out,
 }
 template <>
 void append_vector<double>(std::vector<uint8_t> &out,
-                           const std::vector<double> &values) {
+                            const std::vector<double> &values) {
     append_u32(out, static_cast<uint32_t>(values.size()));
     for (double value : values) append_f64(out, value);
+}
+
+void append_strings(std::vector<uint8_t> &out,
+                    const std::vector<std::string> &values) {
+    append_u32(out, static_cast<uint32_t>(values.size()));
+    for (const std::string &value : values) {
+        append_u32(out, static_cast<uint32_t>(value.size()));
+        out.insert(out.end(), value.begin(), value.end());
+    }
 }
 
 struct Reader {
@@ -120,6 +130,15 @@ struct Reader {
     bool u32(uint32_t &value) {
         const uint8_t *ptr = nullptr;
         if (!bytes(4, ptr)) return false;
+        value = static_cast<uint32_t>(ptr[0]) |
+                (static_cast<uint32_t>(ptr[1]) << 8u) |
+                (static_cast<uint32_t>(ptr[2]) << 16u) |
+                (static_cast<uint32_t>(ptr[3]) << 24u);
+        return true;
+    }
+    bool peek_u32(uint32_t &value) const {
+        if (cursor > size || size - cursor < 4) return false;
+        const uint8_t *ptr = data + cursor;
         value = static_cast<uint32_t>(ptr[0]) |
                 (static_cast<uint32_t>(ptr[1]) << 8u) |
                 (static_cast<uint32_t>(ptr[2]) << 16u) |
@@ -151,6 +170,19 @@ struct Reader {
         if (!u64(raw)) return false;
         static_assert(sizeof(raw) == sizeof(value));
         std::memcpy(&value, &raw, sizeof(value));
+        return true;
+    }
+    bool strings(std::vector<std::string> &out, uint32_t max_count) {
+        uint32_t count = 0;
+        if (!u32(count) || count > max_count) return false;
+        out.resize(count);
+        for (std::string &value : out) {
+            uint32_t length = 0;
+            if (!u32(length) || length > 4096u) return false;
+            const uint8_t *ptr = nullptr;
+            if (!bytes(length, ptr)) return false;
+            value.assign(reinterpret_cast<const char *>(ptr), length);
+        }
         return true;
     }
 
@@ -205,23 +237,6 @@ bool Reader::vector<double>(std::vector<double> &out, uint32_t max_count) {
     out.resize(count);
     for (double &value : out) if (!f64(value)) return false;
     return true;
-}
-
-template <typename T>
-uint64_t hash_vector(uint64_t hash, const std::vector<T> &values) noexcept {
-    const uint32_t count = static_cast<uint32_t>(values.size());
-    for (size_t i = 0; i < sizeof(count); ++i) {
-        hash ^= static_cast<uint8_t>(count >> (i * 8u));
-        hash *= FNV_PRIME;
-    }
-    if (!values.empty()) {
-        const auto *bytes = reinterpret_cast<const uint8_t *>(values.data());
-        for (size_t i = 0; i < values.size() * sizeof(T); ++i) {
-            hash ^= bytes[i];
-            hash *= FNV_PRIME;
-        }
-    }
-    return hash;
 }
 
 bool same_target_ack(const RuntimeDomainIntent &intent,
@@ -706,6 +721,23 @@ bool RuntimeCountryPodAuthority::validate_catalog(
             return false;
         }
     }
+    if (catalog.reveal_condition_offsets.size() != count + 1u ||
+        catalog.reveal_condition_offsets.front() != 0 ||
+        catalog.reveal_condition_offsets.back() !=
+            static_cast<int32_t>(catalog.reveal_condition_ops.size()) ||
+        catalog.reveal_condition_ops.size() !=
+            catalog.reveal_condition_refs.size() ||
+        catalog.reveal_condition_ops.size() !=
+            catalog.reveal_condition_values.size()) {
+        error = "country_catalog_reveal_condition_csr_invalid";
+        return false;
+    }
+    for (size_t i = 1; i < catalog.reveal_condition_offsets.size(); ++i)
+        if (catalog.reveal_condition_offsets[i] <
+            catalog.reveal_condition_offsets[i - 1]) {
+            error = "country_catalog_reveal_condition_csr_invalid";
+            return false;
+        }
     for (size_t i = 0; i < count; ++i) {
         // Production catalogs use zero cost for non-researchable/content
         // placeholder entries. The authoritative core already rejects such
@@ -777,128 +809,20 @@ bool RuntimeCountryPodAuthority::validate_target(
         const RuntimeCountryPodSnapshot &state,
         const RuntimeCountryCommand &command, int32_t &slot,
         std::string &error) const {
-    slot = -1;
-    const uint32_t raw_slot = static_cast<uint32_t>(command.target_handle & 0xffffffffULL);
-    const uint32_t generation = static_cast<uint32_t>(command.target_handle >> 32u);
-    if (command.target_handle == 0 || raw_slot >= state.country_count ||
-        state.country_active[raw_slot] == 0 ||
-        state.country_generation[raw_slot] != generation) {
-        error = "country_handle_invalid";
-        return false;
-    }
-    slot = static_cast<int32_t>(raw_slot);
-    return true;
+    return country_core_validate_target(state, command, slot, error);
 }
 
 bool RuntimeCountryPodAuthority::research_condition_met(
         const RuntimeCountryPodSnapshot &state, int32_t slot,
         int32_t technology) const {
-    if (!_catalog.research_conditions_complete || slot < 0 ||
-        slot >= static_cast<int32_t>(state.country_count) || technology < 0 ||
-        technology >= static_cast<int32_t>(_catalog.technology_count)) return false;
-    if (_catalog.research_condition_offsets.size() !=
-        static_cast<size_t>(_catalog.technology_count) + 1u) return false;
-    const int32_t begin = _catalog.research_condition_offsets[static_cast<size_t>(technology)];
-    const int32_t end = _catalog.research_condition_offsets[static_cast<size_t>(technology + 1)];
-    if (begin < 0 || end < begin || end > static_cast<int32_t>(_catalog.research_condition_ops.size()))
-        return false;
-    if (begin == end) return true;
-    std::array<uint8_t, 128> stack{};
-    int32_t depth = 0;
-    const size_t word_base = static_cast<size_t>(slot) * _catalog.technology_words;
-    const auto has_technology = [&](int32_t ref) {
-        return ref >= 0 && ref < static_cast<int32_t>(_catalog.technology_count) &&
-               (state.country_technologies[word_base + static_cast<size_t>(ref / 64)] &
-                (uint64_t{1} << (ref % 64))) != 0;
-    };
-    const auto has_signal = [&](int32_t ref) {
-        if (ref < 0 || ref >= static_cast<int32_t>(state.research_signal_count) ||
-            state.research_signal_words == 0 ||
-            state.country_research_signals.size() !=
-                static_cast<size_t>(state.country_count) * state.research_signal_words)
-            return false;
-        const size_t index = static_cast<size_t>(slot) * state.research_signal_words +
-                             static_cast<size_t>(ref / 64);
-        return index < state.country_research_signals.size() &&
-               (state.country_research_signals[index] & (uint64_t{1} << (ref % 64))) != 0;
-    };
-    const auto signal_count = [&](int32_t ref) {
-        if (ref < 0 || ref >= static_cast<int32_t>(state.research_signal_count) ||
-            state.research_signal_evidence_offsets.size() !=
-                static_cast<size_t>(state.country_count) + 1u)
-            return int32_t{0};
-        const int32_t first = state.research_signal_evidence_offsets[static_cast<size_t>(slot)];
-        const int32_t last = state.research_signal_evidence_offsets[static_cast<size_t>(slot + 1)];
-        for (int32_t i = first; i < last; ++i)
-            if (state.research_signal_evidence[static_cast<size_t>(i)].signal == ref)
-                return state.research_signal_evidence[static_cast<size_t>(i)].count;
-        return int32_t{0};
-    };
-    for (int32_t cursor = begin; cursor < end; ++cursor) {
-        const int32_t op = _catalog.research_condition_ops[static_cast<size_t>(cursor)];
-        const int32_t ref = _catalog.research_condition_refs[static_cast<size_t>(cursor)];
-        const int64_t value = _catalog.research_condition_values[static_cast<size_t>(cursor)];
-        if (op == 1) {
-            if (depth >= static_cast<int32_t>(stack.size()) || ref < 0 ||
-                ref >= static_cast<int32_t>(_catalog.technology_count)) return false;
-            stack[static_cast<size_t>(depth++)] = has_technology(ref) ? 1u : 0u;
-        } else if (op == 2) {
-            if (depth >= static_cast<int32_t>(stack.size())) return false;
-            stack[static_cast<size_t>(depth++)] = has_signal(ref) ? 1u : 0u;
-        } else if (op == 3) {
-            if (depth >= static_cast<int32_t>(stack.size())) return false;
-            stack[static_cast<size_t>(depth++)] = signal_count(ref) >= value ? 1u : 0u;
-        } else if (op == 13) {
-            if (depth < 1) return false;
-            stack[static_cast<size_t>(depth - 1)] =
-                stack[static_cast<size_t>(depth - 1)] == 0 ? 1u : 0u;
-        } else if (op == 10 || op == 11 || op == 12) {
-            if (ref <= 0 || ref > depth) return false;
-            int32_t truth_count = 0;
-            for (int32_t i = depth - ref; i < depth; ++i)
-                truth_count += stack[static_cast<size_t>(i)] != 0;
-            depth -= ref;
-            stack[static_cast<size_t>(depth++)] = op == 10
-                ? (truth_count == ref ? 1u : 0u)
-                : (op == 11 ? (truth_count > 0 ? 1u : 0u)
-                            : (truth_count >= value ? 1u : 0u));
-        } else {
-            return false;
-        }
-    }
-    return depth == 1 && stack[0] != 0;
+    return country_core_research_condition_met(state, _catalog, slot, technology);
 }
 
 bool RuntimeCountryPodAuthority::technology_prerequisites_met(
         const RuntimeCountryPodSnapshot &state, int32_t slot,
         int32_t technology) const {
-    if (technology < 0 || technology >= static_cast<int32_t>(_catalog.technology_count) ||
-        slot < 0 || slot >= static_cast<int32_t>(state.country_count)) return false;
-    const size_t base = static_cast<size_t>(slot) * _catalog.technology_words;
-    const auto has = [&](int32_t ref) {
-        return ref >= 0 && ref < static_cast<int32_t>(_catalog.technology_count) &&
-               (state.country_technologies[base + static_cast<size_t>(ref / 64)] &
-                (uint64_t{1} << (ref % 64))) != 0;
-    };
-    if (technology < static_cast<int32_t>(_catalog.entry_milestone_indices.size())) {
-        const int32_t entry = _catalog.entry_milestone_indices[static_cast<size_t>(technology)];
-        if (entry >= 0 && !has(entry)) return false;
-    }
-    const int32_t milestone_begin = _catalog.milestone_offsets.empty()
-        ? 0 : _catalog.milestone_offsets[static_cast<size_t>(technology)];
-    const int32_t milestone_end = _catalog.milestone_offsets.empty()
-        ? 0 : _catalog.milestone_offsets[static_cast<size_t>(technology + 1)];
-    if (milestone_end > milestone_begin) {
-        int32_t count = 0;
-        for (int32_t edge = milestone_begin; edge < milestone_end; ++edge)
-            if (has(_catalog.milestone_candidates[static_cast<size_t>(edge)])) ++count;
-        return count >= _catalog.milestone_required_counts[static_cast<size_t>(technology)];
-    }
-    const int32_t begin = _catalog.prerequisite_offsets[static_cast<size_t>(technology)];
-    const int32_t end = _catalog.prerequisite_offsets[static_cast<size_t>(technology + 1)];
-    for (int32_t edge = begin; edge < end; ++edge)
-        if (!has(_catalog.prerequisites[static_cast<size_t>(edge)])) return false;
-    return true;
+    return country_core_technology_prerequisites_met(
+        state, _catalog, slot, technology);
 }
 
 bool RuntimeCountryPodAuthority::queue_command(
@@ -913,11 +837,9 @@ bool RuntimeCountryPodAuthority::queue_command(
         return false;
     }
     if (!RuntimeCountryPodAdapter::validate_command(command, error)) return false;
-    if (command.domain != -1 &&
-        command.domain != static_cast<int32_t>(RuntimeDomainId::COUNTRY)) {
-        error = "country_command_domain_mismatch";
-        return false;
-    }
+    // RuntimeCountryCommand::domain is an opcode payload lane (for example a
+    // research domain), not the RuntimeDomainId carried by the outer packet
+    // envelope. Command-specific validation owns its legal range.
     // An observed-generation mismatch is intentionally deferred to the day
     // preflight. The command remains ordered and receives a deterministic
     // stale-generation receipt; queue admission must not rewrite its
@@ -1143,70 +1065,7 @@ bool RuntimeCountryPodAuthority::activate_pending_technology(
     state.country_technologies[word] |= bit;
     ++state.country_state_version[static_cast<size_t>(slot)];
 
-    // Refresh only the frontier affected by this completion. This mirrors
-    // the production discovery rule while keeping the worker numeric and
-    // independent from the Godot catalog objects.
-    const size_t country_word_base =
-        static_cast<size_t>(slot) * _catalog.technology_words;
-    for (uint32_t candidate = 0; candidate < _catalog.technology_count; ++candidate) {
-        const size_t candidate_word = country_word_base + candidate / 64u;
-        const uint64_t candidate_bit = uint64_t{1} << (candidate % 64u);
-        if ((state.country_technologies[candidate_word] & candidate_bit) != 0) {
-            state.country_discovered[candidate_word] |= candidate_bit;
-            continue;
-        }
-
-        bool reveal = false;
-        if (_catalog.research_conditions_complete &&
-            _catalog.research_condition_offsets.size() ==
-                static_cast<size_t>(_catalog.technology_count) + 1u) {
-            const int32_t condition_begin = _catalog.research_condition_offsets[
-                candidate];
-            const int32_t condition_end = _catalog.research_condition_offsets[
-                candidate + 1u];
-            if (condition_end > condition_begin)
-                reveal = research_condition_met(
-                    state, slot, static_cast<int32_t>(candidate));
-        }
-
-        bool has_milestones = false;
-        if (!_catalog.milestone_offsets.empty()) {
-            const int32_t begin = _catalog.milestone_offsets[candidate];
-            const int32_t end = _catalog.milestone_offsets[candidate + 1u];
-            has_milestones = end > begin;
-            for (int32_t edge = begin; edge < end && !reveal; ++edge) {
-                const int32_t prerequisite = _catalog.milestone_candidates[
-                    static_cast<size_t>(edge)];
-                const size_t prerequisite_word = country_word_base +
-                    static_cast<size_t>(prerequisite / 64);
-                reveal = (state.country_technologies[prerequisite_word] &
-                    (uint64_t{1} << (prerequisite % 64))) != 0;
-            }
-        }
-        if (!reveal && !has_milestones) {
-            const int32_t begin = _catalog.prerequisite_offsets[candidate];
-            const int32_t end = _catalog.prerequisite_offsets[candidate + 1u];
-            for (int32_t edge = begin; edge < end && !reveal; ++edge) {
-                const int32_t prerequisite = _catalog.prerequisites[
-                    static_cast<size_t>(edge)];
-                const size_t prerequisite_word = country_word_base +
-                    static_cast<size_t>(prerequisite / 64);
-                reveal = (state.country_technologies[prerequisite_word] &
-                    (uint64_t{1} << (prerequisite % 64))) != 0;
-            }
-        }
-
-        if (!reveal && candidate < _catalog.entry_milestone_indices.size()) {
-            const int32_t entry = _catalog.entry_milestone_indices[candidate];
-            if (entry >= 0) {
-                const size_t entry_word = country_word_base +
-                    static_cast<size_t>(entry / 64);
-                reveal = (state.country_technologies[entry_word] &
-                    (uint64_t{1} << (entry % 64))) != 0;
-            }
-        }
-        if (reveal) state.country_discovered[candidate_word] |= candidate_bit;
-    }
+    country_core_refresh_discovery(state, _catalog, slot);
     return true;
 }
 
@@ -1223,607 +1082,17 @@ void RuntimeCountryPodAuthority::remove_pending_commands(
 bool RuntimeCountryPodAuthority::apply_command(
         RuntimeCountryPodSnapshot &state, const RuntimeCountryCommand &command,
         RuntimeCountryPodPlan &plan, std::string &error) const {
-    error.clear();
-    int32_t slot = -1;
-    constexpr int32_t TAX_INHERIT = std::numeric_limits<int32_t>::min();
-    constexpr int32_t TAX_MODE_INHERIT = std::numeric_limits<int32_t>::min();
-    constexpr int32_t TAX_MODE_PERCENT = 0;
-    constexpr int32_t TAX_MODE_ABSOLUTE = 1;
-    const auto tax_item_count = [&](int32_t kind) -> int32_t {
-        if (kind == 0) return static_cast<int32_t>(state.profession_count);
-        if (kind == 2) return static_cast<int32_t>(state.building_type_count);
-        if (kind == 1 || kind == 3 || kind == 4)
-            return static_cast<int32_t>(state.good_count);
-        return 0;
-    };
-    const auto tax_value_valid = [&](int32_t mode, int32_t value) {
-        if (mode == TAX_MODE_PERCENT)
-            return value >= -100000 && value <= 10000;
-        if (mode == TAX_MODE_ABSOLUTE)
-            return value >= -1000000000 && value <= 1000000000;
-        return false;
-    };
-    const auto copy_fixed = [](const std::array<char, RUNTIME_COUNTRY_STABLE_ID_CAPACITY> &value) {
-        return std::string(value.data());
-    };
-    const auto copy_display = [](const std::array<char, RUNTIME_COUNTRY_DISPLAY_NAME_CAPACITY> &value) {
-        return std::string(value.data());
-    };
-    const auto ensure_cell_policy = [&](int32_t cell) -> RuntimeCountryPodSnapshot::CellTaxPolicy * {
-        if (cell < 0 || cell >= static_cast<int32_t>(state.cell_tax_policy_ids.size()) ||
-            state.cell_tax_policies.empty()) return nullptr;
-        uint32_t policy_id = state.cell_tax_policy_ids[static_cast<size_t>(cell)];
-        if (policy_id >= state.cell_tax_policies.size()) return nullptr;
-        state.cell_tax_policies.push_back(state.cell_tax_policies[policy_id]);
-        state.cell_tax_policy_ids[static_cast<size_t>(cell)] =
-            static_cast<uint32_t>(state.cell_tax_policies.size() - 1u);
-        return &state.cell_tax_policies.back();
-    };
-    const auto country_tax_vectors = [&](int32_t kind,
-            std::vector<int32_t> *&rates, std::vector<int32_t> *&modes) {
-        rates = nullptr; modes = nullptr;
-        switch (kind) {
-        case 0: rates = &state.country_income_tax_overrides;
-                modes = &state.country_income_tax_mode_overrides; break;
-        case 1: rates = &state.country_consumption_tax_overrides;
-                modes = &state.country_consumption_tax_mode_overrides; break;
-        case 2: rates = &state.country_business_tax_overrides;
-                modes = &state.country_business_tax_mode_overrides; break;
-        case 3: rates = &state.country_import_tax_overrides;
-                modes = &state.country_import_tax_mode_overrides; break;
-        case 4: rates = &state.country_export_tax_overrides;
-                modes = &state.country_export_tax_mode_overrides; break;
-        default: break;
-        }
-    };
-    switch (command.opcode) {
-    case 1: { // create country
-        const std::string stable_id = copy_fixed(command.stable_id);
-        const std::string display_name = copy_display(command.display_name);
-        if (stable_id.empty() || display_name.empty() ||
-            std::find(state.country_stable_ids.begin(), state.country_stable_ids.end(),
-                      stable_id) != state.country_stable_ids.end()) {
-            error = "country_create_identity_invalid";
-            return false;
-        }
-        if (command.cell < 0 || command.cell >= static_cast<int32_t>(state.cell_count) ||
-            (!state.is_water.empty() && state.is_water[static_cast<size_t>(command.cell)] != 0)) {
-            error = "country_create_territory_invalid";
-            return false;
-        }
-        const int32_t old_owner = state.cell_country_slot[static_cast<size_t>(command.cell)];
-        const int32_t new_slot = static_cast<int32_t>(state.country_count);
-        ++state.country_count;
-        state.country_active.push_back(1);
-        state.country_generation.push_back(1);
-        state.country_stable_ids.push_back(stable_id);
-        state.country_display_names.push_back(display_name);
-        state.territory_count.push_back(1);
-        state.country_state_version.push_back(1);
-        state.country_cash.push_back(0);
-        state.country_technologies.insert(state.country_technologies.end(), state.technology_words, 0);
-        state.country_discovered.insert(state.country_discovered.end(), state.technology_words, 0);
-        state.country_pending_technologies.insert(state.country_pending_technologies.end(), state.technology_words, 0);
-        state.country_goods.insert(state.country_goods.end(), state.good_count, 0);
-        state.research_progress.insert(state.research_progress.end(), state.technology_count, 0);
-        state.research_queues.insert(state.research_queues.end(),
-            RUNTIME_COUNTRY_RESEARCH_DOMAIN_COUNT * COUNTRY_QUEUE_SLOTS, -1);
-        state.research_queue_lengths.insert(state.research_queue_lengths.end(),
-            RUNTIME_COUNTRY_RESEARCH_DOMAIN_COUNT, 0);
-        state.research_weights_bp.insert(state.research_weights_bp.end(),
-            RUNTIME_COUNTRY_RESEARCH_DOMAIN_COUNT, 2500);
-        state.research_daily_budgets.push_back(1000 * 10000);
-        state.research_deferred_points.push_back(0);
-        state.research_progress_total.push_back(0);
-        state.research_completed_total.push_back(0);
-        state.research_auto_purchase.push_back(1);
-        state.research_purchased_total.push_back(0);
-        state.research_consumed_total.push_back(0);
-        state.research_peer_flags.insert(state.research_peer_flags.end(), state.technology_count, 0);
-        state.research_signal_cell_offsets.push_back(
-            state.research_signal_cell_offsets.back());
-        state.research_signal_evidence_offsets.push_back(
-            state.research_signal_evidence_offsets.back());
-        state.country_tax_defaults.insert(state.country_tax_defaults.end(),
-            RuntimeCountryPodSnapshot::TAX_KIND_COUNT, 0);
-        state.country_tax_default_modes.insert(state.country_tax_default_modes.end(),
-            RuntimeCountryPodSnapshot::TAX_KIND_COUNT, TAX_MODE_PERCENT);
-        const auto add_tax_arrays = [&](std::vector<int32_t> &rates,
-                                        std::vector<int32_t> &modes,
-                                        int32_t count) {
-            rates.insert(rates.end(), count, TAX_INHERIT);
-            modes.insert(modes.end(), count, TAX_MODE_INHERIT);
-        };
-        add_tax_arrays(state.country_income_tax_overrides, state.country_income_tax_mode_overrides,
-                       static_cast<int32_t>(state.profession_count));
-        add_tax_arrays(state.country_consumption_tax_overrides, state.country_consumption_tax_mode_overrides,
-                       static_cast<int32_t>(state.good_count));
-        add_tax_arrays(state.country_business_tax_overrides, state.country_business_tax_mode_overrides,
-                       static_cast<int32_t>(state.building_type_count));
-        add_tax_arrays(state.country_import_tax_overrides, state.country_import_tax_mode_overrides,
-                       static_cast<int32_t>(state.good_count));
-        add_tax_arrays(state.country_export_tax_overrides, state.country_export_tax_mode_overrides,
-                       static_cast<int32_t>(state.good_count));
-        if (old_owner >= 0) {
-            if (state.territory_count[static_cast<size_t>(old_owner)] <= 0) {
-                error = "country_territory_count_underflow";
-                return false;
-            }
-            --state.territory_count[static_cast<size_t>(old_owner)];
-            for (uint32_t word = 0; word < state.technology_words; ++word) {
-                state.country_technologies[static_cast<size_t>(new_slot) * state.technology_words + word] =
-                    state.country_technologies[static_cast<size_t>(old_owner) * state.technology_words + word];
-                state.country_discovered[static_cast<size_t>(new_slot) * state.technology_words + word] =
-                    state.country_discovered[static_cast<size_t>(old_owner) * state.technology_words + word];
-            }
-        } else {
-            for (const int32_t technology : _catalog.starting_technologies) {
-                if (technology < 0 || technology >= static_cast<int32_t>(state.technology_count)) continue;
-                const size_t word = static_cast<size_t>(new_slot) * state.technology_words + technology / 64u;
-                const uint64_t bit = uint64_t{1} << (technology % 64u);
-                state.country_technologies[word] |= bit;
-                state.country_discovered[word] |= bit;
-            }
-        }
-        state.cell_country_slot[static_cast<size_t>(command.cell)] = new_slot;
-        plan.header.dirty_families |= RUNTIME_DIRTY_COUNTRY_TERRITORY |
-                                      RUNTIME_DIRTY_COUNTRY_STATE;
-        return true;
-    }
-    case 2: { // rename country
-        if (!validate_target(state, command, slot, error)) return false;
-        const std::string display_name = copy_display(command.display_name);
-        if (display_name.empty()) { error = "country_name_empty"; return false; }
-        state.country_display_names[static_cast<size_t>(slot)] = display_name;
-        ++state.country_state_version[static_cast<size_t>(slot)];
-        plan.header.dirty_families |= RUNTIME_DIRTY_COUNTRY_STATE;
-        return true;
-    }
-    case 3: // transfer territory / claim unowned when target_handle is zero
-    case 20: {
-        if (command.cell < 0 || command.cell >= static_cast<int32_t>(state.cell_count) ||
-            (!state.is_water.empty() && state.is_water[static_cast<size_t>(command.cell)] != 0)) {
-            error = "country_transfer_cell_invalid";
-            return false;
-        }
-        if (command.opcode == 20 && command.target_handle == 0) {
-            error = "country_claim_target_missing";
-            return false;
-        }
-        if (command.target_handle != 0 && !validate_target(state, command, slot, error))
-            return false;
-        const int32_t old_owner = state.cell_country_slot[static_cast<size_t>(command.cell)];
-        if (command.opcode == 20 && old_owner != -1) {
-            error = "country_claim_target_not_unowned";
-            return false;
-        }
-        const int32_t target = slot;
-        if (old_owner == target) return true;
-        if (old_owner >= 0) {
-            if (state.territory_count[static_cast<size_t>(old_owner)] <= 0) {
-                error = "country_territory_count_underflow";
-                return false;
-            }
-            --state.territory_count[static_cast<size_t>(old_owner)];
-            ++state.country_state_version[static_cast<size_t>(old_owner)];
-        }
-        ++state.territory_count[static_cast<size_t>(target)];
-        ++state.country_state_version[static_cast<size_t>(target)];
-        state.cell_country_slot[static_cast<size_t>(command.cell)] = target;
-        plan.header.dirty_families |= RUNTIME_DIRTY_COUNTRY_TERRITORY |
-                                      RUNTIME_DIRTY_COUNTRY_STATE;
-        return true;
-    }
-    case 4: // grant technology: completion is an Effect ACK boundary
-        if (!validate_target(state, command, slot, error)) return false;
-        if (command.aux < 0 || command.aux >= static_cast<int32_t>(_catalog.technology_count)) {
-            error = "country_technology_invalid";
-            return false;
-        }
-        {
-            const size_t word = static_cast<size_t>(slot) * _catalog.technology_words +
-                                static_cast<size_t>(command.aux / 64);
-            const uint64_t bit = uint64_t{1} << (command.aux % 64);
-            if ((state.country_technologies[word] & bit) == 0) {
-                state.country_pending_technologies[word] |= bit;
-                ++state.country_state_version[static_cast<size_t>(slot)];
-                RuntimeDomainIntent intent;
-                intent.source_domain = static_cast<uint16_t>(RuntimeDomainId::COUNTRY);
-                intent.target_domain = static_cast<uint16_t>(RuntimeDomainId::EFFECT);
-                // `RuntimeDomainIntent::opcode` is the peer operation at this
-                // boundary, not the originating Country command opcode.  The
-                // two enums intentionally do not share a wire namespace:
-                // GRANT_TECHNOLOGY is Country command 4, while ENSURE is peer
-                // operation 1.  Keeping the typed peer opcode here prevents
-                // the Host adapter from having to guess which semantic was
-                // intended from an overlapping integer value.
-                intent.opcode = static_cast<uint16_t>(
-                    CountryPeerIntentCode::ENSURE_TECHNOLOGY_EFFECT);
-                intent.source_id = command.request_id;
-                intent.target_handle = command.target_handle;
-                intent.target_generation = state.country_generation[static_cast<size_t>(slot)];
-                intent.effective_day = command.effective_day;
-                intent.payload[0] = command.aux;
-                plan.intents.push_back(intent);
-                ++plan.required_ack_count;
-                plan.header.dirty_families |= RUNTIME_DIRTY_COUNTRY_STATE;
-            }
-        }
-        return true;
-    case 5: // set research weights
-        if (!validate_target(state, command, slot, error)) return false;
-        if (!runtime_country_research_weights_valid(command.weights_bp)) {
-            error = "country_research_weight_total_invalid";
-            return false;
-        }
-        for (uint32_t domain = 0; domain < RUNTIME_COUNTRY_RESEARCH_DOMAIN_COUNT; ++domain)
-            state.research_weights_bp[static_cast<size_t>(slot) *
-                                      RUNTIME_COUNTRY_RESEARCH_DOMAIN_COUNT + domain] =
-                command.weights_bp[domain];
-        state.research_deferred_points[static_cast<size_t>(slot)] = 0;
-        ++state.country_state_version[static_cast<size_t>(slot)];
-        plan.header.dirty_families |= RUNTIME_DIRTY_COUNTRY_STATE;
-        return true;
-    case 6: // enqueue research; full condition CSR is mandatory
-    case 8: { // move research
-        if (!validate_target(state, command, slot, error)) return false;
-        if (!_catalog.research_conditions_complete) {
-            error = "country_catalog_research_conditions_missing";
-            return false;
-        }
-        if (command.aux < 0 || command.aux >= static_cast<int32_t>(_catalog.technology_count) ||
-            command.domain < 0 || command.domain >= static_cast<int32_t>(RUNTIME_COUNTRY_RESEARCH_DOMAIN_COUNT) ||
-            command.position < -1 || command.position >= static_cast<int32_t>(COUNTRY_QUEUE_SLOTS)) {
-            error = "country_research_queue_argument_invalid";
-            return false;
-        }
-        const size_t word = static_cast<size_t>(slot) * _catalog.technology_words +
-                            static_cast<size_t>(command.aux / 64);
-        const uint64_t bit = uint64_t{1} << (command.aux % 64);
-        if ((state.country_discovered[word] & bit) == 0 ||
-            (state.country_technologies[word] & bit) != 0 ||
-            (state.country_pending_technologies[word] & bit) != 0) {
-            error = "country_research_technology_unavailable";
-            return false;
-        }
-        if (!technology_prerequisites_met(state, slot, command.aux) ||
-            !research_condition_met(state, slot, command.aux)) {
-            error = "country_research_requirements_incomplete";
-            return false;
-        }
-        if (_catalog.technology_domains[static_cast<size_t>(command.aux)] != command.domain) {
-            error = "country_research_domain_mismatch";
-            return false;
-        }
-        const size_t country_base = static_cast<size_t>(slot) *
-                                    RUNTIME_COUNTRY_RESEARCH_DOMAIN_COUNT;
-        int32_t found_domain = -1, found_position = -1;
-        for (uint32_t domain = 0; domain < RUNTIME_COUNTRY_RESEARCH_DOMAIN_COUNT; ++domain) {
-            const size_t length_index = country_base + domain;
-            const size_t queue_base = length_index * COUNTRY_QUEUE_SLOTS;
-            for (uint32_t position = 0; position < state.research_queue_lengths[length_index]; ++position)
-                if (state.research_queues[queue_base + position] == command.aux) {
-                    found_domain = static_cast<int32_t>(domain);
-                    found_position = static_cast<int32_t>(position);
-                }
-        }
-        if (command.opcode == 6 && found_domain >= 0) {
-            error = "country_research_already_queued";
-            return false;
-        }
-        if (command.opcode == 8 && found_domain < 0) {
-            error = "country_research_not_queued";
-            return false;
-        }
-        if (found_domain >= 0) {
-            const size_t old_index = country_base + static_cast<size_t>(found_domain);
-            const size_t old_base = old_index * COUNTRY_QUEUE_SLOTS;
-            uint8_t &old_length = state.research_queue_lengths[old_index];
-            for (int32_t i = found_position + 1; i < old_length; ++i)
-                state.research_queues[old_base + static_cast<size_t>(i - 1)] =
-                    state.research_queues[old_base + static_cast<size_t>(i)];
-            state.research_queues[old_base + static_cast<size_t>(--old_length)] = -1;
-        }
-        const size_t index = country_base + static_cast<size_t>(command.domain);
-        const size_t base = index * COUNTRY_QUEUE_SLOTS;
-        uint8_t &length = state.research_queue_lengths[index];
-        if (length >= COUNTRY_QUEUE_SLOTS) {
-            error = "country_research_queue_full";
-            return false;
-        }
-        const int32_t insert_at = command.position < 0
-            ? static_cast<int32_t>(length)
-            : std::min<int32_t>(command.position, length);
-        for (int32_t i = length; i > insert_at; --i)
-            state.research_queues[base + static_cast<size_t>(i)] =
-                state.research_queues[base + static_cast<size_t>(i - 1)];
-        state.research_queues[base + static_cast<size_t>(insert_at)] = command.aux;
-        ++length;
-        state.research_deferred_points[static_cast<size_t>(slot)] = 0;
-        ++state.country_state_version[static_cast<size_t>(slot)];
-        plan.header.dirty_families |= RUNTIME_DIRTY_COUNTRY_STATE;
-        return true;
-    }
-    case 7: { // remove research
-        if (!validate_target(state, command, slot, error)) return false;
-        bool removed = false;
-        const size_t country_base = static_cast<size_t>(slot) *
-                                    RUNTIME_COUNTRY_RESEARCH_DOMAIN_COUNT;
-        for (uint32_t domain = 0; domain < RUNTIME_COUNTRY_RESEARCH_DOMAIN_COUNT && !removed; ++domain) {
-            const size_t index = country_base + domain;
-            const size_t base = index * COUNTRY_QUEUE_SLOTS;
-            uint8_t &length = state.research_queue_lengths[index];
-            for (uint32_t position = 0; position < length; ++position) {
-                if (state.research_queues[base + position] != command.aux) continue;
-                for (uint32_t i = position + 1; i < length; ++i)
-                    state.research_queues[base + i - 1u] = state.research_queues[base + i];
-                state.research_queues[base + --length] = -1;
-                removed = true;
-                break;
-            }
-        }
-        if (!removed) {
-            error = "country_research_not_queued";
-            return false;
-        }
-        ++state.country_state_version[static_cast<size_t>(slot)];
-        plan.header.dirty_families |= RUNTIME_DIRTY_COUNTRY_STATE;
-        return true;
-    }
-    case 9: // budget and auto purchase
-        if (!validate_target(state, command, slot, error)) return false;
-        if (command.value < 0 || (command.aux != 0 && command.aux != 1)) {
-            error = "country_research_budget_invalid";
-            return false;
-        }
-        state.research_daily_budgets[static_cast<size_t>(slot)] = command.value;
-        state.research_auto_purchase[static_cast<size_t>(slot)] =
-            static_cast<uint8_t>(command.aux);
-        ++state.country_state_version[static_cast<size_t>(slot)];
-        plan.header.dirty_families |= RUNTIME_DIRTY_COUNTRY_STATE;
-        return true;
-    case 10: // reveal all technologies
-        if (!validate_target(state, command, slot, error)) return false;
-        for (uint32_t tech = 0; tech < _catalog.technology_count; ++tech)
-            state.country_discovered[static_cast<size_t>(slot) * _catalog.technology_words +
-                                      tech / 64u] |= uint64_t{1} << (tech % 64u);
-        ++state.country_state_version[static_cast<size_t>(slot)];
-        plan.header.dirty_families |= RUNTIME_DIRTY_COUNTRY_STATE;
-        return true;
-    case 11: // country tax default
-    case 12: // country tax override
-    case 13: { // clear country tax override
-        if (!validate_target(state, command, slot, error)) return false;
-        if (command.tax_kind < 0 || command.tax_kind >= static_cast<int32_t>(RuntimeCountryPodSnapshot::TAX_KIND_COUNT)) {
-            error = "country_tax_kind_invalid"; return false;
-        }
-        const bool needs_value = command.opcode != 13;
-        if (needs_value && !tax_value_valid(command.tax_assessment_mode,
-                                            command.tax_rate_basis_points)) {
-            error = "country_tax_command_invalid"; return false;
-        }
-        if (command.opcode == 11) {
-            const size_t index = static_cast<size_t>(slot) * RuntimeCountryPodSnapshot::TAX_KIND_COUNT + command.tax_kind;
-            state.country_tax_defaults[index] = command.tax_rate_basis_points;
-            state.country_tax_default_modes[index] = command.tax_assessment_mode;
-        } else {
-            const int32_t count = tax_item_count(command.tax_kind);
-            if (command.tax_item < 0 || command.tax_item >= count) {
-                error = "country_tax_item_invalid"; return false;
-            }
-            std::vector<int32_t> *rates = nullptr, *modes = nullptr;
-            country_tax_vectors(command.tax_kind, rates, modes);
-            const size_t index = static_cast<size_t>(slot) * count + command.tax_item;
-            (*rates)[index] = command.opcode == 13 ? TAX_INHERIT : command.tax_rate_basis_points;
-            (*modes)[index] = command.opcode == 13 ? TAX_MODE_INHERIT : command.tax_assessment_mode;
-        }
-        ++state.country_state_version[static_cast<size_t>(slot)];
-        plan.header.dirty_families |= RUNTIME_DIRTY_COUNTRY_STATE;
-        return true;
-    }
-    case 14: { // discover country signal
-        if (!validate_target(state, command, slot, error)) return false;
-        if (command.aux < 0 || command.aux >= static_cast<int32_t>(state.research_signal_count) ||
-            command.cell < 0 || command.cell >= static_cast<int32_t>(state.cell_count)) {
-            error = "country_research_signal_command_invalid"; return false;
-        }
-        const uint64_t key = (static_cast<uint64_t>(static_cast<uint32_t>(command.aux)) << 32u) |
-                             static_cast<uint32_t>(command.cell);
-        const size_t begin = static_cast<size_t>(state.research_signal_cell_offsets[static_cast<size_t>(slot)]);
-        const size_t end = static_cast<size_t>(state.research_signal_cell_offsets[static_cast<size_t>(slot) + 1u]);
-        auto cells = state.research_signal_cells.begin() + static_cast<ptrdiff_t>(begin);
-        auto cells_end = state.research_signal_cells.begin() + static_cast<ptrdiff_t>(end);
-        auto found = std::lower_bound(cells, cells_end, key);
-        if (found != cells_end && *found == key) return true;
-        const size_t insertion = static_cast<size_t>(found - state.research_signal_cells.begin());
-        state.research_signal_cells.insert(state.research_signal_cells.begin() + static_cast<ptrdiff_t>(insertion), key);
-        for (size_t index = static_cast<size_t>(slot) + 1u; index < state.research_signal_cell_offsets.size(); ++index)
-            ++state.research_signal_cell_offsets[index];
-        const size_t evidence_begin = static_cast<size_t>(state.research_signal_evidence_offsets[static_cast<size_t>(slot)]);
-        const size_t evidence_end = static_cast<size_t>(state.research_signal_evidence_offsets[static_cast<size_t>(slot) + 1u]);
-        auto evidence = state.research_signal_evidence.begin() + static_cast<ptrdiff_t>(evidence_begin);
-        auto evidence_end_it = state.research_signal_evidence.begin() + static_cast<ptrdiff_t>(evidence_end);
-        auto evidence_it = std::lower_bound(evidence, evidence_end_it, command.aux,
-            [](const RuntimeCountryPodSnapshot::SignalEvidence &entry, int32_t signal) {
-                return entry.signal < signal;
-            });
-        if (evidence_it == evidence_end_it || evidence_it->signal != command.aux) {
-            RuntimeCountryPodSnapshot::SignalEvidence entry;
-            entry.signal = command.aux; entry.count = 0; entry.first_day = command.effective_day;
-            entry.last_day = command.effective_day; entry.first_cell = command.cell;
-            const size_t evidence_index = static_cast<size_t>(evidence_it - state.research_signal_evidence.begin());
-            state.research_signal_evidence.insert(state.research_signal_evidence.begin() + static_cast<ptrdiff_t>(evidence_index), entry);
-            for (size_t index = static_cast<size_t>(slot) + 1u; index < state.research_signal_evidence_offsets.size(); ++index)
-                ++state.research_signal_evidence_offsets[index];
-            evidence_it = state.research_signal_evidence.begin() + static_cast<ptrdiff_t>(evidence_index);
-        }
-        ++evidence_it->count;
-        evidence_it->last_day = command.effective_day;
-        if (state.research_signal_words > 0)
-            state.country_research_signals[static_cast<size_t>(slot) * state.research_signal_words + command.aux / 64] |=
-                uint64_t{1} << (command.aux % 64);
-        ++state.country_state_version[static_cast<size_t>(slot)];
-        plan.header.dirty_families |= RUNTIME_DIRTY_COUNTRY_STATE;
-        return true;
-    }
-    case 15: // cell tax default
-    case 16: // clear cell tax default
-    case 17: // cell tax override
-    case 18: // clear cell tax override
-    case 19: { // clear cell tax policy
-        if (!validate_target(state, command, slot, error)) return false;
-        if (command.cell < 0 || command.cell >= static_cast<int32_t>(state.cell_count) ||
-            (!state.is_water.empty() && state.is_water[static_cast<size_t>(command.cell)] != 0) ||
-            state.cell_country_slot[static_cast<size_t>(command.cell)] != slot) {
-            error = "country_cell_tax_territory_invalid"; return false;
-        }
-        if (command.opcode == 19) {
-            state.cell_tax_policy_ids[static_cast<size_t>(command.cell)] = 0;
-        } else {
-            auto *policy = ensure_cell_policy(command.cell);
-            if (policy == nullptr) { error = "country_cell_tax_policy_invalid"; return false; }
-            if (command.tax_kind < 0 || command.tax_kind >= static_cast<int32_t>(RuntimeCountryPodSnapshot::TAX_KIND_COUNT)) {
-                error = "country_cell_tax_kind_invalid"; return false;
-            }
-            if (command.opcode == 15 || command.opcode == 16) {
-                if (command.opcode == 15 && !tax_value_valid(command.tax_assessment_mode, command.tax_rate_basis_points)) {
-                    error = "country_cell_tax_rate_invalid"; return false;
-                }
-                policy->defaults[static_cast<size_t>(command.tax_kind)] = command.opcode == 16 ? TAX_INHERIT : command.tax_rate_basis_points;
-                policy->modes[static_cast<size_t>(command.tax_kind)] = command.opcode == 16 ? TAX_MODE_INHERIT : command.tax_assessment_mode;
-            } else {
-                const int32_t count = tax_item_count(command.tax_kind);
-                if (command.tax_item < 0 || command.tax_item >= count) { error = "country_cell_tax_item_invalid"; return false; }
-                auto entry = std::lower_bound(policy->overrides.begin(), policy->overrides.end(),
-                    std::pair<int32_t, int32_t>{command.tax_kind, command.tax_item},
-                    [](const RuntimeCountryPodSnapshot::CellTaxOverride &value,
-                       const std::pair<int32_t, int32_t> &key) {
-                        return value.kind < key.first || (value.kind == key.first && value.item < key.second);
-                    });
-                if (command.opcode == 18) {
-                    if (entry != policy->overrides.end() && entry->kind == command.tax_kind && entry->item == command.tax_item)
-                        policy->overrides.erase(entry);
-                } else {
-                    if (!tax_value_valid(command.tax_assessment_mode, command.tax_rate_basis_points)) { error = "country_cell_tax_rate_invalid"; return false; }
-                    RuntimeCountryPodSnapshot::CellTaxOverride replacement{command.tax_kind, command.tax_item, command.tax_rate_basis_points, command.tax_assessment_mode};
-                    if (entry != policy->overrides.end() && entry->kind == command.tax_kind && entry->item == command.tax_item) *entry = replacement;
-                    else policy->overrides.insert(entry, replacement);
-                }
-            }
-        }
-        ++state.country_state_version[static_cast<size_t>(slot)];
-        plan.header.dirty_families |= RUNTIME_DIRTY_COUNTRY_STATE;
-        return true;
-    }
-    default:
-        error = "country_command_capture_contract_missing";
-        return false;
-    }
+    return country_core_apply_command(state, _catalog, command, plan, error);
 }
 
 void RuntimeCountryPodAuthority::rebuild_territory_csr(
         RuntimeCountryPodSnapshot &state) const {
-    state.territory_offsets.assign(static_cast<size_t>(state.country_count) + 1u, 0);
-    for (int32_t owner : state.cell_country_slot)
-        if (owner >= 0 && owner < static_cast<int32_t>(state.country_count))
-            ++state.territory_offsets[static_cast<size_t>(owner) + 1u];
-    for (size_t i = 1; i < state.territory_offsets.size(); ++i)
-        state.territory_offsets[i] += state.territory_offsets[i - 1u];
-    state.territory_cells.assign(state.territory_offsets.back(), -1);
-    std::vector<int32_t> cursor = state.territory_offsets;
-    for (int32_t cell = 0; cell < static_cast<int32_t>(state.cell_country_slot.size()); ++cell) {
-        const int32_t owner = state.cell_country_slot[static_cast<size_t>(cell)];
-        if (owner < 0 || owner >= static_cast<int32_t>(state.country_count)) continue;
-        state.territory_cells[static_cast<size_t>(cursor[static_cast<size_t>(owner)]++)] = cell;
-    }
-    state.territory_count.assign(state.country_count, 0);
-    for (uint32_t slot = 0; slot < state.country_count; ++slot)
-        state.territory_count[slot] = state.territory_offsets[slot + 1u] -
-                                      state.territory_offsets[slot];
+    country_core_rebuild_territory_csr(state);
 }
 
 uint64_t RuntimeCountryPodAuthority::hash_business_state(
         const RuntimeCountryPodSnapshot &state) {
-    uint64_t hash = FNV_OFFSET;
-    const auto mix_u64 = [&](uint64_t value) {
-        for (uint32_t i = 0; i < 8; ++i) {
-            hash ^= static_cast<uint8_t>(value >> (i * 8u));
-            hash *= FNV_PRIME;
-        }
-    };
-    // Keep this hash limited to the Country business projection. Transport
-    // session identity, catalog identity and peer inputs belong to the
-    // checkpoint/protocol contract, not to production business parity.
-    mix_u64(state.generation);
-    mix_u64(static_cast<uint64_t>(state.last_research_day));
-    hash = hash_vector(hash, state.country_active);
-    hash = hash_vector(hash, state.country_generation);
-    const auto hash_strings = [&](const std::vector<std::string> &values) {
-        for (const std::string &value : values) {
-            hash = hash_vector(hash, std::vector<uint8_t>(value.begin(), value.end()));
-            mix_u64(0);
-        }
-    };
-    hash_strings(state.country_stable_ids);
-    hash_strings(state.country_display_names);
-    hash = hash_vector(hash, state.country_state_version);
-    hash = hash_vector(hash, state.territory_count);
-    hash = hash_vector(hash, state.country_cash);
-    hash = hash_vector(hash, state.country_goods);
-    hash = hash_vector(hash, state.cell_country_slot);
-    hash = hash_vector(hash, state.territory_offsets);
-    hash = hash_vector(hash, state.territory_cells);
-    hash = hash_vector(hash, state.country_technologies);
-    hash = hash_vector(hash, state.country_discovered);
-    hash = hash_vector(hash, state.country_pending_technologies);
-    hash = hash_vector(hash, state.country_research_signals);
-    hash = hash_vector(hash, state.research_signal_cell_offsets);
-    hash = hash_vector(hash, state.research_signal_cells);
-    hash = hash_vector(hash, state.research_signal_evidence_offsets);
-    for (const auto &entry : state.research_signal_evidence) {
-        mix_u64(static_cast<uint64_t>(entry.signal));
-        mix_u64(static_cast<uint64_t>(entry.count));
-        mix_u64(static_cast<uint64_t>(entry.first_day));
-        mix_u64(static_cast<uint64_t>(entry.last_day));
-        mix_u64(static_cast<uint64_t>(entry.first_cell));
-    }
-    hash = hash_vector(hash, state.research_queues);
-    hash = hash_vector(hash, state.research_queue_lengths);
-    hash = hash_vector(hash, state.research_weights_bp);
-    hash = hash_vector(hash, state.research_auto_purchase);
-    hash = hash_vector(hash, state.research_daily_budgets);
-    hash = hash_vector(hash, state.research_deferred_points);
-    hash = hash_vector(hash, state.research_progress);
-    hash = hash_vector(hash, state.research_purchased_total);
-    hash = hash_vector(hash, state.research_consumed_total);
-    hash = hash_vector(hash, state.research_progress_total);
-    hash = hash_vector(hash, state.research_completed_total);
-    hash = hash_vector(hash, state.country_tax_defaults);
-    hash = hash_vector(hash, state.country_tax_default_modes);
-    hash = hash_vector(hash, state.country_income_tax_overrides);
-    hash = hash_vector(hash, state.country_consumption_tax_overrides);
-    hash = hash_vector(hash, state.country_business_tax_overrides);
-    hash = hash_vector(hash, state.country_import_tax_overrides);
-    hash = hash_vector(hash, state.country_export_tax_overrides);
-    hash = hash_vector(hash, state.country_income_tax_mode_overrides);
-    hash = hash_vector(hash, state.country_consumption_tax_mode_overrides);
-    hash = hash_vector(hash, state.country_business_tax_mode_overrides);
-    hash = hash_vector(hash, state.country_import_tax_mode_overrides);
-    hash = hash_vector(hash, state.country_export_tax_mode_overrides);
-    hash = hash_vector(hash, state.cell_tax_policy_ids);
-    for (const auto &policy : state.cell_tax_policies) {
-        for (const int32_t value : policy.defaults)
-            mix_u64(static_cast<uint64_t>(value));
-        for (const int32_t value : policy.modes)
-            mix_u64(static_cast<uint64_t>(value));
-        for (const auto &entry : policy.overrides) {
-            mix_u64(static_cast<uint64_t>(entry.kind));
-            mix_u64(static_cast<uint64_t>(entry.item));
-            mix_u64(static_cast<uint64_t>(entry.rate));
-            mix_u64(static_cast<uint64_t>(entry.mode));
-        }
-    }
-    return hash;
+    return country_core_hash_business_state(state);
 }
 
 bool RuntimeCountryPodAuthority::plan_day(
@@ -1900,6 +1169,31 @@ bool RuntimeCountryPodAuthority::plan_day(
     plan.header.state_hash = hash_business_state(plan.next_state);
     plan.preflight_ok = 1;
     _plan_active = true;
+    return true;
+}
+
+bool RuntimeCountryPodAuthority::apply_economy_asset_result(
+        const RuntimeEconomyAssetRequest &request,
+        const RuntimeEconomyAssetResult &result, std::string &error) {
+    error.clear();
+    if (!_bootstrapped || _plan_active) {
+        error = "country_economy_asset_apply_invalid";
+        return false;
+    }
+    RuntimeCountryPodSnapshot next = _state;
+    if (!country_core_apply_economy_asset_commit(
+            next, _catalog, request, result, error)) {
+        return false;
+    }
+    const bool mutated =
+        next.country_cash != _state.country_cash ||
+        next.country_goods != _state.country_goods ||
+        next.research_purchased_total != _state.research_purchased_total;
+    if (mutated) {
+        next.generation = _next_generation++;
+        next.state_hash = hash_business_state(next);
+        _state = std::move(next);
+    }
     return true;
 }
 
@@ -2116,6 +1410,11 @@ bool RuntimeCountryPodAuthority::encode_save(
     append_vector(payload, _state.research_progress_total);
     append_vector(payload, _state.research_completed_total);
     append_vector(payload, _state.is_water);
+    append_u32(payload, 0x31494453u); // SID1 identity trailer
+    append_u32(payload, _state.profession_count);
+    append_u32(payload, _state.building_type_count);
+    append_strings(payload, _state.country_stable_ids);
+    append_strings(payload, _state.country_display_names);
     append_u32(payload, static_cast<uint32_t>(_pending.size()));
     for (const RuntimeCountryCommand &command : _pending) append_command(payload, command);
     out.payload = std::move(payload);
@@ -2242,6 +1541,17 @@ bool RuntimeCountryPodAuthority::restore_save(
         error = "country_section_payload_invalid";
         return false;
     }
+    uint32_t identity_marker = 0;
+    if (reader.peek_u32(identity_marker) && identity_marker == 0x31494453u) {
+        uint32_t discarded = 0;
+        if (!reader.u32(discarded) || !reader.u32(restored.profession_count) ||
+            !reader.u32(restored.building_type_count) ||
+            !reader.strings(restored.country_stable_ids, max_countries) ||
+            !reader.strings(restored.country_display_names, max_countries)) {
+            error = "country_section_identity_invalid";
+            return false;
+        }
+    }
     uint32_t pending_count = 0;
     if (!reader.u32(pending_count) || pending_count > COUNTRY_COMMAND_CAPACITY) {
         error = "country_section_pending_commands_invalid";
@@ -2302,6 +1612,7 @@ bool RuntimeCountryPodAuthority::self_test(std::string &error) {
     catalog.prerequisite_offsets.assign(5, 0);
     catalog.entry_milestone_indices.assign(4, -1);
     catalog.research_condition_offsets.assign(5, 0);
+    catalog.reveal_condition_offsets.assign(5, 0);
     catalog.research_conditions_complete = true;
 
     RuntimeCountryPodSnapshot state;
@@ -2315,6 +1626,10 @@ bool RuntimeCountryPodAuthority::self_test(std::string &error) {
     state.technology_words = 1;
     state.technology_count = 4;
     state.good_count = 1;
+    state.profession_count = 1;
+    state.building_type_count = 1;
+    state.country_stable_ids = {"alpha", "beta"};
+    state.country_display_names = {"Alpha", "Beta"};
     state.research_signal_words = 0;
     state.research_signal_count = 0;
     state.bootstrapped = true;
@@ -2393,6 +1708,41 @@ bool RuntimeCountryPodAuthority::self_test(std::string &error) {
         error = "country_pod_self_test_stale_generation_not_rejected";
         return false;
     }
+    RuntimeCountryPodCatalog reveal_catalog = catalog;
+    reveal_catalog.reveal_condition_offsets = {0, 1, 1, 1, 1};
+    reveal_catalog.reveal_condition_ops = {2};
+    reveal_catalog.reveal_condition_refs = {0};
+    reveal_catalog.reveal_condition_values = {0};
+    RuntimeCountryPodSnapshot reveal_state = state;
+    reveal_state.country_discovered = {14, 15};
+    reveal_state.research_signal_count = 1;
+    reveal_state.research_signal_words = 1;
+    reveal_state.country_research_signals = {0, 0};
+    reveal_state.research_signal_cell_offsets = {0, 0, 0};
+    RuntimeCountryPodAuthority reveal_authority;
+    if (!reveal_authority.bootstrap(reveal_state, reveal_catalog, error))
+        return false;
+    RuntimeCountryCommand discover_signal;
+    discover_signal.request_id = 3;
+    discover_signal.producer_id = 2;
+    discover_signal.sequence = 3;
+    discover_signal.requested_day = 0;
+    discover_signal.effective_day = 0;
+    discover_signal.opcode = 14;
+    discover_signal.target_handle = uint64_t{1} << 32u;
+    discover_signal.cell = 0;
+    discover_signal.aux = 0;
+    if (!reveal_authority.queue_command(discover_signal, error)) return false;
+    RuntimeCountryPodPlan reveal_plan;
+    if (!reveal_authority.plan_day(0, 1, reveal_plan, error) ||
+        !reveal_authority.commit_day(reveal_plan, {}, error))
+        return false;
+    RuntimeCountryPodSnapshot revealed;
+    if (!reveal_authority.snapshot(revealed, error) ||
+        (revealed.country_discovered[0] & uint64_t{1}) == 0) {
+        error = "country_pod_self_test_signal_reveal_not_applied";
+        return false;
+    }
     RuntimeCountryPodSaveSection save;
     if (!authority.encode_save(save, error)) return false;
     RuntimeCountryPodAuthority restored;
@@ -2464,6 +1814,10 @@ bool RuntimeCountryPodAuthority::self_test(std::string &error) {
         return false;
     }
     if (!research_authority.commit_day(continuation_plan, {}, error)) return false;
+    if (country_core_hash_business_state(committed) != committed.state_hash) {
+        error = "country_pod_self_test_export_hash_mismatch";
+        return false;
+    }
     return true;
 }
 

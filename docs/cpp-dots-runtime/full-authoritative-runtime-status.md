@@ -73,15 +73,18 @@ immutable committed snapshot
 ```text
 simulation_thread_mode  = OFF / SHADOW / ACTIVE
 graph_coverage_state    = partial
-implemented_domain_mask = CLIMATE | COMMIT (0x802)
+implemented_domain_mask = CLIMATE | COUNTRY | COMMIT (0x806)
 整图 ACTIVE             = 仍禁止（逐域放行，不是全域开关）
 ```
 
+> **更新（2026-09-11）：Country D12 已放行。**`runtime_climate_authority_enabled` 生产
+> 默认 true，generate 时以 per-domain ACTIVE（`CLIMATE|COUNTRY|COMMIT = 0x806`）启动
+> worker；Climate 回灌滞后一日，Country 经 Host read-view 回写。其余 gameplay domain
+> 仍未进入 `implemented_domain_mask`。
+
 > **更新（2026-09-08）：Climate 已经是生产权威，这一节原先的 `0x800` / `ACTIVE=禁止`
-> 已过期。**`runtime_climate_authority_enabled` 生产默认 true，generate 时以
-> per-domain ACTIVE（`CLIMATE|COMMIT = 0x802`）启动 worker，主线程的 14 个 Climate
-> 节点被抑制门挡住，MapData 由 `apply_runtime_climate_writeback` 回灌、滞后一日。
-> 其余七个 gameplay domain 仍按上面的旧约束办。落地过程与证据见 §39–§42。
+> 已过期。**当时以 `CLIMATE|COMMIT = 0x802` 启动；现已被 D12 的 `0x806` 取代。落地
+> 过程与证据见 §39–§42 与 `authority-migration.md`。
 
 > **校正（2026-09-06）**：原文此处还列了一行 `domain_pod_mode = SHADOW`。**代码里
 > 不存在这个开关**（全库检索 `domain_pod_mode` 零命中）。POD 路径没有独立模式位，
@@ -1484,15 +1487,17 @@ research demand、bullion quota 或进入后续 Economy stage。compact/full rep
   才由主线程 peer adapter 执行 intent；
 - 只有实际授予的 Country authority 才能抑制同步 Country 写者，失败不得自动热切到旧状态。
 
-#### K2-D/K2-E：ReadView、发布、存档与交接（未完成）
+#### K2-D/K2-E：ReadView、发布、存档与交接
 
 - 发布不可变 `CountryReadView` 与 territory/research/tax/visual 独立水位；当前已有
   Host snapshot/read-view 协议和 GDScript 消费入口；
 - 仅对实际 owner 变化发布稀疏 cell patch，研究/税务/国库变化不重建 territory CSR；
 - CPD2 已能做同步/Host bundle roundtrip；2026-09-09 已把 Host receipt/request state 合并进
   同一份 PKCN generation/day/hash，并在恢复 prepare 阶段校验 pending/terminal 一致性。
-  worker continuation、真实事务中间态和 ACTIVE↔SYNC 交接 checkpoint 仍未纳入完整 Host
-  生命周期。
+- 2026-09-10 D10：`prepare/install/abort_country_authority_handoff` 完成 unique-writer 交接、
+  SYNC→WORKER checkpoint 发布与 drain；当时**不**改 `implemented_domain_mask`。
+- 2026-09-11 D12：生产 Country ACTIVE 已放行（`0x806`）；ACTIVE 冷启动基线对齐与
+  Climate park 日跳过 Country stage。worker continuation 的完整 Host 持久化中间态仍可后续加深。
 
 Country stage 最终只能读取：
 

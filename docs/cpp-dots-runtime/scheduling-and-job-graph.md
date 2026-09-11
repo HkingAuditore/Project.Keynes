@@ -13,8 +13,8 @@ Country worker 的 read-view 消费不属于新的调度 job，也不推进模�
 在 Country transport service 后执行一次非阻塞 get_country_worker_read_view(cursor)：连续
 generation 应用 sparse cell/owner patch，跳过 generation 时只接受 full snapshot。消费完成后
 复用 CountryFacade.country_committed，因此 vision、border、UI 仍由原事件路径驱动。Country 未获
-granted bit 时该消费边界完全不运行；当前正式 0x802 不改变现有同步 Country 写者。read-view
-代码是 ACTIVE 准入后的发布适配器，不是提前放行。
+granted bit 时该消费边界完全不运行；当前正式 `0x806` 下 Country grant 会抑制同步 Country
+写者。read-view 代码是 ACTIVE 准入后的发布适配器，不是提前放行；Economy D7 仍不在 ACTIVE。
 
 Graph dirty family 是 domain commit 的确认集合，不是“再做一次 MapData 全量发布”的请求。
 `flush_runtime_visuals(mask)` 只清除真实交集；未被 mask 选中的 dirty family 必须保留到后续
@@ -70,6 +70,14 @@ Country/Economy ACK。C++ 仍独占 graph/node/range cursor，每次 native call
 原子切片；这里改变的只是切片之间是否强制空等一个渲染帧。round 完整提交后才释放 barrier。这样
 不会把不同 day context 混入同一个 native round，也不会让不可抢占的诊断/经济 drain
 延迟 climate 或 occupancy 的提交。
+
+NativeDaily 在 continuation pulse 内完成最终 slice 时，与普通 SUS tick 完成使用同一个
+Climate reference generation 提交语义；否则 barrier 虽已释放，已捕获 SHADOW frame 仍会永久
+停在 `climate_trace_reference_pending`。Host 的 worker-local command 游标也只在整日
+preflight/commit 成功后推进；若 Country 已发布确定性终态拒绝则允许消费该批。Climate
+missing/future-frame 属于可重试 barrier，不能先从 pending 队列移除 Effect/Bio/Country
+一次性命令。Country 研究信号证据的 first/last day 使用命令 `effective_day`，不使用实际
+获得 scheduler slice 的墙钟日。
 
 运河不新增 scheduler/runtime：Economy 每日边界推进项目并提交 Effect，Effect gameplay
 adapter 原子发布边；现有 `runtime_hydrology` 尾部运行稀疏运河传播；视觉上传仍是 Godot

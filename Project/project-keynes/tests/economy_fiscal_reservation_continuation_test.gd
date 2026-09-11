@@ -9,6 +9,7 @@ var _settlement_steps := 0
 var _settlement_last_cursor := -1
 var _settlement_save_checked := false
 var _settlement_restore_checked := false
+var _settlement_day_advanced_checked := false
 
 
 func _init() -> void:
@@ -105,6 +106,16 @@ func _run() -> void:
 	var reserve_country_steps := 0
 	var reserve_pending_slices := 0
 	var last_report := report
+	# The scheduler may deliver the next pulse after the wall-clock day has
+	# advanced, while the admitted fiscal plan is still waiting on a peer.
+	# That must resume the saved admission day instead of faulting the whole
+	# Economy runtime as a stale-day protocol error.
+	report = ext.run_economy_slice({
+		"day_index": 1, "tick_index": 1, "slice_budget_ms": 8.0})
+	_expect("later pulse day continues the admitted fiscal reservation",
+		not bool(report.get("fatal", false)) and
+		int(report.get("fiscal_reservation_day", -1)) == 0 and
+		int(report.get("fiscal_reservation_country_cursor", -1)) <= 1)
 	for slice in range(16):
 		_observe_settlement(ext, report)
 		var cursor := int(report.get("fiscal_reservation_country_cursor", -1))
@@ -123,8 +134,17 @@ func _run() -> void:
 		last_report = report
 		if bool(report.get("done", false)) or bool(report.get("fatal", false)):
 			break
+		var next_day := 0
+		if bool(report.get("fiscal_settlement_continuation_active", false)) \
+				and not _settlement_day_advanced_checked:
+			next_day = 1
 		report = ext.run_economy_slice({
-			"day_index": 0, "tick_index": slice + 1, "slice_budget_ms": 8.0})
+			"day_index": next_day, "tick_index": slice + 1,
+			"slice_budget_ms": 8.0})
+		if next_day != 0:
+			_settlement_day_advanced_checked = \
+				not bool(report.get("fatal", false)) \
+				and int(report.get("fiscal_settlement_day", -1)) == 0
 	_expect("one reserve transaction is executed per Country",
 		reserve_country_steps == 3)
 	_expect("continuation reports pending intermediate slices",
@@ -157,6 +177,9 @@ func _run() -> void:
 		_settlement_save_checked)
 	_expect("restore is rejected during fiscal settlement continuation",
 		_settlement_restore_checked)
+	_expect("later pulse day continues the admitted fiscal settlement",
+		_settlement_day_advanced_checked)
+	_run_country_active_fiscal_bridge(catalog, merchant)
 
 
 func _set_income_tax(ext: Object, handles: PackedInt64Array) -> bool:
@@ -256,6 +279,130 @@ func _observe_settlement(ext: Object, report: Dictionary) -> void:
 		var blocked_restore: Dictionary = ext.begin_economy_restore()
 		_settlement_restore_checked = not bool(blocked_restore.get("ok", true)) and \
 			String(blocked_restore.get("reason", "")) == "restore_fiscal_settlement_pending"
+
+
+func _run_country_active_fiscal_bridge(catalog: Dictionary, merchant: int) -> void:
+	var ext: Object = _new_ext(catalog, 1)
+	_expect("bridge Country runtime configures", bool(ext.configure_country(
+		catalog, {"country_runtime_mode": "ACTIVE", "starting_technology_ids": PackedStringArray()},
+		1, 20260911).get("ok", false)))
+	var packet := {
+		"country_ids": PackedStringArray(["country.bridge"]),
+		"country_names": PackedStringArray(["Bridge"]),
+		"country_cash": PackedInt64Array([1000000]),
+		"territory_offsets": PackedInt32Array([0, 1]),
+		"territory_cells": PackedInt32Array([0]),
+		"technology_offsets": PackedInt32Array([0, 0]),
+		"technology_indices": PackedInt32Array(),
+		"treasury_offsets": PackedInt32Array([0, 0]),
+		"treasury_good_indices": PackedInt32Array(),
+		"treasury_quantities": PackedInt64Array(),
+	}
+	_expect("bridge Country bootstraps", bool(ext.bootstrap_country(
+		packet, PackedByteArray([0])).get("ok", false)))
+	var handle := int(ext.get_country_cell_summary(0).get("country_handle", 0))
+	_expect("bridge Country handle is live", handle > 0)
+	_expect("bridge income policy commits", _set_income_tax(ext, PackedInt64Array([handle])))
+	var profile: Dictionary = load(
+		"res://data/economy/default_economy.tres").to_native_profile()
+	profile.market_cycle_days = 1
+	profile.market_runtime_mode = "ACTIVE"
+	profile.trade_runtime_mode = "OFF"
+	_expect("bridge Economy configures", bool(ext.configure_economy(
+		catalog, profile, 1, 20260911).get("ok", false)))
+	_expect("bridge Economy bootstraps", bool(ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0]),
+		"signature_ids": PackedInt32Array([merchant]),
+		"population": PackedInt64Array([20]),
+		"funds": PackedInt64Array([100000]),
+	}, {}).get("ok", false)))
+	_expect("bridge captures Country POD inputs", bool(ext.capture_country_pod_catalog().get(
+		"ok", false)) and bool(ext.capture_country_runtime_snapshot().get("ok", false)))
+	_expect("bridge publishes immutable Country worker input", bool(ext.capture_runtime_inputs({
+		"generation": 1,
+		"day": 0,
+		"terrain": PackedByteArray([1]),
+		"neighbor_offsets": PackedInt32Array([0, 0]),
+		"neighbor_indices": PackedInt32Array(),
+		"cell_temp": PackedFloat32Array([15.0]),
+		"cell_moisture": PackedFloat32Array([0.5]),
+		"cell_plant_available_water": PackedFloat32Array([0.5]),
+	}).get("ok", false)))
+	ext.configure_runtime_graph({"enabled": true, "day": 0})
+	var started: Dictionary = ext.start_runtime_worker({
+		"simulation_thread_mode": "ACTIVE",
+		"graph_coverage_complete": true,
+		"authoritative_domain_mask": 0x004,
+		"day": 0,
+		"speed_days_per_second": 1000.0,
+		"paused": false,
+	})
+	_expect("Country-only ACTIVE worker starts", bool(started.get("ok", false)))
+	var granted := false
+	for _attempt in range(100):
+		if (int(ext.get_runtime_thread_report().get("authoritative_domain_mask", 0)) & 0x004) != 0:
+			granted = true
+			break
+		OS.delay_msec(2)
+	ext.set_runtime_clock(true, 1000.0)
+	_expect("Country worker grant is observed before fiscal admission", granted)
+
+	var worker_view_before: Dictionary = ext.get_country_worker_read_view(-1)
+	var worker_cash_before: PackedInt64Array = worker_view_before.get(
+		"country_cash", PackedInt64Array())
+	_expect("Country worker read-view exposes immutable treasury state",
+		bool(worker_view_before.get("available", false)) and
+		worker_cash_before.size() == 1 and int(worker_cash_before[0]) >= 0)
+	var saw_pending := false
+	var saw_terminal := false
+	var saw_country_apply := false
+	var no_fatal := true
+	for step in range(96):
+		ext.advance_runtime_pulse(0, 0.0, 1.0, 4000)
+		var status: Dictionary = ext.get_country_economy_asset_protocol_status()
+		saw_pending = saw_pending or int(status.get("pending_requests", 0)) > 0
+		saw_terminal = saw_terminal or int(status.get("terminal_requests", 0)) > 0
+		var economy_report: Dictionary = ext.get_runtime_graph_last_economy_report()
+		no_fatal = no_fatal and not bool(economy_report.get("fatal", false))
+		var worker_view: Dictionary = ext.get_country_worker_read_view(-1)
+		var worker_cash: PackedInt64Array = worker_view.get(
+			"country_cash", PackedInt64Array())
+		if worker_cash.size() == 1 and worker_cash_before.size() == 1:
+			saw_country_apply = saw_country_apply or int(worker_cash[0]) < int(worker_cash_before[0])
+		if saw_terminal and saw_country_apply and not bool(economy_report.get(
+			"fiscal_reservation_continuation_active", true)):
+			break
+		ext.set_runtime_clock(false, 1000.0)
+		OS.delay_msec(3)
+		ext.set_runtime_clock(true, 1000.0)
+	_expect("fiscal bridge publishes pending work instead of a sync Country write",
+		saw_pending and no_fatal)
+	_expect("Economy fiscal peer completes a Country-authorized request",
+		saw_terminal and no_fatal)
+	_expect("Country worker applies fiscal debit into its immutable read-view",
+		saw_country_apply)
+	var worker_view_after_terminal: Dictionary = ext.get_country_worker_read_view(-1)
+	var worker_cash_after_terminal: PackedInt64Array = worker_view_after_terminal.get(
+		"country_cash", PackedInt64Array())
+	for step in range(12):
+		ext.advance_runtime_pulse(0, 0.0, 1.0, 4000)
+		ext.set_runtime_clock(false, 1000.0)
+		OS.delay_msec(2)
+		ext.set_runtime_clock(true, 1000.0)
+	var worker_view_after_replay: Dictionary = ext.get_country_worker_read_view(-1)
+	var worker_cash_after_replay: PackedInt64Array = worker_view_after_replay.get(
+		"country_cash", PackedInt64Array())
+	_expect("repeated pulses do not apply the fiscal debit twice",
+		worker_cash_after_terminal.size() == 1 and
+		worker_cash_after_replay.size() == 1 and
+		int(worker_cash_after_replay[0]) == int(worker_cash_after_terminal[0]))
+	ext.request_runtime_stop()
+	for _attempt in range(100):
+		if String(ext.get_runtime_thread_report().get("state", "")) in ["STOPPED", "FAULTED"]:
+			break
+		OS.delay_msec(2)
+	_expect("bridge worker stops", String(ext.get_runtime_thread_report().get(
+		"state", "")) == "STOPPED")
 
 
 func _new_ext(catalog: Dictionary, cells: int) -> Object:

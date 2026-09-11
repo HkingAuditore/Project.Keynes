@@ -1,30 +1,25 @@
 # 运行时权威迁移：目标、设计框架、当前状态与任务
 
-更新时间：2026-09-10（对照当前源码与 `Invoke-RuntimeTests.ps1` 校准进度表述；未重跑 suite）
+更新时间：2026-09-11（Country D12 已放行：`implemented` 与生产 request 均为 `0x806`；C2 field-init 已修；Effect F7 Host SHADOW stage 已接入）
 
-**一句话现状**：十二个 domain 里 Climate 已是生产默认权威（`implemented_domain_mask =
-CLIMATE|COMMIT = 0x802`，滞后一日）；Country 已完成共享生产核心、20 opcode、CPD2、K2-A
-peer 协议和不可变 read-view/稀疏 territory 发布边界，Effect/Modifier 的真实 typed adapter
-已接入，Modifier E2-E7 已完成 SHADOW plan/replay、ACK、snapshot 和独立存档，Ideology G2-G7
-已完成 SHADOW plan/replay、跨域输入校验、deferred intent、ACK barrier、snapshot 和独立存档。
-Trigger H2-H6 已完成共享 kernel、POD command/ACK、snapshot、TPD1 和 SHADOW parity bridge，
-但 H7/H8 未执行，主线程 `TriggerRuntime`、Events 输入和 Effect 消费仍是生产边界。
-K2-B 已完成
-treasury/fiscal/cohort/market/research-purchase 九条异步 operation path 及故障/保存屏障验证；研究采购、财政
-escrow、Country↔cohort cash、Country↔market goods、construction/canal treasury spend 的生产调用方
-也已接入 **同步** Economy-owned coordinator（仍在 Economy stage 内 prepare/commit/apply）。Country Host
-已形成持久 POD candidate、seal、intent outbox/result inbox、SHADOW replay 与 ACTIVE real peer
-adapter；但尚未形成持久 Economy outbox/inbox 和正式唯一写者门禁，整图 ACTIVE 仍禁止，放行是
-**逐域**的。Country 任务进度以第三部分 D1–D12 勾选为准：D1–D6/D9 完成，D7/D8/D10 部分完成，
-D11–D12 未做。
+**一句话现状**：十二个 domain 里 Climate 与 Country 已是生产默认权威（`implemented_domain_mask =
+CLIMATE|COUNTRY|COMMIT = 0x806`；Climate 滞后一日回灌，Country 经 Host read-view 回写）。
+`runtime_climate_authority_enabled` 为真时生产请求 `authoritative_domain_mask=0x806`。关掉该开
+关则退回 SHADOW：同步 `NativeCountryRuntime::run_slice_core()` 仍是 Country 写者，Climate 回主
+线程。整图 ACTIVE 仍禁止，放行仍是 **逐域**的。Country 任务进度：D1–D12 完成。Effect F7 已把
+真实 POD stage 接入 Host 日循环（仍为 SHADOW，mask 不含 EFFECT）。
 
-2026-09-09 继续实施结果：Country Host 新增批量 admission 垂直切片。`enqueue_batch()` 在
-发布任何 packet 前先检查整批容量，由 Host 统一分配单调 `submit_order`；ACTIVE Country
-入口将可表达的数值命令编码为 worker packet，CREATE/RENAME/税务等依赖完整字符串或税务
-状态的命令则明确返回 `country_worker_command_unsupported`，不会回退写同步 store。Country
-peer intent 也已改为按 typed opcode 和 target domain 校验，不再把所有 intent 强制改成
-`ENSURE_TECHNOLOGY_EFFECT`。该切片仍不改变正式能力 mask，也不表示完整 20 opcode 已进入
-Country ACTIVE。
+Modifier E2-E7、Ideology G2-G7、Trigger H2-H6、Effect F2-F7 的 SHADOW 现状不变（E8/F8/G8/
+H7/H8 未执行）。
+
+2026-09-10 纠正：仓库内已不存在 `country_worker_command_unsupported`。Country worker 授权下
+`submit_country_commands()` 对 opcode 1–20 一律编码进 Host packet，不会按 CREATE/RENAME/税务
+提前拒绝。真正缺口从来不是缺 opcode case，而是生产 `run_slice_core()` 的大规模 staged SoA
+apply 与 worker snapshot apply 曾是两套公式；现已把 worker apply 收口到 CountryCore，同步
+路径在热路径上仍用 staged SoA（100k 格领土批），并以 core apply 做小批量 parity。
+
+2026-09-09 协议切片仍有效：`enqueue_batch()` 整批容量预检与单调 `submit_order`；peer intent
+按 typed opcode / target domain 校验。该切片仍不改变正式能力 mask。
 
 同日后续切片已补齐 Country 命令生命周期的终态出口：ACTIVE admission 返回显式
 `status=Accepted` / `receipt_code=1`，`poll_country_command_receipts(after_request_id, limit)`
@@ -32,18 +27,22 @@ Country ACTIVE。
 Host 自测同时覆盖“批内首条已进入 POD pending、后续 packet malformed”的整批拒绝；失败时
 按 request id 清除本批 pending，避免已经发布终态的请求被下一边界重放。同步 SUS
 `country_daily`、`run_country_slice()` 和 native runtime graph Country stage 也都改为根据实际
-granted `authoritative_domain_mask & 0x004` 抑制同步写者。以上仍是测试授权下的协议/门控切片：
-正式 `implemented_domain_mask()` 保持 `0x802`；Host receipt/request state 已接入 CPD2/PKSR
-恢复安装，但这仍不构成 Country ACTIVE 放行。
+granted `authoritative_domain_mask & 0x004` 抑制同步写者。以上协议/门控切片在当时仍挂在
+测试授权下；**D12（2026-09-11）** 已把正式 `implemented_domain_mask()` 与生产 request
+提升为 `CLIMATE|COUNTRY|COMMIT = 0x806`。Host receipt/request state 的 CPD2/PKSR 恢复安装
+仍单独存在，不能与 handoff 测试授权混为一谈。
 
 财政 continuation 追加验证：`NativeEconomyRuntime` 的财政 reserve 已按 Country 拆成可续跑
 的 epoch-open barrier。请求计划先冻结为 `requested_by_country`，之后每个 Economy slice
 最多处理一个 Country；reserve 未完成时保持 `epoch_begin_post_fiscal_pending`，不执行
 research demand、bullion quota 或后续 Economy stage。保存和恢复在此中间态明确拒绝，并返回
 cursor/count/day/phase 诊断。`economy_fiscal_reservation_continuation_test.gd` 专项回归为
-**failures=0**（断言数含循环，运行时打印 `checks/failures`，不要写死 N）。这仍属于
-Economy-owned coordinator 的跨 slice continuation，不是持久 `NativeSimulationHost`
-outbox/inbox；正式 `implemented_domain_mask` 仍为 `0x802`，Country ACTIVE/`0x806` 不变。
+**failures=0**（断言数含循环，运行时打印 `checks/failures`，不要写死 N）。Host 已有
+Country/Economy 内存 transport、`D7T1` transaction journal 编解码/恢复和 Economy-owned
+fiscal peer journal；PKEC v52 已持久化 fiscal escrow、terminal request result 与 state hash。
+但这只完成 M1 fiscal reservation/return/collect 的 peer 基础，不等于 D7 已经完成：cohort、market、
+research、treasury 的跨线程 continuation、reservation reconciliation、逐 operation gate
+和长程守恒/恢复证据仍未完成。D7 与 D12 Country ACTIVE 正交。
 
 ---
 
@@ -289,14 +288,14 @@ Worker 权威下还要多问两层，这两层各让 Climate 栽过一次：
 
 | mask | 在哪 | 语义 | 当前值 |
 | --- | --- | --- | --- |
-| `implemented_domain_mask()` | **编译期 constexpr**（`native_simulation_host.h:235`） | 该域**有真实 POD handler**，不代表它是权威 | `CLIMATE|COMMIT = 0x802` |
-| `authoritative_domain_mask` | 启动配置键，由 GDScript 传入（`world_runtime_host.gd:563-569`） | 本次会话**实际要 worker 承担权威**的域 | ACTIVE 时 `0x802` |
-| `completed_domain_mask` | 每日报告 | 当天实际跑完的域 | ACTIVE 下 `COMMIT|CLIMATE` |
+| `implemented_domain_mask()` | **编译期 constexpr**（`native_simulation_host.h`） | 该域**有真实 POD handler**，不代表它是权威 | `CLIMATE\|COUNTRY\|COMMIT = 0x806` |
+| `authoritative_domain_mask` | 启动配置键，由 GDScript 传入（`world_runtime_host.gd`） | 本次会话**实际要 worker 承担权威**的域 | ACTIVE 时 `0x806` |
+| `completed_domain_mask` | 每日报告 | 当天实际跑完的域 | ACTIVE 下含 `COMMIT\|CLIMATE\|COUNTRY` |
 
 准入逻辑（`native_simulation_host.cpp` 的 `start()` / ACTIVE 分支）：ACTIVE 要求
 `authoritative_domain_mask & ~implemented_domain_mask() == 0` 且 `graph_coverage_complete`。
 **整图 ACTIVE**（不传 `authoritative_domain_mask`）要求 `implemented == 0xFFF`，当前
-`0x802 ≠ 0xFFF`，所以结构上就不可能——这是刻意的。
+`0x806 ≠ 0xFFF`，所以结构上就不可能——这是刻意的。
 
 这三者的区别就写在 `implemented_domain_mask()` 的注释里（2026-09-08 重写；此前它说
 "Climate POD handler is live in SHADOW，ACTIVE 还需要剩下十个 gameplay domain"，那是
@@ -320,7 +319,7 @@ WorldClock._process() → day_changed
   → MapData / 视觉状态修改
 ```
 
-**Worker 路径**（目前只有 Climate）：
+**Worker 路径**（Climate 与 Country 已进入生产 ACTIVE）：
 
 ```text
 WorldClock._process() → day_changed
@@ -443,8 +442,10 @@ BUILDING_PLAN → TRADE_SETTLE → LEDGER_APPLY
 
 驱动路径与 Economy 同构：SUS job `country_daily` 在 `runtime_graph_active()` 时不跑，生产由
 `advance_runtime_pulse` 驱动（`country_daily_system.gd`；`world_ext_runtime_graph.cpp`）。
-当前生产写者仍是同步 `NativeCountryRuntime`，但业务执行已经经 `run_slice_core()` 进入共享
-`CountryCore`；`RuntimeCountryPodAuthority` 仍是诊断/SHADOW 适配器，不是第二套生产权威。
+当 `runtime_climate_authority_enabled=true` 且 Country grant 成功时，生产写者是
+`NativeSimulationHost` worker；主线程只消费 immutable Country read-view。关闭开关、启动失败
+或未获得 `authoritative_domain_mask & 0x004` 时，才回退同步 `NativeCountryRuntime`。
+`RuntimeCountryPodAuthority` 是 worker 的 Host adapter/read-view 组件，不是第二套同步生产权威。
 
 **命令屏障**是它区别于其他模块的地方：
 
@@ -462,9 +463,8 @@ BUILDING_PLAN → TRADE_SETTLE → LEDGER_APPLY
 K2-A 已把研究完成路径拆成 `CountryPeerContext → typed intent → typed result → 同日
 continuation`，并接通真实 `Effect -> Modifier -> gameplay publication -> Country` ACK 链；已验证
 request/session/generation、重复 ACK 幂等、拒绝重试和保存 barrier。`runtime_country_peer_bridge_test.gd`
-专项为 **failures=0**（断言含循环，以运行时打印为准）。Host 侧已接入持久 Country intent
-outbox/result inbox、seal 元数据和三模式 transport：SHADOW 只回放 typed result，ACTIVE 才允许
-真实 peer adapter；正式 Country granted-mask、唯一写者和 Economy 跨线程 outbox/inbox 仍未接入。
+专项以 **failures=0** 为准。D12 已接通 Country granted-mask、唯一写者和 ACTIVE read-view；
+Country–Economy D7 的完整跨线程 continuation、事务级持久化和 Economy 正式 ACTIVE 接管仍未完成。
 
 2026-09-09 继续实施已把 Host 的 peer rejection 从“停在 active plan”改为可续跑语义：Country
 侧先提交当日命令、研究资源消耗和 pending technology，业务 generation 不增加；Host 清理旧
@@ -554,10 +554,10 @@ snapshot 对照，但尚未取得 ACTIVE authority；其它域的 POD 状态见 
 | --- | --- | --- |
 | **A** | 基础设施：协议、线程、快照、存档骨架 | ✅ 完成 |
 | **B** | CLIMATE 垂直切片：第一个域走通全流程 | ✅ 完成（带 6 项遗留） |
-| **C** | 测量能力：证明收益、抓住 headless 抓不到的问题 | 🔶 工具完成；C1/C3 已采集，C2 双录制待执行 |
-| **D** | COUNTRY | 🔶 D1–D6/D9 完成；D7/D8/D10 部分；D11–D12 未做 |
+| **C** | 测量能力：证明收益、抓住 headless 抓不到的问题 | 🔶 C1/C3 已采集；C2 Country pass；`weather_field_init` 已补 extras 回灌，其余 Climate 差异已按 B8/滞后声明 |
+| **D** | COUNTRY | ✅ D1–D12 完成（生产 ACTIVE，`0x806`） |
 | **E** | MODIFIER | ✅ E2–E7 完成；E8 未执行，仍为 SHADOW |
-| **F** | EFFECT | 🔶 F2-F6 完成；F7/F8 未完成 |
+| **F** | EFFECT | 🔶 F2–F7 完成；F8 未执行，仍为 SHADOW |
 | **G** | IDEOLOGY | 🔶 G2–G7 完成；G8 未执行，SHADOW |
 | **H** | TRIGGER_INPUT | 🔶 H2–H6 已实现；SHADOW parity，H7/H8 未执行 |
 | **I** | EVENTS | 🔶 I1–I7 已实现；SHADOW/PROBE，I8 未执行 |
@@ -601,7 +601,7 @@ E–J 的顺序由依赖决定（见"每个域的通用七步"末尾的依赖图
       `matched` 只能靠 2⁻⁵⁶ 碰撞成立）
 - [x] 分叉矩阵：按 canonical 字段表逐字段累积，mismatch 填 field/cell/stage/两侧 bit
 - [x] `climate_parity_probe.gd` harness
-- [x] 首帧 `adopt_reference_baseline`（worker store 全零 vs reference 带世界生成结果）
+- [x] 首帧 `adopt_reference_baseline`（worker store 全零 vs reference 带世界生成结果；SHADOW 用 environment day 收基线，日不对齐时不放行 worker 日）
 
 ### B3 输入边界 ✅
 - [x] environment 快照全 lane（补齐过 12 条缺失 lane）
@@ -646,7 +646,7 @@ E–J 的顺序由依赖决定（见"每个域的通用七步"末尾的依赖图
 - [ ] 清理 `RuntimeClimateCommand` 5 个悬空 opcode → 验收：接上消费者或删除
 - [x] ~~修 `implemented_domain_mask()` 过期注释~~（2026-09-08）
 
-## 阶段 C：测量能力 🔶 **工具已实现，C1/C3 已采集，C2 待执行**
+## 阶段 C：测量能力 🔶 **C1/C3 无稳定收益；C2 已过 field policy（Climate 数值对拍未关）**
 
 **为什么排在 Country 前面**：worker 化的主要卖点是帧延迟，而这个收益至今一次都没测到过；
 同时 Climate 四个缺陷全部是真实客户端抓到的，headless 全绿。**不补上这两条，后续每个域都会
@@ -661,8 +661,12 @@ E–J 的顺序由依赖决定（见"每个域的通用七步"末尾的依赖图
       session、全量字段、tick/cell coverage、authority/worker mode 和 committed/writeback day；
       `Start-AuthorityStageCManual.ps1` 启动单个干净客户端，
       `Compare-AuthorityStageCTiles.ps1` 校验元数据后按 `tick_idx + cell_index` 对齐，报告
-      缺失键、非有限值、逐字段 max/mean/p95、首差异和 `-2..+2` tick 最佳滞后。默认 field
-      policy 为空，因此任何未声明差异都是 release blocker。
+      缺失键、非有限值、逐字段 max/mean/p95、首差异和 `-2..+2` tick 最佳滞后。      默认 field
+      policy 只声明有理由的已知差异，任何未声明差异都是 release blocker。2026-09-10 起全量录制明确包含
+      `country_slot_arr`；sidecar 的 `CountryClientEvidence` 同 tick 记录 reference/worker hash、
+      territory/cash/goods/technology/research 与 terminal receipt。比较器对 Country 行缺失、
+      业务字段或 receipt 不同直接报 `country_client_evidence_mismatch`。启动器支持可见客户端
+      自动 full-SoA 录制，并可用绝对起始 tick + 固定 tick 数消除墙钟录制的覆盖漂移。
 - [x] **C3 排除 harness 开销的性能口径**：保留原始 `run_ms`，增加 writeback window、
       consume、idle wait、idle-adjusted 和 whole-window lower-bound 两套口径以及轮询数；
       `Invoke-AuthorityStageCHeadless.ps1` 用六个干净进程汇总调整后吞吐。C3 只回答吞吐，
@@ -675,17 +679,26 @@ E–J 的顺序由依赖决定（见"每个域的通用七步"末尾的依赖图
       - 2026-09-09 C3：`stage-c3-default-20260909`，三对 adjusted days/s 差为
         `+12.33%`、`-24.44%`、`-9.09%`，结论为
         `mixed_or_no_material_throughput_evidence`。
-      - C2 ACTIVE/OFF 人工全量 SoA 双录制仍待执行，因此阶段 C 不能标记完成。
+      - 2026-09-10 C2：先有 `stage-c2-country-fixed100-20260910`（Country 证据 pass，
+        66 个未声明 Climate 差异）。修完 `weather_field_init` extras 后重录
+        `stage-c2-fieldinit-20260910`：同 seed/config、tick 121–220、各 100 ticks /
+        240,000 行；`weather_field_init_arr` 0 差异；`country_slot_arr` 与
+        `CountryClientEvidence` 仍 pass；ACTIVE writeback_applied_fields=40。
+        其余 65 个气候场按一日滞后 / sliced weather / B8 ψ·风场 / 主线程 succession
+        未回灌声明于 `tools/runtime/authority-stage-c-field-policy.json`
+        （15% 余量，基线为本轮重录）。比较器 status=`pass`。这不是 Climate 数值对拍，
+        也不是 D12。C1/C3 仍无稳定收益结论，阶段 C 正式证据包未关。
 
 ## 阶段 D：Country 接入 🔶
 
-旧判断“POD 实现完整，只缺 Host 接线”已被生产语义盘点替代。当前完成的是共享生产核心及
-K2-A 协议垂直切片，不是 Country 后台权威。
+旧判断“POD 实现完整，只缺 Host 接线”已被生产语义盘点替代。D12 已完成 Country 后台
+ACTIVE authority；当前剩余缺口集中在 Country–Economy D7 跨域事务闭环。
 
 - [x] **D1 / K0-A 生产参考边界**：固定命令水位、边界、hash、receipt、intent/ACK 和首差异
       定位；`country_reference_trace_test.gd` 为 **failures=0**。
-- [x] **D2 / K0-B 唯一生产核心**：同步 `NativeCountryRuntime::run_slice_core()` 使用纯 C++
-      `CountryCore`；POD authority 保留为诊断/SHADOW，不再作为生产算法完成度依据。
+- [x] **D2 / K0-B 唯一生产核心**：同步 `NativeCountryRuntime::run_slice_core()` 仍是生产编排
+      （大规模领土批走 staged SoA）。worker 命令公式收口到 `country_core_apply_command()`；
+      `RuntimeCountryPodAuthority` 只做排队/plan/commit 适配，不再自持第二套 opcode switch。
 - [x] **D3 / K1 完整命令核心**：20 类生产 opcode、`effective_day/sequence/submit_order`
       排序、seal 水位、批次 preflight/原子提交已进入共享核心；Host transport/receipt 见 D8
       （协议切片已有，完整 ACTIVE 仍未完成）。
@@ -703,57 +716,32 @@ K2-A 协议垂直切片，不是 Country 后台权威。
 - [x] **D6 / K2-A 真实 peer adapter**：已在现有 Effect、Modifier 和 gameplay publication
       安全提交点消费 Country intent，并沿用原 request/idempotency identity 返回结果；SHADOW
       测试只回放结果，不产生真实副作用。Host ACTIVE adapter 已接线，但只有显式 ACTIVE + Country
-      请求且实际授权后才可执行；当前正式 mask 仍拒绝 Country，因此此项不等于生产 ACTIVE。
-- [~] **D7 / K2-B Country/Economy 资产事务桥**：研究采购、财政 reserve/return/collect、
-      Country↔cohort 现金、Country↔market 商品、construction/canal treasury spend 已进入统一
-      typed bridge。当前九条 operation path 均支持 peer prepared/applied ACK、commit decision、
-      原 transaction ID 幂等重试、session/generation 校验、方向正确的现金/商品守恒和保存屏障：
-      `treasury_spend`、`fiscal_reserve`、`fiscal_return`、
-      `fiscal_collect`、`cash_to_cohort`、`cash_from_cohort`、`good_to_market`、
-      `good_from_market`、`research_purchase`，均支持 peer prepared/applied ACK、
-      commit decision、原 transaction ID 幂等重试、session/generation 校验、方向正确的现金/商品
-      守恒和保存屏障；扣款方向另外使用 Country 侧 reservation。`runtime_country_economy_transaction_test.gd`
-      当前为 **failures=0**（源码静态约 44 个 `_expect`；以运行时打印为准）。
-      `NativeEconomyRuntime` 的研究采购调用已改为经由这条统一状态机；
-      本轮进一步将政府研究采购改为 Economy-owned coordinator：候选市场按原
-      `(country, price, market)` 稳定顺序冻结，预算/剩余需求/候选 cursor 保存于 epoch
-      continuation；每次只消费固定候选窗口，未完成时保持
-      `GOVERNMENT_RESEARCH_PROCUREMENT` stage，不提前进入 `TRADE_DISPATCH`。每笔采购
-      现在由 Economy 完成市场库存、活商人、整数分账和溢出预检，再调用 Country typed
-      prepare/commit，最后执行市场/商人 peer apply 并提交 Country applied ACK。该路径已不再
-      调用 `economy_purchase_research_points()` 合成兼容入口。
-      财政三类调用已通过
-      `coordinate_country_fiscal_transaction()`；cohort cash 和普通 market goods 命令已不再调用
-      `transfer_cash_*` / `transfer_good_*` compatibility wrapper；construction/canal treasury
-      支出由 `coordinate_country_treasury_spend()` 统一完成 Country 多商品扣款、market 扣货、
-      merchant 分账与 ACK，调用方不再重复应用 market/merchant 副作用。专项回归：
-      `runtime_country_economy_transaction_test.gd` **failures=0**、`technology_procurement_runtime_test.gd`
-      **PASS**、`canal_runtime_test.gd` **failures=0**；`treasury_construction_runtime_test.gd` 的 funded
-      construction、现金失败原子性、守恒和 Country bridge 断言通过，但 grouped-material planner
-      仍有 **2 个既有失败**。同步 Economy-owned coordinator 已接入生产路径；尚未完成的是跨线程
-      outbox/inbox、fiscal/cohort/market continuation 的持久化调度以及正式 Host ACTIVE 接管；
-      D7 总体仍未完成。
+      请求且实际授权后才可执行；D12 已将 Country 加入生产 `0x806`，因此 Country core ACTIVE
+      与 D7 Economy 事务状态必须分别判断。
+- [~] **D7 / K2-B Country/Economy 资产事务桥**：九条 typed path 与同步 Economy-owned
+      coordinator 仍是生产路径。Host 已有内存 request/result transport、
+      `enqueue_economy_origin_country_asset()`、`D7T1` transaction journal 编解码/恢复、
+      identity 校验和 terminal 幂等缓存；Country plan 可发布请求，Economy 也可发布
+      Economy-origin request。当前仅 fiscal 三种 operation 进入 M1 bridge gate，
+      `country_economy_operation_gate_closed` 会明确拒绝其它未迁移 operation，不再伪造
+      成功或静默切换第二个同步写者。Economy-owned fiscal peer journal 已完成，并在 PKEC v52
+      独立 section 持久化 request identity 与 terminal result；fiscal escrow 与 journal
+      都纳入 state hash。完整跨线程续跑仍只覆盖 M1，cohort/market/research/treasury 的 peer
+      journal、reservation reconciliation、逐 operation gated rollout 和长程守恒/恢复证据仍未完成。D7T1
+      恢复时，dispatched 但无 terminal 的请求会按固定排序重新入队并换绑新 session；
+      旧 session 的迟到结果会被拒绝。D7 未因接线完成而放行。
 - [x] **D7a / K2-B fiscal reserve continuation**：`prepare_fiscal_budgets()` 冻结按国家请求
       计划，`advance_fiscal_reservation()` 跨 Economy slice 逐国推进；保存/恢复中间态明确
       拒绝，专项回归 `economy_fiscal_reservation_continuation_test.gd` 为 **failures=0**。这只是
       Economy-owned 可续跑边界，不是 Host ACTIVE 放行。
-- [~] **D8 / K2-C Host stage 与唯一写者**：`NativeSimulationHost` 已有持久 Country POD
-      candidate、sealed-day 执行入口、peer result inbox、intent outbox、`NeedPeerResults`
-      停驻和 session/generation 校验；GDScript 侧已接入 SHADOW replay 与 ACTIVE real adapter
-      transport。`RuntimeThreadReport`/direct report/perf report 现在统一暴露
-      `country_worker_*` seal、session、generation、queue 和 reason 字段；新增
-      `runtime_country_host_protocol_test.gd` 当前为 **failures=0**。2026-09-09 已补
-      `enqueue_batch()` 整批 admission、Host request/submit-order identity、ACTIVE 数值命令
-      packet 入口、unsupported 命令拒绝，以及 Country peer typed opcode/target-domain 校验；
-      2026-09-09 同时修正 Host worker 的排序为 `(effective_day, sequence, submit_order)`，不再
-      使用 `producer_id` 提前打破同日顺序。Country admission 现返回显式 `Accepted`，Host 通过
-      request-id cursor 发布唯一 `Committed/RejectedAtExecution` 终态；批内 decode/preflight
-      失败会清除本批 POD pending，避免终态后重放。同步 SUS、facade slice 与 native graph stage
-      已按实际 granted Country bit 抑制同步写者。2026-09-09 已补 receipt/request state 的
-      CPD2/PKSR 保存合并、恢复安装和 request-id 水位恢复；尚缺完整 20 opcode worker 状态、
-      真实 ACTIVE 资产协调器、正式 Country granted-mask 和完整 Host stage 故障门禁；本次已
-      补齐 peer rejection 的显式 retry barrier 和 Host 自测，但不改变上述阻塞项；
-      主线程不得等待 worker。
+- [x] **D8 / K2-C Host stage 与真实 SHADOW plan/replay**：`submit_country_commands` 在非
+      `0x004` 下先写同步权威，再把 opcode 1–20 镜像进同一条 Host 编码路径（失败码
+      `country_shadow_command_mirror_failed`，不回滚同步 admission）。同步 committed slice
+      经 `export_pod_snapshot` → `country_core_hash_business_state` →
+      `publish_country_reference`；worker commit 后字段级对拍（`country_parity_status` /
+      `first_mismatch_day` / 双方 hash）。未知分叉不得标绿。SHADOW 不把 worker read-view
+      写回 `MapData`。D12 后生产 Country grant 为 `0x004`，主线程不得等待 worker；测试授权用
+      `set_country_sync_store_writes_forbidden` 只用于协议验证，不能替代生产 grant。
 - [x] **D9 / K2-D CountryReadView 与稀疏发布（2026-09-09）**：C++ host 保存不可变
       `RuntimeCountryPodSnapshot`，以 `generation/patch_base_generation` 提供游标消费，首次
       bootstrap/跳代提供 full owner snapshot，连续代次只返回 changed cell/owner patch；
@@ -761,17 +749,65 @@ K2-A 协议垂直切片，不是 Country 后台权威。
       通过 `MapData.country_slot_arr` 更新后复用 `CountryFacade.country_committed`，不增加第二套
       通知路径。纯身份/研究捕获不会产生 territory cell patch。专项回归：
       `runtime_country_pod_test.gd` **failures=0**（源码静态约 36 个 `_expect`）。
-- [~] **D10 / K2-E 保存恢复与交接**：同步 checkpoint/Host bundle roundtrip 已有；2026-09-09
-      增加 Host receipt/request state 的 CPD2/PKSR 保存与恢复安装，并恢复自动 request-id 水位；
-      pending packet 缺 Accepted、terminal 与 request state 不一致、checksum/section 损坏均整体
-      拒绝且不污染当前状态。2026-09-09 又增加 Host rejection retry barrier 的保存阻止检查，
-      并验证 rejection 日业务 state 已发布时 read-view 使用独立单调发布游标，不把业务 generation
-      的“不增加”误当成“没有新提交”。ACTIVE↔SYNC drain、目标 owner prepare/install、新 session
-      epoch 和失败保持原 owner 尚未完成。
-- [ ] **D11 / K3 正确性、故障和性能门禁**：多 seed/地图 1000 日、保存续跑、ACK/背压/
-      事务故障、真实客户端、守恒、延迟和吞吐证据。
-- [ ] **D12 Country 放行**：D6–D11 全部通过后才加入 COUNTRY bit，使 Climate + Country +
-      COMMIT 为 `0x806`；当前保持 `0x802`，不得以测试授权入口绕过。
+- [x] **D10 / K2-E 保存恢复与交接（2026-09-10）**：CPD2/PKSR receipt 恢复仍在。Host
+      `prepare/install/abort_country_authority_handoff`：drain 未完成 intent/asset/Accepted
+      命令后切 owner；SYNC→WORKER 必须先发布 sync `export_pod_snapshot` checkpoint，缺失则
+      失败并保持原 owner；成功推进 session epoch；WORKER owner 驱动 unique-writer 与跳过
+      sync `run_country_slice`。完成时**不**改 `implemented_domain_mask`（仍 `0x802`；后由
+      D12 升至 `0x806`）。prepare 期间 `begin_save` 返回 `country_authority_handoff_pending`。
+      `runtime_country_host_protocol_test.gd` 现为 **42/0**（含 prepare/abort/install 往返与
+      handoff unique-writer）。D10 ≠ D12：handoff 测试授权不能代替生产 Country ACTIVE。
+- [x] **D11 / K3 正确性、故障和性能门禁**：headless 已有 `runtime_country_parity_test.gd`
+      （默认 30 日 soak，可用 `PK_COUNTRY_SOAK_DAYS` 设为 1–100）、probe 公式对拍、
+      多国家/中立地块 fixture，以及 rename/territory/research/tax/claim/technology 六类以上
+      确定性命令双写、unique-writer、save capture、Host protocol。测试现在必须实际观察到
+      `country_parity_compared=true`、`status=comparable` 且双方非零 hash 相等；零 comparison
+      不再允许绿色退出。分叉必须带
+      `country_parity_field` 归因。守恒仍以既有 ledger `0/0/0` 用例
+      （`runtime_country_economy_transaction_test`、`treasury_construction_runtime_test`）为准。
+      本轮重跑 `runtime_country_economy_transaction_test` 为 **43/0**；
+      `treasury_construction_runtime_test` 的 funded/cashless/grouped success/failure 守恒断言
+      全部通过，但该测试整体仍有 2 个既知失败：
+      grouped-material 报价的 AND/OR 共享替代聚合（期望 `material_offsets=[0,1]` /
+      一次扣 60）失败，归因是施工报价 planner，不是 Country SHADOW hash 或命令双写。
+      2026-09-10 聚焦运行已证明独立 fixture 没有生产 Climate reference/input 边界时停在
+      `country_parity_status=uncompared`；加固门禁因此按预期失败，而不是把“没有比较”当成通过。
+      根因之一是 SHADOW 冷启动把 `adopt_reference_baseline` 写成 `plan.context.day`（worker
+      计划日），而第一帧 trace 是生成期 `environment.day`：随后 `plan_day` 撞上
+      `climate_day_not_monotonic`，Climate barrier 失败，Country 永远进不了对拍。现已改为
+      用 environment day 收基线，日不对齐时只收基线、不放行 worker 日。
+      `runtime_country_parity_test.gd` 现用 `WorldRuntimeHost` 生产路径做 comparable-frame
+      门禁；6 格独立 fixture 只覆盖命令双写/probe，不再把无 Climate 输入的零比较标绿。
+      当前正式路径门禁为 **32 checks / 0 failures**：默认 30 日
+      `compared_days=30 matched_days=30 first_mismatch_day=-1`，扩展 100 日
+      `compared_days=100 matched_days=100 first_mismatch_day=-1`；Host protocol 为
+      **41/0**，Country save roundtrip 为 **36/0**，Country POD 为 **35/0**。长程推进曾在 day 7 暴露
+      Effect/Bio 直接写 Country、未进入 SHADOW command ingress 的缺口，以及 POD 把
+      command payload `domain` 误判为 runtime envelope domain；两处均已改走既有 Host
+      mirror/按 opcode 校验。逐日 seal 现等待 WorldClock 的五类硬 barrier，NativeDaily 在
+      continuation 完成时也推进 Climate reference generation；Host 只有在整日 preflight/commit
+      成功或 Country 产生确定性终态拒绝后才消费到期命令，Climate 缺帧重试不再丢失一次性
+      Effect/Bio ingress。day 92 的研究信号分叉还暴露并修复了零 sequence 镜像、reveal catalog
+      缺失，以及生产/worker 证据日期分别使用实际 slice 日与 effective day 的语义漂移。
+      C2 真实客户端已用相同 seed/config、绝对 tick 121–220 完成 ACTIVE/OFF 双录制：
+      240,000 行完全对齐，Country slot 与业务 evidence 零差异、receipt 一致；全域比较另有
+      66 个 Climate/Weather 未声明差异。其中 `weather_field_init` 已补 extras 回灌，其余
+      按 B8/滞后写入 C2 field policy。生产 Country stage 性能
+      使用正式 `60x40` / seed `20260718` / 4 countries，每日一个唯一 rename，共 100 个同步
+      `run_slice_core()` 样本：native P95 `0.0243ms`、max `0.0446ms`，含 facade/event dispatch
+      wrapper P95 `0.839ms`、max `1.095ms`，通过 `2ms/4ms` 门槛。证据位于
+      `artifacts/runtime/country-d11-perf-100d-workload-20260910`。D11 完成；D10 交接亦已
+      完成。随后由 D12 把 COUNTRY 写入 `implemented_domain_mask`。
+- [x] **D12 Country 放行（2026-09-11）**：`implemented_domain_mask` 加入 COUNTRY，使
+      Climate + Country + COMMIT = `0x806`。生产 `world_runtime_host.gd` 在
+      `runtime_climate_authority_enabled` 下请求同一 mask；Country capture 不全则拒绝
+      ACTIVE 启动。ACTIVE 冷启动与 SHADOW 一样把 `committed_day=-1` 无业务基线对齐到
+      Host `start_day`；Climate park 日跳过 Country stage，避免 `country_day_not_contiguous`
+      卡死整包 grant。同步 SUS / graph country slice 在 grant 后抑制；命令走 Host；read-view
+      回写 `MapData.country_slot_arr`。`climate_authority_test.gd` **16/0**（grant 同授
+      Climate+Country，抑制+回灌仍绿）；Host protocol **42/0**；protocol/pod 回归绿。
+      不得以 handoff / `set_country_sync_store_writes_forbidden` 代替本放行。SHADOW fixture
+      仍断言 `authoritative & 0x004 == 0`。
 
 ## 每个域的通用七步
 
@@ -820,9 +856,9 @@ Technology 都靠它的 ACK）；Economy 最后，因为它同时依赖 Country 
 - [ ] E8 放行
 
 **当前边界**：四域 ModifierStore 的 worker-side authority 已在 SHADOW 中运行；capture barrier
-之后到达的 command 顺延到下一安全日。`implemented_domain_mask()` 继续保持
-`CLIMATE | COMMIT = 0x802`，legacy ModifierRuntime 仍是生产 authority，E8 前不做 snapshot
-回灌或 ACTIVE 放行。
+之后到达的 command 顺延到下一安全日。`implemented_domain_mask()` 现为
+`CLIMATE|COUNTRY|COMMIT = 0x806`（不含 MODIFIER），legacy ModifierRuntime 仍是生产
+authority，E8 前不做 snapshot 回灌或 ACTIVE 放行。
 
 ## 阶段 F：EFFECT 🔶
 
@@ -838,12 +874,21 @@ Technology 都靠它的 ACK）；Economy 最后，因为它同时依赖 Country 
       generation、transaction/ACK 状态及 deterministic state hash
 - [x] F6 独立 `EFP1` 存档 section（PKSR bit `1 << 7`）：pending transaction、ACK mask、
       plan/idempotency 信息 roundtrip；缺失、截断、版本、catalog、checksum 不匹配均原子拒绝
-- [ ] F7 接入 host 真实 stage
+- [x] F7 接入 host 真实 stage（2026-09-11）：`execute_effect_worker_stage` 位于 Ideology
+      之后、Modifier 之前；真实 Effect POD intents 在 catalog 非空且 stage 成功时替换
+      diagnostic `run_effect` fixture 作为 Modifier 上游，Modifier ACK 回灌 Effect POD；
+      主线程 transport（queue instance/metric/remove、poll intent、submit ACK）与
+      `effect_pod_*` report 已接线；`implemented_domain_mask` 仍为 `0x806`（不含 EFFECT）；
+      legacy `EffectRuntime` 仍是生产权威。空冷启动 catalog 不启用 stage，以免关掉
+      Modifier E7 fixture 上游。
 - [ ] F8 放行
 
 **特有难点**：它是**跨域原子事务的枢纽**。Country 的 grant tech、Ideology 的三选一、
 Technology 的里程碑都靠它的 ACK 完成。迁移它等于同时改动这几个域的提交路径，需要
 "Effect 在 worker、消费者在主线程"的中间态设计。
+
+**当前边界（F7）**：Host SHADOW 日循环已真实驱动 `RuntimeEffectPodAuthority`；
+F8 前不做主线程 `EffectRuntime` 抑制、不做 Effect ACTIVE grant、不改 mask。
 
 ## 阶段 G：IDEOLOGY 🔶（G2–G7 已实现；SHADOW；G8 未执行）
 
@@ -870,7 +915,7 @@ Technology 的里程碑都靠它的 ACK 完成。迁移它等于同时改动这�
 - [ ] G8 放行
 
 **当前边界**：G2–G7 只证明 worker-side replay、跨域输入校验、deferred intent 和 save
-round-trip 的 SHADOW 语义；`implemented_domain_mask()` 仍为 `CLIMATE | COMMIT = 0x802`，
+round-trip 的 SHADOW 语义；`implemented_domain_mask()` 现为 `0x806`（不含 IDEOLOGY），
 IDEOLOGY 不进入 ACTIVE authority mask。Ideology 使用上一份已提交的 Economy opinion snapshot，
 避免当日 Ideology↔Economy 循环依赖。G8 还需要完整 catalog/长 replay parity、真实 Effect ACK、
 save compatibility、host smoke、thread isolation、source scan 和 stress evidence。
@@ -895,7 +940,7 @@ save compatibility、host smoke、thread isolation、source scan 和 stress evid
 - [ ] H7 接入 host 真实 stage；本阶段仅完成 SHADOW 诊断桥接：Host 发布
       catalog/commands/reference frame，执行真实 worker plan/replay 并报告 parity/ACK；不发布
       Trigger authoritative mask，不抑制
-      `TriggerDailySystem`，`implemented_domain_mask()` 继续为 `0x802`。
+      `TriggerDailySystem`，`implemented_domain_mask()` 仍不含 TRIGGER（现为 `0x806`）。
 - [ ] H8 放行
 
 **当前边界**：H2–H6 已完成 worker-side Trigger kernel、POD command/ACK、snapshot/save；
@@ -985,17 +1030,17 @@ snapshot 与 save/restore，不向 legacy consumers 重复派发；`runtime_even
 
 ## 4.1 一句话与进度
 
-十二个域的全量迁移里，**Climate 已放行，Country 已完成共享核心和协议切片但尚未形成后台权威；
-Modifier/EFFECT/Ideology/Trigger 已有真实 POD SHADOW 组件，Events 已有独立 SHADOW/PROBE
-authority，Economy 仍主要是诊断投影，3 个域待定语义**。
+十二个域的全量迁移里，**Climate 与 Country 已放行，Country 的 D7 Economy 跨域事务仍未闭环；
+Modifier/EFFECT/Ideology/Trigger 已有真实 POD SHADOW 组件（Effect 含 F7 Host 日 stage），
+Events 已有独立 SHADOW/PROBE authority，Economy 仍主要是诊断投影，3 个域待定语义**。
 
 ```text
 A 基础设施       ████████████ 完成
 B CLIMATE        ███████████░ 完成，6 项遗留（B8）
-C 测量能力       ████████░░░░ 工具完成；C1/C3 已采集，C2 双录制待执行
-D COUNTRY        ███████░░░░░ D1–D6/D9 完成；D7/D8/D10 部分；D11–D12 未做
+C 测量能力       █████████░░░ C1/C3 无稳定收益；C2 field-init 已修且比较器 pass
+D COUNTRY        ████████████ D1-D12 完成；生产 ACTIVE（0x806）
 E MODIFIER       ████████░░░░ E2-E7 完成，E8 未做（SHADOW）
-F EFFECT         ████████░░░░ F2-F6 完成，F7/F8 未做
+F EFFECT         █████████░░░ F2-F7 完成，F8 未做（SHADOW）
 G IDEOLOGY       ████████░░░░ G2-G7 完成，G8 未做（SHADOW）
 H TRIGGER_INPUT  ████████░░░░ H2-H6 完成，SHADOW parity；H7/H8 未做
 I EVENTS         ████████░░░░ I1-I7 已实现，SHADOW/PROBE，I8 未做
@@ -1004,21 +1049,20 @@ K 三个无 store   ░░░░░░░░░░░░ 未开始
 L 整图收尾       ░░░░░░░░░░░░ 未开始
 ```
 
-按逐域模板算，未完成的 E8、F7/F8、G8、H7/H8、I8 和阶段 J 仍是这轮迁移剩余工作量的主体；
+按逐域模板算，未完成的 E8、F8、G8、H7/H8、I8 和阶段 J 仍是这轮迁移剩余工作量的主体；
 SHADOW 组件完成不等于生产 authority 放行。
 
-**唯一在生产中真实承担 gameplay 权威的 worker 域是 Climate。** Country 的同步生产路径已使用
-共享核心，且同步 Economy-owned 资产 coordinator 已接入生产调用方，但 Host 仍未取得 Country
-权威；Modifier、Ideology 和 Trigger 已具备真实 SHADOW POD authority，Events 已具备独立 probe
-authority，但各自 legacy 主线程边界仍承担生产职责。其它未放行域仍是协议切片、SHADOW 或诊断
-实现，三个结构上没有可迁移状态，COMMIT 是屏障机制本身。
+**Climate 与 Country 是当前生产中真实承担 gameplay 权威的 worker 域。** Country core 已由
+Host worker 承担；同步 Economy-owned 资产 coordinator 仍是 D7 的生产 peer。Modifier、Ideology
+和 Trigger 仍是 SHADOW，Events 仍是独立 probe authority，其余未放行域仍是协议切片、SHADOW
+或诊断实现，COMMIT 是屏障机制本身。
 
 ## 4.2 域成熟度（对应任务表 B–K）
 
 | 类 | 域 | 一句话 | 任务表 |
 | --- | --- | --- | --- |
-| **第 1 类：生产权威** | CLIMATE、COMMIT | ACTIVE 下真实承担，在 `implemented_domain_mask` | B（完成，遗留 B8） |
-| **第 2 类：共享核心与协议切片** | COUNTRY | 20 opcode 和同步生产核心已统一；K2-A peer、K2-B 同步资产 coordinator、K2-D ReadView、K2-C Host 协议切片已验证；跨线程 outbox/唯一写者/ACTIVE 未完成 | D1–D12 |
+| **第 1 类：生产权威** | CLIMATE、COUNTRY、COMMIT | ACTIVE 下真实承担，在 `implemented_domain_mask` | B + D12 |
+| **第 2 类：共享核心与协议切片** | （原 COUNTRY 已升入第 1 类） | — | — |
 | **第 3 类：SHADOW/POD 迁移中** | MODIFIER、EFFECT、IDEOLOGY、TRIGGER_INPUT、ECONOMY、EVENTS | Modifier/EFFECT/Ideology/Trigger 已有真实 POD 组件，Events 已有独立 SHADOW/PROBE authority；Economy 仍主要是诊断投影 | 阶段 E–J |
 | **第 4 类：无 store** | GAMEPLAY_EFFECT、VISUAL、INPUT_CAPTURE | 结构上没有可迁移状态，需确认语义 | 阶段 K |
 
@@ -1033,12 +1077,12 @@ authority；Modifier、Ideology 和 Trigger 的 plan/replay、ACK、snapshot 与
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | CLIMATE | 有 | **真实** | 定义 5 个，**无消费者** | 协议层有 | 有 | CLM2 | **ACTIVE 真 stage** | **在** |
 | COMMIT | 无（barrier） | 真实 | — | — | 有 | PKSR envelope | 有 | **在** |
-| COUNTRY | 有（诊断） | **共享生产核心；Host stage 部分接入** | 20 个核心完成；Host 数值 transport/receipt 已接入，worker opcode 仍不完整 | Effect/Modifier adapter 已验证；**同步** Economy coordinator 已接；Host 跨线程 outbox **未接** | immutable ReadView 与稀疏 patch 已验证 | CPD2 v2 / PKCN v13；Host receipt/request state 已随 PKSR 保存恢复 | SHADOW/protocol probe | 不在 |
+| COUNTRY | 有（worker CountryCore + read-view） | **worker 走 `country_core_apply_command`；ACTIVE 下 Host worker 负责生产** | 20 个均已编码/core apply；staged SoA 保留为同步回退 | Effect/Modifier adapter 已验证；M1 fiscal 已有 Economy-owned peer journal，其余 D7 coordinator 仍为同步生产 peer；Host transport 与 D7T1 journal 已接线 | immutable ReadView 与稀疏 patch 已验证 | CPD2 v2 / PKCN v13；D7T1 Host transaction journal + PKEC v52 fiscal peer journal 已实现，非 fiscal peer recovery 尚未完成 | D10 handoff+unique-writer；D12 ACTIVE | **在（0x004）** |
 | MODIFIER | 有（四域隔离） | **真实 SHADOW 双缓冲 plan/replay** | 固定 POD payload；legacy 5 已迁移 | **真实 Effect→Modifier ACK barrier** | immutable ring | **MDF2**（PDP4 不重复写） | **SHADOW 完整 stage** | 不在 |
-| EFFECT | 有 | **独立真实 POD；未接 Host 日循环** | 6 类 action | 真实多 adapter 状态机 | 独立 immutable | EFP1 | 无日 stage（仅 configure/save） | 不在 |
+| EFFECT | 有 | **独立真实 POD；Host SHADOW 日 stage（F7）** | 6 类 action | 真实多 adapter 状态机 | 独立 immutable | EFP1 | **SHADOW 完整日 stage**（Ideology 后、Modifier 前；fixture Effect→Modifier 在 POD catalog 非空时停用） | 不在 |
 | IDEOLOGY | 有 | **真实 SHADOW 双缓冲 plan/replay** | 固定 POD payload；legacy 9 已迁移 | **真实 Effect ACK barrier；无 synthetic ACK** | immutable snapshot（Country/Economy 输入校验） | **IDP1**（`1 << 8`，不从 PDP3/PKID 恢复） | **SHADOW 完整 stage**（Country 之后、Effect 之前） | 不在 |
 | TRIGGER_INPUT | 有 | **真实 SHADOW plan/replay** | 6 个固定 opcode；legacy Action `1,2,3,4,10,11,12,13,14,15` 保留 | required ACK + 真实 receipt barrier | immutable POD snapshot | **TPD1**（独立 section，`1 << 4`） | **SHADOW parity bridge** | 不在 |
-| ECONOMY | 有 | 诊断 | legacy 23 | 空槽 | 无 | **无 POD section** | 无 | 不在 |
+| ECONOMY | 有 | 诊断 | legacy 23 | 空槽 | 无 | **无 Economy POD section；D7T1 仅保存跨域 transaction journal** | 无 | 不在 |
 | EVENTS | 有 | **真实 SHADOW/PROBE deterministic plan/replay** | APPEND_BATCH、ACK_CONSUMER、CONFIGURE_CAPACITY、CLEAR_RESET | **worker ACK + legacy cursor bridge** | **immutable snapshot ring** | **EVT1** | **SHADOW/PROBE 日阶段** | 不在 |
 | GAMEPLAY_EFFECT | **无** | 空转 | 无 | 无 | 无 | 无 | 无 | 不在 |
 | VISUAL | 无（intent） | 诊断 | 无 | 无 | — | 无 | SHADOW 刻意不发布 | 不在 |
@@ -1059,10 +1103,11 @@ Economy 有 23 个 legacy opcode 不代表它的 POD 迁移靠前，它的 POD �
 - **抑制**：`climate_worker_authoritative()` 为真时主线程跳过**整张** native daily /
   schedule graph，而不是历史文档写的“14 个节点逐一抑制”。
 
-### COUNTRY 细节（下一个域）
+### COUNTRY 细节（D12 已放行，D7 仍在迁移）
 
-生产核心已经统一，K2-A peer 链、K2-B 同步资产 coordinator、K2-D read-view 发布边界已完成，
-但后台权威闭环还没有形成：
+生产核心已经统一，K2-A peer 链、K2-B 同步资产 coordinator、K2-D read-view 发布边界和
+D12 Country ACTIVE 已完成；未完成的是 Country–Economy 事务的跨线程 continuation、持久化和
+Economy 正式 ACTIVE 接管：
 
 - **已有**：`CountryCore`、同步 `run_slice_core()`、20 opcode、boundary seal、生产排序、原子
   preflight、PKCN v13/CPD2 v2，以及 K2-A 的 peer identity、ACK、同日 continuation 和保存
@@ -1078,12 +1123,18 @@ Economy 有 23 个 legacy opcode 不代表它的 POD 迁移靠前，它的 POD �
   单调 request identity/submit order、worker 数值命令 packet 编码，以及 peer intent 的 typed
   opcode/target-domain 映射；Host worker 命令排序也已统一为
   `(effective_day, sequence, submit_order)`。该实现只在实际 Country worker authority 下接管入口；未授权仍由
-  同步 `NativeCountryRuntime` 处理，不改变 `implemented_domain_mask = 0x802`。
-- **尚缺**：跨帧/跨线程持久 Host outbox/inbox、正式 Country 唯一写者门、ACTIVE↔SYNC 交接和
-  K3 长程/故障/性能门禁。
-- **权威结论**：`RuntimeCountryPodAuthority` 仍是诊断/SHADOW；当前生产写者仍为同步
-  `NativeCountryRuntime`。`implemented_domain_mask()` 保持 `0x802`，不能把协议测试解释成
-  Country ACTIVE。
+  同步 `NativeCountryRuntime` 处理。完成时 `implemented_domain_mask` 仍为 `0x802`（后由 D12
+  升至 `0x806`）。
+- **已补齐（2026-09-10，D10）**：handoff owner 驱动 unique-writer / 跳过 sync country slice；
+  SYNC→WORKER 强制发布 sync checkpoint；abort 已导出；Host protocol 现为 **42/0**。D10 当时
+  不改 mask；生产 Country ACTIVE 由 D12 放行。
+- **已补齐（2026-09-11，D12）**：`implemented_domain_mask` 与生产 request 均为 `0x806`；
+  ACTIVE 冷启动 Country 基线对齐；Climate park 日不推进 Country；`climate_authority_test`
+  **16/0**。
+- **权威结论**：`RuntimeCountryPodAuthority` 是 Host worker adapter；命令公式在
+  `country_core_apply_command()`。生产默认在 `runtime_climate_authority_enabled` 下由 worker
+  承担 Country（granted `0x004`）；关掉开关则退回同步 `NativeCountryRuntime`。
+  D7 未完成不影响 Country core ACTIVE，也不应通过修改 `implemented_domain_mask` 回滚 Country。
 
 ### 第 3 类未放行域细节
 
@@ -1100,14 +1151,14 @@ Economy 有 23 个 legacy opcode 不代表它的 POD 迁移靠前，它的 POD �
 - **发布**：commit 成功后发布 immutable snapshot，generation 单调递增；失败时不 swap、不
   发布 snapshot、不推进 generation。
 - **权威边界**：legacy `ModifierRuntime` 仍是主线程生产 authority，worker snapshot 不回灌；
-  `implemented_domain_mask()` 保持 `0x802`，E8 未执行。
+  `implemented_domain_mask()` 现为 `0x806`（不含 MODIFIER），E8 未执行。
 - **存档**：新格式为 PDP4 + 独立 `MDF2`（save bit `1 << 5`），旧 PDP3 仅做一次性兼容迁移。
 
 未放行域的诊断/SHADOW 实现如下：
 
 | 域 | 诊断实现干了什么 | 证据 |
 | --- | --- | --- |
-| EFFECT | legacy store 仍为 SHADOW/reference；独立 POD authority 已完成 F2-F6，但未进入 Host 日循环（Host 仅有 configure/save/restore） | `runtime_effect_pod.{h,cpp}` |
+| EFFECT | legacy store 仍为 SHADOW/reference；独立 POD authority 已完成 F2-F7：Host 日循环在 Ideology 之后跑真实 plan/commit，Modifier 上游可切换到 Effect POD intents；未进入 ACTIVE mask | `runtime_effect_pod.{h,cpp}`、`native_simulation_host.{h,cpp}` |
 | IDEOLOGY | 独立 POD SHADOW authority：9 opcode、确定性排序、bounded slice/continuation、deferred Effect intent 和真实 ACK barrier；legacy runtime 仍为生产参考 | `runtime_ideology_pod.{h,cpp}`、`native_simulation_host.{h,cpp}` |
 | TRIGGER_INPUT | 共享 Trigger kernel 的真实 POD plan/replay、6-opcode 命令层、ACK barrier、immutable snapshot、TPD1 save 和 SHADOW parity；主线程 `TriggerRuntime` 仍是生产 authority | `runtime_trigger_kernel.{h,cpp}`、`runtime_trigger_pod.{h,cpp}`、`native_simulation_host.{h,cpp}`、`world_ext_trigger.cpp` |
 | ECONOMY | 从 country snapshot 复制 treasury；简化 population→production 投影 | `runtime_domain_pod.cpp:507+`、`runtime_domain_authorities.cpp:581+`（注释："real Economy authority will replace"） |
@@ -1129,7 +1180,7 @@ Economy 有 23 个 legacy opcode 不代表它的 POD 迁移靠前，它的 POD �
 ### 怎么跑
 
 ```powershell
-# 统一 runner：20 个 runtime_* + dots_completion_gate（共 21）
+# 统一 runner：23 个 runtime_* + dots_completion_gate（共 24；长期验收看 failures=0）
 tools\runtime\Invoke-RuntimeTests.ps1
 
 # 单个测试
@@ -1161,9 +1212,9 @@ Godot 可执行文件由 `GODOT_BIN` 或 `tools/runtime/Resolve-GodotBin.ps1` �
 | `country_runtime_test.gd` | 同步共享核心、命令/税务/信号/PKCN（D2–D4） | `failures=0` |
 | `runtime_country_pod_test.gd` | Country POD / read-view（D9） | `failures=0`（静态约 36 `_expect`） |
 | `runtime_country_peer_bridge_test.gd` | 研究完成、真实 Effect/Modifier ACK、同日续跑、拒绝重试、保存 barrier（D5-D6） | `failures=0`（含循环断言） |
-| `runtime_country_save_roundtrip_test.gd` | PKCN/CPD2/PKSR 恢复（D4/D10） | `failures=0` |
+| `runtime_country_host_protocol_test.gd` | Host admission/receipt/handoff（D8/D10） | `failures=0`（当前日志 42 checks, 0 failures） |
 | `runtime_country_economy_transaction_test.gd` | K2-B 九类 Country/Economy asset transaction path | `failures=0`（静态约 44 `_expect`） |
-| `runtime_country_host_protocol_test.gd` | Host admission/receipt/peer transport（D8） | `failures=0` |
+| `runtime_country_save_roundtrip_test.gd` | PKCN/CPD2/PKSR 恢复（D4/D10） | `failures=0` |
 | `runtime_events_pod_test.gd` | Events I1-I7 | `failures=0` |
 | `runtime_trigger_pod_test.gd` | Trigger H2-H5 | `PASS` |
 | `runtime_trigger_parity_test.gd` | Trigger SHADOW parity / ACTIVE refusal | `PASS` |
@@ -1177,19 +1228,22 @@ Godot 可执行文件由 `GODOT_BIN` 或 `tools/runtime/Resolve-GodotBin.ps1` �
 | `ideology_opinion_synergy_test.gd` | Ideology G5 | `failures=0` |
 | `ideology_runtime_stress_test.gd` | Ideology G2-G5 stress | `failures=0` |
 | `runtime_ideology_save_roundtrip_test.gd` | Ideology G6/G7：IDP1 | `failures=0` |
-| `runtime_effect_pod_test.gd` | Effect F2-F6 self-test（统一 suite 已收录） | `failures=0` |
-| `dots_completion/dots_completion_gate.gd` | 静态门禁：巨石行数、直写 grep、flag registry | `ALL GATES PASSED` |
+| `runtime_effect_pod_test.gd` | Effect F2-F7 self-test（统一 suite 已收录；含 Host stage smoke） | `failures=0` |
+| `dots_completion/dots_completion_gate.gd` | 当前静态门禁：D12 mask/request、D7 journal、flag registry；旧巨石行数与 map_generator bake-time 直写只输出 `LEGACY` 警告 | `ALL GATES PASSED` |
 
 > 输出格式是 `checks / failures`，**没有** `passed=N failed=M`；断言数运行时累加，无编译期固定
 > 总数。所以"某测试应该有 N 个断言"这种判断不成立，只能看 failures 是否为 0。含循环的 harness
 > （peer bridge、fiscal continuation）更不要把某次运行的 checks 写进总纲当契约。
 
-2026-09-10 文档校准说明：统一 runner 现为 **20 个 runtime_* + dots_completion_gate = 21**。
-2026-09-09 文档曾记载 suite **19/21**（`runtime_climate_save_roundtrip_test` 因既有 Economy
-bootstrap 缺 timber/stone 超时，`dots_completion_gate` 因脚本行数/直写门禁失败）；仓库内
-`artifacts/runtime/s0-baseline/test-summary.json` 仍是更早的 17/19 归档。本次校准**未重跑**
-suite。Ideology / Modifier / Events / Trigger 专项此前均为 failures=0；它们不构成 H7/H8 或
-I8 放行，也未进入 `implemented_domain_mask`。
+2026-09-11 完整 runner 复核：**24/24 passed, failures=0**（23 个 `runtime_*` +
+`dots_completion_gate`）。checks 数由运行时 assertion 数决定，长期验收只固定 `failures=0`。
+`dots_completion_gate` 的 2026-05 monolith 行数与 `map_generator` bake-time 直写指标已明确降为
+`LEGACY` 非门禁警告；当前硬门禁改为 D12 `implemented_domain_mask`、生产 request `0x806`、
+D7T1/fiscal peer section 与 ClimateProfile flag registry。2026-09-09 历史记录中的 **19/21**
+（Economy bootstrap 超时与旧 monolith gate 失败）及仓库内更早的
+`artifacts/runtime/s0-baseline/test-summary.json` 17/19 归档不代表当前状态。
+Ideology / Modifier / Events / Trigger 专项仍不构成 H7/H8 或 I8 放行，也未进入
+`implemented_domain_mask`。
 
 ### soak 环境变量（`climate_authority_soak_probe.gd`）
 
@@ -1369,7 +1423,7 @@ max 恒等于当日增量上限）；缺 knob 落到结构默认值（默认值�
 | `Project/.../scripts/game/world_runtime_host.gd` | `runtime_events_probe_enabled`（默认 false）和 probe 配置透传 |
 | `Project/.../tests/runtime_events_pod_test.gd` | Events I1-I7 聚焦验证；failures=0 |
 
-## Climate（唯一的生产权威域）
+## Climate / Country（生产权威域）
 
 | 文件 | 内容 |
 | --- | --- |
@@ -1378,7 +1432,7 @@ max 恒等于当日增量上限）；缺 knob 落到结构默认值（默认值�
 | `gdext/src/runtime_climate_passes.{h,cpp}` | 九个 pass 的共享纯内核（生产与 worker 同一份） |
 | `gdext/src/world_ext_climate.cpp` / `world_ext_weather.cpp` | 生产侧实现，**接线时的键名口径以它们为准** |
 | `Project/.../scripts/geography/map_generator.gd` | capture、knobs 构建、stage 节拍 |
-| `Project/.../scripts/game/world_runtime_host.gd` | worker 生命周期、模式决策（Climate ACTIVE → `authoritative_domain_mask=0x802`） |
+| `Project/.../scripts/game/world_runtime_host.gd` | worker 生命周期、模式决策（Climate|Country ACTIVE → `authoritative_domain_mask=0x806`） |
 
 ## 调度层
 
@@ -1398,7 +1452,7 @@ max 恒等于当日增量上限）；缺 knob 落到结构默认值（默认值�
 | --- | --- |
 | `gdext/src/country_core.{h,cpp}` | 共享纯 C++ 生产核心接口、boundary/checkpoint/peer POD 契约 |
 | `gdext/src/country_runtime.{h,cpp}` | 当前同步生产 authority facade、`run_slice_core()`、20 opcode、研究和 peer continuation |
-| `gdext/src/runtime_country_pod.{h,cpp}` | 诊断/SHADOW POD authority；不得作为生产语义完整或 ACTIVE 的证据 |
+| `gdext/src/runtime_country_pod.{h,cpp}` | Host Country adapter、worker plan/commit 与 read-view 发布边界 |
 | `gdext/src/world_ext_country.cpp` / `world_ext_bind_methods.cpp` | Godot facade 与 peer bridge 导出边界 |
 | `Project/.../scripts/geography/map_generator.gd` | get_country_worker_read_view GDScript 转发；捕获边界不暴露 worker store |
 | `Project/.../scripts/game/world_runtime_host.gd` | ACTIVE-gated read-view 消费；连续代次 sparse patch，跳代 full snapshot；复用 CountryFacade.country_committed |
@@ -1427,7 +1481,7 @@ max 恒等于当日增量上限）；缺 knob 落到结构默认值（默认值�
 
 | 开关 | 定义 | 默认 | 作用 |
 | --- | --- | --- | --- |
-| `runtime_climate_authority_enabled` | `world_runtime_host.gd:90` | **true** | true → 以 ACTIVE + `authoritative_domain_mask=0x802` 启动；false → SHADOW。**Climate 的总开关与回退路径** |
+| `runtime_climate_authority_enabled` | `world_runtime_host.gd:90` | **true** | true → 以 ACTIVE + `authoritative_domain_mask=0x806`（Climate\|Country\|COMMIT）启动；false → SHADOW。**Climate+Country 的总开关与回退路径** |
 | `runtime_events_probe_enabled` | `world_runtime_host.gd:63` | **false** | true → 启用 Events legacy journal 到 POD 的 SHADOW/PROBE 镜像与 snapshot；不改变 `implemented_domain_mask`，不替代 legacy consumer |
 | `simulation_thread_mode` | 启动配置键，C++ 解析 `world_ext_simulation_host.cpp:43` | ⚠ **键缺失时 raw 默认 `"ACTIVE"`** | OFF / SHADOW / ACTIVE |
 | `runtime_shadow_on_generate` | `world_runtime_host.gd:59` | true | generate 时是否启动 worker |
@@ -1463,6 +1517,6 @@ max 恒等于当日增量上限）；缺 knob 落到结构默认值（默认值�
 
 ## 阶段 E（2026-09-09）
 
-E2-E7 已完成，E8 未执行。Modifier POD 已具备 worker-side plan/replay authority、四域隔离、五个 legacy opcode、真实 Effect -> Modifier ACK barrier、immutable snapshot ring 和独立 MDF2 存档 section。implemented_domain_mask 仍为 CLIMATE | COMMIT = 0x802；Modifier 不进入 ACTIVE authority，legacy ModifierRuntime 继续是主线程生产 authority，worker snapshot 不回灌 legacy store。
+E2-E7 已完成，E8 未执行。Modifier POD 已具备 worker-side plan/replay authority、四域隔离、五个 legacy opcode、真实 Effect -> Modifier ACK barrier、immutable snapshot ring 和独立 MDF2 存档 section。implemented_domain_mask 现为 CLIMATE|COUNTRY|COMMIT = 0x806；Modifier 不进入 ACTIVE authority，legacy ModifierRuntime 继续是主线程生产 authority，worker snapshot 不回灌 legacy store。
 
 Modifier snapshot 只在安全日边界发布并按 generation 单调消费。capture barrier 之后到达的 Modifier command 顺延到下一日；当前日中途不插入。新 composite 状态写入 PDP4，Modifier 独立写入 save bit 1 << 5 的 MDF2；旧 PDP3 只保留一次性兼容迁移读取。

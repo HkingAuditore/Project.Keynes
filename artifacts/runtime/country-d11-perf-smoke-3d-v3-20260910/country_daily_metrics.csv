@@ -1,0 +1,4 @@
+driver_day,committed_day,native_ms,command_preflight_ms,command_apply_ms,aggregate_publish_ms,report_build_ms,wrapper_ms
+1,1,0.0234,0.011,0.002,0.0104,0.0181,0.632
+2,2,0.0131,0.0046,0.001,0.0075,0.0181,0.579
+3,3,0.0132,0.0049,0.0005,0.0078,0.0179,0.617

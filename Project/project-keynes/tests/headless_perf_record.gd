@@ -57,6 +57,8 @@ func _run() -> int:
 	if args.has("country_pending_queue"):
 		country_pending_queue_enabled = _argument_enabled(
 			args.get("country_pending_queue", "true"))
+	var country_daily_workload := _argument_enabled(
+		args.get("country_daily_workload", "false"))
 	var bio_occupancy_slice_enabled := _argument_enabled(
 		args.get("bio_occupancy_slice_enabled", "false"))
 	Engine.set_meta(&"country_full_diagnostics", country_full_diagnostics)
@@ -294,7 +296,52 @@ func _run() -> int:
 	var harness_writeback_consume_us := 0
 	var harness_idle_wait_us := 0
 	var harness_writeback_poll_count := 0
+	var country_perf_samples: Array[Dictionary] = []
+	var last_country_perf_day := -1
 	for day in range(1, days + 1):
+		if country_daily_workload:
+			if country == null or country_handles.is_empty():
+				push_error("[headless-perf] country_daily_workload requires a formal country")
+				fatal = true
+				break
+			var workload_submit: Dictionary = country.rename_country(
+				int(country_handles[0]), "Headless Benchmark %d" % day,
+				day, 100000 + day)
+			if not bool(workload_submit.get("ok", false)):
+				push_error("[headless-perf] country workload submit failed day=%d result=%s" % [
+					day, str(workload_submit)])
+				fatal = true
+				break
+			var country_stage_started := Time.get_ticks_usec()
+			var workload_result: Dictionary = country.world_ext().run_country_slice({
+				"day_index": day,
+				"tick_index": day,
+			})
+			country.dispatch_committed_events(workload_result)
+			var country_wrapper_ms := float(
+				Time.get_ticks_usec() - country_stage_started) / 1000.0
+			if not bool(workload_result.get("done", false)):
+				push_error("[headless-perf] country workload did not complete day=%d result=%s" % [
+					day, str(workload_result)])
+				fatal = true
+				break
+			country_perf_samples.append({
+				"driver_day": day,
+				"committed_day": int(workload_result.get("last_committed_day", day)),
+				"native_ms": float(workload_result.get("native_ms", 0.0)),
+				"command_preflight_ms": float(workload_result.get(
+					"command_preflight_ms", 0.0)),
+				"command_apply_ms": float(workload_result.get(
+					"command_apply_ms", 0.0)),
+				"aggregate_publish_ms": float(workload_result.get(
+					"aggregate_publish_ms", 0.0)),
+				"report_build_ms": float(workload_result.get(
+					"country_report_build_ms",
+					workload_result.get("report_build_ms", 0.0))),
+				"wrapper_ms": country_wrapper_ms,
+			})
+			last_country_perf_day = int(workload_result.get(
+				"last_committed_day", day))
 		clock.current_day = float(day)
 		var phase := clock.season_phase_for_day(day)
 		host.run_daily_tick(day, phase)
@@ -332,6 +379,28 @@ func _run() -> int:
 			fatal = true
 			break
 
+		if country != null:
+			var measured_country_report: Dictionary = country.report()
+			var committed_country_day := int(measured_country_report.get(
+				"last_committed_day", measured_country_report.get("day_index", -1)))
+			if committed_country_day > last_country_perf_day:
+				country_perf_samples.append({
+					"driver_day": day,
+					"committed_day": committed_country_day,
+					"native_ms": float(measured_country_report.get("native_ms", 0.0)),
+					"command_preflight_ms": float(measured_country_report.get(
+						"command_preflight_ms", 0.0)),
+					"command_apply_ms": float(measured_country_report.get(
+						"command_apply_ms", 0.0)),
+					"aggregate_publish_ms": float(measured_country_report.get(
+						"aggregate_publish_ms", 0.0)),
+					"report_build_ms": float(measured_country_report.get(
+						"country_report_build_ms",
+						measured_country_report.get("report_build_ms", 0.0))),
+					"wrapper_ms": 0.0,
+				})
+				last_country_perf_day = committed_country_day
+
 		if generator != null and generator.has_method("get_economy_report"):
 			economy_report = generator.get_economy_report()
 			fatal = fatal or bool(economy_report.get("fatal", false))
@@ -346,6 +415,8 @@ func _run() -> int:
 			break
 
 	var output_path := String(recorder.call("stop_and_export"))
+	var country_perf_path := _write_country_perf_samples(
+		output_dir, country_perf_samples)
 	var run_ms := float(Time.get_ticks_usec() - run_started) / 1000.0
 	var rows := _csv_data_row_count(output_path)
 	var expected_rows := days if not fatal else host.get_fast_tick_count()
@@ -429,6 +500,9 @@ func _run() -> int:
 			"worker_mode": "ACTIVE" if climate_authority_on else "SHADOW",
 			"requested_days": days,
 			"effective_days": expected_rows,
+			"country_daily_workload": country_daily_workload,
+			"country_perf_samples": country_perf_samples.size(),
+			"country_perf_csv": country_perf_path,
 			"generation_ms": generation_ms,
 			"run_ms": run_ms,
 			"harness_writeback_window_ms": writeback_window_ms,
@@ -533,6 +607,29 @@ func _runtime_report_snapshot(generator) -> Dictionary:
 
 func _days_per_second(days: float, elapsed_ms: float) -> float:
 	return days * 1000.0 / elapsed_ms if elapsed_ms > 0.000001 else 0.0
+
+
+func _write_country_perf_samples(output_dir: String,
+		samples: Array[Dictionary]) -> String:
+	if output_dir.is_empty():
+		return ""
+	var path := output_dir.path_join("country_daily_metrics.csv")
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if file == null:
+		push_error("[headless-perf] country_daily_metrics.csv export failed")
+		return ""
+	var fields := PackedStringArray([
+		"driver_day", "committed_day", "native_ms", "command_preflight_ms",
+		"command_apply_ms", "aggregate_publish_ms", "report_build_ms", "wrapper_ms",
+	])
+	file.store_line(",".join(fields))
+	for sample in samples:
+		var values := PackedStringArray()
+		for field in fields:
+			values.append(str(sample.get(field, 0)))
+		file.store_line(",".join(values))
+	file.close()
+	return path
 
 
 func _write_stage_c_outputs(output_dir: String, session: Dictionary) -> void:

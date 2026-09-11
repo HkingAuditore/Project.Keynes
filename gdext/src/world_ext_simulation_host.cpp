@@ -212,6 +212,20 @@ static Dictionary runtime_report_to_dictionary(const RuntimeThreadReport &report
         report.country_worker_catalog_hash);
     out["country_worker_last_reason"] = String(report.country_worker_last_reason);
     out["country_worker_authoritative"] = report.country_worker_authoritative;
+    out["country_parity_compared"] = report.country_parity_compared != 0;
+    out["country_parity_matched"] = report.country_parity_matched != 0;
+    out["country_parity_compared_count"] = static_cast<int64_t>(
+        report.country_parity_compared_count);
+    out["country_parity_matched_count"] = static_cast<int64_t>(
+        report.country_parity_matched_count);
+    out["country_parity_status"] = String(report.country_parity_status);
+    out["country_parity_first_mismatch_day"] = report.country_parity_first_mismatch_day;
+    out["country_parity_reference_hash"] = static_cast<int64_t>(
+        report.country_parity_reference_hash);
+    out["country_parity_worker_hash"] = static_cast<int64_t>(
+        report.country_parity_worker_hash);
+    out["country_parity_field"] = String(report.country_parity_field);
+    out["country_parity_index"] = report.country_parity_index;
     out["trigger_parity_day"] = report.trigger_parity_day;
     out["trigger_reference_day"] = report.trigger_reference_day;
     out["trigger_input_hash"] = static_cast<int64_t>(report.trigger_input_hash);
@@ -241,6 +255,15 @@ static Dictionary runtime_report_to_dictionary(const RuntimeThreadReport &report
         report.modifier_pod_snapshot_generation);
     out["modifier_pod_ack_count"] = static_cast<int>(report.modifier_pod_ack_count);
     out["modifier_pod_fallback_reason"] = String(report.modifier_pod_fallback_reason);
+    out["effect_pod_ready"] = report.effect_pod_ready;
+    out["effect_pod_plan_ms"] = report.effect_pod_plan_ms;
+    out["effect_pod_replay_ms"] = report.effect_pod_replay_ms;
+    out["effect_pod_state_hash"] = static_cast<int64_t>(report.effect_pod_state_hash);
+    out["effect_pod_snapshot_generation"] = static_cast<int64_t>(
+        report.effect_pod_snapshot_generation);
+    out["effect_pod_ack_count"] = static_cast<int>(report.effect_pod_ack_count);
+    out["effect_pod_intent_count"] = static_cast<int>(report.effect_pod_intent_count);
+    out["effect_pod_fallback_reason"] = String(report.effect_pod_fallback_reason);
     out["ideology_pod_ready"] = report.ideology_pod_ready;
     out["ideology_pod_plan_ms"] = report.ideology_pod_plan_ms;
     out["ideology_pod_replay_ms"] = report.ideology_pod_replay_ms;
@@ -268,6 +291,10 @@ static Dictionary runtime_report_to_dictionary(const RuntimeThreadReport &report
 
 Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
     if (!_runtime_host) _runtime_host = std::make_unique<NativeSimulationHost>();
+    if (_country_runtime != nullptr) {
+        static_cast<NativeCountryRuntime *>(_country_runtime)
+            ->attach_simulation_host(_runtime_host.get());
+    }
     RuntimeSimulationMode mode = RuntimeSimulationMode::ACTIVE;
     String mode_error;
     Dictionary out;
@@ -1932,6 +1959,18 @@ bool DCWorldExt::runtime_effect_pod_self_test() const {
     return ok;
 }
 
+bool DCWorldExt::runtime_effect_host_stage_self_test() {
+    if (!_runtime_host) _runtime_host = std::make_unique<NativeSimulationHost>();
+    std::string error;
+    const bool ok = _runtime_host->effect_pod_host_stage_self_test(&error);
+    if (!ok) {
+        godot::UtilityFunctions::printerr(
+            godot::String("runtime_effect_host_stage_self_test: ") +
+            godot::String(error.c_str()));
+    }
+    return ok;
+}
+
 bool DCWorldExt::runtime_ideology_pod_self_test() const {
     std::string error;
     const bool ok = RuntimeIdeologyPodAuthority::self_test(error);
@@ -2336,6 +2375,36 @@ Dictionary DCWorldExt::apply_runtime_climate_writeback(
     apply_extra("heat_input", "cell_heat_input", snapshot.heat_input);
     apply_extra("temp_season_offset", "cell_temp_season_offset",
                 snapshot.temp_season_offset);
+
+    const auto apply_extra_u8 = [&](const char *field_name, const char *slot_name,
+                                    const std::vector<uint8_t> &source) {
+        if (source.empty()) return;
+        if (static_cast<int>(source.size()) != cell_count) {
+            skipped.push_back(String(field_name));
+            return;
+        }
+        const int sid = component_id(StringName(slot_name));
+        if (sid < 0 || sid >= _slots.size()) {
+            skipped.push_back(String(field_name));
+            return;
+        }
+        Slot &s = _slots.write[sid];
+        if (s.dtype != SlotDType::U8) {
+            skipped.push_back(String(field_name) + String("(dtype)"));
+            return;
+        }
+        if (s.arr_u8.size() != cell_count && s.external_ref) {
+            skipped.push_back(String(field_name) + String("(extern_size)"));
+            return;
+        }
+        if (s.arr_u8.size() != cell_count) s.arr_u8.resize(cell_count);
+        std::memcpy(s.arr_u8.ptrw(), source.data(),
+                    static_cast<size_t>(cell_count) * sizeof(uint8_t));
+        touched_slots.push_back(String(slot_name));
+        ++applied_fields;
+    };
+    apply_extra_u8("weather_field_init", "cell_weather_field_init",
+                   snapshot.weather_field_init);
 
     const int64_t applied_day = snapshot.committed_day;
     const uint64_t applied_generation = snapshot.generation;

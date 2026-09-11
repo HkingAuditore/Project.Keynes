@@ -1,7 +1,9 @@
 #include "country_runtime.h"
+#include "country_core_apply.h"
 #include "effect_runtime.h"
 #include "modifier_runtime.h"
 #include "economy_runtime.h"
+#include "native_simulation_host.h"
 
 #include <algorithm>
 #include <array>
@@ -1963,6 +1965,71 @@ bool NativeCountryRuntime::submit_effect_commands_pod(
         request_ids.push_back(command.effect_request_id);
         staged.push_back(std::move(command));
     }
+    if (_simulation_host != nullptr && !_sync_store_writes_forbidden &&
+        _simulation_host->country_pod_configured()) {
+        const RuntimeWorkerState host_state = _simulation_host->state();
+        const bool host_live = host_state != RuntimeWorkerState::STOPPED &&
+            host_state != RuntimeWorkerState::FAULTED;
+        if (host_live) {
+            std::vector<RuntimeCommandPacket> packets;
+            packets.reserve(staged.size());
+            const auto copy_fixed = [](auto &destination,
+                                       const std::string &source) {
+                size_t i = 0;
+                for (; i + 1u < destination.size() && i < source.size(); ++i)
+                    destination[i] = source[i];
+                destination[i] = '\0';
+            };
+            for (const Command &command : staged) {
+                RuntimeCountryCommand mirrored;
+                mirrored.request_id =
+                    _simulation_host->allocate_command_request_id();
+                mirrored.producer_id = 0;
+                mirrored.sequence = command.sequence > 0
+                    ? static_cast<uint64_t>(command.sequence)
+                    : _simulation_host->allocate_producer_sequence(0);
+                mirrored.requested_day = command.effective_day;
+                mirrored.effective_day = command.effective_day;
+                mirrored.opcode = static_cast<uint16_t>(command.opcode);
+                mirrored.target_handle = command.target_handle;
+                mirrored.cell = command.cell;
+                mirrored.aux = command.aux;
+                mirrored.domain = command.domain;
+                mirrored.position = command.position;
+                for (size_t domain = 0; domain < mirrored.weights_bp.size();
+                     ++domain) {
+                    mirrored.weights_bp[domain] = command.weights_bp[domain];
+                }
+                mirrored.tax_kind = command.tax_kind;
+                mirrored.tax_item = command.tax_item;
+                mirrored.tax_rate_basis_points =
+                    command.tax_rate_basis_points;
+                mirrored.tax_assessment_mode =
+                    command.tax_assessment_mode;
+                mirrored.value = command.value;
+                copy_fixed(mirrored.stable_id, command.stable_id);
+                copy_fixed(mirrored.display_name, command.display_name);
+                RuntimeCommandPacket packet;
+                packet.envelope.request_id = mirrored.request_id;
+                packet.envelope.producer_id = mirrored.producer_id;
+                packet.envelope.sequence = mirrored.sequence;
+                packet.envelope.requested_day = mirrored.requested_day;
+                packet.envelope.effective_day = mirrored.effective_day;
+                packet.envelope.domain = static_cast<uint16_t>(
+                    RuntimeDomainId::COUNTRY);
+                packet.envelope.opcode = mirrored.opcode;
+                packet.envelope.payload_size = sizeof(RuntimeCountryCommand);
+                std::memcpy(packet.payload.data(), &mirrored,
+                            sizeof(RuntimeCountryCommand));
+                packets.push_back(packet);
+            }
+            if (!packets.empty() &&
+                !_simulation_host->enqueue_batch(std::move(packets))) {
+                error = "country_effect_shadow_mirror_capacity_exceeded";
+                return false;
+            }
+        }
+    }
     _pending_commands.insert(_pending_commands.end(),
         std::make_move_iterator(staged.begin()), std::make_move_iterator(staged.end()));
     return true;
@@ -2147,7 +2214,6 @@ bool NativeCountryRuntime::export_pod_snapshot(
         return false;
     }
     out.generation = _generation;
-    out.state_hash = static_cast<uint64_t>(state_hash());
     out.committed_day = _last_committed_day;
     out.last_research_day = _last_research_day;
     out.session_epoch = _session_epoch;
@@ -2338,6 +2404,7 @@ bool NativeCountryRuntime::export_pod_snapshot(
         out = RuntimeCountryPodSnapshot{};
         return false;
     }
+    out.state_hash = country_core_hash_business_state(out);
     return true;
 }
 
@@ -2371,6 +2438,10 @@ bool NativeCountryRuntime::export_pod_catalog(
     out.research_condition_ops = _technology_research_condition_ops;
     out.research_condition_refs = _technology_research_condition_refs;
     out.research_condition_values = _technology_research_condition_values;
+    out.reveal_condition_offsets = _technology_reveal_condition_offsets;
+    out.reveal_condition_ops = _technology_reveal_condition_ops;
+    out.reveal_condition_refs = _technology_reveal_condition_refs;
+    out.reveal_condition_values = _technology_reveal_condition_values;
     out.starting_technologies = _starting_technologies;
     out.research_conditions_complete =
         out.research_condition_offsets.size() ==
@@ -2749,7 +2820,13 @@ CountryCoreStepResult NativeCountryRuntime::run_slice_core(
             return command.opcode == COMMAND_DISCOVER_COUNTRY_SIGNAL;
         });
     if (observation_only) {
-        struct Observation { int32_t slot; uint64_t key; uint64_t handle; int32_t source; };
+        struct Observation {
+            int32_t slot;
+            uint64_t key;
+            uint64_t handle;
+            int32_t source;
+            int64_t effective_day;
+        };
         std::vector<Observation> incoming;
         incoming.reserve(batch.commands.size());
         for (const Command &command : batch.commands) {
@@ -2767,7 +2844,8 @@ CountryCoreStepResult NativeCountryRuntime::run_slice_core(
                 slot,
                 (uint64_t(uint32_t(command.aux)) << 32U) | uint32_t(command.cell),
                 command.target_handle,
-                int32_t(command.value)});
+                int32_t(command.value),
+                command.effective_day});
         }
         if (error.empty()) {
             std::sort(incoming.begin(), incoming.end(), [](const Observation &a,
@@ -2810,6 +2888,31 @@ CountryCoreStepResult NativeCountryRuntime::run_slice_core(
                                int32_t(added[added_end] >> 32U) == signal) ++added_end;
                         const int32_t delta = int32_t(added_end - added_begin);
                         const int32_t first_cell = int32_t(added[added_begin] & 0xffffffffU);
+                        int64_t first_effective_day =
+                            std::numeric_limits<int64_t>::max();
+                        int64_t last_effective_day = 0;
+                        for (size_t added_index = added_begin;
+                             added_index < added_end; ++added_index) {
+                            const auto observation = std::lower_bound(
+                                incoming.begin() + static_cast<ptrdiff_t>(begin),
+                                incoming.begin() + static_cast<ptrdiff_t>(end),
+                                added[added_index],
+                                [](const Observation &candidate, uint64_t key) {
+                                    return candidate.key < key;
+                                });
+                            if (observation ==
+                                incoming.begin() + static_cast<ptrdiff_t>(end))
+                                continue;
+                            first_effective_day = std::min(
+                                first_effective_day, observation->effective_day);
+                            last_effective_day = std::max(
+                                last_effective_day, observation->effective_day);
+                        }
+                        if (first_effective_day ==
+                            std::numeric_limits<int64_t>::max()) {
+                            first_effective_day = day;
+                            last_effective_day = day;
+                        }
                         if (_research_signal_words > 0)
                             batch.signals[size_t(slot) * _research_signal_words + signal / 64] |=
                                 uint64_t{1} << (signal % 64);
@@ -2821,12 +2924,13 @@ CountryCoreStepResult NativeCountryRuntime::run_slice_core(
                         if (evidence_it == evidence.end() || evidence_it->signal != signal) {
                             SignalEvidence entry;
                             entry.signal = signal;
-                            entry.first_day = day;
+                            entry.first_day = first_effective_day;
                             entry.first_cell = first_cell;
                             evidence_it = evidence.insert(evidence_it, entry);
                         }
                         evidence_it->count += delta;
-                        evidence_it->last_day = day;
+                        evidence_it->last_day = std::max(
+                            evidence_it->last_day, last_effective_day);
                         Event event;
                         event.day = day;
                         event.opcode = COMMAND_DISCOVER_COUNTRY_SIGNAL;
@@ -3179,13 +3283,13 @@ CountryCoreStepResult NativeCountryRuntime::run_slice_core(
                     SignalEvidence entry;
                     entry.signal = command.aux;
                     entry.count = 0;
-                    entry.first_day = day;
-                    entry.last_day = day;
+                    entry.first_day = command.effective_day;
+                    entry.last_day = command.effective_day;
                     entry.first_cell = command.cell;
                     evidence_it = evidence.insert(evidence_it, entry);
                 }
                 ++evidence_it->count;
-                evidence_it->last_day = day;
+                evidence_it->last_day = command.effective_day;
                 ++batch.countries.state_version[static_cast<size_t>(slot)];
                 mark_country(slot);
                 event_country_handle = command.target_handle;
@@ -5103,6 +5207,12 @@ bool NativeCountryRuntime::research_procurement_policy(int32_t country_slot, boo
 uint64_t NativeCountryRuntime::begin_economy_asset_transaction(
         EconomyAssetTransaction &transaction, uint64_t request_id,
         uint32_t origin_domain, int64_t origin_epoch, int32_t origin_stage) {
+    if (_sync_store_writes_forbidden) {
+        transaction.transaction_id = 0;
+        transaction.status = ECONOMY_ASSET_REJECTED;
+        transaction.rejection_reason = "country_worker_unique_writer";
+        return 0;
+    }
     transaction.transaction_id = _next_economy_asset_transaction_id++;
     if (transaction.transaction_id == 0)
         transaction.transaction_id = _next_economy_asset_transaction_id++;
@@ -5141,6 +5251,68 @@ void NativeCountryRuntime::finish_economy_asset_transaction(
     _economy_asset_transaction_history.push_back(transaction);
     while (_economy_asset_transaction_history.size() > 4096)
         _economy_asset_transaction_history.pop_front();
+    if (_simulation_host != nullptr && !_sync_store_writes_forbidden &&
+        _simulation_host->country_pod_configured()) {
+        RuntimeEconomyAssetRequest request;
+        RuntimeEconomyAssetResult result;
+        request.operation = static_cast<RuntimeEconomyAssetOperation>(
+            transaction.operation);
+        request.state = RuntimeEconomyAssetState::COUNTRY_PREPARED;
+        request.all_or_nothing = transaction.all_or_nothing ? 1 : 0;
+        request.session_epoch = transaction.session_epoch;
+        request.transaction_id = transaction.transaction_id;
+        request.request_id = transaction.request_id;
+        request.origin_domain = transaction.origin_domain;
+        request.origin_epoch = transaction.origin_epoch;
+        request.origin_stage = transaction.origin_stage;
+        request.operation_sequence = transaction.operation_sequence;
+        request.country_generation = transaction.country_generation_before;
+        request.peer_generation = transaction.peer_generation;
+        request.country_handle = transaction.country_handle;
+        request.country_slot = transaction.country_slot;
+        request.good_id = transaction.good_id;
+        request.good_count = static_cast<uint32_t>(std::min<size_t>(
+            transaction.good_ids.size(), RUNTIME_ECONOMY_ASSET_GOOD_CAPACITY));
+        for (uint32_t i = 0; i < request.good_count; ++i) {
+            request.good_ids[i] = transaction.good_ids[i];
+            request.good_quantities[i] = i < transaction.good_quantities.size()
+                ? transaction.good_quantities[i] : 0;
+        }
+        request.requested_quantity = transaction.requested_quantity;
+        request.prepared_quantity = transaction.prepared_quantity;
+        request.requested_cash = transaction.requested_cash;
+        request.reserved_cash = transaction.reserved_cash;
+        request.requested_goods_total = transaction.requested_goods_total;
+        request.reserved_goods_total = transaction.reserved_goods_total;
+        const bool ok = transaction.status == ECONOMY_ASSET_COMPLETED;
+        result.code = ok ? RuntimeEconomyAssetResultCode::COMPLETED
+                         : RuntimeEconomyAssetResultCode::REJECTED;
+        result.state = ok ? RuntimeEconomyAssetState::COMPLETED
+                          : RuntimeEconomyAssetState::REJECTED;
+        result.accepted = ok ? 1 : 0;
+        result.session_epoch = transaction.session_epoch;
+        result.transaction_id = transaction.transaction_id;
+        result.request_id = transaction.request_id;
+        result.operation = request.operation;
+        result.country_generation = transaction.country_generation_before;
+        result.peer_generation = transaction.peer_generation;
+        result.committed_peer_generation = transaction.peer_generation;
+        result.country_slot = transaction.country_slot;
+        result.committed_quantity = transaction.committed_quantity;
+        result.committed_cash = transaction.committed_cash;
+        result.committed_goods_total = transaction.committed_goods_total;
+        const char *reason_src = transaction.rejection_reason.c_str();
+        size_t reason_i = 0;
+        if (reason_src != nullptr) {
+            for (; reason_i + 1u < result.reason.size() && reason_src[reason_i] != '\0';
+                 ++reason_i)
+                result.reason[reason_i] = reason_src[reason_i];
+        }
+        result.reason[reason_i] = '\0';
+        std::string mirror_error;
+        _simulation_host->mirror_sync_country_economy_asset(
+            request, result, mirror_error);
+    }
 }
 
 bool NativeCountryRuntime::find_economy_asset_transaction(
@@ -5258,6 +5430,12 @@ Dictionary NativeCountryRuntime::begin_economy_treasury_spend(
     begin_economy_asset_transaction(transaction, request_id,
         static_cast<uint32_t>(RuntimeDomainId::ECONOMY), origin_epoch,
         origin_stage);
+    if (transaction.transaction_id == 0) {
+        godot::Dictionary out;
+        out["ok"] = false;
+        out["code"] = "country_worker_unique_writer";
+        return out;
+    }
 
     int32_t slot = -1;
     auto reject = [&](const char *reason) {
@@ -5404,6 +5582,12 @@ Dictionary NativeCountryRuntime::begin_economy_fiscal_reserve(
     begin_economy_asset_transaction(transaction, request_id,
         static_cast<uint32_t>(RuntimeDomainId::ECONOMY), origin_epoch,
         origin_stage);
+    if (transaction.transaction_id == 0) {
+        godot::Dictionary out;
+        out["ok"] = false;
+        out["code"] = "country_worker_unique_writer";
+        return out;
+    }
     int32_t slot = -1;
     auto reject = [&](const char *reason) {
         finish_economy_asset_transaction(transaction, false, reason);
@@ -5453,6 +5637,12 @@ Dictionary NativeCountryRuntime::begin_economy_fiscal_cash_credit(
     begin_economy_asset_transaction(transaction, request_id,
         static_cast<uint32_t>(RuntimeDomainId::ECONOMY), origin_epoch,
         origin_stage);
+    if (transaction.transaction_id == 0) {
+        godot::Dictionary out;
+        out["ok"] = false;
+        out["code"] = "country_worker_unique_writer";
+        return out;
+    }
     int32_t slot = -1;
     auto reject = [&](const char *reason) {
         finish_economy_asset_transaction(transaction, false, reason);
@@ -5514,6 +5704,12 @@ Dictionary NativeCountryRuntime::begin_economy_cash_to_cohort(
     begin_economy_asset_transaction(transaction, request_id,
         static_cast<uint32_t>(RuntimeDomainId::ECONOMY), origin_epoch,
         origin_stage);
+    if (transaction.transaction_id == 0) {
+        godot::Dictionary out;
+        out["ok"] = false;
+        out["code"] = "country_worker_unique_writer";
+        return out;
+    }
     int32_t slot = -1;
     auto reject = [&](const char *reason) {
         finish_economy_asset_transaction(transaction, false, reason);
@@ -5570,6 +5766,12 @@ Dictionary NativeCountryRuntime::begin_economy_good_to_market(
     begin_economy_asset_transaction(transaction, request_id,
         static_cast<uint32_t>(RuntimeDomainId::ECONOMY), origin_epoch,
         origin_stage);
+    if (transaction.transaction_id == 0) {
+        godot::Dictionary out;
+        out["ok"] = false;
+        out["code"] = "country_worker_unique_writer";
+        return out;
+    }
     int32_t slot = -1;
     auto reject = [&](const char *reason) {
         finish_economy_asset_transaction(transaction, false, reason);
@@ -5625,6 +5827,12 @@ Dictionary NativeCountryRuntime::begin_economy_good_from_market(
     begin_economy_asset_transaction(transaction, request_id,
         static_cast<uint32_t>(RuntimeDomainId::ECONOMY), origin_epoch,
         origin_stage);
+    if (transaction.transaction_id == 0) {
+        godot::Dictionary out;
+        out["ok"] = false;
+        out["code"] = "country_worker_unique_writer";
+        return out;
+    }
     int32_t slot = -1;
     auto reject = [&](const char *reason) {
         finish_economy_asset_transaction(transaction, false, reason);
@@ -5679,6 +5887,12 @@ Dictionary NativeCountryRuntime::begin_economy_research_purchase(
     begin_economy_asset_transaction(transaction, request_id,
         static_cast<uint32_t>(RuntimeDomainId::ECONOMY), origin_epoch,
         origin_stage);
+    if (transaction.transaction_id == 0) {
+        godot::Dictionary out;
+        out["ok"] = false;
+        out["code"] = "country_worker_unique_writer";
+        return out;
+    }
 
     auto reject = [&](const char *reason) {
         finish_economy_asset_transaction(transaction, false, reason);
@@ -7482,6 +7696,12 @@ bool NativeCountryRuntime::service_peer_intents_main_thread(
                 ? "country_peer_adapter_result_submit_failed"
                 : submit_error;
             return false;
+        }
+        if (_simulation_host != nullptr && !_sync_store_writes_forbidden &&
+            _simulation_host->country_pod_configured() &&
+            result.code != CountryPeerResultCode::PENDING) {
+            std::string mirror_error;
+            _simulation_host->mirror_country_peer_result(result, mirror_error);
         }
     }
     return true;
@@ -9667,6 +9887,10 @@ bool NativeCountryRuntime::decode_save_in_place(
 
 Dictionary NativeCountryRuntime::begin_save(int32_t chunk_bytes) {
     if (_save_active) return fail("country_save_already_active");
+    if (_simulation_host != nullptr &&
+        _simulation_host->country_authority_handoff_prepare_pending()) {
+        return fail("country_authority_handoff_pending");
+    }
     if (!_economy_asset_transactions_in_flight.empty()) {
         Dictionary out = fail("country_save_economy_asset_transaction_pending");
         out["in_flight"] = static_cast<int64_t>(

@@ -43,7 +43,7 @@ func _run() -> void:
 		report_complete = report_complete and report.has(field)
 	_expect("Events report fields are complete", report_complete)
 	_expect("Events remains outside ACTIVE authority mask",
-		int(report.get("implemented_domain_mask", 0)) == 0x802)
+		int(report.get("implemented_domain_mask", 0)) == 0x806)
 
 	var empty_snapshot: Dictionary = ext.poll_runtime_events_snapshot(0)
 	_expect("snapshot API is non-blocking before a generation",

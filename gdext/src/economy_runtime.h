@@ -18,11 +18,14 @@
 #include <godot_cpp/variant/string.hpp>
 #include <godot_cpp/variant/string_name.hpp>
 
+#include "runtime_pod_protocol.h"
+
 namespace pk {
 
 class EffectRuntime;
 
 class NativeCountryRuntime;
+class NativeSimulationHost;
 class EconomyCsvRecorder;
 class ModifierRuntime;
 class TriggerRuntime;
@@ -57,8 +60,10 @@ public:
     // 45: previous-period food-flow carrying-capacity snapshot.
     // 51: EXPEDITION_PREPARING parties escrow the cargo they have already
     // drawn from the source market, so payload/kit stay empty but cargo may
-    // not. Older economy saves are rejected by the same-version reader.
-    static constexpr int32_t SCHEMA_VERSION = 51;
+    // not. 52: fiscal records persist the Economy-owned per-Country escrow
+    // used by the D7 fiscal peer. Older economy saves are rejected by the
+    // same-version reader.
+    static constexpr int32_t SCHEMA_VERSION = 52;
     static constexpr uint32_t BUILDING_KIT_ROLE_TRADE = 1u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CONSTRUCTION = 2u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CLOTHING_INPUT = 4u;
@@ -279,6 +284,7 @@ public:
     NativeEconomyRuntime();
     ~NativeEconomyRuntime();
     void attach_country_runtime(NativeCountryRuntime *runtime) { _country_runtime = runtime; }
+    void attach_simulation_host(NativeSimulationHost *host) { _simulation_host = host; }
     void attach_modifier_runtime(ModifierRuntime *runtime) { _modifier_runtime = runtime; }
     void attach_effect_runtime(EffectRuntime *runtime) { _effect_runtime = runtime; }
     void attach_trigger_runtime(TriggerRuntime *runtime) { _trigger_runtime = runtime; }
@@ -655,6 +661,14 @@ public:
 
 private:
     friend class EconomyCsvRecorder;
+    // The Country worker gate must not be represented by a bool: callers need
+    // to distinguish an operation that is not routed through the worker from
+    // one that is pending or has been rejected by the gate.
+    enum class CountryWorkerAssetRoute : uint8_t {
+        NOT_APPLICABLE = 0,
+        ENQUEUED_PENDING = 1,
+        TERMINAL_ERROR = 2,
+    };
     enum StructuralOpcode : int32_t {
         STRUCTURAL_BIRTH = -1,
         STRUCTURAL_REMOVE_EMPTY = 0,
@@ -726,11 +740,38 @@ private:
         int32_t phase = 0;
         int32_t country_cursor = 0;
         int32_t country_count = 0;
+        int64_t day_index = -1;
         int64_t last_unused = 0;
         int64_t last_collected = 0;
+        // A host transport retry must reuse one wire identity until the
+        // terminal result is observed. This is intentionally separate from
+        // the Country transaction id, which is owned by the Host request.
+        uint64_t pending_request_id = 0;
         std::vector<int64_t> unused_by_country;
         std::vector<int64_t> collected_by_country;
         std::string last_error;
+    };
+
+    struct FiscalPeerJournalRecord {
+        uint64_t request_id = 0;
+        uint64_t transaction_id = 0;
+        uint64_t country_handle = 0;
+        uint64_t country_generation = 0;
+        uint64_t peer_generation = 0;
+        uint64_t committed_peer_generation = 0;
+        int64_t day = -1;
+        uint64_t operation_sequence = 0;
+        uint32_t continuation_index = 0;
+        int32_t country_slot = -1;
+        RuntimeEconomyAssetOperation operation = RuntimeEconomyAssetOperation::FISCAL_RESERVE;
+        RuntimeEconomyAssetResultCode result_code = RuntimeEconomyAssetResultCode::REJECTED;
+        RuntimeEconomyAssetState state = RuntimeEconomyAssetState::REJECTED;
+        uint8_t accepted = 0;
+        int64_t requested_quantity = 0;
+        int64_t requested_cash = 0;
+        int64_t committed_quantity = 0;
+        int64_t committed_cash = 0;
+        std::array<char, RUNTIME_ECONOMY_ASSET_REASON_CAPACITY> reason{};
     };
 
     // Epoch-open fiscal reservation is a peer transaction boundary as well.
@@ -746,6 +787,7 @@ private:
         int64_t day_index = -1;
         int64_t last_requested = 0;
         int64_t last_reserved = 0;
+        uint64_t pending_request_id = 0;
         std::vector<int64_t> requested_by_country;
         std::string last_error;
     };
@@ -2999,6 +3041,8 @@ private:
         int32_t trade_order_cursor = 0;
         int32_t trade_flow_cursor = 0;
         int32_t fiscal_cursor = 0;
+        int32_t fiscal_country_count = 0;
+        int32_t fiscal_peer_cursor = 0;
         int32_t settlement_cursor = 0;
         int32_t family_cursor = 0;
         int32_t family_membership_cursor = 0;
@@ -3064,7 +3108,10 @@ private:
         int32_t restored_canal_projects = 0;
         int32_t expected_persons = 0;
         int32_t expected_person_needs = 0;
+        int32_t expected_fiscal = -1;
         int32_t restored_fiscal = 0;
+        int32_t expected_fiscal_peer = -1;
+        int32_t restored_fiscal_peer = 0;
         int32_t last_signal_cell = -1;
         int32_t last_signal_good = -1;
         int32_t last_labor_cell = -1;
@@ -3072,6 +3119,7 @@ private:
         std::vector<uint8_t> modifier_bytes;
         bool modifier_seen = false;
         bool fiscal_seen = false;
+        bool fiscal_peer_seen = false;
         bool settlement_names_seen = false;
         int32_t restored_families = 0;
         int32_t restored_family_memberships = 0;
@@ -4583,6 +4631,7 @@ private:
     std::vector<int32_t> _development_metric_duration_days;
     int32_t _technology_words = 0;
     NativeCountryRuntime *_country_runtime = nullptr;
+    NativeSimulationHost *_simulation_host = nullptr;
     ModifierRuntime *_modifier_runtime = nullptr;
     EffectRuntime *_effect_runtime = nullptr;
     TriggerRuntime *_trigger_runtime = nullptr;
@@ -4690,6 +4739,8 @@ private:
     std::vector<int64_t> _fiscal_epoch_collected;
     std::vector<int64_t> _fiscal_epoch_paid;
     std::vector<int64_t> _fiscal_escrow_by_country;
+    std::unordered_map<uint64_t, FiscalPeerJournalRecord>
+        _fiscal_peer_journal;
     std::vector<int64_t> _fiscal_last_bases;
     std::vector<int64_t> _fiscal_last_assessed;
     std::vector<int64_t> _fiscal_last_collected;
@@ -5682,9 +5733,35 @@ private:
     bool advance_country_research_procurement(
         CountryResearchProcurementContinuation &continuation,
         std::string &error);
+    CountryWorkerAssetRoute block_or_enqueue_country_worker_asset(
+        uint16_t operation, int64_t country_handle, int64_t cash,
+        int64_t quantity, int32_t good_id, std::string &error,
+        uint64_t *request_id = nullptr);
+    CountryWorkerAssetRoute block_or_enqueue_country_worker_asset(
+        uint16_t operation, int64_t country_handle, int64_t cash,
+        int64_t quantity, const std::vector<int32_t> &good_ids,
+        const std::vector<int64_t> &good_quantities, std::string &error,
+        uint64_t *request_id = nullptr);
     bool coordinate_country_fiscal_transaction(
         int32_t country, int32_t operation, int64_t amount,
-        int64_t &committed, std::string &error);
+        int64_t &committed, std::string &error,
+        uint64_t *transport_request_id = nullptr);
+    // M1 peer service. Economy stays main-thread owned; it consumes only
+    // Country-authorized fiscal requests and never writes the Country store.
+    bool service_country_economy_asset_peer(uint32_t max_requests,
+                                            std::string &error);
+    bool fiscal_peer_journal_matches(
+        const RuntimeEconomyAssetRequest &request,
+        const FiscalPeerJournalRecord &record, std::string &error) const;
+    RuntimeEconomyAssetResult fiscal_peer_result_from_journal(
+        const RuntimeEconomyAssetRequest &request,
+        const FiscalPeerJournalRecord &record) const;
+    void record_fiscal_peer_terminal(
+        const RuntimeEconomyAssetRequest &request,
+        RuntimeEconomyAssetResultCode code,
+        RuntimeEconomyAssetState state,
+        int64_t committed_quantity, int64_t committed_cash,
+        const char *reason);
     // Economy-owned peer coordinator for Country/cohort cash transfers. The
     // cohort is prepared before Country commit, then mutated exactly once and
     // acknowledged with the same transaction identity.
