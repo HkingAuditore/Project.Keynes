@@ -1111,6 +1111,15 @@ bool RuntimeEffectPodAuthority::plan_day(int64_t day, uint64_t input_generation,
                     intent.producer_id = static_cast<uint32_t>(RuntimeDomainId::EFFECT);
                     intent.sequence = transaction.fire_sequence * 16u + ordinal;
                     intent.idempotency_key = command.idempotency_key;
+                    intent.duration_days = command.duration_days;
+                    intent.stacks = command.stacks;
+                    intent.magnitude_q16 = command.value != 0
+                        ? static_cast<int32_t>(command.value) : 65536;
+                    if (command.action == RuntimeEffectPodAction::MODIFIER_COMMAND &&
+                        intent.payload[1] == 0 && command.domain >= 0 &&
+                        command.domain < 4) {
+                        intent.payload[1] = command.domain;
+                    }
                     plan.intents.push_back(intent);
                     plan_hash = command_hash(plan_hash, command);
                 }
@@ -1176,6 +1185,15 @@ bool RuntimeEffectPodAuthority::plan_day(int64_t day, uint64_t input_generation,
             intent.producer_id = static_cast<uint32_t>(RuntimeDomainId::EFFECT);
             intent.sequence = transaction.fire_sequence * 16u + ordinal;
             intent.idempotency_key = command.idempotency_key;
+            intent.duration_days = command.duration_days;
+            intent.stacks = command.stacks;
+            intent.magnitude_q16 = command.value != 0
+                ? static_cast<int32_t>(command.value) : 65536;
+            if (command.action == RuntimeEffectPodAction::MODIFIER_COMMAND &&
+                intent.payload[1] == 0 && command.domain >= 0 &&
+                command.domain < 4) {
+                intent.payload[1] = command.domain;
+            }
             plan.intents.push_back(intent);
             plan_hash = command_hash(plan_hash, command);
         }

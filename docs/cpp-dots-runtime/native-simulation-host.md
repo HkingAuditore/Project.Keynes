@@ -9,14 +9,19 @@
 `world_ext_simulation_host.cpp` 做参数校验、PackedArray 深拷贝和轻量轮询；worker 不保存
 `Object`、`Variant`、`Dictionary`、`MapData` 或场景树引用。
 
-当前 `implemented_domain_mask()` 为 `CLIMATE | COMMIT = 0x802`。Modifier 虽已接入 SHADOW POD pipeline，仍不在 ACTIVE authority mask。因此：
+当前 `implemented_domain_mask()` 为 `CLIMATE | COUNTRY | COMMIT = 0x806`。Modifier、Economy 等仍不在 ACTIVE authority mask。因此：
 
 - `SHADOW` 可以启动，用于时钟、命令排序、环境快照、提交环和故障路径测试；
 - `ACTIVE` 在缺少任一 native POD domain handler 时直接返回
   `runtime_native_domains_incomplete`，不会以“假 ACTIVE”运行；
-- 生产权威仍由 OFF/同步 SUS 路径提供，直到 Country、Economy、Effect、Modifier、Ideology、
- Climate 保持现有按域 ACTIVE 资格；Modifier 的生产权威仍由 legacy OFF/同步 SUS 路径提供，
- 直到 E8 明确放行。Country、Economy、Effect、Ideology、Trigger 和 Events 仍需各自完成同一日 barrier。
+- 生产 Country 在 `runtime_climate_authority_enabled` 下由 Host worker 负责，主线程消费 immutable
+  read-view；关闭开关、启动失败或未取得 Country grant 时回退同步 `NativeCountryRuntime`；
+- D7 Country–Economy 事务仍有同步 Economy-owned coordinator 作为生产回退；Host 已有内存
+  request/result transport 与独立 `D7T1` transaction journal，Economy-owned fiscal peer
+  journal 也已在 PKEC v52 持久化。当前只有 fiscal reserve/return/collect 进入 M1 bridge
+  gate；cohort、market、research、treasury 的跨帧 continuation 和逐 operation gated
+  rollout 尚未完成，Economy 未加入 ACTIVE mask。
+  Economy、Effect、Modifier、Ideology、Trigger 和 Events 仍需各自完成独立 authority/barrier。
 
 ## POD domain pipeline（当前 SHADOW）
 
@@ -51,7 +56,7 @@ intents; the host exposes those intents and accepts only real Effect ACKs. A
 missing, stale, rejected, or not-yet-returned ACK leaves the transition pending
 and never becomes final ACTIVE ideology state. The synchronous ideology runtime
 remains the production reference, and this stage does not alter
-`implemented_domain_mask() == 0x802`.
+`implemented_domain_mask() == 0x806`.
 
 Climate 边界现在还保留一份独立的 `RuntimeClimatePodSnapshot`：温度、湿度、雪盖、
 30 日 EMA、水分平衡、降水、天气强度、植被活力、anomaly 和 RNG 均为深拷贝 POD。
@@ -139,8 +144,41 @@ publishes `country_pod_*` diagnostics. The probe intentionally reports
 `cross_domain_ack_adapter_missing` and does not claim Country authority. ACTIVE
 remains rejected until all domain handlers and ACK barriers are native POD.
 
+## D7 transaction journal boundary
+
+The Host owns the transport-level `D7T1` section for Country/Economy asset traffic.
+It serializes typed request/result identities, queue membership, dispatch and
+commit idempotency markers, terminal results, protocol counters, and the restored
+worker session rebinding. A dispatched request without a terminal result is
+requeued after restore in deterministic `(day, operation_sequence,
+continuation_index, request_id)` order; its old-session result is rejected and
+the same transaction/request identity continues under the new session. This is
+a coordination journal, not the Economy store. The M1 fiscal peer side has its
+own Economy-owned journal in PKEC v52, containing terminal request
+identity/result data and escrow state; its state hash participates in restore.
+Restore validates both sides independently before rebinding pending requests;
+it does not silently drop an unresolved transaction. Economy remains outside
+the ACTIVE mask until all asset operations have peer reservation/apply
+persistence, cross-frame continuation, generation reconciliation, and
+long-run conservation evidence.
+
 ## Modifier POD shadow stage
 
 阶段 E2-E7 的 Modifier stage 位于 EFFECT -> MODIFIER -> ... -> COMMIT，执行完整 POD plan/replay、expiry、五个 opcode、ACK 校验和 snapshot publish。Modifier commit 前必须先成功预留 snapshot slot；ACK 缺失、容量溢出、身份不匹配或 snapshot shape/catalog hash 错误都会 discard plan，不 swap current、不发布 snapshot、不推进 generation，并写入 modifier_pod_fallback_reason。
 
-Modifier 不改变 implemented_domain_mask == 0x802。legacy ModifierRuntime 仍负责生产 daily，Host 只运行 SHADOW 对照；capture 后 ingress 自动延迟至下一安全日边界，main_wait_on_sim_us 保持为零。
+Modifier 不改变 implemented_domain_mask == 0x806。legacy ModifierRuntime 仍负责生产 daily，Host 只运行 SHADOW 对照；capture 后 ingress 自动延迟至下一安全日边界，main_wait_on_sim_us 保持为零。
+
+## Effect POD shadow stage (F7)
+
+F7 在 Ideology 之后、Modifier 之前接入真实 `RuntimeEffectPodAuthority` 日 stage：
+
+1. 主线程 best-effort 镜像 declarative instance/metric/remove 到 Host transport 队列。
+2. Worker drain 队列 → `apply_acks` → `plan_day` → 发布 outbound intents → `commit_day`。
+3. 当 Effect POD catalog 非空且 stage 成功时，Modifier 只消费 Effect POD 的 MODIFIER
+   intents，并忽略 diagnostic `RuntimeDomainAuthorityRunner::run_effect` fixture intents；
+   Modifier ACK 回灌 `_effect_pod_authority.apply_acks`。
+4. 空冷启动 catalog 不启用该 stage，Modifier E7 继续使用 fixture 上游。
+5. `implemented_domain_mask` 仍为 `CLIMATE|COUNTRY|COMMIT = 0x806`；legacy
+   `EffectRuntime` 仍是生产权威。F8 前不抑制主线程 Effect、不授予 ACTIVE。
+
+Report 暴露 `effect_pod_ready/plan_ms/replay_ms/state_hash/snapshot_generation/ack_count/intent_count/fallback_reason`。

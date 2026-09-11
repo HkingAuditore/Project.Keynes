@@ -81,6 +81,9 @@ public:
     // committed state and pending command queue remain untouched, allowing a
     // deterministic retry or an explicit fault transition.
     void discard_plan() noexcept { _plan_active = false; }
+    bool apply_economy_asset_result(const RuntimeEconomyAssetRequest &request,
+                                    const RuntimeEconomyAssetResult &result,
+                                    std::string &error);
     bool snapshot(RuntimeCountryPodSnapshot &out, std::string &error) const;
     bool encode_save(RuntimeCountryPodSaveSection &out, std::string &error) const;
     bool restore_save(const RuntimeCountryPodSaveSection &section,

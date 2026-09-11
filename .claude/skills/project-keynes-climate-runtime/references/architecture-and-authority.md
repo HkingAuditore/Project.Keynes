@@ -93,9 +93,9 @@ WorldClock.day_changed
 只有 native 同时拥有 state、slot、tick/cursor、graph report 和发布契约时，才称 DOTS-authoritative。`published_to_slot=true` 只证明具体 pass 的 slot publish，不证明 front/LUT/GPU 可见。
 
 Climate ACTIVE 下还要多问一层：**这个场有回灌写者吗？**worker 算出来但没有 store 成员或
-没进 `apply_runtime_climate_writeback` 的场，MapData 会停在世界生成值而不报错——`soil_moisture`
-和 pass_a 的五条输出（`insolation_now/dev`、`day_length`、`heat_input`、`temp_season_offset`）
-都栽在这上面，表现是"字段冻结"而不是数值分叉。反向也要问：**主线程还有第二个写者吗？**
+没进 `apply_runtime_climate_writeback` 的场，MapData 会停在世界生成值而不报错——`soil_moisture`、
+pass_a 的五条输出（`insolation_now/dev`、`day_length`、`heat_input`、`temp_season_offset`）
+和 `weather_field_init` 都栽在这上面，表现是"字段冻结"而不是数值分叉。反向也要问：**主线程还有第二个写者吗？**
 抑制门漏掉的写者会和回灌打架，表现为单 tick 跳变。
 
 ## 生产调度
@@ -219,8 +219,10 @@ CoW 规则：
 worker→主线程（`apply_runtime_climate_writeback`，次日一次）：
 
 - store 内字段走 `RuntimeClimateStore`。
-- store 外字段（`soil_moisture`、pass_a 五条输出）走 `RuntimeClimateSnapshot` 的独立
-  `std::vector<float>` 成员 + `apply_extra`，**刻意不进 store**，因为进 store 会动 PKEC 存档格式。
+- store 外字段走 `RuntimeClimateSnapshot` extras，**刻意不进 store**，因为进 store 会动
+  PKEC 存档格式：`soil_moisture` 与 pass_a 五条输出用 `apply_extra`（F32）；
+  `weather_field_init` 用 `apply_extra_u8`（U8）。C2 曾测到 ACTIVE 整场 `field_init=0`、
+  OFF 整场 `1`，客户端因此把已回灌的 `weather_type` 当成从未初始化。
 
 三条跨边界的坑（都真出过事）：
 

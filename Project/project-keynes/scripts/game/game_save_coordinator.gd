@@ -386,12 +386,12 @@ func _register_providers() -> void:
 			"_restore_simulation_runtime_provider"),
 		_make_provider(&"pkcn", 11, PackedStringArray(["pkcn"]),
 			"_can_country_provider", "_write_country_provider", "_restore_country_provider"),
-		# Effect restores before Economy so PKEC v47 can cross-check every
+		# Effect restores before Economy so PKEC v52 can cross-check every
 		# SETTLING expedition transaction against authoritative PKEF state.
 		_make_provider(&"pkef", 11, PackedStringArray(["pkef"]),
 			"_can_effect_provider", "_write_effect_provider",
 			"_restore_effect_provider"),
-		_make_provider(&"pkec", 47, PackedStringArray(["pkec"]),
+		_make_provider(&"pkec", 52, PackedStringArray(["pkec"]),
 			"_can_economy_provider", "_write_economy_provider", "_restore_economy_provider"),
 		_make_provider(&"pkgp", 3, PackedStringArray(["pkgp"]),
 			"_can_modifier_provider", "_write_gameplay_modifier_provider",
@@ -466,9 +466,9 @@ func _manifest_compatible(raw_manifest) -> bool:
 			# until after partial session restore.
 			schema_compatible = saved_schema == 11
 		elif provider_id == "pkec":
-			# Native writer is v47; v41-v46 remain explicitly readable through
-			# their versioned payload layouts.
-			schema_compatible = saved_schema in [41, 42, 43, 44, 45, 46, 47]
+			# Native PKEC is exact-version only. The manifest must reject an
+			# incompatible payload before any provider mutates live state.
+			schema_compatible = saved_schema == 52
 		elif provider_id == "pktr":
 			schema_compatible = saved_schema == 6
 		elif provider_id == "journal":

@@ -1,0 +1,6199 @@
+{
+  "schema": "AuthorityStageCTileComparison",
+  "schema_version": 1,
+  "status": "release_blocker",
+  "left": "D:\\Godot\\ProjectKeynes\\Project.Keynes\\artifacts\\runtime\\authority-stage-c\\stage-c2-country-20260910\\active\\tile_data.csv",
+  "right": "D:\\Godot\\ProjectKeynes\\Project.Keynes\\artifacts\\runtime\\authority-stage-c\\stage-c2-country-20260910\\off\\tile_data.csv",
+  "policy": "D:\\Godot\\ProjectKeynes\\Project.Keynes\\tools\\runtime\\authority-stage-c-field-policy.json",
+  "authority_modes": [
+    "ACTIVE",
+    "OFF"
+  ],
+  "rows": {
+    "left": 871200,
+    "right": 787200,
+    "aligned": 763200
+  },
+  "missing": {
+    "only_left": {
+      "count": 108000,
+      "examples": [
+        {
+          "tick_idx": 430,
+          "cell_index": 0
+        },
+        {
+          "tick_idx": 430,
+          "cell_index": 1
+        },
+        {
+          "tick_idx": 430,
+          "cell_index": 2
+        },
+        {
+          "tick_idx": 430,
+          "cell_index": 3
+        },
+        {
+          "tick_idx": 430,
+          "cell_index": 4
+        },
+        {
+          "tick_idx": 430,
+          "cell_index": 5
+        },
+        {
+          "tick_idx": 430,
+          "cell_index": 6
+        },
+        {
+          "tick_idx": 430,
+          "cell_index": 7
+        },
+        {
+          "tick_idx": 430,
+          "cell_index": 8
+        },
+        {
+          "tick_idx": 430,
+          "cell_index": 9
+        },
+        {
+          "tick_idx": 430,
+          "cell_index": 10
+        },
+        {
+          "tick_idx": 430,
+          "cell_index": 11
+        },
+        {
+          "tick_idx": 430,
+          "cell_index": 12
+        },
+        {
+          "tick_idx": 430,
+          "cell_index": 13
+        },
+        {
+          "tick_idx": 430,
+          "cell_index": 14
+        },
+        {
+          "tick_idx": 430,
+          "cell_index": 15
+        },
+        {
+          "tick_idx": 430,
+          "cell_index": 16
+        },
+        {
+          "tick_idx": 430,
+          "cell_index": 17
+        },
+        {
+          "tick_idx": 430,
+          "cell_index": 18
+        },
+        {
+          "tick_idx": 430,
+          "cell_index": 19
+        }
+      ]
+    },
+    "only_right": {
+      "count": 24000,
+      "examples": [
+        {
+          "tick_idx": 102,
+          "cell_index": 0
+        },
+        {
+          "tick_idx": 102,
+          "cell_index": 1
+        },
+        {
+          "tick_idx": 102,
+          "cell_index": 2
+        },
+        {
+          "tick_idx": 102,
+          "cell_index": 3
+        },
+        {
+          "tick_idx": 102,
+          "cell_index": 4
+        },
+        {
+          "tick_idx": 102,
+          "cell_index": 5
+        },
+        {
+          "tick_idx": 102,
+          "cell_index": 6
+        },
+        {
+          "tick_idx": 102,
+          "cell_index": 7
+        },
+        {
+          "tick_idx": 102,
+          "cell_index": 8
+        },
+        {
+          "tick_idx": 102,
+          "cell_index": 9
+        },
+        {
+          "tick_idx": 102,
+          "cell_index": 10
+        },
+        {
+          "tick_idx": 102,
+          "cell_index": 11
+        },
+        {
+          "tick_idx": 102,
+          "cell_index": 12
+        },
+        {
+          "tick_idx": 102,
+          "cell_index": 13
+        },
+        {
+          "tick_idx": 102,
+          "cell_index": 14
+        },
+        {
+          "tick_idx": 102,
+          "cell_index": 15
+        },
+        {
+          "tick_idx": 102,
+          "cell_index": 16
+        },
+        {
+          "tick_idx": 102,
+          "cell_index": 17
+        },
+        {
+          "tick_idx": 102,
+          "cell_index": 18
+        },
+        {
+          "tick_idx": 102,
+          "cell_index": 19
+        }
+      ]
+    }
+  },
+  "numeric_issues": {
+    "left": {
+      "temp_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_arr_prev": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "moisture_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "moisture_arr_prev": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "snow_cover_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "snow_cover_arr_prev": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_baseline_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_30d_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_365d_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_anomaly_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "sea_ice_frac_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "sea_ice_frac_arr_prev": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_intensity_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_cloud_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_cloud_water_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_precip_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_transition_alpha_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_classification_temp_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_classification_moisture_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_vapor_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_convergence_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_instability_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_field_init_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "air_mass_temp_anomaly_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "ocean_thermal_anomaly_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "local_thermal_anomaly_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "has_river_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "river_flow_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "river_downstream_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "hydro_parent_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "river_discharge_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "river_discharge_30d_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "river_storage_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "groundwater_storage_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "surface_runoff_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "ema_initialized_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_season_offset_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "insolation_now_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "insolation_dev_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "day_length_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "heat_input_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "thermal_energy_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "snowpack_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "water_balance_30d_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_vitality_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vitality_low_streak_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vitality_high_streak_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "soil_moisture_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_growth_pressure_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temperature_transport_anomaly_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_heat_stress_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_drought_stress_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_cold_stress_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_regen_score_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "elevation_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "base_moisture_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "ocean_current_x_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "ocean_current_y_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "wind_x_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "wind_y_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "slp_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "wind_speed_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "upwelling_strength_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "wind_stress_curl_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "ocean_psi_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "cell_pos_x_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "cell_pos_y_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "cell_lat_norm_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_baseline_year_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "terrain_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "landform_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "has_volcano_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "is_lake_seed_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "base_terrain_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "base_landform_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "base_vegetation_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "cover_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_type_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_prev_type_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_target_type_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "is_water_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "country_slot_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "climate_dirty_mask": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_dirty_mask": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      }
+    },
+    "right": {
+      "temp_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_arr_prev": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "moisture_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "moisture_arr_prev": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "snow_cover_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "snow_cover_arr_prev": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_baseline_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_30d_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_365d_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_anomaly_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "sea_ice_frac_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "sea_ice_frac_arr_prev": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_intensity_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_cloud_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_cloud_water_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_precip_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_transition_alpha_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_classification_temp_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_classification_moisture_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_vapor_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_convergence_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_instability_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_field_init_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "air_mass_temp_anomaly_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "ocean_thermal_anomaly_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "local_thermal_anomaly_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "has_river_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "river_flow_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "river_downstream_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "hydro_parent_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "river_discharge_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "river_discharge_30d_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "river_storage_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "groundwater_storage_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "surface_runoff_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "ema_initialized_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_season_offset_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "insolation_now_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "insolation_dev_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "day_length_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "heat_input_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "thermal_energy_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "snowpack_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "water_balance_30d_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_vitality_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vitality_low_streak_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vitality_high_streak_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "soil_moisture_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_growth_pressure_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temperature_transport_anomaly_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_heat_stress_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_drought_stress_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_cold_stress_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_regen_score_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "elevation_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "base_moisture_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "ocean_current_x_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "ocean_current_y_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "wind_x_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "wind_y_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "slp_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "wind_speed_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "upwelling_strength_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "wind_stress_curl_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "ocean_psi_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "cell_pos_x_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "cell_pos_y_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "cell_lat_norm_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_baseline_year_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "terrain_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "landform_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "has_volcano_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "is_lake_seed_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "base_terrain_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "base_landform_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "base_vegetation_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "cover_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_type_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_prev_type_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_target_type_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "is_water_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "country_slot_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "climate_dirty_mask": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_dirty_mask": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      }
+    }
+  },
+  "field_results": [
+    {
+      "field": "temp_arr",
+      "samples": 763200,
+      "different_samples": 648109,
+      "max_abs_diff": 0.26277800000000007,
+      "mean_abs_diff": 0.024435542450212348,
+      "p95_abs_diff": 0.11454900000000001,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 120,
+        "left": 0.0,
+        "right": 0.008933,
+        "abs_diff": 0.008933
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 1,
+        "samples": 760800,
+        "mean_abs_diff": 0.024192192396163104
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.026267113868489914
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.025256140651778572
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.024435542450212348
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.024192192396163104
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.024397271599420636
+        }
+      ]
+    },
+    {
+      "field": "temp_arr_prev",
+      "samples": 763200,
+      "different_samples": 647970,
+      "max_abs_diff": 0.26277800000000007,
+      "mean_abs_diff": 0.02467244396619918,
+      "p95_abs_diff": 0.11516700000000002,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 120,
+        "left": 0.0,
+        "right": 0.002309,
+        "abs_diff": 0.002309
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 2,
+        "samples": 758400,
+        "mean_abs_diff": 0.024192530278218917
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.026692832850260865
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.025682073162229355
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.02467244396619918
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.024436949599110223
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.024192530278218917
+        }
+      ]
+    },
+    {
+      "field": "moisture_arr",
+      "samples": 763200,
+      "different_samples": 131549,
+      "max_abs_diff": 0.990452,
+      "mean_abs_diff": 0.020953629022536422,
+      "p95_abs_diff": 0.15218399999999999,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 467,
+        "left": 0.946987,
+        "right": 1.0,
+        "abs_diff": 0.05301299999999998
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -1,
+        "samples": 765600,
+        "mean_abs_diff": 0.02082838428291517
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.02104228965755209
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.02082838428291517
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.020953629022536422
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.02110514945846448
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.021169436081223347
+        }
+      ]
+    },
+    {
+      "field": "moisture_arr_prev",
+      "samples": 763200,
+      "different_samples": 131616,
+      "max_abs_diff": 0.939733,
+      "mean_abs_diff": 0.020921828358228384,
+      "p95_abs_diff": 0.15033600000000003,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 467,
+        "left": 0.947659,
+        "right": 1.0,
+        "abs_diff": 0.05234099999999997
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 763200,
+        "mean_abs_diff": 0.020921828358228384
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.021182648670573036
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.02105272721525597
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.020921828358228384
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.021072352436908366
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.021225274227320463
+        }
+      ]
+    },
+    {
+      "field": "snow_cover_arr",
+      "samples": 763200,
+      "different_samples": 8641,
+      "max_abs_diff": 1.0,
+      "mean_abs_diff": 0.0029763400458595476,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 1941,
+        "left": 0.004912,
+        "right": 0.003587,
+        "abs_diff": 0.0013249999999999998
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -1,
+        "samples": 765600,
+        "mean_abs_diff": 0.002960762014106586
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.0029913108580729014
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.002960762014106586
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.0029763400458595476
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.0030835711974237703
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.0031717905023734123
+        }
+      ]
+    },
+    {
+      "field": "snow_cover_arr_prev",
+      "samples": 763200,
+      "different_samples": 8716,
+      "max_abs_diff": 1.0,
+      "mean_abs_diff": 0.0029946611910377464,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 1941,
+        "left": 0.004912,
+        "right": 0.003587,
+        "abs_diff": 0.0013249999999999998
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 763200,
+        "mean_abs_diff": 0.0029946611910377464
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.003031941861979156
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.00300560295585162
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.0029946611910377464
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.0031019501380126244
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.0032099181289556833
+        }
+      ]
+    },
+    {
+      "field": "temp_baseline_arr",
+      "samples": 763200,
+      "different_samples": 683340,
+      "max_abs_diff": 0.03742699999999999,
+      "mean_abs_diff": 0.0012547772549783788,
+      "p95_abs_diff": 0.005672999999999984,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 60,
+        "left": 0.006518,
+        "right": 0.009669,
+        "abs_diff": 0.003151
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -1,
+        "samples": 765600,
+        "mean_abs_diff": 0.0008775800796760081
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.0014680274765627036
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.0008775800796760081
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.0012547772549783788
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.0023400446240813256
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.0034763815625009236
+        }
+      ]
+    },
+    {
+      "field": "temp_30d_arr",
+      "samples": 763200,
+      "different_samples": 724636,
+      "max_abs_diff": 0.027154999999999985,
+      "mean_abs_diff": 0.001949533487945927,
+      "p95_abs_diff": 0.008663999999999977,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 60,
+        "left": 0.00239,
+        "right": 0.003222,
+        "abs_diff": 0.0008319999999999998
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -1,
+        "samples": 765600,
+        "mean_abs_diff": 0.0014406880616509624
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.0016683125924477815
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.0014406880616509624
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.001949533487945927
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.0029858855454786633
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.004139566273734904
+        }
+      ]
+    },
+    {
+      "field": "temp_365d_arr",
+      "samples": 763200,
+      "different_samples": 724731,
+      "max_abs_diff": 0.00565199999999999,
+      "mean_abs_diff": 0.0010653501519916474,
+      "p95_abs_diff": 0.00301499999999999,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 60,
+        "left": 0.023585,
+        "right": 0.023796,
+        "abs_diff": 0.00021100000000000285
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -1,
+        "samples": 765600,
+        "mean_abs_diff": 0.001042767023249725
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.001049788184896123
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.001042767023249725
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.0010653501519916474
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.0011208096293375787
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.0012254308438820346
+        }
+      ]
+    },
+    {
+      "field": "temp_anomaly_arr",
+      "samples": 763200,
+      "different_samples": 725040,
+      "max_abs_diff": 0.264638,
+      "mean_abs_diff": 0.06670606275681781,
+      "p95_abs_diff": 0.170764,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 60,
+        "left": -0.000122,
+        "right": -0.020574,
+        "abs_diff": 0.020451999999999998
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 768000,
+        "mean_abs_diff": 0.06646976530338929
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.06646976530338929
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.06658395314655619
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.06670606275681781
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.06682894277471521
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.06695933662711408
+        }
+      ]
+    },
+    {
+      "field": "sea_ice_frac_arr",
+      "samples": 763200,
+      "different_samples": 100266,
+      "max_abs_diff": 0.982251,
+      "mean_abs_diff": 0.006332828383123353,
+      "p95_abs_diff": 0.01646700000000001,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 60,
+        "left": 0.94569,
+        "right": 0.894625,
+        "abs_diff": 0.05106500000000003
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 763200,
+        "mean_abs_diff": 0.006332828383123353
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.0076618980898432755
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.00676846187695914
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.006332828383123353
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.006450792141167305
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.006855857584388568
+        }
+      ]
+    },
+    {
+      "field": "sea_ice_frac_arr_prev",
+      "samples": 763200,
+      "different_samples": 100647,
+      "max_abs_diff": 0.982251,
+      "mean_abs_diff": 0.006396148739517506,
+      "p95_abs_diff": 0.016256999999999966,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 60,
+        "left": 0.985735,
+        "right": 0.972675,
+        "abs_diff": 0.013060000000000072
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 763200,
+        "mean_abs_diff": 0.006396148739517506
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.008179610696613517
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.007293625035265865
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.006396148739517506
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.0065457320360147635
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.006664062788766792
+        }
+      ]
+    },
+    {
+      "field": "weather_intensity_arr",
+      "samples": 763200,
+      "different_samples": 325752,
+      "max_abs_diff": 0.886706,
+      "mean_abs_diff": 0.05795128313417449,
+      "p95_abs_diff": 0.190909,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 108,
+        "left": 0.045085,
+        "right": 0.0,
+        "abs_diff": 0.045085
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 763200,
+        "mean_abs_diff": 0.05795128313417449
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.058063021640627065
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.05800732752612561
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.05795128313417449
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.05798542923501826
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.058019791450424324
+        }
+      ]
+    },
+    {
+      "field": "weather_cloud_arr",
+      "samples": 763200,
+      "different_samples": 763192,
+      "max_abs_diff": 0.355815,
+      "mean_abs_diff": 0.04759570723008132,
+      "p95_abs_diff": 0.172722,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 0,
+        "left": 0.045245,
+        "right": 0.031683,
+        "abs_diff": 0.013561999999999998
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 763200,
+        "mean_abs_diff": 0.04759570723008132
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.047695936406248904
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.04764597891718732
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.04759570723008132
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.04776442601340539
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.047934212637130214
+        }
+      ]
+    },
+    {
+      "field": "weather_cloud_water_arr",
+      "samples": 763200,
+      "different_samples": 763010,
+      "max_abs_diff": 0.212115,
+      "mean_abs_diff": 0.021122479848008767,
+      "p95_abs_diff": 0.06059600000000001,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 0,
+        "left": 0.033956,
+        "right": 0.014262,
+        "abs_diff": 0.019694
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 763200,
+        "mean_abs_diff": 0.021122479848008767
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.021139444210937833
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.021130988619383843
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.021122479848008767
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.021208962080704934
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.02129599166930423
+        }
+      ]
+    },
+    {
+      "field": "weather_precip_arr",
+      "samples": 763200,
+      "different_samples": 307042,
+      "max_abs_diff": 0.16872,
+      "mean_abs_diff": 0.020149912450209043,
+      "p95_abs_diff": 0.085408,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 108,
+        "left": 0.032985,
+        "right": 0.0,
+        "abs_diff": 0.032985
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 763200,
+        "mean_abs_diff": 0.020149912450209043
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.02017505475520808
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.020162523010710122
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.020149912450209043
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.02018791670084066
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.02022616148470412
+        }
+      ]
+    },
+    {
+      "field": "weather_transition_alpha_arr",
+      "samples": 763200,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 768000,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "weather_classification_temp_arr",
+      "samples": 763200,
+      "different_samples": 647970,
+      "max_abs_diff": 0.26277800000000007,
+      "mean_abs_diff": 0.02467244396619918,
+      "p95_abs_diff": 0.11352899999999999,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 120,
+        "left": 0.0,
+        "right": 0.002309,
+        "abs_diff": 0.002309
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 2,
+        "samples": 758400,
+        "mean_abs_diff": 0.024192530278218917
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.026692832850260865
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.025682073162229355
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.02467244396619918
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.024436949599110223
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.024192530278218917
+        }
+      ]
+    },
+    {
+      "field": "weather_classification_moisture_arr",
+      "samples": 763200,
+      "different_samples": 131616,
+      "max_abs_diff": 0.939733,
+      "mean_abs_diff": 0.020921828358228384,
+      "p95_abs_diff": 0.15310299999999996,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 467,
+        "left": 0.947659,
+        "right": 1.0,
+        "abs_diff": 0.05234099999999997
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 763200,
+        "mean_abs_diff": 0.020921828358228384
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.021182648670573036
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.02105272721525597
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.020921828358228384
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.021072352436908366
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.021225274227320463
+        }
+      ]
+    },
+    {
+      "field": "weather_vapor_arr",
+      "samples": 763200,
+      "different_samples": 763200,
+      "max_abs_diff": 0.465843,
+      "mean_abs_diff": 0.08631448602986615,
+      "p95_abs_diff": 0.23456499999999997,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 0,
+        "left": 0.10677,
+        "right": 0.073505,
+        "abs_diff": 0.033265
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 763200,
+        "mean_abs_diff": 0.08631448602986615
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.08651674117707835
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.08641593061780975
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.08631448602986615
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.08631883646424131
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.08632321443301144
+        }
+      ]
+    },
+    {
+      "field": "weather_convergence_arr",
+      "samples": 763200,
+      "different_samples": 753902,
+      "max_abs_diff": 1.0,
+      "mean_abs_diff": 0.37443747086214446,
+      "p95_abs_diff": 0.613218,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 0,
+        "left": 0.0,
+        "right": 0.178224,
+        "abs_diff": 0.178224
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 768000,
+        "mean_abs_diff": 0.37442526841665413
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.37442526841665413
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.37443135051330917
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.37443747086214446
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.374443629825168
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.3744498277689701
+        }
+      ]
+    },
+    {
+      "field": "weather_instability_arr",
+      "samples": 763200,
+      "different_samples": 664998,
+      "max_abs_diff": 0.870781,
+      "mean_abs_diff": 0.16385435575210242,
+      "p95_abs_diff": 0.40854100000000004,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 110,
+        "left": 0.009169,
+        "right": 0.053895,
+        "abs_diff": 0.044726
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 763200,
+        "mean_abs_diff": 0.16385435575210242
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.1646617385468803
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.16425931263976506
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.16385435575210242
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.16419238061909028
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.16453254488397048
+        }
+      ]
+    },
+    {
+      "field": "weather_field_init_arr",
+      "samples": 763200,
+      "different_samples": 763200,
+      "max_abs_diff": 1.0,
+      "mean_abs_diff": 1.0,
+      "p95_abs_diff": 1.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 0,
+        "left": 0.0,
+        "right": 1.0,
+        "abs_diff": 1.0
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 768000,
+        "mean_abs_diff": 1.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 1.0
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 1.0
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 1.0
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 1.0
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 1.0
+        }
+      ]
+    },
+    {
+      "field": "air_mass_temp_anomaly_arr",
+      "samples": 763200,
+      "different_samples": 756218,
+      "max_abs_diff": 0.12473100000000001,
+      "mean_abs_diff": 0.04387815803983308,
+      "p95_abs_diff": 0.089043,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 0,
+        "left": 0.0,
+        "right": -0.00292,
+        "abs_diff": 0.00292
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 768000,
+        "mean_abs_diff": 0.04372673575781313
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.04372673575781313
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.043802209559823155
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.04387815803983308
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.043957373676394136
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.044037090677743675
+        }
+      ]
+    },
+    {
+      "field": "ocean_thermal_anomaly_arr",
+      "samples": 763200,
+      "different_samples": 567182,
+      "max_abs_diff": 0.160002,
+      "mean_abs_diff": 0.035652842548541654,
+      "p95_abs_diff": 0.103934,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 65,
+        "left": -0.01126,
+        "right": 0.0,
+        "abs_diff": 0.01126
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -1,
+        "samples": 765600,
+        "mean_abs_diff": 0.03562515613120042
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.03564434146490591
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.03562515613120042
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.035652842548541654
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.03563379998165915
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.035661688983447015
+        }
+      ]
+    },
+    {
+      "field": "local_thermal_anomaly_arr",
+      "samples": 763200,
+      "different_samples": 302694,
+      "max_abs_diff": 0.113754,
+      "mean_abs_diff": 0.005219106850105618,
+      "p95_abs_diff": 0.032896999999999996,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 0,
+        "left": -0.003976,
+        "right": -0.01,
+        "abs_diff": 0.006024
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 1,
+        "samples": 760800,
+        "mean_abs_diff": 0.00521457561382835
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.005220981644532072
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.005216808414316372
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.005219106850105618
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.00521457561382835
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.005216881530855213
+        }
+      ]
+    },
+    {
+      "field": "has_river_arr",
+      "samples": 763200,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 768000,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "river_flow_arr",
+      "samples": 763200,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 768000,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "river_downstream_arr",
+      "samples": 763200,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 768000,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "hydro_parent_arr",
+      "samples": 763200,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 768000,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "river_discharge_arr",
+      "samples": 763200,
+      "different_samples": 461312,
+      "max_abs_diff": 313.132111,
+      "mean_abs_diff": 3.766792829483507,
+      "p95_abs_diff": 10.849196,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 0,
+        "left": 0.0,
+        "right": 1.6e-05,
+        "abs_diff": 1.6e-05
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 2,
+        "samples": 758400,
+        "mean_abs_diff": 3.75360806891851
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 3.779812780541435
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 3.7733232124592755
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 3.766792829483507
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 3.7602212453533204
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 3.75360806891851
+        }
+      ]
+    },
+    {
+      "field": "river_discharge_30d_arr",
+      "samples": 763200,
+      "different_samples": 519836,
+      "max_abs_diff": 0.999977,
+      "mean_abs_diff": 0.10861917669287147,
+      "p95_abs_diff": 0.49774899999999994,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 0,
+        "left": 0.0,
+        "right": 0.000508,
+        "abs_diff": 0.000508
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 2,
+        "samples": 758400,
+        "mean_abs_diff": 0.10860914256329043
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.10862908539583273
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.10862414657523448
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.10861917669287147
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.10861417545478376
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.10860914256329043
+        }
+      ]
+    },
+    {
+      "field": "river_storage_arr",
+      "samples": 763200,
+      "different_samples": 439204,
+      "max_abs_diff": 49.153778,
+      "mean_abs_diff": 0.16236050449682646,
+      "p95_abs_diff": 0.341724,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 0,
+        "left": 0.0,
+        "right": 3e-06,
+        "abs_diff": 3e-06
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 2,
+        "samples": 758400,
+        "mean_abs_diff": 0.16160868648731236
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.16310292478122118
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.16273287830718114
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.16236050449682646
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.16198578132489203
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.16160868648731236
+        }
+      ]
+    },
+    {
+      "field": "groundwater_storage_arr",
+      "samples": 763200,
+      "different_samples": 171734,
+      "max_abs_diff": 0.764024,
+      "mean_abs_diff": 0.029726628301887513,
+      "p95_abs_diff": 0.215552,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 467,
+        "left": 0.0,
+        "right": 0.004422,
+        "abs_diff": 0.004422
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 2,
+        "samples": 758400,
+        "mean_abs_diff": 0.029642789124473195
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.02980941948958408
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.02976815366248767
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.029726628301887513
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.029684840951630525
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.029642789124473195
+        }
+      ]
+    },
+    {
+      "field": "surface_runoff_arr",
+      "samples": 763200,
+      "different_samples": 269096,
+      "max_abs_diff": 2.864397,
+      "mean_abs_diff": 0.14343218095912663,
+      "p95_abs_diff": 0.8721,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 423,
+        "left": 0.0,
+        "right": 0.333602,
+        "abs_diff": 0.333602
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 2,
+        "samples": 758400,
+        "mean_abs_diff": 0.1430028377320747
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.14385615739584035
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.14364483371735326
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.14343218095912663
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.14321818654311966
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.1430028377320747
+        }
+      ]
+    },
+    {
+      "field": "ema_initialized_arr",
+      "samples": 763200,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 768000,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "temp_season_offset_arr",
+      "samples": 763200,
+      "different_samples": 292846,
+      "max_abs_diff": 0.011346000000000023,
+      "mean_abs_diff": 0.0006377038469601187,
+      "p95_abs_diff": 0.004198000000000004,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 182,
+        "left": 0.022842,
+        "right": 0.022869,
+        "abs_diff": 2.6999999999999247e-05
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -1,
+        "samples": 765600,
+        "mean_abs_diff": 0.0006236122740334339
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.0017314160481771168
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.0006236122740334339
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.0006377038469601187
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.001740583510778326
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.0028419077716247713
+        }
+      ]
+    },
+    {
+      "field": "insolation_now_arr",
+      "samples": 763200,
+      "different_samples": 224580,
+      "max_abs_diff": 0.021492999999999984,
+      "mean_abs_diff": 0.001509600157232611,
+      "p95_abs_diff": 0.008790999999999993,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 113,
+        "cell_index": 60,
+        "left": 0.447533,
+        "right": 0.467957,
+        "abs_diff": 0.020423999999999998
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -1,
+        "samples": 765600,
+        "mean_abs_diff": 0.0015052445141064818
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.004556918203124854
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.0015052445141064818
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.001509600157232611
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.004526142586750337
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.007506507753164746
+        }
+      ]
+    },
+    {
+      "field": "insolation_dev_arr",
+      "samples": 763200,
+      "different_samples": 224580,
+      "max_abs_diff": 0.021491999999999997,
+      "mean_abs_diff": 0.001509599842767175,
+      "p95_abs_diff": 0.00875200000000001,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 113,
+        "cell_index": 60,
+        "left": 0.077812,
+        "right": 0.098236,
+        "abs_diff": 0.020423999999999998
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -1,
+        "samples": 765600,
+        "mean_abs_diff": 0.0015052452978056082
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.004556919687500314
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.0015052452978056082
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.001509599842767175
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.004526142981072523
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.007506508306960584
+        }
+      ]
+    },
+    {
+      "field": "day_length_arr",
+      "samples": 763200,
+      "different_samples": 302280,
+      "max_abs_diff": 0.11394700000000002,
+      "mean_abs_diff": 0.0009615583333334489,
+      "p95_abs_diff": 0.004280999999999979,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 113,
+        "cell_index": 120,
+        "left": 0.848272,
+        "right": 0.88018,
+        "abs_diff": 0.031907999999999936
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 763200,
+        "mean_abs_diff": 0.0009615583333334489
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.0032147003906245726
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.0011186131661443854
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.0009615583333334489
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.0030471808359635744
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.005114196756328958
+        }
+      ]
+    },
+    {
+      "field": "heat_input_arr",
+      "samples": 763200,
+      "different_samples": 224580,
+      "max_abs_diff": 0.021492999999999984,
+      "mean_abs_diff": 0.001509600157232611,
+      "p95_abs_diff": 0.00862699999999994,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 113,
+        "cell_index": 60,
+        "left": 0.447533,
+        "right": 0.467957,
+        "abs_diff": 0.020423999999999998
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -1,
+        "samples": 765600,
+        "mean_abs_diff": 0.0015052445141064818
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.004556918203124854
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.0015052445141064818
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.001509600157232611
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.004526142586750337
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.007506507753164746
+        }
+      ]
+    },
+    {
+      "field": "thermal_energy_arr",
+      "samples": 763200,
+      "different_samples": 683340,
+      "max_abs_diff": 0.03742699999999999,
+      "mean_abs_diff": 0.0012547772549783788,
+      "p95_abs_diff": 0.00575799999999993,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 60,
+        "left": 0.006518,
+        "right": 0.009669,
+        "abs_diff": 0.003151
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -1,
+        "samples": 765600,
+        "mean_abs_diff": 0.0008775800796760081
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.0014680274765627036
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.0008775800796760081
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.0012547772549783788
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.0023400446240813256
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.0034763815625009236
+        }
+      ]
+    },
+    {
+      "field": "snowpack_arr",
+      "samples": 763200,
+      "different_samples": 7670,
+      "max_abs_diff": 0.32,
+      "mean_abs_diff": 0.0008788695990566006,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 1941,
+        "left": 0.001572,
+        "right": 0.001148,
+        "abs_diff": 0.0004240000000000001
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 763200,
+        "mean_abs_diff": 0.0008788695990566006
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.0008791364609374976
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.0008790034482758592
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.0008788695990566006
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.0009069777155625636
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.0009352637315400829
+        }
+      ]
+    },
+    {
+      "field": "water_balance_30d_arr",
+      "samples": 763200,
+      "different_samples": 172356,
+      "max_abs_diff": 0.314694,
+      "mean_abs_diff": 0.008025254119496885,
+      "p95_abs_diff": 0.045593999999999996,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 467,
+        "left": -0.017873,
+        "right": -0.003869,
+        "abs_diff": 0.014003999999999999
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 768000,
+        "mean_abs_diff": 0.008003769408854137
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.008003769408854137
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.008014478089080464
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.008025254119496885
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.008036151971608941
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.008047118797468535
+        }
+      ]
+    },
+    {
+      "field": "vegetation_vitality_arr",
+      "samples": 763200,
+      "different_samples": 172356,
+      "max_abs_diff": 0.728532,
+      "mean_abs_diff": 0.014242648810267718,
+      "p95_abs_diff": 0.06602200000000003,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 467,
+        "left": 0.98,
+        "right": 1.0,
+        "abs_diff": 0.020000000000000018
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 763200,
+        "mean_abs_diff": 0.014242648810267718
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.014316173643224319
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.014279526469430896
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.014242648810267718
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.014294945647997284
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.01434757347837069
+        }
+      ]
+    },
+    {
+      "field": "vitality_low_streak_arr",
+      "samples": 763200,
+      "different_samples": 23582,
+      "max_abs_diff": 190.0,
+      "mean_abs_diff": 2.498506289308176,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 518,
+        "left": 80.0,
+        "right": 100.0,
+        "abs_diff": 20.0
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 768000,
+        "mean_abs_diff": 2.4915625
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 2.4915625
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 2.495023510971787
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 2.498506289308176
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 2.502536803364879
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 2.5065928270042193
+        }
+      ]
+    },
+    {
+      "field": "vitality_high_streak_arr",
+      "samples": 763200,
+      "different_samples": 20950,
+      "max_abs_diff": 190.0,
+      "mean_abs_diff": 1.647458071278826,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 745,
+        "left": 160.0,
+        "right": -30.0,
+        "abs_diff": 190.0
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 763200,
+        "mean_abs_diff": 1.647458071278826
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 1.6480208333333333
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 1.6477403343782655
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 1.647458071278826
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 1.6548501577287067
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 1.662289029535865
+        }
+      ]
+    },
+    {
+      "field": "soil_moisture_arr",
+      "samples": 763200,
+      "different_samples": 649202,
+      "max_abs_diff": 0.349587,
+      "mean_abs_diff": 0.027608791910375196,
+      "p95_abs_diff": 0.10176999999999999,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 117,
+        "left": 0.0,
+        "right": -0.008914,
+        "abs_diff": 0.008914
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -1,
+        "samples": 765600,
+        "mean_abs_diff": 0.027604847822620505
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.02761788210676859
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.027604847822620505
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.027608791910375196
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.027611192632752638
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.027618030632908866
+        }
+      ]
+    },
+    {
+      "field": "vegetation_growth_pressure_arr",
+      "samples": 763200,
+      "different_samples": 172356,
+      "max_abs_diff": 1.102759,
+      "mean_abs_diff": 0.018141096082287506,
+      "p95_abs_diff": 0.10330099999999999,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 467,
+        "left": 0.1,
+        "right": 0.0,
+        "abs_diff": 0.1
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 763200,
+        "mean_abs_diff": 0.018141096082287506
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.01824595155989838
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.018148070094046325
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.018141096082287506
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.018285729739750144
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.01843127880010812
+        }
+      ]
+    },
+    {
+      "field": "temperature_transport_anomaly_arr",
+      "samples": 763200,
+      "different_samples": 617012,
+      "max_abs_diff": 0.349723,
+      "mean_abs_diff": 0.05558992613469534,
+      "p95_abs_diff": 0.172707,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 65,
+        "left": -0.011358,
+        "right": -0.000569,
+        "abs_diff": 0.010789
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 768000,
+        "mean_abs_diff": 0.055582453359374694
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.055582453359374694
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.05558617803422107
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.05558992613469534
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.05559384367770689
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.05559778601529455
+        }
+      ]
+    },
+    {
+      "field": "vegetation_heat_stress_arr",
+      "samples": 763200,
+      "different_samples": 19640,
+      "max_abs_diff": 0.662386,
+      "mean_abs_diff": 0.0010533645151990917,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 915,
+        "left": 0.038672,
+        "right": 0.047007,
+        "abs_diff": 0.008335000000000002
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 763200,
+        "mean_abs_diff": 0.0010533645151990917
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.001103876328124935
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.0010786995937825867
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.0010533645151990917
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.0010843277878548208
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.0011154870305906497
+        }
+      ]
+    },
+    {
+      "field": "vegetation_drought_stress_arr",
+      "samples": 763200,
+      "different_samples": 2216,
+      "max_abs_diff": 1.0,
+      "mean_abs_diff": 0.0006387257887840697,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 640,
+        "left": 0.342982,
+        "right": 0.187297,
+        "abs_diff": 0.15568500000000002
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 768000,
+        "mean_abs_diff": 0.000635356658854169
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.000635356658854169
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.0006370359430512042
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.0006387257887840697
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.0006403051761303917
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.000641894559599159
+        }
+      ]
+    },
+    {
+      "field": "vegetation_cold_stress_arr",
+      "samples": 763200,
+      "different_samples": 3542,
+      "max_abs_diff": 0.271356,
+      "mean_abs_diff": 0.00038572114517819163,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 516,
+        "left": 0.0,
+        "right": 0.088312,
+        "abs_diff": 0.088312
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 763200,
+        "mean_abs_diff": 0.00038572114517819163
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.00039253388802082905
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.0003891381948798279
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.00038572114517819163
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.00038787976340693477
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.0003900520437763662
+        }
+      ]
+    },
+    {
+      "field": "vegetation_regen_score_arr",
+      "samples": 763200,
+      "different_samples": 317542,
+      "max_abs_diff": 0.998866,
+      "mean_abs_diff": 0.21321615048491896,
+      "p95_abs_diff": 0.956103,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 407,
+        "left": 0.981394,
+        "right": 0.0,
+        "abs_diff": 0.981394
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 2,
+        "samples": 758400,
+        "mean_abs_diff": 0.2132127408176264
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.21321951753137033
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.21321783928564694
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.21321615048491896
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.21321445102929676
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.2132127408176264
+        }
+      ]
+    },
+    {
+      "field": "elevation_arr",
+      "samples": 763200,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 768000,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "base_moisture_arr",
+      "samples": 763200,
+      "different_samples": 169963,
+      "max_abs_diff": 0.294458,
+      "mean_abs_diff": 0.00831862551886792,
+      "p95_abs_diff": 0.05601999999999996,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 467,
+        "left": 0.959182,
+        "right": 0.978953,
+        "abs_diff": 0.019770999999999983
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 768000,
+        "mean_abs_diff": 0.008285899624999997
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.008285899624999997
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.008300370744514106
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.00831862551886792
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.008336943467402734
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.008355377352320677
+        }
+      ]
+    },
+    {
+      "field": "ocean_current_x_arr",
+      "samples": 763200,
+      "different_samples": 585048,
+      "max_abs_diff": 0.65,
+      "mean_abs_diff": 0.08370379308176967,
+      "p95_abs_diff": 0.410642,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 0,
+        "left": -0.649709,
+        "right": 0.0,
+        "abs_diff": 0.649709
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 763200,
+        "mean_abs_diff": 0.08370379308176967
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.08375945644011318
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.08373171200758461
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.08370379308176967
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.08374095056388865
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.08377834321994512
+        }
+      ]
+    },
+    {
+      "field": "ocean_current_y_arr",
+      "samples": 763200,
+      "different_samples": 585090,
+      "max_abs_diff": 0.330067,
+      "mean_abs_diff": 0.016648119536161504,
+      "p95_abs_diff": 0.083517,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 0,
+        "left": -0.019447,
+        "right": 0.0,
+        "abs_diff": 0.019447
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 763200,
+        "mean_abs_diff": 0.016648119536161504
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.016879285882810492
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.016764065039182933
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.016648119536161504
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.016761275511301875
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.016875147663500133
+        }
+      ]
+    },
+    {
+      "field": "wind_x_arr",
+      "samples": 763200,
+      "different_samples": 763176,
+      "max_abs_diff": 1.953144,
+      "mean_abs_diff": 0.08518975475629277,
+      "p95_abs_diff": 0.36152999999999996,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 0,
+        "left": -0.976268,
+        "right": -0.990966,
+        "abs_diff": 0.014697999999999989
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 763200,
+        "mean_abs_diff": 0.08518975475629277
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.12182527017447732
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.10356493490333318
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.08518975475629277
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.10356028790745701
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.1220470902558039
+        }
+      ]
+    },
+    {
+      "field": "wind_y_arr",
+      "samples": 763200,
+      "different_samples": 763098,
+      "max_abs_diff": 1.996097,
+      "mean_abs_diff": 0.08904538582285434,
+      "p95_abs_diff": 0.29868,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 0,
+        "left": 0.216564,
+        "right": 0.134116,
+        "abs_diff": 0.082448
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 763200,
+        "mean_abs_diff": 0.08904538582285434
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.12213900474218749
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.10564406615857111
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.08904538582285434
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.10560923189406093
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.12227791243407321
+        }
+      ]
+    },
+    {
+      "field": "slp_arr",
+      "samples": 763200,
+      "different_samples": 763164,
+      "max_abs_diff": 0.107734,
+      "mean_abs_diff": 0.01185649794287216,
+      "p95_abs_diff": 0.029156000000000015,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 0,
+        "left": 0.220529,
+        "right": 0.223294,
+        "abs_diff": 0.0027649999999999897
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 763200,
+        "mean_abs_diff": 0.01185649794287216
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.018162920236977464
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.015019593764367295
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.01185649794287216
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.014978370812302284
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.018120002370778925
+        }
+      ]
+    },
+    {
+      "field": "wind_speed_arr",
+      "samples": 763200,
+      "different_samples": 763144,
+      "max_abs_diff": 0.7566160000000001,
+      "mean_abs_diff": 0.047784029389404965,
+      "p95_abs_diff": 0.2278809999999999,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 0,
+        "left": 0.953108,
+        "right": 0.780697,
+        "abs_diff": 0.17241099999999998
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 763200,
+        "mean_abs_diff": 0.047784029389404965
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.058909868765612564
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.05336438769722065
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.047784029389404965
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.05345863626576345
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.05916915837551621
+        }
+      ]
+    },
+    {
+      "field": "upwelling_strength_arr",
+      "samples": 763200,
+      "different_samples": 243814,
+      "max_abs_diff": 1.605868,
+      "mean_abs_diff": 0.0825342936217313,
+      "p95_abs_diff": 0.775045,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 0,
+        "left": -0.15,
+        "right": 0.0,
+        "abs_diff": 0.15
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 763200,
+        "mean_abs_diff": 0.0825342936217313
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.0839038456251395
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.08322121625666956
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.0825342936217313
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.08315054228457545
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.08377069125541294
+        }
+      ]
+    },
+    {
+      "field": "wind_stress_curl_arr",
+      "samples": 763200,
+      "different_samples": 585120,
+      "max_abs_diff": 3.986914,
+      "mean_abs_diff": 0.29483184996066514,
+      "p95_abs_diff": 1.498867,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 0,
+        "left": -1.725329,
+        "right": 0.0,
+        "abs_diff": 1.725329
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 763200,
+        "mean_abs_diff": 0.29483184996066514
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.30548570599737035
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.30017547681293066
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.29483184996066514
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.29917711635775557
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.3035498844409036
+        }
+      ]
+    },
+    {
+      "field": "ocean_psi_arr",
+      "samples": 763200,
+      "different_samples": 585120,
+      "max_abs_diff": 10.184132,
+      "mean_abs_diff": 0.8816860174922095,
+      "p95_abs_diff": 4.90314,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 0,
+        "left": 6.624346,
+        "right": 0.0,
+        "abs_diff": 6.624346
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 763200,
+        "mean_abs_diff": 0.8816860174922095
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.8846548115261047
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.8831750677913429
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.8816860174922095
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.8828449213197412
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.8840111599816238
+        }
+      ]
+    },
+    {
+      "field": "cell_pos_x_arr",
+      "samples": 763200,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 768000,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "cell_pos_y_arr",
+      "samples": 763200,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 768000,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "cell_lat_norm_arr",
+      "samples": 763200,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 768000,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "temp_baseline_year_arr",
+      "samples": 763200,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 768000,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "terrain_arr",
+      "samples": 763200,
+      "different_samples": 129861,
+      "max_abs_diff": 20.0,
+      "mean_abs_diff": 3.083456498951782,
+      "p95_abs_diff": 20.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 0,
+        "left": 0.0,
+        "right": 20.0,
+        "abs_diff": 20.0
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 2,
+        "samples": 758400,
+        "mean_abs_diff": 3.0803744725738396
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 3.0860182291666667
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 3.0845454545454545
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 3.083456498951782
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 3.0819203470031544
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 3.0803744725738396
+        }
+      ]
+    },
+    {
+      "field": "landform_arr",
+      "samples": 763200,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 768000,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "vegetation_arr",
+      "samples": 763200,
+      "different_samples": 19666,
+      "max_abs_diff": 22.0,
+      "mean_abs_diff": 0.1373427672955975,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 745,
+        "left": 21.0,
+        "right": 20.0,
+        "abs_diff": 1.0
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 768000,
+        "mean_abs_diff": 0.1365625
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.1365625
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.1369514106583072
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.1373427672955975
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.1377365930599369
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.13813291139240505
+        }
+      ]
+    },
+    {
+      "field": "has_volcano_arr",
+      "samples": 763200,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 768000,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "is_lake_seed_arr",
+      "samples": 763200,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 768000,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "base_terrain_arr",
+      "samples": 763200,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 768000,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "base_landform_arr",
+      "samples": 763200,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 768000,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "base_vegetation_arr",
+      "samples": 763200,
+      "different_samples": 19666,
+      "max_abs_diff": 22.0,
+      "mean_abs_diff": 0.1373427672955975,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 745,
+        "left": 21.0,
+        "right": 20.0,
+        "abs_diff": 1.0
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 768000,
+        "mean_abs_diff": 0.1365625
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.1365625
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.1369514106583072
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.1373427672955975
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.1377365930599369
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.13813291139240505
+        }
+      ]
+    },
+    {
+      "field": "cover_arr",
+      "samples": 763200,
+      "different_samples": 130986,
+      "max_abs_diff": 4.0,
+      "mean_abs_diff": 0.4774855870020964,
+      "p95_abs_diff": 3.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 0,
+        "left": 0.0,
+        "right": 3.0,
+        "abs_diff": 3.0
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 768000,
+        "mean_abs_diff": 0.4772825520833333
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.4772825520833333
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.4772844827586207
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.4774855870020964
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.4776932176656151
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.4779047995780591
+        }
+      ]
+    },
+    {
+      "field": "weather_type_arr",
+      "samples": 763200,
+      "different_samples": 268250,
+      "max_abs_diff": 7.0,
+      "mean_abs_diff": 0.992109538784067,
+      "p95_abs_diff": 6.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 108,
+        "left": 3.0,
+        "right": 0.0,
+        "abs_diff": 3.0
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 768000,
+        "mean_abs_diff": 0.9920104166666667
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.9920104166666667
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.9920598223615466
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.992109538784067
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.9927273922187171
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.9933491561181435
+        }
+      ]
+    },
+    {
+      "field": "weather_prev_type_arr",
+      "samples": 763200,
+      "different_samples": 268250,
+      "max_abs_diff": 7.0,
+      "mean_abs_diff": 0.992109538784067,
+      "p95_abs_diff": 6.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 108,
+        "left": 3.0,
+        "right": 0.0,
+        "abs_diff": 3.0
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 768000,
+        "mean_abs_diff": 0.9920104166666667
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.9920104166666667
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.9920598223615466
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.992109538784067
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.9927273922187171
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.9933491561181435
+        }
+      ]
+    },
+    {
+      "field": "weather_target_type_arr",
+      "samples": 763200,
+      "different_samples": 268250,
+      "max_abs_diff": 7.0,
+      "mean_abs_diff": 0.992109538784067,
+      "p95_abs_diff": 6.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 108,
+        "left": 3.0,
+        "right": 0.0,
+        "abs_diff": 3.0
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 768000,
+        "mean_abs_diff": 0.9920104166666667
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.9920104166666667
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.9920598223615466
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.992109538784067
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.9927273922187171
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.9933491561181435
+        }
+      ]
+    },
+    {
+      "field": "is_water_arr",
+      "samples": 763200,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 768000,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "country_slot_arr",
+      "samples": 763200,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 768000,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "climate_dirty_mask",
+      "samples": 763200,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 768000,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "weather_dirty_mask",
+      "samples": 763200,
+      "different_samples": 754200,
+      "max_abs_diff": 1.0,
+      "mean_abs_diff": 0.9882075471698113,
+      "p95_abs_diff": 1.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 112,
+        "cell_index": 0,
+        "left": 0.0,
+        "right": 1.0,
+        "abs_diff": 1.0
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 2,
+        "samples": 758400,
+        "mean_abs_diff": 0.9881329113924051
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 768000,
+          "mean_abs_diff": 0.98828125
+        },
+        {
+          "lag": -1,
+          "samples": 765600,
+          "mean_abs_diff": 0.9882445141065831
+        },
+        {
+          "lag": 0,
+          "samples": 763200,
+          "mean_abs_diff": 0.9882075471698113
+        },
+        {
+          "lag": 1,
+          "samples": 760800,
+          "mean_abs_diff": 0.9881703470031545
+        },
+        {
+          "lag": 2,
+          "samples": 758400,
+          "mean_abs_diff": 0.9881329113924051
+        }
+      ]
+    }
+  ],
+  "country_evidence": {
+    "status": "release_blocker",
+    "left_country_rows": 1452,
+    "right_country_rows": 1312,
+    "missing_left": [
+      {
+        "tick_idx": 102,
+        "country_id": "country.foreign.001"
+      },
+      {
+        "tick_idx": 102,
+        "country_id": "country.foreign.002"
+      },
+      {
+        "tick_idx": 102,
+        "country_id": "country.foreign.003"
+      },
+      {
+        "tick_idx": 102,
+        "country_id": "country.player"
+      },
+      {
+        "tick_idx": 103,
+        "country_id": "country.foreign.001"
+      },
+      {
+        "tick_idx": 103,
+        "country_id": "country.foreign.002"
+      },
+      {
+        "tick_idx": 103,
+        "country_id": "country.foreign.003"
+      },
+      {
+        "tick_idx": 103,
+        "country_id": "country.player"
+      },
+      {
+        "tick_idx": 104,
+        "country_id": "country.foreign.001"
+      },
+      {
+        "tick_idx": 104,
+        "country_id": "country.foreign.002"
+      },
+      {
+        "tick_idx": 104,
+        "country_id": "country.foreign.003"
+      },
+      {
+        "tick_idx": 104,
+        "country_id": "country.player"
+      },
+      {
+        "tick_idx": 105,
+        "country_id": "country.foreign.001"
+      },
+      {
+        "tick_idx": 105,
+        "country_id": "country.foreign.002"
+      },
+      {
+        "tick_idx": 105,
+        "country_id": "country.foreign.003"
+      },
+      {
+        "tick_idx": 105,
+        "country_id": "country.player"
+      },
+      {
+        "tick_idx": 106,
+        "country_id": "country.foreign.001"
+      },
+      {
+        "tick_idx": 106,
+        "country_id": "country.foreign.002"
+      },
+      {
+        "tick_idx": 106,
+        "country_id": "country.foreign.003"
+      },
+      {
+        "tick_idx": 106,
+        "country_id": "country.player"
+      },
+      {
+        "tick_idx": 107,
+        "country_id": "country.foreign.001"
+      },
+      {
+        "tick_idx": 107,
+        "country_id": "country.foreign.002"
+      },
+      {
+        "tick_idx": 107,
+        "country_id": "country.foreign.003"
+      },
+      {
+        "tick_idx": 107,
+        "country_id": "country.player"
+      },
+      {
+        "tick_idx": 108,
+        "country_id": "country.foreign.001"
+      },
+      {
+        "tick_idx": 108,
+        "country_id": "country.foreign.002"
+      },
+      {
+        "tick_idx": 108,
+        "country_id": "country.foreign.003"
+      },
+      {
+        "tick_idx": 108,
+        "country_id": "country.player"
+      },
+      {
+        "tick_idx": 109,
+        "country_id": "country.foreign.001"
+      },
+      {
+        "tick_idx": 109,
+        "country_id": "country.foreign.002"
+      },
+      {
+        "tick_idx": 109,
+        "country_id": "country.foreign.003"
+      },
+      {
+        "tick_idx": 109,
+        "country_id": "country.player"
+      },
+      {
+        "tick_idx": 110,
+        "country_id": "country.foreign.001"
+      },
+      {
+        "tick_idx": 110,
+        "country_id": "country.foreign.002"
+      },
+      {
+        "tick_idx": 110,
+        "country_id": "country.foreign.003"
+      },
+      {
+        "tick_idx": 110,
+        "country_id": "country.player"
+      },
+      {
+        "tick_idx": 111,
+        "country_id": "country.foreign.001"
+      },
+      {
+        "tick_idx": 111,
+        "country_id": "country.foreign.002"
+      },
+      {
+        "tick_idx": 111,
+        "country_id": "country.foreign.003"
+      },
+      {
+        "tick_idx": 111,
+        "country_id": "country.player"
+      }
+    ],
+    "missing_right": [
+      {
+        "tick_idx": 430,
+        "country_id": "country.foreign.001"
+      },
+      {
+        "tick_idx": 430,
+        "country_id": "country.foreign.002"
+      },
+      {
+        "tick_idx": 430,
+        "country_id": "country.foreign.003"
+      },
+      {
+        "tick_idx": 430,
+        "country_id": "country.player"
+      },
+      {
+        "tick_idx": 431,
+        "country_id": "country.foreign.001"
+      },
+      {
+        "tick_idx": 431,
+        "country_id": "country.foreign.002"
+      },
+      {
+        "tick_idx": 431,
+        "country_id": "country.foreign.003"
+      },
+      {
+        "tick_idx": 431,
+        "country_id": "country.player"
+      },
+      {
+        "tick_idx": 432,
+        "country_id": "country.foreign.001"
+      },
+      {
+        "tick_idx": 432,
+        "country_id": "country.foreign.002"
+      },
+      {
+        "tick_idx": 432,
+        "country_id": "country.foreign.003"
+      },
+      {
+        "tick_idx": 432,
+        "country_id": "country.player"
+      },
+      {
+        "tick_idx": 433,
+        "country_id": "country.foreign.001"
+      },
+      {
+        "tick_idx": 433,
+        "country_id": "country.foreign.002"
+      },
+      {
+        "tick_idx": 433,
+        "country_id": "country.foreign.003"
+      },
+      {
+        "tick_idx": 433,
+        "country_id": "country.player"
+      },
+      {
+        "tick_idx": 434,
+        "country_id": "country.foreign.001"
+      },
+      {
+        "tick_idx": 434,
+        "country_id": "country.foreign.002"
+      },
+      {
+        "tick_idx": 434,
+        "country_id": "country.foreign.003"
+      },
+      {
+        "tick_idx": 434,
+        "country_id": "country.player"
+      },
+      {
+        "tick_idx": 435,
+        "country_id": "country.foreign.001"
+      },
+      {
+        "tick_idx": 435,
+        "country_id": "country.foreign.002"
+      },
+      {
+        "tick_idx": 435,
+        "country_id": "country.foreign.003"
+      },
+      {
+        "tick_idx": 435,
+        "country_id": "country.player"
+      },
+      {
+        "tick_idx": 436,
+        "country_id": "country.foreign.001"
+      },
+      {
+        "tick_idx": 436,
+        "country_id": "country.foreign.002"
+      },
+      {
+        "tick_idx": 436,
+        "country_id": "country.foreign.003"
+      },
+      {
+        "tick_idx": 436,
+        "country_id": "country.player"
+      },
+      {
+        "tick_idx": 437,
+        "country_id": "country.foreign.001"
+      },
+      {
+        "tick_idx": 437,
+        "country_id": "country.foreign.002"
+      },
+      {
+        "tick_idx": 437,
+        "country_id": "country.foreign.003"
+      },
+      {
+        "tick_idx": 437,
+        "country_id": "country.player"
+      },
+      {
+        "tick_idx": 438,
+        "country_id": "country.foreign.001"
+      },
+      {
+        "tick_idx": 438,
+        "country_id": "country.foreign.002"
+      },
+      {
+        "tick_idx": 438,
+        "country_id": "country.foreign.003"
+      },
+      {
+        "tick_idx": 438,
+        "country_id": "country.player"
+      },
+      {
+        "tick_idx": 439,
+        "country_id": "country.foreign.001"
+      },
+      {
+        "tick_idx": 439,
+        "country_id": "country.foreign.002"
+      },
+      {
+        "tick_idx": 439,
+        "country_id": "country.foreign.003"
+      },
+      {
+        "tick_idx": 439,
+        "country_id": "country.player"
+      },
+      {
+        "tick_idx": 440,
+        "country_id": "country.foreign.001"
+      },
+      {
+        "tick_idx": 440,
+        "country_id": "country.foreign.002"
+      },
+      {
+        "tick_idx": 440,
+        "country_id": "country.foreign.003"
+      },
+      {
+        "tick_idx": 440,
+        "country_id": "country.player"
+      },
+      {
+        "tick_idx": 441,
+        "country_id": "country.foreign.001"
+      },
+      {
+        "tick_idx": 441,
+        "country_id": "country.foreign.002"
+      },
+      {
+        "tick_idx": 441,
+        "country_id": "country.foreign.003"
+      },
+      {
+        "tick_idx": 441,
+        "country_id": "country.player"
+      },
+      {
+        "tick_idx": 442,
+        "country_id": "country.foreign.001"
+      },
+      {
+        "tick_idx": 442,
+        "country_id": "country.foreign.002"
+      },
+      {
+        "tick_idx": 442,
+        "country_id": "country.foreign.003"
+      },
+      {
+        "tick_idx": 442,
+        "country_id": "country.player"
+      },
+      {
+        "tick_idx": 443,
+        "country_id": "country.foreign.001"
+      },
+      {
+        "tick_idx": 443,
+        "country_id": "country.foreign.002"
+      },
+      {
+        "tick_idx": 443,
+        "country_id": "country.foreign.003"
+      },
+      {
+        "tick_idx": 443,
+        "country_id": "country.player"
+      },
+      {
+        "tick_idx": 444,
+        "country_id": "country.foreign.001"
+      },
+      {
+        "tick_idx": 444,
+        "country_id": "country.foreign.002"
+      },
+      {
+        "tick_idx": 444,
+        "country_id": "country.foreign.003"
+      },
+      {
+        "tick_idx": 444,
+        "country_id": "country.player"
+      },
+      {
+        "tick_idx": 445,
+        "country_id": "country.foreign.001"
+      },
+      {
+        "tick_idx": 445,
+        "country_id": "country.foreign.002"
+      },
+      {
+        "tick_idx": 445,
+        "country_id": "country.foreign.003"
+      },
+      {
+        "tick_idx": 445,
+        "country_id": "country.player"
+      },
+      {
+        "tick_idx": 446,
+        "country_id": "country.foreign.001"
+      },
+      {
+        "tick_idx": 446,
+        "country_id": "country.foreign.002"
+      },
+      {
+        "tick_idx": 446,
+        "country_id": "country.foreign.003"
+      },
+      {
+        "tick_idx": 446,
+        "country_id": "country.player"
+      },
+      {
+        "tick_idx": 447,
+        "country_id": "country.foreign.001"
+      },
+      {
+        "tick_idx": 447,
+        "country_id": "country.foreign.002"
+      },
+      {
+        "tick_idx": 447,
+        "country_id": "country.foreign.003"
+      },
+      {
+        "tick_idx": 447,
+        "country_id": "country.player"
+      },
+      {
+        "tick_idx": 448,
+        "country_id": "country.foreign.001"
+      },
+      {
+        "tick_idx": 448,
+        "country_id": "country.foreign.002"
+      },
+      {
+        "tick_idx": 448,
+        "country_id": "country.foreign.003"
+      },
+      {
+        "tick_idx": 448,
+        "country_id": "country.player"
+      },
+      {
+        "tick_idx": 449,
+        "country_id": "country.foreign.001"
+      },
+      {
+        "tick_idx": 449,
+        "country_id": "country.foreign.002"
+      },
+      {
+        "tick_idx": 449,
+        "country_id": "country.foreign.003"
+      },
+      {
+        "tick_idx": 449,
+        "country_id": "country.player"
+      },
+      {
+        "tick_idx": 450,
+        "country_id": "country.foreign.001"
+      },
+      {
+        "tick_idx": 450,
+        "country_id": "country.foreign.002"
+      },
+      {
+        "tick_idx": 450,
+        "country_id": "country.foreign.003"
+      },
+      {
+        "tick_idx": 450,
+        "country_id": "country.player"
+      },
+      {
+        "tick_idx": 451,
+        "country_id": "country.foreign.001"
+      },
+      {
+        "tick_idx": 451,
+        "country_id": "country.foreign.002"
+      },
+      {
+        "tick_idx": 451,
+        "country_id": "country.foreign.003"
+      },
+      {
+        "tick_idx": 451,
+        "country_id": "country.player"
+      },
+      {
+        "tick_idx": 452,
+        "country_id": "country.foreign.001"
+      },
+      {
+        "tick_idx": 452,
+        "country_id": "country.foreign.002"
+      },
+      {
+        "tick_idx": 452,
+        "country_id": "country.foreign.003"
+      },
+      {
+        "tick_idx": 452,
+        "country_id": "country.player"
+      },
+      {
+        "tick_idx": 453,
+        "country_id": "country.foreign.001"
+      },
+      {
+        "tick_idx": 453,
+        "country_id": "country.foreign.002"
+      },
+      {
+        "tick_idx": 453,
+        "country_id": "country.foreign.003"
+      },
+      {
+        "tick_idx": 453,
+        "country_id": "country.player"
+      },
+      {
+        "tick_idx": 454,
+        "country_id": "country.foreign.001"
+      },
+      {
+        "tick_idx": 454,
+        "country_id": "country.foreign.002"
+      },
+      {
+        "tick_idx": 454,
+        "country_id": "country.foreign.003"
+      },
+      {
+        "tick_idx": 454,
+        "country_id": "country.player"
+      }
+    ],
+    "differences": [],
+    "receipt_match": true,
+    "left_receipts": [],
+    "right_receipts": []
+  },
+  "known_expected_fields": [],
+  "blockers": [
+    {
+      "field": "temp_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "temp_arr_prev",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "moisture_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "moisture_arr_prev",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "snow_cover_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "snow_cover_arr_prev",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "temp_baseline_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "temp_30d_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "temp_365d_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "temp_anomaly_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "sea_ice_frac_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "sea_ice_frac_arr_prev",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "weather_intensity_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "weather_cloud_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "weather_cloud_water_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "weather_precip_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "weather_classification_temp_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "weather_classification_moisture_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "weather_vapor_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "weather_convergence_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "weather_instability_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "weather_field_init_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "air_mass_temp_anomaly_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "ocean_thermal_anomaly_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "local_thermal_anomaly_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "river_discharge_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "river_discharge_30d_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "river_storage_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "groundwater_storage_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "surface_runoff_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "temp_season_offset_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "insolation_now_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "insolation_dev_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "day_length_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "heat_input_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "thermal_energy_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "snowpack_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "water_balance_30d_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "vegetation_vitality_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "vitality_low_streak_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "vitality_high_streak_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "soil_moisture_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "vegetation_growth_pressure_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "temperature_transport_anomaly_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "vegetation_heat_stress_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "vegetation_drought_stress_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "vegetation_cold_stress_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "vegetation_regen_score_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "base_moisture_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "ocean_current_x_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "ocean_current_y_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "wind_x_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "wind_y_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "slp_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "wind_speed_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "upwelling_strength_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "wind_stress_curl_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "ocean_psi_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "terrain_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "vegetation_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "base_vegetation_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "cover_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "weather_type_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "weather_prev_type_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "weather_target_type_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "weather_dirty_mask",
+      "reason": "undeclared_difference"
+    },
+    {
+      "reason": "missing_tick_or_cell"
+    },
+    {
+      "reason": "country_client_evidence_mismatch"
+    }
+  ]
+}

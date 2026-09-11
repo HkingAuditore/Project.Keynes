@@ -1,0 +1,5469 @@
+{
+  "schema": "AuthorityStageCTileComparison",
+  "schema_version": 1,
+  "status": "release_blocker",
+  "left": "D:\\Godot\\ProjectKeynes\\Project.Keynes\\artifacts\\runtime\\authority-stage-c\\stage-c2-country-fixed100-20260910\\active\\tile_data.csv",
+  "right": "D:\\Godot\\ProjectKeynes\\Project.Keynes\\artifacts\\runtime\\authority-stage-c\\stage-c2-country-fixed100-20260910\\off\\tile_data.csv",
+  "policy": "D:\\Godot\\ProjectKeynes\\Project.Keynes\\tools\\runtime\\authority-stage-c-field-policy.json",
+  "authority_modes": [
+    "ACTIVE",
+    "OFF"
+  ],
+  "rows": {
+    "left": 240000,
+    "right": 240000,
+    "aligned": 240000
+  },
+  "missing": {
+    "only_left": {
+      "count": 0,
+      "examples": []
+    },
+    "only_right": {
+      "count": 0,
+      "examples": []
+    }
+  },
+  "numeric_issues": {
+    "left": {
+      "temp_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_arr_prev": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "moisture_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "moisture_arr_prev": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "snow_cover_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "snow_cover_arr_prev": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_baseline_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_30d_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_365d_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_anomaly_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "sea_ice_frac_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "sea_ice_frac_arr_prev": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_intensity_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_cloud_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_cloud_water_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_precip_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_transition_alpha_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_classification_temp_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_classification_moisture_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_vapor_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_convergence_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_instability_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_field_init_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "air_mass_temp_anomaly_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "ocean_thermal_anomaly_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "local_thermal_anomaly_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "has_river_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "river_flow_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "river_downstream_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "hydro_parent_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "river_discharge_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "river_discharge_30d_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "river_storage_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "groundwater_storage_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "surface_runoff_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "ema_initialized_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_season_offset_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "insolation_now_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "insolation_dev_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "day_length_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "heat_input_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "thermal_energy_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "snowpack_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "water_balance_30d_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_vitality_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vitality_low_streak_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vitality_high_streak_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "soil_moisture_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_growth_pressure_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temperature_transport_anomaly_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_heat_stress_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_drought_stress_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_cold_stress_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_regen_score_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "elevation_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "base_moisture_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "ocean_current_x_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "ocean_current_y_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "wind_x_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "wind_y_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "slp_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "wind_speed_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "upwelling_strength_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "wind_stress_curl_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "ocean_psi_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "cell_pos_x_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "cell_pos_y_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "cell_lat_norm_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_baseline_year_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "terrain_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "landform_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "has_volcano_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "is_lake_seed_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "base_terrain_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "base_landform_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "base_vegetation_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "cover_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_type_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_prev_type_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_target_type_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "is_water_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "country_slot_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "climate_dirty_mask": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_dirty_mask": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      }
+    },
+    "right": {
+      "temp_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_arr_prev": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "moisture_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "moisture_arr_prev": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "snow_cover_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "snow_cover_arr_prev": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_baseline_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_30d_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_365d_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_anomaly_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "sea_ice_frac_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "sea_ice_frac_arr_prev": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_intensity_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_cloud_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_cloud_water_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_precip_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_transition_alpha_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_classification_temp_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_classification_moisture_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_vapor_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_convergence_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_instability_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_field_init_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "air_mass_temp_anomaly_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "ocean_thermal_anomaly_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "local_thermal_anomaly_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "has_river_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "river_flow_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "river_downstream_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "hydro_parent_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "river_discharge_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "river_discharge_30d_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "river_storage_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "groundwater_storage_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "surface_runoff_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "ema_initialized_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_season_offset_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "insolation_now_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "insolation_dev_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "day_length_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "heat_input_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "thermal_energy_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "snowpack_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "water_balance_30d_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_vitality_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vitality_low_streak_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vitality_high_streak_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "soil_moisture_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_growth_pressure_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temperature_transport_anomaly_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_heat_stress_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_drought_stress_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_cold_stress_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_regen_score_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "elevation_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "base_moisture_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "ocean_current_x_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "ocean_current_y_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "wind_x_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "wind_y_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "slp_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "wind_speed_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "upwelling_strength_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "wind_stress_curl_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "ocean_psi_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "cell_pos_x_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "cell_pos_y_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "cell_lat_norm_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_baseline_year_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "terrain_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "landform_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "has_volcano_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "is_lake_seed_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "base_terrain_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "base_landform_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "base_vegetation_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "cover_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_type_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_prev_type_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_target_type_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "is_water_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "country_slot_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "climate_dirty_mask": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_dirty_mask": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      }
+    }
+  },
+  "field_results": [
+    {
+      "field": "temp_arr",
+      "samples": 240000,
+      "different_samples": 204149,
+      "max_abs_diff": 0.2560070000000001,
+      "mean_abs_diff": 0.025862229062499784,
+      "p95_abs_diff": 0.12044700000000003,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 60,
+        "left": 0.0,
+        "right": 0.017902,
+        "abs_diff": 0.017902
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 1,
+        "samples": 237600,
+        "mean_abs_diff": 0.025844420202019533
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.026765812334183986
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.026191550206229142
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.025862229062499784
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.025844420202019533
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.02596033350765206
+        }
+      ]
+    },
+    {
+      "field": "temp_arr_prev",
+      "samples": 240000,
+      "different_samples": 204250,
+      "max_abs_diff": 0.25461900000000004,
+      "mean_abs_diff": 0.026027676274999263,
+      "p95_abs_diff": 0.12149999999999994,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 60,
+        "left": 0.0,
+        "right": 0.017902,
+        "abs_diff": 0.017902
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 2,
+        "samples": 235200,
+        "mean_abs_diff": 0.025992927721087085
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.027183608197278435
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.026599804196127036
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.026027676274999263
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.02601047749579018
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.025992927721087085
+        }
+      ]
+    },
+    {
+      "field": "moisture_arr",
+      "samples": 240000,
+      "different_samples": 42106,
+      "max_abs_diff": 0.990441,
+      "mean_abs_diff": 0.02140140235833355,
+      "p95_abs_diff": 0.147899,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 467,
+        "left": 0.939069,
+        "right": 0.979207,
+        "abs_diff": 0.04013800000000001
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 1,
+        "samples": 237600,
+        "mean_abs_diff": 0.02113330086700363
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.021817901721938912
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.021808401679293068
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.02140140235833355
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.02113330086700363
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.021344268869047733
+        }
+      ]
+    },
+    {
+      "field": "moisture_arr_prev",
+      "samples": 240000,
+      "different_samples": 42188,
+      "max_abs_diff": 0.990441,
+      "mean_abs_diff": 0.021727239241666797,
+      "p95_abs_diff": 0.14741199999999996,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 467,
+        "left": 0.939069,
+        "right": 0.979207,
+        "abs_diff": 0.04013800000000001
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 2,
+        "samples": 235200,
+        "mean_abs_diff": 0.021192065255102335
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.021744120493197423
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.021735594608586005
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.021727239241666797
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.021462355147306635
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.021192065255102335
+        }
+      ]
+    },
+    {
+      "field": "snow_cover_arr",
+      "samples": 240000,
+      "different_samples": 3372,
+      "max_abs_diff": 1.0,
+      "mean_abs_diff": 0.0038486370416665897,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 1941,
+        "left": 0.076612,
+        "right": 0.37454,
+        "abs_diff": 0.29792799999999997
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0037329672534013245
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.00398298462585027
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.003939801372053801
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0038486370416665897
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0037622868686868153
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0037329672534013245
+        }
+      ]
+    },
+    {
+      "field": "snow_cover_arr_prev",
+      "samples": 240000,
+      "different_samples": 3498,
+      "max_abs_diff": 1.0,
+      "mean_abs_diff": 0.003900509674999917,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 1941,
+        "left": 0.076612,
+        "right": 0.37454,
+        "abs_diff": 0.29792799999999997
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0037271057057822726
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.003986074311224409
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.003942859848484767
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.003900509674999917
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.003814683468013405
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0037271057057822726
+        }
+      ]
+    },
+    {
+      "field": "temp_baseline_arr",
+      "samples": 240000,
+      "different_samples": 211432,
+      "max_abs_diff": 0.04066900000000001,
+      "mean_abs_diff": 0.003487650074999455,
+      "p95_abs_diff": 0.017591999999999997,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 60,
+        "left": 0.023607,
+        "right": 0.036158,
+        "abs_diff": 0.012551000000000003
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0020373274744899363
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0020373274744899363
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.002584718080807474
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.003487650074999455
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.004394148598485047
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.005330742053573868
+        }
+      ]
+    },
+    {
+      "field": "temp_30d_arr",
+      "samples": 240000,
+      "different_samples": 227989,
+      "max_abs_diff": 0.059365,
+      "mean_abs_diff": 0.00840833903750048,
+      "p95_abs_diff": 0.028256999999999977,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 60,
+        "left": 0.005504,
+        "right": 0.009589,
+        "abs_diff": 0.004085
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.005802822857143704
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.005802822857143704
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.007027606376262874
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.00840833903750048
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.009772248114478757
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.011167644000850489
+        }
+      ]
+    },
+    {
+      "field": "temp_365d_arr",
+      "samples": 240000,
+      "different_samples": 227914,
+      "max_abs_diff": 0.005259999999999987,
+      "mean_abs_diff": 0.0016154875541666712,
+      "p95_abs_diff": 0.0036449999999999816,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 60,
+        "left": 0.024156,
+        "right": 0.023827,
+        "abs_diff": 0.00032899999999999943
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.001238740259353667
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.001238740259353667
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0014045123611110687
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0016154875541666712
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.001865741893939538
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0021360963690478236
+        }
+      ]
+    },
+    {
+      "field": "temp_anomaly_arr",
+      "samples": 240000,
+      "different_samples": 227994,
+      "max_abs_diff": 0.263251,
+      "mean_abs_diff": 0.06395500210833953,
+      "p95_abs_diff": 0.176205,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 60,
+        "left": -0.000122,
+        "right": -0.014237,
+        "abs_diff": 0.014114999999999999
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.06329449869048208
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.06329449869048208
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.06362808627525857
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.06395500210833953
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0644113285648213
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.06487696780612856
+        }
+      ]
+    },
+    {
+      "field": "sea_ice_frac_arr",
+      "samples": 240000,
+      "different_samples": 29459,
+      "max_abs_diff": 0.965257,
+      "mean_abs_diff": 0.007111624945833509,
+      "p95_abs_diff": 0.01681900000000003,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 0,
+        "left": 0.99373,
+        "right": 0.983897,
+        "abs_diff": 0.00983299999999998
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0060130281675169804
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0060130281675169804
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.006480485639730876
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.007111624945833509
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0076465182112795
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.008127819090136454
+        }
+      ]
+    },
+    {
+      "field": "sea_ice_frac_arr_prev",
+      "samples": 240000,
+      "different_samples": 29620,
+      "max_abs_diff": 0.965257,
+      "mean_abs_diff": 0.006982852016666811,
+      "p95_abs_diff": 0.01681900000000003,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 0,
+        "left": 0.99373,
+        "right": 0.983897,
+        "abs_diff": 0.00983299999999998
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.005890540119047341
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.005890540119047341
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.006442212794612787
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.006982852016666811
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.007512468703703798
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.008052893894557949
+        }
+      ]
+    },
+    {
+      "field": "weather_intensity_arr",
+      "samples": 240000,
+      "different_samples": 99636,
+      "max_abs_diff": 0.880188,
+      "mean_abs_diff": 0.051751019362500664,
+      "p95_abs_diff": 0.179732,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 110,
+        "left": 0.068679,
+        "right": 0.0,
+        "abs_diff": 0.068679
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.05166759425595318
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.05166759425595318
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.05170972814814889
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.051751019362500664
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.05172367291666728
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.051695768380102605
+        }
+      ]
+    },
+    {
+      "field": "weather_cloud_arr",
+      "samples": 240000,
+      "different_samples": 239992,
+      "max_abs_diff": 0.35572400000000004,
+      "mean_abs_diff": 0.046622104804167556,
+      "p95_abs_diff": 0.162134,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 0,
+        "left": 0.045696,
+        "right": 0.037075,
+        "abs_diff": 0.008621000000000004
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.046535760922620024
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.046535760922620024
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.04657936894360354
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.046622104804167556
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.04686901165825017
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.04712095742772235
+        }
+      ]
+    },
+    {
+      "field": "weather_cloud_water_arr",
+      "samples": 240000,
+      "different_samples": 239940,
+      "max_abs_diff": 0.171961,
+      "mean_abs_diff": 0.02177761672916742,
+      "p95_abs_diff": 0.061222000000000006,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 0,
+        "left": 0.034492,
+        "right": 0.013357,
+        "abs_diff": 0.021135
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.021702479851191267
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.021702479851191267
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.021740427769361047
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.02177761672916742
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.021910979642256412
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.022047064247449396
+        }
+      ]
+    },
+    {
+      "field": "weather_precip_arr",
+      "samples": 240000,
+      "different_samples": 94238,
+      "max_abs_diff": 0.161105,
+      "mean_abs_diff": 0.019317937620833205,
+      "p95_abs_diff": 0.083209,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 110,
+        "left": 0.050018,
+        "right": 0.0,
+        "abs_diff": 0.050018
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.01930204616921747
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.01930204616921747
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.019310072154881987
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.019317937620833205
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0193743330513468
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.01943187940901371
+        }
+      ]
+    },
+    {
+      "field": "weather_transition_alpha_arr",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "weather_classification_temp_arr",
+      "samples": 240000,
+      "different_samples": 204250,
+      "max_abs_diff": 0.25461900000000004,
+      "mean_abs_diff": 0.026027676274999263,
+      "p95_abs_diff": 0.12090200000000001,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 60,
+        "left": 0.0,
+        "right": 0.017902,
+        "abs_diff": 0.017902
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 2,
+        "samples": 235200,
+        "mean_abs_diff": 0.025992927721087085
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.027183608197278435
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.026599804196127036
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.026027676274999263
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.02601047749579018
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.025992927721087085
+        }
+      ]
+    },
+    {
+      "field": "weather_classification_moisture_arr",
+      "samples": 240000,
+      "different_samples": 42188,
+      "max_abs_diff": 0.990441,
+      "mean_abs_diff": 0.021727239241666797,
+      "p95_abs_diff": 0.15007099999999995,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 467,
+        "left": 0.939069,
+        "right": 0.979207,
+        "abs_diff": 0.04013800000000001
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 2,
+        "samples": 235200,
+        "mean_abs_diff": 0.021192065255102335
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.021744120493197423
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.021735594608586005
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.021727239241666797
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.021462355147306635
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.021192065255102335
+        }
+      ]
+    },
+    {
+      "field": "weather_vapor_arr",
+      "samples": 240000,
+      "different_samples": 239995,
+      "max_abs_diff": 0.43803000000000003,
+      "mean_abs_diff": 0.08332917417916529,
+      "p95_abs_diff": 0.223076,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 0,
+        "left": 0.107327,
+        "right": 0.073426,
+        "abs_diff": 0.033901
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 2,
+        "samples": 235200,
+        "mean_abs_diff": 0.08332832588010101
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.083645617827379
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.08348579780302849
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.08332917417916529
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.08332875431397191
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.08332832588010101
+        }
+      ]
+    },
+    {
+      "field": "weather_convergence_arr",
+      "samples": 240000,
+      "different_samples": 236917,
+      "max_abs_diff": 1.0,
+      "mean_abs_diff": 0.3739067206624994,
+      "p95_abs_diff": 0.61169,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 0,
+        "left": 0.0,
+        "right": 0.178867,
+        "abs_diff": 0.178867
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.3739067206624994
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.37394965092261906
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.3739279689730637
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.3739067206624994
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.3739213656439376
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.3739363095025482
+        }
+      ]
+    },
+    {
+      "field": "weather_instability_arr",
+      "samples": 240000,
+      "different_samples": 209855,
+      "max_abs_diff": 0.8643810000000001,
+      "mean_abs_diff": 0.163411914600001,
+      "p95_abs_diff": 0.411856,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 101,
+        "left": 0.0,
+        "right": 0.005572,
+        "abs_diff": 0.005572
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.163411914600001
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.1639130821173484
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.16365996720959727
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.163411914600001
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.16398971648569105
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.164579310246599
+        }
+      ]
+    },
+    {
+      "field": "weather_field_init_arr",
+      "samples": 240000,
+      "different_samples": 240000,
+      "max_abs_diff": 1.0,
+      "mean_abs_diff": 1.0,
+      "p95_abs_diff": 1.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 0,
+        "left": 0.0,
+        "right": 1.0,
+        "abs_diff": 1.0
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 1.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 1.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 1.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 1.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 1.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 1.0
+        }
+      ]
+    },
+    {
+      "field": "air_mass_temp_anomaly_arr",
+      "samples": 240000,
+      "different_samples": 236811,
+      "max_abs_diff": 0.109712,
+      "mean_abs_diff": 0.04454360034583316,
+      "p95_abs_diff": 0.09349700000000001,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 0,
+        "left": 0.0,
+        "right": -0.002096,
+        "abs_diff": 0.002096
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0443177463222787
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0443177463222787
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.044432250980639555
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.04454360034583316
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.04482719787037013
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.045111250093537135
+        }
+      ]
+    },
+    {
+      "field": "ocean_thermal_anomaly_arr",
+      "samples": 240000,
+      "different_samples": 176981,
+      "max_abs_diff": 0.160001,
+      "mean_abs_diff": 0.03426545403749393,
+      "p95_abs_diff": 0.09739300000000001,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 65,
+        "left": -0.01126,
+        "right": 0.0,
+        "abs_diff": 0.01126
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -1,
+        "samples": 237600,
+        "mean_abs_diff": 0.034155411565650384
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.03423025377125237
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.034155411565650384
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.03426545403749393
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.034340651801340695
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.03425591437499395
+        }
+      ]
+    },
+    {
+      "field": "local_thermal_anomaly_arr",
+      "samples": 240000,
+      "different_samples": 95400,
+      "max_abs_diff": 0.113754,
+      "mean_abs_diff": 0.0054542448541671455,
+      "p95_abs_diff": 0.035695,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 0,
+        "left": -0.003976,
+        "right": 0.0,
+        "abs_diff": 0.003976
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -1,
+        "samples": 237600,
+        "mean_abs_diff": 0.005443911119529124
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.005453686683673988
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.005443911119529124
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0054542448541671455
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.00546402605639779
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.005454977465986882
+        }
+      ]
+    },
+    {
+      "field": "has_river_arr",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "river_flow_arr",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "river_downstream_arr",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "hydro_parent_arr",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "river_discharge_arr",
+      "samples": 240000,
+      "different_samples": 143679,
+      "max_abs_diff": 312.188599,
+      "mean_abs_diff": 3.789217086183497,
+      "p95_abs_diff": 11.159424,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 0,
+        "left": 0.0,
+        "right": 3e-06,
+        "abs_diff": 3e-06
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 2,
+        "samples": 235200,
+        "mean_abs_diff": 3.751546529030736
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 3.8051446097450685
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 3.797100405926093
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 3.789217086183497
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 3.770572062946272
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 3.751546529030736
+        }
+      ]
+    },
+    {
+      "field": "river_discharge_30d_arr",
+      "samples": 240000,
+      "different_samples": 166210,
+      "max_abs_diff": 0.99998,
+      "mean_abs_diff": 0.10493368480833354,
+      "p95_abs_diff": 0.503777,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 0,
+        "left": 0.0,
+        "right": 0.000221,
+        "abs_diff": 0.000221
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 2,
+        "samples": 235200,
+        "mean_abs_diff": 0.10487241812925147
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.10494120675170039
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.104937407790404
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.10493368480833354
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.1049033608964646
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.10487241812925147
+        }
+      ]
+    },
+    {
+      "field": "river_storage_arr",
+      "samples": 240000,
+      "different_samples": 136407,
+      "max_abs_diff": 48.997284,
+      "mean_abs_diff": 0.14725622651251713,
+      "p95_abs_diff": 0.285229,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 0,
+        "left": 0.0,
+        "right": 1e-06,
+        "abs_diff": 1e-06
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 2,
+        "samples": 235200,
+        "mean_abs_diff": 0.14518637230868797
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.14794878750426785
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.14759900922560587
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.14725622651251713
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.14623175321971277
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.14518637230868797
+        }
+      ]
+    },
+    {
+      "field": "groundwater_storage_arr",
+      "samples": 240000,
+      "different_samples": 53845,
+      "max_abs_diff": 0.654488,
+      "mean_abs_diff": 0.031517729366666206,
+      "p95_abs_diff": 0.22414,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 467,
+        "left": 0.0,
+        "right": 0.003092,
+        "abs_diff": 0.003092
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 2,
+        "samples": 235200,
+        "mean_abs_diff": 0.031192126828230884
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.03152676359693831
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.03152220085437664
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.031517729366666206
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.03135657255471337
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.031192126828230884
+        }
+      ]
+    },
+    {
+      "field": "surface_runoff_arr",
+      "samples": 240000,
+      "different_samples": 82537,
+      "max_abs_diff": 2.300172,
+      "mean_abs_diff": 0.13535505250000227,
+      "p95_abs_diff": 0.826907,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 427,
+        "left": 0.0,
+        "right": 0.458376,
+        "abs_diff": 0.458376
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 2,
+        "samples": 235200,
+        "mean_abs_diff": 0.13431627710034297
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.13568281754251912
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.13551727964225807
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.13535505250000227
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.13484091114057475
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.13431627710034297
+        }
+      ]
+    },
+    {
+      "field": "ema_initialized_arr",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "temp_season_offset_arr",
+      "samples": 240000,
+      "different_samples": 83455,
+      "max_abs_diff": 0.00740200000000002,
+      "mean_abs_diff": 0.000323085620833322,
+      "p95_abs_diff": 0.0014939999999999988,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 60,
+        "left": 0.064688,
+        "right": 0.069883,
+        "abs_diff": 0.005195000000000005
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -1,
+        "samples": 237600,
+        "mean_abs_diff": 0.00029883239057238283
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0007914353528912507
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.00029883239057238283
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.000323085620833322
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.000825314297138113
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0013406089498298906
+        }
+      ]
+    },
+    {
+      "field": "insolation_now_arr",
+      "samples": 240000,
+      "different_samples": 57360,
+      "max_abs_diff": 0.018986999999999976,
+      "mean_abs_diff": 0.0008286240000001366,
+      "p95_abs_diff": 0.005108999999999975,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 60,
+        "left": 0.606154,
+        "right": 0.625141,
+        "abs_diff": 0.018986999999999976
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -1,
+        "samples": 237600,
+        "mean_abs_diff": 0.0007952287878787417
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0023969525510202138
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0007952287878787417
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0008286240000001366
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0024145060606057187
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.004011078316326666
+        }
+      ]
+    },
+    {
+      "field": "insolation_dev_arr",
+      "samples": 240000,
+      "different_samples": 57360,
+      "max_abs_diff": 0.018986999999999976,
+      "mean_abs_diff": 0.0008286287500001152,
+      "p95_abs_diff": 0.005086000000000035,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 60,
+        "left": 0.236433,
+        "right": 0.25542,
+        "abs_diff": 0.018986999999999976
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -1,
+        "samples": 237600,
+        "mean_abs_diff": 0.0007952244949494796
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.00239694795918343
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0007952244949494796
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0008286287500001152
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0024145106060601785
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.004011082397959246
+        }
+      ]
+    },
+    {
+      "field": "day_length_arr",
+      "samples": 240000,
+      "different_samples": 88920,
+      "max_abs_diff": 0.03143600000000002,
+      "mean_abs_diff": 0.0005577722500000411,
+      "p95_abs_diff": 0.0028000000000000247,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 180,
+        "left": 0.79543,
+        "right": 0.809725,
+        "abs_diff": 0.014295000000000058
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.0005577722500000411
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.001745403826530397
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0005947247474748117
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0005577722500000411
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0016964550505048676
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.002846519897958785
+        }
+      ]
+    },
+    {
+      "field": "heat_input_arr",
+      "samples": 240000,
+      "different_samples": 57360,
+      "max_abs_diff": 0.018986999999999976,
+      "mean_abs_diff": 0.0008286240000001366,
+      "p95_abs_diff": 0.005089999999999928,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 60,
+        "left": 0.606154,
+        "right": 0.625141,
+        "abs_diff": 0.018986999999999976
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -1,
+        "samples": 237600,
+        "mean_abs_diff": 0.0007952287878787417
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0023969525510202138
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0007952287878787417
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0008286240000001366
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0024145060606057187
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.004011078316326666
+        }
+      ]
+    },
+    {
+      "field": "thermal_energy_arr",
+      "samples": 240000,
+      "different_samples": 211432,
+      "max_abs_diff": 0.04066900000000001,
+      "mean_abs_diff": 0.003487650074999455,
+      "p95_abs_diff": 0.018112000000000017,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 60,
+        "left": 0.023607,
+        "right": 0.036158,
+        "abs_diff": 0.012551000000000003
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0020373274744899363
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0020373274744899363
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.002584718080807474
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.003487650074999455
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.004394148598485047
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.005330742053573868
+        }
+      ]
+    },
+    {
+      "field": "snowpack_arr",
+      "samples": 240000,
+      "different_samples": 2863,
+      "max_abs_diff": 0.32,
+      "mean_abs_diff": 0.0011051087083333306,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 1941,
+        "left": 0.024516,
+        "right": 0.119853,
+        "abs_diff": 0.095337
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0010854527806122435
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0011284772874149637
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0011166749747474722
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0011051087083333306
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.001095380016835015
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0010854527806122435
+        }
+      ]
+    },
+    {
+      "field": "water_balance_30d_arr",
+      "samples": 240000,
+      "different_samples": 54200,
+      "max_abs_diff": 0.310159,
+      "mean_abs_diff": 0.01007079937916678,
+      "p95_abs_diff": 0.05227,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 467,
+        "left": -0.018731,
+        "right": -0.003962,
+        "abs_diff": 0.014769000000000001
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.010031570752551162
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.010031570752551162
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.010051383190235822
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.01007079937916678
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.01008524970117857
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.010099994927721215
+        }
+      ]
+    },
+    {
+      "field": "vegetation_vitality_arr",
+      "samples": 240000,
+      "different_samples": 54200,
+      "max_abs_diff": 0.610835,
+      "mean_abs_diff": 0.010925181562498325,
+      "p95_abs_diff": 0.05617900000000009,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 467,
+        "left": 0.98,
+        "right": 1.0,
+        "abs_diff": 0.020000000000000018
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.010925181562498325
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.010994979085882668
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.01095972781144613
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.010925181562498325
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.010991950425082523
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.01106008191751538
+        }
+      ]
+    },
+    {
+      "field": "vitality_low_streak_arr",
+      "samples": 240000,
+      "different_samples": 7725,
+      "max_abs_diff": 190.0,
+      "mean_abs_diff": 2.9047916666666667,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 518,
+        "left": 80.0,
+        "right": 100.0,
+        "abs_diff": 20.0
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 2.903698979591837
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 2.903698979591837
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 2.9042508417508417
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 2.9047916666666667
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 2.907239057239057
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 2.909736394557823
+        }
+      ]
+    },
+    {
+      "field": "vitality_high_streak_arr",
+      "samples": 240000,
+      "different_samples": 6280,
+      "max_abs_diff": 190.0,
+      "mean_abs_diff": 1.369375,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 745,
+        "left": 160.0,
+        "right": -30.0,
+        "abs_diff": 190.0
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 1.369375
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 1.3792942176870748
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 1.3742845117845117
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 1.369375
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 1.3812289562289561
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 1.3933248299319727
+        }
+      ]
+    },
+    {
+      "field": "soil_moisture_arr",
+      "samples": 240000,
+      "different_samples": 193032,
+      "max_abs_diff": 0.349842,
+      "mean_abs_diff": 0.027658489516666253,
+      "p95_abs_diff": 0.106338,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 121,
+        "left": 0.0,
+        "right": -0.006648,
+        "abs_diff": 0.006648
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 2,
+        "samples": 235200,
+        "mean_abs_diff": 0.027495850943876864
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.027630742185373713
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.027644755989056805
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.027658489516666253
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.027548239482322705
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.027495850943876864
+        }
+      ]
+    },
+    {
+      "field": "vegetation_growth_pressure_arr",
+      "samples": 240000,
+      "different_samples": 54200,
+      "max_abs_diff": 0.821823,
+      "mean_abs_diff": 0.01849935804583248,
+      "p95_abs_diff": 0.104657,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 467,
+        "left": 0.1,
+        "right": 0.0,
+        "abs_diff": 0.1
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 1,
+        "samples": 237600,
+        "mean_abs_diff": 0.018447713762625266
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.018632692648808534
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.01856535194023477
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.01849935804583248
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.018447713762625266
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.01858484400935273
+        }
+      ]
+    },
+    {
+      "field": "temperature_transport_anomaly_arr",
+      "samples": 240000,
+      "different_samples": 191700,
+      "max_abs_diff": 0.34050800000000003,
+      "mean_abs_diff": 0.05235026976666679,
+      "p95_abs_diff": 0.16562,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 65,
+        "left": -0.011358,
+        "right": -0.000442,
+        "abs_diff": 0.010916
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 2,
+        "samples": 235200,
+        "mean_abs_diff": 0.05229035519983024
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.052303054494047506
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0523267616792929
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.05235026976666679
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.052322453278619736
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.05229035519983024
+        }
+      ]
+    },
+    {
+      "field": "vegetation_heat_stress_arr",
+      "samples": 240000,
+      "different_samples": 5765,
+      "max_abs_diff": 0.534894,
+      "mean_abs_diff": 0.000873634666666695,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 915,
+        "left": 0.030424,
+        "right": 0.046902,
+        "abs_diff": 0.016478
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.000873634666666695
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0009326087244898293
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0009028238468013779
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.000873634666666695
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0009190282828283156
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0009653482993197642
+        }
+      ]
+    },
+    {
+      "field": "vegetation_drought_stress_arr",
+      "samples": 240000,
+      "different_samples": 745,
+      "max_abs_diff": 0.312655,
+      "mean_abs_diff": 0.0004603335624999998,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 640,
+        "left": 0.340354,
+        "right": 0.193334,
+        "abs_diff": 0.14701999999999998
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0004549600382653058
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0004549600382653058
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0004576739393939392
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0004603335624999998
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0004628106186868686
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0004653382270408162
+        }
+      ]
+    },
+    {
+      "field": "vegetation_cold_stress_arr",
+      "samples": 240000,
+      "different_samples": 1205,
+      "max_abs_diff": 0.175278,
+      "mean_abs_diff": 0.00038510687499999647,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 516,
+        "left": 0.0,
+        "right": 0.088669,
+        "abs_diff": 0.088669
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.00038510687499999647
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.00039302152210883996
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.000389024225589222
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.00038510687499999647
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.00038664817340067
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0003882209268707449
+        }
+      ]
+    },
+    {
+      "field": "vegetation_regen_score_arr",
+      "samples": 240000,
+      "different_samples": 99810,
+      "max_abs_diff": 0.998866,
+      "mean_abs_diff": 0.21457524712500525,
+      "p95_abs_diff": 0.956103,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 407,
+        "left": 0.981394,
+        "right": 0.0,
+        "abs_diff": 0.981394
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.2145616353826579
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.2145616353826579
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.21456851000000507
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.21457524712500525
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.21458348138889394
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.21459188369898444
+        }
+      ]
+    },
+    {
+      "field": "elevation_arr",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "base_moisture_arr",
+      "samples": 240000,
+      "different_samples": 54200,
+      "max_abs_diff": 0.154228,
+      "mean_abs_diff": 0.006015871850000122,
+      "p95_abs_diff": 0.04120999999999997,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 467,
+        "left": 0.959171,
+        "right": 0.978937,
+        "abs_diff": 0.01976599999999995
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.006015871850000122
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.006026312967687193
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.006021039675926045
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.006015871850000122
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.006030124368686974
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.006056710969387868
+        }
+      ]
+    },
+    {
+      "field": "ocean_current_x_arr",
+      "samples": 240000,
+      "different_samples": 183963,
+      "max_abs_diff": 0.65,
+      "mean_abs_diff": 0.0813720454000038,
+      "p95_abs_diff": 0.397738,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 0,
+        "left": -0.649716,
+        "right": 0.0,
+        "abs_diff": 0.649716
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.0813720454000038
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.08144628969388047
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.08140879257576092
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0813720454000038
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.08137563250000365
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.08137929280612594
+        }
+      ]
+    },
+    {
+      "field": "ocean_current_y_arr",
+      "samples": 240000,
+      "different_samples": 184000,
+      "max_abs_diff": 0.32201,
+      "mean_abs_diff": 0.017008344254165947,
+      "p95_abs_diff": 0.087031,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 0,
+        "left": -0.019223,
+        "right": 0.0,
+        "abs_diff": 0.019223
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.017008344254165947
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.017135695429421102
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.01707137665403971
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.017008344254165947
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.017061468021884837
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.017115675948128604
+        }
+      ]
+    },
+    {
+      "field": "wind_x_arr",
+      "samples": 240000,
+      "different_samples": 240000,
+      "max_abs_diff": 1.9532669999999999,
+      "mean_abs_diff": 0.08651286254166553,
+      "p95_abs_diff": 0.37027199999999993,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 0,
+        "left": -0.801219,
+        "right": -0.8891,
+        "abs_diff": 0.08788099999999999
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.08651286254166553
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.1245805173979591
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.10535442908670177
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.08651286254166553
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.10505887004629717
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.12398336749999855
+        }
+      ]
+    },
+    {
+      "field": "wind_y_arr",
+      "samples": 240000,
+      "different_samples": 240000,
+      "max_abs_diff": 1.9879120000000001,
+      "mean_abs_diff": 0.08926061812499783,
+      "p95_abs_diff": 0.29273000000000005,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 0,
+        "left": 0.598371,
+        "right": 0.457713,
+        "abs_diff": 0.140658
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.08926061812499783
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.12306821984693467
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.10599367352272268
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.08926061812499783
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.10586868555134284
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.12281569312924875
+        }
+      ]
+    },
+    {
+      "field": "slp_arr",
+      "samples": 240000,
+      "different_samples": 239983,
+      "max_abs_diff": 0.10770300000000001,
+      "mean_abs_diff": 0.011373906424999405,
+      "p95_abs_diff": 0.033183000000000004,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 0,
+        "left": 0.196357,
+        "right": 0.194164,
+        "abs_diff": 0.0021930000000000005
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.011373906424999405
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.017389605331632873
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.014351373560605927
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.011373906424999405
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.014426222087541872
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.017540829906462576
+        }
+      ]
+    },
+    {
+      "field": "wind_speed_arr",
+      "samples": 240000,
+      "different_samples": 240000,
+      "max_abs_diff": 0.7570209999999999,
+      "mean_abs_diff": 0.0499916950625002,
+      "p95_abs_diff": 0.23900200000000005,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 0,
+        "left": 1.036109,
+        "right": 0.899903,
+        "abs_diff": 0.13620599999999994
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.0499916950625002
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.06110913752976027
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.05549426759680114
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0499916950625002
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.055783723476430964
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.06169395655186949
+        }
+      ]
+    },
+    {
+      "field": "upwelling_strength_arr",
+      "samples": 240000,
+      "different_samples": 75318,
+      "max_abs_diff": 1.4707219999999999,
+      "mean_abs_diff": 0.07786495844581622,
+      "p95_abs_diff": 0.615134,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 0,
+        "left": -0.15,
+        "right": 0.0,
+        "abs_diff": 0.15
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.07786495844581622
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.07941435329505096
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.07863183064392254
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.07786495844581622
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.07868308333331667
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.07951790464709185
+        }
+      ]
+    },
+    {
+      "field": "wind_stress_curl_arr",
+      "samples": 240000,
+      "different_samples": 184000,
+      "max_abs_diff": 3.963118,
+      "mean_abs_diff": 0.31458045857081807,
+      "p95_abs_diff": 1.572117,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 0,
+        "left": -1.731709,
+        "right": 0.0,
+        "abs_diff": 1.731709
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.31458045857081807
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.3213522114923324
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.3179321342592445
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.31458045857081807
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.3178518414435882
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.3211899872321293
+        }
+      ]
+    },
+    {
+      "field": "ocean_psi_arr",
+      "samples": 240000,
+      "different_samples": 184000,
+      "max_abs_diff": 9.903578,
+      "mean_abs_diff": 0.9653571291583901,
+      "p95_abs_diff": 5.015882,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 0,
+        "left": 6.647608,
+        "right": 0.0,
+        "abs_diff": 6.647608
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.9653571291583901
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.9690978203231829
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.9672085823611664
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.9653571291583901
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.96535777273154
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.9653584294388358
+        }
+      ]
+    },
+    {
+      "field": "cell_pos_x_arr",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "cell_pos_y_arr",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "cell_lat_norm_arr",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "temp_baseline_year_arr",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "terrain_arr",
+      "samples": 240000,
+      "different_samples": 39151,
+      "max_abs_diff": 20.0,
+      "mean_abs_diff": 2.9343625,
+      "p95_abs_diff": 20.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 0,
+        "left": 0.0,
+        "right": 20.0,
+        "abs_diff": 20.0
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 2.9325552721088437
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 2.9325552721088437
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 2.933472222222222
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 2.9343625
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 2.9399747474747473
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 2.9445408163265308
+        }
+      ]
+    },
+    {
+      "field": "landform_arr",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "vegetation_arr",
+      "samples": 240000,
+      "different_samples": 3010,
+      "max_abs_diff": 22.0,
+      "mean_abs_diff": 0.06910416666666666,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 745,
+        "left": 21.0,
+        "right": 20.0,
+        "abs_diff": 1.0
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.06815901360544217
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.06815901360544217
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.06863636363636363
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.06910416666666666
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.06967592592592593
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0702593537414966
+        }
+      ]
+    },
+    {
+      "field": "has_volcano_arr",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "is_lake_seed_arr",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "base_terrain_arr",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "base_landform_arr",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "base_vegetation_arr",
+      "samples": 240000,
+      "different_samples": 3010,
+      "max_abs_diff": 22.0,
+      "mean_abs_diff": 0.06910416666666666,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 745,
+        "left": 21.0,
+        "right": 20.0,
+        "abs_diff": 1.0
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.06815901360544217
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.06815901360544217
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.06863636363636363
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.06910416666666666
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.06967592592592593
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0702593537414966
+        }
+      ]
+    },
+    {
+      "field": "cover_arr",
+      "samples": 240000,
+      "different_samples": 41067,
+      "max_abs_diff": 4.0,
+      "mean_abs_diff": 0.4600708333333333,
+      "p95_abs_diff": 3.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 0,
+        "left": 0.0,
+        "right": 3.0,
+        "abs_diff": 3.0
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 2,
+        "samples": 235200,
+        "mean_abs_diff": 0.45995323129251703
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.45997023809523807
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.46002104377104375
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.4600708333333333
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.46000841750841753
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.45995323129251703
+        }
+      ]
+    },
+    {
+      "field": "weather_type_arr",
+      "samples": 240000,
+      "different_samples": 80161,
+      "max_abs_diff": 7.0,
+      "mean_abs_diff": 0.9513041666666666,
+      "p95_abs_diff": 6.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 110,
+        "left": 3.0,
+        "right": 0.0,
+        "abs_diff": 3.0
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.9497236394557823
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.9497236394557823
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.9505218855218855
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.9513041666666666
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.9524621212121213
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.9536437074829932
+        }
+      ]
+    },
+    {
+      "field": "weather_prev_type_arr",
+      "samples": 240000,
+      "different_samples": 80161,
+      "max_abs_diff": 7.0,
+      "mean_abs_diff": 0.9513041666666666,
+      "p95_abs_diff": 6.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 110,
+        "left": 3.0,
+        "right": 0.0,
+        "abs_diff": 3.0
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.9497236394557823
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.9497236394557823
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.9505218855218855
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.9513041666666666
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.9524621212121213
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.9536437074829932
+        }
+      ]
+    },
+    {
+      "field": "weather_target_type_arr",
+      "samples": 240000,
+      "different_samples": 80161,
+      "max_abs_diff": 7.0,
+      "mean_abs_diff": 0.9513041666666666,
+      "p95_abs_diff": 6.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 110,
+        "left": 3.0,
+        "right": 0.0,
+        "abs_diff": 3.0
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.9497236394557823
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.9497236394557823
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.9505218855218855
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.9513041666666666
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.9524621212121213
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.9536437074829932
+        }
+      ]
+    },
+    {
+      "field": "is_water_arr",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "country_slot_arr",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "climate_dirty_mask",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "weather_dirty_mask",
+      "samples": 240000,
+      "different_samples": 237284,
+      "max_abs_diff": 1.0,
+      "mean_abs_diff": 0.9886833333333334,
+      "p95_abs_diff": 1.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 121,
+        "cell_index": 0,
+        "left": 0.0,
+        "right": 1.0,
+        "abs_diff": 1.0
+      },
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": true,
+      "best_lag": {
+        "lag": 2,
+        "samples": 235200,
+        "mean_abs_diff": 0.988452380952381
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.9893707482993197
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.989023569023569
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.9886833333333334
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.9885690235690235
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.988452380952381
+        }
+      ]
+    }
+  ],
+  "country_evidence": {
+    "status": "pass",
+    "left_country_rows": 400,
+    "right_country_rows": 400,
+    "missing_left": [],
+    "missing_right": [],
+    "differences": [],
+    "receipt_match": true,
+    "left_receipts": [],
+    "right_receipts": []
+  },
+  "known_expected_fields": [],
+  "blockers": [
+    {
+      "field": "temp_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "temp_arr_prev",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "moisture_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "moisture_arr_prev",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "snow_cover_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "snow_cover_arr_prev",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "temp_baseline_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "temp_30d_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "temp_365d_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "temp_anomaly_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "sea_ice_frac_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "sea_ice_frac_arr_prev",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "weather_intensity_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "weather_cloud_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "weather_cloud_water_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "weather_precip_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "weather_classification_temp_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "weather_classification_moisture_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "weather_vapor_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "weather_convergence_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "weather_instability_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "weather_field_init_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "air_mass_temp_anomaly_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "ocean_thermal_anomaly_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "local_thermal_anomaly_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "river_discharge_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "river_discharge_30d_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "river_storage_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "groundwater_storage_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "surface_runoff_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "temp_season_offset_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "insolation_now_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "insolation_dev_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "day_length_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "heat_input_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "thermal_energy_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "snowpack_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "water_balance_30d_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "vegetation_vitality_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "vitality_low_streak_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "vitality_high_streak_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "soil_moisture_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "vegetation_growth_pressure_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "temperature_transport_anomaly_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "vegetation_heat_stress_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "vegetation_drought_stress_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "vegetation_cold_stress_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "vegetation_regen_score_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "base_moisture_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "ocean_current_x_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "ocean_current_y_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "wind_x_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "wind_y_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "slp_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "wind_speed_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "upwelling_strength_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "wind_stress_curl_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "ocean_psi_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "terrain_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "vegetation_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "base_vegetation_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "cover_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "weather_type_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "weather_prev_type_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "weather_target_type_arr",
+      "reason": "undeclared_difference"
+    },
+    {
+      "field": "weather_dirty_mask",
+      "reason": "undeclared_difference"
+    }
+  ]
+}

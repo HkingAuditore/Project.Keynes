@@ -32,9 +32,9 @@
 ### Climate 由后台 worker 权威（当前默认）
 
 `WorldRuntimeHost.runtime_climate_authority_enabled` 生产默认 true。generate 以
-per-domain ACTIVE（`CLIMATE|COMMIT = 0x802`）启动 worker；主线程 native daily
+per-domain ACTIVE（`CLIMATE|COUNTRY|COMMIT = 0x806`，D12）启动 worker；主线程 native daily
 climate 图被抑制门挡住，MapData 由 `apply_runtime_climate_writeback` 回灌，
-**滞后一日**（worker 算 day N，day N+1 落地）。
+**滞后一日**（worker 算 day N，day N+1 落地）。Country 经 Host read-view 回写。
 
 执行序在 `_on_clock_day_changed` 里钉死：**回灌(day N) → season refresh → capture(day N+1 输入)**。
 这不是风格问题 —— 换序会让 season refresh 对回灌表内字段的写入全部作废。
@@ -76,6 +76,8 @@ SHADOW 对拍 / CLM2 字节测试必须在 generate 前关掉该开关。运行�
   的 wind pass 在 round 里比 weather 晚，自己推一份只会把风场的分叉搬到 ψ 上。代价是降水
   少了移动涡旋这条主驱动（`syn_base_lift` 默认 1.55，当前配置里最强的一项）。
 - `vegetation_growth_pressure` 均值符号与主线程对照相反（+0.113 vs −0.011），未定论。
+- C2 曾测到 ACTIVE 整场 `weather_field_init=0`（无 extras 回灌）。现已走 snapshot U8 extras，
+  不再进 store。植被/cover/terrain 的主线程 succession 写者仍未回灌，C2 policy 已声明。
 
 证据见 `docs/cpp-dots-runtime/full-authoritative-runtime-status.md` 第 39–42 节与
 `artifacts/runtime/s4-evidence/`。

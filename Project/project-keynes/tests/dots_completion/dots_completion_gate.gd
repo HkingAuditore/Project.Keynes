@@ -1,30 +1,36 @@
 # tests/dots_completion/dots_completion_gate.gd
-# 任务 7：DOTS 化收官验收门禁脚本（dots-monolith-split §7）。
+# DOTS 运行时验收门禁。
 #
 # 与 record_baseline.gd 的区别：
 #   - record_baseline.gd  ：信息性输出，exit 0 always（用于建立基线 + 进度跟踪）
 #   - dots_completion_gate.gd：硬门禁，任一项失败 exit 非零（用于 CI / merge gate）
 #
-# 依次跑下列 5 项检查（任一失败立即累积；最后给汇总 + 非零退出码）：
-#   (a) 4 巨石行数门禁
+# 依次跑下列检查（任一失败立即累积；最后给汇总 + 非零退出码）：
+#   (a) 4 巨石行数历史诊断
 #       - weather_system.gd ≤ 400
 #       - map_generator.gd  ≤ 1500
 #       - map_baker.gd      ≤ 800
 #       - main.gd           ≤ 400
+#       - 该项属于 2026-05 monolith-split 计划。当前生产架构已经转为
+#         native daily graph + DataCore；超限保留为迁移债务警告，不再
+#         伪装成当前 authority 契约，也不允许静默删除这些数据。
 #   (b) hot path 直写残留 grep
 #       - map_generator.gd 中 `^\s*cell\.[a-z_]+\s*=\s` 命中 ≤ baseline × 0.20
-#         （拆完后剩余命中必须头部注释 `# bake-time only`，但本脚本不强制
-#          per-line 校验注释存在性——record_baseline + code review 把关）
+#         （这是 2026-05 拆分目标的 legacy 指标；超限只警告，不阻断当前门禁）
 #       - weather_system.gd 中 `out_cell\.\w+\s*=` 命中 = 0
 #   (c) Flag registry 完整性
 #       - climate_profile.gd 中所有 `@export var use_[a-z_]+: bool` 必须在
 #         feature_flags.gd::FLAGS 中注册
 #       - 反向：FLAGS 中 resource = "ClimateProfile" 的项必须在 climate_profile
 #         上有同名字段（用 default-constructed 实例反射 .get 校验）
-#   (d) 1000 tick SAME_SOURCE 数值收敛 [SKIP / RUNTIME-GATED]
+#   (d) 当前 D12 authority / D7 transport journal 静态契约
+#       - implemented_domain_mask 只包含 COMMIT|CLIMATE|COUNTRY
+#       - 生产 worker request 为 0x806
+#       - D7T1 section 与 Economy fiscal peer journal 仍在源码中
+#   (e) 1000 tick SAME_SOURCE 数值收敛 [SKIP / RUNTIME-GATED]
 #       - 当前脚本静态校验，不真正跑 tick；记录 baseline.json 中的占位指标。
 #         真正 runtime soak 由项目内 dedicated scene 跑（待 1.1-3.2 拆分稳定后建立）。
-#   (e) 帧时间不退化 [SKIP / RUNTIME-GATED]
+#   (f) 帧时间不退化 [SKIP / RUNTIME-GATED]
 #       - 同上；baseline.json 中的 fast_tick_ms_p50/p95 记录 ground truth，
 #         runtime soak 完成后由 CI 比对。
 #
@@ -32,18 +38,18 @@
 #   godot --headless --script tests/dots_completion/dots_completion_gate.gd --quit
 #
 # 退出码：
-#   0 = 全部门禁通过（含 SKIP 的 (d)/(e)）
-#   1 = 至少一项硬门禁 [(a)/(b)/(c)] 失败
+#   0 = 全部门禁通过（含 SKIP 的 runtime soak）
+#   1 = 至少一项当前硬门禁 [(b weather_system)/(c)/(d)] 失败
 #   2 = 内部错误（脚本无法读取 baseline.json / climate_profile.gd 等）
 #
-# 失败输出格式（精确定位）：
-#   [GATE-FAIL] (a) main.gd: 1742 lines > target 400 (over by 1342)
+# 失败/警告输出格式（精确定位）：
+#   [LEGACY] (a) main.gd: 1742 lines > historical target 400 (over by 1342)
 #   [GATE-FAIL] (b) weather_system.gd: 'out_cell.x =' hit 5 (expected 0)
 #   [GATE-FAIL] (c) feature_flags.FLAGS missing entry for 'use_xxx_yyy' declared on ClimateProfile
 
 extends SceneTree
 
-# 4 巨石行数门禁
+# 4 巨石行数历史诊断
 const _LANDMARKS: Array = [
 	{path = "res://scripts/weather/weather_system.gd",   target =  400, key = "weather_system_gd",  label = "weather_system.gd"},
 	{path = "res://scripts/geography/map_generator.gd",  target = 1500, key = "map_generator_gd",   label = "map_generator.gd"},
@@ -75,9 +81,14 @@ const _DIRECT_WRITE_TARGETS: Array = [
 const _CLIMATE_PROFILE_PATH: String = "res://scripts/data/climate_profile.gd"
 const _FEATURE_FLAGS_PATH: String = "res://scripts/data_core/feature_flags.gd"
 const _BASELINE_PATH: String = "res://tests/dots_completion/baseline.json"
+const _NATIVE_HOST_HEADER_PATH: String = "gdext/src/native_simulation_host.h"
+const _NATIVE_HOST_SOURCE_PATH: String = "gdext/src/native_simulation_host.cpp"
+const _WORLD_RUNTIME_HOST_PATH: String = "res://scripts/game/world_runtime_host.gd"
+const _ECONOMY_PERSISTENCE_PATH: String = "gdext/src/economy_runtime_persistence_codec.h"
 
 # 累积失败信息；len > 0 时以 exit 1 退出。
 var _failures: Array = []
+var _warnings: Array = []
 var _internal_errors: Array = []
 
 
@@ -91,15 +102,17 @@ func _init() -> void:
 	print("")
 	_check_flag_registry()
 	print("")
+	_check_authority_contract()
+	print("")
 	_check_runtime_soak_placeholder(baseline)
 	print("")
 	_summarize_and_exit()
 
 
-# ─── (a) 4 巨石行数门禁 ─────────────────────────────────────────────────
+# ─── (a) 4 巨石行数历史诊断 ─────────────────────────────────────────────
 
 func _check_landmarks() -> void:
-	print("─── (a) 4 巨石行数门禁 ───────────────────────────")
+	print("─── (a) 4 巨石行数历史诊断 ───────────────────────")
 	print("%-28s %8s  %8s  %s" % ["file", "current", "target", "status"])
 	for entry in _LANDMARKS:
 		var lines: int = _count_lines(String(entry.path))
@@ -112,8 +125,8 @@ func _check_landmarks() -> void:
 		var status: String = "PASS" if ok else ("OVER by %d" % (lines - target))
 		print("%-28s %8d  %8d  %s" % [String(entry.label), lines, target, status])
 		if not ok:
-			_failures.append(
-				"[GATE-FAIL] (a) %s: %d lines > target %d (over by %d)"
+			_warnings.append(
+				"[LEGACY] (a) %s: %d lines > historical target %d (over by %d)"
 					% [String(entry.label), lines, target, lines - target]
 			)
 
@@ -135,13 +148,19 @@ func _check_direct_writes(baseline: Dictionary) -> void:
 		if key != "" and hp_b.has(key):
 			limit = int(round(float(hp_b[key]) * float(entry.ratio_max)))
 		var ok: bool = n <= limit
-		var status: String = "PASS" if ok else "FAIL"
+		var legacy: bool = String(entry.label).begins_with("map_generator ")
+		var status: String = "PASS" if ok else ("LEGACY" if legacy else "FAIL")
 		print("%-40s %8d  %8d  %s" % [String(entry.label), n, limit, status])
 		if not ok:
-			_failures.append(
-				"[GATE-FAIL] (b) %s: hit %d > limit %d in %s"
-					% [String(entry.label), n, limit, String(entry.path)]
+			var message := (
+				"[%s] (b) %s: hit %d > limit %d in %s"
+					% ["LEGACY" if legacy else "GATE-FAIL",
+						String(entry.label), n, limit, String(entry.path)]
 			)
+			if legacy:
+				_warnings.append(message)
+			else:
+				_failures.append(message)
 
 
 # ─── (c) Flag registry 完整性 ─────────────────────────────────────────
@@ -183,21 +202,80 @@ func _check_flag_registry() -> void:
 			)
 
 
-# ─── (d) / (e) Runtime soak placeholder ────────────────────────────────
+# ─── (d) Current D12 authority / D7 journal contract ─────────────────
+
+func _check_authority_contract() -> void:
+	print("─── (d) D12 authority / D7 journal contract ─────")
+	var host_header := _read_repo_text(_NATIVE_HOST_HEADER_PATH)
+	var host_source := _read_repo_text(_NATIVE_HOST_SOURCE_PATH)
+	var world_host := _read_text(_WORLD_RUNTIME_HOST_PATH)
+	var economy_persistence := _read_repo_text(_ECONOMY_PERSISTENCE_PATH)
+	if host_header == "" or host_source == "" or world_host == "" or economy_persistence == "":
+		_internal_errors.append("authority contract source file missing")
+		return
+
+	var mask_block := _extract_implemented_mask_block(host_header)
+	var mask_ok := mask_block != "" \
+		and mask_block.contains("runtime_domain_mask(RuntimeDomainId::COMMIT)") \
+		and mask_block.contains("runtime_domain_mask(RuntimeDomainId::CLIMATE)") \
+		and mask_block.contains("runtime_domain_mask(RuntimeDomainId::COUNTRY)") \
+		and not mask_block.contains("RuntimeDomainId::ECONOMY")
+	_expect_gate_contract("(d) implemented_domain_mask is COMMIT|CLIMATE|COUNTRY", mask_ok)
+
+	var request_ok := world_host.contains("config[\"authoritative_domain_mask\"] = 0x806")
+	_expect_gate_contract("(d) production worker request is exactly 0x806", request_ok)
+
+	var d7_marker_ok := host_source.contains("D7_TRANSACTION_MAGIC") \
+		and host_source.contains("\"D7T1\"") \
+		and economy_persistence.contains("SAVE_SECTION_FISCAL_PEER = 30")
+	_expect_gate_contract("(d) D7T1 transport and fiscal peer section are present", d7_marker_ok)
+
+
+func _expect_gate_contract(label: String, ok: bool) -> void:
+	print("%-58s %s" % [label, "PASS" if ok else "FAIL"])
+	if not ok:
+		_failures.append("[GATE-FAIL] %s" % label)
+
+
+func _extract_implemented_mask_block(source: String) -> String:
+	var rx := RegEx.new()
+	if rx.compile("(?s)implemented_domain_mask\\(\\)\\s*\\{.*?return\\s+(.*?);") != OK:
+		return ""
+	var match := rx.search(source)
+	return match.get_string(1) if match != null else ""
+
+
+func _read_text(res_path: String) -> String:
+	var f := FileAccess.open(res_path, FileAccess.READ)
+	if f == null:
+		return ""
+	var text := f.get_as_text()
+	f.close()
+	return text
+
+
+func _read_repo_text(relative_path: String) -> String:
+	var project_root := ProjectSettings.globalize_path("res://").replace(
+		"\\", "/").trim_suffix("/")
+	var repo_root := project_root.path_join("..").path_join("..").simplify_path()
+	return _read_text(repo_root.path_join(relative_path))
+
+
+# ─── (e) / (f) Runtime soak placeholder ────────────────────────────────
 
 func _check_runtime_soak_placeholder(baseline: Dictionary) -> void:
-	print("─── (d)/(e) runtime soak [SKIP / RUNTIME-GATED] ──")
+	print("─── (e)/(f) runtime soak [SKIP / RUNTIME-GATED] ──")
 	var bm: Dictionary = baseline.get("_baseline_metrics", {})
 	var p50: Variant = bm.get("fast_tick_ms_p50", null)
 	var p95: Variant = bm.get("fast_tick_ms_p95", null)
 	if p50 == null or p95 == null:
-		print("baseline metrics not yet recorded; (d)/(e) SKIPPED")
+		print("baseline metrics not yet recorded; (e)/(f) SKIPPED")
 		print("  → record fast_tick_ms_p50/p95 in baseline.json by running 100-tick scene")
 		return
 	print("baseline.fast_tick_ms_p50 = %s" % str(p50))
 	print("baseline.fast_tick_ms_p95 = %s" % str(p95))
-	print("(d) 1000-tick SAME_SOURCE convergence: SKIPPED (requires runtime scene)")
-	print("(e) frame-time non-regression:         SKIPPED (requires runtime scene)")
+	print("(e) 1000-tick SAME_SOURCE convergence: SKIPPED (requires runtime scene)")
+	print("(f) frame-time non-regression:         SKIPPED (requires runtime scene)")
 
 
 # ─── 辅助：行数 / regex 计数 / baseline 加载 / flag 文本扫描 ────────────
@@ -302,6 +380,10 @@ func _summarize_and_exit() -> void:
 		print("=> exit 2 (gate cannot run)")
 		quit(2)
 		return
+	if not _warnings.is_empty():
+		print("historical warnings (non-gating):")
+		for warning in _warnings:
+			print("  %s" % warning)
 	if _failures.is_empty():
 		print("ALL GATES PASSED")
 		print("=> exit 0")

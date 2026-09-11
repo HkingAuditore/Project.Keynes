@@ -1,0 +1,64 @@
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/organic.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1179)
+       [3] generate (res://scripts/geography/map_generator.gd:1474)
+       [4] generate_world (res://scripts/game/world_runtime_host.gd:457)
+       [5] _run (res://tests/runtime_climate_save_roundtrip_test.gd:86)
+       [6] _init (res://tests/runtime_climate_save_roundtrip_test.gd:46)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/dry_sand.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1179)
+       [3] generate (res://scripts/geography/map_generator.gd:1474)
+       [4] generate_world (res://scripts/game/world_runtime_host.gd:457)
+       [5] _run (res://tests/runtime_climate_save_roundtrip_test.gd:86)
+       [6] _init (res://tests/runtime_climate_save_roundtrip_test.gd:46)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/rock.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1179)
+       [3] generate (res://scripts/geography/map_generator.gd:1474)
+       [4] generate_world (res://scripts/game/world_runtime_host.gd:457)
+       [5] _run (res://tests/runtime_climate_save_roundtrip_test.gd:86)
+       [6] _init (res://tests/runtime_climate_save_roundtrip_test.gd:46)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/snow_wet.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1179)
+       [3] generate (res://scripts/geography/map_generator.gd:1474)
+       [4] generate_world (res://scripts/game/world_runtime_host.gd:457)
+       [5] _run (res://tests/runtime_climate_save_roundtrip_test.gd:86)
+       [6] _init (res://tests/runtime_climate_save_roundtrip_test.gd:46)
+ERROR: [economy] test bootstrap failed: bootstrap_construction_source_missing candidate_regions=2 skipped_regions=2 details=[{ "component_index": 0, "missing_timber": true, "missing_stone": true, "cell_count": 259, "first_cell": 49 }, { "component_index": 1, "missing_timber": true, "missing_stone": true, "cell_count": 1, "first_cell": 554 }] diagnostics={ "passable_cells": 260, "resource_positive_cells": { "fertile_soil": 257, "timber": 0, "stone": 0 }, "resource_peaks": { "fertile_soil": 350000.0, "timber": 0.0, "stone": 0.0 }, "root_buildings": { "timber_collector": 0, "stone_collector": 0 }, "fallback_roots": { "timber_collector": 0, "stone_collector": 0 } }
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _setup_economy_runtime (res://scripts/geography/map_generator.gd:1748)
+       [1] _setup_sus (res://scripts/geography/map_generator.gd:3706)
+       [2] generate (res://scripts/geography/map_generator.gd:1602)
+       [3] generate_world (res://scripts/game/world_runtime_host.gd:457)
+       [4] _run (res://tests/runtime_climate_save_roundtrip_test.gd:86)
+       [5] _init (res://tests/runtime_climate_save_roundtrip_test.gd:46)
+WARNING: [runtime-climate-round] no ClimateDailySystem; SHADOW capture carries no shared pass input
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _build_runtime_climate_round_input (res://scripts/geography/map_generator.gd:4608)
+       [1] capture_runtime_inputs_for_worker (res://scripts/geography/map_generator.gd:2351)
+       [2] generate_world (res://scripts/game/world_runtime_host.gd:511)
+       [3] _run (res://tests/runtime_climate_save_roundtrip_test.gd:86)
+       [4] _init (res://tests/runtime_climate_save_roundtrip_test.gd:46)
+[climate][boundary] cold-start env_day=0 plan_day=1 ok=0 ref_hash=15864837856752618639 adopted_parity=15864837856752618639 round_ran=1
+[climate][boundary] day=1 planned=1 compared=1 matched=1 worker_parity=15864837856752618639 ref=15864837856752618639 stage_ran=0x0 prod_stage=0x0 round_ran=0 alb=0 veg=0 fb=0 err=
+ERROR: 24 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 310 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

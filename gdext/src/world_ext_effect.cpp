@@ -312,8 +312,73 @@ Dictionary DCWorldExt::choose_era_reward(int64_t offer_generation,
 }
 
 Dictionary DCWorldExt::submit_effect_instances(const Dictionary &batch) {
-    return _effect_runtime == nullptr ? unavailable()
-        : runtime_from(_effect_runtime)->submit_instances(batch);
+    if (_effect_runtime == nullptr) return unavailable();
+    Dictionary result = runtime_from(_effect_runtime)->submit_instances(batch);
+    // F7 SHADOW mirror: best-effort queue of accepted declarative instances.
+    // Failures here never roll back the production EffectRuntime write.
+    if (bool(result.get("ok", false)) && _runtime_host != nullptr) {
+        const PackedInt64Array accepted_ids = result.get("instance_ids",
+                                                         PackedInt64Array());
+        const PackedInt64Array ids = batch.get("instance_ids", PackedInt64Array());
+        const PackedStringArray program_keys = batch.get("program_keys",
+                                                          PackedStringArray());
+        const PackedInt32Array generations = batch.get("generations",
+                                                        PackedInt32Array());
+        const PackedInt32Array source_types = batch.get("source_types",
+                                                         PackedInt32Array());
+        const PackedInt64Array source_ids = batch.get("source_ids",
+                                                       PackedInt64Array());
+        const PackedInt64Array source_handles = batch.get("source_handles",
+                                                           PackedInt64Array());
+        const PackedInt64Array target_handles = batch.get("target_handles",
+                                                           PackedInt64Array());
+        const PackedInt32Array target_generations = batch.get(
+            "target_generations", PackedInt32Array());
+        const PackedInt32Array levels = batch.get("levels", PackedInt32Array());
+        const PackedInt64Array next_due_days = batch.get("next_due_days",
+                                                          PackedInt64Array());
+        const PackedByteArray active = batch.get("active", PackedByteArray());
+        int32_t mirrored = 0;
+        int32_t mirror_rejected = 0;
+        for (int i = 0; i < ids.size() && i < program_keys.size(); ++i) {
+            const int64_t id = ids[i];
+            bool accepted = false;
+            for (int a = 0; a < accepted_ids.size(); ++a) {
+                if (accepted_ids[a] == id) { accepted = true; break; }
+            }
+            if (!accepted) continue;
+            const int32_t program_id = _runtime_host->effect_pod_program_id_for_key(
+                program_keys[i].utf8().get_data());
+            if (program_id < 0) {
+                ++mirror_rejected;
+                continue;
+            }
+            RuntimeEffectPodInstanceInput input;
+            input.instance_id = id;
+            input.generation = static_cast<uint32_t>(std::max(
+                1, i < generations.size() ? generations[i] : 1));
+            input.program_id = program_id;
+            input.source_type = i < source_types.size() ? source_types[i] : 0;
+            input.source_id = i < source_ids.size() ? source_ids[i] : 0;
+            input.source_handle = static_cast<uint64_t>(
+                i < source_handles.size() ? source_handles[i] : 0);
+            input.target_handle = static_cast<uint64_t>(
+                i < target_handles.size() ? target_handles[i] : 0);
+            input.target_generation = static_cast<uint32_t>(std::max(
+                0, i < target_generations.size() ? target_generations[i] : 0));
+            input.level = i < levels.size() ? levels[i] : 0;
+            input.next_due_day = i < next_due_days.size() ? next_due_days[i] : 0;
+            input.active = i >= active.size() || active[i] != 0;
+            std::string mirror_error;
+            if (_runtime_host->queue_effect_pod_instance(input, mirror_error))
+                ++mirrored;
+            else
+                ++mirror_rejected;
+        }
+        result["effect_pod_mirrored"] = mirrored;
+        result["effect_pod_mirror_rejected"] = mirror_rejected;
+    }
+    return result;
 }
 
 Dictionary DCWorldExt::retire_effect_instance(int64_t instance_id,
@@ -326,6 +391,155 @@ Dictionary DCWorldExt::retire_effect_instance(int64_t instance_id,
     Dictionary out;
     out["ok"] = ok;
     if (!ok) out["reason"] = String(error.c_str());
+    if (ok && _runtime_host != nullptr) {
+        std::string mirror_error;
+        out["effect_pod_mirrored"] = _runtime_host->queue_effect_pod_remove(
+            instance_id, static_cast<uint32_t>(generation), mirror_error);
+        if (!bool(out["effect_pod_mirrored"]))
+            out["effect_pod_mirror_reason"] = String(mirror_error.c_str());
+    }
+    return out;
+}
+
+Dictionary DCWorldExt::queue_effect_pod_instance(const Dictionary &source) {
+    Dictionary out;
+    if (_runtime_host == nullptr) {
+        out["ok"] = false;
+        out["code"] = "runtime_host_unavailable";
+        return out;
+    }
+    RuntimeEffectPodInstanceInput input;
+    input.instance_id = static_cast<int64_t>(source.get("instance_id", 0));
+    input.generation = static_cast<uint32_t>(std::max<int64_t>(
+        1, static_cast<int64_t>(source.get("generation", 1))));
+    input.program_id = static_cast<int32_t>(source.get("program_id", -1));
+    if (source.has("program_key")) {
+        const String key = source.get("program_key", String());
+        const int32_t resolved = _runtime_host->effect_pod_program_id_for_key(
+            key.utf8().get_data());
+        if (resolved >= 0) input.program_id = resolved;
+    }
+    input.source_type = static_cast<int32_t>(source.get("source_type", 0));
+    input.source_id = static_cast<int64_t>(source.get("source_id", 0));
+    input.source_handle = static_cast<uint64_t>(
+        static_cast<int64_t>(source.get("source_handle", 0)));
+    input.target_handle = static_cast<uint64_t>(
+        static_cast<int64_t>(source.get("target_handle", 0)));
+    input.target_generation = static_cast<uint32_t>(std::max<int64_t>(
+        0, static_cast<int64_t>(source.get("target_generation", 0))));
+    input.level = static_cast<int32_t>(source.get("level", 0));
+    input.next_due_day = static_cast<int64_t>(source.get("next_due_day", 0));
+    input.active = bool(source.get("active", true));
+    std::string error;
+    const bool ok = _runtime_host->queue_effect_pod_instance(input, error);
+    out["ok"] = ok;
+    out["code"] = ok ? "ok" : String(error.c_str());
+    return out;
+}
+
+Dictionary DCWorldExt::queue_effect_pod_metric(const Dictionary &source) {
+    Dictionary out;
+    if (_runtime_host == nullptr) {
+        out["ok"] = false;
+        out["code"] = "runtime_host_unavailable";
+        return out;
+    }
+    std::string error;
+    const bool ok = _runtime_host->queue_effect_pod_metric(
+        static_cast<int64_t>(source.get("instance_id", 0)),
+        static_cast<uint32_t>(std::max<int64_t>(
+            1, static_cast<int64_t>(source.get("generation", 1)))),
+        static_cast<int32_t>(source.get("metric_id", 0)),
+        static_cast<int64_t>(source.get("revision", 1)),
+        static_cast<int64_t>(source.get("value", 0)),
+        error);
+    out["ok"] = ok;
+    out["code"] = ok ? "ok" : String(error.c_str());
+    return out;
+}
+
+Dictionary DCWorldExt::queue_effect_pod_remove(int64_t instance_id,
+                                               int64_t generation) {
+    Dictionary out;
+    if (_runtime_host == nullptr) {
+        out["ok"] = false;
+        out["code"] = "runtime_host_unavailable";
+        return out;
+    }
+    std::string error;
+    const bool ok = generation > 0 && _runtime_host->queue_effect_pod_remove(
+        instance_id, static_cast<uint32_t>(generation), error);
+    out["ok"] = ok;
+    out["code"] = ok ? "ok" : String(error.empty() ? "effect_remove_invalid" :
+                                                    error.c_str());
+    return out;
+}
+
+Dictionary DCWorldExt::poll_effect_worker_intent() {
+    Dictionary out;
+    if (_runtime_host == nullptr) {
+        out["ok"] = false;
+        out["code"] = "runtime_host_unavailable";
+        return out;
+    }
+    RuntimeDomainIntent intent;
+    if (!_runtime_host->poll_effect_pod_intent(intent)) {
+        out["ok"] = true;
+        out["available"] = false;
+        return out;
+    }
+    out["ok"] = true;
+    out["available"] = true;
+    out["request_id"] = static_cast<int64_t>(intent.request_id);
+    out["transaction_id"] = static_cast<int64_t>(intent.request_id);
+    out["source_id"] = static_cast<int64_t>(intent.source_id);
+    out["target_handle"] = static_cast<int64_t>(intent.target_handle);
+    out["target_generation"] = static_cast<int64_t>(intent.target_generation);
+    out["target_domain"] = static_cast<int64_t>(intent.target_domain);
+    out["opcode"] = static_cast<int64_t>(intent.opcode);
+    out["effect_action"] = static_cast<int64_t>(intent.effect_action);
+    out["effective_day"] = intent.effective_day;
+    out["sequence"] = static_cast<int64_t>(intent.sequence);
+    out["duration_days"] = intent.duration_days;
+    out["stacks"] = intent.stacks;
+    out["magnitude_q16"] = intent.magnitude_q16;
+    PackedInt64Array payload;
+    for (int64_t value : intent.payload) payload.append(value);
+    out["payload"] = payload;
+    return out;
+}
+
+Dictionary DCWorldExt::submit_effect_worker_ack(const Dictionary &source) {
+    Dictionary out;
+    if (_runtime_host == nullptr) {
+        out["ok"] = false;
+        out["code"] = "runtime_host_unavailable";
+        return out;
+    }
+    RuntimeDomainAck ack;
+    ack.request_id = static_cast<uint64_t>(
+        static_cast<int64_t>(source.get("request_id", 0)));
+    ack.transaction_id = static_cast<uint64_t>(
+        static_cast<int64_t>(source.get("transaction_id",
+            source.get("request_id", 0))));
+    ack.target_handle = static_cast<uint64_t>(
+        static_cast<int64_t>(source.get("target_handle", 0)));
+    ack.target_generation = static_cast<uint32_t>(
+        static_cast<int64_t>(source.get("target_generation", 0)));
+    ack.domain = static_cast<uint16_t>(
+        static_cast<int64_t>(source.get(
+            "domain", static_cast<int64_t>(RuntimeDomainId::MODIFIER))));
+    ack.code = static_cast<RuntimeDomainAckCode>(
+        static_cast<int32_t>(source.get("code", 0)));
+    ack.effective_day = static_cast<int64_t>(source.get("effective_day", 0));
+    ack.producer_id = static_cast<uint32_t>(
+        static_cast<int64_t>(source.get("producer_id", 0)));
+    ack.sequence = static_cast<uint64_t>(
+        static_cast<int64_t>(source.get("sequence", 0)));
+    std::string error;
+    const bool ok = _runtime_host->submit_effect_pod_ack(ack, error);
+    out["ok"] = ok;
+    out["code"] = ok ? "ok" : String(error.c_str());
     return out;
 }
 

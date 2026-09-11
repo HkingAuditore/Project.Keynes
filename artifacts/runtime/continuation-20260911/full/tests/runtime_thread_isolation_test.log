@@ -1,0 +1,28 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+=== runtime thread isolation smoke ===
+  [PASS] thread API exported
+  [PASS] commit API exported
+  [PASS] stop API exported
+  [PASS] thread QoS API exported
+  [PASS] runtime restore API exported
+  [PASS] partial graph is rejected
+  [PASS] rejection is explicit
+  [PASS] ACTIVE is blocked until every native domain handler exists
+  [PASS] shadow graph starts asynchronously
+  [PASS] domain POD ABI version is exposed
+  [PASS] worker reaches running state
+  [PASS] worker waits for OFF reference trace at day barrier
+  [PASS] main thread never waits for simulation
+  [PASS] time debt remains bounded
+  [PASS] coverage reports missing native domain handlers
+  [PASS] barrier pause remains non-blocking
+  [PASS] barrier stop remains non-blocking
+  [PASS] barrier worker stops cleanly
+=== done: 18 checks, 0 failures ===
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 111 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

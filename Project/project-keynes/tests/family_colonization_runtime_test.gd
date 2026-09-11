@@ -114,8 +114,8 @@ func _run() -> void:
 			restored_page.get("total", 0)) != 1:
 		print("restore=", restored_result, " page=", restored_page,
 			" saved_schema=", saved.get("schema", 0))
-	_expect("PKEC v51 restores in-flight route, payload, cargo and due heap exactly",
-		int(saved.get("schema", 0)) == 51
+	_expect("PKEC v52 restores in-flight route, payload, cargo and due heap exactly",
+		int(saved.get("schema", 0)) == 52
 		and bool(restored_result.get("ok", false))
 		and int(restored_page.get("total", 0)) == 1
 		and int(restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))
@@ -661,8 +661,8 @@ func _run_greenfield_kit_and_return(catalog: Dictionary) -> void:
 	var restored_fixture := _make_fixture(catalog.duplicate(true), 260820)
 	var restored: Object = restored_fixture.ext
 	var restored_result := _restore_economy(restored, saved.get("chunks", []))
-	_expect("PKEC v51 restores in-flight kit cargo and frozen buildings",
-		int(saved.get("schema", 0)) == 51
+	_expect("PKEC v52 restores in-flight kit cargo and frozen buildings",
+		int(saved.get("schema", 0)) == 52
 		and bool(restored_result.get("ok", false))
 		and int(restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))
 	var cancelled: Dictionary = ext.cancel_family_colonization(
@@ -1332,8 +1332,8 @@ func _run_zero_stock_partial_kit(catalog: Dictionary) -> void:
 	var restored_fixture := _make_fixture(catalog.duplicate(true), 260822, 0)
 	var restored: Object = restored_fixture.ext
 	var restored_result := _restore_economy(restored, saved.get("chunks", []))
-	_expect("v51 preparing/outbound expeditions restore with matching state hash",
-		int(saved.get("schema", 0)) == 51
+	_expect("v52 preparing/outbound expeditions restore with matching state hash",
+		int(saved.get("schema", 0)) == 52
 		and bool(restored_result.get("ok", false))
 		and int(restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))
 

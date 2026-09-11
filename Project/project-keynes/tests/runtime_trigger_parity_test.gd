@@ -11,7 +11,7 @@ func _init() -> void:
 		quit(1)
 		return
 	# Stage H remains SHADOW: the protocol guard must continue refusing ACTIVE
-	# Trigger authority and retain the 0x802/0x7FD masks.
+	# Trigger authority. Implemented is Climate|Country|COMMIT = 0x806 after D12.
 	var started: Dictionary = ext.start_runtime_worker({
 		"simulation_thread_mode": "SHADOW",
 		"graph_coverage_complete": false,
@@ -20,8 +20,8 @@ func _init() -> void:
 		"paused": true,
 	})
 	var report: Dictionary = ext.get_runtime_thread_report()
-	var ok := bool(started.get("ok", false)) and int(report.get("implemented_domain_mask", 0)) == 0x802 \
-		and int(report.get("missing_domain_mask", 0)) == 0x7FD \
+	var ok := bool(started.get("ok", false)) and int(report.get("implemented_domain_mask", 0)) == 0x806 \
+		and int(report.get("missing_domain_mask", 0)) == 0x7F9 \
 		and not bool(report.get("authority_ready", true))
 	ext.request_runtime_stop()
 	if not ok:

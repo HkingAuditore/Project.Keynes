@@ -67,6 +67,12 @@ struct RuntimeClimateSnapshot {
     std::vector<float> day_length;
     std::vector<float> heat_input;
     std::vector<float> temp_season_offset;
+    // weather_field_init 同样没有 store 成员。生产 weather_commit 会把解算过的格子
+    // 标成 1；ACTIVE 下主线程那条路径被抑制，worker scratch 若也不回灌，MapData 会
+    // 整场停在生成时的 0。客户端常见读法是 field_init ? weather_type : CLEAR，于是
+    // 即使 weather_type 已回灌，可见天气仍被当成从未初始化。刻意不进 store，以免
+    // bump PKEC schema。空 vector = 这一天 weather 没跑过。
+    std::vector<uint8_t> weather_field_init;
 };
 
 // Worker -> main-thread handoff for ACTIVE Climate write-back.
@@ -171,6 +177,7 @@ public:
         result.day_length = ro.day_length;
         result.heat_input = ro.heat_input;
         result.temp_season_offset = ro.temp_season_offset;
+        result.weather_field_init = _kernel.weather_field_init();
         return result;
     }
 

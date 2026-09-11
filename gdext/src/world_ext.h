@@ -242,6 +242,11 @@ public:
     godot::Dictionary submit_country_economy_asset_result(
         const godot::Dictionary &result);
     bool runtime_country_host_economy_protocol_self_test() const;
+    bool runtime_country_host_handoff_self_test() const;
+    godot::Dictionary prepare_country_authority_handoff(int target_owner);
+    godot::Dictionary install_country_authority_handoff();
+    godot::Dictionary abort_country_authority_handoff();
+    godot::Dictionary get_country_authority_handoff_status() const;
     bool runtime_country_host_rejection_self_test() const;
     // Main-thread transport service for the Country worker.  In SHADOW this
     // only replays a typed, side-effect-free ACK; ACTIVE must not use this
@@ -347,6 +352,7 @@ public:
     bool runtime_protocol_guard_self_test() const;
     bool runtime_trigger_pod_self_test() const;
     bool runtime_effect_pod_self_test() const;
+    bool runtime_effect_host_stage_self_test();
     bool runtime_ideology_pod_self_test() const;
     bool runtime_events_authority_self_test() const;
     bool is_native_daily_visual_commit_pending() const;
@@ -377,6 +383,8 @@ public:
     godot::Dictionary poll_country_command_receipts(
             int64_t after_request_id = 0, int limit = 128);
     bool runtime_country_host_receipt_self_test() const;
+    bool runtime_country_shadow_parity_self_test() const;
+    void set_country_sync_store_writes_forbidden(bool forbidden);
     godot::Dictionary run_country_slice(const godot::Dictionary &ctx);
     /// Push NativeCountryRuntime territory into DataCore + MapData before
     /// vision/borders consume country_slot_arr. CLAIM can bump native ownership
@@ -478,6 +486,11 @@ public:
     godot::Dictionary submit_effect_instances(const godot::Dictionary &batch);
     godot::Dictionary retire_effect_instance(int64_t instance_id, int64_t generation,
                                              int64_t effective_day);
+    godot::Dictionary queue_effect_pod_instance(const godot::Dictionary &input);
+    godot::Dictionary queue_effect_pod_metric(const godot::Dictionary &input);
+    godot::Dictionary queue_effect_pod_remove(int64_t instance_id, int64_t generation);
+    godot::Dictionary poll_effect_worker_intent();
+    godot::Dictionary submit_effect_worker_ack(const godot::Dictionary &ack);
     bool effect_instance_fire_acked(int64_t instance_id, int64_t generation) const;
     godot::Dictionary submit_effect_snapshots(const godot::Dictionary &batch);
     godot::Dictionary run_effect_daily(int64_t day_index);

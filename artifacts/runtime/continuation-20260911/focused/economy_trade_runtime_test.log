@@ -1,0 +1,26 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] catalog compiles
+  [PASS] accuracy ACTIVE country configures
+  [PASS] accuracy ACTIVE economy configures
+  [PASS] accuracy ACTIVE markets bootstrap
+  [FAIL] accuracy ACTIVE uses certified nested frontier
+  [PASS] accuracy ACTIVE preserves exact ledgers
+  [PASS] country configures
+  [PASS] economy configures
+  [PASS] independent trade topology captures
+  [PASS] two markets bootstrap
+  [FAIL] opening local cycle commits exactly
+  [FAIL] economy publishes population development metric v1
+  [FAIL] rolling markets remain within the four-day visibility bound
+  [FAIL] trade planner timing is reported on its native slice
+  [FAIL] trade planner timing exposes an accounted substage breakdown
+  [FAIL] trade planner timing does not leak into the next continuation slice
+  [FAIL] profitable domestic route dispatches
+=== economy trade runtime FAIL ===
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 276 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

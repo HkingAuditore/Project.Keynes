@@ -1,6 +1,13 @@
 # 经济存档、catalog migration 与内容扩展 SOP
 
-筹备期逐日囤积 / PKEC v51：只支持新游戏；旧经济存档显式拒绝。v51 不增加持久字段，
+财政 peer escrow / PKEC v52：只支持新游戏；旧经济存档显式拒绝。v52 在每个固定 Country
+fiscal record 后追加一个非负 `int64` Economy-owned escrow，并新增
+`SAVE_SECTION_FISCAL_PEER` 持久化 `request_id -> terminal result` 的 Economy-owned
+fiscal peer journal。escrow 与 journal 都进入 Economy state hash；reader 按当前 Country
+snapshot 的 slot 数要求 fiscal record 完整、稳定顺序，journal 要求 identity 唯一且完整，
+缺失或不匹配一律拒绝。恢复后重复 request 只重发原 terminal，不再次修改 escrow。
+
+筹备期逐日囤积 / PKEC v51（历史）：v51 不增加持久字段，
 只放宽一条校验：`EXPEDITION_PREPARING` 记录仍要求 `payload_count == 0` 且
 `kit_count == 0`，但 `cargo_count` 可以非零——筹备队每天把源地市场买得起的差额划入托管
 cargo，攒够才出发。该 cargo 已计入在途货物守恒与权威 state hash，因此不能按旧规则当成

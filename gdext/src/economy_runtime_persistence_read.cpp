@@ -392,6 +392,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         }
         int32_t ceiling_confirm = 0, ceiling_expand = 0, ceiling_recover = 0;
         int64_t ceiling_count = 0;
+        int32_t fiscal_peer_count = 0;
         if (!read_le(bytes, cursor, ceiling_confirm) || !read_le(bytes, cursor, ceiling_expand) ||
             !read_le(bytes, cursor, ceiling_recover) || !read_le(bytes, cursor, ceiling_count) ||
             ceiling_confirm != _price_ceiling_confirm_days || ceiling_expand != _price_ceiling_expand_bp ||
@@ -401,6 +402,13 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             return false;
         }
         _restore.expected_ceilings = ceiling_count;
+        if (schema >= 52 &&
+            (!read_le(bytes, cursor, fiscal_peer_count) ||
+             fiscal_peer_count < 0 || fiscal_peer_count > 1000000)) {
+            error = "save_fiscal_peer_header_invalid";
+            return false;
+        }
+        _restore.expected_fiscal_peer = schema >= 52 ? fiscal_peer_count : 0;
         if (!read_id_table(bytes, cursor, professions) || !read_id_table(bytes, cursor, ethnicities) ||
             !read_id_table(bytes, cursor, good_ids) || !read_id_table(bytes, cursor, plan_ids) ||
             cursor != bytes.size()) {
@@ -1489,9 +1497,20 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             error = "save_fiscal_country_snapshot_unavailable";
             return false;
         }
-        const size_t summary_count = static_cast<size_t>(
-            std::max(0, country_snapshot.country_count)) *
+        const int32_t country_count = std::max(0,
+            country_snapshot.country_count);
+        const size_t summary_count = static_cast<size_t>(country_count) *
             NativeCountryRuntime::TAX_KIND_COUNT;
+        if (_restore.expected_fiscal < 0) {
+            _restore.expected_fiscal = country_count;
+            _fiscal_escrow_by_country.assign(
+                static_cast<size_t>(country_count), 0);
+        } else if (_restore.expected_fiscal != country_count ||
+                   _restore.restored_fiscal +
+                       static_cast<int64_t>(records) > country_count) {
+            error = "save_fiscal_record_count_invalid";
+            return false;
+        }
         const auto ensure_summary_size = [&](size_t size) {
             _fiscal_last_bases.resize(size, 0);
             _fiscal_last_assessed.resize(size, 0);
@@ -1522,6 +1541,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         };
         for (uint32_t record = 0; record < records; ++record) {
             int32_t country = -1;
+            int64_t escrow = 0;
             if (!read_le(bytes, cursor, country) ||
                 country != _restore.restored_fiscal ||
                 country < 0 || static_cast<size_t>(country) *
@@ -1537,10 +1557,14 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 !read_group(_fiscal_cumulative_bases, country) ||
                 !read_group(_fiscal_cumulative_collected, country) ||
                 !read_group(_fiscal_cumulative_requests, country) ||
-                !read_group(_fiscal_cumulative_paid, country)) {
+                !read_group(_fiscal_cumulative_paid, country) ||
+                !read_le(bytes, cursor, escrow) || escrow < 0 ||
+                static_cast<size_t>(country) >=
+                    _fiscal_escrow_by_country.size()) {
                 error = "save_fiscal_record_invalid";
                 return false;
             }
+            _fiscal_escrow_by_country[static_cast<size_t>(country)] = escrow;
             ++_restore.restored_fiscal;
         }
         _restore.fiscal_seen = true;
@@ -2503,6 +2527,84 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             ++_restore.restored_ceilings;
         }
         _restore.ceilings_seen = true;
+    } else if (schema >= 52 && section == SAVE_SECTION_FISCAL_PEER) {
+        if (_restore.expected_fiscal_peer < 0 ||
+            _restore.restored_fiscal_peer + static_cast<int64_t>(records) >
+                _restore.expected_fiscal_peer) {
+            error = "save_fiscal_peer_record_count_invalid";
+            return false;
+        }
+        for (uint32_t i = 0; i < records; ++i) {
+            NativeEconomyRuntime::FiscalPeerJournalRecord record;
+            uint16_t operation = 0;
+            uint8_t result_code = 0, state = 0, reserved0 = 0;
+            uint16_t reserved1 = 0;
+            if (!read_le(bytes, cursor, record.request_id) ||
+                !read_le(bytes, cursor, record.transaction_id) ||
+                !read_le(bytes, cursor, record.country_handle) ||
+                !read_le(bytes, cursor, record.country_generation) ||
+                !read_le(bytes, cursor, record.peer_generation) ||
+                !read_le(bytes, cursor, record.committed_peer_generation) ||
+                !read_le(bytes, cursor, record.day) ||
+                !read_le(bytes, cursor, record.operation_sequence) ||
+                !read_le(bytes, cursor, record.continuation_index) ||
+                !read_le(bytes, cursor, record.country_slot) ||
+                !read_le(bytes, cursor, operation) ||
+                !read_le(bytes, cursor, result_code) ||
+                !read_le(bytes, cursor, state) ||
+                !read_le(bytes, cursor, record.accepted) ||
+                !read_le(bytes, cursor, reserved0) ||
+                !read_le(bytes, cursor, reserved1) ||
+                !read_le(bytes, cursor, record.requested_quantity) ||
+                !read_le(bytes, cursor, record.requested_cash) ||
+                !read_le(bytes, cursor, record.committed_quantity) ||
+                !read_le(bytes, cursor, record.committed_cash)) {
+                error = "save_fiscal_peer_record_truncated";
+                return false;
+            }
+            for (char &value : record.reason) {
+                uint8_t byte = 0;
+                if (!read_le(bytes, cursor, byte)) {
+                    error = "save_fiscal_peer_record_truncated";
+                    return false;
+                }
+                value = static_cast<char>(byte);
+            }
+            record.operation = static_cast<RuntimeEconomyAssetOperation>(operation);
+            record.result_code = static_cast<RuntimeEconomyAssetResultCode>(result_code);
+            record.state = static_cast<RuntimeEconomyAssetState>(state);
+            if (record.request_id == 0 || record.transaction_id == 0 ||
+                record.country_handle == 0 ||
+                record.country_slot < -1 ||
+                record.country_slot >= _epoch_country_count ||
+                record.committed_peer_generation < record.peer_generation ||
+                record.day < -1 || record.operation < RuntimeEconomyAssetOperation::FISCAL_RESERVE ||
+                record.operation > RuntimeEconomyAssetOperation::FISCAL_COLLECT ||
+                record.result_code != RuntimeEconomyAssetResultCode::COMPLETED &&
+                    record.result_code != RuntimeEconomyAssetResultCode::REJECTED ||
+                record.state != RuntimeEconomyAssetState::COMPLETED &&
+                    record.state != RuntimeEconomyAssetState::REJECTED ||
+                record.accepted > 1 || record.requested_quantity < 0 ||
+                record.requested_cash < 0 || record.committed_quantity < 0 ||
+                record.committed_cash < 0 || record.committed_quantity > record.requested_quantity ||
+                record.committed_cash > record.requested_cash || reserved0 != 0 || reserved1 != 0) {
+                error = "save_fiscal_peer_record_invalid";
+                return false;
+            }
+            if (record.result_code == RuntimeEconomyAssetResultCode::COMPLETED &&
+                (record.accepted == 0 || record.country_slot < 0 ||
+                 record.country_generation == 0 || record.peer_generation == 0 ||
+                 record.committed_quantity <= 0 || record.committed_cash <= 0)) {
+                error = "save_fiscal_peer_completed_record_invalid";
+                return false;
+            }
+            if (!_fiscal_peer_journal.emplace(record.request_id, record).second) {
+                error = "save_fiscal_peer_duplicate";
+                return false;
+            }
+            ++_restore.restored_fiscal_peer;
+        }
+        _restore.fiscal_peer_seen = true;
     } else if (section == SAVE_SECTION_END ||
                (schema == 33 && section == SAVE_SECTION_END_V33)) {
         if (records != 0 || payload_bytes != 0) {

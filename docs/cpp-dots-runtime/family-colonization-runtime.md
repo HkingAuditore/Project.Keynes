@@ -184,7 +184,7 @@ busy。家族入口进入地图选点模式，Esc/右键退出。
 
 ## 存档与诊断
 
-当前写出为 PKCN v11、PKEC v51；PKEF 当前为 v11。reader 只接受同版本。
+当前写出为 PKCN v11、PKEC v52；PKEF 当前为 v11。reader 只接受同版本。
 v51 的 `EXPEDITION_PREPARING` 记录要求 `payload_count == 0` 且 `kit_count == 0`，
 但 `cargo_count` **可以非零**——那是筹备期逐日囤积的托管货物，已计入在途货物守恒总量与
 authoritative state hash。v42 曾要求 PREPARING 的 cargo 也为 0，该约束在 v51 解除。

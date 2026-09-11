@@ -1,6 +1,7 @@
 #include "economy_runtime.h"
 #include "effect_runtime.h"
 #include "country_runtime.h"
+#include "native_simulation_host.h"
 #include "economy_runtime_variant_helpers.h"
 #include "modifier_runtime.h"
 #include "parallel_dispatcher.h"
@@ -697,10 +698,27 @@ bool NativeEconomyRuntime::advance_country_research_procurement(
             continuation.good < 0 || continuation.good >= _market.good_count ||
             continuation.quantity <= 0 || continuation.cash <= 0)
             return fail_fault("country_research_procurement_continuation_invalid");
+        const int64_t research_handle = static_cast<int64_t>(
+            _epoch_country_handles[static_cast<size_t>(continuation.country)]);
+        const CountryWorkerAssetRoute route =
+            block_or_enqueue_country_worker_asset(
+                static_cast<uint16_t>(
+                    NativeCountryRuntime::ECONOMY_ASSET_RESEARCH_PURCHASE),
+                research_handle, continuation.cash, continuation.quantity,
+                continuation.good, error);
+        if (route != CountryWorkerAssetRoute::NOT_APPLICABLE) {
+            // Research is not part of the M1 gate. Treat any routed result as
+            // a hard continuation fault until its own peer journal exists;
+            // never turn a gate decision into a successful completion.
+            continuation.phase = 7;
+            continuation.last_error = error.empty()
+                ? "country_economy_operation_gate_closed" : error;
+            continuation.active = false;
+            return false;
+        }
         const godot::Dictionary begun =
             _country_runtime->begin_economy_research_purchase(
-                static_cast<int64_t>(_epoch_country_handles[
-                    static_cast<size_t>(continuation.country)]),
+                research_handle,
                 continuation.quantity, continuation.cash, _epoch_id,
                 static_cast<int32_t>(_stage));
         if (!static_cast<bool>(begun.get("ok", false))) {
@@ -871,9 +889,371 @@ bool NativeEconomyRuntime::advance_country_research_procurement(
     return fail_fault("country_research_procurement_phase_invalid");
 }
 
+NativeEconomyRuntime::CountryWorkerAssetRoute
+NativeEconomyRuntime::block_or_enqueue_country_worker_asset(
+        uint16_t operation, int64_t country_handle, int64_t cash,
+        int64_t quantity, int32_t good_id, std::string &error,
+        uint64_t *request_id) {
+    std::vector<int32_t> ids;
+    std::vector<int64_t> quantities;
+    if (good_id >= 0) {
+        ids.push_back(good_id);
+        quantities.push_back(quantity);
+    }
+    return block_or_enqueue_country_worker_asset(
+        operation, country_handle, cash, quantity, ids, quantities, error,
+        request_id);
+}
+
+NativeEconomyRuntime::CountryWorkerAssetRoute
+NativeEconomyRuntime::block_or_enqueue_country_worker_asset(
+        uint16_t operation, int64_t country_handle, int64_t cash,
+        int64_t quantity, const std::vector<int32_t> &good_ids,
+        const std::vector<int64_t> &good_quantities, std::string &error,
+        uint64_t *request_id) {
+    if (_country_runtime == nullptr ||
+        !_country_runtime->sync_store_writes_forbidden())
+        return CountryWorkerAssetRoute::NOT_APPLICABLE;
+    // M1 is intentionally fiscal-only. Other Country/Economy operations
+    // still use their established synchronous coordinator until their peer
+    // owner and recovery rules are implemented; enqueuing them now would turn
+    // a supported sync path into a request that no peer can complete.
+    if (operation != NativeCountryRuntime::ECONOMY_ASSET_FISCAL_RESERVE &&
+        operation != NativeCountryRuntime::ECONOMY_ASSET_FISCAL_RETURN &&
+        operation != NativeCountryRuntime::ECONOMY_ASSET_FISCAL_COLLECT) {
+        error = "country_economy_operation_gate_closed";
+        return CountryWorkerAssetRoute::TERMINAL_ERROR;
+    }
+    if (_simulation_host == nullptr) {
+        error = "country_economy_bridge_unavailable";
+        return CountryWorkerAssetRoute::TERMINAL_ERROR;
+    }
+    uint64_t wire_request_id = request_id != nullptr ? *request_id : 0;
+    if (wire_request_id == 0)
+        wire_request_id = _simulation_host->allocate_command_request_id();
+    RuntimeEconomyAssetRequest request;
+    request.operation = static_cast<RuntimeEconomyAssetOperation>(operation);
+    request.origin_domain = static_cast<uint32_t>(RuntimeDomainId::ECONOMY);
+    request.origin_epoch = _epoch_id;
+    request.origin_stage = static_cast<int32_t>(_stage);
+    // A fiscal reservation continuation owns the admission day until every
+    // country in that frozen plan has reached a terminal peer result. The
+    // scheduler may deliver the next pulse with a later wall-clock day, but
+    // allowing that value into the wire identity would make one logical
+    // continuation appear to cross days and can reject an otherwise valid
+    // retry as stale. Keep the request day stable for the whole reservation
+    // boundary.
+    const int64_t request_day =
+        _fiscal_reservation_continuation.active &&
+            _fiscal_reservation_continuation.day_index >= 0
+        ? _fiscal_reservation_continuation.day_index
+        : (_fiscal_settlement_continuation.active &&
+            _fiscal_settlement_continuation.day_index >= 0
+            ? _fiscal_settlement_continuation.day_index
+            : std::max<int64_t>(0, _current_day));
+    request.day = request_day;
+    request.transaction_id = wire_request_id;
+    request.request_id = wire_request_id;
+    request.operation_sequence = wire_request_id;
+    request.country_handle = static_cast<uint64_t>(country_handle);
+    request.requested_cash = cash;
+    request.requested_quantity = quantity;
+    request.requested_goods_total = quantity;
+    request.good_count = 0;
+    const size_t copied = std::min(good_ids.size(), good_quantities.size());
+    for (size_t i = 0; i < copied && i < RUNTIME_ECONOMY_ASSET_GOOD_CAPACITY; ++i) {
+        request.good_ids[i] = good_ids[i];
+        request.good_quantities[i] = good_quantities[i];
+        ++request.good_count;
+    }
+    if (request.good_count > 0) request.good_id = request.good_ids[0];
+    if (request_id != nullptr) *request_id = wire_request_id;
+    if (!_simulation_host->enqueue_economy_origin_country_asset(request, error)) {
+        if (error.empty()) error = "country_economy_asset_enqueue_failed";
+        return CountryWorkerAssetRoute::TERMINAL_ERROR;
+    }
+    error = "country_economy_asset_host_pending";
+    return CountryWorkerAssetRoute::ENQUEUED_PENDING;
+}
+
+bool NativeEconomyRuntime::fiscal_peer_journal_matches(
+        const RuntimeEconomyAssetRequest &request,
+        const FiscalPeerJournalRecord &record, std::string &error) const {
+    error.clear();
+    if (record.request_id != request.request_id ||
+        record.transaction_id != request.transaction_id ||
+        record.country_handle != request.country_handle ||
+        record.country_generation != request.country_generation ||
+        record.peer_generation != request.peer_generation ||
+        record.day != request.day ||
+        record.operation_sequence != request.operation_sequence ||
+        record.continuation_index != request.continuation_index ||
+        record.country_slot != request.country_slot ||
+        record.operation != request.operation ||
+        record.requested_quantity != request.requested_quantity ||
+        record.requested_cash != request.requested_cash) {
+        error = "country_economy_fiscal_peer_journal_identity_mismatch";
+        return false;
+    }
+    return true;
+}
+
+RuntimeEconomyAssetResult NativeEconomyRuntime::fiscal_peer_result_from_journal(
+        const RuntimeEconomyAssetRequest &request,
+        const FiscalPeerJournalRecord &record) const {
+    RuntimeEconomyAssetResult result;
+    result.code = record.result_code;
+    result.state = record.state;
+    result.accepted = record.accepted;
+    result.session_epoch = request.session_epoch;
+    result.transaction_id = record.transaction_id;
+    result.request_id = record.request_id;
+    result.operation = record.operation;
+    result.continuation_index = record.continuation_index;
+    result.day = record.day;
+    result.country_generation = record.country_generation;
+    result.peer_generation = record.peer_generation;
+    result.committed_peer_generation = record.committed_peer_generation;
+    result.country_slot = record.country_slot;
+    result.target_slot = request.target_slot;
+    result.committed_quantity = record.committed_quantity;
+    result.committed_cash = record.committed_cash;
+    result.committed_goods_total = 0;
+    result.reason = record.reason;
+    return result;
+}
+
+void NativeEconomyRuntime::record_fiscal_peer_terminal(
+        const RuntimeEconomyAssetRequest &request,
+        RuntimeEconomyAssetResultCode code,
+        RuntimeEconomyAssetState state,
+        int64_t committed_quantity, int64_t committed_cash,
+        const char *reason) {
+    FiscalPeerJournalRecord record;
+    record.request_id = request.request_id;
+    record.transaction_id = request.transaction_id;
+    record.country_handle = request.country_handle;
+    record.country_generation = request.country_generation;
+    record.peer_generation = request.peer_generation;
+    record.committed_peer_generation = std::max(
+        request.peer_generation, _committed_generation);
+    record.day = request.day;
+    record.operation_sequence = request.operation_sequence;
+    record.continuation_index = request.continuation_index;
+    record.country_slot = request.country_slot;
+    record.operation = request.operation;
+    record.result_code = code;
+    record.state = state;
+    record.accepted = code == RuntimeEconomyAssetResultCode::COMPLETED ? 1 : 0;
+    record.requested_quantity = request.requested_quantity;
+    record.requested_cash = request.requested_cash;
+    record.committed_quantity = committed_quantity;
+    record.committed_cash = committed_cash;
+    if (reason != nullptr) {
+        const size_t size = std::min(std::strlen(reason), record.reason.size() - 1);
+        std::memcpy(record.reason.data(), reason, size);
+        record.reason[size] = '\0';
+    }
+    _fiscal_peer_journal[request.request_id] = record;
+}
+
+bool NativeEconomyRuntime::service_country_economy_asset_peer(
+        uint32_t max_requests, std::string &error) {
+    error.clear();
+    if (max_requests == 0 || _simulation_host == nullptr ||
+        _country_runtime == nullptr ||
+        !_country_runtime->sync_store_writes_forbidden()) {
+        return true;
+    }
+
+    for (uint32_t inspected = 0; inspected < max_requests; ++inspected) {
+        RuntimeEconomyAssetRequest request;
+        if (!_simulation_host->poll_country_economy_asset_request(request))
+            break;
+
+        const auto journal = _fiscal_peer_journal.find(request.request_id);
+        if (journal != _fiscal_peer_journal.end()) {
+            std::string identity_error;
+            if (!fiscal_peer_journal_matches(request, journal->second,
+                                             identity_error)) {
+                error = identity_error;
+                return false;
+            }
+            RuntimeEconomyAssetResult result = fiscal_peer_result_from_journal(
+                request, journal->second);
+            std::string submit_error;
+            if (!_simulation_host->submit_country_economy_asset_result(
+                    result, submit_error)) {
+                std::string requeue_error;
+                if (!_simulation_host->requeue_country_economy_asset_request(
+                        request.request_id, requeue_error)) {
+                    error = requeue_error.empty() ? submit_error : requeue_error;
+                    return false;
+                }
+                error = submit_error.empty()
+                    ? "country_economy_fiscal_terminal_retry_pending"
+                    : submit_error;
+                return false;
+            }
+            continue;
+        }
+
+        const auto submit_terminal = [this](
+                const RuntimeEconomyAssetRequest &request,
+                RuntimeEconomyAssetResultCode code,
+                RuntimeEconomyAssetState state,
+                int64_t committed_quantity, int64_t committed_cash,
+                const char *reason, std::string &submit_error) {
+            RuntimeEconomyAssetResult result;
+            result.code = code;
+            result.state = state;
+            result.accepted = code == RuntimeEconomyAssetResultCode::COMPLETED ? 1 : 0;
+            result.session_epoch = request.session_epoch;
+            result.transaction_id = request.transaction_id;
+            result.request_id = request.request_id;
+            result.operation = request.operation;
+            result.continuation_index = request.continuation_index;
+            result.day = request.day;
+            result.country_generation = request.country_generation;
+            result.peer_generation = request.peer_generation;
+            result.committed_peer_generation = std::max(
+                request.peer_generation, _committed_generation);
+            result.country_slot = request.country_slot;
+            result.target_slot = request.target_slot;
+            result.committed_quantity = committed_quantity;
+            result.committed_cash = committed_cash;
+            result.committed_goods_total = 0;
+            if (reason != nullptr) {
+                const size_t size = std::min(std::strlen(reason),
+                    result.reason.size() - 1);
+                std::memcpy(result.reason.data(), reason, size);
+                result.reason[size] = '\0';
+            }
+            return _simulation_host->submit_country_economy_asset_result(
+                result, submit_error);
+        };
+
+        const bool fiscal = request.operation ==
+                RuntimeEconomyAssetOperation::FISCAL_RESERVE ||
+            request.operation == RuntimeEconomyAssetOperation::FISCAL_RETURN ||
+            request.operation == RuntimeEconomyAssetOperation::FISCAL_COLLECT;
+        const bool request_ready = request.origin_domain ==
+                static_cast<uint32_t>(RuntimeDomainId::ECONOMY) &&
+            request.state == RuntimeEconomyAssetState::COUNTRY_PREPARED &&
+            request.country_slot >= 0 &&
+            request.country_slot < static_cast<int32_t>(
+                _fiscal_escrow_by_country.size());
+        const int64_t amount = request.prepared_quantity > 0
+            ? request.prepared_quantity : request.requested_quantity;
+        if (!fiscal || !request_ready || amount <= 0 ||
+            request.requested_cash != amount ||
+            request.requested_quantity != amount) {
+            record_fiscal_peer_terminal(
+                request, RuntimeEconomyAssetResultCode::REJECTED,
+                RuntimeEconomyAssetState::REJECTED, 0, 0,
+                "country_economy_fiscal_request_invalid");
+            std::string submit_error;
+            if (!submit_terminal(
+                    request, RuntimeEconomyAssetResultCode::REJECTED,
+                    RuntimeEconomyAssetState::REJECTED, 0, 0,
+                    "country_economy_fiscal_request_invalid", submit_error)) {
+                std::string requeue_error;
+                if (!_simulation_host->requeue_country_economy_asset_request(
+                        request.request_id, requeue_error)) {
+                    error = requeue_error.empty() ? submit_error : requeue_error;
+                    return false;
+                }
+                error = submit_error.empty()
+                    ? "country_economy_fiscal_rejection_retry_pending"
+                    : submit_error;
+                return false;
+            }
+            continue;
+        }
+
+        const size_t country = static_cast<size_t>(request.country_slot);
+        const int64_t escrow = _fiscal_escrow_by_country[country];
+        int64_t updated_escrow = escrow;
+        if (request.operation == RuntimeEconomyAssetOperation::FISCAL_RESERVE) {
+            if (escrow > std::numeric_limits<int64_t>::max() - amount) {
+                record_fiscal_peer_terminal(
+                    request, RuntimeEconomyAssetResultCode::REJECTED,
+                    RuntimeEconomyAssetState::REJECTED, 0, 0,
+                    "country_economy_fiscal_escrow_overflow");
+                std::string submit_error;
+                if (!submit_terminal(
+                        request, RuntimeEconomyAssetResultCode::REJECTED,
+                        RuntimeEconomyAssetState::REJECTED, 0, 0,
+                        "country_economy_fiscal_escrow_overflow", submit_error)) {
+                    std::string requeue_error;
+                    if (!_simulation_host->requeue_country_economy_asset_request(
+                            request.request_id, requeue_error)) {
+                        error = requeue_error.empty() ? submit_error : requeue_error;
+                        return false;
+                    }
+                    error = submit_error.empty()
+                        ? "country_economy_fiscal_rejection_retry_pending"
+                        : submit_error;
+                    return false;
+                }
+                continue;
+            }
+            updated_escrow = escrow + amount;
+        } else {
+            if (escrow < amount) {
+                record_fiscal_peer_terminal(
+                    request, RuntimeEconomyAssetResultCode::REJECTED,
+                    RuntimeEconomyAssetState::REJECTED, 0, 0,
+                    "country_economy_fiscal_escrow_insufficient");
+                std::string submit_error;
+                if (!submit_terminal(
+                        request, RuntimeEconomyAssetResultCode::REJECTED,
+                        RuntimeEconomyAssetState::REJECTED, 0, 0,
+                        "country_economy_fiscal_escrow_insufficient", submit_error)) {
+                    std::string requeue_error;
+                    if (!_simulation_host->requeue_country_economy_asset_request(
+                            request.request_id, requeue_error)) {
+                        error = requeue_error.empty() ? submit_error : requeue_error;
+                        return false;
+                    }
+                    error = submit_error.empty()
+                        ? "country_economy_fiscal_rejection_retry_pending"
+                        : submit_error;
+                    return false;
+                }
+                continue;
+            }
+            updated_escrow = escrow - amount;
+        }
+
+        _fiscal_escrow_by_country[country] = updated_escrow;
+        record_fiscal_peer_terminal(
+            request, RuntimeEconomyAssetResultCode::COMPLETED,
+            RuntimeEconomyAssetState::COMPLETED, amount, amount, "");
+        std::string submit_error;
+        if (!submit_terminal(
+                request, RuntimeEconomyAssetResultCode::COMPLETED,
+                RuntimeEconomyAssetState::COMPLETED, amount, amount, "",
+                submit_error)) {
+            std::string requeue_error;
+            if (!_simulation_host->requeue_country_economy_asset_request(
+                    request.request_id, requeue_error)) {
+                error = requeue_error.empty() ? submit_error : requeue_error;
+                return false;
+            }
+            error = submit_error.empty()
+                ? "country_economy_fiscal_completion_retry_pending"
+                : submit_error;
+            return false;
+        }
+    }
+    return true;
+}
+
 bool NativeEconomyRuntime::coordinate_country_fiscal_transaction(
         int32_t country, int32_t operation, int64_t amount,
-        int64_t &committed, std::string &error) {
+        int64_t &committed, std::string &error,
+        uint64_t *transport_request_id) {
     committed = 0;
     error.clear();
     if (_country_runtime == nullptr || !_country_runtime->economy_available()) {
@@ -886,6 +1266,32 @@ bool NativeEconomyRuntime::coordinate_country_fiscal_transaction(
         error = "country_fiscal_peer_request_invalid";
         return false;
     }
+    if (_country_runtime->sync_store_writes_forbidden() &&
+        _simulation_host != nullptr && transport_request_id != nullptr &&
+        *transport_request_id != 0) {
+        RuntimeEconomyAssetResult terminal;
+        if (_simulation_host->country_economy_asset_terminal_result(
+                *transport_request_id, terminal)) {
+            if (terminal.code != RuntimeEconomyAssetResultCode::COMPLETED ||
+                terminal.operation != static_cast<RuntimeEconomyAssetOperation>(operation)) {
+                error = "country_economy_asset_host_terminal_rejected";
+                return false;
+            }
+            committed = terminal.committed_quantity > 0
+                ? terminal.committed_quantity : terminal.committed_cash;
+            if (committed <= 0 || committed > amount) {
+                error = "country_economy_asset_host_terminal_quantity_invalid";
+                return false;
+            }
+            return true;
+        }
+    }
+    if (block_or_enqueue_country_worker_asset(
+            static_cast<uint16_t>(operation),
+            static_cast<int64_t>(_epoch_country_handles[static_cast<size_t>(country)]),
+            amount, amount, -1, error, transport_request_id) !=
+            CountryWorkerAssetRoute::NOT_APPLICABLE)
+        return false;
     const int64_t handle = static_cast<int64_t>(
         _epoch_country_handles[static_cast<size_t>(country)]);
     godot::Dictionary begun;
@@ -994,6 +1400,10 @@ bool NativeEconomyRuntime::coordinate_country_cohort_cash(
         return false;
     }
     if (amount == 0) return true;
+    if (block_or_enqueue_country_worker_asset(
+            static_cast<uint16_t>(operation), country_handle, amount, amount, -1,
+            error) != CountryWorkerAssetRoute::NOT_APPLICABLE)
+        return false;
 
     godot::Dictionary begun;
     if (operation == NativeCountryRuntime::ECONOMY_ASSET_CASH_TO_COHORT) {
@@ -1107,6 +1517,10 @@ bool NativeEconomyRuntime::coordinate_country_market_goods(
         return false;
     }
     if (amount == 0) return true;
+    if (block_or_enqueue_country_worker_asset(
+            static_cast<uint16_t>(operation), country_handle, 0, amount, good,
+            error) != CountryWorkerAssetRoute::NOT_APPLICABLE)
+        return false;
     const size_t market_index = _market.index(market, good);
     if (market_index >= _market.stock.size()) {
         error = "country_market_goods_lane_invalid";
@@ -1234,6 +1648,11 @@ bool NativeEconomyRuntime::coordinate_country_treasury_spend(
         }
     }
     if (cash == 0 && goods_total == 0) return true;
+    if (block_or_enqueue_country_worker_asset(
+            static_cast<uint16_t>(NativeCountryRuntime::ECONOMY_ASSET_TREASURY_SPEND),
+            country_handle, cash, goods_total, good_ids, treasury_quantities,
+            error) != CountryWorkerAssetRoute::NOT_APPLICABLE)
+        return false;
 
     std::vector<int32_t> living_merchants;
     if (_merchant_offsets.size() == static_cast<size_t>(_cell_count + 1)) {
@@ -9743,22 +10162,27 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
         out["elapsed_ms"] = elapsed_ms(slice_start);
         return out;
     }
+    if (!service_country_economy_asset_peer(64, error)) {
+        fail(error.empty() ? "country_economy_fiscal_peer_failed" : error);
+        out = compact ? compact_report() : report();
+        out["done"] = true;
+        out["work_done"] = 0;
+        out["elapsed_ms"] = elapsed_ms(slice_start);
+        return out;
+    }
     if (!_epoch_active &&
         (_fiscal_reservation_continuation.active ||
          _epoch_begin_post_fiscal_pending)) {
         _executed_stage = Stage::EPOCH_BEGIN;
         _executed_substage = _fiscal_reservation_continuation.active
             ? "fiscal_reserve" : "fiscal_finalize";
-        if (_epoch_begin_pending_day < 0 ||
-            day_index != _epoch_begin_pending_day) {
-            error = "epoch_begin_fiscal_day_mismatch";
-            fail(error);
-            out = compact ? compact_report() : report();
-            out["done"] = true;
-            out["work_done"] = 0;
-            out["elapsed_ms"] = elapsed_ms(slice_start);
-            return out;
-        }
+        // The epoch-open fiscal plan is admitted on one deterministic day.
+        // A later scheduler pulse is still a continuation of that plan, not
+        // a new day. Do not turn normal wall-clock advancement into a fatal
+        // protocol error; all request identities and frozen fiscal lanes must
+        // continue to use the saved admission day.
+        const int64_t fiscal_day = _epoch_begin_pending_day >= 0
+            ? _epoch_begin_pending_day : day_index;
         if (_fiscal_reservation_continuation.active) {
             if (!advance_fiscal_reservation(error)) {
                 fail(error.empty() ? "fiscal_reservation_failed" : error);
@@ -9774,7 +10198,7 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
         }
         if (!_fiscal_reservation_continuation.active &&
             _epoch_begin_post_fiscal_pending) {
-            if (!finish_epoch_start_after_fiscal(day_index, error)) {
+            if (!finish_epoch_start_after_fiscal(fiscal_day, error)) {
                 fail(error.empty() ? "fiscal_begin_finalize_failed" : error);
                 out = compact ? compact_report() : report();
                 out["done"] = true;
@@ -16552,7 +16976,13 @@ int64_t NativeEconomyRuntime::state_hash() const {
                     ? _fiscal_previous_requests[lane] : 0));
         }
     }
-    const size_t fiscal_hash_lanes = _epoch_country_handles.size() *
+    NativeCountryRuntime::EconomySnapshot fiscal_country_snapshot;
+    const size_t fiscal_hash_countries = _country_runtime != nullptr &&
+        _country_runtime->copy_economy_snapshot(fiscal_country_snapshot)
+        ? static_cast<size_t>(std::max(0,
+            fiscal_country_snapshot.country_count))
+        : _epoch_country_handles.size();
+    const size_t fiscal_hash_lanes = fiscal_hash_countries *
         NativeCountryRuntime::TAX_KIND_COUNT;
     const auto mix_fiscal_lanes = [&](const std::vector<int64_t> &values) {
         for (size_t lane = 0; lane < fiscal_hash_lanes; ++lane) {
@@ -17032,6 +17462,42 @@ int64_t NativeEconomyRuntime::state_hash() const {
     // never-committed bootstrap may still hold an empty vector. Hash the same
     // fixed logical country x tax-kind shape used by PKEC serialization.
     mix_fiscal_lanes(_fiscal_last_events);
+    mix_u64(0x46495343455343ULL); // "FISCAESC"
+    for (size_t country = 0; country < fiscal_hash_countries; ++country) {
+        mix_u64(static_cast<uint64_t>(country <
+            _fiscal_escrow_by_country.size()
+                ? _fiscal_escrow_by_country[country] : 0));
+    }
+    mix_u64(0x46495343414c504aULL); // "FISCALPJ"
+    std::vector<uint64_t> fiscal_peer_ids;
+    fiscal_peer_ids.reserve(_fiscal_peer_journal.size());
+    for (const auto &entry : _fiscal_peer_journal)
+        fiscal_peer_ids.push_back(entry.first);
+    std::sort(fiscal_peer_ids.begin(), fiscal_peer_ids.end());
+    for (const uint64_t request_id : fiscal_peer_ids) {
+        const FiscalPeerJournalRecord &record =
+            _fiscal_peer_journal.at(request_id);
+        mix_u64(record.request_id);
+        mix_u64(record.transaction_id);
+        mix_u64(record.country_handle);
+        mix_u64(record.country_generation);
+        mix_u64(record.peer_generation);
+        mix_u64(record.committed_peer_generation);
+        mix_u64(static_cast<uint64_t>(record.day));
+        mix_u64(record.operation_sequence);
+        mix_u64(record.continuation_index);
+        mix_u64(static_cast<uint64_t>(record.country_slot));
+        mix_u64(static_cast<uint16_t>(record.operation));
+        mix_u64(static_cast<uint8_t>(record.result_code));
+        mix_u64(static_cast<uint8_t>(record.state));
+        mix_u64(record.accepted);
+        mix_u64(static_cast<uint64_t>(record.requested_quantity));
+        mix_u64(static_cast<uint64_t>(record.requested_cash));
+        mix_u64(static_cast<uint64_t>(record.committed_quantity));
+        mix_u64(static_cast<uint64_t>(record.committed_cash));
+        for (const char value : record.reason)
+            mix_u64(static_cast<uint8_t>(value));
+    }
     // Canal quotes are read-side preview state and deliberately do not alter
     // the authoritative simulation hash.  Started projects do: they own paid
     // construction resources and the route that an Effect transaction will
@@ -17468,6 +17934,7 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _fiscal_epoch_collected.clear();
     _fiscal_epoch_paid.clear();
     _fiscal_escrow_by_country.clear();
+    _fiscal_peer_journal.clear();
     _fiscal_last_bases.clear();
     _fiscal_last_assessed.clear();
     _fiscal_last_collected.clear();

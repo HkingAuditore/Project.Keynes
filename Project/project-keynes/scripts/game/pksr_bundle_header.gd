@@ -44,9 +44,10 @@ const SECTION_MODIFIER := 32
 const SECTION_EVENTS := 64
 const SECTION_EFFECT := 128
 const SECTION_IDEOLOGY := 256
+const SECTION_ECONOMY_ASSET := 512
 const SECTION_KNOWN := SECTION_RUNTIME_ENVELOPE | SECTION_DOMAIN_POD | SECTION_CLIMATE \
 	| SECTION_COUNTRY | SECTION_TRIGGER | SECTION_MODIFIER | SECTION_EVENTS | SECTION_EFFECT \
-	| SECTION_IDEOLOGY
+	| SECTION_IDEOLOGY | SECTION_ECONOMY_ASSET
 
 
 static func section_mask(bytes: PackedByteArray) -> int:
@@ -61,6 +62,10 @@ static func has_climate_section(bytes: PackedByteArray) -> bool:
 
 static func has_country_section(bytes: PackedByteArray) -> bool:
 	return (section_mask(bytes) & SECTION_COUNTRY) != 0
+
+
+static func has_economy_asset_section(bytes: PackedByteArray) -> bool:
+	return (section_mask(bytes) & SECTION_ECONOMY_ASSET) != 0
 
 
 static func has_trigger_section(bytes: PackedByteArray) -> bool:

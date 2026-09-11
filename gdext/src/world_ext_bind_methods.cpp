@@ -130,8 +130,20 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::submit_country_economy_asset_result);
     ClassDB::bind_method(D_METHOD("runtime_country_host_economy_protocol_self_test"),
                          &DCWorldExt::runtime_country_host_economy_protocol_self_test);
+    ClassDB::bind_method(D_METHOD("runtime_country_host_handoff_self_test"),
+                         &DCWorldExt::runtime_country_host_handoff_self_test);
+    ClassDB::bind_method(D_METHOD("prepare_country_authority_handoff", "target_owner"),
+                         &DCWorldExt::prepare_country_authority_handoff);
+    ClassDB::bind_method(D_METHOD("install_country_authority_handoff"),
+                         &DCWorldExt::install_country_authority_handoff);
+    ClassDB::bind_method(D_METHOD("abort_country_authority_handoff"),
+                         &DCWorldExt::abort_country_authority_handoff);
+    ClassDB::bind_method(D_METHOD("get_country_authority_handoff_status"),
+                         &DCWorldExt::get_country_authority_handoff_status);
     ClassDB::bind_method(D_METHOD("runtime_country_host_rejection_self_test"),
                          &DCWorldExt::runtime_country_host_rejection_self_test);
+    ClassDB::bind_method(D_METHOD("runtime_country_shadow_parity_self_test"),
+                         &DCWorldExt::runtime_country_shadow_parity_self_test);
     ClassDB::bind_method(D_METHOD("service_country_worker_peer_adapter",
                                   "max_intents", "shadow_replay"),
                          &DCWorldExt::service_country_worker_peer_adapter,
@@ -274,6 +286,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::runtime_trigger_pod_self_test);
     ClassDB::bind_method(D_METHOD("runtime_effect_pod_self_test"),
                          &DCWorldExt::runtime_effect_pod_self_test);
+    ClassDB::bind_method(D_METHOD("runtime_effect_host_stage_self_test"),
+                         &DCWorldExt::runtime_effect_host_stage_self_test);
     ClassDB::bind_method(D_METHOD("runtime_ideology_pod_self_test"),
                          &DCWorldExt::runtime_ideology_pod_self_test);
     ClassDB::bind_method(D_METHOD("runtime_events_authority_self_test"),
@@ -316,6 +330,8 @@ void DCWorldExt::_bind_methods() {
                          DEFVAL(0), DEFVAL(128));
     ClassDB::bind_method(D_METHOD("runtime_country_host_receipt_self_test"),
                          &DCWorldExt::runtime_country_host_receipt_self_test);
+    ClassDB::bind_method(D_METHOD("set_country_sync_store_writes_forbidden", "forbidden"),
+                         &DCWorldExt::set_country_sync_store_writes_forbidden);
     ClassDB::bind_method(D_METHOD("run_country_slice", "ctx"),
                          &DCWorldExt::run_country_slice);
     ClassDB::bind_method(D_METHOD("sync_country_territory_to_map"),
@@ -446,6 +462,16 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::submit_effect_instances);
     ClassDB::bind_method(D_METHOD("retire_effect_instance", "instance_id", "generation", "effective_day"),
                          &DCWorldExt::retire_effect_instance);
+    ClassDB::bind_method(D_METHOD("queue_effect_pod_instance", "input"),
+                         &DCWorldExt::queue_effect_pod_instance);
+    ClassDB::bind_method(D_METHOD("queue_effect_pod_metric", "input"),
+                         &DCWorldExt::queue_effect_pod_metric);
+    ClassDB::bind_method(D_METHOD("queue_effect_pod_remove", "instance_id", "generation"),
+                         &DCWorldExt::queue_effect_pod_remove);
+    ClassDB::bind_method(D_METHOD("poll_effect_worker_intent"),
+                         &DCWorldExt::poll_effect_worker_intent);
+    ClassDB::bind_method(D_METHOD("submit_effect_worker_ack", "ack"),
+                         &DCWorldExt::submit_effect_worker_ack);
     ClassDB::bind_method(D_METHOD("effect_instance_fire_acked", "instance_id", "generation"),
                          &DCWorldExt::effect_instance_fire_acked);
     ClassDB::bind_method(D_METHOD("submit_effect_snapshots", "batch"),

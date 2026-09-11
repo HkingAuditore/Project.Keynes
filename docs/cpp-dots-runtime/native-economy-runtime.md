@@ -9,13 +9,23 @@ Country 顺序逐国执行 `fiscal_reserve` typed transaction。单个 `run_econ
 
 reserve continuation 活跃时，Economy 保持在 `EPOCH_BEGIN`，不刷新 research demand、
 bullion quota 或开始后续 stage；完成后才进入 `finish_epoch_start_after_fiscal()` 的原有
-研究/生产路径。day 不匹配会进入 fatal，不自动切换同步权威。保存/恢复在 continuation 或
+研究/生产路径。后续 slice 即使拿到更大的 wall-clock day，也继续保存的 admission day，
+不会把正常续跑误判成 `epoch_begin_fiscal_day_mismatch`；只有 transaction/request/session
+identity 真正不匹配才拒绝或 fault，且不自动切换同步权威。保存/恢复在 continuation 或
 `epoch_begin_post_fiscal_pending` 状态下明确失败，不编码财政事务中间态。
 
-回归：`economy_fiscal_reservation_continuation_test.gd` **40/0**；当前 PKEC schema 为 51，
-`economy_cadence_runtime_test.gd` 已通过。该边界仍由 Economy-owned coordinator 在同步
-Economy stage 内执行，尚未形成持久 Country Host outbox/inbox；正式 authority 仍为 SYNC，
-`implemented_domain_mask` 仍为 `0x802`。
+回归：`economy_fiscal_reservation_continuation_test.gd` 当前 **failures=0**；
+当前 PKEC schema 为 52。v52 在既有 fiscal record 的十二组税务汇总后追加 Economy-owned
+`_fiscal_escrow_by_country`，并新增 `SAVE_SECTION_FISCAL_PEER` 保存 Economy-owned
+`request_id -> terminal result` journal；escrow 与 journal 都进入 Economy state hash。
+恢复时按 Country snapshot 的固定 slot 数逐项校验，journal 要求 identity 唯一且完整；
+缺项、重复项、负值或 shape 不匹配都会失败，不会把 D7 peer reservation 静默归零。
+重复 request 只重发原 terminal，不再次修改 escrow。财政 continuation
+仍由 Economy-owned coordinator 在同步 Economy stage 内推进，但 M1 fiscal bridge 已可在
+Country worker 唯一写者模式下经 Host request/result transport 完成 peer 结果消费；Host
+已具备 `D7T1` transaction journal section 的编解码、checksum 和恢复基础。正式 Economy
+authority 仍为 SYNC，`implemented_domain_mask` 当前为 `0x806`，Economy 本身仍未进入
+ACTIVE mask。
 
 ## 2026-09-09 Country treasury typed transaction 边界（K2-B 部分完成）
 
@@ -58,8 +68,14 @@ prepare/commit、市场扣货、商人入账、withdrawal EMA 和 Country applie
 财政 reserve/return/collect 已由 `coordinate_country_fiscal_transaction()` 驱动；
 construction/canal treasury material/cash 已由 `coordinate_country_treasury_spend()` 统一
 完成 Country 多商品扣款、market 扣货、merchant 分账与 peer ACK，调用方不再重复应用
-market/merchant 副作用。上述 coordinator 仍是同步 Economy stage 内的纵向切片，持久 Host
-跨帧 continuation、正式 Country ACTIVE 和 `0x806` mask 提升仍未完成。
+market/merchant 副作用。上述 coordinator 仍是同步 Economy stage 内的纵向切片；Host
+transport 已有内存协议和 D7T1 journal，M1 fiscal 的 Economy-owned peer reservation/apply
+journal 与 PKEC v52 restore 已完成；cohort/market/research/treasury 的跨帧 continuation、
+restore 后 reservation reconciliation 和正式 per-operation gate 尚未完成。
+当前 M1 只开放 `fiscal_reserve`、`fiscal_return`、`fiscal_collect`；research/cohort/
+market/treasury 在 Country worker 唯一写者模式下返回明确的
+`country_economy_operation_gate_closed`，不会静默标记成功或切换第二个 Country writer。
+Country `0x806` ACTIVE 已经放行，但 Economy 不在 ACTIVE mask。
 
 ## 2026-09-03 Incumbent 扩容使用揭示单位经济
 

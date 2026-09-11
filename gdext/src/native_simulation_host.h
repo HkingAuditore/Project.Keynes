@@ -27,6 +27,7 @@
 #include <map>
 #include <deque>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace pk {
@@ -78,16 +79,61 @@ public:
     bool publish_country_snapshot(const RuntimeCountryPodSnapshot &snapshot);
     bool publish_country_catalog(const RuntimeCountryPodCatalog &catalog,
                                  std::string &error);
+    bool country_pod_configured() const {
+        return _country_pod_configured.load(std::memory_order_acquire);
+    }
+    bool publish_country_reference(int64_t day, uint64_t reference_state_hash,
+                                   std::string &error,
+                                   const RuntimeCountryPodSnapshot *snapshot = nullptr);
+    bool mirror_country_peer_result(const CountryPeerResult &result,
+                                    std::string &error);
+    bool mirror_sync_country_economy_asset(
+            const RuntimeEconomyAssetRequest &request,
+            const RuntimeEconomyAssetResult &result, std::string &error);
+    bool country_shadow_parity_self_test(std::string &error) const;
     bool poll_country_worker_intent(CountryPeerIntent &out);
     bool submit_country_worker_result(const CountryPeerResult &result,
                                       std::string &error);
     bool poll_country_economy_asset_request(
             RuntimeEconomyAssetRequest &out);
+    // Economy owns peer-side mutation. Its continuation needs a read-only
+    // terminal lookup so it can resume the same request identity without
+    // creating a second Country transaction.
+    bool country_economy_asset_terminal_result(
+            uint64_t request_id, RuntimeEconomyAssetResult &out) const;
     bool submit_country_economy_asset_result(
             const RuntimeEconomyAssetResult &result, std::string &error);
+    bool requeue_country_economy_asset_request(uint64_t request_id,
+                                               std::string &error);
     RuntimeEconomyAssetProtocolStatus
     country_economy_asset_protocol_status() const;
     bool country_economy_asset_protocol_self_test(std::string &error) const;
+    bool enqueue_economy_origin_country_asset(
+            RuntimeEconomyAssetRequest request, std::string &error);
+    enum class CountryAuthorityOwner : uint8_t { SYNC = 0, WORKER = 1 };
+    struct CountryAuthorityHandoffStatus {
+        CountryAuthorityOwner owner = CountryAuthorityOwner::SYNC;
+        CountryAuthorityOwner prepared_target = CountryAuthorityOwner::SYNC;
+        bool prepare_pending = false;
+        uint64_t session_epoch = 0;
+        char last_reason[64]{};
+    };
+    bool prepare_country_authority_handoff(CountryAuthorityOwner target,
+                                           std::string &error);
+    bool abort_country_authority_handoff(std::string &error);
+    bool install_country_authority_handoff(std::string &error);
+    CountryAuthorityHandoffStatus country_authority_handoff_status() const;
+    // D10 unique-writer / sync-slice gate. Independent of
+    // authoritative_domain_mask for protocol tests, but production ACTIVE
+    // Country also sets this via domain_is_worker_authoritative after D12.
+    bool country_authority_owner_is_worker() const {
+        return country_authority_handoff_status().owner ==
+            CountryAuthorityOwner::WORKER;
+    }
+    bool country_authority_handoff_prepare_pending() const {
+        return country_authority_handoff_status().prepare_pending;
+    }
+    bool country_authority_handoff_self_test(std::string &error) const;
     RuntimeCountryReadView country_worker_read_view(
             uint64_t after_generation = 0) const;
     struct CountryWorkerProtocolStatus {
@@ -173,6 +219,22 @@ public:
         return _effect_pod_authority.report();
     }
     bool effect_pod_self_test(std::string *error = nullptr) const;
+    // F7 host-stage smoke: plan/commit + MODIFIER intent emission + ACK
+    // round-trip. Does not grant EFFECT ACTIVE authority.
+    bool effect_pod_host_stage_self_test(std::string *error = nullptr);
+    // F7 SHADOW transport. Main-thread EffectRuntime remains production
+    // authority; these queues only mirror declarative POD-expressible state
+    // and expose worker intents/ACKs for diagnostics and Modifier E7.
+    bool queue_effect_pod_instance(const RuntimeEffectPodInstanceInput &input,
+                                   std::string &error);
+    bool queue_effect_pod_metric(int64_t instance_id, uint32_t generation,
+                                 int32_t metric_id, int64_t revision,
+                                 int64_t value, std::string &error);
+    bool queue_effect_pod_remove(int64_t instance_id, uint32_t generation,
+                                 std::string &error);
+    bool poll_effect_pod_intent(RuntimeDomainIntent &intent);
+    bool submit_effect_pod_ack(const RuntimeDomainAck &ack, std::string &error);
+    int32_t effect_pod_program_id_for_key(const char *key) const;
     bool configure_ideology_pod(const RuntimeIdeologyPodCatalog &catalog,
                                 std::string &error);
     bool publish_ideology_opinion_snapshot(
@@ -241,13 +303,12 @@ public:
         //   requested_authority_mask  per-session, from the start() caller; must
         //                             be a subset of this one.
         //   completed_domain_mask     per-day report of what actually ran.
-        // Climate ships ACTIVE-authoritative in production as of 2026-09-08
-        // (runtime_climate_authority_enabled defaults true, which makes
-        // world_runtime_host.gd request 0x802). Promotion is per-domain, so the
-        // remaining gameplay domains do not block it; only whole-graph ACTIVE
-        // (start() without an explicit mask) still requires all of 0xFFF.
+        // Climate + Country ship ACTIVE-authoritative in production as of
+        // 2026-09-11 (world_runtime_host.gd requests 0x806 when
+        // runtime_climate_authority_enabled). Other gameplay domains stay off.
         return runtime_domain_mask(RuntimeDomainId::COMMIT)
-            | runtime_domain_mask(RuntimeDomainId::CLIMATE);
+            | runtime_domain_mask(RuntimeDomainId::CLIMATE)
+            | runtime_domain_mask(RuntimeDomainId::COUNTRY);
     }
     RuntimeWorkerState state() const {
         return _state.load(std::memory_order_acquire);
@@ -329,11 +390,18 @@ private:
             const std::vector<RuntimeCommandPacket> &day_commands,
             RuntimeDayCommit &commit, std::string &error,
             uint64_t admitted_submit_order);
+    void bind_shadow_country_peer_mirrors_locked();
+    void record_country_parity_locked(const RuntimeCountryPodSnapshot &worker);
+    bool flush_country_economy_asset_commits(std::string &error);
+    bool country_authority_drain_idle_locked() const;
     bool publish_country_worker_snapshot(uint32_t dirty_families,
                                          std::string &error);
     bool execute_ideology_worker_stage(int64_t day,
                                        RuntimeDayCommit &commit,
                                        std::string &error);
+    bool execute_effect_worker_stage(int64_t day, uint64_t input_generation,
+                                     RuntimeDayCommit &commit,
+                                     std::string &error);
     void publish_country_command_terminals(
             const std::vector<RuntimeCountryCommand> &commands,
             CountryCommandReceiptCode code, uint64_t generation,
@@ -354,6 +422,10 @@ private:
             int64_t day, const RuntimeClimateStore &reference,
             const RuntimeClimateStore &worker);
     void reset_climate_parity_fields();
+    bool serialize_country_economy_asset_journal(
+            std::vector<uint8_t> &out, std::string &error) const;
+    bool restore_country_economy_asset_journal(
+            const uint8_t *bytes, size_t size, std::string &error);
     void build_save_bundle(uint64_t request_id,
                            const std::vector<RuntimeCommandPacket> &pending_commands);
 
@@ -457,6 +529,18 @@ private:
     RuntimeCountryPodCatalog _country_pod_catalog;
     std::atomic<bool> _country_pod_configured{false};
     std::atomic<bool> _country_pod_plan_active{false};
+    std::map<int64_t, RuntimeCountryPodSnapshot> _country_references;
+    std::deque<CountryPeerResult> _country_shadow_peer_mirrors;
+    std::atomic<uint8_t> _country_parity_compared{0};
+    std::atomic<uint8_t> _country_parity_matched{0};
+    std::atomic<uint64_t> _country_parity_compared_count{0};
+    std::atomic<uint64_t> _country_parity_matched_count{0};
+    std::atomic<int64_t> _country_parity_first_mismatch_day{-1};
+    std::atomic<uint64_t> _country_parity_reference_hash{0};
+    std::atomic<uint64_t> _country_parity_worker_hash{0};
+    std::atomic<int32_t> _country_parity_index{-1};
+    std::array<std::atomic<char>, 64> _country_parity_status{};
+    std::array<std::atomic<char>, 48> _country_parity_field{};
     CountryPeerProtocolStatus _country_worker_protocol{};
     RuntimeCountryPodPlan _country_pod_plan;
     std::deque<uint64_t> _country_worker_intent_queue;
@@ -474,7 +558,19 @@ private:
         _country_economy_asset_results;
     std::unordered_map<uint64_t, RuntimeEconomyAssetResult>
         _country_economy_asset_terminal_results;
+    // Request ids that already crossed the Host transport boundary. A worker
+    // continuation must not enqueue the same request again merely because the
+    // Economy coordinator polled it from the queue.
+    std::unordered_set<uint64_t> _country_economy_asset_dispatched;
     RuntimeEconomyAssetProtocolStatus _country_economy_asset_protocol{};
+    std::deque<uint64_t> _economy_origin_asset_queue;
+    std::unordered_set<uint64_t> _country_economy_asset_committed;
+    CountryAuthorityOwner _country_authority_owner =
+        CountryAuthorityOwner::SYNC;
+    CountryAuthorityOwner _country_authority_prepared =
+        CountryAuthorityOwner::SYNC;
+    bool _country_authority_prepare_pending = false;
+    std::array<char, 64> _country_authority_handoff_reason{};
     // Country command lifecycle is separate from the legacy generic receipt
     // queue. The generic queue reports transport/preflight admission for all
     // domains; this ordered map carries Country's typed terminal state and is
@@ -617,6 +713,35 @@ private:
     RuntimeEffectPodAuthority _effect_pod_authority;
     RuntimeEffectPodCatalog _effect_pod_catalog;
     bool _effect_pod_configured = false;
+    struct EffectPodMetricQueueItem {
+        int64_t instance_id = 0;
+        uint32_t generation = 0;
+        int32_t metric_id = 0;
+        int64_t revision = 0;
+        int64_t value = 0;
+    };
+    struct EffectPodRemoveQueueItem {
+        int64_t instance_id = 0;
+        uint32_t generation = 0;
+    };
+    mutable std::mutex _effect_transport_mutex;
+    std::deque<RuntimeEffectPodInstanceInput> _effect_instance_queue;
+    std::deque<EffectPodMetricQueueItem> _effect_metric_queue;
+    std::deque<EffectPodRemoveQueueItem> _effect_remove_queue;
+    std::deque<RuntimeDomainIntent> _effect_intents;
+    std::deque<RuntimeDomainAck> _effect_acks;
+    // Day-local MODIFIER-targeted intents produced by the Effect stage for
+    // Modifier E7. Cleared at the start of each Effect stage visit.
+    std::vector<RuntimeDomainIntent> _effect_day_modifier_intents;
+    bool _effect_day_stage_ok = false;
+    std::atomic<bool> _effect_pod_ready{false};
+    std::atomic<double> _effect_pod_plan_ms{0.0};
+    std::atomic<double> _effect_pod_replay_ms{0.0};
+    std::atomic<uint64_t> _effect_pod_state_hash{0};
+    std::atomic<uint64_t> _effect_pod_snapshot_generation{0};
+    std::atomic<uint32_t> _effect_pod_ack_count{0};
+    std::atomic<uint32_t> _effect_pod_intent_count{0};
+    std::array<std::atomic<char>, 64> _effect_pod_fallback_reason{};
     mutable std::mutex _ideology_transport_mutex;
     RuntimeIdeologyPodAuthority _ideology_pod_authority;
     RuntimeIdeologyPodCatalog _ideology_pod_catalog;

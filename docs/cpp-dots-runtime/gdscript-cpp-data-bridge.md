@@ -33,7 +33,9 @@ Runtime Graph dirty mask 采用真实交集：一次 `flush_runtime_visuals(mask
 
 Country 后台发布使用 DCWorldExt.get_country_worker_read_view(after_generation)，不是把
 worker store 的 vector 引用交给 GDScript。C++ host 保存 immutable Country snapshot 和与最近
-提交代次对应的 owner diff：
+提交代次对应的 owner diff。当前 read-view 还包含 worker-owned 的 `country_cash` 与
+`country_state_versions` 快照；这些字段是只读发布值，不能被解释为主线程同步
+`NativeCountryRuntime` store 已被写回，也不能作为第二个 Country writer：
 
 ```text
 after_generation == 0              -> bootstrap view，changed_cells/owners 为初始化 patch
@@ -68,6 +70,22 @@ peer ACK 未完成时没有终态；cursor 之后只返回更大的 request id�
 失败时按本批 request id 清除已排入 POD pending 的命令，禁止已经发布
 `RejectedAtExecution` 的请求在下一边界重放。当前 receipt history 仍是进程内 Host 状态，尚未
 完成恢复安装，因此不能据此放行 Country ACTIVE。
+
+### Country 客户端录制证据（2026-09-10）
+
+Stage C2 沿用 `TileDataRecorder`，不另建 Country recorder。全量 CSV 把唯一逐格镜像
+`MapData.country_slot_arr` 作为普通 SoA 列；sidecar 的 `CountryClientEvidence` 在每个实际
+录制 tick 通过既有 `CountryFacade` 冷查询记录 country handle/stable ID、territory count、
+cash、非零 goods、completed technology、research state/queue，并通过
+`get_country_worker_read_view(0)` 同时记录 worker generation/day/state hash 与
+territory/research/tax watermark。terminal command receipt 使用
+`poll_worker_command_receipts()` 的 request-id cursor 收集，不消费通用 runtime receipt queue。
+
+`compare_authority_stage_c_tiles.py` 在 CSV 出现 `country_slot_arr` 时强制要求两侧 sidecar
+存在有效 Country evidence，并按 `(tick_idx, country_id)` 精确比较上述业务字段和 receipt；
+缺行或差异均为 release blocker。该工具只增加可见性，不改变 authority：worker read view
+仍不会在未 granted Country bit 时写回 MapData；当前生产 `implemented_domain_mask` 为 `0x806`，
+但这不代表 Economy 已进入 ACTIVE。
 
 后台模拟线程的硬前提是调用链完全不包含 Godot `Object`、`Variant`、`Dictionary`、
 `PackedArray` 和 `WorkerThreadPool`。当前 graph 仍有这些边界，因此线程化 ACTIVE 必须保持

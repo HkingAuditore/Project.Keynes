@@ -26,6 +26,7 @@ class EffectRuntime;
 
 class ModifierRuntime;
 class NativeEconomyRuntime;
+class NativeSimulationHost;
 
 // Sole mutable authority for country identity, territory, country technology,
 // and treasury state. Godot values are converted at coarse API boundaries;
@@ -343,6 +344,18 @@ public:
     int64_t total_cash() const;
     int64_t cash_for_slot(int32_t country_slot) const;
     int64_t cash_for_handle(int64_t country_handle) const;
+    // When the Host grants Country worker authority, Economy must not mutate
+    // this store. The flag is a unique-writer gate, not an ACTIVE promotion.
+    void set_sync_store_writes_forbidden(bool forbidden) {
+        _sync_store_writes_forbidden = forbidden;
+    }
+    bool sync_store_writes_forbidden() const {
+        return _sync_store_writes_forbidden;
+    }
+    void attach_simulation_host(NativeSimulationHost *host) {
+        _simulation_host = host;
+    }
+    int64_t last_committed_day() const { return _last_committed_day; }
     int64_t total_good(int32_t good_id) const;
     // Cumulative research-point goods consumed by the country runtime. The
     // economy uses the value at an epoch boundary to account for research
@@ -897,6 +910,8 @@ private:
         int32_t slot, int32_t technology, int64_t day_index) const;
 
     bool _configured = false;
+    bool _sync_store_writes_forbidden = false;
+    NativeSimulationHost *_simulation_host = nullptr;
     bool _bootstrapped = false;
     RuntimeMode _mode = MODE_ACTIVE;
     int32_t _cell_count = 0;

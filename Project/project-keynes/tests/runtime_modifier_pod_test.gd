@@ -23,7 +23,7 @@ func _run() -> void:
 	_expect("Modifier POD authority, protocol, save and ring contracts pass",
 		bool(self_test.get("ok", false)))
 	_expect("Modifier remains outside ACTIVE authority mask",
-		int(self_test.get("implemented_domain_mask", 0)) == 0x802)
+		int(self_test.get("implemented_domain_mask", 0)) == 0x806)
 
 	var facade = ModifierFacadeScript.new()
 	var configured: Dictionary = facade.configure(ext, 16)
@@ -58,7 +58,7 @@ func _run() -> void:
 		print("[runtime-modifier-pod] report: %s" % report)
 	_expect("Modifier POD report fields are complete", report_complete)
 	_expect("SHADOW does not grant Modifier production authority",
-		int(report.get("implemented_domain_mask", 0)) == 0x802 \
+		int(report.get("implemented_domain_mask", 0)) == 0x806 \
 		and (int(report.get("authoritative_domain_mask", 0)) & 0x80) == 0 \
 		and int(report.get("main_wait_on_sim_us", -1)) == 0)
 

@@ -1,0 +1,45 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+=== DOTS completion gate ===
+
+─── (a) 4 巨石行数历史诊断 ───────────────────────
+file                          current    target  status
+weather_system.gd                4314       400  OVER by 3914
+map_generator.gd                20222      1500  OVER by 18722
+map_baker.gd                     7770       800  OVER by 6970
+main.gd                          4319       400  OVER by 3919
+
+─── (b) hot path 直写残留 ─────────────────────────
+pattern                                     count     limit  status
+map_generator cell.x = (bake-time only)        92        10  LEGACY
+weather_system out_cell.x =                     0         0  PASS
+
+─── (c) Flag registry 完整性 ──────────────────────
+declared on ClimateProfile: 6 flags
+registered in FLAGS:        7 flags
+all 6 ClimateProfile flags registered: PASS
+
+─── (d) D12 authority / D7 journal contract ─────
+(d) implemented_domain_mask is COMMIT|CLIMATE|COUNTRY      PASS
+(d) production worker request is exactly 0x806             PASS
+(d) D7T1 transport and fiscal peer section are present     PASS
+
+─── (e)/(f) runtime soak [SKIP / RUNTIME-GATED] ──
+baseline metrics not yet recorded; (e)/(f) SKIPPED
+  → record fast_tick_ms_p50/p95 in baseline.json by running 100-tick scene
+
+=== summary ===
+historical warnings (non-gating):
+  [LEGACY] (a) weather_system.gd: 4314 lines > historical target 400 (over by 3914)
+  [LEGACY] (a) map_generator.gd: 20222 lines > historical target 1500 (over by 18722)
+  [LEGACY] (a) map_baker.gd: 7770 lines > historical target 800 (over by 6970)
+  [LEGACY] (a) main.gd: 4319 lines > historical target 400 (over by 3919)
+  [LEGACY] (b) map_generator cell.x = (bake-time only): hit 92 > limit 10 in res://scripts/geography/map_generator.gd
+ALL GATES PASSED
+=> exit 0
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 111 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

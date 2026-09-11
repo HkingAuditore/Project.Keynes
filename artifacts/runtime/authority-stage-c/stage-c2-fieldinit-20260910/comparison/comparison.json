@@ -1,0 +1,5654 @@
+{
+  "schema": "AuthorityStageCTileComparison",
+  "schema_version": 1,
+  "status": "pass",
+  "left": "D:\\Godot\\ProjectKeynes\\Project.Keynes\\artifacts\\runtime\\authority-stage-c\\stage-c2-fieldinit-20260910\\active\\tile_data.csv",
+  "right": "D:\\Godot\\ProjectKeynes\\Project.Keynes\\artifacts\\runtime\\authority-stage-c\\stage-c2-fieldinit-20260910\\off\\tile_data.csv",
+  "policy": "D:\\Godot\\ProjectKeynes\\Project.Keynes\\tools\\runtime\\authority-stage-c-field-policy.json",
+  "authority_modes": [
+    "ACTIVE",
+    "OFF"
+  ],
+  "rows": {
+    "left": 240000,
+    "right": 240000,
+    "aligned": 240000
+  },
+  "missing": {
+    "only_left": {
+      "count": 0,
+      "examples": []
+    },
+    "only_right": {
+      "count": 0,
+      "examples": []
+    }
+  },
+  "numeric_issues": {
+    "left": {
+      "temp_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_arr_prev": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "moisture_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "moisture_arr_prev": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "snow_cover_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "snow_cover_arr_prev": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_baseline_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_30d_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_365d_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_anomaly_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "sea_ice_frac_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "sea_ice_frac_arr_prev": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_intensity_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_cloud_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_cloud_water_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_precip_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_transition_alpha_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_classification_temp_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_classification_moisture_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_vapor_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_convergence_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_instability_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_field_init_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "air_mass_temp_anomaly_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "ocean_thermal_anomaly_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "local_thermal_anomaly_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "has_river_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "river_flow_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "river_downstream_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "hydro_parent_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "river_discharge_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "river_discharge_30d_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "river_storage_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "groundwater_storage_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "surface_runoff_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "ema_initialized_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_season_offset_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "insolation_now_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "insolation_dev_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "day_length_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "heat_input_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "thermal_energy_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "snowpack_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "water_balance_30d_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_vitality_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vitality_low_streak_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vitality_high_streak_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "soil_moisture_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_growth_pressure_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temperature_transport_anomaly_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_heat_stress_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_drought_stress_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_cold_stress_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_regen_score_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "elevation_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "base_moisture_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "ocean_current_x_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "ocean_current_y_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "wind_x_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "wind_y_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "slp_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "wind_speed_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "upwelling_strength_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "wind_stress_curl_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "ocean_psi_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "cell_pos_x_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "cell_pos_y_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "cell_lat_norm_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_baseline_year_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "terrain_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "landform_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "has_volcano_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "is_lake_seed_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "base_terrain_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "base_landform_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "base_vegetation_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "cover_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_type_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_prev_type_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_target_type_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "is_water_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "country_slot_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "climate_dirty_mask": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_dirty_mask": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      }
+    },
+    "right": {
+      "temp_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_arr_prev": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "moisture_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "moisture_arr_prev": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "snow_cover_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "snow_cover_arr_prev": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_baseline_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_30d_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_365d_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_anomaly_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "sea_ice_frac_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "sea_ice_frac_arr_prev": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_intensity_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_cloud_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_cloud_water_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_precip_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_transition_alpha_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_classification_temp_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_classification_moisture_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_vapor_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_convergence_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_instability_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_field_init_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "air_mass_temp_anomaly_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "ocean_thermal_anomaly_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "local_thermal_anomaly_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "has_river_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "river_flow_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "river_downstream_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "hydro_parent_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "river_discharge_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "river_discharge_30d_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "river_storage_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "groundwater_storage_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "surface_runoff_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "ema_initialized_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_season_offset_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "insolation_now_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "insolation_dev_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "day_length_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "heat_input_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "thermal_energy_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "snowpack_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "water_balance_30d_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_vitality_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vitality_low_streak_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vitality_high_streak_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "soil_moisture_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_growth_pressure_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temperature_transport_anomaly_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_heat_stress_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_drought_stress_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_cold_stress_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_regen_score_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "elevation_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "base_moisture_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "ocean_current_x_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "ocean_current_y_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "wind_x_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "wind_y_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "slp_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "wind_speed_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "upwelling_strength_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "wind_stress_curl_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "ocean_psi_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "cell_pos_x_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "cell_pos_y_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "cell_lat_norm_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "temp_baseline_year_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "terrain_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "landform_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "vegetation_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "has_volcano_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "is_lake_seed_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "base_terrain_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "base_landform_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "base_vegetation_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "cover_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_type_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_prev_type_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_target_type_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "is_water_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "country_slot_arr": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "climate_dirty_mask": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      },
+      "weather_dirty_mask": {
+        "empty": 0,
+        "invalid": 0,
+        "nonfinite": 0
+      }
+    }
+  },
+  "field_results": [
+    {
+      "field": "temp_arr",
+      "samples": 240000,
+      "different_samples": 203848,
+      "max_abs_diff": 0.2560659999999999,
+      "mean_abs_diff": 0.025942609000000665,
+      "p95_abs_diff": 0.12279200000000001,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 60,
+        "left": 0.0,
+        "right": 0.026059,
+        "abs_diff": 0.026059
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 0.294475901,
+        "mean_tolerance": 0.02983400135,
+        "p95_tolerance": 0.141210801,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 2,
+        "samples": 235200,
+        "mean_abs_diff": 0.02563984320153086
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.027160706335034514
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.02644246410353477
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.025942609000000665
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.02569399757575825
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.02563984320153086
+        }
+      ]
+    },
+    {
+      "field": "temp_arr_prev",
+      "samples": 240000,
+      "different_samples": 203913,
+      "max_abs_diff": 0.2548659999999999,
+      "mean_abs_diff": 0.0262176177750002,
+      "p95_abs_diff": 0.12467100000000009,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 60,
+        "left": 0.0,
+        "right": 0.018329,
+        "abs_diff": 0.018329
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 0.293095901,
+        "mean_tolerance": 0.030150261441,
+        "p95_tolerance": 0.143371651,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 2,
+        "samples": 235200,
+        "mean_abs_diff": 0.02574163727891211
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.027658400484695207
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.026936200387206274
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0262176177750002
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.025993670471380355
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.02574163727891211
+        }
+      ]
+    },
+    {
+      "field": "moisture_arr",
+      "samples": 240000,
+      "different_samples": 41995,
+      "max_abs_diff": 0.990633,
+      "mean_abs_diff": 0.021115158020833403,
+      "p95_abs_diff": 0.14731799999999995,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 467,
+        "left": 0.944327,
+        "right": 0.972833,
+        "abs_diff": 0.02850599999999992
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 1.139227951,
+        "mean_tolerance": 0.024282432724,
+        "p95_tolerance": 0.169415701,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.021115158020833403
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.021795075335884262
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.02179047648148131
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.021115158020833403
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.021264033013468103
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.021430487759353755
+        }
+      ]
+    },
+    {
+      "field": "moisture_arr_prev",
+      "samples": 240000,
+      "different_samples": 42037,
+      "max_abs_diff": 0.990633,
+      "mean_abs_diff": 0.021287680712499986,
+      "p95_abs_diff": 0.14457300000000006,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 467,
+        "left": 0.945419,
+        "right": 0.978662,
+        "abs_diff": 0.03324300000000002
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 1.139227951,
+        "mean_tolerance": 0.024480833819,
+        "p95_tolerance": 0.166258951,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.021287680712499986
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.021832647874149798
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.021557089271885578
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.021287680712499986
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.02143963026094279
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.02159291861394566
+        }
+      ]
+    },
+    {
+      "field": "snow_cover_arr",
+      "samples": 240000,
+      "different_samples": 3287,
+      "max_abs_diff": 1.0,
+      "mean_abs_diff": 0.0038496515874999414,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 1941,
+        "left": 0.079341,
+        "right": 0.374178,
+        "abs_diff": 0.294837
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 1.150000001,
+        "mean_tolerance": 0.004427100326,
+        "p95_tolerance": 1.150000001,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0037956087627550763
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.004039132113095158
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.003995617213804634
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0038496515874999414
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0038229031186868276
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0037956087627550763
+        }
+      ]
+    },
+    {
+      "field": "snow_cover_arr_prev",
+      "samples": 240000,
+      "different_samples": 3351,
+      "max_abs_diff": 1.0,
+      "mean_abs_diff": 0.0038654996124999454,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 1941,
+        "left": 0.079341,
+        "right": 0.374178,
+        "abs_diff": 0.294837
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 1.150000001,
+        "mean_tolerance": 0.004445325554,
+        "p95_tolerance": 1.150000001,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0038117802168367073
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.004065928490646158
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.003964701784511708
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0038654996124999454
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0038389112247474337
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0038117802168367073
+        }
+      ]
+    },
+    {
+      "field": "temp_baseline_arr",
+      "samples": 240000,
+      "different_samples": 210947,
+      "max_abs_diff": 0.027903999999999984,
+      "mean_abs_diff": 0.0025723453583330618,
+      "p95_abs_diff": 0.012621999999999911,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 60,
+        "left": 0.029459,
+        "right": 0.035318,
+        "abs_diff": 0.005859000000000003
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 0.032089601,
+        "mean_tolerance": 0.002958198162,
+        "p95_tolerance": 0.014515301,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0015636011819727708
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0015636011819727708
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0018704872390573305
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0025723453583330618
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.003390211927609455
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.004215150701530764
+        }
+      ]
+    },
+    {
+      "field": "temp_30d_arr",
+      "samples": 240000,
+      "different_samples": 227943,
+      "max_abs_diff": 0.03433900000000001,
+      "mean_abs_diff": 0.0054013463166664695,
+      "p95_abs_diff": 0.018365999999999993,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 60,
+        "left": 0.007754,
+        "right": 0.009282,
+        "abs_diff": 0.0015280000000000007
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 0.039489851,
+        "mean_tolerance": 0.006211549264,
+        "p95_tolerance": 0.021120901,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0032775044600337894
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0032775044600337894
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.004203478930976043
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0054013463166664695
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0066989704882162
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.00801849174744965
+        }
+      ]
+    },
+    {
+      "field": "temp_365d_arr",
+      "samples": 240000,
+      "different_samples": 227972,
+      "max_abs_diff": 0.007282999999999984,
+      "mean_abs_diff": 0.001808368195833403,
+      "p95_abs_diff": 0.0047439999999999705,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 60,
+        "left": 0.024997,
+        "right": 0.02381,
+        "abs_diff": 0.001186999999999997
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 0.008375451,
+        "mean_tolerance": 0.002079624425,
+        "p95_tolerance": 0.005455601,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0012873274192175825
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.002349114642857184
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.002079465500841643
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.001808368195833403
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0015337717845118038
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0012873274192175825
+        }
+      ]
+    },
+    {
+      "field": "temp_anomaly_arr",
+      "samples": 240000,
+      "different_samples": 227992,
+      "max_abs_diff": 0.264034,
+      "mean_abs_diff": 0.06473771437082952,
+      "p95_abs_diff": 0.17762,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 60,
+        "left": -0.000122,
+        "right": -0.014528,
+        "abs_diff": 0.014405999999999999
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 0.303639101,
+        "mean_tolerance": 0.074448372526,
+        "p95_tolerance": 0.204263001,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.06409185710033616
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.06409185710033616
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.06441746509679724
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.06473771437082952
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.06520030968013091
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.06568270952805753
+        }
+      ]
+    },
+    {
+      "field": "sea_ice_frac_arr",
+      "samples": 240000,
+      "different_samples": 28957,
+      "max_abs_diff": 0.965275,
+      "mean_abs_diff": 0.00617464126666661,
+      "p95_abs_diff": 0.016417000000000015,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 0,
+        "left": 0.99112,
+        "right": 0.980985,
+        "abs_diff": 0.010135000000000005
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 1.110066251,
+        "mean_tolerance": 0.007100838457,
+        "p95_tolerance": 0.018879551,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.005485038724489882
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.005485038724489882
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.005719502289562286
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.00617464126666661
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.006588302377946266
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.007063641505102276
+        }
+      ]
+    },
+    {
+      "field": "sea_ice_frac_arr_prev",
+      "samples": 240000,
+      "different_samples": 28973,
+      "max_abs_diff": 0.965275,
+      "mean_abs_diff": 0.0060141444583332905,
+      "p95_abs_diff": 0.01673799999999992,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 0,
+        "left": 0.993107,
+        "right": 0.984234,
+        "abs_diff": 0.008872999999999909
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 1.110066251,
+        "mean_tolerance": 0.006916267127,
+        "p95_tolerance": 0.019248701,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.005429900684523821
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.005429900684523821
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.005669658274410751
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0060141444583332905
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.006518122365319898
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.006933902011054431
+        }
+      ]
+    },
+    {
+      "field": "weather_intensity_arr",
+      "samples": 240000,
+      "different_samples": 99496,
+      "max_abs_diff": 0.880181,
+      "mean_abs_diff": 0.051692562033333084,
+      "p95_abs_diff": 0.179913,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 110,
+        "left": 0.068716,
+        "right": 0.0,
+        "abs_diff": 0.068716
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_sliced_weather_or_b8: Climate ACTIVE weather is worker+1-day writeback plus sliced weather vs main-thread; B8 also notes feedback-before-weather order. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 1.012208151,
+        "mean_tolerance": 0.059446447338,
+        "p95_tolerance": 0.206899951,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.05162276023809508
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.05162276023809508
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.05165801367003345
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.051692562033333084
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.05167505201599298
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.051657184651360294
+        }
+      ]
+    },
+    {
+      "field": "weather_cloud_arr",
+      "samples": 240000,
+      "different_samples": 239992,
+      "max_abs_diff": 0.35574599999999995,
+      "mean_abs_diff": 0.04674343896666536,
+      "p95_abs_diff": 0.161945,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 0,
+        "left": 0.045765,
+        "right": 0.037018,
+        "abs_diff": 0.008746999999999998
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_sliced_weather_or_b8: Climate ACTIVE weather is worker+1-day writeback plus sliced weather vs main-thread; B8 also notes feedback-before-weather order. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 0.409107901,
+        "mean_tolerance": 0.053754955812,
+        "p95_tolerance": 0.186236751,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.046681348707481515
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.046681348707481515
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.046712707424240996
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.04674343896666536
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.04698821839225472
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.047237993316325395
+        }
+      ]
+    },
+    {
+      "field": "weather_cloud_water_arr",
+      "samples": 240000,
+      "different_samples": 239956,
+      "max_abs_diff": 0.17579,
+      "mean_abs_diff": 0.021757736183335066,
+      "p95_abs_diff": 0.06116100000000001,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 0,
+        "left": 0.034552,
+        "right": 0.013348,
+        "abs_diff": 0.021204
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_sliced_weather_or_b8: Climate ACTIVE weather is worker+1-day writeback plus sliced weather vs main-thread; B8 also notes feedback-before-weather order. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 0.202158501,
+        "mean_tolerance": 0.025021397611,
+        "p95_tolerance": 0.070335151,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.021681187976191774
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.021681187976191774
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0217198486868702
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.021757736183335066
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.02188914845538875
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.022023242610545484
+        }
+      ]
+    },
+    {
+      "field": "weather_precip_arr",
+      "samples": 240000,
+      "different_samples": 94040,
+      "max_abs_diff": 0.16094,
+      "mean_abs_diff": 0.01930751888333287,
+      "p95_abs_diff": 0.083544,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 110,
+        "left": 0.050037,
+        "right": 0.0,
+        "abs_diff": 0.050037
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_sliced_weather_or_b8: Climate ACTIVE weather is worker+1-day writeback plus sliced weather vs main-thread; B8 also notes feedback-before-weather order. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 0.185081001,
+        "mean_tolerance": 0.022203647716,
+        "p95_tolerance": 0.096075601,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.019286695051020084
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.019286695051020084
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.019297212138046735
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.01930751888333287
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.019367047398989423
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.01942779078231241
+        }
+      ]
+    },
+    {
+      "field": "weather_transition_alpha_arr",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "weather_classification_temp_arr",
+      "samples": 240000,
+      "different_samples": 203913,
+      "max_abs_diff": 0.2548659999999999,
+      "mean_abs_diff": 0.0262176177750002,
+      "p95_abs_diff": 0.12309199999999998,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 60,
+        "left": 0.0,
+        "right": 0.018329,
+        "abs_diff": 0.018329
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_sliced_weather_or_b8: Climate ACTIVE weather is worker+1-day writeback plus sliced weather vs main-thread; B8 also notes feedback-before-weather order. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 0.293095901,
+        "mean_tolerance": 0.030150261441,
+        "p95_tolerance": 0.141555801,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 2,
+        "samples": 235200,
+        "mean_abs_diff": 0.02574163727891211
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.027658400484695207
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.026936200387206274
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0262176177750002
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.025993670471380355
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.02574163727891211
+        }
+      ]
+    },
+    {
+      "field": "weather_classification_moisture_arr",
+      "samples": 240000,
+      "different_samples": 42037,
+      "max_abs_diff": 0.990633,
+      "mean_abs_diff": 0.021287680712499986,
+      "p95_abs_diff": 0.14658800000000005,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 467,
+        "left": 0.945419,
+        "right": 0.978662,
+        "abs_diff": 0.03324300000000002
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_sliced_weather_or_b8: Climate ACTIVE weather is worker+1-day writeback plus sliced weather vs main-thread; B8 also notes feedback-before-weather order. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 1.139227951,
+        "mean_tolerance": 0.024480833819,
+        "p95_tolerance": 0.168576201,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.021287680712499986
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.021832647874149798
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.021557089271885578
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.021287680712499986
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.02143963026094279
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.02159291861394566
+        }
+      ]
+    },
+    {
+      "field": "weather_vapor_arr",
+      "samples": 240000,
+      "different_samples": 239996,
+      "max_abs_diff": 0.437848,
+      "mean_abs_diff": 0.08398686446667568,
+      "p95_abs_diff": 0.225489,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 0,
+        "left": 0.107372,
+        "right": 0.073427,
+        "abs_diff": 0.03394499999999999
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_sliced_weather_or_b8: Climate ACTIVE weather is worker+1-day writeback plus sliced weather vs main-thread; B8 also notes feedback-before-weather order. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 0.503525201,
+        "mean_tolerance": 0.096584895137,
+        "p95_tolerance": 0.259312351,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 2,
+        "samples": 235200,
+        "mean_abs_diff": 0.08397643182823793
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.08434217328231934
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0841627243855294
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.08398686446667568
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.08398170083754984
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.08397643182823793
+        }
+      ]
+    },
+    {
+      "field": "weather_convergence_arr",
+      "samples": 240000,
+      "different_samples": 236916,
+      "max_abs_diff": 1.0,
+      "mean_abs_diff": 0.3738940763499954,
+      "p95_abs_diff": 0.612392,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 0,
+        "left": 0.0,
+        "right": 0.178339,
+        "abs_diff": 0.178339
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_sliced_weather_or_b8: Climate ACTIVE weather is worker+1-day writeback plus sliced weather vs main-thread; B8 also notes feedback-before-weather order. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 1.150000001,
+        "mean_tolerance": 0.429978188802,
+        "p95_tolerance": 0.704250801,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.3738940763499954
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.3739362802806074
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.3739149651641367
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.3738940763499954
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.3739085957196922
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.37392341140305646
+        }
+      ]
+    },
+    {
+      "field": "weather_instability_arr",
+      "samples": 240000,
+      "different_samples": 209872,
+      "max_abs_diff": 0.864447,
+      "mean_abs_diff": 0.1627783229166604,
+      "p95_abs_diff": 0.41276,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 101,
+        "left": 0.0,
+        "right": 0.005647,
+        "abs_diff": 0.005647
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_sliced_weather_or_b8: Climate ACTIVE weather is worker+1-day writeback plus sliced weather vs main-thread; B8 also notes feedback-before-weather order. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 0.994114051,
+        "mean_tolerance": 0.187195072354,
+        "p95_tolerance": 0.474674001,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.1627783229166604
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.16322760055271554
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.16300069265571782
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.1627783229166604
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.16333378740319207
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.1639005878996532
+        }
+      ]
+    },
+    {
+      "field": "weather_field_init_arr",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "air_mass_temp_anomaly_arr",
+      "samples": 240000,
+      "different_samples": 236802,
+      "max_abs_diff": 0.109712,
+      "mean_abs_diff": 0.04490536422499998,
+      "p95_abs_diff": 0.093974,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 0,
+        "left": 0.0,
+        "right": -0.001455,
+        "abs_diff": 0.001455
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_b8_psi_wind_ocean: B8 leftover \u2014 psi/cyclone/monsoon unwired and wind pass after weather; ACTIVE vs OFF magnitude/order divergence. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 0.126168801,
+        "mean_tolerance": 0.051641169859,
+        "p95_tolerance": 0.108070101,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.04468776477891132
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.04468776477891132
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.04479766348905711
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.04490536422499998
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.04518823881734013
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.045476886360544214
+        }
+      ]
+    },
+    {
+      "field": "ocean_thermal_anomaly_arr",
+      "samples": 240000,
+      "different_samples": 177077,
+      "max_abs_diff": 0.16,
+      "mean_abs_diff": 0.03429471559999384,
+      "p95_abs_diff": 0.096676,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 65,
+        "left": -0.01126,
+        "right": 0.0,
+        "abs_diff": 0.01126
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_b8_psi_wind_ocean: B8 leftover \u2014 psi/cyclone/monsoon unwired and wind pass after weather; ACTIVE vs OFF magnitude/order divergence. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 0.184000001,
+        "mean_tolerance": 0.03943892394,
+        "p95_tolerance": 0.111177401,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 1,
+        "samples": 237600,
+        "mean_abs_diff": 0.03420912982743508
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.03426080904336119
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.03437020893517912
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.03429471559999384
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.03420912982743508
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.03428452017856545
+        }
+      ]
+    },
+    {
+      "field": "local_thermal_anomaly_arr",
+      "samples": 240000,
+      "different_samples": 95432,
+      "max_abs_diff": 0.113754,
+      "mean_abs_diff": 0.0054536508125005104,
+      "p95_abs_diff": 0.035921999999999996,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 0,
+        "left": -0.003976,
+        "right": -0.009842,
+        "abs_diff": 0.005866
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_b8_psi_wind_ocean: B8 leftover \u2014 psi/cyclone/monsoon unwired and wind pass after weather; ACTIVE vs OFF magnitude/order divergence. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 0.130817101,
+        "mean_tolerance": 0.006271699434,
+        "p95_tolerance": 0.041310301,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 1,
+        "samples": 237600,
+        "mean_abs_diff": 0.005445288514310302
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.005453042895408723
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0054634260143102895
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0054536508125005104
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.005445288514310302
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.00545507813350395
+        }
+      ]
+    },
+    {
+      "field": "has_river_arr",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "river_flow_arr",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "river_downstream_arr",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "hydro_parent_arr",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "river_discharge_arr",
+      "samples": 240000,
+      "different_samples": 143256,
+      "max_abs_diff": 310.393341,
+      "mean_abs_diff": 3.7755123744668837,
+      "p95_abs_diff": 11.193853,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 0,
+        "left": 0.0,
+        "right": 3e-06,
+        "abs_diff": 3e-06
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 356.952342151,
+        "mean_tolerance": 4.341839231637,
+        "p95_tolerance": 12.872930951,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 2,
+        "samples": 235200,
+        "mean_abs_diff": 3.73825948260228
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 3.790961859005311
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 3.7831590890364084
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 3.7755123744668837
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 3.7570740744530906
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 3.73825948260228
+        }
+      ]
+    },
+    {
+      "field": "river_discharge_30d_arr",
+      "samples": 240000,
+      "different_samples": 165832,
+      "max_abs_diff": 0.999975,
+      "mean_abs_diff": 0.1047885944833336,
+      "p95_abs_diff": 0.504552,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 0,
+        "left": 0.0,
+        "right": 0.000221,
+        "abs_diff": 0.000221
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 1.149971251,
+        "mean_tolerance": 0.120506884656,
+        "p95_tolerance": 0.580234801,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 2,
+        "samples": 235200,
+        "mean_abs_diff": 0.10472147511054311
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.10480133524659867
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.10479490051767691
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.1047885944833336
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.10475537378366964
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.10472147511054311
+        }
+      ]
+    },
+    {
+      "field": "river_storage_arr",
+      "samples": 240000,
+      "different_samples": 136040,
+      "max_abs_diff": 48.740234,
+      "mean_abs_diff": 0.14640008443335037,
+      "p95_abs_diff": 0.283743,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 0,
+        "left": 0.0,
+        "right": 1e-06,
+        "abs_diff": 1e-06
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 56.051269101,
+        "mean_tolerance": 0.168360098098,
+        "p95_tolerance": 0.326304451,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 2,
+        "samples": 235200,
+        "mean_abs_diff": 0.14436193481293844
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.14706882514457348
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.1467310773106224
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.14640008443335037
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.14539130330809624
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.14436193481293844
+        }
+      ]
+    },
+    {
+      "field": "groundwater_storage_arr",
+      "samples": 240000,
+      "different_samples": 53868,
+      "max_abs_diff": 0.65428,
+      "mean_abs_diff": 0.03135399738333342,
+      "p95_abs_diff": 0.224065,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 467,
+        "left": 0.0,
+        "right": 0.003096,
+        "abs_diff": 0.003096
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 0.752422001,
+        "mean_tolerance": 0.036057097991,
+        "p95_tolerance": 0.257674751,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 2,
+        "samples": 235200,
+        "mean_abs_diff": 0.031027185603741587
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.031356570858843566
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.031355271123737434
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.03135399738333342
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.03119224205808092
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.031027185603741587
+        }
+      ]
+    },
+    {
+      "field": "surface_runoff_arr",
+      "samples": 240000,
+      "different_samples": 82560,
+      "max_abs_diff": 2.296888,
+      "mean_abs_diff": 0.13513756641666905,
+      "p95_abs_diff": 0.823787,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 427,
+        "left": 0.0,
+        "right": 0.453382,
+        "abs_diff": 0.453382
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 2.641421201,
+        "mean_tolerance": 0.155408202379,
+        "p95_tolerance": 0.947355051,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 2,
+        "samples": 235200,
+        "mean_abs_diff": 0.13409584000850552
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.13544802126700908
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.13529122588804945
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.13513756641666905
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.1346219644570729
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.13409584000850552
+        }
+      ]
+    },
+    {
+      "field": "ema_initialized_arr",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "temp_season_offset_arr",
+      "samples": 240000,
+      "different_samples": 83198,
+      "max_abs_diff": 0.01264599999999999,
+      "mean_abs_diff": 0.00045053203749997585,
+      "p95_abs_diff": 0.0033090000000000064,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 180,
+        "left": 0.061645,
+        "right": 0.061644,
+        "abs_diff": 1.000000000001e-06
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 0.014542901,
+        "mean_tolerance": 0.000518112843,
+        "p95_tolerance": 0.003805351,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.00045053203749997585
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.001022018979591935
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0005310231355218633
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.00045053203749997585
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.000854991199495034
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0012702903869047336
+        }
+      ]
+    },
+    {
+      "field": "insolation_now_arr",
+      "samples": 240000,
+      "different_samples": 56880,
+      "max_abs_diff": 0.018569000000000058,
+      "mean_abs_diff": 0.0008026055000001402,
+      "p95_abs_diff": 0.004855000000000054,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 123,
+        "cell_index": 60,
+        "left": 0.643922,
+        "right": 0.662491,
+        "abs_diff": 0.018569000000000058
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 0.021354351,
+        "mean_tolerance": 0.000922997325,
+        "p95_tolerance": 0.005583251,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.0008026055000001402
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.002366409183673275
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0008191757575757118
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0008026055000001402
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0024121717171714436
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.003922021428571604
+        }
+      ]
+    },
+    {
+      "field": "insolation_dev_arr",
+      "samples": 240000,
+      "different_samples": 56880,
+      "max_abs_diff": 0.01856800000000003,
+      "mean_abs_diff": 0.0008026090000001301,
+      "p95_abs_diff": 0.0048850000000000005,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 123,
+        "cell_index": 60,
+        "left": 0.274201,
+        "right": 0.292769,
+        "abs_diff": 0.01856800000000003
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 0.021353201,
+        "mean_tolerance": 0.00092300135,
+        "p95_tolerance": 0.005617751,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.0008026090000001301
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0023664058673466618
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0008191722222222126
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0008026090000001301
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0024121757575754
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.003922024744898046
+        }
+      ]
+    },
+    {
+      "field": "day_length_arr",
+      "samples": 240000,
+      "different_samples": 88680,
+      "max_abs_diff": 0.03143600000000002,
+      "mean_abs_diff": 0.0005448200000000782,
+      "p95_abs_diff": 0.0027369999999999894,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 123,
+        "cell_index": 180,
+        "left": 0.824919,
+        "right": 0.841272,
+        "abs_diff": 0.016353000000000062
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 0.036151401,
+        "mean_tolerance": 0.000626544,
+        "p95_tolerance": 0.003147551,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.0005448200000000782
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0017315992346937032
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0006065936868687425
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0005448200000000782
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0016952409090906617
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.002804968877551104
+        }
+      ]
+    },
+    {
+      "field": "heat_input_arr",
+      "samples": 240000,
+      "different_samples": 56880,
+      "max_abs_diff": 0.018569000000000058,
+      "mean_abs_diff": 0.0008026055000001402,
+      "p95_abs_diff": 0.0047319999999999585,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 123,
+        "cell_index": 60,
+        "left": 0.643922,
+        "right": 0.662491,
+        "abs_diff": 0.018569000000000058
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 0.021354351,
+        "mean_tolerance": 0.000922997325,
+        "p95_tolerance": 0.005441801,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.0008026055000001402
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.002366409183673275
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0008191757575757118
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0008026055000001402
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0024121717171714436
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.003922021428571604
+        }
+      ]
+    },
+    {
+      "field": "thermal_energy_arr",
+      "samples": 240000,
+      "different_samples": 210947,
+      "max_abs_diff": 0.027903999999999984,
+      "mean_abs_diff": 0.0025723453583330618,
+      "p95_abs_diff": 0.012881000000000031,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 60,
+        "left": 0.029459,
+        "right": 0.035318,
+        "abs_diff": 0.005859000000000003
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 0.032089601,
+        "mean_tolerance": 0.002958198162,
+        "p95_tolerance": 0.014813151,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0015636011819727708
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0015636011819727708
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0018704872390573305
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0025723453583330618
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.003390211927609455
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.004215150701530764
+        }
+      ]
+    },
+    {
+      "field": "snowpack_arr",
+      "samples": 240000,
+      "different_samples": 2852,
+      "max_abs_diff": 0.32,
+      "mean_abs_diff": 0.0011193140666666626,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 1941,
+        "left": 0.025389,
+        "right": 0.119737,
+        "abs_diff": 0.094348
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 0.368000001,
+        "mean_tolerance": 0.001287212177,
+        "p95_tolerance": 0.368000001,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0011007121003401307
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0011424488605442165
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0011307646212121187
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0011193140666666626
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.001110107032828278
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0011007121003401307
+        }
+      ]
+    },
+    {
+      "field": "water_balance_30d_arr",
+      "samples": 240000,
+      "different_samples": 54200,
+      "max_abs_diff": 0.310156,
+      "mean_abs_diff": 0.010028616466666713,
+      "p95_abs_diff": 0.052071000000000006,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 467,
+        "left": -0.018951,
+        "right": -0.003942,
+        "abs_diff": 0.015008999999999998
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 0.356679401,
+        "mean_tolerance": 0.011532909937,
+        "p95_tolerance": 0.059881651,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.00998878894557829
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.00998878894557829
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.010008903855218926
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.010028616466666713
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.010042819002525306
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.01005731138605446
+        }
+      ]
+    },
+    {
+      "field": "vegetation_vitality_arr",
+      "samples": 240000,
+      "different_samples": 54200,
+      "max_abs_diff": 0.5990500000000001,
+      "mean_abs_diff": 0.010592370199997727,
+      "p95_abs_diff": 0.05286100000000005,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 467,
+        "left": 0.98,
+        "right": 1.0,
+        "abs_diff": 0.020000000000000018
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 0.688907501,
+        "mean_tolerance": 0.01218122673,
+        "p95_tolerance": 0.060790151,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.010592370199997727
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.010672793477888833
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.01063217566077212
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.010592370199997727
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.010654887617842862
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.010718680901358284
+        }
+      ]
+    },
+    {
+      "field": "vitality_low_streak_arr",
+      "samples": 240000,
+      "different_samples": 7796,
+      "max_abs_diff": 190.0,
+      "mean_abs_diff": 2.9925,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 518,
+        "left": 80.0,
+        "right": 100.0,
+        "abs_diff": 20.0
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 218.500000001,
+        "mean_tolerance": 3.441375001,
+        "p95_tolerance": 218.500000001,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 2.9925
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 2.999234693877551
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 2.995833333333333
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 2.9925
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 2.993771043771044
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 2.9950680272108845
+        }
+      ]
+    },
+    {
+      "field": "vitality_high_streak_arr",
+      "samples": 240000,
+      "different_samples": 6036,
+      "max_abs_diff": 190.0,
+      "mean_abs_diff": 1.3525,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 745,
+        "left": 160.0,
+        "right": -30.0,
+        "abs_diff": 190.0
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 218.500000001,
+        "mean_tolerance": 1.555375001,
+        "p95_tolerance": 218.500000001,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 1.3525
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 1.362329931972789
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 1.35736531986532
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 1.3525
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 1.3634680134680135
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 1.3746598639455783
+        }
+      ]
+    },
+    {
+      "field": "soil_moisture_arr",
+      "samples": 240000,
+      "different_samples": 193464,
+      "max_abs_diff": 0.353668,
+      "mean_abs_diff": 0.027486729287501035,
+      "p95_abs_diff": 0.104934,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 117,
+        "left": 0.0,
+        "right": -0.007668,
+        "abs_diff": 0.007668
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 0.406718201,
+        "mean_tolerance": 0.031609739681,
+        "p95_tolerance": 0.120674101,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 2,
+        "samples": 235200,
+        "mean_abs_diff": 0.027383077189626605
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.02751594910289208
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.02753102446548925
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.027486729287501035
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.02743542673400764
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.027383077189626605
+        }
+      ]
+    },
+    {
+      "field": "vegetation_growth_pressure_arr",
+      "samples": 240000,
+      "different_samples": 54200,
+      "max_abs_diff": 0.8218179999999999,
+      "mean_abs_diff": 0.01818476878333303,
+      "p95_abs_diff": 0.10113900000000003,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 467,
+        "left": 0.1,
+        "right": 0.0,
+        "abs_diff": 0.1
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 0.945090701,
+        "mean_tolerance": 0.020912485101,
+        "p95_tolerance": 0.116309851,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.01818476878333303
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.018490730093537112
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.018429370593434115
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.01818476878333303
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.018320167992423943
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.018458330450680013
+        }
+      ]
+    },
+    {
+      "field": "temperature_transport_anomaly_arr",
+      "samples": 240000,
+      "different_samples": 191740,
+      "max_abs_diff": 0.340703,
+      "mean_abs_diff": 0.05230325396666527,
+      "p95_abs_diff": 0.16586,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 65,
+        "left": -0.011358,
+        "right": -0.000416,
+        "abs_diff": 0.010942
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_b8_psi_wind_ocean: B8 leftover \u2014 psi/cyclone/monsoon unwired and wind pass after weather; ACTIVE vs OFF magnitude/order divergence. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 0.391808451,
+        "mean_tolerance": 0.060148743062,
+        "p95_tolerance": 0.190739001,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 2,
+        "samples": 235200,
+        "mean_abs_diff": 0.05224069963435217
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.052257215153059915
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.052280467079123226
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.05230325396666527
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.05227229273148002
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.05224069963435217
+        }
+      ]
+    },
+    {
+      "field": "vegetation_heat_stress_arr",
+      "samples": 240000,
+      "different_samples": 5880,
+      "max_abs_diff": 0.535312,
+      "mean_abs_diff": 0.0010255507333333334,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 915,
+        "left": 0.039858,
+        "right": 0.047059,
+        "abs_diff": 0.007200999999999999
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 0.615608801,
+        "mean_tolerance": 0.001179384343,
+        "p95_tolerance": 0.615608801,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.0010255507333333334
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.001083281794217687
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0010541246927609428
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0010255507333333334
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0010714775378787879
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0011183416241496607
+        }
+      ]
+    },
+    {
+      "field": "vegetation_drought_stress_arr",
+      "samples": 240000,
+      "different_samples": 744,
+      "max_abs_diff": 0.316902,
+      "mean_abs_diff": 0.0004544152833333325,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 640,
+        "left": 0.331533,
+        "right": 0.183067,
+        "abs_diff": 0.14846600000000001
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 0.364437301,
+        "mean_tolerance": 0.000522578576,
+        "p95_tolerance": 0.364437301,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.00044946634353741416
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.00044946634353741416
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.00045196580808080727
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0004544152833333325
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0004570606776094268
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0004597600595238087
+        }
+      ]
+    },
+    {
+      "field": "vegetation_cold_stress_arr",
+      "samples": 240000,
+      "different_samples": 1040,
+      "max_abs_diff": 0.169797,
+      "mean_abs_diff": 0.0003095331500000034,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 516,
+        "left": 0.0,
+        "right": 0.088096,
+        "abs_diff": 0.088096
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 0.195266551,
+        "mean_tolerance": 0.000355964123,
+        "p95_tolerance": 0.195266551,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.0003095331500000034
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0003178931887755136
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.00031367094696970035
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0003095331500000034
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.00031084432239057567
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.00031218225340136384
+        }
+      ]
+    },
+    {
+      "field": "vegetation_regen_score_arr",
+      "samples": 240000,
+      "different_samples": 99812,
+      "max_abs_diff": 0.998866,
+      "mean_abs_diff": 0.21460040033333425,
+      "p95_abs_diff": 0.956103,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 407,
+        "left": 0.981394,
+        "right": 0.0,
+        "abs_diff": 0.981394
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 1.148695901,
+        "mean_tolerance": 0.246790461383,
+        "p95_tolerance": 1.099518451,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.21458647970238157
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.21458647970238157
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.21459351032407484
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.21460040033333425
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.21460916943602776
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.21461811750000068
+        }
+      ]
+    },
+    {
+      "field": "elevation_arr",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "base_moisture_arr",
+      "samples": 240000,
+      "different_samples": 54200,
+      "max_abs_diff": 0.15922,
+      "mean_abs_diff": 0.0061202325583333056,
+      "p95_abs_diff": 0.04186400000000001,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 467,
+        "left": 0.9597,
+        "right": 0.978952,
+        "abs_diff": 0.019252000000000047
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 0.183103001,
+        "mean_tolerance": 0.007038268442,
+        "p95_tolerance": 0.048143601,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.0061202325583333056
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.006132356130952357
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.006126233114478086
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0061202325583333056
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.00614652404882152
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.006173352100340102
+        }
+      ]
+    },
+    {
+      "field": "ocean_current_x_arr",
+      "samples": 240000,
+      "different_samples": 184000,
+      "max_abs_diff": 0.65,
+      "mean_abs_diff": 0.08158935144166543,
+      "p95_abs_diff": 0.402422,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 0,
+        "left": -0.649726,
+        "right": 0.0,
+        "abs_diff": 0.649726
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_b8_psi_wind_ocean: B8 leftover \u2014 psi/cyclone/monsoon unwired and wind pass after weather; ACTIVE vs OFF magnitude/order divergence. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 0.747500001,
+        "mean_tolerance": 0.093827755158,
+        "p95_tolerance": 0.462785301,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.08158935144166543
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.08166339019557714
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0816259968855207
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.08158935144166543
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.08159540409511663
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.08160158027210762
+        }
+      ]
+    },
+    {
+      "field": "ocean_current_y_arr",
+      "samples": 240000,
+      "different_samples": 184000,
+      "max_abs_diff": 0.325157,
+      "mean_abs_diff": 0.016868964683330705,
+      "p95_abs_diff": 0.08734800000000001,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 0,
+        "left": -0.018885,
+        "right": 0.0,
+        "abs_diff": 0.018885
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_b8_psi_wind_ocean: B8 leftover \u2014 psi/cyclone/monsoon unwired and wind pass after weather; ACTIVE vs OFF magnitude/order divergence. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 0.373930551,
+        "mean_tolerance": 0.019399310386,
+        "p95_tolerance": 0.100450201,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.016868964683330705
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.016999487465983946
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.01693356686868433
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.016868964683330705
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.01692122058922303
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.016974542942174382
+        }
+      ]
+    },
+    {
+      "field": "wind_x_arr",
+      "samples": 240000,
+      "different_samples": 240000,
+      "max_abs_diff": 1.952399,
+      "mean_abs_diff": 0.08682819027500048,
+      "p95_abs_diff": 0.37204600000000004,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 0,
+        "left": -0.799684,
+        "right": -0.889206,
+        "abs_diff": 0.0895220000000001
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_b8_psi_wind_ocean: B8 leftover \u2014 psi/cyclone/monsoon unwired and wind pass after weather; ACTIVE vs OFF magnitude/order divergence. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 2.245258851,
+        "mean_tolerance": 0.099852419816,
+        "p95_tolerance": 0.427852901,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.08682819027500048
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.12494787289115541
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.1056955079335012
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.08682819027500048
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.10539076852693607
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.12433217490646237
+        }
+      ]
+    },
+    {
+      "field": "wind_y_arr",
+      "samples": 240000,
+      "different_samples": 239988,
+      "max_abs_diff": 1.9857960000000001,
+      "mean_abs_diff": 0.08953843349999976,
+      "p95_abs_diff": 0.292051,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 0,
+        "left": 0.600421,
+        "right": 0.457506,
+        "abs_diff": 0.14291499999999996
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_b8_psi_wind_ocean: B8 leftover \u2014 psi/cyclone/monsoon unwired and wind pass after weather; ACTIVE vs OFF magnitude/order divergence. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 2.283665401,
+        "mean_tolerance": 0.102969199525,
+        "p95_tolerance": 0.335858651,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.08953843349999976
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.12342205146258255
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.10630911309764214
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.08953843349999976
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.10617115278619436
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.12314331532312706
+        }
+      ]
+    },
+    {
+      "field": "slp_arr",
+      "samples": 240000,
+      "different_samples": 239988,
+      "max_abs_diff": 0.107836,
+      "mean_abs_diff": 0.011343168833332943,
+      "p95_abs_diff": 0.032349,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 0,
+        "left": 0.195844,
+        "right": 0.194003,
+        "abs_diff": 0.0018409999999999815
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_b8_psi_wind_ocean: B8 leftover \u2014 psi/cyclone/monsoon unwired and wind pass after weather; ACTIVE vs OFF magnitude/order divergence. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 0.124011401,
+        "mean_tolerance": 0.013044645158,
+        "p95_tolerance": 0.037201351,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.011343168833332943
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.01739363789965969
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.014337845441918934
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.011343168833332943
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.014404273110269095
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.01752784890306106
+        }
+      ]
+    },
+    {
+      "field": "wind_speed_arr",
+      "samples": 240000,
+      "different_samples": 240000,
+      "max_abs_diff": 0.7567759999999999,
+      "mean_abs_diff": 0.04974025643333881,
+      "p95_abs_diff": 0.23713099999999998,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 0,
+        "left": 1.029738,
+        "right": 0.902365,
+        "abs_diff": 0.12737300000000007
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_b8_psi_wind_ocean: B8 leftover \u2014 psi/cyclone/monsoon unwired and wind pass after weather; ACTIVE vs OFF magnitude/order divergence. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 0.870292401,
+        "mean_tolerance": 0.057201295898,
+        "p95_tolerance": 0.272700651,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.04974025643333881
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.06091661615646599
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.05527199003367466
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.04974025643333881
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.055550473821553634
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.06147926707483357
+        }
+      ]
+    },
+    {
+      "field": "upwelling_strength_arr",
+      "samples": 240000,
+      "different_samples": 75304,
+      "max_abs_diff": 1.465813,
+      "mean_abs_diff": 0.07813710764164948,
+      "p95_abs_diff": 0.621643,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 0,
+        "left": -0.15,
+        "right": 0.0,
+        "abs_diff": 0.15
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_b8_psi_wind_ocean: B8 leftover \u2014 psi/cyclone/monsoon unwired and wind pass after weather; ACTIVE vs OFF magnitude/order divergence. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 1.685684951,
+        "mean_tolerance": 0.089857674788,
+        "p95_tolerance": 0.714889451,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.07813710764164948
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.07969776976188746
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.07890955656984845
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.07813710764164948
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.07896250978112787
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.07980475686222786
+        }
+      ]
+    },
+    {
+      "field": "wind_stress_curl_arr",
+      "samples": 240000,
+      "different_samples": 184000,
+      "max_abs_diff": 3.974036,
+      "mean_abs_diff": 0.3061758924833282,
+      "p95_abs_diff": 1.5597720000000002,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 0,
+        "left": -1.726786,
+        "right": 0.0,
+        "abs_diff": 1.726786
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_b8_psi_wind_ocean: B8 leftover \u2014 psi/cyclone/monsoon unwired and wind pass after weather; ACTIVE vs OFF magnitude/order divergence. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 4.570141401,
+        "mean_tolerance": 0.352102277356,
+        "p95_tolerance": 1.793737801,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 0,
+        "samples": 240000,
+        "mean_abs_diff": 0.3061758924833282
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.3130599893792476
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.30958317276514713
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.3061758924833282
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.3094304030345077
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.3127513321683633
+        }
+      ]
+    },
+    {
+      "field": "ocean_psi_arr",
+      "samples": 240000,
+      "different_samples": 184000,
+      "max_abs_diff": 9.909006,
+      "mean_abs_diff": 0.9562377058167122,
+      "p95_abs_diff": 5.020333,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 0,
+        "left": 6.594959,
+        "right": 0.0,
+        "abs_diff": 6.594959
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_b8_psi_wind_ocean: B8 leftover \u2014 psi/cyclone/monsoon unwired and wind pass after weather; ACTIVE vs OFF magnitude/order divergence. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 11.395356901,
+        "mean_tolerance": 1.099673362689,
+        "p95_tolerance": 5.773382951,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 2,
+        "samples": 235200,
+        "mean_abs_diff": 0.9560579752211372
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.9599965648980084
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.9580981512205861
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.9562377058167122
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.9561487482492054
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.9560579752211372
+        }
+      ]
+    },
+    {
+      "field": "cell_pos_x_arr",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "cell_pos_y_arr",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "cell_lat_norm_arr",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "temp_baseline_year_arr",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "terrain_arr",
+      "samples": 240000,
+      "different_samples": 39117,
+      "max_abs_diff": 20.0,
+      "mean_abs_diff": 2.9344083333333333,
+      "p95_abs_diff": 20.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 0,
+        "left": 0.0,
+        "right": 20.0,
+        "abs_diff": 20.0
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_main_thread_succession_not_writeback: ACTIVE suppresses GDScript vegetation/cover/terrain succession writers; worker only publishes succession_candidate. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 23.000000001,
+        "mean_tolerance": 3.374569584333,
+        "p95_tolerance": 23.000000001,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 2.933001700680272
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 2.933001700680272
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 2.933712121212121
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 2.9344083333333333
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 2.938606902356902
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 2.942891156462585
+        }
+      ]
+    },
+    {
+      "field": "landform_arr",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "vegetation_arr",
+      "samples": 240000,
+      "different_samples": 3108,
+      "max_abs_diff": 22.0,
+      "mean_abs_diff": 0.07083333333333333,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 745,
+        "left": 21.0,
+        "right": 20.0,
+        "abs_diff": 1.0
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_main_thread_succession_not_writeback: ACTIVE suppresses GDScript vegetation/cover/terrain succession writers; worker only publishes succession_candidate. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 25.300000001,
+        "mean_tolerance": 0.081458334333,
+        "p95_tolerance": 25.300000001,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.06989795918367347
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.06989795918367347
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.07037037037037037
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.07083333333333333
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.07142255892255893
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.07202380952380952
+        }
+      ]
+    },
+    {
+      "field": "has_volcano_arr",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "is_lake_seed_arr",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "base_terrain_arr",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "base_landform_arr",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "base_vegetation_arr",
+      "samples": 240000,
+      "different_samples": 3108,
+      "max_abs_diff": 22.0,
+      "mean_abs_diff": 0.07083333333333333,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 745,
+        "left": 21.0,
+        "right": 20.0,
+        "abs_diff": 1.0
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_main_thread_succession_not_writeback: ACTIVE suppresses GDScript vegetation/cover/terrain succession writers; worker only publishes succession_candidate. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 25.300000001,
+        "mean_tolerance": 0.081458334333,
+        "p95_tolerance": 25.300000001,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.06989795918367347
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.06989795918367347
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.07037037037037037
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.07083333333333333
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.07142255892255893
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.07202380952380952
+        }
+      ]
+    },
+    {
+      "field": "cover_arr",
+      "samples": 240000,
+      "different_samples": 41089,
+      "max_abs_diff": 4.0,
+      "mean_abs_diff": 0.4606708333333333,
+      "p95_abs_diff": 3.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 0,
+        "left": 0.0,
+        "right": 3.0,
+        "abs_diff": 3.0
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_main_thread_succession_not_writeback: ACTIVE suppresses GDScript vegetation/cover/terrain succession writers; worker only publishes succession_candidate. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 4.600000001,
+        "mean_tolerance": 0.529771459333,
+        "p95_tolerance": 3.450000001,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 2,
+        "samples": 235200,
+        "mean_abs_diff": 0.46036989795918365
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.46048044217687073
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.46057659932659933
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.4606708333333333
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.4605218855218855
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.46036989795918365
+        }
+      ]
+    },
+    {
+      "field": "weather_type_arr",
+      "samples": 240000,
+      "different_samples": 80344,
+      "max_abs_diff": 7.0,
+      "mean_abs_diff": 0.9532,
+      "p95_abs_diff": 6.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 110,
+        "left": 3.0,
+        "right": 0.0,
+        "abs_diff": 3.0
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_sliced_weather_or_b8: Climate ACTIVE weather is worker+1-day writeback plus sliced weather vs main-thread; B8 also notes feedback-before-weather order. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 8.050000001,
+        "mean_tolerance": 1.096180001,
+        "p95_tolerance": 6.900000001,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.9508163265306122
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.9508163265306122
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.952020202020202
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.9532
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.9542592592592593
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.9553401360544218
+        }
+      ]
+    },
+    {
+      "field": "weather_prev_type_arr",
+      "samples": 240000,
+      "different_samples": 80344,
+      "max_abs_diff": 7.0,
+      "mean_abs_diff": 0.9532,
+      "p95_abs_diff": 6.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 110,
+        "left": 3.0,
+        "right": 0.0,
+        "abs_diff": 3.0
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_sliced_weather_or_b8: Climate ACTIVE weather is worker+1-day writeback plus sliced weather vs main-thread; B8 also notes feedback-before-weather order. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 8.050000001,
+        "mean_tolerance": 1.096180001,
+        "p95_tolerance": 6.900000001,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.9508163265306122
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.9508163265306122
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.952020202020202
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.9532
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.9542592592592593
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.9553401360544218
+        }
+      ]
+    },
+    {
+      "field": "weather_target_type_arr",
+      "samples": 240000,
+      "different_samples": 80344,
+      "max_abs_diff": 7.0,
+      "mean_abs_diff": 0.9532,
+      "p95_abs_diff": 6.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 110,
+        "left": 3.0,
+        "right": 0.0,
+        "abs_diff": 3.0
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_sliced_weather_or_b8: Climate ACTIVE weather is worker+1-day writeback plus sliced weather vs main-thread; B8 also notes feedback-before-weather order. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+        "absolute_tolerance": 8.050000001,
+        "mean_tolerance": 1.096180001,
+        "p95_tolerance": 6.900000001,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.9508163265306122
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.9508163265306122
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.952020202020202
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.9532
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.9542592592592593
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.9553401360544218
+        }
+      ]
+    },
+    {
+      "field": "is_water_arr",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "country_slot_arr",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "climate_dirty_mask",
+      "samples": 240000,
+      "different_samples": 0,
+      "max_abs_diff": 0.0,
+      "mean_abs_diff": 0.0,
+      "p95_abs_diff": 0.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": null,
+      "policy_declared": false,
+      "policy_valid": false,
+      "policy": {},
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": -2,
+        "samples": 235200,
+        "mean_abs_diff": 0.0
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.0
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.0
+        }
+      ]
+    },
+    {
+      "field": "weather_dirty_mask",
+      "samples": 240000,
+      "different_samples": 237200,
+      "max_abs_diff": 1.0,
+      "mean_abs_diff": 0.9883333333333333,
+      "p95_abs_diff": 1.0,
+      "p95_method": "deterministic_reservoir_50000",
+      "first_difference": {
+        "tick_idx": 122,
+        "cell_index": 0,
+        "left": 0.0,
+        "right": 1.0,
+        "abs_diff": 1.0
+      },
+      "policy_declared": true,
+      "policy_valid": true,
+      "policy": {
+        "reason": "climate_transient_dirty_mask: weather_dirty_mask is a visual dirty bit, not a persisted climate state; ACTIVE/OFF cadence differs. Measured on C2 tick 121-220 after weather_field_init extras writeback.",
+        "absolute_tolerance": 1.150000001,
+        "mean_tolerance": 1.136583334333,
+        "p95_tolerance": 1.150000001,
+        "source": "stage-c2-fieldinit-20260910"
+      },
+      "policy_exceeded": false,
+      "best_lag": {
+        "lag": 2,
+        "samples": 235200,
+        "mean_abs_diff": 0.9880952380952381
+      },
+      "lags": [
+        {
+          "lag": -2,
+          "samples": 235200,
+          "mean_abs_diff": 0.9890391156462585
+        },
+        {
+          "lag": -1,
+          "samples": 237600,
+          "mean_abs_diff": 0.9886826599326599
+        },
+        {
+          "lag": 0,
+          "samples": 240000,
+          "mean_abs_diff": 0.9883333333333333
+        },
+        {
+          "lag": 1,
+          "samples": 237600,
+          "mean_abs_diff": 0.9882154882154882
+        },
+        {
+          "lag": 2,
+          "samples": 235200,
+          "mean_abs_diff": 0.9880952380952381
+        }
+      ]
+    }
+  ],
+  "country_evidence": {
+    "status": "pass",
+    "left_country_rows": 400,
+    "right_country_rows": 400,
+    "missing_left": [],
+    "missing_right": [],
+    "differences": [],
+    "receipt_match": true,
+    "left_receipts": [],
+    "right_receipts": []
+  },
+  "known_expected_fields": [
+    "temp_arr",
+    "temp_arr_prev",
+    "moisture_arr",
+    "moisture_arr_prev",
+    "snow_cover_arr",
+    "snow_cover_arr_prev",
+    "temp_baseline_arr",
+    "temp_30d_arr",
+    "temp_365d_arr",
+    "temp_anomaly_arr",
+    "sea_ice_frac_arr",
+    "sea_ice_frac_arr_prev",
+    "weather_intensity_arr",
+    "weather_cloud_arr",
+    "weather_cloud_water_arr",
+    "weather_precip_arr",
+    "weather_classification_temp_arr",
+    "weather_classification_moisture_arr",
+    "weather_vapor_arr",
+    "weather_convergence_arr",
+    "weather_instability_arr",
+    "air_mass_temp_anomaly_arr",
+    "ocean_thermal_anomaly_arr",
+    "local_thermal_anomaly_arr",
+    "river_discharge_arr",
+    "river_discharge_30d_arr",
+    "river_storage_arr",
+    "groundwater_storage_arr",
+    "surface_runoff_arr",
+    "temp_season_offset_arr",
+    "insolation_now_arr",
+    "insolation_dev_arr",
+    "day_length_arr",
+    "heat_input_arr",
+    "thermal_energy_arr",
+    "snowpack_arr",
+    "water_balance_30d_arr",
+    "vegetation_vitality_arr",
+    "vitality_low_streak_arr",
+    "vitality_high_streak_arr",
+    "soil_moisture_arr",
+    "vegetation_growth_pressure_arr",
+    "temperature_transport_anomaly_arr",
+    "vegetation_heat_stress_arr",
+    "vegetation_drought_stress_arr",
+    "vegetation_cold_stress_arr",
+    "vegetation_regen_score_arr",
+    "base_moisture_arr",
+    "ocean_current_x_arr",
+    "ocean_current_y_arr",
+    "wind_x_arr",
+    "wind_y_arr",
+    "slp_arr",
+    "wind_speed_arr",
+    "upwelling_strength_arr",
+    "wind_stress_curl_arr",
+    "ocean_psi_arr",
+    "terrain_arr",
+    "vegetation_arr",
+    "base_vegetation_arr",
+    "cover_arr",
+    "weather_type_arr",
+    "weather_prev_type_arr",
+    "weather_target_type_arr",
+    "weather_dirty_mask"
+  ],
+  "blockers": []
+}

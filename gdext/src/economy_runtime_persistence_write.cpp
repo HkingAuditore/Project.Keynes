@@ -161,6 +161,8 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
         append_le<int32_t>(payload, _price_ceiling_expand_bp);
         append_le<int32_t>(payload, _price_ceiling_recover_bp);
         append_le<int64_t>(payload, price_ceiling_state_count());
+        append_le<int32_t>(payload, static_cast<int32_t>(
+            _fiscal_peer_journal.size()));
         append_id_table(payload, _profession_ids);
         append_id_table(payload, _ethnicity_ids);
         append_id_table(payload, _good_ids);
@@ -624,9 +626,8 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
     }
     if (_save.section == SAVE_SECTION_FISCAL) {
         constexpr int32_t record_bytes =
-            4 + NativeCountryRuntime::TAX_KIND_COUNT * 12 * 8;
-        const int32_t country_count = static_cast<int32_t>(
-            _epoch_country_handles.size());
+            4 + NativeCountryRuntime::TAX_KIND_COUNT * 12 * 8 + 8;
+        const int32_t country_count = _save.fiscal_country_count;
         const int32_t max_records = std::max(
             1, (budget - 16) / record_bytes);
         const int32_t begin = _save.fiscal_cursor;
@@ -657,6 +658,10 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             append_group(_fiscal_cumulative_collected, country);
             append_group(_fiscal_cumulative_requests, country);
             append_group(_fiscal_cumulative_paid, country);
+            append_le<int64_t>(payload,
+                static_cast<size_t>(country) < _fiscal_escrow_by_country.size()
+                    ? _fiscal_escrow_by_country[static_cast<size_t>(country)]
+                    : 0);
         }
         if (_save.fiscal_cursor >= country_count) ++_save.section;
         return make_save_chunk(SAVE_SECTION_FISCAL,
@@ -1212,6 +1217,47 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
         }
         if (_save.ceiling_market_cursor >= _market.market_count) ++_save.section;
         return make_save_chunk(SAVE_SECTION_PRICE_CEILINGS, records, payload);
+    }
+    if (_save.section == SAVE_SECTION_FISCAL_PEER) {
+        std::vector<uint64_t> request_ids;
+        request_ids.reserve(_fiscal_peer_journal.size());
+        for (const auto &entry : _fiscal_peer_journal)
+            request_ids.push_back(entry.first);
+        std::sort(request_ids.begin(), request_ids.end());
+        const int32_t begin = _save.fiscal_peer_cursor;
+        const int32_t end = std::min<int32_t>(
+            static_cast<int32_t>(request_ids.size()),
+            begin + std::max(1, (budget - 16) / 176));
+        for (; _save.fiscal_peer_cursor < end; ++_save.fiscal_peer_cursor) {
+            const auto &record = _fiscal_peer_journal.at(request_ids[
+                static_cast<size_t>(_save.fiscal_peer_cursor)]);
+            append_le<uint64_t>(payload, record.request_id);
+            append_le<uint64_t>(payload, record.transaction_id);
+            append_le<uint64_t>(payload, record.country_handle);
+            append_le<uint64_t>(payload, record.country_generation);
+            append_le<uint64_t>(payload, record.peer_generation);
+            append_le<uint64_t>(payload, record.committed_peer_generation);
+            append_le<int64_t>(payload, record.day);
+            append_le<uint64_t>(payload, record.operation_sequence);
+            append_le<uint32_t>(payload, record.continuation_index);
+            append_le<int32_t>(payload, record.country_slot);
+            append_le<uint16_t>(payload, static_cast<uint16_t>(record.operation));
+            append_le<uint8_t>(payload, static_cast<uint8_t>(record.result_code));
+            append_le<uint8_t>(payload, static_cast<uint8_t>(record.state));
+            append_le<uint8_t>(payload, record.accepted);
+            append_le<uint8_t>(payload, 0);
+            append_le<uint16_t>(payload, 0);
+            append_le<int64_t>(payload, record.requested_quantity);
+            append_le<int64_t>(payload, record.requested_cash);
+            append_le<int64_t>(payload, record.committed_quantity);
+            append_le<int64_t>(payload, record.committed_cash);
+            for (const char value : record.reason)
+                append_le<uint8_t>(payload, static_cast<uint8_t>(value));
+        }
+        if (_save.fiscal_peer_cursor >= static_cast<int32_t>(request_ids.size()))
+            ++_save.section;
+        return make_save_chunk(SAVE_SECTION_FISCAL_PEER,
+            static_cast<uint32_t>(_save.fiscal_peer_cursor - begin), payload);
     }
     _save.end_emitted = true;
     return make_save_chunk(SAVE_SECTION_END, 0, payload);

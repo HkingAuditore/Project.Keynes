@@ -36,6 +36,8 @@ void NativeEconomyRuntime::write_fiscal_continuation_report(
     out["epoch_begin_post_fiscal_pending"] =
         _epoch_begin_post_fiscal_pending;
     out["epoch_begin_pending_day"] = _epoch_begin_pending_day;
+    out["fiscal_settlement_day"] =
+        _fiscal_settlement_continuation.day_index;
 }
 
 // Read-only report diagnostics; stage and scheduler authority stays in the root.

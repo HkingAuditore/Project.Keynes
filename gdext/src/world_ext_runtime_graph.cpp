@@ -1,6 +1,7 @@
 #include "world_ext.h"
 
 #include "country_runtime.h"
+#include "economy_runtime.h"
 #include "native_simulation_host.h"
 #include "effect_runtime.h"
 #include "ideology_runtime.h"
@@ -211,8 +212,21 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
         bool progressed = false;
         Dictionary ctx = ctx_for();
         const bool country_worker_authoritative = _runtime_host != nullptr &&
-            _runtime_host->domain_is_worker_authoritative(
-                RuntimeDomainId::COUNTRY);
+            (_runtime_host->domain_is_worker_authoritative(
+                RuntimeDomainId::COUNTRY) ||
+             _runtime_host->country_authority_owner_is_worker());
+        if (_country_runtime != nullptr) {
+            static_cast<NativeCountryRuntime *>(_country_runtime)
+                ->set_sync_store_writes_forbidden(country_worker_authoritative);
+            if (_runtime_host != nullptr) {
+                static_cast<NativeCountryRuntime *>(_country_runtime)
+                    ->attach_simulation_host(_runtime_host.get());
+            }
+        }
+        if (_economy_runtime != nullptr && _runtime_host != nullptr) {
+            static_cast<NativeEconomyRuntime *>(_economy_runtime)
+                ->attach_simulation_host(_runtime_host.get());
+        }
         if (!country_worker_authoritative && _country_runtime != nullptr &&
             static_cast<NativeCountryRuntime *>(_country_runtime)->should_run(day)) {
             if (_effect_runtime != nullptr) dispatch_effect_native_country();
@@ -625,6 +639,21 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
             host.country_worker_catalog_hash);
         out["country_worker_last_reason"] = String(host.country_worker_last_reason);
         out["country_worker_authoritative"] = host.country_worker_authoritative;
+        out["country_parity_compared"] = host.country_parity_compared != 0;
+        out["country_parity_matched"] = host.country_parity_matched != 0;
+        out["country_parity_compared_count"] = static_cast<int64_t>(
+            host.country_parity_compared_count);
+        out["country_parity_matched_count"] = static_cast<int64_t>(
+            host.country_parity_matched_count);
+        out["country_parity_status"] = String(host.country_parity_status);
+        out["country_parity_first_mismatch_day"] =
+            host.country_parity_first_mismatch_day;
+        out["country_parity_reference_hash"] = static_cast<int64_t>(
+            host.country_parity_reference_hash);
+        out["country_parity_worker_hash"] = static_cast<int64_t>(
+            host.country_parity_worker_hash);
+        out["country_parity_field"] = String(host.country_parity_field);
+        out["country_parity_index"] = host.country_parity_index;
         out["trigger_parity_day"] = host.trigger_parity_day;
         out["trigger_reference_day"] = host.trigger_reference_day;
         out["trigger_input_hash"] = static_cast<int64_t>(host.trigger_input_hash);
@@ -658,6 +687,32 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
             host.modifier_pod_ack_count);
         out["modifier_pod_fallback_reason"] = String(
             host.modifier_pod_fallback_reason);
+        out["effect_pod_ready"] = host.effect_pod_ready;
+        out["effect_pod_plan_ms"] = host.effect_pod_plan_ms;
+        out["effect_pod_replay_ms"] = host.effect_pod_replay_ms;
+        out["effect_pod_state_hash"] = static_cast<int64_t>(
+            host.effect_pod_state_hash);
+        out["effect_pod_snapshot_generation"] = static_cast<int64_t>(
+            host.effect_pod_snapshot_generation);
+        out["effect_pod_ack_count"] = static_cast<int>(
+            host.effect_pod_ack_count);
+        out["effect_pod_intent_count"] = static_cast<int>(
+            host.effect_pod_intent_count);
+        out["effect_pod_fallback_reason"] = String(
+            host.effect_pod_fallback_reason);
+        out["ideology_pod_ready"] = host.ideology_pod_ready;
+        out["ideology_pod_plan_ms"] = host.ideology_pod_plan_ms;
+        out["ideology_pod_replay_ms"] = host.ideology_pod_replay_ms;
+        out["ideology_pod_state_hash"] = static_cast<int64_t>(
+            host.ideology_pod_state_hash);
+        out["ideology_pod_snapshot_generation"] = static_cast<int64_t>(
+            host.ideology_pod_snapshot_generation);
+        out["ideology_pod_pending_transition_count"] = static_cast<int>(
+            host.ideology_pod_pending_transition_count);
+        out["ideology_pod_intent_count"] = static_cast<int>(
+            host.ideology_pod_intent_count);
+        out["ideology_pod_fallback_reason"] = String(
+            host.ideology_pod_fallback_reason);
         out["events_probe_enabled"] = host.events_probe_enabled;
         out["events_pod_ready"] = host.events_pod_ready;
         out["events_pod_plan_ms"] = host.events_pod_plan_ms;
@@ -795,6 +850,21 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
             host.country_worker_catalog_hash);
         out["country_worker_last_reason"] = String(host.country_worker_last_reason);
         out["country_worker_authoritative"] = host.country_worker_authoritative;
+        out["country_parity_compared"] = host.country_parity_compared != 0;
+        out["country_parity_matched"] = host.country_parity_matched != 0;
+        out["country_parity_compared_count"] = static_cast<int64_t>(
+            host.country_parity_compared_count);
+        out["country_parity_matched_count"] = static_cast<int64_t>(
+            host.country_parity_matched_count);
+        out["country_parity_status"] = String(host.country_parity_status);
+        out["country_parity_first_mismatch_day"] =
+            host.country_parity_first_mismatch_day;
+        out["country_parity_reference_hash"] = static_cast<int64_t>(
+            host.country_parity_reference_hash);
+        out["country_parity_worker_hash"] = static_cast<int64_t>(
+            host.country_parity_worker_hash);
+        out["country_parity_field"] = String(host.country_parity_field);
+        out["country_parity_index"] = host.country_parity_index;
         out["trigger_parity_day"] = host.trigger_parity_day;
         out["trigger_reference_day"] = host.trigger_reference_day;
         out["trigger_input_hash"] = static_cast<int64_t>(host.trigger_input_hash);

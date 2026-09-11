@@ -1,0 +1,38 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] economy catalog compiles
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] map binds to native world
+  [PASS] Effect runtime configures built-in canal transactions
+  [PASS] country runtime configures
+  [PASS] single country owns the full quoted route
+  [PASS] economy runtime configures
+  [PASS] economy bootstraps with a local public-works market
+  [PASS] day zero captures geography, climate and trade topology
+  [PASS] quote exposes the stable facade contract
+  [PASS] read-side quote does not change authoritative simulation hash
+  [PASS] detail returns only the server-frozen route
+  [PASS] quote tokens are country isolated
+  [PASS] domain construction API preserves formal command shape
+  [PASS] effective-day economy settlement starts the project
+  [PASS] settlement receipt carries payment attribution and project handle
+  [PASS] canal treasury payment uses the Country asset bridge
+  [PASS] PKEC restores an in-flight canal project
+  [PASS] finished construction waits for the cross-domain Effect ACK
+  [PASS] PKEF preserves the unacknowledged built-in canal transaction
+  [PASS] Effect preflight and atomic geography commit complete
+  [PASS] the committed edge is reciprocal and appears all at once
+  [PASS] journal v4 persists custom geography-commit idempotency evidence
+  [PASS] crash replay is idempotent and reaches ACK without a second write
+  [PASS] only the completed route is published as visual dirtiness
+  [PASS] Economy archives the bounded route only after ACK
+  [PASS] sparse daily hydrology detects a freshwater canal
+  [PASS] freshwater canal raises local soil/plant water
+  [PASS] canal hydrology leaves the natural drainage DAG unchanged
+=== canal runtime: 28 checks, 0 failures ===
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 307 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
