@@ -79,6 +79,20 @@ struct RuntimeClimateStore {
     std::vector<int32_t> vegetation_growth_streak;
     std::vector<int32_t> vegetation_drought_streak;
     std::vector<uint8_t> vegetation_succession_candidate;
+    // B8-2：worker 自持的 synoptic ψ / ψ_prev。CLM2 ABI 4 起持久化；ABI 3 的旧档
+    // 读进来时这两条保持全零，由第一天的生产 capture 重新播种（见
+    // RuntimeClimateAuthority::restore 的版本分支）。
+    std::vector<float> synoptic_psi;
+    std::vector<float> synoptic_psi_prev;
+    // B8-P1：worker 自持的植被演替状态（CLM2 ABI 5 起持久化）。生产侧演替后处理会
+    // 写 vegetation / base_vegetation 并把 vitality 拉向目标值；ACTIVE 下那条主线程
+    // 写入被抑制，这两条 lane 就是 worker 的唯一副本。
+    std::vector<uint8_t> vegetation;
+    std::vector<uint8_t> base_vegetation;
+    // B8-2：worker 自持的 tropical cyclone 状态（可变长条目表），以不透明 blob 形式
+    // 随 CLM2 ABI 6 持久化。语义由 runtime_climate_passes.h 的
+    // cyclone_state_encode/decode 拥有，store 只负责搬运字节。
+    std::vector<uint8_t> cyclone_state;
     float climate_anomaly = 0.0f;
     float annual_temperature_drift = 0.0f;
     uint64_t rng_state = 0x9e3779b97f4a7c15ull;

@@ -363,6 +363,8 @@ var _sidecar_path: String = ""
 var _country_samples: Array[Dictionary] = []
 var _country_receipts: Array[Dictionary] = []
 var _country_receipt_cursor: int = 0
+var _modifier_samples: Array[Dictionary] = []
+var _effect_samples: Array[Dictionary] = []
 var _runtime_report_start: Dictionary = {}
 var _runtime_report_end: Dictionary = {}
 var _first_seen_tick: int = -1
@@ -470,6 +472,8 @@ func start(metadata: Dictionary = {}) -> void:
 	_path = ""
 	_sidecar_path = ""
 	_country_samples.clear()
+	_modifier_samples.clear()
+	_effect_samples.clear()
 	_country_receipts.clear()
 	_country_receipt_cursor = 0
 	_runtime_report_start = {}
@@ -679,6 +683,8 @@ func on_fast_tick(sample: Dictionary) -> Dictionary:
 		weather[key] = transition_stats[key]
 	sample["weather"] = weather
 	_capture_country_evidence(global_tick, map_data)
+	_capture_modifier_evidence(global_tick)
+	_capture_effect_evidence(global_tick)
 	_last_tick_stats_ms = (Time.get_ticks_usec() - t_stats_us0) / 1000.0
 	var first_cell = map_data.cell_at(0)
 	if first_cell == null:
@@ -835,6 +841,46 @@ func _capture_country_evidence(tick_idx: int, map_data) -> void:
 			_country_receipt_cursor = maxi(_country_receipt_cursor,
 				int(receipt_batch.get("last_request_id",
 					_country_receipt_cursor)))
+
+
+## E8 ModifierClientEvidence: record worker Modifier POD hashes for ACTIVE/OFF
+## dual recordings. Uses runtime thread report fields — not Climate tile arrays.
+func _capture_modifier_evidence(tick_idx: int) -> void:
+	if _main == null or not _main.has_method("get_generator"):
+		return
+	var generator = _main.get_generator()
+	if generator == null or not generator.has_method("get_runtime_thread_report"):
+		return
+	var report: Dictionary = generator.get_runtime_thread_report()
+	_modifier_samples.append({
+		"tick_idx": tick_idx,
+		"state_hash": int(report.get("modifier_pod_state_hash", 0)),
+		"snapshot_generation": int(report.get("modifier_pod_snapshot_generation", 0)),
+		"ack_count": int(report.get("modifier_pod_ack_count", 0)),
+		"ready": bool(report.get("modifier_pod_ready", false)),
+		"worker_authoritative": bool(report.get("modifier_worker_authoritative", false)),
+		"fallback_reason": String(report.get("modifier_pod_fallback_reason", "")),
+	})
+
+
+## F8 EffectClientEvidence: record worker Effect POD hashes for ACTIVE/OFF
+## dual recordings. Uses runtime thread report fields — not Climate tile arrays.
+func _capture_effect_evidence(tick_idx: int) -> void:
+	if _main == null or not _main.has_method("get_generator"):
+		return
+	var generator = _main.get_generator()
+	if generator == null or not generator.has_method("get_runtime_thread_report"):
+		return
+	var report: Dictionary = generator.get_runtime_thread_report()
+	_effect_samples.append({
+		"tick_idx": tick_idx,
+		"state_hash": int(report.get("effect_pod_state_hash", 0)),
+		"snapshot_generation": int(report.get("effect_pod_snapshot_generation", 0)),
+		"ack_count": int(report.get("effect_pod_ack_count", 0)),
+		"ready": bool(report.get("effect_pod_ready", false)),
+		"worker_authoritative": bool(report.get("effect_worker_authoritative", false)),
+		"fallback_reason": String(report.get("effect_pod_fallback_reason", "")),
+	})
 
 
 func _current_map():
@@ -1179,6 +1225,22 @@ func _write_sidecar(final: bool, stop_reason: String = "") -> void:
 			"samples": _country_samples.duplicate(true),
 			"terminal_receipts": _country_receipts.duplicate(true),
 			"last_receipt_request_id": _country_receipt_cursor,
+		},
+		"modifier_evidence": {
+			"schema": "ModifierClientEvidence",
+			"schema_version": 1,
+			"state_hash": int(_modifier_samples.back().get("state_hash", 0)) if not _modifier_samples.is_empty() else 0,
+			"snapshot_generation": int(_modifier_samples.back().get("snapshot_generation", 0)) if not _modifier_samples.is_empty() else 0,
+			"ack_count": int(_modifier_samples.back().get("ack_count", 0)) if not _modifier_samples.is_empty() else 0,
+			"samples": _modifier_samples.duplicate(true),
+		},
+		"effect_evidence": {
+			"schema": "EffectClientEvidence",
+			"schema_version": 1,
+			"state_hash": int(_effect_samples.back().get("state_hash", 0)) if not _effect_samples.is_empty() else 0,
+			"snapshot_generation": int(_effect_samples.back().get("snapshot_generation", 0)) if not _effect_samples.is_empty() else 0,
+			"ack_count": int(_effect_samples.back().get("ack_count", 0)) if not _effect_samples.is_empty() else 0,
+			"samples": _effect_samples.duplicate(true),
 		},
 		"runtime": {
 			"committed_day": int(report.get("simulation_committed_day", -1)),

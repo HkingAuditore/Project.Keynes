@@ -1,16 +1,15 @@
 # 运行时权威迁移：目标、设计框架、当前状态与任务
+更新时间：2026-09-12（Effect F8 已放行：`implemented` 与生产 request 均为 `0x866`；Climate /
+Country / Modifier 仍 ACTIVE；G8/H8 未做）
 
-更新时间：2026-09-11（Country D12 已放行：`implemented` 与生产 request 均为 `0x806`；C2 field-init 已修；Effect F7 Host SHADOW stage 已接入）
+**一句话现状**：十二个 domain 里 Climate、Country、Modifier 与 Effect 已是生产默认权威（`implemented_domain_mask =
+CLIMATE|COUNTRY|MODIFIER|EFFECT|COMMIT = 0x866`；Climate 滞后一日回灌，Country 经 Host read-view 回写，
+Modifier/Effect snapshot 回灌 legacy runtime）。`runtime_climate_authority_enabled` 为真时生产
+请求 `authoritative_domain_mask=0x866`。关掉该开关则退回 SHADOW：同步 Country / 主线程
+modifier·effect daily / Climate 回主线程。整图 ACTIVE 仍禁止，放行仍是 **逐域**的。Country D1–D12、
+Modifier E2–E8 与 Effect F8 完成。
 
-**一句话现状**：十二个 domain 里 Climate 与 Country 已是生产默认权威（`implemented_domain_mask =
-CLIMATE|COUNTRY|COMMIT = 0x806`；Climate 滞后一日回灌，Country 经 Host read-view 回写）。
-`runtime_climate_authority_enabled` 为真时生产请求 `authoritative_domain_mask=0x806`。关掉该开
-关则退回 SHADOW：同步 `NativeCountryRuntime::run_slice_core()` 仍是 Country 写者，Climate 回主
-线程。整图 ACTIVE 仍禁止，放行仍是 **逐域**的。Country 任务进度：D1–D12 完成。Effect F7 已把
-真实 POD stage 接入 Host 日循环（仍为 SHADOW，mask 不含 EFFECT）。
-
-Modifier E2-E7、Ideology G2-G7、Trigger H2-H6、Effect F2-F7 的 SHADOW 现状不变（E8/F8/G8/
-H7/H8 未执行）。
+Ideology G2-G7、Trigger H2-H6 的 SHADOW 现状不变（G8/H7/H8 未执行）。
 
 2026-09-10 纠正：仓库内已不存在 `country_worker_command_unsupported`。Country worker 授权下
 `submit_country_commands()` 对 opcode 1–20 一律编码进 Host packet，不会按 CREATE/RENAME/税务
@@ -556,8 +555,8 @@ snapshot 对照，但尚未取得 ACTIVE authority；其它域的 POD 状态见 
 | **B** | CLIMATE 垂直切片：第一个域走通全流程 | ✅ 完成（带 6 项遗留） |
 | **C** | 测量能力：证明收益、抓住 headless 抓不到的问题 | 🔶 C1/C3 已采集；C2 Country pass；`weather_field_init` 已补 extras 回灌，其余 Climate 差异已按 B8/滞后声明 |
 | **D** | COUNTRY | ✅ D1–D12 完成（生产 ACTIVE，`0x806`） |
-| **E** | MODIFIER | ✅ E2–E7 完成；E8 未执行，仍为 SHADOW |
-| **F** | EFFECT | 🔶 F2–F7 完成；F8 未执行，仍为 SHADOW |
+| **E** | MODIFIER | ✅ E2–E8 完成（生产 ACTIVE，`0x846`） |
+| **F** | EFFECT | ✅ F2–F8 完成（生产 ACTIVE，`0x866`） |
 | **G** | IDEOLOGY | 🔶 G2–G7 完成；G8 未执行，SHADOW |
 | **H** | TRIGGER_INPUT | 🔶 H2–H6 已实现；SHADOW parity，H7/H8 未执行 |
 | **I** | EVENTS | 🔶 I1–I7 已实现；SHADOW/PROBE，I8 未执行 |
@@ -638,13 +637,391 @@ E–J 的顺序由依赖决定（见"每个域的通用七步"末尾的依赖图
 - [x] weather field solve 从未运行（湿度跳变）
 
 ### B8 遗留（转入 P2） 🔶
-- [ ] stage 重排：`feedback` 移到 `weather`/`distribute` 之后 → 验收：与生产语义一致且 soak 无回归
-- [ ] ψ / cyclone / monsoon 自持推进 → 前置：解决 wind pass 与 weather 的次序
-- [ ] 量级偏差归因（snow_cover +25%、moisture/WB30 偏高、VGP 符号相反）→ 验收：每条一对一映射到原因
+- [x] ~~stage 重排：`feedback` 移到 `weather`/`distribute` 之后~~（2026-09-11，B8-1：canonical 顺序表 + kernel 执行序自检 + 生产 graph 契约测试；SHADOW parity 保持 28/30，soak 无回归）
+- [x] ~~ψ / cyclone / monsoon 自持推进~~（2026-09-11：ψ 自持 + CLM2 ABI 4；monsoon/traj transport 带指纹资格；cyclone **推进/衰减/stamp/genesis 全部自持** + CLM2 ABI 6 的 `cyclone_state` blob，见下）
+- [x] ~~量级偏差归因（snow_cover +25%、moisture/WB30 偏高、VGP 符号相反）~~（2026-09-11：三条各有一对一映射；headless A/B 侧的成因是"一日滞后 + 水域 PAW 规则 + writer cadence 不对等"，E1/E2/E6 三个单因子实验均为非成因。客户端量级确认归入 P6 的 C2 对比）
 - [ ] 按格数的启用阈值（小地图 +5.5% 负收益）→ 验收：阈值有实测依据
 - [ ] 大地图回灌跟不上节拍 → 验收：`writeback_days` 达到 50/50
-- [ ] 清理 `RuntimeClimateCommand` 5 个悬空 opcode → 验收：接上消费者或删除
+- [x] ~~清理 `RuntimeClimateCommand` 5 个悬空 opcode~~（2026-09-11：连同无消费者的 `RuntimeClimateIntentOpcode` 一起删除，并在协议头写明"命令枚举必须有消费者"）
 - [x] ~~修 `implemented_domain_mask()` 过期注释~~（2026-09-08）
+
+#### B8 修复进展（2026-09-11，按计划 P0/P1/P3 部分）
+
+已完成并随本 PR 落地：
+
+- **P0 交付游标与丢天计数**：`RuntimeThreadReport` 新增
+  `climate_committed_day`、`climate_consumed_generation`、
+  `environment_published_days/consumed_days/superseded_days/dropped_days`、
+  `climate_wait_total/last/max_ms`；`get_runtime_thread_report()` 与
+  `WorldRuntimeHost.climate_authority_diagnostics()` 全部透传。
+  `superseded` 的定义是"已发布但被下一天顶掉、worker 从未 plan 过"，这正是
+  单槽 latest-value 的静默丢天；它现在是一个可读数字，不再是推断。
+- **P0 回灌分段耗时**：`apply_runtime_climate_writeback()` 返回
+  `memcpy_ms` / `flush_map_ms` / `total_ms` / `dirty_fields`，把"worker 慢"
+  与"回灌写回慢"分开。
+- **P0 stage 顺序契约**：`runtime_climate_kernel.h` 新增
+  `RUNTIME_CLIMATE_CANONICAL_ORDER`（声明序即执行序）与
+  `runtime_climate_stage_order_self_test()`；kernel 的 `run_stage` 记录真实执行序
+  (`RuntimeClimateKernelReport::stage_sequence`)，self-test 校验它与声明序一致。
+  生产侧由 `DCWorldExt::runtime_climate_stage_order_contract_test()` 核对
+  `NATIVE_DAILY_SLICE_GRAPH` 的无条件执行链（round 8 段 → weather_field →
+  commit → distribute → summary → cyclone → hydrology → stage_b_after_hydrology），
+  并报告 `weather_stage_b` 等条件宿主。新增测试
+  `tests/runtime_climate_stage_order_contract_test.gd`（538 项断言）。
+- **P0 字段写入权台账**：`tools/runtime/climate_field_ownership.json` 为 parity 表
+  的 35 个字段逐一记录生产写者、ACTIVE 抑制项与回灌归属，并与
+  `authority-stage-c-field-policy.json` 交叉校验；测试在字段表漂移、台账过期或
+  抑制 token 非法时失败。
+- **P1 stage 重排（B8-1）**：worker kernel 的
+  `albedo → vegetation_dynamics → climate_feedback` 从 weather 之前移到
+  weather/distribute/hydrology 之后（生产 `weather_stage_b` /
+  `stage_b_after_hydrology` 的落点）；诊断近似回退路径同样按 canonical 顺序执行。
+  vegetation/feedback 的 `weather_type/intensity/field_init` 输入改为读 worker
+  当天 store（`_weather_field_init_scratch` 只在真的被 seed/写过时启用），生产记录
+  仅在 worker 当天没算出该场时兜底。
+- **P3 背压等待（B8-5 的结构部分）**：
+  `DCWorldExt::wait_climate_consumed(after_environment_generation, timeout_ms)` +
+  `NativeSimulationHost::wait_climate_consumed()`（条件变量，非忙等）。
+  `WorldRuntimeHost.wait_for_climate_consumed()` 在切片之间 pump
+  Country/Economy peer 服务，避免两个边界互锁；`_on_clock_day_changed` 已把
+  "回灌 → 等 worker 消费上一份环境 → capture" 串成同一调用栈。终止条件只有
+  worker 故障/停止、权威撤销、接口缺失三类 —— 无性能超时（按计划的"无限等"选择）。
+- **B8 证据工具**：`tools/runtime/Invoke-ClimateB8Soak.ps1`（单次 soak +
+  `soak.json` 摘要）、`Compare-ClimateB8Soak.ps1` + `climate_b8_soak_policy.json`
+  （按字段 nz/mean/min/max 判定 pass / declared_gap / regression）；
+  `climate_authority_soak_probe.gd` 新增 `PK_SOAK_DRIVE=serial_wait` 与
+  `[soak/delivery]`、结构化 samples（stage_b_after_hydrology 也补进 stage 名单）。
+
+  **首轮 smoke 证据**（2026-09-11，40x32 / 12 天 / x50 / `serial_wait`，
+  `artifacts/runtime/climate-b8/ab/`）：
+
+  | 指标 | OFF | ACTIVE |
+  | --- | --- | --- |
+  | `first_bad_tick` | -1 | -1 |
+  | `environment_published_days` | — | 12 |
+  | `environment_consumed_days` | — | 11 |
+  | `environment_superseded_days` | — | **0** |
+  | `environment_dropped_days` | — | 0 |
+  | `writeback_days` | 0 | 8（含固定的一日交接滞后） |
+  | `writeback memcpy_ms` / `flush_ms` | — | 0.14 / 0.10 |
+  | `climate_wait_total_ms` / `max_ms` | — | 90 / 10 |
+
+  结论：单槽丢天已被等待消除（superseded=0）；回灌 memcpy/flush 都是亚毫秒级，
+  不是瓶颈；剩余差距集中在 worker 单日成本（由 `climate_wait_total_ms` 体现）与
+  B8-3 量级偏差。同一轮 A/B 由 `Compare-ClimateB8Soak.ps1` 判定为
+  `declared_gap`：7 条已知 B8 偏差带 run-id 与原因，0 条未声明回归。
+
+本轮又补上的两项：
+
+- **B8-2 子项：worker 自持 synoptic ψ**。生产侧只剩"冷启动播种"：capture 把
+  `DCWorldExt::_wx_synoptic` / `_wx_synoptic_prev` 当天 solve 读到的那一帧传给
+  worker（`WeatherFieldInput::psi/psi_prev`），worker 第一次见齐长 lane 时拷进
+  `RuntimeClimateKernel::_synoptic_psi`，之后用当天风场 + 归一化温度调用共享的
+  `synoptic_advance_pure` 自己推进。SHADOW 不自己推进（直接用生产那一帧，保持
+  复刻语义，避免把"节拍差"记成算法分叉），ACTIVE 用自己的单调 tick。
+  `PK_CLIMATE_SYNOPTIC_OFF=1` 复现 B8 之前的"无 ψ"路径，用于 E6 归因 A/B。
+  存档：**CLM2 ABI 3→4**，ψ/ψ_prev 进 store lane 与 `state_hash`，随存档持久化；
+  ABI 3 旧档按旧 lane 顺序读取、新增两条留全零，并跳过 ABI 4 才有的 state_hash
+  校验（旧档的 hash 不含这两条）。`RuntimeClimateAuthority::self_test()` 内置
+  迁移自检：把 ABI 4 payload 剪掉 ψ 两条 lane、改写 header 后走正式 restore，
+  验证成功且 ψ 全零。
+- **交付等待的自旋缺陷修复**。新计数器一上来就抓到：`environment_consumed_days`
+  在 50 天里涨到 3200 万。根因是 worker 消费环境后在 `_control_cv` 上
+  `notify_all`，而它自己的 preflight 重试也挂在同一个 CV 上——自唤醒自旋。
+  现在等待用专用 `_climate_wait_cv`，并且只有"第一次看到某个代次"才计入
+  delivered，失败天的重试不再把计数撑成重试次数。修复后同一组 60x40/50 天：
+  `published=50 consumed=50 superseded=0 dropped=0`。
+
+**SHADOW parity（30 天，`parity-30d-parity30.json`）**：`compared=30 matched=28`
+（回到并保持文档基线 28/30）；天气组（precipitation/vapor/cloud/instability）
+从 3 天分歧降到 1 天（day 7），`snow_cover` 0 天分歧。
+
+**E1 归因（stage 顺序单因子，80 天 / 40x32 / ACTIVE，`artifacts/runtime/climate-b8/e1-80/`）**：
+canonical vs legacy 顺序，其它变量完全不动：
+
+| 场 | 最大 mean 差 | nz 差 | 结论 |
+| --- | --- | --- | --- |
+| `plant_available_water_arr` | — | 847（tick 5 一次性） | 顺序改变 PAW 初值，随后收敛 |
+| `moisture_arr` | 0.016 | 0 | 早期偏移，随后收敛 |
+| `snow_cover_arr` | — | ≤5 | 顺序几乎不解释 snow_cover |
+| `vegetation_growth_pressure_arr` | ≤0.0013 | 0 | **顺序不是 VGP 反号的成因** |
+
+结论：B8-1 的 stage 重排把 worker 顺序对齐到生产语义（正确性/一致性），但
+它不是 snow_cover +25% / VGP 反号的成因；这两个必须继续查 E2（输入所有权）、
+E5（succession）与 E6（ψ）。
+
+**E6 归因（ψ 自持 on/off，30 天 / 40x32 / ACTIVE，`artifacts/runtime/climate-b8/psi-own/`）**：
+`PK_CLIMATE_SYNOPTIC_OFF=1` 复现 B8 之前的"无 ψ"路径：
+
+| 场 | ψ on | ψ off |
+| --- | --- | --- |
+| `weather_vapor_arr` mean | 0.18039 | 0.18077 |
+| `weather_cloud_arr` nz | 1280 | 1280 |
+| `weather_precip_arr` nz | 171 | 167 |
+
+结论：ψ 自持在 30 天窗口里对天气只造成 <0.5% 的差异；它是正确性补齐（worker 不再
+丢 syn_base_lift 这条驱动），**不是** B8 量级偏差的成因。
+
+**顺带两处修正**：
+
+- **weather 在 ACTIVE 下确实是活的**。C++ 一次性诊断
+  `[climate/writeback][b8] day=5 vapor store0=0.110427 map0=0.110427` 证明
+  worker→writeback→MapData 链路完好；此前"天气全零"是 soak 的 `CONTESTED` 清单
+  没包含天气数组、PowerShell 读缺失 key 拿到 0 的假象。天气组已加入结构化采样，
+  实测 `vapor nz=1280 / cloud nz=1275 / precip nz=171` 且随 ψ 推进逐日增长。
+- **主线程 weather job 的唯一写者门**。`WeatherRefreshJob.should_run()` 与
+  `run_slice()` 在 Climate worker 权威时返回抑制（`MapGenerator.climate_authority_suppressed()`）。
+  原先它不在任何抑制门内：DCSystemScheduler 路径直接走 policy + run_slice，
+  主线程 weather 链可以在 writeback 之后用一份不再推进的 field state 覆盖天气场。
+
+**B8-P1：succession 写入权迁入 worker（CLM2 ABI 5）**
+
+- store 新增 `vegetation` / `base_vegetation` 两条 u8 lane，进 `state_hash`；
+  `CLIMATE_U8_LANES_V4` 保留了 ABI<=4 的旧 lane 集合，restore 现在同时支持
+  ABI 3/4/5（`self_test` 对 ABI 3 与 ABI 4 各造一份旧 payload 走正式 restore，
+  验证新 lane 全零、metadata 一致）。
+- worker 在 `vegetation_dynamics_apply_pure` 之后直接应用演替 emit，规则与
+  `_apply_vegetation_succession_candidates` 逐条对齐：`vegetation`/`base_vegetation`
+  同步换档、降级用 `vegetation_degrade_reset_target`（新增 knob）、升级用固定 0.7、
+  vitality 取中点；streak 冷却由纯内核写入。冷启动从 capture 的 vegetation lane 播种。
+- 两条 lane 进了 parity 表（`RUNTIME_CLIMATE_PARITY_VERSION` 2→3）与写入权台账，
+  所以它们既出现在分叉矩阵里，也走 writeback 回灌 MapData（不再靠 extras 旁路）。
+- **发现并修掉一个真 bug**：`copy_store_lanes` 是手写清单，新增 lane 不在里面时
+  双缓冲之间状态不连续 —— 实测 `vegetation_arr` 在 0/679 之间逐日翻转，ψ 也从未
+  真正进 store（save/restore 表面通过、实际存空 lane）。补上四条 lane 后：
+  ACTIVE 120 天 `vegetation nz=679 mean=8.559` 与 OFF 基线 `8.5586` 一致且稳定；
+  SHADOW parity 仍是 `matched=28/30`，新增的 vegetation / base_vegetation
+  在 30 天里 **0 天分歧**。
+
+**B8-3 归因：一日滞后 vs 真实分歧（12 天逐日采样，`artifacts/runtime/climate-b8/lag/`）**
+
+把采样改成逐日，并让 ACTIVE 的 tick T 对齐 OFF 的 T-1（权威回灌固定滞后一日）：
+
+| tick | PAW on(T) vs off(T-1) | VGP on(T) vs off(T-1) | moisture on(T) vs off(T-1) |
+| --- | --- | --- | --- |
+| 2 | 0.8337 vs 0.8337 | 0.1965 vs 0.1965 | 0.8404 vs 0.8404 |
+| 4 | 0.8337 vs 0.8337 | 0.0000 vs 0.1965 | 0.8632 vs 0.8404 |
+| 6 | **0.2386 vs 0.8337** | 0.0000 vs 0.1965 | 0.8790 vs 0.8404 |
+| 12 | 0.2471 vs 0.8337 | 0.1144 vs 0.1965 | 0.8897 vs 0.8538 |
+
+结论（这是目前最强的一条归因证据）：
+
+1. **tick 2–5 的差异 100% 是滞后**：PAW/VGP/moisture 三个场逐位相同，说明 P1/P2 的
+   顺序、输入所有权、ψ 都没有引入早期偏差。
+2. **tick 6 起出现真实分歧**：ACTIVE 的 PAW 从 0.8337 崩到 0.2386（-71%），VGP
+   同期掉到 0，moisture 随后单向偏高。分界点落在 PAW/soil_moisture/WB30 这条链上，
+   而不是天气、ψ、stage 顺序或演替。
+3. 结合上面的 E1/E2/E6 三个负结果（顺序、植被三 lane 所有权、ψ 各自都不是成因），
+   剩余 B8 量级偏差的排查面已经收敛到**一条链**：PAW 重算所消费的
+   `cell_soil_moisture` / `water_balance_30d` 在 ACTIVE 下由谁在什么时点写、
+   以及 distribute 缺席日这两个 lane 取到什么值。
+
+#### 收尾：PAW 链已归因，headless soak A/B 不是数值 oracle
+
+PAW 逐日诊断（`artifacts/runtime/climate-b8/paw-diag2/`，12 天，每图第一个陆地格）：
+
+```
+day=3..12  zeros(water=847 land=0) nonzero=433
+probe cell=70 moisture≈0.845 wb30∈[0,-0.00039] soil∈[0,-0.00094] paw≈0.844
+```
+
+- **PAW 的"collapse"是水域规则**：worker 每图把 847 个水域格 PAW 清零、陆地 0 个
+  清零；OFF 侧在这个 headless harness 里从不跑同一条 clearing stage，于是水格保留
+  世界生成时的种子值。mean 从 0.8337 掉到 0.2386 = 847/1280 格按设计归零，
+  不是公式或权重错误（陆地 probe 全程 0.84）。
+- **tick 2–5 与 OFF(T-1) 逐位相同**：这一段差异 100% 是一日权威滞后。
+- 因此 headless soak A/B 对 **cadence 门控 + 主线程伴随写者**的场（PAW / WB30 /
+  VGP / snow_cover / soil_moisture）不是有效数值 oracle：两侧跑的不是同一批
+  writer。它的正确用途是**稳定性/回归**（NaN、丢天、大幅漂移），数值对拍交给
+  SHADOW parity（生产与 worker 同日并行）与 C2 客户端全量录制。
+- E1（stage 顺序）、E2（植被三 lane 输入所有权）、E6（ψ）三个单因子实验均已实测为
+  **非成因**；PAW/VGP/WB30/snow 在 soak policy 里已从"待查偏差"改写为"已归因 +
+  引用证据 run-id"。
+
+**B8-2：cyclone 自持（CLM2 ABI 6）**
+
+- **纯内核**：`pk_async_climate::cyclone_advance_and_stamp_pure` 把
+  `DCWorldExt::_advance_and_stamp_cyclones` 逐行搬成不依赖 Godot 类型的实现
+  （`Vector2` → 标量对、Dictionary knobs → POD、条目表指向调用方 vector）。
+  公式、阈值、步数、BFS stamping 顺序均未改动。
+- **worker 状态**：kernel 持有 `_cyclone_entries`（跨天）+ 当天派生 lane
+  （tag/visit/x/y/lift）+ generation；每个 weather 日在 field solve 之前推进/衰减/
+  stamp，并把 stamp 结果喂给 `WeatherFieldState`（与生产同一位置、同一顺序）。
+  冷启动先看 store blob（存档恢复），再看 capture 的生产种子。
+- **持久化**：CLM2 ABI 6。条目表是可变长，编码成不透明 blob
+  （`cyclone_state_encode/decode`：magic+version+count+next_stable_id+记录表），
+  追加在 lane 之后；ABI ≤ 5 的旧档读完后 `cyclone_state` 保持空。迁移自检新增
+  ABI 5 用例（只缺 blob）并断言旧档不会解出 blob。
+- **验证**：kernel self_test 覆盖"推进改变 intensity/age + stamp 写出 tag/x/y/lift +
+  encode/decode 往返"；`PK_CLIMATE_CYCLONE_FORCE=1` soak 的
+  `[climate/worker][b8] cyclone day=4/12 entries=0 alive=0 touched=0 gen=2/3`
+  证明接线按 weather 节拍运行。
+- **cyclone genesis 也迁入 worker**（同 CLM2 ABI 6）。生产的是
+  `cyclone_wake_step` 的 native-entity 分支：从 WeatherFront 列表里挑
+  `type == STORM && intensity ≥ 0.8` 的前沿，按其 center 反查格子、过物理闸、
+  以切向向量注入条目。ACTIVE 下没有 front 对象（summary 段被抑制），所以这条
+  路径必须换成 worker 自己的格子态判据：
+  - `pk_async_climate::cyclone_genesis_pure`：水陆 LUT、纬度带、`temp ≥ 0.58`、
+    `precip ≥ 0.05`、`cloud ≥ 0.22`、`instability ≥ 0.40 or convergence ≥ 0.30`、
+    风切变 ≤ `max_shear`、强度门、`capacity` / `births_per_commit` 全部与生产逐条
+    一致；唯一键从 `q*10000+r` 换成 cell_idx（worker 内等价），同键覆盖
+    （replaced）不吃出生预算，只有新条目才消耗 `births_per_commit`。
+  - **前沿等价物 = `weather_intensity` lane**：生产 front 的 intensity 就是
+    cluster 内最大 cell intensity（`world_ext_weather.cpp` summary 段
+    `std::clamp(c.max_intensity, 0, 1)`），两者同源。**不能**再要求
+    `weather_type == STORM`：field solve 只有在已有 stamp（`cyclone_lift ≥ 0.58`）
+    时才把类型写成 STORM，拿它当出生条件就是闭锁 —— `require_storm_type` 只留给
+    A/B 复现旧闭锁。
+  - **纬度带用规范 `cell_lat_norm`**：生产公式 `abs((pos_y-wb_y)/wb_h*2-1)` 里
+    `_world_bounds` 是世界矩形、`cell_pos_y` 是格子局部坐标，两者尺度不一致
+    （实测 50x48 地图 water_ny ∈ [0.026,0.068] ⇒ abs_lat ≈ 0.95，恒出带）。
+    worker 侧改用 `cell_lat_norm`（赤道 0.5，与 `temp_baseline` 同源）；lane
+    缺席时退回生产公式，`CycloneLanes::lat_norm` 空指针语义即对拍/单测路径。
+  - **profile 常量入 capture**：`stage_weather` 原来不带 cyclone 常量，host 只能按
+    `cyclone_storm_type_id=-1` 兜底 ⇒ genesis 永不触发。现在
+    `MapGenerator._build_runtime_climate_stage_knobs()` 显式注入
+    `cyclone_storm_type_id` / `cyclone_wake_days` /
+    `native_tropical_cyclone_enabled` / `tropical_cyclone_{capacity,births_per_commit,
+    min_temp,min_instability,max_shear,min_lat,max_lat,max_radius_cells}`。
+  - **门控现状**：`ClimateProfile.native_tropical_cyclone_enabled` 的脚本默认是
+    false，但生产 profile `data/world/earth_like.tres` 把它打开 —— 也就是说 cyclone
+    子系统在这张图上本来就每天在跑（`cyclone_gate ... input_enabled=1`）。迁移只换
+    所有权，不改这个门。
+  - **验证（160 天 / 50x48 / ACTIVE / `serial_wait`）**：
+    `PK_CLIMATE_CYCLONE_GENESIS_GATE=0.6` 是**证据用覆盖**：默认世界里热带水格的
+    intensity 年峰值只有 0.76（`max_int` 漏斗实测），压在生产的 0.8 门之下，不降门
+    就拿不到"出生→推进→衰减→淘汰"的实证（`PK_CLIMATE_CYCLONE_FORCE=1` 只在
+    profile 关掉气旋时才需要）。日志
+    `artifacts/runtime/climate-b8/soak/cyclone-genesis-gate06/soak.log`：
+    day=52/76/116 `injected=1`（出生），day=60/84 `decayed=1` 且
+    `int(before/after)=0.625/0.000`（推进读的是 worker 自己那份 store 条目），
+    全程 `first_bad_tick=-1` / `drops=0`。
+  - **默认门 0.8 在默认世界不可达是生产事实**，不是 worker 回归：同一份阈值、
+    同一条 intensity 定义；本项迁移只换所有权与输入来源。`storm_type` 漏斗
+    （`type_storm` 计数）证明 worker 分类确实会产出 STORM 格（一年内最多 7 格同
+    时），只是强度还没到 0.8。
+
+仍未完成（后续阶段）：
+
+- **P2 物理环流求解器迁入 worker**：synoptic ψ、cyclone 推进/衰减/stamp/genesis
+  已由 worker 自持（CLM2 ABI 4 / 6）；monsoon 与 wind traj 从主线程物理求解状态
+  transport 进 `WeatherFieldInput`（traj 走与消费端相同的资格 + 指纹校验）。
+  仍留主线程的是 SLP/风场/洋流/上涌求解与 `climate_physics_authority` 开关
+  （P2 的后半段）。**共享纯内核已开工**（2026-09-12）：
+  - 新增 `gdext/src/runtime_climate_physics.{h,cpp}`（namespace `pk_async_physics`，
+    Godot 无依赖，已进 `runtime_worker_source_scan_test` 的守护清单）。
+  - **SLP 已迁**：`run_slp_field_pass` 的 Pass A（逐 cell 基线）与 Pass B/norm
+    （Jacobi 平滑 → recenter+p95 → 响应混合 → 再 recenter → delta）改调
+    `slp_pass_a_range` / `slp_pass_b_pure`。生产保留 `pk::parallel_for_range`
+    分段（逐 cell 独立 ⇒ 分段 bit-equal），worker 侧单线程整段调用。
+  - **wind field 已迁**：`run_wind_field_pass` 的主循环（纬度基线 → ∇SLP/科氏 →
+    沿海权重 → 海风/热力季风 → synoptic 波 → 地形绕流 → 响应混合 + NS Phase 1
+    动量自平流/扩散 → 转向限幅）改调 `wind_field_range`；季风/flip 统计按区间
+    返回后在生产合并（整数加法的合并顺序无关）。几何/风带常量（`NB_DIR_*`、
+    `WIND_*`、`COAST_INF`、`pk_wind_*` helper）同时收进
+    `runtime_climate_physics.h` 作为**唯一来源**，`world_ext_physical.cpp` 改用
+    `using` 声明，杜绝两份常量漂移。旧的内联实现已整体删除（不是注释掉）。
+  - **psi SOR 已迁**：`run_psi_solver_pass` 的三段全部走共享内核 ——
+    `psi_topology_build_pure`（水域 CSR：cell↔water 互逆映射 + `nb_w`，生产保留
+    自己的 FNV 指纹缓存外壳）与 `psi_solve_pure`（tau/curl/源项 → SOR
+    Gauss-Seidel（含 warm-start 与提前退出）→ grad ψ → 洋流 + 密度/地形/高纬项 +
+    响应混合 + 限幅）。scratch（tau/ny/ls/curl/beta/r/source/psi 共 9 条 n_water
+    缓冲）由调用方持有：生产用局部 vector，worker 侧将来用常驻缓冲；诊断
+    （iters/residual/early_exit/clamp_count/preclamp_max/thermal p95）逐项对齐原
+    输出键。
+  - **upwelling 与 wind traj 已迁**：`run_physical_circulation_pass(stage=upwelling)`
+    的主循环改调 `upwelling_range`（离岸 Ekman + 高纬冷沉，逐 cell 独立）；私有
+    `_phys_build_wind_traj` 的内部循环改调 `wind_traj_build_range`（半拉格朗日回溯 +
+    六分扇形 barycentric 权重）。为让后者能被 worker 复用，
+    `pk_hex_sextant_barycentric` 与 `pk_wind_state_fp` 从 `world_ext_internal.h` 的匿名
+    namespace **搬到** `runtime_climate_pass_math.h`（namespace `pk`，Godot 无依赖），
+    成为唯一来源。
+  - **coast/sea BFS 已迁**：`_phys_ensure_wind_coast` 的两次 BFS 改调
+    `wind_coast_build_pure`（Pass 0 陆地→海岸 + Pass 0b 水面→岸线；生产保留 FNV
+    指纹缓存与 build_ms 计时外壳，scratch 队列由调用方持有）。
+  - **至此 §4.1 的共享纯内核清单全部落地**：slp / wind / psi(SOR) / upwelling /
+    monsoon（在 wind 内核内）/ wind_traj / cyclone（此前完成）。
+    worker 侧还额外需要 coast/sea BFS 缓存，也已一并提供（生产同源）。
+  - **等价性证据**：同一配置（50x48 / ACTIVE / `serial_wait` / 30 天 /
+    `PK_CLIMATE_CYCLONE_GENESIS_GATE=0.6`）在迁移前后的 `[soak/live]` 第 25 tick
+    快照**逐位相同**（moisture/snow/VGP/PAW/WB30/temp/insolation/sea_ice/weather
+    全组 mean、nz、min、max 一致）—— SLP、wind、psi、upwelling+traj、coast BFS
+    五次迁移各自独立复核过；
+    SHADOW parity 30 天仍 28/30；25/25 测试全绿。
+  - 自检：`pk_async_physics::self_test()` 随 `RuntimeClimateAuthority::self_test()`
+    跑（SLP：Pass A 有限性/水陆差异、Pass B Jacobi 平均手算比对、recenter 零均值、
+    `response_rate=0` 保持 prev；wind：方向单位化/速度范围、季风 onshore 触发、
+    季风关闭时 `monsoon_thermal` 归零且计数为 0；psi：CSR 互逆/不泄漏到陆地、
+    SOR 迭代数与残差下降、warm-start 不劣化、`early_exit` 在 `min_iters` 处退出、
+    洋流模长不超 `oc_max_mag`；upwelling 的陆地格归零/值域/邻陆非零、
+    wind traj 的权重归一/索引域内/静止风 own-cell 退化）。
+  - **物理标量链路已通（2026-09-12）**：`RuntimeClimatePhysicsKnobs` POD +
+    `MapBaker.runtime_physics_knobs()` 标量投影 + capture 下发 + host 解析 +
+    kernel readiness 诊断。soak 实测 `[climate/worker][b8] physics_knobs
+    day=3..6 ready=1 missing=`（day1–2 为 bake 未完成的正常窗口）。过程中修掉两个
+    真实缺陷：base dict 只在第一次物理求解时才建（ACTIVE 下物理被策略门挡住 ⇒
+    永远拿不到标量）、以及物理标量被 weather 不到期的提前返回吞掉（readiness 随
+    节拍 1/0 抖动）。详见 gdscript-cpp-data-bridge.md 同名小节。
+  - **`RuntimeClimatePhysicsState` 已落地（2026-09-12，P2 §4.2）**：worker 侧物理
+    常驻状态成型，SoA 全量 + shape/generation 校验：
+    * 场：`slp/slp_prev/slp_thermal/slp_scratch`、`wind_x/y/speed/speed_out/delta/
+      dir_delta`、`ocean_current_x/y`、`ocean_psi/ocean_psi_prev`、`upwelling`、
+      `wind_stress_curl`、`ocean_thermal_anomaly`、`synoptic_psi/psi_prev`、
+      `monsoon_thermal`；
+    * 派生缓存：coast/sea 距离 + 朝海/朝陆单位向量 + 锚格 + BFS 队列；水域 CSR
+      （`cell_to_water`/`water_to_cell`/`nb_w`）；回溯轨迹表（`wind_traj_idx/w`）；
+      三者各带指纹 + valid（生产同款语义）；
+    * scratch：`psi_solve_pure` 的 9 条 + 两条诊断（preclamp/thermal）；
+    * API：`resize(cell_count)`（整份重建 + 派生缓存失效 + generation++）、
+      `resize_water(n_water)`、`validate(error)`（形状/水域长度）、`state_hash()`
+      （FNV-1a 按位，供读视图游标与存档段校验）。
+    * 接线：kernel 持 `_physics`；`plan_day` 按当日 shape 自动重建；`reset()` 整份
+      丢弃；原 kernel 的 synoptic ψ 四个成员已搬进该 state（rename 无行为变化）。
+      cyclone 条目表仍留在 kernel —— `CycloneEntry` 属 climate 库类型，避免 physics
+      反向依赖 climate 头（文档已注明）。
+    * 验证：`physics_state_self_test` 随 authority 自检（resize 形状/generation、
+      水域未定形必须拒绝、hash 稳定且随数据变化、缩尺寸不留残留）；50x48 ACTIVE
+      30 天 soak 的 `[soak/live]` 第 25 tick 与迁移前**逐位相同**。
+  - 待做（P2 后半段的下一段）：worker 侧
+    `RuntimeClimatePhysicsState` + 日序接线
+    （`physics_prepass → synoptic ψ → cyclone stamp → round → …`）、
+    `climate_physics_authority` 开关、`get_climate_physics_read_view()` 与 CLM2 ABI 7。
+- **P1 succession 纳入 worker**：`terrain_arr/vegetation_arr/base_vegetation_arr/cover_arr`
+  —— `vegetation` / `base_vegetation` 已完成（CLM2 ABI 5 + parity + writeback）；
+  `terrain_arr` / `cover_arr` 仍由主线程（演替后处理本身不改这两条，保留为主线程
+  succession 的伴随写入）。
+- **P1 量级偏差归因（B8-3）**：snow_cover / moisture / WB30 / VGP 的单因子实验
+  矩阵（E1..E6）与 run-id 证据。
+- **P4 按格数启用阈值**：C1/C3 尺寸阶梯实测 + `ClimateAuthorityPolicy`
+  的 auto/force 三态与 GM 入口已落地（`climate_authority_policy.gd`、
+  `simulation.climate_worker_authority_auto` GM 开关、
+  `climate_authority_diagnostics().authority_policy`）；但阈值常量仍是
+  `threshold_cells=0` + `auto_threshold_not_measured`，即 auto 保持历史默认、
+  不静默改变行为。**剩余工作是 C1/C3 尺寸阶梯实测与常量落地**，判据为
+  "worker p95 单日成本 ≤ 日预算且 `climate_wait_ms` p95 ≈ 0 的最大 cell 数"。
+
+  **阈值实测结果（2026-09-11）**：
+
+  | 尺寸 | cells | OFF adjusted days/s | ACTIVE adjusted days/s | 结论 |
+  | --- | --- | --- | --- | --- |
+  | 60x40 | 2400 | 28.23 | 4.97（lower bound 5.04） | ACTIVE 明显负收益 |
+  | 120x80 | 9600 | 未完成 | 未完成 | OFF 基线本身在 tick 29 因 ocean frame-budget 停滞，停止 |
+  | 180x120 | 21600 | 6.02（历史 sus_sim_avg） | 6.08（历史） | 吞吐中性，但 worker 跟不上（writeback 30/50） |
+
+  60x40 的 ACTIVE 慢约 5.7×，但 `environment_superseded_days=0`、回灌
+  memcpy/flush 均为亚毫秒级 —— 损失来自 worker 与主线程抢 CPU，不是回灌路径。
+  **实测阶梯里没有任何一档在 x50 下满足"worker 单日成本 ≤ 日预算"**：小图明确为负，
+  大图 worker 跟不上。因此 `threshold_cells` 保持 0（历史默认、不静默改变行为），
+  诊断明确报 `auto_threshold_not_measured`；真正的阈值要等 P2 把 worker 单日成本
+  降下来（或把目标速度调低）之后才有实测依据。这也意味着"21600 格 auto 开启"
+  这条原定验收在当前证据下不成立，需要按 P2 的结果重定。
+- **P4 阈值实测已做（结论见上）**：机制完整、证据齐备；常量待 P2。
+- **P3 环境有界 ring**：目前仍是单槽 + 等待；`environment_dropped_days` 已就位，
+  ring 深度与溢出语义待接线。
+- **P5 悬空 opcode 清理已完成**（2026-09-11）：`RuntimeClimateCommand`
+  （5 个）与同样无消费者的 `RuntimeClimateIntentOpcode`（2 个）已删除；
+  Climate 的策略输入唯一来源是环境快照 knobs，脏信号走 day commit
+  dirty families，跨域通知走既有 `RuntimeDomainIntent`/ACK ring。
 
 ## 阶段 C：测量能力 🔶 **C1/C3 无稳定收益；C2 已过 field policy（Climate 数值对拍未关）**
 
@@ -835,7 +1212,7 @@ Modifier ──→ Effect ──→ Ideology
 Modifier 最底层（其他域经 Effect 写它）；Effect 是跨域事务枢纽（Country / Ideology /
 Technology 都靠它的 ACK）；Economy 最后，因为它同时依赖 Country 与 Modifier。
 
-## 阶段 E：MODIFIER（第三个域）✅（E2–E7；E8 未执行）
+## 阶段 E：MODIFIER（第三个域）✅（E2–E8 完成）
 
 **为什么排在其余域最前**：它是 Effect / Ideology / Economy 税率的共同下游，它不迁移，上面几个
 域的写入路径就得跨 worker/主线程边界。
@@ -853,12 +1230,12 @@ Technology 都靠它的 ACK）；Economy 最后，因为它同时依赖 Country 
 - [x] E6 独立 `MDF2` 存档 section：PDP4 不再重复写 Modifier；保留旧 PDP3 的一次性兼容迁移读取
 - [x] E7 接入 `NativeSimulationHost` 的 `EFFECT → MODIFIER → ... → COMMIT` SHADOW stage，
       失败时不 swap、不发布 snapshot、不推进 generation
-- [ ] E8 放行
+- [x] E8 放行（`0x846`；Host ACTIVE 唯一写者；snapshot 回灌 `ModifierRuntime`；抑制 `modifier_daily`）
 
 **当前边界**：四域 ModifierStore 的 worker-side authority 已在 SHADOW 中运行；capture barrier
 之后到达的 command 顺延到下一安全日。`implemented_domain_mask()` 现为
-`CLIMATE|COUNTRY|COMMIT = 0x806`（不含 MODIFIER），legacy ModifierRuntime 仍是生产
-authority，E8 前不做 snapshot 回灌或 ACTIVE 放行。
+`CLIMATE|COUNTRY|MODIFIER|EFFECT|COMMIT = 0x866`；worker 为 Modifier 唯一写者，snapshot 回灌
+legacy `ModifierRuntime`（非 MapData）；主线程仅抑制 `modifier_daily`。
 
 ## 阶段 F：EFFECT 🔶
 
@@ -878,17 +1255,16 @@ authority，E8 前不做 snapshot 回灌或 ACTIVE 放行。
       之后、Modifier 之前；真实 Effect POD intents 在 catalog 非空且 stage 成功时替换
       diagnostic `run_effect` fixture 作为 Modifier 上游，Modifier ACK 回灌 Effect POD；
       主线程 transport（queue instance/metric/remove、poll intent、submit ACK）与
-      `effect_pod_*` report 已接线；`implemented_domain_mask` 仍为 `0x806`（不含 EFFECT）；
+      `effect_pod_*` report 已接线；`implemented_domain_mask` 现为 `0x866`（含 EFFECT）；
       legacy `EffectRuntime` 仍是生产权威。空冷启动 catalog 不启用 stage，以免关掉
       Modifier E7 fixture 上游。
-- [ ] F8 放行
+- [x] F8 放行（`0x866`；Host ACTIVE 唯一写者；snapshot 回灌 `EffectRuntime`；抑制 `run_effect_daily`；跨域 intent 主线程 pump）
 
 **特有难点**：它是**跨域原子事务的枢纽**。Country 的 grant tech、Ideology 的三选一、
 Technology 的里程碑都靠它的 ACK 完成。迁移它等于同时改动这几个域的提交路径，需要
 "Effect 在 worker、消费者在主线程"的中间态设计。
 
-**当前边界（F7）**：Host SHADOW 日循环已真实驱动 `RuntimeEffectPodAuthority`；
-F8 前不做主线程 `EffectRuntime` 抑制、不做 Effect ACTIVE grant、不改 mask。
+**当前边界（F8）**：`implemented`/`request` 均为 `CLIMATE|COUNTRY|MODIFIER|EFFECT|COMMIT = 0x866`；worker 为 Effect 唯一写者；snapshot 回灌 legacy `EffectRuntime`；主线程抑制 effect daily；MODIFIER intents 在 worker 内 ACK，其它 intents 主线程 pump+ACK。
 
 ## 阶段 G：IDEOLOGY 🔶（G2–G7 已实现；SHADOW；G8 未执行）
 
@@ -1039,8 +1415,8 @@ A 基础设施       ████████████ 完成
 B CLIMATE        ███████████░ 完成，6 项遗留（B8）
 C 测量能力       █████████░░░ C1/C3 无稳定收益；C2 field-init 已修且比较器 pass
 D COUNTRY        ████████████ D1-D12 完成；生产 ACTIVE（0x806）
-E MODIFIER       ████████░░░░ E2-E7 完成，E8 未做（SHADOW）
-F EFFECT         █████████░░░ F2-F7 完成，F8 未做（SHADOW）
+E MODIFIER       ████████████ E2-E8 完成；生产 ACTIVE（0x846）
+F EFFECT         ████████████ F2-F8 完成；生产 ACTIVE（0x866）
 G IDEOLOGY       ████████░░░░ G2-G7 完成，G8 未做（SHADOW）
 H TRIGGER_INPUT  ████████░░░░ H2-H6 完成，SHADOW parity；H7/H8 未做
 I EVENTS         ████████░░░░ I1-I7 已实现，SHADOW/PROBE，I8 未做
@@ -1049,7 +1425,7 @@ K 三个无 store   ░░░░░░░░░░░░ 未开始
 L 整图收尾       ░░░░░░░░░░░░ 未开始
 ```
 
-按逐域模板算，未完成的 E8、F8、G8、H7/H8、I8 和阶段 J 仍是这轮迁移剩余工作量的主体；
+按逐域模板算，未完成的 F8、G8、H7/H8、I8 和阶段 J 仍是这轮迁移剩余工作量的主体；
 SHADOW 组件完成不等于生产 authority 放行。
 
 **Climate 与 Country 是当前生产中真实承担 gameplay 权威的 worker 域。** Country core 已由
@@ -1063,7 +1439,8 @@ Host worker 承担；同步 Economy-owned 资产 coordinator 仍是 D7 的生产
 | --- | --- | --- | --- |
 | **第 1 类：生产权威** | CLIMATE、COUNTRY、COMMIT | ACTIVE 下真实承担，在 `implemented_domain_mask` | B + D12 |
 | **第 2 类：共享核心与协议切片** | （原 COUNTRY 已升入第 1 类） | — | — |
-| **第 3 类：SHADOW/POD 迁移中** | MODIFIER、EFFECT、IDEOLOGY、TRIGGER_INPUT、ECONOMY、EVENTS | Modifier/EFFECT/Ideology/Trigger 已有真实 POD 组件，Events 已有独立 SHADOW/PROBE authority；Economy 仍主要是诊断投影 | 阶段 E–J |
+| **第 1 类：生产 ACTIVE** | CLIMATE、COUNTRY、MODIFIER、EFFECT、COMMIT | 生产 request `0x866` | 已放行 |
+| **第 3 类：SHADOW/POD 迁移中** | EFFECT、IDEOLOGY、TRIGGER_INPUT、ECONOMY、EVENTS | Effect/Ideology/Trigger 已有真实 POD 组件，Events 已有独立 SHADOW/PROBE authority；Economy 仍主要是诊断投影 | 阶段 F–J |
 | **第 4 类：无 store** | GAMEPLAY_EFFECT、VISUAL、INPUT_CAPTURE | 结构上没有可迁移状态，需确认语义 | 阶段 K |
 
 「SHADOW/POD 迁移中」表示代码可在 worker 侧运行并产出协议/对照数据，但尚未取得生产
@@ -1098,8 +1475,9 @@ Economy 有 23 个 legacy opcode 不代表它的 POD 迁移靠前，它的 POD �
 - **注意**：pipeline / authority runner 里另有一份 climate，那是**诊断投影**
   （`runtime_domain_pod.cpp` / `runtime_domain_authorities.cpp` 注释写明），不是权威
   路径。对拍和排障只应看 `RuntimeClimateAuthority`。
-- **悬空件**：`RuntimeClimateCommand` 5 个 opcode（`runtime_pod_protocol.h:139`）全仓库只有
-  定义处，无任何消费代码 → B8。
+- **悬空件（已清）**：`RuntimeClimateCommand` 的 5 个 opcode 全仓库只有定义处、
+  无消费代码；2026-09-11（B8-6）连同 `RuntimeClimateIntentOpcode` 一并删除，
+  协议头留下"命令枚举必须有消费者"的说明，防止同类空枚举回潮。
 - **抑制**：`climate_worker_authoritative()` 为真时主线程跳过**整张** native daily /
   schedule graph，而不是历史文档写的“14 个节点逐一抑制”。
 
@@ -1151,7 +1529,7 @@ Economy 正式 ACTIVE 接管：
 - **发布**：commit 成功后发布 immutable snapshot，generation 单调递增；失败时不 swap、不
   发布 snapshot、不推进 generation。
 - **权威边界**：legacy `ModifierRuntime` 仍是主线程生产 authority，worker snapshot 不回灌；
-  `implemented_domain_mask()` 现为 `0x806`（不含 MODIFIER），E8 未执行。
+  `implemented_domain_mask()` 现为 `0x866`（含 MODIFIER|EFFECT）；F8 已放行。
 - **存档**：新格式为 PDP4 + 独立 `MDF2`（save bit `1 << 5`），旧 PDP3 仅做一次性兼容迁移。
 
 未放行域的诊断/SHADOW 实现如下：
@@ -1238,7 +1616,7 @@ Godot 可执行文件由 `GODOT_BIN` 或 `tools/runtime/Resolve-GodotBin.ps1` �
 2026-09-11 完整 runner 复核：**24/24 passed, failures=0**（23 个 `runtime_*` +
 `dots_completion_gate`）。checks 数由运行时 assertion 数决定，长期验收只固定 `failures=0`。
 `dots_completion_gate` 的 2026-05 monolith 行数与 `map_generator` bake-time 直写指标已明确降为
-`LEGACY` 非门禁警告；当前硬门禁改为 D12 `implemented_domain_mask`、生产 request `0x806`、
+`LEGACY` 非门禁警告；当前硬门禁改为 E8 `implemented_domain_mask`、生产 request `0x866`、
 D7T1/fiscal peer section 与 ClimateProfile flag registry。2026-09-09 历史记录中的 **19/21**
 （Economy bootstrap 超时与旧 monolith gate 失败）及仓库内更早的
 `artifacts/runtime/s0-baseline/test-summary.json` 17/19 归档不代表当前状态。
@@ -1432,7 +1810,7 @@ max 恒等于当日增量上限）；缺 knob 落到结构默认值（默认值�
 | `gdext/src/runtime_climate_passes.{h,cpp}` | 九个 pass 的共享纯内核（生产与 worker 同一份） |
 | `gdext/src/world_ext_climate.cpp` / `world_ext_weather.cpp` | 生产侧实现，**接线时的键名口径以它们为准** |
 | `Project/.../scripts/geography/map_generator.gd` | capture、knobs 构建、stage 节拍 |
-| `Project/.../scripts/game/world_runtime_host.gd` | worker 生命周期、模式决策（Climate|Country ACTIVE → `authoritative_domain_mask=0x806`） |
+| `Project/.../scripts/game/world_runtime_host.gd` | worker 生命周期、模式决策（Climate|Country|Modifier|Effect ACTIVE → `authoritative_domain_mask=0x866`） |
 
 ## 调度层
 
@@ -1481,7 +1859,7 @@ max 恒等于当日增量上限）；缺 knob 落到结构默认值（默认值�
 
 | 开关 | 定义 | 默认 | 作用 |
 | --- | --- | --- | --- |
-| `runtime_climate_authority_enabled` | `world_runtime_host.gd:90` | **true** | true → 以 ACTIVE + `authoritative_domain_mask=0x806`（Climate\|Country\|COMMIT）启动；false → SHADOW。**Climate+Country 的总开关与回退路径** |
+| `runtime_climate_authority_enabled` | `world_runtime_host.gd:90` | **true** | true → 以 ACTIVE + `authoritative_domain_mask=0x866`（Climate\|Country\|Modifier\|Effect\|COMMIT）启动；false → SHADOW。**Climate+Country+Modifier+Effect 的总开关与回退路径** |
 | `runtime_events_probe_enabled` | `world_runtime_host.gd:63` | **false** | true → 启用 Events legacy journal 到 POD 的 SHADOW/PROBE 镜像与 snapshot；不改变 `implemented_domain_mask`，不替代 legacy consumer |
 | `simulation_thread_mode` | 启动配置键，C++ 解析 `world_ext_simulation_host.cpp:43` | ⚠ **键缺失时 raw 默认 `"ACTIVE"`** | OFF / SHADOW / ACTIVE |
 | `runtime_shadow_on_generate` | `world_runtime_host.gd:59` | true | generate 时是否启动 worker |
@@ -1517,6 +1895,6 @@ max 恒等于当日增量上限）；缺 knob 落到结构默认值（默认值�
 
 ## 阶段 E（2026-09-09）
 
-E2-E7 已完成，E8 未执行。Modifier POD 已具备 worker-side plan/replay authority、四域隔离、五个 legacy opcode、真实 Effect -> Modifier ACK barrier、immutable snapshot ring 和独立 MDF2 存档 section。implemented_domain_mask 现为 CLIMATE|COUNTRY|COMMIT = 0x806；Modifier 不进入 ACTIVE authority，legacy ModifierRuntime 继续是主线程生产 authority，worker snapshot 不回灌 legacy store。
+E2-E8 已完成。Modifier POD 在生产 ACTIVE 下为唯一写者：日循环 plan/replay、四域隔离、Effect POD intents ACK、immutable snapshot ring、MDF2，以及回灌 legacy ModifierRuntime。implemented/request 均为 CLIMATE|COUNTRY|MODIFIER|EFFECT|COMMIT = 0x866；主线程抑制 modifier_daily 与 effect daily；Effect 为 F8 ACTIVE。
 
 Modifier snapshot 只在安全日边界发布并按 generation 单调消费。capture barrier 之后到达的 Modifier command 顺延到下一日；当前日中途不插入。新 composite 状态写入 PDP4，Modifier 独立写入 save bit 1 << 5 的 MDF2；旧 PDP3 只保留一次性兼容迁移读取。

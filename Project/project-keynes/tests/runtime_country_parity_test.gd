@@ -2,7 +2,7 @@ extends SceneTree
 
 # Country SHADOW plan/replay: unified business hash, command dual-write,
 # reference publication, probe formula parity, and a 30–100 day soak window.
-# Production implemented mask is Climate|Country|COMMIT = 0x806 after D12.
+# Production implemented mask is Climate|Country|Modifier|Effect|COMMIT = 0x866 after F8.
 # This harness stays on SHADOW Country compare evidence (sync writer + Host
 # mirror); it does not grant Country ACTIVE.
 

@@ -1,6 +1,7 @@
 #include "runtime_climate_authority.h"
 
 #include "runtime_climate_parity.h"
+#include "runtime_climate_physics.h"
 
 #include <chrono>
 #include <cstring>
@@ -14,7 +15,13 @@ constexpr uint32_t CLIMATE_SECTION_MARKER = 0x324d4c43u; // CLM2
 // ABI 3 replaces the single uint8 weather_transition lane with the three lanes
 // the production path actually keeps (prev type / target type / alpha), so the
 // lane set and its order changed and older sections cannot be read.
-constexpr uint32_t CLIMATE_SECTION_ABI = 3u;
+// ABI 3 = 到 weather_transition_alpha 为止的 float lane 集合。
+// ABI 4 = 追加 worker 自持的 synoptic ψ / ψ_prev（B8-2）。
+// ABI 5 = 追加 worker 自持的 vegetation / base_vegetation（B8-P1 演替）。
+// ABI 6 = 追加 worker 自持的 tropical cyclone 状态 blob（B8-2）。
+// 旧档必须继续可读：只允许在这些版本之间迁移，不做"猜版本"。
+constexpr uint32_t CLIMATE_SECTION_ABI = 6u;
+constexpr uint32_t CLIMATE_SECTION_ABI_MIN_SUPPORTED = 3u;
 constexpr uint64_t FNV_OFFSET = 1469598103934665603ull;
 constexpr uint64_t FNV_PRIME = 1099511628211ull;
 
@@ -139,8 +146,26 @@ struct Reader {
     X(river_storage) X(river_discharge) X(riparian_moisture) X(vegetation_vitality) \
     X(vegetation_growth_pressure) X(vegetation_heat_stress) \
     X(vegetation_drought_stress) X(vegetation_cold_stress) \
+    X(weather_transition_alpha) \
+    X(synoptic_psi) X(synoptic_psi_prev)
+// CLM2 ABI 3 的 float lane 集合 = 当前列表去掉 ABI 4 追加的 synoptic ψ 两条。
+// 旧档必须按这份顺序读完，新增 lane 留在 reset 给的全零，而不是被当成旧数据。
+#define CLIMATE_CELL_FLOAT_LANES_V3(X) \
+    X(temperature) X(temperature_30d_ema) X(temperature_365d_ema) \
+    X(temperature_baseline) X(thermal_energy) X(moisture) \
+    X(plant_available_water) X(water_balance_30d) X(weather_precipitation) \
+    X(weather_intensity) X(vapor) X(cloud_water) X(cloud_cover) X(convergence) \
+    X(instability) X(snow_cover) X(snowpack) X(sea_ice) X(runoff) X(groundwater) \
+    X(river_storage) X(river_discharge) X(riparian_moisture) X(vegetation_vitality) \
+    X(vegetation_growth_pressure) X(vegetation_heat_stress) \
+    X(vegetation_drought_stress) X(vegetation_cold_stress) \
     X(weather_transition_alpha)
 #define CLIMATE_U8_LANES(X) \
+    X(weather_type) X(weather_prev_type) X(weather_target_type) \
+    X(vegetation_succession_candidate) \
+    X(vegetation) X(base_vegetation)
+// CLM2 ABI 4 的 u8 lane 集合 = 当前列表去掉 ABI 5 追加的植被演替两条。
+#define CLIMATE_U8_LANES_V4(X) \
     X(weather_type) X(weather_prev_type) X(weather_target_type) \
     X(vegetation_succession_candidate)
 #define CLIMATE_I32_LANES(X) \
@@ -330,6 +355,11 @@ bool RuntimeClimateAuthority::plan_day(
     report.stage_work = kernel_report.stage_work;
     report.production_stage_mask = kernel_report.production_stage_mask;
     report.worker_stage_mask = kernel_report.stage_ran_mask;
+    report.cyclone_alive = kernel_report.cyclone_alive;
+    report.cyclone_injected = kernel_report.cyclone_injected;
+    report.cyclone_replaced = kernel_report.cyclone_replaced;
+    report.cyclone_decayed = kernel_report.cyclone_decayed;
+    report.cyclone_touched = kernel_report.cyclone_touched;
     report.plan_ms = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - begin).count();
     _planned_day = day;
@@ -462,6 +492,13 @@ bool RuntimeClimateAuthority::serialize(std::vector<uint8_t> &bytes,
 #define APPEND_I32(name) append_i32_vector(payload, _store.name);
     CLIMATE_I32_LANES(APPEND_I32)
 #undef APPEND_I32
+    // ABI 6：cyclone 条目表以不透明 blob 追加在 lane 之后（u32 长度前缀）。
+    append_u32(payload, static_cast<uint32_t>(std::min<size_t>(
+        _store.cyclone_state.size(), 0xFFFFFFFFu)));
+    if (!_store.cyclone_state.empty()) {
+        payload.insert(payload.end(), _store.cyclone_state.begin(),
+                       _store.cyclone_state.end());
+    }
 
     bytes.clear();
     bytes.reserve(80u + payload.size());
@@ -509,7 +546,10 @@ bool RuntimeClimateAuthority::restore(const uint8_t *bytes, size_t size,
         error = "climate_section_marker_mismatch";
         return false;
     }
-    if (section_abi != CLIMATE_SECTION_ABI) {
+    // 接受 [MIN_SUPPORTED, CLIMATE_SECTION_ABI] 区间内的所有版本：ABI 4 是 B8-2
+    // 的中间档（有 ψ、没有演替 lane），也是必须能读的旧档。
+    if (section_abi < CLIMATE_SECTION_ABI_MIN_SUPPORTED ||
+        section_abi > CLIMATE_SECTION_ABI) {
         error = "climate_section_abi_mismatch";
         return false;
     }
@@ -572,8 +612,16 @@ bool RuntimeClimateAuthority::restore(const uint8_t *bytes, size_t size,
         return false;
     }
     restored.cell_count = cells;
+    // ABI 3 的 payload 没有 synoptic ψ 两条 lane：按旧列表顺序读完，把新 lane
+    // 留在 reset 给的全零。ABI 4 读完整列表。
 #define READ_FLOAT(name) if (!payload.floats(restored.name, cells)) { error = "climate_section_lane_invalid_" #name; return false; }
-    CLIMATE_CELL_FLOAT_LANES(READ_FLOAT)
+    if (section_abi >= 4u) {
+        CLIMATE_CELL_FLOAT_LANES(READ_FLOAT)
+    } else {
+        CLIMATE_CELL_FLOAT_LANES_V3(READ_FLOAT)
+        restored.synoptic_psi.assign(cells, 0.0f);
+        restored.synoptic_psi_prev.assign(cells, 0.0f);
+    }
 #undef READ_FLOAT
     const uint64_t history_count = static_cast<uint64_t>(cells) * 365u;
     if (history_count > std::numeric_limits<uint32_t>::max() ||
@@ -582,12 +630,36 @@ bool RuntimeClimateAuthority::restore(const uint8_t *bytes, size_t size,
         error = "climate_section_history_invalid";
         return false;
     }
+    // ABI <= 4 的 u8 集合没有 vegetation / base_vegetation：按旧列表读完，新 lane
+    // 留在 reset 给的全零。
 #define READ_U8(name) if (!payload.bytes(restored.name, cells)) { error = "climate_section_lane_invalid_" #name; return false; }
-    CLIMATE_U8_LANES(READ_U8)
+    if (section_abi >= 5u) {
+        CLIMATE_U8_LANES(READ_U8)
+    } else {
+        CLIMATE_U8_LANES_V4(READ_U8)
+        restored.vegetation.assign(cells, 0);
+        restored.base_vegetation.assign(cells, 0);
+    }
 #undef READ_U8
 #define READ_I32(name) if (!payload.ints(restored.name, cells)) { error = "climate_section_lane_invalid_" #name; return false; }
     CLIMATE_I32_LANES(READ_I32)
 #undef READ_I32
+    // ABI 6：cyclone 条目表 blob。旧档没有这一段，读完后保持空（冷启动由 capture
+    // 的生产种子或零场接管）。
+    if (section_abi >= 6u) {
+        uint32_t blob_size = 0;
+        if (!payload.u32(blob_size) ||
+            payload.cursor > payload.size ||
+            payload.size - payload.cursor < blob_size) {
+            error = "climate_section_cyclone_blob_invalid";
+            return false;
+        }
+        restored.cyclone_state.assign(payload.data + payload.cursor,
+                                      payload.data + payload.cursor + blob_size);
+        payload.cursor += blob_size;
+    } else {
+        restored.cyclone_state.clear();
+    }
     if (payload.cursor != payload.size) {
         error = "climate_section_payload_trailing_bytes";
         return false;
@@ -606,7 +678,11 @@ bool RuntimeClimateAuthority::restore(const uint8_t *bytes, size_t size,
                                          : validation_error;
         return false;
     }
-    if (restored.state_hash() != state_hash) {
+    // state_hash 覆盖 ABI 4 新增的两条 lane；ABI 3 的存档里这两条是零，重算出的
+    // hash 与原档不同是预期行为，不是损坏。只对当前 ABI 校验哈希，旧档靠
+    // checksum + 逐 lane 形状校验保证完整性。
+    if (section_abi >= CLIMATE_SECTION_ABI &&
+        restored.state_hash() != state_hash) {
         error = "climate_section_state_hash_mismatch";
         return false;
     }
@@ -629,6 +705,160 @@ bool RuntimeClimateAuthority::restore(const uint8_t *bytes, size_t size,
 
 bool RuntimeClimateAuthority::self_test(std::string &error) {
     if (!RuntimeClimateKernel::self_test(error)) return false;
+    // B8 P2：物理环流共享纯内核自检（SLP Pass A 有限性/水陆差异、Pass B Jacobi
+    // 平均、recenter 零均值、response_rate=0 保持 prev）。生产路径已经切到同一份
+    // 内核，所以这里的失败等价于 MapBaker 每日 SLP 求解失败。
+    if (!pk_async_physics::self_test(error)) {
+        error = "climate_physics_self_test_failed:" + error;
+        return false;
+    }
+    // B8-2 / CLM2 ABI 4 迁移自检：造一份 ABI 3 的 payload（= 当前 payload 去掉末尾
+    // 两条 synoptic ψ lane），改写 header 的 ABI / payload_size / checksum，再走
+    // 正式 restore。通过条件：restore 成功、ψ 两条 lane 全零、其余字段逐 lane 一致。
+    {
+        const auto migration_fail = [&](const std::string &reason) {
+            error = reason;
+            std::fprintf(stderr, "[climate][abi-migration] %s\n", reason.c_str());
+            std::fflush(stderr);
+            return false;
+        };
+        RuntimeClimateAuthority authority;
+        authority.reset(2);
+        RuntimeEnvironmentSnapshot env;
+        env.generation = 1;
+        env.day = 0;
+        env.cell_count = 2;
+        env.climate_map_width = 2;
+        env.climate_map_height = 1;
+        env.climate_catalog_hash = 7;
+        env.cell_temp = {15.0f, -8.0f};
+        env.cell_temp_30d = env.cell_temp;
+        env.cell_moisture = {0.5f, 0.25f};
+        env.cell_plant_available_water = {0.7f, 0.2f};
+        env.terrain = {1, 0};
+        env.is_water = {0, 1};
+        env.neighbor_offsets = {0, 1, 2};
+        env.neighbor_indices = {1, 0};
+        RuntimeClimateVerticalReport report;
+        if (!authority.plan_day(0, env, report) ||
+            !authority.commit_day(0, report)) {
+            return migration_fail("climate_abi_migration_seed_failed");
+        }
+        std::vector<uint8_t> v4;
+        if (!authority.serialize(v4, error) || v4.size() <= 88u) {
+            return migration_fail(error.empty()
+                ? "climate_abi_migration_serialize_failed" : error);
+        }
+        // payload 布局（ABI 5）：header 80B + 前缀 56B +
+        //   31 条 float lane（每条 u32 长度 + cells*f32）+
+        //   temperature_history（u32 长度 + 365*cells*f32）+
+        //   6 条 u8 lane（每条 u32 长度 + cells 字节）+
+        //   2 条 i32 lane（每条 u32 长度 + cells*i32）。
+        // 旧档 = 从这份 payload 里剪掉对应版本没有的 lane，改写 header 三处字段。
+        constexpr size_t PAYLOAD_PREFIX = 56u;
+        constexpr size_t FLOAT_LANES = 31u;
+        constexpr size_t U8_LANES = 6u;
+        constexpr size_t I32_LANES = 2u;
+        const uint32_t cells = 2u;
+        const size_t float_lane = sizeof(uint32_t) + cells * sizeof(float);
+        const size_t u8_lane = sizeof(uint32_t) + cells;
+        const size_t i32_lane = sizeof(uint32_t) + cells * sizeof(uint32_t);
+        const size_t history_block =
+            sizeof(uint32_t) + static_cast<size_t>(cells) * 365u * sizeof(float);
+        const size_t floats_start = 80u + PAYLOAD_PREFIX;
+        const size_t history_start = floats_start + FLOAT_LANES * float_lane;
+        const size_t u8_start = history_start + history_block;
+        const size_t i32_start = u8_start + U8_LANES * u8_lane;
+        const size_t blob_start = i32_start + I32_LANES * i32_lane;
+        // blob 区 = u32 长度前缀 + bytes；长度必须与实际长度一致，否则形状异常。
+        if (v4.size() < blob_start + sizeof(uint32_t)) {
+            return migration_fail("climate_abi_migration_shape_unexpected");
+        }
+        uint32_t blob_len = 0;
+        std::memcpy(&blob_len, v4.data() + blob_start, sizeof(blob_len));
+        if (v4.size() != blob_start + sizeof(uint32_t) + blob_len) {
+            return migration_fail("climate_abi_migration_blob_shape_unexpected");
+        }
+        const auto build_legacy = [&](uint32_t abi, size_t drop_float_lanes,
+                                      size_t drop_u8_lanes,
+                                      std::vector<uint8_t> &out,
+                                      std::string &why) {
+            out.assign(v4.begin(), v4.begin() + 80);
+            out.insert(out.end(), v4.begin() + 80,
+                       v4.begin() + static_cast<ptrdiff_t>(
+                           floats_start + (FLOAT_LANES - drop_float_lanes) *
+                               float_lane));
+            out.insert(out.end(),
+                       v4.begin() + static_cast<ptrdiff_t>(
+                           history_start),
+                       v4.begin() + static_cast<ptrdiff_t>(
+                           u8_start + (U8_LANES - drop_u8_lanes) * u8_lane));
+            out.insert(out.end(),
+                       v4.begin() + static_cast<ptrdiff_t>(i32_start),
+                       v4.begin() + static_cast<ptrdiff_t>(blob_start));
+            std::memcpy(out.data() + 4, &abi, sizeof(abi));
+            const uint64_t payload_size =
+                static_cast<uint64_t>(out.size() - 80u);
+            std::memcpy(out.data() + 64, &payload_size, sizeof(payload_size));
+            const uint64_t payload_checksum =
+                checksum(out.data() + 80, out.size() - 80u);
+            std::memcpy(out.data() + 72, &payload_checksum,
+                        sizeof(payload_checksum));
+            why.clear();
+            return true;
+        };
+        const auto check_legacy = [&](uint32_t abi, size_t drop_float_lanes,
+                                      size_t drop_u8_lanes,
+                                      const char *label) -> bool {
+            std::vector<uint8_t> legacy;
+            std::string why;
+            if (!build_legacy(abi, drop_float_lanes, drop_u8_lanes, legacy, why)) {
+                return migration_fail(std::string(label) + "_build_failed");
+            }
+            RuntimeClimateAuthority restored;
+            restored.reset(2);
+            std::string restore_error;
+            if (!restored.restore(legacy.data(), legacy.size(), restore_error)) {
+                return migration_fail(std::string(label) + "_restore_failed:" +
+                                      restore_error);
+            }
+            const RuntimeClimateStore &store = restored.store();
+            if (store.committed_day != 0 || store.cell_count != 2) {
+                return migration_fail(std::string(label) + "_metadata_mismatch");
+            }
+            if (drop_float_lanes > 0) {
+                for (float value : store.synoptic_psi) {
+                    if (value != 0.0f) return migration_fail(
+                        std::string(label) + "_psi_not_zeroed");
+                }
+                for (float value : store.synoptic_psi_prev) {
+                    if (value != 0.0f) return migration_fail(
+                        std::string(label) + "_psi_prev_not_zeroed");
+                }
+            }
+            if (drop_u8_lanes > 0) {
+                for (uint8_t value : store.vegetation) {
+                    if (value != 0u) return migration_fail(
+                        std::string(label) + "_vegetation_not_zeroed");
+                }
+                for (uint8_t value : store.base_vegetation) {
+                    if (value != 0u) return migration_fail(
+                        std::string(label) + "_base_vegetation_not_zeroed");
+                }
+            }
+            if (abi <= 5u && !store.cyclone_state.empty()) {
+                return migration_fail(std::string(label) +
+                                      "_cyclone_blob_not_cleared");
+            }
+            return true;
+        };
+        // ABI 5 = 只缺 cyclone blob。
+        if (!check_legacy(5u, 0u, 0u, "climate_abi5")) return false;
+        // ABI 4 = 只缺 vegetation / base_vegetation（2 条 u8 lane）。
+        if (!check_legacy(4u, 0u, 2u, "climate_abi4")) return false;
+        // ABI 3 = 同时缺 ψ 两条 float lane 与 vegetation 两条 u8 lane。
+        if (!check_legacy(3u, 2u, 2u, "climate_abi3")) return false;
+    }
     RuntimeEnvironmentSnapshot environment;
     environment.generation = 1;
     environment.day = 0;

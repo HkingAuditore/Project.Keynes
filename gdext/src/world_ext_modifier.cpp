@@ -56,88 +56,149 @@ Dictionary DCWorldExt::configure_modifiers(const Dictionary &catalog,
 Dictionary DCWorldExt::submit_modifier_commands(const Dictionary &packed_batch) {
     if (_modifier_runtime == nullptr) return unavailable();
     ModifierRuntime *runtime = runtime_from(_modifier_runtime);
+    const bool worker_authoritative = _runtime_host != nullptr &&
+        _runtime_host->domain_is_worker_authoritative(
+            RuntimeDomainId::MODIFIER);
+
+    auto encode_and_enqueue = [&](const Dictionary &batch,
+                                  const PackedInt64Array &request_ids,
+                                  bool require_enqueue) -> Dictionary {
+        Dictionary result;
+        result["ok"] = true;
+        const PackedInt32Array opcodes = batch.get("opcodes", PackedInt32Array());
+        const PackedInt32Array producers = batch.get("producer_ids", PackedInt32Array());
+        const PackedInt64Array sequences = batch.get("sequences", PackedInt64Array());
+        const PackedInt64Array days = batch.get("effective_days", PackedInt64Array());
+        const PackedStringArray definitions = batch.get("definition_keys", PackedStringArray());
+        const PackedInt32Array domains = batch.get("domains", PackedInt32Array());
+        const PackedInt32Array scopes = batch.get("scopes", PackedInt32Array());
+        const PackedInt64Array entities = batch.get("entity_handles", PackedInt64Array());
+        const PackedInt64Array groups = batch.get("group_handles", PackedInt64Array());
+        const PackedInt64Array source_types = batch.get("source_types", PackedInt64Array());
+        const PackedInt64Array source_ids = batch.get("source_ids", PackedInt64Array());
+        const PackedInt32Array durations = batch.get("duration_days", PackedInt32Array());
+        const PackedInt32Array stacks = batch.get("stacks", PackedInt32Array());
+        const PackedInt32Array magnitudes = batch.get("magnitude_q16", PackedInt32Array());
+        const PackedInt64Array handles = batch.get("modifier_handles", PackedInt64Array());
+        const int32_t count = request_ids.size();
+        int32_t enqueued = 0;
+        std::string enqueue_error;
+        const RuntimeThreadReport host_report = _runtime_host->report();
+        for (int32_t i = 0; i < count; ++i) {
+            RuntimeCommandPacket packet;
+            packet.envelope.request_id = static_cast<uint64_t>(request_ids[i]);
+            packet.envelope.producer_id = static_cast<uint32_t>(producers[i]);
+            packet.envelope.sequence = static_cast<uint64_t>(sequences[i]);
+            packet.envelope.observed_generation = host_report.generation;
+            packet.envelope.requested_day = days[i];
+            packet.envelope.effective_day = days[i];
+            packet.envelope.domain = static_cast<uint16_t>(RuntimeDomainId::MODIFIER);
+            packet.envelope.opcode = static_cast<uint16_t>(opcodes[i]);
+            packet.envelope.payload_size = RUNTIME_MODIFIER_POD_WIRE_SIZE;
+            size_t cursor = 0;
+            const auto append = [&packet, &cursor](auto value) {
+                using T = decltype(value);
+                using U = std::make_unsigned_t<T>;
+                U bits = static_cast<U>(value);
+                for (size_t byte = 0; byte < sizeof(T); ++byte) {
+                    packet.payload[cursor++] = static_cast<uint8_t>(
+                        bits & static_cast<U>(0xffu));
+                    bits >>= 8u;
+                }
+            };
+            const int32_t definition_id = runtime->definition_id_for_key(
+                definitions[i].utf8().get_data());
+            const uint64_t entity_handle = static_cast<uint64_t>(entities[i]);
+            const uint32_t target_generation = scopes[i] == ModifierRuntime::ENTITY
+                ? static_cast<uint32_t>(entity_handle >> 32u) : 0u;
+            append(static_cast<uint32_t>(RUNTIME_MODIFIER_POD_WIRE_ABI_VERSION));
+            append(static_cast<uint16_t>(domains[i]));
+            append(static_cast<uint16_t>(scopes[i]));
+            append(definition_id);
+            append(entity_handle);
+            append(static_cast<uint64_t>(groups[i]));
+            append(static_cast<uint64_t>(source_types[i]));
+            append(static_cast<uint64_t>(source_ids[i]));
+            append(static_cast<int32_t>(durations[i]));
+            append(static_cast<int32_t>(stacks[i]));
+            append(static_cast<int32_t>(magnitudes[i]));
+            append(static_cast<uint64_t>(handles[i]));
+            append(target_generation);
+            append(host_report.environment_generation);
+            if (cursor != RUNTIME_MODIFIER_POD_WIRE_SIZE ||
+                !_runtime_host->enqueue_modifier_shadow(std::move(packet))) {
+                enqueue_error = "modifier_host_enqueue_failed";
+                if (require_enqueue) {
+                    result["ok"] = false;
+                    result["reason"] = String(enqueue_error.c_str());
+                    result["modifier_host_enqueued"] = enqueued;
+                    return result;
+                }
+                continue;
+            }
+            ++enqueued;
+        }
+        result["request_ids"] = request_ids;
+        result["modifier_host_enqueued"] = enqueued;
+        result["modifier_shadow_enqueued"] = enqueued;
+        result["modifier_shadow_fallback_reason"] = String(enqueue_error.c_str());
+        return result;
+    };
+
+    if (worker_authoritative) {
+        // E8: Host is the sole writer. Never apply to legacy first.
+        if (!_runtime_host) {
+            Dictionary out;
+            out["ok"] = false;
+            out["reason"] = "modifier_host_unavailable";
+            return out;
+        }
+        const PackedInt32Array opcodes = packed_batch.get("opcodes", PackedInt32Array());
+        const int32_t count = opcodes.size();
+        PackedInt64Array request_ids;
+        request_ids.resize(count);
+        for (int32_t i = 0; i < count; ++i) {
+            request_ids.set(i, static_cast<int64_t>(
+                _runtime_host->allocate_command_request_id()));
+        }
+        return encode_and_enqueue(packed_batch, request_ids, true);
+    }
+
     Dictionary result = runtime->submit_commands(packed_batch);
     if (!static_cast<bool>(result.get("ok", false)) || !_runtime_host) return result;
-
     const PackedInt64Array request_ids = result.get("request_ids", PackedInt64Array());
-    const PackedInt32Array opcodes = packed_batch.get("opcodes", PackedInt32Array());
-    const PackedInt32Array producers = packed_batch.get("producer_ids", PackedInt32Array());
-    const PackedInt64Array sequences = packed_batch.get("sequences", PackedInt64Array());
-    const PackedInt64Array days = packed_batch.get("effective_days", PackedInt64Array());
-    const PackedStringArray definitions = packed_batch.get("definition_keys", PackedStringArray());
-    const PackedInt32Array domains = packed_batch.get("domains", PackedInt32Array());
-    const PackedInt32Array scopes = packed_batch.get("scopes", PackedInt32Array());
-    const PackedInt64Array entities = packed_batch.get("entity_handles", PackedInt64Array());
-    const PackedInt64Array groups = packed_batch.get("group_handles", PackedInt64Array());
-    const PackedInt64Array source_types = packed_batch.get("source_types", PackedInt64Array());
-    const PackedInt64Array source_ids = packed_batch.get("source_ids", PackedInt64Array());
-    const PackedInt32Array durations = packed_batch.get("duration_days", PackedInt32Array());
-    const PackedInt32Array stacks = packed_batch.get("stacks", PackedInt32Array());
-    const PackedInt32Array magnitudes = packed_batch.get("magnitude_q16", PackedInt32Array());
-    const PackedInt64Array handles = packed_batch.get("modifier_handles", PackedInt64Array());
-    const int32_t count = request_ids.size();
-    int32_t shadow_enqueued = 0;
-    std::string shadow_error;
-    const RuntimeThreadReport host_report = _runtime_host->report();
-    for (int32_t i = 0; i < count; ++i) {
-        RuntimeCommandPacket packet;
-        packet.envelope.request_id = static_cast<uint64_t>(request_ids[i]);
-        packet.envelope.producer_id = static_cast<uint32_t>(producers[i]);
-        packet.envelope.sequence = static_cast<uint64_t>(sequences[i]);
-        packet.envelope.observed_generation = host_report.generation;
-        packet.envelope.requested_day = days[i];
-        packet.envelope.effective_day = days[i];
-        packet.envelope.domain = static_cast<uint16_t>(RuntimeDomainId::MODIFIER);
-        packet.envelope.opcode = static_cast<uint16_t>(opcodes[i]);
-        packet.envelope.payload_size = RUNTIME_MODIFIER_POD_WIRE_SIZE;
-        size_t cursor = 0;
-        const auto append = [&packet, &cursor](auto value) {
-            using T = decltype(value);
-            using U = std::make_unsigned_t<T>;
-            U bits = static_cast<U>(value);
-            for (size_t byte = 0; byte < sizeof(T); ++byte) {
-                packet.payload[cursor++] = static_cast<uint8_t>(
-                    bits & static_cast<U>(0xffu));
-                bits >>= 8u;
-            }
-        };
-        const int32_t definition_id = runtime->definition_id_for_key(
-            definitions[i].utf8().get_data());
-        const uint64_t entity_handle = static_cast<uint64_t>(entities[i]);
-        const uint32_t target_generation = scopes[i] == ModifierRuntime::ENTITY
-            ? static_cast<uint32_t>(entity_handle >> 32u) : 0u;
-        append(static_cast<uint32_t>(RUNTIME_MODIFIER_POD_WIRE_ABI_VERSION));
-        append(static_cast<uint16_t>(domains[i]));
-        append(static_cast<uint16_t>(scopes[i]));
-        append(definition_id);
-        append(entity_handle);
-        append(static_cast<uint64_t>(groups[i]));
-        append(static_cast<uint64_t>(source_types[i]));
-        append(static_cast<uint64_t>(source_ids[i]));
-        append(static_cast<int32_t>(durations[i]));
-        append(static_cast<int32_t>(stacks[i]));
-        append(static_cast<int32_t>(magnitudes[i]));
-        append(static_cast<uint64_t>(handles[i]));
-        append(target_generation);
-        append(host_report.environment_generation);
-        if (cursor != RUNTIME_MODIFIER_POD_WIRE_SIZE ||
-            !_runtime_host->enqueue_modifier_shadow(std::move(packet))) {
-            shadow_error = "modifier_shadow_enqueue_failed";
-            continue;
-        }
-        ++shadow_enqueued;
-    }
-    result["modifier_shadow_enqueued"] = shadow_enqueued;
-    result["modifier_shadow_fallback_reason"] = String(shadow_error.c_str());
+    Dictionary mirrored = encode_and_enqueue(packed_batch, request_ids, false);
+    result["modifier_shadow_enqueued"] = mirrored.get("modifier_host_enqueued", 0);
+    result["modifier_shadow_fallback_reason"] =
+        mirrored.get("modifier_shadow_fallback_reason", "");
     return result;
 }
 
 Dictionary DCWorldExt::run_modifier_daily(int64_t day_index) {
-    return _modifier_runtime == nullptr ? unavailable()
-        : runtime_from(_modifier_runtime)->run_daily(day_index);
+    if (_modifier_runtime == nullptr) return unavailable();
+    if (_runtime_host != nullptr &&
+        _runtime_host->domain_is_worker_authoritative(
+            RuntimeDomainId::MODIFIER)) {
+        Dictionary out;
+        out["ok"] = true;
+        out["done"] = true;
+        out["work_done"] = 0;
+        out["commands_applied"] = 0;
+        out["expired"] = 0;
+        out["stage"] = "modifier_worker_authoritative";
+        out["path"] = "MODIFIER_WORKER";
+        out["suppressed"] = true;
+        return out;
+    }
+    return runtime_from(_modifier_runtime)->run_daily(day_index);
 }
 
 bool DCWorldExt::modifier_should_run(int64_t day_index) const {
+    if (_runtime_host != nullptr &&
+        _runtime_host->domain_is_worker_authoritative(
+            RuntimeDomainId::MODIFIER)) {
+        return false;
+    }
     return _modifier_runtime != nullptr &&
         runtime_from(_modifier_runtime)->should_run(day_index);
 }
@@ -361,6 +422,61 @@ Dictionary DCWorldExt::get_runtime_modifier_snapshot(int64_t after_generation) {
     out["bucket_stat_ids"] = bucket_stats; out["bucket_scope_ids"] = bucket_scope_ids;
     out["bucket_sum_add"] = bucket_adds; out["bucket_product_factor"] = bucket_factors;
     out["bucket_active_counts"] = bucket_counts;
+    _runtime_host->release_modifier_snapshot(slot);
+    return out;
+}
+
+
+Dictionary DCWorldExt::apply_runtime_modifier_snapshot(int64_t after_generation) {
+    Dictionary out;
+    out["ok"] = false;
+    out["available"] = false;
+    out["applied"] = false;
+    if (_modifier_runtime == nullptr) {
+        out["reason"] = "modifier_runtime_unavailable";
+        return out;
+    }
+    if (!_runtime_host) {
+        out["reason"] = "runtime_host_unavailable";
+        return out;
+    }
+    if (!_runtime_host->domain_is_worker_authoritative(RuntimeDomainId::MODIFIER)) {
+        out["ok"] = true;
+        out["reason"] = "modifier_not_worker_authoritative";
+        return out;
+    }
+    const uint64_t cursor = after_generation < 0
+        ? std::numeric_limits<uint64_t>::max()
+        : static_cast<uint64_t>(after_generation);
+    uint32_t slot = 0;
+    if (!_runtime_host->try_acquire_modifier_snapshot(cursor, slot)) {
+        out["ok"] = true;
+        out["reason"] = "";
+        return out;
+    }
+    const RuntimeModifierPodSnapshot &snapshot =
+        _runtime_host->modifier_snapshot_buffer(slot);
+    bool shape_ok = snapshot.abi_version == RUNTIME_MODIFIER_POD_ABI_VERSION &&
+        snapshot.catalog_hash == _runtime_host->modifier_pod_catalog_hash();
+    for (const RuntimeModifierPodEntry &entry : snapshot.entries)
+        shape_ok = shape_ok && entry.domain < 4;
+    for (const RuntimeModifierPodBucket &bucket : snapshot.buckets)
+        shape_ok = shape_ok && bucket.domain < 4 && bucket.scope < 3;
+    if (!shape_ok) {
+        _runtime_host->release_modifier_snapshot(slot);
+        out["reason"] = "modifier_snapshot_shape_or_catalog_invalid";
+        return out;
+    }
+    std::string apply_error;
+    const bool applied =
+        runtime_from(_modifier_runtime)->apply_pod_snapshot(snapshot, apply_error);
+    out["ok"] = applied;
+    out["available"] = true;
+    out["applied"] = applied;
+    out["generation"] = static_cast<int64_t>(snapshot.generation);
+    out["committed_day"] = snapshot.committed_day;
+    out["state_hash"] = static_cast<int64_t>(snapshot.state_hash);
+    out["reason"] = applied ? "" : String(apply_error.c_str());
     _runtime_host->release_modifier_snapshot(slot);
     return out;
 }

@@ -135,7 +135,10 @@ constexpr size_t RUNTIME_CLIMATE_PARITY_MAX_FIELDS = 64u;
 // Version 2 splits the single uint8 weather_transition entry into the three
 // lanes the production path keeps, which changes both the field set and the
 // mixing order.
-constexpr uint32_t RUNTIME_CLIMATE_PARITY_VERSION = 2u;
+// Version 3 adds the two succession lanes (vegetation / base_vegetation) that the
+// worker took over in B8-P1. The field set is part of the hash framing, so this
+// must move whenever the table's membership changes.
+constexpr uint32_t RUNTIME_CLIMATE_PARITY_VERSION = 3u;
 
 size_t runtime_climate_parity_field_count();
 const RuntimeClimateParityField *runtime_climate_parity_fields();

@@ -260,6 +260,10 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(
         D_METHOD("apply_runtime_climate_writeback", "after_generation"),
         &DCWorldExt::apply_runtime_climate_writeback);
+    ClassDB::bind_method(
+        D_METHOD("wait_climate_consumed", "after_environment_generation",
+                 "timeout_ms"),
+        &DCWorldExt::wait_climate_consumed, DEFVAL(-1));
     ClassDB::bind_method(D_METHOD("runtime_climate_writeback_self_test"),
                          &DCWorldExt::runtime_climate_writeback_self_test);
     ClassDB::bind_method(D_METHOD("runtime_snapshot_ring_self_test"),
@@ -274,6 +278,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::runtime_climate_trace_self_test);
     ClassDB::bind_method(D_METHOD("runtime_climate_parity_contract_test"),
                          &DCWorldExt::runtime_climate_parity_contract_test);
+    ClassDB::bind_method(D_METHOD("runtime_climate_stage_order_contract_test"),
+                         &DCWorldExt::runtime_climate_stage_order_contract_test);
     ClassDB::bind_method(D_METHOD("runtime_country_pod_authority_self_test"),
                          &DCWorldExt::runtime_country_pod_authority_self_test);
     ClassDB::bind_method(D_METHOD("runtime_country_core_protocol_self_test"),
@@ -420,6 +426,12 @@ void DCWorldExt::_bind_methods() {
     ClassDB::bind_method(D_METHOD("get_runtime_modifier_snapshot", "after_generation"),
                          &DCWorldExt::get_runtime_modifier_snapshot,
                          DEFVAL(0));
+    ClassDB::bind_method(D_METHOD("apply_runtime_modifier_snapshot", "after_generation"),
+                         &DCWorldExt::apply_runtime_modifier_snapshot,
+                         DEFVAL(-1));
+    ClassDB::bind_method(D_METHOD("apply_runtime_effect_snapshot", "after_generation"),
+                         &DCWorldExt::apply_runtime_effect_snapshot,
+                         DEFVAL(-1));
     ClassDB::bind_method(D_METHOD("runtime_modifier_pod_self_test"),
                          &DCWorldExt::runtime_modifier_pod_self_test);
     ClassDB::bind_method(D_METHOD("configure_triggers", "catalog"),

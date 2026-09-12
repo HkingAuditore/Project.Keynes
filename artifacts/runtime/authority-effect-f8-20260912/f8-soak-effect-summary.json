@@ -1,0 +1,40 @@
+{
+  "active-22": {
+    "first_bad_tick": -1,
+    "writeback_drop_count": 0,
+    "delivery_mask": 2150,
+    "authoritative_domain_mask": "2150",
+    "requested_authority_mask": "2150",
+    "effect_worker_authoritative": "true",
+    "effect_pod_ready": "true",
+    "effect_pod_snapshot_generation": "21",
+    "effect_pod_state_hash": "3701113702934608035",
+    "effect_pod_ack_count": "0",
+    "effect_pod_intent_count": "0",
+    "effect_pod_fallback_reason": "",
+    "modifier_worker_authoritative": "true",
+    "modifier_pod_snapshot_generation": "21",
+    "main_wait_on_sim_us": "0",
+    "worker_fault_count": "0",
+    "simulation_thread_mode": "ACTIVE"
+  },
+  "off-22": {
+    "first_bad_tick": -1,
+    "writeback_drop_count": 0,
+    "delivery_mask": 0,
+    "authoritative_domain_mask": "0",
+    "requested_authority_mask": "0",
+    "effect_worker_authoritative": "false",
+    "effect_pod_ready": "false",
+    "effect_pod_snapshot_generation": "0",
+    "effect_pod_state_hash": "0",
+    "effect_pod_ack_count": "0",
+    "effect_pod_intent_count": "0",
+    "effect_pod_fallback_reason": "",
+    "modifier_worker_authoritative": "false",
+    "modifier_pod_snapshot_generation": "0",
+    "main_wait_on_sim_us": "0",
+    "worker_fault_count": "0",
+    "simulation_thread_mode": "SHADOW"
+  }
+}

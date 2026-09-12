@@ -23,6 +23,11 @@ extends SceneTree
 #     clean, which is itself the finding: a torn read needs the two writers to
 #     interleave, and this ordering never lets them.
 #
+#   PK_SOAK_DRIVE=serial_wait (B8 P3)
+#     与 serial 相同，但用生产路径的 host.wait_for_climate_consumed() 代替探针
+#     自造的 24ms 忙等轮询。这样 soak 测的是"主线程等 worker"的真实节拍，
+#     也是 environment_dropped/superseded 计数唯一有意义的驱动方式。
+#
 #   PK_SOAK_DRIVE=frames
 #     Let WorldClock run at speed and advance real SceneTree frames, so
 #     `_on_clock_day_changed` (SUS tick, season refresh) and `_process`
@@ -37,7 +42,7 @@ extends SceneTree
 #     the crash still needs the real client.
 #
 # Env overrides: PK_SOAK_DAYS, PK_SOAK_SEED, PK_SOAK_W, PK_SOAK_H,
-# PK_SOAK_AUTHORITY, PK_SOAK_DRIVE, PK_SOAK_SPEED
+# PK_SOAK_AUTHORITY, PK_SOAK_DRIVE, PK_SOAK_SPEED, PK_SOAK_SUMMARY (JSON path)
 
 const WORKER_SPEED: float = 50.0
 const POLL_MSEC: int = 2
@@ -66,15 +71,58 @@ func _env_int(name: String, fallback: int) -> int:
 	return int(raw) if raw != "" and raw.is_valid_int() else fallback
 
 
+## 命令行覆盖层（`-- --days=3 --authority=1 --summary=D:\...`）。环境变量在
+## PowerShell 5.1 的包装脚本里容易在跨进程边界时丢失（实测 child 收到空值），
+## 而命令行参数是逐字传递的。两者都支持，CLI 优先。
+var _cli: Dictionary = {}
+
+
+func _arg(name: String) -> String:
+	return String(_cli.get(name, ""))
+
+
+func _setting_int(name: String, env_name: String, fallback: int) -> int:
+	var via_cli := _arg(name)
+	if via_cli != "" and via_cli.is_valid_int():
+		return int(via_cli)
+	return _env_int(env_name, fallback)
+
+
+func _setting(name: String, env_name: String) -> String:
+	var via_cli := _arg(name)
+	return via_cli if via_cli != "" else OS.get_environment(env_name)
+
+
 func _init() -> void:
-	var days := _env_int("PK_SOAK_DAYS", 300)
-	var seed := _env_int("PK_SOAK_SEED", 20260907)
-	var width := _env_int("PK_SOAK_W", 50)
-	var height := _env_int("PK_SOAK_H", 48)
-	var authority := _env_int("PK_SOAK_AUTHORITY", 1) != 0
-	var drive := OS.get_environment("PK_SOAK_DRIVE")
+	for raw in OS.get_cmdline_user_args():
+		var text := String(raw)
+		if not text.begins_with("--"):
+			continue
+		var body := text.substr(2)
+		var split_at := body.find("=")
+		if split_at <= 0:
+			continue
+		_cli[body.substr(0, split_at)] = body.substr(split_at + 1)
+	var days := _setting_int("days", "PK_SOAK_DAYS", 300)
+	var seed := _setting_int("seed", "PK_SOAK_SEED", 20260907)
+	var width := _setting_int("width", "PK_SOAK_W", 50)
+	var height := _setting_int("height", "PK_SOAK_H", 48)
+	var authority := _setting_int("authority", "PK_SOAK_AUTHORITY", 1) != 0
+	var drive := _setting("drive", "PK_SOAK_DRIVE")
 	if drive == "":
 		drive = "serial"
+	if drive not in ["serial", "serial_wait", "frames"]:
+		print("[soak/FAIL] unknown PK_SOAK_DRIVE=%s (expected serial|serial_wait|frames)" % drive)
+		quit(1)
+		return
+	# B8/P6：场景剧本（drought/storm/snow/canal/cross_year/topology_revision）还没
+	# 实现 forcing。这里的处理是明确拒绝，而不是静默跑成普通 soak —— 静默会让一份
+	# "场景通过"的证据其实什么都没测。
+	var scenario := _setting("scenario", "PK_SOAK_SCENARIO")
+	if scenario != "":
+		print("[soak/FAIL] PK_SOAK_SCENARIO=%s is not implemented yet (B8 P6 evidence item); refusing to run an unforced soak under a scenario label" % scenario)
+		quit(1)
+		return
 	print("[soak/start] days=%d seed=%d %dx%d authority=%s drive=%s" % [
 		days, seed, width, height, str(authority), drive])
 	var rc := await _run(authority, seed, width, height, days, drive)
@@ -83,7 +131,7 @@ func _init() -> void:
 
 func _run(authority: bool, seed: int, width: int, height: int, days: int,
 		drive: String) -> int:
-	var speed := float(_env_int("PK_SOAK_SPEED", 50))
+	var speed := float(_setting_int("speed", "PK_SOAK_SPEED", 50))
 	var clock := WorldClock.new()
 	clock.auto_start = false
 	clock.initial_speed = speed if drive == "frames" else 1.0
@@ -100,12 +148,12 @@ func _run(authority: bool, seed: int, width: int, height: int, days: int,
 	# a world whose economy never started leaves the contested fields flat, so
 	# a clean run there says nothing about the double write.
 	host.generate_test_economy_data = false
-	host.test_economy_population_scale = _env_int("PK_SOAK_POP", 100)
+	host.test_economy_population_scale = _setting_int("pop", "PK_SOAK_POP", 100)
 	host.runtime_climate_authority_enabled = authority
 	get_root().add_child(host)
 	host.configure(null, null, clock)
 	var session := _configure_formal_start(host, width, height, seed,
-		_env_int("PK_SOAK_FOREIGN", 3))
+		_setting_int("foreign", "PK_SOAK_FOREIGN", 3))
 	if not bool(session.get("ok", false)):
 		print("[soak/FAIL] formal start failed: %s" % str(session))
 		return 1
@@ -127,6 +175,13 @@ func _run(authority: bool, seed: int, width: int, height: int, days: int,
 	var first_bad_tick := -1
 	var first_bad_field := ""
 	var last_season_log := ""
+	# wb-probe：writeback 之前/之后、整 tick 之后的 weather_vapor_arr[0]。
+	var probe_before := -1.0
+	var probe_after_wb := -1.0
+	# 采样间隔：短跑逐日（用来对齐"一日滞后"），长跑 5 天。
+	var sample_every: int = 1 if days <= 20 else 5
+	# B8：逐采样点的场统计，供 Compare-ClimateB8Soak.ps1 做 ACTIVE/OFF A/B。
+	var samples: Array[Dictionary] = []
 
 	if drive == "frames":
 		# The client ordering. WorldClock drives day_changed off _process, and
@@ -174,14 +229,24 @@ func _run(authority: bool, seed: int, width: int, height: int, days: int,
 			# MapData，再跑本 tick 的 capture + season refresh。这个顺序就是被测
 			# 对象，改客户端那侧时这里必须跟着改，否则 soak 测的是另一条路径。
 			if authority:
-				var deadline := Time.get_ticks_msec() + WRITEBACK_WAIT_MSEC
-				while Time.get_ticks_msec() < deadline:
+				if drive == "serial_wait":
+					# 生产路径：等到 worker 评估过上一份环境再发布下一天。等待本身
+					# 在 C++ 侧是条件变量，本层在每个切片之间 pump peer 服务。
+					var pre_report: Dictionary = generator.get_runtime_thread_report()
+					probe_before = _vapor0(map)
+					host.wait_for_climate_consumed(int(pre_report.get(
+						"simulation_environment_generation", 0)))
 					host._consume_runtime_commit_if_ready()
-					OS.delay_msec(POLL_MSEC)
+					probe_after_wb = _vapor0(map)
+				else:
+					var deadline := Time.get_ticks_msec() + WRITEBACK_WAIT_MSEC
+					while Time.get_ticks_msec() < deadline:
+						host._consume_runtime_commit_if_ready()
+						OS.delay_msec(POLL_MSEC)
 				_accumulate_stages(generator)
 			host.run_daily_tick(tick, clock.season_phase_for_day(tick))
 			host.finish_daily_tick(0.0, {})
-			if OS.get_environment("PK_SOAK_TRACE_DAYS") == "1":
+			if _setting("trace_days", "PK_SOAK_TRACE_DAYS") == "1":
 				var r: Dictionary = generator.get_runtime_thread_report()
 				var d: Dictionary = host.climate_authority_diagnostics()
 				print("[soak/t%d] wb_last=%s wb_days=%s pod_ready=%s changed=%s " \
@@ -221,12 +286,51 @@ func _run(authority: bool, seed: int, width: int, height: int, days: int,
 					int(diag.get("writeback_applied_fields", 0)),
 					str(diag.get("writeback_skipped_fields", []))])
 				print("[soak/stages] %s" % _stage_report(generator))
+				# B8 P0：交付游标。superseded > 0 说明有发布过的天在 worker 评估前
+				# 就被下一天顶掉；dropped 是将来有界 ring 溢出才会出现的计数。
+				print("[soak/delivery] published=%d consumed=%d superseded=%d dropped=%d committed_day=%d wait_max_ms=%d wb_memcpy_ms=%.3f wb_flush_ms=%.3f" % [
+					int(diag.get("environment_published_days", 0)),
+					int(diag.get("environment_consumed_days", 0)),
+					int(diag.get("environment_superseded_days", 0)),
+					int(diag.get("environment_dropped_days", 0)),
+					int(diag.get("climate_committed_day", -1)),
+					int(diag.get("climate_wait_max_ms", 0)),
+					float(diag.get("writeback_memcpy_ms", 0.0)),
+					float(diag.get("writeback_flush_ms", 0.0))])
+			# 结构化采样每 5 天一次（外加最后一天）：短 smoke 也要有可比较的点，
+			# 而 300 天 × 11 场也只是几千条记录，JSON 仍然轻。
+			# 短跑（<=20 天）逐日采样：B8-3 要判"ACTIVE 的 tick T 是否等于 OFF 的
+			# T-1"（权威回灌固定滞后一日），5 天间隔根本对不齐这个滞后。
+			if tick % sample_every == 0 or tick == days:
+				if authority and probe_before >= 0.0:
+					print("[soak/wb-probe] tick=" + str(tick) +
+						" before=" + str(probe_before) +
+						" after_wb=" + str(probe_after_wb) +
+						" after_tick=" + str(_vapor0(map)))
+				samples.append({
+					"tick": tick,
+					"fields": _sample_fields(map),
+					"delivery": host.climate_authority_diagnostics(),
+				})
 
 	var diag_final: Dictionary = host.climate_authority_diagnostics()
 	print("[soak/fields] applied=%d skipped=%s" % [
 		int(diag_final.get("writeback_applied_fields", 0)),
 		str(diag_final.get("writeback_skipped_fields", []))])
 	print("[soak/stage-days] %s" % _stage_totals())
+		# F8: always emit Effect/Modifier authority fields at end (tick%25 dump may miss short runs).
+	if generator.has_method("get_runtime_thread_report"):
+		var end_report: Dictionary = generator.get_runtime_thread_report()
+		var effect_keys: PackedStringArray = []
+		for k in ["authoritative_domain_mask", "requested_authority_mask",
+				"effect_worker_authoritative", "effect_pod_ready",
+				"effect_pod_snapshot_generation", "effect_pod_state_hash",
+				"effect_pod_ack_count", "effect_pod_intent_count",
+				"effect_pod_fallback_reason", "modifier_worker_authoritative",
+				"modifier_pod_snapshot_generation", "main_wait_on_sim_us",
+				"worker_fault_count", "simulation_thread_mode"]:
+			effect_keys.append("%s=%s" % [k, str(end_report.get(k, ""))])
+		print("[soak/effect-report] %s" % ", ".join(effect_keys))
 	print("[soak/done] ticks=%d writeback_days=%d drops=%d first_bad_tick=%d field=%s season_path=%s" % [
 		days,
 		int(diag_final.get("writeback_days", 0)),
@@ -234,6 +338,35 @@ func _run(authority: bool, seed: int, width: int, height: int, days: int,
 		first_bad_tick,
 		first_bad_field,
 		last_season_log])
+	# B8：结构化摘要。比较器只读这份 JSON，不再从人类可读的日志里抠数字。
+	var summary_path := _setting("summary", "PK_SOAK_SUMMARY")
+	if summary_path != "":
+		var summary := {
+			"schema": "ClimateB8SoakRun",
+			"schema_version": 1,
+			"days": days,
+			"seed": seed,
+			"width": width,
+			"height": height,
+			"authority": authority,
+			"drive": drive,
+			"speed": speed,
+			"first_bad_tick": first_bad_tick,
+			"first_bad_field": first_bad_field,
+			"writeback_days": int(diag_final.get("writeback_days", 0)),
+			"writeback_drop_count": int(diag_final.get("writeback_drop_count", 0)),
+			"delivery": diag_final.duplicate(false),
+			"stage_names": STAGE_NAMES.duplicate(),
+			"stage_days": _stage_days.duplicate(),
+			"samples": samples,
+		}
+		var summary_file := FileAccess.open(summary_path, FileAccess.WRITE)
+		if summary_file == null:
+			push_error("[soak] cannot write summary: %s" % summary_path)
+		else:
+			summary_file.store_string(JSON.stringify(summary, "\t"))
+			summary_file.close()
+			print("[soak/summary] %s" % summary_path)
 	host.free()
 	clock.free()
 	await process_frame
@@ -266,6 +399,16 @@ const CONTESTED: Array[String] = [
 	# 渲染上等于完全不显示。它的 knobs（si_t_form 等）与 insol_amp 是同一批 round
 	# scalars，都走 climate_round_input 那一条通道。
 	"sea_ice_frac_arr",
+	# B8 天气组：worker 自持 ψ / distribute 的直接产物。之前 soak 没有采样它们，
+	# 导致"ACTIVE 天气是不是零"只能靠 C++ 一次性诊断回答；现在纳入结构化采样。
+	"weather_vapor_arr",
+	"weather_cloud_arr",
+	"weather_precip_arr",
+	"weather_cloud_water_arr",
+	# B8-P1：演替写入权的直接证据。ACTIVE 下这两条由 worker 自持并回灌，OFF 下由
+	# 主线程 GDScript 后处理写；两者的逐场 nz/mean 差异就是 E5 的结论。
+	"vegetation_arr",
+	"base_vegetation_arr",
 ]
 
 
@@ -307,12 +450,69 @@ func _liveness(map: MapData) -> String:
 	return " | ".join(parts)
 
 
+## B8：场统计的结构化版本。_liveness 是给人读的，这一份给比较器读 —— 两边共用
+## 同一组字段与同一种统计口径（nz / mean / min / max），避免"人读的日志"
+## 和"机器判定的 JSON"各算一遍。
+func _vapor0(map: MapData) -> float:
+	if map == null or map.weather_vapor_arr.size() <= 0:
+		return -1.0
+	return float(map.weather_vapor_arr[0])
+
+
+func _sample_fields(map: MapData) -> Dictionary:
+	var out := {}
+	for name in CONTESTED:
+		var raw: Variant = map.get(name)
+		# 三种 PackedArray 都要支持：vegetation / base_vegetation 是 byte，streak 是
+		# int32，天气/气候场是 float。只认 float 的采样器会把 u8 场静默记成
+		# present=false，然后在比较器里被读成 0 —— 和"场真的全零"长得一模一样。
+		var arr := PackedFloat32Array()
+		match typeof(raw):
+			TYPE_PACKED_FLOAT32_ARRAY:
+				arr = raw
+			TYPE_PACKED_BYTE_ARRAY:
+				var bytes: PackedByteArray = raw
+				arr.resize(bytes.size())
+				for i in range(bytes.size()):
+					arr[i] = float(bytes[i])
+			TYPE_PACKED_INT32_ARRAY:
+				var ints: PackedInt32Array = raw
+				arr.resize(ints.size())
+				for i in range(ints.size()):
+					arr[i] = float(ints[i])
+			_:
+				out[name] = {"present": false}
+				continue
+		if arr.is_empty():
+			out[name] = {"present": false}
+			continue
+		var nonzero := 0
+		var total := 0.0
+		var lo := INF
+		var hi := -INF
+		for i in range(arr.size()):
+			if arr[i] != 0.0:
+				nonzero += 1
+			total += arr[i]
+			lo = minf(lo, arr[i])
+			hi = maxf(hi, arr[i])
+		out[name] = {
+			"present": true,
+			"size": arr.size(),
+			"nz": nonzero,
+			"mean": total / float(max(arr.size(), 1)),
+			"min": lo,
+			"max": hi,
+		}
+	return out
+
+
 # RuntimeClimateStage order, so a missing stage can be named rather than read
 # out of a hex mask.
 const STAGE_NAMES: Array[String] = [
 	"pass_a", "pass_b", "ocean_water", "ocean_land", "wind_air", "wind_surface",
 	"sea_ice", "transpiration", "albedo", "vegetation", "feedback", "weather",
-	"hydrology",
+	"hydrology", "stage_b_after_hydrology",
 ]
 
 
@@ -348,11 +548,17 @@ func _stage_report(generator: MapGenerator) -> String:
 	if not generator.has_method("get_runtime_thread_report"):
 		return "no_report"
 	var report: Dictionary = generator.get_runtime_thread_report()
-	if OS.get_environment("PK_SOAK_DUMP_REPORT") == "1":
+	if _setting("dump_report", "PK_SOAK_DUMP_REPORT") == "1":
 		var keys: Array = []
 		for k in report.keys():
-			if String(k).contains("climate") or String(k).contains("mode") \
-					or String(k).contains("authorit"):
+			var key := String(k)
+			# E8：Modifier_pod_* / modifier_worker_authoritative 也要进 soak 证据，
+			# 不能只扫 climate/mode/authorit（否则 generation/state_hash 被静默丢掉）。
+			if key.contains("climate") or key.contains("mode") \
+					or key.contains("authorit") or key.contains("modifier") \
+					or key.contains("effect") \
+					or key.contains("fallback") or key.contains("main_wait") \
+					or key.contains("fault"):
 				keys.append("%s=%s" % [k, str(report[k])])
 		keys.sort()
 		print("[soak/report] %s" % ", ".join(keys))

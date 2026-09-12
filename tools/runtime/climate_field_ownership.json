@@ -1,0 +1,574 @@
+{
+  "schema": "ClimateFieldOwnershipLedger",
+  "schema_version": 1,
+  "notes": "B8 P0 field-writer ledger. The parity table in gdext/src/runtime_climate_parity.cpp is the single definition of which fields belong to the Climate authority; this ledger records, for each of them, who writes it on the production path and which main-thread writer must therefore be suppressed once the worker owns the domain. tools/runtime/runtime_climate_stage_order_contract_test (GDScript) fails when a parity field is missing here, when the recorded parity_stage/kind/comparability drift from the C++ table, or when an extra_policy/pending field is not present in authority-stage-c-field-policy.json. Keep it in sync with the parity table, not with memory.",
+  "allowed_active_writers": [
+    "climate_worker",
+    "main_thread_season_refresh",
+    "main_thread_succession",
+    "main_thread_raster",
+    "transport_readonly"
+  ],
+  "allowed_suppression": [
+    "native_daily_graph",
+    "weather_refresh",
+    "ocean_currents",
+    "sea_ice_daily",
+    "season_refresh",
+    "none"
+  ],
+  "internal_state": {
+    "synoptic_psi": {
+      "state_fields": ["psi", "psi_prev"],
+      "target_phase": "P2-done-partial",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": false,
+      "production_writers": ["weather_refresh:run_weather_field_solve_pass(start_idx==0)"],
+      "suppression": ["none"],
+      "note": "B8-2 子项：worker 自持 synoptic ψ / ψ_prev，不是 MapData 数组、不在 parity 表里（因此也不在 fields 校验范围）。生产 capture 只提供冷启动种子；SHADOW 直接用生产那一帧（不自己推进），ACTIVE 用共享 synoptic_advance_pure + 自己的 tick 推进。效果通过它驱动的 weather 场（vapor / cloud_water / cloud_cover / weather_precipitation / instability）在 parity 里可见。CLM2 ABI 4 起随 store 持久化（进 state_hash）；ABI 3 旧档读入时两条 lane 全零并记录 cold-seed 行为。E6 开关：PK_CLIMATE_SYNOPTIC_OFF=1。"
+    },
+    "wind_traj": {
+      "state_fields": ["traj_idx", "traj_w"],
+      "target_phase": "P2-done-partial",
+      "active_writer": "transport_readonly",
+      "worker_owned": false,
+      "writeback": false,
+      "production_writers": ["world_ext_physical:_phys_wind_traj_idx/_w"],
+      "suppression": ["none"],
+      "note": "B8-2：轨迹表由主线程物理求解构建，capture 通过 runtime_weather_traj_snapshot() 导出，资格判定与 weather field solve 的消费端逐条一致（表已建 + knob 允许消费 + 指纹匹配当前风场）。任何一条不满足就保持空，worker 与生产一起走 hopping 回退。求解器整体迁入 worker 后这条才可能变成 worker-owned。"
+    },
+    "monsoon_thermal": {
+      "state_fields": ["monsoon_thermal"],
+      "target_phase": "P2-done-partial",
+      "active_writer": "transport_readonly",
+      "worker_owned": false,
+      "writeback": false,
+      "production_writers": ["world_ext_physical:_phys_monsoon_thermal"],
+      "suppression": ["none"],
+      "note": "B8-2：主线程物理求解的热力季风派生量，作为 weather field solve 的只读输入 transport。求解器迁入 worker 之前它是输入而不是 worker 状态；允许为零。"
+    },
+    "cyclone_state": {
+      "state_fields": ["cyclone_entries", "cyclone_next_stable_id"],
+      "target_phase": "P2-done",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": false,
+      "production_writers": ["world_ext_weather:_advance_and_stamp_cyclones", "world_ext_weather:cyclone_wake_step(genesis)"],
+      "suppression": ["native_daily_graph", "weather_refresh"],
+      "note": "B8-2 完成态：推进/衰减/stamp 与 genesis 全部由 worker 自持（CLM2 ABI 6 的 cyclone_state blob，cyclone_state_encode/decode 由生产 capture、worker 冷启动播种与存档共用）。per-cell 强迫 lane 是当天派生量、不回灌 MapData；worker 把 stamp 直接喂给自己的 field solve。genesis 的**前沿等价物是 weather_intensity lane**（生产 front intensity 就是 cluster 内最大 cell intensity；不能再要求 weather_type==STORM，那要已有 stamp 才成立，是闭锁），纬度带用规范 cell_lat_norm（生产 pos_y/world_bounds 在小地图上退化，见 CycloneLanes::lat_norm 注释），其余物理闸与生产 native-entity 分支逐条一致。验证：kernel self_test（推进+stamp+codec+genesis 注入/替换/容量）、PK_CLIMATE_CYCLONE_FORCE=1 + PK_CLIMATE_CYCLONE_GENESIS_GATE=0.6 的 160 天 soak（day=52/76/116 injected=1，day=60/84 decayed=1 且 int(before/after)=0.625/0.000），以及 [climate/worker][b8] cyclone/cyclone_lat/cyclone_genesis 漏斗诊断。"
+    }
+  },
+  "fields": {
+    "vegetation": {
+      "map_data_array": "vegetation_arr",
+      "kind": "u8",
+      "comparability": "comparable",
+      "parity_stage": "VEGETATION_DYNAMICS",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["weather_refresh:refresh_daily_stage_b(succession post-process)", "native_daily_slice:weather_stage_b(succession post-process)"],
+      "suppression": ["native_daily_graph", "weather_refresh"],
+      "note": "B8-P1：演替写入权已从主线程 GDScript 后处理搬到 worker（CLM2 ABI 5 lane）。离散触发、一天时序差即整档错位，tolerance 取 CHAINED。"
+    },
+    "base_vegetation": {
+      "map_data_array": "base_vegetation_arr",
+      "kind": "u8",
+      "comparability": "comparable",
+      "parity_stage": "VEGETATION_DYNAMICS",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["weather_refresh:refresh_daily_stage_b(succession post-process)", "native_daily_slice:weather_stage_b(succession post-process)"],
+      "suppression": ["native_daily_graph", "weather_refresh"],
+      "note": "与 vegetation 同步写：演替后 base_vegetation 是新的基线档位。"
+    },
+    "temperature": {
+      "map_data_array": "temp_arr",
+      "kind": "f32",
+      "comparability": "comparable",
+      "parity_stage": "CLIMATE_FEEDBACK",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["native_daily_slice:albedo|vegetation_dynamics|climate_feedback", "weather_refresh:refresh_daily_stage_b"],
+      "suppression": ["native_daily_graph", "weather_refresh"],
+      "note": "stage_b 三段是日内最后写者；ACTIVE 下两处生产写者都必须被抑制门关掉。"
+    },
+    "temperature_30d_ema": {
+      "map_data_array": "temp_30d_arr",
+      "kind": "f32",
+      "comparability": "comparable",
+      "parity_stage": "PASS_A",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["native_daily_slice:climate_pass_a", "weather_refresh:refresh_climate_daily"],
+      "suppression": ["native_daily_graph", "weather_refresh"]
+    },
+    "temperature_365d_ema": {
+      "map_data_array": "temp_365d_arr",
+      "kind": "f32",
+      "comparability": "comparable",
+      "parity_stage": "PASS_A",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["native_daily_slice:climate_pass_a", "weather_refresh:refresh_climate_daily"],
+      "suppression": ["native_daily_graph", "weather_refresh"]
+    },
+    "temperature_baseline": {
+      "map_data_array": "temp_baseline_arr",
+      "kind": "f32",
+      "comparability": "comparable",
+      "parity_stage": "PASS_A",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["native_daily_slice:climate_pass_a", "weather_refresh:refresh_climate_daily"],
+      "suppression": ["native_daily_graph", "weather_refresh"]
+    },
+    "thermal_energy": {
+      "map_data_array": "thermal_energy_arr",
+      "kind": "f32",
+      "comparability": "comparable",
+      "parity_stage": "PASS_A",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["native_daily_slice:climate_pass_a", "weather_refresh:refresh_climate_daily"],
+      "suppression": ["native_daily_graph", "weather_refresh"]
+    },
+    "moisture": {
+      "map_data_array": "moisture_arr",
+      "kind": "f32",
+      "comparability": "comparable",
+      "parity_stage": "CLIMATE_FEEDBACK",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["native_daily_slice:climate_pass_a|weather_distribute|runtime_hydrology|climate_feedback", "weather_refresh:refresh_climate_daily|refresh_weather_daily|refresh_daily_stage_b"],
+      "suppression": ["native_daily_graph", "weather_refresh"],
+      "note": "四个写者：pass_a 松弛、weather direct-moisture、hydrology segment G、feedback。最后写者是 feedback。"
+    },
+    "plant_available_water": {
+      "map_data_array": "plant_available_water_arr",
+      "kind": "f32",
+      "comparability": "comparable",
+      "parity_stage": "RUNTIME_HYDROLOGY",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["native_daily_slice:runtime_hydrology", "weather_refresh:hydrology_discharge"],
+      "suppression": ["native_daily_graph", "weather_refresh"]
+    },
+    "water_balance_30d": {
+      "map_data_array": "water_balance_30d_arr",
+      "kind": "f32",
+      "comparability": "comparable",
+      "parity_stage": "RUNTIME_HYDROLOGY",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["native_daily_slice:runtime_hydrology", "weather_refresh:hydrology_discharge"],
+      "suppression": ["native_daily_graph", "weather_refresh"],
+      "note": "B8 量级偏差之一：ACTIVE 下必须由 worker 的 hydrology 或 distribute 中与生产同源的那一个写者负责。"
+    },
+    "weather_precipitation": {
+      "map_data_array": "weather_precip_arr",
+      "kind": "f32",
+      "comparability": "comparable",
+      "parity_stage": "WEATHER",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["native_daily_slice:weather_field|weather_commit", "weather_refresh:refresh_weather_daily"],
+      "suppression": ["native_daily_graph", "weather_refresh"]
+    },
+    "weather_intensity": {
+      "map_data_array": "weather_intensity_arr",
+      "kind": "f32",
+      "comparability": "comparable",
+      "parity_stage": "WEATHER",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["native_daily_slice:weather_field|weather_commit", "weather_refresh:refresh_weather_daily"],
+      "suppression": ["native_daily_graph", "weather_refresh"]
+    },
+    "vapor": {
+      "map_data_array": "weather_vapor_arr",
+      "kind": "f32",
+      "comparability": "comparable",
+      "parity_stage": "WEATHER",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["native_daily_slice:weather_field|weather_commit", "weather_refresh:refresh_weather_daily"],
+      "suppression": ["native_daily_graph", "weather_refresh"]
+    },
+    "cloud_water": {
+      "map_data_array": "weather_cloud_water_arr",
+      "kind": "f32",
+      "comparability": "comparable",
+      "parity_stage": "WEATHER",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["native_daily_slice:weather_field|weather_commit", "weather_refresh:refresh_weather_daily"],
+      "suppression": ["native_daily_graph", "weather_refresh"]
+    },
+    "cloud_cover": {
+      "map_data_array": "weather_cloud_arr",
+      "kind": "f32",
+      "comparability": "comparable",
+      "parity_stage": "WEATHER",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["native_daily_slice:weather_field|weather_commit", "weather_refresh:refresh_weather_daily"],
+      "suppression": ["native_daily_graph", "weather_refresh"]
+    },
+    "convergence": {
+      "map_data_array": "weather_convergence_arr",
+      "kind": "f32",
+      "comparability": "comparable",
+      "parity_stage": "WIND_AIR",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["native_daily_slice:wind_air", "weather_refresh:refresh_weather_daily"],
+      "suppression": ["native_daily_graph", "weather_refresh"]
+    },
+    "instability": {
+      "map_data_array": "weather_instability_arr",
+      "kind": "f32",
+      "comparability": "comparable",
+      "parity_stage": "WEATHER",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["native_daily_slice:weather_field|weather_commit", "weather_refresh:refresh_weather_daily"],
+      "suppression": ["native_daily_graph", "weather_refresh"]
+    },
+    "weather_type": {
+      "map_data_array": "weather_type_arr",
+      "kind": "u8",
+      "comparability": "comparable",
+      "parity_stage": "WEATHER",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["native_daily_slice:weather_commit", "weather_refresh:refresh_weather_daily"],
+      "suppression": ["native_daily_graph", "weather_refresh"]
+    },
+    "weather_prev_type": {
+      "map_data_array": "weather_prev_type_arr",
+      "kind": "u8",
+      "comparability": "comparable",
+      "parity_stage": "WEATHER",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["native_daily_slice:weather_commit", "weather_refresh:refresh_weather_daily"],
+      "suppression": ["native_daily_graph", "weather_refresh"]
+    },
+    "weather_target_type": {
+      "map_data_array": "weather_target_type_arr",
+      "kind": "u8",
+      "comparability": "comparable",
+      "parity_stage": "WEATHER",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["native_daily_slice:weather_commit", "weather_refresh:refresh_weather_daily"],
+      "suppression": ["native_daily_graph", "weather_refresh"]
+    },
+    "weather_transition_alpha": {
+      "map_data_array": "weather_transition_alpha_arr",
+      "kind": "f32",
+      "comparability": "comparable",
+      "parity_stage": "WEATHER",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["native_daily_slice:weather_commit", "weather_refresh:refresh_weather_daily"],
+      "suppression": ["native_daily_graph", "weather_refresh"]
+    },
+    "snow_cover": {
+      "map_data_array": "snow_cover_arr",
+      "kind": "f32",
+      "comparability": "comparable",
+      "parity_stage": "WEATHER",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["native_daily_slice:weather_distribute", "weather_refresh:refresh_weather_daily"],
+      "suppression": ["native_daily_graph", "weather_refresh"],
+      "note": "B8 量级偏差之一（+25%）：最后一个写者是 weather distribute，不是 sea_ice。"
+    },
+    "snowpack": {
+      "map_data_array": "snowpack_arr",
+      "kind": "f32",
+      "comparability": "comparable",
+      "parity_stage": "WEATHER",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["native_daily_slice:weather_distribute", "weather_refresh:refresh_weather_daily"],
+      "suppression": ["native_daily_graph", "weather_refresh"]
+    },
+    "sea_ice": {
+      "map_data_array": "sea_ice_frac_arr",
+      "kind": "f32",
+      "comparability": "comparable",
+      "parity_stage": "SEA_ICE",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["native_daily_slice:sea_ice", "sea_ice_daily:sea_ice_daily"],
+      "suppression": ["native_daily_graph", "sea_ice_daily"],
+      "note": "海冰独立系统默认关闭；开启时它也是主线程写者，必须与 native_daily 一起抑制。"
+    },
+    "runoff": {
+      "map_data_array": "surface_runoff_arr",
+      "kind": "f32",
+      "comparability": "comparable",
+      "parity_stage": "RUNTIME_HYDROLOGY",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["native_daily_slice:runtime_hydrology", "weather_refresh:hydrology_discharge"],
+      "suppression": ["native_daily_graph", "weather_refresh"]
+    },
+    "groundwater": {
+      "map_data_array": "groundwater_storage_arr",
+      "kind": "f32",
+      "comparability": "comparable",
+      "parity_stage": "RUNTIME_HYDROLOGY",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["native_daily_slice:runtime_hydrology", "weather_refresh:hydrology_discharge"],
+      "suppression": ["native_daily_graph", "weather_refresh"]
+    },
+    "river_storage": {
+      "map_data_array": "river_storage_arr",
+      "kind": "f32",
+      "comparability": "comparable",
+      "parity_stage": "RUNTIME_HYDROLOGY",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["native_daily_slice:runtime_hydrology", "weather_refresh:hydrology_discharge"],
+      "suppression": ["native_daily_graph", "weather_refresh"]
+    },
+    "river_discharge": {
+      "map_data_array": "river_discharge_arr",
+      "kind": "f32",
+      "comparability": "comparable",
+      "parity_stage": "RUNTIME_HYDROLOGY",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["native_daily_slice:runtime_hydrology", "weather_refresh:hydrology_discharge"],
+      "suppression": ["native_daily_graph", "weather_refresh"]
+    },
+    "riparian_moisture": {
+      "map_data_array": "riparian_moisture_arr",
+      "kind": "f32",
+      "comparability": "no_reference",
+      "parity_stage": "RUNTIME_HYDROLOGY",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": false,
+      "production_writers": ["native_daily_slice:runtime_hydrology"],
+      "suppression": ["native_daily_graph", "weather_refresh"],
+      "note": "map_data.gd 没有 riparian_moisture_arr，所以写入回灌表也无处可写；字段仍在 parity 表里以保持可见。"
+    },
+    "vegetation_vitality": {
+      "map_data_array": "vegetation_vitality_arr",
+      "kind": "f32",
+      "comparability": "comparable",
+      "parity_stage": "VEGETATION_DYNAMICS",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["native_daily_slice:vegetation_dynamics", "weather_refresh:refresh_daily_stage_b"],
+      "suppression": ["native_daily_graph", "weather_refresh"]
+    },
+    "vegetation_growth_pressure": {
+      "map_data_array": "vegetation_growth_pressure_arr",
+      "kind": "f32",
+      "comparability": "comparable",
+      "parity_stage": "TRANSPIRATION",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["native_daily_slice:transpiration|climate_feedback", "weather_refresh:refresh_climate_daily|refresh_daily_stage_b"],
+      "suppression": ["native_daily_graph", "weather_refresh"],
+      "note": "B8 量级偏差之一（符号相反）：两个写者是 transpiration 与 feedback，最后写者取决于当天节拍。"
+    },
+    "vegetation_heat_stress": {
+      "map_data_array": "vegetation_heat_stress_arr",
+      "kind": "f32",
+      "comparability": "comparable",
+      "parity_stage": "VEGETATION_DYNAMICS",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["native_daily_slice:vegetation_dynamics", "weather_refresh:refresh_daily_stage_b"],
+      "suppression": ["native_daily_graph", "weather_refresh"]
+    },
+    "vegetation_drought_stress": {
+      "map_data_array": "vegetation_drought_stress_arr",
+      "kind": "f32",
+      "comparability": "comparable",
+      "parity_stage": "VEGETATION_DYNAMICS",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["native_daily_slice:vegetation_dynamics", "weather_refresh:refresh_daily_stage_b"],
+      "suppression": ["native_daily_graph", "weather_refresh"]
+    },
+    "vegetation_cold_stress": {
+      "map_data_array": "vegetation_cold_stress_arr",
+      "kind": "f32",
+      "comparability": "comparable",
+      "parity_stage": "VEGETATION_DYNAMICS",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["native_daily_slice:vegetation_dynamics", "weather_refresh:refresh_daily_stage_b"],
+      "suppression": ["native_daily_graph", "weather_refresh"]
+    },
+    "vegetation_growth_streak": {
+      "map_data_array": "vitality_high_streak_arr",
+      "kind": "i32",
+      "comparability": "comparable",
+      "parity_stage": "VEGETATION_DYNAMICS",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["native_daily_slice:vegetation_dynamics", "weather_refresh:refresh_daily_stage_b"],
+      "suppression": ["native_daily_graph", "weather_refresh"]
+    },
+    "vegetation_drought_streak": {
+      "map_data_array": "vitality_low_streak_arr",
+      "kind": "i32",
+      "comparability": "comparable",
+      "parity_stage": "VEGETATION_DYNAMICS",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["native_daily_slice:vegetation_dynamics", "weather_refresh:refresh_daily_stage_b"],
+      "suppression": ["native_daily_graph", "weather_refresh"]
+    },
+    "vegetation_succession_candidate": {
+      "map_data_array": "vegetation_regen_score_arr",
+      "kind": "u8",
+      "comparability": "type_mismatch",
+      "parity_stage": "VEGETATION_DYNAMICS",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["native_daily_slice:vegetation_dynamics", "weather_refresh:refresh_daily_stage_b"],
+      "suppression": ["native_daily_graph", "weather_refresh"],
+      "note": "worker 是 uint8 候选标志，生产是 float regen score；两者不是同一量，因此排除在 hash 外。"
+    }
+  },
+  "extra_policy_fields": {
+    "terrain_arr": {
+      "target_phase": "P1",
+      "active_writer": "main_thread_succession",
+      "worker_owned": false,
+      "suppression": ["none"],
+      "note": "植被/地形演替写者；B8-P1 把 succession 纳入 worker 后改为 climate_worker。"
+    },
+    "cover_arr": {
+      "target_phase": "P1",
+      "active_writer": "main_thread_succession",
+      "worker_owned": false,
+      "suppression": ["none"]
+    },
+    "wind_x_arr": {
+      "target_phase": "P2",
+      "active_writer": "transport_readonly",
+      "worker_owned": false,
+      "suppression": ["ocean_currents"]
+    },
+    "wind_y_arr": {
+      "target_phase": "P2",
+      "active_writer": "transport_readonly",
+      "worker_owned": false,
+      "suppression": ["ocean_currents"]
+    },
+    "wind_speed_arr": {
+      "target_phase": "P2",
+      "active_writer": "transport_readonly",
+      "worker_owned": false,
+      "suppression": ["ocean_currents"]
+    },
+    "slp_arr": {
+      "target_phase": "P2",
+      "active_writer": "transport_readonly",
+      "worker_owned": false,
+      "suppression": ["ocean_currents"]
+    },
+    "ocean_psi_arr": {
+      "target_phase": "P2",
+      "active_writer": "transport_readonly",
+      "worker_owned": false,
+      "suppression": ["ocean_currents"]
+    },
+    "upwelling_strength_arr": {
+      "target_phase": "P2",
+      "active_writer": "transport_readonly",
+      "worker_owned": false,
+      "suppression": ["ocean_currents"]
+    },
+    "wind_stress_curl_arr": {
+      "target_phase": "P2",
+      "active_writer": "transport_readonly",
+      "worker_owned": false,
+      "suppression": ["ocean_currents"]
+    },
+    "ocean_current_x_arr": {
+      "target_phase": "P2",
+      "active_writer": "transport_readonly",
+      "worker_owned": false,
+      "suppression": ["ocean_currents"]
+    },
+    "ocean_current_y_arr": {
+      "target_phase": "P2",
+      "active_writer": "transport_readonly",
+      "worker_owned": false,
+      "suppression": ["ocean_currents"]
+    },
+    "air_mass_temp_anomaly_arr": {
+      "target_phase": "P2",
+      "active_writer": "transport_readonly",
+      "worker_owned": false,
+      "suppression": ["ocean_currents"]
+    },
+    "ocean_thermal_anomaly_arr": {
+      "target_phase": "P2",
+      "active_writer": "transport_readonly",
+      "worker_owned": false,
+      "suppression": ["ocean_currents"]
+    },
+    "local_thermal_anomaly_arr": {
+      "target_phase": "P2",
+      "active_writer": "transport_readonly",
+      "worker_owned": false,
+      "suppression": ["ocean_currents"]
+    },
+    "temperature_transport_anomaly_arr": {
+      "target_phase": "P2",
+      "active_writer": "transport_readonly",
+      "worker_owned": false,
+      "suppression": ["ocean_currents"]
+    }
+  }
+}

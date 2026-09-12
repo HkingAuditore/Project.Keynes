@@ -9,8 +9,10 @@
 #include "native_simulation_host.h"
 
 #include <algorithm>
+#include <limits>
 #include <string>
 #include <type_traits>
+#include <unordered_map>
 
 namespace pk {
 
@@ -201,13 +203,33 @@ bool compile_effect_pod_catalog(const Dictionary &catalog,
                          i < payload_i3.size() ? payload_i3[i] : 0};
         out.commands.push_back(value);
     }
+    // F8: resolve open-ended behaviors from EffectRuntime registry into POD
+    // metadata. Missing implementations hard-fail (no silent legacy fallback).
+    std::unordered_map<uint64_t, size_t> behavior_index_by_hash;
+    for (int i = 0; i < behavior_keys.size(); ++i) {
+        const String key = behavior_keys[i];
+        if (key.is_empty()) continue;
+        const std::string key_utf8 = key.utf8().get_data();
+        const uint64_t hash = RuntimeEffectPodAuthority::hash_text(key_utf8.c_str());
+        if (behavior_index_by_hash.count(hash) != 0) continue;
+        if (!EffectRuntime::has_behavior(key_utf8)) {
+            error = "effect_pod_behavior_implementation_missing:" + key_utf8;
+            return false;
+        }
+        RuntimeEffectPodBehaviorMetadata meta;
+        meta.behavior_id_hash = hash;
+        meta.version = 1;
+        meta.max_output = RUNTIME_EFFECT_POD_MAX_BEHAVIOR_OUTPUT;
+        meta.thread_safe = 1;
+        meta.implemented = 1;
+        meta.function = nullptr; // via runtime_effect_pod_behavior_resolver
+        behavior_index_by_hash[hash] = out.behaviors.size();
+        out.behaviors.push_back(meta);
+    }
     for (int i = 0; i < count; ++i) {
-        if (effect_keys[i].is_empty() || behavior_keys[i].is_empty() == false) {
-            if (!behavior_keys[i].is_empty()) {
-                error = "effect_pod_behavior_implementation_missing:" +
-                    std::string(behavior_keys[i].utf8().get_data());
-                return false;
-            }
+        if (effect_keys[i].is_empty()) {
+            error = "effect_pod_definition_key_empty";
+            return false;
         }
         const auto valid_offset = [](const PackedInt32Array &offsets, int index,
                                      int total) { return offsets[index] >= 0 &&
@@ -222,6 +244,10 @@ bool compile_effect_pod_catalog(const Dictionary &catalog,
         value.key_hash = RuntimeEffectPodAuthority::hash_text(effect_keys[i].utf8().get_data());
         value.version = versions[i]; value.cadence_days = cadence_days[i];
         value.max_work = max_work[i]; value.enabled = enabled[i] != 0;
+        if (i < behavior_keys.size() && !behavior_keys[i].is_empty()) {
+            value.behavior_id_hash = RuntimeEffectPodAuthority::hash_text(
+                behavior_keys[i].utf8().get_data());
+        }
         value.condition_begin = condition_offsets[i];
         value.condition_count = condition_offsets[i + 1] - condition_offsets[i];
         value.instruction_begin = instruction_offsets[i];
@@ -244,8 +270,7 @@ bool compile_effect_pod_catalog(const Dictionary &catalog,
                 ? 65536 : prestige[i * 6 + tier];
         out.definitions.push_back(value);
     }
-    // No behavior is registered by this bridge yet. Declarative programs are
-    // fully POD; open-ended behavior programs fail explicitly above.
+    // F8: behaviors resolved above via EffectRuntime registry + POD resolver.
     out.catalog_hash = 0;
     return true;
 }
@@ -253,6 +278,14 @@ bool compile_effect_pod_catalog(const Dictionary &catalog,
 
 Dictionary DCWorldExt::configure_effects(const Dictionary &catalog) {
     if (_effect_runtime == nullptr) _effect_runtime = new EffectRuntime();
+    runtime_effect_pod_set_behavior_resolver(
+        [](uint64_t behavior_id_hash,
+           const RuntimeEffectPodBehaviorInput &input,
+           RuntimeEffectPodBehaviorOutput &output,
+           std::string &error) -> bool {
+            return EffectRuntime::invoke_pod_behavior(
+                behavior_id_hash, input, output, error);
+        });
     Dictionary result = runtime_from(_effect_runtime)->configure(catalog);
     if (bool(result.get("ok", false))) {
         if (!_runtime_host) _runtime_host = std::make_unique<NativeSimulationHost>();
@@ -313,6 +346,75 @@ Dictionary DCWorldExt::choose_era_reward(int64_t offer_generation,
 
 Dictionary DCWorldExt::submit_effect_instances(const Dictionary &batch) {
     if (_effect_runtime == nullptr) return unavailable();
+    const bool worker_authoritative = _runtime_host != nullptr &&
+        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::EFFECT);
+    // F8 ACTIVE: Host transport is the sole writer. Never mutate legacy first.
+    if (worker_authoritative) {
+        Dictionary result;
+        if (_runtime_host == nullptr) {
+            result["ok"] = false;
+            result["reason"] = "effect_worker_host_unavailable";
+            return result;
+        }
+        const PackedInt64Array ids = batch.get("instance_ids", PackedInt64Array());
+        const PackedStringArray program_keys = batch.get("program_keys",
+                                                          PackedStringArray());
+        const PackedInt32Array generations = batch.get("generations",
+                                                        PackedInt32Array());
+        const PackedInt32Array source_types = batch.get("source_types",
+                                                         PackedInt32Array());
+        const PackedInt64Array source_ids = batch.get("source_ids",
+                                                       PackedInt64Array());
+        const PackedInt64Array source_handles = batch.get("source_handles",
+                                                           PackedInt64Array());
+        const PackedInt64Array target_handles = batch.get("target_handles",
+                                                           PackedInt64Array());
+        const PackedInt32Array target_generations = batch.get(
+            "target_generations", PackedInt32Array());
+        const PackedInt32Array levels = batch.get("levels", PackedInt32Array());
+        const PackedInt64Array next_due_days = batch.get("next_due_days",
+                                                          PackedInt64Array());
+        const PackedByteArray active = batch.get("active", PackedByteArray());
+        PackedInt64Array accepted_ids;
+        int32_t rejected = 0;
+        for (int i = 0; i < ids.size() && i < program_keys.size(); ++i) {
+            const int32_t program_id = _runtime_host->effect_pod_program_id_for_key(
+                program_keys[i].utf8().get_data());
+            if (program_id < 0) {
+                ++rejected;
+                continue;
+            }
+            RuntimeEffectPodInstanceInput input;
+            input.instance_id = ids[i];
+            input.generation = static_cast<uint32_t>(std::max(
+                1, i < generations.size() ? generations[i] : 1));
+            input.program_id = program_id;
+            input.source_type = i < source_types.size() ? source_types[i] : 0;
+            input.source_id = i < source_ids.size() ? source_ids[i] : 0;
+            input.source_handle = static_cast<uint64_t>(
+                i < source_handles.size() ? source_handles[i] : 0);
+            input.target_handle = static_cast<uint64_t>(
+                i < target_handles.size() ? target_handles[i] : 0);
+            input.target_generation = static_cast<uint32_t>(std::max(
+                0, i < target_generations.size() ? target_generations[i] : 0));
+            input.level = i < levels.size() ? levels[i] : 0;
+            input.next_due_day = i < next_due_days.size() ? next_due_days[i] : 0;
+            input.active = i >= active.size() || active[i] != 0;
+            std::string queue_error;
+            if (_runtime_host->queue_effect_pod_instance(input, queue_error)) {
+                accepted_ids.push_back(ids[i]);
+            } else {
+                ++rejected;
+                result["reason"] = String(queue_error.c_str());
+            }
+        }
+        result["ok"] = rejected == 0 && accepted_ids.size() == ids.size();
+        result["instance_ids"] = accepted_ids;
+        result["path"] = "EFFECT_WORKER";
+        result["effect_pod_queued"] = accepted_ids.size();
+        result["effect_pod_rejected"] = rejected;
+        return result;
+    }
     Dictionary result = runtime_from(_effect_runtime)->submit_instances(batch);
     // F7 SHADOW mirror: best-effort queue of accepted declarative instances.
     // Failures here never roll back the production EffectRuntime write.
@@ -385,10 +487,27 @@ Dictionary DCWorldExt::retire_effect_instance(int64_t instance_id,
                                               int64_t generation,
                                               int64_t effective_day) {
     if (_effect_runtime == nullptr) return unavailable();
+    Dictionary out;
+    const bool worker_authoritative = _runtime_host != nullptr &&
+        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::EFFECT);
+    if (worker_authoritative) {
+        if (generation <= 0 || _runtime_host == nullptr) {
+            out["ok"] = false;
+            out["reason"] = "effect_worker_retire_invalid";
+            return out;
+        }
+        std::string queue_error;
+        const bool ok = _runtime_host->queue_effect_pod_remove(
+            instance_id, static_cast<uint32_t>(generation), queue_error);
+        out["ok"] = ok;
+        out["path"] = "EFFECT_WORKER";
+        if (!ok) out["reason"] = String(queue_error.c_str());
+        (void)effective_day;
+        return out;
+    }
     std::string error;
     const bool ok = generation > 0 && runtime_from(_effect_runtime)->retire_instance_pod(
         instance_id, static_cast<uint32_t>(generation), effective_day, error);
-    Dictionary out;
     out["ok"] = ok;
     if (!ok) out["reason"] = String(error.c_str());
     if (ok && _runtime_host != nullptr) {
@@ -556,52 +675,160 @@ Dictionary DCWorldExt::submit_effect_snapshots(const Dictionary &batch) {
 }
 
 Dictionary DCWorldExt::run_effect_daily(int64_t day_index) {
-    return _effect_runtime == nullptr ? unavailable()
-        : runtime_from(_effect_runtime)->run_daily(day_index);
+    if (_effect_runtime == nullptr) return unavailable();
+    if (_runtime_host != nullptr &&
+        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::EFFECT)) {
+        Dictionary out;
+        out["ok"] = true;
+        out["suppressed"] = true;
+        out["path"] = "EFFECT_WORKER";
+        out["day"] = day_index;
+        return out;
+    }
+    return runtime_from(_effect_runtime)->run_daily(day_index);
+}
+
+Dictionary DCWorldExt::apply_runtime_effect_snapshot(int64_t after_generation) {
+    Dictionary out;
+    out["ok"] = false;
+    out["applied"] = false;
+    if (_effect_runtime == nullptr || _runtime_host == nullptr) {
+        out["code"] = "effect_runtime_unavailable";
+        return out;
+    }
+    if (!_runtime_host->domain_is_worker_authoritative(RuntimeDomainId::EFFECT)) {
+        out["code"] = "effect_not_worker_authoritative";
+        return out;
+    }
+    const uint64_t cursor = after_generation < 0
+        ? std::numeric_limits<uint64_t>::max()
+        : static_cast<uint64_t>(after_generation);
+    uint32_t slot = 0;
+    if (!_runtime_host->try_acquire_effect_snapshot(cursor, slot)) {
+        out["ok"] = true;
+        out["code"] = "effect_snapshot_unavailable";
+        return out;
+    }
+    const RuntimeEffectPodSnapshot &snapshot =
+        _runtime_host->effect_snapshot_buffer(slot);
+    std::string apply_error;
+    const bool applied = runtime_from(_effect_runtime)->apply_pod_snapshot(
+        snapshot, apply_error);
+    const int64_t generation = static_cast<int64_t>(snapshot.generation);
+    _runtime_host->release_effect_snapshot(slot);
+    out["ok"] = applied;
+    out["applied"] = applied;
+    out["generation"] = generation;
+    out["code"] = applied ? "ok" : String(apply_error.c_str());
+    return out;
 }
 
 Dictionary DCWorldExt::dispatch_effect_native_modifier() {
+    if (_runtime_host != nullptr &&
+        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::EFFECT)) {
+        Dictionary out;
+        out["ok"] = true;
+        out["suppressed"] = true;
+        out["path"] = "EFFECT_WORKER";
+        return out;
+    }
     if (_effect_runtime == nullptr || _modifier_runtime == nullptr) return unavailable();
     return runtime_from(_effect_runtime)->dispatch_native_modifier(
         static_cast<ModifierRuntime *>(_modifier_runtime));
 }
 
 Dictionary DCWorldExt::ack_effect_native_modifier() {
+    if (_runtime_host != nullptr &&
+        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::EFFECT)) {
+        Dictionary out;
+        out["ok"] = true;
+        out["suppressed"] = true;
+        out["path"] = "EFFECT_WORKER";
+        return out;
+    }
     if (_effect_runtime == nullptr || _modifier_runtime == nullptr) return unavailable();
     return runtime_from(_effect_runtime)->ack_native_modifier(
         static_cast<ModifierRuntime *>(_modifier_runtime));
 }
 
 Dictionary DCWorldExt::dispatch_effect_native_country() {
+    if (_runtime_host != nullptr &&
+        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::EFFECT)) {
+        Dictionary out;
+        out["ok"] = true;
+        out["suppressed"] = true;
+        out["path"] = "EFFECT_WORKER";
+        return out;
+    }
     if (_effect_runtime == nullptr || _country_runtime == nullptr) return unavailable();
     return runtime_from(_effect_runtime)->dispatch_native_country(
         static_cast<NativeCountryRuntime *>(_country_runtime));
 }
 
 Dictionary DCWorldExt::ack_effect_native_country() {
+    if (_runtime_host != nullptr &&
+        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::EFFECT)) {
+        Dictionary out;
+        out["ok"] = true;
+        out["suppressed"] = true;
+        out["path"] = "EFFECT_WORKER";
+        return out;
+    }
     if (_effect_runtime == nullptr || _country_runtime == nullptr) return unavailable();
     return runtime_from(_effect_runtime)->ack_native_country(
         static_cast<NativeCountryRuntime *>(_country_runtime));
 }
 
 Dictionary DCWorldExt::dispatch_effect_native_economy() {
+    if (_runtime_host != nullptr &&
+        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::EFFECT)) {
+        Dictionary out;
+        out["ok"] = true;
+        out["suppressed"] = true;
+        out["path"] = "EFFECT_WORKER";
+        return out;
+    }
     if (_effect_runtime == nullptr || _economy_runtime == nullptr) return unavailable();
     return runtime_from(_effect_runtime)->dispatch_native_economy(
         static_cast<NativeEconomyRuntime *>(_economy_runtime));
 }
 
 Dictionary DCWorldExt::ack_effect_native_economy() {
+    if (_runtime_host != nullptr &&
+        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::EFFECT)) {
+        Dictionary out;
+        out["ok"] = true;
+        out["suppressed"] = true;
+        out["path"] = "EFFECT_WORKER";
+        return out;
+    }
     if (_effect_runtime == nullptr || _economy_runtime == nullptr) return unavailable();
     return runtime_from(_effect_runtime)->ack_native_economy(
         static_cast<NativeEconomyRuntime *>(_economy_runtime));
 }
 
 Dictionary DCWorldExt::dispatch_effect_native_gameplay() {
+    if (_runtime_host != nullptr &&
+        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::EFFECT)) {
+        Dictionary out;
+        out["ok"] = true;
+        out["suppressed"] = true;
+        out["path"] = "EFFECT_WORKER";
+        return out;
+    }
     if (_effect_runtime == nullptr) return unavailable();
     return runtime_from(_effect_runtime)->dispatch_native_gameplay(this);
 }
 
 Dictionary DCWorldExt::ack_effect_native_gameplay() {
+    if (_runtime_host != nullptr &&
+        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::EFFECT)) {
+        Dictionary out;
+        out["ok"] = true;
+        out["suppressed"] = true;
+        out["path"] = "EFFECT_WORKER";
+        return out;
+    }
     if (_effect_runtime == nullptr) return unavailable();
     return runtime_from(_effect_runtime)->ack_native_gameplay(this);
 }
@@ -627,6 +854,10 @@ Dictionary DCWorldExt::get_effect_native_adapter_report() const {
 }
 
 bool DCWorldExt::effect_should_run(int64_t day_index) const {
+    if (_runtime_host != nullptr &&
+        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::EFFECT)) {
+        return false;
+    }
     return _effect_runtime != nullptr &&
         runtime_from(_effect_runtime)->should_run(day_index);
 }

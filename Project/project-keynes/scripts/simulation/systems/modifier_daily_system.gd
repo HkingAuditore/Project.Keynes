@@ -25,6 +25,13 @@ func feature_flag() -> StringName:
 
 
 func should_run(ctx: SusTickContext) -> bool:
+	# E8: when Modifier is Host ACTIVE, C++ should_run already suppresses
+	# production writes; keep the SUS shell idle as well.
+	if facade != null and facade.is_configured() and facade.world_ext() != null:
+		var report: Dictionary = facade.world_ext().get_runtime_thread_report() \
+			if facade.world_ext().has_method("get_runtime_thread_report") else {}
+		if bool(report.get("modifier_worker_authoritative", false)):
+			return false
 	return facade != null and facade.is_configured() and ctx != null \
 		and bool(facade.world_ext().modifier_should_run(ctx.day_index))
 
@@ -38,6 +45,16 @@ func tick(ctx) -> Dictionary:
 	var started_us := Time.get_ticks_usec()
 	if facade == null or not facade.is_configured():
 		return {"done": true, "elapsed_ms": 0.0, "stage_name": "modifier_unavailable"}
+	# E8: Host ACTIVE owns Modifier ACK inside the worker; do not dual-ACK.
+	if not should_run(ctx):
+		return {
+			"done": true,
+			"work_done": 0,
+			"elapsed_ms": 0.0,
+			"stage_name": "modifier_worker_authoritative",
+			"path": "MODIFIER_WORKER",
+			"suppressed": true,
+		}
 	var result: Dictionary = facade.world_ext().run_modifier_daily(
 		int(ctx.day_index) if ctx != null else 0)
 	# Modifier Runtime is the safe commit boundary for native Effect commands.

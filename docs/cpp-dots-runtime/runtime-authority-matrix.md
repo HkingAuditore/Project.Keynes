@@ -11,7 +11,7 @@ long-form matrix below: country authority is **PKCN v13**, economy authority is
 **PKEC v52**, configurable cross-domain effects are **PKEF v11**, Trigger state is
 **PKTR v6**, ideology state is **PKID v3**, and the native gameplay journal is
 **journal v4**. Country is production ACTIVE only for the granted
-`CLIMATE|COUNTRY|COMMIT = 0x806` mask; Economy remains synchronous production
+`CLIMATE|COUNTRY|MODIFIER|EFFECT|COMMIT = 0x866` mask; Economy remains synchronous production
 authority while its D7 peer work is staged per operation. The save
 coordinator restores domain state in its documented order and verifies active
 ideology bindings against PKEF; recovery never replays an effect to repair a
@@ -44,7 +44,7 @@ current schema and do not imply Economy POD ACTIVE authority.
 
 Stage G also provides a separate `RuntimeIdeologyPodAuthority` mirror for
 worker `SHADOW` diagnostics. It owns no production authority and does not add
-an Ideology bit to the current `implemented_domain_mask() == 0x806`; its `IDP1`
+an Ideology bit to the current `implemented_domain_mask() == 0x866`; its `IDP1`
 section is independent from synchronous `PKID` and legacy composite `PDP3`.
 | Effect-originated gameplay events | native Gameplay journal | PKSV `journal` v4 | `gameplay_effect` is the POD ingress/ACK boundary; journal stores normal event IDs and `event_id=-1` custom geography-commit idempotency evidence |
 | Calendar/RNG/time mode | `WorldClock` | PKSV `world_clock` | Restore date, carry, RNG, publish indices, pause and speed |
@@ -96,7 +96,7 @@ round 也设置 `native_daily_day_barrier`，continuation pulse 先完成 climat
 | `season_refresh` | `SeasonRefreshSystem` 持有 period counter、round stage、stage cursor；B+ round 可由 `DCWorldExt` probe。 | GDScript helper 与 B+ C++ pass 写 terrain/landform/vegetation/cover/moisture/weather dirty slots。 | `MapData` mutation、dirty mask、enum atlas/detail scatter intents。 | `SeasonRefreshSystem` 12-stage path；B+ 失败回退同 system。 | 默认 GDScript retained；`native_season_refresh_active_owner_enabled=true` 且 B+ state 可证明时，report 可升为 `native_active`。 | Atlas queue、detail scatter 和 Godot upload 是 retained boundaries；只有 owner 未 active 才阻塞 simulation complete。 |
 | `refresh_climate_daily` | `ClimateDailySystem` 持有 `_round_active`、`_pass_cursor`、phase lock；native daily report 镜像 climate state。 | 多个 `DCWorldExt` climate/ocean/wind/sea-ice/transpiration pass 写 slot；GDScript system 仍持 round state。 | Pass 级 `_flush_slot_to_map()` / `published_to_slot`，尾部 debug/CSV/visual intents。 | `ClimateDailySystem` sliced path；旧 `RefreshClimateDailyJob` 已删除。 | Partial native-ready / guarded ACTIVE owner flags；默认仍保留 GDScript round shell。 | Reset/abort/debug boundary、visible publish 与 sync sliced fallback 尚未完全退休。 |
 | `native_daily_sim` | `DCWorldExt::run_native_daily_slice()` 持有 graph continuation、node cursor、round accumulator；GDScript 只保留 SUS shell 与 bundle boundary。 | `SCHEDULE_GRAPH` 节点调用 C++ pass 写 slots。 | Graph report `published_slots`、`visual_dirty_intents`、`authority_report`、`authority_blockers`、`retained_boundaries`；必要时 flush 到 `MapData`。首片被预算跳过时，GDScript 的 transient `native_daily_day_pending` 持有 same-day barrier，continuation 再直接启动 job。 | 普通 ACTIVE 不再回 full-run；`run_native_daily_tick()` 只作 debug/probe，`run_native_sim_tick()` 作 SHADOW/A-B。 | `run_native_daily_slice` 是唯一 ACTIVE hot path；`graph_coverage_state=complete` 只由 simulation authority blockers 决定；`native_daily_legacy_daily_production_retired=true` 才允许 fallback/test-only handoff。 | Climate/weather/ocean/season owner gates 与 legacy fallback 未退休时仍阻塞；Godot/visual boundaries 只进 `retained_boundaries`；pending 标记不进入存档或 hash，reset 时清理。 |
-| `modifier_daily` | `ModifierRuntime` 持有四域 SoA、bucket、expiry heap、命令排序与 snapshot version。 | 不写领域 base slot；发布只读 effective 聚合。 | `MODIFIER_GRAPH` report、command result、journal；PKCM/PKGP 与 PKCN/PKEC 内嵌 domain。 | GDScript fallback 只消费同一 `evaluate_modifier_stat` 公式；无第二份可变 store。 | ACTIVE，priority 90、单 slice、无工作时零 slice。 | 独立 SHADOW 双算和目标规模性能门禁尚未完成。 |
+| `modifier_daily` | Host ACTIVE Modifier POD 为唯一写者；legacy `ModifierRuntime` 经 snapshot 回灌作只读视图。 | 不写领域 base slot；发布只读 effective 聚合。 | `MODIFIER_GRAPH` / `modifier_worker_authoritative` report、MDF2；PKCM/PKGP 与 PKCN/PKEC 内嵌 domain。 | grant 后 SUS/`run_modifier_daily` 无生产写入。 | Host ACTIVE（`0x040`），主线程抑制。 | Effect 已 F8 ACTIVE（`0x020`）。 |
 | `country_daily` | 生产 authority 为 Host `RuntimeCountryPodAuthority`（Country grant `0x004`）；`NativeCountryRuntime` 保留同步 fallback 与共享 CountryCore。 | Host 发布 immutable read-view/稀疏 patch；名称、科技、证据、国库、税表和 CSR 不暴露为主线程可变 worker store。 | 原子 `command_preflight → command_apply → aggregate_publish`；只有 `territory_generation` 改变才同步地块；研究可见性使用独立 `research_generation`；PKCN v13。 | 开关关闭、启动失败或未获 grant 时回退同步 runtime。 | 当前生产为 **ACTIVE（D12）**；旧 SUS `country_daily` 在实际 Country grant 下 no-op，避免同日双 authority。 | D7 跨域事务仍按 operation 分阶段，不等同于 Country core 未完成。 |
 | `economy_daily` | `NativeEconomyRuntime` 是同步生产 authority，持有 Population/Settlement/Market/Family/FamilyTrait/FamilyCellInfluence/NotablePerson stores、稀疏关系、BUILDING_GRAPH、国内 Trade、税务与财政 escrow。 | 独立 native vectors；due-cell sample 冻结七条环境 lane、国家/科技/税率、城市 Modifier 和资源再生 factor。 | 生产图继续执行 Economy 公式与审计；D7 Host transport 只承载已开放 operation 的 peer reservation/apply。 | 无大规模 GDScript fallback；Country worker 唯一写者场景下仅 M1 fiscal bridge 进入 gate，其余 operation 明确拒绝。 | 当前为 **SYNC（不在 ACTIVE mask）**；Economy 不得据此宣称 POD ACTIVE。 | M2 cohort、M3 market、M4 research、M5 treasury 的跨帧 continuation、恢复 reconciliation 和长期守恒证据仍未完成。 |
 | `weather_refresh` | `WeatherDCSystem` wrapper 内的 `WeatherRefreshJob` 持有 field stage/front state；`WeatherSystem` 持业务 facade。 | `DCWorldExt` weather field/distribute/summary/stage-b pass 与 GDScript fallback 写 weather slots。 | Weather commit flush、front apply、weather LUT upload intent/Godot upload。 | `WeatherRefreshJob` staged path；merged native 受 readiness gate。 | `weather_native_daily_readiness_report()` 证明 visible publish/front/LUT 后为 `native_ready`；`native_weather_transaction_active_owner_enabled=true` 后为 `native_active`，执行后可升 `native_active_verified`。 | WeatherFront Godot objects、front rebuild、ImageTexture/LUT upload、CSV visible fields 是 retained boundaries；publish readiness 未达成才是 blocker。 |
@@ -209,7 +209,7 @@ native transient diagnostics and are not parallel gameplay state.
 
 这里的“authority”指同步 `NativeEconomyRuntime` 的业务状态所有权，
 不表示 Economy 已进入 Host/POD `implemented_domain_mask`；当前正式 mask
-仍为 `0x806`，Economy 仍不在 ACTIVE grant 中。
+现为 `0x866`，Economy 仍不在 ACTIVE grant 中。
 
 `NativeEconomyRuntime` is stage, tick, state, and publish authority for rolling
 local settlement. GDScript only captures coarse environment/resource inputs,
@@ -368,9 +368,8 @@ diagnostic after the Climate trace barrier. It owns isolated shadow stores,
 emits typed intents/ACKs, and reports timing, hashes, and fallback reasons.
 The diagnostic runner itself is not an authority: `capability_mask()` is zero
 and MapData is never written. Production Host authority is independently
-`COMMIT | CLIMATE | COUNTRY (0x806)`; Modifier remains SHADOW-only and is not
-granted ACTIVE authority.
+`COMMIT | CLIMATE | COUNTRY | MODIFIER | EFFECT (0x866)`; Economy remains outside ACTIVE.
 
 # Modifier POD authority boundary
 
-Modifier E2-E7 已完成 worker-side SHADOW plan/replay，但未执行 E8。它拥有 numeric catalog、四域 store、稳定 replay、真实 ACK、immutable snapshot 和 MDF2 persistence；生产 authority 仍是主线程 legacy ModifierRuntime。因此 Modifier 不授予 ACTIVE grant，snapshot 只能在下一安全日边界被消费。该结论只描述 Modifier；D12 已将独立的 Country bit 加入当前 Host mask，使当前 mask 为 `0x806`。
+Modifier E2-E8 与 Effect F8 已完成：生产 ACTIVE 唯一写者、snapshot 回灌 legacy runtime、抑制对应 daily。当前 Host mask 为 `CLIMATE|COUNTRY|MODIFIER|EFFECT|COMMIT = 0x866`。

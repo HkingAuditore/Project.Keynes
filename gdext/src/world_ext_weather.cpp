@@ -3157,6 +3157,70 @@ double DCWorldExt::cyclone_wake_step(Dictionary &knobs,
 }
 
 // ─── plan/weather-refresh-cpp-all: cyclone perturbations 镜像导出 ────────
+bool DCWorldExt::runtime_weather_traj_snapshot(
+        int n_cells, std::vector<int32_t> &out_idx,
+        std::vector<float> &out_w) const {
+    out_idx.clear();
+    out_w.clear();
+    if (n_cells <= 0 || !_bound) return false;
+    const int sid_wx = component_id(StringName("cell_wind_x"));
+    const int sid_wy = component_id(StringName("cell_wind_y"));
+    const int sid_ws = component_id(StringName("cell_wind_speed"));
+    if (sid_wx < 0 || sid_wy < 0 || sid_ws < 0) return false;
+    // const 方法：用只读下标（_slots.write[] 在 const 语义下返回写代理，不能取引用）。
+    const Slot &s_wx = _slots[sid_wx];
+    const Slot &s_wy = _slots[sid_wy];
+    const Slot &s_ws = _slots[sid_ws];
+    if (int(s_wx.arr_f32.size()) != n_cells ||
+        int(s_wy.arr_f32.size()) != n_cells ||
+        int(s_ws.arr_f32.size()) != n_cells) {
+        return false;
+    }
+    // 与 run_weather_field_solve_pass / run_wind_air_pass 的消费契约逐条一致：
+    // 表已建、knob 允许消费、长度正确、指纹仍匹配当前风场。任何一条不满足都让
+    // worker 走和生产相同的 hopping 回退，而不是拿一张过期表插值。
+    if (!_phys_wind_traj_valid || !_phys_wind_traj_consume_enabled ||
+        int(_phys_wind_traj_idx.size()) != n_cells * 3 ||
+        int(_phys_wind_traj_w.size()) != n_cells * 3) {
+        return false;
+    }
+    if (pk_wind_state_fp(n_cells, s_wx.arr_f32.ptr(), s_wy.arr_f32.ptr(),
+                         s_ws.arr_f32.ptr()) != _phys_wind_traj_fp) {
+        return false;
+    }
+    out_idx = _phys_wind_traj_idx;
+    out_w = _phys_wind_traj_w;
+    return true;
+}
+
+std::vector<uint8_t> DCWorldExt::runtime_cyclone_state_blob() const {
+    // Vector2 → 标量是唯一的信息搬运；stable_id / key 原样保留，worker 沿用它做
+    // 确定性身份，genesis 侧仍由主线程发号。
+    std::vector<pk_async_climate::CycloneEntry> entries;
+    entries.reserve(_cyclone_perturbations.size());
+    for (const CycloneWakeEntry &src : _cyclone_perturbations) {
+        pk_async_climate::CycloneEntry dst;
+        dst.stable_id = src.stable_id;
+        dst.key = src.key;
+        dst.cell_idx = src.cell_idx;
+        dst.steering_x = src.steering.x;
+        dst.steering_y = src.steering.y;
+        dst.vec_x = src.vec.x;
+        dst.vec_y = src.vec.y;
+        dst.vec_init_x = src.vec_init.x;
+        dst.vec_init_y = src.vec_init.y;
+        dst.intensity = src.intensity;
+        dst.radius_cells = src.radius_cells;
+        dst.age_days = src.age_days;
+        dst.move_progress = src.move_progress;
+        dst.days_left = src.days_left;
+        dst.init_days = src.init_days;
+        entries.push_back(dst);
+    }
+    return pk_async_climate::cyclone_state_encode(entries, _cyclone_next_stable_id);
+}
+
+
 Dictionary DCWorldExt::get_cyclone_perturbations_dict() const {
     Dictionary out;
     out.clear();

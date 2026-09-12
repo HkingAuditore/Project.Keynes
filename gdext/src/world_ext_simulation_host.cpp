@@ -8,6 +8,7 @@
 #include "runtime_ideology_pod.h"
 
 #include <algorithm>
+#include <chrono>
 #include <cmath>
 #include <cstring>
 
@@ -774,6 +775,22 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
         out["code"] = "runtime_input_shape_mismatch";
         return out;
     }
+    // B8 P2：traj / monsoon 住在 DCWorldExt 的物理求解状态里，不是 input dict 的
+    // PackedArray，所以在形状校验之后直接从成员导出。traj 走与生产消费端完全相同的
+    // 资格 + 指纹校验；返回 false 就保持空，让 worker 与生产一起走 hopping 回退，
+    // 而不是拿一张过期表插值。monsoon 允许为零（物理求解还没产出）。
+    if (cells > 0) {
+        snapshot.cell_monsoon_thermal = _phys_monsoon_thermal;
+        if (snapshot.cell_monsoon_thermal.size() != cells) {
+            snapshot.cell_monsoon_thermal.clear();
+        }
+        if (!runtime_weather_traj_snapshot(static_cast<int>(cells),
+                                           snapshot.cell_wind_traj_idx,
+                                           snapshot.cell_wind_traj_w)) {
+            snapshot.cell_wind_traj_idx.clear();
+            snapshot.cell_wind_traj_w.clear();
+        }
+    }
     for (const int32_t neighbor : snapshot.neighbor_indices) {
         if (neighbor < -1 || (neighbor >= 0 &&
                 static_cast<size_t>(neighbor) >= cells)) {
@@ -1022,8 +1039,8 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
             // 起解析、:792 起收进 wfk）。默认值与 clamp 都要照抄：ClimateProfile 给
             // 越界值时只有 clamp 能让两侧落在同一个数上，而少一次 clamp 不会有任何
             // 人报错。
-            if (stage_knobs.has("stage_weather") &&
-                stage_knobs["stage_weather"].get_type() == Variant::DICTIONARY) {
+        if (stage_knobs.has("stage_weather") &&
+            stage_knobs["stage_weather"].get_type() == Variant::DICTIONARY) {
                 const Dictionary d = stage_knobs["stage_weather"];
                 auto wx = std::make_shared<pk_async_climate::WeatherFieldInput>();
                 wx->n_cells = static_cast<int>(cells);
@@ -1157,6 +1174,44 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
                 wx->wind_x = snapshot.cell_wind_x;
                 wx->wind_y = snapshot.cell_wind_y;
                 wx->wind_speed = snapshot.cell_wind_speed;
+                // B8 P2：把 weather field solve 的另外两条直接输入接上。
+                // traj 已通过生产的指纹/资格校验（capture 直接调用同一个 accessor），
+                // 为空就是"这一次不该消费"，worker 走 hopping。monsoon 是主线程
+                // 物理求解的派生量，求解器迁走之前它仍是输入而不是 worker 的状态。
+                wx->traj_idx = snapshot.cell_wind_traj_idx;
+                wx->traj_w = snapshot.cell_wind_traj_w;
+                wx->monsoon_thermal = snapshot.cell_monsoon_thermal;
+                // B8-2：cyclone 冷启动种子 + 推进参数。genesis 仍在主线程，所以
+                // 这里搬的是"当前活跃条目"，worker 接管后自行推进/衰减/stamp。
+                snapshot.cyclone_seed_blob = runtime_cyclone_state_blob();
+                snapshot.cyclone_enabled =
+                    kb("native_tropical_cyclone_enabled", false);
+                snapshot.cyclone_dt_days = kf("weather_transition_dt_days", 1.0f);
+                snapshot.cyclone_max_radius_cells =
+                    ki("tropical_cyclone_max_radius_cells", 5);
+                snapshot.cyclone_world_bounds_pos_y =
+                    kf("world_bounds_pos_y", 0.0f);
+                snapshot.cyclone_world_bounds_size_y =
+                    kf("world_bounds_size_y", 1.0f);
+                snapshot.cyclone_wrap_width_x =
+                    kf("weather_wrap_width_x", 0.0f);
+                snapshot.cyclone_storm_type_id = ki("cyclone_storm_type_id", -1);
+                snapshot.cyclone_capacity =
+                    ki("tropical_cyclone_capacity", 24);
+                snapshot.cyclone_births_per_commit =
+                    ki("tropical_cyclone_births_per_commit", 2);
+                snapshot.cyclone_min_temp =
+                    kf("tropical_cyclone_min_temp", 0.58f);
+                snapshot.cyclone_min_instability =
+                    kf("tropical_cyclone_min_instability", 0.40f);
+                snapshot.cyclone_max_shear =
+                    kf("tropical_cyclone_max_shear", 0.42f);
+                snapshot.cyclone_min_lat =
+                    kf("tropical_cyclone_min_lat", 0.06f);
+                snapshot.cyclone_max_lat =
+                    kf("tropical_cyclone_max_lat", 0.40f);
+                snapshot.cyclone_wake_days =
+                    kf("cyclone_wake_days", 32.0f);
                 wx->elevation = snapshot.cell_elevation;
                 wx->pos_x = snapshot.cell_pos_x;
                 wx->pos_y = snapshot.cell_pos_y;
@@ -1171,12 +1226,23 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
                 wx->vitality = snapshot.cell_vegetation_vitality;
                 wx->sea_ice = snapshot.cell_sea_ice_frac_prev;
                 wx->snow_cover = snapshot.cell_snow_cover;
-                // ψ / cyclone / monsoon / traj 在 ACTIVE 下没有写者：它们的推进输入
-                // 是风场，而 worker 的 wind pass 在 round 里比 weather 晚，自己推一份
-                // 只会把风场的分叉搬到 ψ 上（见 WeatherFieldInput::psi 的注释）。
-                // 留空 = 内核走无 ψ 分支，代价是降水少了移动涡旋这条主驱动
-                // （syn_base_lift 默认 1.55，是当前配置里最强的一项）。这是已知待办
-                // synoptic-own，不是这次接线的遗漏。
+                // B8-2：synoptic ψ 现在由 worker 自持。这里只把生产当天 solve 读到
+                // 的 ψ 作为**冷启动种子**传过去（worker 第一次见到该 lane 时播种，
+                // 之后自己推进）。风场仍是输入：物理环流求解器还在主线程（P2），
+                // 所以这不是"worker 缺状态"，而是"worker 用当天风场推进自己的 ψ"。
+                //
+                // cyclone / monsoon / traj 仍留空：cyclone 的跨天扰动表在生产成员
+                // 里，monsoon/traj 的写者还没迁；它们的待办见台账
+                // tools/runtime/climate_field_ownership.json 的 extra_policy_fields。
+                if (wx->synoptic_enabled && _wx_synoptic.size() == cells) {
+                    wx->psi = _wx_synoptic;
+                    if (_wx_synoptic_prev.size() == cells) {
+                        wx->psi_prev = _wx_synoptic_prev;
+                    }
+                } else {
+                    wx->psi.clear();
+                    wx->psi_prev.clear();
+                }
 
                 snapshot.climate_weather = wx;
 
@@ -1306,6 +1372,8 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
                 bf("vegetation_low_vitality_damping_threshold", 0.40f);
             k.succession_cooldown_days =
                 bi("vegetation_succession_cooldown_days", 30);
+            k.degrade_reset_target =
+                bf("vegetation_degrade_reset_target", 0.75f);
             k.stress_enabled = bool(stage_b.get("vegetation_stress_enabled", false));
             // stress_blend 生产侧算好再存，两侧各做一次除法会差 ULP。
             float memory_days = bf("vegetation_stress_memory_days", 30.0f);
@@ -1390,6 +1458,153 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
             }
         }
     }
+
+            // ── B8 P2：物理环流 prepass 的标量 ────────────────────────────────
+            // 由 MapBaker::runtime_physics_knobs() 投影出的 profile 常量；worker 用
+            // 自己的 lane，因此这里只要标量。缺 slp/wind 任一子字典就不置 ready，
+            // 并把第一个缺席的键名留给诊断（worker 不跑物理，不静默算错）。
+            // 注意：这张 dict 在这个作用域里重新取一次（上面那份 stage_knobs 在更内层
+            // 的作用域里）。capture 每帧一次，成本可忽略。
+            const Dictionary stage_knobs_phys =
+                inputs.has("climate_stage_knobs") &&
+                inputs["climate_stage_knobs"].get_type() == Variant::DICTIONARY
+                    ? Dictionary(inputs["climate_stage_knobs"]) : Dictionary();
+            if (stage_knobs_phys.has("physics_knobs") &&
+                stage_knobs_phys["physics_knobs"].get_type() == Variant::DICTIONARY) {
+                const Dictionary phys = stage_knobs_phys["physics_knobs"];
+                const bool has_slp = phys.has("slp") &&
+                    phys["slp"].get_type() == Variant::DICTIONARY;
+                const bool has_wind = phys.has("wind") &&
+                    phys["wind"].get_type() == Variant::DICTIONARY;
+                if (has_slp && has_wind) {
+                    const Dictionary slp = phys["slp"];
+                    const Dictionary wind = phys["wind"];
+                    auto pf = [](const Dictionary &dict, const char *key,
+                                 float fallback) {
+                        return dict.has(key) ? float(dict[key]) : fallback;
+                    };
+                    auto pi = [](const Dictionary &dict, const char *key,
+                                 int fallback) {
+                        return dict.has(key) ? int(dict[key]) : fallback;
+                    };
+                    auto pb = [](const Dictionary &dict, const char *key,
+                                 bool fallback) {
+                        return dict.has(key) ? bool(dict[key]) : fallback;
+                    };
+                    auto &pk_k = snapshot.climate_physics_knobs;
+                    pk_k.slp_lat_amp = pf(slp, "slp_lat_amp", pk_k.slp_lat_amp);
+                    pk_k.slp_land_amp = pf(slp, "slp_land_amp", pk_k.slp_land_amp);
+                    pk_k.slp_water_damp = pf(slp, "slp_water_damp", pk_k.slp_water_damp);
+                    pk_k.slp_interior_boost =
+                        pf(slp, "slp_interior_boost", pk_k.slp_interior_boost);
+                    pk_k.slp_coast_damp = pf(slp, "slp_coast_damp", pk_k.slp_coast_damp);
+                    pk_k.slp_thermal_weight =
+                        pf(slp, "wind_thermal_slp_weight", pk_k.slp_thermal_weight);
+                    pk_k.slp_ice_high_weight =
+                        pf(slp, "slp_ice_high_weight", pk_k.slp_ice_high_weight);
+                    pk_k.slp_snow_high_weight =
+                        pf(slp, "slp_snow_high_weight", pk_k.slp_snow_high_weight);
+                    pk_k.slp_moist_low_weight =
+                        pf(slp, "slp_moist_low_weight", pk_k.slp_moist_low_weight);
+                    pk_k.slp_response_rate =
+                        pf(slp, "slp_response_rate", pk_k.slp_response_rate);
+                    pk_k.slp_synoptic_amp =
+                        pf(slp, "slp_synoptic_amp", pk_k.slp_synoptic_amp);
+                    pk_k.slp_target_p95 =
+                        pf(slp, "slp_target_p95", pk_k.slp_target_p95);
+                    pk_k.slp_mobile_low_count =
+                        pi(slp, "slp_mobile_low_count", pk_k.slp_mobile_low_count);
+                    pk_k.slp_mobile_low_amp =
+                        pf(slp, "slp_mobile_low_amp", pk_k.slp_mobile_low_amp);
+                    pk_k.slp_mobile_low_sigma =
+                        pf(slp, "slp_mobile_low_sigma", pk_k.slp_mobile_low_sigma);
+                    pk_k.slp_mobile_low_period_days = pf(
+                        slp, "slp_mobile_low_period_days",
+                        pk_k.slp_mobile_low_period_days);
+                    pk_k.slp_smooth_passes =
+                        pi(slp, "smooth_passes", pk_k.slp_smooth_passes);
+                    pk_k.slp_recenter =
+                        pb(slp, "slp_recenter", pk_k.slp_recenter != 0) ? 1 : 0;
+                    pk_k.wind_response_rate =
+                        pf(wind, "wind_response_rate", pk_k.wind_response_rate);
+                    pk_k.wind_max_turn_deg_per_day = pf(
+                        wind, "wind_max_turn_deg_per_day",
+                        pk_k.wind_max_turn_deg_per_day);
+                    pk_k.wind_min_flux_for_dir_update = pf(
+                        wind, "wind_min_flux_for_dir_update",
+                        pk_k.wind_min_flux_for_dir_update);
+                    pk_k.wind_synoptic_amp =
+                        pf(wind, "wind_synoptic_amp", pk_k.wind_synoptic_amp);
+                    pk_k.wind_synoptic_period_days = pf(
+                        wind, "wind_synoptic_period_days",
+                        pk_k.wind_synoptic_period_days);
+                    pk_k.wind_terrain_aware =
+                        pi(wind, "terrain_aware", pk_k.wind_terrain_aware);
+                    pk_k.wind_belt_only_debug = pb(
+                        wind, "wind_belt_only_debug",
+                        pk_k.wind_belt_only_debug != 0) ? 1 : 0;
+                    pk_k.wind_momentum_advect_w = pf(
+                        wind, "wind_momentum_advect_w", pk_k.wind_momentum_advect_w);
+                    pk_k.wind_momentum_diffuse_w_daily = pf(
+                        wind, "wind_momentum_diffuse_w_daily",
+                        pk_k.wind_momentum_diffuse_w_daily);
+                    pk_k.wind_traj_table_enabled = pb(
+                        wind, "wind_traj_table_enabled",
+                        pk_k.wind_traj_table_enabled != 0) ? 1 : 0;
+                    pk_k.wind_traj_pos_scale = pf(
+                        wind, "wind_traj_pos_scale", pk_k.wind_traj_pos_scale);
+                    pk_k.wind_traj_dt_days = pf(
+                        wind, "wind_traj_dt_days", pk_k.wind_traj_dt_days);
+                    pk_k.wind_traj_weather_share = pb(
+                        wind, "wind_traj_weather_share",
+                        pk_k.wind_traj_weather_share != 0) ? 1 : 0;
+                    pk_k.wind_div_damp_alpha = pf(
+                        wind, "wind_div_damp_alpha", pk_k.wind_div_damp_alpha);
+                    pk_k.thermal_monsoon_enabled = pb(
+                        wind, "thermal_monsoon_enabled",
+                        pk_k.thermal_monsoon_enabled != 0) ? 1 : 0;
+                    pk_k.thermal_monsoon_lat_limit = pf(
+                        wind, "thermal_monsoon_lat_limit",
+                        pk_k.thermal_monsoon_lat_limit);
+                    pk_k.thermal_monsoon_deadband = pf(
+                        wind, "thermal_monsoon_deadband",
+                        pk_k.thermal_monsoon_deadband);
+                    pk_k.thermal_monsoon_full_contrast = pf(
+                        wind, "thermal_monsoon_full_contrast",
+                        pk_k.thermal_monsoon_full_contrast);
+                    pk_k.thermal_monsoon_gain = pf(
+                        wind, "thermal_monsoon_gain", pk_k.thermal_monsoon_gain);
+                    pk_k.thermal_monsoon_breeze_floor = pf(
+                        wind, "thermal_monsoon_breeze_floor",
+                        pk_k.thermal_monsoon_breeze_floor);
+                    pk_k.days_per_year =
+                        pi(slp, "days_per_year", pk_k.days_per_year);
+                    pk_k.axial_tilt_deg =
+                        pf(slp, "axial_tilt_deg", pk_k.axial_tilt_deg);
+                    pk_k.insolation_daylen_amp = pf(
+                        slp, "insolation_daylen_amp", pk_k.insolation_daylen_amp);
+                    pk_k.lat_lut_bins =
+                        pi(slp, "slp_lat_lut_bins", pk_k.lat_lut_bins);
+                    pk_k.land_lf_mountain =
+                        pi(wind, "land_lf_mountain", pk_k.land_lf_mountain);
+                    pk_k.land_lf_peak =
+                        pi(wind, "land_lf_peak", pk_k.land_lf_peak);
+                    pk_k.land_lf_hill =
+                        pi(wind, "land_lf_hill", pk_k.land_lf_hill);
+                    pk_k.ready = 1;
+                    pk_k.missing_key[0] = '\0';
+                } else {
+                    std::snprintf(
+                        snapshot.climate_physics_knobs.missing_key,
+                        sizeof(snapshot.climate_physics_knobs.missing_key),
+                        "%s", has_slp ? "physics_knobs.wind" : "physics_knobs.slp");
+                }
+            } else {
+                std::snprintf(
+                    snapshot.climate_physics_knobs.missing_key,
+                    sizeof(snapshot.climate_physics_knobs.missing_key),
+                    "physics_knobs");
+            }
 
     snapshot.topology_validated = cells > 0 &&
         ((!snapshot.neighbor_offsets.empty() &&
@@ -2195,9 +2410,56 @@ Array DCWorldExt::get_runtime_climate_parity_fields() const {
     return out;
 }
 
+Dictionary DCWorldExt::wait_climate_consumed(
+        int64_t after_environment_generation, int64_t timeout_ms) {
+    Dictionary out;
+    if (!_runtime_host) {
+        out["ok"] = false;
+        out["code"] = "runtime_worker_not_started";
+        // 契约：等待接口永远报告消费游标，即使 worker 从未启动 —— 调用方据此
+        // 保持自己的游标不动，而不是把缺失键当成 0。
+        out["consumed_generation"] = 0;
+        out["after_environment_generation"] = after_environment_generation;
+        out["waited_ms"] = 0.0;
+        return out;
+    }
+    if (after_environment_generation < 0) {
+        const RuntimeThreadReport snapshot = _runtime_host->report();
+        out["ok"] = false;
+        out["code"] = "climate_wait_generation_invalid";
+        out["consumed_generation"] =
+            static_cast<int64_t>(snapshot.climate_consumed_generation);
+        return out;
+    }
+    const auto started = std::chrono::steady_clock::now();
+    uint64_t consumed = 0;
+    std::string error;
+    const bool ok = _runtime_host->wait_climate_consumed(
+        static_cast<uint64_t>(after_environment_generation), timeout_ms,
+        consumed, error);
+    const double waited_ms = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - started).count();
+    out["ok"] = ok;
+    out["code"] = ok ? String("ok") : String(error.c_str());
+    out["waited_ms"] = waited_ms;
+    out["after_environment_generation"] = after_environment_generation;
+    out["consumed_generation"] = static_cast<int64_t>(consumed);
+    out["worker_state"] = static_cast<int>(_runtime_host->state());
+    const RuntimeThreadReport snapshot = _runtime_host->report();
+    out["climate_committed_day"] = snapshot.climate_committed_day;
+    out["environment_published_days"] =
+        static_cast<int64_t>(snapshot.environment_published_days);
+    out["environment_consumed_days"] =
+        static_cast<int64_t>(snapshot.environment_consumed_days);
+    out["environment_superseded_days"] =
+        static_cast<int64_t>(snapshot.environment_superseded_days);
+    return out;
+}
+
 Dictionary DCWorldExt::apply_runtime_climate_writeback(
         int64_t after_generation) {
     Dictionary out;
+    const auto writeback_start = std::chrono::steady_clock::now();
     if (!_runtime_host) {
         out["ok"] = false;
         out["code"] = "runtime_worker_not_started";
@@ -2409,11 +2671,43 @@ Dictionary DCWorldExt::apply_runtime_climate_writeback(
     const int64_t applied_day = snapshot.committed_day;
     const uint64_t applied_generation = snapshot.generation;
     const uint64_t applied_state_hash = snapshot.state_hash;
+    // B8 P0：把"回灌慢"拆成 memcpy（worker 快照 → slot）与 flush（slot → MapData）
+    // 两段。二者混在一个 total 里时，无法判断瓶颈是拷贝量还是 MapData 的写回路径，
+    // 而这两条要采取的措施完全不同。
+    const auto copy_done = std::chrono::steady_clock::now();
     // Release before flushing: the flush writes MapData, which the worker never
     // touches, so there is no reason to keep a ring slot occupied across it.
     _runtime_host->release_climate_writeback(slot);
 
     flush_slots_to_map_keys(touched_slots);
+    // B8 诊断（一次性）：确认天气场在 writeback 之后是否真的进了 MapData。用它
+    // 区分"flush 没写进去"与"写进去之后被同 tick 的主线程写者覆盖"。
+    {
+        static std::atomic<int> s_weather_wb_reports_left{4};
+        if (s_weather_wb_reports_left.fetch_sub(1, std::memory_order_relaxed) > 0) {
+            const Variant map_vapor = _map_data->get(StringName("weather_vapor_arr"));
+            float map_first = 0.0f;
+            float store_first = 0.0f;
+            if (map_vapor.get_type() == Variant::PACKED_FLOAT32_ARRAY) {
+                const PackedFloat32Array arr = map_vapor;
+                if (arr.size() > 0) map_first = arr[0];
+            }
+            if (!store.vapor.empty()) store_first = store.vapor[0];
+            std::fprintf(stderr,
+                "[climate/writeback][b8] day=%lld vapor store0=%.6g map0=%.6g "
+                "dirty_fields=%d applied=%d\n",
+                static_cast<long long>(applied_day), store_first, map_first,
+                static_cast<int>(touched_slots.size()), applied_fields);
+            std::fflush(stderr);
+        }
+    }
+    const auto flush_done = std::chrono::steady_clock::now();
+    const double copy_ms = std::chrono::duration<double, std::milli>(
+        copy_done - writeback_start).count();
+    const double flush_ms = std::chrono::duration<double, std::milli>(
+        flush_done - copy_done).count();
+    const double total_ms = std::chrono::duration<double, std::milli>(
+        flush_done - writeback_start).count();
 
     out["ok"] = true;
     // applied 只在真的写进了字段时为真。曾经这里无条件报 true，于是"回灌假活跃"
@@ -2428,7 +2722,11 @@ Dictionary DCWorldExt::apply_runtime_climate_writeback(
     // 读的就是这两个）。被 slot 守卫拒掉的字段是"worker 拥有但从不发布"的字段，
     // MapData 会静默停在转权威那天的值 —— 所以拒绝清单必须出得来，不能只报计数。
     out["applied_fields"] = applied_fields;
+    out["dirty_fields"] = touched_slots.size();
     out["skipped_fields"] = skipped;
+    out["memcpy_ms"] = copy_ms;
+    out["flush_map_ms"] = flush_ms;
+    out["total_ms"] = total_ms;
     out["drops"] =
         static_cast<int64_t>(_runtime_host->climate_writeback_drop_count());
     return out;

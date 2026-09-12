@@ -202,6 +202,213 @@ def compare_country_evidence(left_meta: dict, right_meta: dict):
     }
 
 
+def modifier_evidence_samples(sidecar: dict):
+    evidence = sidecar.get("modifier_evidence", {})
+    if evidence.get("schema") != "ModifierClientEvidence" or evidence.get("schema_version") != 1:
+        return None, {"field": "modifier_evidence", "detail": "schema_missing_or_invalid"}
+    indexed = {}
+    for sample in evidence.get("samples", []):
+        tick = int(sample.get("tick_idx", -1))
+        if tick < 0:
+            continue
+        indexed[tick] = {
+            "state_hash": int(sample.get("state_hash", 0)),
+            "snapshot_generation": int(sample.get("snapshot_generation", 0)),
+            "ack_count": int(sample.get("ack_count", 0)),
+        }
+    return indexed, None
+
+
+def compare_modifier_evidence(left_meta: dict, right_meta: dict, policy: dict) -> list[dict]:
+    """E8 ModifierClientEvidence: undeclared divergences are blockers.
+
+    Declared fields under policy['modifier_evidence'] use absolute_tolerance.
+    Compares per-tick samples when present; also compares sidecar summary keys.
+    """
+    mismatches: list[dict] = []
+    left, left_error = modifier_evidence_samples(left_meta)
+    right, right_error = modifier_evidence_samples(right_meta)
+    if left_error:
+        mismatches.append(left_error)
+    if right_error:
+        mismatches.append(right_error)
+    if left is None or right is None:
+        return mismatches
+
+    field_policy = policy.get("modifier_evidence", {})
+    left_ticks = set(left)
+    right_ticks = set(right)
+    for tick in sorted(right_ticks - left_ticks)[:50]:
+        mismatches.append({"field": "modifier_evidence", "tick_idx": tick, "detail": "missing_left_sample"})
+    for tick in sorted(left_ticks - right_ticks)[:50]:
+        mismatches.append({"field": "modifier_evidence", "tick_idx": tick, "detail": "missing_right_sample"})
+
+    compared_fields = ("state_hash", "snapshot_generation", "ack_count")
+    for tick in sorted(left_ticks & right_ticks):
+        for field in compared_fields:
+            left_value = left[tick][field]
+            right_value = right[tick][field]
+            abs_diff = abs(left_value - right_value)
+            if abs_diff == 0:
+                continue
+            limits = field_policy.get(field)
+            if not isinstance(limits, dict) or "absolute_tolerance" not in limits:
+                mismatches.append({
+                    "field": field,
+                    "tick_idx": tick,
+                    "detail": "undeclared_difference",
+                    "left": left_value,
+                    "right": right_value,
+                    "abs_diff": abs_diff,
+                })
+                continue
+            tolerance = float(limits.get("absolute_tolerance", 0.0))
+            if abs_diff > tolerance:
+                mismatches.append({
+                    "field": field,
+                    "tick_idx": tick,
+                    "detail": "declared_tolerance_exceeded",
+                    "left": left_value,
+                    "right": right_value,
+                    "abs_diff": abs_diff,
+                    "absolute_tolerance": tolerance,
+                })
+        if len(mismatches) >= 200:
+            break
+
+    # Summary keys (last sample) — catch recordings that only store aggregates.
+    for field in compared_fields:
+        left_summary = left_meta.get("modifier_evidence", {}).get(field)
+        right_summary = right_meta.get("modifier_evidence", {}).get(field)
+        if left_summary is None or right_summary is None:
+            continue
+        abs_diff = abs(int(left_summary) - int(right_summary))
+        if abs_diff == 0:
+            continue
+        limits = field_policy.get(field)
+        if not isinstance(limits, dict) or "absolute_tolerance" not in limits:
+            mismatches.append({
+                "field": field,
+                "detail": "undeclared_summary_difference",
+                "left": int(left_summary),
+                "right": int(right_summary),
+                "abs_diff": abs_diff,
+            })
+        elif abs_diff > float(limits.get("absolute_tolerance", 0.0)):
+            mismatches.append({
+                "field": field,
+                "detail": "declared_summary_tolerance_exceeded",
+                "left": int(left_summary),
+                "right": int(right_summary),
+                "abs_diff": abs_diff,
+                "absolute_tolerance": float(limits.get("absolute_tolerance", 0.0)),
+            })
+    return mismatches
+
+
+def effect_evidence_samples(sidecar: dict):
+    evidence = sidecar.get("effect_evidence", {})
+    if evidence.get("schema") != "EffectClientEvidence" or evidence.get("schema_version") != 1:
+        return None, {"field": "effect_evidence", "detail": "schema_missing_or_invalid"}
+    indexed = {}
+    for sample in evidence.get("samples", []):
+        tick = int(sample.get("tick_idx", -1))
+        if tick < 0:
+            continue
+        indexed[tick] = {
+            "state_hash": int(sample.get("state_hash", 0)),
+            "snapshot_generation": int(sample.get("snapshot_generation", 0)),
+            "ack_count": int(sample.get("ack_count", 0)),
+        }
+    return indexed, None
+
+
+def compare_effect_evidence(left_meta: dict, right_meta: dict, policy: dict) -> list[dict]:
+    """F8 EffectClientEvidence: undeclared divergences are blockers.
+
+    Declared fields under policy['effect_evidence'] use absolute_tolerance.
+    Compares per-tick samples when present; also compares sidecar summary keys.
+    """
+    mismatches: list[dict] = []
+    left, left_error = effect_evidence_samples(left_meta)
+    right, right_error = effect_evidence_samples(right_meta)
+    if left_error:
+        mismatches.append(left_error)
+    if right_error:
+        mismatches.append(right_error)
+    if left is None or right is None:
+        return mismatches
+
+    field_policy = policy.get("effect_evidence", {})
+    left_ticks = set(left)
+    right_ticks = set(right)
+    for tick in sorted(right_ticks - left_ticks)[:50]:
+        mismatches.append({"field": "effect_evidence", "tick_idx": tick, "detail": "missing_left_sample"})
+    for tick in sorted(left_ticks - right_ticks)[:50]:
+        mismatches.append({"field": "effect_evidence", "tick_idx": tick, "detail": "missing_right_sample"})
+
+    compared_fields = ("state_hash", "snapshot_generation", "ack_count")
+    for tick in sorted(left_ticks & right_ticks):
+        for field in compared_fields:
+            left_value = left[tick][field]
+            right_value = right[tick][field]
+            abs_diff = abs(left_value - right_value)
+            if abs_diff == 0:
+                continue
+            limits = field_policy.get(field)
+            if not isinstance(limits, dict) or "absolute_tolerance" not in limits:
+                mismatches.append({
+                    "field": field,
+                    "tick_idx": tick,
+                    "detail": "undeclared_difference",
+                    "left": left_value,
+                    "right": right_value,
+                    "abs_diff": abs_diff,
+                })
+                continue
+            tolerance = float(limits.get("absolute_tolerance", 0.0))
+            if abs_diff > tolerance:
+                mismatches.append({
+                    "field": field,
+                    "tick_idx": tick,
+                    "detail": "declared_tolerance_exceeded",
+                    "left": left_value,
+                    "right": right_value,
+                    "abs_diff": abs_diff,
+                    "absolute_tolerance": tolerance,
+                })
+        if len(mismatches) >= 200:
+            break
+
+    for field in compared_fields:
+        left_summary = left_meta.get("effect_evidence", {}).get(field)
+        right_summary = right_meta.get("effect_evidence", {}).get(field)
+        if left_summary is None or right_summary is None:
+            continue
+        abs_diff = abs(int(left_summary) - int(right_summary))
+        if abs_diff == 0:
+            continue
+        limits = field_policy.get(field)
+        if not isinstance(limits, dict) or "absolute_tolerance" not in limits:
+            mismatches.append({
+                "field": field,
+                "detail": "undeclared_summary_difference",
+                "left": int(left_summary),
+                "right": int(right_summary),
+                "abs_diff": abs_diff,
+            })
+        elif abs_diff > float(limits.get("absolute_tolerance", 0.0)):
+            mismatches.append({
+                "field": field,
+                "detail": "declared_summary_tolerance_exceeded",
+                "left": int(left_summary),
+                "right": int(right_summary),
+                "abs_diff": abs_diff,
+                "absolute_tolerance": float(limits.get("absolute_tolerance", 0.0)),
+            })
+    return mismatches
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--left-csv", required=True, type=Path)
@@ -318,6 +525,12 @@ def main() -> int:
         country_evidence = compare_country_evidence(left_meta, right_meta)
         if country_evidence["status"] != "pass":
             blockers.append({"reason": "country_client_evidence_mismatch"})
+    modifier_mismatches = compare_modifier_evidence(left_meta, right_meta, policy)
+    for item in modifier_mismatches:
+        blockers.append({"reason": "modifier_client_evidence_mismatch", **item})
+    effect_mismatches = compare_effect_evidence(left_meta, right_meta, policy)
+    for item in effect_mismatches:
+        blockers.append({"reason": "effect_client_evidence_mismatch", **item})
     status = "pass" if not blockers else "release_blocker"
     report = {"schema": "AuthorityStageCTileComparison", "schema_version": 1, "status": status,
               "left": str(args.left_csv), "right": str(args.right_csv), "policy": str(args.policy),
@@ -326,6 +539,8 @@ def main() -> int:
               "missing": {"only_left": only_left, "only_right": only_right},
               "numeric_issues": {"left": left_issues, "right": right_issues},
               "field_results": results, "country_evidence": country_evidence,
+              "modifier_evidence_mismatches": modifier_mismatches,
+              "effect_evidence_mismatches": effect_mismatches,
               "known_expected_fields": [row["field"] for row in known_expected], "blockers": blockers}
     (args.output_dir / "comparison.json").write_text(json.dumps(report, indent=2, allow_nan=False), encoding="utf-8")
     with (args.output_dir / "comparison.csv").open("w", encoding="utf-8-sig", newline="") as stream:

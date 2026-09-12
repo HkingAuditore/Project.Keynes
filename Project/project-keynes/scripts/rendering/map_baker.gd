@@ -573,6 +573,7 @@ var _phys_water_ids_cache: PackedByteArray = PackedByteArray()
 var _phys_knobs_base_slp: Dictionary = {}
 var _phys_knobs_base_wind: Dictionary = {}
 var _phys_knobs_base_psi: Dictionary = {}
+var _runtime_physics_knobs_reported: bool = false
 var _phys_knobs_base_up: Dictionary = {}
 # DOTS-Final-Push 任务 6.2：upwelling C++ 路径选择诊断（once-only）。
 # stage 6 GDScript fallback ~92ms 是当前最大瓶颈。原因可能是 _phys_wind_done_by_cpp
@@ -727,6 +728,12 @@ func _bake_initial_physical_circulation(map: MapData, world: WorldData, hex_size
 	_initial_physical_deferred = false
 	if not _use_physical_circulation(cfg):
 		return
+	# B8 P2：物理 knob base 在 bake 期就建好，而不是等第一次 _physical_solve_step_one。
+	# 否则「物理求解被策略门挡住」的存档里 MapGenerator 拿不到标量，worker 侧物理
+	# prepass 永远判未就绪（实测 soak day1 ready=0 missing=physics_knobs）。
+	if map != null and world != null:
+		var bake_profile: ClimateProfile = cfg.climate_profile if cfg != null else _climate_profile
+		_phys_ensure_knob_cache(map, hex_size, world.world_bounds, bake_profile, cfg)
 	var ext_ready_now: bool = _world_ext != null and map != null and map.has_indices() and map.has_soa()
 	if not ext_ready_now and ClassDB.class_exists("DCWorldExt"):
 		_initial_physical_deferred = true
@@ -6379,6 +6386,49 @@ func prime_physical_solve_from_current_wind(map: MapData, season_phase: float) -
 # PackedArray（neighbor_indices / water_ids）引用，不复制。
 # 注意：若后续给某 stage 增加新的常量 knob 字段，必须同步加到此处的 base，
 # 否则该字段会在缓存命中时被遗漏（变化字段由 stage 内显式设置，不受影响）。
+# B8 P2：worker 侧物理 prepass 需要同一批标量。这里的投影只保留标量键（丢 per-cell
+# 数组），由 MapGenerator 随环境快照下发；worker 用自己的 lane，因此数组没有意义。
+# 新增字段时只需加进对应 base dict —— 投影自动带走，不必再维护第二份清单。
+const _PHYS_LANE_KNOB_KEYS: Array[StringName] = [
+	&"neighbor_indices", &"water_terrain_ids", &"cell_pos", &"cell_q_arr",
+	&"cell_r_arr", &"prev_slp_arr", &"slp_arr", &"wind_x_arr", &"wind_y_arr",
+	&"wind_speed_arr", &"n_cells",
+]
+
+
+## B8 P2：四个物理 stage base dict 的标量投影（worker 侧 prepass 用）。
+## 返回 {"slp": {...}, "wind": {...}, "psi": {...}, "upwelling": {...}}；
+## 未构建过 base（bake 还没跑）时返回空 dict，调用方按"未就绪"处理。
+func runtime_physics_knobs() -> Dictionary:
+	if _phys_knobs_base_slp.is_empty() or _phys_knobs_base_wind.is_empty():
+		if not _runtime_physics_knobs_reported:
+			_runtime_physics_knobs_reported = true
+			print("[phys/knobs] projection empty (slp=%d wind=%d) — bake 未跑或物理未启用"
+				% [_phys_knobs_base_slp.size(), _phys_knobs_base_wind.size()])
+		return {}
+	if not _runtime_physics_knobs_reported:
+		_runtime_physics_knobs_reported = true
+		print("[phys/knobs] projection ready: slp=%d wind=%d psi=%d up=%d" % [
+			_phys_knobs_base_slp.size(), _phys_knobs_base_wind.size(),
+			_phys_knobs_base_psi.size(), _phys_knobs_base_up.size()])
+	return {
+		"slp": _phys_scalar_knob_projection(_phys_knobs_base_slp),
+		"wind": _phys_scalar_knob_projection(_phys_knobs_base_wind),
+		"psi": _phys_scalar_knob_projection(_phys_knobs_base_psi),
+		"upwelling": _phys_scalar_knob_projection(_phys_knobs_base_up),
+	}
+
+
+func _phys_scalar_knob_projection(src: Dictionary) -> Dictionary:
+	var out: Dictionary = {}
+	for k in src.keys():
+		if k is StringName or k is String:
+			if String(k) in _PHYS_LANE_KNOB_KEYS:
+				continue
+		out[k] = src[k]
+	return out
+
+
 func _phys_ensure_knob_cache(map: MapData, hex_size: float, bounds: Rect2,
 		profile: ClimateProfile, cfg: MapConfig) -> void:
 	if _phys_knob_cache_map == map and _phys_knob_cache_profile == profile \

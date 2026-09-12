@@ -521,6 +521,10 @@ struct VegetationDynamicsKnobs {
     float succession_min_compat_gain = 0.0f;
     float low_vitality_damping_threshold = 0.40f;
     int32_t succession_cooldown_days = 30;
+    // 生产 GDScript 演替后处理用的"降级后 vitality 重置目标"（默认 0.75；升级用
+    // 固定 0.7）。worker 自持演替时必须拿到同一个值，否则同一次演替后两侧 vitality
+    // 会系统性分叉。
+    float degrade_reset_target = 0.75f;
     // 只有 use_soa=true 的 stage_b 路径能开；关闭时 heat/drought/cold/regen 四条
     // in/out lane 允许为 nullptr。
     bool  stress_enabled = false;
@@ -1076,6 +1080,193 @@ void synoptic_advance_pure(int n_cells,
                            const SynopticAdvanceKnobs &knobs,
                            std::vector<float> &psi,
                            std::vector<float> &psi_prev);
+
+// ─── stage 11 WEATHER：tropical cyclone 推进 + stamp（B8-2 自持）────────────
+//
+// 生产把它放在 DCWorldExt::_advance_and_stamp_cyclones（world_ext_weather.cpp），
+// 在 weather field solve 的 start_idx==0 处调用一次；worker 现在也自持同一份状态与
+// 同一段数学。为了让内核不依赖 godot::Vector2，条目里的向量拆成标量、位置拆成
+// pos_x/pos_y 两条 lane —— 数学逐行照搬，不做任何"顺手优化"。
+//
+// 状态所有权：
+//   * entries / next_stable_id 是跨天状态（可变长），生产在 DCWorldExt 成员里，
+//     worker 在 kernel scratch 里，两者都通过 cyclone_state_encode/decode 走同一种
+//     blob（capture 播种 + CLM2 持久化）。
+//   * force_tag/visit_tag/force_x/y/lift 是当天派生 lane，由调用方持有。
+//
+// genesis（cyclone_wake_step 从前沿注入新气旋）仍留在主线程：它消费 WeatherFront
+// 对象。本内核只负责已有气旋的推进、衰减与 stamp。
+struct CycloneAdvanceKnobs {
+    bool    enabled = false;
+    float   dt_days = 1.0f;
+    float   world_bounds_pos_y = 0.0f;
+    float   world_bounds_size_y = 1.0f;
+    float   wrap_width_x = 0.0f;
+    int32_t max_radius_cells = 5;
+};
+
+struct CycloneEntry {
+    uint64_t stable_id = 0;
+    int64_t  key = 0;              // cell.q * 10000 + cell.r
+    int32_t  cell_idx = -1;
+    float    steering_x = 0.0f;
+    float    steering_y = 0.0f;
+    float    vec_x = 0.0f;
+    float    vec_y = 0.0f;
+    float    vec_init_x = 0.0f;
+    float    vec_init_y = 0.0f;
+    float    intensity = 0.0f;
+    float    radius_cells = 2.0f;
+    float    age_days = 0.0f;
+    float    move_progress = 0.0f;
+    int32_t  days_left = 0;        // compatibility projection
+    int32_t  init_days = 0;
+};
+
+struct CycloneLanes {
+    const int32_t *neighbors = nullptr;   // [n_cells * 6]
+    const float   *pos_x = nullptr;
+    const float   *pos_y = nullptr;
+    // 规范纬度（cell_lat_norm，0..1，赤道=0.5）。可空。
+    //
+    // 为什么不能只用 pos_y / world_bounds：`_world_bounds` 是世界矩形，而
+    // cell_pos_y 是格子局部世界坐标。两者尺度并不一致（例：50x48 地图上
+    // water_ny ∈ [0.026,0.068]），按 world bounds 归一化得到的"纬度"会整体贴边，
+    // 纬度带过滤器于是恒不命中。lat_norm 是 temp_baseline 用的同一条几何量，
+    // 也是"纬度"的唯一规范来源；空指针时退回 world-y 公式（对拍/单测用）。
+    const float   *lat_norm = nullptr;
+    const uint8_t *terrain = nullptr;
+    const float   *temp = nullptr;
+    const float   *wind_x = nullptr;
+    const float   *wind_y = nullptr;
+    const float   *wind_speed = nullptr;
+    const float   *vapor = nullptr;
+    const float   *instability = nullptr;
+    const float   *convergence = nullptr;
+};
+
+struct CycloneStamp {
+    uint32_t *force_tag = nullptr;   // [n_cells]
+    uint32_t *visit_tag = nullptr;   // [n_cells]
+    float    *force_x = nullptr;     // [n_cells]
+    float    *force_y = nullptr;     // [n_cells]
+    float    *lift = nullptr;        // [n_cells]
+    uint32_t force_generation = 1u;
+    uint32_t visit_generation = 1u;
+};
+
+struct CycloneStats {
+    int32_t touched_cells = 0;
+    int32_t decayed = 0;
+    int32_t alive = 0;
+    // 推进前后的最大 intensity：用来区分"出生即死"是衰减项太狠（温度/势能
+    // 项）还是 evict 条件（<0.075 / age>32）本身不对。
+    float   entry_intensity_max_before = 0.0f;
+    float   entry_intensity_max_after = 0.0f;
+};
+
+// genesis（出生）：生产版消费 WeatherFront 对象（type==STORM && intensity>=0.8 +
+// 前沿 center/velocity），而前沿由 C++-only 的 summary pass 产出、ACTIVE 下主线程
+// 天气被抑制时根本不存在。共享内核因此改成**基于格子状态**的等价判据：
+//   * 前沿等价物 = 当天 weather_intensity >= intensity_gate(0.8) 的格子。
+//     注意不能要求 weather_type == STORM：field solve 只有在已有 cyclone stamp
+//     （cyclone_lift >= 0.58）时才把 type 写成 STORM，拿它当出生条件就是闭锁
+//     （new storm 永远生不出来）。require_storm_type 只为复现旧闭锁做 A/B。
+//     而 front 的 intensity 本来就从这条 intensity lane 派生，所以两者同源。
+//   * 前沿 velocity 等价物 = 该格当天风场（前沿本来就随风移动）；
+//   * 前沿 center → 格子的 world→qr 反查不需要了：候选格自己就是注入点；
+//   * 唯一键用 cell_idx（生产用 q*10000+r，只用于"同格覆盖"，在 worker 内等价）。
+// 其余阈值（水陆、温度、降水、云量、对流/辐合、风切变、纬度带、容量、每次出生数）
+// 与生产 native-entity 路径逐条一致；纬度带用规范 lat_norm（生产用的
+// world-y/world_bounds 在小地图上是退化量，见 CycloneLanes::lat_norm 注释）。
+struct CycloneGenesisKnobs {
+    bool    enabled = false;
+    int32_t storm_type_id = -1;
+    int32_t capacity = 24;
+    int32_t births_per_commit = 2;
+    float   min_temp = 0.58f;
+    float   min_instability = 0.40f;
+    float   max_shear = 0.42f;
+    float   min_lat = 0.06f;
+    float   max_lat = 0.40f;
+    float   world_bounds_pos_y = 0.0f;
+    float   world_bounds_size_y = 1.0f;
+    float   intensity_gate = 0.8f;
+    float   precip_gate = 0.05f;
+    float   cloud_gate = 0.22f;
+    float   wake_days = 32.0f;
+    // 生产 genesis 消费 WeatherFront.type（summary 段产物）。worker 里没有 front
+    // 对象，等价判据是 field solve 的 intensity lane，所以默认不查 weather_type。
+    // 置 true 时额外要求格子当前已被分类为 storm（只有已有 stamp 才可能成立），
+    // 仅供 A/B 复现"旧闭锁奇偶"排查用。
+    bool    require_storm_type = false;
+};
+
+struct CycloneGenesisLanes {
+    const uint8_t *terrain = nullptr;          // [n_cells]
+    const uint8_t *water_lut = nullptr;        // [256] water terrain ids
+    const uint8_t *weather_type = nullptr;     // [n_cells]
+    const float   *weather_intensity = nullptr;// [n_cells]
+    const float   *temp = nullptr;             // [n_cells]
+    const float   *precip = nullptr;           // [n_cells]
+    const float   *cloud = nullptr;            // [n_cells]
+    const float   *instability = nullptr;      // [n_cells]
+    const float   *convergence = nullptr;      // [n_cells]
+    const float   *wind_x = nullptr;           // [n_cells]
+    const float   *wind_y = nullptr;           // [n_cells]
+    const float   *pos_y = nullptr;            // [n_cells]
+    const float   *lat_norm = nullptr;         // [n_cells]，可空，语义同 CycloneLanes
+    const int32_t *neighbors = nullptr;        // [n_cells * 6]
+    const uint8_t *is_water = nullptr;         // [n_cells]，可空（用 LUT 判定）
+};
+
+struct CycloneGenesisStats {
+    int32_t injected = 0;
+    int32_t replaced = 0;
+    int32_t alive = 0;
+    // 漏斗计数（诊断用）：每一格候选按顺序过闸，失败即停。soak 里
+    // "injected=0" 时靠这四个数判断是水陆/纬度/物理量还是强度门槛挡住。
+    int32_t cand_water = 0;     // 过水陆
+    int32_t cand_lat = 0;       // 过纬度带
+    int32_t cand_physical = 0;  // 过 temp/precip/cloud/instability
+    int32_t cand_intensity = 0; // 过 intensity_gate
+    int32_t cand_shear = 0;     // 过风切变（= 真正可出生）
+    // 物理闸细分（只在纬度带内累加）：四个条件各自失败多少格。
+    int32_t fail_temp = 0;
+    int32_t fail_precip = 0;
+    int32_t fail_cloud = 0;
+    int32_t fail_instability = 0;
+    // 纬度带内水格里当前 weather_type == storm_type_id 的个数。用来区分
+    // "worker 分类根本没产出 STORM（气候不够强）"与"产出了但强度不够"。
+    int32_t type_storm = 0;
+    float   max_intensity = 0.0f;
+    float   max_precip = 0.0f;
+    float   max_cloud = 0.0f;
+    float   max_instability = 0.0f;
+    float   max_convergence = 0.0f;
+};
+
+void cyclone_genesis_pure(int n_cells,
+                          const CycloneGenesisKnobs &knobs,
+                          const CycloneGenesisLanes &lanes,
+                          std::vector<CycloneEntry> &entries,
+                          uint64_t &next_stable_id,
+                          CycloneGenesisStats &stats);
+
+void cyclone_advance_and_stamp_pure(int n_cells,
+                                    const CycloneAdvanceKnobs &knobs,
+                                    const CycloneLanes &lanes,
+                                    std::vector<CycloneEntry> &entries,
+                                    CycloneStamp &stamp,
+                                    CycloneStats &stats);
+
+// blob：u32 magic "CYC1" + u32 version + u32 count + u64 next_stable_id + count × record。
+// 生产 capture、worker 冷启动播种与 CLM2 ABI 6 持久化共用同一份编码。
+std::vector<uint8_t> cyclone_state_encode(const std::vector<CycloneEntry> &entries,
+                                          uint64_t next_stable_id);
+void cyclone_state_decode(const std::vector<uint8_t> &blob,
+                          std::vector<CycloneEntry> &entries,
+                          uint64_t &next_stable_id);
 
 // ─── stage 11 WEATHER：field solve 主循环 ───────────────────────────────────
 //
@@ -1756,9 +1947,12 @@ struct WeatherFieldInput {
     // 播种，之后走自己的演化 —— 否则 parity 就退化成"把生产的状态抄一遍"。
     std::vector<float>    conv_inhib;
     // ψ 记的是生产在 solve 前刚推进完的那一帧（也就是 solve 实际读到的）。
-    // worker 不自己推进 ψ：它的推进输入是风场与归一化温度，而 wind pass 还没提取，
-    // 自己推一份只会把风场的分叉搬到 ψ 上。wind 提取完之后这条换成 worker 自持。
+    // B8-2 起 worker 自持 ψ：这一对 lane 只作为**冷启动/恢复后的播种值**，worker
+    // 第一次见到齐长 lane 时把它拷进自己的 scratch，之后每个 weather 日用自己的
+    // 风场与归一化温度推进（见 RuntimeClimateKernel::_synoptic_psi）。psi_prev
+    // 只在播种时需要，用来给第一次推进一个正确的平流历史。
     std::vector<float>    psi;
+    std::vector<float>    psi_prev;
     std::vector<uint32_t> cyclone_tag;
     uint32_t              cyclone_generation = 0;
     std::vector<float>    cyclone_lift;

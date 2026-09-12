@@ -2,6 +2,7 @@
 
 #include "runtime_authoritative_domains.h"
 #include "runtime_climate_passes.h"
+#include "runtime_climate_physics.h"
 
 #include <array>
 #include <cstdint>
@@ -73,6 +74,67 @@ enum class RuntimeClimateStage : uint8_t {
 constexpr size_t RUNTIME_CLIMATE_STAGE_COUNT =
     static_cast<size_t>(RuntimeClimateStage::COUNT);
 
+// ─── Canonical Climate stage order（B8 P0）───────────────────────────────────
+//
+// 生产 native daily graph 的 climate 子集与 worker kernel 的日序必须来自同一张
+// 表。两边各写一份手序时，任何一侧单独改动都只会在数值对拍里表现成"算法分叉"，
+// 而分叉矩阵只能告诉你"哪个字段不同"，告诉不了你"哪一侧的顺序错了"。
+//
+// 这张表描述**一个仿真日内 stage 的相对顺序**，不是 graph 数组下标：
+//   * round 的 8 个 pass 先跑；
+//   * weather 段（field → commit → distribute → summary → cyclone）随后；
+//   * hydrology 有独立 stride，跑在 weather 之后；
+//   * albedo / vegetation_dynamics / climate_feedback 是生产 stage_b 的三段。
+//     默认配置（runtime_hydrology_enabled=false）下它们内嵌在 weather_stage_b
+//     节点、跑在 weather 之后；开启 hydrology 时改由 stage_b_after_hydrology
+//     节点承载，同样在 weather 之后、hydrology 之后。生产 graph 数组里另有
+//     一组"条件早宿主"节点（albedo / vegetation_dynamics / climate_feedback /
+//     stage_b），只在 weather 内嵌关闭时才非空，它们不属于 canonical 顺序。
+//
+// 判定规则（契约测试与 runtime_climate_stage_order_self_test 都跑这一条）：
+//   表里下标越小的 stage 必须先执行；未列出的 stage 视为"不在这一天执行"。
+// STAGE_B_AFTER_HYDROLOGY 只出现在诊断近似回退路径（没有共享 round 时），
+// 因此排在表尾并标注为 fallback tail。
+enum class RuntimeClimateStageOrderKind : uint8_t {
+    // 共享/生产路径都会执行的核心阶段。
+    CORE = 0,
+    // 只在一个仿真日内条件执行（stride 未到期时不跑），但一旦执行必须在表中位置。
+    CONDITIONAL = 1,
+    // 诊断近似回退路径（无共享 round）专用的尾段，不具备 parity 语义。
+    FALLBACK_TAIL = 2,
+};
+
+struct RuntimeClimateStageOrderEntry {
+    RuntimeClimateStage stage;
+    RuntimeClimateStageOrderKind kind;
+};
+
+// 声明序即执行序。新增 stage 必须插进这张表，而不是只在 kernel 里加一次
+// run_stage 调用 —— 否则契约测试立刻失败。
+constexpr size_t RUNTIME_CLIMATE_CANONICAL_ORDER_COUNT =
+    RUNTIME_CLIMATE_STAGE_COUNT;
+extern const RuntimeClimateStageOrderEntry
+    RUNTIME_CLIMATE_CANONICAL_ORDER[RUNTIME_CLIMATE_CANONICAL_ORDER_COUNT];
+
+// Returns RUNTIME_CLIMATE_STAGE_COUNT when the stage is not in the canonical
+// order (COUNT included, which is not a stage).
+size_t runtime_climate_canonical_order_index(RuntimeClimateStage stage);
+
+// "PASS_A>PASS_B>..."。用于报告与 soak 日志，避免读者再去翻枚举。
+const char *runtime_climate_canonical_order_names();
+
+// Validates the table itself: every real stage appears exactly once, CORE and
+// CONDITIONAL entries precede FALLBACK_TAIL, and the weather group sits after
+// the round passes. This is what makes the table trustworthy as a contract.
+bool runtime_climate_stage_order_self_test(std::string &error);
+
+// Validates a recorded execution sequence (RuntimeClimateKernelReport::
+// stage_sequence) against the canonical order. Returns false with a human
+// readable reason naming the first out-of-order pair, so a soak log can say
+// "WEATHER ran before TRANSPIRATION" instead of "contract failed".
+bool runtime_climate_stage_sequence_is_canonical(
+        const uint8_t *sequence, size_t count, std::string &error);
+
 // 生产侧用的位常量（runtime_climate_passes.h）必须与本枚举一致，否则 production /
 // worker 两个掩码会各说各话，而它们的差集正是"缺哪个 stage"的判据。
 static_assert(pk_async_climate::CLIMATE_STAGE_BIT_PASS_A ==
@@ -128,6 +190,21 @@ struct RuntimeClimateKernelReport {
     // 30 日窗口里其实占大多数，把它们混在一起会严重高估剩余工作量。
     int production_stage_mask = 0;
     int stage_ran_mask = 0;
+    // 实际执行序：按 run_stage 的调用顺序记录 stage。位掩码回答"跑没跑"，这一条
+    // 回答"按什么顺序跑"——B8-1 修的就是后者，而掩码对顺序完全不可见。契约测试与
+    // soak 用 runtime_climate_stage_sequence_is_canonical() 校验它。
+    std::array<uint8_t, RUNTIME_CLIMATE_STAGE_COUNT> stage_sequence{};
+    uint32_t stage_sequence_count = 0;
+    // B8-2：worker 自持 cyclone 的当日事实。soak 的 JSON 证据靠这几个数，
+    // stderr 的 [climate/worker][b8] 诊断只用于人工排查；两者必须同源。
+    int32_t cyclone_alive = 0;
+    // injected/replaced/decayed 是**累计值**（自 kernel 初始化/播种起），alive 与
+    // touched 是当日值。累计值才能让 soak 在任意采样点判定"这段跑里有没有气旋
+    // 出生/衰减" —— 逐日值在采样点上几乎总是 0（weather 是节拍制）。
+    int32_t cyclone_injected = 0;
+    int32_t cyclone_replaced = 0;
+    int32_t cyclone_decayed = 0;
+    int32_t cyclone_touched = 0;
     char error[64]{};
 };
 
@@ -224,6 +301,31 @@ private:
     // 后者是"这格初始化过没有"的一次性标记，经 snapshot extras 回灌 MapData。
     mutable std::vector<float> _weather_conv_inhib;
     mutable std::vector<uint8_t> _weather_field_init_scratch;
+    // True once field_init has been seeded from a real record (or written by the
+    // weather commit). stage_b reads it after the weather段 now, so an
+    // unseeded scratch must not masquerade as "weather never initialized".
+    mutable bool _weather_field_init_seeded = false;
+    // B8 P2 §4.2：物理环流常驻状态（SLP/风/ψ/洋流/上涌/coast 缓存/traj 表 +
+    // 全部 scratch）。worker 侧唯一所有权人；synoptic ψ 与 cyclone 条目分别住在
+    // 这份 state（`synoptic_psi*`）与 kernel 的 `_cyclone_*`（后者是 climate 库
+    // 类型，避免 physics → climate 反向依赖）。见 runtime_climate_physics.h。
+    mutable pk_async_physics::RuntimeClimatePhysicsState _physics;
+    // B8-2：worker 自持的 tropical cyclone 状态。entries 是跨天状态（blob 持久化），
+    // 其余四条是当天派生 lane；generation 用于 tag 的"本轮是否被 stamp"判定。
+    mutable std::vector<pk_async_climate::CycloneEntry> _cyclone_entries;
+    mutable std::vector<uint32_t> _cyclone_force_tag;
+    mutable std::vector<uint32_t> _cyclone_visit_tag;
+    mutable std::vector<float> _cyclone_force_x;
+    mutable std::vector<float> _cyclone_force_y;
+    mutable std::vector<float> _cyclone_lift;
+    mutable uint32_t _cyclone_force_generation = 0;
+    mutable uint64_t _cyclone_next_stable_id = 1;
+    mutable bool _cyclone_seeded = false;
+    // 累计动作计数（自 kernel 初始化/播种起）。逐日值在 soak 的采样点上几乎恒为 0
+    // （weather 是节拍制），所以对外只报累计值 + 当日 alive/touched。
+    mutable uint64_t _cyclone_total_injected = 0;
+    mutable uint64_t _cyclone_total_replaced = 0;
+    mutable uint64_t _cyclone_total_decayed = 0;
     // staged next buffer：生产 weather_advance → weather_commit 两步之间的中转。
     // worker 走同一条 staged 路径，所以也要自己的一份。
     mutable std::vector<float>   _wx_next_vapor;

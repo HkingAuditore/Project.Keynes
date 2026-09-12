@@ -188,6 +188,9 @@ public:
                                         uint32_t &slot);
     const RuntimeModifierPodSnapshot &modifier_snapshot_buffer(uint32_t slot) const;
     void release_modifier_snapshot(uint32_t slot);
+    bool try_acquire_effect_snapshot(uint64_t after_generation, uint32_t &slot);
+    const RuntimeEffectPodSnapshot &effect_snapshot_buffer(uint32_t slot) const;
+    void release_effect_snapshot(uint32_t slot);
     bool modifier_pod_self_test(std::string *error = nullptr) const;
     uint64_t modifier_pod_catalog_hash() const {
         return _modifier_pod_configured ? _modifier_pod_catalog.catalog_hash : 0;
@@ -303,12 +306,18 @@ public:
         //   requested_authority_mask  per-session, from the start() caller; must
         //                             be a subset of this one.
         //   completed_domain_mask     per-day report of what actually ran.
-        // Climate + Country ship ACTIVE-authoritative in production as of
-        // 2026-09-11 (world_runtime_host.gd requests 0x806 when
-        // runtime_climate_authority_enabled). Other gameplay domains stay off.
+        // Climate + Country + Modifier + Effect ship ACTIVE-authoritative in
+        // production as of F8 (world_runtime_host.gd requests 0x866 when
+        // runtime_climate_authority_enabled). Contract: authoritative & EFFECT
+        // => worker is the sole Effect writer; snapshot write-back targets
+        // legacy EffectRuntime; only effect_runtime / run_effect_daily is
+        // suppressed. MODIFIER intents ACK in-worker; other domains use the
+        // main-thread intent pump.
         return runtime_domain_mask(RuntimeDomainId::COMMIT)
             | runtime_domain_mask(RuntimeDomainId::CLIMATE)
-            | runtime_domain_mask(RuntimeDomainId::COUNTRY);
+            | runtime_domain_mask(RuntimeDomainId::COUNTRY)
+            | runtime_domain_mask(RuntimeDomainId::MODIFIER)
+            | runtime_domain_mask(RuntimeDomainId::EFFECT);
     }
     RuntimeWorkerState state() const {
         return _state.load(std::memory_order_acquire);
@@ -336,6 +345,18 @@ public:
     uint64_t climate_writeback_drop_count() const {
         return _climate_writeback.publish_drop_count();
     }
+    // B8 P3：ACTIVE Climate 的主线程等待边界。等到 worker 已经评估过
+    // `after_generation` 这份环境（plan 尝试，不要求提交成功）。timeout_ms < 0
+    // 表示等到条件满足为止；>= 0 是一次有界等待切片，调用方负责在外层循环里
+    // 继续等并在此期间 pump 主线程侧 peer 服务（GDScript facade 就是这么做的：
+    // 纯 C++ 条件变量等待无法回调 Godot 服务 Country/Economy barrier）。
+    //
+    // 终止条件（故障保护，不是性能超时）：worker 进入 FAULTED/STOPPING/STOPPED、
+    // Climate 权威被撤销、或 stop 被请求。此时返回 false 并给出 code，调用方按
+    // 当时的 authority 状态决定回主线程还是结束 tick。
+    bool wait_climate_consumed(uint64_t after_generation, int64_t timeout_ms,
+                               uint64_t &consumed_generation,
+                               std::string &error);
     // Whether a given domain may be suppressed on the main thread this frame.
     bool domain_is_worker_authoritative(RuntimeDomainId domain) const {
         return (authoritative_domain_mask() & runtime_domain_mask(domain)) != 0u;
@@ -402,6 +423,18 @@ private:
     bool execute_effect_worker_stage(int64_t day, uint64_t input_generation,
                                      RuntimeDayCommit &commit,
                                      std::string &error);
+    // E8: shared Modifier POD stage for SHADOW diagnostics and ACTIVE
+    // production. authority_plan is non-null only on SHADOW (fixture ACK /
+    // domain-runner commit). ACTIVE passes nullptr. Failure isolates
+    // Modifier — callers must not roll back Climate/Country already
+    // committed the same day.
+    bool execute_modifier_worker_stage(
+            int64_t day, uint64_t input_generation,
+            const std::vector<RuntimeCommandPacket> &day_commands,
+            bool effect_upstream_ok,
+            RuntimeDomainAuthorityPlan *authority_plan,
+            std::string &authority_error,
+            std::string &error);
     void publish_country_command_terminals(
             const std::vector<RuntimeCountryCommand> &commands,
             CountryCommandReceiptCode code, uint64_t generation,
@@ -499,6 +532,10 @@ private:
 
     mutable std::mutex _control_mutex;
     std::condition_variable _control_cv;
+    // B8 P3：主线程交付等待专用。不能复用 _control_cv —— worker 的日循环也在
+    // 同一个 CV 上等 preflight 重试，而 worker 自己在消费环境后 notify 会让它
+    // 自唤醒自旋（实测 50 天内 3200 万次不提交的重试）。
+    std::condition_variable _climate_wait_cv;
     std::atomic<uint32_t> _reaper_count{0};
     std::thread _worker;
     RuntimeSnapshotRing _snapshots;
@@ -513,6 +550,22 @@ private:
     std::atomic<bool> _environment_topology_validated{false};
     std::atomic<uint64_t> _invalid_environment_rejected{0};
     std::atomic<uint64_t> _stale_environment_rejected{0};
+    // B8 P0 delivery cursors. `published` counts accepted publishes; `consumed`
+    // counts plan attempts (not commits) so the main thread can wait for an
+    // input to be *seen* without requiring the day to succeed. `superseded`
+    // counts published days that a newer publish overwrote before the worker
+    // planned against them — the single latest-value slot's silent loss.
+    std::atomic<uint64_t> _environment_published_days{0};
+    std::atomic<uint64_t> _environment_consumed_days{0};
+    std::atomic<uint64_t> _environment_superseded_days{0};
+    std::atomic<uint64_t> _environment_dropped_days{0};
+    std::atomic<uint64_t> _climate_consumed_generation{0};
+    // 上一个被记录进 environment_consumed_days 的代次。无效天重试会反复评估同一
+    // 份环境；把它算成"消费了一天"会让计数变成重试次数而不是交付天数。
+    std::atomic<uint64_t> _climate_last_counted_generation{0};
+    std::atomic<uint64_t> _climate_wait_total_ms{0};
+    std::atomic<uint64_t> _climate_wait_last_ms{0};
+    std::atomic<uint64_t> _climate_wait_max_ms{0};
     RuntimeClimateTrace _climate_trace;
     std::atomic<uint64_t> _climate_trace_latest_hash{0};
     std::atomic<uint64_t> _climate_trace_consumed{0};
@@ -675,6 +728,13 @@ private:
     // 1 << RuntimeClimateStage。见 RuntimeThreadReport::climate_production_stage_mask。
     std::atomic<int32_t> _climate_production_stage_mask{0};
     std::atomic<int32_t> _climate_worker_stage_mask{0};
+    // B8-2：worker 自持 cyclone 的当日事实。见
+    // RuntimeThreadReport::climate_cyclone_alive。
+    std::atomic<int32_t> _climate_cyclone_alive{0};
+    std::atomic<int32_t> _climate_cyclone_injected{0};
+    std::atomic<int32_t> _climate_cyclone_replaced{0};
+    std::atomic<int32_t> _climate_cyclone_decayed{0};
+    std::atomic<int32_t> _climate_cyclone_touched{0};
     std::atomic<double> _time_debt_days{0.0};
     std::array<std::atomic<char>, 64> _fault_code{};
     std::atomic<uint64_t> _state_hash{1469598103934665603ull};
@@ -712,6 +772,7 @@ private:
     int64_t _events_last_processed_day = -1;
     RuntimeEffectPodAuthority _effect_pod_authority;
     RuntimeEffectPodCatalog _effect_pod_catalog;
+    RuntimeEffectSnapshotRing _effect_snapshots;
     bool _effect_pod_configured = false;
     struct EffectPodMetricQueueItem {
         int64_t instance_id = 0;

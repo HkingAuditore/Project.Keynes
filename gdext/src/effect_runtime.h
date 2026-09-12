@@ -18,6 +18,9 @@ class ModifierRuntime;
 class NativeCountryRuntime;
 class NativeEconomyRuntime;
 class DCWorldExt;
+struct RuntimeEffectPodBehaviorInput;
+struct RuntimeEffectPodBehaviorOutput;
+struct RuntimeEffectPodSnapshot;
 
 // Generic effect plan/transaction authority. It evaluates immutable catalog
 // programs against submitted POD snapshots and emits typed commands. Domain
@@ -182,6 +185,15 @@ public:
     static bool register_behavior(const std::string &behavior_id,
                                   BehaviorFn fn);
     static bool unregister_behavior(const std::string &behavior_id);
+    // F8: POD catalog compile / invoke resolve registered behaviors by id or
+    // hash. Missing implementations are hard failures (no silent fallback).
+    static BehaviorFn find_behavior(const std::string &behavior_id);
+    static BehaviorFn find_behavior_hash(uint64_t behavior_id_hash);
+    static bool has_behavior(const std::string &behavior_id);
+    static bool invoke_pod_behavior(
+        uint64_t behavior_id_hash,
+        const struct RuntimeEffectPodBehaviorInput &input,
+        struct RuntimeEffectPodBehaviorOutput &output, std::string &error);
 
     godot::Dictionary configure(const godot::Dictionary &catalog);
     // Native domain runtimes use this POD entry point at structural commit
@@ -302,6 +314,11 @@ public:
     godot::Dictionary submit_instances(const godot::Dictionary &batch);
     godot::Dictionary submit_snapshots(const godot::Dictionary &batch);
     godot::Dictionary run_daily(int64_t day_index);
+    // F8 ACTIVE write-back: replace instance/transaction/metric state from the
+    // worker-committed POD snapshot. Generation must be monotonic.
+    bool apply_pod_snapshot(const struct RuntimeEffectPodSnapshot &snapshot,
+                            std::string &error);
+    uint64_t pod_snapshot_generation() const { return _pod_snapshot_generation; }
     // Native production bridge. It submits typed Modifier commands without
     // constructing a Godot Dictionary/Callable per effect transaction.
     godot::Dictionary dispatch_native_modifier(ModifierRuntime *modifier_runtime);
@@ -785,6 +802,8 @@ private:
     double _last_era_reward_plan_ms = 0.0;
     uint64_t _era_reward_offers_planned = 0;
     int32_t _last_era_reward_expanded_commands = 0;
+    // F8: last applied worker snapshot generation (0 = never applied).
+    uint64_t _pod_snapshot_generation = 0;
 };
 
 } // namespace pk

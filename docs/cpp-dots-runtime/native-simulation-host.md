@@ -9,7 +9,7 @@
 `world_ext_simulation_host.cpp` 做参数校验、PackedArray 深拷贝和轻量轮询；worker 不保存
 `Object`、`Variant`、`Dictionary`、`MapData` 或场景树引用。
 
-当前 `implemented_domain_mask()` 为 `CLIMATE | COUNTRY | COMMIT = 0x806`。Modifier、Economy 等仍不在 ACTIVE authority mask。因此：
+当前 `implemented_domain_mask()` 为 `CLIMATE | COUNTRY | MODIFIER | EFFECT | COMMIT = 0x866`。Economy 等仍不在 ACTIVE authority mask。因此：
 
 - `SHADOW` 可以启动，用于时钟、命令排序、环境快照、提交环和故障路径测试；
 - `ACTIVE` 在缺少任一 native POD domain handler 时直接返回
@@ -56,7 +56,7 @@ intents; the host exposes those intents and accepts only real Effect ACKs. A
 missing, stale, rejected, or not-yet-returned ACK leaves the transition pending
 and never becomes final ACTIVE ideology state. The synchronous ideology runtime
 remains the production reference, and this stage does not alter
-`implemented_domain_mask() == 0x806`.
+`implemented_domain_mask() == 0x866`.
 
 Climate 边界现在还保留一份独立的 `RuntimeClimatePodSnapshot`：温度、湿度、雪盖、
 30 日 EMA、水分平衡、降水、天气强度、植被活力、anomaly 和 RNG 均为深拷贝 POD。
@@ -162,23 +162,20 @@ the ACTIVE mask until all asset operations have peer reservation/apply
 persistence, cross-frame continuation, generation reconciliation, and
 long-run conservation evidence.
 
-## Modifier POD shadow stage
+## Modifier POD ACTIVE stage (E8)
 
-阶段 E2-E7 的 Modifier stage 位于 EFFECT -> MODIFIER -> ... -> COMMIT，执行完整 POD plan/replay、expiry、五个 opcode、ACK 校验和 snapshot publish。Modifier commit 前必须先成功预留 snapshot slot；ACK 缺失、容量溢出、身份不匹配或 snapshot shape/catalog hash 错误都会 discard plan，不 swap current、不发布 snapshot、不推进 generation，并写入 modifier_pod_fallback_reason。
+Modifier stage 位于 EFFECT -> MODIFIER -> ... -> COMMIT，SHADOW 与 ACTIVE 共用 `execute_modifier_worker_stage`。生产 ACTIVE（mask `0x866`）在 Country 之后、Climate park 日跳过对齐 Country：独立 Effect stage → Modifier；成功日写入 EFFECT/MODIFIER 位。失败隔离。
 
-Modifier 不改变 implemented_domain_mask == 0x806。legacy ModifierRuntime 仍负责生产 daily，Host 只运行 SHADOW 对照；capture 后 ingress 自动延迟至下一安全日边界，main_wait_on_sim_us 保持为零。
+grant 后：Host 为 Modifier/Effect 唯一写者；主线程抑制 modifier/effect daily；非阻塞 snapshot 回灌；非 Modifier Effect intents 主线程 pump+ACK；`main_wait_on_sim_us` 保持 0。
 
-## Effect POD shadow stage (F7)
+## Effect POD ACTIVE stage (F8)
 
-F7 在 Ideology 之后、Modifier 之前接入真实 `RuntimeEffectPodAuthority` 日 stage：
+F8 在 Ideology 之后、Modifier 之前跑独立 ACTIVE Effect stage：
 
-1. 主线程 best-effort 镜像 declarative instance/metric/remove 到 Host transport 队列。
-2. Worker drain 队列 → `apply_acks` → `plan_day` → 发布 outbound intents → `commit_day`。
-3. 当 Effect POD catalog 非空且 stage 成功时，Modifier 只消费 Effect POD 的 MODIFIER
-   intents，并忽略 diagnostic `RuntimeDomainAuthorityRunner::run_effect` fixture intents；
-   Modifier ACK 回灌 `_effect_pod_authority.apply_acks`。
-4. 空冷启动 catalog 不启用该 stage，Modifier E7 继续使用 fixture 上游。
-5. `implemented_domain_mask` 仍为 `CLIMATE|COUNTRY|COMMIT = 0x806`；legacy
-   `EffectRuntime` 仍是生产权威。F8 前不抑制主线程 Effect、不授予 ACTIVE。
+1. grant `0x020` 后 submit/retire 只走 Host transport（sole-writer）。
+2. Worker：drain → apply_acks → plan_day → intents → commit_day → snapshot ring。
+3. MODIFIER intents 同日 Modifier stage ACK；COUNTRY/ECONOMY/GAMEPLAY 由主线程非阻塞 poll→ACK。
+4. Behavior 经 EffectRuntime 注册表桥接；缺实现 hard-fail。
+5. 主线程回灌 EffectRuntime；graph/SUS 抑制 evaluate+dispatch。
 
-Report 暴露 `effect_pod_ready/plan_ms/replay_ms/state_hash/snapshot_generation/ack_count/intent_count/fallback_reason`。
+Report 暴露 `effect_pod_*` 与 `effect_worker_authoritative`。

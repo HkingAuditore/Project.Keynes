@@ -336,7 +336,24 @@ public:
     // "generation" by the previous successful call. Non-blocking, and a no-op
     // when the worker has not committed a newer day.
     godot::Dictionary apply_runtime_climate_writeback(int64_t after_generation);
+    // B8 P3: block until the worker has evaluated environment generation
+    // `after_environment_generation` (plan attempt, not necessarily a commit).
+    // timeout_ms < 0 waits until the condition or a terminal worker state;
+    // >= 0 is one bounded slice that the caller loops over while pumping
+    // main-thread peer transport between slices.
+    godot::Dictionary wait_climate_consumed(
+        int64_t after_environment_generation, int64_t timeout_ms = -1);
     bool runtime_climate_writeback_self_test() const;
+    // B8 P2：把"生产当前可用"的 wind traj 表导出给 capture。判定与 weather
+    // field solve 的消费端同一契约：表已建 + knob 允许消费 + 指纹仍然匹配当前
+    // 风场。返回 false 表示这次不该消费 traj（worker 与生产一起走 hopping 回退），
+    // 而不是"没有这张表"。
+    bool runtime_weather_traj_snapshot(int n_cells,
+                                       std::vector<int32_t> &out_idx,
+                                       std::vector<float> &out_w) const;
+    // B8-2：把生产 cyclone 条目表编码成 worker/存档共用的 blob。空 blob = 当前没有
+    // 活跃气旋（仍然是一次有效播种：worker 会接管空表并自行推进）。
+    std::vector<uint8_t> runtime_cyclone_state_blob() const;
     bool runtime_snapshot_ring_self_test() const;
     bool runtime_domain_pod_self_test() const;
     bool runtime_authoritative_domains_self_test() const;
@@ -346,6 +363,11 @@ public:
     // reason to be actionable, and a bare false is what let earlier gaps sit
     // behind a green light.
     godot::Dictionary runtime_climate_parity_contract_test() const;
+    // B8 P0: proves the worker kernel's canonical stage order and the
+    // production native-daily graph order are the same contract. A single
+    // reorder on either side fails here instead of surfacing as a numerical
+    // divergence weeks later.
+    godot::Dictionary runtime_climate_stage_order_contract_test() const;
     bool runtime_country_pod_authority_self_test() const;
     bool runtime_country_core_protocol_self_test();
     bool runtime_country_peer_protocol_self_test();
@@ -453,6 +475,8 @@ public:
                                               const godot::PackedByteArray &bytes);
     godot::Dictionary clear_modifier_domain(int domain);
     godot::Dictionary get_runtime_modifier_snapshot(int64_t after_generation);
+    godot::Dictionary apply_runtime_modifier_snapshot(int64_t after_generation);
+    godot::Dictionary apply_runtime_effect_snapshot(int64_t after_generation);
     godot::Dictionary runtime_modifier_pod_self_test() const;
 
     // Generic trigger runtime. It only ingests committed facts/snapshots and

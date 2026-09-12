@@ -306,25 +306,41 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
         if (over_budget()) break;
         if (_effect_runtime != nullptr &&
             static_cast<EffectRuntime *>(_effect_runtime)->should_run(day)) {
-            ran(run_effect_daily(day), DIRTY_EVENTS);
-            // A native effect transaction can be waiting for an ACK even when
-            // the peer runtime has no independent daily work.  ACK every
-            // adapter after effect evaluation so the transaction can reach a
-            // terminal state instead of keeping effect_should_run() hot.
-            if (_effect_runtime != nullptr) {
-                dispatch_effect_native_country();
-                dispatch_effect_native_economy();
-                dispatch_effect_native_modifier();
-                dispatch_effect_native_gameplay();
-                ack_effect_native_country();
-                ack_effect_native_economy();
-                ack_effect_native_modifier();
-                ack_effect_native_gameplay();
+            const bool effect_worker_authoritative = _runtime_host != nullptr &&
+                _runtime_host->domain_is_worker_authoritative(
+                    RuntimeDomainId::EFFECT);
+            if (!effect_worker_authoritative) {
+                ran(run_effect_daily(day), DIRTY_EVENTS);
+                // A native effect transaction can be waiting for an ACK even when
+                // the peer runtime has no independent daily work.  ACK every
+                // adapter after effect evaluation so the transaction can reach a
+                // terminal state instead of keeping effect_should_run() hot.
+                if (_effect_runtime != nullptr) {
+                    dispatch_effect_native_country();
+                    dispatch_effect_native_economy();
+                    if (!(_runtime_host != nullptr &&
+                          _runtime_host->domain_is_worker_authoritative(
+                              RuntimeDomainId::MODIFIER))) {
+                        dispatch_effect_native_modifier();
+                    }
+                    dispatch_effect_native_gameplay();
+                    ack_effect_native_country();
+                    ack_effect_native_economy();
+                    if (!(_runtime_host != nullptr &&
+                          _runtime_host->domain_is_worker_authoritative(
+                              RuntimeDomainId::MODIFIER))) {
+                        ack_effect_native_modifier();
+                    }
+                    ack_effect_native_gameplay();
+                }
+                progressed = true;
             }
-            progressed = true;
         }
         if (over_budget()) break;
-        if (_modifier_runtime != nullptr &&
+        const bool modifier_worker_authoritative = _runtime_host != nullptr &&
+            _runtime_host->domain_is_worker_authoritative(
+                RuntimeDomainId::MODIFIER);
+        if (!modifier_worker_authoritative && _modifier_runtime != nullptr &&
             static_cast<ModifierRuntime *>(_modifier_runtime)->should_run(day)) {
             if (_effect_runtime != nullptr) dispatch_effect_native_modifier();
             ran(run_modifier_daily(day), DIRTY_COUNTRY_STATE);
@@ -581,6 +597,36 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
             static_cast<int>(host.climate_production_stage_mask);
         out["climate_worker_stage_mask"] =
             static_cast<int>(host.climate_worker_stage_mask);
+        // B8-2：worker 自持 cyclone 的当日事实（soak/C3 的 JSON 证据来源）。
+        out["climate_cyclone_alive"] = static_cast<int>(host.climate_cyclone_alive);
+        out["climate_cyclone_injected"] =
+            static_cast<int>(host.climate_cyclone_injected);
+        out["climate_cyclone_replaced"] =
+            static_cast<int>(host.climate_cyclone_replaced);
+        out["climate_cyclone_decayed"] =
+            static_cast<int>(host.climate_cyclone_decayed);
+        out["climate_cyclone_touched"] =
+            static_cast<int>(host.climate_cyclone_touched);
+        // B8 P0：交付游标。见 RuntimeThreadReport 的注释 —— 这组数字把
+        // "worker 慢"（consumed 落后 published）与"输入被覆盖"（superseded）
+        // 分开，是背压策略与 50/50 验收的判据。
+        out["climate_committed_day"] = host.climate_committed_day;
+        out["climate_consumed_generation"] =
+            static_cast<int64_t>(host.climate_consumed_generation);
+        out["environment_published_days"] =
+            static_cast<int64_t>(host.environment_published_days);
+        out["environment_consumed_days"] =
+            static_cast<int64_t>(host.environment_consumed_days);
+        out["environment_superseded_days"] =
+            static_cast<int64_t>(host.environment_superseded_days);
+        out["environment_dropped_days"] =
+            static_cast<int64_t>(host.environment_dropped_days);
+        out["climate_wait_total_ms"] =
+            static_cast<int64_t>(host.climate_wait_total_ms);
+        out["climate_wait_last_ms"] =
+            static_cast<int64_t>(host.climate_wait_last_ms);
+        out["climate_wait_max_ms"] =
+            static_cast<int64_t>(host.climate_wait_max_ms);
         out["climate_trace_depth"] = static_cast<int>(host.climate_trace_depth);
         out["climate_trace_front_day"] = host.climate_trace_front_day;
         out["climate_trace_lag_days"] = host.climate_trace_lag_days;
@@ -639,6 +685,12 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
             host.country_worker_catalog_hash);
         out["country_worker_last_reason"] = String(host.country_worker_last_reason);
         out["country_worker_authoritative"] = host.country_worker_authoritative;
+        out["modifier_worker_authoritative"] =
+            (host.authoritative_domain_mask &
+             runtime_domain_mask(RuntimeDomainId::MODIFIER)) != 0u;
+        out["effect_worker_authoritative"] =
+            (host.authoritative_domain_mask &
+             runtime_domain_mask(RuntimeDomainId::EFFECT)) != 0u;
         out["country_parity_compared"] = host.country_parity_compared != 0;
         out["country_parity_matched"] = host.country_parity_matched != 0;
         out["country_parity_compared_count"] = static_cast<int64_t>(
@@ -850,6 +902,12 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
             host.country_worker_catalog_hash);
         out["country_worker_last_reason"] = String(host.country_worker_last_reason);
         out["country_worker_authoritative"] = host.country_worker_authoritative;
+        out["modifier_worker_authoritative"] =
+            (host.authoritative_domain_mask &
+             runtime_domain_mask(RuntimeDomainId::MODIFIER)) != 0u;
+        out["effect_worker_authoritative"] =
+            (host.authoritative_domain_mask &
+             runtime_domain_mask(RuntimeDomainId::EFFECT)) != 0u;
         out["country_parity_compared"] = host.country_parity_compared != 0;
         out["country_parity_matched"] = host.country_parity_matched != 0;
         out["country_parity_compared_count"] = static_cast<int64_t>(
