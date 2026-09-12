@@ -1,0 +1,117 @@
+﻿{
+    "schema":  "ClimateB8SoakCompare",
+    "schema_version":  1,
+    "generated_utc":  "2026-09-11T10:12:35.0011928Z",
+    "left":  {
+                 "label":  "OFF",
+                 "days":  12,
+                 "authority":  true,
+                 "artifacts":  "D:\\Godot\\ProjectKeynes\\Project.Keynes\\artifacts\\runtime\\climate-b8\\e1\\canonical"
+             },
+    "right":  {
+                  "label":  "ACTIVE",
+                  "days":  12,
+                  "authority":  true,
+                  "artifacts":  "D:\\Godot\\ProjectKeynes\\Project.Keynes\\artifacts\\runtime\\climate-b8\\e1\\legacy"
+              },
+    "compared_ticks":  3,
+    "field_count":  9,
+    "verdict":  "declared_gap",
+    "regressions":  [
+
+                    ],
+    "declared_gaps":  [
+                          {
+                              "field":  "temp_arr",
+                              "tick":  5,
+                              "reason":  "B8-3 + one-day authority lag: ACTIVE applies day N-1 through the write-back, so the same tick is compared one simulated day apart; the remaining amplitude is the B8 stage_b/stage-order work. Evidence: b8-ab-on/off 40x32 12d 2026-09-11.",
+                              "violations":  "nz 28 \u003e 16"
+                          },
+                          {
+                              "field":  "plant_available_water_arr",
+                              "tick":  5,
+                              "reason":  "B8-3 plant_available_water / WB30 magnitude: pre-P1 worker PAW only moves on the vegetation_dynamics cadence. Evidence: b8-ab-on/off 40x32 12d 2026-09-11.",
+                              "violations":  "mean 0.59517 \u003e 0.04000; nz 847 \u003e 32"
+                          },
+                          {
+                              "field":  "sea_ice_frac_arr",
+                              "tick":  5,
+                              "reason":  "B8-3 sea-ice amplitude: historic client defect (insolation amplitude + frozen seasonal signal), fix tracked by the parity probe rather than the soak band. Evidence: b8-ab-on/off 40x32 12d 2026-09-11.",
+                              "violations":  "max 0.06755 \u003e 0.05000"
+                          }
+                      ],
+    "worst_deltas":  [
+                         {
+                             "field":  "moisture_arr",
+                             "tick":  5,
+                             "nz_delta":  0,
+                             "mean_delta":  0.016053097828990004,
+                             "min_delta":  0.0090487673878669045,
+                             "max_delta":  0
+                         },
+                         {
+                             "field":  "temp_arr",
+                             "tick":  5,
+                             "nz_delta":  28,
+                             "mean_delta":  0.011929525681262043,
+                             "min_delta":  0,
+                             "max_delta":  0.023088157176970991
+                         },
+                         {
+                             "field":  "vegetation_growth_pressure_arr",
+                             "tick":  10,
+                             "nz_delta":  0,
+                             "mean_delta":  0.0012801237404349991,
+                             "min_delta":  0.017984628677368997,
+                             "max_delta":  0
+                         },
+                         {
+                             "field":  "plant_available_water_arr",
+                             "tick":  5,
+                             "nz_delta":  847,
+                             "mean_delta":  0.595172648917651,
+                             "min_delta":  0.0441455319523811,
+                             "max_delta":  0
+                         },
+                         {
+                             "field":  "snow_cover_arr",
+                             "tick":  10,
+                             "nz_delta":  5,
+                             "mean_delta":  0.0033182349137860015,
+                             "min_delta":  0,
+                             "max_delta":  0
+                         },
+                         {
+                             "field":  "soil_moisture_arr",
+                             "tick":  10,
+                             "nz_delta":  0,
+                             "mean_delta":  0.00017227345472300287,
+                             "min_delta":  1.3853423297405243E-06,
+                             "max_delta":  1.490116119401419E-05
+                         },
+                         {
+                             "field":  "sea_ice_frac_arr",
+                             "tick":  5,
+                             "nz_delta":  31,
+                             "mean_delta":  0.0089767854799902014,
+                             "min_delta":  0,
+                             "max_delta":  0.0675499998033046
+                         },
+                         {
+                             "field":  "insolation_dev_arr",
+                             "tick":  5,
+                             "nz_delta":  0,
+                             "mean_delta":  0.00027994066476821032,
+                             "min_delta":  0.00064116716384798877,
+                             "max_delta":  0
+                         },
+                         {
+                             "field":  "water_balance_30d_arr",
+                             "tick":  10,
+                             "nz_delta":  0,
+                             "mean_delta":  7.17804525606977E-05,
+                             "min_delta":  5.7718716562011121E-07,
+                             "max_delta":  6.1988830569736919E-06
+                         }
+                     ]
+}

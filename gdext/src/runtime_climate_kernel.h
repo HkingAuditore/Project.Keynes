@@ -232,6 +232,10 @@ struct RuntimeClimateVisualIntent {
     uint64_t generation = 0;
 };
 
+// capture 与 worker 共用资格检查，不能由空字典或旧 ready 授权。
+bool runtime_climate_physics_inputs_ready(const RuntimeEnvironmentSnapshot &input,
+                                         size_t cells, std::string &error);
+
 // Pure C++ staged kernel. It does not own clock, host, visual resources, or
 // source objects. The caller supplies two preallocated stores: plan writes the
 // next store; commit swaps them only at the day barrier.
@@ -243,7 +247,9 @@ public:
     bool plan_day(int64_t day, const RuntimeEnvironmentSnapshot &input,
                   const RuntimeClimateCatalog &catalog,
                   const RuntimeClimateStore &current, RuntimeClimateStore &next,
-                  RuntimeClimateKernelReport &report) const;
+                  RuntimeClimateKernelReport &report,
+                  bool compute_state_hash = true,
+                  bool validate_input = true) const;
     static void commit(RuntimeClimateStore &current, RuntimeClimateStore &next);
     static uint64_t input_hash(const RuntimeEnvironmentSnapshot &input);
     static bool self_test(std::string &error);
@@ -321,11 +327,6 @@ private:
     mutable uint32_t _cyclone_force_generation = 0;
     mutable uint64_t _cyclone_next_stable_id = 1;
     mutable bool _cyclone_seeded = false;
-    // 累计动作计数（自 kernel 初始化/播种起）。逐日值在 soak 的采样点上几乎恒为 0
-    // （weather 是节拍制），所以对外只报累计值 + 当日 alive/touched。
-    mutable uint64_t _cyclone_total_injected = 0;
-    mutable uint64_t _cyclone_total_replaced = 0;
-    mutable uint64_t _cyclone_total_decayed = 0;
     // staged next buffer：生产 weather_advance → weather_commit 两步之间的中转。
     // worker 走同一条 staged 路径，所以也要自己的一份。
     mutable std::vector<float>   _wx_next_vapor;

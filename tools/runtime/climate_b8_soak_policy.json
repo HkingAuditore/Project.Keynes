@@ -23,7 +23,7 @@
       "verdict": "throughput_neutral_but_worker_cannot_keep_up",
       "note": "SUS sim avg 6.02 (OFF) vs 6.08 (ACTIVE); writeback_days=30/50 because the worker could not sustain the day rate."
     },
-    "conclusion": "In the measured ladder there is no size where ACTIVE is affordable at x50 under the main-thread-waits policy: the only measured small size is clearly negative and the large size is worker-limited. ClimateAuthorityPolicy keeps threshold_cells=0 (historical default, no silent behavior change) and reports auto_threshold_not_measured; the measured basis for a real threshold requires the P2 worker-cost reduction (or a lower target speed). force_on remains the explicit A/B override."
+    "conclusion": "In the measured ladder there is no size where ACTIVE is affordable at x50: small sizes are negative and large sizes are worker-limited. ClimateAuthorityPolicy now records threshold_source=c1_c3_ladder_20260911_no_affordable_size_at_x50_keep_on with threshold_cells=0 and reason auto_measured_keep_on_no_affordable_size (product keeps AUTO on for authority correctness; FORCE_OFF is the perf escape hatch). B8 P3 environment FIFO ring (depth 4) + wait_climate_consumed(0) removes single-slot drops; writeback cadence under serial_wait is superseded=0 rather than a hard 50/50 throughput claim."
   },
   "default": {
     "mean_abs": 0.05,

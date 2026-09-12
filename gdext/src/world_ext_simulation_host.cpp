@@ -247,6 +247,15 @@ static Dictionary runtime_report_to_dictionary(const RuntimeThreadReport &report
     out["trigger_first_divergence_index"] = report.trigger_first_divergence_index;
     out["trigger_first_divergence_kind"] = String(report.trigger_first_divergence_kind);
     out["trigger_blocker"] = String(report.trigger_blocker);
+    out["trigger_pod_ready"] = report.trigger_pod_ready;
+    out["trigger_pod_plan_ms"] = report.trigger_pod_plan_ms;
+    out["trigger_pod_replay_ms"] = report.trigger_pod_replay_ms;
+    out["trigger_pod_state_hash"] = static_cast<int64_t>(report.trigger_pod_state_hash);
+    out["trigger_pod_snapshot_generation"] = static_cast<int64_t>(
+        report.trigger_pod_snapshot_generation);
+    out["trigger_pod_intent_count"] = static_cast<int>(report.trigger_pod_intent_count);
+    out["trigger_pod_ack_count"] = static_cast<int>(report.trigger_pod_ack_count);
+    out["trigger_pod_fallback_reason"] = String(report.trigger_pod_fallback_reason);
     out["modifier_pod_ready"] = report.modifier_pod_ready;
     out["modifier_pod_plan_ms"] = report.modifier_pod_plan_ms;
     out["modifier_pod_replay_ms"] = report.modifier_pod_replay_ms;
@@ -291,6 +300,8 @@ static Dictionary runtime_report_to_dictionary(const RuntimeThreadReport &report
 }
 
 Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
+    if (!_runtime_host || _runtime_host->state() == RuntimeWorkerState::STOPPED)
+        _climate_physics_committed.reset();
     if (!_runtime_host) _runtime_host = std::make_unique<NativeSimulationHost>();
     if (_country_runtime != nullptr) {
         static_cast<NativeCountryRuntime *>(_country_runtime)
@@ -471,6 +482,7 @@ Dictionary DCWorldExt::set_runtime_qos_threaded(bool interactive) {
 
 Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
     Dictionary out;
+    _climate_physics_capture_ready = false;
     if (!_runtime_host) {
         // Capture is intentionally legal before start: generation bootstrap
         // freezes the native input boundary, then STARTING consumes it.
@@ -1476,20 +1488,33 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
                     phys["slp"].get_type() == Variant::DICTIONARY;
                 const bool has_wind = phys.has("wind") &&
                     phys["wind"].get_type() == Variant::DICTIONARY;
-                if (has_slp && has_wind) {
+                if (has_slp && has_wind && phys.has("psi") && phys.has("upwelling") &&
+                    phys["psi"].get_type() == Variant::DICTIONARY &&
+                    phys["upwelling"].get_type() == Variant::DICTIONARY) {
                     const Dictionary slp = phys["slp"];
                     const Dictionary wind = phys["wind"];
-                    auto pf = [](const Dictionary &dict, const char *key,
-                                 float fallback) {
-                        return dict.has(key) ? float(dict[key]) : fallback;
+                    const Dictionary psi = phys["psi"];
+                    const Dictionary up = phys["upwelling"];
+                    std::string phys_error;
+                    auto bad = [&](const char *key) { if (phys_error.empty()) phys_error = key; };
+                    auto pf = [&](const Dictionary &dict, const char *key, double fallback) -> double {
+                        if (!dict.has(key)) { bad(key); return fallback; }
+                        const Variant v = dict[key];
+                        if ((v.get_type() != Variant::FLOAT && v.get_type() != Variant::INT) ||
+                            !std::isfinite(double(v))) { bad(key); return fallback; }
+                        return double(v);
                     };
-                    auto pi = [](const Dictionary &dict, const char *key,
-                                 int fallback) {
-                        return dict.has(key) ? int(dict[key]) : fallback;
+                    auto pi = [&](const Dictionary &dict, const char *key, int fallback) -> int {
+                        if (!dict.has(key)) { bad(key); return fallback; }
+                        const Variant v = dict[key];
+                        if (v.get_type() != Variant::INT || int64_t(v) < INT32_MIN || int64_t(v) > INT32_MAX) {
+                            bad(key); return fallback;
+                        }
+                        return int(v);
                     };
-                    auto pb = [](const Dictionary &dict, const char *key,
-                                 bool fallback) {
-                        return dict.has(key) ? bool(dict[key]) : fallback;
+                    auto pb = [&](const Dictionary &dict, const char *key, bool fallback) -> bool {
+                        if (!dict.has(key) || dict[key].get_type() != Variant::BOOL) { bad(key); return fallback; }
+                        return bool(dict[key]);
                     };
                     auto &pk_k = snapshot.climate_physics_knobs;
                     pk_k.slp_lat_amp = pf(slp, "slp_lat_amp", pk_k.slp_lat_amp);
@@ -1591,8 +1616,62 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
                         pi(wind, "land_lf_peak", pk_k.land_lf_peak);
                     pk_k.land_lf_hill =
                         pi(wind, "land_lf_hill", pk_k.land_lf_hill);
-                    pk_k.ready = 1;
-                    pk_k.missing_key[0] = '\0';
+                    pk_k.enabled = pb(phys, "enabled", false);
+                    pk_k.daily_split = pb(phys, "daily_split", false);
+                    pk_k.daily_period_days = pi(phys, "daily_period_days", 1);
+                    pk_k.ocean_period_days = pi(phys, "ocean_period_days", 30);
+                    pk_k.world_seed = pi(phys, "world_seed", 0);
+                    pk_k.wrap_origin_x = pf(slp, "wrap_origin_x", 0.0);
+                    pk_k.wrap_period_x = pf(slp, "wrap_period_x", 0.0);
+                    if (!phys.has("water_terrain_ids") || phys["water_terrain_ids"].get_type() != Variant::PACKED_BYTE_ARRAY) {
+                        bad("water_terrain_ids");
+                    } else {
+                        const PackedByteArray ids = phys["water_terrain_ids"];
+                        if (ids.size() != 4) bad("water_terrain_ids");
+                        else {
+                            pk_k.water_id_count = 4;
+                            std::copy_n(ids.ptr(), 4, pk_k.water_terrain_ids.begin());
+                        }
+                    }
+                    auto &p = pk_k.psi;
+                    p.total_iters = pi(psi, "psi_total_iters", p.total_iters);
+                    p.omega = pf(psi, "psi_sor_omega", p.omega);
+                    p.r_base = pf(psi, "psi_r_base", p.r_base);
+                    p.beta_floor = pf(psi, "psi_beta_floor", p.beta_floor);
+                    p.source_scale = pf(psi, "psi_source_scale", p.source_scale);
+                    p.oc_scale = pf(psi, "ocean_current_scale", p.oc_scale);
+                    p.oc_max_mag = pf(psi, "ocean_current_max_magnitude", p.oc_max_mag);
+                    p.thermohaline_weight = pf(psi, "thermohaline_weight", p.thermohaline_weight);
+                    p.upwelling_highlat_abs = pf(psi, "upwelling_highlat_abs", p.upwelling_highlat_abs);
+                    p.cold_sink_temp = pf(psi, "cold_sink_temp", p.cold_sink_temp);
+                    p.response_rate = pf(psi, "ocean_current_response_rate", p.response_rate);
+                    p.thermal_current_weight = pf(psi, "ocean_thermal_current_weight", p.thermal_current_weight);
+                    p.density_cold_weight = pf(psi, "ocean_density_cold_weight", p.density_cold_weight);
+                    p.density_ice_weight = pf(psi, "ocean_density_ice_weight", p.density_ice_weight);
+                    p.depth_curl_damp = pf(psi, "ocean_depth_curl_damp", p.depth_curl_damp);
+                    p.sea_level = pf(psi, "sea_level", p.sea_level);
+                    p.depth_ref = pf(psi, "ocean_depth_ref", p.depth_ref);
+                    p.topo_steer_w = pf(psi, "ocean_topo_steer_w", p.topo_steer_w);
+                    pk_k.psi_warm_start = pb(psi, "psi_warm_start", true);
+                    String mode;
+                    if (!psi.has("psi_early_exit_mode") || psi["psi_early_exit_mode"].get_type() != Variant::STRING)
+                        bad("psi_early_exit_mode");
+                    else mode = psi["psi_early_exit_mode"];
+                    p.early_exit = mode == "balanced" || mode == "perf";
+                    if (!p.early_exit && mode != "off") bad("psi_early_exit_mode");
+                    p.min_iters = mode == "balanced" ? 8 : (mode == "perf" ? 6 : p.total_iters);
+                    p.residual_epsilon = mode == "balanced" ? 0.00035f : (mode == "perf" ? 0.00075f : 0.0f);
+                    if (p.early_exit && !pk_k.psi_warm_start) p.min_iters += 4;
+                    p.min_iters = std::max(1, std::min(p.total_iters, p.min_iters));
+                    p.check_every = 2;
+                    pk_k.upwelling.ekman_gain = pf(up, "upwelling_ekman_gain", 0.6);
+                    pk_k.upwelling.cold_sink_gain = pf(up, "upwelling_cold_sink_gain", 0.15);
+                    pk_k.upwelling.highlat_abs = pf(up, "upwelling_highlat_abs", 0.75);
+                    pk_k.upwelling.cold_sink_temp = pf(up, "cold_sink_temp", -0.05);
+                    std::string bounds_error;
+                    if (!pk_k.validate(bounds_error) && phys_error.empty()) phys_error = bounds_error;
+                    pk_k.ready = phys_error.empty() ? 1 : 0;
+                    std::snprintf(pk_k.missing_key, sizeof(pk_k.missing_key), "%s", phys_error.c_str());
                 } else {
                     std::snprintf(
                         snapshot.climate_physics_knobs.missing_key,
@@ -1605,6 +1684,25 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
                     sizeof(snapshot.climate_physics_knobs.missing_key),
                     "physics_knobs");
             }
+
+    // 新图／legacy 冷启动种子；接管以后不再持续运输主线程物理解。
+    if (_map_data && snapshot.climate_physics_knobs.ready &&
+        (!_climate_physics_committed || !_climate_physics_committed->initialized ||
+         _climate_physics_map_id != _map_data->get_instance_id())) {
+        const auto seed = [&](const char *name, std::vector<float> &dst) {
+            const Variant value = _map_data->get(StringName(name));
+            if (value.get_type() != Variant::PACKED_FLOAT32_ARRAY) return;
+            const PackedFloat32Array lane = value;
+            if (lane.size() > 0) dst.assign(lane.ptr(), lane.ptr() + lane.size());
+        };
+        seed("slp_arr", snapshot.climate_physics_seed_slp);
+        seed("ocean_psi_arr", snapshot.climate_physics_seed_psi);
+        seed("upwelling_strength_arr", snapshot.climate_physics_seed_upwelling);
+    }
+    std::string physics_ready_error;
+    const bool physics_capture_ready = runtime_climate_physics_inputs_ready(snapshot, cells, physics_ready_error);
+    out["physics_ready"] = false;
+    out["physics_missing_key"] = String(snapshot.climate_physics_knobs.missing_key);
 
     snapshot.topology_validated = cells > 0 &&
         ((!snapshot.neighbor_offsets.empty() &&
@@ -1625,6 +1723,8 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
         out["generation"] = static_cast<int64_t>(snapshot.generation);
         return out;
     }
+    _climate_physics_capture_ready = physics_capture_ready;
+    out["physics_ready"] = physics_capture_ready;
     out["ok"] = true;
     out["generation"] = static_cast<int64_t>(snapshot.generation);
     out["day"] = snapshot.day;
@@ -2085,6 +2185,8 @@ Dictionary DCWorldExt::restore_runtime_bundle(const PackedByteArray &bytes) {
         out["state"] = runtime_state_name(_runtime_host->state());
         return out;
     }
+    _climate_physics_committed.reset();
+    _climate_physics_capture_ready = false;
     // The bundle is held by the host until the next start() consumes it.  Do
     // not expose or decode the payload here; this call remains a main-thread
     // validation/copy boundary only.
@@ -2097,6 +2199,8 @@ Dictionary DCWorldExt::restore_runtime_bundle(const PackedByteArray &bytes) {
 }
 
 Dictionary DCWorldExt::request_runtime_stop() {
+    _climate_physics_committed.reset();
+    _climate_physics_capture_ready = false;
     Dictionary out;
     if (!_runtime_host) {
         out["ok"] = true;
@@ -2337,6 +2441,48 @@ bool DCWorldExt::climate_worker_authoritative() const {
         RuntimeDomainId::CLIMATE);
 }
 
+bool DCWorldExt::climate_physics_authoritative() const {
+    if (!climate_worker_authoritative() || !_climate_physics_capture_ready || !_map_data ||
+        _climate_physics_map_id != _map_data->get_instance_id() || !_climate_physics_committed ||
+        !_climate_physics_committed->ready || !_climate_physics_committed->initialized) return false;
+    const auto input = _runtime_host->environment_snapshot();
+    return input && input->cell_count == static_cast<uint32_t>(_climate_physics_committed->cell_count) &&
+        input->climate_physics_knobs.ready && input->climate_physics_knobs.enabled;
+}
+
+Dictionary DCWorldExt::get_climate_physics_read_view() const {
+    Dictionary out;
+    const auto committed = _climate_physics_committed;
+    const bool ready = climate_physics_authoritative();
+    out["ready"] = ready;
+    out["authoritative"] = ready;
+    out["ok"] = ready;
+    out["code"] = ready ? "ok" : "physics_not_committed_or_not_granted";
+    if (!ready) return out;
+    const auto &s = *committed;
+    out["committed_day"] = s.committed_day;
+    out["input_generation"] = static_cast<int64_t>(s.input_generation);
+    out["generation"] = static_cast<int64_t>(s.generation);
+    out["state_hash"] = static_cast<int64_t>(s.state_hash());
+    out["cell_count"] = s.cell_count;
+    out["last_slp_day"] = s.last_slp_day;
+    out["last_wind_day"] = s.last_wind_day;
+    out["last_ocean_day"] = s.last_ocean_day;
+    auto lane = [&](const char *name, const std::vector<float> &v) {
+        PackedFloat32Array a;
+        a.resize(static_cast<int>(v.size()));
+        if (!v.empty()) std::memcpy(a.ptrw(), v.data(), v.size() * sizeof(float));
+        out[name] = a;
+    };
+    lane("slp", s.slp); lane("wind_x", s.wind_x); lane("wind_y", s.wind_y);
+    lane("wind_speed", s.wind_speed); lane("ocean_current_x", s.ocean_current_x);
+    lane("ocean_current_y", s.ocean_current_y); lane("ocean_psi", s.ocean_psi);
+    lane("upwelling", s.upwelling); lane("wind_stress_curl", s.wind_stress_curl);
+    lane("ocean_thermal_anomaly", s.ocean_thermal_anomaly);
+    lane("monsoon_thermal", s.monsoon_thermal); lane("synoptic_psi", s.synoptic_psi);
+    return out;
+}
+
 Dictionary DCWorldExt::set_runtime_climate_parity_forcing(bool enabled) {
     Dictionary out;
     if (!_runtime_host) {
@@ -2460,6 +2606,9 @@ Dictionary DCWorldExt::apply_runtime_climate_writeback(
         int64_t after_generation) {
     Dictionary out;
     const auto writeback_start = std::chrono::steady_clock::now();
+    out["committed_day"] = _climate_physics_committed ? _climate_physics_committed->committed_day : -1;
+    out["input_generation"] = _climate_physics_committed
+        ? static_cast<int64_t>(_climate_physics_committed->input_generation) : int64_t(0);
     if (!_runtime_host) {
         out["ok"] = false;
         out["code"] = "runtime_worker_not_started";
@@ -2496,6 +2645,38 @@ Dictionary DCWorldExt::apply_runtime_climate_writeback(
         return out;
     }
 
+    using PhysicsState = pk_async_physics::RuntimeClimatePhysicsState;
+    std::shared_ptr<PhysicsState> physics;
+    if (!store.physics_state.empty()) {
+        physics = std::make_shared<PhysicsState>();
+        std::string error;
+        if (!pk_async_physics::restore_physics_state(store.physics_state.data(), store.physics_state.size(), *physics, error) ||
+            physics->cell_count != cell_count || physics->committed_day != snapshot.committed_day ||
+            physics->input_generation != snapshot.input_generation) {
+            _runtime_host->release_climate_writeback(slot);
+            _climate_physics_committed.reset();
+            out["ok"] = false; out["applied"] = false;
+            out["code"] = error.empty() ? String("physics_commit_mismatch") : String(error.c_str());
+            return out;
+        }
+    }
+    const bool apply_physics = physics && physics->initialized && physics->ready && climate_worker_authoritative();
+    // 物理 family 全部预检通过后才写；任何缺槽都不能宣称 grant。
+    if (apply_physics) {
+        for (const char *name : {"cell_slp", "cell_wind_x", "cell_wind_y", "cell_wind_speed",
+                "cell_ocean_current_x", "cell_ocean_current_y", "cell_ocean_psi",
+                "cell_upwelling_strength", "cell_wind_stress_curl", "cell_ocean_thermal_anomaly"}) {
+            const int sid = component_id(StringName(name));
+            if (sid < 0 || sid >= _slots.size() || _slots[sid].dtype != SlotDType::F32 ||
+                (_slots[sid].external_ref && _slots[sid].arr_f32.size() != cell_count)) {
+                _runtime_host->release_climate_writeback(slot);
+                _climate_physics_committed.reset();
+                out["ok"] = false; out["applied"] = false;
+                out["code"] = String("physics_writeback_slot_invalid:") + name;
+                return out;
+            }
+        }
+    }
     PackedStringArray touched_slots;
     PackedStringArray skipped;
     int applied_fields = 0;
@@ -2628,6 +2809,32 @@ Dictionary DCWorldExt::apply_runtime_climate_writeback(
         touched_slots.push_back(String(slot_name));
         ++applied_fields;
     };
+    if (apply_physics) {
+        apply_extra("slp", "cell_slp", physics->slp);
+        apply_extra("wind_x", "cell_wind_x", physics->wind_x);
+        apply_extra("wind_y", "cell_wind_y", physics->wind_y);
+        apply_extra("wind_speed", "cell_wind_speed", physics->wind_speed);
+        apply_extra("ocean_current_x", "cell_ocean_current_x", physics->ocean_current_x);
+        apply_extra("ocean_current_y", "cell_ocean_current_y", physics->ocean_current_y);
+        apply_extra("ocean_psi", "cell_ocean_psi", physics->ocean_psi);
+        apply_extra("upwelling", "cell_upwelling_strength", physics->upwelling);
+        apply_extra("wind_stress_curl", "cell_wind_stress_curl", physics->wind_stress_curl);
+        apply_extra("ocean_thermal_anomaly", "cell_ocean_thermal_anomaly", physics->ocean_thermal_anomaly);
+        _phys_slp_buf = physics->slp;
+        _phys_monsoon_thermal = physics->monsoon_thermal;
+        // traj 是派生缓存，使用本次提交风场重建，绝不携带 worker 裸指针。
+        const auto env = _runtime_host->environment_snapshot();
+        _phys_wind_traj_valid = false;
+        if (env && env->cell_pos_x.size() == size_t(cell_count) && env->cell_pos_y.size() == size_t(cell_count) &&
+            env->neighbor_indices.size() == size_t(cell_count) * 6 && env->generation == snapshot.input_generation &&
+            physics->wind_traj_generation > 0) {
+            const auto &k = env->climate_physics_knobs;
+            _phys_build_wind_traj(cell_count, env->cell_pos_x.data(), env->cell_pos_y.data(),
+                env->neighbor_indices.data(), physics->wind_x.data(), physics->wind_y.data(), physics->wind_speed.data(),
+                k.wrap_period_x, k.wind_traj_pos_scale, k.wind_traj_dt_days);
+            _phys_wind_traj_consume_enabled = k.wind_traj_weather_share != 0;
+        }
+    }
     apply_extra("soil_moisture", "cell_soil_moisture", snapshot.soil_moisture);
     // pass_a 的日照/热量输出。worker 内部算得对（round 内 pass_a→pass_b 走 out 缓冲，
     // 不经 MapData），坏的是外部读者：渲染、tile 录制、UI 面板读的都是 MapData。
@@ -2671,6 +2878,8 @@ Dictionary DCWorldExt::apply_runtime_climate_writeback(
     const int64_t applied_day = snapshot.committed_day;
     const uint64_t applied_generation = snapshot.generation;
     const uint64_t applied_state_hash = snapshot.state_hash;
+    const uint64_t applied_input_generation = snapshot.input_generation;
+    const float applied_vapor_first = store.vapor.empty() ? 0.0f : store.vapor[0];
     // B8 P0：把"回灌慢"拆成 memcpy（worker 快照 → slot）与 flush（slot → MapData）
     // 两段。二者混在一个 total 里时，无法判断瓶颈是拷贝量还是 MapData 的写回路径，
     // 而这两条要采取的措施完全不同。
@@ -2680,6 +2889,8 @@ Dictionary DCWorldExt::apply_runtime_climate_writeback(
     _runtime_host->release_climate_writeback(slot);
 
     flush_slots_to_map_keys(touched_slots);
+    _climate_physics_committed = apply_physics ? std::move(physics) : nullptr;
+    _climate_physics_map_id = _map_data->get_instance_id();
     // B8 诊断（一次性）：确认天气场在 writeback 之后是否真的进了 MapData。用它
     // 区分"flush 没写进去"与"写进去之后被同 tick 的主线程写者覆盖"。
     {
@@ -2692,7 +2903,7 @@ Dictionary DCWorldExt::apply_runtime_climate_writeback(
                 const PackedFloat32Array arr = map_vapor;
                 if (arr.size() > 0) map_first = arr[0];
             }
-            if (!store.vapor.empty()) store_first = store.vapor[0];
+            store_first = applied_vapor_first;
             std::fprintf(stderr,
                 "[climate/writeback][b8] day=%lld vapor store0=%.6g map0=%.6g "
                 "dirty_fields=%d applied=%d\n",
@@ -2715,6 +2926,14 @@ Dictionary DCWorldExt::apply_runtime_climate_writeback(
     out["applied"] = applied_fields > 0;
     out["code"] = "ok";
     out["day"] = applied_day;
+    out["committed_day"] = applied_day;
+    out["input_generation"] = static_cast<int64_t>(applied_input_generation);
+    out["physics_applied"] = apply_physics;
+    out["physics_authoritative"] = climate_physics_authoritative();
+    if (_runtime_host) {
+        _runtime_host->note_climate_writeback_input_generation(
+            applied_input_generation);
+    }
     out["generation"] = static_cast<int64_t>(applied_generation);
     out["state_hash"] = static_cast<int64_t>(applied_state_hash);
     out["cell_count"] = static_cast<int64_t>(cell_count);
@@ -2873,7 +3092,8 @@ Dictionary DCWorldExt::publish_runtime_climate_reference_state(
 
 bool DCWorldExt::runtime_climate_writeback_self_test() const {
     std::string error;
-    return RuntimeClimateWritebackRing::self_test(error);
+    return RuntimeClimateWritebackRing::self_test(error) &&
+           RuntimeEnvironmentInputRing::self_test(error);
 }
 
 Dictionary DCWorldExt::runtime_climate_parity_contract_test() const {

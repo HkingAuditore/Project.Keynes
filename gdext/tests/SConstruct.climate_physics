@@ -1,0 +1,23 @@
+from pathlib import Path
+
+root = Path(Dir('.').abspath).parent
+build = root.parent / 'tmp' / 'climate_physics_focused'
+SConsignFile(str(build / 'physics.sconsign.dblite'))
+env = Environment()
+env.Append(CPPPATH=[str(root / 'src')])
+if env['PLATFORM'] == 'win32':
+    env.Append(CCFLAGS=['/std:c++17', '/EHsc', '/O2', '/utf-8'])
+else:
+    env.Append(CCFLAGS=['-std=c++17', '-O2'])
+worker = ARGUMENTS.get('worker', '0') == '1'
+sources = ['runtime_climate_physics.cpp', 'runtime_climate_formulas.cpp']
+if worker:
+    env.Append(CPPDEFINES=['PK_TEST_CLIMATE_WORKER'])
+    sources += ['runtime_climate_kernel.cpp', 'runtime_climate_passes.cpp',
+                'runtime_authoritative_domains.cpp', 'runtime_climate_parity.cpp',
+                'runtime_pod_protocol.cpp']
+objects = [env.Object(str(build / name.replace('.cpp', '')), str(root / 'src' / name))
+           for name in sources]
+objects.append(env.Object(str(build / ('worker_test' if worker else 'physics_test')),
+                          'runtime_climate_physics_focused_test.cpp'))
+Default(env.Program(str(build / ('worker_focused' if worker else 'physics_focused')), objects))

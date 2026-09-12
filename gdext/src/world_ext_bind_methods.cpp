@@ -257,6 +257,10 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::request_runtime_stop);
     ClassDB::bind_method(D_METHOD("climate_worker_authoritative"),
                          &DCWorldExt::climate_worker_authoritative);
+    ClassDB::bind_method(D_METHOD("climate_physics_authoritative"),
+                         &DCWorldExt::climate_physics_authoritative);
+    ClassDB::bind_method(D_METHOD("get_climate_physics_read_view"),
+                         &DCWorldExt::get_climate_physics_read_view);
     ClassDB::bind_method(
         D_METHOD("apply_runtime_climate_writeback", "after_generation"),
         &DCWorldExt::apply_runtime_climate_writeback);
@@ -444,6 +448,15 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::run_trigger_daily);
     ClassDB::bind_method(D_METHOD("trigger_should_run", "day_index"),
                          &DCWorldExt::trigger_should_run);
+    ClassDB::bind_method(D_METHOD("trigger_worker_authoritative"),
+                         &DCWorldExt::trigger_worker_authoritative);
+    ClassDB::bind_method(D_METHOD("apply_runtime_trigger_snapshot", "after_generation"),
+                         &DCWorldExt::apply_runtime_trigger_snapshot,
+                         DEFVAL(-1));
+    ClassDB::bind_method(D_METHOD("poll_trigger_worker_intent"),
+                         &DCWorldExt::poll_trigger_worker_intent);
+    ClassDB::bind_method(D_METHOD("submit_trigger_worker_ack", "ack"),
+                         &DCWorldExt::submit_trigger_worker_ack);
     ClassDB::bind_method(D_METHOD("poll_trigger_effects", "after_effect_id", "limit"),
                          &DCWorldExt::poll_trigger_effects, DEFVAL(128));
     ClassDB::bind_method(D_METHOD("ack_trigger_effects", "up_to_effect_id"),
@@ -551,6 +564,10 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::run_ideology_daily);
     ClassDB::bind_method(D_METHOD("ideology_should_run", "day_index"),
                          &DCWorldExt::ideology_should_run);
+    ClassDB::bind_method(D_METHOD("apply_runtime_ideology_snapshot",
+                         "after_generation"),
+                         &DCWorldExt::apply_runtime_ideology_snapshot,
+                         DEFVAL(-1));
     ClassDB::bind_method(D_METHOD("get_ideology_snapshot", "country_handle"),
                          &DCWorldExt::get_ideology_snapshot);
     ClassDB::bind_method(D_METHOD("explain_ideology", "country_handle", "ideology_id"),

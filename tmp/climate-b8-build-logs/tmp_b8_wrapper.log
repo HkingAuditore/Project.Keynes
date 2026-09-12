@@ -1,0 +1,10 @@
+[b8-soak] b8-p0-smoke-on authority=1 drive=serial_wait 30x24 days=3 speed=50
+Godot_v4.6.2-stable_win64_console.exe : WARNING: Loaded resource as image file, this will not work on export: 'res://as
+sets/textures/terrain_materials/organic.png'. Instead, import the image file as an Image resource and load it normally 
+as a resource.
+At D:\Godot\ProjectKeynes\Project.Keynes\tools\runtime\Invoke-ClimateB8Soak.ps1:73 char:5
++     & $godot @godotArgs 2>&1 | Tee-Object -FilePath $soakLogPath | Ou ...
++     ~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (WARNING: Loaded... as a resource.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 

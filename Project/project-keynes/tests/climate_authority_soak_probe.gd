@@ -318,7 +318,7 @@ func _run(authority: bool, seed: int, width: int, height: int, days: int,
 		int(diag_final.get("writeback_applied_fields", 0)),
 		str(diag_final.get("writeback_skipped_fields", []))])
 	print("[soak/stage-days] %s" % _stage_totals())
-		# F8: always emit Effect/Modifier authority fields at end (tick%25 dump may miss short runs).
+	# F8–I8: always emit domain authority fields at end (tick%25 dump may miss short runs).
 	if generator.has_method("get_runtime_thread_report"):
 		var end_report: Dictionary = generator.get_runtime_thread_report()
 		var effect_keys: PackedStringArray = []
@@ -327,7 +327,18 @@ func _run(authority: bool, seed: int, width: int, height: int, days: int,
 				"effect_pod_snapshot_generation", "effect_pod_state_hash",
 				"effect_pod_ack_count", "effect_pod_intent_count",
 				"effect_pod_fallback_reason", "modifier_worker_authoritative",
-				"modifier_pod_snapshot_generation", "main_wait_on_sim_us",
+				"modifier_pod_snapshot_generation",
+				"ideology_worker_authoritative", "ideology_pod_ready",
+				"ideology_pod_snapshot_generation", "ideology_pod_state_hash",
+				"ideology_pod_pending_transition_count",
+				"ideology_pod_intent_count", "ideology_pod_fallback_reason",
+				"trigger_worker_authoritative", "trigger_pod_ready",
+				"trigger_pod_snapshot_generation", "trigger_pod_state_hash",
+				"trigger_pod_intent_count", "trigger_pod_fallback_reason",
+				"events_worker_authoritative", "events_pod_ready",
+				"events_pod_snapshot_generation", "events_pod_state_hash",
+				"events_pod_fallback_reason",
+				"main_wait_on_sim_us",
 				"worker_fault_count", "simulation_thread_mode"]:
 			effect_keys.append("%s=%s" % [k, str(end_report.get(k, ""))])
 		print("[soak/effect-report] %s" % ", ".join(effect_keys))
@@ -556,7 +567,8 @@ func _stage_report(generator: MapGenerator) -> String:
 			# 不能只扫 climate/mode/authorit（否则 generation/state_hash 被静默丢掉）。
 			if key.contains("climate") or key.contains("mode") \
 					or key.contains("authorit") or key.contains("modifier") \
-					or key.contains("effect") \
+					or key.contains("effect") or key.contains("ideology") \
+					or key.contains("trigger") or key.contains("events") \
 					or key.contains("fallback") or key.contains("main_wait") \
 					or key.contains("fault"):
 				keys.append("%s=%s" % [k, str(report[k])])

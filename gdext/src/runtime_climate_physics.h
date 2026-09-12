@@ -526,6 +526,12 @@ struct RuntimeClimatePhysicsState {
     int      cell_count = 0;
     uint64_t generation = 0;   // 每次成功 resize/reset 自增（读视图/存档用）
     bool     ready = false;
+    bool     initialized = false;
+    int64_t  committed_day = -1;
+    uint64_t input_generation = 0;
+    int64_t  last_daily_day = -1, last_slp_day = -1, last_wind_day = -1, last_ocean_day = -1;
+    uint64_t daily_due_seq = 0;
+    uint64_t cyclone_total_injected = 0, cyclone_total_replaced = 0, cyclone_total_decayed = 0;
 
     // ── SLP（cell 索引）─────────────────────────────────────────────────
     std::vector<float> slp;            // 当轮 SLP 场
@@ -555,7 +561,7 @@ struct RuntimeClimatePhysicsState {
     uint64_t coast_fingerprint = 0;
     bool     coast_valid = false;
 
-    // ── 洋流 ψ / CSR / 工作区（water 索引）──────────────────────────────
+    // ── 洋流 ψ 为 cell 索引；CSR / SOR 工作区为 water 索引 ──────────────
     std::vector<int>     cell_to_water;      // [cell_count]，陆地 = -1
     std::vector<int>     water_to_cell;      // [n_water]
     std::vector<int32_t> nb_w;               // [n_water * 6]
@@ -628,8 +634,12 @@ struct RuntimeClimatePhysicsState {
         n_water = 0;
         water_to_cell.clear();
         nb_w.clear();
-        ocean_psi.clear();
-        ocean_psi_prev.clear();
+        ocean_psi.assign(n, 0.0f);
+        ocean_psi_prev.assign(n, 0.0f);
+        initialized = false;
+        committed_day = last_daily_day = last_slp_day = last_wind_day = last_ocean_day = -1;
+        input_generation = daily_due_seq = 0;
+        cyclone_total_injected = cyclone_total_replaced = cyclone_total_decayed = 0;
         psi_tau_x.clear(); psi_tau_y.clear(); psi_ny.clear(); psi_ls.clear();
         psi_curl.clear(); psi_beta.clear(); psi_r.clear(); psi_source.clear();
         psi_work.clear(); psi_preclamp_mag.clear(); psi_thermal_mag.clear();
@@ -644,15 +654,14 @@ struct RuntimeClimatePhysicsState {
         ready = cells > 0;
     }
 
-    // 按水域格数定形 ψ/CSR/工作区缓冲。
+    // 只按水域格数定形 CSR/工作区，不改变 cell-index ψ 或其 warm-start。
     void resize_water(int n) {
         if (n < 0) n = 0;
         n_water = n;
         const size_t nw = static_cast<size_t>(n);
         water_to_cell.assign(nw, 0);
         nb_w.assign(nw * 6u, -1);
-        ocean_psi.assign(nw, 0.0f);
-        ocean_psi_prev.assign(nw, 0.0f);
+        // ψ 的输入/输出始终按 cell 索引；只有 SOR 工作区按水格索引。
         psi_tau_x.assign(nw, 0.0f);
         psi_tau_y.assign(nw, 0.0f);
         psi_ny.assign(nw, 0.5f);
@@ -668,7 +677,7 @@ struct RuntimeClimatePhysicsState {
 
     // 形状/有限性校验。失败写 error 并返回 false（caller 不跑物理）。
     bool validate(std::string &error) const {
-        if (cell_count <= 0) { error = "cell_count<=0"; return false; }
+        if (cell_count <= 0 || cell_count > 10000000) { error = "physics_cell_count_invalid"; return false; }
         const size_t n = static_cast<size_t>(cell_count);
         auto ok_n = [n](const std::vector<float> &v) { return v.size() == n; };
         if (!ok_n(slp) || !ok_n(slp_prev) || !ok_n(slp_thermal) ||
@@ -678,7 +687,7 @@ struct RuntimeClimatePhysicsState {
             !ok_n(ocean_current_x) || !ok_n(ocean_current_y) ||
             !ok_n(upwelling) || !ok_n(wind_stress_curl) ||
             !ok_n(ocean_thermal_anomaly) || !ok_n(synoptic_psi) ||
-            !ok_n(synoptic_psi_prev)) {
+            !ok_n(synoptic_psi_prev) || !ok_n(ocean_psi) || !ok_n(ocean_psi_prev)) {
             error = "cell_lane_shape_mismatch";
             return false;
         }
@@ -692,9 +701,9 @@ struct RuntimeClimatePhysicsState {
             return false;
         }
         const size_t nw = static_cast<size_t>(n_water);
-        if (n_water < 0 || water_to_cell.size() != nw ||
-            nb_w.size() != nw * 6u || ocean_psi.size() != nw ||
-            ocean_psi_prev.size() != nw || psi_tau_x.size() != nw ||
+        if (n_water < 0 || n_water > cell_count || water_to_cell.size() != nw ||
+            nb_w.size() != nw * 6u || psi_preclamp_mag.size() != nw ||
+            psi_thermal_mag.size() != nw || psi_tau_x.size() != nw ||
             psi_tau_y.size() != nw || psi_ny.size() != nw ||
             psi_ls.size() != nw || psi_curl.size() != nw ||
             psi_beta.size() != nw || psi_r.size() != nw ||
@@ -702,8 +711,9 @@ struct RuntimeClimatePhysicsState {
             error = "water_lane_shape_mismatch";
             return false;
         }
-        return true;
+        return validate_values(error);
     }
+    bool validate_values(std::string &error) const;
 
     // 轻量状态哈希（FNV-1a，按位：float 用 bit pattern）。用于读视图游标
     // （get_climate_physics_read_view 的 generation 比对）与存档段校验；
@@ -715,7 +725,13 @@ struct RuntimeClimatePhysicsState {
             h *= 1099511628211ull;
         };
         mix(static_cast<uint64_t>(cell_count));
-        mix(static_cast<uint64_t>(n_water));
+        mix(generation); mix(input_generation); mix(static_cast<uint64_t>(committed_day));
+        mix(initialized); mix(ready); mix(daily_due_seq);
+        mix(static_cast<uint64_t>(last_daily_day)); mix(static_cast<uint64_t>(last_slp_day));
+        mix(static_cast<uint64_t>(last_wind_day)); mix(static_cast<uint64_t>(last_ocean_day));
+        mix(synoptic_seeded); mix(static_cast<uint32_t>(synoptic_tick));
+        mix(wind_traj_generation);
+        mix(cyclone_total_injected); mix(cyclone_total_replaced); mix(cyclone_total_decayed);
         auto mix_vec = [&mix](const std::vector<float> &v) {
             for (float f : v) {
                 uint32_t bits = 0;
@@ -726,7 +742,9 @@ struct RuntimeClimatePhysicsState {
         mix_vec(slp); mix_vec(wind_x); mix_vec(wind_y); mix_vec(wind_speed);
         mix_vec(ocean_current_x); mix_vec(ocean_current_y);
         mix_vec(upwelling); mix_vec(ocean_psi);
-        mix_vec(synoptic_psi);
+        mix_vec(synoptic_psi); mix_vec(synoptic_psi_prev); mix_vec(slp_prev);
+        mix_vec(ocean_psi_prev); mix_vec(wind_stress_curl);
+        mix_vec(ocean_thermal_anomaly); mix_vec(monsoon_thermal);
         return h;
     }
 };
@@ -734,6 +752,26 @@ struct RuntimeClimatePhysicsState {
 // 自检：resize 后形状校验通过、清空后失败、water 缓冲按 n_water 定形、
 // generation 递增、hash 随数据变化且对同一份数据稳定。
 bool physics_state_self_test(std::string &error);
+
+// 空 blob 是 legacy 冷启动；非空错误返回 false，且不修改目标状态。
+bool serialize_physics_state(const RuntimeClimatePhysicsState &state,
+                             std::vector<uint8_t> &blob, std::string &error);
+bool restore_physics_state(const uint8_t *data, size_t size,
+                           RuntimeClimatePhysicsState &state, std::string &error);
+
+// 两趟 sweep 必须隔开，生产可分段并行、worker 整段串行。
+void wind_divergence_range(int n, int begin, int end, const int32_t *nb,
+                          const float *wx, const float *wy, const float *speed, float *div);
+void wind_divergence_apply_range(int n, int begin, int end, const int32_t *nb,
+                                const float *div, double alpha,
+                                float *wx, float *wy, float *speed);
+
+// 纬度 LUT、synoptic 波与移动低压的同源预处理。
+void prepare_slp_forcing(SlpPassAKnobs &k, int bins, float season,
+                        float tilt, float daylen, int day, double period,
+                        int mobile_count, float mobile_amp, float mobile_sigma,
+                        double mobile_period, std::vector<float> &base,
+                        std::vector<float> &heat, const float *annual_mean = nullptr);
 
 // 自检：合成小网格上验证 Pass A 的有限性/水陆差异、Pass B 的 Jacobi 平均、
 // recenter（均值≈0）与 response_rate=0 的"保持 prev"语义。失败写 error。

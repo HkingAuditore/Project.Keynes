@@ -39,14 +39,18 @@ Shorter 10/20-day runs also green. Longer 30-day attempts were interrupted under
 Summary JSON: `f8-soak-effect-summary.json` (updated from end-of-run `[soak/effect-report]` lines).
 
 ## C2 client dual-recording
-**Not run in this session** (visible Debug client ACTIVE/OFF TileDataRecorder SOP).
+**Ran 2026-09-12**: `artifacts/runtime/authority-stage-c/stage-c2-effect-f8-20260912/`
 
-Comparator + policy are ready:
-- `TileDataRecorder` emits `EffectClientEvidence` (alongside `ModifierClientEvidence`)
-- `authority-stage-c-field-policy.json` → `effect_evidence`
-- `compare_authority_stage_c_tiles.py` → `compare_effect_evidence` (undeclared diffs = blocker)
+| | OFF | ACTIVE |
+| --- | --- | --- |
+| seed / map / ticks | 20260718 / 60×40 / 121–220 (100 ticks) | same |
+| rows | 240000 | 240000 |
+| `effect_worker_authoritative` (last sample) | false | true |
+| `effect_pod_snapshot_generation` (end) | 3 | 219 |
+| `modifier_worker_authoritative` (last sample) | false | true |
+| `modifier_pod_snapshot_generation` (end) | 0 | 219 |
 
-When C2 is recorded, use same seed/absolute tick window and compare via
-`tools/runtime/Compare-AuthorityStageCTiles.ps1`. Measured soak shows ACTIVE
-generation advances while OFF stays at 0 — declare any expected generation
-divergence in policy before treating C2 as green.
+Comparator status after declaring ACTIVE/OFF Effect+Modifier generation/hash divergence and retuning 7 climate field tolerances: **`pass`** (`comparison/comparison.json`, 0 blockers).
+
+Orchestrator: `tools/runtime/Invoke-AuthorityStageC2EffectF8.ps1`
+

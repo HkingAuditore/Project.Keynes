@@ -3,6 +3,7 @@
 // S3：生产 Climate pass 的共享纯内核。worker 不再维护第二套 stage 实现。
 #include "runtime_climate_parity.h"
 #include "runtime_climate_passes.h"
+#include "runtime_climate_pass_math.h"
 
 #include <algorithm>
 #include <chrono>
@@ -92,6 +93,8 @@ void copy_store_lanes(RuntimeClimateStore &next, const RuntimeClimateStore &curr
     copy_lane(next.synoptic_psi_prev, current.synoptic_psi_prev);
     copy_lane(next.vegetation, current.vegetation);
     copy_lane(next.base_vegetation, current.base_vegetation);
+    copy_lane(next.terrain, current.terrain);
+    copy_lane(next.cover, current.cover);
     copy_lane(next.temperature_history, current.temperature_history);
     next.cell_count = current.cell_count;
     next.generation = current.generation;
@@ -102,6 +105,204 @@ void copy_store_lanes(RuntimeClimateStore &next, const RuntimeClimateStore &curr
     next.rng_state = current.rng_state;
     next.annual_rng_state = current.annual_rng_state;
     next.history_cursor = current.history_cursor;
+    next.physics_state = current.physics_state;
+    next.cyclone_state = current.cyclone_state;
+}
+
+bool physics_inputs_ready(const RuntimeEnvironmentSnapshot &in, size_t n) {
+    const auto &k = in.climate_physics_knobs;
+    std::string error;
+    if (n == 0 || n > 10000000u || in.day < 0 || in.day > INT32_MAX ||
+        !k.validate(error) || !in.climate_worker_authoritative || !k.ready || !k.enabled ||
+        k.water_id_count != 4 || k.daily_period_days < 1 || k.ocean_period_days < 1 ||
+        in.terrain.size() != n || in.landform.size() != n ||
+        in.neighbor_indices.size() != n * 6 || !in.neighbor_offsets.empty()) return false;
+    for (const auto *v : {&in.cell_pos_x, &in.cell_pos_y, &in.cell_lat_norm,
+                         &in.cell_elevation, &in.cell_temperature_transport_anomaly}) {
+        if (v->size() != n) return false;
+        for (float f : *v) if (!std::isfinite(f)) return false;
+    }
+    for (float f : in.cell_lat_norm) if (f < 0.0f || f > 1.0f) return false;
+    for (int32_t i : in.neighbor_indices) if (i < -1 || i >= static_cast<int32_t>(n)) return false;
+    return true;
+}
+
+bool physics_prepass(int64_t day, const RuntimeEnvironmentSnapshot &in,
+                     const RuntimeClimateStore &current,
+                     pk_async_physics::RuntimeClimatePhysicsState &s, std::string &error) {
+    using namespace pk_async_physics;
+    const auto &k = in.climate_physics_knobs;
+    const int n = s.cell_count;
+    const bool cold = !s.initialized;
+    if (cold) {
+        for (const auto *v : {&in.cell_wind_x, &in.cell_wind_y, &in.cell_wind_speed,
+                             &in.cell_ocean_current_x, &in.cell_ocean_current_y}) {
+            if (v->size() != static_cast<size_t>(n)) { error = "physics_seed_shape"; return false; }
+            for (float f : *v) if (!std::isfinite(f)) { error = "physics_seed_nonfinite"; return false; }
+        }
+        s.wind_x = in.cell_wind_x; s.wind_y = in.cell_wind_y; s.wind_speed = in.cell_wind_speed;
+        s.ocean_current_x = in.cell_ocean_current_x; s.ocean_current_y = in.cell_ocean_current_y;
+        for (const auto *v : {&in.climate_physics_seed_slp, &in.climate_physics_seed_psi,
+                             &in.climate_physics_seed_upwelling, &in.cell_ocean_thermal_anomaly}) {
+            if (!v->empty() && v->size() != static_cast<size_t>(n)) { error = "physics_seed_shape"; return false; }
+            for (float f : *v) if (!std::isfinite(f)) { error = "physics_seed_nonfinite"; return false; }
+        }
+        if (in.climate_physics_seed_slp.size() == static_cast<size_t>(n)) s.slp = in.climate_physics_seed_slp;
+        if (in.climate_physics_seed_psi.size() == static_cast<size_t>(n)) s.ocean_psi = in.climate_physics_seed_psi;
+        if (in.climate_physics_seed_upwelling.size() == static_cast<size_t>(n)) s.upwelling = in.climate_physics_seed_upwelling;
+        if (in.cell_ocean_thermal_anomaly.size() == static_cast<size_t>(n)) s.ocean_thermal_anomaly = in.cell_ocean_thermal_anomaly;
+    }
+    bool water[256]{};
+    for (uint8_t id : k.water_terrain_ids) water[id] = true;
+    const auto &nb = in.neighbor_indices;
+    // 生产物理读 cell_temp_anomaly（30d - 365d），不是 transport anomaly。
+    std::vector<float> temp_anomaly(static_cast<size_t>(n));
+    for (int i = 0; i < n; ++i)
+        temp_anomaly[i] = current.temperature_30d_ema[i] - current.temperature_365d_ema[i];
+    // 缓存可重建；存档不包含地图派生 CSR/coast。重建不得清除 cell-index ψ。
+    if (!s.topo_valid) {
+        int nw = 0;
+        for (uint8_t t : in.terrain) if (water[t]) ++nw;
+        s.resize_water(nw);
+        if (nw > 0) psi_topology_build_pure(n, in.terrain.data(), nb.data(), water,
+            s.cell_to_water.data(), s.water_to_cell.data(), s.nb_w.data());
+        else std::fill(s.cell_to_water.begin(), s.cell_to_water.end(), -1);
+        s.topo_valid = true;
+    }
+    if (!s.coast_valid) {
+        WindCoastLanes l;
+        l.terrain = in.terrain.data(); l.neighbors = nb.data(); l.is_water_lut = water;
+        l.coast_dist = s.coast_dist.data(); l.coast_sea_x = s.coast_sea_x.data(); l.coast_sea_y = s.coast_sea_y.data();
+        l.coast_sea_anchor = s.coast_sea_anchor.data(); l.sea_dist = s.sea_dist.data();
+        l.sea_land_x = s.sea_land_x.data(); l.sea_land_y = s.sea_land_y.data();
+        l.sea_land_anchor = s.sea_land_anchor.data(); l.scratch_queue = s.coast_scratch.data();
+        wind_coast_build_pure(n, WindCoastKnobs{}, l); s.coast_valid = true;
+    }
+    auto rebuild_traj = [&]() {
+        WindTrajKnobs tk;
+        tk.wrap_period_x = k.wrap_period_x;
+        tk.traj_pos_scale = std::clamp(double(k.wind_traj_pos_scale), 0.0, 4.0);
+        tk.traj_dt_days = std::clamp(double(k.wind_traj_dt_days), 0.25, 60.0);
+        WindTrajLanes tl;
+        tl.pos_x = in.cell_pos_x.data(); tl.pos_y = in.cell_pos_y.data(); tl.neighbors = nb.data();
+        tl.wind_x = s.wind_x.data(); tl.wind_y = s.wind_y.data(); tl.wind_speed = s.wind_speed.data();
+        tl.traj_idx = s.wind_traj_idx.data(); tl.traj_w = s.wind_traj_w.data();
+        wind_traj_build_range(n, 0, n, tk, tl);
+        s.wind_traj_fingerprint = pk_wind_state_fp(n, s.wind_x.data(), s.wind_y.data(), s.wind_speed.data());
+        s.wind_traj_valid = true;
+    };
+    if (s.wind_traj_generation > 0 && !s.wind_traj_valid) rebuild_traj();
+    const bool daily_due = cold || day / k.daily_period_days != s.last_daily_day / k.daily_period_days;
+    const bool ocean_due = cold || day - s.last_ocean_day >= k.ocean_period_days;
+    const bool slp_due = daily_due && (cold || !k.daily_split || s.daily_due_seq % 2 == 0);
+    const bool wind_due = daily_due && (cold || !k.daily_split || s.daily_due_seq % 2 != 0);
+    const auto bounds = std::minmax_element(in.cell_pos_x.begin(), in.cell_pos_x.end());
+    const double xmin = *bounds.first;
+    const double invw = 1.0 / std::max(0.001, double(*bounds.second) - xmin);
+    if (slp_due) {
+        SlpPassAKnobs a;
+        a.lat_amp = k.slp_lat_amp; a.land_amp = k.slp_land_amp; a.water_damp = k.slp_water_damp;
+        a.interior_boost = k.slp_interior_boost; a.coast_damp = k.slp_coast_damp;
+        a.thermal_weight = k.slp_thermal_weight; a.ice_high_weight = k.slp_ice_high_weight;
+        a.snow_high_weight = k.slp_snow_high_weight; a.moist_low_weight = k.slp_moist_low_weight;
+        a.synoptic_amp = k.slp_synoptic_amp; a.world_seed = k.world_seed;
+        a.bounds_pos_x = float(xmin); a.inv_bounds_w = float(invw);
+        a.has_wrap_domain = k.wrap_period_x > 0.001; a.wrap_origin_x = k.wrap_origin_x; a.wrap_period_x = k.wrap_period_x;
+        std::vector<float> base, heat;
+        prepare_slp_forcing(a, k.lat_lut_bins, float(in.season_phase), k.axial_tilt_deg,
+            k.insolation_daylen_amp, static_cast<int>(day), k.wind_synoptic_period_days,
+            k.slp_mobile_low_count, k.slp_mobile_low_amp, k.slp_mobile_low_sigma,
+            k.slp_mobile_low_period_days, base, heat);
+        SlpPassALanes l;
+        l.lat_norm = in.cell_lat_norm.data(); l.pos_x = in.cell_pos_x.data(); l.pos_y = in.cell_pos_y.data();
+        l.terrain = in.terrain.data(); l.neighbors = nb.data(); l.is_water_lut = water;
+        l.temp_anomaly = temp_anomaly.data(); l.ice = current.sea_ice.data();
+        l.snow = current.snow_cover.data(); l.vapor = current.vapor.data(); l.cloud = current.cloud_cover.data();
+        s.slp_prev = s.slp;
+        slp_pass_a_range(n, 0, n, a, l, s.slp.data(), s.slp_thermal.data());
+        // 与生产三次调用完全同序，第三次包含混合前、混合后的 recenter。
+        SlpPassBKnobs b;
+        b.smooth_passes = k.slp_smooth_passes; b.recenter = false; b.response_rate = -1.0f;
+        slp_pass_b_pure(n, b, nb.data(), nullptr, s.slp.data(), s.slp_scratch.data(), nullptr);
+        b.smooth_passes = 0; b.recenter = k.slp_recenter != 0; b.target_p95 = k.slp_target_p95;
+        slp_pass_b_pure(n, b, nullptr, nullptr, s.slp.data(), s.slp_scratch.data(), nullptr);
+        b.target_p95 = 0.0f; b.response_rate = std::clamp(k.slp_response_rate, 0.0f, 1.0f);
+        slp_pass_b_pure(n, b, nullptr, s.slp_prev.data(), s.slp.data(), nullptr, nullptr);
+        s.last_slp_day = day;
+    }
+    if (wind_due) {
+        const double elapsed = s.last_wind_day < 0 ? 1.0 : std::clamp(double(day - s.last_wind_day), 0.0, 60.0);
+        WindFieldKnobs w;
+        w.season_phase = in.season_phase; w.axial_tilt_deg = k.axial_tilt_deg;
+        w.terrain_aware = k.wind_terrain_aware != 0; w.wind_belt_only = k.wind_belt_only_debug != 0;
+        w.response_rate = std::clamp(k.wind_response_rate, 0.0f, 1.0f);
+        w.synoptic_amp = k.wind_synoptic_amp; w.synoptic_period_days = std::max(0.5, double(k.wind_synoptic_period_days));
+        w.max_turn_rad = std::clamp(double(k.wind_max_turn_deg_per_day) * (3.14159265358979323846 / 180.0) * elapsed, 0.0, 3.14159265358979323846);
+        const double min_flux = std::max(0.0, double(k.wind_min_flux_for_dir_update)); w.min_flux_len2 = min_flux * min_flux;
+        w.sim_day = static_cast<int>(day); w.world_seed = k.world_seed;
+        w.bounds_pos_x = xmin; w.inv_bounds_w = invw; w.has_wrap_domain = k.wrap_period_x > 0.001;
+        w.wrap_origin_x = k.wrap_origin_x; w.wrap_period_x = k.wrap_period_x;
+        w.lf_mountain = k.land_lf_mountain; w.lf_peak = k.land_lf_peak; w.lf_hill = k.land_lf_hill;
+        w.thermal_monsoon_enabled = k.thermal_monsoon_enabled != 0;
+        w.monsoon_lat_limit = std::clamp(double(k.thermal_monsoon_lat_limit), 0.0, 1.0);
+        w.monsoon_deadband = std::clamp(double(k.thermal_monsoon_deadband), 0.0, 0.10);
+        w.monsoon_full_contrast = std::max(w.monsoon_deadband + 0.001, std::clamp(double(k.thermal_monsoon_full_contrast), 0.01, 0.25));
+        w.monsoon_gain = std::clamp(double(k.thermal_monsoon_gain), 0.0, 1.5);
+        w.monsoon_breeze_floor = std::clamp(double(k.thermal_monsoon_breeze_floor), 0.0, 0.5);
+        w.momentum_advect_w = std::clamp(double(k.wind_momentum_advect_w), 0.0, 0.5);
+        const double diffuse = std::clamp(double(k.wind_momentum_diffuse_w_daily), 0.0, 0.5);
+        w.momentum_active = w.momentum_advect_w > 0.0 || diffuse > 0.0;
+        const double grid_s = std::sqrt(double(n) / 15000.0);
+        w.diffuse_w = std::min(0.5, (1.0 - std::pow(1.0 - diffuse, elapsed)) * grid_s * grid_s);
+        std::vector<float> fx, fy;
+        if (w.momentum_active) {
+            fx.resize(n); fy.resize(n);
+            for (int i = 0; i < n; ++i) { fx[i] = s.wind_x[i] * s.wind_speed[i]; fy[i] = s.wind_y[i] * s.wind_speed[i]; }
+            w.snap_fx = fx.data(); w.snap_fy = fy.data();
+        }
+        if (w.momentum_advect_w > 0.0 && s.wind_traj_valid) { w.traj_idx = s.wind_traj_idx.data(); w.traj_w = s.wind_traj_w.data(); }
+        WindFieldLanes l;
+        l.lat_norm = in.cell_lat_norm.data(); l.pos_x = in.cell_pos_x.data(); l.pos_y = in.cell_pos_y.data();
+        l.slp = s.slp.data(); l.neighbors = nb.data(); l.terrain = in.terrain.data(); l.landform = in.landform.data(); l.is_water_lut = water;
+        l.coast_dist = s.coast_dist.data(); l.coast_sea_x = s.coast_sea_x.data(); l.coast_sea_y = s.coast_sea_y.data(); l.coast_sea_anchor = s.coast_sea_anchor.data();
+        l.sea_dist = s.sea_dist.data(); l.sea_land_x = s.sea_land_x.data(); l.sea_land_y = s.sea_land_y.data(); l.sea_land_anchor = s.sea_land_anchor.data();
+        l.temp = current.temperature.data(); l.wind_x = s.wind_x.data(); l.wind_y = s.wind_y.data(); l.wind_speed = s.wind_speed.data();
+        l.wind_speed_out = s.wind_speed_out.data(); l.wind_delta = s.wind_delta.data(); l.wind_dir_delta = s.wind_dir_delta.data(); l.monsoon_thermal = s.monsoon_thermal.data();
+        WindFieldStats stats;
+        wind_field_range(n, 0, n, w, l, stats);
+        const double alpha = std::min(0.3, std::clamp(double(k.wind_div_damp_alpha), 0.0, 0.3) * grid_s * grid_s);
+        if (alpha > 0.0) {
+            wind_divergence_range(n, 0, n, nb.data(), s.wind_x.data(), s.wind_y.data(), s.wind_speed.data(), s.slp_scratch.data());
+            wind_divergence_apply_range(n, 0, n, nb.data(), s.slp_scratch.data(), alpha, s.wind_x.data(), s.wind_y.data(), s.wind_speed.data());
+        }
+        s.wind_speed_out = s.wind_speed;
+        if (k.wind_traj_table_enabled || w.momentum_active) { rebuild_traj(); ++s.wind_traj_generation; }
+        else { s.wind_traj_valid = false; s.wind_traj_generation = 0; }
+        s.last_wind_day = day;
+    }
+    if (daily_due) { s.last_daily_day = day; ++s.daily_due_seq; }
+    if (ocean_due) {
+        s.ocean_psi_prev = s.ocean_psi;
+        PsiSolveLanes l;
+        l.n_cells = n; l.n_water = s.n_water; l.neighbors = nb.data(); l.terrain = in.terrain.data(); l.is_water_lut = water;
+        l.cell_to_water = s.cell_to_water.data(); l.water_to_cell = s.water_to_cell.data(); l.nb_w = s.nb_w.data();
+        l.wind_x = s.wind_x.data(); l.wind_y = s.wind_y.data(); l.wind_speed = s.wind_speed.data();
+        l.lat_norm = in.cell_lat_norm.data(); l.pos_y = in.cell_pos_y.data(); l.temp = current.temperature.data();
+        l.temp_anomaly = temp_anomaly.data(); l.ice = current.sea_ice.data(); l.elevation = in.cell_elevation.data();
+        l.prev_psi = k.psi_warm_start ? s.ocean_psi_prev.data() : nullptr;
+        l.old_ocean_x = s.ocean_current_x.data(); l.old_ocean_y = s.ocean_current_y.data();
+        l.out_curl = s.wind_stress_curl.data(); l.out_psi = s.ocean_psi.data(); l.out_ocean_x = s.ocean_current_x.data(); l.out_ocean_y = s.ocean_current_y.data();
+        PsiSolveScratch scratch{ s.psi_tau_x.data(), s.psi_tau_y.data(), s.psi_ny.data(), s.psi_ls.data(), s.psi_curl.data(), s.psi_beta.data(), s.psi_r.data(), s.psi_source.data(), s.psi_work.data() };
+        PsiSolveStats stats;
+        if (!psi_solve_pure(k.psi, l, scratch, stats)) { error = "physics_psi_failed"; return false; }
+        UpwellingLanes u;
+        u.lat_norm = in.cell_lat_norm.data(); u.pos_y = in.cell_pos_y.data(); u.terrain = in.terrain.data(); u.neighbors = nb.data(); u.is_water_lut = water;
+        u.wind_x = s.wind_x.data(); u.wind_y = s.wind_y.data(); u.wind_speed = s.wind_speed.data(); u.upwelling = s.upwelling.data();
+        upwelling_range(n, 0, n, k.upwelling, u);
+        s.last_ocean_day = day;
+    }
+    s.initialized = true; s.committed_day = day; s.input_generation = in.generation; ++s.generation;
+    return s.validate(error);
 }
 
 float normalised_rng(uint64_t &value) noexcept {
@@ -125,6 +326,64 @@ void run_stage(RuntimeClimateKernelReport &report, RuntimeClimateStage stage, Fn
     }
 }
 } // namespace
+
+bool runtime_climate_physics_inputs_ready(const RuntimeEnvironmentSnapshot &input,
+                                         size_t cells, std::string &error) {
+    if (!input.climate_physics_knobs.validate(error)) return false;
+    if (!physics_inputs_ready(input, cells)) { error = "physics_input_not_ready"; return false; }
+    error.clear(); return true;
+}
+
+bool RuntimeEnvironmentSnapshot::ClimatePhysicsKnobs::validate(std::string &error) const {
+    auto range = [&](double v, double lo, double hi, const char *name) {
+        if (!std::isfinite(v) || v < lo || v > hi) { error = name; return false; }
+        return true;
+    };
+#define PK_RANGE(field, lo, hi) if (!range(field, lo, hi, #field)) return false
+    PK_RANGE(slp_lat_amp, 0, 10); PK_RANGE(slp_land_amp, 0, 10);
+    PK_RANGE(slp_water_damp, 0, 1); PK_RANGE(slp_interior_boost, 0, 10);
+    PK_RANGE(slp_coast_damp, 0, 1); PK_RANGE(slp_thermal_weight, 0, 10);
+    PK_RANGE(slp_ice_high_weight, 0, 10); PK_RANGE(slp_snow_high_weight, 0, 10);
+    PK_RANGE(slp_moist_low_weight, 0, 10); PK_RANGE(slp_response_rate, 0, 1);
+    PK_RANGE(slp_synoptic_amp, 0, 10); PK_RANGE(slp_target_p95, 0, 10);
+    PK_RANGE(slp_mobile_low_count, 0, 8); PK_RANGE(slp_mobile_low_amp, 0, 10);
+    PK_RANGE(slp_mobile_low_sigma, 0.02f, 10); PK_RANGE(slp_mobile_low_period_days, 1, 1000000);
+    PK_RANGE(slp_smooth_passes, 0, 64); PK_RANGE(slp_recenter, 0, 1);
+    PK_RANGE(wind_response_rate, 0, 1); PK_RANGE(wind_max_turn_deg_per_day, 0, 360);
+    PK_RANGE(wind_min_flux_for_dir_update, 0, 10); PK_RANGE(wind_synoptic_amp, 0, 10);
+    PK_RANGE(wind_synoptic_period_days, 0.5, 1000000);
+    PK_RANGE(wind_terrain_aware, 0, 1); PK_RANGE(wind_belt_only_debug, 0, 1);
+    PK_RANGE(wind_momentum_advect_w, 0, 0.5); PK_RANGE(wind_momentum_diffuse_w_daily, 0, 0.5);
+    PK_RANGE(wind_traj_table_enabled, 0, 1); PK_RANGE(wind_traj_weather_share, 0, 1);
+    PK_RANGE(wind_traj_pos_scale, 0, 4); PK_RANGE(wind_traj_dt_days, 0.25, 60);
+    PK_RANGE(wind_div_damp_alpha, 0, 0.3f); PK_RANGE(thermal_monsoon_enabled, 0, 1);
+    PK_RANGE(thermal_monsoon_lat_limit, 0, 1); PK_RANGE(thermal_monsoon_deadband, 0, 0.10f);
+    PK_RANGE(thermal_monsoon_full_contrast, 0.01f, 0.25);
+    PK_RANGE(thermal_monsoon_gain, 0, 1.5); PK_RANGE(thermal_monsoon_breeze_floor, 0, 0.5);
+    PK_RANGE(days_per_year, 1, 1000000); PK_RANGE(axial_tilt_deg, 0, 90);
+    PK_RANGE(insolation_daylen_amp, 0, 10); PK_RANGE(lat_lut_bins, 16, 8192);
+    PK_RANGE(land_lf_mountain, 0, 255); PK_RANGE(land_lf_peak, 0, 255); PK_RANGE(land_lf_hill, 0, 255);
+    PK_RANGE(daily_period_days, 1, 1000000); PK_RANGE(ocean_period_days, 1, 1000000);
+    PK_RANGE(wrap_origin_x, -1e9, 1e9); PK_RANGE(wrap_period_x, 0, 1e9);
+    PK_RANGE(psi.total_iters, 1, 10000); PK_RANGE(psi.omega, 0.01, 1.99);
+    PK_RANGE(psi.r_base, 0, 10); PK_RANGE(psi.beta_floor, 0.000001, 1);
+    PK_RANGE(psi.source_scale, 0, 10); PK_RANGE(psi.oc_scale, 0, 10);
+    PK_RANGE(psi.oc_max_mag, 0.01f, 1.4142136f); PK_RANGE(psi.thermohaline_weight, 0, 10);
+    PK_RANGE(psi.upwelling_highlat_abs, 0, 1); PK_RANGE(psi.cold_sink_temp, -1, 1);
+    PK_RANGE(psi.response_rate, 0, 1); PK_RANGE(psi.thermal_current_weight, 0, 10);
+    PK_RANGE(psi.density_cold_weight, 0, 10); PK_RANGE(psi.density_ice_weight, 0, 10);
+    PK_RANGE(psi.depth_curl_damp, 0, 1); PK_RANGE(psi.sea_level, 0.05f, 0.95f);
+    PK_RANGE(psi.depth_ref, 0.01f, 10); PK_RANGE(psi.topo_steer_w, 0, 0.5);
+    PK_RANGE(psi.min_iters, 1, psi.total_iters); PK_RANGE(psi.check_every, 1, 10000);
+    PK_RANGE(psi.residual_epsilon, 0, 1);
+    PK_RANGE(upwelling.ekman_gain, 0, 10); PK_RANGE(upwelling.cold_sink_gain, 0, 10);
+    PK_RANGE(upwelling.highlat_abs, 0, 1); PK_RANGE(upwelling.cold_sink_temp, -1, 1);
+#undef PK_RANGE
+    if (water_id_count != 4) { error = "physics_water_id_count"; return false; }
+    for (size_t i = 0; i < 4; ++i) for (size_t j = i + 1; j < 4; ++j)
+        if (water_terrain_ids[i] == water_terrain_ids[j]) { error = "physics_water_id_duplicate"; return false; }
+    error.clear(); return true;
+}
 
 // ─── Canonical Climate stage order（B8 P0）───────────────────────────────────
 //
@@ -280,9 +539,6 @@ bool runtime_climate_stage_sequence_is_canonical(
 void RuntimeClimateKernel::reset(uint32_t) {
     // 换图 / authority reset 后，weather field_init 的"已播种"标记必须一起清掉。
     _weather_field_init_seeded = false;
-    _cyclone_total_injected = 0;
-    _cyclone_total_replaced = 0;
-    _cyclone_total_decayed = 0;
     // B8 P2：物理常驻状态整份丢弃（含派生缓存指纹），下次 plan_day 按新 shape 重建。
     _physics = pk_async_physics::RuntimeClimatePhysicsState{};
 }
@@ -393,6 +649,38 @@ uint64_t RuntimeClimateKernel::input_hash(const RuntimeEnvironmentSnapshot &inpu
     hash = mix_vector(hash, input.visible);
     hash = mix_vector(hash, input.building_resource_reserve);
     hash = mix_vector(hash, input.building_resource_extra);
+    hash = mix_vector(hash, input.cell_pos_x); hash = mix_vector(hash, input.cell_pos_y);
+    hash = mix_vector(hash, input.climate_physics_seed_slp);
+    hash = mix_vector(hash, input.climate_physics_seed_psi);
+    hash = mix_vector(hash, input.climate_physics_seed_upwelling);
+    // 按语义字段哈希，不能读取 POD padding（会破坏重试确定性）。
+    const auto &p = input.climate_physics_knobs;
+    const double physics_scalars[] = {
+        p.slp_lat_amp, p.slp_land_amp, p.slp_water_damp, p.slp_interior_boost, p.slp_coast_damp,
+        p.slp_thermal_weight, p.slp_ice_high_weight, p.slp_snow_high_weight, p.slp_moist_low_weight,
+        p.slp_response_rate, p.slp_synoptic_amp, p.slp_target_p95, double(p.slp_mobile_low_count),
+        p.slp_mobile_low_amp, p.slp_mobile_low_sigma, p.slp_mobile_low_period_days,
+        double(p.slp_smooth_passes), double(p.slp_recenter), p.wind_response_rate,
+        p.wind_max_turn_deg_per_day, p.wind_min_flux_for_dir_update, p.wind_synoptic_amp,
+        p.wind_synoptic_period_days, double(p.wind_terrain_aware), double(p.wind_belt_only_debug),
+        p.wind_momentum_advect_w, p.wind_momentum_diffuse_w_daily, double(p.wind_traj_table_enabled),
+        p.wind_traj_pos_scale, p.wind_traj_dt_days, double(p.wind_traj_weather_share), p.wind_div_damp_alpha,
+        double(p.thermal_monsoon_enabled), p.thermal_monsoon_lat_limit, p.thermal_monsoon_deadband,
+        p.thermal_monsoon_full_contrast, p.thermal_monsoon_gain, p.thermal_monsoon_breeze_floor,
+        double(p.days_per_year), p.axial_tilt_deg, p.insolation_daylen_amp, double(p.lat_lut_bins),
+        double(p.land_lf_mountain), double(p.land_lf_peak), double(p.land_lf_hill),
+        double(p.daily_split), double(p.daily_period_days), double(p.ocean_period_days), double(p.world_seed),
+        p.wrap_origin_x, p.wrap_period_x, double(p.enabled), double(p.ready), double(p.psi_warm_start),
+        double(p.psi.total_iters), p.psi.omega, p.psi.r_base, p.psi.beta_floor, p.psi.source_scale,
+        p.psi.oc_scale, p.psi.oc_max_mag, p.psi.thermohaline_weight, p.psi.upwelling_highlat_abs,
+        p.psi.cold_sink_temp, p.psi.response_rate, p.psi.thermal_current_weight, p.psi.density_cold_weight,
+        p.psi.density_ice_weight, p.psi.depth_curl_damp, p.psi.sea_level, p.psi.depth_ref, p.psi.topo_steer_w,
+        double(p.psi.early_exit), double(p.psi.min_iters), double(p.psi.check_every), p.psi.residual_epsilon,
+        p.upwelling.ekman_gain, p.upwelling.cold_sink_gain, p.upwelling.highlat_abs, p.upwelling.cold_sink_temp,
+    };
+    for (double v : physics_scalars) { uint64_t bits; std::memcpy(&bits, &v, sizeof(bits)); hash = mix(hash, bits); }
+    hash = mix(hash, p.water_id_count);
+    for (uint8_t id : p.water_terrain_ids) hash = mix(hash, id);
     return hash;
 }
 
@@ -400,7 +688,9 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
                                     const RuntimeClimateCatalog &catalog,
                                     const RuntimeClimateStore &current,
                                     RuntimeClimateStore &next,
-                                    RuntimeClimateKernelReport &report) const {
+                                    RuntimeClimateKernelReport &report,
+                                    bool compute_state_hash,
+                                    bool validate_input) const {
     report = RuntimeClimateKernelReport{};
     // B8 P2：物理环流 prepass 的就绪状态。worker 用自己的 lane，只缺 profile 标量；
     // 未就绪时物理继续读生产 transport（不静默算错），这一行给出第一手证据。
@@ -420,29 +710,53 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
     std::string error;
     std::string current_error;
     std::string next_error;
-    if (!validate_runtime_environment_snapshot(input, error) ||
-        !current.validate(current_error) || !next.validate(next_error) ||
+    // publish 边界已对同一份 snapshot 做过完整 validate；热路径再跑一遍会把
+    // hydro cycle（O(cells·depth)）和有限性扫描算进 plan_ms。
+    if (validate_input && !validate_runtime_environment_snapshot(input, error)) {
+        copy_error(report, error.c_str());
+        return false;
+    }
+    // 提交态 store：形状契约即可。finite / physics decode 留给 save 与自测。
+    if (!current.validate_shape(current_error) || &current == &next ||
         catalog.abi_version != RUNTIME_DOMAIN_POD_ABI_VERSION ||
         catalog.cell_count != current.cell_count || next.cell_count != current.cell_count ||
         (input.climate_catalog_hash != 0 && input.climate_catalog_hash != catalog.hash) ||
-        day < 0 || current.committed_day >= day) {
-        const char *reason = !error.empty() ? error.c_str() :
-            (!current_error.empty() ? current_error.c_str() :
-            (!next_error.empty() ? next_error.c_str() : "climate_kernel_preflight_failed"));
+        day < 0 || day > INT32_MAX || current.committed_day >= day) {
+        const char *reason = !current_error.empty() ? current_error.c_str()
+                                                    : "climate_kernel_preflight_failed";
         copy_error(report, reason);
         return false;
     }
+    // next 是可丢弃工作区。上次失败留下的无效值不能阻止从有效 current 重试。
+    if (!next.validate_shape(next_error)) next.reset(current.cell_count);
     copy_store_lanes(next, current);
-    // B8 P2 §4.2：物理常驻状态按当日 shape 定形。换图/换尺寸 → 整份重建（派生缓存
-    // 一并失效），绝不复用旧图缓冲；worker 物理 prepass 后续只在这份 state 上做数值
-    // 读写（每日零分配）。derive 缓存（coast/topo/traj）由各自指纹在用时懒重建。
-    if (_physics.cell_count != static_cast<int>(current.cell_count)) {
-        _physics.resize(static_cast<int>(current.cell_count));
+    // 每次计划从提交态恢复；kernel 成员只是工作区，discard/retry 不推进权威。
+    if (!pk_async_physics::restore_physics_state(current.physics_state.data(),
+            current.physics_state.size(), _physics, error)) {
+        copy_error(report, error.c_str()); return false;
     }
+    if (current.physics_state.empty()) _physics.resize(static_cast<int>(current.cell_count));
+    if (_physics.cell_count != static_cast<int>(current.cell_count)) {
+        copy_error(report, "physics_store_shape_mismatch"); return false;
+    }
+    const bool physics_owned = physics_inputs_ready(input, current.cell_count);
+    if (physics_owned && !physics_prepass(day, input, current, _physics, error)) {
+        copy_error(report, error.c_str()); return false;
+    }
+    if (physics_owned) report.work_units += uint64_t(current.cell_count) *
+        (uint64_t(_physics.last_slp_day == day) + uint64_t(_physics.last_wind_day == day) +
+         2u * uint64_t(_physics.last_ocean_day == day));
+    // 缺配置时不能沿用上次 ready 来授权主线程停算。
+    if (!physics_owned) _physics.initialized = false;
+    _physics.committed_day = day;
+    _physics.input_generation = input.generation;
+    _cyclone_seeded = false;
+    _cyclone_entries.clear();
+    _cyclone_next_stable_id = 1;
     // B8-2：store 里的 synoptic ψ 是跨天 + 跨存档的权威副本。先把它装进 kernel
     // scratch；只有"store 里确实有非零状态"才算已播种，否则留着让生产 capture
     // 的冷启动种子生效（ABI 3 旧档读进来就是全零）。
-    if (current.synoptic_psi.size() == current.cell_count &&
+    if (current.physics_state.empty() && current.synoptic_psi.size() == current.cell_count &&
         current.synoptic_psi_prev.size() == current.cell_count) {
         for (size_t i = 0; i < current.synoptic_psi.size(); ++i) {
             if (current.synoptic_psi[i] != 0.0f ||
@@ -471,6 +785,32 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
             next.base_vegetation = input.vegetation;
         }
     }
+    // B8-P1 / ABI 8：terrain / cover 冷启动。store 全零（新图 / ABI<=7 旧档）时
+    // 用环境快照播种；之后由 sea_ice 翻转与 weather distribute 在 worker 侧推进。
+    if (current.terrain.size() == current.cell_count &&
+        !current.terrain.empty() &&
+        input.terrain.size() == current.cell_count) {
+        bool terrain_seeded = false;
+        for (uint8_t value : current.terrain) {
+            if (value != 0u) {
+                terrain_seeded = true;
+                break;
+            }
+        }
+        if (!terrain_seeded) next.terrain = input.terrain;
+    }
+    if (current.cover.size() == current.cell_count &&
+        !current.cover.empty() &&
+        input.cover.size() == current.cell_count) {
+        bool cover_seeded = false;
+        for (uint8_t value : current.cover) {
+            if (value != 0u) {
+                cover_seeded = true;
+                break;
+            }
+        }
+        if (!cover_seeded) next.cover = input.cover;
+    }
     // B8-2：cyclone 状态同样先看 store（存档恢复），再退回 capture 的生产种子。
     // blob 的语义由 cyclone_state_encode/decode 拥有；只要 header 合法就算播种成功，
     // 哪怕是"0 个条目"—— 否则 worker 会每天重新播种、永远不开始自己的推进。
@@ -485,6 +825,56 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
         cyclone_state_decode(input.cyclone_seed_blob, _cyclone_entries,
                              _cyclone_next_stable_id);
         if (input.cyclone_seed_blob.size() >= 16u) {
+            _cyclone_seeded = true;
+        }
+    }
+    // P2 日序：physics → synoptic → cyclone stamp → round → weather。
+    bool physics_cyclone_stamp_ready = false;
+    if (physics_owned && input.climate_weather && input.climate_weather->ran) {
+        const auto &wx = *input.climate_weather;
+        const size_t n = current.cell_count;
+        if (wx.n_cells != static_cast<int>(n)) { copy_error(report, "physics_weather_shape"); return false; }
+        const auto &nb = input.neighbor_indices;
+        const char *syn_off = std::getenv("PK_CLIMATE_SYNOPTIC_OFF");
+        if (wx.synoptic_enabled && !(syn_off && syn_off[0] == '1')) {
+            if (!_physics.synoptic_seeded) {
+                if (wx.psi.size() == n) _physics.synoptic_psi = wx.psi;
+                if (wx.psi_prev.size() == n) _physics.synoptic_psi_prev = wx.psi_prev;
+                _physics.synoptic_seeded = true;
+            }
+            if (_physics.synoptic_tick == INT32_MAX) { copy_error(report, "physics_synoptic_tick_overflow"); return false; }
+            auto syn = wx.synoptic;
+            syn.tick = ++_physics.synoptic_tick;
+            pk_async_climate::synoptic_advance_pure(static_cast<int>(n), nb.data(),
+                input.cell_pos_x.data(), input.cell_pos_y.data(), _physics.wind_x.data(),
+                _physics.wind_y.data(), current.temperature.data(), syn,
+                _physics.synoptic_psi, _physics.synoptic_psi_prev);
+        }
+        const char *cyc_force = std::getenv("PK_CLIMATE_CYCLONE_FORCE");
+        if (input.cyclone_enabled || (cyc_force && cyc_force[0] == '1')) {
+            // stamp/tag 是当日派生场，每次从空工作区重建，使重试不依赖上次计划。
+            _cyclone_force_tag.assign(n, 0); _cyclone_visit_tag.assign(n, 0);
+            _cyclone_force_x.assign(n, 0); _cyclone_force_y.assign(n, 0); _cyclone_lift.assign(n, 0);
+            _cyclone_force_generation = 1;
+            pk_async_climate::CycloneAdvanceKnobs ck;
+            ck.enabled = true; ck.dt_days = input.cyclone_dt_days;
+            ck.world_bounds_pos_y = input.cyclone_world_bounds_pos_y;
+            ck.world_bounds_size_y = input.cyclone_world_bounds_size_y;
+            ck.wrap_width_x = input.cyclone_wrap_width_x; ck.max_radius_cells = input.cyclone_max_radius_cells;
+            pk_async_climate::CycloneLanes cl;
+            cl.neighbors = nb.data(); cl.pos_x = input.cell_pos_x.data(); cl.pos_y = input.cell_pos_y.data();
+            cl.lat_norm = input.cell_lat_norm.data(); cl.terrain = input.terrain.data(); cl.temp = current.temperature.data();
+            cl.wind_x = _physics.wind_x.data(); cl.wind_y = _physics.wind_y.data(); cl.wind_speed = _physics.wind_speed.data();
+            cl.vapor = current.vapor.data(); cl.instability = current.instability.data(); cl.convergence = current.convergence.data();
+            pk_async_climate::CycloneStamp stamp;
+            stamp.force_tag = _cyclone_force_tag.data(); stamp.visit_tag = _cyclone_visit_tag.data();
+            stamp.force_x = _cyclone_force_x.data(); stamp.force_y = _cyclone_force_y.data(); stamp.lift = _cyclone_lift.data();
+            stamp.force_generation = stamp.visit_generation = 1;
+            pk_async_climate::CycloneStats stats;
+            pk_async_climate::cyclone_advance_and_stamp_pure(static_cast<int>(n), ck, cl, _cyclone_entries, stamp, stats);
+            _physics.cyclone_total_decayed += static_cast<uint64_t>(std::max(0, stats.decayed));
+            report.cyclone_touched = stats.touched_cells;
+            physics_cyclone_stamp_ready = true;
             _cyclone_seeded = true;
         }
     }
@@ -676,13 +1066,14 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
     if (!input.climate_round_ran && !input.climate_albedo.ran &&
         !vegetation_requested && !feedback_requested && !weather_requested &&
         !hydrology_requested && !distribute_requested) {
-        // 物理场一个不动，但日期/代号必须照常推进：committed_day 是单调性门禁和
-        // restore 校验的依据，停在旧值会让后面某一天被判成回退。
+        if (!pk_async_physics::serialize_physics_state(_physics, next.physics_state, error)) {
+            copy_error(report, error.c_str()); return false;
+        }
         next.committed_day = day;
         ++next.generation;
         ++next.climate_generation;
         report.completed = 1;
-        report.state_hash = next.state_hash();
+        if (compute_state_hash) report.state_hash = next.state_hash();
         return true;
     }
 
@@ -715,11 +1106,28 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
     bool shared_round_ran = false;
     if (shared_passes_available) {
         _round_in = round_in;   // 编排在 in 上做接力，必须给它可变副本
+        if (physics_owned) {
+            _round_in.wind_x = _physics.wind_x; _round_in.wind_y = _physics.wind_y;
+            _round_in.wind_speed = _physics.wind_speed;
+            _round_in.ocean_current_x = _physics.ocean_current_x;
+            _round_in.ocean_current_y = _physics.ocean_current_y;
+            _round_in.upwelling_strength = _physics.upwelling;
+            _round_in.wind_traj_idx.clear(); _round_in.wind_traj_w.clear();
+            if (input.climate_physics_knobs.wind_traj_weather_share && _physics.wind_traj_valid) {
+                _round_in.wind_traj_idx = _physics.wind_traj_idx;
+                _round_in.wind_traj_w = _physics.wind_traj_w;
+            }
+        }
         // water terrain LUT 走 static knobs（它不是 per-cell lane，capture 的 slot 兜底
         // 覆盖不到）。round input 里没带时从 static knobs 补，否则 sea_ice 会饿死。
         if (_round_in.water_terrain_ids.empty()) {
             _round_in.water_terrain_ids =
                 input.climate_round_static_knobs.water_terrain_ids;
+        }
+        // ABI 8：ACTIVE 下 MapData terrain 被冻结，round 必须吃 worker 自持副本，
+        // 否则海冰翻转无法跨天累积。
+        if (next.terrain.size() == cells) {
+            _round_in.terrain = next.terrain;
         }
         // scalars 由 capture 侧整套填好（world_ext_simulation_host.cpp 里
         // climate_round_scalars 那段），这里不再逐字段补。
@@ -810,6 +1218,10 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
         // 温度场的唯一授权写者。
         scatter(next.temperature,          _round_out.temp);
         scatter(next.sea_ice,              _round_out.sea_ice_frac);
+        // ABI 8：sea_ice 翻转后的 terrain 写回 worker store，供次日 round 与 writeback。
+        if (_round_out.terrain.size() == cells && next.terrain.size() == cells) {
+            std::memcpy(next.terrain.data(), _round_out.terrain.data(), cells);
+        }
 
         // 逐 pass 耗时记进对应 stage 槽位（索引与 passes_mask 的 bit 位一致）。
         // finalizer 没有独立 stage 槽，它的耗时并入 round 尾巴不单列。
@@ -1367,8 +1779,29 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
         (shared_round_ran || !input.climate_round_ran);
     if (shared_weather_ran) {
         run_stage(report, RuntimeClimateStage::WEATHER, [&]() {
-            const pk_async_climate::WeatherFieldInput &wx = *input.climate_weather;
-            const auto &neighbors = input.climate_round_static_knobs.neighbor_indices;
+            // SHADOW 保持捕获的参考输入；ACTIVE 的物理消费者只读本次 worker 计划。
+            pk_async_climate::WeatherFieldInput owned_weather;
+            if (physics_owned) {
+                owned_weather = *input.climate_weather;
+                owned_weather.wind_x = _physics.wind_x;
+                owned_weather.wind_y = _physics.wind_y;
+                owned_weather.wind_speed = _physics.wind_speed;
+                owned_weather.monsoon_thermal = _physics.monsoon_thermal;
+                owned_weather.temp_read = next.temperature;
+                owned_weather.moisture_read = next.moisture;
+                owned_weather.sea_ice = next.sea_ice;
+                owned_weather.snow_cover = next.snow_cover;
+                owned_weather.traj_idx.clear();
+                owned_weather.traj_w.clear();
+                if (input.climate_physics_knobs.wind_traj_weather_share && _physics.wind_traj_valid) {
+                    owned_weather.traj_idx = _physics.wind_traj_idx;
+                    owned_weather.traj_w = _physics.wind_traj_w;
+                }
+            }
+            const pk_async_climate::WeatherFieldInput &wx = physics_owned
+                ? owned_weather : *input.climate_weather;
+            const auto &neighbors = physics_owned ? input.neighbor_indices
+                : input.climate_round_static_knobs.neighbor_indices;
             const auto lane_ok = [cells](const std::vector<float> &v) {
                 return v.size() == cells;
             };
@@ -1570,8 +2003,8 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
                     cyclone_enabled_for_day ? 1 : 0);
                 std::fflush(stderr);
             }
-            bool cyclone_lanes_ready = false;
-            if (cyclone_enabled_for_day) {
+            bool cyclone_lanes_ready = physics_cyclone_stamp_ready;
+            if (cyclone_enabled_for_day && input.climate_worker_authoritative && !physics_owned) {
                 if (_cyclone_force_tag.size() != cells) {
                     _cyclone_force_tag.assign(cells, 0u);
                     _cyclone_visit_tag.assign(cells, 0u);
@@ -1631,10 +2064,10 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
                         _cyclone_entries, cyc_stamp, cyc_stats);
                     cyclone_lanes_ready = true;
                     report.cyclone_alive = cyc_stats.alive;
-                    _cyclone_total_decayed +=
+                    _physics.cyclone_total_decayed +=
                         static_cast<uint64_t>(std::max(0, cyc_stats.decayed));
                     report.cyclone_decayed =
-                        static_cast<int32_t>(_cyclone_total_decayed);
+                        static_cast<int32_t>(_physics.cyclone_total_decayed);
                     report.cyclone_touched = cyc_stats.touched_cells;
                     static std::atomic<int> s_cyclone_reports_left{24};
                     if (s_cyclone_reports_left.fetch_sub(
@@ -1662,8 +2095,8 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
                 const char *value = std::getenv("PK_CLIMATE_SYNOPTIC_OFF");
                 return value != nullptr && value[0] == '1';
             }();
-            bool worker_psi_ready = false;
-            if (wx.synoptic_enabled && !synoptic_disabled) {
+            bool worker_psi_ready = physics_owned && _physics.synoptic_seeded && wx.synoptic_enabled && !synoptic_disabled;
+            if (!physics_owned && wx.synoptic_enabled && !synoptic_disabled) {
                 if (_physics.synoptic_psi.size() != cells) {
                     _physics.synoptic_psi.assign(cells, 0.0f);
                     _physics.synoptic_psi_prev.assign(cells, 0.0f);
@@ -1913,14 +2346,14 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
                     if (gen_stats.injected > 0 || gen_stats.replaced > 0) {
                         _cyclone_seeded = true;
                     }
-                    _cyclone_total_injected +=
+                    _physics.cyclone_total_injected +=
                         static_cast<uint64_t>(std::max(0, gen_stats.injected));
-                    _cyclone_total_replaced +=
+                    _physics.cyclone_total_replaced +=
                         static_cast<uint64_t>(std::max(0, gen_stats.replaced));
                     report.cyclone_injected =
-                        static_cast<int32_t>(_cyclone_total_injected);
+                        static_cast<int32_t>(_physics.cyclone_total_injected);
                     report.cyclone_replaced =
-                        static_cast<int32_t>(_cyclone_total_replaced);
+                        static_cast<int32_t>(_physics.cyclone_total_replaced);
                     report.cyclone_alive = gen_stats.alive;
                     static std::atomic<int> s_cyclone_genesis_reports_left{24};
                     if (s_cyclone_genesis_reports_left.fetch_sub(
@@ -2003,7 +2436,12 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
                 next.water_balance_30d.size() != cells) {
                 return static_cast<uint64_t>(0);
             }
-            _distribute_cover_scratch = wd.cover;
+            // ABI 8：cover 由 worker 自持；已播种时用 store，否则跟生产冷启动。
+            if (next.cover.size() == cells) {
+                _distribute_cover_scratch = next.cover;
+            } else {
+                _distribute_cover_scratch = wd.cover;
+            }
             _distribute_soil_scratch = wd.soil_moisture;
             // 两条积雪计数：own_snow_state 决定跨天由谁持有（见
             // WeatherDistributeInput 那里的说明）。SHADOW 每天跟生产播种以便对拍
@@ -2029,7 +2467,8 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
             lanes.heat = wd.heat.data();
             lanes.elevation = wd.elevation.data();
             lanes.landform = wd.landform.data();
-            lanes.terrain = wd.terrain.data();
+            lanes.terrain = next.terrain.size() == cells
+                ? next.terrain.data() : wd.terrain.data();
             // 这四条走 worker 自己的 store：field solve 刚刚写过它们，拿生产的记录
             // 等于把 field solve 的对拍结果绕过去，那一段就白验了。
             // weather_field_init 没有 store 成员，而 field solve 在 worker 侧总是走
@@ -2048,6 +2487,12 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
 
             pk_async_climate::WeatherDistributeEmit emit;
             pk_async_climate::weather_distribute_pure(wd.knobs, lanes, state, emit);
+            // ABI 8：distribute 就地改 cover scratch，写回 worker store 供 writeback。
+            if (_distribute_cover_scratch.size() == cells &&
+                next.cover.size() == cells) {
+                std::memcpy(next.cover.data(), _distribute_cover_scratch.data(),
+                            cells);
+            }
             report.stage_ran_mask |= pk_async_climate::CLIMATE_STAGE_BIT_WEATHER;
             return static_cast<uint64_t>(cells) * 8u;
         });
@@ -2232,14 +2677,19 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
             current.moisture[c], next.moisture[c]);
         std::fflush(stderr);
     }
-    report.state_hash = next.state_hash();
+    if (physics_owned && shared_round_ran && _round_out.ocean_thermal_anomaly.size() == cells)
+        _physics.ocean_thermal_anomaly = _round_out.ocean_thermal_anomaly;
+    if (!pk_async_physics::serialize_physics_state(_physics, next.physics_state, error)) {
+        copy_error(report, error.c_str()); return false;
+    }
+    if (compute_state_hash) report.state_hash = next.state_hash();
     // B8-2：把 cyclone 的累计动作数与当前存活数无条件写进 report。weather 是
     // 节拍制 —— 只跑 round 的那天（stage_ran_mask=0xFF）根本不会进 genesis 段，
     // 逐日的 report 会带着零出门，于是 host/soak 最后采到的那一天永远是 0。
     // 这三个数是 kernel 级累计量，必须每天出口都要说真话。
-    report.cyclone_injected = static_cast<int32_t>(_cyclone_total_injected);
-    report.cyclone_replaced = static_cast<int32_t>(_cyclone_total_replaced);
-    report.cyclone_decayed = static_cast<int32_t>(_cyclone_total_decayed);
+    report.cyclone_injected = static_cast<int32_t>(_physics.cyclone_total_injected);
+    report.cyclone_replaced = static_cast<int32_t>(_physics.cyclone_total_replaced);
+    report.cyclone_decayed = static_cast<int32_t>(_physics.cyclone_total_decayed);
     report.cyclone_alive = static_cast<int32_t>(_cyclone_entries.size());
     report.completed = 1;
     return true;

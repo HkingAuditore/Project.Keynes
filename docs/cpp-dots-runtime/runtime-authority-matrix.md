@@ -11,7 +11,7 @@ long-form matrix below: country authority is **PKCN v13**, economy authority is
 **PKEC v52**, configurable cross-domain effects are **PKEF v11**, Trigger state is
 **PKTR v6**, ideology state is **PKID v3**, and the native gameplay journal is
 **journal v4**. Country is production ACTIVE only for the granted
-`CLIMATE|COUNTRY|MODIFIER|EFFECT|COMMIT = 0x866` mask; Economy remains synchronous production
+`CLIMATE|COUNTRY|TRIGGER_INPUT|IDEOLOGY|MODIFIER|EFFECT|EVENTS|COMMIT = 0xA7E` mask; Economy remains synchronous production
 authority while its D7 peer work is staged per operation. The save
 coordinator restores domain state in its documented order and verifies active
 ideology bindings against PKEF; recovery never replays an effect to repair a
@@ -40,12 +40,27 @@ current schema and do not imply Economy POD ACTIVE authority.
 | Gameplay modifiers | Gameplay `ModifierStore` + base/identity SoA | PKSV `pkgp` / PKGP v1 | Explicit native handles only; no Godot Object reflection |
 | Configurable effects and cross-domain plans | `EffectRuntime` | PKSV `pkef` / PKEF v11 | Owns catalog IR, FamilyEffect metadata/stack groups, managed lifecycle, unique technology recipes, flat metric slabs, due/dirty candidates, transactions, durable external bindings and ACKs; never owns country/economy/Modifier stores |
 | Trigger accumulation, technology-practice breakthroughs and development duration | `TriggerRuntime` | PKSV `pktr` / PKTR v6 | Owns source cursors, aggregate/remainder/window state, last sample day, fire sequence and unhanded effects; threshold crossing hands typed Country-signal commands to Effect and never writes Country or Economy directly |
-| Country ideology collection/progression/offers/public-opinion gates/synergies | `NativeIdeologyRuntime` | PKSV `pkid` / PKID v3 | Owns sparse country idea state, slots, points, offer RNG, directional support policy, exclusion and synergy state; reads committed Economy class facts and verifies PKEF external identity rather than replaying effects |
+| Country ideology collection/progression/offers/public-opinion gates/synergies | Host `RuntimeIdeologyPodAuthority` while Ideology has the `0x010` grant; synchronous `NativeIdeologyRuntime` only when the switch is disabled, startup fails, or the grant is absent | PKSV `pkid` / PKID v3 plus worker `IDP1` | Owns sparse country idea state, slots, points, offer RNG, directional support policy, exclusion and synergy state; reads committed Economy class facts and verifies PKEF external identity rather than replaying effects. Under the grant the worker is the sole writer and its snapshot writes back into `NativeIdeologyRuntime`, so UI and save keep reading one runtime |
 
-Stage G also provides a separate `RuntimeIdeologyPodAuthority` mirror for
-worker `SHADOW` diagnostics. It owns no production authority and does not add
-an Ideology bit to the current `implemented_domain_mask() == 0x866`; its `IDP1`
-section is independent from synchronous `PKID` and legacy composite `PDP3`.
+G8 promoted `RuntimeIdeologyPodAuthority` from a worker `SHADOW` mirror to the
+production writer; the Ideology bit is part of
+`implemented_domain_mask() == 0xA7E`. Its `IDP1` section stays independent from
+synchronous `PKID` and legacy composite `PDP3`, and the SHADOW diagnostic stage
+is retained for parity work.
+
+H7/H8 did the same for Trigger: with the `0x008` grant the Host worker stage is
+the sole Trigger writer, its snapshot ring writes back into `TriggerRuntime`, and
+`run_trigger_daily` / `trigger_should_run` are suppressed on the main thread.
+PKTR v6 and the Trigger row above are unchanged — the write-back keeps one
+runtime as the read surface for UI, save, and the Trigger→Effect handoff.
+
+I8 is narrower and must not be over-read. The `0x200` EVENTS grant gives the
+worker POD store the EVENTS **stage bit and a worker-side mirror snapshot only**.
+The native Gameplay journal row below is still the production consumer source:
+no main-thread journal append or ACK is suppressed, and the POD snapshot is
+deliberately not fed back into `GameplayEventBus`. Migrating the journal's
+consumers is a separate change; until it lands, a granted EVENTS bit does not
+mean the journal moved to the worker.
 | Effect-originated gameplay events | native Gameplay journal | PKSV `journal` v4 | `gameplay_effect` is the POD ingress/ACK boundary; journal stores normal event IDs and `event_id=-1` custom geography-commit idempotency evidence |
 | Calendar/RNG/time mode | `WorldClock` | PKSV `world_clock` | Restore date, carry, RNG, publish indices, pause and speed |
 | Cell exploration progress | `VisionSolver` writing `cell.explored` | PKSV `pkfg` (`PKFogOfWar v1`) | Monotonic; restore after PKCN because re-solving reads territory |
@@ -209,7 +224,7 @@ native transient diagnostics and are not parallel gameplay state.
 
 这里的“authority”指同步 `NativeEconomyRuntime` 的业务状态所有权，
 不表示 Economy 已进入 Host/POD `implemented_domain_mask`；当前正式 mask
-现为 `0x866`，Economy 仍不在 ACTIVE grant 中。
+现为 `0xA7E`，Economy 仍不在 ACTIVE grant 中。
 
 `NativeEconomyRuntime` is stage, tick, state, and publish authority for rolling
 local settlement. GDScript only captures coarse environment/resource inputs,
@@ -368,8 +383,8 @@ diagnostic after the Climate trace barrier. It owns isolated shadow stores,
 emits typed intents/ACKs, and reports timing, hashes, and fallback reasons.
 The diagnostic runner itself is not an authority: `capability_mask()` is zero
 and MapData is never written. Production Host authority is independently
-`COMMIT | CLIMATE | COUNTRY | MODIFIER | EFFECT (0x866)`; Economy remains outside ACTIVE.
+`COMMIT | CLIMATE | COUNTRY | TRIGGER_INPUT | IDEOLOGY | MODIFIER | EFFECT | EVENTS (0xA7E)`; Economy remains outside ACTIVE.
 
 # Modifier POD authority boundary
 
-Modifier E2-E8 与 Effect F8 已完成：生产 ACTIVE 唯一写者、snapshot 回灌 legacy runtime、抑制对应 daily。当前 Host mask 为 `CLIMATE|COUNTRY|MODIFIER|EFFECT|COMMIT = 0x866`。
+Modifier E2-E8、Effect F8、Ideology G8 与 Trigger H7/H8 已完成：生产 ACTIVE 唯一写者、snapshot 回灌 legacy runtime、抑制对应 daily。Events I8 只拿到 stage 位与 worker 侧镜像，legacy journal 仍是消费源。当前 Host mask 为 `CLIMATE|COUNTRY|TRIGGER_INPUT|IDEOLOGY|MODIFIER|EFFECT|EVENTS|COMMIT = 0xA7E`。

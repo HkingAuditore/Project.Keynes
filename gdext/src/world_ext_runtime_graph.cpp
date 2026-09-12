@@ -12,6 +12,7 @@
 #include <godot_cpp/variant/utility_functions.hpp>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <limits>
 
@@ -33,6 +34,13 @@ enum RuntimeDirtyFamily : uint32_t {
     DIRTY_EVENTS = 1u << 7,
     DIRTY_OVERLAY = 1u << 8,
 };
+
+// Producer 2 on the Trigger POD command lane. Producer 1 is the Dictionary
+// bridge in world_ext_trigger.cpp; the lane is drained in a deterministic
+// (effective_day, producer_id, sequence, request_id) order, so the two producers
+// stay replayable independently.
+std::atomic<uint64_t> g_graph_trigger_request_id{1};
+std::atomic<uint64_t> g_graph_trigger_sequence{1};
 
 static uint32_t elapsed_us(Clock::time_point start) {
     const auto us = std::chrono::duration_cast<std::chrono::microseconds>(
@@ -154,6 +162,41 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
             input.value = event.value_i64;
             input.payload = {event.payload_i0, event.payload_i1,
                              event.payload_i2, event.payload_i3};
+            // H8: mirror the same committed fact onto the Trigger POD lane. The
+            // worker dedupes by source cursor, so this is safe in SHADOW too,
+            // and under ACTIVE it is the only way the worker sees the journal.
+            if (_runtime_host != nullptr) {
+                RuntimeTriggerCommand command;
+                command.request_id = g_graph_trigger_request_id.fetch_add(
+                    1, std::memory_order_relaxed);
+                command.producer_id = 2u;
+                command.sequence = g_graph_trigger_sequence.fetch_add(
+                    1, std::memory_order_relaxed);
+                command.opcode = RuntimeTriggerCommandOpcode::INGEST_EVENT;
+                command.requested_day = day;
+                command.effective_day = day;
+                command.event.source_id = input.source_id;
+                command.event.event_id = input.event_id;
+                command.event.day = input.day;
+                command.event.event_type = input.event_type;
+                command.event.payload_schema = input.payload_schema;
+                command.event.entity_handle = input.entity_handle;
+                command.event.group_handle = input.group_handle;
+                command.event.value = input.value;
+                command.event.payload = input.payload;
+                std::string queue_error;
+                if (!_runtime_host->queue_trigger_pod_command(command, queue_error))
+                    break;
+            }
+            if (trigger_worker_authoritative()) {
+                // Sole writer: the worker owns ingest, so do not stage the same
+                // event in the facade — the snapshot write-back would then
+                // disagree with a facade that saw it twice.
+                cursor = input.event_id;
+                ++ingested;
+                if (ingested >= 512) break;
+                continue;
+            }
             size_t accepted = 0;
             int64_t last_accepted = 0;
             std::string error;
@@ -250,11 +293,26 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
             work += ingested_events;
             progressed = true;
         }
+        // H8: under worker authority the worker runs the aggregation/emission
+        // day. The main thread stays the Trigger->Effect delivery cursor owner,
+        // so the handoff below keeps running against the written-back facade.
+        const bool trigger_worker_owns_day = trigger_worker_authoritative();
         if (_trigger_runtime != nullptr && !trigger_handoff_blocked &&
-            static_cast<TriggerRuntime *>(_trigger_runtime)->should_run(day)) {
-            ran(run_trigger_daily(day), DIRTY_EVENTS);
+            (trigger_worker_owns_day ||
+             static_cast<TriggerRuntime *>(_trigger_runtime)->should_run(day))) {
+            if (!trigger_worker_owns_day) {
+                ran(run_trigger_daily(day), DIRTY_EVENTS);
+                progressed = true;
+            }
             if (_effect_runtime != nullptr) {
                 const Dictionary handoff = handoff_trigger_effects(512);
+                const int64_t handed_off =
+                    static_cast<int64_t>(handoff.get("handed_off", 0));
+                if (handed_off > 0) {
+                    work += static_cast<uint32_t>(handed_off);
+                    dirty |= DIRTY_EVENTS;
+                    progressed = true;
+                }
                 if (bool(handoff.get("blocked", false))) {
                     trigger_handoff_blocked = true;
                     const std::string reason =
@@ -288,7 +346,6 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
                     }
                 }
             }
-            progressed = true;
         }
         if (over_budget()) break;
         // Publish the last committed Economy opinion before synchronous
@@ -298,7 +355,13 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
             _runtime_host != nullptr) {
             publish_ideology_worker_inputs();
         }
-        if (_ideology_runtime != nullptr &&
+        // G8: publish_ideology_worker_inputs above still runs under worker
+        // authority — the worker needs the opinion snapshot either way — but
+        // the synchronous day must not.
+        const bool ideology_worker_authoritative = _runtime_host != nullptr &&
+            _runtime_host->domain_is_worker_authoritative(
+                RuntimeDomainId::IDEOLOGY);
+        if (!ideology_worker_authoritative && _ideology_runtime != nullptr &&
             static_cast<NativeIdeologyRuntime *>(_ideology_runtime)->should_run(day)) {
             ran(run_ideology_daily(day), DIRTY_COUNTRY_STATE | DIRTY_EVENTS);
             progressed = true;
@@ -621,6 +684,8 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
             static_cast<int64_t>(host.environment_superseded_days);
         out["environment_dropped_days"] =
             static_cast<int64_t>(host.environment_dropped_days);
+        out["environment_ring_pending"] =
+            static_cast<int64_t>(host.environment_ring_pending);
         out["climate_wait_total_ms"] =
             static_cast<int64_t>(host.climate_wait_total_ms);
         out["climate_wait_last_ms"] =
@@ -691,6 +756,18 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
         out["effect_worker_authoritative"] =
             (host.authoritative_domain_mask &
              runtime_domain_mask(RuntimeDomainId::EFFECT)) != 0u;
+        out["ideology_worker_authoritative"] =
+            (host.authoritative_domain_mask &
+             runtime_domain_mask(RuntimeDomainId::IDEOLOGY)) != 0u;
+        out["trigger_worker_authoritative"] =
+            (host.authoritative_domain_mask &
+             runtime_domain_mask(RuntimeDomainId::TRIGGER_INPUT)) != 0u;
+        // I8: the Events grant means the worker mirrors the committed journal in
+        // POD form and owns the EVENTS stage bit. The legacy GameplayEventBus
+        // journal is still the production consumer source.
+        out["events_worker_authoritative"] =
+            (host.authoritative_domain_mask &
+             runtime_domain_mask(RuntimeDomainId::EVENTS)) != 0u;
         out["country_parity_compared"] = host.country_parity_compared != 0;
         out["country_parity_matched"] = host.country_parity_matched != 0;
         out["country_parity_compared_count"] = static_cast<int64_t>(
@@ -726,6 +803,19 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
         out["trigger_first_divergence_index"] = host.trigger_first_divergence_index;
         out["trigger_first_divergence_kind"] = String(host.trigger_first_divergence_kind);
         out["trigger_blocker"] = String(host.trigger_blocker);
+        out["trigger_pod_ready"] = host.trigger_pod_ready;
+        out["trigger_pod_plan_ms"] = host.trigger_pod_plan_ms;
+        out["trigger_pod_replay_ms"] = host.trigger_pod_replay_ms;
+        out["trigger_pod_state_hash"] = static_cast<int64_t>(
+            host.trigger_pod_state_hash);
+        out["trigger_pod_snapshot_generation"] = static_cast<int64_t>(
+            host.trigger_pod_snapshot_generation);
+        out["trigger_pod_intent_count"] = static_cast<int>(
+            host.trigger_pod_intent_count);
+        out["trigger_pod_ack_count"] = static_cast<int>(
+            host.trigger_pod_ack_count);
+        out["trigger_pod_fallback_reason"] = String(
+            host.trigger_pod_fallback_reason);
         out["modifier_pod_ready"] = host.modifier_pod_ready;
         out["modifier_pod_plan_ms"] = host.modifier_pod_plan_ms;
         out["modifier_pod_replay_ms"] = host.modifier_pod_replay_ms;
@@ -908,6 +998,18 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
         out["effect_worker_authoritative"] =
             (host.authoritative_domain_mask &
              runtime_domain_mask(RuntimeDomainId::EFFECT)) != 0u;
+        out["ideology_worker_authoritative"] =
+            (host.authoritative_domain_mask &
+             runtime_domain_mask(RuntimeDomainId::IDEOLOGY)) != 0u;
+        out["trigger_worker_authoritative"] =
+            (host.authoritative_domain_mask &
+             runtime_domain_mask(RuntimeDomainId::TRIGGER_INPUT)) != 0u;
+        // I8: the Events grant means the worker mirrors the committed journal in
+        // POD form and owns the EVENTS stage bit. The legacy GameplayEventBus
+        // journal is still the production consumer source.
+        out["events_worker_authoritative"] =
+            (host.authoritative_domain_mask &
+             runtime_domain_mask(RuntimeDomainId::EVENTS)) != 0u;
         out["country_parity_compared"] = host.country_parity_compared != 0;
         out["country_parity_matched"] = host.country_parity_matched != 0;
         out["country_parity_compared_count"] = static_cast<int64_t>(
@@ -943,6 +1045,19 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
         out["trigger_first_divergence_index"] = host.trigger_first_divergence_index;
         out["trigger_first_divergence_kind"] = String(host.trigger_first_divergence_kind);
         out["trigger_blocker"] = String(host.trigger_blocker);
+        out["trigger_pod_ready"] = host.trigger_pod_ready;
+        out["trigger_pod_plan_ms"] = host.trigger_pod_plan_ms;
+        out["trigger_pod_replay_ms"] = host.trigger_pod_replay_ms;
+        out["trigger_pod_state_hash"] = static_cast<int64_t>(
+            host.trigger_pod_state_hash);
+        out["trigger_pod_snapshot_generation"] = static_cast<int64_t>(
+            host.trigger_pod_snapshot_generation);
+        out["trigger_pod_intent_count"] = static_cast<int>(
+            host.trigger_pod_intent_count);
+        out["trigger_pod_ack_count"] = static_cast<int>(
+            host.trigger_pod_ack_count);
+        out["trigger_pod_fallback_reason"] = String(
+            host.trigger_pod_fallback_reason);
         out["stale_environment_rejected"] = static_cast<int64_t>(host.stale_environment_rejected);
         out["simulation_time_debt_days"] = host.time_debt_days;
         out["time_debt_days"] = host.time_debt_days;

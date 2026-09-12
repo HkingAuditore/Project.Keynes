@@ -1,0 +1,2043 @@
+{
+	"authority": true,
+	"days": 60,
+	"delivery": {
+		"authoritative_domain_mask": 2686,
+		"authority_policy": {
+			"enabled": true,
+			"measured_affordable_threshold_cells": -1,
+			"n_cells": 2400,
+			"override": "auto",
+			"reason": "auto_measured_keep_on_no_affordable_size",
+			"requested": true,
+			"threshold_cells": 0,
+			"threshold_source": "c1_c3_ladder_20260911_no_affordable_size_at_x50_keep_on"
+		},
+		"climate_committed_day": 59,
+		"climate_consumed_generation": 60,
+		"climate_wait_last_ms": 0,
+		"climate_wait_max_ms": 0,
+		"climate_wait_total_ms": 0,
+		"country_worker_authoritative": true,
+		"enabled": true,
+		"environment_consumed_days": 60,
+		"environment_dropped_days": 0,
+		"environment_published_days": 60,
+		"environment_ring_pending": 0,
+		"environment_superseded_days": 0,
+		"requested_authority_mask": 2686,
+		"worker_authoritative": true,
+		"writeback_applied_fields": 44,
+		"writeback_days": 32,
+		"writeback_drop_count": 23,
+		"writeback_flush_ms": 0.0569,
+		"writeback_generation": 57,
+		"writeback_last_day": 57,
+		"writeback_memcpy_ms": 0.1613,
+		"writeback_skipped_fields": [
+			"riparian_moisture(unbound)",
+			"vegetation_succession_candidate(extern_size)"
+		]
+	},
+	"drive": "serial_wait",
+	"first_bad_field": "",
+	"first_bad_tick": -1,
+	"height": 48,
+	"samples": [
+		{
+			"delivery": {
+				"authoritative_domain_mask": 2686,
+				"authority_policy": {
+					"enabled": true,
+					"measured_affordable_threshold_cells": -1,
+					"n_cells": 2400,
+					"override": "auto",
+					"reason": "auto_measured_keep_on_no_affordable_size",
+					"requested": true,
+					"threshold_cells": 0,
+					"threshold_source": "c1_c3_ladder_20260911_no_affordable_size_at_x50_keep_on"
+				},
+				"climate_committed_day": 4,
+				"climate_consumed_generation": 5,
+				"climate_wait_last_ms": 0,
+				"climate_wait_max_ms": 0,
+				"climate_wait_total_ms": 0,
+				"country_worker_authoritative": true,
+				"enabled": true,
+				"environment_consumed_days": 5,
+				"environment_dropped_days": 0,
+				"environment_published_days": 5,
+				"environment_ring_pending": 0,
+				"environment_superseded_days": 0,
+				"requested_authority_mask": 2686,
+				"worker_authoritative": true,
+				"writeback_applied_fields": 42,
+				"writeback_days": 2,
+				"writeback_drop_count": 0,
+				"writeback_flush_ms": 0.1591,
+				"writeback_generation": 3,
+				"writeback_last_day": 3,
+				"writeback_memcpy_ms": 0.2062,
+				"writeback_skipped_fields": [
+					"riparian_moisture(unbound)",
+					"vegetation_succession_candidate(extern_size)"
+				]
+			},
+			"fields": {
+				"base_vegetation_arr": {
+					"max": 27.0,
+					"mean": 8.58333333333333,
+					"min": 0.0,
+					"nz": 1333,
+					"present": true,
+					"size": 2400
+				},
+				"insolation_dev_arr": {
+					"max": 0.630167841911316,
+					"mean": -0.00445401358107726,
+					"min": -0.475803971290588,
+					"nz": 2300,
+					"present": true,
+					"size": 2400
+				},
+				"moisture_arr": {
+					"max": 1.0,
+					"mean": 0.872616822663016,
+					"min": 0.00222087861038744,
+					"nz": 2400,
+					"present": true,
+					"size": 2400
+				},
+				"plant_available_water_arr": {
+					"max": 1.0,
+					"mean": 0.286586066186234,
+					"min": 0.0,
+					"nz": 910,
+					"present": true,
+					"size": 2400
+				},
+				"sea_ice_frac_arr": {
+					"max": 0.0915500000119209,
+					"mean": 0.00973475488989303,
+					"min": 0.0,
+					"nz": 303,
+					"present": true,
+					"size": 2400
+				},
+				"snow_cover_arr": {
+					"max": 0.0,
+					"mean": 0.0,
+					"min": 0.0,
+					"nz": 0,
+					"present": true,
+					"size": 2400
+				},
+				"soil_moisture_arr": {
+					"max": 0.5,
+					"mean": 0.0536619435451576,
+					"min": 0.0,
+					"nz": 537,
+					"present": true,
+					"size": 2400
+				},
+				"temp_arr": {
+					"max": 0.910308539867401,
+					"mean": 0.452113592741662,
+					"min": 0.0,
+					"nz": 2159,
+					"present": true,
+					"size": 2400
+				},
+				"vegetation_arr": {
+					"max": 27.0,
+					"mean": 8.58333333333333,
+					"min": 0.0,
+					"nz": 1333,
+					"present": true,
+					"size": 2400
+				},
+				"vegetation_growth_pressure_arr": {
+					"max": 0.0,
+					"mean": 0.0,
+					"min": 0.0,
+					"nz": 0,
+					"present": true,
+					"size": 2400
+				},
+				"water_balance_30d_arr": {
+					"max": 0.5,
+					"mean": 0.060192126932064,
+					"min": -0.5,
+					"nz": 542,
+					"present": true,
+					"size": 2400
+				},
+				"weather_cloud_arr": {
+					"max": 0.0,
+					"mean": 0.0,
+					"min": 0.0,
+					"nz": 0,
+					"present": true,
+					"size": 2400
+				},
+				"weather_cloud_water_arr": {
+					"max": 0.0,
+					"mean": 0.0,
+					"min": 0.0,
+					"nz": 0,
+					"present": true,
+					"size": 2400
+				},
+				"weather_precip_arr": {
+					"max": 0.0,
+					"mean": 0.0,
+					"min": 0.0,
+					"nz": 0,
+					"present": true,
+					"size": 2400
+				},
+				"weather_vapor_arr": {
+					"max": 0.0,
+					"mean": 0.0,
+					"min": 0.0,
+					"nz": 0,
+					"present": true,
+					"size": 2400
+				}
+			},
+			"tick": 5
+		},
+		{
+			"delivery": {
+				"authoritative_domain_mask": 2686,
+				"authority_policy": {
+					"enabled": true,
+					"measured_affordable_threshold_cells": -1,
+					"n_cells": 2400,
+					"override": "auto",
+					"reason": "auto_measured_keep_on_no_affordable_size",
+					"requested": true,
+					"threshold_cells": 0,
+					"threshold_source": "c1_c3_ladder_20260911_no_affordable_size_at_x50_keep_on"
+				},
+				"climate_committed_day": 9,
+				"climate_consumed_generation": 10,
+				"climate_wait_last_ms": 0,
+				"climate_wait_max_ms": 0,
+				"climate_wait_total_ms": 0,
+				"country_worker_authoritative": true,
+				"enabled": true,
+				"environment_consumed_days": 10,
+				"environment_dropped_days": 0,
+				"environment_published_days": 10,
+				"environment_ring_pending": 0,
+				"environment_superseded_days": 0,
+				"requested_authority_mask": 2686,
+				"worker_authoritative": true,
+				"writeback_applied_fields": 44,
+				"writeback_days": 5,
+				"writeback_drop_count": 0,
+				"writeback_flush_ms": 0.0753,
+				"writeback_generation": 7,
+				"writeback_last_day": 7,
+				"writeback_memcpy_ms": 0.2806,
+				"writeback_skipped_fields": [
+					"riparian_moisture(unbound)",
+					"vegetation_succession_candidate(extern_size)"
+				]
+			},
+			"fields": {
+				"base_vegetation_arr": {
+					"max": 27.0,
+					"mean": 8.58333333333333,
+					"min": 0.0,
+					"nz": 1333,
+					"present": true,
+					"size": 2400
+				},
+				"insolation_dev_arr": {
+					"max": 0.630167841911316,
+					"mean": -0.0035920316974322,
+					"min": -0.474232077598572,
+					"nz": 2300,
+					"present": true,
+					"size": 2400
+				},
+				"moisture_arr": {
+					"max": 1.0,
+					"mean": 0.886155203731032,
+					"min": 0.00472180265933275,
+					"nz": 2400,
+					"present": true,
+					"size": 2400
+				},
+				"plant_available_water_arr": {
+					"max": 1.0,
+					"mean": 0.292671241253265,
+					"min": 0.0,
+					"nz": 909,
+					"present": true,
+					"size": 2400
+				},
+				"sea_ice_frac_arr": {
+					"max": 0.294200003147125,
+					"mean": 0.0334564599604831,
+					"min": 0.0,
+					"nz": 394,
+					"present": true,
+					"size": 2400
+				},
+				"snow_cover_arr": {
+					"max": 1.0,
+					"mean": 0.0338859380687245,
+					"min": 0.0,
+					"nz": 109,
+					"present": true,
+					"size": 2400
+				},
+				"soil_moisture_arr": {
+					"max": 0.484617620706558,
+					"mean": 0.0513345976021143,
+					"min": -0.00532774301245809,
+					"nz": 914,
+					"present": true,
+					"size": 2400
+				},
+				"temp_arr": {
+					"max": 0.900283455848694,
+					"mean": 0.453022219552658,
+					"min": 0.0,
+					"nz": 2140,
+					"present": true,
+					"size": 2400
+				},
+				"vegetation_arr": {
+					"max": 27.0,
+					"mean": 8.58333333333333,
+					"min": 0.0,
+					"nz": 1333,
+					"present": true,
+					"size": 2400
+				},
+				"vegetation_growth_pressure_arr": {
+					"max": 0.5,
+					"mean": 0.114107278523346,
+					"min": -0.5,
+					"nz": 909,
+					"present": true,
+					"size": 2400
+				},
+				"water_balance_30d_arr": {
+					"max": 0.483220458030701,
+					"mean": 0.0578867687322781,
+					"min": -0.483520239591599,
+					"nz": 914,
+					"present": true,
+					"size": 2400
+				},
+				"weather_cloud_arr": {
+					"max": 0.173832193017006,
+					"mean": 0.0374061099196777,
+					"min": 0.0,
+					"nz": 1896,
+					"present": true,
+					"size": 2400
+				},
+				"weather_cloud_water_arr": {
+					"max": 0.0761647745966911,
+					"mean": 0.0183592589588925,
+					"min": 0.0,
+					"nz": 1896,
+					"present": true,
+					"size": 2400
+				},
+				"weather_precip_arr": {
+					"max": 0.0517433770000935,
+					"mean": 0.00194153951791426,
+					"min": 0.0,
+					"nz": 135,
+					"present": true,
+					"size": 2400
+				},
+				"weather_vapor_arr": {
+					"max": 0.213918790221214,
+					"mean": 0.145765578604769,
+					"min": 0.0305005107074976,
+					"nz": 2400,
+					"present": true,
+					"size": 2400
+				}
+			},
+			"tick": 10
+		},
+		{
+			"delivery": {
+				"authoritative_domain_mask": 2686,
+				"authority_policy": {
+					"enabled": true,
+					"measured_affordable_threshold_cells": -1,
+					"n_cells": 2400,
+					"override": "auto",
+					"reason": "auto_measured_keep_on_no_affordable_size",
+					"requested": true,
+					"threshold_cells": 0,
+					"threshold_source": "c1_c3_ladder_20260911_no_affordable_size_at_x50_keep_on"
+				},
+				"climate_committed_day": 14,
+				"climate_consumed_generation": 15,
+				"climate_wait_last_ms": 0,
+				"climate_wait_max_ms": 0,
+				"climate_wait_total_ms": 0,
+				"country_worker_authoritative": true,
+				"enabled": true,
+				"environment_consumed_days": 15,
+				"environment_dropped_days": 0,
+				"environment_published_days": 15,
+				"environment_ring_pending": 0,
+				"environment_superseded_days": 0,
+				"requested_authority_mask": 2686,
+				"worker_authoritative": true,
+				"writeback_applied_fields": 44,
+				"writeback_days": 8,
+				"writeback_drop_count": 3,
+				"writeback_flush_ms": 0.0557,
+				"writeback_generation": 13,
+				"writeback_last_day": 13,
+				"writeback_memcpy_ms": 0.1681,
+				"writeback_skipped_fields": [
+					"riparian_moisture(unbound)",
+					"vegetation_succession_candidate(extern_size)"
+				]
+			},
+			"fields": {
+				"base_vegetation_arr": {
+					"max": 27.0,
+					"mean": 8.58333333333333,
+					"min": 0.0,
+					"nz": 1333,
+					"present": true,
+					"size": 2400
+				},
+				"insolation_dev_arr": {
+					"max": 0.630167841911316,
+					"mean": -0.00122224539518356,
+					"min": -0.469743877649307,
+					"nz": 2300,
+					"present": true,
+					"size": 2400
+				},
+				"moisture_arr": {
+					"max": 1.0,
+					"mean": 0.893233891894827,
+					"min": 0.00265113380737603,
+					"nz": 2400,
+					"present": true,
+					"size": 2400
+				},
+				"plant_available_water_arr": {
+					"max": 1.0,
+					"mean": 0.295229339456224,
+					"min": 0.0,
+					"nz": 909,
+					"present": true,
+					"size": 2400
+				},
+				"sea_ice_frac_arr": {
+					"max": 0.49685001373291,
+					"mean": 0.0581919466582864,
+					"min": 0.0,
+					"nz": 423,
+					"present": true,
+					"size": 2400
+				},
+				"snow_cover_arr": {
+					"max": 1.0,
+					"mean": 0.0364177300825637,
+					"min": 0.0,
+					"nz": 116,
+					"present": true,
+					"size": 2400
+				},
+				"soil_moisture_arr": {
+					"max": 0.4697145819664,
+					"mean": 0.0487909987787862,
+					"min": -0.0104905124753714,
+					"nz": 914,
+					"present": true,
+					"size": 2400
+				},
+				"temp_arr": {
+					"max": 0.905384123325348,
+					"mean": 0.461522655744726,
+					"min": 0.0,
+					"nz": 2129,
+					"present": true,
+					"size": 2400
+				},
+				"vegetation_arr": {
+					"max": 27.0,
+					"mean": 8.58333333333333,
+					"min": 0.0,
+					"nz": 1333,
+					"present": true,
+					"size": 2400
+				},
+				"vegetation_growth_pressure_arr": {
+					"max": 0.5,
+					"mean": 0.114107278523346,
+					"min": -0.5,
+					"nz": 909,
+					"present": true,
+					"size": 2400
+				},
+				"water_balance_30d_arr": {
+					"max": 0.467007458209991,
+					"mean": 0.0555390586877062,
+					"min": -0.467581868171692,
+					"nz": 914,
+					"present": true,
+					"size": 2400
+				},
+				"weather_cloud_arr": {
+					"max": 0.282512217760086,
+					"mean": 0.0553673460290819,
+					"min": 0.0,
+					"nz": 2395,
+					"present": true,
+					"size": 2400
+				},
+				"weather_cloud_water_arr": {
+					"max": 0.121493101119995,
+					"mean": 0.0273947785251442,
+					"min": 0.0,
+					"nz": 2394,
+					"present": true,
+					"size": 2400
+				},
+				"weather_precip_arr": {
+					"max": 0.0847966372966766,
+					"mean": 0.00425585292900602,
+					"min": 0.0,
+					"nz": 245,
+					"present": true,
+					"size": 2400
+				},
+				"weather_vapor_arr": {
+					"max": 0.263387501239777,
+					"mean": 0.160985741883827,
+					"min": 0.0144745111465454,
+					"nz": 2400,
+					"present": true,
+					"size": 2400
+				}
+			},
+			"tick": 15
+		},
+		{
+			"delivery": {
+				"authoritative_domain_mask": 2686,
+				"authority_policy": {
+					"enabled": true,
+					"measured_affordable_threshold_cells": -1,
+					"n_cells": 2400,
+					"override": "auto",
+					"reason": "auto_measured_keep_on_no_affordable_size",
+					"requested": true,
+					"threshold_cells": 0,
+					"threshold_source": "c1_c3_ladder_20260911_no_affordable_size_at_x50_keep_on"
+				},
+				"climate_committed_day": 19,
+				"climate_consumed_generation": 20,
+				"climate_wait_last_ms": 0,
+				"climate_wait_max_ms": 0,
+				"climate_wait_total_ms": 0,
+				"country_worker_authoritative": true,
+				"enabled": true,
+				"environment_consumed_days": 20,
+				"environment_dropped_days": 0,
+				"environment_published_days": 20,
+				"environment_ring_pending": 0,
+				"environment_superseded_days": 0,
+				"requested_authority_mask": 2686,
+				"worker_authoritative": true,
+				"writeback_applied_fields": 44,
+				"writeback_days": 10,
+				"writeback_drop_count": 5,
+				"writeback_flush_ms": 0.0563,
+				"writeback_generation": 17,
+				"writeback_last_day": 17,
+				"writeback_memcpy_ms": 0.1559,
+				"writeback_skipped_fields": [
+					"riparian_moisture(unbound)",
+					"vegetation_succession_candidate(extern_size)"
+				]
+			},
+			"fields": {
+				"base_vegetation_arr": {
+					"max": 27.0,
+					"mean": 8.58333333333333,
+					"min": 0.0,
+					"nz": 1333,
+					"present": true,
+					"size": 2400
+				},
+				"insolation_dev_arr": {
+					"max": 0.630167841911316,
+					"mean": 0.0010930597782135,
+					"min": -0.465176105499268,
+					"nz": 2300,
+					"present": true,
+					"size": 2400
+				},
+				"moisture_arr": {
+					"max": 1.0,
+					"mean": 0.894998110533634,
+					"min": 0.00198326190002263,
+					"nz": 2400,
+					"present": true,
+					"size": 2400
+				},
+				"plant_available_water_arr": {
+					"max": 1.0,
+					"mean": 0.295970805298615,
+					"min": 0.0,
+					"nz": 909,
+					"present": true,
+					"size": 2400
+				},
+				"sea_ice_frac_arr": {
+					"max": 0.6319500207901,
+					"mean": 0.075210632221133,
+					"min": 0.0,
+					"nz": 429,
+					"present": true,
+					"size": 2400
+				},
+				"snow_cover_arr": {
+					"max": 1.0,
+					"mean": 0.0364177300825637,
+					"min": 0.0,
+					"nz": 116,
+					"present": true,
+					"size": 2400
+				},
+				"soil_moisture_arr": {
+					"max": 0.4697145819664,
+					"mean": 0.0487909987787862,
+					"min": -0.0104905124753714,
+					"nz": 914,
+					"present": true,
+					"size": 2400
+				},
+				"temp_arr": {
+					"max": 0.907779932022095,
+					"mean": 0.468873127766031,
+					"min": 0.0,
+					"nz": 2122,
+					"present": true,
+					"size": 2400
+				},
+				"vegetation_arr": {
+					"max": 27.0,
+					"mean": 8.58333333333333,
+					"min": 0.0,
+					"nz": 1333,
+					"present": true,
+					"size": 2400
+				},
+				"vegetation_growth_pressure_arr": {
+					"max": 0.5,
+					"mean": 0.114107278523346,
+					"min": -0.5,
+					"nz": 909,
+					"present": true,
+					"size": 2400
+				},
+				"water_balance_30d_arr": {
+					"max": 0.467007458209991,
+					"mean": 0.0555390586877062,
+					"min": -0.467581868171692,
+					"nz": 914,
+					"present": true,
+					"size": 2400
+				},
+				"weather_cloud_arr": {
+					"max": 0.282512217760086,
+					"mean": 0.0553673460290819,
+					"min": 0.0,
+					"nz": 2395,
+					"present": true,
+					"size": 2400
+				},
+				"weather_cloud_water_arr": {
+					"max": 0.121493101119995,
+					"mean": 0.0273947785251442,
+					"min": 0.0,
+					"nz": 2394,
+					"present": true,
+					"size": 2400
+				},
+				"weather_precip_arr": {
+					"max": 0.0847966372966766,
+					"mean": 0.00425585292900602,
+					"min": 0.0,
+					"nz": 245,
+					"present": true,
+					"size": 2400
+				},
+				"weather_vapor_arr": {
+					"max": 0.263387501239777,
+					"mean": 0.160985741883827,
+					"min": 0.0144745111465454,
+					"nz": 2400,
+					"present": true,
+					"size": 2400
+				}
+			},
+			"tick": 20
+		},
+		{
+			"delivery": {
+				"authoritative_domain_mask": 2686,
+				"authority_policy": {
+					"enabled": true,
+					"measured_affordable_threshold_cells": -1,
+					"n_cells": 2400,
+					"override": "auto",
+					"reason": "auto_measured_keep_on_no_affordable_size",
+					"requested": true,
+					"threshold_cells": 0,
+					"threshold_source": "c1_c3_ladder_20260911_no_affordable_size_at_x50_keep_on"
+				},
+				"climate_committed_day": 24,
+				"climate_consumed_generation": 25,
+				"climate_wait_last_ms": 0,
+				"climate_wait_max_ms": 0,
+				"climate_wait_total_ms": 0,
+				"country_worker_authoritative": true,
+				"enabled": true,
+				"environment_consumed_days": 25,
+				"environment_dropped_days": 0,
+				"environment_published_days": 25,
+				"environment_ring_pending": 0,
+				"environment_superseded_days": 0,
+				"requested_authority_mask": 2686,
+				"worker_authoritative": true,
+				"writeback_applied_fields": 44,
+				"writeback_days": 13,
+				"writeback_drop_count": 8,
+				"writeback_flush_ms": 0.0563,
+				"writeback_generation": 23,
+				"writeback_last_day": 23,
+				"writeback_memcpy_ms": 0.1686,
+				"writeback_skipped_fields": [
+					"riparian_moisture(unbound)",
+					"vegetation_succession_candidate(extern_size)"
+				]
+			},
+			"fields": {
+				"base_vegetation_arr": {
+					"max": 27.0,
+					"mean": 8.58333333333333,
+					"min": 0.0,
+					"nz": 1333,
+					"present": true,
+					"size": 2400
+				},
+				"insolation_dev_arr": {
+					"max": 0.630167841911316,
+					"mean": 0.00566304164628188,
+					"min": -0.455629467964172,
+					"nz": 2300,
+					"present": true,
+					"size": 2400
+				},
+				"moisture_arr": {
+					"max": 1.0,
+					"mean": 0.896346121870301,
+					"min": 0.00180527160409838,
+					"nz": 2400,
+					"present": true,
+					"size": 2400
+				},
+				"plant_available_water_arr": {
+					"max": 1.0,
+					"mean": 0.296619080297338,
+					"min": 0.0,
+					"nz": 909,
+					"present": true,
+					"size": 2400
+				},
+				"sea_ice_frac_arr": {
+					"max": 0.834600031375885,
+					"mean": 0.10138087090716,
+					"min": 0.0,
+					"nz": 437,
+					"present": true,
+					"size": 2400
+				},
+				"snow_cover_arr": {
+					"max": 1.0,
+					"mean": 0.0366079068721681,
+					"min": 0.0,
+					"nz": 118,
+					"present": true,
+					"size": 2400
+				},
+				"soil_moisture_arr": {
+					"max": 0.457954317331314,
+					"mean": 0.0467677553436564,
+					"min": -0.0154663845896721,
+					"nz": 914,
+					"present": true,
+					"size": 2400
+				},
+				"temp_arr": {
+					"max": 0.911037802696228,
+					"mean": 0.478259464899699,
+					"min": 0.0,
+					"nz": 2109,
+					"present": true,
+					"size": 2400
+				},
+				"vegetation_arr": {
+					"max": 27.0,
+					"mean": 8.58333333333333,
+					"min": 0.0,
+					"nz": 1333,
+					"present": true,
+					"size": 2400
+				},
+				"vegetation_growth_pressure_arr": {
+					"max": 0.5,
+					"mean": 0.114107278523346,
+					"min": -0.5,
+					"nz": 909,
+					"present": true,
+					"size": 2400
+				},
+				"water_balance_30d_arr": {
+					"max": 0.452324539422989,
+					"mean": 0.0534546253678188,
+					"min": -0.452174574136734,
+					"nz": 914,
+					"present": true,
+					"size": 2400
+				},
+				"weather_cloud_arr": {
+					"max": 0.339853197336197,
+					"mean": 0.0668268304984182,
+					"min": 0.000150586565723643,
+					"nz": 2400,
+					"present": true,
+					"size": 2400
+				},
+				"weather_cloud_water_arr": {
+					"max": 0.140687748789787,
+					"mean": 0.0340209744700041,
+					"min": 0.0000960265751928091,
+					"nz": 2400,
+					"present": true,
+					"size": 2400
+				},
+				"weather_precip_arr": {
+					"max": 0.122523993253708,
+					"mean": 0.00772843045415357,
+					"min": 0.0,
+					"nz": 406,
+					"present": true,
+					"size": 2400
+				},
+				"weather_vapor_arr": {
+					"max": 0.316894441843033,
+					"mean": 0.173936440535666,
+					"min": 0.00946186110377312,
+					"nz": 2400,
+					"present": true,
+					"size": 2400
+				}
+			},
+			"tick": 25
+		},
+		{
+			"delivery": {
+				"authoritative_domain_mask": 2686,
+				"authority_policy": {
+					"enabled": true,
+					"measured_affordable_threshold_cells": -1,
+					"n_cells": 2400,
+					"override": "auto",
+					"reason": "auto_measured_keep_on_no_affordable_size",
+					"requested": true,
+					"threshold_cells": 0,
+					"threshold_source": "c1_c3_ladder_20260911_no_affordable_size_at_x50_keep_on"
+				},
+				"climate_committed_day": 29,
+				"climate_consumed_generation": 30,
+				"climate_wait_last_ms": 0,
+				"climate_wait_max_ms": 0,
+				"climate_wait_total_ms": 0,
+				"country_worker_authoritative": true,
+				"enabled": true,
+				"environment_consumed_days": 30,
+				"environment_dropped_days": 0,
+				"environment_published_days": 30,
+				"environment_ring_pending": 0,
+				"environment_superseded_days": 0,
+				"requested_authority_mask": 2686,
+				"worker_authoritative": true,
+				"writeback_applied_fields": 44,
+				"writeback_days": 16,
+				"writeback_drop_count": 9,
+				"writeback_flush_ms": 0.0638,
+				"writeback_generation": 27,
+				"writeback_last_day": 27,
+				"writeback_memcpy_ms": 0.2193,
+				"writeback_skipped_fields": [
+					"riparian_moisture(unbound)",
+					"vegetation_succession_candidate(extern_size)"
+				]
+			},
+			"fields": {
+				"base_vegetation_arr": {
+					"max": 27.0,
+					"mean": 8.58333333333333,
+					"min": 0.0,
+					"nz": 1333,
+					"present": true,
+					"size": 2400
+				},
+				"insolation_dev_arr": {
+					"max": 0.630167841911316,
+					"mean": 0.00943148632844289,
+					"min": -0.448940098285675,
+					"nz": 2300,
+					"present": true,
+					"size": 2400
+				},
+				"moisture_arr": {
+					"max": 1.0,
+					"mean": 0.835274121450687,
+					"min": 0.0,
+					"nz": 2365,
+					"present": true,
+					"size": 2400
+				},
+				"plant_available_water_arr": {
+					"max": 1.0,
+					"mean": 0.297307466944136,
+					"min": 0.0,
+					"nz": 909,
+					"present": true,
+					"size": 2400
+				},
+				"sea_ice_frac_arr": {
+					"max": 1.0,
+					"mean": 0.125997566431421,
+					"min": 0.0,
+					"nz": 442,
+					"present": true,
+					"size": 2400
+				},
+				"snow_cover_arr": {
+					"max": 1.0,
+					"mean": 0.045814404314893,
+					"min": 0.0,
+					"nz": 227,
+					"present": true,
+					"size": 2400
+				},
+				"soil_moisture_arr": {
+					"max": 0.228977158665657,
+					"mean": 0.0233838776718282,
+					"min": -0.00773319229483604,
+					"nz": 914,
+					"present": true,
+					"size": 2400
+				},
+				"temp_arr": {
+					"max": 0.932182729244232,
+					"mean": 0.484271462196484,
+					"min": 0.0,
+					"nz": 2097,
+					"present": true,
+					"size": 2400
+				},
+				"vegetation_arr": {
+					"max": 27.0,
+					"mean": 8.58333333333333,
+					"min": 0.0,
+					"nz": 1333,
+					"present": true,
+					"size": 2400
+				},
+				"vegetation_growth_pressure_arr": {
+					"max": 0.25,
+					"mean": 0.0570536392616729,
+					"min": -0.25,
+					"nz": 909,
+					"present": true,
+					"size": 2400
+				},
+				"water_balance_30d_arr": {
+					"max": 0.452324539422989,
+					"mean": 0.0534546253678188,
+					"min": -0.452174574136734,
+					"nz": 914,
+					"present": true,
+					"size": 2400
+				},
+				"weather_cloud_arr": {
+					"max": 0.339853197336197,
+					"mean": 0.0668268304984182,
+					"min": 0.000150586565723643,
+					"nz": 2400,
+					"present": true,
+					"size": 2400
+				},
+				"weather_cloud_water_arr": {
+					"max": 0.140687748789787,
+					"mean": 0.0340209744700041,
+					"min": 0.0000960265751928091,
+					"nz": 2400,
+					"present": true,
+					"size": 2400
+				},
+				"weather_precip_arr": {
+					"max": 0.122523993253708,
+					"mean": 0.00772843045415357,
+					"min": 0.0,
+					"nz": 406,
+					"present": true,
+					"size": 2400
+				},
+				"weather_vapor_arr": {
+					"max": 0.316894441843033,
+					"mean": 0.173936440535666,
+					"min": 0.00946186110377312,
+					"nz": 2400,
+					"present": true,
+					"size": 2400
+				}
+			},
+			"tick": 30
+		},
+		{
+			"delivery": {
+				"authoritative_domain_mask": 2686,
+				"authority_policy": {
+					"enabled": true,
+					"measured_affordable_threshold_cells": -1,
+					"n_cells": 2400,
+					"override": "auto",
+					"reason": "auto_measured_keep_on_no_affordable_size",
+					"requested": true,
+					"threshold_cells": 0,
+					"threshold_source": "c1_c3_ladder_20260911_no_affordable_size_at_x50_keep_on"
+				},
+				"climate_committed_day": 34,
+				"climate_consumed_generation": 35,
+				"climate_wait_last_ms": 0,
+				"climate_wait_max_ms": 0,
+				"climate_wait_total_ms": 0,
+				"country_worker_authoritative": true,
+				"enabled": true,
+				"environment_consumed_days": 35,
+				"environment_dropped_days": 0,
+				"environment_published_days": 35,
+				"environment_ring_pending": 0,
+				"environment_superseded_days": 0,
+				"requested_authority_mask": 2686,
+				"worker_authoritative": true,
+				"writeback_applied_fields": 44,
+				"writeback_days": 19,
+				"writeback_drop_count": 12,
+				"writeback_flush_ms": 0.0567,
+				"writeback_generation": 33,
+				"writeback_last_day": 33,
+				"writeback_memcpy_ms": 0.1619,
+				"writeback_skipped_fields": [
+					"riparian_moisture(unbound)",
+					"vegetation_succession_candidate(extern_size)"
+				]
+			},
+			"fields": {
+				"base_vegetation_arr": {
+					"max": 27.0,
+					"mean": 8.58333333333333,
+					"min": 0.0,
+					"nz": 1333,
+					"present": true,
+					"size": 2400
+				},
+				"insolation_dev_arr": {
+					"max": 0.630167841911316,
+					"mean": 0.0158731850485007,
+					"min": -0.437848925590515,
+					"nz": 2300,
+					"present": true,
+					"size": 2400
+				},
+				"moisture_arr": {
+					"max": 1.0,
+					"mean": 0.898092650566444,
+					"min": 0.00216111773625016,
+					"nz": 2400,
+					"present": true,
+					"size": 2400
+				},
+				"plant_available_water_arr": {
+					"max": 1.0,
+					"mean": 0.298058882997526,
+					"min": 0.0,
+					"nz": 909,
+					"present": true,
+					"size": 2400
+				},
+				"sea_ice_frac_arr": {
+					"max": 1.0,
+					"mean": 0.134568544745853,
+					"min": 0.0,
+					"nz": 446,
+					"present": true,
+					"size": 2400
+				},
+				"snow_cover_arr": {
+					"max": 1.0,
+					"mean": 0.036922834976455,
+					"min": 0.0,
+					"nz": 121,
+					"present": true,
+					"size": 2400
+				},
+				"soil_moisture_arr": {
+					"max": 0.449809461832047,
+					"mean": 0.0450931395769051,
+					"min": -0.0198160316795111,
+					"nz": 914,
+					"present": true,
+					"size": 2400
+				},
+				"temp_arr": {
+					"max": 0.962655007839203,
+					"mean": 0.489443805910026,
+					"min": 0.0,
+					"nz": 2085,
+					"present": true,
+					"size": 2400
+				},
+				"vegetation_arr": {
+					"max": 27.0,
+					"mean": 8.58333333333333,
+					"min": 0.0,
+					"nz": 1333,
+					"present": true,
+					"size": 2400
+				},
+				"vegetation_growth_pressure_arr": {
+					"max": 0.5,
+					"mean": 0.114107278523346,
+					"min": -0.5,
+					"nz": 909,
+					"present": true,
+					"size": 2400
+				},
+				"water_balance_30d_arr": {
+					"max": 0.44026255607605,
+					"mean": 0.051559644217244,
+					"min": -0.437281221151352,
+					"nz": 914,
+					"present": true,
+					"size": 2400
+				},
+				"weather_cloud_arr": {
+					"max": 0.341808199882507,
+					"mean": 0.0746519549607668,
+					"min": 0.00119646638631821,
+					"nz": 2400,
+					"present": true,
+					"size": 2400
+				},
+				"weather_cloud_water_arr": {
+					"max": 0.151737257838249,
+					"mean": 0.0392359386840932,
+					"min": 0.000612829113379121,
+					"nz": 2400,
+					"present": true,
+					"size": 2400
+				},
+				"weather_precip_arr": {
+					"max": 0.130368754267693,
+					"mean": 0.0107807584262143,
+					"min": 0.0,
+					"nz": 478,
+					"present": true,
+					"size": 2400
+				},
+				"weather_vapor_arr": {
+					"max": 0.361889898777008,
+					"mean": 0.183764824005775,
+					"min": 0.0000268556177616119,
+					"nz": 2400,
+					"present": true,
+					"size": 2400
+				}
+			},
+			"tick": 35
+		},
+		{
+			"delivery": {
+				"authoritative_domain_mask": 2686,
+				"authority_policy": {
+					"enabled": true,
+					"measured_affordable_threshold_cells": -1,
+					"n_cells": 2400,
+					"override": "auto",
+					"reason": "auto_measured_keep_on_no_affordable_size",
+					"requested": true,
+					"threshold_cells": 0,
+					"threshold_source": "c1_c3_ladder_20260911_no_affordable_size_at_x50_keep_on"
+				},
+				"climate_committed_day": 39,
+				"climate_consumed_generation": 40,
+				"climate_wait_last_ms": 0,
+				"climate_wait_max_ms": 0,
+				"climate_wait_total_ms": 0,
+				"country_worker_authoritative": true,
+				"enabled": true,
+				"environment_consumed_days": 40,
+				"environment_dropped_days": 0,
+				"environment_published_days": 40,
+				"environment_ring_pending": 0,
+				"environment_superseded_days": 0,
+				"requested_authority_mask": 2686,
+				"worker_authoritative": true,
+				"writeback_applied_fields": 44,
+				"writeback_days": 22,
+				"writeback_drop_count": 13,
+				"writeback_flush_ms": 0.0571,
+				"writeback_generation": 37,
+				"writeback_last_day": 37,
+				"writeback_memcpy_ms": 0.1622,
+				"writeback_skipped_fields": [
+					"riparian_moisture(unbound)",
+					"vegetation_succession_candidate(extern_size)"
+				]
+			},
+			"fields": {
+				"base_vegetation_arr": {
+					"max": 27.0,
+					"mean": 8.58333333333333,
+					"min": 0.0,
+					"nz": 1333,
+					"present": true,
+					"size": 2400
+				},
+				"insolation_dev_arr": {
+					"max": 0.630167841911316,
+					"mean": 0.0177284230788549,
+					"min": -0.430101811885834,
+					"nz": 2300,
+					"present": true,
+					"size": 2400
+				},
+				"moisture_arr": {
+					"max": 1.0,
+					"mean": 0.898766428723854,
+					"min": 0.00227756798267365,
+					"nz": 2400,
+					"present": true,
+					"size": 2400
+				},
+				"plant_available_water_arr": {
+					"max": 1.0,
+					"mean": 0.298570778775029,
+					"min": 0.0,
+					"nz": 909,
+					"present": true,
+					"size": 2400
+				},
+				"sea_ice_frac_arr": {
+					"max": 1.0,
+					"mean": 0.138717041627776,
+					"min": 0.0,
+					"nz": 450,
+					"present": true,
+					"size": 2400
+				},
+				"snow_cover_arr": {
+					"max": 1.0,
+					"mean": 0.036739684237635,
+					"min": 0.0,
+					"nz": 120,
+					"present": true,
+					"size": 2400
+				},
+				"soil_moisture_arr": {
+					"max": 0.443199306726456,
+					"mean": 0.0436376330370452,
+					"min": -0.023747019469738,
+					"nz": 914,
+					"present": true,
+					"size": 2400
+				},
+				"temp_arr": {
+					"max": 0.978569865226746,
+					"mean": 0.493321178499609,
+					"min": 0.0,
+					"nz": 2080,
+					"present": true,
+					"size": 2400
+				},
+				"vegetation_arr": {
+					"max": 27.0,
+					"mean": 8.58333333333333,
+					"min": 0.0,
+					"nz": 1333,
+					"present": true,
+					"size": 2400
+				},
+				"vegetation_growth_pressure_arr": {
+					"max": 0.5,
+					"mean": 0.114107278523346,
+					"min": -0.5,
+					"nz": 909,
+					"present": true,
+					"size": 2400
+				},
+				"water_balance_30d_arr": {
+					"max": 0.429181098937988,
+					"mean": 0.0497981919378193,
+					"min": -0.422902226448059,
+					"nz": 914,
+					"present": true,
+					"size": 2400
+				},
+				"weather_cloud_arr": {
+					"max": 0.355270147323608,
+					"mean": 0.082044466957935,
+					"min": 0.00127133878413588,
+					"nz": 2400,
+					"present": true,
+					"size": 2400
+				},
+				"weather_cloud_water_arr": {
+					"max": 0.172509744763374,
+					"mean": 0.0428921052612714,
+					"min": 0.000656880554743111,
+					"nz": 2400,
+					"present": true,
+					"size": 2400
+				},
+				"weather_precip_arr": {
+					"max": 0.144986212253571,
+					"mean": 0.0128850569808856,
+					"min": 0.0,
+					"nz": 516,
+					"present": true,
+					"size": 2400
+				},
+				"weather_vapor_arr": {
+					"max": 0.396593600511551,
+					"mean": 0.189993140217848,
+					"min": 0.0,
+					"nz": 2397,
+					"present": true,
+					"size": 2400
+				}
+			},
+			"tick": 40
+		},
+		{
+			"delivery": {
+				"authoritative_domain_mask": 2686,
+				"authority_policy": {
+					"enabled": true,
+					"measured_affordable_threshold_cells": -1,
+					"n_cells": 2400,
+					"override": "auto",
+					"reason": "auto_measured_keep_on_no_affordable_size",
+					"requested": true,
+					"threshold_cells": 0,
+					"threshold_source": "c1_c3_ladder_20260911_no_affordable_size_at_x50_keep_on"
+				},
+				"climate_committed_day": 44,
+				"climate_consumed_generation": 45,
+				"climate_wait_last_ms": 0,
+				"climate_wait_max_ms": 0,
+				"climate_wait_total_ms": 0,
+				"country_worker_authoritative": true,
+				"enabled": true,
+				"environment_consumed_days": 45,
+				"environment_dropped_days": 0,
+				"environment_published_days": 45,
+				"environment_ring_pending": 0,
+				"environment_superseded_days": 0,
+				"requested_authority_mask": 2686,
+				"worker_authoritative": true,
+				"writeback_applied_fields": 44,
+				"writeback_days": 25,
+				"writeback_drop_count": 16,
+				"writeback_flush_ms": 0.0632,
+				"writeback_generation": 43,
+				"writeback_last_day": 43,
+				"writeback_memcpy_ms": 0.1675,
+				"writeback_skipped_fields": [
+					"riparian_moisture(unbound)",
+					"vegetation_succession_candidate(extern_size)"
+				]
+			},
+			"fields": {
+				"base_vegetation_arr": {
+					"max": 27.0,
+					"mean": 8.58333333333333,
+					"min": 0.0,
+					"nz": 1333,
+					"present": true,
+					"size": 2400
+				},
+				"insolation_dev_arr": {
+					"max": 0.550567030906677,
+					"mean": 0.0149122973283132,
+					"min": -0.419825434684753,
+					"nz": 2300,
+					"present": true,
+					"size": 2400
+				},
+				"moisture_arr": {
+					"max": 1.0,
+					"mean": 0.899304746360479,
+					"min": 0.00400145212188363,
+					"nz": 2400,
+					"present": true,
+					"size": 2400
+				},
+				"plant_available_water_arr": {
+					"max": 1.0,
+					"mean": 0.299193920148537,
+					"min": 0.0,
+					"nz": 909,
+					"present": true,
+					"size": 2400
+				},
+				"sea_ice_frac_arr": {
+					"max": 1.0,
+					"mean": 0.141846650870672,
+					"min": 0.0,
+					"nz": 460,
+					"present": true,
+					"size": 2400
+				},
+				"snow_cover_arr": {
+					"max": 1.0,
+					"mean": 0.036739684237635,
+					"min": 0.0,
+					"nz": 120,
+					"present": true,
+					"size": 2400
+				},
+				"soil_moisture_arr": {
+					"max": 0.443199306726456,
+					"mean": 0.0436376330370452,
+					"min": -0.023747019469738,
+					"nz": 914,
+					"present": true,
+					"size": 2400
+				},
+				"temp_arr": {
+					"max": 0.988701701164246,
+					"mean": 0.496482803309336,
+					"min": 0.0,
+					"nz": 2117,
+					"present": true,
+					"size": 2400
+				},
+				"vegetation_arr": {
+					"max": 27.0,
+					"mean": 8.58333333333333,
+					"min": 0.0,
+					"nz": 1333,
+					"present": true,
+					"size": 2400
+				},
+				"vegetation_growth_pressure_arr": {
+					"max": 0.5,
+					"mean": 0.114107278523346,
+					"min": -0.5,
+					"nz": 909,
+					"present": true,
+					"size": 2400
+				},
+				"water_balance_30d_arr": {
+					"max": 0.429181098937988,
+					"mean": 0.0497981919378193,
+					"min": -0.422902226448059,
+					"nz": 914,
+					"present": true,
+					"size": 2400
+				},
+				"weather_cloud_arr": {
+					"max": 0.355270147323608,
+					"mean": 0.082044466957935,
+					"min": 0.00127133878413588,
+					"nz": 2400,
+					"present": true,
+					"size": 2400
+				},
+				"weather_cloud_water_arr": {
+					"max": 0.172509744763374,
+					"mean": 0.0428921052612714,
+					"min": 0.000656880554743111,
+					"nz": 2400,
+					"present": true,
+					"size": 2400
+				},
+				"weather_precip_arr": {
+					"max": 0.144986212253571,
+					"mean": 0.0128850569808856,
+					"min": 0.0,
+					"nz": 516,
+					"present": true,
+					"size": 2400
+				},
+				"weather_vapor_arr": {
+					"max": 0.396593600511551,
+					"mean": 0.189993140217848,
+					"min": 0.0,
+					"nz": 2397,
+					"present": true,
+					"size": 2400
+				}
+			},
+			"tick": 45
+		},
+		{
+			"delivery": {
+				"authoritative_domain_mask": 2686,
+				"authority_policy": {
+					"enabled": true,
+					"measured_affordable_threshold_cells": -1,
+					"n_cells": 2400,
+					"override": "auto",
+					"reason": "auto_measured_keep_on_no_affordable_size",
+					"requested": true,
+					"threshold_cells": 0,
+					"threshold_source": "c1_c3_ladder_20260911_no_affordable_size_at_x50_keep_on"
+				},
+				"climate_committed_day": 49,
+				"climate_consumed_generation": 50,
+				"climate_wait_last_ms": 0,
+				"climate_wait_max_ms": 0,
+				"climate_wait_total_ms": 0,
+				"country_worker_authoritative": true,
+				"enabled": true,
+				"environment_consumed_days": 50,
+				"environment_dropped_days": 0,
+				"environment_published_days": 50,
+				"environment_ring_pending": 0,
+				"environment_superseded_days": 0,
+				"requested_authority_mask": 2686,
+				"worker_authoritative": true,
+				"writeback_applied_fields": 44,
+				"writeback_days": 27,
+				"writeback_drop_count": 18,
+				"writeback_flush_ms": 0.0617,
+				"writeback_generation": 47,
+				"writeback_last_day": 47,
+				"writeback_memcpy_ms": 0.1878,
+				"writeback_skipped_fields": [
+					"riparian_moisture(unbound)",
+					"vegetation_succession_candidate(extern_size)"
+				]
+			},
+			"fields": {
+				"base_vegetation_arr": {
+					"max": 27.0,
+					"mean": 8.58333333333333,
+					"min": 0.0,
+					"nz": 1333,
+					"present": true,
+					"size": 2400
+				},
+				"insolation_dev_arr": {
+					"max": 0.49017408490181,
+					"mean": 0.0121464890738328,
+					"min": -0.408877581357956,
+					"nz": 2300,
+					"present": true,
+					"size": 2400
+				},
+				"moisture_arr": {
+					"max": 1.0,
+					"mean": 0.899541945267701,
+					"min": 0.00526444800198078,
+					"nz": 2400,
+					"present": true,
+					"size": 2400
+				},
+				"plant_available_water_arr": {
+					"max": 1.0,
+					"mean": 0.29939170260448,
+					"min": 0.0,
+					"nz": 909,
+					"present": true,
+					"size": 2400
+				},
+				"sea_ice_frac_arr": {
+					"max": 1.0,
+					"mean": 0.143801549817824,
+					"min": 0.0,
+					"nz": 460,
+					"present": true,
+					"size": 2400
+				},
+				"snow_cover_arr": {
+					"max": 1.0,
+					"mean": 0.0363031557016969,
+					"min": 0.0,
+					"nz": 117,
+					"present": true,
+					"size": 2400
+				},
+				"soil_moisture_arr": {
+					"max": 0.437377452850342,
+					"mean": 0.0423365856200083,
+					"min": -0.027709124609828,
+					"nz": 914,
+					"present": true,
+					"size": 2400
+				},
+				"temp_arr": {
+					"max": 1.0,
+					"mean": 0.497619241673189,
+					"min": 0.0,
+					"nz": 2116,
+					"present": true,
+					"size": 2400
+				},
+				"vegetation_arr": {
+					"max": 27.0,
+					"mean": 8.58333333333333,
+					"min": 0.0,
+					"nz": 1333,
+					"present": true,
+					"size": 2400
+				},
+				"vegetation_growth_pressure_arr": {
+					"max": 0.5,
+					"mean": 0.114107278523346,
+					"min": -0.5,
+					"nz": 909,
+					"present": true,
+					"size": 2400
+				},
+				"water_balance_30d_arr": {
+					"max": 0.418807923793793,
+					"mean": 0.0481416189661407,
+					"min": -0.409003615379334,
+					"nz": 914,
+					"present": true,
+					"size": 2400
+				},
+				"weather_cloud_arr": {
+					"max": 0.358770251274109,
+					"mean": 0.0887581032708598,
+					"min": 0.00298649072647095,
+					"nz": 2400,
+					"present": true,
+					"size": 2400
+				},
+				"weather_cloud_water_arr": {
+					"max": 0.158192574977875,
+					"mean": 0.0451553485186741,
+					"min": 0.000964531267527491,
+					"nz": 2400,
+					"present": true,
+					"size": 2400
+				},
+				"weather_precip_arr": {
+					"max": 0.15388311445713,
+					"mean": 0.0144592583629613,
+					"min": 0.0,
+					"nz": 530,
+					"present": true,
+					"size": 2400
+				},
+				"weather_vapor_arr": {
+					"max": 0.434155225753784,
+					"mean": 0.193095176660766,
+					"min": 0.0,
+					"nz": 2396,
+					"present": true,
+					"size": 2400
+				}
+			},
+			"tick": 50
+		},
+		{
+			"delivery": {
+				"authoritative_domain_mask": 2686,
+				"authority_policy": {
+					"enabled": true,
+					"measured_affordable_threshold_cells": -1,
+					"n_cells": 2400,
+					"override": "auto",
+					"reason": "auto_measured_keep_on_no_affordable_size",
+					"requested": true,
+					"threshold_cells": 0,
+					"threshold_source": "c1_c3_ladder_20260911_no_affordable_size_at_x50_keep_on"
+				},
+				"climate_committed_day": 54,
+				"climate_consumed_generation": 55,
+				"climate_wait_last_ms": 0,
+				"climate_wait_max_ms": 0,
+				"climate_wait_total_ms": 0,
+				"country_worker_authoritative": true,
+				"enabled": true,
+				"environment_consumed_days": 55,
+				"environment_dropped_days": 0,
+				"environment_published_days": 55,
+				"environment_ring_pending": 0,
+				"environment_superseded_days": 0,
+				"requested_authority_mask": 2686,
+				"worker_authoritative": true,
+				"writeback_applied_fields": 44,
+				"writeback_days": 30,
+				"writeback_drop_count": 21,
+				"writeback_flush_ms": 0.0563,
+				"writeback_generation": 53,
+				"writeback_last_day": 53,
+				"writeback_memcpy_ms": 0.1684,
+				"writeback_skipped_fields": [
+					"riparian_moisture(unbound)",
+					"vegetation_succession_candidate(extern_size)"
+				]
+			},
+			"fields": {
+				"base_vegetation_arr": {
+					"max": 27.0,
+					"mean": 8.58333333333333,
+					"min": 0.0,
+					"nz": 1333,
+					"present": true,
+					"size": 2400
+				},
+				"insolation_dev_arr": {
+					"max": 0.391529351472855,
+					"mean": 0.00706655035416285,
+					"min": -0.401800274848938,
+					"nz": 2300,
+					"present": true,
+					"size": 2400
+				},
+				"moisture_arr": {
+					"max": 1.0,
+					"mean": 0.899773025224955,
+					"min": 0.00622752355411649,
+					"nz": 2400,
+					"present": true,
+					"size": 2400
+				},
+				"plant_available_water_arr": {
+					"max": 1.0,
+					"mean": 0.299642837004115,
+					"min": 0.0,
+					"nz": 909,
+					"present": true,
+					"size": 2400
+				},
+				"sea_ice_frac_arr": {
+					"max": 1.0,
+					"mean": 0.144526192982836,
+					"min": 0.0,
+					"nz": 460,
+					"present": true,
+					"size": 2400
+				},
+				"snow_cover_arr": {
+					"max": 1.0,
+					"mean": 0.0360008960014056,
+					"min": 0.0,
+					"nz": 111,
+					"present": true,
+					"size": 2400
+				},
+				"soil_moisture_arr": {
+					"max": 0.431024849414825,
+					"mean": 0.0411565410376109,
+					"min": -0.0287337396293879,
+					"nz": 914,
+					"present": true,
+					"size": 2400
+				},
+				"temp_arr": {
+					"max": 1.0,
+					"mean": 0.498810822316445,
+					"min": 0.0,
+					"nz": 2104,
+					"present": true,
+					"size": 2400
+				},
+				"vegetation_arr": {
+					"max": 27.0,
+					"mean": 8.58333333333333,
+					"min": 0.0,
+					"nz": 1333,
+					"present": true,
+					"size": 2400
+				},
+				"vegetation_growth_pressure_arr": {
+					"max": 0.5,
+					"mean": 0.114107278523346,
+					"min": -0.5,
+					"nz": 909,
+					"present": true,
+					"size": 2400
+				},
+				"water_balance_30d_arr": {
+					"max": 0.408870726823807,
+					"mean": 0.0465744198002964,
+					"min": -0.395551770925522,
+					"nz": 914,
+					"present": true,
+					"size": 2400
+				},
+				"weather_cloud_arr": {
+					"max": 0.359680265188217,
+					"mean": 0.0933614397671772,
+					"min": 0.00568347424268723,
+					"nz": 2400,
+					"present": true,
+					"size": 2400
+				},
+				"weather_cloud_water_arr": {
+					"max": 0.181029289960861,
+					"mean": 0.0463827412924729,
+					"min": 0.00242959591560066,
+					"nz": 2400,
+					"present": true,
+					"size": 2400
+				},
+				"weather_precip_arr": {
+					"max": 0.156068205833435,
+					"mean": 0.0157295973063447,
+					"min": 0.0,
+					"nz": 572,
+					"present": true,
+					"size": 2400
+				},
+				"weather_vapor_arr": {
+					"max": 0.465382188558578,
+					"mean": 0.1956667204923,
+					"min": 0.0,
+					"nz": 2397,
+					"present": true,
+					"size": 2400
+				}
+			},
+			"tick": 55
+		},
+		{
+			"delivery": {
+				"authoritative_domain_mask": 2686,
+				"authority_policy": {
+					"enabled": true,
+					"measured_affordable_threshold_cells": -1,
+					"n_cells": 2400,
+					"override": "auto",
+					"reason": "auto_measured_keep_on_no_affordable_size",
+					"requested": true,
+					"threshold_cells": 0,
+					"threshold_source": "c1_c3_ladder_20260911_no_affordable_size_at_x50_keep_on"
+				},
+				"climate_committed_day": 59,
+				"climate_consumed_generation": 60,
+				"climate_wait_last_ms": 0,
+				"climate_wait_max_ms": 0,
+				"climate_wait_total_ms": 0,
+				"country_worker_authoritative": true,
+				"enabled": true,
+				"environment_consumed_days": 60,
+				"environment_dropped_days": 0,
+				"environment_published_days": 60,
+				"environment_ring_pending": 0,
+				"environment_superseded_days": 0,
+				"requested_authority_mask": 2686,
+				"worker_authoritative": true,
+				"writeback_applied_fields": 44,
+				"writeback_days": 32,
+				"writeback_drop_count": 23,
+				"writeback_flush_ms": 0.0569,
+				"writeback_generation": 57,
+				"writeback_last_day": 57,
+				"writeback_memcpy_ms": 0.1613,
+				"writeback_skipped_fields": [
+					"riparian_moisture(unbound)",
+					"vegetation_succession_candidate(extern_size)"
+				]
+			},
+			"fields": {
+				"base_vegetation_arr": {
+					"max": 27.0,
+					"mean": 8.58333333333333,
+					"min": 0.0,
+					"nz": 1333,
+					"present": true,
+					"size": 2400
+				},
+				"insolation_dev_arr": {
+					"max": 0.320800572633743,
+					"mean": 0.00329812119404475,
+					"min": -0.390486210584641,
+					"nz": 2300,
+					"present": true,
+					"size": 2400
+				},
+				"moisture_arr": {
+					"max": 1.0,
+					"mean": 0.899827071444985,
+					"min": 0.00844931695610285,
+					"nz": 2400,
+					"present": true,
+					"size": 2400
+				},
+				"plant_available_water_arr": {
+					"max": 1.0,
+					"mean": 0.299831835984563,
+					"min": 0.0,
+					"nz": 910,
+					"present": true,
+					"size": 2400
+				},
+				"sea_ice_frac_arr": {
+					"max": 1.0,
+					"mean": 0.144631344562028,
+					"min": 0.0,
+					"nz": 459,
+					"present": true,
+					"size": 2400
+				},
+				"snow_cover_arr": {
+					"max": 1.0,
+					"mean": 0.0360008960014056,
+					"min": 0.0,
+					"nz": 111,
+					"present": true,
+					"size": 2400
+				},
+				"soil_moisture_arr": {
+					"max": 0.431024849414825,
+					"mean": 0.0411565410376109,
+					"min": -0.0287337396293879,
+					"nz": 914,
+					"present": true,
+					"size": 2400
+				},
+				"temp_arr": {
+					"max": 1.0,
+					"mean": 0.49866915231881,
+					"min": 0.0,
+					"nz": 2099,
+					"present": true,
+					"size": 2400
+				},
+				"vegetation_arr": {
+					"max": 27.0,
+					"mean": 8.58333333333333,
+					"min": 0.0,
+					"nz": 1333,
+					"present": true,
+					"size": 2400
+				},
+				"vegetation_growth_pressure_arr": {
+					"max": 0.5,
+					"mean": 0.114107278523346,
+					"min": -0.5,
+					"nz": 909,
+					"present": true,
+					"size": 2400
+				},
+				"water_balance_30d_arr": {
+					"max": 0.408870726823807,
+					"mean": 0.0465744198002964,
+					"min": -0.395551770925522,
+					"nz": 914,
+					"present": true,
+					"size": 2400
+				},
+				"weather_cloud_arr": {
+					"max": 0.359680265188217,
+					"mean": 0.0933614397671772,
+					"min": 0.00568347424268723,
+					"nz": 2400,
+					"present": true,
+					"size": 2400
+				},
+				"weather_cloud_water_arr": {
+					"max": 0.181029289960861,
+					"mean": 0.0463827412924729,
+					"min": 0.00242959591560066,
+					"nz": 2400,
+					"present": true,
+					"size": 2400
+				},
+				"weather_precip_arr": {
+					"max": 0.156068205833435,
+					"mean": 0.0157295973063447,
+					"min": 0.0,
+					"nz": 572,
+					"present": true,
+					"size": 2400
+				},
+				"weather_vapor_arr": {
+					"max": 0.465382188558578,
+					"mean": 0.1956667204923,
+					"min": 0.0,
+					"nz": 2397,
+					"present": true,
+					"size": 2400
+				}
+			},
+			"tick": 60
+		}
+	],
+	"schema": "ClimateB8SoakRun",
+	"schema_version": 1,
+	"seed": 20260907,
+	"speed": 50.0,
+	"stage_days": [
+		58,
+		58,
+		58,
+		58,
+		58,
+		58,
+		58,
+		58,
+		1,
+		1,
+		1,
+		7,
+		0,
+		0
+	],
+	"stage_names": [
+		"pass_a",
+		"pass_b",
+		"ocean_water",
+		"ocean_land",
+		"wind_air",
+		"wind_surface",
+		"sea_ice",
+		"transpiration",
+		"albedo",
+		"vegetation",
+		"feedback",
+		"weather",
+		"hydrology",
+		"stage_b_after_hydrology"
+	],
+	"width": 50,
+	"writeback_days": 32,
+	"writeback_drop_count": 23
+}

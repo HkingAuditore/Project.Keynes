@@ -1,0 +1,7 @@
+At D:\Godot\ProjectKeynes\Project.Keynes\tools\runtime\Invoke-ClimateB8Soak.ps1:58 char:1
++ )
++ ~
+Unexpected token ')' in expression or statement.
+    + CategoryInfo          : ParserError: (:) [], ParentContainsErrorRecordException
+    + FullyQualifiedErrorId : UnexpectedToken
+ 

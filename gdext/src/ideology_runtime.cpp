@@ -427,7 +427,185 @@ void NativeIdeologyRuntime::reset_runtime_state() {
     _active_progress_ms = 0.0;
     _last_slice_ms = 0.0;
     _max_slice_ms = 0.0;
+    _pod_snapshot_generation = 0;
     _last_error.clear();
+}
+
+bool NativeIdeologyRuntime::apply_pod_snapshot(
+        const RuntimeIdeologyPodSnapshot &snapshot, std::string &error) {
+    error.clear();
+    if (!_configured) {
+        error = "ideology_runtime_not_configured";
+        return false;
+    }
+    if (snapshot.abi_version != RUNTIME_IDEOLOGY_POD_ABI_VERSION) {
+        error = "ideology_pod_snapshot_abi_mismatch";
+        return false;
+    }
+    if (snapshot.generation != 0 &&
+            snapshot.generation <= _pod_snapshot_generation) {
+        error = "ideology_pod_snapshot_generation_regression";
+        return false;
+    }
+    const size_t definition_count = _definitions.size();
+    const size_t idea_words = static_cast<size_t>(std::max(0, _idea_words));
+    const size_t gate_words = static_cast<size_t>(std::max(0, _gate_words));
+    const size_t synergy_words = (_synergies.size() + 63u) / 64u;
+
+    std::vector<CountryState> next_countries(snapshot.countries.size());
+    for (size_t slot = 0; slot < snapshot.countries.size(); ++slot) {
+        const RuntimeIdeologyPodCountryState &source = snapshot.countries[slot];
+        if (source.handle == 0) continue;
+        CountryState &target = next_countries[slot];
+        target.handle = source.handle;
+        target.ideology_points_q16 = source.ideology_points_q16;
+        target.rng_state = source.rng_state;
+        target.draw_sequence = source.draw_sequence;
+        target.opinion_revision = source.opinion_revision;
+        target.ideology_slots_used = source.ideology_slots_used;
+        target.spirit_slots_used = source.spirit_slots_used;
+        target.known_bits.assign(idea_words, 0);
+        target.gate_bits.assign(gate_words, 0);
+        target.active_bits.assign(idea_words, 0);
+        target.active_synergy_bits.assign(synergy_words, 0);
+        for (size_t word = 0;
+                word < idea_words && word < source.known_bits.size(); ++word)
+            target.known_bits[word] = source.known_bits[word];
+        for (size_t word = 0;
+                word < gate_words && word < source.gate_bits.size(); ++word)
+            target.gate_bits[word] = source.gate_bits[word];
+        for (size_t word = 0;
+                word < synergy_words && word < source.synergy_bits.size(); ++word)
+            target.active_synergy_bits[word] = source.synergy_bits[word];
+        target.offer.generation = source.offer.generation;
+        target.offer.ideology_ids = source.offer.ideology_ids;
+        target.offer.active = source.offer.active;
+        // POD ideas are dense by ideology_id. The facade keeps sparse rows plus
+        // an id->row index, so only rows that carry state are materialised;
+        // everything else stays absent exactly as the synchronous path leaves
+        // an undiscovered idea.
+        for (size_t id = 0; id < source.ideas.size() && id < definition_count;
+                ++id) {
+            const RuntimeIdeologyPodIdeaState &idea = source.ideas[id];
+            const bool discovered = (id / 64u) < target.known_bits.size() &&
+                (target.known_bits[id / 64u] & (1ull << (id % 64u))) != 0;
+            if (!discovered &&
+                    idea.location == RuntimeIdeologyPodLocation::INACTIVE &&
+                    idea.understanding_q16 == 0 && idea.level < 0 &&
+                    idea.entered_levels == 0 && idea.generation <= 1) {
+                continue;
+            }
+            const int32_t row = static_cast<int32_t>(target.ideas.size());
+            IdeaState state;
+            state.ideology_id = static_cast<int32_t>(id);
+            state.understanding_q16 = idea.understanding_q16;
+            state.level = idea.level;
+            state.entered_levels = idea.entered_levels;
+            state.generation = idea.generation;
+            state.location = static_cast<uint8_t>(idea.location);
+            target.idea_indices[state.ideology_id] = row;
+            if (state.location != INACTIVE) {
+                // Rows are appended in ascending ideology_id, so the active
+                // index is already in the sorted order insert_active_state
+                // maintains.
+                target.active_state_indices.push_back(row);
+                target.active_bits[id / 64u] |= 1ull << (id % 64u);
+            }
+            target.ideas.push_back(state);
+        }
+    }
+
+    std::vector<PendingTransitionRef> next_pending;
+    next_pending.reserve(snapshot.pending_transitions.size());
+    for (const RuntimeIdeologyPodTransition &pending :
+            snapshot.pending_transitions) {
+        if (pending.country_slot >= next_countries.size() ||
+                pending.ideology_id < 0 ||
+                pending.ideology_id >= static_cast<int32_t>(definition_count)) {
+            error = "ideology_pod_snapshot_transition_invalid";
+            return false;
+        }
+        CountryState &country =
+            next_countries[static_cast<size_t>(pending.country_slot)];
+        if (country.handle == 0) {
+            error = "ideology_pod_snapshot_transition_country_inactive";
+            return false;
+        }
+        auto found = country.idea_indices.find(pending.ideology_id);
+        if (found == country.idea_indices.end()) {
+            // A first transition can be the only state an idea carries, and
+            // the dense POD row above then looked empty.
+            IdeaState state;
+            state.ideology_id = pending.ideology_id;
+            const int32_t row = static_cast<int32_t>(country.ideas.size());
+            country.idea_indices[pending.ideology_id] = row;
+            country.ideas.push_back(state);
+            found = country.idea_indices.find(pending.ideology_id);
+        }
+        IdeaState &state = country.ideas[static_cast<size_t>(found->second)];
+        // The worker applies a transition only on the Effect ACK, so the row
+        // above is still the pre-transition state. previous_* mirrors it: a
+        // rollback on rejection is then a no-op instead of inventing state the
+        // POD snapshot never carried. desired_level / desired_location have no
+        // facade field; the next snapshot carries them as the applied row.
+        state.transition.active = 1;
+        state.transition.producer_id = static_cast<int32_t>(pending.producer_id);
+        state.transition.command_sequence =
+            static_cast<int64_t>(pending.sequence);
+        state.transition.previous_level = state.level;
+        state.transition.previous_entered_levels = state.entered_levels;
+        state.transition.previous_generation = state.generation;
+        state.transition.previous_location = state.location;
+        state.transition.entered_on_success = pending.desired_entered_levels;
+        state.transition.transaction_ids.assign(
+            1, static_cast<int64_t>(pending.intent_id));
+        ++country.pending_transition_count;
+        next_pending.push_back({country.handle,
+            static_cast<int32_t>(pending.country_slot), found->second,
+            state.generation});
+    }
+
+    std::vector<Receipt> next_receipts;
+    next_receipts.reserve(snapshot.receipts.size());
+    int64_t next_receipt_id = 1;
+    for (const RuntimeIdeologyPodReceipt &source : snapshot.receipts) {
+        Receipt receipt;
+        receipt.receipt_id = next_receipt_id++;
+        receipt.producer_id = static_cast<int32_t>(source.producer_id);
+        receipt.sequence = static_cast<int64_t>(source.sequence);
+        receipt.status = static_cast<int32_t>(source.status);
+        receipt.opcode = static_cast<int32_t>(source.opcode);
+        receipt.country_handle = source.country_handle;
+        receipt.ideology_id = source.ideology_id;
+        receipt.settled_day = source.settled_day;
+        if (source.status == RuntimeIdeologyPodReceiptStatus::REJECTED)
+            receipt.reason = "ideology_worker_rejected";
+        next_receipts.push_back(receipt);
+    }
+
+    _countries = std::move(next_countries);
+    _pending_transitions = std::move(next_pending);
+    _pending_transition_cursor = 0;
+    _receipts = std::move(next_receipts);
+    _next_receipt_id = next_receipt_id;
+    _producer_high_watermarks.clear();
+    for (const RuntimeIdeologyPodProducerWatermark &watermark :
+            snapshot.producer_high_watermarks) {
+        _producer_high_watermarks[static_cast<int32_t>(watermark.producer_id)] =
+            static_cast<int64_t>(watermark.sequence);
+    }
+    // The worker owns the command queue under ACTIVE. Whatever is staged here
+    // was already mirrored across the transport by submit_ideology_commands,
+    // so replaying it on the main thread would double-apply it.
+    _commands.clear();
+    _command_cursor = 0;
+    _active_progress_day = snapshot.round_day;
+    _active_country_cursor = 0;
+    _active_item_cursor = 0;
+    _submit_order = std::max(_submit_order, snapshot.next_submit_order);
+    _pod_snapshot_generation = snapshot.generation;
+    _last_day = snapshot.committed_day;
+    return true;
 }
 
 bool NativeIdeologyRuntime::validate_country(uint64_t handle, int32_t &slot) const { slot=static_cast<int32_t>(handle & 0xffffffffULL); return _country_runtime!=nullptr && handle!=0 && _country_runtime->valid_handle(static_cast<int64_t>(handle)); }

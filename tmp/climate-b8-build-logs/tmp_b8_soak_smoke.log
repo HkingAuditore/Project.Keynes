@@ -1,0 +1,9 @@
+[b8-soak] b8-p0-smoke-on authority=1 drive=serial_wait 50x48 days=20 speed=50
+[b8-soak] b8-p0-smoke-on produced no summary; see artifacts\runtime\climate-b8\smoke\b8-p0-smoke-on\soak.log (exit=)
+At D:\Godot\ProjectKeynes\Project.Keynes\tools\runtime\Invoke-ClimateB8Soak.ps1:65 char:5
++     throw "[b8-soak] $RunId produced no summary; see $logPath (exit=$ ...
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : OperationStopped: ([b8-soak] b8-p0...oak.log (exit=):String) [], RuntimeException
+    + FullyQualifiedErrorId : [b8-soak] b8-p0-smoke-on produced no summary; see artifacts\runtime\climate-b8\smoke\b8- 
+   p0-smoke-on\soak.log (exit=)
+ 

@@ -1,0 +1,67 @@
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/organic.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] generate (res://scripts/geography/map_generator.gd:1474)
+       [4] generate_world (res://scripts/game/world_runtime_host.gd:493)
+       [5] _run (res://tests/climate_authority_soak_probe.gd:160)
+       [6] _init (res://tests/climate_authority_soak_probe.gd:128)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/dry_sand.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] generate (res://scripts/geography/map_generator.gd:1474)
+       [4] generate_world (res://scripts/game/world_runtime_host.gd:493)
+       [5] _run (res://tests/climate_authority_soak_probe.gd:160)
+       [6] _init (res://tests/climate_authority_soak_probe.gd:128)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/rock.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] generate (res://scripts/geography/map_generator.gd:1474)
+       [4] generate_world (res://scripts/game/world_runtime_host.gd:493)
+       [5] _run (res://tests/climate_authority_soak_probe.gd:160)
+       [6] _init (res://tests/climate_authority_soak_probe.gd:128)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/snow_wet.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] generate (res://scripts/geography/map_generator.gd:1474)
+       [4] generate_world (res://scripts/game/world_runtime_host.gd:493)
+       [5] _run (res://tests/climate_authority_soak_probe.gd:160)
+       [6] _init (res://tests/climate_authority_soak_probe.gd:128)
+WARNING: [building-visual] disabled: building_visual_renderer_unavailable
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] generate_world (res://scripts/game/world_runtime_host.gd:528)
+       [1] _run (res://tests/climate_authority_soak_probe.gd:160)
+       [2] _init (res://tests/climate_authority_soak_probe.gd:128)
+WARNING: [runtime-climate-round] no ClimateDailySystem; SHADOW capture carries no shared pass input
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _build_runtime_climate_round_input (res://scripts/geography/map_generator.gd:4704)
+       [1] capture_runtime_inputs_for_worker (res://scripts/geography/map_generator.gd:2387)
+       [2] generate_world (res://scripts/game/world_runtime_host.gd:547)
+       [3] _run (res://tests/climate_authority_soak_probe.gd:160)
+       [4] _init (res://tests/climate_authority_soak_probe.gd:128)
+WARNING: [sim/graph-trigger] handoff blocked day=7 reason=trigger_effect_domain_adapter_required command_key=economy.social_pressure_notice definition_key= action=13 opcode=1 â trigger effect queue cannot drain; trigger is retired for the rest of each pulse
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _advance_runtime_graph_pulse (res://scripts/geography/map_generator.gd:3339)
+       [1] sus_tick_daily (res://scripts/geography/map_generator.gd:7854)
+       [2] run_daily_tick (res://scripts/game/world_runtime_host.gd:681)
+       [3] _run (res://tests/climate_authority_soak_probe.gd:247)
+       [4] _init (res://tests/climate_authority_soak_probe.gd:128)
+ERROR: 24 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 238 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

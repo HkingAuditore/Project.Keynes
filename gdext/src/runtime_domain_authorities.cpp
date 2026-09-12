@@ -28,6 +28,41 @@ bool RuntimeDomainAuthorityRunner::queue_trigger_command(
     return _trigger_authority.queue_command(command, error);
 }
 
+bool RuntimeDomainAuthorityRunner::trigger_pod_configured() const {
+    std::lock_guard<std::mutex> lock(_trigger_mutex);
+    return _trigger_configured;
+}
+
+bool RuntimeDomainAuthorityRunner::run_trigger_active_day(
+        int64_t day, uint64_t input_generation,
+        const std::vector<RuntimeDomainAck> &acks,
+        std::vector<RuntimeTriggerEffectIntent> &intents,
+        RuntimeTriggerSnapshot &snapshot, uint32_t &required_ack_count,
+        uint64_t &state_hash, double &replay_ms, std::string &error) {
+    std::lock_guard<std::mutex> lock(_trigger_mutex);
+    intents.clear();
+    required_ack_count = 0;
+    state_hash = 0;
+    replay_ms = 0.0;
+    error.clear();
+    if (!_trigger_configured) { error = "trigger_pod_not_configured"; return false; }
+    if (!_trigger_authority.plan_day(day, input_generation, _trigger_plan, error)) {
+        _trigger_authority.discard_plan();
+        return false;
+    }
+    intents = _trigger_plan.intents;
+    required_ack_count = _trigger_plan.required_ack_count;
+    const auto replay_started = std::chrono::steady_clock::now();
+    if (!_trigger_authority.commit_day(_trigger_plan, acks, error)) {
+        _trigger_authority.discard_plan();
+        return false;
+    }
+    replay_ms = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - replay_started).count();
+    state_hash = _trigger_authority.state_hash();
+    return _trigger_authority.snapshot(snapshot, error);
+}
+
 RuntimeTriggerPodDiagnostics RuntimeDomainAuthorityRunner::trigger_pod_diagnostics() const {
     std::lock_guard<std::mutex> lock(_trigger_mutex);
     return _trigger_authority.diagnostics();

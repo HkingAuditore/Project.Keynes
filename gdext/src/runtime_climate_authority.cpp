@@ -19,8 +19,10 @@ constexpr uint32_t CLIMATE_SECTION_MARKER = 0x324d4c43u; // CLM2
 // ABI 4 = 追加 worker 自持的 synoptic ψ / ψ_prev（B8-2）。
 // ABI 5 = 追加 worker 自持的 vegetation / base_vegetation（B8-P1 演替）。
 // ABI 6 = 追加 worker 自持的 tropical cyclone 状态 blob（B8-2）。
+// ABI 7 = 追加 worker 自持物理状态 blob；旧档以空 blob 明确冷播种。
+// ABI 8 = worker 自持的 terrain + cover u8 lanes。
 // 旧档必须继续可读：只允许在这些版本之间迁移，不做"猜版本"。
-constexpr uint32_t CLIMATE_SECTION_ABI = 6u;
+constexpr uint32_t CLIMATE_SECTION_ABI = 8u;
 constexpr uint32_t CLIMATE_SECTION_ABI_MIN_SUPPORTED = 3u;
 constexpr uint64_t FNV_OFFSET = 1469598103934665603ull;
 constexpr uint64_t FNV_PRIME = 1099511628211ull;
@@ -111,7 +113,8 @@ struct Reader {
     }
     bool floats(std::vector<float> &values, uint32_t expected) {
         uint32_t count = 0;
-        if (!u32(count) || count != expected) return false;
+        if (!u32(count) || count != expected || cursor > size ||
+            count > (size - cursor) / 4u) return false;
         values.resize(count);
         for (float &value : values) if (!f32(value)) return false;
         return true;
@@ -124,9 +127,18 @@ struct Reader {
         cursor += count;
         return true;
     }
+    bool blob(std::vector<uint8_t> &values, size_t limit) {
+        uint32_t count = 0;
+        if (!u32(count) || count > limit || cursor > size || size - cursor < count)
+            return false;
+        values.assign(data + cursor, data + cursor + count);
+        cursor += count;
+        return true;
+    }
     bool ints(std::vector<int32_t> &values, uint32_t expected) {
         uint32_t count = 0;
-        if (!u32(count) || count != expected) return false;
+        if (!u32(count) || count != expected || cursor > size ||
+            count > (size - cursor) / 4u) return false;
         values.resize(count);
         for (int32_t &value : values) {
             uint32_t raw = 0;
@@ -163,6 +175,12 @@ struct Reader {
 #define CLIMATE_U8_LANES(X) \
     X(weather_type) X(weather_prev_type) X(weather_target_type) \
     X(vegetation_succession_candidate) \
+    X(vegetation) X(base_vegetation) \
+    X(terrain) X(cover)
+// CLM2 ABI 7 的 u8 lane 集合 = 当前列表去掉 ABI 8 追加的 terrain / cover。
+#define CLIMATE_U8_LANES_V7(X) \
+    X(weather_type) X(weather_prev_type) X(weather_target_type) \
+    X(vegetation_succession_candidate) \
     X(vegetation) X(base_vegetation)
 // CLM2 ABI 4 的 u8 lane 集合 = 当前列表去掉 ABI 5 追加的植被演替两条。
 #define CLIMATE_U8_LANES_V4(X) \
@@ -180,16 +198,21 @@ void RuntimeClimateAuthority::reset(uint32_t cell_count) {
     _catalog_ready = false;
     _plan_ready = false;
     _planned_day = -1;
+    _planned_state_hash = 0;
+    _planned_parity_hash = 0;
     _last_input_generation = 0;
     _last_report = RuntimeClimateVerticalReport{};
 }
 
 bool RuntimeClimateAuthority::seed_from_input(
         const RuntimeEnvironmentSnapshot &environment, std::string &error) {
-    if (_store.cell_count != environment.cell_count) {
+    if (_store.cell_count != environment.cell_count ||
+        environment.cell_temp.size() != environment.cell_count) {
         error = "climate_seed_shape_mismatch";
         return false;
     }
+    // 输入已过有限性校验；先验证目标形状，避免播种失败留下半写状态。
+    if (!_store.validate(error)) return false;
     const size_t cells = environment.cell_count;
     for (size_t i = 0; i < cells; ++i) {
         _store.temperature[i] = environment.cell_temp[i];
@@ -231,13 +254,17 @@ bool RuntimeClimateAuthority::seed_from_input(
         _store.vegetation_vitality[i] = environment.cell_vegetation_vitality.empty()
             ? 0.5f : environment.cell_vegetation_vitality[i];
     }
+    // 未编译 catalog 的新基线没有物理历史，下一次计划从输入冷播种。
+    _store.physics_state.clear();
     _next = _store;
-    return _store.validate(error) && _next.validate(error);
+    return true;
 }
 
 bool RuntimeClimateAuthority::plan_day(
         int64_t day, const RuntimeEnvironmentSnapshot &environment,
-        RuntimeClimateVerticalReport &report) {
+        RuntimeClimateVerticalReport &report,
+        bool compute_hashes,
+        bool validate_input) {
     report = RuntimeClimateVerticalReport{};
     const auto begin = std::chrono::steady_clock::now();
     std::string error;
@@ -257,7 +284,10 @@ bool RuntimeClimateAuthority::plan_day(
         _last_report = report;
         return false;
     }
-    if (!validate_runtime_environment_snapshot(environment, error)) {
+    // Host publish 已对 ring 内 snapshot 做过完整 validate；热路径默认仍校验
+    // （自测 / 直接调用），生产 ACTIVE/SHADOW 传入 validate_input=false。
+    if (validate_input &&
+        !validate_runtime_environment_snapshot(environment, error)) {
         set_error(report, error.c_str());
         report.plan_ms = std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - begin).count();
@@ -335,7 +365,7 @@ bool RuntimeClimateAuthority::plan_day(
     }
     RuntimeClimateKernelReport kernel_report;
     if (!_kernel.plan_day(day, environment, _catalog, _store, _next,
-                          kernel_report)) {
+                          kernel_report, compute_hashes, validate_input)) {
         set_error(report, kernel_report.error);
         report.plan_ms = std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - begin).count();
@@ -345,9 +375,8 @@ bool RuntimeClimateAuthority::plan_day(
     report.work_units = kernel_report.work_units;
     report.changed_cells = kernel_report.changed_cells;
     report.state_hash = kernel_report.state_hash;
-    // The planned next state is what a reference for this day describes; the
-    // commit below only swaps lanes, so both report the same parity hash.
-    report.parity_hash = _next.parity_hash();
+    // SHADOW 对拍需要 parity；ACTIVE 热路径跳过（writeback/save 会自算 state_hash）。
+    report.parity_hash = compute_hashes ? _next.parity_hash() : 0;
     report.input_hash = kernel_report.input_hash;
     report.catalog_hash = _catalog.hash;
     report.input_generation = environment.generation;
@@ -363,6 +392,9 @@ bool RuntimeClimateAuthority::plan_day(
     report.plan_ms = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - begin).count();
     _planned_day = day;
+    // compute_hashes 时这两份就是提交后的权威归约；否则为 0（commit 原样写出）。
+    _planned_state_hash = report.state_hash;
+    _planned_parity_hash = report.parity_hash;
     _plan_ready = true;
     _last_report = report;
     return true;
@@ -376,15 +408,27 @@ bool RuntimeClimateAuthority::commit_day(
         return false;
     }
     const auto begin = std::chrono::steady_clock::now();
+    std::string error;
+    // 热路径：只做 O(lanes) 形状检查。finite / physics decode 已由 plan 写路径与
+    // save/restore 全量 validate 覆盖；这里再扫一遍会把 replay_ms 抬到数毫秒。
+    if (!_next.validate_shape(error)) {
+        set_error(report, error.c_str());
+        _last_report = report;
+        return false;
+    }
+    // 整 store 交换包含 physics_state；发布前绝不改变 current 的胶囊。
     _kernel.commit(_store, _next);
-    report.state_hash = _store.state_hash();
-    report.parity_hash = _store.parity_hash();
+    report.state_hash = _planned_state_hash;
+    report.parity_hash = _planned_parity_hash;
     report.replay_ms = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - begin).count();
     report.completed = 1;
     report.preflight_ok = 1;
     _last_input_generation = report.input_generation;
     _plan_ready = false;
+    _planned_day = -1;
+    _planned_state_hash = 0;
+    _planned_parity_hash = 0;
     _last_report = report;
     return true;
 }
@@ -392,6 +436,12 @@ bool RuntimeClimateAuthority::commit_day(
 bool RuntimeClimateAuthority::commit_day_forced(
         int64_t day, const RuntimeClimateStore &reference,
         RuntimeClimateVerticalReport &report) {
+    // comparable adopt 不校验 lane 形状/NaN；必须在提交之前验证整份 reference。
+    std::string error;
+    if (reference.cell_count != _store.cell_count || !reference.validate(error)) {
+        set_error(report, error.empty() ? "climate_reference_shape_mismatch" : error.c_str());
+        return false;
+    }
     if (!commit_day(day, report)) return false;
     if (!runtime_climate_parity_adopt_comparable_fields(_store, reference)) {
         set_error(report, "climate_reference_shape_mismatch");
@@ -410,8 +460,19 @@ bool RuntimeClimateAuthority::adopt_reference_baseline(
         const RuntimeEnvironmentSnapshot &environment,
         RuntimeClimateVerticalReport &report) {
     report = RuntimeClimateVerticalReport{};
-    if (_store.cell_count != reference.cell_count) {
+    if (_store.cell_count != reference.cell_count ||
+        environment.cell_count != reference.cell_count) {
         set_error(report, "climate_reference_shape_mismatch");
+        return false;
+    }
+    std::string validation_error;
+    if (!reference.validate(validation_error) ||
+        !validate_runtime_environment_snapshot(environment, validation_error)) {
+        set_error(report, validation_error.c_str());
+        return false;
+    }
+    if (day < 0 || day != environment.day) {
+        set_error(report, "climate_environment_day_mismatch");
         return false;
     }
     // The catalog must be compiled here, not left to the next plan_day. That
@@ -436,6 +497,9 @@ bool RuntimeClimateAuthority::adopt_reference_baseline(
     // Only the comparable physical fields come from the reference. Bookkeeping
     // stays the worker's own, which is why this is a baseline and not a restore:
     // rng_state and history intentionally keep their cold-start values.
+    // 新基线采用 reference 的物理胶囊；旧 reference 无胶囊时明确冷播种，
+    // 不能保留另一段历史的物理缓存。forced commit 则保留刚计划出的 worker 胶囊。
+    _store.physics_state = reference.physics_state;
     _store.committed_day = day;
     ++_store.generation;
     ++_store.climate_generation;
@@ -458,8 +522,11 @@ bool RuntimeClimateAuthority::adopt_reference_baseline(
 }
 
 void RuntimeClimateAuthority::discard_plan() {
+    _next.physics_state.clear();
     _plan_ready = false;
     _planned_day = -1;
+    _planned_state_hash = 0;
+    _planned_parity_hash = 0;
 }
 
 bool RuntimeClimateAuthority::serialize(std::vector<uint8_t> &bytes,
@@ -492,12 +559,12 @@ bool RuntimeClimateAuthority::serialize(std::vector<uint8_t> &bytes,
 #define APPEND_I32(name) append_i32_vector(payload, _store.name);
     CLIMATE_I32_LANES(APPEND_I32)
 #undef APPEND_I32
-    // ABI 6：cyclone 条目表以不透明 blob 追加在 lane 之后（u32 长度前缀）。
-    append_u32(payload, static_cast<uint32_t>(std::min<size_t>(
-        _store.cyclone_state.size(), 0xFFFFFFFFu)));
-    if (!_store.cyclone_state.empty()) {
-        payload.insert(payload.end(), _store.cyclone_state.begin(),
-                       _store.cyclone_state.end());
+    // blob 已通过 store 限长与 codec 校验，不允许截断长度后仍写入完整数据。
+    append_u8_vector(payload, _store.cyclone_state);
+    append_u8_vector(payload, _store.physics_state);
+    if (payload.size() > MAX_SECTION_BYTES - 80u) {
+        error = "climate_section_too_large";
+        return false;
     }
 
     bytes.clear();
@@ -524,6 +591,10 @@ bool RuntimeClimateAuthority::restore(const uint8_t *bytes, size_t size,
     error.clear();
     if (bytes == nullptr || size < 80u) {
         error = "climate_section_truncated";
+        return false;
+    }
+    if (size > MAX_SECTION_BYTES) {
+        error = "climate_section_too_large";
         return false;
     }
     Reader reader{bytes, size, 0};
@@ -574,7 +645,8 @@ bool RuntimeClimateAuthority::restore(const uint8_t *bytes, size_t size,
         error = "climate_section_checksum_invalid";
         return false;
     }
-    if ((map_width == 0) != (map_height == 0)) {
+    if ((map_width == 0) != (map_height == 0) ||
+        (map_width != 0 && static_cast<uint64_t>(map_width) * map_height != cells)) {
         error = "climate_section_map_shape_invalid";
         return false;
     }
@@ -630,15 +702,21 @@ bool RuntimeClimateAuthority::restore(const uint8_t *bytes, size_t size,
         error = "climate_section_history_invalid";
         return false;
     }
-    // ABI <= 4 的 u8 集合没有 vegetation / base_vegetation：按旧列表读完，新 lane
-    // 留在 reset 给的全零。
+    // ABI <= 4 的 u8 集合没有 vegetation / base_vegetation；ABI <= 7 没有
+    // terrain / cover：按旧列表读完，新 lane 留在 reset 给的全零。
 #define READ_U8(name) if (!payload.bytes(restored.name, cells)) { error = "climate_section_lane_invalid_" #name; return false; }
-    if (section_abi >= 5u) {
+    if (section_abi >= 8u) {
         CLIMATE_U8_LANES(READ_U8)
+    } else if (section_abi >= 5u) {
+        CLIMATE_U8_LANES_V7(READ_U8)
+        restored.terrain.assign(cells, 0);
+        restored.cover.assign(cells, 0);
     } else {
         CLIMATE_U8_LANES_V4(READ_U8)
         restored.vegetation.assign(cells, 0);
         restored.base_vegetation.assign(cells, 0);
+        restored.terrain.assign(cells, 0);
+        restored.cover.assign(cells, 0);
     }
 #undef READ_U8
 #define READ_I32(name) if (!payload.ints(restored.name, cells)) { error = "climate_section_lane_invalid_" #name; return false; }
@@ -646,19 +724,17 @@ bool RuntimeClimateAuthority::restore(const uint8_t *bytes, size_t size,
 #undef READ_I32
     // ABI 6：cyclone 条目表 blob。旧档没有这一段，读完后保持空（冷启动由 capture
     // 的生产种子或零场接管）。
-    if (section_abi >= 6u) {
-        uint32_t blob_size = 0;
-        if (!payload.u32(blob_size) ||
-            payload.cursor > payload.size ||
-            payload.size - payload.cursor < blob_size) {
-            error = "climate_section_cyclone_blob_invalid";
-            return false;
-        }
-        restored.cyclone_state.assign(payload.data + payload.cursor,
-                                      payload.data + payload.cursor + blob_size);
-        payload.cursor += blob_size;
-    } else {
-        restored.cyclone_state.clear();
+    if (section_abi >= 6u &&
+        !payload.blob(restored.cyclone_state, 64u * 1024u * 1024u)) {
+        error = "climate_section_cyclone_blob_invalid";
+        return false;
+    }
+    // ABI 3-6 没有物理胶囊：保持空，由 kernel 下一次计划显式冷播种。
+    // 非空胶囊必须经正式 physics codec 验证形状/有限性/hash，不能降级成空。
+    if (section_abi >= 7u &&
+        !payload.blob(restored.physics_state, RuntimeClimateStore::MAX_PHYSICS_STATE_BYTES)) {
+        error = "climate_section_physics_blob_invalid";
+        return false;
     }
     if (payload.cursor != payload.size) {
         error = "climate_section_payload_trailing_bytes";
@@ -678,11 +754,14 @@ bool RuntimeClimateAuthority::restore(const uint8_t *bytes, size_t size,
                                          : validation_error;
         return false;
     }
-    // state_hash 覆盖 ABI 4 新增的两条 lane；ABI 3 的存档里这两条是零，重算出的
-    // hash 与原档不同是预期行为，不是损坏。只对当前 ABI 校验哈希，旧档靠
-    // checksum + 逐 lane 形状校验保证完整性。
-    if (section_abi >= CLIMATE_SECTION_ABI &&
-        restored.state_hash() != state_hash) {
+    // ABI 6 继续按原算法严格校验，不能随 ABI bump 自动失去哈希保护。
+    // ABI 7 冻结为 abi6 + physics；ABI 8+ 再混入 terrain/cover。
+    // ABI 3-5 保持既有迁移契约：checksum + lane 形状/有限性校验，缺失 lane 冷播种。
+    const uint64_t expected_hash = section_abi >= 8u
+        ? restored.state_hash()
+        : (section_abi >= 7u ? restored.state_hash_abi7()
+                             : restored.state_hash_abi6());
+    if (section_abi >= 6u && expected_hash != state_hash) {
         error = "climate_section_state_hash_mismatch";
         return false;
     }
@@ -749,15 +828,16 @@ bool RuntimeClimateAuthority::self_test(std::string &error) {
             return migration_fail(error.empty()
                 ? "climate_abi_migration_serialize_failed" : error);
         }
-        // payload 布局（ABI 5）：header 80B + 前缀 56B +
+        // payload 布局（ABI 8）：header 80B + 前缀 56B +
         //   31 条 float lane（每条 u32 长度 + cells*f32）+
         //   temperature_history（u32 长度 + 365*cells*f32）+
-        //   6 条 u8 lane（每条 u32 长度 + cells 字节）+
-        //   2 条 i32 lane（每条 u32 长度 + cells*i32）。
+        //   8 条 u8 lane（每条 u32 长度 + cells 字节）+
+        //   2 条 i32 lane（每条 u32 长度 + cells*i32）+
+        //   cyclone blob + physics blob。
         // 旧档 = 从这份 payload 里剪掉对应版本没有的 lane，改写 header 三处字段。
         constexpr size_t PAYLOAD_PREFIX = 56u;
         constexpr size_t FLOAT_LANES = 31u;
-        constexpr size_t U8_LANES = 6u;
+        constexpr size_t U8_LANES = 8u;
         constexpr size_t I32_LANES = 2u;
         const uint32_t cells = 2u;
         const size_t float_lane = sizeof(uint32_t) + cells * sizeof(float);
@@ -776,7 +856,9 @@ bool RuntimeClimateAuthority::self_test(std::string &error) {
         }
         uint32_t blob_len = 0;
         std::memcpy(&blob_len, v4.data() + blob_start, sizeof(blob_len));
-        if (v4.size() != blob_start + sizeof(uint32_t) + blob_len) {
+        const size_t physics_start = blob_start + sizeof(uint32_t) + blob_len;
+        if (v4.size() != physics_start + sizeof(uint32_t) +
+                         authority.store().physics_state.size()) {
             return migration_fail("climate_abi_migration_blob_shape_unexpected");
         }
         const auto build_legacy = [&](uint32_t abi, size_t drop_float_lanes,
@@ -793,10 +875,17 @@ bool RuntimeClimateAuthority::self_test(std::string &error) {
                            history_start),
                        v4.begin() + static_cast<ptrdiff_t>(
                            u8_start + (U8_LANES - drop_u8_lanes) * u8_lane));
+            // ABI >= 7 保留 physics；ABI 6 保留 cyclone、剪掉 physics；更旧剪掉 blob。
+            const size_t payload_end = abi >= 7u ? v4.size()
+                : (abi >= 6u ? physics_start : blob_start);
             out.insert(out.end(),
                        v4.begin() + static_cast<ptrdiff_t>(i32_start),
-                       v4.begin() + static_cast<ptrdiff_t>(blob_start));
+                       v4.begin() + static_cast<ptrdiff_t>(payload_end));
             std::memcpy(out.data() + 4, &abi, sizeof(abi));
+            const uint64_t legacy_hash = abi >= 7u
+                ? authority.store().state_hash_abi7()
+                : authority.store().state_hash_abi6();
+            std::memcpy(out.data() + 56, &legacy_hash, sizeof(legacy_hash));
             const uint64_t payload_size =
                 static_cast<uint64_t>(out.size() - 80u);
             std::memcpy(out.data() + 64, &payload_size, sizeof(payload_size));
@@ -836,7 +925,18 @@ bool RuntimeClimateAuthority::self_test(std::string &error) {
                         std::string(label) + "_psi_prev_not_zeroed");
                 }
             }
-            if (drop_u8_lanes > 0) {
+            // ABI 8 末尾两条 u8 是 terrain / cover；再往前两条是 vegetation。
+            if (drop_u8_lanes >= 2u) {
+                for (uint8_t value : store.terrain) {
+                    if (value != 0u) return migration_fail(
+                        std::string(label) + "_terrain_not_zeroed");
+                }
+                for (uint8_t value : store.cover) {
+                    if (value != 0u) return migration_fail(
+                        std::string(label) + "_cover_not_zeroed");
+                }
+            }
+            if (drop_u8_lanes >= 4u) {
                 for (uint8_t value : store.vegetation) {
                     if (value != 0u) return migration_fail(
                         std::string(label) + "_vegetation_not_zeroed");
@@ -846,18 +946,25 @@ bool RuntimeClimateAuthority::self_test(std::string &error) {
                         std::string(label) + "_base_vegetation_not_zeroed");
                 }
             }
+            if (abi < 7u && !store.physics_state.empty()) {
+                return migration_fail(std::string(label) + "_physics_not_cold_seeded");
+            }
             if (abi <= 5u && !store.cyclone_state.empty()) {
                 return migration_fail(std::string(label) +
                                       "_cyclone_blob_not_cleared");
             }
             return true;
         };
-        // ABI 5 = 只缺 cyclone blob。
-        if (!check_legacy(5u, 0u, 0u, "climate_abi5")) return false;
-        // ABI 4 = 只缺 vegetation / base_vegetation（2 条 u8 lane）。
-        if (!check_legacy(4u, 0u, 2u, "climate_abi4")) return false;
-        // ABI 3 = 同时缺 ψ 两条 float lane 与 vegetation 两条 u8 lane。
-        if (!check_legacy(3u, 2u, 2u, "climate_abi3")) return false;
+        // ABI 7 = 只缺 terrain / cover（2 条 u8 lane），保留 physics。
+        if (!check_legacy(7u, 0u, 2u, "climate_abi7")) return false;
+        // ABI 6 = 缺 terrain/cover + physics blob；仍须通过旧算法 hash 校验。
+        if (!check_legacy(6u, 0u, 2u, "climate_abi6")) return false;
+        // ABI 5 = 缺 terrain/cover + cyclone / physics blob。
+        if (!check_legacy(5u, 0u, 2u, "climate_abi5")) return false;
+        // ABI 4 = 缺 vegetation / base_vegetation / terrain / cover（4 条 u8）。
+        if (!check_legacy(4u, 0u, 4u, "climate_abi4")) return false;
+        // ABI 3 = 同时缺 ψ 两条 float lane 与上述 4 条 u8 lane。
+        if (!check_legacy(3u, 2u, 4u, "climate_abi3")) return false;
     }
     RuntimeEnvironmentSnapshot environment;
     environment.generation = 1;
@@ -960,6 +1067,12 @@ bool RuntimeClimateAuthority::self_test(std::string &error) {
     }
     if (authority.store().parity_hash() != planned_parity) {
         error = "climate_committed_store_parity_hash_mismatch";
+        return false;
+    }
+    // commit 复用 plan 缓存的 state_hash；必须与提交后 store 重算一致。
+    if (report.state_hash == 0 ||
+        report.state_hash != authority.store().state_hash()) {
+        error = "climate_commit_state_hash_reuse_mismatch";
         return false;
     }
     // parity_hash and state_hash must stay distinct concerns: the former is
@@ -1185,6 +1298,116 @@ bool RuntimeClimateWritebackRing::self_test(std::string &error) {
         return false;
     }
     ring.release(newest);
+    return true;
+}
+
+// ─── RuntimeEnvironmentInputRing ──────────────────────────────────────────
+
+size_t RuntimeEnvironmentInputRing::size() const {
+    std::lock_guard<std::mutex> lock(_mutex);
+    return _queue.size();
+}
+
+bool RuntimeEnvironmentInputRing::try_push(
+        std::shared_ptr<const RuntimeEnvironmentSnapshot> snapshot) {
+    if (!snapshot) return false;
+    std::lock_guard<std::mutex> lock(_mutex);
+    if (_queue.size() >= SLOT_COUNT) return false;
+    _queue.push_back(snapshot);
+    _latest = std::move(snapshot);
+    return true;
+}
+
+bool RuntimeEnvironmentInputRing::force_push(
+        std::shared_ptr<const RuntimeEnvironmentSnapshot> snapshot,
+        bool &dropped) {
+    dropped = false;
+    if (!snapshot) return false;
+    std::lock_guard<std::mutex> lock(_mutex);
+    if (_queue.size() >= SLOT_COUNT) {
+        _queue.pop_front();
+        dropped = true;
+    }
+    _queue.push_back(snapshot);
+    _latest = std::move(snapshot);
+    return true;
+}
+
+std::shared_ptr<const RuntimeEnvironmentSnapshot>
+RuntimeEnvironmentInputRing::peek_oldest() const {
+    std::lock_guard<std::mutex> lock(_mutex);
+    if (_queue.empty()) return nullptr;
+    return _queue.front();
+}
+
+std::shared_ptr<const RuntimeEnvironmentSnapshot>
+RuntimeEnvironmentInputRing::latest() const {
+    std::lock_guard<std::mutex> lock(_mutex);
+    return _latest;
+}
+
+bool RuntimeEnvironmentInputRing::pop_generation(uint64_t generation) {
+    std::lock_guard<std::mutex> lock(_mutex);
+    if (_queue.empty() || !_queue.front() ||
+        _queue.front()->generation != generation) {
+        return false;
+    }
+    _queue.pop_front();
+    return true;
+}
+
+void RuntimeEnvironmentInputRing::reset() {
+    std::lock_guard<std::mutex> lock(_mutex);
+    _queue.clear();
+    _latest.reset();
+}
+
+bool RuntimeEnvironmentInputRing::self_test(std::string &error) {
+    RuntimeEnvironmentInputRing ring;
+    if (ring.peek_oldest() != nullptr) {
+        error = "environment_ring_empty_peek";
+        return false;
+    }
+    auto make = [](uint64_t generation, int64_t day) {
+        auto snap = std::make_shared<RuntimeEnvironmentSnapshot>();
+        snap->generation = generation;
+        snap->day = day;
+        snap->cell_count = 1;
+        snap->topology_validated = true;
+        return snap;
+    };
+    if (!ring.try_push(make(1, 10)) || ring.size() != 1) {
+        error = "environment_ring_first_push_failed";
+        return false;
+    }
+    for (uint64_t g = 2; g <= RuntimeEnvironmentInputRing::SLOT_COUNT; ++g) {
+        if (!ring.try_push(make(g, static_cast<int64_t>(10 + g)))) {
+            error = "environment_ring_fill_failed";
+            return false;
+        }
+    }
+    if (ring.try_push(make(99, 99))) {
+        error = "environment_ring_overfill_accepted";
+        return false;
+    }
+    bool dropped = false;
+    if (!ring.force_push(make(100, 100), dropped) || !dropped) {
+        error = "environment_ring_force_drop_failed";
+        return false;
+    }
+    auto oldest = ring.peek_oldest();
+    if (!oldest || oldest->generation != 2) {
+        error = "environment_ring_fifo_order_broken";
+        return false;
+    }
+    if (!ring.pop_generation(2) || ring.peek_oldest()->generation != 3) {
+        error = "environment_ring_pop_failed";
+        return false;
+    }
+    if (ring.latest() == nullptr || ring.latest()->generation != 100) {
+        error = "environment_ring_latest_broken";
+        return false;
+    }
     return true;
 }
 

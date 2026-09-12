@@ -1,0 +1,23 @@
+scons: Reading SConscript files ...
+Building for architecture x86_64 on platform windows
+scons: done reading SConscript files.
+scons: Building targets ...
+scons: `godot-cpp\bin\libgodot-cpp.windows.template_debug.x86_64.lib' is up to date.
+Compiling shared src\native_simulation_host.cpp ...
+src\native_simulation_host.cpp(1502): error C2039: "climate_committed_day": 不是 "pk::NativeSimulationHost::ClimateParityFieldStatus" 的成�\ufffd
+D:\Godot\ProjectKeynes\Project.Keynes\gdext\src\native_simulation_host.h(363): note: 参�\ufffd��\ufffd�pk::NativeSimulationHost::ClimateParityFieldStatus”的声明
+src\native_simulation_host.cpp(1507): error C2039: "climate_cyclone_injected": 不是 "pk::NativeSimulationHost::ClimateParityFieldStatus" 的成�\ufffd
+D:\Godot\ProjectKeynes\Project.Keynes\gdext\src\native_simulation_host.h(363): note: 参�\ufffd��\ufffd�pk::NativeSimulationHost::ClimateParityFieldStatus”的声明
+src\native_simulation_host.cpp(1508): error C2039: "climate_cyclone_alive": 不是 "pk::NativeSimulationHost::ClimateParityFieldStatus" 的成�\ufffd
+D:\Godot\ProjectKeynes\Project.Keynes\gdext\src\native_simulation_host.h(363): note: 参�\ufffd��\ufffd�pk::NativeSimulationHost::ClimateParityFieldStatus”的声明
+scons: building terminated because of errors.
+src\native_simulation_host.cpp(1508): error C2039: "climate_cyclone_decayed": 不是 "pk::NativeSimulationHost::ClimateParityFieldStatus" 的成�\ufffd
+D:\Godot\ProjectKeynes\Project.Keynes\gdext\src\native_simulation_host.h(363): note: 参�\ufffd��\ufffd�pk::NativeSimulationHost::ClimateParityFieldStatus”的声明
+src\native_simulation_host.cpp(1509): error C2039: "climate_worker_stage_mask": 不是 "pk::NativeSimulationHost::ClimateParityFieldStatus" 的成�\ufffd
+D:\Godot\ProjectKeynes\Project.Keynes\gdext\src\native_simulation_host.h(363): note: 参�\ufffd��\ufffd�pk::NativeSimulationHost::ClimateParityFieldStatus”的声明
+src\native_simulation_host.cpp(1510): error C2039: "climate_committed_day": 不是 "pk::NativeSimulationHost::ClimateParityFieldStatus" 的成�\ufffd
+D:\Godot\ProjectKeynes\Project.Keynes\gdext\src\native_simulation_host.h(363): note: 参�\ufffd��\ufffd�pk::NativeSimulationHost::ClimateParityFieldStatus”的声明
+src\native_simulation_host.cpp(1505): warning C4473: “fprintf�\ufffd: 没有为格式字符串传�\ufffd�足够的参数
+src\native_simulation_host.cpp(1505): note: 占位符和其参数�\ufffd��\ufffd\ufffd 6 �\ufffd变参数，但提供的却是 1 参数
+src\native_simulation_host.cpp(1505): note: 缺失的可变参�\ufffd 2 为格式字符串�\ufffd%d”所�\ufffd
+scons: *** [src\native_simulation_host.windows.template_debug.x86_64.obj] Error 2

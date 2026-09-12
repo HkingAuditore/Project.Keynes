@@ -192,6 +192,8 @@ var _country_worker_transport_last_service: Dictionary = {}
 var _country_worker_transport_capture: Dictionary = {}
 var _modifier_worker_snapshot_generation: int = 0
 var _effect_worker_snapshot_generation: int = 0
+var _ideology_worker_snapshot_generation: int = 0
+var _trigger_worker_snapshot_generation: int = 0
 var _country_worker_read_generation: int = 0
 var _country_worker_read_last_day: int = -1
 var _country_worker_read_last_result: Dictionary = {}
@@ -277,13 +279,19 @@ func _on_clock_day_changed(day_idx: int) -> void:
 		_consume_modifier_worker_snapshot_if_authoritative()
 		_consume_effect_worker_snapshot_if_authoritative()
 		_service_effect_worker_intents_if_authoritative()
+		# H8: Trigger before Ideology mirrors the worker stage order, and doing it
+		# here (not only after the tick) lets this day's graph pulse hand off the
+		# effects the worker just emitted instead of trailing them by a day.
+		_consume_trigger_worker_snapshot_if_authoritative()
+		_service_trigger_worker_intents_if_authoritative()
+		_consume_ideology_worker_snapshot_if_authoritative()
+		_service_ideology_worker_intents_if_authoritative()
 	_apply_climate_writeback_if_authoritative(report)
 	if bool(report.get("climate_worker_authoritative", false)):
-		# B8 P3：主线程等到 worker 已经评估过上一份环境再发布下一天，输入不再
-		# 被单槽覆盖。等待在切片之间 pump Country peer 服务，避免两个边界互锁；
-		# 用户选择无限等，所以这里只有故障/停止/撤销三类终止条件。
-		wait_for_climate_consumed(
-			int(report.get("simulation_environment_generation", 0)))
+		# B8 P3：等输入 ring 有空位再 capture（after_generation=0）。
+		# 允许最多 SLOT_COUNT-1 天流水线，大地图不再被“等上一份完全消费”串成单槽。
+		# serial_wait soak 仍可显式传具体 generation。
+		wait_for_climate_consumed(0)
 	run_daily_tick(day_idx, _world_clock.season_phase_for_day(day_idx))
 
 
@@ -594,10 +602,14 @@ func _start_production_shadow_worker() -> void:
 	}
 	if climate_authority_active:
 		# graph_coverage_complete 在 per-domain ACTIVE 下的含义是"请求的这些域
-		# 线程安全"，不是整图。CLIMATE(0x2)|COUNTRY(0x4)|EFFECT(0x20)|MODIFIER(0x40)|COMMIT(0x800)=0x866：
+		# 线程安全"，不是整图。
+		# CLIMATE(0x2)|COUNTRY(0x4)|TRIGGER(0x8)|IDEOLOGY(0x10)|EFFECT(0x20)|
+		# MODIFIER(0x40)|EVENTS(0x200)|COMMIT(0x800)=0xA7E：
 		# COMMIT 是 barrier 域本身，C++ 侧也会补上，这里显式写出让配置自解释。
-		# F8：Climate|Country|Modifier|Effect 同开关进入生产 ACTIVE；不得用 handoff /
-		# set_country_sync_store_writes_forbidden 冒充本路径。
+		# H8/I8：Trigger 与 Events 与 Climate|Country|Modifier|Effect|Ideology 同开关进入
+		# 生产 ACTIVE；不得用 handoff / set_country_sync_store_writes_forbidden 冒充本路径。
+		# Events 的授予只表示 worker 侧镜像 + 阶段位；legacy GameplayEventBus journal
+		# 仍是生产消费源，消费者迁移是后续 PR。
 		if not bool(_country_worker_transport_capture.get("ok", false)) \
 				and _generator != null \
 				and _generator.has_method("capture_country_worker_inputs"):
@@ -605,19 +617,26 @@ func _start_production_shadow_worker() -> void:
 				_generator.capture_country_worker_inputs()
 		if not bool(_country_worker_transport_capture.get("ok", false)):
 			push_error(
-				"[runtime-worker] Climate|Country|Modifier|Effect ACTIVE refused: Country capture incomplete (%s)" % [
+				"[runtime-worker] Climate|Country|Trigger|Modifier|Effect|Ideology|Events ACTIVE refused: Country capture incomplete (%s)" % [
 					String(_country_worker_transport_capture.get("code", "missing"))])
 			return
+		# G8: best-effort Economy opinion publish before ACTIVE so Ideology
+		# stage is not cold-started with a null opinion snapshot.
+		if ext != null and ext.has_method("publish_ideology_worker_inputs"):
+			var opinion_pub: Dictionary = ext.publish_ideology_worker_inputs()
+			if not bool(opinion_pub.get("ok", false)):
+				push_warning("[runtime-worker] Ideology opinion publish deferred: %s" % [
+					String(opinion_pub.get("code", "unknown"))])
 		config["simulation_thread_mode"] = "ACTIVE"
 		config["graph_coverage_complete"] = true
-		config["authoritative_domain_mask"] = 0x866
+		config["authoritative_domain_mask"] = 0xA7E
 	var started: Dictionary = _generator.start_runtime_worker(config)
 	if not bool(started.get("ok", false)):
 		if climate_authority_active:
 			# 权威启动失败不能静默退回 SHADOW：主线程的 climate/country 抑制门读的是
 			# worker 侧的授予位，授予没发生就不会抑制，于是主线程仍在算。
 			# 但调用方以为已经转权威了，所以这里必须响。
-			push_error("[runtime-worker] Climate|Country|Modifier|Effect authority start refused: %s (%s)" % [
+			push_error("[runtime-worker] Climate|Country|Trigger|Modifier|Effect|Ideology|Events authority start refused: %s (%s)" % [
 				String(started.get("code", "unknown")),
 				String(started.get("message", ""))])
 		else:
@@ -668,6 +687,10 @@ func run_daily_tick(day_idx: int, season_phase: float) -> Dictionary:
 	_consume_modifier_worker_snapshot_if_authoritative()
 	_consume_effect_worker_snapshot_if_authoritative()
 	_service_effect_worker_intents_if_authoritative()
+	_consume_trigger_worker_snapshot_if_authoritative()
+	_service_trigger_worker_intents_if_authoritative()
+	_consume_ideology_worker_snapshot_if_authoritative()
+	_service_ideology_worker_intents_if_authoritative()
 	_consume_country_worker_read_view_if_authoritative()
 	_fast_tick_count += 1
 	if _renderer != null and _generator.has_method("has_pending_detail_scatter_refresh") \
@@ -756,6 +779,10 @@ func _process(_delta: float) -> void:
 	_consume_modifier_worker_snapshot_if_authoritative()
 	_consume_effect_worker_snapshot_if_authoritative()
 	_service_effect_worker_intents_if_authoritative()
+	_consume_trigger_worker_snapshot_if_authoritative()
+	_service_trigger_worker_intents_if_authoritative()
+	_consume_ideology_worker_snapshot_if_authoritative()
+	_service_ideology_worker_intents_if_authoritative()
 	_consume_country_worker_read_view_if_authoritative()
 	_consume_runtime_commit_if_ready()
 	var now_msec := Time.get_ticks_msec()
@@ -866,13 +893,136 @@ func _service_effect_worker_intents_if_authoritative() -> void:
 			"target_handle": int(intent.get("target_handle", 0)),
 			"target_generation": int(intent.get("target_generation", 0)),
 			"domain": domain,
-			"code": 1, # OK — adapters that reject must submit Rejected via their path
+			# RuntimeDomainAckCode::OK == 0; 1 is RETRY (clears intent_emitted).
+			"code": 0,
 			"effective_day": int(intent.get("effective_day", 0)),
 			"producer_id": int(intent.get("producer_id", 0)),
 			"sequence": int(intent.get("sequence", 0)),
 		}
 		if ext.has_method("submit_effect_worker_ack"):
 			ext.submit_effect_worker_ack(ack)
+
+
+## G8 ACTIVE Ideology write-back. Non-blocking: drops intermediate generations.
+## Targets legacy NativeIdeologyRuntime. main_wait_on_sim_us stays 0.
+func _consume_ideology_worker_snapshot_if_authoritative() -> void:
+	if not _runtime_ready_for_ticks or _generator == null:
+		return
+	if not _generator.has_method("apply_runtime_ideology_snapshot"):
+		return
+	var report: Dictionary = _generator.get_runtime_thread_report() \
+		if _generator.has_method("get_runtime_thread_report") else {}
+	var granted_mask := int(report.get("authoritative_domain_mask", 0))
+	if (granted_mask & 0x010) == 0:
+		return
+	var applied: Dictionary = _generator.apply_runtime_ideology_snapshot(
+		_ideology_worker_snapshot_generation)
+	if not bool(applied.get("ok", false)) or not bool(applied.get("applied", false)):
+		return
+	var generation := int(applied.get("generation", 0))
+	if generation <= _ideology_worker_snapshot_generation:
+		return
+	_ideology_worker_snapshot_generation = generation
+
+
+## G8: Ideology transition intents address EFFECT and require an ACK before the
+## worker applies the transition. When EFFECT is granted in the same session the
+## worker already ACKs them in-worker; this pump is the protocol path and covers
+## an IDEOLOGY-only grant plus anything the in-worker drain missed.
+func _service_ideology_worker_intents_if_authoritative() -> void:
+	if not _runtime_ready_for_ticks or _generator == null:
+		return
+	var report: Dictionary = _generator.get_runtime_thread_report() \
+		if _generator.has_method("get_runtime_thread_report") else {}
+	var granted_mask := int(report.get("authoritative_domain_mask", 0))
+	if (granted_mask & 0x010) == 0:
+		return
+	var ext = _generator.get_data_core_world_ext() \
+		if _generator.has_method("get_data_core_world_ext") else null
+	if ext == null or not ext.has_method("poll_ideology_worker_intent"):
+		return
+	if not ext.has_method("submit_ideology_worker_ack"):
+		return
+	# Bounded pump: never block the sim on an unbounded intent backlog.
+	for _i in range(64):
+		var intent: Dictionary = ext.poll_ideology_worker_intent()
+		if not bool(intent.get("ok", false)) or not bool(intent.get("available", false)):
+			break
+		# submit_ideology_worker_ack stamps EFFECT itself; the Ideology
+		# authority ignores an ACK from any other domain.
+		ext.submit_ideology_worker_ack({
+			"request_id": int(intent.get("request_id", 0)),
+			"transaction_id": int(intent.get("transaction_id",
+				intent.get("request_id", 0))),
+			"target_handle": int(intent.get("target_handle", 0)),
+			"target_generation": int(intent.get("target_generation", 0)),
+			# RuntimeDomainAckCode::OK == 0. 1 is RETRY, which clears
+			# intent_emitted and makes the worker re-emit the same transition
+			# forever instead of settling it.
+			"code": 0,
+			"effective_day": int(intent.get("effective_day", 0)),
+		})
+
+## H8 ACTIVE Trigger write-back. The worker owns aggregation and effect emission;
+## this is the only boundary that copies its committed state back into the legacy
+## TriggerRuntime facade, which the UI, save, and Trigger->Effect handoff still
+## read. Non-blocking and generation-gated: intermediate generations are dropped.
+func _consume_trigger_worker_snapshot_if_authoritative() -> void:
+	if not _runtime_ready_for_ticks or _generator == null:
+		return
+	if not _generator.has_method("apply_runtime_trigger_snapshot"):
+		return
+	var report: Dictionary = _generator.get_runtime_thread_report() \
+		if _generator.has_method("get_runtime_thread_report") else {}
+	var granted_mask := int(report.get("authoritative_domain_mask", 0))
+	if (granted_mask & 0x008) == 0:
+		return
+	var applied: Dictionary = _generator.apply_runtime_trigger_snapshot(
+		_trigger_worker_snapshot_generation)
+	if not bool(applied.get("ok", false)) or not bool(applied.get("applied", false)):
+		return
+	var generation := int(applied.get("generation", 0))
+	if generation <= _trigger_worker_snapshot_generation:
+		return
+	_trigger_worker_snapshot_generation = generation
+
+
+## H8: Trigger effect intents address EFFECT and require an ACK before the worker
+## considers the firing day committed. With EFFECT granted in the same session the
+## worker ACKs them itself at the Effect stage; this pump is the protocol path and
+## covers a TRIGGER-only grant plus anything the in-worker drain missed.
+func _service_trigger_worker_intents_if_authoritative() -> void:
+	if not _runtime_ready_for_ticks or _generator == null:
+		return
+	var report: Dictionary = _generator.get_runtime_thread_report() \
+		if _generator.has_method("get_runtime_thread_report") else {}
+	var granted_mask := int(report.get("authoritative_domain_mask", 0))
+	if (granted_mask & 0x008) == 0:
+		return
+	var ext = _generator.get_data_core_world_ext() \
+		if _generator.has_method("get_data_core_world_ext") else null
+	if ext == null or not ext.has_method("poll_trigger_worker_intent"):
+		return
+	if not ext.has_method("submit_trigger_worker_ack"):
+		return
+	# Bounded pump: never block the sim on an unbounded intent backlog.
+	for _i in range(64):
+		var intent: Dictionary = ext.poll_trigger_worker_intent()
+		if not bool(intent.get("ok", false)) or not bool(intent.get("available", false)):
+			break
+		ext.submit_trigger_worker_ack({
+			"request_id": int(intent.get("request_id", 0)),
+			"transaction_id": int(intent.get("transaction_id",
+				intent.get("request_id", 0))),
+			"target_handle": int(intent.get("target_handle", 0)),
+			"target_generation": int(intent.get("target_generation", 0)),
+			"target_domain": int(intent.get("target_domain", 0)),
+			# RuntimeDomainAckCode::OK == 0. RETRY(1) would make the worker
+			# replay the same firing day forever instead of settling it.
+			"code": 0,
+			"effective_day": int(intent.get("effective_day", 0)),
+		})
+
 
 func _consume_country_worker_read_view_if_authoritative() -> void:
 	if not _runtime_ready_for_ticks or _generator == null \
@@ -1212,6 +1362,8 @@ func climate_authority_diagnostics() -> Dictionary:
 			"environment_superseded_days", 0)),
 		"environment_dropped_days": int(report.get(
 			"environment_dropped_days", 0)),
+		"environment_ring_pending": int(report.get(
+			"environment_ring_pending", 0)),
 		"climate_wait_total_ms": int(report.get("climate_wait_total_ms", 0)),
 		"climate_wait_last_ms": int(report.get("climate_wait_last_ms", 0)),
 		"climate_wait_max_ms": int(report.get("climate_wait_max_ms", 0)),

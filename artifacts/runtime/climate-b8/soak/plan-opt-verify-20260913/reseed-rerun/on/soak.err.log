@@ -1,0 +1,127 @@
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/organic.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] generate (res://scripts/geography/map_generator.gd:1474)
+       [4] generate_world (res://scripts/game/world_runtime_host.gd:493)
+       [5] _run (res://tests/climate_authority_soak_probe.gd:160)
+       [6] _init (res://tests/climate_authority_soak_probe.gd:128)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/dry_sand.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] generate (res://scripts/geography/map_generator.gd:1474)
+       [4] generate_world (res://scripts/game/world_runtime_host.gd:493)
+       [5] _run (res://tests/climate_authority_soak_probe.gd:160)
+       [6] _init (res://tests/climate_authority_soak_probe.gd:128)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/rock.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] generate (res://scripts/geography/map_generator.gd:1474)
+       [4] generate_world (res://scripts/game/world_runtime_host.gd:493)
+       [5] _run (res://tests/climate_authority_soak_probe.gd:160)
+       [6] _init (res://tests/climate_authority_soak_probe.gd:128)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/snow_wet.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] generate (res://scripts/geography/map_generator.gd:1474)
+       [4] generate_world (res://scripts/game/world_runtime_host.gd:493)
+       [5] _run (res://tests/climate_authority_soak_probe.gd:160)
+       [6] _init (res://tests/climate_authority_soak_probe.gd:128)
+WARNING: [building-visual] disabled: building_visual_renderer_unavailable
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] generate_world (res://scripts/game/world_runtime_host.gd:528)
+       [1] _run (res://tests/climate_authority_soak_probe.gd:160)
+       [2] _init (res://tests/climate_authority_soak_probe.gd:128)
+WARNING: [runtime-climate-round] no ClimateDailySystem; SHADOW capture carries no shared pass input
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _build_runtime_climate_round_input (res://scripts/geography/map_generator.gd:4704)
+       [1] capture_runtime_inputs_for_worker (res://scripts/geography/map_generator.gd:2387)
+       [2] generate_world (res://scripts/game/world_runtime_host.gd:547)
+       [3] _run (res://tests/climate_authority_soak_probe.gd:160)
+       [4] _init (res://tests/climate_authority_soak_probe.gd:128)
+WARNING: [runtime-worker] Ideology opinion publish deferred: ideology_opinion_snapshot_invalid
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _start_production_shadow_worker (res://scripts/game/world_runtime_host.gd:628)
+       [1] generate_world (res://scripts/game/world_runtime_host.gd:556)
+       [2] _run (res://tests/climate_authority_soak_probe.gd:160)
+       [3] _init (res://tests/climate_authority_soak_probe.gd:128)
+[climate/worker][b8] physics_knobs day=1 ready=0 missing=physics_knobs
+[climate-kernel][round] shared=1 ok=1 n_cells=2400 mask=0x1FF ran=0x1FF starved=0x0 knobs_cells=2400
+[country][parity] worker_day=1 uncompared reference_range=-1..-1 depth=0
+[climate/worker][b8] physics_knobs day=2 ready=1 missing=
+[climate/worker][b8] paw day=2 cell=137 moisture=0.893391 wb30=0 soil=0 paw=0.893391 zeros(water=1486 land=4) nonzero=910 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[country][parity] worker_day=2 uncompared reference_range=-1..-1 depth=0
+[climate/writeback][b8] day=1 vapor store0=0 map0=0 dirty_fields=42 applied=42
+[climate/worker][b8] physics_knobs day=3 ready=1 missing=
+[climate/worker][b8] paw day=3 cell=137 moisture=0.891144 wb30=0 soil=0 paw=0.891144 zeros(water=1486 land=4) nonzero=910 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[country][parity] worker_day=3 uncompared reference_range=-1..-1 depth=0
+[climate/writeback][b8] day=3 vapor store0=0 map0=0 dirty_fields=42 applied=42
+[climate/worker][b8] physics_knobs day=4 ready=1 missing=
+[climate/worker][b8] paw day=4 cell=137 moisture=0.887648 wb30=0 soil=0 paw=0.887648 zeros(water=1486 land=4) nonzero=910 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[climate/worker][b8] cyclone_gate day=4 input_enabled=1 force_env=0 effective=1
+[climate/worker][b8] cyclone day=4 cells=2400 entries=0 alive=0 decayed=0 touched=0 gen=2 int(before/after)=0.000/0.000
+[climate/worker][b8] cyclone_lat day=4 wb_y=-44.000 wb_h=1683.000 water_ny=[0.026,0.068] abs_lat=[0.021,1.000] lat_norm=1 band=[0.060,0.400]
+[climate/worker][b8] cyclone_genesis day=4 injected=0 replaced=0 alive=0 water=1486 lat=439 phys=0 inten=0 shear=0 storm_type=0 fail(t/p/c/i)=0/439/0/0 max(p/c/i/conv)=0.000/0.019/0.601/0.000 max_int=0.052
+[climate/worker][b8] weather_solve day=4 cells=2400 psi=1 vapor0=0.114456 precip0=0 cloud0=0.0413493 type0=0 field_init0=1
+[country][parity] worker_day=4 uncompared reference_range=-1..-1 depth=0
+[climate/writeback][b8] day=4 vapor store0=0.114456 map0=0.114456 dirty_fields=44 applied=44
+[climate/worker][b8] physics_knobs day=5 ready=1 missing=
+[climate/worker][b8] paw day=5 cell=137 moisture=0.883312 wb30=-0.000702014 soil=-0.00168483 paw=0.882856 zeros(water=1486 land=5) nonzero=909 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[country][parity] worker_day=5 uncompared reference_range=-1..-1 depth=0
+[climate/writeback][b8] day=5 vapor store0=0.114456 map0=0.114456 dirty_fields=44 applied=44
+[climate/worker][b8] physics_knobs day=6 ready=1 missing=
+[climate/worker][b8] paw day=6 cell=137 moisture=0.881876 wb30=-0.000702014 soil=-0.00168483 paw=0.88142 zeros(water=1486 land=5) nonzero=909 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[country][parity] worker_day=6 uncompared reference_range=-1..-1 depth=0
+[climate/worker][b8] paw day=7 cell=137 moisture=0.880794 wb30=-0.000702014 soil=-0.00168483 paw=0.880338 zeros(water=1486 land=5) nonzero=909 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+WARNING: [sim/graph-trigger] handoff blocked day=8 reason=trigger_effect_domain_adapter_required command_key=economy.social_pressure_notice definition_key= action=13 opcode=1 â trigger effect queue cannot drain; trigger is retired for the rest of each pulse
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+[country][parity] worker_day=7 uncompared reference_range=-1..-1 depth=0
+   GDScript backtrace (most recent call first):
+       [0] _advance_runtime_graph_pulse (res://scripts/geography/map_generator.gd:3339)
+       [1] sus_tick_daily (res://scripts/geography/map_generator.gd:7854)
+       [2] run_daily_tick (res://scripts/game/world_runtime_host.gd:681)
+       [3] _run (res://tests/climate_authority_soak_probe.gd:247)
+       [4] _init (res://tests/climate_authority_soak_probe.gd:128)
+[climate/worker][b8] paw day=8 cell=137 moisture=0.880794 wb30=-0.000702014 soil=-0.00168483 paw=0.880338 zeros(water=1486 land=5) nonzero=909 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[country][parity] worker_day=8 uncompared reference_range=-1..-1 depth=0
+[climate/worker][b8] paw day=9 cell=137 moisture=0.879979 wb30=-0.000702014 soil=-0.00168483 paw=0.879523 zeros(water=1486 land=5) nonzero=909 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[climate/worker][b8] paw day=10 cell=137 moisture=0.879979 wb30=-0.000702014 soil=-0.00168483 paw=0.879523 zeros(water=1486 land=5) nonzero=909 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[climate/worker][b8] paw day=11 cell=137 moisture=0.879365 wb30=-0.000702014 soil=-0.00168483 paw=0.878909 zeros(water=1486 land=5) nonzero=909 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[climate/worker][b8] paw day=12 cell=137 moisture=0.879365 wb30=-0.000702014 soil=-0.00168483 paw=0.878909 zeros(water=1486 land=5) nonzero=909 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[climate/worker][b8] cyclone_gate day=12 input_enabled=1 force_env=0 effective=1
+[climate/worker][b8] cyclone day=12 cells=2400 entries=0 alive=0 decayed=0 touched=0 gen=3 int(before/after)=0.000/0.000
+[climate/worker][b8] cyclone_lat day=12 wb_y=-44.000 wb_h=1683.000 water_ny=[0.026,0.068] abs_lat=[0.021,1.000] lat_norm=1 band=[0.060,0.400]
+[climate/worker][b8] cyclone_genesis day=12 injected=0 replaced=0 alive=0 water=1486 lat=439 phys=0 inten=0 shear=0 storm_type=0 fail(t/p/c/i)=0/439/0/0 max(p/c/i/conv)=0.041/0.033/0.625/0.000 max_int=0.093
+[climate/worker][b8] weather_solve day=12 cells=2400 psi=1 vapor0=0.107933 precip0=0 cloud0=0.0492803 type0=0 field_init0=1
+[climate/worker][b8] paw day=13 cell=137 moisture=0.878903 wb30=-0.00134288 soil=-0.00168483 paw=0.87803 zeros(water=1486 land=5) nonzero=909 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[climate/worker][b8] cyclone day=20 cells=2400 entries=0 alive=0 decayed=0 touched=0 gen=4 int(before/after)=0.000/0.000
+[climate/worker][b8] cyclone_genesis day=20 injected=0 replaced=0 alive=0 water=1486 lat=439 phys=0 inten=0 shear=0 storm_type=0 fail(t/p/c/i)=0/438/1/0 max(p/c/i/conv)=0.060/0.096/0.644/0.000 max_int=0.121
+[climate/worker][b8] weather_solve day=20 cells=2400 psi=1 vapor0=0.106111 precip0=0 cloud0=0.0494876 type0=0 field_init0=1
+[climate/worker][b8] cyclone day=28 cells=2400 entries=0 alive=0 decayed=0 touched=0 gen=5 int(before/after)=0.000/0.000
+[climate/worker][b8] cyclone_genesis day=28 injected=0 replaced=0 alive=0 water=1486 lat=439 phys=0 inten=0 shear=0 storm_type=0 fail(t/p/c/i)=0/436/2/1 max(p/c/i/conv)=0.083/0.238/0.681/0.000 max_int=0.143
+[climate/worker][b8] weather_solve day=28 cells=2400 psi=1 vapor0=0.106204 precip0=0 cloud0=0.049975 type0=0 field_init0=1
+[climate/worker][b8] cyclone day=36 cells=2400 entries=0 alive=0 decayed=0 touched=0 gen=6 int(before/after)=0.000/0.000
+[climate/worker][b8] cyclone_genesis day=36 injected=0 replaced=0 alive=0 water=1486 lat=439 phys=2 inten=0 shear=0 storm_type=0 fail(t/p/c/i)=0/435/2/0 max(p/c/i/conv)=0.082/0.233/0.656/0.000 max_int=0.178
+[climate/worker][b8] cyclone day=44 cells=2400 entries=0 alive=0 decayed=0 touched=0 gen=7 int(before/after)=0.000/0.000
+[climate/worker][b8] cyclone_genesis day=44 injected=0 replaced=0 alive=0 water=1486 lat=439 phys=3 inten=0 shear=0 storm_type=0 fail(t/p/c/i)=0/434/2/0 max(p/c/i/conv)=0.094/0.290/0.692/0.000 max_int=0.191
+[climate/worker][b8] cyclone day=52 cells=2400 entries=0 alive=0 decayed=0 touched=0 gen=8 int(before/after)=0.000/0.000
+[climate/worker][b8] cyclone_genesis day=52 injected=0 replaced=0 alive=0 water=1486 lat=439 phys=3 inten=0 shear=0 storm_type=1 fail(t/p/c/i)=0/430/6/0 max(p/c/i/conv)=0.083/0.263/0.791/0.000 max_int=0.635
+ERROR: 24 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 238 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

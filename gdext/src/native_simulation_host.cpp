@@ -587,6 +587,13 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     // proves the worker actually ran those domains (see publish_day).
     _requested_authority_mask.store(wanted, std::memory_order_release);
     _authoritative_domain_mask.store(0, std::memory_order_release);
+    // I8: an ACTIVE EVENTS request owns the Events stage bit, so the POD store
+    // must run whether or not the caller also asked for the diagnostic probe.
+    // Leaving it off would make the stage soft-complete forever without ever
+    // producing a snapshot.
+    if ((wanted & runtime_domain_mask(RuntimeDomainId::EVENTS)) != 0u) {
+        _events_probe_enabled.store(true, std::memory_order_release);
+    }
     _mode.store(mode, std::memory_order_release);
     _committed_day.store(start_day, std::memory_order_release);
     _speed_days_per_second.store(std::max(0.0, start_speed),
@@ -760,6 +767,7 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         bootstrap_country != nullptr ? bootstrap_country->country_count : 0u);
     _modifier_snapshots.reset();
     _effect_snapshots.reset();
+    _ideology_snapshots.reset();
     _events_authority.reset();
     _events_snapshots.reset();
     _events_last_processed_day = -1;
@@ -834,6 +842,41 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     }
     _climate_authority.reset(
         bootstrap_environment != nullptr ? bootstrap_environment->cell_count : 0u);
+    _climate_writeback.reset();
+    // Clear leftover ring slots from a prior worker lifetime, then re-seed the
+    // generation-time capture. WorldRuntimeHost publishes environment *before*
+    // start(); wiping without reseed leaves report.environment_generation > 0
+    // while has_pending_climate_input() is false. ACTIVE serial_wait soak then
+    // deadlocks: wait_climate_consumed(gen) never completes, and the first
+    // run_daily_tick (which would publish) never runs.
+    _environment_ring.reset();
+    uint64_t bootstrap_published_days = 0;
+    if (bootstrap_environment != nullptr) {
+        bool dropped = false;
+        if (!_environment_ring.force_push(bootstrap_environment, dropped)) {
+            set_fault("climate_environment_bootstrap_reseed_failed");
+            _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
+            return false;
+        }
+        bootstrap_published_days = 1;
+        std::atomic_store_explicit(&_environment_snapshot,
+            bootstrap_environment, std::memory_order_release);
+    }
+    _climate_writeback_sequence.store(0, std::memory_order_release);
+    _climate_writeback_last_day.store(-1, std::memory_order_release);
+    _climate_committed_day.store(-1, std::memory_order_release);
+    _climate_committed_input_generation.store(0, std::memory_order_release);
+    _climate_writeback_input_generation.store(0, std::memory_order_release);
+    _climate_bootstrap_day.store(start_day, std::memory_order_release);
+    _climate_consumed_generation.store(0, std::memory_order_release);
+    _climate_last_counted_generation.store(0, std::memory_order_release);
+    _environment_published_days.store(bootstrap_published_days, std::memory_order_release);
+    _environment_consumed_days.store(0, std::memory_order_release);
+    _environment_superseded_days.store(0, std::memory_order_release);
+    _environment_dropped_days.store(0, std::memory_order_release);
+    _climate_wait_total_ms.store(0, std::memory_order_release);
+    _climate_wait_last_ms.store(0, std::memory_order_release);
+    _climate_wait_max_ms.store(0, std::memory_order_release);
     if (restore_pending && !_pending_restore_bundle.modifier_bytes.empty()) {
         std::string modifier_restore_error;
         if (!modifier_candidate_ready ||
@@ -1216,6 +1259,25 @@ void NativeSimulationHost::record_visual_timings(
     _gpu_upload_ms.store(sanitize(gpu_upload_ms), std::memory_order_release);
 }
 
+bool NativeSimulationHost::has_pending_climate_input() const {
+    // 仅 ACTIVE Climate 有"未消费输入 = 有活可干"语义；SHADOW/OFF 恒 false，
+    // 否则 begin_save 会在 ring/latest 未清时永久等（save_poll_timeout）。
+    if (_mode.load(std::memory_order_acquire) != RuntimeSimulationMode::ACTIVE ||
+        (_requested_authority_mask.load(std::memory_order_acquire) &
+         runtime_domain_mask(RuntimeDomainId::CLIMATE)) == 0u) {
+        return false;
+    }
+    return _environment_ring.size() > 0u;
+}
+
+bool NativeSimulationHost::environment_ring_full() const {
+    return !_environment_ring.has_capacity();
+}
+
+size_t NativeSimulationHost::environment_ring_pending() const {
+    return _environment_ring.size();
+}
+
 bool NativeSimulationHost::publish_environment(
         const RuntimeEnvironmentSnapshot &snapshot, std::string &error) {
     error.clear();
@@ -1225,22 +1287,23 @@ bool NativeSimulationHost::publish_environment(
         error = validation_error;
         return false;
     }
-    const auto previous = environment_snapshot();
-    // Generation is the immutable publication sequence, not merely a day
-    // label. Rejecting equality as well as rollback prevents duplicate trace
-    // frames after restore or a repeated capture at the same day.
-    if (previous != nullptr && snapshot.generation <= previous->generation) {
+    std::lock_guard<std::mutex> publish_lock(_environment_publish_mutex);
+    const auto previous = _environment_ring.latest();
+    if (previous == nullptr) {
+        // Fall back to legacy single-slot pointer for the first publish of a
+        // session that restored without going through the ring.
+        const auto legacy = std::atomic_load_explicit(
+            &_environment_snapshot, std::memory_order_acquire);
+        if (legacy != nullptr && snapshot.generation <= legacy->generation) {
+            _stale_environment_rejected.fetch_add(1, std::memory_order_relaxed);
+            error = "runtime_input_stale";
+            return false;
+        }
+    } else if (snapshot.generation <= previous->generation) {
         _stale_environment_rejected.fetch_add(1, std::memory_order_relaxed);
         error = "runtime_input_stale";
         return false;
     }
-    // Under Climate authority the environment is Climate's only input, and
-    // Climate's progress — not the worker clock's — is what makes a capture
-    // stale. The worker clock advances off its own speed/debt accounting and
-    // routinely runs ahead of the main thread; comparing against it rejected
-    // every publish after the clock overtook the tick loop, which froze the
-    // environment and silently stopped Climate. `sus_tick_daily` does not
-    // inspect the capture result, so the rejection was invisible.
     const bool climate_authoritative_watermark =
         (_authoritative_domain_mask.load(std::memory_order_acquire) &
          runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u;
@@ -1252,44 +1315,44 @@ bool NativeSimulationHost::publish_environment(
         error = "runtime_input_before_committed_day";
         return false;
     }
-    // The trace is the replay boundary, not a best-effort diagnostic side
-    // channel. Reject the capture before publishing the live convenience
-    // snapshot when its bounded storage is full; this preserves the invariant
-    // that every accepted input has a corresponding OFF reference release.
-    //
-    // Skipped once Climate is worker-authoritative: production no longer runs,
-    // so no reference will ever be released for these frames and nothing
-    // consumes them. Pushing anyway would fill the bounded trace and then start
-    // rejecting every environment publish with capacity_exceeded, which is the
-    // one input ACTIVE Climate depends on.
     const bool climate_authoritative =
-        (_authoritative_domain_mask.load(std::memory_order_acquire) &
+        _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE &&
+        (_requested_authority_mask.load(std::memory_order_acquire) &
          runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u;
     if (!climate_authoritative && !_climate_trace.push(snapshot)) {
         error = "climate_trace_capacity_exceeded";
         return false;
     }
     auto copy = std::make_shared<RuntimeEnvironmentSnapshot>(snapshot);
-    std::atomic_store_explicit(&_environment_snapshot,
-        std::shared_ptr<const RuntimeEnvironmentSnapshot>(std::move(copy)),
-        std::memory_order_release);
-    // B8 P0：一条被接受的发布就是一天输入。若上一条已接受的发布在 worker
-    // plan 之前就被这一条顶掉，那就是单槽 latest-value 的静默丢天；不计数的话
-    // 它只会以"writeback 少了几天"的形式出现，看不出是输入被覆盖。
-    if (previous != nullptr &&
-        _climate_consumed_generation.load(std::memory_order_acquire) <
-            previous->generation) {
-        _environment_superseded_days.fetch_add(1, std::memory_order_relaxed);
+    bool dropped = false;
+    if (climate_authoritative) {
+        // ACTIVE：满环拒绝，主线程 wait_climate_consumed(0) 等空位 —— 不静默丢天。
+        if (!_environment_ring.has_capacity() || !_environment_ring.try_push(copy)) {
+            error = "climate_environment_pending";
+            return false;
+        }
+    } else {
+        // SHADOW：允许 force 覆盖最旧未消费输入，计入 dropped（ring 溢出语义）。
+        if (!_environment_ring.force_push(copy, dropped)) {
+            error = "climate_environment_ring_push_failed";
+            return false;
+        }
+        if (dropped) {
+            _environment_dropped_days.fetch_add(1, std::memory_order_relaxed);
+            _environment_superseded_days.fetch_add(1, std::memory_order_relaxed);
+        }
     }
+    std::atomic_store_explicit(&_environment_snapshot,
+        std::shared_ptr<const RuntimeEnvironmentSnapshot>(copy),
+        std::memory_order_release);
     _environment_published_days.fetch_add(1, std::memory_order_relaxed);
     _environment_generation.store(snapshot.generation, std::memory_order_release);
     _environment_day.store(snapshot.day, std::memory_order_release);
     _environment_cell_count.store(snapshot.cell_count, std::memory_order_release);
     _environment_topology_validated.store(snapshot.topology_validated,
                                            std::memory_order_release);
-    // Under ACTIVE authority a fresh environment is the only thing that can
-    // release a worker parked on a failed input barrier, so it has to wake it.
     _control_cv.notify_all();
+    _climate_wait_cv.notify_all();
     return true;
 }
 
@@ -1336,7 +1399,12 @@ bool NativeSimulationHost::wait_climate_consumed(
     while (true) {
         consumed_generation =
             _climate_consumed_generation.load(std::memory_order_acquire);
-        if (consumed_generation >= after_generation) {
+        // after_generation == 0：等 ring 有空位（流水线发布）。
+        // after_generation  > 0：等该代次已被 worker 评估（serial_wait / soak）。
+        const bool ready = after_generation == 0
+            ? _environment_ring.has_capacity()
+            : consumed_generation >= after_generation;
+        if (ready) {
             return finish(true, nullptr);
         }
         const RuntimeWorkerState state = _state.load(std::memory_order_acquire);
@@ -3824,6 +3892,61 @@ bool NativeSimulationHost::queue_trigger_pod_command(
     return _domain_authority_runner.queue_trigger_command(command, error);
 }
 
+bool NativeSimulationHost::try_acquire_trigger_snapshot(uint64_t after_generation,
+                                                        uint32_t &slot) {
+    return _trigger_snapshots.try_acquire_latest(after_generation, slot);
+}
+
+const RuntimeTriggerSnapshot &NativeSimulationHost::trigger_snapshot_buffer(
+        uint32_t slot) const {
+    return _trigger_snapshots.read_buffer(slot);
+}
+
+void NativeSimulationHost::release_trigger_snapshot(uint32_t slot) {
+    _trigger_snapshots.release(slot);
+}
+
+bool NativeSimulationHost::poll_trigger_pod_intent(RuntimeDomainIntent &intent) {
+    std::lock_guard<std::mutex> lock(_trigger_transport_mutex);
+    if (_trigger_intents.empty()) return false;
+    const RuntimeTriggerEffectIntent source = _trigger_intents.front();
+    _trigger_intents.pop_front();
+    intent = RuntimeDomainIntent{};
+    // Trigger identifies an effect intent by its own effect id. The ACK barrier
+    // matches on (transaction_id, effective_day), so both must survive the
+    // round trip through the main thread untouched.
+    intent.source_domain = static_cast<uint16_t>(RuntimeDomainId::TRIGGER_INPUT);
+    intent.source_id = static_cast<uint64_t>(source.id);
+    intent.request_id = static_cast<uint64_t>(source.id);
+    intent.target_domain = static_cast<uint16_t>(source.domain);
+    intent.opcode = static_cast<uint16_t>(source.opcode);
+    intent.target_handle = source.target_handle;
+    intent.target_generation = source.target_generation;
+    intent.effective_day = source.effective_day;
+    intent.value = source.resolved_value;
+    intent.duration_days = source.duration_days;
+    intent.stacks = source.stacks;
+    intent.payload = source.payload;
+    intent.flags = RUNTIME_DOMAIN_INTENT_REQUIRES_ACK;
+    return true;
+}
+
+bool NativeSimulationHost::submit_trigger_pod_ack(const RuntimeDomainAck &ack,
+                                                  std::string &error) {
+    error.clear();
+    if (ack.transaction_id == 0) {
+        error = "trigger_ack_transaction_missing";
+        return false;
+    }
+    std::lock_guard<std::mutex> lock(_trigger_transport_mutex);
+    if (_trigger_acks.size() >= RUNTIME_DOMAIN_INTENT_CAPACITY) {
+        error = "trigger_ack_capacity_exceeded";
+        return false;
+    }
+    _trigger_acks.push_back(ack);
+    return true;
+}
+
 RuntimeTriggerPodDiagnostics NativeSimulationHost::trigger_pod_diagnostics() const {
     return _domain_authority_runner.trigger_pod_diagnostics();
 }
@@ -4075,12 +4198,16 @@ bool NativeSimulationHost::effect_pod_host_stage_self_test(std::string *out_erro
             RuntimeEffectPodTransactionStatus::ACKED) {
         return fail("effect_host_stage_not_acked");
     }
+    // Keep this pin equal to implemented_domain_mask() (H8/I8 = 0xA7E).
     if (implemented_domain_mask() !=
         (runtime_domain_mask(RuntimeDomainId::COMMIT) |
          runtime_domain_mask(RuntimeDomainId::CLIMATE) |
          runtime_domain_mask(RuntimeDomainId::COUNTRY) |
+         runtime_domain_mask(RuntimeDomainId::TRIGGER_INPUT) |
          runtime_domain_mask(RuntimeDomainId::MODIFIER) |
-         runtime_domain_mask(RuntimeDomainId::EFFECT))) {
+         runtime_domain_mask(RuntimeDomainId::EFFECT) |
+         runtime_domain_mask(RuntimeDomainId::IDEOLOGY) |
+         runtime_domain_mask(RuntimeDomainId::EVENTS))) {
         return fail("effect_host_stage_mask_changed");
     }
     return true;
@@ -4283,9 +4410,16 @@ bool NativeSimulationHost::restore_ideology_pod_save(
 
 bool NativeSimulationHost::ideology_pod_self_test(std::string *out_error) const {
     std::string error;
-    const bool ok = RuntimeIdeologyPodAuthority::self_test(error);
-    if (!ok && out_error != nullptr) *out_error = error;
-    return ok;
+    if (!RuntimeIdeologyPodAuthority::self_test(error)) {
+        if (out_error != nullptr) *out_error = error;
+        return false;
+    }
+    if (!RuntimeIdeologySnapshotRing::self_test()) {
+        if (out_error != nullptr)
+            *out_error = "ideology_pod_snapshot_ring_self_test_failed";
+        return false;
+    }
+    return true;
 }
 
 bool NativeSimulationHost::encode_modifier_pod_save(
@@ -4349,6 +4483,31 @@ const RuntimeEffectPodSnapshot &NativeSimulationHost::effect_snapshot_buffer(
 
 void NativeSimulationHost::release_effect_snapshot(uint32_t slot) {
     _effect_snapshots.release(slot);
+}
+
+bool NativeSimulationHost::try_acquire_ideology_snapshot(
+        uint64_t after_generation, uint32_t &slot) {
+    if (!_ideology_snapshots.try_acquire_latest(after_generation, slot))
+        return false;
+    const RuntimeIdeologyPodSnapshot &snapshot =
+        _ideology_snapshots.read_buffer(slot);
+    const bool valid = _ideology_pod_configured &&
+        snapshot.abi_version == RUNTIME_IDEOLOGY_POD_ABI_VERSION &&
+        snapshot.catalog_hash == _ideology_pod_catalog.catalog_hash;
+    if (!valid) {
+        _ideology_snapshots.release(slot);
+        return false;
+    }
+    return true;
+}
+
+const RuntimeIdeologyPodSnapshot &
+NativeSimulationHost::ideology_snapshot_buffer(uint32_t slot) const {
+    return _ideology_snapshots.read_buffer(slot);
+}
+
+void NativeSimulationHost::release_ideology_snapshot(uint32_t slot) {
+    _ideology_snapshots.release(slot);
 }
 
 bool NativeSimulationHost::modifier_pod_self_test(std::string *out_error) const {
@@ -4429,7 +4588,15 @@ bool NativeSimulationHost::modifier_pod_self_test(std::string *out_error) const 
 
 std::shared_ptr<const RuntimeEnvironmentSnapshot>
 NativeSimulationHost::environment_snapshot() const {
+    // 诊断 / 物理派生读 latest；worker 日计划必须走 environment_input_for_plan。
+    if (auto latest = _environment_ring.latest()) return latest;
     return std::atomic_load_explicit(&_environment_snapshot, std::memory_order_acquire);
+}
+
+std::shared_ptr<const RuntimeEnvironmentSnapshot>
+NativeSimulationHost::environment_input_for_plan() const {
+    if (auto oldest = _environment_ring.peek_oldest()) return oldest;
+    return environment_snapshot();
 }
 
 bool NativeSimulationHost::enqueue(RuntimeCommandPacket packet) {
@@ -5526,6 +5693,95 @@ bool NativeSimulationHost::execute_country_worker_stage(
     return true;
 }
 
+void NativeSimulationHost::publish_trigger_intents_locked(
+        const std::vector<RuntimeTriggerEffectIntent> &intents) {
+    for (const RuntimeTriggerEffectIntent &intent : intents) {
+        if (intent.id <= _trigger_published_intent_id) continue;
+        if (_trigger_intents.size() >= RUNTIME_DOMAIN_INTENT_CAPACITY) break;
+        _trigger_intents.push_back(intent);
+        _trigger_published_intent_id = intent.id;
+    }
+}
+
+uint32_t NativeSimulationHost::ack_trigger_intents_in_worker(int64_t day) {
+    std::lock_guard<std::mutex> lock(_trigger_transport_mutex);
+    uint32_t acked = 0;
+    while (!_trigger_intents.empty()) {
+        if (_trigger_acks.size() >= RUNTIME_DOMAIN_INTENT_CAPACITY) break;
+        const RuntimeTriggerEffectIntent intent = _trigger_intents.front();
+        _trigger_intents.pop_front();
+        RuntimeDomainAck ack;
+        // ack_matches() keys on (transaction_id, effective_day, OK) only; the
+        // domain tag is carried for the diagnostics/report side.
+        ack.domain = static_cast<uint16_t>(intent.domain);
+        ack.code = RuntimeDomainAckCode::OK;
+        ack.request_id = static_cast<uint64_t>(intent.id);
+        ack.transaction_id = static_cast<uint64_t>(intent.id);
+        ack.target_handle = intent.target_handle;
+        ack.target_generation = intent.target_generation;
+        ack.effective_day = intent.effective_day;
+        _trigger_acks.push_back(ack);
+        ++acked;
+    }
+    (void)day;
+    return acked;
+}
+
+bool NativeSimulationHost::execute_trigger_worker_stage(
+        int64_t day, uint64_t input_generation, RuntimeDayCommit &commit,
+        std::string &error) {
+    error.clear();
+    if (!_domain_authority_runner.trigger_pod_configured()) {
+        error = "trigger_pod_not_configured";
+        return false;
+    }
+    // The ACK deque is copied, not drained: an incomplete barrier discards the
+    // plan and replays the same intent ids next visit, so an ACK consumed by a
+    // failed attempt would be lost forever.
+    std::vector<RuntimeDomainAck> acks;
+    {
+        std::lock_guard<std::mutex> lock(_trigger_transport_mutex);
+        acks.assign(_trigger_acks.begin(), _trigger_acks.end());
+    }
+    const auto plan_started = std::chrono::steady_clock::now();
+    std::vector<RuntimeTriggerEffectIntent> intents;
+    RuntimeTriggerSnapshot snapshot;
+    uint32_t required_ack_count = 0;
+    uint64_t state_hash = 0;
+    double replay_ms = 0.0;
+    const bool ok = _domain_authority_runner.run_trigger_active_day(
+        day, input_generation, acks, intents, snapshot, required_ack_count,
+        state_hash, replay_ms, error);
+    {
+        std::lock_guard<std::mutex> lock(_trigger_transport_mutex);
+        // Publish before deciding on success: a plan whose ACK barrier is
+        // incomplete is exactly the case that needs its intents delivered.
+        publish_trigger_intents_locked(intents);
+        if (ok) _trigger_acks.clear();
+    }
+    _trigger_pod_plan_ms.store(
+        std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - plan_started).count(),
+        std::memory_order_release);
+    _trigger_pod_replay_ms.store(replay_ms, std::memory_order_release);
+    _trigger_pod_intent_count.store(
+        static_cast<uint32_t>(intents.size()), std::memory_order_release);
+    _trigger_pod_ack_count.store(
+        static_cast<uint32_t>(acks.size()), std::memory_order_release);
+    if (!ok) return false;
+    _trigger_pod_state_hash.store(state_hash, std::memory_order_release);
+    _trigger_pod_snapshot_generation.store(snapshot.generation,
+                                           std::memory_order_release);
+    uint32_t trigger_slot = 0;
+    if (_trigger_snapshots.try_begin_write(trigger_slot)) {
+        _trigger_snapshots.write_buffer(trigger_slot) = snapshot;
+        _trigger_snapshots.publish(trigger_slot);
+    }
+    commit.dirty_families |= RUNTIME_DIRTY_EVENTS;
+    commit.work_units += intents.size() + snapshot.states.size();
+    return true;
+}
+
 bool NativeSimulationHost::execute_ideology_worker_stage(
         int64_t day, RuntimeDayCommit &commit, std::string &error) {
     (void)commit;
@@ -5611,6 +5867,13 @@ bool NativeSimulationHost::execute_ideology_worker_stage(
     std::atomic_store_explicit(&_ideology_snapshot,
         std::shared_ptr<const RuntimeIdeologyPodSnapshot>(std::move(copy)),
         std::memory_order_release);
+    // G8: publish the immutable snapshot for main-thread NativeIdeologyRuntime
+    // write-back. The shared_ptr above stays for SHADOW diagnostics readers.
+    uint32_t ideology_slot = 0;
+    if (_ideology_snapshots.try_begin_write(ideology_slot)) {
+        _ideology_snapshots.write_buffer(ideology_slot) = snapshot;
+        _ideology_snapshots.publish(ideology_slot);
+    }
     _ideology_pod_plan_ms.store(
         std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - plan_started).count(),
@@ -5626,6 +5889,33 @@ bool NativeSimulationHost::execute_ideology_worker_stage(
     return true;
 }
 
+uint32_t NativeSimulationHost::ack_ideology_intents_in_worker(int64_t day) {
+    std::lock_guard<std::mutex> lock(_ideology_transport_mutex);
+    uint32_t acked = 0;
+    while (!_ideology_intents.empty()) {
+        if (_ideology_acks.size() >= RUNTIME_DOMAIN_INTENT_CAPACITY) break;
+        const RuntimeDomainIntent intent = _ideology_intents.front();
+        _ideology_intents.pop_front();
+        RuntimeDomainAck ack;
+        // Ideology transitions address EFFECT, so the ACK must carry the
+        // EFFECT domain tag even though no Effect instance is involved:
+        // RuntimeIdeologyPodAuthority::apply_ack ignores every other domain.
+        ack.domain = static_cast<uint16_t>(RuntimeDomainId::EFFECT);
+        ack.code = RuntimeDomainAckCode::OK;
+        ack.request_id = intent.request_id != 0 ? intent.request_id
+                                                : intent.source_id;
+        ack.transaction_id = intent.source_id;
+        ack.target_handle = intent.target_handle;
+        ack.target_generation = intent.target_generation;
+        ack.effective_day = intent.effective_day;
+        ack.producer_id = intent.producer_id;
+        ack.sequence = intent.sequence;
+        _ideology_acks.push_back(ack);
+        ++acked;
+    }
+    (void)day;
+    return acked;
+}
 
 bool NativeSimulationHost::execute_modifier_worker_stage(
         int64_t day, uint64_t input_generation,
@@ -5934,14 +6224,19 @@ bool NativeSimulationHost::execute_effect_worker_stage(
 
 RuntimeDayCommit NativeSimulationHost::execute_day_plan(
         RuntimeDayPlan &plan,
+        const RuntimeEnvironmentSnapshot *environment,
         const std::vector<RuntimeCommandPacket> &day_commands,
         std::vector<RuntimeCommandReceipt> &day_receipts,
         uint64_t admitted_submit_order) {
     RuntimeDayCommit commit;
-    const auto run_events_probe = [&](int64_t event_day) {
+    // Returns false only on a hard Events plan/commit failure. "Disabled" and
+    // "already processed this host day" are true: an I8 ACTIVE Events stage
+    // soft-completes on them so the shared grant is not held hostage by a
+    // diagnostic mirror with no work.
+    const auto run_events_probe = [&](int64_t event_day) -> bool {
         if (!_events_probe_enabled.load(std::memory_order_acquire) ||
             _events_last_processed_day >= event_day) {
-            return;
+            return true;
         }
         RuntimeEventsSnapshot events_snapshot;
         RuntimeEventsReport events_report;
@@ -5986,7 +6281,7 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                 events_report.fallback_reason[i], std::memory_order_release);
             if (events_report.fallback_reason[i] == '\0') break;
         }
-        if (!events_ok) return;
+        if (!events_ok) return false;
         uint32_t events_slot = 0;
         if (_events_snapshots.try_begin_write(events_slot)) {
             _events_snapshots.write_buffer(events_slot) = _events_authority.snapshot();
@@ -5994,6 +6289,7 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
         } else {
             _events_pod_ready.store(false, std::memory_order_release);
         }
+        return true;
     };
     // SHADOW runs the worker-safe POD pipeline for measurement and parity
     // diagnostics. The legacy synchronous graph remains authoritative until
@@ -6096,7 +6392,8 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                 }
             } else {
             const bool climate_planned = _climate_authority.plan_day(
-                climate_day, *climate_environment, climate_report);
+                climate_day, *climate_environment, climate_report,
+                /*compute_hashes=*/true, /*validate_input=*/false);
             // plan_day resets the report, so attach the trace metadata only
             // after the authority has filled its execution diagnostics.
             climate_report.reference_state_hash = trace_frame.reference_state_hash;
@@ -6380,6 +6677,9 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
         // G7 SHADOW stage. It consumes the Country snapshot committed above
         // and the previous main-thread Economy opinion publication. Failure
         // is diagnostic only and never stalls Climate or promotes IDEOLOGY.
+        // This whole block is SHADOW-only; G8 ACTIVE Ideology runs from the
+        // stage loop below, where a failure isolates the domain instead of
+        // being folded into the Climate/Country diagnostic chain.
         std::string ideology_error;
         const bool ideology_ok = climate_ok && execute_ideology_worker_stage(
             plan.context.day, commit, ideology_error);
@@ -6620,7 +6920,7 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
          runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u;
     bool active_climate_ok = false;
     if (climate_authority_requested) {
-        const auto environment = environment_snapshot();
+        // 与 build_day_plan 使用同一不可变输入，重试不能重新读取 latest。
         RuntimeClimateVerticalReport climate_report{};
         // The environment day, not plan.context.day. Under authority the
         // published environment is Climate's only input and arrives one per
@@ -6642,28 +6942,27 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
         bool climate_day_computed = false;
         if (environment == nullptr) {
             runtime_copy_text(climate_report.error, "climate_environment_missing");
-        } else if (plan.context.day > climate_day) {
-            // The worker clock has outrun the main thread. Park the day instead
-            // of committing it: letting the clock run ahead is what desynced
-            // the two sides in the first place, and every day committed past
-            // the last published environment is a day Climate cannot compute.
+        } else if (plan.context.day != climate_day ||
+                   plan.context.input_generation != environment->generation) {
             runtime_copy_text(climate_report.error,
-                              "climate_environment_not_published");
-        } else if (climate_day <= climate_committed) {
-            // No new input this day. Not a failure: the worker clock is free to
-            // run ahead of the main thread, and Climate simply has nothing to
-            // advance until the next publish. Reporting it as a preflight
-            // failure would stall the whole worker on a condition only the main
-            // thread can clear, which is the deadlock described above.
+                              "climate_environment_day_mismatch");
+        } else if (climate_day == climate_committed &&
+                   environment->generation == _climate_committed_input_generation.load(
+                       std::memory_order_acquire)) {
+            // Country/Effect continuation 重试只复用同日同代成功提交，不重跑 Climate。
             active_climate_ok = true;
-            runtime_copy_text(climate_report.parity_reason,
-                              "climate_environment_day_not_new");
+        } else if (climate_day <= climate_committed) {
+            runtime_copy_text(climate_report.error, "climate_input_commit_mismatch");
         } else if (_climate_authority.plan_day(climate_day, *environment,
-                                               climate_report)) {
+                                               climate_report,
+                                               /*compute_hashes=*/false,
+                                               /*validate_input=*/false)) {
             climate_day_computed = true;
             active_climate_ok = _climate_authority.commit_day(climate_day,
                                                               climate_report);
             if (active_climate_ok) {
+                _climate_committed_input_generation.store(environment->generation,
+                                                          std::memory_order_release);
                 _climate_committed_day.store(climate_day,
                                              std::memory_order_release);
             } else {
@@ -6679,6 +6978,8 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
         if (environment != nullptr) {
             _climate_consumed_generation.store(environment->generation,
                                                std::memory_order_release);
+            // B8 P3：FIFO 弹出已评估的最旧输入，给主线程腾出 ring 空位。
+            _environment_ring.pop_generation(environment->generation);
             // 只有"第一次看到这一代"才算消费了一天；失败/挂起天的重试会反复评估
             // 同一份环境，把它们计数会把 delivered 指标变成重试计数器。
             uint64_t last_counted =
@@ -6697,6 +6998,10 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             _climate_wait_cv.notify_all();
         }
         if (climate_day_computed) {
+            if (!active_climate_ok) {
+                set_fault(climate_report.error[0] != '\0'
+                    ? climate_report.error : "climate_commit_failed");
+            }
             _climate_pod_ready.store(active_climate_ok, std::memory_order_release);
             _climate_pod_plan_ms.store(climate_report.plan_ms,
                                        std::memory_order_release);
@@ -6850,6 +7155,136 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             }
             continue;
         }
+        if (stage.domain == RuntimeDomainId::TRIGGER_INPUT &&
+            _mode.load(std::memory_order_acquire) ==
+                RuntimeSimulationMode::ACTIVE &&
+            (_requested_authority_mask.load(std::memory_order_acquire) &
+             runtime_domain_mask(RuntimeDomainId::TRIGGER_INPUT)) != 0u) {
+            // H7 ACTIVE Trigger stage. It sits between Country and Ideology in
+            // the stage order, so this day's effect intents are available to the
+            // Effect stage's in-worker ACK drain below. Park with Climate like
+            // Country/Ideology/Effect/Modifier.
+            if (climate_authority_requested && !active_climate_ok) {
+                stage.completed = 0;
+                continue;
+            }
+            const uint32_t dirty_before = commit.dirty_families;
+            const uint64_t work_before = commit.work_units;
+            std::string trigger_error;
+            const bool trigger_ok = execute_trigger_worker_stage(
+                plan.context.day, plan.context.input_generation, commit,
+                trigger_error);
+            _trigger_pod_ready.store(trigger_ok, std::memory_order_release);
+            const char *trigger_reason = trigger_ok ? "" :
+                (trigger_error.empty() ? "trigger_pod_plan_failed"
+                                       : trigger_error.c_str());
+            size_t trigger_reason_index = 0;
+            for (; trigger_reason_index + 1 <
+                       _trigger_pod_fallback_reason.size() &&
+                   trigger_reason[trigger_reason_index] != '\0';
+                 ++trigger_reason_index) {
+                _trigger_pod_fallback_reason[trigger_reason_index].store(
+                    trigger_reason[trigger_reason_index],
+                    std::memory_order_release);
+            }
+            for (; trigger_reason_index < _trigger_pod_fallback_reason.size();
+                 ++trigger_reason_index) {
+                _trigger_pod_fallback_reason[trigger_reason_index].store(
+                    '\0', std::memory_order_release);
+            }
+            // Soft-complete input-not-ready failures so the shared grant is not
+            // held hostage by Trigger. An incomplete ACK barrier is the normal
+            // first-visit outcome for a firing day: the intents were published
+            // above, the Effect stage ACKs them, and the next visit commits the
+            // same replayed plan. ready stays false and the fallback reason
+            // keeps the diagnosis. Hard kernel/command failures still isolate.
+            const bool trigger_soft =
+                !trigger_ok &&
+                (trigger_error == "trigger_pod_not_configured" ||
+                 trigger_error == "trigger_pod_not_bootstrapped" ||
+                 trigger_error == "ack_barrier_incomplete" ||
+                 trigger_error == "ack_retry" ||
+                 trigger_error == "stale_generation" ||
+                 trigger_error == "ack_rejected");
+            if (trigger_ok || trigger_soft) {
+                if (trigger_ok) {
+                    stage.dirty_families =
+                        (commit.dirty_families | dirty_before) &
+                        RUNTIME_DIRTY_EVENTS;
+                    stage.work_units = commit.work_units >= work_before
+                        ? commit.work_units - work_before : 0;
+                }
+                stage.completed = 1;
+                commit.completed_domain_mask |=
+                    runtime_domain_mask(RuntimeDomainId::TRIGGER_INPUT);
+                ++commit.completed_stage_count;
+            } else {
+                stage.completed = 0;
+            }
+            continue;
+        }
+        if (stage.domain == RuntimeDomainId::IDEOLOGY &&
+            _mode.load(std::memory_order_acquire) ==
+                RuntimeSimulationMode::ACTIVE &&
+            (_requested_authority_mask.load(std::memory_order_acquire) &
+             runtime_domain_mask(RuntimeDomainId::IDEOLOGY)) != 0u) {
+            // G8 ACTIVE Ideology stage. It runs before Effect in the stage
+            // order, so this day's transition intents are still available to
+            // the in-worker ACK bridge below. Park with Climate like
+            // Country/Effect/Modifier.
+            if (climate_authority_requested && !active_climate_ok) {
+                stage.completed = 0;
+                continue;
+            }
+            std::string ideology_error;
+            const bool ideology_ok = execute_ideology_worker_stage(
+                plan.context.day, commit, ideology_error);
+            _ideology_pod_ready.store(ideology_ok, std::memory_order_release);
+            const char *ideology_reason = ideology_ok ? "" :
+                (ideology_error.empty() ? "ideology_pod_plan_failed"
+                                        : ideology_error.c_str());
+            size_t ideology_reason_index = 0;
+            for (; ideology_reason_index + 1 <
+                       _ideology_pod_fallback_reason.size() &&
+                   ideology_reason[ideology_reason_index] != '\0';
+                 ++ideology_reason_index) {
+                _ideology_pod_fallback_reason[ideology_reason_index].store(
+                    ideology_reason[ideology_reason_index],
+                    std::memory_order_release);
+            }
+            for (; ideology_reason_index <
+                       _ideology_pod_fallback_reason.size();
+                 ++ideology_reason_index) {
+                _ideology_pod_fallback_reason[ideology_reason_index].store(
+                    '\0', std::memory_order_release);
+            }
+            // Soft-complete input-not-ready failures so Climate|Country|
+            // Effect|Modifier grant is not held hostage by Ideology's
+            // Economy-opinion dependency (revision stays 0 until the first
+            // Economy COMMIT after generate). ready stays false; fallback
+            // reason keeps the diagnosis. Hard plan failures still isolate.
+            const bool ideology_soft =
+                !ideology_ok &&
+                (ideology_error == "ideology_opinion_snapshot_missing" ||
+                 ideology_error == "ideology_country_snapshot_missing" ||
+                 ideology_error == "ideology_pod_not_configured" ||
+                 ideology_error == "ideology_opinion_snapshot_invalid" ||
+                 ideology_error == "ideology_opinion_snapshot_shape_invalid" ||
+                 ideology_error.find("ideology_opinion_") == 0);
+            if (ideology_ok || ideology_soft) {
+                if (ideology_ok) {
+                    stage.dirty_families = RUNTIME_DIRTY_COUNTRY_STATE;
+                    commit.dirty_families |= stage.dirty_families;
+                }
+                stage.completed = 1;
+                commit.completed_domain_mask |=
+                    runtime_domain_mask(RuntimeDomainId::IDEOLOGY);
+                ++commit.completed_stage_count;
+            } else {
+                stage.completed = 0;
+            }
+            continue;
+        }
         if (stage.domain == RuntimeDomainId::EFFECT &&
             _mode.load(std::memory_order_acquire) ==
                 RuntimeSimulationMode::ACTIVE &&
@@ -6898,6 +7333,22 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                 commit.completed_domain_mask |=
                     runtime_domain_mask(RuntimeDomainId::EFFECT);
                 ++commit.completed_stage_count;
+                // G8: when the worker also owns IDEOLOGY, the Effect side of an
+                // Ideology transition is this stage. ACK in-worker so the
+                // transition settles on the next Ideology visit without a
+                // main-thread round trip. The pump stays for IDEOLOGY-only
+                // grants and for anything this drain missed.
+                if ((_requested_authority_mask.load(std::memory_order_acquire) &
+                     runtime_domain_mask(RuntimeDomainId::IDEOLOGY)) != 0u) {
+                    ack_ideology_intents_in_worker(plan.context.day);
+                }
+                // H8: same bridge for Trigger. Its effect intents are delivered
+                // by this stage under a joint TRIGGER|EFFECT grant, so ACK them
+                // here and let the next Trigger visit clear its barrier.
+                if ((_requested_authority_mask.load(std::memory_order_acquire) &
+                     runtime_domain_mask(RuntimeDomainId::TRIGGER_INPUT)) != 0u) {
+                    ack_trigger_intents_in_worker(plan.context.day);
+                }
             } else {
                 stage.completed = 0;
             }
@@ -6976,6 +7427,39 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             } else {
                 stage.completed = 0;
             }
+            continue;
+        }
+        if (stage.domain == RuntimeDomainId::EVENTS &&
+            _mode.load(std::memory_order_acquire) ==
+                RuntimeSimulationMode::ACTIVE &&
+            (_requested_authority_mask.load(std::memory_order_acquire) &
+             runtime_domain_mask(RuntimeDomainId::EVENTS)) != 0u) {
+            // I8 ACTIVE Events stage. The POD store is the worker-authority
+            // mirror of the journal: it owns this stage bit and its own snapshot
+            // ring, but the legacy GameplayEventBus journal is still the
+            // production consumer source, so no main-thread append/ACK is
+            // suppressed here. Park with Climate like the other domains.
+            if (climate_authority_requested && !active_climate_ok) {
+                stage.completed = 0;
+                continue;
+            }
+            const bool events_ok = run_events_probe(plan.context.day);
+            if (_events_pod_event_count.load(std::memory_order_relaxed) > 0u) {
+                stage.dirty_families = RUNTIME_DIRTY_EVENTS;
+                commit.dirty_families |= stage.dirty_families;
+            }
+            stage.work_units =
+                _events_pod_event_count.load(std::memory_order_relaxed);
+            commit.work_units += stage.work_units;
+            // Soft-complete even a rejected batch: this is a mirror, and holding
+            // Climate|Country|Trigger|Effect|Modifier hostage to it would be the
+            // G8 mistake again. `events_pod_ready` plus
+            // `events_pod_fallback_reason` carry the real outcome.
+            (void)events_ok;
+            stage.completed = 1;
+            commit.completed_domain_mask |=
+                runtime_domain_mask(RuntimeDomainId::EVENTS);
+            ++commit.completed_stage_count;
             continue;
         }
         if (stage.domain != RuntimeDomainId::COMMIT) continue;
@@ -8196,11 +8680,15 @@ void NativeSimulationHost::worker_main() {
         pending_commands.resize(pending_commands.size() - pending_begin);
         pending_begin = 0;
     };
+    std::shared_ptr<const RuntimeEnvironmentSnapshot> active_environment;
     try {
-        while (!_stop_requested.load(std::memory_order_acquire)) {
+        while (!_stop_requested.load(std::memory_order_acquire) &&
+               _state.load(std::memory_order_acquire) != RuntimeWorkerState::FAULTED) {
             if (_stop_requested.load(std::memory_order_acquire)) break;
 
-            if (_save_requested.exchange(false, std::memory_order_acq_rel)) {
+            // PKSR 不保存 pending environment；即使暂停也必须先排空该日。
+            if (!has_pending_climate_input() &&
+                _save_requested.exchange(false, std::memory_order_acq_rel)) {
                 const uint64_t request_id = _save_request_id.load(std::memory_order_acquire);
                 // Commands in the lock-free ingress queue are already
                 // accepted but not yet visible in the worker-local list. Move
@@ -8224,7 +8712,13 @@ void NativeSimulationHost::worker_main() {
 
             const bool paused = _paused.load(std::memory_order_acquire);
             const double speed = _speed_days_per_second.load(std::memory_order_acquire);
-            if (paused || speed <= 0.0 || !std::isfinite(speed)) {
+            const bool climate_driven =
+                _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE &&
+                (_requested_authority_mask.load(std::memory_order_acquire) &
+                 runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u;
+            const bool climate_pending = has_pending_climate_input();
+            if ((climate_driven && !climate_pending) ||
+                (!climate_driven && (paused || speed <= 0.0 || !std::isfinite(speed)))) {
                 if (_stop_requested.load(std::memory_order_acquire)) break;
                 _state.store(RuntimeWorkerState::PAUSED, std::memory_order_release);
                 last = std::chrono::steady_clock::now();
@@ -8232,8 +8726,9 @@ void NativeSimulationHost::worker_main() {
                 _control_cv.wait(lock, [&] {
                     return _stop_requested.load(std::memory_order_acquire) ||
                         _save_requested.load(std::memory_order_acquire) ||
-                        !_paused.load(std::memory_order_acquire) ||
-                        _speed_days_per_second.load(std::memory_order_acquire) > 0.0;
+                        (climate_driven ? has_pending_climate_input() :
+                            (!_paused.load(std::memory_order_acquire) &&
+                             _speed_days_per_second.load(std::memory_order_acquire) > 0.0));
                 });
                 continue;
             }
@@ -8247,7 +8742,7 @@ void NativeSimulationHost::worker_main() {
             const auto now = std::chrono::steady_clock::now();
             const double elapsed = std::chrono::duration<double>(now - last).count();
             last = now;
-            double debt = std::min(100.0,
+            double debt = climate_driven ? 1.0 : std::min(100.0,
                 _time_debt_days.load(std::memory_order_relaxed) + elapsed * speed);
             int64_t target_days = static_cast<int64_t>(debt);
             if (target_days <= 0) {
@@ -8341,11 +8836,22 @@ void NativeSimulationHost::worker_main() {
                     }
                     day_receipts.push_back(receipt);
                 }
-                const auto environment = environment_snapshot();
+                // 与 build_day_plan 钉死同一份输入：同日重试不得换 latest。
+                // 跨日时（environment.day < worker 下一拍）再从 FIFO 取最旧。
+                if (!active_environment ||
+                    active_environment->day < day) {
+                    active_environment = environment_input_for_plan();
+                }
+                const auto &environment = active_environment;
+                // 在执行前采样唤醒游标，避免执行期间已到达的 peer ACK 被漏掉。
+                const uint64_t attempt_trace_signal =
+                    _climate_trace_signal.load(std::memory_order_acquire);
+                const uint64_t attempt_peer_signal =
+                    _country_peer_signal.load(std::memory_order_acquire);
                 RuntimeDayPlan day_plan = build_day_plan(
                     day, speed, environment.get());
                 const RuntimeDayCommit day_commit = execute_day_plan(
-                    day_plan, day_commands, day_receipts,
+                    day_plan, environment.get(), day_commands, day_receipts,
                     admitted_submit_order);
                 bool country_commands_terminal = !day_commands.empty();
                 if (country_commands_terminal) {
@@ -8654,6 +9160,8 @@ RuntimeThreadReport NativeSimulationHost::report() const {
         _environment_superseded_days.load(std::memory_order_relaxed);
     out.environment_dropped_days =
         _environment_dropped_days.load(std::memory_order_relaxed);
+    out.environment_ring_pending =
+        static_cast<uint64_t>(_environment_ring.size());
     out.climate_wait_total_ms =
         _climate_wait_total_ms.load(std::memory_order_relaxed);
     out.climate_wait_last_ms =
@@ -8780,6 +9288,24 @@ RuntimeThreadReport NativeSimulationHost::report() const {
                 trigger_diag.first_divergence_kind,
                 sizeof(out.trigger_first_divergence_kind));
     runtime_copy_text(out.trigger_blocker, trigger_diag.blocker);
+    out.trigger_pod_ready = _trigger_pod_ready.load(std::memory_order_acquire);
+    out.trigger_pod_plan_ms = _trigger_pod_plan_ms.load(std::memory_order_acquire);
+    out.trigger_pod_replay_ms = _trigger_pod_replay_ms.load(std::memory_order_acquire);
+    out.trigger_pod_state_hash = _trigger_pod_state_hash.load(std::memory_order_acquire);
+    out.trigger_pod_snapshot_generation = _trigger_pod_snapshot_generation.load(
+        std::memory_order_acquire);
+    out.trigger_pod_intent_count = _trigger_pod_intent_count.load(
+        std::memory_order_acquire);
+    out.trigger_pod_ack_count = _trigger_pod_ack_count.load(
+        std::memory_order_acquire);
+    for (size_t i = 0; i + 1 < sizeof(out.trigger_pod_fallback_reason); ++i) {
+        const char value = _trigger_pod_fallback_reason[i].load(
+            std::memory_order_acquire);
+        out.trigger_pod_fallback_reason[i] = value;
+        if (value == '\0') break;
+    }
+    out.trigger_pod_fallback_reason[
+        sizeof(out.trigger_pod_fallback_reason) - 1] = '\0';
     out.modifier_pod_ready = _modifier_pod_ready.load(std::memory_order_acquire);
     out.modifier_pod_plan_ms = _modifier_pod_plan_ms.load(std::memory_order_acquire);
     out.modifier_pod_replay_ms = _modifier_pod_replay_ms.load(std::memory_order_acquire);

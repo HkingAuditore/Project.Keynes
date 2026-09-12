@@ -476,99 +476,136 @@
       "production_writers": ["native_daily_slice:vegetation_dynamics", "weather_refresh:refresh_daily_stage_b"],
       "suppression": ["native_daily_graph", "weather_refresh"],
       "note": "worker 是 uint8 候选标志，生产是 float regen score；两者不是同一量，因此排除在 hash 外。"
+    },
+    "terrain": {
+      "map_data_array": "terrain_arr",
+      "kind": "u8",
+      "comparability": "comparable",
+      "parity_stage": "SEA_ICE",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["native_daily_slice:sea_ice", "sea_ice_daily:sea_ice_daily"],
+      "suppression": ["native_daily_graph", "weather_refresh"],
+      "note": "B8-P1 / CLM2 ABI 8：worker 自持 sea_ice 翻转后的 terrain 并 writeback；ACTIVE 下主线程 succession/海冰写者被抑制。"
+    },
+    "cover": {
+      "map_data_array": "cover_arr",
+      "kind": "u8",
+      "comparability": "comparable",
+      "parity_stage": "WEATHER",
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "production_writers": ["native_daily_slice:weather_distribute", "weather_refresh:refresh_weather_daily"],
+      "suppression": ["native_daily_graph", "weather_refresh"],
+      "note": "B8-P1 / CLM2 ABI 8：weather distribute 写 cover（雪盖/洪水等）；worker 自持并 writeback。"
     }
   },
   "extra_policy_fields": {
-    "terrain_arr": {
-      "target_phase": "P1",
-      "active_writer": "main_thread_succession",
-      "worker_owned": false,
-      "suppression": ["none"],
-      "note": "植被/地形演替写者；B8-P1 把 succession 纳入 worker 后改为 climate_worker。"
-    },
-    "cover_arr": {
-      "target_phase": "P1",
-      "active_writer": "main_thread_succession",
-      "worker_owned": false,
-      "suppression": ["none"]
-    },
     "wind_x_arr": {
       "target_phase": "P2",
-      "active_writer": "transport_readonly",
-      "worker_owned": false,
-      "suppression": ["ocean_currents"]
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "suppression": ["ocean_currents"],
+      "note": "P2 physics：worker 物理胶囊 writeback（cell_wind_x）。"
     },
     "wind_y_arr": {
       "target_phase": "P2",
-      "active_writer": "transport_readonly",
-      "worker_owned": false,
-      "suppression": ["ocean_currents"]
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "suppression": ["ocean_currents"],
+      "note": "P2 physics：worker 物理胶囊 writeback（cell_wind_y）。"
     },
     "wind_speed_arr": {
       "target_phase": "P2",
-      "active_writer": "transport_readonly",
-      "worker_owned": false,
-      "suppression": ["ocean_currents"]
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "suppression": ["ocean_currents"],
+      "note": "P2 physics：worker 物理胶囊 writeback（cell_wind_speed）。"
     },
     "slp_arr": {
       "target_phase": "P2",
-      "active_writer": "transport_readonly",
-      "worker_owned": false,
-      "suppression": ["ocean_currents"]
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "suppression": ["ocean_currents"],
+      "note": "P2 physics：worker 物理胶囊 writeback（cell_slp）。"
     },
     "ocean_psi_arr": {
       "target_phase": "P2",
-      "active_writer": "transport_readonly",
-      "worker_owned": false,
-      "suppression": ["ocean_currents"]
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "suppression": ["ocean_currents"],
+      "note": "P2 physics：worker 物理胶囊 writeback（cell_ocean_psi）。"
     },
     "upwelling_strength_arr": {
       "target_phase": "P2",
-      "active_writer": "transport_readonly",
-      "worker_owned": false,
-      "suppression": ["ocean_currents"]
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "suppression": ["ocean_currents"],
+      "note": "P2 physics：worker 物理胶囊 writeback（cell_upwelling_strength）。"
     },
     "wind_stress_curl_arr": {
       "target_phase": "P2",
-      "active_writer": "transport_readonly",
-      "worker_owned": false,
-      "suppression": ["ocean_currents"]
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "suppression": ["ocean_currents"],
+      "note": "P2 physics：worker 物理胶囊 writeback（cell_wind_stress_curl）。"
     },
     "ocean_current_x_arr": {
       "target_phase": "P2",
-      "active_writer": "transport_readonly",
-      "worker_owned": false,
-      "suppression": ["ocean_currents"]
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "suppression": ["ocean_currents"],
+      "note": "P2 physics：worker 物理胶囊 writeback（cell_ocean_current_x）。"
     },
     "ocean_current_y_arr": {
       "target_phase": "P2",
-      "active_writer": "transport_readonly",
-      "worker_owned": false,
-      "suppression": ["ocean_currents"]
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "suppression": ["ocean_currents"],
+      "note": "P2 physics：worker 物理胶囊 writeback（cell_ocean_current_y）。"
     },
     "air_mass_temp_anomaly_arr": {
       "target_phase": "P2",
-      "active_writer": "transport_readonly",
-      "worker_owned": false,
-      "suppression": ["ocean_currents"]
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "suppression": ["ocean_currents"],
+      "note": "P2 physics：与 worker 物理环流/热力异常同族；ACTIVE 下由 climate_worker 权威。"
     },
     "ocean_thermal_anomaly_arr": {
       "target_phase": "P2",
-      "active_writer": "transport_readonly",
-      "worker_owned": false,
-      "suppression": ["ocean_currents"]
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "suppression": ["ocean_currents"],
+      "note": "P2 physics：worker 物理胶囊 writeback（cell_ocean_thermal_anomaly）。"
     },
     "local_thermal_anomaly_arr": {
       "target_phase": "P2",
-      "active_writer": "transport_readonly",
-      "worker_owned": false,
-      "suppression": ["ocean_currents"]
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "suppression": ["ocean_currents"],
+      "note": "P2 physics：与 worker 物理环流/热力异常同族；ACTIVE 下由 climate_worker 权威。"
     },
     "temperature_transport_anomaly_arr": {
       "target_phase": "P2",
-      "active_writer": "transport_readonly",
-      "worker_owned": false,
-      "suppression": ["ocean_currents"]
+      "active_writer": "climate_worker",
+      "worker_owned": true,
+      "writeback": true,
+      "suppression": ["ocean_currents"],
+      "note": "P2 physics：与 worker 物理环流/热力异常同族；ACTIVE 下由 climate_worker 权威。"
     }
   }
 }
