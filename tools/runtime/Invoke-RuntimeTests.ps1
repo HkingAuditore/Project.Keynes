@@ -37,6 +37,7 @@ $tests = @(
     'tests/runtime_events_pod_test.gd',
     'tests/runtime_climate_authority_test.gd',
     'tests/runtime_climate_parity_test.gd',
+    'tests/runtime_climate_stage_order_contract_test.gd',
     'tests/runtime_climate_save_roundtrip_test.gd',
     'tests/runtime_country_pod_test.gd',
     'tests/runtime_country_peer_bridge_test.gd',

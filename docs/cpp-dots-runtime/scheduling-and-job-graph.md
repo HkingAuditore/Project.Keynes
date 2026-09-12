@@ -380,6 +380,12 @@ worker 内变更；async climate 只接收主线程冻结的 add/factor 数组�
   `climate_pass_a` 的 range 片使用同一份 annual-insolation cache，所有片都保持
   `defer_visible_publish=true`；只有 native daily graph 完整提交时才 flush，避免逐片
   把同一批 slots 复制回 `MapData`。
+- **ACTIVE 下的 `weather_cyclone` 节点**：climate worker 权威时，主线程的
+  `weather` 拆分节点（含 `weather_cyclone`）整段被抑制门短路；气旋的推进/衰减/
+  stamp 与 genesis 改由 worker 在天气日承担（`runtime_climate_kernel.cpp`，
+  顺序：advance+stamp → field solve → commit → genesis）。因此 ACTIVE 的
+  `climate_stage_ms[WEATHER]` 仍然记录 worker 侧 weather 段，而调度层的
+  `weather_cyclone_ms` 只反映 OFF/SHADOW 路径。
 - native daily 首片若被 SUS 以 `frame_budget_exhausted` 或
   `strict_budget_one_job` 跳过，`MapGenerator` 会设置 transient
   `native_daily_day_pending` 并保持 `native_daily_day_barrier`。下一次 continuation
@@ -1225,3 +1231,49 @@ producer sequence。这样 `request_runtime_save()` 已接受的命令不会因�
 本地 pending 列表。主线程仍只接收 immutable bytes，不读取任何 domain store。
 
 阶段 E 的日序固定包含 EFFECT -> MODIFIER。Effect 只产生 typed intent，Modifier POD 产生真实 OK/REJECTED/STALE_GENERATION/RETRY ACK；ACK barrier 未闭合时 Effect plan 不能 commit。Modifier shadow command 在 capture 后才进入 pending 日队列，因此迟到请求只能在下一日执行。
+
+## Climate ACTIVE 主线程背压（B8 P3，2026-09-11）
+
+ACTIVE Climate 的环境输入目前仍是单槽 latest-value：主线程每次 capture 都会替换
+上一份环境，而 worker 只在 day 循环里读最新那一份。worker 跟不上时，中间的天会被
+静默顶掉 —— 这正是 180x120 下 `writeback_days=30/50` 的成因，而不是回灌 memcpy
+慢。B8 先把它变成可观测，再把它变成不可发生：
+
+- **可观测**：`RuntimeThreadReport` 新增
+  `environment_published_days / consumed_days / superseded_days / dropped_days`
+  与 `climate_consumed_generation`。`superseded` 的定义是"已发布但被下一天顶掉、
+  worker 从未 plan 过"；`dropped` 留给将来的有界 ring 溢出。50/50 验收要求两者
+  都为 0。
+- **不可发生（当前实现）**：日边界顺序钉成
+  **回灌(第 N 天) → `wait_climate_consumed(第 N 份环境) → capture(第 N+1 天输入)
+  → season refresh**。主线程不会在 worker 看过上一份环境之前发布下一天，所以单槽
+  也不再覆盖未消费的输入。
+- **等待语义**：`DCWorldExt::wait_climate_consumed(after_environment_generation,
+  timeout_ms)` 在 C++ 侧是条件变量等待。`timeout_ms < 0` 一直等到条件满足或出现
+  终止条件；`>= 0` 是一次有界切片，GDScript 侧的
+  `WorldRuntimeHost.wait_for_climate_consumed()` 在每个切片之间
+  `service_country_worker_peer_adapter` + drain read-view，然后继续等 —— 纯 C++
+  等待无法回调 Godot 清 peer barrier，两边互等就是死锁。
+- **终止条件是故障保护而不是性能超时**：worker `FAULTED/STOPPING/STOPPED`、
+  `stop` 请求、Climate 权威撤销、等待接口缺失。出现时按当时的 authority 状态
+  回主线程或结束本 tick，不会静默继续发布。
+- **代价**：worker 单日成本超过日预算时，主线程会在日边界阻塞相应时长。
+  `climate_wait_total_ms/last_ms/max_ms` 是这条代价的直接证据；按格数启用阈值
+  （B8-4）就是用来把 auto 模式限制在能负担得起的规模上。
+
+尚未完成：把单槽换成有界环境 ring（深度可配）并让 worker 一次唤醒串行 drain
+多份环境；`environment_dropped_days` 已就位，ring 接线后由它承担溢出计数。
+
+### Climate B8 soak 驱动的固定用法
+
+```
+tools/runtime/Invoke-ClimateB8Soak.ps1 -RunId soak-small-off -Authority 0 -Drive serial_wait -Days 300
+tools/runtime/Invoke-ClimateB8Soak.ps1 -RunId soak-small-on  -Authority 1 -Drive serial_wait -Days 300
+tools/runtime/Compare-ClimateB8Soak.ps1 `
+  -LeftArtifacts artifacts/runtime/climate-b8/soak/soak-small-off `
+  -RightArtifacts artifacts/runtime/climate-b8/soak/soak-small-on
+```
+
+`serial_wait` 走的是生产等待路径；`serial` 保留旧 24ms 轮询作为 A/B 对照。
+比较器只读 `soak.json` 的结构化 samples（逐 25 天 nz/mean/min/max），
+不再从人类日志里抠数字。

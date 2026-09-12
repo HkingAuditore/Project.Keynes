@@ -129,6 +129,12 @@ const RuntimeClimateParityField FIELDS[] = {
     {"vegetation_cold_stress", "vegetation_cold_stress_arr", F32, OK, EXACT, Stage::VEGETATION_DYNAMICS, "", &Store::vegetation_cold_stress, nullptr, nullptr},
     {"vegetation_growth_streak", "vitality_high_streak_arr", I32, OK, EXACT, Stage::VEGETATION_DYNAMICS, "", nullptr, &Store::vegetation_growth_streak, nullptr},
     {"vegetation_drought_streak", "vitality_low_streak_arr", I32, OK, EXACT, Stage::VEGETATION_DYNAMICS, "", nullptr, &Store::vegetation_drought_streak, nullptr},
+    // B8-P1：演替后的植被档位与它的基线。生产侧由 GDScript 演替后处理写
+    // cell.vegetation / base_vegetation；ACTIVE 下那次写入被抑制，worker 自持这两条
+    // lane 并回灌。tolerance 取 CHAINED：演替是按 streak/cooldown 触发的离散事件，
+    // 差一天的触发时序就会让整条 lane 在若干格上错位，那不是"算法分叉"。
+    {"vegetation", "vegetation_arr", U8, OK, CHAINED, Stage::VEGETATION_DYNAMICS, "", nullptr, nullptr, &Store::vegetation},
+    {"base_vegetation", "base_vegetation_arr", U8, OK, CHAINED, Stage::VEGETATION_DYNAMICS, "", nullptr, nullptr, &Store::base_vegetation},
     // The production side fills a continuous regeneration score, while the
     // worker keeps a boolean candidate flag. These are not the same quantity.
     {"vegetation_succession_candidate", "vegetation_regen_score_arr", U8, MISMATCH, EXACT, Stage::VEGETATION_DYNAMICS,

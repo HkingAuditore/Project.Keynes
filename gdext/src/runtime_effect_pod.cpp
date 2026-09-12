@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cstring>
 #include <limits>
 #include <type_traits>
@@ -304,7 +305,8 @@ bool RuntimeEffectPodAuthority::validate_catalog(
         if (behavior.behavior_id_hash == 0 || behavior.version == 0 ||
             behavior.max_output > RUNTIME_EFFECT_POD_MAX_BEHAVIOR_OUTPUT ||
             behavior.thread_safe > 1u || behavior.implemented > 1u ||
-            (behavior.implemented != 0 && behavior.function == nullptr)) {
+            (behavior.implemented != 0 && behavior.function == nullptr &&
+             runtime_effect_pod_behavior_resolver() == nullptr)) {
             error = "effect_pod_behavior_metadata_invalid";
             return false;
         }
@@ -687,7 +689,7 @@ bool RuntimeEffectPodAuthority::invoke_behavior(
         }
     }
     if (metadata == nullptr || metadata->implemented == 0 ||
-        metadata->function == nullptr || metadata->thread_safe == 0) {
+        metadata->thread_safe == 0) {
         error = "effect_behavior_not_registered";
         return false;
     }
@@ -708,7 +710,17 @@ bool RuntimeEffectPodAuthority::invoke_behavior(
     input.target_handle = instance.target_handle;
     input.metrics = metrics;
     input.metric_count = static_cast<uint32_t>(metric_count);
-    if (!metadata->function(input, output, error) || output.overflowed) {
+    bool invoked = false;
+    if (metadata->function != nullptr) {
+        invoked = metadata->function(input, output, error);
+    } else if (RuntimeEffectPodBehaviorResolver resolver =
+                   runtime_effect_pod_behavior_resolver()) {
+        invoked = resolver(definition.behavior_id_hash, input, output, error);
+    } else {
+        error = "effect_behavior_not_registered";
+        return false;
+    }
+    if (!invoked || output.overflowed) {
         if (error.empty()) error = output.overflowed
             ? "effect_behavior_output_capacity_exceeded" : "effect_behavior_failed";
         return false;
@@ -1748,6 +1760,116 @@ bool RuntimeEffectPodAuthority::self_test(std::string &error) {
     if (restored.restore(bytes.data(), bytes.size(), error) ||
         restored.snapshot().deterministic_state_hash != before)
         return fail("effect_self_test_corrupt_restore_mutated_state");
+    return true;
+}
+
+namespace {
+RuntimeEffectPodBehaviorResolver g_effect_behavior_resolver = nullptr;
+} // namespace
+
+void runtime_effect_pod_set_behavior_resolver(
+        RuntimeEffectPodBehaviorResolver resolver) {
+    g_effect_behavior_resolver = resolver;
+}
+
+RuntimeEffectPodBehaviorResolver runtime_effect_pod_behavior_resolver() {
+    return g_effect_behavior_resolver;
+}
+
+RuntimeEffectSnapshotRing::RuntimeEffectSnapshotRing() { reset(); }
+
+void RuntimeEffectSnapshotRing::reset() {
+    for (Slot &slot : _slots) {
+        slot.snapshot = RuntimeEffectPodSnapshot{};
+        slot.state.store(FREE, std::memory_order_relaxed);
+    }
+    _published_generation.store(0, std::memory_order_relaxed);
+    _publish_drop_count.store(0, std::memory_order_relaxed);
+}
+
+bool RuntimeEffectSnapshotRing::try_begin_write(uint32_t &index) {
+    for (uint32_t i = 0; i < _slots.size(); ++i) {
+        uint8_t expected = FREE;
+        if (_slots[i].state.compare_exchange_strong(expected, WRITING,
+                std::memory_order_acq_rel, std::memory_order_relaxed)) {
+            index = i;
+            return true;
+        }
+    }
+    uint64_t oldest_generation = std::numeric_limits<uint64_t>::max();
+    uint32_t oldest_index = 0;
+    bool ready_found = false;
+    for (uint32_t i = 0; i < _slots.size(); ++i) {
+        if (_slots[i].state.load(std::memory_order_acquire) != READY) continue;
+        const uint64_t generation = _slots[i].snapshot.generation;
+        if (!ready_found || generation < oldest_generation) {
+            oldest_generation = generation;
+            oldest_index = i;
+            ready_found = true;
+        }
+    }
+    if (ready_found) {
+        uint8_t expected = READY;
+        if (_slots[oldest_index].state.compare_exchange_strong(
+                expected, WRITING, std::memory_order_acq_rel,
+                std::memory_order_relaxed)) {
+            index = oldest_index;
+            return true;
+        }
+    }
+    _publish_drop_count.fetch_add(1, std::memory_order_relaxed);
+    return false;
+}
+
+void RuntimeEffectSnapshotRing::publish(uint32_t index) {
+    if (index >= _slots.size()) return;
+    _published_generation.store(_slots[index].snapshot.generation,
+                                std::memory_order_relaxed);
+    _slots[index].state.store(READY, std::memory_order_release);
+}
+
+bool RuntimeEffectSnapshotRing::try_acquire_latest(uint64_t after_generation,
+                                                   uint32_t &index) {
+    const bool accept_initial =
+        after_generation == std::numeric_limits<uint64_t>::max();
+    uint64_t best = 0;
+    uint32_t best_index = 0;
+    bool found = false;
+    for (uint32_t i = 0; i < _slots.size(); ++i) {
+        if (_slots[i].state.load(std::memory_order_acquire) != READY) continue;
+        const uint64_t generation = _slots[i].snapshot.generation;
+        if ((accept_initial || generation > after_generation) &&
+            (!found || generation > best)) {
+            best = generation;
+            best_index = i;
+            found = true;
+        }
+    }
+    if (!found) return false;
+    uint8_t expected = READY;
+    if (!_slots[best_index].state.compare_exchange_strong(expected, READING,
+            std::memory_order_acq_rel, std::memory_order_relaxed)) {
+        return false;
+    }
+    index = best_index;
+    return true;
+}
+
+void RuntimeEffectSnapshotRing::release(uint32_t index) {
+    if (index >= _slots.size()) return;
+    _slots[index].state.store(READY, std::memory_order_release);
+}
+
+bool RuntimeEffectSnapshotRing::self_test() {
+    RuntimeEffectSnapshotRing ring;
+    uint32_t slot = 0;
+    if (!ring.try_begin_write(slot)) return false;
+    ring.write_buffer(slot).generation = 7;
+    ring.publish(slot);
+    uint32_t acquired = 0;
+    if (!ring.try_acquire_latest(0, acquired)) return false;
+    if (ring.read_buffer(acquired).generation != 7) return false;
+    ring.release(acquired);
     return true;
 }
 

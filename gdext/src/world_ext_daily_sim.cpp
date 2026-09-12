@@ -1,6 +1,8 @@
 #include "world_ext.h"
 
 #include "runtime_climate_passes.h"
+#include "runtime_climate_kernel.h"
+#include "runtime_climate_parity.h"
 
 #include "component_bind_table.gen.h"  // A1 / dots-migration-roadmap §3 — autogen by tools/codegen/gen_cpp_bind_table.py
 #include "system_schedule.h"           // Phase C.1 — 静态 DAG 调度图
@@ -3281,6 +3283,124 @@ Dictionary DCWorldExt::run_native_daily_finalizer(Dictionary knobs) {
     out["native_published_slots"] = native_published_slots;
     out["finalizer_native_write_ms"] = native_write_ms;
     out["finalizer_native_dirty_mark_ms"] = 0.0;
+    return out;
+}
+
+// ─── B8 P0：canonical Climate stage order 契约测试 ────────────────────────────
+//
+// worker kernel 的顺序由 runtime_climate_canonical_order 表声明；生产侧的顺序
+// 由 NATIVE_DAILY_SLICE_GRAPH 的节点序决定。两者必须一致，否则"改了一侧"只会
+// 在数值对拍里表现成算法分叉。这里把两边都读出来逐项核对：
+//
+//   1. canonical 表本身合法（每个 stage 恰好一次，weather 在 round 之后，
+//      stage_b 三段内部顺序 albedo → vegetation → feedback）；
+//   2. 生产 graph 里每个 stage 的宿主节点都存在；
+//   3. 生产 graph 的无条件执行链顺序与 canonical 表一致：
+//        round 8 段 < weather_field < commit < distribute < summary < cyclone
+//        < runtime_hydrology < stage_b_after_hydrology；
+//   4. 早期 stage_b 宿主（albedo / vegetation_dynamics / climate_feedback /
+//      stage_b）被显式标记为"条件宿主"：它们只在 weather 内嵌关闭时非空，
+//      不属于 canonical 顺序。
+Dictionary DCWorldExt::runtime_climate_stage_order_contract_test() const {
+    Dictionary out;
+    std::string order_error;
+    if (!pk::runtime_climate_stage_order_self_test(order_error)) {
+        out["ok"] = false;
+        out["code"] = String(order_error.c_str());
+        return out;
+    }
+
+    // stage → 生产宿主节点名。空串表示该 stage 在生产侧没有独立节点。
+    struct StageNode {
+        pk::RuntimeClimateStage stage;
+        const char *node;
+        bool conditional_host;
+    };
+    static const StageNode STAGE_NODES[] = {
+        {pk::RuntimeClimateStage::PASS_A, "climate_pass_a", false},
+        {pk::RuntimeClimateStage::PASS_B, "climate_pass_b", false},
+        {pk::RuntimeClimateStage::OCEAN_WATER, "ocean_water", false},
+        {pk::RuntimeClimateStage::OCEAN_LAND, "ocean_land", false},
+        {pk::RuntimeClimateStage::WIND_AIR, "wind_air", false},
+        {pk::RuntimeClimateStage::WIND_SURFACE, "wind_surface", false},
+        {pk::RuntimeClimateStage::SEA_ICE, "sea_ice", false},
+        {pk::RuntimeClimateStage::TRANSPIRATION, "transpiration", false},
+        {pk::RuntimeClimateStage::WEATHER, "weather_field", false},
+        // 无条件链上的顺序锚点：commit/distribute/summary/cyclone 与
+        // runtime_hydrology 都不在 parity stage 枚举里，但在契约里要一并排序。
+        {pk::RuntimeClimateStage::RUNTIME_HYDROLOGY, "runtime_hydrology", false},
+        {pk::RuntimeClimateStage::ALBEDO, "stage_b_after_hydrology", false},
+        {pk::RuntimeClimateStage::VEGETATION_DYNAMICS,
+         "stage_b_after_hydrology", false},
+        {pk::RuntimeClimateStage::CLIMATE_FEEDBACK,
+         "stage_b_after_hydrology", false},
+    };
+    static const char *ORDER_ANCHORS[] = {
+        "climate_pass_a", "climate_pass_b", "ocean_water", "ocean_land",
+        "wind_air", "wind_surface", "sea_ice", "transpiration",
+        "weather_field", "weather_commit", "weather_distribute",
+        "weather_summary", "weather_cyclone", "runtime_hydrology",
+        "stage_b_after_hydrology",
+    };
+    static const char *CONDITIONAL_EARLY_HOSTS[] = {
+        "albedo", "vegetation_dynamics", "climate_feedback", "stage_b",
+        "weather_stage_b",
+    };
+
+    Dictionary positions;
+    int previous_index = -1;
+    for (const char *name : ORDER_ANCHORS) {
+        const int index = native_daily_node_index_by_name(String(name));
+        positions[String(name)] = index;
+        if (index < 0) {
+            out["ok"] = false;
+            out["code"] = String("climate_stage_order_missing_production_node:") +
+                String(name);
+            out["graph_positions"] = positions;
+            return out;
+        }
+        if (index <= previous_index) {
+            out["ok"] = false;
+            out["code"] =
+                String("climate_stage_order_production_node_out_of_order:") +
+                String(name);
+            out["graph_positions"] = positions;
+            return out;
+        }
+        previous_index = index;
+    }
+
+    // 条件宿主只报告位置，不参与顺序判定 —— 它们是否执行由 bundle 的
+    // stage_b / weather_stage_b 互斥决定（map_generator._build_native_daily_bundle）。
+    Dictionary conditional;
+    for (const char *name : CONDITIONAL_EARLY_HOSTS) {
+        const int index = native_daily_node_index_by_name(String(name));
+        if (index >= 0) conditional[String(name)] = index;
+    }
+
+    out["ok"] = true;
+    out["code"] = String("ok");
+    out["canonical_order"] = String(pk::runtime_climate_canonical_order_names());
+    out["canonical_stage_count"] =
+        static_cast<int64_t>(pk::RUNTIME_CLIMATE_CANONICAL_ORDER_COUNT);
+    out["production_node_count"] =
+        static_cast<int64_t>(NATIVE_DAILY_SLICE_GRAPH_SIZE);
+    out["graph_positions"] = positions;
+    out["conditional_early_hosts"] = conditional;
+    // 每个 canonical stage 都能映射到一个生产宿主（或明确报告它没有独立节点）。
+    Array stage_hosts;
+    for (const StageNode &entry : STAGE_NODES) {
+        Dictionary row;
+        row["stage"] = String(pk::runtime_climate_stage_name(entry.stage));
+        row["canonical_index"] = static_cast<int64_t>(
+            pk::runtime_climate_canonical_order_index(entry.stage));
+        row["production_node"] = String(entry.node);
+        row["production_node_index"] =
+            native_daily_node_index_by_name(String(entry.node));
+        row["conditional_host"] = entry.conditional_host;
+        stage_hosts.push_back(row);
+    }
+    out["stage_hosts"] = stage_hosts;
     return out;
 }
 

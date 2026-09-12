@@ -3,6 +3,7 @@
 #include "component_bind_table.gen.h"  // A1 / dots-migration-roadmap §3 — autogen by tools/codegen/gen_cpp_bind_table.py
 #include "system_schedule.h"           // Phase C.1 — 静态 DAG 调度图
 #include "parallel_dispatcher.h"       // Phase C.3a — 并行分发 helper（统一 5 个手写 _thread）
+#include "runtime_climate_physics.h"   // B8 P2：物理环流共享纯内核（SLP Pass A/B）
 
 // MSVC 默认不定义 M_PI；必须在引入 <cmath> 之前打开 _USE_MATH_DEFINES。
 // 双保险：仍未定义时手动兜底，避免某些编译器/PCH 顺序问题。
@@ -33,9 +34,6 @@
 #include <cstring>
 #include <limits>
 
-// 海岸/海洋 BFS 距离上界（见 _phys_ensure_wind_coast / run_wind_field_pass 海风逻辑）。
-// 文件级常量，供两个函数共享（run_wind_field_pass 用其判等 coast/sea 距离是否已达无穷）。
-static constexpr int8_t COAST_INF = 127;
 #include <memory>
 #include <mutex>
 #include <functional>
@@ -59,63 +57,32 @@ using namespace godot;
 
 
 // ─── Block B helpers ────────────────────────────────────────────────────────
+//
+// B8 P2：几何常量与风带常量已搬到 runtime_climate_physics.h（唯一来源），
+// 这里用 using 声明保持原有非限定调用点不变。风场主循环本身也已迁到
+// pk_async_physics::wind_field_range。
+using pk_async_physics::COAST_INF;
+using pk_async_physics::NB_DIR_X;
+using pk_async_physics::NB_DIR_Y;
+using pk_async_physics::WIND_W_LAT;
+using pk_async_physics::WIND_W_GRAD;
+using pk_async_physics::WIND_W_COAST_THERMAL;
+using pk_async_physics::WIND_COAST_THERMAL_MAX_DIST;
+using pk_async_physics::WIND_CORIOLIS_MAX_RAD;
+using pk_async_physics::WIND_PRESSURE_GRAD_WEAK;
+using pk_async_physics::WIND_PRESSURE_GRAD_STRONG;
+using pk_async_physics::WIND_PRESSURE_BASE_W;
+using pk_async_physics::WIND_PRESSURE_GRAD_W;
+using pk_async_physics::WIND_LAT_GRAD_SUPPRESS;
+using pk_async_physics::WIND_TERRAIN_MOUNTAIN_DAMP;
+using pk_async_physics::WIND_TERRAIN_HILL_DAMP;
+using pk_async_physics::WIND_LAND_FRICTION;
+using pk_async_physics::WIND_MOUNTAIN_DEFLECT_W;
+using pk_async_physics::WIND_MOUNTAIN_UPSTREAM_DAMP;
+using pk_async_physics::WIND_SEA_BREEZE_W;
+using pk_async_physics::SEA_BREEZE_SEA_MAX_DIST;
+
 namespace {
-
-// 几何常量：6 个邻居方向在屏幕坐标系下的"世界向量"（pointy-top 六边形），
-// 与 physical_circulation_solver.gd::NEIGHBOR_DIRS 完全一致。
-// 顺序对齐 HexUtils.CUBE_DIRECTIONS：0=E, 1=NE, 2=NW, 3=W, 4=SW, 5=SE。
-// 这里直接 hardcode 因为 neighbor_indices 已按此顺序存储（见 map_data.gd:23）。
-constexpr double SQRT3_HALF = 0.8660254037844387; // √3 / 2
-constexpr double NB_DIR_X[6] = {
-     SQRT3_HALF * 2.0,  //  0 E
-     SQRT3_HALF,        //  1 NE
-    -SQRT3_HALF,        //  2 NW
-    -SQRT3_HALF * 2.0,  //  3 W
-    -SQRT3_HALF,        //  4 SW
-     SQRT3_HALF,        //  5 SE
-};
-constexpr double NB_DIR_Y[6] = {
-     0.0,  //  0 E
-    -1.5,  //  1 NE
-    -1.5,  //  2 NW
-     0.0,  //  3 W
-     1.5,  //  4 SW
-     1.5,  //  5 SE
-};
-
-// physical_circulation_solver.gd 内常量（line 233-244）。
-constexpr double WIND_W_LAT                    = 0.45;
-constexpr double WIND_W_GRAD                   = 1.05;
-constexpr double WIND_W_COAST_THERMAL          = 0.58;
-constexpr int    WIND_COAST_THERMAL_MAX_DIST   = 5;
-constexpr double WIND_CORIOLIS_MAX_RAD         = 1.20;
-constexpr double WIND_PRESSURE_GRAD_WEAK       = 0.006;
-constexpr double WIND_PRESSURE_GRAD_STRONG     = 0.055;
-constexpr double WIND_PRESSURE_BASE_W          = 0.55;
-constexpr double WIND_PRESSURE_GRAD_W          = 2.55;
-constexpr double WIND_LAT_GRAD_SUPPRESS        = 0.75;
-constexpr double WIND_TERRAIN_MOUNTAIN_DAMP    = 0.55;
-constexpr double WIND_TERRAIN_HILL_DAMP        = 0.85;
-constexpr double WIND_LAND_FRICTION            = 0.85;
-constexpr double WIND_MOUNTAIN_DEFLECT_W       = 0.85;
-constexpr double WIND_MOUNTAIN_UPSTREAM_DAMP   = 0.55;
-// 几何海风 (thermal sea breeze)：实测陆地常年是热源(land-sea 温差常年 ~+0.04)，海风常年
-// 朝内陆。方向用几何 -coast_sea(远离最近海岸，BFS 已把朝海单位向量传播到内陆 5 格)，而非
-// SLP 梯度——因海陆温差弱，SLP 海岸梯度方向只有 ~56% 指向内陆(近随机)，无法驱动 onshore。
-// 几何方向 100% 朝内陆，强度随到岸距离权重衰减(沿海/近岸最强)。此系数是相对本地风量级的
-// 比例(海风 = W × dist_w × |v_sum|)，与地转风量级解耦、效果可预测。海陆连续 onshore：陆地侧
-// 朝内陆 + 海洋侧朝陆，把"深海→近岸→海岸→内陆"接成一条水汽输送带。只抽陆地侧(W=1.5→陆地
-// onshore 99%)会断链——海洋补不进、沿海被抽干、海洋堆积成永雨；故 W=1.0(hop1~78%) + 海洋侧补充。
-constexpr double WIND_SEA_BREEZE_W             = 1.0;
-constexpr int    SEA_BREEZE_SEA_MAX_DIST       = 5;   // 海洋侧海风延伸格数(朝陆，与陆地侧 5 格对称)
-
-inline double wind_smoothstep(double a, double b, double x) {
-    const double span = b - a;
-    if (std::abs(span) < 1e-12) return (x >= a) ? 1.0 : 0.0;
-    double t = (x - a) / span;
-    if (t < 0.0) t = 0.0; else if (t > 1.0) t = 1.0;
-    return t * t * (3.0 - 2.0 * t);
-}
 
 inline double wind_clamp(double v, double lo, double hi) {
     return v < lo ? lo : (v > hi ? hi : v);
@@ -207,65 +174,9 @@ inline float wind_speed_norm(float dir_x, float dir_y, float speed) {
     return (len2 > 0.0001f) ? std::sqrt(len2) : 0.0f;
 }
 
-inline double wind_orbital_progress(double orbital_phase) {
-    double p = std::fmod(orbital_phase, 4.0);
-    if (p < 0.0) p += 4.0;
-    return p * 0.25;
-}
-
-inline double wind_subsolar_signed(double orbital_phase, double axial_tilt_deg) {
-    constexpr double PI_HALF = 1.57079632679489661923;
-    constexpr double TAU = 6.28318530717958647692;
-    const double decl_rad = axial_tilt_deg * (3.14159265358979323846 / 180.0)
-        * std::cos(TAU * wind_orbital_progress(orbital_phase));
-    return wind_clamp(decl_rad / PI_HALF, -1.0, 1.0);
-}
-
-inline double wind_shifted_lat_signed(double ny, double orbital_phase, double axial_tilt_deg) {
-    const double lat_signed = (ny - 0.5) * 2.0;
-    const double itcz_shift = wind_clamp(
-        wind_subsolar_signed(orbital_phase, axial_tilt_deg) * 0.45, -0.18, 0.18);
-    return wind_clamp(lat_signed - itcz_shift, -1.0, 1.0);
-}
-
-// Three-cell circulation speed envelope. `orbital_phase` only moves the
-// insolation-driven ITCZ/belt centers; it no longer injects an independent
-// monsoon or season-speed term.
-inline double wind_belt_speed_at(double ny, double orbital_phase, double axial_tilt_deg) {
-    constexpr double ITCZ_HALF_WIDTH = 0.05;
-    constexpr double TRADE_TOP       = 0.40;
-    constexpr double WEST_TOP        = 0.70;
-    constexpr double SPEED_ITCZ      = 0.15;
-    constexpr double SPEED_TRADE     = 0.85;
-    constexpr double SPEED_WEST      = 1.10;
-    constexpr double SPEED_POLAR     = 0.65;
-
-    auto smoothstep = [](double a, double b, double x) -> double {
-        const double span = b - a;
-        if (std::abs(span) < 1e-12) return (x >= a) ? 1.0 : 0.0;
-        double t = (x - a) / span;
-        if (t < 0.0) t = 0.0; else if (t > 1.0) t = 1.0;
-        return t * t * (3.0 - 2.0 * t);
-    };
-
-    const double lat_signed = wind_shifted_lat_signed(ny, orbital_phase, axial_tilt_deg);
-    const double abs_lat    = (lat_signed < 0.0) ? -lat_signed : lat_signed;
-
-    // 风带基础强度（带边界 smoothstep；半带宽 0.03~0.04）
-    const double w_itcz = 1.0 - smoothstep(ITCZ_HALF_WIDTH - 0.03, ITCZ_HALF_WIDTH + 0.03, abs_lat);
-    const double w_trade = smoothstep(ITCZ_HALF_WIDTH - 0.03, ITCZ_HALF_WIDTH + 0.03, abs_lat)
-                         * (1.0 - smoothstep(TRADE_TOP - 0.04, TRADE_TOP + 0.04, abs_lat));
-    const double w_west = smoothstep(TRADE_TOP - 0.04, TRADE_TOP + 0.04, abs_lat)
-                        * (1.0 - smoothstep(WEST_TOP - 0.04, WEST_TOP + 0.04, abs_lat));
-    const double w_polar = smoothstep(WEST_TOP - 0.04, WEST_TOP + 0.04, abs_lat);
-    const double base_speed = w_itcz * SPEED_ITCZ + w_trade * SPEED_TRADE
-                             + w_west * SPEED_WEST + w_polar * SPEED_POLAR;
-    return base_speed;
-}
-
-inline double wind_belt_speed_at(double ny, double orbital_phase) {
-    return wind_belt_speed_at(ny, orbital_phase, 23.5);
-}
+// B8 P2：wind_orbital_progress / wind_subsolar_signed / wind_shifted_lat_signed /
+// wind_belt_speed_at 已搬到 runtime_climate_physics.h（唯一来源，生产与 worker
+// 共用）。风场主循环也已迁到 pk_async_physics::wind_field_range。
 
 } // anonymous namespace (Block B helpers)
 
@@ -588,398 +499,84 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
     std::vector<float> momentum_delta;
     if (momentum_active) momentum_delta.assign(static_cast<size_t>(n_cells), 0.0f);
 
+    // B8 P2：主循环体已搬到 pk_async_physics::wind_field_range（worker 与生产
+    // 共用同一份）。这里只负责组装 POD 与把分段统计合并回 WindFlipEmit。
+    pk_async_physics::WindFieldKnobs wind_k;
+    wind_k.season_phase = season_phase;
+    wind_k.axial_tilt_deg = axial_tilt_deg;
+    wind_k.terrain_aware = terrain_aware;
+    wind_k.wind_belt_only = wind_belt_only;
+    wind_k.response_rate = double(response_rate);
+    wind_k.synoptic_amp = synoptic_amp;
+    wind_k.synoptic_period_days = synoptic_period_days;
+    wind_k.max_turn_rad = max_turn_rad;
+    wind_k.min_flux_len2 = min_flux_len2;
+    wind_k.sim_day = sim_day;
+    wind_k.world_seed = world_seed;
+    wind_k.bounds_pos_x = bounds_pos_x;
+    wind_k.inv_bounds_w = inv_bounds_w;
+    wind_k.has_wrap_domain = has_wrap_domain;
+    wind_k.wrap_origin_x = wrap_origin_x;
+    wind_k.wrap_period_x = wrap_period_x;
+    wind_k.lf_mountain = lf_mountain;
+    wind_k.lf_peak = lf_peak;
+    wind_k.lf_hill = lf_hill;
+    wind_k.thermal_monsoon_enabled = thermal_monsoon_enabled;
+    wind_k.monsoon_lat_limit = monsoon_lat_limit;
+    wind_k.monsoon_deadband = monsoon_deadband;
+    wind_k.monsoon_full_contrast = monsoon_full_contrast;
+    wind_k.monsoon_gain = monsoon_gain;
+    wind_k.monsoon_breeze_floor = monsoon_breeze_floor;
+    wind_k.momentum_active = momentum_active;
+    wind_k.momentum_advect_w = momentum_advect_w;
+    wind_k.diffuse_w = diffuse_w;
+    wind_k.traj_idx = TRAJ_IDX;
+    wind_k.traj_w = TRAJ_W;
+    wind_k.snap_fx = SNAP_FX;
+    wind_k.snap_fy = SNAP_FY;
+    pk_async_physics::WindFieldLanes wind_l;
+    wind_l.lat_norm = LATN.lat;
+    wind_l.pos_y = LATN.posy;
+    wind_l.lat_origin = LATN.origin;
+    wind_l.lat_inv_span = LATN.inv_span;
+    wind_l.pos_x = POSX;
+    wind_l.slp = SLP;
+    wind_l.neighbors = NB;
+    wind_l.terrain = TR;
+    wind_l.landform = LF;
+    wind_l.is_water_lut = is_water_lut;
+    wind_l.coast_dist = _phys_wind_coast_dist.data();
+    wind_l.coast_sea_x = _phys_wind_coast_sea_x.data();
+    wind_l.coast_sea_y = _phys_wind_coast_sea_y.data();
+    wind_l.coast_sea_anchor = _phys_wind_coast_sea_anchor.data();
+    wind_l.sea_dist = _phys_wind_sea_dist.data();
+    wind_l.sea_land_x = _phys_wind_sea_land_x.data();
+    wind_l.sea_land_y = _phys_wind_sea_land_y.data();
+    wind_l.sea_land_anchor = _phys_wind_sea_land_anchor.data();
+    wind_l.temp = TEMP;
+    wind_l.wind_x = WX;
+    wind_l.wind_y = WY;
+    wind_l.wind_speed = WSP_SLOT;
+    wind_l.wind_speed_out = WSPD;
+    wind_l.wind_delta = wind_delta.data();
+    wind_l.wind_dir_delta = wind_dir_delta.data();
+    wind_l.momentum_delta = momentum_delta.empty() ? nullptr : momentum_delta.data();
+    wind_l.monsoon_thermal = _phys_monsoon_thermal.data();
     pk::parallel_for_range_with_emit<WindFlipEmit>(
         "pk_wind_field", slice_n, wind_flip_emit,
         [&](int __wrb, int __wre, WindFlipEmit &__we) {
-    for (int ii = __wrb; ii < __wre; ++ii) {
-        const int i = start_idx + ii;
-        // ny / ls / ls_abs（cell_lat_norm 权威，0=第0行 0.5=赤道 1=末行）
-        const double ny = LATN.at(i);
-        const double ls = (ny - 0.5) * 2.0;
-        const double ls_abs = (ls < 0.0) ? -ls : ls;
-
-        // (a) 纬度基线。年内变化只通过太阳直射点迁移风带中心。
-        double v_base_x = 0.0, v_base_y = 0.0;
-        const double ny_belt = 0.5 + wind_shifted_lat_signed(ny, season_phase, axial_tilt_deg) * 0.5;
-        wind_belt_at(ny_belt, 0.0, &v_base_x, &v_base_y);
-
-        // (b) 6 邻域离散梯度（unit_x/y 已 hardcode 在 NB_DIR_*）
-        double grad_x = 0.0, grad_y = 0.0;
-        const int base = i * 6;
-        const float slp_self = SLP[i];
-        int nb_count = 0;
-        for (int d = 0; d < 6; ++d) {
-            const int32_t ni = NB[base + d];
-            if (ni < 0) continue;
-            const double dslp = double(SLP[ni]) - double(slp_self);
-            grad_x += dslp * NB_DIR_X[d];
-            grad_y += dslp * NB_DIR_Y[d];
-            ++nb_count;
-        }
-        if (nb_count > 0) {
-            grad_x /= 3.0;
-            grad_y /= 3.0;
-        }
-        const double grad_mag = std::sqrt(grad_x * grad_x + grad_y * grad_y);
-        const double grad_w = wind_smoothstep(
-            WIND_PRESSURE_GRAD_WEAK, WIND_PRESSURE_GRAD_STRONG, grad_mag);
-
-        // 压力梯度风方向 = -∇slp（高 → 低）
-        double v_grad_raw_x = -grad_x;
-        double v_grad_raw_y = -grad_y;
-        if (grad_mag > 1e-8) {
-            const double inv_grad = 1.0 / grad_mag;
-            v_grad_raw_x *= inv_grad;
-            v_grad_raw_y *= inv_grad;
-        } else {
-            v_grad_raw_x = 0.0;
-            v_grad_raw_y = 0.0;
-        }
-
-        // (d) 科氏偏转：离赤道越远越接近沿等压线流，赤道附近保留直接压差流。
-        // 屏幕坐标 x=东、y=南（北在 y<0），故 R(+θ):(x,y)->(x cosθ - y sinθ, x sinθ + y cosθ)
-        // 把东转向南 = 地图上顺时针 = 右偏。北半球右偏取 +θ，南半球左偏取 -θ。
-        const double coriolis_angle = WIND_CORIOLIS_MAX_RAD * std::pow(ls_abs, 0.55);
-        const double rot = (ls < 0.0) ? coriolis_angle : -coriolis_angle;
-        const double cos_r = std::cos(rot);
-        const double sin_r = std::sin(rot);
-        const double v_geo_x = v_grad_raw_x * cos_r - v_grad_raw_y * sin_r;
-        const double v_geo_y = v_grad_raw_x * sin_r + v_grad_raw_y * cos_r;
-        const double ageo_w = 1.0 - wind_smoothstep(0.10, 0.55, ls_abs);
-        const double geo_w = 1.0 - ageo_w;
-        double v_grad_x = v_grad_raw_x * ageo_w + v_geo_x * geo_w;
-        double v_grad_y = v_grad_raw_y * ageo_w + v_geo_y * geo_w;
-        const double v_grad_len2 = v_grad_x * v_grad_x + v_grad_y * v_grad_y;
-        if (v_grad_len2 > 0.0001) {
-            const double inv_vg = 1.0 / std::sqrt(v_grad_len2);
-            v_grad_x *= inv_vg;
-            v_grad_y *= inv_vg;
-        }
-
-        // (c) 沿海热力环流权重。方向由 SLP 梯度决定，不再由季节符号指定。
-        double coast_pressure_w = 0.0;
-        const bool is_water = is_water_lut[TR[i]];
-        if (!is_water) {
-            const int8_t cd = coast_dist[i];
-            if (cd != COAST_INF) {
-                double w = 1.0 - double(cd) / double(WIND_COAST_THERMAL_MAX_DIST);
-                if (w < 0.0) w = 0.0; else if (w > 1.0) w = 1.0;
-                coast_pressure_w = w;
+            pk_async_physics::WindFieldStats wind_stats;
+            pk_async_physics::wind_field_range(
+                n_cells, start_idx + __wrb, start_idx + __wre,
+                wind_k, wind_l, wind_stats);
+            // 逐字段合并（emit 类型归生产所有，内核只给统计 POD）。
+            __we.flip += wind_stats.flip;
+            __we.monsoon_eligible += wind_stats.monsoon_eligible;
+            __we.monsoon_onshore += wind_stats.monsoon_onshore;
+            __we.monsoon_offshore += wind_stats.monsoon_offshore;
+            if (wind_stats.monsoon_abs_max > __we.monsoon_abs_max) {
+                __we.monsoon_abs_max = wind_stats.monsoon_abs_max;
             }
-        }
-
-        // 加权合成：纬向风带是背景环流，压力梯度和天气尺度扰动决定本地风。
-        const double lat_w = WIND_W_LAT * (1.0 - WIND_LAT_GRAD_SUPPRESS * grad_w);
-        const double pressure_w = WIND_W_GRAD * (WIND_PRESSURE_BASE_W + WIND_PRESSURE_GRAD_W * grad_w)
-                                * (1.0 + WIND_W_COAST_THERMAL * coast_pressure_w);
-        double v_sum_x = lat_w * v_base_x + pressure_w * v_grad_x;
-        double v_sum_y = lat_w * v_base_y + pressure_w * v_grad_y;
-        // (c2) 几何海风 + 热力季风。warm land drives onshore flow; cold land
-        // reverses it offshore.  The 0.20 floor preserves the existing weak
-        // sea-breeze moisture conveyor inside the deadband.
-        // 陆地侧朝内陆(-coast_sea) + 海洋侧朝陆(sea_land)，拼成"深海→近岸→海岸→内陆"连续带。
-        // 只抽陆地侧会把沿海抽干、海洋补不进(实测 hop0→hop1 vapor 断崖)；海洋侧朝陆把海洋水汽
-        // 真正推上岸。方向几何确定(弃用海陆温差弱→只 56% 可靠的 -∇slp)，强度正比本地风量级。
-        const double vs_mag = std::sqrt(v_sum_x * v_sum_x + v_sum_y * v_sum_y);
-        double monsoon_thermal = 0.0;
-        if (thermal_monsoon_enabled && TEMP != nullptr && ls_abs <= monsoon_lat_limit) {
-            const int anchor = is_water ? sea_land_anchor[i] : coast_sea_anchor[i];
-            if (anchor >= 0 && anchor < n_cells) {
-                const double land_minus_sea = is_water
-                    ? double(TEMP[anchor]) - double(TEMP[i])
-                    : double(TEMP[i]) - double(TEMP[anchor]);
-                const double abs_contrast = std::abs(land_minus_sea);
-                if (abs_contrast > monsoon_deadband) {
-                    const double response = wind_smoothstep(
-                        monsoon_deadband, monsoon_full_contrast, abs_contrast);
-                    monsoon_thermal = (land_minus_sea >= 0.0 ? response : -response);
-                }
-                _phys_monsoon_thermal[static_cast<size_t>(i)] = float(monsoon_thermal);
-                ++__we.monsoon_eligible;
-                if (monsoon_thermal > 0.0) ++__we.monsoon_onshore;
-                else if (monsoon_thermal < 0.0) ++__we.monsoon_offshore;
-                const float abs_value = float(abs_contrast);
-                if (abs_value > __we.monsoon_abs_max) __we.monsoon_abs_max = abs_value;
-            } else {
-                _phys_monsoon_thermal[static_cast<size_t>(i)] = 0.0f;
-            }
-        } else {
-            _phys_monsoon_thermal[static_cast<size_t>(i)] = 0.0f;
-        }
-        double breeze_sign = 1.0;
-        if (thermal_monsoon_enabled) {
-            breeze_sign = wind_clamp(monsoon_breeze_floor + monsoon_gain * monsoon_thermal,
-                                     -0.65, 1.05);
-        }
-        if (!is_water && coast_pressure_w > 0.0) {
-            const double breeze = WIND_SEA_BREEZE_W * coast_pressure_w * vs_mag * breeze_sign;
-            v_sum_x += breeze * (-double(coast_sea_x[i]));   // 朝内陆
-            v_sum_y += breeze * (-double(coast_sea_y[i]));
-        } else if (is_water && sea_dist[i] != COAST_INF) {
-            const double sea_pw = 1.0 - double(sea_dist[i]) / double(SEA_BREEZE_SEA_MAX_DIST);
-            const double breeze = WIND_SEA_BREEZE_W * sea_pw * vs_mag * breeze_sign;
-            v_sum_x += breeze * double(sea_land_x[i]);       // 朝陆
-            v_sum_y += breeze * double(sea_land_y[i]);
-        }
-        if (synoptic_amp > 0.0) {
-            const double px = has_wrap_domain
-                ? physical_wrap01(double(POSX[i]), wrap_origin_x, wrap_period_x)
-                : wind_clamp((double(POSX[i]) - bounds_pos_x) * inv_bounds_w, 0.0, 1.0);
-            const double py = ny;
-            // 天气尺度修复(2026-06-19)：synoptic 波平移项原先挂在 day_t(=sim_day/days_per_year)→约 1.3
-            // 年才平移一个波长，日/月尺度上风型实质冻结 → 水汽永远送往同一辐合带 → 固定雨带/干区、
-            // 整图天气静止。改挂在 synoptic_period_days(~6 天/波长)，让辐合带逐日移动 → 移动的雨团/
-            // 天气系统。结构(双流函数 → 非辐散卷曲)不变，仅时间项加速。镜像见 run_slp_field_pass。
-            const double syn_cycles = double(sim_day) / synoptic_period_days;
-            const double seed_a = double(seed_bits & 1023u) * 0.006135923151542565;
-            const double seed_b = double((seed_bits >> 10) & 1023u) * 0.006135923151542565;
-            // 圆柱周期契约：经向波数必须是整数谐波，否则 px=0/1 不同相，
-            // SLP 梯度与风自身扰动都会在东西接缝形成一堵“墙”。seed 只选择谐波与相位。
-            // 波数标定(wind-variability 2026-08-03)：原 k1x∈{1,2} 在 100 列图上是
-            // 波长 50~100 格的行星波，扰动方向几乎整片同相 → 天气无空间结构。真实中纬
-            // Rossby 波是经向波数 4~8，故改 {3..6}（波长 17~33 格）。y 波数必须同步提高：
-            // 流函数 syn_y = -k1x·psi1 + k2x·psi2、syn_x = k1y·psi1 + k2y·psi2，若 k1x≈4.5
-            // 而 k1y≈0.75 则归一化后扰动退化成几乎纯经向；k1y≈2.3（64 行上波长 28 行）
-            // 与 k1x 大致各向同性。
-            const double k1x = 3.0 + double(seed_bits & 3u);
-            const double k1y = std::cos(seed_a) * 0.90 + 2.30;
-            const double k2x = 3.0 + double((seed_bits >> 2) & 3u);
-            const double k2y = std::sin(seed_b) * 1.00 + 2.40;
-            const double p1 = 6.283185307179586 * (k1x * px + k1y * py + syn_cycles) + seed_a;
-            const double p2 = 6.283185307179586 * (k2x * px - k2y * py - syn_cycles * 0.56) + seed_b;
-            const double psi1 = std::sin(p1);
-            const double psi2 = std::cos(p2);
-            double syn_x = k1y * psi1 + k2y * psi2;
-            double syn_y = -k1x * psi1 + k2x * psi2;
-            const double syn_len2 = syn_x * syn_x + syn_y * syn_y;
-            if (syn_len2 > 0.0001) {
-                const double inv_syn = 1.0 / std::sqrt(syn_len2);
-                syn_x *= inv_syn;
-                syn_y *= inv_syn;
-            }
-            const double amp_lat = synoptic_amp * (0.70 + 0.65 * ls_abs) * (0.80 + 0.75 * grad_w);
-            v_sum_x += syn_x * amp_lat;
-            v_sum_y += syn_y * amp_lat;
-        }
-        const double v_sum_len2 = v_sum_x * v_sum_x + v_sum_y * v_sum_y;
-        if (v_sum_len2 < 0.0001) {
-            // 退化保护
-            v_sum_x = v_base_x;
-            v_sum_y = v_base_y;
-        }
-
-        // 方向 / 速度分离
-        double dir_x = 1.0, dir_y = 0.0;
-        const double v_len2 = v_sum_x * v_sum_x + v_sum_y * v_sum_y;
-        if (v_len2 > 0.0001) {
-            const double inv = 1.0 / std::sqrt(v_len2);
-            dir_x = v_sum_x * inv;
-            dir_y = v_sum_y * inv;
-        }
-        double spd = wind_belt_speed_at(ny, season_phase, axial_tilt_deg);
-        spd += wind_clamp(grad_mag * 9.0, 0.0, 0.65);
-        spd += synoptic_amp * (0.35 + grad_w * 1.4);
-        if (coast_pressure_w > 0.0) {
-            spd += coast_pressure_w * grad_w * 0.22;
-        }
-
-        // (e) 地形 / 摩擦衰减
-        if (!is_water) spd *= WIND_LAND_FRICTION;
-        if (wind_belt_only) {
-            const double old_dir_x = double(WX[i]);
-            const double old_dir_y = double(WY[i]);
-            const double old_spd = double(WSP_SLOT[i]);
-            WX[i] = float(v_base_x);
-            WY[i] = float(v_base_y);
-            WSP_SLOT[i] = float(spd);
-            WSPD[i] = float(spd);
-            const double dx = v_base_x - old_dir_x;
-            const double dy = v_base_y - old_dir_y;
-            const double ds = spd - old_spd;
-            const double dir_delta = std::sqrt(dx * dx + dy * dy);
-            wind_dir_delta[static_cast<size_t>(i)] = float(dir_delta);
-            if (dir_delta > 1.7320508075688772) ++__we.flip;
-            wind_delta[static_cast<size_t>(i)] = float(std::sqrt(dx * dx + dy * dy + ds * ds));
-            continue;
-        }
-        if (ta) {
-            // (e1) 山脉绕流
-            double mtn_dx = 0.0, mtn_dy = 0.0;
-            bool has_mtn_nb = false;
-            if (!is_water) {
-                for (int d = 0; d < 6; ++d) {
-                    const int32_t ni = NB[base + d];
-                    if (ni < 0) continue;
-                    const int lf_m = int(LF[ni]);
-                    if (lf_m == lf_mountain || lf_m == lf_peak) {
-                        mtn_dx += NB_DIR_X[d];
-                        mtn_dy += NB_DIR_Y[d];
-                        has_mtn_nb = true;
-                    }
-                }
-            }
-            if (has_mtn_nb) {
-                const double mtn_len2 = mtn_dx * mtn_dx + mtn_dy * mtn_dy;
-                if (mtn_len2 > 0.0001) {
-                    const double inv_m = 1.0 / std::sqrt(mtn_len2);
-                    const double mtn_nx = mtn_dx * inv_m;
-                    const double mtn_ny = mtn_dy * inv_m;
-                    const double dot_m = dir_x * mtn_nx + dir_y * mtn_ny;
-                    if (dot_m > 0.0) {
-                        // 两个切向：tan_a = (-mtn_ny, mtn_nx)，tan_b = (mtn_ny, -mtn_nx)
-                        const double tan_a_x = -mtn_ny;
-                        const double tan_a_y =  mtn_nx;
-                        const double tan_b_x =  mtn_ny;
-                        const double tan_b_y = -mtn_nx;
-                        const double dot_a = dir_x * tan_a_x + dir_y * tan_a_y;
-                        const double dot_b = dir_x * tan_b_x + dir_y * tan_b_y;
-                        const double tan_x = (dot_a >= dot_b) ? tan_a_x : tan_b_x;
-                        const double tan_y = (dot_a >= dot_b) ? tan_a_y : tan_b_y;
-                        const double blend_w = WIND_MOUNTAIN_DEFLECT_W * dot_m;
-                        const double blend_inv = 1.0 - blend_w;
-                        double new_dir_x = blend_inv * dir_x + blend_w * tan_x;
-                        double new_dir_y = blend_inv * dir_y + blend_w * tan_y;
-                        const double nd_len2 = new_dir_x * new_dir_x + new_dir_y * new_dir_y;
-                        if (nd_len2 > 0.0001) {
-                            const double inv_nd = 1.0 / std::sqrt(nd_len2);
-                            dir_x = new_dir_x * inv_nd;
-                            dir_y = new_dir_y * inv_nd;
-                        }
-                        // 迎风格风速额外衰减：lerp(1.0, UPSTREAM_DAMP, dot_m)
-                        spd *= 1.0 + (WIND_MOUNTAIN_UPSTREAM_DAMP - 1.0) * dot_m;
-                    }
-                }
-            }
-            // (e2) 当前 cell 自身 landform 衰减
-            const int lf_self = int(LF[i]);
-            if (lf_self == lf_mountain || lf_self == lf_peak) {
-                spd *= WIND_TERRAIN_MOUNTAIN_DAMP;
-                // 山地 cell 给 -∇slp 多一份权重
-                const double mtn_pull_x = -grad_x;
-                const double mtn_pull_y = -grad_y;
-                const double mp_len2 = mtn_pull_x * mtn_pull_x + mtn_pull_y * mtn_pull_y;
-                if (mp_len2 > 0.0001) {
-                    const double inv_mp = 1.0 / std::sqrt(mp_len2);
-                    const double mp_nx = mtn_pull_x * inv_mp;
-                    const double mp_ny = mtn_pull_y * inv_mp;
-                    const double new_dir_x = dir_x + 0.4 * mp_nx;
-                    const double new_dir_y = dir_y + 0.4 * mp_ny;
-                    const double nd_len2 = new_dir_x * new_dir_x + new_dir_y * new_dir_y;
-                    if (nd_len2 > 0.0001) {
-                        const double inv_nd = 1.0 / std::sqrt(nd_len2);
-                        dir_x = new_dir_x * inv_nd;
-                        dir_y = new_dir_y * inv_nd;
-                    }
-                }
-            } else if (lf_self == lf_hill) {
-                spd *= WIND_TERRAIN_HILL_DAMP;
-            }
-        }
-
-        const double old_dir_x = double(WX[i]);
-        const double old_dir_y = double(WY[i]);
-        const double old_spd = double(WSP_SLOT[i]);
-        double effective_rate = double(response_rate);
-        const double old_len2 = old_dir_x * old_dir_x + old_dir_y * old_dir_y;
-        const bool old_dir_valid = old_len2 >= 0.0001 && old_spd > 0.0001;
-        double old_unit_x = 1.0;
-        double old_unit_y = 0.0;
-        if (old_len2 > 0.0001) {
-            const double inv_old_dir = 1.0 / std::sqrt(old_len2);
-            old_unit_x = old_dir_x * inv_old_dir;
-            old_unit_y = old_dir_y * inv_old_dir;
-        }
-        if (!old_dir_valid) {
-            effective_rate = 1.0;
-        }
-        double old_flux_x = 0.0;
-        double old_flux_y = 0.0;
-        if (old_dir_valid) {
-            old_flux_x = old_unit_x * old_spd;
-            old_flux_y = old_unit_y * old_spd;
-        }
-        const double target_flux_x = dir_x * spd;
-        const double target_flux_y = dir_y * spd;
-        // NS 化 Phase 1:transported momentum = 旧动量 + 自平流增量 + 扩散增量。
-        // 松弛形式即动量方程 dV/dt = -(V·∇)V + ν∇²V - r(V - V_force) 的半隐式离散:
-        //   final = transp + r·(target - transp) ≡ r·target + (1-r)·transp。
-        // momentum 关闭时 transp==old_flux,与旧代码逐位一致;开启时只从 SNAP 快照
-        // 读邻居(并行安全),诊断差量写入 momentum_delta[i](own-cell,无 race)。
-        double transp_x = old_flux_x;
-        double transp_y = old_flux_y;
-        if (momentum_active && old_dir_valid) {
-            if (TRAJ_IDX != nullptr) {
-                const int t3 = i * 3;
-                const int j0 = TRAJ_IDX[t3], j1 = TRAJ_IDX[t3 + 1], j2 = TRAJ_IDX[t3 + 2];
-                const double q0 = double(TRAJ_W[t3]);
-                const double q1 = double(TRAJ_W[t3 + 1]);
-                const double q2 = double(TRAJ_W[t3 + 2]);
-                const double sl_x = q0 * double(SNAP_FX[j0]) + q1 * double(SNAP_FX[j1]) + q2 * double(SNAP_FX[j2]);
-                const double sl_y = q0 * double(SNAP_FY[j0]) + q1 * double(SNAP_FY[j1]) + q2 * double(SNAP_FY[j2]);
-                transp_x += momentum_advect_w * (sl_x - old_flux_x);
-                transp_y += momentum_advect_w * (sl_y - old_flux_y);
-            }
-            if (diffuse_w > 0.0) {
-                double sum_x = 0.0, sum_y = 0.0;
-                int nb_cnt = 0;
-                for (int d = 0; d < 6; ++d) {
-                    const int32_t ni = NB[base + d];
-                    if (ni < 0) continue;
-                    sum_x += double(SNAP_FX[ni]);
-                    sum_y += double(SNAP_FY[ni]);
-                    ++nb_cnt;
-                }
-                if (nb_cnt > 0) {  // 缺邻按自身处理(零通量边界),lap = avg_nb - own
-                    transp_x += diffuse_w * (sum_x / double(nb_cnt) - old_flux_x);
-                    transp_y += diffuse_w * (sum_y / double(nb_cnt) - old_flux_y);
-                }
-            }
-            momentum_delta[static_cast<size_t>(i)] = float(std::sqrt(
-                (transp_x - old_flux_x) * (transp_x - old_flux_x)
-                + (transp_y - old_flux_y) * (transp_y - old_flux_y)));
-        }
-        const double final_flux_x = transp_x + (target_flux_x - transp_x) * effective_rate;
-        const double final_flux_y = transp_y + (target_flux_y - transp_y) * effective_rate;
-        const double final_spd = old_spd + (spd - old_spd) * effective_rate;
-        double final_dir_x = dir_x;
-        double final_dir_y = dir_y;
-        const double final_len2 = final_flux_x * final_flux_x + final_flux_y * final_flux_y;
-        if (final_len2 > 0.0001) {
-            const double inv_final = 1.0 / std::sqrt(final_len2);
-            final_dir_x = final_flux_x * inv_final;
-            final_dir_y = final_flux_y * inv_final;
-        }
-        if (old_dir_valid) {
-            if (final_len2 <= min_flux_len2) {
-                final_dir_x = old_unit_x;
-                final_dir_y = old_unit_y;
-            } else if (max_turn_rad > 0.0) {
-                double dot = old_unit_x * final_dir_x + old_unit_y * final_dir_y;
-                if (dot < -1.0) dot = -1.0;
-                else if (dot > 1.0) dot = 1.0;
-                const double angle = std::acos(dot);
-                if (angle > max_turn_rad) {
-                    const double cross = old_unit_x * final_dir_y - old_unit_y * final_dir_x;
-                    const double sign = (cross < 0.0) ? -1.0 : 1.0;
-                    const double cos_t = std::cos(max_turn_rad);
-                    const double sin_t = std::sin(max_turn_rad) * sign;
-                    final_dir_x = old_unit_x * cos_t - old_unit_y * sin_t;
-                    final_dir_y = old_unit_x * sin_t + old_unit_y * cos_t;
-                }
-            }
-        }
-        WX[i] = float(final_dir_x);
-        WY[i] = float(final_dir_y);
-        WSP_SLOT[i] = float(final_spd);
-        WSPD[i] = float(final_spd);
-        const double dx = final_dir_x - old_dir_x;
-        const double dy = final_dir_y - old_dir_y;
-        const double ds = final_spd - old_spd;
-        const double dir_delta = std::sqrt(dx * dx + dy * dy);
-        wind_dir_delta[static_cast<size_t>(i)] = float(dir_delta);
-        if (dir_delta > 1.7320508075688772) ++__we.flip;
-        wind_delta[static_cast<size_t>(i)] = float(std::sqrt(dx * dx + dy * dy + ds * ds));
-    }
         }); // pk_wind_field parallel_for_range_with_emit
     wind_flip_count = wind_flip_emit.flip;
     if (start_idx == 0) {
@@ -1732,62 +1329,27 @@ godot::Dictionary DCWorldExt::run_physical_circulation_pass(godot::Dictionary kn
 
     // perf (2A): upwelling 逐 cell 独立（只读 POSY/TERR/WX/WY/WSPD/NB + 常量方向表，
     // 写 UP[i]，无标量累加器）→ 按 cell 区间并行、bit-equal、无需 reduce。
+    // B8 P2：循环体已抽到 pk_async_physics::upwelling_range（worker 走同一份）。
+    pk_async_physics::UpwellingKnobs up_k;
+    up_k.ekman_gain = float(UPWELLING_EKMAN_GAIN);
+    up_k.cold_sink_gain = float(UPWELLING_COLD_SINK_GAIN);
+    up_k.highlat_abs = float(UPWELLING_HIGHLAT_ABS_SOLVER);
+    up_k.cold_sink_temp = float(cold_sink_temp);
+    pk_async_physics::UpwellingLanes up_l;
+    up_l.lat_norm = LATN.lat;
+    up_l.pos_y = LATN.posy;
+    up_l.lat_origin = LATN.origin;
+    up_l.lat_inv_span = LATN.inv_span;
+    up_l.terrain = TERR;
+    up_l.neighbors = NB;
+    up_l.is_water_lut = is_water_lut;
+    up_l.wind_x = WX;
+    up_l.wind_y = WY;
+    up_l.wind_speed = WSPD;
+    up_l.upwelling = UP;
     auto upwelling_range = [&](int rb, int re) {
-    for (int i = start_idx + rb; i < start_idx + re; ++i) {
-        if (!is_water_lut[TERR[i]]) {
-            UP[i] = 0.0f;
-            continue;
-        }
-
-        const double ny = LATN.at(i);
-        const double ls = (ny - 0.5) * 2.0;
-        const double ls_abs = (ls < 0.0) ? -ls : ls;
-        double lat_temp = pk_lat_temp_bell(ls_abs);  // 纬度温度钟形单一来源
-        if (lat_temp < 0.0) lat_temp = 0.0;
-        else if (lat_temp > 1.0) lat_temp = 1.0;
-        const double temp_rel = lat_temp - 0.5;
-
-        double land_dx = 0.0;
-        double land_dy = 0.0;
-        const int base = i * 6;
-        for (int d = 0; d < 6; ++d) {
-            const int32_t ni = NB[base + d];
-            if (ni < 0) continue;
-            if (!is_water_lut[TERR[ni]]) {
-                land_dx += NB_DIR_X[d];
-                land_dy += NB_DIR_Y[d];
-            }
-        }
-
-        double ekman_main = 0.0;
-        const double land_len2 = land_dx * land_dx + land_dy * land_dy;
-        if (land_len2 > 0.0001) {
-            const double inv_land = 1.0 / std::sqrt(land_len2);
-            const double off_x = -land_dx * inv_land;
-            const double off_y = -land_dy * inv_land;
-            // 屏幕坐标 x=东、y=南，故 (x,y)->(-y,x) 是右转 90°：coast_tan = 离岸方向右转 90°。
-            // 北半球 Ekman 输运在风向右侧 90°，离岸输运(=上升流)要求 R(+90°)(wind)=off，
-            // 即 wind = -coast_tan → dot_v < 0 时上升。故北半球取 -1、南半球取 +1（up>0 = 上升流）。
-            const double coast_tan_x = -off_y;
-            const double coast_tan_y = off_x;
-            const double hemi_sign = (ls < 0.0) ? -1.0 : 1.0;
-            const double dot_v = double(WX[i]) * coast_tan_x + double(WY[i]) * coast_tan_y;
-            ekman_main = dot_v * hemi_sign * double(WSPD[i]) * UPWELLING_EKMAN_GAIN;
-        }
-
-        double cold_sink_neg = 0.0;
-        if (ls_abs > UPWELLING_HIGHLAT_ABS_SOLVER && temp_rel < cold_sink_temp) {
-            double t_cold = (cold_sink_temp - temp_rel) / 0.3;
-            if (t_cold < 0.0) t_cold = 0.0;
-            else if (t_cold > 1.0) t_cold = 1.0;
-            cold_sink_neg = -t_cold * UPWELLING_COLD_SINK_GAIN;
-        }
-
-        double up = ekman_main + cold_sink_neg;
-        if (up < -1.0) up = -1.0;
-        else if (up > 1.0) up = 1.0;
-        UP[i] = float(up);
-    }
+        pk_async_physics::upwelling_range(
+            n_cells, start_idx + rb, start_idx + re, up_k, up_l);
     };
     pk::parallel_for_range("pk_ocean_upwelling", slice_n, upwelling_range);
 
@@ -1895,7 +1457,8 @@ void DCWorldExt::_phys_ensure_wind_coast(int n_cells, const uint8_t *TR, const i
     }
     _phys_wind_coast_last_hit = false;
 
-    constexpr int8_t COAST_INF = 127;
+    // B8 P2：两次 BFS 已抽到 pk_async_physics::wind_coast_build_pure（worker 走同一份）。
+    // 生产仍持有缓存与指纹外壳 —— 命中即整段跳过。
     _phys_wind_coast_dist.assign(static_cast<size_t>(n_cells), COAST_INF);
     _phys_wind_coast_sea_x.assign(static_cast<size_t>(n_cells), 0.0f);
     _phys_wind_coast_sea_y.assign(static_cast<size_t>(n_cells), 0.0f);
@@ -1904,110 +1467,24 @@ void DCWorldExt::_phys_ensure_wind_coast(int n_cells, const uint8_t *TR, const i
     _phys_wind_sea_land_x.assign(static_cast<size_t>(n_cells), 0.0f);
     _phys_wind_sea_land_y.assign(static_cast<size_t>(n_cells), 0.0f);
     _phys_wind_sea_land_anchor.assign(static_cast<size_t>(n_cells), -1);
-    std::vector<int32_t> bfs_queue;
-    bfs_queue.reserve(n_cells);
-
-    // Pass 0: coast BFS（≤ WIND_COAST_THERMAL_MAX_DIST 步）
-    for (int i = 0; i < n_cells; ++i) {
-        if (is_water_lut[TR[i]]) continue;
-        double sea_dx = 0.0, sea_dy = 0.0;
-        bool is_coast = false;
-        int32_t sea_anchor = -1;
-        const int base = i * 6;
-        for (int d = 0; d < 6; ++d) {
-            const int32_t ni = NB[base + d];
-            if (ni < 0) continue;
-            if (!is_water_lut[TR[ni]]) continue;
-            sea_dx += NB_DIR_X[d];
-            sea_dy += NB_DIR_Y[d];
-            is_coast = true;
-            if (sea_anchor < 0 || ni < sea_anchor) sea_anchor = ni;
-        }
-        if (is_coast) {
-            const double len2 = sea_dx * sea_dx + sea_dy * sea_dy;
-            if (len2 > 0.0001) {
-                const double inv = 1.0 / std::sqrt(len2);
-                _phys_wind_coast_dist[i] = 0;
-                _phys_wind_coast_sea_x[i] = float(sea_dx * inv);
-                _phys_wind_coast_sea_y[i] = float(sea_dy * inv);
-                _phys_wind_coast_sea_anchor[i] = sea_anchor;
-                bfs_queue.push_back(i);
-            }
-        }
-    }
-    size_t bfs_head = 0;
-    while (bfs_head < bfs_queue.size()) {
-        const int32_t cur = bfs_queue[bfs_head++];
-        const int cur_d = _phys_wind_coast_dist[cur];
-        if (cur_d >= WIND_COAST_THERMAL_MAX_DIST) continue;
-        const float cur_sx = _phys_wind_coast_sea_x[cur];
-        const float cur_sy = _phys_wind_coast_sea_y[cur];
-        const int32_t cur_anchor = _phys_wind_coast_sea_anchor[cur];
-        const int base = cur * 6;
-        for (int d = 0; d < 6; ++d) {
-            const int32_t ni = NB[base + d];
-            if (ni < 0) continue;
-            if (is_water_lut[TR[ni]]) continue;
-            if (_phys_wind_coast_dist[ni] != COAST_INF) continue;
-            _phys_wind_coast_dist[ni] = static_cast<int8_t>(cur_d + 1);
-            _phys_wind_coast_sea_x[ni] = cur_sx;
-            _phys_wind_coast_sea_y[ni] = cur_sy;
-            _phys_wind_coast_sea_anchor[ni] = cur_anchor;
-            bfs_queue.push_back(ni);
-        }
-    }
-
-    // Pass 0b: 海洋侧 BFS（≤ SEA_BREEZE_SEA_MAX_DIST 步）
-    std::vector<int32_t> sea_queue;
-    sea_queue.reserve(n_cells);
-    for (int i = 0; i < n_cells; ++i) {
-        if (!is_water_lut[TR[i]]) continue;
-        double land_dx = 0.0, land_dy = 0.0;
-        bool is_shore = false;
-        int32_t land_anchor = -1;
-        const int base = i * 6;
-        for (int d = 0; d < 6; ++d) {
-            const int32_t ni = NB[base + d];
-            if (ni < 0) continue;
-            if (is_water_lut[TR[ni]]) continue;
-            land_dx += NB_DIR_X[d];
-            land_dy += NB_DIR_Y[d];
-            is_shore = true;
-            if (land_anchor < 0 || ni < land_anchor) land_anchor = ni;
-        }
-        if (is_shore) {
-            const double len2 = land_dx * land_dx + land_dy * land_dy;
-            if (len2 > 0.0001) {
-                const double inv = 1.0 / std::sqrt(len2);
-                _phys_wind_sea_dist[i] = 0;
-                _phys_wind_sea_land_x[i] = float(land_dx * inv);
-                _phys_wind_sea_land_y[i] = float(land_dy * inv);
-                _phys_wind_sea_land_anchor[i] = land_anchor;
-                sea_queue.push_back(i);
-            }
-        }
-    }
-    size_t sea_head = 0;
-    while (sea_head < sea_queue.size()) {
-        const int32_t cur = sea_queue[sea_head++];
-        const int cur_d = _phys_wind_sea_dist[cur];
-        if (cur_d >= SEA_BREEZE_SEA_MAX_DIST) continue;
-        const float cur_lx = _phys_wind_sea_land_x[cur];
-        const float cur_ly = _phys_wind_sea_land_y[cur];
-        const int32_t cur_anchor = _phys_wind_sea_land_anchor[cur];
-        const int base = cur * 6;
-        for (int d = 0; d < 6; ++d) {
-            const int32_t ni = NB[base + d];
-            if (ni < 0) continue;
-            if (!is_water_lut[TR[ni]]) continue;
-            if (_phys_wind_sea_dist[ni] != COAST_INF) continue;
-            _phys_wind_sea_dist[ni] = static_cast<int8_t>(cur_d + 1);
-            _phys_wind_sea_land_x[ni] = cur_lx;
-            _phys_wind_sea_land_y[ni] = cur_ly;
-            _phys_wind_sea_land_anchor[ni] = cur_anchor;
-            sea_queue.push_back(ni);
-        }
-    }
+    std::vector<int32_t> bfs_scratch(static_cast<size_t>(n_cells) * 2u, 0);
+    pk_async_physics::WindCoastKnobs coast_k;
+    coast_k.coast_max_dist = WIND_COAST_THERMAL_MAX_DIST;
+    coast_k.sea_max_dist = SEA_BREEZE_SEA_MAX_DIST;
+    pk_async_physics::WindCoastLanes coast_l;
+    coast_l.terrain = TR;
+    coast_l.neighbors = NB;
+    coast_l.is_water_lut = is_water_lut;
+    coast_l.coast_dist = _phys_wind_coast_dist.data();
+    coast_l.coast_sea_x = _phys_wind_coast_sea_x.data();
+    coast_l.coast_sea_y = _phys_wind_coast_sea_y.data();
+    coast_l.coast_sea_anchor = _phys_wind_coast_sea_anchor.data();
+    coast_l.sea_dist = _phys_wind_sea_dist.data();
+    coast_l.sea_land_x = _phys_wind_sea_land_x.data();
+    coast_l.sea_land_y = _phys_wind_sea_land_y.data();
+    coast_l.sea_land_anchor = _phys_wind_sea_land_anchor.data();
+    coast_l.scratch_queue = bfs_scratch.data();
+    pk_async_physics::wind_coast_build_pure(n_cells, coast_k, coast_l);
 
     _phys_wind_coast_fp = fp;
     _phys_wind_coast_valid = true;
@@ -2032,67 +1509,22 @@ void DCWorldExt::_phys_build_wind_traj(int n_cells, const float *POSX, const flo
         _phys_wind_traj_w.assign(static_cast<size_t>(n_cells) * 3, 0.0f);
     }
     const double grid_s = std::sqrt(double(n_cells) / 15000.0);
-    const double step_len = traj_pos_scale * grid_s * traj_dt_days;
-    const double max_dist = 12.0;
-    const float wrap_f = float(wrap_period_x);
-    int32_t * const __restrict TIDX = _phys_wind_traj_idx.data();
-    float * const __restrict TW = _phys_wind_traj_w.data();
+    // B8 P2：回溯轨迹构建已抽到 pk_async_physics::wind_traj_build_range。
+    pk_async_physics::WindTrajKnobs traj_k;
+    traj_k.wrap_period_x = wrap_period_x;
+    traj_k.traj_pos_scale = traj_pos_scale;
+    traj_k.traj_dt_days = traj_dt_days;
+    pk_async_physics::WindTrajLanes traj_l;
+    traj_l.pos_x = POSX;
+    traj_l.pos_y = POSY;
+    traj_l.neighbors = NB;
+    traj_l.wind_x = WX;
+    traj_l.wind_y = WY;
+    traj_l.wind_speed = WSP;
+    traj_l.traj_idx = _phys_wind_traj_idx.data();
+    traj_l.traj_w = _phys_wind_traj_w.data();
     pk::parallel_for_range("pk_wind_traj", n_cells, [&](int rb, int re) {
-        for (int i = rb; i < re; ++i) {
-            const int t3 = i * 3;
-            const double fx = double(WX[i]) * double(WSP[i]);
-            const double fy = double(WY[i]) * double(WSP[i]);
-            const double sp = std::sqrt(fx * fx + fy * fy);
-            if (sp < 1e-6 || step_len <= 0.0) {
-                TIDX[t3] = i; TIDX[t3 + 1] = i; TIDX[t3 + 2] = i;
-                TW[t3] = 1.0f; TW[t3 + 1] = 0.0f; TW[t3 + 2] = 0.0f;
-                continue;
-            }
-            double dist = sp * step_len;
-            if (dist > max_dist) dist = max_dist;
-            const double inv_sp = 1.0 / sp;
-            const double tx = double(POSX[i]) - fx * inv_sp * dist;
-            const double ty = double(POSY[i]) - fy * inv_sp * dist;
-            // walk：把宿主推进到终点所在 cell（每步选与剩余位移最对齐的邻居）。
-            int cur = i;
-            for (int hop = 0; hop < 12; ++hop) {
-                double dx = tx - double(POSX[cur]);
-                const double dy = ty - double(POSY[cur]);
-                if (wrap_period_x > 0.001) {
-                    const double half = wrap_period_x * 0.5;
-                    if (dx > half) dx -= wrap_period_x;
-                    else if (dx < -half) dx += wrap_period_x;
-                }
-                const double dl2 = dx * dx + dy * dy;
-                if (dl2 <= 0.75) break;  // ≈inradius²(0.866²)内视为本 cell 域
-                int best = -1;
-                double best_dot = 0.5;   // 方向不明(<60°)即停,防跨域抖动
-                const int base = cur * 6;
-                for (int d = 0; d < 6; ++d) {
-                    const int32_t ni = NB[base + d];
-                    if (ni < 0) continue;
-                    double ndx = double(POSX[ni]) - double(POSX[cur]);
-                    const double ndy = double(POSY[ni]) - double(POSY[cur]);
-                    if (wrap_period_x > 0.001) {
-                        const double half = wrap_period_x * 0.5;
-                        if (ndx > half) ndx -= wrap_period_x;
-                        else if (ndx < -half) ndx += wrap_period_x;
-                    }
-                    const double nl2 = ndx * ndx + ndy * ndy;
-                    if (nl2 < 1e-6) continue;
-                    const double dot = (ndx * dx + ndy * dy) / std::sqrt(nl2 * dl2);
-                    if (dot > best_dot) { best_dot = dot; best = ni; }
-                }
-                if (best < 0) break;
-                cur = best;
-            }
-            int i0, i1, i2;
-            float w0, w1, w2;
-            pk_hex_sextant_barycentric(cur, float(tx), float(ty), POSX, POSY, NB,
-                                       n_cells, wrap_f, i0, i1, i2, w0, w1, w2);
-            TIDX[t3] = i0; TIDX[t3 + 1] = i1; TIDX[t3 + 2] = i2;
-            TW[t3] = w0; TW[t3 + 1] = w1; TW[t3 + 2] = w2;
-        }
+        pk_async_physics::wind_traj_build_range(n_cells, rb, re, traj_k, traj_l);
     });
     _phys_wind_traj_fp = pk_wind_state_fp(n_cells, WX, WY, WSP);
     ++_phys_wind_traj_gen;
@@ -2430,97 +1862,62 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
     const double slp_syn_k1y = 1.30 + 0.40 * std::cos(slp_syn_sa);
     const double slp_syn_k2x = 3.0 + double((slp_seed_bits >> 2) & 3u);
     const double slp_syn_k2y = 1.45 + 0.35 * std::sin(slp_syn_sb);
-    auto slp_passA_range = [&](int rb, int re) {
-    for (int ii = rb; ii < re; ++ii) {
-        const int i = start_idx + ii;
-        // ny / lat_signed / lat_abs（cell_lat_norm 权威）
-        const float ny     = float(LATN.at(i));
-        const float ls     = (ny - 0.5f) * 2.0f;
-        const float ls_abs = std::fabs(ls);
-
-        // base_lat（三圈环流基线 -cos(3π|lat|)）与 solar_heat（insol_now-insol_mean
-        // 乘 lat_temp_factor）改自纬度 LUT 线性插值，消掉每 cell ~155 次三角/insolation。
-        float fb = ny * float(LUT_BINS - 1);
-        int b0 = int(fb);
-        if (b0 < 0) b0 = 0;
-        else if (b0 > LUT_BINS - 2) b0 = LUT_BINS - 2;
-        const float bfrac = fb - float(b0);
-        const float base_lat = LUT_BASE[b0] + (LUT_BASE[b0 + 1] - LUT_BASE[b0]) * bfrac;
-        const float solar_heat = LUT_HEAT[b0] + (LUT_HEAT[b0 + 1] - LUT_HEAT[b0]) * bfrac;
-
-        const bool is_water = is_water_lut[TR[i]];
-        const float thermal_slp = -THERMAL_WEIGHT
-            * ((TEMP_AN != nullptr) ? TEMP_AN[i] : solar_heat)
-            * (is_water ? 0.55f : 1.0f);
-        float landsea;
-        if (is_water) {
-            landsea = -solar_heat * A_LAND * WATER_DAMP;
-        } else {
-            // Coast detect: any valid neighbor that is water.
-            bool is_coast = false;
-            const int base_i = i * 6;
-            for (int d = 0; d < 6; ++d) {
-                const int ni = NB[base_i + d];
-                if (ni >= 0 && ni < n_cells && is_water_lut[TR[ni]]) {
-                    is_coast = true;
-                    break;
-                }
-            }
-            const float continentality = is_coast ? COAST_DAMP : INTERIOR_BOOST;
-            landsea = -solar_heat * A_LAND * continentality;
-        }
-        const float ice_high = ICE_HIGH_WEIGHT * ((ICE != nullptr) ? std::clamp(ICE[i], 0.0f, 1.0f) : 0.0f);
-        const float snow_high = SNOW_HIGH_WEIGHT * ((SNOW != nullptr) ? std::clamp(SNOW[i], 0.0f, 1.0f) : 0.0f);
-        const float vapor_low = (WVAP != nullptr) ? std::clamp(WVAP[i], 0.0f, 1.0f) : 0.0f;
-        const float cloud_low = (WCLD != nullptr) ? std::clamp(WCLD[i], 0.0f, 1.0f) : 0.0f;
-        const float moist_low = -MOIST_LOW_WEIGHT * (vapor_low * 0.65f + cloud_low * 0.35f) * (0.45f + 0.55f * (1.0f - ls_abs));
-        float synoptic;
-        if (POSX != nullptr) {
-            // 大尺度二维空间波：px∈[0,1)，经向为整数谐波，严格满足圆柱周期契约。
-            // 时间项 slp_syn_phase(2π/period_days) 让波整体漂移；纬向调制弱化(避免纬度高频)。
-            const double px = slp_has_wrap_domain
-                ? physical_wrap01(double(POSX[i]), wrap_origin_x, wrap_period_x)
-                : std::clamp((double(POSX[i]) - slp_bounds_pos_x) * slp_inv_bounds_w, 0.0, 1.0);
-            const double py = double(ny);
-            const double sa = slp_syn_sa;
-            const double sb = slp_syn_sb;
-            const double k1x = slp_syn_k1x;
-            const double k1y = slp_syn_k1y;
-            const double k2x = slp_syn_k2x;
-            const double k2y = slp_syn_k2y;
-            const double TWO_PI = 6.283185307179586;
-            synoptic = SLP_SYNOPTIC_AMP * float(
-                0.65 * std::sin(TWO_PI * (k1x * px + k1y * py) + slp_syn_phase + double(ls) * 0.6 + sa) +
-                0.35 * std::cos(TWO_PI * (k2x * px - k2y * py) - slp_syn_phase2 + double(ls_abs) * 0.9 + sb));
-        } else {
-            // 退化(无 cell_pos_x slot)：沿用原 cell 索引波，保证向后兼容。
-            synoptic = SLP_SYNOPTIC_AMP * float(
-                0.65 * std::sin(double(i) * 4.886 + double(world_seed) * 0.00011 + slp_syn_phase + double(ls) * 5.3) +
-                0.35 * std::cos(double(i) * 2.191 - double(world_seed) * 0.00017 + slp_syn_phase2 + double(ls_abs) * 8.1));
-        }
-        // 让天气流动(阶段1)：移动低压叠加 —— 每 cell 到各平移低压中心的归一化高斯衰减
-        // −amp·exp(−r²/2σ²)（x 方向取环绕最近映像）。逐日变化的辐合源，下游 wind 压力梯度→
-        // convergence→cloud_source/frontogenesis 链让雨带随之整团漂移。px 在此重算(不动 synoptic 块)。
-        float mobile_low = 0.0f;
-        if (n_mlow > 0) {
-            const float px_m = float(slp_has_wrap_domain
-                ? physical_wrap01(double(POSX[i]), wrap_origin_x, wrap_period_x)
-                : std::clamp((double(POSX[i]) - slp_bounds_pos_x) * slp_inv_bounds_w, 0.0, 1.0));
-            for (int j = 0; j < n_mlow; ++j) {
-                float dx = px_m - mlows[j].cx;
-                if (dx > 0.5f) dx -= 1.0f; else if (dx < -0.5f) dx += 1.0f;
-                const float dy = ny - mlows[j].cy;
-                const float r2 = dx * dx + dy * dy;
-                mobile_low -= mobile_low_amp * std::exp(-r2 * mobile_low_inv2s2);
-            }
-        }
-        slp_buf[i] = base_lat + landsea + thermal_slp + ice_high + snow_high + moist_low + synoptic + mobile_low;
-        if (!thermal_abs.empty()) {
-            thermal_abs[i] = std::fabs(landsea) + std::fabs(thermal_slp)
-                + std::fabs(ice_high) + std::fabs(snow_high) + std::fabs(moist_low)
-                + std::fabs(mobile_low);
-        }
+    // B8 P2：Pass A 已抽成 Godot 无依赖的共享内核（worker 走同一份）。
+    // 生产保留 parallel_for_range 分段：逐 cell 独立 → 分段 bit-equal。
+    pk_async_physics::SlpPassAKnobs slp_a;
+    slp_a.lat_amp = A_LAT;
+    slp_a.land_amp = A_LAND;
+    slp_a.water_damp = WATER_DAMP;
+    slp_a.interior_boost = INTERIOR_BOOST;
+    slp_a.coast_damp = COAST_DAMP;
+    slp_a.thermal_weight = THERMAL_WEIGHT;
+    slp_a.ice_high_weight = ICE_HIGH_WEIGHT;
+    slp_a.snow_high_weight = SNOW_HIGH_WEIGHT;
+    slp_a.moist_low_weight = MOIST_LOW_WEIGHT;
+    slp_a.synoptic_amp = SLP_SYNOPTIC_AMP;
+    slp_a.syn_sa = float(slp_syn_sa);
+    slp_a.syn_sb = float(slp_syn_sb);
+    slp_a.syn_phase = float(slp_syn_phase);
+    slp_a.syn_phase2 = float(slp_syn_phase2);
+    slp_a.syn_k1x = float(slp_syn_k1x);
+    slp_a.syn_k1y = float(slp_syn_k1y);
+    slp_a.syn_k2x = float(slp_syn_k2x);
+    slp_a.syn_k2y = float(slp_syn_k2y);
+    slp_a.bounds_pos_x = float(slp_bounds_pos_x);
+    slp_a.inv_bounds_w = float(slp_inv_bounds_w);
+    slp_a.has_wrap_domain = slp_has_wrap_domain;
+    slp_a.wrap_origin_x = wrap_origin_x;
+    slp_a.wrap_period_x = wrap_period_x;
+    slp_a.world_seed = world_seed;
+    slp_a.n_mobile_low = n_mlow;
+    slp_a.mobile_low_amp = mobile_low_amp;
+    slp_a.mobile_low_inv2s2 = mobile_low_inv2s2;
+    for (int j = 0; j < n_mlow && j < 8; ++j) {
+        slp_a.mobile_low_cx[j] = mlows[j].cx;
+        slp_a.mobile_low_cy[j] = mlows[j].cy;
     }
+    slp_a.lut_bins = LUT_BINS;
+    slp_a.lut_base = LUT_BASE;
+    slp_a.lut_heat = LUT_HEAT;
+    pk_async_physics::SlpPassALanes slp_lanes;
+    slp_lanes.lat_norm = LATN.lat;
+    slp_lanes.pos_y = LATN.posy;
+    slp_lanes.lat_origin = LATN.origin;
+    slp_lanes.lat_inv_span = LATN.inv_span;
+    slp_lanes.terrain = TR;
+    slp_lanes.neighbors = NB;
+    slp_lanes.pos_x = POSX;
+    slp_lanes.temp_anomaly = TEMP_AN;
+    slp_lanes.ice = ICE;
+    slp_lanes.snow = SNOW;
+    slp_lanes.vapor = WVAP;
+    slp_lanes.cloud = WCLD;
+    slp_lanes.is_water_lut = is_water_lut;
+    auto slp_passA_range = [&](int rb, int re) {
+        pk_async_physics::slp_pass_a_range(
+            n_cells, start_idx + rb, start_idx + re, slp_a, slp_lanes,
+            slp_buf.data(),
+            thermal_abs.empty() ? nullptr : thermal_abs.data());
     };
     pk::parallel_for_range("pk_slp_passA", slice_n, slp_passA_range);
 
@@ -2540,90 +1937,52 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
     auto t_slp_norm = t_slp_pa;
     if (end_idx == n_cells) {
     // ─── Pass B: 6-neighbor Jacobi smoothing ──────────────────────────────
-    if (smooth_passes > 0) {
-        std::vector<float> tmp(static_cast<size_t>(n_cells), 0.0f);
-        for (int p = 0; p < smooth_passes; ++p) {
-            // perf (2A): Jacobi sweep 逐 cell 独立（读 SRC 邻域只读、写 DST[i]，无 cross-cell 写）
-            // → 按 cell 区间并行、bit-equal。SRC/DST 在每次 swap 后重取，保证读旧写新。
-            const float * const __restrict SRC = slp_buf.data();
-            float * const __restrict DST = tmp.data();
-            pk::parallel_for_range("pk_slp_passB", n_cells, [&](int rb, int re) {
-                for (int i = rb; i < re; ++i) {
-                    float sum_slp = SRC[i];
-                    int   cnt     = 1;
-                    const int base_i = i * 6;
-                    for (int d = 0; d < 6; ++d) {
-                        const int ni = NB[base_i + d];
-                        if (ni < 0 || ni >= n_cells) continue;
-                        sum_slp += SRC[ni];
-                        cnt += 1;
-                    }
-                    DST[i] = sum_slp / float(cnt);
-                }
-            });
-            // Write back (one sweep).
-            std::swap(slp_buf, tmp);
-        }
+    // B8 P2：平滑 + recenter/p95 + 响应混合 + delta 全部走共享内核
+    // （pk_async_physics::slp_pass_b_pure）。生产侧只负责准备 scratch 与参数。
+    std::vector<float> tmp(static_cast<size_t>(n_cells), 0.0f);
+    {
+        // 段 1：只做 Jacobi 平滑（保持 slp_passB_ms 的原有口径）。
+        pk_async_physics::SlpPassBKnobs slp_b;
+        slp_b.smooth_passes = smooth_passes;
+        slp_b.recenter = false;
+        slp_b.response_rate = -1.0f;
+        pk_async_physics::slp_pass_b_pure(
+            n_cells, slp_b, NB, nullptr, slp_buf.data(),
+            (smooth_passes > 0) ? tmp.data() : nullptr,
+            nullptr);
     }
 
     // 埋点：t_slp_pb 标记 Pass B（邻域平滑）结束。
     t_slp_pb = std::chrono::high_resolution_clock::now();
 
-    if (SLP_RECENTER && n_cells > 1) {
-        double mean = 0.0;
-        for (int i = 0; i < n_cells; ++i) {
-            mean += double(slp_buf[i]);
-        }
-        mean /= double(n_cells);
-        std::vector<float> slp_abs(static_cast<size_t>(n_cells), 0.0f);
-        for (int i = 0; i < n_cells; ++i) {
-            slp_buf[i] = float(double(slp_buf[i]) - mean);
-            slp_abs[static_cast<size_t>(i)] = std::fabs(slp_buf[i]);
-        }
-        std::sort(slp_abs.begin(), slp_abs.end());
-        const size_t p95_i = std::min(slp_abs.size() - 1, size_t(std::floor(double(slp_abs.size() - 1) * 0.95)));
-        const float p95 = slp_abs[p95_i];
-        if (p95 > 1e-5f && SLP_TARGET_P95 > 1e-5f) {
-            float scale = SLP_TARGET_P95 / p95;
-            if (scale < 0.75f) scale = 0.75f;
-            else if (scale > 3.60f) scale = 3.60f;
-            for (int i = 0; i < n_cells; ++i) {
-                slp_buf[i] *= scale;
-            }
-        }
+    {
+        // 段 2：recenter + p95 缩放（slp_norm_ms 的原有口径）。
+        pk_async_physics::SlpPassBKnobs slp_b;
+        slp_b.smooth_passes = 0;
+        slp_b.recenter = SLP_RECENTER;
+        slp_b.target_p95 = SLP_TARGET_P95;
+        slp_b.response_rate = -1.0f;
+        pk_async_physics::slp_pass_b_pure(
+            n_cells, slp_b, nullptr, nullptr, slp_buf.data(),
+            (n_cells > 0) ? tmp.data() : nullptr, nullptr);
     }
 
     // 埋点：t_slp_norm 标记 recenter + p95 排序 + 缩放（norm 段）结束。
     t_slp_norm = std::chrono::high_resolution_clock::now();
 
     // ─── Marshall slp_out ─────────────────────────────────────────────────
-    if (PREV_SLP != nullptr) {
-        for (int i = 0; i < n_cells; ++i) {
-            const float prev = PREV_SLP[i];
-            const float next = prev + (slp_buf[i] - prev) * slp_response_rate;
-            slp_buf[i] = next;
-        }
+    {
+        // 段 3：响应混合（prev → cur）+ 再 recenter + delta。这三步原先就落在
+        // marshall 段（t_slp_norm 之后），所以计时口径不变。
+        pk_async_physics::SlpPassBKnobs slp_b;
+        slp_b.smooth_passes = 0;
+        slp_b.recenter = SLP_RECENTER;
+        slp_b.target_p95 = 0.0f;   // 段 3 不再做 p95 缩放
+        slp_b.response_rate = (PREV_SLP != nullptr) ? slp_response_rate : -1.0f;
+        pk_async_physics::slp_pass_b_pure(
+            n_cells, slp_b, nullptr, PREV_SLP, slp_buf.data(), nullptr,
+            slp_delta.empty() ? nullptr : slp_delta.data());
     }
-    if (SLP_RECENTER && n_cells > 1) {
-        double mean = 0.0;
-        for (int i = 0; i < n_cells; ++i) {
-            mean += double(slp_buf[i]);
-        }
-        mean /= double(n_cells);
-        for (int i = 0; i < n_cells; ++i) {
-            slp_buf[i] = float(double(slp_buf[i]) - mean);
-        }
-    }
-    if (PREV_SLP != nullptr) {
-        for (int i = 0; i < n_cells; ++i) {
-            slp_delta[static_cast<size_t>(i)] = std::fabs(slp_buf[i] - PREV_SLP[i]);
-        }
-    } else {
-        for (int i = 0; i < n_cells; ++i) {
-            slp_delta[static_cast<size_t>(i)] = std::fabs(slp_buf[i]);
-        }
-    }
-
     {
         float *dst = slp_out.ptrw();
         std::memcpy(dst, slp_buf.data(), sizeof(float) * static_cast<size_t>(n_cells));
@@ -2938,30 +2297,14 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
         if (!(_psi_topo_valid && _psi_topo_fp == fp &&
               int(_psi_cell_to_water.size()) == n_cells)) {
             _psi_cell_to_water.assign(static_cast<size_t>(n_cells), -1);
-            _psi_water_to_cell.clear();
-            _psi_water_to_cell.reserve(static_cast<size_t>(n_cells));
-            for (int i = 0; i < n_cells; ++i) {
-                if (is_water_lut[TR[i]]) {
-                    _psi_cell_to_water[i] = static_cast<int>(_psi_water_to_cell.size());
-                    _psi_water_to_cell.push_back(i);
-                }
-            }
-            _psi_topo_n_water = static_cast<int>(_psi_water_to_cell.size());
-            // nb_w：每水 cell 的 6 邻接映射到水域索引（依赖 cell_to_water，与 NB_DIR 无关）。
-            _psi_nb_w.assign(static_cast<size_t>(_psi_topo_n_water) * 6, -1);
-            for (int k = 0; k < _psi_topo_n_water; ++k) {
-                const int i = _psi_water_to_cell[static_cast<size_t>(k)];
-                const int base_i = i * 6;
-                const int base_k = k * 6;
-                for (int d = 0; d < 6; ++d) {
-                    const int ni = NB[base_i + d];
-                    int kw = -1;
-                    if (ni >= 0 && ni < n_cells) {
-                        kw = _psi_cell_to_water[static_cast<size_t>(ni)];
-                    }
-                    _psi_nb_w[static_cast<size_t>(base_k + d)] = kw;
-                }
-            }
+            _psi_water_to_cell.assign(static_cast<size_t>(n_cells), 0);
+            _psi_nb_w.assign(static_cast<size_t>(n_cells) * 6, -1);
+            // B8 P2：CSR 拓扑构建已抽成共享纯内核（worker 走同一份）。
+            _psi_topo_n_water = pk_async_physics::psi_topology_build_pure(
+                n_cells, TR, NB, is_water_lut,
+                _psi_cell_to_water.data(), _psi_water_to_cell.data(),
+                _psi_nb_w.data());
+            _psi_water_to_cell.resize(static_cast<size_t>(_psi_topo_n_water));
             _psi_topo_fp = fp;
             _psi_topo_valid = true;
         }
@@ -2984,283 +2327,101 @@ godot::Dictionary DCWorldExt::run_psi_solver_pass(godot::Dictionary knobs) {
     std::vector<float> r_factor(static_cast<size_t>(n_water), 0.0f);
     std::vector<float> source(static_cast<size_t>(n_water), 0.0f);
     std::vector<float> psi(static_cast<size_t>(n_water), 0.0f);
-    // warm-start seed：用上一轮收敛的 ψ（cell_ocean_psi slot）初始化，SOR 从近收敛
-    // 状态起步。源项每轮只变一点（风应力旋度的日间增量），故少量迭代即可重新收敛。
-    if (PSI_PREV != nullptr) {
-        for (int k = 0; k < n_water; ++k) {
-            psi[k] = PSI_PREV[water_to_cell[k]];
-        }
-    }
+    // warm-start 与 NEIGHBOR_DIRS 都已在共享内核里（psi_solve_pure 自带清零 +
+    // prev_psi 播种与同源的邻居方向表），生产侧不再重复。
 
-    // NEIGHBOR_DIRS (screen-space, +y = south, +x = east).
-    // MUST match physical_circulation_solver.gd::NEIGHBOR_DIRS 1:1, in the
-    // order _neighbor_indices is stored (HexUtils.CUBE_DIRECTIONS):
-    //   0:E, 1:NE, 2:NW, 3:W, 4:SW, 5:SE
-    const float SQRT3_HALF = 0.8660254037844386f;            // sqrt(3)/2
-    const float NB_DIR_X[6] = {
-        SQRT3_HALF * 2.0f,   //  0  E
-        SQRT3_HALF,          //  1  NE
-       -SQRT3_HALF,          //  2  NW
-       -SQRT3_HALF * 2.0f,   //  3  W
-       -SQRT3_HALF,          //  4  SW
-        SQRT3_HALF,          //  5  SE
-    };
-    const float NB_DIR_Y[6] = {
-        0.0f,                //  0  E
-       -1.5f,                //  1  NE  (screen +y = south, so north has y<0)
-       -1.5f,                //  2  NW
-        0.0f,                //  3  W
-        1.5f,                //  4  SW
-        1.5f,                //  5  SE
-    };
-
-    // Build tau (= wind_stress = wind_vector * wind_speed; here wind_x_arr /
-    // wind_y_arr already encode wind_vector, so multiply by speed to get
-    // wind_stress 1:1 with GDScript) + per-tick ny/ls. nb_w 已在拓扑缓存块建好。
+    // B8 P2：tau/curl/源项 → SOR → finalize 三段已抽到 pk_async_physics::psi_solve_pure
+    // （worker 走同一份）。生产侧只保留拓扑缓存、scratch 与诊断输出。
     // 纬度权威：cell_lat_norm slot（见 phys_make_lat_norm）。
     const PhysLatNorm LATN = phys_make_lat_norm(_phys_lat_norm_ptr(n_cells), POSY, n_cells);
     (void)bounds_pos_y;
     (void)bounds_size_y;
-    for (int k = 0; k < n_water; ++k) {
-        const int i = water_to_cell[k];
-        tau_x[k] = WX[i] * WSP[i];
-        tau_y[k] = WY[i] * WSP[i];
 
-        // ny / ls（cell_lat_norm 权威）
-        const float ny = float(LATN.at(i));
-        ny_w[k] = ny;
-        ls_w[k] = (ny - 0.5f) * 2.0f;
-    }
-
-    // curl_tau (z component) over 6-neighbors:
-    //   curl ~ (1/3) * sum_d (tau_nb_d - tau_self) x NB_DIR_d
-    //        = (1/3) * sum_d ((tau_nb.x - tau_self.x) * NB_DIR_d.y
-    //                         - (tau_nb.y - tau_self.y) * NB_DIR_d.x)
-    // Land neighbors: tau = (0, 0) (no-slip / no-stress boundary).
-    for (int k = 0; k < n_water; ++k) {
-        const float tx_self = tau_x[k];
-        const float ty_self = tau_y[k];
-        float c = 0.0f;
-        const int base_k = k * 6;
-        for (int d = 0; d < 6; ++d) {
-            const int kw = nb_w[base_k + d];
-            float tx_nb, ty_nb;
-            if (kw >= 0) {
-                tx_nb = tau_x[kw];
-                ty_nb = tau_y[kw];
-            } else {
-                tx_nb = 0.0f;
-                ty_nb = 0.0f;
-            }
-            const float dx = tx_nb - tx_self;
-            const float dy = ty_nb - ty_self;
-            c += dx * NB_DIR_Y[d] - dy * NB_DIR_X[d];
-        }
-        curl[k] = c / 3.0f;
-    }
-
-    // Match physical_circulation_solver.gd::_psi_prepare():
-    //   beta_a    = max(PSI_BETA_FLOOR, cos(|ls| * pi/2))    // ≈ |cos(lat)|, equator=1, poles→0
-    //   r_factor  = PSI_R_BASE * (0.5 + sin(|ls| * pi))      // mid-lat peak
-    //   source    = -curl / beta_a * PSI_SOURCE_SCALE        // sign: ∇²ψ + R ∂ψ/∂x = -ω/|β|
-    const float HALF_PI_PREP = 1.5707963267948966f;
-    const float PI_PREP      = 3.14159265358979323846f;
-    const bool depth_damp_active = (DEPTH_CURL_DAMP > 0.0f && ELEV != nullptr);
-    for (int k = 0; k < n_water; ++k) {
-        const float ls_abs = std::fabs(ls_w[k]);
-        float b = std::cos(ls_abs * HALF_PI_PREP);
-        if (b < PSI_BETA_FLOOR) b = PSI_BETA_FLOOR;
-        beta_abs[k] = b;
-        r_factor[k] = PSI_R_BASE * (0.5f + std::sin(ls_abs * PI_PREP));
-        source[k]   = -PSI_SRC_SCALE * curl[k] / b;
-        // NS 化 Phase 4:深度衰减 — 浅水(陆架)旋度效率降低,深海不变。
-        // factor = lerp(1.0, clamp(depth/depth_ref, 0.2, 1.0), damp);damp=0 → ×1 逐位不变。
-        if (depth_damp_active) {
-            const int i_w = water_to_cell[k];
-            float depth_norm = (SEA_LEVEL - ELEV[i_w]) / DEPTH_REF;
-            if (depth_norm < 0.2f) depth_norm = 0.2f;
-            else if (depth_norm > 1.0f) depth_norm = 1.0f;
-            source[k] *= (1.0f - DEPTH_CURL_DAMP) + DEPTH_CURL_DAMP * depth_norm;
-        }
-        // psi[k] already zero from std::vector constructor.
-    }
-
-    // ─── PSI iters: SOR Gauss-Seidel (in-place) ───────────────────────────
-    int psi_iters_run = 0;
-    float psi_residual_final = 0.0f;
-    bool psi_early_exit = false;
-    for (int it = 0; it < PSI_TOTAL_ITERS; ++it) {
-        float iter_max_delta = 0.0f;
-        for (int k = 0; k < n_water; ++k) {
-            float sum_psi = 0.0f;
-            float psi_e   = 0.0f;
-            float psi_w   = 0.0f;
-            const int base_k = k * 6;
-            for (int d = 0; d < 6; ++d) {
-                const int kw = nb_w[base_k + d];
-                const float p_nb = (kw >= 0) ? psi[kw] : 0.0f;
-                sum_psi += p_nb;
-                if (d == 0) psi_e = p_nb;
-                else if (d == 3) psi_w = p_nb;
-            }
-            const float avg_nb  = sum_psi / 6.0f;
-            const float adv     = r_factor[k] * (psi_e - psi_w) * 0.5f;
-            const float target  = avg_nb - adv + source[k];
-            const float old_v   = psi[k];
-            const float new_v   = (1.0f - PSI_OMEGA) * old_v + PSI_OMEGA * target;
-            const float delta   = std::fabs(new_v - old_v);
-            if (delta > iter_max_delta) iter_max_delta = delta;
-            psi[k] = new_v;
-        }
-        psi_iters_run = it + 1;
-        psi_residual_final = iter_max_delta;
-        if (psi_early_exit_enabled
-                && psi_iters_run >= psi_min_iters
-                && (psi_iters_run % psi_check_every) == 0
-                && iter_max_delta <= psi_residual_epsilon) {
-            psi_early_exit = true;
-            break;
-        }
-    }
-
-    // ─── PSI finalize: grad psi -> ocean_current + thermohaline + clamp ───
+    // ─── PSI finalize + SOR（共享内核）────────────────────────────────────
     PackedFloat32Array curl_out, psi_out, ocx_out, ocy_out;
     curl_out.resize(n_cells);
     psi_out.resize(n_cells);
     ocx_out.resize(n_cells);
     ocy_out.resize(n_cells);
-    float * const __restrict P_CURL = curl_out.ptrw();
-    float * const __restrict P_PSI  = psi_out.ptrw();
-    float * const __restrict P_OCX  = ocx_out.ptrw();
-    float * const __restrict P_OCY  = ocy_out.ptrw();
     std::vector<float> ocean_delta(static_cast<size_t>(n_cells), 0.0f);
     std::vector<float> ocean_preclamp_mag(static_cast<size_t>(n_water), 0.0f);
     std::vector<float> thermal_current_mag(static_cast<size_t>(n_water), 0.0f);
-    int ocean_current_clamp_count = 0;
-    float ocean_preclamp_max = 0.0f;
-    for (int i = 0; i < n_cells; ++i) {
-        P_CURL[i] = 0.0f;
-        P_PSI[i]  = 0.0f;
-        P_OCX[i]  = 0.0f;
-        P_OCY[i]  = 0.0f;
+
+    pk_async_physics::PsiSolveKnobs psi_k;
+    psi_k.total_iters = PSI_TOTAL_ITERS;
+    psi_k.omega = PSI_OMEGA;
+    psi_k.r_base = PSI_R_BASE;
+    psi_k.beta_floor = PSI_BETA_FLOOR;
+    psi_k.source_scale = PSI_SRC_SCALE;
+    psi_k.oc_scale = OC_SCALE;
+    psi_k.oc_max_mag = OC_MAX_MAG;
+    psi_k.thermohaline_weight = TH_WEIGHT;
+    psi_k.upwelling_highlat_abs = UPW_HIGHLAT_ABS;
+    psi_k.cold_sink_temp = COLD_SINK_TEMP;
+    psi_k.response_rate = response_rate;
+    psi_k.thermal_current_weight = THERMAL_CURRENT_WEIGHT;
+    psi_k.density_cold_weight = DENSITY_COLD_WEIGHT;
+    psi_k.density_ice_weight = DENSITY_ICE_WEIGHT;
+    psi_k.depth_curl_damp = DEPTH_CURL_DAMP;
+    psi_k.sea_level = SEA_LEVEL;
+    psi_k.depth_ref = DEPTH_REF;
+    psi_k.topo_steer_w = TOPO_STEER_W;
+    psi_k.early_exit = psi_early_exit_enabled;
+    psi_k.min_iters = psi_min_iters;
+    psi_k.check_every = psi_check_every;
+    psi_k.residual_epsilon = psi_residual_epsilon;
+
+    pk_async_physics::PsiSolveLanes psi_l;
+    psi_l.n_cells = n_cells;
+    psi_l.n_water = n_water;
+    psi_l.neighbors = NB;
+    psi_l.terrain = TR;
+    psi_l.is_water_lut = is_water_lut;
+    psi_l.cell_to_water = cell_to_water.data();
+    psi_l.water_to_cell = water_to_cell.data();
+    psi_l.nb_w = nb_w.data();
+    psi_l.wind_x = WX;
+    psi_l.wind_y = WY;
+    psi_l.wind_speed = WSP;
+    psi_l.lat_norm = LATN.lat;
+    psi_l.pos_y = LATN.posy;
+    psi_l.lat_origin = LATN.origin;
+    psi_l.lat_inv_span = LATN.inv_span;
+    psi_l.temp = TEMP;
+    psi_l.temp_anomaly = TEMP_AN;
+    psi_l.ice = ICE;
+    psi_l.elevation = ELEV;
+    psi_l.prev_psi = PSI_PREV;
+    psi_l.old_ocean_x = OLD_OCX;
+    psi_l.old_ocean_y = OLD_OCY;
+    psi_l.out_curl = curl_out.ptrw();
+    psi_l.out_psi = psi_out.ptrw();
+    psi_l.out_ocean_x = ocx_out.ptrw();
+    psi_l.out_ocean_y = ocy_out.ptrw();
+    psi_l.ocean_delta = ocean_delta.data();
+    psi_l.out_preclamp_mag = ocean_preclamp_mag.data();
+    psi_l.out_thermal_mag = thermal_current_mag.data();
+
+    pk_async_physics::PsiSolveScratch psi_s;
+    psi_s.tau_x = tau_x.data();
+    psi_s.tau_y = tau_y.data();
+    psi_s.ny_w = ny_w.data();
+    psi_s.ls_w = ls_w.data();
+    psi_s.curl = curl.data();
+    psi_s.beta_abs = beta_abs.data();
+    psi_s.r_factor = r_factor.data();
+    psi_s.source = source.data();
+    psi_s.psi = psi.data();
+
+    pk_async_physics::PsiSolveStats psi_stats;
+    if (!pk_async_physics::psi_solve_pure(psi_k, psi_l, psi_s, psi_stats)) {
+        return fail("psi_solve_pure rejected inputs");
     }
-
-    const float HALF_PI = 1.5707963267948966f;
-    const float PI_F    = 3.14159265358979323846f;
-    auto density_proxy = [&](int cell_idx) -> float {
-        if (cell_idx < 0 || cell_idx >= n_cells || !is_water_lut[TR[cell_idx]]) {
-            return 0.0f;
-        }
-        float temp_now = (TEMP != nullptr) ? TEMP[cell_idx] : 0.5f;
-        if (temp_now < 0.0f) temp_now = 0.0f;
-        else if (temp_now > 1.0f) temp_now = 1.0f;
-        const float temp_anom = (TEMP_AN != nullptr) ? TEMP_AN[cell_idx] : 0.0f;
-        float ice = (ICE != nullptr) ? ICE[cell_idx] : 0.0f;
-        if (ice < 0.0f) ice = 0.0f;
-        else if (ice > 1.0f) ice = 1.0f;
-        return DENSITY_COLD_WEIGHT * (1.0f - temp_now) + DENSITY_ICE_WEIGHT * ice - temp_anom;
-    };
-
-    for (int k = 0; k < n_water; ++k) {
-        const int i = water_to_cell[k];
-        // ψ gradient over 6-neighbors (boundary ψ = 0 on land).
-        const float p_self = psi[k];
-        float gx = 0.0f, gy = 0.0f;
-        const int base_k = k * 6;
-        for (int d = 0; d < 6; ++d) {
-            const int kw = nb_w[base_k + d];
-            const float p_nb = (kw >= 0) ? psi[kw] : 0.0f;
-            const float dpsi = p_nb - p_self;
-            gx += dpsi * NB_DIR_X[d];
-            gy += dpsi * NB_DIR_Y[d];
-        }
-        gx /= 3.0f;
-        gy /= 3.0f;
-
-        // Rotate 90° ccw -> (u, v) = (-d psi/dy, d psi/dx); scale.
-        float cx = -gy * OC_SCALE;
-        float cy =  gx * OC_SCALE;
-
-        const float density_self = density_proxy(i);
-        float grad_den_x = 0.0f;
-        float grad_den_y = 0.0f;
-        const int base_i = i * 6;
-        for (int d = 0; d < 6; ++d) {
-            const int ni = NB[base_i + d];
-            if (ni < 0 || ni >= n_cells || !is_water_lut[TR[ni]]) continue;
-            const float dden = density_proxy(ni) - density_self;
-            grad_den_x += dden * NB_DIR_X[d];
-            grad_den_y += dden * NB_DIR_Y[d];
-        }
-        grad_den_x /= 3.0f;
-        grad_den_y /= 3.0f;
-        const float thermal_x = -grad_den_x * THERMAL_CURRENT_WEIGHT;
-        const float thermal_y = -grad_den_y * THERMAL_CURRENT_WEIGHT;
-        cx += thermal_x;
-        cy += thermal_y;
-        thermal_current_mag[static_cast<size_t>(k)] = std::sqrt(thermal_x * thermal_x + thermal_y * thermal_y);
-
-        // NS 化 Phase 4:地形等深线转向 — 加 k_topo·(∇h × k) 分量(洋流被等深线
-        // 引导,陆架/海山绕流)。∇h 仅对水邻居差分(陆邻居视作同高 → 该方向无贡献),
-        // 与密度梯度同 (1/3)Σ_d 离散;knob=0 → 逐位不变。
-        if (TOPO_STEER_W > 0.0f && ELEV != nullptr) {
-            const float h_self = ELEV[i];
-            float hx = 0.0f, hy = 0.0f;
-            for (int d = 0; d < 6; ++d) {
-                const int ni = NB[base_i + d];
-                if (ni < 0 || ni >= n_cells || !is_water_lut[TR[ni]]) continue;
-                const float dh = ELEV[ni] - h_self;
-                hx += dh * NB_DIR_X[d];
-                hy += dh * NB_DIR_Y[d];
-            }
-            hx /= 3.0f;
-            hy /= 3.0f;
-            cx += TOPO_STEER_W * (-hy);
-            cy += TOPO_STEER_W * (hx);
-        }
-
-        // High-lat thermohaline overlay (preserve "polar cold sinker" semantics).
-        const float ls     = ls_w[k];
-        const float ls_abs = std::fabs(ls);
-        if (ls_abs > UPW_HIGHLAT_ABS) {
-            // lat_temp = pk_lat_temp_bell(ls_abs); temp_rel = lat_temp - 0.5（纬度温度钟形单一来源）
-            const float lat_t   = float(pk_lat_temp_bell(double(ls_abs)));
-            const float temp_rel = lat_t - 0.5f;
-            if (temp_rel < COLD_SINK_TEMP) {
-                const float pole_dir_y = (ls > 0.0f) ? 1.0f : ((ls < 0.0f) ? -1.0f : 0.0f);
-                const float grad_mag   = std::sin(ls_abs * PI_F);
-                cy += pole_dir_y * grad_mag * THERMAL_CURRENT_WEIGHT;
-            }
-        }
-
-        const float old_cx = (OLD_OCX != nullptr) ? OLD_OCX[i] : 0.0f;
-        const float old_cy = (OLD_OCY != nullptr) ? OLD_OCY[i] : 0.0f;
-        cx = old_cx + (cx - old_cx) * response_rate;
-        cy = old_cy + (cy - old_cy) * response_rate;
-
-        const float mag2 = cx * cx + cy * cy;
-        const float pre_mag = std::sqrt(mag2);
-        ocean_preclamp_mag[static_cast<size_t>(k)] = pre_mag;
-        if (pre_mag > ocean_preclamp_max) ocean_preclamp_max = pre_mag;
-        const float max2 = OC_MAX_MAG * OC_MAX_MAG;
-        if (mag2 > max2 && mag2 > 1e-12f) {
-            const float inv_scale = OC_MAX_MAG / std::sqrt(mag2);
-            cx *= inv_scale;
-            cy *= inv_scale;
-            ++ocean_current_clamp_count;
-        }
-        // Final safety clamp for atlas encoding compatibility.
-        if (cx >  1.0f) cx =  1.0f; else if (cx < -1.0f) cx = -1.0f;
-        if (cy >  1.0f) cy =  1.0f; else if (cy < -1.0f) cy = -1.0f;
-        const float odx = cx - old_cx;
-        const float ody = cy - old_cy;
-        ocean_delta[static_cast<size_t>(i)] = std::sqrt(odx * odx + ody * ody);
-
-        P_CURL[i] = curl[k];
-        P_PSI[i]  = psi[k];
-        P_OCX[i]  = cx;
-        P_OCY[i]  = cy;
-    }
+    const int   psi_iters_run = psi_stats.iters_run;
+    const float psi_residual_final = psi_stats.residual_final;
+    const bool  psi_early_exit = psi_stats.early_exit;
+    const int   ocean_current_clamp_count = psi_stats.clamp_count;
+    const float ocean_preclamp_max = psi_stats.preclamp_max;
 
     knobs["wind_stress_curl_out"] = curl_out;
     knobs["ocean_psi_out"]        = psi_out;

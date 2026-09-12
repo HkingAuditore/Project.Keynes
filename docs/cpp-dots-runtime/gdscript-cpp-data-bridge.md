@@ -251,6 +251,110 @@ climate-lost output; summary rows append profiled/limited group counts and the
 average climate capacity. These are committed read-only diagnostics, not a
 second authority.
 
+## Climate B8 delivery cursors and wait API（2026-09-11）
+
+ACTIVE Climate 现在有两组跨边界游标，二者都是稳定契约：
+
+- `get_runtime_thread_report()` 新增 `climate_committed_day`、
+  `climate_consumed_generation`、`environment_published_days`、
+  `environment_consumed_days`、`environment_superseded_days`、
+  `environment_dropped_days`、`climate_wait_total_ms` / `last_ms` / `max_ms`。
+  `climate_consumed_generation` 记录的是 **plan 尝试**代次而不是提交代次：主线程
+  问的是"这份输入被 worker 看到没有"，preflight 失败也算看到，否则等待方会把一次
+  有诊断结论的失败误判成"输入没送到"。
+- `apply_runtime_climate_writeback()` 新增 `memcpy_ms` / `flush_map_ms` /
+  `total_ms` / `dirty_fields`，把"worker 算得慢"与"回灌写回慢"分开。
+
+新增等待入口：
+
+```
+DCWorldExt.wait_climate_consumed(after_environment_generation: int, timeout_ms: int = -1)
+  -> { ok, code, waited_ms, consumed_generation, worker_state,
+       climate_committed_day, environment_published_days/consumed_days/superseded_days }
+```
+
+- `timeout_ms < 0`：等到条件满足或出现终止条件（worker FAULTED/STOPPING/STOPPED、
+  stop 请求、Climate 权威撤销）。
+- `timeout_ms >= 0`：一次有界切片，返回 `climate_wait_timeout_slice`，调用方负责
+  外层循环。`WorldRuntimeHost.wait_for_climate_consumed()` 就是这么用的：每个切片
+  之间 pump Country/Economy peer 服务，因为纯 C++ 条件变量等待无法回调 Godot 去清
+  peer barrier —— 两边互等就是死锁。
+- 等待是条件变量而不是忙等；worker 每次评估环境、故障、停止都会 `notify_all`。
+  唯一允许"无限等"的对象是健康 worker；故障/撤销/退出是终止条件，不是性能超时。
+
+`WorldRuntimeHost._on_clock_day_changed` 的执行序现在是
+**回灌(第 N 天) → 等 worker 消费第 N 份环境 → capture(第 N+1 天输入) →
+season refresh**。单槽 latest-value 的覆盖丢天由
+`environment_superseded_days` 计数；50/50 验收要求它在整段 soak 里保持 0。
+
+## CLM2 ABI 3→6（B8-2 / B8-P1，2026-09-11）
+
+CLM2 section ABI 现为 **6**：
+
+| ABI | 新增内容 |
+| --- | --- |
+| 4 | `synoptic_psi` / `synoptic_psi_prev`（float，追加在 float lane 末尾） |
+| 5 | `vegetation` / `base_vegetation`（u8，追加在 u8 lane 末尾） |
+| 6 | `cyclone_state`（不透明 blob，追加在所有 lane 之后：`CYC1` magic + version + count + next_stable_id + 定长记录表） |
+
+- **写入**：`serialize()` 按当前 lane 列表输出 ABI 6。
+- **读取**：接受 `[3, 6]` 区间，不做"猜版本"。版本分支：
+  float lane —— ABI 3 走 `CLIMATE_CELL_FLOAT_LANES_V3`（29 条），ABI >=4 走完整 31 条；
+  u8 lane —— ABI <=4 走 `CLIMATE_U8_LANES_V4`（4 条），ABI >=5 走完整 6 条；
+  i32 lane —— 三版一致；ABI 6 在 lane 区之后多一段长度前缀的 `cyclone_state`，
+  ABI <=5 读完 lane 即停（blob 保持空 = 冷启动，气旋条目由 capture 种子播种）。
+  缺席的新 lane 留在 `reset()` 给的全零。
+- **哈希**：`state_hash` 覆盖当前版本的全部 lane，因此只对当前 ABI 校验哈希；旧档
+  的完整性由 checksum + 逐 lane 形状/有限性校验保证。
+- **自检**：`runtime_climate_authority_self_test()` 从当前 payload 里按版本剪掉
+  对应内容（ABI 5 只剪 blob；ABI 4 再剪两条 u8；ABI 3 再剪两条 ψ float），改写
+  header 的 ABI/payload_size/checksum 后走正式 restore，验证成功、新内容空/零、
+  metadata 一致。
+
+后续给 worker 增加任何新的跨天状态（SLP/风场/洋流求解器状态、succession 的 cover）
+都按同一条路径：追加 lane → 定义 `_Vn` 旧列表 → 升 ABI → 版本分支读取 → 自检覆盖迁移。
+**跨天 lane 还必须加进 `copy_store_lanes()`**——它是手写清单，漏一条会让双缓冲之间
+状态不连续（实测 vegetation 逐日 0/679 翻转、ψ 从未真正持久化）。
+
+## worker cyclone 常量必须走 capture（B8-2 genesis，2026-09-11）
+
+`capture_runtime_inputs` 的 `climate_stage_knobs["stage_weather"]` 是 worker 唯一
+能看到 cyclone profile 常量的入口。曾经这里只有 field-solve 标量，host 对
+`cyclone_storm_type_id` 的兜底是 -1 ⇒ genesis 永不触发（表现为 ACTIVE 下气旋即
+衰减、无出生，且没有任何报错）。`MapGenerator._build_runtime_climate_stage_knobs()`
+现在显式注入：`cyclone_storm_type_id`、`cyclone_wake_days`、
+`native_tropical_cyclone_enabled`、`tropical_cyclone_{capacity,births_per_commit,
+min_temp,min_instability,max_shear,min_lat,max_lat,max_radius_cells}`。
+新增 cyclone 常量时同步 `world_ext_simulation_host.cpp` 的读取键名与本清单。
+
+反向（C++ → GDScript）新增机读字段：`get_runtime_thread_report()` 里的
+`climate_cyclone_alive/injected/replaced/decayed/touched`。前三个动作数是累计量且
+**每个 planned day 都写出口**，否则 weather 节拍制下 soak 采样点几乎总是 0。
+
+## worker 物理标量：`climate_stage_knobs["physics_knobs"]`（B8 P2，2026-09-12）
+
+worker 要自己跑 SLP/wind/psi/upwelling，缺的不是 lane（快照已有 terrain/landform/
+pos/lat_norm/elevation/风 lane），而是 **profile 标量**。来源与形态：
+
+- `MapBaker.runtime_physics_knobs()`：把四个物理 stage base dict（`_phys_knobs_base_
+  slp/wind/psi/up`）投影成**标量字典**（`_PHYS_LANE_KNOB_KEYS` 过滤 per-cell 数组）。
+  以后给某 stage 加常量只需加进 base，投影自动带走 —— 没有第二份清单。
+- `MapGenerator._build_runtime_climate_stage_knobs()` 把它写进
+  `out["physics_knobs"]`，随 `climate_stage_knobs` 一起下发。
+- C++ 侧解析成 `RuntimeEnvironmentSnapshot::ClimatePhysicsKnobs`（POD，Godot 无依赖），
+  带 `ready` 与 `missing_key[48]`；`ready=0` 时 worker 不跑物理（继续读生产 transport），
+  并在 `[climate/worker][b8] physics_knobs ready=/missing=` 里如实报告。
+
+两个踩过的坑（都已修）：
+
+1. **base dict 必须在 bake 期建**：原先只在第一次 `_physical_solve_step_one` 里建，
+   而 ACTIVE 下物理求解常被策略门挡住 → `runtime_physics_knobs()` 永远返回空。
+   现在 `_bake_initial_physical_circulation` 一开始就调 `_phys_ensure_knob_cache`。
+2. **不能挂在 weather 到期分支后面**：`_build_runtime_climate_stage_knobs` 在
+   `not due` 时整份返回 `{}`，会把静态物理标量一起吞掉，readiness 于是随节拍在
+   1/0 之间跳（实测 day4=1、day5=0）。现在物理标量在 due 判断**之前**取出，
+   不到期时返回 `{"physics_knobs": ...}`。
+
 ## PackedArray CoW 公理
 
 Godot `PackedFloat32Array` / `PackedInt32Array` / `PackedByteArray` 是 Copy-on-Write。当前架构不依赖双向可变零拷贝。

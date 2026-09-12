@@ -1,6 +1,7 @@
 #include "runtime_climate_kernel.h"
 #include "runtime_climate_formulas.h"
 // S3：生产 Climate pass 的共享纯内核。worker 不再维护第二套 stage 实现。
+#include "runtime_climate_parity.h"
 #include "runtime_climate_passes.h"
 
 #include <algorithm>
@@ -84,6 +85,13 @@ void copy_store_lanes(RuntimeClimateStore &next, const RuntimeClimateStore &curr
     copy_lane(next.vegetation_growth_streak, current.vegetation_growth_streak);
     copy_lane(next.vegetation_drought_streak, current.vegetation_drought_streak);
     copy_lane(next.vegetation_succession_candidate, current.vegetation_succession_candidate);
+    // B8：新增的跨天 lane 必须一起复制。这里是手写清单，漏一条的后果是双缓冲
+    // 之间状态不连续：vegetation 会在两天的值之间交替（实测 MapData 0/679 翻转），
+    // ψ 也永远进不了 store（save/restore 表面上通过，实际存的是空 lane）。
+    copy_lane(next.synoptic_psi, current.synoptic_psi);
+    copy_lane(next.synoptic_psi_prev, current.synoptic_psi_prev);
+    copy_lane(next.vegetation, current.vegetation);
+    copy_lane(next.base_vegetation, current.base_vegetation);
     copy_lane(next.temperature_history, current.temperature_history);
     next.cell_count = current.cell_count;
     next.generation = current.generation;
@@ -109,10 +117,175 @@ void run_stage(RuntimeClimateKernelReport &report, RuntimeClimateStage stage, Fn
     report.work_units += work;
     report.stage_ms[index] = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - begin).count();
+    // B8-1/P0：记录真实执行序。位掩码只回答"跑没跑"，而这一轮要修的是顺序，
+    // 顺序错了掩码完全看不见。容量固定，溢出只影响诊断，不影响计算。
+    if (report.stage_sequence_count < report.stage_sequence.size()) {
+        report.stage_sequence[report.stage_sequence_count++] =
+            static_cast<uint8_t>(stage);
+    }
 }
 } // namespace
 
-void RuntimeClimateKernel::reset(uint32_t) {}
+// ─── Canonical Climate stage order（B8 P0）───────────────────────────────────
+//
+// 表必须与 runtime_climate_kernel.cpp 里 plan_day 的实际调用序一致。任何一侧
+// 改动都会让 runtime_climate_stage_order_self_test() 或运行期 sequence 校验失败，
+// 而不是等到数值对拍里出现"某个字段不同"。
+const RuntimeClimateStageOrderEntry RUNTIME_CLIMATE_CANONICAL_ORDER[] = {
+    {RuntimeClimateStage::PASS_A, RuntimeClimateStageOrderKind::CORE},
+    {RuntimeClimateStage::PASS_B, RuntimeClimateStageOrderKind::CORE},
+    {RuntimeClimateStage::OCEAN_WATER, RuntimeClimateStageOrderKind::CORE},
+    {RuntimeClimateStage::OCEAN_LAND, RuntimeClimateStageOrderKind::CORE},
+    {RuntimeClimateStage::WIND_AIR, RuntimeClimateStageOrderKind::CORE},
+    {RuntimeClimateStage::WIND_SURFACE, RuntimeClimateStageOrderKind::CORE},
+    {RuntimeClimateStage::SEA_ICE, RuntimeClimateStageOrderKind::CORE},
+    {RuntimeClimateStage::TRANSPIRATION, RuntimeClimateStageOrderKind::CORE},
+    {RuntimeClimateStage::WEATHER, RuntimeClimateStageOrderKind::CONDITIONAL},
+    {RuntimeClimateStage::RUNTIME_HYDROLOGY, RuntimeClimateStageOrderKind::CONDITIONAL},
+    {RuntimeClimateStage::ALBEDO, RuntimeClimateStageOrderKind::CONDITIONAL},
+    {RuntimeClimateStage::VEGETATION_DYNAMICS, RuntimeClimateStageOrderKind::CONDITIONAL},
+    {RuntimeClimateStage::CLIMATE_FEEDBACK, RuntimeClimateStageOrderKind::CONDITIONAL},
+    {RuntimeClimateStage::STAGE_B_AFTER_HYDROLOGY,
+     RuntimeClimateStageOrderKind::FALLBACK_TAIL},
+};
+
+static_assert(sizeof(RUNTIME_CLIMATE_CANONICAL_ORDER) /
+                      sizeof(RUNTIME_CLIMATE_CANONICAL_ORDER[0]) ==
+                  RUNTIME_CLIMATE_CANONICAL_ORDER_COUNT,
+              "canonical climate order table is out of sync with its count");
+
+size_t runtime_climate_canonical_order_index(RuntimeClimateStage stage) {
+    for (size_t i = 0; i < RUNTIME_CLIMATE_CANONICAL_ORDER_COUNT; ++i) {
+        if (RUNTIME_CLIMATE_CANONICAL_ORDER[i].stage == stage) return i;
+    }
+    return RUNTIME_CLIMATE_STAGE_COUNT;
+}
+
+const char *runtime_climate_canonical_order_names() {
+    // 静态拼接：调用方（契约测试、soak dump）把它当只读字符串。
+    static const std::string joined = [] {
+        std::string out;
+        for (size_t i = 0; i < RUNTIME_CLIMATE_CANONICAL_ORDER_COUNT; ++i) {
+            if (i != 0) out += '>';
+            out += runtime_climate_stage_name(
+                RUNTIME_CLIMATE_CANONICAL_ORDER[i].stage);
+        }
+        return out;
+    }();
+    return joined.c_str();
+}
+
+bool runtime_climate_stage_order_self_test(std::string &error) {
+    error.clear();
+    // 1. 每个真实 stage 恰好出现一次，COUNT 不出现。
+    std::array<int, RUNTIME_CLIMATE_STAGE_COUNT> seen{};
+    bool saw_fallback_tail = false;
+    bool saw_weather = false;
+    for (size_t i = 0; i < RUNTIME_CLIMATE_CANONICAL_ORDER_COUNT; ++i) {
+        const RuntimeClimateStageOrderEntry &entry =
+            RUNTIME_CLIMATE_CANONICAL_ORDER[i];
+        const size_t index = static_cast<size_t>(entry.stage);
+        if (index >= RUNTIME_CLIMATE_STAGE_COUNT) {
+            error = "climate_stage_order_contains_count";
+            return false;
+        }
+        if (++seen[index] != 1) {
+            error = std::string("climate_stage_order_duplicate_") +
+                runtime_climate_stage_name(entry.stage);
+            return false;
+        }
+        // 2. FALLBACK_TAIL 只能在表尾，且不能再出现 CORE/CONDITIONAL。
+        if (entry.kind == RuntimeClimateStageOrderKind::FALLBACK_TAIL) {
+            saw_fallback_tail = true;
+            if (i + 1u != RUNTIME_CLIMATE_CANONICAL_ORDER_COUNT) {
+                error = "climate_stage_order_fallback_tail_not_last";
+                return false;
+            }
+        } else if (saw_fallback_tail) {
+            error = "climate_stage_order_core_after_fallback_tail";
+            return false;
+        }
+        // 3. weather 段必须在 round 之后。round 的最后一个 stage 是 TRANSPIRATION；
+        //    这条断言就是 B8-1 的机器可读形式。
+        if (entry.stage == RuntimeClimateStage::WEATHER) saw_weather = true;
+        if (entry.stage == RuntimeClimateStage::TRANSPIRATION && saw_weather) {
+            error = "climate_stage_order_weather_before_round";
+            return false;
+        }
+    }
+    for (size_t i = 0; i < RUNTIME_CLIMATE_STAGE_COUNT; ++i) {
+        if (seen[i] != 1) {
+            error = std::string("climate_stage_order_missing_") +
+                runtime_climate_stage_name(
+                    static_cast<RuntimeClimateStage>(i));
+            return false;
+        }
+    }
+    // 4. stage_b 三段必须严格在 weather 之后，且内部顺序是 albedo → veg → feedback。
+    const size_t weather = runtime_climate_canonical_order_index(
+        RuntimeClimateStage::WEATHER);
+    const size_t albedo = runtime_climate_canonical_order_index(
+        RuntimeClimateStage::ALBEDO);
+    const size_t vegetation = runtime_climate_canonical_order_index(
+        RuntimeClimateStage::VEGETATION_DYNAMICS);
+    const size_t feedback = runtime_climate_canonical_order_index(
+        RuntimeClimateStage::CLIMATE_FEEDBACK);
+    const size_t hydrology = runtime_climate_canonical_order_index(
+        RuntimeClimateStage::RUNTIME_HYDROLOGY);
+    if (!(weather < hydrology && hydrology < albedo && albedo < vegetation &&
+          vegetation < feedback)) {
+        error = "climate_stage_order_stage_b_not_after_weather";
+        return false;
+    }
+    return true;
+}
+
+bool runtime_climate_stage_sequence_is_canonical(
+        const uint8_t *sequence, size_t count, std::string &error) {
+    error.clear();
+    if (sequence == nullptr && count != 0) {
+        error = "climate_stage_sequence_null";
+        return false;
+    }
+    size_t previous = 0;
+    bool have_previous = false;
+    for (size_t i = 0; i < count; ++i) {
+        const size_t raw = static_cast<size_t>(sequence[i]);
+        if (raw >= RUNTIME_CLIMATE_STAGE_COUNT) {
+            error = "climate_stage_sequence_out_of_range";
+            return false;
+        }
+        const auto stage = static_cast<RuntimeClimateStage>(raw);
+        const size_t index = runtime_climate_canonical_order_index(stage);
+        if (index == RUNTIME_CLIMATE_STAGE_COUNT) {
+            error = std::string("climate_stage_sequence_unknown_") +
+                runtime_climate_stage_name(stage);
+            return false;
+        }
+        if (have_previous && index < previous) {
+            error = std::string("climate_stage_sequence_out_of_order_") +
+                runtime_climate_stage_name(
+                    static_cast<RuntimeClimateStage>(
+                        sequence[i - 1u])) +
+                "_then_" +
+                runtime_climate_stage_name(stage);
+            return false;
+        }
+        previous = index;
+        have_previous = true;
+    }
+    return true;
+}
+
+void RuntimeClimateKernel::reset(uint32_t) {
+    // 换图 / authority reset 后，weather field_init 的"已播种"标记必须一起清掉。
+    _weather_field_init_seeded = false;
+    _cyclone_total_injected = 0;
+    _cyclone_total_replaced = 0;
+    _cyclone_total_decayed = 0;
+    // B8 P2：物理常驻状态整份丢弃（含派生缓存指纹），下次 plan_day 按新 shape 重建。
+    _physics = pk_async_physics::RuntimeClimatePhysicsState{};
+}
 
 bool RuntimeClimateKernel::compile_catalog(const RuntimeEnvironmentSnapshot &input,
                                            RuntimeClimateCatalog &catalog,
@@ -229,6 +402,21 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
                                     RuntimeClimateStore &next,
                                     RuntimeClimateKernelReport &report) const {
     report = RuntimeClimateKernelReport{};
+    // B8 P2：物理环流 prepass 的就绪状态。worker 用自己的 lane，只缺 profile 标量；
+    // 未就绪时物理继续读生产 transport（不静默算错），这一行给出第一手证据。
+    {
+        // 前 6 天都打：bake 的 knob base 可能在首日 capture 之后才建好，只打前两天
+        // 会看不到 ready 从 0→1 的切换（实测踩过）。
+        static std::atomic<int> s_physics_ready_reports_left{6};
+        if (s_physics_ready_reports_left.fetch_sub(1, std::memory_order_relaxed) > 0) {
+            std::fprintf(stderr,
+                "[climate/worker][b8] physics_knobs day=%lld ready=%d missing=%s\n",
+                static_cast<long long>(day),
+                input.climate_physics_knobs.ready ? 1 : 0,
+                input.climate_physics_knobs.missing_key);
+            std::fflush(stderr);
+        }
+    }
     std::string error;
     std::string current_error;
     std::string next_error;
@@ -245,6 +433,61 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
         return false;
     }
     copy_store_lanes(next, current);
+    // B8 P2 §4.2：物理常驻状态按当日 shape 定形。换图/换尺寸 → 整份重建（派生缓存
+    // 一并失效），绝不复用旧图缓冲；worker 物理 prepass 后续只在这份 state 上做数值
+    // 读写（每日零分配）。derive 缓存（coast/topo/traj）由各自指纹在用时懒重建。
+    if (_physics.cell_count != static_cast<int>(current.cell_count)) {
+        _physics.resize(static_cast<int>(current.cell_count));
+    }
+    // B8-2：store 里的 synoptic ψ 是跨天 + 跨存档的权威副本。先把它装进 kernel
+    // scratch；只有"store 里确实有非零状态"才算已播种，否则留着让生产 capture
+    // 的冷启动种子生效（ABI 3 旧档读进来就是全零）。
+    if (current.synoptic_psi.size() == current.cell_count &&
+        current.synoptic_psi_prev.size() == current.cell_count) {
+        for (size_t i = 0; i < current.synoptic_psi.size(); ++i) {
+            if (current.synoptic_psi[i] != 0.0f ||
+                current.synoptic_psi_prev[i] != 0.0f) {
+                _physics.synoptic_psi = current.synoptic_psi;
+                _physics.synoptic_psi_prev = current.synoptic_psi_prev;
+                _physics.synoptic_seeded = true;
+                break;
+            }
+        }
+    }
+    // B8-P1：演替状态的冷启动。store 里全零（新图 / ABI 4 旧档）时用生产 capture
+    // 的 vegetation lane 播种；之后由 worker 的演替 emit 自己推进。
+    if (current.vegetation.size() == current.cell_count &&
+        !current.vegetation.empty() &&
+        input.vegetation.size() == current.cell_count) {
+        bool vegetation_seeded = false;
+        for (uint8_t value : current.vegetation) {
+            if (value != 0u) {
+                vegetation_seeded = true;
+                break;
+            }
+        }
+        if (!vegetation_seeded) {
+            next.vegetation = input.vegetation;
+            next.base_vegetation = input.vegetation;
+        }
+    }
+    // B8-2：cyclone 状态同样先看 store（存档恢复），再退回 capture 的生产种子。
+    // blob 的语义由 cyclone_state_encode/decode 拥有；只要 header 合法就算播种成功，
+    // 哪怕是"0 个条目"—— 否则 worker 会每天重新播种、永远不开始自己的推进。
+    if (!_cyclone_seeded && !current.cyclone_state.empty()) {
+        cyclone_state_decode(current.cyclone_state, _cyclone_entries,
+                             _cyclone_next_stable_id);
+        if (current.cyclone_state.size() >= 16u) {
+            _cyclone_seeded = true;
+        }
+    }
+    if (!_cyclone_seeded && !input.cyclone_seed_blob.empty()) {
+        cyclone_state_decode(input.cyclone_seed_blob, _cyclone_entries,
+                             _cyclone_next_stable_id);
+        if (input.cyclone_seed_blob.size() >= 16u) {
+            _cyclone_seeded = true;
+        }
+    }
     // climate_anomaly 是季节系统给出的全局量，不是 Climate 域自己的状态：生产每 tick
     // 从 environment 提供它，而 worker 的 store 只在 day % 365 == 0 改写。两者因此长期
     // 不等，且这个差异不在 parity 字段表里（只进 parity_hash），会一直隐身。它进
@@ -318,6 +561,19 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
         next.water_balance_30d.size() == current.cell_count) {
         const auto &soil = input.cell_soil_moisture;
         const auto &water = input.is_water;
+        // B8-3 归因诊断：PAW 链 collapse 的逐日输入。只打前 12 天、每图选第一个
+        // 陆地格（水域 PAW 恒 0，看它没有意义）。定位"是 WB30 变负、soil 缺席、
+        // 还是权重口径不同"三选一，而不是继续猜。
+        static std::atomic<int> s_paw_reports_left{12};
+        size_t paw_probe_cell = current.cell_count;
+        for (size_t i = 0; i < current.cell_count; ++i) {
+            if (i >= water.size() || water[i] == 0u) {
+                paw_probe_cell = i;
+                break;
+            }
+        }
+        const bool paw_probe = paw_probe_cell < current.cell_count &&
+            s_paw_reports_left.load(std::memory_order_relaxed) > 0;
         for (size_t i = 0; i < current.cell_count; ++i) {
             // 水域格 PAW 恒 0，与生产两处调用点的 is_water 分支一致
             // （runtime_climate_passes.cpp:2602 与 :5043）。
@@ -331,6 +587,41 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
                 input.climate_paw_water_balance_weight,
                 input.climate_paw_soil_buffer_weight,
                 input.climate_paw_drought_penalty);
+        }
+        if (paw_probe) {
+            s_paw_reports_left.fetch_sub(1, std::memory_order_relaxed);
+            const size_t c = paw_probe_cell;
+            // 零值按水/陆分类：PAW 的"collapse"要么是水域规则（生产共享内核同样
+            // 把 water/veg_none 清零），要么是陆地真的算错。分类计数一次就能分开。
+            size_t zero_water = 0, zero_land = 0, nonzero = 0;
+            for (size_t i = 0; i < current.cell_count; ++i) {
+                const bool is_water = i < water.size() && water[i] != 0u;
+                if (next.plant_available_water[i] == 0.0f) {
+                    if (is_water) ++zero_water; else ++zero_land;
+                } else {
+                    ++nonzero;
+                }
+            }
+            std::fprintf(stderr,
+                "[climate/worker][b8] paw day=%lld cell=%zu moisture=%.6g "
+                "wb30=%.6g soil=%s%.6g paw=%.6g "
+                "zeros(water=%zu land=%zu) nonzero=%zu weights(wb=%.4g soil=%.4g dry=%.4g) "
+                "round=%d distribute=%d hydrology=%d\n",
+                static_cast<long long>(day), c, next.moisture[c],
+                next.water_balance_30d[c],
+                c < soil.size() ? "" : "missing/",
+                c < soil.size() ? soil[c] : 0.0f,
+                next.plant_available_water[c],
+                zero_water, zero_land, nonzero,
+                input.climate_paw_water_balance_weight,
+                input.climate_paw_soil_buffer_weight,
+                input.climate_paw_drought_penalty,
+                input.climate_round_ran ? 1 : 0,
+                (input.climate_weather_distribute != nullptr &&
+                 input.climate_weather_distribute->ran) ? 1 : 0,
+                (input.climate_hydrology != nullptr &&
+                 input.climate_hydrology->ran) ? 1 : 0);
+            std::fflush(stderr);
         }
     }
     // 生产 stage 11（consume_feedback_buffers）在 climate round / hydrology 之前
@@ -722,28 +1013,6 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
         }
         return static_cast<uint64_t>(cells) * 2u;
     });
-    run_stage(report, RuntimeClimateStage::ALBEDO, [&]() {
-        for (size_t i = 0; i < cells; ++i) next.temperature[i] -= next.snow_cover[i] * 0.4f + next.sea_ice[i] * 0.25f;
-        return static_cast<uint64_t>(cells) * 2u;
-    });
-    run_stage(report, RuntimeClimateStage::VEGETATION_DYNAMICS, [&]() {
-        for (size_t i = 0; i < cells; ++i) {
-            next.vegetation_heat_stress[i] = std::clamp((next.temperature[i] - 30.0f) / 20.0f, 0.0f, 1.0f);
-            next.vegetation_drought_stress[i] = 1.0f - std::clamp(next.plant_available_water[i], 0.0f, 1.0f);
-            next.vegetation_cold_stress[i] = std::clamp((-next.temperature[i]) / 20.0f, 0.0f, 1.0f);
-            const float pressure = next.vegetation_growth_pressure[i] -
-                (next.vegetation_heat_stress[i] + next.vegetation_drought_stress[i] + next.vegetation_cold_stress[i]) / 3.0f;
-            next.vegetation_vitality[i] = std::clamp(current.vegetation_vitality[i] + pressure * 0.02f, 0.0f, 1.0f);
-            next.vegetation_growth_streak[i] = pressure > 0.0f ? current.vegetation_growth_streak[i] + 1 : 0;
-            next.vegetation_drought_streak[i] = next.vegetation_drought_stress[i] > 0.7f ? current.vegetation_drought_streak[i] + 1 : 0;
-            next.vegetation_succession_candidate[i] = next.vegetation_growth_streak[i] >= 30 ? 1u : 0u;
-        }
-        return static_cast<uint64_t>(cells) * 9u;
-    });
-    run_stage(report, RuntimeClimateStage::CLIMATE_FEEDBACK, [&]() {
-        for (size_t i = 0; i < cells; ++i) next.temperature[i] += (next.vegetation_vitality[i] - 0.5f) * 0.05f;
-        return static_cast<uint64_t>(cells) * 2u;
-    });
     run_stage(report, RuntimeClimateStage::WEATHER, [&]() {
         for (size_t i = 0; i < cells; ++i) {
             next.vapor[i] = std::clamp(next.moisture[i] + std::max(0.0f, next.temperature[i]) * 0.004f, 0.0f, 1.0f);
@@ -782,6 +1051,32 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
         }
         return static_cast<uint64_t>(cells) * 11u;
     });
+    // 近似回退路径同样遵守 canonical 顺序：albedo → vegetation → feedback 在生产
+    // 语义里是 weather 之后的 stage_b 三段，排在 weather/hydrology 之前会改变
+    // 温度与植被链的读写接力。这条路径没有 parity 语义，但顺序不能与生产相反，
+    // 否则 stage_sequence 契约会（正确地）拒绝它。
+    run_stage(report, RuntimeClimateStage::ALBEDO, [&]() {
+        for (size_t i = 0; i < cells; ++i) next.temperature[i] -= next.snow_cover[i] * 0.4f + next.sea_ice[i] * 0.25f;
+        return static_cast<uint64_t>(cells) * 2u;
+    });
+    run_stage(report, RuntimeClimateStage::VEGETATION_DYNAMICS, [&]() {
+        for (size_t i = 0; i < cells; ++i) {
+            next.vegetation_heat_stress[i] = std::clamp((next.temperature[i] - 30.0f) / 20.0f, 0.0f, 1.0f);
+            next.vegetation_drought_stress[i] = 1.0f - std::clamp(next.plant_available_water[i], 0.0f, 1.0f);
+            next.vegetation_cold_stress[i] = std::clamp((-next.temperature[i]) / 20.0f, 0.0f, 1.0f);
+            const float pressure = next.vegetation_growth_pressure[i] -
+                (next.vegetation_heat_stress[i] + next.vegetation_drought_stress[i] + next.vegetation_cold_stress[i]) / 3.0f;
+            next.vegetation_vitality[i] = std::clamp(current.vegetation_vitality[i] + pressure * 0.02f, 0.0f, 1.0f);
+            next.vegetation_growth_streak[i] = pressure > 0.0f ? current.vegetation_growth_streak[i] + 1 : 0;
+            next.vegetation_drought_streak[i] = next.vegetation_drought_stress[i] > 0.7f ? current.vegetation_drought_streak[i] + 1 : 0;
+            next.vegetation_succession_candidate[i] = next.vegetation_growth_streak[i] >= 30 ? 1u : 0u;
+        }
+        return static_cast<uint64_t>(cells) * 9u;
+    });
+    run_stage(report, RuntimeClimateStage::CLIMATE_FEEDBACK, [&]() {
+        for (size_t i = 0; i < cells; ++i) next.temperature[i] += (next.vegetation_vitality[i] - 0.5f) * 0.05f;
+        return static_cast<uint64_t>(cells) * 2u;
+    });
     run_stage(report, RuntimeClimateStage::STAGE_B_AFTER_HYDROLOGY, [&]() {
         for (size_t i = 0; i < cells; ++i) {
             next.moisture[i] = std::clamp(next.moisture[i] * 0.9f + next.plant_available_water[i] * 0.1f, 0.0f, 1.0f);
@@ -805,7 +1100,11 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
     // 内核等于对同一天算两遍。回退路径本来就没有 parity 语义，保持它自洽即可。
     const bool shared_albedo_ran = input.climate_albedo.ran &&
         (shared_round_ran || !input.climate_round_ran);
-    if (shared_albedo_ran) {
+    // B8-1：这里只登记执行体，不在当前位置执行。stage_b 的三段（albedo →
+    // vegetation → feedback）在生产里跑在 weather / distribute / hydrology
+    // 之后；真正调用点固定在下面气象段之后，顺序与 canonical 表一致。
+    auto run_shared_albedo = [&]() {
+        if (!shared_albedo_ran) return;
         run_stage(report, RuntimeClimateStage::ALBEDO, [&]() {
             const auto &knobs = input.climate_round_static_knobs;
             if (input.is_water.size() != cells ||
@@ -823,7 +1122,7 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
             report.stage_ran_mask |= pk_async_climate::CLIMATE_STAGE_BIT_ALBEDO;
             return static_cast<uint64_t>(cells);
         });
-    }
+    };
 
     // ─── stage 9 VEGETATION_DYNAMICS（共享纯内核，节拍独立于 round）────────
     //
@@ -844,16 +1143,44 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
     //   - regen_score 没有 float store 成员，用 scratch 承接生产读到的初值后丢弃。
     const bool shared_vegetation_ran = vegetation_requested &&
         (shared_round_ran || !input.climate_round_ran);
-    if (shared_vegetation_ran) {
+    auto run_shared_vegetation = [&]() {
+        if (!shared_vegetation_ran) return;
         run_stage(report, RuntimeClimateStage::VEGETATION_DYNAMICS, [&]() {
             const pk_async_climate::VegetationDynamicsInput &vd = *input.climate_vegetation;
+            // B8-1：weather 段现在排在本段之前，worker 自己当天的场才是生产语义里
+            // 的输入。生产记录只在 worker 当天没算出该场时兜底（跳过节拍 / 缺 lane）。
+            const uint8_t *wx_type = (next.weather_type.size() == cells)
+                ? next.weather_type.data() : vd.weather_type.data();
+            const float *wx_intensity = (next.weather_intensity.size() == cells)
+                ? next.weather_intensity.data() : vd.weather_intensity.data();
+            const uint8_t *wx_field_init =
+                (_weather_field_init_seeded &&
+                 _weather_field_init_scratch.size() == cells)
+                    ? _weather_field_init_scratch.data()
+                    : vd.weather_field_init.data();
+            // B8-3 E2：植被阶段读 worker 自己当天算出来的慢层，而不是 tick 起始的
+            // 生产记录。本段已经排在 weather/distribute 之后（P1 重排），所以
+            // next.moisture 是 distribute/hydrology 之后的当天值、
+            // next.water_balance_30d 是 distribute 之后的当天值、
+            // next.temperature_30d_ema 是 round pass_a 之后的当天值。
+            //
+            // 之前三条读 vd（生产记录）时，PAW/VGP/moisture/WB30 的量级偏差正好
+            // 集中在它们身上：worker 用"别人的昨天"算自己的今天，再回灌覆盖，
+            // 差值每天被重新引入。
+            const float *veg_temp_30d = (next.temperature_30d_ema.size() == cells)
+                ? next.temperature_30d_ema.data() : vd.temp_30d.data();
+            const float *veg_moisture = (next.moisture.size() == cells)
+                ? next.moisture.data() : vd.moisture.data();
+            const float *veg_water_balance =
+                (next.water_balance_30d.size() == cells)
+                    ? next.water_balance_30d.data()
+                    : vd.water_balance_30d.data();
             if (vd.is_water.size() != cells || vd.terrain.size() != cells ||
                 vd.landform.size() != cells || vd.vegetation.size() != cells ||
-                vd.temp_30d.size() != cells || vd.moisture.size() != cells ||
-                vd.water_balance_30d.size() != cells ||
-                vd.weather_type.size() != cells ||
-                vd.weather_intensity.size() != cells ||
-                vd.weather_field_init.size() != cells ||
+                veg_temp_30d == nullptr || veg_moisture == nullptr ||
+                veg_water_balance == nullptr ||
+                wx_type == nullptr || wx_intensity == nullptr ||
+                wx_field_init == nullptr ||
                 next.plant_available_water.size() != cells ||
                 next.vegetation_vitality.size() != cells ||
                 next.vegetation_drought_streak.size() != cells ||
@@ -877,13 +1204,13 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
             lanes.terrain = vd.terrain.data();
             lanes.landform = vd.landform.data();
             lanes.vegetation = vd.vegetation.data();
-            lanes.temp_30d = vd.temp_30d.data();
-            lanes.moisture = vd.moisture.data();
-            lanes.water_balance_30d = vd.water_balance_30d.data();
+            lanes.temp_30d = veg_temp_30d;
+            lanes.moisture = veg_moisture;
+            lanes.water_balance_30d = veg_water_balance;
             lanes.soil_moisture = vd.has_soil_moisture ? vd.soil_moisture.data() : nullptr;
-            lanes.weather_type = vd.weather_type.data();
-            lanes.weather_intensity = vd.weather_intensity.data();
-            lanes.weather_field_init = vd.weather_field_init.data();
+            lanes.weather_type = wx_type;
+            lanes.weather_intensity = wx_intensity;
+            lanes.weather_field_init = wx_field_init;
             lanes.plant_available_water = next.plant_available_water.data();
             lanes.vegetation_growth_pressure =
                 (vd.has_growth_pressure &&
@@ -908,13 +1235,41 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
             pk_async_climate::VegetationDynamicsEmit emit;
             pk_async_climate::vegetation_dynamics_apply_pure(
                 knobs, tables, lanes, 0, static_cast<int>(cells), emit);
-            // 演替本身（写 cell.vegetation）由 GDScript 后处理执行，不在 store 里，
-            // 所以 worker 只消费 emit 的规模用作 stage 统计。
+            // B8-P1：演替后处理从主线程搬进 worker。规则与
+            // map_generator._apply_vegetation_succession_candidates 逐条对齐：
+            //   * vegetation / base_vegetation 一起改成下一档；
+            //   * 降级（next_down[prev] == next）用 degrade_reset_target，升级用 0.7；
+            //   * vitality 取"当前与目标的中点"；
+            //   * streak 冷却（-succession_cooldown_days）已由纯内核写入。
+            // 生产侧对应的 GDScript 写入在 ACTIVE 下被抑制门关掉，worker 是唯一写者。
+            if (next.vegetation.size() == cells &&
+                next.base_vegetation.size() == cells) {
+                for (size_t k = 0; k < emit.indices.size(); ++k) {
+                    const int32_t idx = emit.indices[k];
+                    if (idx < 0 || static_cast<size_t>(idx) >= cells) continue;
+                    const uint8_t next_veg = emit.to_veg[k];
+                    const uint8_t prev_veg = next.vegetation[static_cast<size_t>(idx)];
+                    if (next_veg == prev_veg) continue;
+                    const bool is_degrade =
+                        static_cast<size_t>(prev_veg) < vd.next_down.size() &&
+                        vd.next_down[prev_veg] == next_veg;
+                    next.vegetation[static_cast<size_t>(idx)] = next_veg;
+                    next.base_vegetation[static_cast<size_t>(idx)] = next_veg;
+                    const float target =
+                        is_degrade ? knobs.degrade_reset_target : 0.7f;
+                    next.vegetation_vitality[static_cast<size_t>(idx)] =
+                        (next.vegetation_vitality[static_cast<size_t>(idx)] +
+                         target) * 0.5f;
+                }
+            }
+            // B8-P1：演替本身已经在上面的 apply 里落到 worker 自己的
+            // vegetation / base_vegetation lane；生产侧同一步 GDScript 后处理在
+            // ACTIVE 下被抑制门关掉，worker 是唯一写者。
             report.stage_ran_mask |=
                 pk_async_climate::CLIMATE_STAGE_BIT_VEGETATION_DYNAMICS;
             return static_cast<uint64_t>(cells);
         });
-    }
+    };
 
     // ─── stage 10 CLIMATE_FEEDBACK（共享纯内核，节拍独立于 round）──────────
     //
@@ -929,13 +1284,26 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
     //       否则 parity 就退化成"把生产的结果抄一遍"，什么都验不出来。
     const bool shared_feedback_ran = feedback_requested &&
         (shared_round_ran || !input.climate_round_ran);
-    if (shared_feedback_ran) {
+    auto run_shared_feedback = [&]() {
+        if (!shared_feedback_ran) return;
         run_stage(report, RuntimeClimateStage::CLIMATE_FEEDBACK, [&]() {
             const pk_async_climate::ClimateFeedbackInput &fb = *input.climate_feedback;
             const auto &neighbors = input.climate_round_static_knobs.neighbor_indices;
-            if (fb.is_water.size() != cells || fb.weather_type.size() != cells ||
-                fb.weather_intensity.size() != cells ||
-                fb.weather_field_init.size() != cells ||
+            // B8-1：与 vegetation 同一口径 —— feedback 读当天 weather 段的产物，
+            // 而不是 tick 开始时的生产记录。weather_type/intensity 的 store 成员
+            // 一定齐长；field_init 走 weather 段写过的 scratch。
+            const uint8_t *wx_type = (next.weather_type.size() == cells)
+                ? next.weather_type.data() : fb.weather_type.data();
+            const float *wx_intensity = (next.weather_intensity.size() == cells)
+                ? next.weather_intensity.data() : fb.weather_intensity.data();
+            const uint8_t *wx_field_init =
+                (_weather_field_init_seeded &&
+                 _weather_field_init_scratch.size() == cells)
+                    ? _weather_field_init_scratch.data()
+                    : fb.weather_field_init.data();
+            if (fb.is_water.size() != cells ||
+                wx_type == nullptr || wx_intensity == nullptr ||
+                wx_field_init == nullptr ||
                 fb.temp_transport_anomaly.size() != cells ||
                 fb.base_moisture.size() != cells ||
                 fb.soil_moisture.size() != cells ||
@@ -949,8 +1317,8 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
             _feedback_base_moisture = fb.base_moisture;
             _feedback_soil_moisture = fb.soil_moisture;
             pk_async_climate::climate_feedback_apply_pure(
-                fb.knobs, fb.is_water.data(), fb.weather_type.data(),
-                fb.weather_intensity.data(), fb.weather_field_init.data(),
+                fb.knobs, fb.is_water.data(), wx_type,
+                wx_intensity, wx_field_init,
                 neighbors.data(), fb.temp_transport_anomaly.data(),
                 _feedback_base_moisture.data(), _feedback_soil_moisture.data(),
                 next.vegetation_growth_pressure.data(),
@@ -959,6 +1327,20 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
                 pk_async_climate::CLIMATE_STAGE_BIT_CLIMATE_FEEDBACK;
             return static_cast<uint64_t>(cells);
         });
+    };
+
+    // B8-3 单因子实验开关：把 stage_b 三段放回 weather 之前（旧顺序）。只用于
+    // soak A/B 归因，默认关闭；进程级读取一次，不参与任何仿真状态，也不进存档。
+    // 归因方法：同一 seed/尺寸跑 canonical vs legacy，只翻这一个变量，差值就是
+    // "顺序"这一项的贡献，与"输入所有权""节拍""ψ"等其它因子分开。
+    static const bool legacy_stage_order = [] {
+        const char *value = std::getenv("PK_CLIMATE_STAGE_ORDER_LEGACY");
+        return value != nullptr && value[0] == '1';
+    }();
+    if (legacy_stage_order) {
+        run_shared_albedo();
+        run_shared_vegetation();
+        run_shared_feedback();
     }
 
     // ─── stage 11 WEATHER（共享纯内核，weather bucket 自己的 cadence）────────
@@ -1056,6 +1438,9 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
                 _weather_field_init_scratch.size() != cells;
             if (field_init_fresh) {
                 _weather_field_init_scratch.assign(cells, 0u);
+                // 换图/换尺寸后旧图的有效性不能继承；stage_b 在 weather 之后读
+                // 这张 scratch，继承一个 true 会把新图当成已初始化。
+                _weather_field_init_seeded = false;
             }
             // 生产生成阶段通常已经把 field_init 置 1。worker 若从全零起步会按
             // moisture*0.15 重做 spinup，vapor 因此整场偏 0.15。
@@ -1066,6 +1451,20 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
             if (wx.field_init.size() == cells &&
                 (!wx.own_field_state || field_init_fresh)) {
                 _weather_field_init_scratch = wx.field_init;
+                _weather_field_init_seeded = true;
+            }
+            // commit 会写这张 scratch；即使 seed 分支没走（own_field_state 且非
+            // fresh），只要它带着上一日的值就是有效状态。全零只可能是"首日还没解
+            // 算过"，那不算有效状态 —— 否则 starved 的首日会让 stage_b 把已初始化
+            // 的地图当成 spin-up。
+            if (_weather_field_init_scratch.size() == cells &&
+                !_weather_field_init_seeded) {
+                for (size_t i = 0; i < cells; ++i) {
+                    if (_weather_field_init_scratch[i] != 0u) {
+                        _weather_field_init_seeded = true;
+                        break;
+                    }
+                }
             }
             // 未初始化的格子不读 SoA vapor/precip —— 那份此刻还是零，而生产按稳态
             // 量级 moisture * WEATHER_SPINUP_VAPOR_FRACTION 起步（field_solver.gd 的
@@ -1152,9 +1551,178 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
             pk_async_climate::WeatherFieldState state;
             state.conv_inhib =
                 _weather_conv_inhib.size() == cells ? _weather_conv_inhib.data() : nullptr;
-            state.psi = (wx.synoptic_enabled && wx.psi.size() == cells)
-                ? wx.psi.data() : nullptr;
-            if (wx.cyclone_tag.size() == cells) {
+            // B8-2：worker 自持 cyclone —— 在生产同一位置、同一顺序（field solve 之前）
+            // 推进已有条目并 stamp 当天的强迫 lane。PK_CLIMATE_CYCLONE_FORCE=1 用于
+            // 特性默认关闭时的验证；生产配置走 capture 的 native_tropical_cyclone_enabled。
+            static const bool cyclone_force_enabled = [] {
+                const char *value = std::getenv("PK_CLIMATE_CYCLONE_FORCE");
+                return value != nullptr && value[0] == '1';
+            }();
+            const bool cyclone_enabled_for_day =
+                input.cyclone_enabled || cyclone_force_enabled;
+            static std::atomic<int> s_cyc_gate_debug{2};
+            if (s_cyc_gate_debug.fetch_sub(1, std::memory_order_relaxed) > 0) {
+                std::fprintf(stderr,
+                    "[climate/worker][b8] cyclone_gate day=%lld input_enabled=%d "
+                    "force_env=%d effective=%d\n",
+                    static_cast<long long>(day),
+                    input.cyclone_enabled ? 1 : 0, cyclone_force_enabled ? 1 : 0,
+                    cyclone_enabled_for_day ? 1 : 0);
+                std::fflush(stderr);
+            }
+            bool cyclone_lanes_ready = false;
+            if (cyclone_enabled_for_day) {
+                if (_cyclone_force_tag.size() != cells) {
+                    _cyclone_force_tag.assign(cells, 0u);
+                    _cyclone_visit_tag.assign(cells, 0u);
+                    _cyclone_force_x.assign(cells, 0.0f);
+                    _cyclone_force_y.assign(cells, 0.0f);
+                    _cyclone_lift.assign(cells, 0.0f);
+                    _cyclone_force_generation = 1u;
+                }
+                if (++_cyclone_force_generation == 0u) {
+                    std::fill(_cyclone_force_tag.begin(),
+                              _cyclone_force_tag.end(), 0u);
+                    std::fill(_cyclone_visit_tag.begin(),
+                              _cyclone_visit_tag.end(), 0u);
+                    _cyclone_force_generation = 1u;
+                }
+                if (wx.pos_x.size() == cells && wx.pos_y.size() == cells &&
+                    wx.wind_x.size() == cells && wx.wind_y.size() == cells &&
+                    wx.wind_speed.size() == cells && wx.temp_read.size() == cells &&
+                    wx.terrain.size() == cells && neighbors.size() >= cells * 6u &&
+                    next.vapor.size() == cells && next.instability.size() == cells &&
+                    next.convergence.size() == cells) {
+                    pk_async_climate::CycloneAdvanceKnobs cyc;
+                    cyc.enabled = true;
+                    cyc.dt_days = input.cyclone_dt_days;
+                    cyc.world_bounds_pos_y = input.cyclone_world_bounds_pos_y;
+                    cyc.world_bounds_size_y = input.cyclone_world_bounds_size_y;
+                    cyc.wrap_width_x = input.cyclone_wrap_width_x;
+                    cyc.max_radius_cells = input.cyclone_max_radius_cells;
+                    pk_async_climate::CycloneLanes cyc_lanes;
+                    cyc_lanes.neighbors = neighbors.data();
+                    cyc_lanes.pos_x = wx.pos_x.data();
+                    cyc_lanes.pos_y = wx.pos_y.data();
+                    cyc_lanes.terrain = wx.terrain.data();
+                    cyc_lanes.temp = wx.temp_read.data();
+                    cyc_lanes.wind_x = wx.wind_x.data();
+                    cyc_lanes.wind_y = wx.wind_y.data();
+                    cyc_lanes.wind_speed = wx.wind_speed.data();
+                    // 与生产同源：生产在 solve 循环之前解引用的是 slot 里"上一轮"的
+                    // vapor / instability / convergence，worker 侧对应 next.*（本段
+                    // 尚未被本次 solve 覆盖）。
+                    cyc_lanes.vapor = next.vapor.data();
+                    cyc_lanes.instability = next.instability.data();
+                    cyc_lanes.convergence = next.convergence.data();
+                    cyc_lanes.lat_norm = input.cell_lat_norm.size() == cells
+                        ? input.cell_lat_norm.data() : nullptr;
+                    pk_async_climate::CycloneStamp cyc_stamp;
+                    cyc_stamp.force_tag = _cyclone_force_tag.data();
+                    cyc_stamp.visit_tag = _cyclone_visit_tag.data();
+                    cyc_stamp.force_x = _cyclone_force_x.data();
+                    cyc_stamp.force_y = _cyclone_force_y.data();
+                    cyc_stamp.lift = _cyclone_lift.data();
+                    cyc_stamp.force_generation = _cyclone_force_generation;
+                    cyc_stamp.visit_generation = _cyclone_force_generation;
+                    pk_async_climate::CycloneStats cyc_stats;
+                    pk_async_climate::cyclone_advance_and_stamp_pure(
+                        static_cast<int>(cells), cyc, cyc_lanes,
+                        _cyclone_entries, cyc_stamp, cyc_stats);
+                    cyclone_lanes_ready = true;
+                    report.cyclone_alive = cyc_stats.alive;
+                    _cyclone_total_decayed +=
+                        static_cast<uint64_t>(std::max(0, cyc_stats.decayed));
+                    report.cyclone_decayed =
+                        static_cast<int32_t>(_cyclone_total_decayed);
+                    report.cyclone_touched = cyc_stats.touched_cells;
+                    static std::atomic<int> s_cyclone_reports_left{24};
+                    if (s_cyclone_reports_left.fetch_sub(
+                            1, std::memory_order_relaxed) > 0) {
+                        std::fprintf(stderr,
+                            "[climate/worker][b8] cyclone day=%lld cells=%zu "
+                            "entries=%zu alive=%d decayed=%d touched=%d gen=%u "
+                            "int(before/after)=%.3f/%.3f\n",
+                            static_cast<long long>(day), cells,
+                            _cyclone_entries.size(), cyc_stats.alive,
+                            cyc_stats.decayed, cyc_stats.touched_cells,
+                            _cyclone_force_generation,
+                            static_cast<double>(cyc_stats.entry_intensity_max_before),
+                            static_cast<double>(cyc_stats.entry_intensity_max_after));
+                        std::fflush(stderr);
+                    }
+                }
+            }
+            // B8-2：worker 自持 ψ。生产这次只提供冷启动种子；推进会覆盖它，所以
+            // 一旦播种成功就只喂 worker 自己那份。SHADOW 保持与参考同源（用捕获的
+            // 生产 tick），ACTIVE 用自己的单调 tick。
+            // PK_CLIMATE_SYNOPTIC_OFF=1 复现 B8 之前的"无 ψ"路径，只用于 E6 归因
+            // A/B（ψ 对降水/云量/水汽的贡献），不参与生产配置。
+            static const bool synoptic_disabled = [] {
+                const char *value = std::getenv("PK_CLIMATE_SYNOPTIC_OFF");
+                return value != nullptr && value[0] == '1';
+            }();
+            bool worker_psi_ready = false;
+            if (wx.synoptic_enabled && !synoptic_disabled) {
+                if (_physics.synoptic_psi.size() != cells) {
+                    _physics.synoptic_psi.assign(cells, 0.0f);
+                    _physics.synoptic_psi_prev.assign(cells, 0.0f);
+                    _physics.synoptic_seeded = false;
+                }
+                if (!_physics.synoptic_seeded && wx.psi.size() == cells) {
+                    _physics.synoptic_psi = wx.psi;
+                    if (wx.psi_prev.size() == cells) {
+                        _physics.synoptic_psi_prev = wx.psi_prev;
+                    }
+                    _physics.synoptic_seeded = true;
+                }
+                if (!_physics.synoptic_seeded && input.climate_worker_authoritative) {
+                    // ACTIVE 下主线程 weather 被抑制门关掉，`_wx_synoptic` 可能永远
+                    // 不被构建（cap 里就是空 lane）。这时 worker 必须从零场冷启动
+                    // 自持推进；否则 `_physics.synoptic_seeded` 永远为假，ψ 一天都不参与，
+                    // 降水就少掉 syn_base_lift 这条最强驱动。
+                    _physics.synoptic_seeded = true;
+                }
+                // SHADOW 只做忠实复刻：直接用生产当天 solve 读到的 ψ，不自己推进。
+                // 自己的推进节拍与生产的内联推进不会逐位相同（tick 不同），在
+                // SHADOW 里推一份只会把"节拍差"记成算法分叉。自持从 ACTIVE 开始。
+                if (input.climate_worker_authoritative && _physics.synoptic_seeded &&
+                    wx.wind_x.size() == cells &&
+                    wx.wind_y.size() == cells &&
+                    wx.temp_read.size() == cells &&
+                    wx.pos_x.size() == cells && wx.pos_y.size() == cells &&
+                    neighbors.size() >= cells * 6u) {
+                    pk_async_climate::SynopticAdvanceKnobs syn = wx.synoptic;
+                    syn.tick = static_cast<int>(++_physics.synoptic_tick);
+                    pk_async_climate::synoptic_advance_pure(
+                        static_cast<int>(cells), neighbors.data(),
+                        wx.pos_x.data(), wx.pos_y.data(), wx.wind_x.data(),
+                        wx.wind_y.data(), wx.temp_read.data(), syn,
+                        _physics.synoptic_psi, _physics.synoptic_psi_prev);
+                    worker_psi_ready = true;
+                } else if (input.climate_worker_authoritative && _physics.synoptic_seeded) {
+                    // 风/温度 lane 缺失时不能推进，但已播种的 ψ 仍比 nullptr 好：
+                    // 内核走无 ψ 分支会直接丢掉 syn_base_lift 这条最强降水驱动。
+                    worker_psi_ready = true;
+                }
+            }
+            if (worker_psi_ready) {
+                state.psi = _physics.synoptic_psi.data();
+            } else {
+                state.psi = (wx.synoptic_enabled && !synoptic_disabled &&
+                             wx.psi.size() == cells)
+                    ? wx.psi.data() : nullptr;
+            }
+            if (cyclone_lanes_ready) {
+                // B8-2：worker 自持 cyclone 的 stamp 结果优先。生产条目表只在冷启动
+                // 播种时读过一次；之后这几条 lane 完全由 worker 推进。
+                state.cyclone_tag = _cyclone_force_tag.data();
+                state.cyclone_tag_count = static_cast<int>(cells);
+                state.cyclone_generation = _cyclone_force_generation;
+                state.cyclone_lift = _cyclone_lift.data();
+                state.cyclone_x = _cyclone_force_x.data();
+                state.cyclone_y = _cyclone_force_y.data();
+            } else if (wx.cyclone_tag.size() == cells) {
                 state.cyclone_tag = wx.cyclone_tag.data();
                 state.cyclone_tag_count = static_cast<int>(cells);
                 state.cyclone_generation = wx.cyclone_generation;
@@ -1232,7 +1800,172 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
             pk_async_climate::WeatherCommitStats cs;
             pk_async_climate::weather_commit_pure(ck, cl, cs);
 
+            // B8-2 genesis（出生）：与生产 native-entity 路径同一位置（field solve /
+            // commit / distribute 之后的当天后段），但判据改用 worker 自己的状态：
+            // 前沿等价物 = 当天 weather_type == STORM 且 intensity 过门的格子。
+            // 只在 ACTIVE 下注入：SHADOW 必须保持"复刻生产前沿路径"，否则对拍会
+            // 把两套 genesis 规则的差记录成算法分叉。
+            if (input.climate_worker_authoritative && cyclone_enabled_for_day &&
+                input.cyclone_storm_type_id >= 0 &&
+                next.weather_type.size() == cells &&
+                next.weather_intensity.size() == cells &&
+                next.weather_precipitation.size() == cells &&
+                next.cloud_cover.size() == cells &&
+                next.instability.size() == cells &&
+                next.convergence.size() == cells &&
+                next.temperature.size() == cells) {
+                const auto &water_ids =
+                    input.climate_round_static_knobs.water_terrain_ids;
+                if (water_ids.size() > 0u && wx.terrain.size() == cells &&
+                    wx.pos_y.size() == cells && wx.wind_x.size() == cells &&
+                    wx.wind_y.size() == cells &&
+                    neighbors.size() >= cells * 6u) {
+                    uint8_t water_lut[256] = {};
+                    for (size_t k = 0; k < water_ids.size(); ++k) {
+                        const uint8_t wid = water_ids[k];
+                        water_lut[wid] = 1u;
+                    }
+                    pk_async_climate::CycloneGenesisKnobs gen;
+                    gen.enabled = true;
+                    gen.storm_type_id = input.cyclone_storm_type_id;
+                    gen.capacity = input.cyclone_capacity;
+                    gen.births_per_commit = input.cyclone_births_per_commit;
+                    gen.min_temp = input.cyclone_min_temp;
+                    gen.min_instability = input.cyclone_min_instability;
+                    gen.max_shear = input.cyclone_max_shear;
+                    gen.min_lat = input.cyclone_min_lat;
+                    gen.max_lat = input.cyclone_max_lat;
+                    gen.world_bounds_pos_y = input.cyclone_world_bounds_pos_y;
+                    gen.world_bounds_size_y = input.cyclone_world_bounds_size_y;
+                    gen.wake_days = input.cyclone_wake_days;
+                    // 出生强度门 = 生产 native-entity 路径的硬编码 0.8（front
+                    // intensity 就是 cluster 内最大 cell intensity，与之同源）。
+                    // PK_CLIMATE_CYCLONE_GENESIS_GATE 只用于验证/归因 A/B：默认
+                    // 世界里热带水格年峰值 ≈0.76，正好压在 0.8 之下，gate 不降就
+                    // 拿不到"出生→推进→stamp→回灌→持久化"这条链路的实证。
+                    static const float genesis_gate_override = [] {
+                        const char *value =
+                            std::getenv("PK_CLIMATE_CYCLONE_GENESIS_GATE");
+                        return value != nullptr ? std::strtof(value, nullptr) : 0.0f;
+                    }();
+                    if (genesis_gate_override > 0.0f && genesis_gate_override < 1.0f) {
+                        gen.intensity_gate = genesis_gate_override;
+                    }
+                    pk_async_climate::CycloneGenesisLanes gen_lanes;
+                    gen_lanes.terrain = wx.terrain.data();
+                    gen_lanes.water_lut = water_lut;
+                    gen_lanes.weather_type = next.weather_type.data();
+                    gen_lanes.weather_intensity = next.weather_intensity.data();
+                    gen_lanes.temp = next.temperature.data();
+                    gen_lanes.precip = next.weather_precipitation.data();
+                    gen_lanes.cloud = next.cloud_cover.data();
+                    gen_lanes.instability = next.instability.data();
+                    gen_lanes.convergence = next.convergence.data();
+                    gen_lanes.wind_x = wx.wind_x.data();
+                    gen_lanes.wind_y = wx.wind_y.data();
+                    gen_lanes.pos_y = wx.pos_y.data();
+                    gen_lanes.lat_norm = input.cell_lat_norm.size() == cells
+                        ? input.cell_lat_norm.data() : nullptr;
+                    gen_lanes.neighbors = neighbors.data();
+                    gen_lanes.is_water = input.is_water.size() == cells
+                        ? input.is_water.data() : nullptr;
+                    pk_async_climate::CycloneGenesisStats gen_stats;
+                    pk_async_climate::cyclone_genesis_pure(
+                        static_cast<int>(cells), gen, gen_lanes,
+                        _cyclone_entries, _cyclone_next_stable_id, gen_stats);
+                    // 纬度漏斗诊断：genesis 全部堵在 lat 闸时，必须能区分「世界
+                    // 边界没送到」与「候选确实都在带外」。lat_norm 存在时应走
+                    // 规范纬度（赤道=0.5），打印两次即封顶。
+                    static std::atomic<int> s_cyclone_lat_reports_left{2};
+                    if (s_cyclone_lat_reports_left.fetch_sub(
+                            1, std::memory_order_relaxed) > 0) {
+                        float ny_min = 1e30f, ny_max = -1e30f;
+                        float lat_min = 1e30f, lat_max = -1e30f;
+                        const float wb_h = std::max(0.001f, gen.world_bounds_size_y);
+                        for (size_t i = 0; i < cells; ++i) {
+                            if (water_lut[wx.terrain[i]] == 0u) continue;
+                            const float ny = dc_clampf(
+                                (wx.pos_y[i] - gen.world_bounds_pos_y) / wb_h,
+                                0.0f, 1.0f);
+                            ny_min = std::min(ny_min, ny);
+                            ny_max = std::max(ny_max, ny);
+                            const float abs_lat = gen_lanes.lat_norm != nullptr
+                                ? std::abs((dc_clampf(gen_lanes.lat_norm[i], 0.0f, 1.0f) -
+                                            0.5f) * 2.0f)
+                                : std::abs((ny - 0.5f) * 2.0f);
+                            lat_min = std::min(lat_min, abs_lat);
+                            lat_max = std::max(lat_max, abs_lat);
+                        }
+                        std::fprintf(stderr,
+                            "[climate/worker][b8] cyclone_lat day=%lld wb_y=%.3f "
+                            "wb_h=%.3f water_ny=[%.3f,%.3f] abs_lat=[%.3f,%.3f] "
+                            "lat_norm=%d band=[%.3f,%.3f]\n",
+                            static_cast<long long>(day),
+                            static_cast<double>(gen.world_bounds_pos_y),
+                            static_cast<double>(gen.world_bounds_size_y),
+                            static_cast<double>(ny_min), static_cast<double>(ny_max),
+                            static_cast<double>(lat_min), static_cast<double>(lat_max),
+                            gen_lanes.lat_norm != nullptr ? 1 : 0,
+                            static_cast<double>(gen.min_lat),
+                            static_cast<double>(gen.max_lat));
+                        std::fflush(stderr);
+                    }
+                    if (gen_stats.injected > 0 || gen_stats.replaced > 0) {
+                        _cyclone_seeded = true;
+                    }
+                    _cyclone_total_injected +=
+                        static_cast<uint64_t>(std::max(0, gen_stats.injected));
+                    _cyclone_total_replaced +=
+                        static_cast<uint64_t>(std::max(0, gen_stats.replaced));
+                    report.cyclone_injected =
+                        static_cast<int32_t>(_cyclone_total_injected);
+                    report.cyclone_replaced =
+                        static_cast<int32_t>(_cyclone_total_replaced);
+                    report.cyclone_alive = gen_stats.alive;
+                    static std::atomic<int> s_cyclone_genesis_reports_left{24};
+                    if (s_cyclone_genesis_reports_left.fetch_sub(
+                            1, std::memory_order_relaxed) > 0) {
+                        std::fprintf(stderr,
+                            "[climate/worker][b8] cyclone_genesis day=%lld "
+                            "injected=%d replaced=%d alive=%d "
+                            "water=%d lat=%d phys=%d inten=%d shear=%d "
+                            "storm_type=%d fail(t/p/c/i)=%d/%d/%d/%d "
+                            "max(p/c/i/conv)=%.3f/%.3f/%.3f/%.3f "
+                            "max_int=%.3f\n",
+                            static_cast<long long>(day), gen_stats.injected,
+                            gen_stats.replaced, gen_stats.alive,
+                            gen_stats.cand_water, gen_stats.cand_lat,
+                            gen_stats.cand_physical, gen_stats.cand_intensity,
+                            gen_stats.cand_shear,
+                            gen_stats.type_storm,
+                            gen_stats.fail_temp, gen_stats.fail_precip,
+                            gen_stats.fail_cloud, gen_stats.fail_instability,
+                            static_cast<double>(gen_stats.max_precip),
+                            static_cast<double>(gen_stats.max_cloud),
+                            static_cast<double>(gen_stats.max_instability),
+                            static_cast<double>(gen_stats.max_convergence),
+                            static_cast<double>(gen_stats.max_intensity));
+                        std::fflush(stderr);
+                    }
+                }
+            }
             report.stage_ran_mask |= pk_async_climate::CLIMATE_STAGE_BIT_WEATHER;
+            // B8 诊断：确认 weather field solve 真的产出非零场。headless soak 里
+            // 如果这一行全零，问题在输入 lane 或 solve 资格，而不是 writeback。
+            static std::atomic<int> s_weather_solve_reports_left{4};
+            if (s_weather_solve_reports_left.fetch_sub(1, std::memory_order_relaxed) > 0) {
+                std::fprintf(stderr,
+                    "[climate/worker][b8] weather_solve day=%lld cells=%zu psi=%d "
+                    "vapor0=%.6g precip0=%.6g cloud0=%.6g type0=%u field_init0=%u\n",
+                    static_cast<long long>(day), cells,
+                    state.psi != nullptr ? 1 : 0,
+                    next.vapor.empty() ? 0.0f : next.vapor[0],
+                    next.weather_precipitation.empty() ? 0.0f : next.weather_precipitation[0],
+                    next.cloud_cover.empty() ? 0.0f : next.cloud_cover[0],
+                    next.weather_type.empty() ? 0u : next.weather_type[0],
+                    _weather_field_init_scratch.empty() ? 0u : _weather_field_init_scratch[0]);
+                std::fflush(stderr);
+            }
             return static_cast<uint64_t>(cells) * 6u;
         });
     }
@@ -1423,6 +2156,20 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
         });
     }
 
+    // ─── stage_b 三段：与生产落点一致，在 weather/distribute/hydrology 之后 ──
+    //
+    // B8-1：这三段在旧实现里排在 weather 之前（注释里写的是"必须夹在 albedo 与
+    // feedback 之间"，那只约束了三段的内部顺序，没有约束它们与 weather 的相对
+    // 位置）。生产语义是 stage_b 晚于 weather：runtime_hydrology_enabled=false 时
+    // 内嵌在 weather_stage_b 节点，开启时由 stage_b_after_hydrology 承载。顺序错了
+    // 会让 feedback 读到前一天的 weather_type/intensity，并让 hydrology 用未衰减的
+    // VGP 抽水 —— 这正是 B8 记录的量级偏差来源之一。
+    if (!legacy_stage_order) {
+        run_shared_albedo();
+        run_shared_vegetation();
+        run_shared_feedback();
+    }
+
     if (shared_round_ran || shared_albedo_ran || shared_vegetation_ran ||
         shared_feedback_ran || shared_weather_ran || shared_hydrology_ran ||
         shared_distribute_ran) {
@@ -1442,6 +2189,19 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
                 ++report.changed_cells;
             }
         }
+    }
+    // B8-2：把 worker 自持的 ψ 写回 store lane。提交时会随 store 一起 swap；
+    // CLM2 ABI 4 的 serialize 直接从这里取，save/restore 因此保住 ψ 演化。
+    if (_physics.synoptic_seeded && _physics.synoptic_psi.size() == cells &&
+        cells == current.cell_count) {
+        next.synoptic_psi = _physics.synoptic_psi;
+        next.synoptic_psi_prev = _physics.synoptic_psi_prev;
+    }
+    // B8-2：cyclone 条目表进 store blob，随提交/存档持久化。空表也要写：它表示
+    // "worker 已接管、当前没有活跃气旋"，与"从未播种"是两种不同状态。
+    if (_cyclone_seeded) {
+        next.cyclone_state = pk_async_climate::cyclone_state_encode(
+            _cyclone_entries, _cyclone_next_stable_id);
     }
     next.committed_day = day;
     ++next.generation;
@@ -1473,6 +2233,14 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
         std::fflush(stderr);
     }
     report.state_hash = next.state_hash();
+    // B8-2：把 cyclone 的累计动作数与当前存活数无条件写进 report。weather 是
+    // 节拍制 —— 只跑 round 的那天（stage_ran_mask=0xFF）根本不会进 genesis 段，
+    // 逐日的 report 会带着零出门，于是 host/soak 最后采到的那一天永远是 0。
+    // 这三个数是 kernel 级累计量，必须每天出口都要说真话。
+    report.cyclone_injected = static_cast<int32_t>(_cyclone_total_injected);
+    report.cyclone_replaced = static_cast<int32_t>(_cyclone_total_replaced);
+    report.cyclone_decayed = static_cast<int32_t>(_cyclone_total_decayed);
+    report.cyclone_alive = static_cast<int32_t>(_cyclone_entries.size());
     report.completed = 1;
     return true;
 }
@@ -1485,6 +2253,166 @@ void RuntimeClimateKernel::commit(RuntimeClimateStore &current, RuntimeClimateSt
 bool RuntimeClimateKernel::self_test(std::string &error) {
     if (!climate_formula::self_test()) {
         error = "climate_formula_self_test_failed";
+        return false;
+    }
+    // B8-2：cyclone 纯内核自检。7 个连成一行的水格，1 个气旋条目；验证
+    //   1. 推进改变 intensity / age；
+    //   2. stamp 写出 tag/x/y/lift，且 force_generation 逐位落到 tag；
+    //   3. encode→decode 往返保持条目字段与 next_stable_id。
+    {
+        constexpr int kCells = 7;
+        std::vector<int32_t> neighbors(static_cast<size_t>(kCells) * 6u, -1);
+        for (int i = 0; i < kCells; ++i) {
+            neighbors[static_cast<size_t>(i) * 6u + 0u] = (i > 0) ? i - 1 : -1;
+            neighbors[static_cast<size_t>(i) * 6u + 1u] = (i + 1 < kCells) ? i + 1 : -1;
+        }
+        std::vector<float> pos_x(kCells), pos_y(kCells, 0.0f);
+        std::vector<uint8_t> terrain(kCells, 0u);
+        std::vector<float> temp(kCells, 0.90f), wind_x(kCells, 1.0f);
+        std::vector<float> wind_y(kCells, 0.0f), wind_speed(kCells, 0.80f);
+        std::vector<float> vapor(kCells, 0.85f), instability(kCells, 0.80f);
+        std::vector<float> convergence(kCells, 0.70f);
+        for (int i = 0; i < kCells; ++i) pos_x[static_cast<size_t>(i)] = float(i);
+        pk_async_climate::CycloneAdvanceKnobs knobs;
+        knobs.enabled = true;
+        knobs.dt_days = 1.0f;
+        knobs.world_bounds_pos_y = 0.0f;
+        knobs.world_bounds_size_y = 1.0f;
+        knobs.wrap_width_x = 0.0f;
+        knobs.max_radius_cells = 4;
+        pk_async_climate::CycloneLanes lanes;
+        lanes.neighbors = neighbors.data();
+        lanes.pos_x = pos_x.data();
+        lanes.pos_y = pos_y.data();
+        lanes.terrain = terrain.data();
+        lanes.temp = temp.data();
+        lanes.wind_x = wind_x.data();
+        lanes.wind_y = wind_y.data();
+        lanes.wind_speed = wind_speed.data();
+        lanes.vapor = vapor.data();
+        lanes.instability = instability.data();
+        lanes.convergence = convergence.data();
+        std::vector<uint32_t> tag(kCells, 0u), visit(kCells, 0u);
+        std::vector<float> fx(kCells, 0.0f), fy(kCells, 0.0f), lift(kCells, 0.0f);
+        pk_async_climate::CycloneStamp stamp;
+        stamp.force_tag = tag.data();
+        stamp.visit_tag = visit.data();
+        stamp.force_x = fx.data();
+        stamp.force_y = fy.data();
+        stamp.lift = lift.data();
+        stamp.force_generation = 1u;
+        stamp.visit_generation = 1u;
+        std::vector<pk_async_climate::CycloneEntry> entries(1);
+        entries[0].stable_id = 7u;
+        entries[0].key = 12;
+        entries[0].cell_idx = 3;
+        entries[0].intensity = 0.35f;
+        entries[0].steering_x = 1.0f;
+        entries[0].steering_y = 0.0f;
+        pk_async_climate::CycloneStats stats;
+        pk_async_climate::cyclone_advance_and_stamp_pure(
+            kCells, knobs, lanes, entries, stamp, stats);
+        if (entries.empty() || entries[0].age_days <= 0.0f) {
+            error = "cyclone_kernel_advance_failed";
+            return false;
+        }
+        bool stamped = false;
+        for (int i = 0; i < kCells; ++i) {
+            if (tag[static_cast<size_t>(i)] == 1u) {
+                stamped = true;
+                break;
+            }
+        }
+        if (!stamped || stats.touched_cells <= 0) {
+            error = "cyclone_kernel_stamp_failed";
+            return false;
+        }
+        const std::vector<uint8_t> blob =
+            pk_async_climate::cyclone_state_encode(entries, 9u);
+        std::vector<pk_async_climate::CycloneEntry> decoded;
+        uint64_t decoded_next = 0;
+        pk_async_climate::cyclone_state_decode(blob, decoded, decoded_next);
+        if (decoded.size() != entries.size() || decoded_next != 9u ||
+            decoded[0].stable_id != entries[0].stable_id ||
+            decoded[0].cell_idx != entries[0].cell_idx ||
+            decoded[0].intensity != entries[0].intensity ||
+            decoded[0].age_days != entries[0].age_days) {
+            error = "cyclone_state_codec_failed";
+            return false;
+        }
+        // genesis 自检：同一份 lanes 连续调用两次 —— 第一次注入 1 个，第二次
+        // 命中同键变成 replaced，不该重复出生。
+        {
+            constexpr int kGenCells = 3;
+            uint8_t water_lut[256] = {};
+            water_lut[0] = 1u;
+            std::vector<uint8_t> gen_terrain(kGenCells, 0u);
+            std::vector<uint8_t> gen_is_water(kGenCells, 1u);
+            std::vector<uint8_t> gen_type(kGenCells, 2u);
+            std::vector<float> gen_intensity(kGenCells, 0.90f);
+            std::vector<float> gen_temp(kGenCells, 0.90f);
+            std::vector<float> gen_precip(kGenCells, 0.20f);
+            std::vector<float> gen_cloud(kGenCells, 0.50f);
+            std::vector<float> gen_inst(kGenCells, 0.60f);
+            std::vector<float> gen_conv(kGenCells, 0.50f);
+            std::vector<float> gen_wx(kGenCells, 1.0f);
+            std::vector<float> gen_wy(kGenCells, 0.0f);
+            std::vector<float> gen_posy = {0.35f, 0.35f, 0.35f};
+            std::vector<int32_t> gen_nb(static_cast<size_t>(kGenCells) * 6u, -1);
+            gen_nb[0] = 1; gen_nb[6] = 0; gen_nb[7] = 2; gen_nb[12] = 1;
+            pk_async_climate::CycloneGenesisKnobs gen;
+            gen.enabled = true;
+            gen.storm_type_id = 2;
+            gen.capacity = 4;
+            gen.births_per_commit = 2;
+            gen.world_bounds_pos_y = 0.0f;
+            gen.world_bounds_size_y = 1.0f;
+            pk_async_climate::CycloneGenesisLanes gen_lanes;
+            gen_lanes.terrain = gen_terrain.data();
+            gen_lanes.water_lut = water_lut;
+            gen_lanes.weather_type = gen_type.data();
+            gen_lanes.weather_intensity = gen_intensity.data();
+            gen_lanes.temp = gen_temp.data();
+            gen_lanes.precip = gen_precip.data();
+            gen_lanes.cloud = gen_cloud.data();
+            gen_lanes.instability = gen_inst.data();
+            gen_lanes.convergence = gen_conv.data();
+            gen_lanes.wind_x = gen_wx.data();
+            gen_lanes.wind_y = gen_wy.data();
+            gen_lanes.pos_y = gen_posy.data();
+            gen_lanes.neighbors = gen_nb.data();
+            gen_lanes.is_water = gen_is_water.data();
+            std::vector<pk_async_climate::CycloneEntry> gen_entries;
+            uint64_t gen_next_id = 1;
+            pk_async_climate::CycloneGenesisStats gen_stats;
+            pk_async_climate::cyclone_genesis_pure(kGenCells, gen, gen_lanes,
+                                                  gen_entries, gen_next_id,
+                                                  gen_stats);
+             // births_per_commit=2、3 个同条件格：按 cell 升序注入 2 个后停。
+             if (gen_stats.injected != 2 || gen_entries.size() != 2u ||
+                 gen_next_id != 3u || gen_stats.cand_water != 3 ||
+                 gen_stats.cand_shear != 3) {
+                error = "cyclone_genesis_inject_failed";
+                return false;
+             }
+             // 第二次调用把容量压到已满：同键（0/1）走 replaced，第 3 格因容量
+             // 被挡住，不该再出生，也不该产生重复条目。
+             gen.capacity = 2;
+             pk_async_climate::cyclone_genesis_pure(kGenCells, gen, gen_lanes,
+                                                  gen_entries, gen_next_id,
+                                                  gen_stats);
+            if (gen_stats.injected != 0 || gen_stats.replaced != 2 ||
+                gen_entries.size() != 2u) {
+                error = "cyclone_genesis_replace_failed";
+                return false;
+            }
+        }
+    }
+    // B8 P0：顺序契约是 kernel 的一部分，随 self_test 一起跑。表本身错了
+    // （漏 stage / 重复 / fallback tail 不在尾部）时不必等到 plan_day。
+    std::string order_error;
+    if (!runtime_climate_stage_order_self_test(order_error)) {
+        error = "climate_kernel_stage_order_contract_failed:" + order_error;
         return false;
     }
     RuntimeEnvironmentSnapshot input;
@@ -1509,6 +2437,13 @@ bool RuntimeClimateKernel::self_test(std::string &error) {
     RuntimeClimateKernelReport report;
     if (!kernel.plan_day(0, input, catalog, current, next, report) || !report.completed) {
         error = report.error;
+        return false;
+    }
+    // 执行序必须与声明序一致。位掩码只能证明 stage 跑过，证明不了顺序。
+    if (!runtime_climate_stage_sequence_is_canonical(
+            report.stage_sequence.data(), report.stage_sequence_count,
+            order_error)) {
+        error = "climate_kernel_stage_sequence_contract_failed:" + order_error;
         return false;
     }
     commit(current, next);

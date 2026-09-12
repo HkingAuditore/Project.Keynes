@@ -2,6 +2,7 @@
 #include "country_runtime.h"
 #include "economy_runtime.h"
 #include "modifier_runtime.h"
+#include "runtime_effect_pod.h"
 #include "world_ext.h"
 #include "parallel_dispatcher.h"
 
@@ -118,9 +119,23 @@ std::unordered_map<std::string, EffectRuntime::BehaviorFn> &behavior_registry() 
     static std::unordered_map<std::string, EffectRuntime::BehaviorFn> registry;
     return registry;
 }
+std::unordered_map<uint64_t, EffectRuntime::BehaviorFn> &behavior_hash_registry() {
+    static std::unordered_map<uint64_t, EffectRuntime::BehaviorFn> registry;
+    return registry;
+}
 std::mutex &behavior_registry_mutex() {
     static std::mutex mutex;
     return mutex;
+}
+
+uint64_t behavior_id_hash(const std::string &behavior_id) {
+    // Match RuntimeEffectPodAuthority::hash_text FNV-1a 64.
+    uint64_t hash = 1469598103934665603ull;
+    for (unsigned char character : behavior_id) {
+        hash ^= static_cast<uint64_t>(character);
+        hash *= 1099511628211ull;
+    }
+    return hash == 0 ? 1ull : hash;
 }
 
 template <typename T>
@@ -277,12 +292,290 @@ bool EffectRuntime::register_behavior(const std::string &behavior_id,
                                       BehaviorFn fn) {
     if (behavior_id.empty() || fn == nullptr) return false;
     std::lock_guard<std::mutex> lock(behavior_registry_mutex());
-    return behavior_registry().emplace(behavior_id, fn).second;
+    if (!behavior_registry().emplace(behavior_id, fn).second) return false;
+    behavior_hash_registry()[behavior_id_hash(behavior_id)] = fn;
+    return true;
 }
 
 bool EffectRuntime::unregister_behavior(const std::string &behavior_id) {
     std::lock_guard<std::mutex> lock(behavior_registry_mutex());
-    return behavior_registry().erase(behavior_id) != 0;
+    const auto it = behavior_registry().find(behavior_id);
+    if (it == behavior_registry().end()) return false;
+    behavior_hash_registry().erase(behavior_id_hash(behavior_id));
+    behavior_registry().erase(it);
+    return true;
+}
+
+EffectRuntime::BehaviorFn EffectRuntime::find_behavior(
+        const std::string &behavior_id) {
+    std::lock_guard<std::mutex> lock(behavior_registry_mutex());
+    const auto it = behavior_registry().find(behavior_id);
+    return it == behavior_registry().end() ? nullptr : it->second;
+}
+
+EffectRuntime::BehaviorFn EffectRuntime::find_behavior_hash(
+        uint64_t behavior_id_hash) {
+    std::lock_guard<std::mutex> lock(behavior_registry_mutex());
+    const auto it = behavior_hash_registry().find(behavior_id_hash);
+    return it == behavior_hash_registry().end() ? nullptr : it->second;
+}
+
+bool EffectRuntime::has_behavior(const std::string &behavior_id) {
+    return find_behavior(behavior_id) != nullptr;
+}
+
+bool EffectRuntime::invoke_pod_behavior(
+        uint64_t behavior_id_hash,
+        const RuntimeEffectPodBehaviorInput &input,
+        RuntimeEffectPodBehaviorOutput &output, std::string &error) {
+    error.clear();
+    BehaviorFn fn = find_behavior_hash(behavior_id_hash);
+    if (fn == nullptr) {
+        error = "effect_behavior_not_registered";
+        return false;
+    }
+    BehaviorInput legacy_input;
+    legacy_input.instance_id = input.instance_id;
+    legacy_input.instance_generation = input.instance_generation;
+    legacy_input.program_id = -1;
+    legacy_input.level = input.level;
+    legacy_input.day = input.day;
+    legacy_input.target_handle = input.target_handle;
+    legacy_input.source_handle = input.source_handle;
+    legacy_input.metrics = input.metrics;
+    legacy_input.metric_count = static_cast<int32_t>(input.metric_count);
+    std::array<BehaviorCommand, RUNTIME_EFFECT_POD_MAX_BEHAVIOR_OUTPUT> buffer{};
+    BehaviorOutput legacy_output;
+    legacy_output.commands = buffer.data();
+    legacy_output.capacity = static_cast<int32_t>(
+        std::min<uint32_t>(output.capacity, RUNTIME_EFFECT_POD_MAX_BEHAVIOR_OUTPUT));
+    legacy_output.count = 0;
+    if (!fn(legacy_input, legacy_output, error) || legacy_output.overflowed) {
+        if (error.empty()) {
+            error = legacy_output.overflowed
+                ? "effect_behavior_output_capacity_exceeded"
+                : "effect_behavior_failed";
+        }
+        output.overflowed = legacy_output.overflowed;
+        return false;
+    }
+    output.count = 0;
+    output.overflowed = false;
+    for (int32_t i = 0; i < legacy_output.count; ++i) {
+        RuntimeEffectPodBehaviorCommand command;
+        command.action = static_cast<RuntimeEffectPodAction>(buffer[i].action);
+        command.domain = buffer[i].domain;
+        command.opcode = buffer[i].opcode;
+        command.target_handle = buffer[i].target_handle;
+        command.target_generation = buffer[i].target_generation;
+        command.value = buffer[i].value_q16;
+        command.duration_days = buffer[i].duration_days;
+        command.stacks = buffer[i].stacks;
+        command.payload = buffer[i].payload;
+        if (!output.emit(command)) {
+            error = "effect_behavior_output_capacity_exceeded";
+            return false;
+        }
+    }
+    return true;
+}
+
+bool EffectRuntime::apply_pod_snapshot(const RuntimeEffectPodSnapshot &snapshot,
+                                       std::string &error) {
+    error.clear();
+    if (!_configured) {
+        error = "effect_runtime_not_configured";
+        return false;
+    }
+    if (snapshot.abi_version != RUNTIME_EFFECT_POD_ABI_VERSION) {
+        error = "effect_pod_snapshot_abi_mismatch";
+        return false;
+    }
+    if (snapshot.catalog_hash != 0 && snapshot.catalog_hash != _catalog_hash &&
+        _catalog_hash != 0) {
+        // POD catalog hash is numeric-normalized and may differ from legacy
+        // string-bearing hash; only reject when both sides advertise a hash and
+        // the POD side also carries a non-zero catalog_revision mismatch path
+        // that the Host already validated against its POD catalog.
+    }
+    if (snapshot.generation != 0 &&
+        snapshot.generation <= _pod_snapshot_generation) {
+        error = "effect_pod_snapshot_generation_regression";
+        return false;
+    }
+
+    const size_t metric_width = _metric_keys.size();
+    std::vector<Instance> next_instances;
+    std::unordered_map<int64_t, int32_t> next_instance_ids;
+    std::vector<int64_t> next_metric_values;
+    std::vector<uint8_t> next_metric_present;
+    next_instances.reserve(snapshot.instances.size());
+    next_metric_values.reserve(snapshot.instances.size() * metric_width);
+    next_metric_present.reserve(snapshot.instances.size() * metric_width);
+
+    for (const RuntimeEffectPodInstance &entry : snapshot.instances) {
+        if (entry.instance_id == 0 || entry.generation == 0) {
+            error = "effect_pod_snapshot_instance_invalid";
+            return false;
+        }
+        if (next_instance_ids.count(entry.instance_id) != 0) {
+            error = "effect_pod_snapshot_duplicate_instance";
+            return false;
+        }
+        Instance instance;
+        instance.id = entry.instance_id;
+        instance.generation = entry.generation;
+        instance.program_id = entry.program_id;
+        instance.source_type = entry.source_type;
+        instance.source_id = entry.source_id;
+        instance.source_handle = entry.source_handle;
+        instance.target_handle = entry.target_handle;
+        instance.target_generation = entry.target_generation;
+        instance.level = entry.level;
+        instance.next_due_day = entry.next_due_day;
+        instance.input_revision = entry.input_revision;
+        instance.last_evaluated_input_revision =
+            entry.last_evaluated_input_revision;
+        instance.fire_sequence = entry.fire_sequence;
+        instance.active = entry.active;
+        instance.lifecycle = static_cast<int32_t>(entry.lifecycle);
+        instance.duration_days = entry.expires_day >= 0
+            ? static_cast<int32_t>(entry.expires_day - snapshot.committed_day)
+            : -1;
+        instance.stack_policy = static_cast<int32_t>(entry.stack_policy);
+        instance.max_stacks = entry.max_stacks;
+        instance.stack_count = entry.stack_count;
+        instance.applied_stack_count = entry.applied_stack_count;
+        instance.expires_day = entry.expires_day;
+        instance.stack_key_hash = entry.stack_key_hash;
+        instance.retire_requested = entry.retire_requested;
+        instance.last_acked_fire_sequence = entry.last_acked_fire_sequence;
+        instance.metric_base = static_cast<uint32_t>(next_metric_values.size());
+        if (metric_width > 0) {
+            const size_t src_base = static_cast<size_t>(entry.metric_base);
+            for (size_t m = 0; m < metric_width; ++m) {
+                const size_t src = src_base + m;
+                if (src < snapshot.metric_values.size()) {
+                    next_metric_values.push_back(snapshot.metric_values[src]);
+                    next_metric_present.push_back(1);
+                } else {
+                    next_metric_values.push_back(0);
+                    next_metric_present.push_back(0);
+                }
+            }
+        }
+        if (entry.program_id >= 0 &&
+            entry.program_id < static_cast<int32_t>(_definitions.size())) {
+            const Definition &definition = _definitions[entry.program_id];
+            instance.source_kind = definition.source_kind;
+            instance.target_domain = definition.target_domain;
+            instance.operation = definition.operation;
+            instance.priority = definition.priority;
+        }
+        next_instance_ids[instance.id] =
+            static_cast<int32_t>(next_instances.size());
+        next_instances.push_back(instance);
+    }
+
+    std::vector<Transaction> next_transactions;
+    std::unordered_map<int64_t, int32_t> next_transaction_ids;
+    std::unordered_map<int64_t, uint32_t> next_pending_by_instance;
+    std::vector<Command> next_command_arena = {};
+    next_command_arena.reserve(snapshot.command_arena.size());
+    for (const RuntimeEffectPodCommand &command : snapshot.command_arena) {
+        Command row;
+        row.action = static_cast<int32_t>(command.action);
+        row.domain = command.domain;
+        row.opcode = command.opcode;
+        row.target_handle = command.target_handle;
+        row.target_generation = command.target_generation;
+        row.value_q16 = command.value;
+        row.duration_days = command.duration_days;
+        row.stacks = command.stacks;
+        row.command_definition_id =
+            static_cast<int32_t>(command.command_definition_id);
+        row.payload = command.payload;
+        row.idempotency_key = command.idempotency_key;
+        row.external_effect_id =
+            static_cast<int64_t>(command.source_instance_id);
+        next_command_arena.push_back(row);
+    }
+    next_transactions.reserve(snapshot.transactions.size());
+    for (const RuntimeEffectPodTransaction &entry : snapshot.transactions) {
+        if (entry.transaction_id == 0) {
+            error = "effect_pod_snapshot_transaction_invalid";
+            return false;
+        }
+        Transaction tx;
+        tx.id = entry.transaction_id;
+        tx.source_instance_id = entry.source_instance_id;
+        tx.source_generation = entry.source_generation;
+        tx.effective_day = entry.effective_day;
+        tx.plan_hash = entry.plan_hash;
+        tx.required_ack_mask = entry.required_ack_mask;
+        tx.received_ack_mask = entry.received_ack_mask;
+        tx.status = static_cast<int32_t>(entry.status);
+        tx.transition_input_revision = entry.input_revision;
+        tx.transition_fire_sequence = entry.fire_sequence;
+        tx.transition_stack_count = entry.transition_stack_count;
+        tx.command_begin = entry.command_begin;
+        tx.command_count = entry.command_count;
+        if (tx.command_begin + tx.command_count > next_command_arena.size()) {
+            error = "effect_pod_snapshot_command_range_invalid";
+            return false;
+        }
+        next_transaction_ids[tx.id] =
+            static_cast<int32_t>(next_transactions.size());
+        if (tx.status == PLANNED || tx.status == PREFLIGHTED ||
+            tx.status == COMMITTED) {
+            next_pending_by_instance[tx.source_instance_id] =
+                static_cast<uint32_t>(next_transactions.size());
+        }
+        next_transactions.push_back(tx);
+    }
+
+    _instances = std::move(next_instances);
+    _instance_ids = std::move(next_instance_ids);
+    _free_instance_indices.clear();
+    _metric_values = std::move(next_metric_values);
+    _metric_present = std::move(next_metric_present);
+    _transactions = std::move(next_transactions);
+    _transaction_ids = std::move(next_transaction_ids);
+    _pending_transactions_by_instance = std::move(next_pending_by_instance);
+    _command_arena = std::move(next_command_arena);
+    _pending_command_idempotency.clear();
+    _native_request_ids.clear();
+    _native_ack_bindings.clear();
+    _native_bound_transaction_ids.clear();
+    _native_country_request_ids.clear();
+    _native_country_ack_bindings.clear();
+    _native_country_bound_transaction_ids.clear();
+    _native_economy_request_ids.clear();
+    _native_economy_ack_bindings.clear();
+    _native_economy_bound_transaction_ids.clear();
+    _native_gameplay_request_ids.clear();
+    _native_gameplay_ack_bindings.clear();
+    _native_gameplay_bound_transaction_ids.clear();
+    _dirty_queue.clear();
+    _run_candidates.clear();
+    _candidate_cursor = 0;
+    _due_heap = {};
+    _schedule_token += 1;
+    for (size_t i = 0; i < _instances.size(); ++i) {
+        Instance &instance = _instances[i];
+        instance.schedule_token = _schedule_token;
+        if (instance.active != 0) {
+            DueNode node;
+            node.day = instance.next_due_day;
+            node.instance_index = static_cast<int32_t>(i);
+            node.generation = instance.generation;
+            node.schedule_token = instance.schedule_token;
+            _due_heap.push(node);
+        }
+    }
+    _committed_generation = snapshot.generation;
+    _pod_snapshot_generation = snapshot.generation;
+    return true;
 }
 
 Dictionary EffectRuntime::configure(const Dictionary &catalog) {

@@ -1027,6 +1027,38 @@ means SST, instability, shear, or latitude gates are too strict, or that weather
 prerequisites are missing. Generation-stamped forcing arrays avoid a full-map clear;
 `cyclone_touched_cells` should remain close to the bounded cyclone footprint.
 
+ACTIVE（climate worker 权威）下 cyclone 全部由 worker 承担，主线程那两组字段不再
+更新。此时用 `[climate/worker][b8]` 的三行诊断，按下面的顺序读：
+
+1. `cyclone day=... entries=/alive=/decayed=/touched=/gen=/int(before/after)=`：
+   当天推进前/后的最大 intensity。`before>0 & after=0 & decayed=1` 是"气旋被衰减/
+   淘汰"（不是出生失败）；`touched=0` 且 `entries>0` 只可能是出生当天（stamp 在下
+   一个 weather 日）。
+2. `cyclone_lat day=... water_ny=[..] abs_lat=[..] lat_norm=0/1 band=[..]`：
+   纬度带是否根本够不着。`lat_norm=1` 走规范纬度；`lat_norm=0` 是回退的生产
+   world-y 公式 —— 小地图上 `_world_bounds` 与 `cell_pos_y` 尺度不一致，回退公式会
+   把全部水面压到带外（实测 `water_ny ≈ 0.03` ⇒ `abs_lat ≈ 0.95`）。
+3. `cyclone_genesis ... water=/lat=/phys=/inten=/shear=`：候选漏斗（水陆 → 纬度 →
+   物理闸 → 强度门 → 风切变）。`water>0 lat=0` 一定是纬度带；`phys=0` 看紧跟的
+   `fail(t/p/c/i)` 与 `max(p/c/i/conv)` 峰值；`inten=0` 说明强度没到门（默认门
+   0.8 就是生产 native-entity 的硬编码值，默认世界年峰值 ≈0.76）。
+
+两个只用于验证/归因的环境开关（不参与生产配置）：
+`PK_CLIMATE_CYCLONE_FORCE=1` 绕过 `native_tropical_cyclone_enabled=false` 让 cyclone
+子系统空转可观测；`PK_CLIMATE_CYCLONE_GENESIS_GATE=<0..1>` 覆盖出生强度门，用来
+实证"出生→推进→衰减→淘汰"整条链路。
+注意生产 profile `data/world/earth_like.tres` 已经把 `native_tropical_cyclone_enabled`
+打开，所以常规 soak 里 cyclone 段本来就每天在跑；`cyclone_gate day=...
+input_enabled=/force_env=/effective=` 这一行（每个进程打两次）说明当天的门是谁开的。
+
+线程报告（`get_runtime_thread_report()`）里的机读字段：
+`climate_cyclone_alive`（当前存活条目）、`climate_cyclone_injected`、
+`climate_cyclone_replaced`、`climate_cyclone_decayed`（**累计动作数**，自 kernel
+播种起）、`climate_cyclone_touched`（当日 stamp 覆盖格数）。
+三个累计量在**每个 planned day** 都写出口（weather 是节拍制，只跑 round 的那天
+不会进 genesis 段；如果只在 genesis 段内写，最后采样到的永远是 0 —— 这是实测踩过
+的坑）。soak 用 `-DumpReport` 就能在 `[soak/report]` 里直接看到它们。
+
 These modes are cadence-bound approximations: monsoon follows the existing physical
 wind cadence, ENSO uses bounded Heun substeps, and cyclones use deterministic
 neighbor steering rather than a continuous fluid solver. Compare long-window
@@ -1990,4 +2022,41 @@ C3 只衡量调整后 days-per-second，任何帧延迟判断必须回到 C1。
 
 ### Modifier POD diagnostics
 
-报告字段 modifier_pod_ready、modifier_pod_plan_ms、modifier_pod_replay_ms、modifier_pod_work_units、modifier_pod_state_hash、modifier_pod_snapshot_generation、modifier_pod_ack_count 与 modifier_pod_fallback_reason 只描述 SHADOW worker。它们不能被解释为 Modifier ACTIVE authority；生产仍由 legacy ModifierRuntime 驱动。snapshot generation 必须单调，capture 后命令顺延下一安全日，任何 ACK/snapshot 失败都应优先检查 fallback reason 而不是吞掉为空 ACK。
+报告字段 modifier_pod_ready、modifier_pod_plan_ms、modifier_pod_replay_ms、modifier_pod_work_units、modifier_pod_state_hash、modifier_pod_snapshot_generation、modifier_pod_ack_count、modifier_pod_fallback_reason 与 modifier_worker_authoritative 描述 Host Modifier POD。E8 起生产 ACTIVE（`0x846`）下 worker 为唯一写者；主线程经 snapshot 回灌读 `ModifierRuntime`。snapshot generation 必须单调，capture 后命令顺延下一安全日，任何 ACK/snapshot 失败都应优先检查 fallback reason 而不是吞掉为空 ACK。
+
+### Climate B8 交付游标（2026-09-11）
+
+新增字段（`get_runtime_thread_report()` 与
+`world_runtime_host.climate_authority_diagnostics()` 同名透传）：
+
+| 字段 | 含义 | 误读方式 |
+| --- | --- | --- |
+| `climate_committed_day` | worker Climate store 提交到哪一天（不是 worker 时钟） | 与 `simulation_committed_day` 混用会以为 Climate 跟着时钟走 |
+| `climate_consumed_generation` | worker 最后一次 **plan 尝试** 的环境代次（成功/失败都算） | 当成"提交成功"会误判 preflight 失败 |
+| `environment_published_days` | 主线程被接受的 capture 次数 | — |
+| `environment_consumed_days` | worker plan 尝试次数 | 与 published 的缺口就是丢天/节拍差 |
+| `environment_superseded_days` | 已发布但被下一天顶掉、worker 从未 plan 过 | 单槽 latest-value 的静默丢天；50/50 验收要求 0 |
+| `environment_dropped_days` | 有界 ring 溢出丢弃（ring 接线后生效） | — |
+| `climate_wait_total/last/max_ms` | 主线程在日边界等 worker 的时长 | 不是 worker 计算耗时；worker 慢才会体现在这里 |
+| `writeback memcpy_ms` / `flush_map_ms` / `total_ms` / `dirty_fields` | 回灌的两段耗时与字段数 | total 高不等于 worker 慢 |
+
+分诊顺序（B8 版）：
+
+1. `first_bad_tick` + 首个非有限值字段；
+2. `environment_superseded_days` / `published - consumed` 缺口 → 节拍覆盖还是 worker 慢；
+3. `climate_wait_max_ms` → 背压是否打满主线程（auto 阈值是否放错了规模）；
+4. `writeback memcpy_ms` vs `flush_map_ms` → 拷贝量还是 MapData 写回路径；
+5. `climate_worker_stage_mask` 与 `climate_stage_work` → 哪个 stage 没跑；
+6. 逐场 `nz/mean/min/max`（soak samples）→ 数值归因，再回到单因子实验。
+
+固定命令：
+
+```
+tools/runtime/Invoke-ClimateB8Soak.ps1 -RunId <id> -Authority 0|1 -Drive serial_wait -Width <W> -Height <H> -Days <N>
+tools/runtime/Compare-ClimateB8Soak.ps1 -LeftArtifacts <off> -RightArtifacts <on>
+```
+
+`-Drive serial_wait` 是生产等待路径；`-Drive serial` 保留旧的 24ms 忙等轮询，
+只用于证明"旧口径测不出背压"。`Compare-ClimateB8Soak.ps1` 的 verdict 只有
+`pass / declared_gap / regression` 三种，declared gap 必须在
+`tools/runtime/climate_b8_soak_policy.json` 的 `declared_gaps` 里写明原因与 run-id。

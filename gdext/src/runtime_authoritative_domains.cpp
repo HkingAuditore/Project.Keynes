@@ -352,6 +352,11 @@ void RuntimeClimateStore::reset(uint32_t cells) {
     vegetation_growth_streak.assign(cells, 0);
     vegetation_drought_streak.assign(cells, 0);
     vegetation_succession_candidate.assign(cells, 0);
+    resize(synoptic_psi);
+    resize(synoptic_psi_prev);
+    vegetation.assign(cells, 0);
+    base_vegetation.assign(cells, 0);
+    cyclone_state.clear();
     climate_anomaly = 0.0f;
     annual_temperature_drift = 0.0f;
     rng_state = 0x9e3779b97f4a7c15ull;
@@ -381,6 +386,9 @@ bool RuntimeClimateStore::validate(std::string &error) const {
         same_size(vegetation_drought_stress, n) &&
         same_size(vegetation_cold_stress, n) && same_size(vegetation_growth_streak, n) &&
         same_size(vegetation_drought_streak, n) && same_size(vegetation_succession_candidate, n) &&
+        same_size(synoptic_psi, n) && same_size(synoptic_psi_prev, n) &&
+        same_size(vegetation, n) && same_size(base_vegetation, n) &&
+        cyclone_state.size() <= 64u * 1024u * 1024u &&
         temperature_history.size() == n * 365u;
     if (!shape) {
         set_error(error, "climate_store_shape_invalid");
@@ -401,6 +409,7 @@ bool RuntimeClimateStore::validate(std::string &error) const {
         finite_vector(vegetation_vitality) && finite_vector(temperature_history) &&
         finite_vector(vegetation_growth_pressure) && finite_vector(vegetation_heat_stress) &&
         finite_vector(vegetation_drought_stress) && finite_vector(vegetation_cold_stress) &&
+        finite_vector(synoptic_psi) && finite_vector(synoptic_psi_prev) &&
         std::isfinite(climate_anomaly) && std::isfinite(annual_temperature_drift);
     if (!finite) set_error(error, "climate_store_non_finite");
     return finite;
@@ -451,6 +460,15 @@ uint64_t RuntimeClimateStore::state_hash() const {
     hash = mix_vector(hash, vegetation_growth_streak);
     hash = mix_vector(hash, vegetation_drought_streak);
     hash = mix_vector(hash, vegetation_succession_candidate);
+    // B8-2：synoptic ψ 是 worker 自持的跨天状态，必须进 state_hash，否则
+    // save→restore 之后 hash 校验会漏掉它、parity 也看不见它的漂移。
+    hash = mix_vector(hash, synoptic_psi);
+    hash = mix_vector(hash, synoptic_psi_prev);
+    hash = mix_vector(hash, vegetation);
+    hash = mix_vector(hash, base_vegetation);
+    // cyclone_state 是可变长 blob：先混长度再逐字节混，保证长度变化一定改变 hash。
+    hash = mix(hash, static_cast<uint64_t>(cyclone_state.size()));
+    for (uint8_t value : cyclone_state) hash = mix(hash, value);
     hash = mix_vector(hash, temperature_history);
     uint32_t drift_bits = 0;
     std::memcpy(&drift_bits, &annual_temperature_drift, sizeof(drift_bits));

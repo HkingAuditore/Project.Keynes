@@ -375,6 +375,152 @@ bool ModifierRuntime::export_pod_catalog(RuntimeModifierPodCatalog &out,
     return true;
 }
 
+
+bool ModifierRuntime::apply_pod_snapshot(const RuntimeModifierPodSnapshot &snapshot,
+                                         std::string &error) {
+    error.clear();
+    if (!_configured) {
+        error = "modifier_runtime_not_configured";
+        return false;
+    }
+    if (snapshot.abi_version != RUNTIME_MODIFIER_POD_ABI_VERSION) {
+        error = "modifier_pod_snapshot_abi_mismatch";
+        return false;
+    }
+    if (snapshot.generation != 0 &&
+        snapshot.generation <= _pod_snapshot_generation) {
+        error = "modifier_pod_snapshot_generation_regression";
+        return false;
+    }
+    for (const RuntimeModifierPodEntry &entry : snapshot.entries) {
+        if (entry.domain >= DOMAIN_COUNT) {
+            error = "modifier_pod_snapshot_domain_invalid";
+            return false;
+        }
+        if (entry.scope < GLOBAL || entry.scope > ENTITY) {
+            error = "modifier_pod_snapshot_scope_invalid";
+            return false;
+        }
+        if (entry.definition_id < 0 ||
+            entry.definition_id >= static_cast<int32_t>(_definitions.size())) {
+            error = "modifier_pod_snapshot_definition_invalid";
+            return false;
+        }
+    }
+    for (const RuntimeModifierPodBucket &bucket : snapshot.buckets) {
+        if (bucket.domain >= DOMAIN_COUNT || bucket.scope > ENTITY) {
+            error = "modifier_pod_snapshot_bucket_shape_invalid";
+            return false;
+        }
+    }
+
+    // Build into temporaries so a mid-apply failure cannot leave a half state.
+    std::array<Store, DOMAIN_COUNT> next_stores{};
+    for (int32_t domain = 0; domain < DOMAIN_COUNT; ++domain) {
+        next_stores[domain].snapshot_version =
+            _stores[domain].snapshot_version + 1;
+        next_stores[domain].structure_epoch =
+            _stores[domain].structure_epoch + 1;
+        if (domain < static_cast<int32_t>(snapshot.domain_versions.size()) &&
+            snapshot.domain_versions[domain] != 0) {
+            next_stores[domain].snapshot_version = std::max(
+                next_stores[domain].snapshot_version,
+                snapshot.domain_versions[domain]);
+        }
+    }
+
+    for (const RuntimeModifierPodEntry &entry : snapshot.entries) {
+        if (entry.modifier_handle == 0) continue;
+        Store &store = next_stores[entry.domain];
+        const uint32_t index =
+            static_cast<uint32_t>(entry.modifier_handle & 0xffffffffULL);
+        const uint32_t generation =
+            static_cast<uint32_t>(entry.modifier_handle >> 32U);
+        if (generation == 0) {
+            error = "modifier_pod_snapshot_handle_invalid";
+            return false;
+        }
+        if (index >= store.active.size()) {
+            const size_t grow = static_cast<size_t>(index) + 1u;
+            store.active.resize(grow, 0);
+            store.generation.resize(grow, 0);
+            store.definition_id.resize(grow, -1);
+            store.entity_handle.resize(grow, 0);
+            store.group_handle.resize(grow, 0);
+            store.source_type.resize(grow, 0);
+            store.source_id.resize(grow, 0);
+            store.scope.resize(grow, GLOBAL);
+            store.stacks.resize(grow, 1);
+            store.magnitude_q16.resize(grow, Q16_ONE);
+            store.applied_day.resize(grow, -1);
+            store.expiry_day.resize(grow, PERMANENT_EXPIRY);
+            store.expiry_revision.resize(grow, 0);
+        }
+        if (store.active[index] != 0) {
+            error = "modifier_pod_snapshot_duplicate_slot";
+            return false;
+        }
+        store.active[index] = 1;
+        store.generation[index] = generation;
+        store.definition_id[index] = entry.definition_id;
+        store.entity_handle[index] = entry.entity_handle;
+        store.group_handle[index] = entry.group_handle;
+        store.source_type[index] = entry.source_type;
+        store.source_id[index] = entry.source_id;
+        store.scope[index] = entry.scope;
+        store.stacks[index] = entry.stacks;
+        store.magnitude_q16[index] = entry.magnitude_q16;
+        store.applied_day[index] = entry.applied_day;
+        store.expiry_day[index] = entry.expires_day;
+        store.expiry_revision[index] = 1;
+        if (store.expiry_day[index] >= 0) {
+            store.expiry_heap.push({store.expiry_day[index], index,
+                                   store.generation[index],
+                                   store.expiry_revision[index]});
+        }
+        const Definition &definition = _definitions[entry.definition_id];
+        if (definition.policy != INDEPENDENT) {
+            UniqueKey unique{entry.definition_id, entry.scope,
+                             entry.scope == GROUP ? entry.group_handle
+                                 : (entry.scope == ENTITY ? entry.entity_handle
+                                                         : 0),
+                             entry.source_type, entry.source_id};
+            store.unique_instances[unique] = index;
+        }
+        ++store.active_instances;
+        store.peak_instances =
+            std::max(store.peak_instances, store.active_instances);
+    }
+
+    // Install aggregated buckets from the snapshot so evaluate_* matches the
+    // worker commit even when contribution rebuild would diverge on ordering.
+    for (const RuntimeModifierPodBucket &pod_bucket : snapshot.buckets) {
+        Store &store = next_stores[pod_bucket.domain];
+        BucketKey key{static_cast<int32_t>(pod_bucket.stat_id),
+                      static_cast<int32_t>(pod_bucket.scope),
+                      pod_bucket.scope_id};
+        Bucket bucket;
+        bucket.sum_add = pod_bucket.sum_add;
+        if (pod_bucket.product_factor == 0.0) {
+            bucket.zero_factor_count = 1;
+            bucket.product_nonzero = 1.0;
+        } else {
+            bucket.zero_factor_count = 0;
+            bucket.product_nonzero = pod_bucket.product_factor;
+        }
+        store.buckets[key] = bucket;
+        bump_stat_version(store, key.stat_id);
+    }
+
+    // Swap in only after the full rebuild succeeded.
+    _stores = std::move(next_stores);
+    _pending_commands.clear();
+    if (snapshot.committed_day >= 0)
+        _current_day = snapshot.committed_day;
+    _pod_snapshot_generation = snapshot.generation;
+    return true;
+}
+
 Dictionary ModifierRuntime::submit_commands(const Dictionary &batch) {
     if (!_configured) return fail_dict("modifier_runtime_not_configured");
     const int32_t protocol = batch.get("protocol_version", 0);

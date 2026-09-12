@@ -1,7 +1,24 @@
 {
   "schema": "AuthorityStageCFieldPolicy",
   "schema_version": 1,
-  "notes": "Declared Climate/Weather C2 divergences after weather_field_init extras writeback. weather_field_init_arr is NOT declared and matched 0/240000 on stage-c2-fieldinit-20260910. Tolerances are 15% headroom on that post-fix recording. Do not treat this as Climate numeric parity or D12 Country release.",
+  "notes": "F8 adds EffectClientEvidence (state_hash/snapshot_generation/ack_count); undeclared Effect divergences are blockers. Headless soak authority-effect-f8-20260912: ACTIVE mask 0x866, effect_worker_authoritative=true, snapshot_generation advances, fallback empty, main_wait=0. OFF SHADOW may keep snapshot_generation=0 — declare expected ACTIVE/OFF generation divergence before C2 client dual-recording is treated as green. E8 ModifierClientEvidence retained. Declared Climate/Weather C2 divergences after weather_field_init extras writeback. Do not treat this as Climate numeric parity or D12 Country release.",
+  "modifier_evidence": {
+    "state_hash": {
+      "reason": "e8_modifier_active: ModifierClientEvidence; ACTIVE vs OFF may diverge when OFF SHADOW does not advance the same POD cursor — declare measured tolerance after C2 dual-recording; default zero until then.",
+      "absolute_tolerance": 0,
+      "source": "e8-soak-20260911"
+    },
+    "snapshot_generation": {
+      "reason": "e8_modifier_active: ACTIVE soak advances generation; OFF may remain 0. Absolute equality is the default gate until C2 measures an allowed lag/divergence.",
+      "absolute_tolerance": 0,
+      "source": "e8-soak-20260911"
+    },
+    "ack_count": {
+      "reason": "e8_modifier_active: ack_count default zero-diff (soak both 0).",
+      "absolute_tolerance": 0,
+      "source": "e8-soak-20260911"
+    }
+  },
   "fields": {
     "temp_arr": {
       "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
@@ -457,6 +474,23 @@
       "mean_tolerance": 1.136583334333,
       "p95_tolerance": 1.150000001,
       "source": "stage-c2-fieldinit-20260910"
+    }
+  },
+  "effect_evidence": {
+    "state_hash": {
+      "reason": "f8_effect_active: EffectClientEvidence; ACTIVE vs OFF may diverge when OFF SHADOW does not advance the same POD cursor — declare measured tolerance after C2 dual-recording; default zero until then.",
+      "absolute_tolerance": 0,
+      "source": "f8-soak-20260912"
+    },
+    "snapshot_generation": {
+      "reason": "f8_effect_active: ACTIVE soak advances generation; OFF may remain 0. Absolute equality is the default gate until C2 measures an allowed lag/divergence.",
+      "absolute_tolerance": 0,
+      "source": "f8-soak-20260912"
+    },
+    "ack_count": {
+      "reason": "f8_effect_active: ack_count default zero-diff until C2 measures.",
+      "absolute_tolerance": 0,
+      "source": "f8-soak-20260912"
     }
   }
 }

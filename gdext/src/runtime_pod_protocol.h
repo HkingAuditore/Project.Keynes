@@ -136,16 +136,15 @@ struct RuntimeCommandPacket {
     std::array<uint8_t, RUNTIME_MAX_COMMAND_PAYLOAD> payload{};
 };
 
-// Climate worker commands. Payload is POD-only; strings stay on the facade.
-// VISUAL / ECONOMY opcodes emit RuntimeDomainIntent toward those domains and
-// wait on the matching RuntimeDomainAck before the next Climate day commits.
-enum class RuntimeClimateCommand : uint16_t {
-    NOOP = 0,
-    SET_POLICY = 1,
-    FORCE_STAGE_MASK = 2,
-    REQUEST_VISUAL_ACK = 3,
-    REQUEST_ECONOMY_ACK = 4,
-};
+// Climate 没有 worker command 枚举。B8-6 删掉了曾经的 5 个 opcode
+// (NOOP/SET_POLICY/FORCE_STAGE_MASK/REQUEST_VISUAL_ACK/REQUEST_ECONOMY_ACK)：
+// 全仓库没有消费者，而它们描述的三件事各有正式通道 ——
+//   * policy / stage mask  → 每 tick 环境快照里的 climate_round_scalars 与
+//                            stage knobs（唯一策略输入）；
+//   * 脏信号               → day commit 的 dirty_families；
+//   * 跨域通知             → 既有 RuntimeDomainIntent / ACK ring。
+// 命令枚举必须有消费者才存在；预留空枚举只会让协议看起来比实际多一层，
+// 而下一轮排查又要花时间证明它确实没人读。
 
 // Events commands use an explicit little-endian payload. APPEND_BATCH carries
 // a bounded array of RuntimeEventsIngressRecord values; the worker assigns IDs
@@ -155,11 +154,6 @@ enum class RuntimeEventsCommand : uint16_t {
     ACK_CONSUMER = 2,
     CONFIGURE_CAPACITY = 3,
     CLEAR_RESET = 4,
-};
-
-enum class RuntimeClimateIntentOpcode : uint16_t {
-    VISUAL_FIELD_DIRTY = 1,
-    ECONOMY_YIELD_HINT = 2,
 };
 
 enum class RuntimeReceiptCode : uint16_t {
@@ -238,6 +232,95 @@ struct RuntimeEnvironmentSnapshot {
     std::vector<float> cell_wind_x;
     std::vector<float> cell_wind_y;
     std::vector<float> cell_wind_speed;
+    // B8 P2：物理环流求解器仍在主线程（cyclone/monsoon/traj/SLP/洋流），但下面
+    // 两条是 weather field solve 的直接输入，必须先能 transport，才谈得上把求解器
+    // 搬进 worker。traj 只有通过生产同一套指纹/资格校验时才有值；空 = worker 与
+    // 生产一起走 hopping 回退。monsoon 是主线程物理求解的派生量，允许为零。
+    std::vector<float> cell_wind_traj_w;
+    std::vector<int32_t> cell_wind_traj_idx;
+    std::vector<float> cell_monsoon_thermal;
+    // B8-2：worker 自持 cyclone 的冷启动种子。生产条目表在 DCWorldExt 成员里，
+    // capture 用同一个 encode 把它变成 blob；worker 第一次见到有效 blob 时接管，
+    // 之后自己推进并随 CLM2 ABI 6 持久化。genesis（从前沿注入新气旋）仍留在主线程，
+    // 所以这里只搬已有条目，不搬前沿。
+    std::vector<uint8_t> cyclone_seed_blob;
+    bool   cyclone_enabled = false;
+    float  cyclone_dt_days = 1.0f;
+    int32_t cyclone_max_radius_cells = 5;
+    float  cyclone_world_bounds_pos_y = 0.0f;
+    float  cyclone_world_bounds_size_y = 1.0f;
+    float  cyclone_wrap_width_x = 0.0f;
+    // genesis（出生）判据：ACTIVE 下没有 WeatherFront，worker 用当天 weather_type /
+    // intensity 作为"前沿等价物"，阈值与生产 native-entity 路径逐条一致。
+    int32_t cyclone_storm_type_id = -1;
+    int32_t cyclone_capacity = 24;
+    int32_t cyclone_births_per_commit = 2;
+    float  cyclone_min_temp = 0.58f;
+    float  cyclone_min_instability = 0.40f;
+    float  cyclone_max_shear = 0.42f;
+    float  cyclone_min_lat = 0.06f;
+    float  cyclone_max_lat = 0.40f;
+    float  cyclone_wake_days = 32.0f;
+    // ── B8 P2：worker 侧物理环流 prepass 的标量（Pod，Godot 无依赖）──────────
+    //
+    // 只搬常量：per-cell lane 用快照里已有的 terrain/landform/pos/lat_norm/
+    // elevation/风 lane。来源是 MapBaker::runtime_physics_knobs()（生产四个
+    // stage base dict 的标量投影），保证 worker 与生产读同一份 profile 值。
+    // ready=0 时 missing_key 给出第一个缺席的键（诊断用），worker 不跑物理。
+    struct ClimatePhysicsKnobs {
+        // SLP
+        float slp_lat_amp = 0.16f;
+        float slp_land_amp = 0.55f;
+        float slp_water_damp = 0.20f;
+        float slp_interior_boost = 1.30f;
+        float slp_coast_damp = 0.60f;
+        float slp_thermal_weight = 0.0f;
+        float slp_ice_high_weight = 0.0f;
+        float slp_snow_high_weight = 0.0f;
+        float slp_moist_low_weight = 0.12f;
+        float slp_response_rate = 0.55f;
+        float slp_synoptic_amp = 0.075f;
+        float slp_target_p95 = 0.18f;
+        int32_t slp_mobile_low_count = 0;
+        float slp_mobile_low_amp = 0.0f;
+        float slp_mobile_low_sigma = 0.16f;
+        float slp_mobile_low_period_days = 38.0f;
+        int32_t slp_smooth_passes = 1;
+        int32_t slp_recenter = 1;
+        // WIND
+        float wind_response_rate = 0.25f;
+        float wind_max_turn_deg_per_day = 32.0f;
+        float wind_min_flux_for_dir_update = 0.035f;
+        float wind_synoptic_amp = 0.055f;
+        float wind_synoptic_period_days = 6.0f;
+        int32_t wind_terrain_aware = 1;
+        int32_t wind_belt_only_debug = 0;
+        float wind_momentum_advect_w = 0.0f;
+        float wind_momentum_diffuse_w_daily = 0.0f;
+        int32_t wind_traj_table_enabled = 0;
+        float wind_traj_pos_scale = 0.65f;
+        float wind_traj_dt_days = 10.0f;
+        int32_t wind_traj_weather_share = 1;
+        float wind_div_damp_alpha = 0.0f;
+        int32_t thermal_monsoon_enabled = 0;
+        float thermal_monsoon_lat_limit = 0.45f;
+        float thermal_monsoon_deadband = 0.015f;
+        float thermal_monsoon_full_contrast = 0.08f;
+        float thermal_monsoon_gain = 0.85f;
+        float thermal_monsoon_breeze_floor = 0.20f;
+        // 共享
+        int32_t days_per_year = 365;
+        float axial_tilt_deg = 23.5f;
+        float insolation_daylen_amp = 0.35f;
+        int32_t lat_lut_bins = 1024;
+        int32_t land_lf_mountain = -1;
+        int32_t land_lf_peak = -1;
+        int32_t land_lf_hill = -1;
+        // 就绪标记 + 诊断
+        uint8_t ready = 0;
+        char missing_key[48]{};
+    };
+    ClimatePhysicsKnobs climate_physics_knobs;
     std::vector<float> cell_ocean_current_x;
     std::vector<float> cell_ocean_current_y;
     std::vector<float> cell_air_mass_temp_anomaly;
@@ -1182,6 +1265,16 @@ struct RuntimeThreadReport {
     // "worker 缺实现"和"这一天生产本来也没跑"在矩阵上长得一模一样。
     int32_t climate_production_stage_mask = 0;
     int32_t climate_worker_stage_mask = 0;
+    // ── B8-2：worker 自持 cyclone 的当日事实 ─────────────────────────────
+    // alive = 当天推进/淘汰后仍在 store blob 里的条目数；injected/replaced 是
+    // 当天 genesis 的动作；decayed 是推进淘汰数；touched 是 stamp 覆盖格数。
+    // 这四个数让 soak/C3 的 JSON 能直接判定"气旋有没有非平凡演化"，不必去
+    // 解析 stderr 的 [climate/worker][b8] 诊断。
+    int32_t climate_cyclone_alive = 0;
+    int32_t climate_cyclone_injected = 0;
+    int32_t climate_cyclone_replaced = 0;
+    int32_t climate_cyclone_decayed = 0;
+    int32_t climate_cyclone_touched = 0;
     // 逐 stage 的 worker 侧耗时与工作量，索引即 RuntimeClimateStage。
     // RuntimeClimateVerticalReport 早就有这两条，但没进 ThreadReport，GDScript 因此
     // 拿不到任何 per-stage 数据，performance.csv 只能记一个总的 climate_pod_plan_ms。
@@ -1190,6 +1283,22 @@ struct RuntimeThreadReport {
         pk_async_climate::CLIMATE_STAGE_SLOT_COUNT)> climate_stage_ms{};
     std::array<uint64_t, static_cast<size_t>(
         pk_async_climate::CLIMATE_STAGE_SLOT_COUNT)> climate_stage_work{};
+    // ── B8 P0：Climate 交付游标 ──────────────────────────────────────────
+    // `climate_committed_day` 是 worker Climate store 的日，不是 worker 时钟；
+    // `climate_consumed_generation` 统计 worker 实际尝试过 plan 的环境代次
+    // （成功失败都算），所以主线程可以问"这一天输入被看到没有"，而不必等提交成功。
+    //
+    // environment_* 三条把"worker 慢"与"输入被覆盖"分开：单槽 latest-value 下发
+    // 时，被新发布顶掉而从未 plan 的天 = superseded；将来的有界 ring 溢出 = dropped。
+    int64_t climate_committed_day = -1;
+    uint64_t climate_consumed_generation = 0;
+    uint64_t environment_published_days = 0;
+    uint64_t environment_consumed_days = 0;
+    uint64_t environment_superseded_days = 0;
+    uint64_t environment_dropped_days = 0;
+    uint64_t climate_wait_total_ms = 0;
+    uint64_t climate_wait_last_ms = 0;
+    uint64_t climate_wait_max_ms = 0;
     uint32_t command_queue_depth = 0;
     uint32_t receipt_queue_depth = 0;
     double time_debt_days = 0.0;

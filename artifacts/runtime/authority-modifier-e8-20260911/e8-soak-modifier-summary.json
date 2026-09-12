@@ -1,0 +1,34 @@
+{
+  "active-30": {
+    "authoritative_domain_mask": "2118",
+    "modifier_worker_authoritative": "true",
+    "modifier_pod_state_hash": "-8949312637168217117",
+    "modifier_pod_snapshot_generation": "23",
+    "modifier_pod_ack_count": "0",
+    "modifier_pod_ready": "true",
+    "modifier_pod_fallback_reason": "",
+    "main_wait_on_sim_us": "0",
+    "worker_fault_count": "0",
+    "simulation_thread_mode": "ACTIVE",
+    "domain_authority_fallback_reason": "",
+    "first_bad_tick": -1,
+    "writeback_drop_count": 0,
+    "delivery_mask": 2118
+  },
+  "off-30": {
+    "authoritative_domain_mask": "0",
+    "modifier_worker_authoritative": "false",
+    "modifier_pod_state_hash": "4086609180920079675",
+    "modifier_pod_snapshot_generation": "0",
+    "modifier_pod_ack_count": "0",
+    "modifier_pod_ready": "true",
+    "modifier_pod_fallback_reason": "",
+    "main_wait_on_sim_us": "0",
+    "worker_fault_count": "0",
+    "simulation_thread_mode": "SHADOW",
+    "domain_authority_fallback_reason": "",
+    "first_bad_tick": -1,
+    "writeback_drop_count": 0,
+    "delivery_mask": 0
+  }
+}

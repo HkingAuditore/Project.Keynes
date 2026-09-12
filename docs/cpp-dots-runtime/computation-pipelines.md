@@ -1955,6 +1955,71 @@ precip EMA(`weather_precip_inertia`)、`ocean_drive` 海面抑制、`precip_rh` 
   `precip >= 0.05`、`cloud >= 0.22`，且 `instability >= 0.48` 或 `convergence >= 0.30`，
   再加风速/强度门控。普通陆地雷暴不再生成台风尾迹。
 
+**物理环流共享内核（2026-09-12，B8 P2 开工）**：`gdext/src/runtime_climate_physics.{h,cpp}`
+（namespace `pk_async_physics`）承载"主线程 MapBaker 与 climate worker 必须跑同一份"
+的物理内核。已迁入 SLP 与 wind field：
+
+- `slp_pass_a_range`：逐 cell 基线场（三圈环流基线 + 海陆/沿海/内陆项 + 热力/冰雪/
+  水汽项 + synoptic 二维波 + 移动低压）。逐 cell 独立，生产按 `pk::parallel_for_range`
+  分段调用，worker 单线程整段调用 —— 分段是 bit-equal 的。
+- `slp_pass_b_pure`：Jacobi 平滑 → recenter + p95 缩放 → 与上一轮响应混合 →
+  再 recenter → delta。只在整图末切片执行。
+- `wind_field_range`：wind 主循环全段（纬度基线 → ∇SLP/科氏偏转 → 沿海热力权重 →
+  几何海风 + 热力季风 → synoptic 波 → 地形绕流/减速 → 响应混合 + NS Phase 1
+  动量自平流/扩散 → 转向限幅）。季风/filter 统计按区间返回，生产侧合并。
+- `psi_topology_build_pure`：水域 CSR（`cell_to_water` / `water_to_cell` / `nb_w`）
+  纯构建，只依赖水掩膜与邻接。生产用它替换了原来的内联构建（外面仍是 FNV 指纹
+  缓存），worker 侧按 shape/generation 失效重建。
+- `psi_solve_pure`：psi 全段 —— tau/curl/源项（含深度旋度衰减）→ SOR
+  Gauss-Seidel（warm-start + 提前退出）→ grad ψ → 洋流 + 密度梯度热力项 + 地形
+  等深线转向 + 高纬热盐下沉 + 响应混合 + 双重限幅；同时输出 curl/psi/ocean
+  四张场与限幅/热力分量诊断。9 条 n_water scratch 由调用方持有（生产局部、
+  worker 常驻），内核自身不分配。
+- `upwelling_range`：离岸 Ekman 输运（6 邻陆方向合成离岸法线 × 半球符号 × 风速）
+  + 高纬冷沉（`lat_temp_bell` 与 `cold_sink_temp` 之差）；逐 cell 独立。
+- `wind_traj_build_range`：半拉格朗日回溯轨迹表（`traj_idx`/`traj_w`，各 n*3），
+  含 12 跳 walk 与六分扇形 barycentric 权重；`pk_hex_sextant_barycentric` /
+  `pk_wind_state_fp` 已随之上移到 `runtime_climate_pass_math.h`（唯一来源）。
+- `wind_coast_build_pure`：海岸/海洋两次 BFS（陆地→海岸的格数 + 朝海单位向量 +
+  锚格；水面→岸线同理）。生产保留 FNV 指纹缓存 + build_ms 计时外壳，scratch 队列
+  由调用方持有 —— worker 侧在 shape/generation 变化时重建一次。
+- 至此物理侧共享内核齐备（slp / wind+monsoon / psi / upwelling / traj / coast BFS /
+  cyclone），迁入 worker 的只剩所有权与日环接线，不再是算法复制。
+- **`RuntimeClimatePhysicsState`（worker 侧常驻状态）**：上述内核的 SoA 容器 ——
+  SLP/风/洋流/上涌/synoptic ψ 场、coast 缓存、水域 CSR、回溯轨迹表，以及
+  `psi_solve_pure` 的 9 条 scratch 与 SLP Pass B 缓冲全部常驻，**每日零分配**。
+  `resize(cell_count)` 换图整份重建并让派生缓存指纹失效，`validate()` 做形状/水域
+  长度校验，`state_hash()` 给读视图游标与存档段校验用。kernel 每天按 shape 自动
+  对齐；cyclone 条目表留在 climate kernel（类型归属，避免 physics→climate 反向依赖）。
+- 共享常量：`NB_DIR_X/Y`、`COAST_INF`、全部 `WIND_*` 与 `pk_wind_*` 风带 helper
+  以 `runtime_climate_physics.h` 为唯一来源；`world_ext_physical.cpp` 用 `using`
+  声明继续用原名。**改这些常量只需要改一处**，两侧不会漂移。
+- 生产 `DCWorldExt::run_slp_field_pass` 的 `slp_passA_ms` / `slp_passB_ms` /
+  `slp_norm_ms` / `slp_marshall_ms` 四段计时口径保持不变（内核按同样的边界分三次
+  调用：平滑 / recenter+p95 / 响应混合+delta）。
+- 自检随 `RuntimeClimateAuthority::self_test()`：Pass A 有限性与水陆差异、Pass B
+  一次 Jacobi 的手算比对、recenter 零均值、`response_rate=0` 逐位保持 prev；
+  wind 的方向单位化/速度范围、季风 onshore 触发与关闭后归零。
+
+**ACTIVE 下的 cyclone 权威（2026-09-11，B8-2）**：主线程 `weather` 段被抑制后
+`_advance_and_stamp_cyclones` 与 `cyclone_wake_step` 都不再跑，两类工作全部由
+worker kernel 承担：
+
+- 推进/衰减/stamp：`pk_async_climate::cyclone_advance_and_stamp_pure`（与生产同公式、
+  同步数、同 BFS 顺序），按 weather 日节拍在 field solve 之前执行，stamp 结果直接
+  喂给 worker 自己的 `WeatherFieldState`（`cyclone_tag/lift/x/y`）。
+- genesis：`pk_async_climate::cyclone_genesis_pure`。判据 = 生产 native-entity 分支的
+  物理闸（水陆/纬度/`temp ≥ 0.58`/`precip ≥ 0.05`/`cloud ≥ 0.22`/
+  `instability ≥ 0.40 or convergence ≥ 0.30`/风切变/capacity/每次出生数），但**前沿
+  等价物换成 field solve 的 `weather_intensity` lane**（生产 front intensity 就是
+  cluster 内最大 cell intensity，同源）；纬度用规范 `cell_lat_norm`。执行点在
+  `weather_commit` 之后的当天后段，只在 ACTIVE 注入（SHADOW 必须保持复刻生产前沿路径）。
+- 诊断：`[climate/worker][b8] cyclone day=... entries=/alive=/decayed=/touched=/gen=/
+  int(before/after)=`，`cyclone_lat day=... wb_y/wb_h/water_ny/abs_lat/lat_norm/band`，
+  `cyclone_genesis day=... injected/replaced/alive water/lat/phys/inten/shear
+  storm_type/fail(t/p/c/i)/max(p/c/i/conv)/max_int`。漏斗计数是"为什么没出生"的
+  唯一有效证据链：先看 `lat`（纬度带），再看 `fail(p/c/i)`（物理闸），最后看 `inten`。
+
 **植被/水文闭环**：
 
 - 天气仍先影响 `soil_moisture` / `water_balance_30d`，植被动态再通过
@@ -3185,4 +3250,38 @@ directly into the country observation batch.
 
 ## Modifier POD pipeline
 
-Modifier stage 使用双缓冲 state：capture 当日 command，先处理 expiry，再按 (effective_day, producer_id, sequence, request_id) 排序，执行 APPLY/REMOVE/REFRESH/SET_STACKS/SET_MAGNITUDE，重建受影响 bucket，计算 state hash 和 immutable snapshot。公式为 clamp((base + sum(add)) * product(factor), min, max)；Modifier 绝不写 Climate/Country/Economy/GamePlay base state。E2-E7 为 SHADOW only，E8 未执行。
+Modifier stage 使用双缓冲 state：capture 当日 command，先处理 expiry，再按 (effective_day, producer_id, sequence, request_id) 排序，执行 APPLY/REMOVE/REFRESH/SET_STACKS/SET_MAGNITUDE，重建受影响 bucket，计算 state hash 和 immutable snapshot。公式为 clamp((base + sum(add)) * product(factor), min, max)；Modifier 绝不写 Climate/Country/Economy/GamePlay base state。E8 已放行生产 ACTIVE（`0x846`）：Host 为唯一写者，snapshot 回灌 `ModifierRuntime`，主线程抑制 `modifier_daily`。
+
+## Climate canonical stage order（B8 P0/P1，2026-09-11）
+
+Climate 的日内 stage 顺序现在只有一处定义：
+`gdext/src/runtime_climate_kernel.h` 的 `RUNTIME_CLIMATE_CANONICAL_ORDER`
+（声明序即执行序）。worker kernel 的 `run_stage` 把真实执行序写进
+`RuntimeClimateKernelReport::stage_sequence`，`RuntimeClimateKernel::self_test()`
+用 `runtime_climate_stage_sequence_is_canonical()` 校验它与声明序一致；
+生产侧由 `DCWorldExt::runtime_climate_stage_order_contract_test()` 核对
+`NATIVE_DAILY_SLICE_GRAPH` 的无条件执行链。任何一侧单独改序都会让
+`tests/runtime_climate_stage_order_contract_test.gd` 失败，而不是等到数值对拍里
+出现"某个字段不同"。
+
+canonical 顺序：
+
+```
+PASS_A > PASS_B > OCEAN_WATER > OCEAN_LAND > WIND_AIR > WIND_SURFACE >
+SEA_ICE > TRANSPIRATION > WEATHER > RUNTIME_HYDROLOGY >
+ALBEDO > VEGETATION_DYNAMICS > CLIMATE_FEEDBACK > STAGE_B_AFTER_HYDROLOGY
+```
+
+要点：
+
+- `WEATHER` 段（field solve → commit → distribute → summary → cyclone）在 round
+  之后；`RUNTIME_HYDROLOGY` 有独立 stride，但一旦执行必须在 weather 之后。
+- `ALBEDO / VEGETATION_DYNAMICS / CLIMATE_FEEDBACK` 是生产 stage_b 的三段：
+  `runtime_hydrology_enabled=false`（默认）时内嵌在 `weather_stage_b` 节点，
+  开启时由 `stage_b_after_hydrology` 承载。worker 侧此前把它们排在 weather 之前，
+  导致 feedback 读前一天的 `weather_type/intensity`、hydrology 用未衰减的 VGP 抽水；
+  2026-09-11（B8-1）已改为在 weather/distribute/hydrology 之后执行，并把三段的
+  `weather_type/intensity/field_init` 输入切到 worker 当天 store。
+- 诊断近似回退路径（没有共享 round 输入时）同样遵守这张表；它没有 parity 语义，
+  但顺序不能与生产相反，否则 stage_sequence 契约会拒绝它。
+- `STAGE_B_AFTER_HYDROLOGY` 只属于回退尾段，标为 `FALLBACK_TAIL`，永远在表尾。

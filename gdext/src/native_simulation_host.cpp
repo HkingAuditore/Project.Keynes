@@ -759,6 +759,7 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         bootstrap_environment != nullptr ? bootstrap_environment->cell_count : 0u,
         bootstrap_country != nullptr ? bootstrap_country->country_count : 0u);
     _modifier_snapshots.reset();
+    _effect_snapshots.reset();
     _events_authority.reset();
     _events_snapshots.reset();
     _events_last_processed_day = -1;
@@ -1272,6 +1273,15 @@ bool NativeSimulationHost::publish_environment(
     std::atomic_store_explicit(&_environment_snapshot,
         std::shared_ptr<const RuntimeEnvironmentSnapshot>(std::move(copy)),
         std::memory_order_release);
+    // B8 P0：一条被接受的发布就是一天输入。若上一条已接受的发布在 worker
+    // plan 之前就被这一条顶掉，那就是单槽 latest-value 的静默丢天；不计数的话
+    // 它只会以"writeback 少了几天"的形式出现，看不出是输入被覆盖。
+    if (previous != nullptr &&
+        _climate_consumed_generation.load(std::memory_order_acquire) <
+            previous->generation) {
+        _environment_superseded_days.fetch_add(1, std::memory_order_relaxed);
+    }
+    _environment_published_days.fetch_add(1, std::memory_order_relaxed);
     _environment_generation.store(snapshot.generation, std::memory_order_release);
     _environment_day.store(snapshot.day, std::memory_order_release);
     _environment_cell_count.store(snapshot.cell_count, std::memory_order_release);
@@ -1299,6 +1309,70 @@ void store_atomic_text(std::array<std::atomic<char>, N> &destination,
         destination[index].store('\0', std::memory_order_relaxed);
 }
 } // namespace
+
+bool NativeSimulationHost::wait_climate_consumed(
+        uint64_t after_generation, int64_t timeout_ms,
+        uint64_t &consumed_generation, std::string &error) {
+    error.clear();
+    const uint64_t start_us = now_us();
+    const uint64_t budget_us = timeout_ms < 0
+        ? 0u : static_cast<uint64_t>(timeout_ms) * 1000u;
+    // 每次返回都记等待统计：soak / perf 报告用 last/p95/max 判断背压是否打满
+    // 主线程。等待总时长是"worker 没跟上"的直接证据，不是估算。
+    const auto finish = [&](bool ok, const char *reason) {
+        const uint64_t waited_ms = (now_us() - start_us) / 1000u;
+        _climate_wait_last_ms.store(waited_ms, std::memory_order_relaxed);
+        _climate_wait_total_ms.fetch_add(waited_ms, std::memory_order_relaxed);
+        uint64_t previous_max =
+            _climate_wait_max_ms.load(std::memory_order_relaxed);
+        while (waited_ms > previous_max &&
+               !_climate_wait_max_ms.compare_exchange_weak(
+                   previous_max, waited_ms, std::memory_order_relaxed)) {
+        }
+        if (!ok && reason != nullptr) error = reason;
+        return ok;
+    };
+    std::unique_lock<std::mutex> lock(_control_mutex);
+    while (true) {
+        consumed_generation =
+            _climate_consumed_generation.load(std::memory_order_acquire);
+        if (consumed_generation >= after_generation) {
+            return finish(true, nullptr);
+        }
+        const RuntimeWorkerState state = _state.load(std::memory_order_acquire);
+        if (state == RuntimeWorkerState::FAULTED) {
+            return finish(false, "climate_wait_worker_faulted");
+        }
+        if (state == RuntimeWorkerState::STOPPING ||
+            state == RuntimeWorkerState::STOPPED) {
+            return finish(false, "climate_wait_worker_stopped");
+        }
+        if (_stop_requested.load(std::memory_order_acquire)) {
+            return finish(false, "climate_wait_stop_requested");
+        }
+        // 撤销 Climate 权威 = 调用方不再要求这个域。grant 之前 mask 仍可能是
+        // 0，所以判据是 requested mask，而不是 authoritative mask。
+        if ((_requested_authority_mask.load(std::memory_order_acquire) &
+             runtime_domain_mask(RuntimeDomainId::CLIMATE)) == 0u) {
+            return finish(false, "climate_wait_authority_revoked");
+        }
+        const uint64_t elapsed_us = now_us() - start_us;
+        if (timeout_ms >= 0) {
+            if (elapsed_us >= budget_us) {
+                return finish(false, "climate_wait_timeout_slice");
+            }
+            const uint64_t remaining_us = budget_us - elapsed_us;
+            _climate_wait_cv.wait_for(lock,
+                                      std::chrono::microseconds(remaining_us));
+        } else {
+            // "无限等"用 100ms 长片等待实现：真正唤醒靠 worker 的
+            // _climate_wait_cv.notify_all，长片只保证等待方周期性重查
+            // FAULTED/STOPPED/撤销这些终止条件 —— 故障路径通知的是 _control_cv，
+            // 漏掉一次 notify 就会让主线程永远挂着。10 次/秒唤醒不是忙等。
+            _climate_wait_cv.wait_for(lock, std::chrono::milliseconds(100));
+        }
+    }
+}
 
 void NativeSimulationHost::publish_climate_parity_divergence(
         const RuntimeClimateParityReport &diff) {
@@ -4004,7 +4078,9 @@ bool NativeSimulationHost::effect_pod_host_stage_self_test(std::string *out_erro
     if (implemented_domain_mask() !=
         (runtime_domain_mask(RuntimeDomainId::COMMIT) |
          runtime_domain_mask(RuntimeDomainId::CLIMATE) |
-         runtime_domain_mask(RuntimeDomainId::COUNTRY))) {
+         runtime_domain_mask(RuntimeDomainId::COUNTRY) |
+         runtime_domain_mask(RuntimeDomainId::MODIFIER) |
+         runtime_domain_mask(RuntimeDomainId::EFFECT))) {
         return fail("effect_host_stage_mask_changed");
     }
     return true;
@@ -4251,6 +4327,30 @@ void NativeSimulationHost::release_modifier_snapshot(uint32_t slot) {
     _modifier_snapshots.release(slot);
 }
 
+bool NativeSimulationHost::try_acquire_effect_snapshot(
+        uint64_t after_generation, uint32_t &slot) {
+    if (!_effect_snapshots.try_acquire_latest(after_generation, slot)) return false;
+    const RuntimeEffectPodSnapshot &snapshot =
+        _effect_snapshots.read_buffer(slot);
+    const bool valid = _effect_pod_configured &&
+        snapshot.abi_version == RUNTIME_EFFECT_POD_ABI_VERSION &&
+        snapshot.catalog_hash == _effect_pod_catalog.catalog_hash;
+    if (!valid) {
+        _effect_snapshots.release(slot);
+        return false;
+    }
+    return true;
+}
+
+const RuntimeEffectPodSnapshot &NativeSimulationHost::effect_snapshot_buffer(
+        uint32_t slot) const {
+    return _effect_snapshots.read_buffer(slot);
+}
+
+void NativeSimulationHost::release_effect_snapshot(uint32_t slot) {
+    _effect_snapshots.release(slot);
+}
+
 bool NativeSimulationHost::modifier_pod_self_test(std::string *out_error) const {
     const auto fail = [out_error](const char *reason) {
         if (out_error != nullptr) *out_error = reason;
@@ -4424,10 +4524,22 @@ uint64_t NativeSimulationHost::allocate_command_request_id() {
 bool NativeSimulationHost::enqueue_modifier_shadow(RuntimeCommandPacket packet) {
     if (packet.envelope.domain !=
             static_cast<uint16_t>(RuntimeDomainId::MODIFIER)) return false;
+    const auto modifier_enqueue_allowed = [this]() {
+        const RuntimeSimulationMode mode =
+            _mode.load(std::memory_order_acquire);
+        if (mode == RuntimeSimulationMode::SHADOW) return true;
+        // E8: ACTIVE Host is the sole Modifier writer once MODIFIER is
+        // in the requested authority mask (grant may still be pending).
+        if (mode == RuntimeSimulationMode::ACTIVE &&
+            (_requested_authority_mask.load(std::memory_order_acquire) &
+             runtime_domain_mask(RuntimeDomainId::MODIFIER)) != 0u) {
+            return true;
+        }
+        return false;
+    };
     const RuntimeWorkerState current = _state.load(std::memory_order_acquire);
     if (current != RuntimeWorkerState::STOPPED) {
-        if (_mode.load(std::memory_order_acquire) != RuntimeSimulationMode::SHADOW)
-            return false;
+        if (!modifier_enqueue_allowed()) return false;
         return enqueue(std::move(packet));
     }
     if (packet.submit_order == 0) {
@@ -4436,8 +4548,7 @@ bool NativeSimulationHost::enqueue_modifier_shadow(RuntimeCommandPacket packet) 
     }
     std::lock_guard<std::mutex> lock(_control_mutex);
     if (_state.load(std::memory_order_acquire) != RuntimeWorkerState::STOPPED) {
-        if (_mode.load(std::memory_order_acquire) != RuntimeSimulationMode::SHADOW)
-            return false;
+        if (!modifier_enqueue_allowed()) return false;
         return enqueue(std::move(packet));
     }
     if (_prestart_modifier_commands.size() >= RUNTIME_COMMAND_QUEUE_CAPACITY) {
@@ -5515,6 +5626,202 @@ bool NativeSimulationHost::execute_ideology_worker_stage(
     return true;
 }
 
+
+bool NativeSimulationHost::execute_modifier_worker_stage(
+        int64_t day, uint64_t input_generation,
+        const std::vector<RuntimeCommandPacket> &day_commands,
+        bool effect_upstream_ok,
+        RuntimeDomainAuthorityPlan *authority_plan,
+        std::string &authority_error,
+        std::string &error) {
+    error.clear();
+    std::vector<RuntimeModifierPodCommand> modifier_commands;
+    modifier_commands.reserve(day_commands.size());
+    for (const RuntimeCommandPacket &packet : day_commands) {
+        RuntimeModifierPodCommand command;
+        if (decode_modifier_packet(packet, command))
+            modifier_commands.push_back(command);
+    }
+
+    // Effect POD upstream (F7/E8): when Effect stage succeeded with a non-empty
+    // catalog, Modifier consumes those intents. SHADOW fixture intents are
+    // stripped by the caller when upstream is active. ACTIVE with an empty
+    // Effect catalog uses empty intents (no fixture).
+    const std::vector<RuntimeDomainIntent> empty_intents;
+    const std::vector<RuntimeDomainIntent> &intent_source =
+        effect_upstream_ok ? _effect_day_modifier_intents
+                           : (authority_plan != nullptr ? authority_plan->intents
+                                                       : empty_intents);
+    std::vector<RuntimeModifierPodCommand> modifier_intents;
+    modifier_intents.reserve(intent_source.size());
+    for (const RuntimeDomainIntent &intent : intent_source) {
+        if (intent.target_domain !=
+            static_cast<uint16_t>(RuntimeDomainId::MODIFIER)) {
+            continue;
+        }
+        RuntimeModifierPodCommand command;
+        command.request_id =
+            intent.request_id != 0 ? intent.request_id : intent.source_id;
+        command.producer_id = intent.producer_id;
+        command.sequence = intent.sequence;
+        command.effective_day = intent.effective_day;
+        command.requested_day = intent.effective_day;
+        command.opcode = intent.opcode;
+        command.domain = intent.payload[1] >= 0 && intent.payload[1] < 4
+            ? static_cast<uint16_t>(intent.payload[1]) : 0;
+        command.definition_id = intent.payload[0] >= 0
+            ? static_cast<int32_t>(intent.payload[0]) : 0;
+        command.scope = intent.payload[2] >= 0 && intent.payload[2] <= 2
+            ? static_cast<int32_t>(intent.payload[2]) : 2;
+        command.entity_handle = intent.target_handle;
+        command.target_generation = intent.target_generation;
+        command.group_handle = intent.group_handle;
+        command.modifier_handle = intent.modifier_handle;
+        command.duration_days = intent.duration_days;
+        command.stacks = intent.stacks;
+        command.magnitude_q16 = intent.magnitude_q16;
+        command.source_type = static_cast<uint64_t>(RuntimeDomainId::EFFECT);
+        command.source_id = intent.source_id;
+        command.input_generation = input_generation;
+        modifier_intents.push_back(command);
+    }
+
+    auto publish_fallback = [this](const char *reason) {
+        size_t i = 0;
+        for (; i + 1 < _modifier_pod_fallback_reason.size() &&
+                reason != nullptr && reason[i] != '\0'; ++i) {
+            _modifier_pod_fallback_reason[i].store(
+                reason[i], std::memory_order_release);
+        }
+        for (; i < _modifier_pod_fallback_reason.size(); ++i) {
+            _modifier_pod_fallback_reason[i].store(
+                '\0', std::memory_order_release);
+        }
+    };
+
+    // SHADOW may run the diagnostic domain runner without a Modifier POD
+    // catalog. ACTIVE always requires the POD when this stage is invoked.
+    if (!_modifier_pod_configured) {
+        if (!modifier_commands.empty() || !modifier_intents.empty()) {
+            error = "modifier_pod_not_configured";
+            publish_fallback(error.c_str());
+            _modifier_pod_ready.store(false, std::memory_order_release);
+            if (authority_plan != nullptr) {
+                _domain_authority_runner.discard_plan();
+                if (authority_error.empty()) authority_error = error;
+            }
+            return false;
+        }
+        _modifier_pod_ready.store(false, std::memory_order_release);
+        publish_fallback("modifier_pod_not_configured");
+        if (authority_plan != nullptr) {
+            return _domain_authority_runner.commit_day(
+                *authority_plan, authority_error);
+        }
+        error = "modifier_pod_not_configured";
+        return false;
+    }
+
+    bool modifier_ok = true;
+    std::string modifier_error;
+    RuntimeModifierPodSnapshot modifier_snapshot;
+    RuntimeModifierPodReport modifier_report;
+    std::vector<RuntimeDomainAck> modifier_acks;
+    double modifier_plan_ms = 0.0;
+    const auto plan_started = std::chrono::steady_clock::now();
+    modifier_ok = _modifier_pod_authority.plan_day(
+        day, input_generation, modifier_commands, modifier_intents,
+        modifier_snapshot, modifier_acks, modifier_report, modifier_error);
+    modifier_plan_ms = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - plan_started).count();
+    if (!modifier_ok) {
+        _modifier_pod_authority.discard_plan();
+    }
+
+    bool authority_ok = true;
+    if (modifier_ok) {
+        if (effect_upstream_ok) {
+            if (!modifier_acks.empty() &&
+                !_effect_pod_authority.apply_acks(
+                    modifier_acks, modifier_error)) {
+                modifier_ok = false;
+            } else {
+                _effect_pod_ack_count.store(
+                    static_cast<uint32_t>(modifier_acks.size()),
+                    std::memory_order_release);
+                _effect_pod_state_hash.store(
+                    _effect_pod_authority.snapshot().deterministic_state_hash,
+                    std::memory_order_release);
+            }
+        } else if (authority_plan != nullptr) {
+            modifier_ok = _domain_authority_runner.accept_modifier_acks(
+                *authority_plan, modifier_acks, modifier_error);
+        }
+    }
+
+    uint32_t modifier_slot = 0;
+    bool modifier_slot_reserved = false;
+    if (modifier_ok) {
+        if (!_modifier_snapshots.try_begin_write(modifier_slot)) {
+            modifier_ok = false;
+            modifier_error = "modifier_snapshot_ring_full";
+        } else {
+            _modifier_snapshots.write_buffer(modifier_slot) = modifier_snapshot;
+            modifier_slot_reserved = true;
+        }
+    }
+
+    const auto replay_started = std::chrono::steady_clock::now();
+    if (modifier_ok) {
+        modifier_ok = _modifier_pod_authority.commit_day(
+            modifier_snapshot, modifier_error);
+        if (modifier_ok && authority_plan != nullptr) {
+            authority_ok = _domain_authority_runner.commit_day(
+                *authority_plan, authority_error);
+        }
+        if (modifier_ok && authority_ok && modifier_slot_reserved) {
+            _modifier_snapshots.publish(modifier_slot);
+            modifier_slot_reserved = false;
+            _modifier_pod_snapshot_generation.store(
+                modifier_snapshot.generation, std::memory_order_release);
+        }
+    } else {
+        authority_ok = false;
+        _modifier_pod_authority.discard_plan();
+        if (authority_plan != nullptr) {
+            _domain_authority_runner.discard_plan();
+            if (authority_error.empty()) authority_error = modifier_error;
+        }
+    }
+    if ((!modifier_ok || !authority_ok) && modifier_slot_reserved)
+        _modifier_snapshots.release(modifier_slot);
+    const double modifier_replay_ms = std::chrono::duration<double, std::milli>(
+        std::chrono::steady_clock::now() - replay_started).count();
+
+    const bool modifier_committed = modifier_ok && authority_ok;
+    _modifier_pod_ready.store(modifier_committed, std::memory_order_release);
+    _modifier_pod_plan_ms.store(modifier_plan_ms, std::memory_order_release);
+    _modifier_pod_replay_ms.store(modifier_replay_ms, std::memory_order_release);
+    _modifier_pod_work_units.store(modifier_report.work_units,
+                                   std::memory_order_release);
+    _modifier_pod_state_hash.store(
+        modifier_committed ? modifier_snapshot.state_hash
+                           : _modifier_pod_authority.snapshot().state_hash,
+        std::memory_order_release);
+    _modifier_pod_ack_count.store(
+        modifier_committed ? static_cast<uint32_t>(modifier_acks.size()) : 0u,
+        std::memory_order_release);
+    const char *reason = modifier_committed ? "" :
+        (modifier_error.empty() ? "modifier_pod_plan_failed"
+                                : modifier_error.c_str());
+    publish_fallback(reason);
+    if (!modifier_committed) {
+        error = reason;
+        return false;
+    }
+    return true;
+}
+
 bool NativeSimulationHost::execute_effect_worker_stage(
         int64_t day, uint64_t input_generation, RuntimeDayCommit &commit,
         std::string &error) {
@@ -5615,6 +5922,12 @@ bool NativeSimulationHost::execute_effect_worker_stage(
     _effect_pod_intent_count.store(emitted, std::memory_order_release);
     _effect_pod_ack_count.store(static_cast<uint32_t>(acks.size()),
                                 std::memory_order_release);
+    // F8: publish immutable snapshot for main-thread EffectRuntime write-back.
+    uint32_t effect_slot = 0;
+    if (_effect_snapshots.try_begin_write(effect_slot)) {
+        _effect_snapshots.write_buffer(effect_slot) = snapshot;
+        _effect_snapshots.publish(effect_slot);
+    }
     _effect_day_stage_ok = true;
     return true;
 }
@@ -5899,6 +6212,10 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                         runtime_copy_text(climate_report.error,
                                           "climate_forced_commit_failed");
                     }
+                    if (climate_ok) {
+                        _climate_committed_day.store(climate_day,
+                                                     std::memory_order_release);
+                    }
                     runtime_copy_text(climate_report.parity_reason,
                                       "climate_reference_mismatch_forced");
                 } else {
@@ -5936,6 +6253,11 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                     // stale field name cannot be read as today's result.
                     clear_climate_parity_divergence();
                     runtime_copy_text(climate_report.parity_reason, "ok");
+                    // B8 P0：SHADOW 也推进交付游标。诊断报告里的
+                    // climate_committed_day 不能只在 ACTIVE 下有意义，否则
+                    // 同一份 CSV 在两种模式间不可比。
+                    _climate_committed_day.store(climate_day,
+                                                 std::memory_order_release);
                 }
             }
             }
@@ -5993,6 +6315,16 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                                                 std::memory_order_release);
             _climate_worker_stage_mask.store(climate_report.worker_stage_mask,
                                             std::memory_order_release);
+            _climate_cyclone_alive.store(climate_report.cyclone_alive,
+                                         std::memory_order_release);
+            _climate_cyclone_injected.store(climate_report.cyclone_injected,
+                                            std::memory_order_release);
+            _climate_cyclone_replaced.store(climate_report.cyclone_replaced,
+                                            std::memory_order_release);
+            _climate_cyclone_decayed.store(climate_report.cyclone_decayed,
+                                           std::memory_order_release);
+            _climate_cyclone_touched.store(climate_report.cyclone_touched,
+                                           std::memory_order_release);
         }
         for (size_t i = 0; i < _climate_pod_fallback_reason.size(); ++i) {
             _climate_pod_fallback_reason[i].store(climate_report.error[i],
@@ -6138,24 +6470,14 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             authority_plan_ms = std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - plan_started).count();
             if (authority_ok) {
-                std::vector<RuntimeModifierPodCommand> modifier_commands;
-                modifier_commands.reserve(day_commands.size());
-                for (const RuntimeCommandPacket &packet : day_commands) {
-                    RuntimeModifierPodCommand command;
-                    if (decode_modifier_packet(packet, command))
-                        modifier_commands.push_back(command);
-                }
-                // F7: when a real Effect POD catalog is configured and the
-                // stage succeeded, Modifier consumes those intents and
-                // diagnostic run_effect fixture intents are ignored to avoid
-                // double APPLY. Empty cold-start catalogs keep the fixture
-                // upstream for Modifier E7.
+                // F7/E8: Effect POD upstream when catalog is non-empty and the
+                // Effect stage succeeded. Strip fixture MODIFIER intents so the
+                // domain-runner ACK barrier does not wait on a second Effect
+                // writer. Empty cold-start catalogs keep fixture upstream for
+                // Modifier E7.
                 const bool use_effect_pod_upstream =
                     effect_stage_enabled && _effect_day_stage_ok;
                 if (use_effect_pod_upstream) {
-                    // Domain-runner MODIFIER ACK barrier is tied to fixture
-                    // intents. Strip them so commit_day does not wait on a
-                    // second Effect writer that no longer feeds Modifier.
                     std::vector<RuntimeDomainIntent> retained_intents;
                     retained_intents.reserve(authority_plan.intents.size());
                     for (const RuntimeDomainIntent &intent : authority_plan.intents) {
@@ -6169,148 +6491,17 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                     authority_plan.ack_required_mask &=
                         ~runtime_domain_mask(RuntimeDomainId::MODIFIER);
                 }
-                const std::vector<RuntimeDomainIntent> &intent_source =
-                    use_effect_pod_upstream ? _effect_day_modifier_intents
-                                            : authority_plan.intents;
-                std::vector<RuntimeModifierPodCommand> modifier_intents;
-                modifier_intents.reserve(intent_source.size());
-                for (const RuntimeDomainIntent &intent : intent_source) {
-                    if (intent.target_domain != static_cast<uint16_t>(RuntimeDomainId::MODIFIER)) continue;
-                    RuntimeModifierPodCommand command;
-                    command.request_id = intent.request_id != 0 ? intent.request_id : intent.source_id;
-                    command.producer_id = intent.producer_id;
-                    command.sequence = intent.sequence;
-                    command.effective_day = intent.effective_day;
-                    command.requested_day = intent.effective_day;
-                    command.opcode = intent.opcode;
-                    command.domain = intent.payload[1] >= 0 && intent.payload[1] < 4
-                        ? static_cast<uint16_t>(intent.payload[1]) : 0;
-                    command.definition_id = intent.payload[0] >= 0
-                        ? static_cast<int32_t>(intent.payload[0]) : 0;
-                    command.scope = intent.payload[2] >= 0 && intent.payload[2] <= 2
-                        ? static_cast<int32_t>(intent.payload[2]) : 2;
-                    command.entity_handle = intent.target_handle;
-                    command.target_generation = intent.target_generation;
-                    command.group_handle = intent.group_handle;
-                    command.modifier_handle = intent.modifier_handle;
-                    command.duration_days = intent.duration_days;
-                    command.stacks = intent.stacks;
-                    command.magnitude_q16 = intent.magnitude_q16;
-                    command.source_type = static_cast<uint64_t>(RuntimeDomainId::EFFECT);
-                    command.source_id = intent.source_id;
-                    command.input_generation = diagnostic_context.input_generation;
-                    modifier_intents.push_back(command);
-                }
-                bool modifier_ok = true;
                 std::string modifier_error;
-                RuntimeModifierPodSnapshot modifier_snapshot;
-                RuntimeModifierPodReport modifier_report;
-                std::vector<RuntimeDomainAck> modifier_acks;
-                double modifier_plan_ms = 0.0;
-                double modifier_replay_ms = 0.0;
-                if (_modifier_pod_configured) {
-                    const auto modifier_plan_started = std::chrono::steady_clock::now();
-                    modifier_ok = _modifier_pod_authority.plan_day(
-                        plan.context.day, diagnostic_context.input_generation,
-                        modifier_commands, modifier_intents, modifier_snapshot,
-                        modifier_acks, modifier_report, modifier_error);
-                    modifier_plan_ms = std::chrono::duration<double, std::milli>(
-                        std::chrono::steady_clock::now() - modifier_plan_started).count();
-                    if (!modifier_ok) {
-                        _modifier_pod_authority.discard_plan();
-                    }
-                } else if (!modifier_commands.empty() || !modifier_intents.empty()) {
-                    modifier_ok = false;
-                    modifier_error = "modifier_pod_not_configured";
-                }
-                if (modifier_ok) {
-                    if (use_effect_pod_upstream) {
-                        if (!modifier_acks.empty() &&
-                            !_effect_pod_authority.apply_acks(
-                                modifier_acks, modifier_error)) {
-                            modifier_ok = false;
-                        } else {
-                            _effect_pod_ack_count.store(
-                                static_cast<uint32_t>(modifier_acks.size()),
-                                std::memory_order_release);
-                            _effect_pod_state_hash.store(
-                                _effect_pod_authority.snapshot()
-                                    .deterministic_state_hash,
-                                std::memory_order_release);
-                        }
-                    } else {
-                        modifier_ok = _domain_authority_runner.accept_modifier_acks(
-                            authority_plan, modifier_acks, modifier_error);
-                    }
-                }
-                uint32_t modifier_slot = 0;
-                bool modifier_slot_reserved = false;
-                if (modifier_ok && _modifier_pod_configured) {
-                    if (!_modifier_snapshots.try_begin_write(modifier_slot)) {
-                        modifier_ok = false;
-                        modifier_error = "modifier_snapshot_ring_full";
-                    } else {
-                        _modifier_snapshots.write_buffer(modifier_slot) = modifier_snapshot;
-                        modifier_slot_reserved = true;
-                    }
-                }
-                const auto replay_started = std::chrono::steady_clock::now();
-                if (modifier_ok) {
-                    modifier_ok = !_modifier_pod_configured ||
-                        _modifier_pod_authority.commit_day(
-                            modifier_snapshot, modifier_error);
-                    if (modifier_ok) {
-                        authority_ok = _domain_authority_runner.commit_day(
-                            authority_plan, authority_error);
-                    }
-                    if (modifier_ok && authority_ok && modifier_slot_reserved) {
-                        _modifier_snapshots.publish(modifier_slot);
-                        modifier_slot_reserved = false;
-                        _modifier_pod_snapshot_generation.store(
-                            modifier_snapshot.generation, std::memory_order_release);
-                    }
-                } else {
-                    authority_ok = false;
-                    _modifier_pod_authority.discard_plan();
-                    _domain_authority_runner.discard_plan();
-                    if (authority_error.empty()) authority_error = modifier_error;
-                }
-                if ((!modifier_ok || !authority_ok) && modifier_slot_reserved)
-                    _modifier_snapshots.release(modifier_slot);
+                const auto modifier_started = std::chrono::steady_clock::now();
+                const bool modifier_ok = execute_modifier_worker_stage(
+                    plan.context.day, diagnostic_context.input_generation,
+                    day_commands, use_effect_pod_upstream, &authority_plan,
+                    authority_error, modifier_error);
+                authority_ok = modifier_ok;
                 authority_replay_ms = std::chrono::duration<double, std::milli>(
-                    std::chrono::steady_clock::now() - replay_started).count();
-                modifier_replay_ms = authority_replay_ms;
-                const bool modifier_committed = modifier_ok && authority_ok &&
-                    _modifier_pod_configured;
-                _modifier_pod_ready.store(modifier_committed,
-                                          std::memory_order_release);
-                _modifier_pod_plan_ms.store(modifier_plan_ms, std::memory_order_release);
-                _modifier_pod_replay_ms.store(modifier_replay_ms, std::memory_order_release);
-                _modifier_pod_work_units.store(modifier_report.work_units, std::memory_order_release);
-                _modifier_pod_state_hash.store(modifier_committed
-                    ? modifier_snapshot.state_hash
-                    : _modifier_pod_authority.snapshot().state_hash,
-                    std::memory_order_release);
-                _modifier_pod_ack_count.store(modifier_committed
-                    ? static_cast<uint32_t>(modifier_acks.size()) : 0u,
-                    std::memory_order_release);
-                const char *modifier_reason = modifier_committed ? "" :
-                    (!_modifier_pod_configured && modifier_error.empty()
-                        ? "modifier_pod_not_configured"
-                        : (modifier_error.empty() ? "modifier_pod_plan_failed" :
-                           modifier_error.c_str()));
-                size_t modifier_reason_index = 0;
-                for (; modifier_reason_index + 1 < _modifier_pod_fallback_reason.size() &&
-                        modifier_reason[modifier_reason_index] != '\0';
-                     ++modifier_reason_index) {
-                    _modifier_pod_fallback_reason[modifier_reason_index].store(
-                        modifier_reason[modifier_reason_index], std::memory_order_release);
-                }
-                for (; modifier_reason_index < _modifier_pod_fallback_reason.size();
-                     ++modifier_reason_index) {
-                    _modifier_pod_fallback_reason[modifier_reason_index].store(
-                        '\0', std::memory_order_release);
-                }
+                    std::chrono::steady_clock::now() - modifier_started).count();
+                if (!modifier_ok && authority_error.empty())
+                    authority_error = modifier_error;
             } else {
                 _domain_authority_runner.discard_plan();
             }
@@ -6482,6 +6673,29 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             climate_day_computed = true;
             _climate_authority.discard_plan();
         }
+        // B8 P0：无论 plan 成功、失败，还是"这一天不是新输入"，worker 都已经
+        // 评估过这份环境。消费游标记录"看到过"，主线程等待因此不会把一次 preflight
+        // 失败误判成"输入没送到"；真正提交到哪一天由 _climate_committed_day 表示。
+        if (environment != nullptr) {
+            _climate_consumed_generation.store(environment->generation,
+                                               std::memory_order_release);
+            // 只有"第一次看到这一代"才算消费了一天；失败/挂起天的重试会反复评估
+            // 同一份环境，把它们计数会把 delivered 指标变成重试计数器。
+            uint64_t last_counted =
+                _climate_last_counted_generation.load(std::memory_order_relaxed);
+            while (environment->generation > last_counted &&
+                   !_climate_last_counted_generation.compare_exchange_weak(
+                       last_counted, environment->generation,
+                       std::memory_order_relaxed)) {
+            }
+            if (environment->generation > last_counted) {
+                _environment_consumed_days.fetch_add(1,
+                                                     std::memory_order_relaxed);
+            }
+            // 等待方在 _climate_wait_cv 上等这个游标，必须显式唤醒。用专用 CV：
+            // _control_cv 上还挂着 worker 自己的 preflight 重试等待。
+            _climate_wait_cv.notify_all();
+        }
         if (climate_day_computed) {
             _climate_pod_ready.store(active_climate_ok, std::memory_order_release);
             _climate_pod_plan_ms.store(climate_report.plan_ms,
@@ -6503,6 +6717,16 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             }
             _climate_worker_stage_mask.store(climate_report.worker_stage_mask,
                                             std::memory_order_release);
+            _climate_cyclone_alive.store(climate_report.cyclone_alive,
+                                         std::memory_order_release);
+            _climate_cyclone_injected.store(climate_report.cyclone_injected,
+                                            std::memory_order_release);
+            _climate_cyclone_replaced.store(climate_report.cyclone_replaced,
+                                            std::memory_order_release);
+            _climate_cyclone_decayed.store(climate_report.cyclone_decayed,
+                                           std::memory_order_release);
+            _climate_cyclone_touched.store(climate_report.cyclone_touched,
+                                           std::memory_order_release);
         }
         // Nothing to compare against under authority; keep the parity slots
         // explicitly empty rather than leaving the last SHADOW day's verdict
@@ -6623,6 +6847,134 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                 std::atomic_store_explicit(&_country_pod_diagnostics,
                     std::make_shared<const RuntimeCountryPodDiagnostics>(diagnostics),
                     std::memory_order_release);
+            }
+            continue;
+        }
+        if (stage.domain == RuntimeDomainId::EFFECT &&
+            _mode.load(std::memory_order_acquire) ==
+                RuntimeSimulationMode::ACTIVE &&
+            (_requested_authority_mask.load(std::memory_order_acquire) &
+             runtime_domain_mask(RuntimeDomainId::EFFECT)) != 0u) {
+            // F8 ACTIVE independent Effect stage (Ideology order already passed
+            // in the stage list). Park with Climate like Country/Modifier.
+            if (climate_authority_requested && !active_climate_ok) {
+                stage.completed = 0;
+                continue;
+            }
+            const bool effect_stage_enabled =
+                _effect_pod_configured &&
+                !_effect_pod_catalog.definitions.empty();
+            if (!effect_stage_enabled) {
+                _effect_day_modifier_intents.clear();
+                _effect_day_stage_ok = false;
+                stage.completed = 0;
+                continue;
+            }
+            std::string effect_error;
+            const bool effect_ok = execute_effect_worker_stage(
+                plan.context.day, plan.context.input_generation,
+                commit, effect_error);
+            _effect_pod_ready.store(effect_ok, std::memory_order_release);
+            const char *effect_reason = effect_ok ? "" :
+                (effect_error.empty() ? "effect_pod_plan_failed"
+                                      : effect_error.c_str());
+            size_t effect_reason_index = 0;
+            for (; effect_reason_index + 1 <
+                       _effect_pod_fallback_reason.size() &&
+                   effect_reason[effect_reason_index] != '\0';
+                 ++effect_reason_index) {
+                _effect_pod_fallback_reason[effect_reason_index].store(
+                    effect_reason[effect_reason_index],
+                    std::memory_order_release);
+            }
+            for (; effect_reason_index <
+                       _effect_pod_fallback_reason.size();
+                 ++effect_reason_index) {
+                _effect_pod_fallback_reason[effect_reason_index].store(
+                    '\0', std::memory_order_release);
+            }
+            if (effect_ok) {
+                stage.completed = 1;
+                commit.completed_domain_mask |=
+                    runtime_domain_mask(RuntimeDomainId::EFFECT);
+                ++commit.completed_stage_count;
+            } else {
+                stage.completed = 0;
+            }
+            continue;
+        }
+        if (stage.domain == RuntimeDomainId::MODIFIER &&
+            _mode.load(std::memory_order_acquire) ==
+                RuntimeSimulationMode::ACTIVE &&
+            (_requested_authority_mask.load(std::memory_order_acquire) &
+             runtime_domain_mask(RuntimeDomainId::MODIFIER)) != 0u) {
+            // Park with Climate the same way Country does: when the worker
+            // clock outruns the published environment, do not advance Modifier.
+            if (climate_authority_requested && !active_climate_ok) {
+                stage.completed = 0;
+                continue;
+            }
+            // F8: when EFFECT is granted, the independent EFFECT stage already
+            // ran. Otherwise keep the E8 embedded upstream for Mod-only grant.
+            const bool effect_authority_requested =
+                (_requested_authority_mask.load(std::memory_order_acquire) &
+                 runtime_domain_mask(RuntimeDomainId::EFFECT)) != 0u;
+            bool effect_upstream_ok = false;
+            if (effect_authority_requested) {
+                effect_upstream_ok = _effect_day_stage_ok;
+            } else {
+                const bool effect_stage_enabled =
+                    _effect_pod_configured &&
+                    !_effect_pod_catalog.definitions.empty();
+                if (effect_stage_enabled) {
+                    std::string effect_error;
+                    effect_upstream_ok = execute_effect_worker_stage(
+                        plan.context.day, plan.context.input_generation,
+                        commit, effect_error);
+                    _effect_pod_ready.store(effect_upstream_ok,
+                                             std::memory_order_release);
+                    const char *effect_reason = effect_upstream_ok ? "" :
+                        (effect_error.empty() ? "effect_pod_plan_failed"
+                                              : effect_error.c_str());
+                    size_t effect_reason_index = 0;
+                    for (; effect_reason_index + 1 <
+                               _effect_pod_fallback_reason.size() &&
+                           effect_reason[effect_reason_index] != '\0';
+                         ++effect_reason_index) {
+                        _effect_pod_fallback_reason[effect_reason_index].store(
+                            effect_reason[effect_reason_index],
+                            std::memory_order_release);
+                    }
+                    for (; effect_reason_index <
+                               _effect_pod_fallback_reason.size();
+                         ++effect_reason_index) {
+                        _effect_pod_fallback_reason[effect_reason_index].store(
+                            '\0', std::memory_order_release);
+                    }
+                } else {
+                    _effect_day_modifier_intents.clear();
+                    _effect_day_stage_ok = false;
+                }
+            }
+            std::string modifier_error;
+            std::string unused_authority_error;
+            // ACTIVE: no diagnostic domain runner. Failure isolates Modifier —
+            // Climate/Country already committed stay.
+            if (execute_modifier_worker_stage(
+                    plan.context.day, plan.context.input_generation,
+                    day_commands, effect_upstream_ok, nullptr,
+                    unused_authority_error, modifier_error)) {
+                stage.dirty_families = RUNTIME_DIRTY_COUNTRY_STATE;
+                stage.work_units = _modifier_pod_work_units.load(
+                    std::memory_order_relaxed);
+                stage.completed = 1;
+                commit.dirty_families |= stage.dirty_families;
+                commit.work_units += stage.work_units;
+                commit.completed_domain_mask |=
+                    runtime_domain_mask(RuntimeDomainId::MODIFIER);
+                ++commit.completed_stage_count;
+            } else {
+                stage.completed = 0;
             }
             continue;
         }
@@ -8277,6 +8629,37 @@ RuntimeThreadReport NativeSimulationHost::report() const {
         _climate_production_stage_mask.load(std::memory_order_acquire);
     out.climate_worker_stage_mask =
         _climate_worker_stage_mask.load(std::memory_order_acquire);
+    // B8-2：worker 自持 cyclone 的当日事实（只用于报告，不参与仿真）。
+    out.climate_cyclone_alive =
+        _climate_cyclone_alive.load(std::memory_order_relaxed);
+    out.climate_cyclone_injected =
+        _climate_cyclone_injected.load(std::memory_order_relaxed);
+    out.climate_cyclone_replaced =
+        _climate_cyclone_replaced.load(std::memory_order_relaxed);
+    out.climate_cyclone_decayed =
+        _climate_cyclone_decayed.load(std::memory_order_relaxed);
+    out.climate_cyclone_touched =
+        _climate_cyclone_touched.load(std::memory_order_relaxed);
+    // B8 P0：交付游标。诊断表允许 relaxed 读；这些计数只用于报告与等待判定，
+    // 不参与任何仿真状态。
+    out.climate_committed_day =
+        _climate_committed_day.load(std::memory_order_acquire);
+    out.climate_consumed_generation =
+        _climate_consumed_generation.load(std::memory_order_acquire);
+    out.environment_published_days =
+        _environment_published_days.load(std::memory_order_relaxed);
+    out.environment_consumed_days =
+        _environment_consumed_days.load(std::memory_order_relaxed);
+    out.environment_superseded_days =
+        _environment_superseded_days.load(std::memory_order_relaxed);
+    out.environment_dropped_days =
+        _environment_dropped_days.load(std::memory_order_relaxed);
+    out.climate_wait_total_ms =
+        _climate_wait_total_ms.load(std::memory_order_relaxed);
+    out.climate_wait_last_ms =
+        _climate_wait_last_ms.load(std::memory_order_relaxed);
+    out.climate_wait_max_ms =
+        _climate_wait_max_ms.load(std::memory_order_relaxed);
     const uint64_t command_write = _command_enqueue_pos.load(std::memory_order_acquire);
     const uint64_t command_read = _command_dequeue_pos.load(std::memory_order_acquire);
     const uint64_t receipt_write = _receipt_write.load(std::memory_order_acquire);

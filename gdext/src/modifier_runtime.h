@@ -183,6 +183,15 @@ public:
     }
     bool export_pod_catalog(RuntimeModifierPodCatalog &out,
                             std::string &error) const;
+    // E8 ACTIVE write-back: replace stores from a worker-committed POD
+    // snapshot so evaluate_modifier_stat / hot-path consumers observe
+    // the submitted state. Generation must be monotonic; failures leave
+    // the previous stores untouched.
+    bool apply_pod_snapshot(const RuntimeModifierPodSnapshot &snapshot,
+                            std::string &error);
+    uint64_t pod_snapshot_generation() const {
+        return _pod_snapshot_generation;
+    }
     // Bumps on every apply/remove/expire/set-stacks mutation of the domain
     // store. Callers may use it as an exact invalidation token for caches keyed
     // on that domain's effective values.
@@ -384,6 +393,9 @@ private:
     int64_t _current_day = -1;
     int64_t _next_request_id = 1;
     int64_t _next_event_id = 1;
+    // E8 ACTIVE write-back：最近一次 apply_pod_snapshot 的代次。apply 侧用它做
+    // 单调性检查，host 侧用 pod_snapshot_generation() 做失效令牌。
+    uint64_t _pod_snapshot_generation = 0;
     uint64_t _submit_order = 0;
     uint64_t _journal_overflow = 0;
     uint64_t _commands_applied = 0;

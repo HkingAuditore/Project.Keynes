@@ -94,6 +94,23 @@ var _runtime_climate_writeback_days: int = 0
 var _runtime_climate_writeback_last_day: int = -1
 var _runtime_climate_writeback_applied_fields: int = 0
 var _runtime_climate_writeback_skipped: Array = []
+## B8 P0：回灌分段耗时（worker 快照 → slot，slot → MapData）。只看 writeback_days
+## 分不出"worker 慢"和"回灌慢"，这两条是分诊用的。
+var _runtime_climate_writeback_memcpy_ms: float = 0.0
+var _runtime_climate_writeback_flush_ms: float = 0.0
+## 写回环的发布丢弃计数（worker 侧 ring 满时递增）。B8 的 50/50 验收要求它为 0。
+var _runtime_climate_writeback_drops: int = 0
+## B8 P3：等待切片。C++ 侧是条件变量等待，返回一次有界切片后由本层 pump
+## Country peer 服务再进入下一次等待 —— 纯 C++ 等待无法回调 Godot 服务
+## Country/Economy barrier，两者互等就是死锁。
+const RUNTIME_CLIMATE_WAIT_SLICE_MS: int = 10
+## B8-4：Climate ACTIVE 启用策略。requested 来自
+## runtime_climate_authority_enabled（会话/玩家想不想要），effective 由
+## override + 实测阈值决定。阈值证据落地前 auto 保持历史默认，见 policy 文件。
+const ClimateAuthorityPolicyScript = preload("res://scripts/game/climate_authority_policy.gd")
+# Use the preload instance type — not class_name ClimateAuthorityPolicy — so
+# dependents (e.g. game_save_coordinator) can parse before global class registry.
+var _climate_authority_policy = ClimateAuthorityPolicyScript.new()
 
 var _renderer: HexRenderer = null
 # GM 开关「关闭地形 GI」按下时暂存的三个强度原值，关掉开关时原样还回去。
@@ -173,6 +190,8 @@ var _runtime_last_ui_feedback_ms: float = 0.0
 var _runtime_last_gpu_upload_ms: float = 0.0
 var _country_worker_transport_last_service: Dictionary = {}
 var _country_worker_transport_capture: Dictionary = {}
+var _modifier_worker_snapshot_generation: int = 0
+var _effect_worker_snapshot_generation: int = 0
 var _country_worker_read_generation: int = 0
 var _country_worker_read_last_day: int = -1
 var _country_worker_read_last_result: Dictionary = {}
@@ -255,7 +274,16 @@ func _on_clock_day_changed(day_idx: int) -> void:
 	# _process 那次回灌保留：它服务于视觉的每帧刷新。apply 侧有 generation 与
 	# committed-day 双重门，同一天重复调用不会二次应用。
 	if bool(report.get("climate_worker_authoritative", false)):
-		_apply_climate_writeback_if_authoritative(report)
+		_consume_modifier_worker_snapshot_if_authoritative()
+		_consume_effect_worker_snapshot_if_authoritative()
+		_service_effect_worker_intents_if_authoritative()
+	_apply_climate_writeback_if_authoritative(report)
+	if bool(report.get("climate_worker_authoritative", false)):
+		# B8 P3：主线程等到 worker 已经评估过上一份环境再发布下一天，输入不再
+		# 被单槽覆盖。等待在切片之间 pump Country peer 服务，避免两个边界互锁；
+		# 用户选择无限等，所以这里只有故障/停止/撤销三类终止条件。
+		wait_for_climate_consumed(
+			int(report.get("simulation_environment_generation", 0)))
 	run_daily_tick(day_idx, _world_clock.season_phase_for_day(day_idx))
 
 
@@ -544,6 +572,10 @@ func _start_production_shadow_worker() -> void:
 		return
 	if _generator == null or not _generator.has_method("start_runtime_worker"):
 		return
+	# B8-4：先解析策略，再决定 worker 以什么模式启动。requested 是会话请求，
+	# effective 才是本机/本地图真实生效的模式；诊断里两者都保留。
+	var authority_policy: Dictionary = _resolve_climate_authority_policy()
+	var climate_authority_active := bool(authority_policy.get("enabled", false))
 	var ext = _generator.get_data_core_world_ext() \
 		if _generator.has_method("get_data_core_world_ext") else null
 	if ext != null and runtime_parity_forcing \
@@ -560,11 +592,11 @@ func _start_production_shadow_worker() -> void:
 		"paused": true,
 		"events_probe_enabled": runtime_events_probe_enabled,
 	}
-	if runtime_climate_authority_enabled:
+	if climate_authority_active:
 		# graph_coverage_complete 在 per-domain ACTIVE 下的含义是"请求的这些域
-		# 线程安全"，不是整图。CLIMATE(0x2)|COUNTRY(0x4)|COMMIT(0x800)=0x806：
+		# 线程安全"，不是整图。CLIMATE(0x2)|COUNTRY(0x4)|EFFECT(0x20)|MODIFIER(0x40)|COMMIT(0x800)=0x866：
 		# COMMIT 是 barrier 域本身，C++ 侧也会补上，这里显式写出让配置自解释。
-		# D12：Country 与 Climate 同开关进入生产 ACTIVE；不得用 handoff /
+		# F8：Climate|Country|Modifier|Effect 同开关进入生产 ACTIVE；不得用 handoff /
 		# set_country_sync_store_writes_forbidden 冒充本路径。
 		if not bool(_country_worker_transport_capture.get("ok", false)) \
 				and _generator != null \
@@ -573,19 +605,19 @@ func _start_production_shadow_worker() -> void:
 				_generator.capture_country_worker_inputs()
 		if not bool(_country_worker_transport_capture.get("ok", false)):
 			push_error(
-				"[runtime-worker] Climate|Country ACTIVE refused: Country capture incomplete (%s)" % [
+				"[runtime-worker] Climate|Country|Modifier|Effect ACTIVE refused: Country capture incomplete (%s)" % [
 					String(_country_worker_transport_capture.get("code", "missing"))])
 			return
 		config["simulation_thread_mode"] = "ACTIVE"
 		config["graph_coverage_complete"] = true
-		config["authoritative_domain_mask"] = 0x806
+		config["authoritative_domain_mask"] = 0x866
 	var started: Dictionary = _generator.start_runtime_worker(config)
 	if not bool(started.get("ok", false)):
-		if runtime_climate_authority_enabled:
+		if climate_authority_active:
 			# 权威启动失败不能静默退回 SHADOW：主线程的 climate/country 抑制门读的是
 			# worker 侧的授予位，授予没发生就不会抑制，于是主线程仍在算。
 			# 但调用方以为已经转权威了，所以这里必须响。
-			push_error("[runtime-worker] Climate|Country authority start refused: %s (%s)" % [
+			push_error("[runtime-worker] Climate|Country|Modifier|Effect authority start refused: %s (%s)" % [
 				String(started.get("code", "unknown")),
 				String(started.get("message", ""))])
 		else:
@@ -633,6 +665,9 @@ func run_daily_tick(day_idx: int, season_phase: float) -> Dictionary:
 	# ticks without idling WorldRuntimeHost._process (headless tests, catch-up
 	# batches) still need the transport drained on every day boundary.
 	_service_country_worker_transport()
+	_consume_modifier_worker_snapshot_if_authoritative()
+	_consume_effect_worker_snapshot_if_authoritative()
+	_service_effect_worker_intents_if_authoritative()
 	_consume_country_worker_read_view_if_authoritative()
 	_fast_tick_count += 1
 	if _renderer != null and _generator.has_method("has_pending_detail_scatter_refresh") \
@@ -718,6 +753,9 @@ func map_overlay_diagnostics() -> Dictionary:
 
 func _process(_delta: float) -> void:
 	_service_country_worker_transport()
+	_consume_modifier_worker_snapshot_if_authoritative()
+	_consume_effect_worker_snapshot_if_authoritative()
+	_service_effect_worker_intents_if_authoritative()
 	_consume_country_worker_read_view_if_authoritative()
 	_consume_runtime_commit_if_ready()
 	var now_msec := Time.get_ticks_msec()
@@ -753,6 +791,89 @@ func _service_country_worker_transport() -> void:
 ## generation-contiguous sparse owner patch or an explicit full bootstrap /
 ## recovery snapshot.  It never waits for the worker and never calls the
 ## synchronous Country write API.
+
+## E8 ACTIVE Modifier write-back. Non-blocking: drops intermediate generations.
+## Targets legacy ModifierRuntime (not MapData arrays). main_wait_on_sim_us stays 0.
+func _consume_modifier_worker_snapshot_if_authoritative() -> void:
+	if not _runtime_ready_for_ticks or _generator == null:
+		return
+	if not _generator.has_method("apply_runtime_modifier_snapshot"):
+		return
+	var report: Dictionary = _generator.get_runtime_thread_report() \
+		if _generator.has_method("get_runtime_thread_report") else {}
+	var granted_mask := int(report.get("authoritative_domain_mask", 0))
+	if (granted_mask & 0x040) == 0:
+		return
+	var applied: Dictionary = _generator.apply_runtime_modifier_snapshot(
+		_modifier_worker_snapshot_generation)
+	if not bool(applied.get("ok", false)) or not bool(applied.get("applied", false)):
+		return
+	var generation := int(applied.get("generation", 0))
+	if generation <= _modifier_worker_snapshot_generation:
+		return
+	_modifier_worker_snapshot_generation = generation
+
+
+## F8 ACTIVE Effect write-back. Non-blocking: drops intermediate generations.
+## Targets legacy EffectRuntime. main_wait_on_sim_us stays 0.
+func _consume_effect_worker_snapshot_if_authoritative() -> void:
+	if not _runtime_ready_for_ticks or _generator == null:
+		return
+	if not _generator.has_method("apply_runtime_effect_snapshot"):
+		return
+	var report: Dictionary = _generator.get_runtime_thread_report() \
+		if _generator.has_method("get_runtime_thread_report") else {}
+	var granted_mask := int(report.get("authoritative_domain_mask", 0))
+	if (granted_mask & 0x020) == 0:
+		return
+	var applied: Dictionary = _generator.apply_runtime_effect_snapshot(
+		_effect_worker_snapshot_generation)
+	if not bool(applied.get("ok", false)) or not bool(applied.get("applied", false)):
+		return
+	var generation := int(applied.get("generation", 0))
+	if generation <= _effect_worker_snapshot_generation:
+		return
+	_effect_worker_snapshot_generation = generation
+
+
+## F8: non-Modifier Effect intents are consumed on the main thread and ACK'd
+## back to the worker. MODIFIER intents stay in-worker (E8).
+func _service_effect_worker_intents_if_authoritative() -> void:
+	if not _runtime_ready_for_ticks or _generator == null:
+		return
+	var report: Dictionary = _generator.get_runtime_thread_report() \
+		if _generator.has_method("get_runtime_thread_report") else {}
+	var granted_mask := int(report.get("authoritative_domain_mask", 0))
+	if (granted_mask & 0x020) == 0:
+		return
+	var ext = _generator.get_data_core_world_ext() \
+		if _generator.has_method("get_data_core_world_ext") else null
+	if ext == null or not ext.has_method("poll_effect_worker_intent"):
+		return
+	# Bounded pump: never block the sim on an unbounded intent backlog.
+	for _i in range(64):
+		var intent: Dictionary = ext.poll_effect_worker_intent()
+		if not bool(intent.get("ok", false)) or not bool(intent.get("available", false)):
+			break
+		var domain := int(intent.get("target_domain", intent.get("domain", 0)))
+		# MODIFIER (7) is ACK'd inside the worker Modifier stage.
+		if domain == 7:
+			continue
+		var ack: Dictionary = {
+			"request_id": int(intent.get("request_id", 0)),
+			"transaction_id": int(intent.get("transaction_id",
+				intent.get("request_id", 0))),
+			"target_handle": int(intent.get("target_handle", 0)),
+			"target_generation": int(intent.get("target_generation", 0)),
+			"domain": domain,
+			"code": 1, # OK — adapters that reject must submit Rejected via their path
+			"effective_day": int(intent.get("effective_day", 0)),
+			"producer_id": int(intent.get("producer_id", 0)),
+			"sequence": int(intent.get("sequence", 0)),
+		}
+		if ext.has_method("submit_effect_worker_ack"):
+			ext.submit_effect_worker_ack(ack)
+
 func _consume_country_worker_read_view_if_authoritative() -> void:
 	if not _runtime_ready_for_ticks or _generator == null \
 			or not _generator.has_method("get_country_worker_read_view"):
@@ -954,12 +1075,69 @@ func _apply_climate_writeback_if_authoritative(report: Dictionary) -> void:
 	# given world, so the probe reads it once instead of spamming the log.
 	_runtime_climate_writeback_applied_fields = int(applied.get("applied_fields", 0))
 	_runtime_climate_writeback_skipped = applied.get("skipped_fields", [])
+	_runtime_climate_writeback_memcpy_ms = float(applied.get("memcpy_ms", 0.0))
+	_runtime_climate_writeback_flush_ms = float(applied.get("flush_map_ms", 0.0))
+	_runtime_climate_writeback_drops = int(applied.get(
+		"drops", _runtime_climate_writeback_drops))
+
+
+## B8 P3：等到 worker 评估过 `after_environment_generation` 这份环境。
+##
+## 为什么不是单次 C++ 无限等待：等待期间必须继续服务 Country/Economy 的 peer
+## 请求，否则 worker 卡在 peer barrier、主线程卡在等待，两边互锁。C++ 侧因此
+## 只提供有界切片（条件变量，非忙等），本层在每个切片之间 pump 一次，然后继续
+## 等 —— 行为上仍然是"无限等"，但不会把 peer 服务饿死。
+##
+## 终止条件只有三类：worker 故障/停止、Climate 权威被撤销、等待接口缺失。
+## 它们不是性能超时：出现时按当时的 authority 状态回主线程或结束本 tick。
+func wait_for_climate_consumed(after_environment_generation: int) -> Dictionary:
+	if after_environment_generation <= 0:
+		return {"ok": true, "code": "climate_wait_no_environment_yet",
+			"waited_ms": 0.0}
+	var ext = _generator.get_data_core_world_ext() \
+		if _generator != null and _generator.has_method("get_data_core_world_ext") \
+		else null
+	if ext == null or not ext.has_method("wait_climate_consumed"):
+		# 旧 DLL / 未接线：不阻塞，也不假装等过。调用方（day 边界）继续走原路径。
+		return {"ok": false, "code": "climate_wait_api_missing", "waited_ms": 0.0}
+	var total_waited_ms := 0.0
+	while true:
+		# 先服务 peer，再进入下一次等待：Country 的 barrier 可能正是 worker
+		# 还没消费这份环境的原因。
+		_service_country_worker_transport()
+		_consume_country_worker_read_view_if_authoritative()
+		var slice: Dictionary = ext.wait_climate_consumed(
+			after_environment_generation, RUNTIME_CLIMATE_WAIT_SLICE_MS)
+		total_waited_ms += float(slice.get("waited_ms", 0.0))
+		if bool(slice.get("ok", false)):
+			slice["waited_ms"] = total_waited_ms
+			slice["code"] = "ok"
+			return slice
+		var code := String(slice.get("code", ""))
+		if code == "climate_wait_timeout_slice":
+			continue
+		# 终止条件。作者/Debug 读者需要知道是"谁没在跑"，所以带上 worker state
+		# 与已消费代次，而不是只报 false。
+		push_warning("[climate-authority] wait terminated: %s (state=%s consumed=%s target=%s)" % [
+			code, str(slice.get("worker_state", -1)),
+			str(slice.get("consumed_generation", -1)),
+			str(after_environment_generation)])
+		slice["waited_ms"] = total_waited_ms
+		return slice
+	return {"ok": false, "code": "climate_wait_unreachable", "waited_ms": total_waited_ms}
 
 
 ## 运行时开关 Climate|Country 权威。关掉后停掉 ACTIVE worker、改以 SHADOW 重启，
 ## 主线程立刻恢复算 climate/country。打开则相反。不需要重新生成世界。
+## B8-4：这个入口现在等价于 force_on / force_off；想回到 auto 用
+## set_climate_authority_override("auto")。
 func set_runtime_climate_authority_enabled(enabled: bool) -> Dictionary:
 	runtime_climate_authority_enabled = enabled
+	_climate_authority_policy.set_force_enabled(enabled)
+	return _restart_worker_with_current_policy()
+
+
+func _restart_worker_with_current_policy() -> Dictionary:
 	if _generator == null or not _generator.has_method("request_runtime_stop"):
 		return climate_authority_diagnostics()
 	_generator.request_runtime_stop()
@@ -972,10 +1150,35 @@ func set_runtime_climate_authority_enabled(enabled: bool) -> Dictionary:
 		if state in ["STOPPED", "FAULTED"]:
 			break
 		OS.delay_msec(4)
-	if enabled and _generator.has_method("capture_country_worker_inputs"):
+	var policy: Dictionary = _resolve_climate_authority_policy()
+	if bool(policy.get("enabled", false)) \
+			and _generator.has_method("capture_country_worker_inputs"):
 		_country_worker_transport_capture = _generator.capture_country_worker_inputs()
 	_start_production_shadow_worker()
 	return climate_authority_diagnostics()
+
+
+## B8-4：三态策略入口。auto 交给实测阈值，force_on/force_off 覆盖它。
+func set_climate_authority_override(mode: String) -> Dictionary:
+	var applied: Dictionary = _climate_authority_policy.set_override_mode(mode)
+	if not bool(applied.get("ok", false)):
+		return applied
+	# override 只决定"模式"，不覆写会话 request（诊断要能同时看到"想开"与"实际
+	# 生效"）。重启路径自己会重新解析策略，避免半状态。
+	var restarted: Dictionary = _restart_worker_with_current_policy()
+	return {
+		"ok": true,
+		"code": "ok",
+		"override": mode,
+		"policy": _resolve_climate_authority_policy(),
+		"diagnostics": restarted,
+	}
+
+
+## 解析当前策略（不改状态）。诊断与启动路径共用同一个函数，避免两处判据漂移。
+func _resolve_climate_authority_policy() -> Dictionary:
+	var n_cells := _current_map.cell_count() if _current_map != null else 0
+	return _climate_authority_policy.resolve(runtime_climate_authority_enabled, n_cells)
 
 
 ## Climate|Country 权威诊断。供 dev console / 对拍场景读，不参与调度决策。
@@ -995,6 +1198,27 @@ func climate_authority_diagnostics() -> Dictionary:
 		"writeback_last_day": _runtime_climate_writeback_last_day,
 		"writeback_applied_fields": _runtime_climate_writeback_applied_fields,
 		"writeback_skipped_fields": _runtime_climate_writeback_skipped,
+		# B8 P0：交付游标与回灌分段耗时。writeback_days 只说明"回灌落地几天"，
+		# 这几条才区分"worker 没消费"（superseded/consumed 落后 published）与
+		# "回灌本身慢"（memcpy/flush）。
+		"climate_committed_day": int(report.get("climate_committed_day", -1)),
+		"climate_consumed_generation": int(report.get(
+			"climate_consumed_generation", 0)),
+		"environment_published_days": int(report.get(
+			"environment_published_days", 0)),
+		"environment_consumed_days": int(report.get(
+			"environment_consumed_days", 0)),
+		"environment_superseded_days": int(report.get(
+			"environment_superseded_days", 0)),
+		"environment_dropped_days": int(report.get(
+			"environment_dropped_days", 0)),
+		"climate_wait_total_ms": int(report.get("climate_wait_total_ms", 0)),
+		"climate_wait_last_ms": int(report.get("climate_wait_last_ms", 0)),
+		"climate_wait_max_ms": int(report.get("climate_wait_max_ms", 0)),
+		"writeback_memcpy_ms": float(_runtime_climate_writeback_memcpy_ms),
+		"writeback_flush_ms": float(_runtime_climate_writeback_flush_ms),
+		"writeback_drop_count": int(_runtime_climate_writeback_drops),
+		"authority_policy": _resolve_climate_authority_policy(),
 	}
 
 
@@ -1463,6 +1687,7 @@ func get_gm_capabilities() -> Dictionary:
 		"toggles": [
 			{"id": "simulation.paused", "label": "暂停模拟", "group": "模拟"},
 			{"id": "simulation.climate_worker_authority", "label": "Climate worker 权威", "group": "模拟"},
+			{"id": "simulation.climate_worker_authority_auto", "label": "Climate 权威按规模自动判定", "group": "模拟"},
 			{"id": "simulation.click_claim_territory", "label": "点击地块接管领土", "group": "模拟"},
 			{"id": "system.autosave", "label": "自动存档（每年）", "group": "系统"},
 			{"id": "visual.day_night", "label": "昼夜循环", "group": "视觉"},
@@ -1568,6 +1793,9 @@ func get_gm_toggle_state(toggle_id: String) -> Dictionary:
 			return {"ok": true, "enabled": _world_clock.paused}
 		"simulation.climate_worker_authority":
 			return {"ok": true, "enabled": runtime_climate_authority_enabled}
+		"simulation.climate_worker_authority_auto":
+			return {"ok": true, "enabled":
+				_climate_authority_policy.override == ClimateAuthorityPolicy.Override.AUTO}
 		"simulation.click_claim_territory":
 			return {"ok": true, "enabled": _gm_click_claim_territory_enabled}
 		"system.autosave":
@@ -1668,6 +1896,8 @@ func set_gm_toggle(toggle_id: String, enabled: bool) -> Dictionary:
 			on_clock_running_changed(not enabled)
 		"simulation.climate_worker_authority":
 			set_runtime_climate_authority_enabled(enabled)
+		"simulation.climate_worker_authority_auto":
+			set_climate_authority_override("auto" if enabled else "force_off")
 		"simulation.click_claim_territory":
 			return _gm_set_click_claim_territory_enabled(enabled)
 		"system.autosave":

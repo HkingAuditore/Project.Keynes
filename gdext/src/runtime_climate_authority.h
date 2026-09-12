@@ -37,6 +37,13 @@ struct RuntimeClimateVerticalReport {
     // 节拍，而 stage 9..13 的分叉恰恰要靠两侧对比才能归因。
     int32_t production_stage_mask = 0;
     int32_t worker_stage_mask = 0;
+    // B8-2：worker 自持 cyclone 的当日事实（推进后存活 / 出生 / 同键刷新 /
+    // 淘汰 / stamp 覆盖格数）。soak 与 C3 的 JSON 证据引用这组数。
+    int32_t cyclone_alive = 0;
+    int32_t cyclone_injected = 0;
+    int32_t cyclone_replaced = 0;
+    int32_t cyclone_decayed = 0;
+    int32_t cyclone_touched = 0;
     char error[64]{};
 };
 

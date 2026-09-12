@@ -658,6 +658,15 @@ func _init(p_generator, p_map: MapData, p_world: WorldData,
 func should_run(ctx: SusTickContext) -> bool:
 	if generator == null or map == null or world == null:
 		return false
+	# B8 唯一写者规则：Climate 在 worker 手上时，主线程 weather 链是一个必须被抑制的
+	# 第二写者。它的 field state 在 ACTIVE 下不再被推进/填充，distribute 会把一份
+	# 零天气写回 MapData —— 而且时序正好在 worker writeback 之后，于是 worker 当天
+	# 算出的天气场被覆盖成零（实测：worker vapor0=0.11，MapData weather_vapor_arr
+	# nz=0，pending 的 skipped_fields 里没有任何天气字段）。
+	if generator.has_method("climate_authority_suppressed") \
+			and bool(generator.climate_authority_suppressed()):
+		ran_this_tick = false
+		return false
 	var base_should_run: bool = true if _round_active else super.should_run(ctx)
 	if not base_should_run:
 		return false
@@ -727,6 +736,20 @@ func run_slice(ctx: SusTickContext) -> Dictionary:
 	if generator == null or map == null or world == null:
 		ran_this_tick = false
 		return { "done": true, "work_done": 0, "elapsed_ms": 0.0 }
+	# B8 唯一写者规则的第二道门：DCSystemScheduler 路径直接走 policy + run_slice，
+	# 不会调用本 job 的 should_run。抑制必须放在真正干活的地方，否则天气链仍然在
+	# worker writeback 之后把 MapData 天气场写回零。
+	if generator.has_method("climate_authority_suppressed") \
+			and bool(generator.climate_authority_suppressed()):
+		ran_this_tick = false
+		return {
+			"done": true,
+			"work_done": 0,
+			"elapsed_ms": 0.0,
+			"stage_name": "weather_suppressed_by_climate_authority",
+			"substage": "climate_worker_authoritative",
+			"path": "suppressed",
+		}
 
 	# Prelude 计时：getter 调用、is_data_core_on 探测、can_slice_field has_method ×4。
 	# 历史日志（2026-05-18）显示 unattributed=2.5~2.6ms，将该段独立 instrument

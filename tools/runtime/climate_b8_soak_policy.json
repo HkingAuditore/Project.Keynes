@@ -1,0 +1,56 @@
+{
+  "schema": "ClimateB8SoakPolicy",
+  "schema_version": 1,
+  "notes": "B8 soak A/B tolerance policy. Values are provisional headroom around the 2026-09-08 measurements (60x40) and must be tightened, field by field, as P1/P2 land. A run either passes inside these bands, is a declared_gap (documented reason + run-id), or is a regression (plan work item). The comparator reads only the structured soak.json, never human logs.",
+  "threshold_measurement_2026_09_11": {
+    "criterion": "worker single-day cost <= day budget at the target speed, and climate_wait_* near zero",
+    "c3_60x40": {
+      "cells": 2400,
+      "off_adjusted_days_per_second": 28.234,
+      "active_adjusted_days_per_second": 4.966,
+      "active_lower_bound_days_per_second": 5.039,
+      "verdict": "active_clearly_negative",
+      "note": "50 days, seed 20260718, x50, headless_perf_record.gd direct invocation (Invoke-AuthorityStageCHeadless.ps1 trips on Godot stderr warnings under PS5.1 Stop mode). The 60x40 ACTIVE run is ~5.7x slower than OFF; environment_superseded_days=0 and writeback memcpy/flush are sub-ms, so the loss is worker/main-thread CPU contention, not the write-back."
+    },
+    "c3_120x80": {
+      "cells": 9600,
+      "verdict": "not_completed",
+      "note": "The OFF baseline itself stalls around tick 29 (ocean job skips every tick on frame budget, season refresh b_plus_start on 9600 cells); the run was stopped after ~18 minutes. A larger-size ladder is not practical in this environment."
+    },
+    "existing_180x120_evidence": {
+      "cells": 21600,
+      "source": "docs/cpp-dots-runtime/full-authoritative-runtime-status.md section 38",
+      "verdict": "throughput_neutral_but_worker_cannot_keep_up",
+      "note": "SUS sim avg 6.02 (OFF) vs 6.08 (ACTIVE); writeback_days=30/50 because the worker could not sustain the day rate."
+    },
+    "conclusion": "In the measured ladder there is no size where ACTIVE is affordable at x50 under the main-thread-waits policy: the only measured small size is clearly negative and the large size is worker-limited. ClimateAuthorityPolicy keeps threshold_cells=0 (historical default, no silent behavior change) and reports auto_threshold_not_measured; the measured basis for a real threshold requires the P2 worker-cost reduction (or a lower target speed). force_on remains the explicit A/B override."
+  },
+  "default": {
+    "mean_abs": 0.05,
+    "nz_abs": 32,
+    "min_abs": 0.10,
+    "max_abs": 0.10
+  },
+  "declared_gaps": {
+    "temp_arr": "B8-3 + one-day authority lag: ACTIVE applies day N-1 through the write-back, so the same tick is compared one simulated day apart; the remaining amplitude is the B8 stage_b/stage-order work. Evidence: b8-ab-on/off 40x32 12d 2026-09-11.",
+    "plant_available_water_arr": "B8-3 attributed: PAW zeros are the water-cell rule (day>=3 diagnostic: zeros water=847 land=0, nonzero=433), not a physics error. The headless OFF side never runs the clearing stage, so its water cells keep the seed value. Ticks 2-5 are bit-identical to OFF(T-1) (one-day authority lag). Evidence: artifacts/runtime/climate-b8/paw-diag2 + lag/ 2026-09-11.",
+    "water_balance_30d_arr": "B8-3 attributed: WB30 is written by distribute on its own cadence while the headless OFF side does not run the same writer, so the soak compares different writer cadences rather than two models. Numeric parity is delegated to SHADOW parity + C2 client recording. Evidence: lag/ + paw-diag2 2026-09-11.",
+    "vegetation_growth_pressure_arr": "B8-3 attributed: VGP inherits the PAW water-rule/cadence asymmetry above (it is a direct function of PAW and the veg stage). E1 order, E2 input ownership, E6 psi all measured as non-causes. Evidence: e1-80/, e2/, psi-own/ 2026-09-11.",
+    "snow_cover_arr": "B8-3 partially attributed: snow_cover is cadence-gated (weather distribute). Headless OFF does not run the same cadence in this harness; E1 order measured as a non-cause. Evidence: e1-80/ 2026-09-11.",
+    "soil_moisture_arr": "B8-3 attributed: soil_moisture has no store member; the worker consumes the environment lane and the season refresh stays on the main thread, so same-tick comparison mixes a one-day lag with a main-thread-only writer. Evidence: lag/ 2026-09-11.",
+    "sea_ice_frac_arr": "B8-3 sea-ice amplitude: historic client defect (insolation amplitude + frozen seasonal signal), fix tracked by the parity probe rather than the soak band. Evidence: b8-ab-on/off 40x32 12d 2026-09-11."
+  },
+  "fields": {
+    "temp_arr": { "mean_abs": 0.02, "nz_abs": 16, "min_abs": 0.05, "max_abs": 0.05 },
+    "insolation_dev_arr": { "mean_abs": 0.02, "nz_abs": 16, "min_abs": 0.05, "max_abs": 0.05 },
+    "sea_ice_frac_arr": { "mean_abs": 0.02, "nz_abs": 64, "min_abs": 0.05, "max_abs": 0.05 },
+    "moisture_arr": { "mean_abs": 0.06, "nz_abs": 32, "min_abs": 0.10, "max_abs": 0.10 },
+    "snow_cover_arr": { "mean_abs": 0.01, "nz_abs": 24, "min_abs": 0.05, "max_abs": 0.05 },
+    "soil_moisture_arr": { "mean_abs": 0.05, "nz_abs": 64, "min_abs": 0.10, "max_abs": 0.10 },
+    "plant_available_water_arr": { "mean_abs": 0.04, "nz_abs": 32, "min_abs": 0.10, "max_abs": 0.10 },
+    "water_balance_30d_arr": { "mean_abs": 0.06, "nz_abs": 64, "min_abs": 0.10, "max_abs": 0.10 },
+    "vegetation_growth_pressure_arr": { "mean_abs": 0.05, "nz_abs": 64, "min_abs": 0.10, "max_abs": 0.10 },
+    "weather_precip_arr": { "mean_abs": 0.02, "nz_abs": 32, "min_abs": 0.05, "max_abs": 0.05 },
+    "weather_vapor_arr": { "mean_abs": 0.03, "nz_abs": 32, "min_abs": 0.05, "max_abs": 0.05 }
+  }
+}

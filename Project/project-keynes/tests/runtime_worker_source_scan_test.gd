@@ -9,6 +9,8 @@ const WORKER_SOURCES := [
 	"gdext/src/runtime_authoritative_domains.h",
 	"gdext/src/runtime_climate_kernel.cpp",
 	"gdext/src/runtime_climate_kernel.h",
+	"gdext/src/runtime_climate_physics.cpp",
+	"gdext/src/runtime_climate_physics.h",
 	"gdext/src/runtime_climate_formulas.cpp",
 	"gdext/src/runtime_climate_formulas.h",
 	"gdext/src/runtime_climate_trace.h",
