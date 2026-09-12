@@ -129,6 +129,13 @@ public:
                             std::string &error) const;
     bool export_pod_snapshot(RuntimeTriggerSnapshot &out,
                              std::string &error) const;
+    // H8 ACTIVE write-back. The worker is the sole Trigger writer; this rebuilds
+    // the facade-visible state from an immutable worker snapshot so UI, effect
+    // dispatch, and save keep reading one runtime. Never call it while the main
+    // thread still owns the domain.
+    bool apply_pod_snapshot(const RuntimeTriggerSnapshot &snapshot,
+                            std::string &error);
+    uint64_t pod_snapshot_generation() const { return _pod_snapshot_generation; }
     uint64_t pod_state_hash() const;
     uint64_t pod_effect_hash() const;
 
@@ -251,6 +258,9 @@ private:
     int32_t _state_count = 0;
     int64_t _next_effect_id = 1;
     int64_t _acked_effect_id = 0;
+    // H8 ACTIVE write-back：最近一次 apply_pod_snapshot 的代次。apply 侧用它拒绝
+    // 回退代次，所以同一天重复回灌是幂等的。
+    uint64_t _pod_snapshot_generation = 0;
 
     std::vector<Definition> _definitions;
     std::vector<EffectDefinition> _effect_definitions;
@@ -303,6 +313,11 @@ private:
                       const Event &event, int64_t fire_count,
                       int64_t level, int64_t event_value);
     void mark_source_gap(int32_t source_id, int64_t expected, int64_t actual);
+    // Replaces the whole runtime state with a POD snapshot, preserving the
+    // cumulative counters and the local effect-delivery cursor. Shared by
+    // run_daily (after its own kernel pass) and the H8 ACTIVE write-back.
+    bool adopt_pod_state(const RuntimeTriggerSnapshot &snapshot,
+                         int64_t day_index, std::string &error);
     void reset_runtime_state();
 };
 

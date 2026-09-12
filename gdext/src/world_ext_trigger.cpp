@@ -6,8 +6,10 @@
 #include "ideology_runtime.h"
 #include "native_simulation_host.h"
 
+#include <algorithm>
 #include <cstring>
 #include <atomic>
+#include <limits>
 #include <vector>
 
 namespace pk {
@@ -17,6 +19,18 @@ using namespace godot;
 namespace {
 std::atomic<uint64_t> g_trigger_pod_request_id{1};
 std::atomic<uint64_t> g_trigger_pod_sequence{1};
+
+Dictionary trigger_worker_suppressed(const char *code, int64_t day_index) {
+    Dictionary out;
+    out["ok"] = true;
+    out["done"] = true;
+    out["suppressed"] = true;
+    out["path"] = "TRIGGER_WORKER";
+    out["stage"] = String(code);
+    out["day_index"] = day_index;
+    out["work_done"] = 0;
+    return out;
+}
 
 bool publish_trigger_command(DCWorldExt *world,
                              RuntimeTriggerCommand command,
@@ -89,6 +103,43 @@ Dictionary unavailable() {
 }
 } // namespace
 
+bool DCWorldExt::trigger_worker_authoritative() const {
+    return _runtime_host != nullptr &&
+        _runtime_host->domain_is_worker_authoritative(
+            RuntimeDomainId::TRIGGER_INPUT);
+}
+
+// Transport-level admission for the sole-writer path. submit_events() normally
+// both validates the batch and reports per-row ingest accounting; under worker
+// authority the POD authority does the ingest, so this only answers "was the
+// batch admissible and how many rows go to the worker". Callers that ACK an
+// upstream journal on `accepted == count` therefore ACK on admission, not on
+// worker ingest — the worker rejects a row by re-reporting a source gap in its
+// own diagnostics.
+namespace {
+Dictionary trigger_worker_admission(const Dictionary &batch) {
+    Dictionary out;
+    const Variant raw_ids = batch.get("event_ids", PackedInt64Array());
+    if (raw_ids.get_type() != Variant::PACKED_INT64_ARRAY) {
+        out["ok"] = false;
+        out["reason"] = "trigger_event_columns_invalid";
+        return out;
+    }
+    const PackedInt64Array ids = raw_ids;
+    const int32_t count = std::max(0, std::min<int32_t>(
+        int32_t(batch.get("count", ids.size())), ids.size()));
+    out["ok"] = true;
+    out["path"] = "TRIGGER_WORKER";
+    out["accepted"] = count;
+    out["deduplicated"] = 0;
+    out["last_accepted_event_id"] = count > 0 ? ids[count - 1] : int64_t{0};
+    out["pending_events"] = int64_t{0};
+    out["needs_resync"] = false;
+    out["reason"] = String();
+    return out;
+}
+} // namespace
+
 Dictionary DCWorldExt::configure_triggers(const Dictionary &catalog) {
     if (_trigger_runtime == nullptr) _trigger_runtime = new TriggerRuntime();
     Dictionary out = runtime_from(_trigger_runtime)->configure(catalog);
@@ -111,8 +162,19 @@ Dictionary DCWorldExt::configure_triggers(const Dictionary &catalog) {
     return out;
 }
 
+// H8: when the worker owns Trigger it is the sole writer. Staging the same batch
+// in the legacy facade first would let the main thread ingest it a second time,
+// and the worker snapshot write-back would then overwrite the result with a state
+// that never saw the event twice. Column validation moves into
+// publish_trigger_event_batch, which already tolerates short/absent columns.
 Dictionary DCWorldExt::submit_trigger_events(const Dictionary &batch) {
     if (_trigger_runtime == nullptr) return unavailable();
+    if (trigger_worker_authoritative()) {
+        Dictionary out = trigger_worker_admission(batch);
+        if (static_cast<bool>(out.get("ok", false)))
+            publish_trigger_event_batch(this, batch, false, out);
+        return out;
+    }
     Dictionary out = runtime_from(_trigger_runtime)->submit_events(batch);
     if (static_cast<bool>(out.get("ok", false))) publish_trigger_event_batch(this, batch, false, out);
     return out;
@@ -120,6 +182,12 @@ Dictionary DCWorldExt::submit_trigger_events(const Dictionary &batch) {
 
 Dictionary DCWorldExt::submit_trigger_snapshots(const Dictionary &batch) {
     if (_trigger_runtime == nullptr) return unavailable();
+    if (trigger_worker_authoritative()) {
+        Dictionary out = trigger_worker_admission(batch);
+        if (static_cast<bool>(out.get("ok", false)))
+            publish_trigger_event_batch(this, batch, true, out);
+        return out;
+    }
     Dictionary out = runtime_from(_trigger_runtime)->submit_snapshots(batch);
     if (static_cast<bool>(out.get("ok", false))) publish_trigger_event_batch(this, batch, true, out);
     return out;
@@ -127,6 +195,11 @@ Dictionary DCWorldExt::submit_trigger_snapshots(const Dictionary &batch) {
 
 Dictionary DCWorldExt::run_trigger_daily(int64_t day_index) {
     if (_trigger_runtime == nullptr) return unavailable();
+    // H8: the worker owns the aggregation/emission day. Running the facade
+    // kernel here would be a second writer and would also republish a reference
+    // frame the worker can no longer diverge from.
+    if (trigger_worker_authoritative())
+        return trigger_worker_suppressed("trigger_evaluate", day_index);
     Dictionary out = runtime_from(_trigger_runtime)->run_daily(day_index);
     if (static_cast<bool>(out.get("ok", false)) && _runtime_host != nullptr) {
         // The synchronous facade remains authoritative in Stage H. Publish
@@ -149,8 +222,96 @@ Dictionary DCWorldExt::run_trigger_daily(int64_t day_index) {
 }
 
 bool DCWorldExt::trigger_should_run(int64_t day_index) const {
+    if (trigger_worker_authoritative()) return false;
     return _trigger_runtime != nullptr &&
         runtime_from(_trigger_runtime)->should_run(day_index);
+}
+
+Dictionary DCWorldExt::apply_runtime_trigger_snapshot(int64_t after_generation) {
+    Dictionary out;
+    out["ok"] = false;
+    out["applied"] = false;
+    if (_trigger_runtime == nullptr || _runtime_host == nullptr) {
+        out["code"] = "trigger_runtime_unavailable";
+        return out;
+    }
+    if (!trigger_worker_authoritative()) {
+        out["code"] = "trigger_not_worker_authoritative";
+        return out;
+    }
+    const uint64_t cursor = after_generation < 0
+        ? std::numeric_limits<uint64_t>::max()
+        : static_cast<uint64_t>(after_generation);
+    uint32_t slot = 0;
+    if (!_runtime_host->try_acquire_trigger_snapshot(cursor, slot)) {
+        out["ok"] = true;
+        out["code"] = "trigger_snapshot_unavailable";
+        return out;
+    }
+    const RuntimeTriggerSnapshot &snapshot =
+        _runtime_host->trigger_snapshot_buffer(slot);
+    std::string apply_error;
+    const bool applied = runtime_from(_trigger_runtime)
+        ->apply_pod_snapshot(snapshot, apply_error);
+    const int64_t generation = static_cast<int64_t>(snapshot.generation);
+    _runtime_host->release_trigger_snapshot(slot);
+    out["ok"] = applied;
+    out["applied"] = applied;
+    out["generation"] = generation;
+    out["code"] = applied ? "ok" : String(apply_error.c_str());
+    return out;
+}
+
+Dictionary DCWorldExt::poll_trigger_worker_intent() {
+    Dictionary out;
+    if (_runtime_host == nullptr) {
+        out["ok"] = false;
+        out["code"] = "runtime_host_unavailable";
+        return out;
+    }
+    RuntimeDomainIntent intent;
+    if (!_runtime_host->poll_trigger_pod_intent(intent)) {
+        out["ok"] = true;
+        out["available"] = false;
+        return out;
+    }
+    out["ok"] = true;
+    out["available"] = true;
+    out["transaction_id"] = static_cast<int64_t>(intent.source_id);
+    out["request_id"] = static_cast<int64_t>(intent.request_id);
+    out["target_domain"] = static_cast<int>(intent.target_domain);
+    out["opcode"] = static_cast<int>(intent.opcode);
+    out["target_handle"] = static_cast<int64_t>(intent.target_handle);
+    out["target_generation"] = static_cast<int64_t>(intent.target_generation);
+    out["effective_day"] = intent.effective_day;
+    out["value"] = intent.value;
+    PackedInt64Array payload;
+    for (int64_t value : intent.payload) payload.append(value);
+    out["payload"] = payload;
+    return out;
+}
+
+Dictionary DCWorldExt::submit_trigger_worker_ack(const Dictionary &source) {
+    Dictionary out;
+    if (_runtime_host == nullptr) {
+        out["ok"] = false;
+        out["code"] = "runtime_host_unavailable";
+        return out;
+    }
+    RuntimeDomainAck ack;
+    ack.request_id = static_cast<uint64_t>(static_cast<int64_t>(source.get("request_id", 0)));
+    ack.transaction_id = static_cast<uint64_t>(static_cast<int64_t>(
+        source.get("transaction_id", source.get("request_id", 0))));
+    ack.target_handle = static_cast<uint64_t>(static_cast<int64_t>(source.get("target_handle", 0)));
+    ack.target_generation = static_cast<uint32_t>(static_cast<int64_t>(source.get("target_generation", 0)));
+    ack.domain = static_cast<uint16_t>(static_cast<int64_t>(source.get("target_domain", 0)));
+    ack.code = static_cast<RuntimeDomainAckCode>(static_cast<int32_t>(source.get("code", 0)));
+    ack.effective_day = static_cast<int64_t>(source.get("effective_day", 0));
+    std::string error;
+    const bool ok = _runtime_host->submit_trigger_pod_ack(ack, error);
+    out["ok"] = ok;
+    out["code"] = ok ? "ok" : String(error.c_str());
+    return out;
 }
 
 Dictionary DCWorldExt::poll_trigger_effects(int64_t after_effect_id,
@@ -176,17 +337,45 @@ Dictionary DCWorldExt::ack_trigger_effects(int64_t up_to_effect_id) {
 Dictionary DCWorldExt::handoff_trigger_effects(int limit) {
     if (_trigger_runtime == nullptr || _effect_runtime == nullptr)
         return unavailable();
-    return runtime_from(_trigger_runtime)->handoff_effects(
+    Dictionary out = runtime_from(_trigger_runtime)->handoff_effects(
         static_cast<EffectRuntime *>(_effect_runtime),
         static_cast<NativeIdeologyRuntime *>(_ideology_runtime),
         _runtime_host.get(), limit);
+    // H8: handoff_effects ACKs the facade cursor internally but does not talk to
+    // the worker. Under authority the worker holds the same pending effects, so
+    // without this the worker's queue would never drain.
+    const int64_t handed_off = static_cast<int64_t>(out.get("handed_off", 0));
+    if (handed_off > 0 && trigger_worker_authoritative()) {
+        RuntimeTriggerCommand command;
+        command.opcode = RuntimeTriggerCommandOpcode::ACK_EFFECTS;
+        command.effective_day = 0;
+        command.requested_day = 0;
+        command.ack_up_to_effect_id =
+            static_cast<int64_t>(out.get("last_effect_id", 0));
+        publish_trigger_command(this, command, out);
+    }
+    return out;
 }
 
 Dictionary DCWorldExt::set_trigger_enabled(const Dictionary &batch) {
     if (_trigger_runtime == nullptr) return unavailable();
-    Dictionary out = runtime_from(_trigger_runtime)->set_enabled(batch);
     const PackedInt32Array ids = batch.get("trigger_ids", PackedInt32Array());
     const PackedByteArray values = batch.get("enabled", PackedByteArray());
+    Dictionary out;
+    if (trigger_worker_authoritative()) {
+        // H8 sole writer: the enabled flags live in the worker snapshot and come
+        // back through apply_runtime_trigger_snapshot.
+        if (ids.size() != values.size()) {
+            out["ok"] = false;
+            out["reason"] = "trigger_enabled_columns_invalid";
+            return out;
+        }
+        out["ok"] = true;
+        out["path"] = "TRIGGER_WORKER";
+        out["updated"] = ids.size();
+    } else {
+        out = runtime_from(_trigger_runtime)->set_enabled(batch);
+    }
     if (static_cast<bool>(out.get("ok", false)) && ids.size() == values.size()) {
         for (int32_t i = 0; i < ids.size(); ++i) {
             RuntimeTriggerCommand command;
@@ -203,7 +392,15 @@ Dictionary DCWorldExt::set_trigger_enabled(const Dictionary &batch) {
 
 Dictionary DCWorldExt::reconcile_trigger_branch_bindings(const Dictionary &batch) {
     if (_trigger_runtime == nullptr) return unavailable();
-    Dictionary out = runtime_from(_trigger_runtime)->reconcile_branch_bindings(batch);
+    const bool worker_authoritative = trigger_worker_authoritative();
+    Dictionary out;
+    if (worker_authoritative) {
+        // H8 sole writer: bindings are rebuilt from the worker snapshot.
+        out["ok"] = true;
+        out["path"] = "TRIGGER_WORKER";
+    } else {
+        out = runtime_from(_trigger_runtime)->reconcile_branch_bindings(batch);
+    }
     const PackedStringArray keys = batch.get("trigger_keys", PackedStringArray());
     const PackedInt64Array branches = batch.get("branch_handles", PackedInt64Array());
     const PackedInt32Array cells = batch.get("cells", PackedInt32Array());
@@ -274,7 +471,16 @@ Dictionary DCWorldExt::resync_trigger_source(const Dictionary &snapshot) {
         out["reason"] = "trigger_resync_capacity_exceeded";
         return out;
     }
-    Dictionary out = runtime_from(_trigger_runtime)->resync_source(snapshot);
+    Dictionary out;
+    if (trigger_worker_authoritative()) {
+        // H8 sole writer: the worker clears its own resync flag and the cleared
+        // cursor arrives through the snapshot ring.
+        out["ok"] = true;
+        out["path"] = "TRIGGER_WORKER";
+        out["resynced"] = trigger_ids.size();
+    } else {
+        out = runtime_from(_trigger_runtime)->resync_source(snapshot);
+    }
     if (static_cast<bool>(out.get("ok", false))) {
         RuntimeTriggerCommand command;
         command.opcode = RuntimeTriggerCommandOpcode::RESYNC_SOURCE;

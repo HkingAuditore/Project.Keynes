@@ -80,6 +80,13 @@ public:
     bool export_pod_catalog(const RuntimeCountryPodSnapshot &country,
                             RuntimeIdeologyPodCatalog &out,
                             std::string &error) const;
+    // G8 ACTIVE write-back. The worker is the sole Ideology writer; this
+    // rebuilds the facade-visible state from an immutable worker snapshot so
+    // UI/save keep reading one runtime. Never call it while the main thread
+    // still owns the domain.
+    bool apply_pod_snapshot(const RuntimeIdeologyPodSnapshot &snapshot,
+                            std::string &error);
+    uint64_t pod_snapshot_generation() const { return _pod_snapshot_generation; }
 
 private:
     struct Level {
@@ -374,6 +381,9 @@ private:
     int32_t _active_country_cursor = 0;
     int32_t _active_item_cursor = 0;
     uint64_t _submit_order = 0;
+    // G8 ACTIVE write-back：最近一次 apply_pod_snapshot 的代次。apply 侧用它拒绝
+    // 回退代次，所以同一天重复回灌是幂等的。
+    uint64_t _pod_snapshot_generation = 0;
     int64_t _last_day = -1;
     uint64_t _active_visits = 0;
     uint64_t _dormant_scan_count = 0;

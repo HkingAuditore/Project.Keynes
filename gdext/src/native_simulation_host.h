@@ -70,12 +70,22 @@ public:
     }
     bool publish_environment(const RuntimeEnvironmentSnapshot &snapshot,
                              std::string &error);
+    // worker：ring 内仍有未评估输入（有活可干）。
+    bool has_pending_climate_input() const;
+    // 主线程 publish：ring 已满，需 wait 腾空位。
+    bool environment_ring_full() const;
+    size_t environment_ring_pending() const;
     // publish 描述这一天生产 Climate 各段的真实执行情况（跑没跑、用的什么输入），
     // 全部字段可选；见 RuntimeClimateReferencePublish。
     bool publish_climate_reference(
             int64_t day, uint64_t reference_state_hash, std::string &error,
             RuntimeClimateReferencePublish publish = {});
+    // 最近一次成功 publish（诊断 / 物理派生）。worker 日计划请用
+    // environment_input_for_plan()。
     std::shared_ptr<const RuntimeEnvironmentSnapshot> environment_snapshot() const;
+    // FIFO 最旧未消费输入；空则退回 latest。
+    std::shared_ptr<const RuntimeEnvironmentSnapshot>
+    environment_input_for_plan() const;
     bool publish_country_snapshot(const RuntimeCountryPodSnapshot &snapshot);
     bool publish_country_catalog(const RuntimeCountryPodCatalog &catalog,
                                  std::string &error);
@@ -169,6 +179,20 @@ public:
                                std::string &error);
     bool queue_trigger_pod_command(const RuntimeTriggerCommand &command,
                                    std::string &error);
+    // H8 ACTIVE write-back boundary. Acquire, apply into the legacy
+    // TriggerRuntime facade, release. Non-blocking.
+    bool try_acquire_trigger_snapshot(uint64_t after_generation, uint32_t &slot);
+    const RuntimeTriggerSnapshot &trigger_snapshot_buffer(uint32_t slot) const;
+    void release_trigger_snapshot(uint32_t slot);
+    uint64_t trigger_snapshot_drop_count() const {
+        return _trigger_snapshots.publish_drop_count();
+    }
+    // H8 real-ACK transport. Trigger effect intents require a peer ACK before
+    // the day commits; the worker Effect stage drains them in-worker when EFFECT
+    // is granted in the same session, and this pair is the main-thread protocol
+    // path for a TRIGGER-only grant.
+    bool poll_trigger_pod_intent(RuntimeDomainIntent &intent);
+    bool submit_trigger_pod_ack(const RuntimeDomainAck &ack, std::string &error);
     RuntimeTriggerPodDiagnostics trigger_pod_diagnostics() const;
     bool set_trigger_reference_frame(int64_t day, uint64_t input_hash,
                                      uint64_t state_hash, uint64_t effect_hash,
@@ -191,6 +215,9 @@ public:
     bool try_acquire_effect_snapshot(uint64_t after_generation, uint32_t &slot);
     const RuntimeEffectPodSnapshot &effect_snapshot_buffer(uint32_t slot) const;
     void release_effect_snapshot(uint32_t slot);
+    bool try_acquire_ideology_snapshot(uint64_t after_generation, uint32_t &slot);
+    const RuntimeIdeologyPodSnapshot &ideology_snapshot_buffer(uint32_t slot) const;
+    void release_ideology_snapshot(uint32_t slot);
     bool modifier_pod_self_test(std::string *error = nullptr) const;
     uint64_t modifier_pod_catalog_hash() const {
         return _modifier_pod_configured ? _modifier_pod_catalog.catalog_hash : 0;
@@ -306,18 +333,29 @@ public:
         //   requested_authority_mask  per-session, from the start() caller; must
         //                             be a subset of this one.
         //   completed_domain_mask     per-day report of what actually ran.
-        // Climate + Country + Modifier + Effect ship ACTIVE-authoritative in
-        // production as of F8 (world_runtime_host.gd requests 0x866 when
-        // runtime_climate_authority_enabled). Contract: authoritative & EFFECT
-        // => worker is the sole Effect writer; snapshot write-back targets
-        // legacy EffectRuntime; only effect_runtime / run_effect_daily is
-        // suppressed. MODIFIER intents ACK in-worker; other domains use the
-        // main-thread intent pump.
+        // Climate + Country + Trigger + Modifier + Effect + Ideology + Events
+        // ship ACTIVE-authoritative in production as of H7/H8/I8
+        // (world_runtime_host.gd requests 0xA7E when
+        // runtime_climate_authority_enabled). Contract:
+        // authoritative & EFFECT => worker is the sole Effect writer; snapshot
+        // write-back targets legacy EffectRuntime; only effect_runtime /
+        // run_effect_daily is suppressed. IDEOLOGY follows the same shape
+        // against NativeIdeologyRuntime, TRIGGER_INPUT against TriggerRuntime.
+        // MODIFIER intents ACK in-worker; Ideology's and Trigger's
+        // EFFECT-targeted intents ACK in-worker after the Effect stage and
+        // through the main-thread pump; other domains use the main-thread intent
+        // pump. EVENTS is a worker-authority mirror only: the POD store owns the
+        // stage bit and its own snapshot, but the legacy GameplayEventBus journal
+        // remains the production consumer source until the consumer migration
+        // lands, so nothing on the main thread is suppressed for it.
         return runtime_domain_mask(RuntimeDomainId::COMMIT)
             | runtime_domain_mask(RuntimeDomainId::CLIMATE)
             | runtime_domain_mask(RuntimeDomainId::COUNTRY)
+            | runtime_domain_mask(RuntimeDomainId::TRIGGER_INPUT)
             | runtime_domain_mask(RuntimeDomainId::MODIFIER)
-            | runtime_domain_mask(RuntimeDomainId::EFFECT);
+            | runtime_domain_mask(RuntimeDomainId::EFFECT)
+            | runtime_domain_mask(RuntimeDomainId::IDEOLOGY)
+            | runtime_domain_mask(RuntimeDomainId::EVENTS);
     }
     RuntimeWorkerState state() const {
         return _state.load(std::memory_order_acquire);
@@ -345,18 +383,20 @@ public:
     uint64_t climate_writeback_drop_count() const {
         return _climate_writeback.publish_drop_count();
     }
-    // B8 P3：ACTIVE Climate 的主线程等待边界。等到 worker 已经评估过
-    // `after_generation` 这份环境（plan 尝试，不要求提交成功）。timeout_ms < 0
-    // 表示等到条件满足为止；>= 0 是一次有界等待切片，调用方负责在外层循环里
-    // 继续等并在此期间 pump 主线程侧 peer 服务（GDScript facade 就是这么做的：
-    // 纯 C++ 条件变量等待无法回调 Godot 服务 Country/Economy barrier）。
+    // B8 P3：ACTIVE Climate 的主线程等待边界。
+    // - after_generation > 0：等到 worker 已评估过该代次（plan 尝试，不要求提交）。
+    // - after_generation == 0：等到输入 ring 有空位（可流水线发布下一天）。
+    // timeout_ms < 0 表示等到条件满足；>= 0 是一次有界等待切片。
     //
     // 终止条件（故障保护，不是性能超时）：worker 进入 FAULTED/STOPPING/STOPPED、
-    // Climate 权威被撤销、或 stop 被请求。此时返回 false 并给出 code，调用方按
-    // 当时的 authority 状态决定回主线程还是结束 tick。
+    // Climate 权威被撤销、或 stop 被请求。
     bool wait_climate_consumed(uint64_t after_generation, int64_t timeout_ms,
                                uint64_t &consumed_generation,
                                std::string &error);
+    void note_climate_writeback_input_generation(uint64_t generation) {
+        _climate_writeback_input_generation.store(generation,
+                                                   std::memory_order_release);
+    }
     // Whether a given domain may be suppressed on the main thread this frame.
     bool domain_is_worker_authoritative(RuntimeDomainId domain) const {
         return (authoritative_domain_mask() & runtime_domain_mask(domain)) != 0u;
@@ -403,6 +443,7 @@ private:
                                   const RuntimeEnvironmentSnapshot *environment) const;
     RuntimeDayCommit execute_day_plan(
             RuntimeDayPlan &plan,
+            const RuntimeEnvironmentSnapshot *environment,
             const std::vector<RuntimeCommandPacket> &day_commands,
             std::vector<RuntimeCommandReceipt> &day_receipts,
             uint64_t admitted_submit_order);
@@ -420,6 +461,25 @@ private:
     bool execute_ideology_worker_stage(int64_t day,
                                        RuntimeDayCommit &commit,
                                        std::string &error);
+    // G8 in-worker bridge: Ideology transition intents target EFFECT, and under
+    // ACTIVE the worker owns both domains. Draining them here lets a pending
+    // transition settle on the next Ideology visit instead of waiting a frame
+    // for the main-thread pump. The main-thread pump stays as the protocol
+    // path for sessions that grant IDEOLOGY without EFFECT.
+    uint32_t ack_ideology_intents_in_worker(int64_t day);
+    bool execute_trigger_worker_stage(int64_t day, uint64_t input_generation,
+                                      RuntimeDayCommit &commit,
+                                      std::string &error);
+    // Day-local publish of Trigger effect intents. Ids are monotonic inside the
+    // authority and a discarded plan replays the same ones, so the watermark is
+    // what stops an ACK-barrier retry from queueing a duplicate.
+    void publish_trigger_intents_locked(
+            const std::vector<RuntimeTriggerEffectIntent> &intents);
+    // H8 in-worker bridge, same shape as ack_ideology_intents_in_worker: Trigger
+    // effect intents are delivered by the Effect stage under a joint grant, so
+    // the ACK barrier settles on the next Trigger visit instead of waiting a
+    // frame for the main-thread pump.
+    uint32_t ack_trigger_intents_in_worker(int64_t day);
     bool execute_effect_worker_stage(int64_t day, uint64_t input_generation,
                                      RuntimeDayCommit &commit,
                                      std::string &error);
@@ -540,6 +600,7 @@ private:
     std::thread _worker;
     RuntimeSnapshotRing _snapshots;
     std::shared_ptr<const RuntimeEnvironmentSnapshot> _environment_snapshot;
+    RuntimeEnvironmentInputRing _environment_ring;
     std::shared_ptr<const RuntimeCountryPodSnapshot> _country_snapshot;
     std::shared_ptr<const RuntimeCountryPodSnapshot> _country_committed_snapshot;
     std::shared_ptr<const CountryCoreCheckpoint> _country_checkpoint;
@@ -809,6 +870,9 @@ private:
     bool _ideology_pod_configured = false;
     std::shared_ptr<const RuntimeIdeologyOpinionSnapshot> _ideology_opinion_snapshot;
     std::shared_ptr<const RuntimeIdeologyPodSnapshot> _ideology_snapshot;
+    // G8 ACTIVE write-back boundary. The shared_ptr above stays for SHADOW
+    // consumers; the ring is the immutable main-thread apply path.
+    RuntimeIdeologySnapshotRing _ideology_snapshots;
     std::deque<RuntimeIdeologyPodCommand> _ideology_commands;
     std::deque<RuntimeDomainIntent> _ideology_intents;
     std::deque<RuntimeDomainAck> _ideology_acks;
@@ -820,6 +884,22 @@ private:
     std::atomic<uint32_t> _ideology_pod_pending_transition_count{0};
     std::atomic<uint32_t> _ideology_pod_intent_count{0};
     std::array<std::atomic<char>, 64> _ideology_pod_fallback_reason{};
+    // H7/H8 Trigger transport. The POD authority itself lives in
+    // _domain_authority_runner (shared with the SHADOW probe); these are the
+    // ACTIVE-only boundaries around it.
+    mutable std::mutex _trigger_transport_mutex;
+    RuntimeTriggerSnapshotRing _trigger_snapshots;
+    std::deque<RuntimeTriggerEffectIntent> _trigger_intents;
+    std::deque<RuntimeDomainAck> _trigger_acks;
+    int64_t _trigger_published_intent_id = 0;
+    std::atomic<bool> _trigger_pod_ready{false};
+    std::atomic<double> _trigger_pod_plan_ms{0.0};
+    std::atomic<double> _trigger_pod_replay_ms{0.0};
+    std::atomic<uint64_t> _trigger_pod_state_hash{0};
+    std::atomic<uint64_t> _trigger_pod_snapshot_generation{0};
+    std::atomic<uint32_t> _trigger_pod_intent_count{0};
+    std::atomic<uint32_t> _trigger_pod_ack_count{0};
+    std::array<std::atomic<char>, 64> _trigger_pod_fallback_reason{};
     RuntimeClimateAuthority _climate_authority;
     RuntimeClimateWritebackRing _climate_writeback;
     std::atomic<uint64_t> _climate_writeback_sequence{0};
@@ -831,6 +911,12 @@ private:
     // environment must clear: the worker clock advances on its own and would
     // otherwise reject the very input Climate is waiting for.
     std::atomic<int64_t> _climate_committed_day{-1};
+    std::atomic<uint64_t> _climate_committed_input_generation{0};
+    // 主线程 writeback 已应用的 input_generation；诊断用，不再驱动 pending 判定。
+    std::atomic<uint64_t> _climate_writeback_input_generation{0};
+    // 生成/恢复快照是已存在的基线，不是待执行的日输入。
+    std::atomic<int64_t> _climate_bootstrap_day{0};
+    mutable std::mutex _environment_publish_mutex;
     // Reused worker-local output arenas; no per-day heap growth in the hot
     // loop. They are never exposed to Godot or another thread.
     std::vector<RuntimeVisualIntent> _pod_visual_intents;

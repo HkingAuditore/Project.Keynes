@@ -19,12 +19,26 @@ func _init(p_facade, p_world_clock: WorldClock = null) -> void:
 	world_clock = p_world_clock
 
 func should_run(ctx: SusTickContext) -> bool:
+	# G8: when IDEOLOGY is worker-authoritative, ideology_should_run is false and
+	# this SUS must not evaluate on the main thread.
 	return facade != null and facade.is_configured() and ctx != null \
 		and bool(facade.world_ext().ideology_should_run(ctx.day_index))
 func is_deadline_critical(ctx: SusTickContext) -> bool: return ctx != null and should_run(ctx)
 func tick(ctx) -> Dictionary:
 	if facade == null or not facade.is_configured(): return {"done": true, "stage_name": "ideology_unavailable"}
 	var started := Time.get_ticks_usec()
+	# Hard no-op when worker owns Ideology (belt-and-suspenders with ideology_should_run).
+	if facade.world_ext().has_method("get_runtime_thread_report"):
+		var report: Dictionary = facade.world_ext().get_runtime_thread_report()
+		if bool(report.get("ideology_worker_authoritative", false)):
+			return {
+				"done": true,
+				"work_done": 0,
+				"elapsed_ms": float(Time.get_ticks_usec() - started) / 1000.0,
+				"progress_ratio": 1.0,
+				"stage_name": "ideology_worker_authoritative",
+				"path": "IDEOLOGY_WORKER",
+			}
 	var result: Dictionary = facade.world_ext().run_ideology_daily(int(ctx.day_index) if ctx != null else 0)
 	if facade.has_method("drain_receipts"):
 		facade.drain_receipts()

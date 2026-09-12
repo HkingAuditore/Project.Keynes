@@ -89,10 +89,18 @@ struct RuntimeClimateStore {
     // 写入被抑制，这两条 lane 就是 worker 的唯一副本。
     std::vector<uint8_t> vegetation;
     std::vector<uint8_t> base_vegetation;
+    // CLM2 ABI 8：worker 自持的 terrain / cover u8 lane。ACTIVE 下主线程海冰翻转与
+    // weather distribute 对这两条的写入被抑制，必须由 worker 推进并 writeback。
+    std::vector<uint8_t> terrain;
+    std::vector<uint8_t> cover;
     // B8-2：worker 自持的 tropical cyclone 状态（可变长条目表），以不透明 blob 形式
     // 随 CLM2 ABI 6 持久化。语义由 runtime_climate_passes.h 的
     // cyclone_state_encode/decode 拥有，store 只负责搬运字节。
     std::vector<uint8_t> cyclone_state;
+    // CLM2 ABI 7 的提交态物理胶囊；空表示旧档/新图，下一次计划明确冷播种。
+    // 不加入旧 RuntimeClimatePodSnapshot / PDP3/PDP4，也不改变 PKEC 的独立格式。
+    static constexpr size_t MAX_PHYSICS_STATE_BYTES = 64u * 1024u * 1024u;
+    std::vector<uint8_t> physics_state;
     float climate_anomaly = 0.0f;
     float annual_temperature_drift = 0.0f;
     uint64_t rng_state = 0x9e3779b97f4a7c15ull;
@@ -101,10 +109,17 @@ struct RuntimeClimateStore {
     std::vector<float> temperature_history;
 
     void reset(uint32_t cells);
+    // Lane 形状 / 长度契约（无逐元素扫描）。commit 热路径用这个，避免把
+    // finite + physics decode 再付一遍；完整 validate 留给 save/restore/seed。
+    bool validate_shape(std::string &error) const;
     bool validate(std::string &error) const;
     // Covers every field including worker-only bookkeeping. Use for save,
-    // restore and snapshot integrity.
+    // restore and snapshot integrity. ABI 8+ includes terrain/cover.
     uint64_t state_hash() const;
+    // 冻结 ABI 7 的哈希算法：abi6 + physics_state，不含 terrain/cover。
+    uint64_t state_hash_abi7() const;
+    // 冻结 ABI 6 的哈希算法，仅供 CLM2 旧档完整性校验；不包含 physics_state。
+    uint64_t state_hash_abi6() const;
     // Covers only the fields that also exist on the production side, so the
     // two paths are actually comparable. Defined in runtime_climate_parity.cpp
     // alongside the canonical field table. Use for parity comparison.

@@ -90,6 +90,19 @@ public:
                                std::string &error);
     bool queue_trigger_command(const RuntimeTriggerCommand &command,
                                std::string &error);
+    bool trigger_pod_configured() const;
+    // H8 ACTIVE Trigger stage. Same authority object the SHADOW probe uses; the
+    // difference is that ACTIVE supplies real peer ACKs and reads the committed
+    // snapshot back out for the main-thread write-back ring. `intents` is filled
+    // from the plan even when the commit fails, because an incomplete ACK
+    // barrier is exactly the case where the caller must publish them.
+    bool run_trigger_active_day(int64_t day, uint64_t input_generation,
+                                const std::vector<RuntimeDomainAck> &acks,
+                                std::vector<RuntimeTriggerEffectIntent> &intents,
+                                RuntimeTriggerSnapshot &snapshot,
+                                uint32_t &required_ack_count,
+                                uint64_t &state_hash, double &replay_ms,
+                                std::string &error);
     RuntimeTriggerPodDiagnostics trigger_pod_diagnostics() const;
     bool set_trigger_reference_frame(int64_t day, uint64_t input_hash,
                                      uint64_t state_hash, uint64_t effect_hash,

@@ -1,5 +1,6 @@
 #include "runtime_authoritative_domains.h"
 #include "runtime_domain_pod.h"
+#include "runtime_climate_physics.h"
 
 #include <algorithm>
 #include <cmath>
@@ -356,7 +357,10 @@ void RuntimeClimateStore::reset(uint32_t cells) {
     resize(synoptic_psi_prev);
     vegetation.assign(cells, 0);
     base_vegetation.assign(cells, 0);
+    terrain.assign(cells, 0);
+    cover.assign(cells, 0);
     cyclone_state.clear();
+    physics_state.clear();
     climate_anomaly = 0.0f;
     annual_temperature_drift = 0.0f;
     rng_state = 0x9e3779b97f4a7c15ull;
@@ -365,7 +369,7 @@ void RuntimeClimateStore::reset(uint32_t cells) {
     temperature_history.assign(static_cast<size_t>(cells) * 365u, 0.0f);
 }
 
-bool RuntimeClimateStore::validate(std::string &error) const {
+bool RuntimeClimateStore::validate_shape(std::string &error) const {
     const size_t n = cell_count;
     const bool shape = same_size(temperature, n) && same_size(temperature_30d_ema, n) &&
         same_size(temperature_365d_ema, n) && same_size(temperature_baseline, n) &&
@@ -388,12 +392,22 @@ bool RuntimeClimateStore::validate(std::string &error) const {
         same_size(vegetation_drought_streak, n) && same_size(vegetation_succession_candidate, n) &&
         same_size(synoptic_psi, n) && same_size(synoptic_psi_prev, n) &&
         same_size(vegetation, n) && same_size(base_vegetation, n) &&
+        same_size(terrain, n) && same_size(cover, n) &&
         cyclone_state.size() <= 64u * 1024u * 1024u &&
         temperature_history.size() == n * 365u;
     if (!shape) {
         set_error(error, "climate_store_shape_invalid");
         return false;
     }
+    if (physics_state.size() > MAX_PHYSICS_STATE_BYTES) {
+        set_error(error, "climate_physics_blob_too_large");
+        return false;
+    }
+    return true;
+}
+
+bool RuntimeClimateStore::validate(std::string &error) const {
+    if (!validate_shape(error)) return false;
     const bool finite = finite_vector(temperature) && finite_vector(temperature_30d_ema) &&
         finite_vector(temperature_365d_ema) && finite_vector(temperature_baseline) &&
         finite_vector(thermal_energy) &&
@@ -411,11 +425,40 @@ bool RuntimeClimateStore::validate(std::string &error) const {
         finite_vector(vegetation_drought_stress) && finite_vector(vegetation_cold_stress) &&
         finite_vector(synoptic_psi) && finite_vector(synoptic_psi_prev) &&
         std::isfinite(climate_anomaly) && std::isfinite(annual_temperature_drift);
-    if (!finite) set_error(error, "climate_store_non_finite");
-    return finite;
+    if (!finite) {
+        set_error(error, "climate_store_non_finite");
+        return false;
+    }
+    if (!physics_state.empty()) {
+        pk_async_physics::RuntimeClimatePhysicsState decoded;
+        std::string physics_error;
+        if (!pk_async_physics::restore_physics_state(physics_state.data(),
+                physics_state.size(), decoded, physics_error)) {
+            if (error.empty()) error = physics_error;
+            return false;
+        }
+        if (decoded.cell_count < 0 ||
+            static_cast<uint32_t>(decoded.cell_count) != cell_count) {
+            set_error(error, "climate_physics_store_shape_mismatch");
+            return false;
+        }
+    }
+    return true;
 }
 
 uint64_t RuntimeClimateStore::state_hash() const {
+    uint64_t hash = state_hash_abi7();
+    // ABI 8：terrain / cover 只进当前 state_hash，不进冻结的 abi6/abi7。
+    hash = mix_vector(hash, terrain);
+    hash = mix_vector(hash, cover);
+    return hash;
+}
+
+uint64_t RuntimeClimateStore::state_hash_abi7() const {
+    return mix_vector(state_hash_abi6(), physics_state);
+}
+
+uint64_t RuntimeClimateStore::state_hash_abi6() const {
     uint64_t hash = mix(FNV_OFFSET, generation);
     hash = mix(hash, climate_generation);
     hash = mix(hash, static_cast<uint64_t>(committed_day));

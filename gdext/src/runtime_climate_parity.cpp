@@ -135,6 +135,10 @@ const RuntimeClimateParityField FIELDS[] = {
     // 差一天的触发时序就会让整条 lane 在若干格上错位，那不是"算法分叉"。
     {"vegetation", "vegetation_arr", U8, OK, CHAINED, Stage::VEGETATION_DYNAMICS, "", nullptr, nullptr, &Store::vegetation},
     {"base_vegetation", "base_vegetation_arr", U8, OK, CHAINED, Stage::VEGETATION_DYNAMICS, "", nullptr, nullptr, &Store::base_vegetation},
+    // B8-P1 / ABI 8：sea_ice 翻转 terrain；weather distribute 写 cover。ACTIVE 下主线程
+    // 写者被抑制，worker 自持并 writeback。一天时序差即可整格错位，tolerance 取 CHAINED。
+    {"terrain", "terrain_arr", U8, OK, CHAINED, Stage::SEA_ICE, "", nullptr, nullptr, &Store::terrain},
+    {"cover", "cover_arr", U8, OK, CHAINED, Stage::WEATHER, "", nullptr, nullptr, &Store::cover},
     // The production side fills a continuous regeneration score, while the
     // worker keeps a boolean candidate flag. These are not the same quantity.
     {"vegetation_succession_candidate", "vegetation_regen_score_arr", U8, MISMATCH, EXACT, Stage::VEGETATION_DYNAMICS,

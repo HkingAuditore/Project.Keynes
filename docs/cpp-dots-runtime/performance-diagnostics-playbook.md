@@ -1938,6 +1938,11 @@ Climate 首批垂直切片的 `runtime_graph_climate_pod_ready`、
 plan/replay 成本和日级 state hash 纳入同一份 CSV；不得据此将 Climate 视为 ACTIVE authority，
 也不得与同步 Climate 的 `t_sus_ms` 直接相加。
 
+ACTIVE 下同名字段语义：`plan_ms` = kernel 全日计算；生产路径关闭每日
+`state_hash`/`parity_hash` 与二次 input validate（publish 边界已校验）。`replay_ms` =
+`commit_day` 的形状快检 + store swap。若 `plan_ms` 仍接近 OFF 的同步 Climate，剩余主要是
+物理/weather kernel 本身，不是记账开销。
+
 看到 `simulation_worker_blocker=runtime_graph_still_uses_godot_containers_and_object_boundaries`
 或 `runtime_graph_not_thread_safe` 时，说明 graph 尚未完成输入冻结和 POD ABI 迁移，
 应继续使用 OFF/SHADOW，而不是绕过 readiness gate。

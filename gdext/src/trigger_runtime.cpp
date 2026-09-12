@@ -404,6 +404,7 @@ Dictionary TriggerRuntime::configure(const Dictionary &catalog) {
             _event_type_span + definition.event_type].push_back(i);
     }
     reset_runtime_state();
+    _pod_snapshot_generation = 0;
     _configured = true;
     Dictionary out = report();
     out["ok"] = true;
@@ -1039,95 +1040,10 @@ Dictionary TriggerRuntime::run_daily(int64_t day_index) {
 
     // Replace only after the Godot-free kernel succeeds. This keeps the
     // facade transactional while preserving all PKTR v6 fields and strings.
-    const uint64_t events_ingested = _events_ingested;
-    const uint64_t events_deduplicated = _events_deduplicated;
-    const uint64_t events_rejected = _events_rejected;
-    const uint64_t effects_emitted = _effects_emitted + emitted.size();
-    const uint64_t rules_evaluated = _rules_evaluated;
-    const uint64_t gap_count = _gap_count;
-    const uint64_t resync_count = _resync_count;
-    for (const RuntimeTriggerPodSnapshotState &source : snapshot.states) {
-        if (source.trigger_id < 0 ||
-            source.trigger_id >= static_cast<int32_t>(_definitions.size()) ||
-            source.distinct_keys.size() != static_cast<size_t>(_distinct_capacity))
-            return failure("trigger_state_restore_failed");
-    }
-    reset_runtime_state();
-    _current_day = day_index;
-    _next_effect_id = snapshot.next_effect_id;
-    _acked_effect_id = snapshot.acked_effect_id;
-    _source_cursor = snapshot.source_cursor;
-    _source_needs_resync = snapshot.source_needs_resync;
-    _source_gap_begin = snapshot.source_gap_begin;
-    _source_gap_end = snapshot.source_gap_end;
-    for (size_t i = 0; i < snapshot.enabled.size() &&
-                       i < _definitions.size(); ++i)
-        _definitions[i].enabled = snapshot.enabled[i] != 0 ? 1 : 0;
-    for (const RuntimeTriggerBranchBinding &source : snapshot.branch_bindings) {
-        if (source.trigger_id < 0 ||
-            source.trigger_id >= static_cast<int32_t>(_definitions.size()))
-            return failure("trigger_branch_binding_restore_failed");
-        _branch_bindings.push_back({source.trigger_id, source.branch_handle,
-                                    source.cell, source.reward_target});
-    }
-    rebuild_branch_index();
-    for (const RuntimeTriggerPodSnapshotState &source : snapshot.states) {
-        const int32_t index = find_or_create_state(source.trigger_id,
-            source.target_handle, source.target_generation);
-        if (index < 0) return failure("trigger_state_restore_failed");
-        _state.accumulator[index] = source.accumulator;
-        _state.remainder[index] = source.remainder;
-        _state.last_event_id[index] = source.last_event_id;
-        _state.fire_sequence[index] = source.fire_sequence;
-        _state.cooldown_until[index] = source.cooldown_until;
-        _state.window_start_day[index] = source.window_start_day;
-        _state.last_observed[index] = source.last_observed;
-        _state.last_sample_day[index] = source.last_sample_day;
-        _state.completed[index] = source.completed;
-        _state.initialized[index] = source.initialized;
-        _state.needs_resync[index] = source.needs_resync;
-        const size_t begin = static_cast<size_t>(index) * _distinct_capacity;
-        std::copy(source.distinct_keys.begin(), source.distinct_keys.end(),
-                  _distinct_keys.begin() + begin);
-    }
-    for (const RuntimeTriggerEvent &source : snapshot.pending_events) {
-        Event event;
-        event.source_id = source.source_id; event.event_id = source.event_id;
-        event.day = source.day; event.event_type = source.event_type;
-        event.payload_schema = source.payload_schema;
-        event.entity_handle = source.entity_handle;
-        event.group_handle = source.group_handle;
-        event.value = source.value; event.payload = source.payload;
-        event.snapshot = source.snapshot != 0;
-        _pending_events.push_back(event);
-    }
-    for (const RuntimeTriggerEffectIntent &source : snapshot.pending_effects) {
-        Effect effect;
-        effect.id = source.id; effect.effective_day = source.effective_day;
-        effect.source_priority = source.source_priority;
-        effect.trigger_id = source.trigger_id;
-        effect.target_handle = source.target_handle;
-        effect.target_generation = source.target_generation;
-        effect.fire_sequence = source.fire_sequence; effect.action = source.action;
-        effect.domain = source.domain; effect.opcode = source.opcode;
-        effect.resolved_value = source.resolved_value;
-        effect.duration_days = source.duration_days; effect.stacks = source.stacks;
-        effect.payload = source.payload;
-        if (source.effect_definition_id >= 0 &&
-            source.effect_definition_id < static_cast<int32_t>(_effect_definitions.size())) {
-            const EffectDefinition &definition = _effect_definitions[source.effect_definition_id];
-            effect.command_key = definition.command_key;
-            effect.definition_key = definition.definition_key;
-        }
-        _effects.push_back(std::move(effect));
-    }
-    _events_ingested = events_ingested;
-    _events_deduplicated = events_deduplicated;
-    _events_rejected = events_rejected;
-    _effects_emitted = effects_emitted;
-    _rules_evaluated = rules_evaluated;
-    _gap_count = gap_count;
-    _resync_count = resync_count;
+    _effects_emitted += emitted.size();
+    std::string adopt_error;
+    if (!adopt_pod_state(snapshot, day_index, adopt_error))
+        return failure(adopt_error.c_str());
     _last_evaluate_ms = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - started).count();
     Dictionary out = report();
@@ -1696,6 +1612,10 @@ Dictionary TriggerRuntime::restore(const PackedByteArray &packed) {
         return failure("catalog_hash_mismatch");
 
     reset_runtime_state();
+    // PKTR is the facade's own save. The worker restores its POD section
+    // separately and resumes its own generation counter, so the write-back gate
+    // must not reject the first snapshot after a load.
+    _pod_snapshot_generation = 0;
     _current_day = current_day;
     _next_effect_id = next_effect;
     _acked_effect_id = acked_effect;
@@ -1818,6 +1738,9 @@ Dictionary TriggerRuntime::restore(const PackedByteArray &packed) {
 Dictionary TriggerRuntime::clear_state() {
     if (!_configured) return failure("trigger_runtime_not_configured");
     reset_runtime_state();
+    // A cleared facade has no worker generation history; the next write-back
+    // must be accepted rather than rejected as stale.
+    _pod_snapshot_generation = 0;
     Dictionary out;
     out["ok"] = true;
     out["migration"] = "legacy_empty_trigger_state";
@@ -1955,6 +1878,137 @@ bool TriggerRuntime::export_pod_snapshot(RuntimeTriggerSnapshot &out,
         effect.stacks = source.stacks; effect.payload = source.payload;
         out.pending_effects.push_back(effect);
     }
+    return true;
+}
+
+bool TriggerRuntime::adopt_pod_state(const RuntimeTriggerSnapshot &snapshot,
+                                     int64_t day_index, std::string &error) {
+    error.clear();
+    for (const RuntimeTriggerPodSnapshotState &source : snapshot.states) {
+        if (source.trigger_id < 0 ||
+            source.trigger_id >= static_cast<int32_t>(_definitions.size()) ||
+            source.distinct_keys.size() != static_cast<size_t>(_distinct_capacity)) {
+            error = "trigger_state_restore_failed";
+            return false;
+        }
+    }
+    for (const RuntimeTriggerBranchBinding &source : snapshot.branch_bindings) {
+        if (source.trigger_id < 0 ||
+            source.trigger_id >= static_cast<int32_t>(_definitions.size())) {
+            error = "trigger_branch_binding_restore_failed";
+            return false;
+        }
+    }
+    const uint64_t events_ingested = _events_ingested;
+    const uint64_t events_deduplicated = _events_deduplicated;
+    const uint64_t events_rejected = _events_rejected;
+    const uint64_t effects_emitted = _effects_emitted;
+    const uint64_t rules_evaluated = _rules_evaluated;
+    const uint64_t gap_count = _gap_count;
+    const uint64_t resync_count = _resync_count;
+    // Effect delivery stays a main-thread cursor even under H8 authority: the
+    // facade hands the contiguous prefix to EffectRuntime and ACKs it back to the
+    // worker as an ACK_EFFECTS command. Clamping instead of overwriting keeps a
+    // write-back that predates that command from replaying an already delivered
+    // effect.
+    const int64_t acked_effect_id = _acked_effect_id;
+    const int64_t next_effect_id = _next_effect_id;
+    reset_runtime_state();
+    _current_day = day_index;
+    _next_effect_id = std::max(next_effect_id, snapshot.next_effect_id);
+    _acked_effect_id = std::max(acked_effect_id, snapshot.acked_effect_id);
+    _source_cursor = snapshot.source_cursor;
+    _source_needs_resync = snapshot.source_needs_resync;
+    _source_gap_begin = snapshot.source_gap_begin;
+    _source_gap_end = snapshot.source_gap_end;
+    for (size_t i = 0; i < snapshot.enabled.size() &&
+                       i < _definitions.size(); ++i)
+        _definitions[i].enabled = snapshot.enabled[i] != 0 ? 1 : 0;
+    for (const RuntimeTriggerBranchBinding &source : snapshot.branch_bindings) {
+        _branch_bindings.push_back({source.trigger_id, source.branch_handle,
+                                    source.cell, source.reward_target});
+    }
+    rebuild_branch_index();
+    for (const RuntimeTriggerPodSnapshotState &source : snapshot.states) {
+        const int32_t index = find_or_create_state(source.trigger_id,
+            source.target_handle, source.target_generation);
+        if (index < 0) { error = "trigger_state_restore_failed"; return false; }
+        _state.accumulator[index] = source.accumulator;
+        _state.remainder[index] = source.remainder;
+        _state.last_event_id[index] = source.last_event_id;
+        _state.fire_sequence[index] = source.fire_sequence;
+        _state.cooldown_until[index] = source.cooldown_until;
+        _state.window_start_day[index] = source.window_start_day;
+        _state.last_observed[index] = source.last_observed;
+        _state.last_sample_day[index] = source.last_sample_day;
+        _state.completed[index] = source.completed;
+        _state.initialized[index] = source.initialized;
+        _state.needs_resync[index] = source.needs_resync;
+        const size_t begin = static_cast<size_t>(index) * _distinct_capacity;
+        std::copy(source.distinct_keys.begin(), source.distinct_keys.end(),
+                  _distinct_keys.begin() + begin);
+    }
+    for (const RuntimeTriggerEvent &source : snapshot.pending_events) {
+        Event event;
+        event.source_id = source.source_id; event.event_id = source.event_id;
+        event.day = source.day; event.event_type = source.event_type;
+        event.payload_schema = source.payload_schema;
+        event.entity_handle = source.entity_handle;
+        event.group_handle = source.group_handle;
+        event.value = source.value; event.payload = source.payload;
+        event.snapshot = source.snapshot != 0;
+        _pending_events.push_back(event);
+    }
+    for (const RuntimeTriggerEffectIntent &source : snapshot.pending_effects) {
+        Effect effect;
+        effect.id = source.id; effect.effective_day = source.effective_day;
+        effect.source_priority = source.source_priority;
+        effect.trigger_id = source.trigger_id;
+        effect.effect_definition_id = source.effect_definition_id;
+        effect.target_handle = source.target_handle;
+        effect.target_generation = source.target_generation;
+        effect.fire_sequence = source.fire_sequence; effect.action = source.action;
+        effect.domain = source.domain; effect.opcode = source.opcode;
+        effect.resolved_value = source.resolved_value;
+        effect.duration_days = source.duration_days; effect.stacks = source.stacks;
+        effect.payload = source.payload;
+        if (source.effect_definition_id >= 0 &&
+            source.effect_definition_id < static_cast<int32_t>(_effect_definitions.size())) {
+            const EffectDefinition &definition = _effect_definitions[source.effect_definition_id];
+            effect.command_key = definition.command_key;
+            effect.definition_key = definition.definition_key;
+        }
+        _effects.push_back(std::move(effect));
+    }
+    _events_ingested = events_ingested;
+    _events_deduplicated = events_deduplicated;
+    _events_rejected = events_rejected;
+    _effects_emitted = effects_emitted;
+    _rules_evaluated = rules_evaluated;
+    _gap_count = gap_count;
+    _resync_count = resync_count;
+    return true;
+}
+
+bool TriggerRuntime::apply_pod_snapshot(const RuntimeTriggerSnapshot &snapshot,
+                                        std::string &error) {
+    error.clear();
+    if (!_configured) { error = "trigger_runtime_not_configured"; return false; }
+    if (snapshot.catalog_hash != _catalog_hash) {
+        error = "trigger_snapshot_catalog_mismatch";
+        return false;
+    }
+    // Generation gate. The ring hands out the newest READY buffer, so a caller
+    // that polls twice in one frame — or after a worker restart replayed an
+    // older generation — must not walk the facade backwards.
+    if (snapshot.generation <= _pod_snapshot_generation) {
+        error = "trigger_snapshot_generation_stale";
+        return false;
+    }
+    const int64_t day = snapshot.committed_day >= 0
+        ? snapshot.committed_day : _current_day;
+    if (!adopt_pod_state(snapshot, day, error)) return false;
+    _pod_snapshot_generation = snapshot.generation;
     return true;
 }
 

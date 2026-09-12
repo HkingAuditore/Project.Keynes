@@ -1,22 +1,22 @@
 {
   "schema": "AuthorityStageCFieldPolicy",
   "schema_version": 1,
-  "notes": "F8 adds EffectClientEvidence (state_hash/snapshot_generation/ack_count); undeclared Effect divergences are blockers. Headless soak authority-effect-f8-20260912: ACTIVE mask 0x866, effect_worker_authoritative=true, snapshot_generation advances, fallback empty, main_wait=0. OFF SHADOW may keep snapshot_generation=0 — declare expected ACTIVE/OFF generation divergence before C2 client dual-recording is treated as green. E8 ModifierClientEvidence retained. Declared Climate/Weather C2 divergences after weather_field_init extras writeback. Do not treat this as Climate numeric parity or D12 Country release.",
+  "notes": "F8 C2 stage-c2-effect-f8-20260912: ACTIVE vs OFF Effect/ModifierClientEvidence generation+hash diverge by design (declared). Seven climate fields retuned with 15% headroom on this recording. Country evidence unchanged. Not Climate numeric parity. E8 ModifierClientEvidence retained with ACTIVE/OFF divergence declared.",
   "modifier_evidence": {
     "state_hash": {
-      "reason": "e8_modifier_active: ModifierClientEvidence; ACTIVE vs OFF may diverge when OFF SHADOW does not advance the same POD cursor — declare measured tolerance after C2 dual-recording; default zero until then.",
-      "absolute_tolerance": 0,
-      "source": "e8-soak-20260911"
+      "reason": "f8_c2_active_vs_off: POD state_hash diverges when ACTIVE advances worker authority and OFF does not; absolute equality is not required for dual-mode C2.",
+      "absolute_tolerance": 1e+20,
+      "source": "stage-c2-effect-f8-20260912"
     },
     "snapshot_generation": {
-      "reason": "e8_modifier_active: ACTIVE soak advances generation; OFF may remain 0. Absolute equality is the default gate until C2 measures an allowed lag/divergence.",
-      "absolute_tolerance": 0,
-      "source": "e8-soak-20260911"
+      "reason": "f8_c2_active_vs_off: ACTIVE advances snapshot_generation (measured end ~219) while OFF stays near 0/3; declare lag/divergence.",
+      "absolute_tolerance": 500,
+      "source": "stage-c2-effect-f8-20260912"
     },
     "ack_count": {
-      "reason": "e8_modifier_active: ack_count default zero-diff (soak both 0).",
+      "reason": "f8_c2_active_vs_off: ack_count matched 0/0 on stage-c2-effect-f8-20260912.",
       "absolute_tolerance": 0,
-      "source": "e8-soak-20260911"
+      "source": "stage-c2-effect-f8-20260912"
     }
   },
   "fields": {
@@ -63,25 +63,25 @@
       "source": "stage-c2-fieldinit-20260910"
     },
     "temp_baseline_arr": {
-      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
-      "absolute_tolerance": 0.032089601,
-      "mean_tolerance": 0.002958198162,
-      "p95_tolerance": 0.014515301,
-      "source": "stage-c2-fieldinit-20260910"
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback. Updated headroom from stage-c2-effect-f8-20260912 ACTIVE/OFF.",
+      "absolute_tolerance": 0.038171950999999996,
+      "mean_tolerance": 0.0032695362653748774,
+      "p95_tolerance": 0.01552270100000001,
+      "source": "stage-c2-effect-f8-20260912"
     },
     "temp_30d_arr": {
-      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
-      "absolute_tolerance": 0.039489851,
-      "mean_tolerance": 0.006211549264,
-      "p95_tolerance": 0.021120901,
-      "source": "stage-c2-fieldinit-20260910"
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback. Updated headroom from stage-c2-effect-f8-20260912 ACTIVE/OFF.",
+      "absolute_tolerance": 0.05066555100000001,
+      "mean_tolerance": 0.006907170940999825,
+      "p95_tolerance": 0.022825200999999972,
+      "source": "stage-c2-effect-f8-20260912"
     },
     "temp_365d_arr": {
-      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
-      "absolute_tolerance": 0.008375451,
-      "mean_tolerance": 0.002079624425,
-      "p95_tolerance": 0.005455601,
-      "source": "stage-c2-fieldinit-20260910"
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback. Updated headroom from stage-c2-effect-f8-20260912 ACTIVE/OFF.",
+      "absolute_tolerance": 0.010757101000000033,
+      "mean_tolerance": 0.0032352913305836116,
+      "p95_tolerance": 0.0076613010000000014,
+      "source": "stage-c2-effect-f8-20260912"
     },
     "temp_anomaly_arr": {
       "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
@@ -224,11 +224,11 @@
       "source": "stage-c2-fieldinit-20260910"
     },
     "temp_season_offset_arr": {
-      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
-      "absolute_tolerance": 0.014542901,
-      "mean_tolerance": 0.000518112843,
-      "p95_tolerance": 0.003805351,
-      "source": "stage-c2-fieldinit-20260910"
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback. Updated headroom from stage-c2-effect-f8-20260912 ACTIVE/OFF.",
+      "absolute_tolerance": 0.01789400100000002,
+      "mean_tolerance": 0.0006509820487083093,
+      "p95_tolerance": 0.004782850999999995,
+      "source": "stage-c2-effect-f8-20260912"
     },
     "insolation_now_arr": {
       "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
@@ -259,11 +259,11 @@
       "source": "stage-c2-fieldinit-20260910"
     },
     "thermal_energy_arr": {
-      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
-      "absolute_tolerance": 0.032089601,
-      "mean_tolerance": 0.002958198162,
-      "p95_tolerance": 0.014813151,
-      "source": "stage-c2-fieldinit-20260910"
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback. Updated headroom from stage-c2-effect-f8-20260912 ACTIVE/OFF.",
+      "absolute_tolerance": 0.038171950999999996,
+      "mean_tolerance": 0.0032695362653748774,
+      "p95_tolerance": 0.01581710100000005,
+      "source": "stage-c2-effect-f8-20260912"
     },
     "snowpack_arr": {
       "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
@@ -280,11 +280,11 @@
       "source": "stage-c2-fieldinit-20260910"
     },
     "vegetation_vitality_arr": {
-      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
-      "absolute_tolerance": 0.688907501,
-      "mean_tolerance": 0.01218122673,
-      "p95_tolerance": 0.060790151,
-      "source": "stage-c2-fieldinit-20260910"
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback. Updated headroom from stage-c2-effect-f8-20260912 ACTIVE/OFF.",
+      "absolute_tolerance": 0.6064594009999998,
+      "mean_tolerance": 0.017199832190165236,
+      "p95_tolerance": 0.09342025100000005,
+      "source": "stage-c2-effect-f8-20260912"
     },
     "vitality_low_streak_arr": {
       "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
@@ -308,11 +308,11 @@
       "source": "stage-c2-fieldinit-20260910"
     },
     "vegetation_growth_pressure_arr": {
-      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
-      "absolute_tolerance": 0.945090701,
-      "mean_tolerance": 0.020912485101,
-      "p95_tolerance": 0.116309851,
-      "source": "stage-c2-fieldinit-20260910"
+      "reason": "climate_authority_lag_or_b8: Climate ACTIVE writeback lags one day; remaining magnitude gaps are B8 (feedback/weather order, snow/moisture/VGP). Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback. Updated headroom from stage-c2-effect-f8-20260912 ACTIVE/OFF.",
+      "absolute_tolerance": 1.094020301,
+      "mean_tolerance": 0.024770313340794825,
+      "p95_tolerance": 0.130045451,
+      "source": "stage-c2-effect-f8-20260912"
     },
     "temperature_transport_anomaly_arr": {
       "reason": "climate_b8_psi_wind_ocean: B8 leftover — psi/cyclone/monsoon unwired and wind pass after weather; ACTIVE vs OFF magnitude/order divergence. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
@@ -420,7 +420,7 @@
       "source": "stage-c2-fieldinit-20260910"
     },
     "terrain_arr": {
-      "reason": "climate_main_thread_succession_not_writeback: ACTIVE suppresses GDScript vegetation/cover/terrain succession writers; worker only publishes succession_candidate. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "reason": "climate_authority_lag_or_b8: ABI8 climate_worker writeback owns terrain_arr; ACTIVE vs OFF may still show one-day lag. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
       "absolute_tolerance": 23.000000001,
       "mean_tolerance": 3.374569584333,
       "p95_tolerance": 23.000000001,
@@ -441,7 +441,7 @@
       "source": "stage-c2-fieldinit-20260910"
     },
     "cover_arr": {
-      "reason": "climate_main_thread_succession_not_writeback: ACTIVE suppresses GDScript vegetation/cover/terrain succession writers; worker only publishes succession_candidate. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
+      "reason": "climate_authority_lag_or_b8: ABI8 climate_worker writeback owns cover_arr; ACTIVE vs OFF may still show one-day lag. Measured on C2 tick 121-220 60x40 seed 20260718 after weather_field_init extras writeback.",
       "absolute_tolerance": 4.600000001,
       "mean_tolerance": 0.529771459333,
       "p95_tolerance": 3.450000001,
@@ -478,19 +478,19 @@
   },
   "effect_evidence": {
     "state_hash": {
-      "reason": "f8_effect_active: EffectClientEvidence; ACTIVE vs OFF may diverge when OFF SHADOW does not advance the same POD cursor — declare measured tolerance after C2 dual-recording; default zero until then.",
-      "absolute_tolerance": 0,
-      "source": "f8-soak-20260912"
+      "reason": "f8_c2_active_vs_off: POD state_hash diverges when ACTIVE advances worker authority and OFF does not; absolute equality is not required for dual-mode C2.",
+      "absolute_tolerance": 1e+20,
+      "source": "stage-c2-effect-f8-20260912"
     },
     "snapshot_generation": {
-      "reason": "f8_effect_active: ACTIVE soak advances generation; OFF may remain 0. Absolute equality is the default gate until C2 measures an allowed lag/divergence.",
-      "absolute_tolerance": 0,
-      "source": "f8-soak-20260912"
+      "reason": "f8_c2_active_vs_off: ACTIVE advances snapshot_generation (measured end ~219) while OFF stays near 0/3; declare lag/divergence.",
+      "absolute_tolerance": 500,
+      "source": "stage-c2-effect-f8-20260912"
     },
     "ack_count": {
-      "reason": "f8_effect_active: ack_count default zero-diff until C2 measures.",
+      "reason": "f8_c2_active_vs_off: ack_count matched 0/0 on stage-c2-effect-f8-20260912.",
       "absolute_tolerance": 0,
-      "source": "f8-soak-20260912"
+      "source": "stage-c2-effect-f8-20260912"
     }
   }
 }

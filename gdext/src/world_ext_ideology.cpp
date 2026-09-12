@@ -7,6 +7,7 @@
 #include "native_simulation_host.h"
 
 #include <algorithm>
+#include <limits>
 
 namespace pk {
 using namespace godot;
@@ -99,9 +100,12 @@ Dictionary DCWorldExt::configure_ideologies(const Dictionary &catalog) {
 
 Dictionary DCWorldExt::submit_ideology_commands(const Dictionary &batch) {
     if (_ideology_runtime == nullptr) return unavailable();
-    Dictionary result = ideology_runtime_from(_ideology_runtime)->submit_commands(batch);
-    if (!bool(result.get("ok", false)) || _runtime_host == nullptr)
-        return result;
+    // G8: when the worker owns Ideology it is the sole writer. Staging the same
+    // batch in the legacy queue first would let the main thread apply it a
+    // second time, and the worker snapshot write-back would then overwrite the
+    // result with a state that never saw the command twice.
+    const bool worker_authoritative = _runtime_host != nullptr &&
+        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::IDEOLOGY);
     const PackedInt32Array opcodes = batch.get("opcodes", PackedInt32Array());
     const PackedInt32Array producers = batch.get("producer_ids", PackedInt32Array());
     const PackedInt32Array priorities = batch.get("source_priorities", PackedInt32Array());
@@ -113,6 +117,32 @@ Dictionary DCWorldExt::submit_ideology_commands(const Dictionary &batch) {
     const PackedInt64Array handles = batch.get("country_handles", PackedInt64Array());
     const PackedInt64Array values = batch.get("values_q16", PackedInt64Array());
     const PackedInt64Array offers = batch.get("offer_generations", PackedInt64Array());
+    Dictionary result;
+    if (worker_authoritative) {
+        // submit_commands() normally validates the column shapes before the
+        // mirror loop below indexes them. Skipping it means this path owns the
+        // same check.
+        const int32_t count = opcodes.size();
+        if (count <= 0 || (!producers.is_empty() && producers.size() != count) ||
+            priorities.size() != count || days.size() != count ||
+            sequences.size() != count || handles.size() != count ||
+            ideology_ids.size() != count || values.size() != count ||
+            offers.size() != count || choices.size() != count ||
+            gates.size() != count) {
+            result["ok"] = false;
+            result["reason"] = "ideology_command_columns_invalid";
+            return result;
+        }
+        result["ok"] = true;
+        result["path"] = "IDEOLOGY_WORKER";
+        result["accepted"] = count;
+        result["duplicates"] = 0;
+        result["pending"] = 0;
+    } else {
+        result = ideology_runtime_from(_ideology_runtime)->submit_commands(batch);
+        if (!bool(result.get("ok", false)) || _runtime_host == nullptr)
+            return result;
+    }
     bool mirrored = true;
     std::string error;
     for (int32_t index = 0; index < opcodes.size(); ++index) {
@@ -209,13 +239,62 @@ Dictionary DCWorldExt::poll_ideology_receipts(int64_t after_receipt_id,
 }
 
 Dictionary DCWorldExt::run_ideology_daily(int64_t day_index) {
-    return _ideology_runtime == nullptr ? unavailable()
-        : ideology_runtime_from(_ideology_runtime)->run_daily(day_index);
+    if (_ideology_runtime == nullptr) return unavailable();
+    if (_runtime_host != nullptr &&
+        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::IDEOLOGY)) {
+        Dictionary out;
+        out["ok"] = true;
+        out["suppressed"] = true;
+        out["path"] = "IDEOLOGY_WORKER";
+        out["day"] = day_index;
+        return out;
+    }
+    return ideology_runtime_from(_ideology_runtime)->run_daily(day_index);
 }
 
 bool DCWorldExt::ideology_should_run(int64_t day_index) const {
+    if (_runtime_host != nullptr &&
+        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::IDEOLOGY)) {
+        return false;
+    }
     return _ideology_runtime != nullptr &&
         ideology_runtime_from(_ideology_runtime)->should_run(day_index);
+}
+
+Dictionary DCWorldExt::apply_runtime_ideology_snapshot(int64_t after_generation) {
+    Dictionary out;
+    out["ok"] = false;
+    out["applied"] = false;
+    if (_ideology_runtime == nullptr || _runtime_host == nullptr) {
+        out["code"] = "ideology_runtime_unavailable";
+        return out;
+    }
+    if (!_runtime_host->domain_is_worker_authoritative(
+            RuntimeDomainId::IDEOLOGY)) {
+        out["code"] = "ideology_not_worker_authoritative";
+        return out;
+    }
+    const uint64_t cursor = after_generation < 0
+        ? std::numeric_limits<uint64_t>::max()
+        : static_cast<uint64_t>(after_generation);
+    uint32_t slot = 0;
+    if (!_runtime_host->try_acquire_ideology_snapshot(cursor, slot)) {
+        out["ok"] = true;
+        out["code"] = "ideology_snapshot_unavailable";
+        return out;
+    }
+    const RuntimeIdeologyPodSnapshot &snapshot =
+        _runtime_host->ideology_snapshot_buffer(slot);
+    std::string apply_error;
+    const bool applied = ideology_runtime_from(_ideology_runtime)
+        ->apply_pod_snapshot(snapshot, apply_error);
+    const int64_t generation = static_cast<int64_t>(snapshot.generation);
+    _runtime_host->release_ideology_snapshot(slot);
+    out["ok"] = applied;
+    out["applied"] = applied;
+    out["generation"] = generation;
+    out["code"] = applied ? "ok" : String(apply_error.c_str());
+    return out;
 }
 
 Dictionary DCWorldExt::get_ideology_snapshot(int64_t country_handle) const {

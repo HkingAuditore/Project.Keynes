@@ -9,7 +9,7 @@
 `world_ext_simulation_host.cpp` 做参数校验、PackedArray 深拷贝和轻量轮询；worker 不保存
 `Object`、`Variant`、`Dictionary`、`MapData` 或场景树引用。
 
-当前 `implemented_domain_mask()` 为 `CLIMATE | COUNTRY | MODIFIER | EFFECT | COMMIT = 0x866`。Economy 等仍不在 ACTIVE authority mask。因此：
+当前 `implemented_domain_mask()` 为 `CLIMATE | COUNTRY | TRIGGER_INPUT | IDEOLOGY | MODIFIER | EFFECT | EVENTS | COMMIT = 0xA7E`（H7/H8/I8 之后）。Economy 等仍不在 ACTIVE authority mask，整图 `required` 仍是 `0xFFF`，`missing_domain_mask = 0x581`。因此：
 
 - `SHADOW` 可以启动，用于时钟、命令排序、环境快照、提交环和故障路径测试；
 - `ACTIVE` 在缺少任一 native POD domain handler 时直接返回
@@ -21,7 +21,10 @@
   journal 也已在 PKEC v52 持久化。当前只有 fiscal reserve/return/collect 进入 M1 bridge
   gate；cohort、market、research、treasury 的跨帧 continuation 和逐 operation gated
   rollout 尚未完成，Economy 未加入 ACTIVE mask。
-  Economy、Effect、Modifier、Ideology、Trigger 和 Events 仍需各自完成独立 authority/barrier。
+- 生产 Trigger 在同一开关下由 Host worker 负责（H7/H8），主线程 `run_trigger_daily`
+  被抑制、快照回灌 legacy `TriggerRuntime`；Events（I8）只拿到 stage 位与 worker 侧
+  镜像 snapshot，legacy `GameplayEventBus` journal 仍是生产消费源。
+  Economy 仍需完成独立 authority/barrier。
 
 ## POD domain pipeline（当前 SHADOW）
 
@@ -47,6 +50,9 @@ runtime 仍是权威。这样可以先做逐日 hash/工作量对拍，再逐域
 
 ### Ideology G2-G7 SHADOW stage
 
+The SHADOW block below is the diagnostic path only. G8 ACTIVE Ideology runs from
+the stage loop; see "Ideology POD ACTIVE stage (G8)".
+
 Ideology is wired between Country and Effect. The host publishes the previous
 committed Economy class-opinion snapshot, captures Country technology/research
 state, and invokes the worker POD plan at the daily barrier. Worker commands
@@ -55,8 +61,8 @@ promotion, level replacement, and active progression emit deferred typed Effect
 intents; the host exposes those intents and accepts only real Effect ACKs. A
 missing, stale, rejected, or not-yet-returned ACK leaves the transition pending
 and never becomes final ACTIVE ideology state. The synchronous ideology runtime
-remains the production reference, and this stage does not alter
-`implemented_domain_mask() == 0x866`.
+remains the production reference in SHADOW, and this stage does not by itself
+grant authority. `implemented_domain_mask() == 0xA7E` since H7/H8/I8.
 
 Climate 边界现在还保留一份独立的 `RuntimeClimatePodSnapshot`：温度、湿度、雪盖、
 30 日 EMA、水分平衡、降水、天气强度、植被活力、anomaly 和 RNG 均为深拷贝 POD。
@@ -164,7 +170,7 @@ long-run conservation evidence.
 
 ## Modifier POD ACTIVE stage (E8)
 
-Modifier stage 位于 EFFECT -> MODIFIER -> ... -> COMMIT，SHADOW 与 ACTIVE 共用 `execute_modifier_worker_stage`。生产 ACTIVE（mask `0x866`）在 Country 之后、Climate park 日跳过对齐 Country：独立 Effect stage → Modifier；成功日写入 EFFECT/MODIFIER 位。失败隔离。
+Modifier stage 位于 EFFECT -> MODIFIER -> ... -> COMMIT，SHADOW 与 ACTIVE 共用 `execute_modifier_worker_stage`。生产 ACTIVE（mask `0xA7E`）在 Country 之后、Climate park 日跳过对齐 Country：独立 Trigger stage → 独立 Ideology stage → 独立 Effect stage → Modifier；成功日写入 TRIGGER_INPUT/IDEOLOGY/EFFECT/MODIFIER 位。失败隔离。
 
 grant 后：Host 为 Modifier/Effect 唯一写者；主线程抑制 modifier/effect daily；非阻塞 snapshot 回灌；非 Modifier Effect intents 主线程 pump+ACK；`main_wait_on_sim_us` 保持 0。
 
@@ -179,3 +185,54 @@ F8 在 Ideology 之后、Modifier 之前跑独立 ACTIVE Effect stage：
 5. 主线程回灌 EffectRuntime；graph/SUS 抑制 evaluate+dispatch。
 
 Report 暴露 `effect_pod_*` 与 `effect_worker_authoritative`。
+
+## Ideology POD ACTIVE stage (G8)
+
+G8 在 Country 之后、Effect 之前跑独立 ACTIVE Ideology stage：
+
+1. grant `0x010` 后 `submit_ideology_commands` 只入 Host POD 队列（sole-writer），不再先改 legacy 队列。
+2. Worker：drain commands/acks → plan_day/commit_day 的 same-day continuation → intents → `_ideology_snapshots` ring。
+3. Ideology 的 transition intent 目标域是 EFFECT：同日 Effect ACTIVE stage 成功后由
+   `ack_ideology_intents_in_worker()` 在 worker 内 ACK；主线程
+   `poll_ideology_worker_intent` / `submit_ideology_worker_ack` pump 保留为协议路径，
+   也覆盖只授予 IDEOLOGY 的会话。
+4. Climate park 日与 Country/Effect/Modifier 一起跳过；失败隔离，不回滚当日已提交的 Climate/Country。
+5. 主线程回灌 `NativeIdeologyRuntime`（`apply_runtime_ideology_snapshot`）；graph/SUS 抑制
+   `run_ideology_daily` 与 `ideology_should_run`。
+
+Report 暴露 `ideology_pod_*` 与 `ideology_worker_authoritative`。SHADOW 模式的 G7 诊断 stage 原样保留。
+
+## Trigger POD ACTIVE stage (H7/H8)
+
+H7/H8 在 Country 之后、Ideology 之前跑独立 ACTIVE Trigger stage
+（`execute_trigger_worker_stage`）：
+
+1. grant `0x008` 后 `submit_*` 只入 Host POD 队列（sole-writer）；`trigger_should_run`
+   返回 false，`run_trigger_daily` 被抑制。
+2. Worker：drain commands → 取 reference frame / catalog → `run_trigger_active_day`
+   （plan + commit，用 `_trigger_acks` 里的**真实** ACK，不合成）→ intents →
+   `_trigger_snapshots` ring。
+3. intents 在判定成功**之前**发布：ACK barrier 未满的当日计划会被丢弃并在下次访问重放
+   同一批单调 id，`_trigger_published_intent_id` 水位线负责去重。同日 Effect ACTIVE stage
+   成功后由 `ack_trigger_intents_in_worker()` 在 worker 内 ACK；主线程
+   `poll_trigger_worker_intent` / `submit_trigger_worker_ack` pump 保留为协议路径，
+   覆盖只授予 TRIGGER 的会话。
+4. Climate park 日与 Country/Ideology/Effect/Modifier 一起跳过。
+5. **soft-complete**：`trigger_pod_not_configured`、`trigger_pod_not_bootstrapped`、
+   `ack_barrier_incomplete`、`ack_retry`、`stale_generation`、`ack_rejected` 仍置
+   TRIGGER 位，避免 Climate|Country|Effect|Modifier 的 grant 被 Trigger 扣住；
+   `trigger_pod_ready` 保持 false，`trigger_pod_fallback_reason` 留诊断。硬失败仍隔离。
+6. 主线程回灌 `TriggerRuntime`（`apply_runtime_trigger_snapshot`，按 generation 门控）。
+
+Report 暴露 `trigger_pod_*` 与 `trigger_worker_authoritative`。
+
+## Events POD ACTIVE stage (I8)
+
+I8 的 EVENTS grant（`0x200`）**只是 worker 侧镜像 + stage 位**：POD store 拥有 EVENTS
+stage 位和自己的 snapshot ring，legacy `GameplayEventBus` journal 仍是生产消费源，
+主线程的 append/ACK 一条都没有抑制，POD snapshot 也不会回灌 GameplayEventBus。
+`start()` 在 requested mask 含 EVENTS 时强制打开 `_events_probe_enabled`，否则该 stage
+会永远 soft-complete 却从不产出 snapshot。stage 无条件 soft-complete（含空日与被拒批次），
+真实结果由 `events_pod_ready` / `events_pod_fallback_reason` 承载。
+
+Report 暴露 `events_pod_*` 与 `events_worker_authoritative`。消费者迁移是后续 PR。

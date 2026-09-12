@@ -574,6 +574,7 @@ var _phys_knobs_base_slp: Dictionary = {}
 var _phys_knobs_base_wind: Dictionary = {}
 var _phys_knobs_base_psi: Dictionary = {}
 var _runtime_physics_knobs_reported: bool = false
+var _runtime_physics_visual_view: Dictionary = {}
 var _phys_knobs_base_up: Dictionary = {}
 # DOTS-Final-Push 任务 6.2：upwelling C++ 路径选择诊断（once-only）。
 # stage 6 GDScript fallback ~92ms 是当前最大瓶颈。原因可能是 _phys_wind_done_by_cpp
@@ -5856,7 +5857,26 @@ func set_climate_profile(cp) -> void:
 func set_world_clock_ref(world_clock_node) -> void:
 	_world_clock_ref = world_clock_node
 
+## 只固定已提交的视觉输入，不计算物理、不重建或释放 GPU 资源。
+func begin_runtime_physics_visual(map: MapData, world: WorldData, view: Dictionary, phase: float) -> bool:
+	if map == null or world == null or not bool(view.get("ready", false)) \
+			or int(view.get("cell_count", 0)) != map.soa_size():
+		return false
+	for key in ["slp", "wind_x", "wind_y", "wind_speed", "ocean_current_x", "ocean_current_y", "upwelling"]:
+		if not view.get(key) is PackedFloat32Array or view[key].size() != map.soa_size():
+			return false
+	_runtime_physics_visual_view = view.duplicate()
+	_pending_phase = phase
+	_pending_phys_solved_phase = phase
+	_phys_stage = _PHYS_STAGE_DONE
+	_pending_psi_state = null
+	_ensure_pending_wind_size(world)
+	_ensure_pending_currents_size(world)
+	return true
+
+
 func reset_physical_solve_state() -> void:
+	_runtime_physics_visual_view = {}
 	_phys_stage = _PHYS_STAGE_NONE
 	_phys_psi_iters_done = 0
 	_phys_wind_raster_idx = 0
@@ -6400,7 +6420,8 @@ const _PHYS_LANE_KNOB_KEYS: Array[StringName] = [
 ## 返回 {"slp": {...}, "wind": {...}, "psi": {...}, "upwelling": {...}}；
 ## 未构建过 base（bake 还没跑）时返回空 dict，调用方按"未就绪"处理。
 func runtime_physics_knobs() -> Dictionary:
-	if _phys_knobs_base_slp.is_empty() or _phys_knobs_base_wind.is_empty():
+	if _phys_knobs_base_slp.is_empty() or _phys_knobs_base_wind.is_empty() \
+			or _phys_knobs_base_psi.is_empty() or _phys_knobs_base_up.is_empty():
 		if not _runtime_physics_knobs_reported:
 			_runtime_physics_knobs_reported = true
 			print("[phys/knobs] projection empty (slp=%d wind=%d) — bake 未跑或物理未启用"
@@ -6416,6 +6437,7 @@ func runtime_physics_knobs() -> Dictionary:
 		"wind": _phys_scalar_knob_projection(_phys_knobs_base_wind),
 		"psi": _phys_scalar_knob_projection(_phys_knobs_base_psi),
 		"upwelling": _phys_scalar_knob_projection(_phys_knobs_base_up),
+		"water_terrain_ids": _phys_water_ids_cache,
 	}
 
 
@@ -6471,6 +6493,19 @@ func _phys_ensure_knob_cache(map: MapData, hex_size: float, bounds: Rect2,
 		"slp_interior_boost": 1.30,
 		"slp_coast_damp": 0.60,
 		"slp_target_p95": 0.18,
+		"slp_recenter": true,
+		"slp_lat_lut_bins": 1024,
+		"wind_thermal_slp_weight": 0.0,
+		"slp_ice_high_weight": 0.0,
+		"slp_snow_high_weight": 0.0,
+		"slp_response_rate": 0.55,
+		"slp_synoptic_amp": 0.075,
+		"slp_moist_low_weight": 0.12,
+		"wind_synoptic_period_days": 6.0,
+		"slp_mobile_low_count": 0,
+		"slp_mobile_low_amp": 0.0,
+		"slp_mobile_low_sigma": 0.16,
+		"slp_mobile_low_period_days": 38.0,
 		"days_per_year": days_per_year,
 		"axial_tilt_deg": axial_tilt,
 		"insolation_daylen_amp": insolation_amp,
@@ -6483,6 +6518,10 @@ func _phys_ensure_knob_cache(map: MapData, hex_size: float, bounds: Rect2,
 		_phys_knobs_base_slp["slp_synoptic_amp"] = profile.slp_synoptic_amp
 		_phys_knobs_base_slp["slp_moist_low_weight"] = profile.slp_moist_low_weight
 		_phys_knobs_base_slp["wind_synoptic_period_days"] = profile.wind_synoptic_period_days
+		_phys_knobs_base_slp["slp_mobile_low_count"] = profile.slp_mobile_low_count
+		_phys_knobs_base_slp["slp_mobile_low_amp"] = profile.slp_mobile_low_amp
+		_phys_knobs_base_slp["slp_mobile_low_sigma"] = profile.slp_mobile_low_sigma
+		_phys_knobs_base_slp["slp_mobile_low_period_days"] = profile.slp_mobile_low_period_days
 	# ── WIND base（变化：season_phase / sim_day / world_seed / slp_arr）
 	_phys_knobs_base_wind = {
 		"n_cells": n_cells,
@@ -6523,6 +6562,8 @@ func _phys_ensure_knob_cache(map: MapData, hex_size: float, bounds: Rect2,
 		_phys_knobs_base_wind["thermal_monsoon_breeze_floor"] = profile.thermal_monsoon_breeze_floor
 	# ── PSI base（变化：wind_x_arr / wind_y_arr / wind_speed_arr）
 	_phys_knobs_base_psi = {
+		"sea_level": 0.42,
+		"ocean_depth_ref": 0.12,
 		"n_cells": n_cells,
 		"hex_size": hex_size,
 		"world_bounds_pos_y": bounds.position.y,
@@ -6554,6 +6595,9 @@ func _phys_ensure_knob_cache(map: MapData, hex_size: float, bounds: Rect2,
 		_phys_knobs_base_psi["sea_level"] = float(cfg.sea_level)
 	# ── UPWELLING base（全常量，可直接复用，无需 duplicate）
 	_phys_knobs_base_up = {
+		"upwelling_ekman_gain": 0.6,
+		"upwelling_cold_sink_gain": 0.15,
+		"upwelling_highlat_abs": 0.75,
 		"stage": "upwelling",
 		"n_cells": n_cells,
 		"neighbor_indices": nb,
@@ -7747,6 +7791,8 @@ func run_ocean_field_rasterize_full(map: MapData, world: WorldData, _cfg: MapCon
 	}
 	if atlas_ok:
 		knobs["atlas_data"] = _vector_atlas_data
+	if not _runtime_physics_visual_view.is_empty():
+		knobs["physics_read_view"] = _runtime_physics_visual_view
 	var res: Dictionary = _world_ext.run_ocean_field_rasterize(knobs)
 	if bool(res.get("fallback", true)) or float(res.get("elapsed_ms", -1.0)) < 0.0:
 		out["reason"] = String(res.get("reason", "unknown"))
@@ -7805,6 +7851,8 @@ func run_wind_field_rasterize_full(map: MapData, world: WorldData, _cfg: MapConf
 	}
 	if atlas_ok:
 		knobs["atlas_data"] = _vector_atlas_data
+	if not _runtime_physics_visual_view.is_empty():
+		knobs["physics_read_view"] = _runtime_physics_visual_view
 	var res: Dictionary = _world_ext.run_wind_field_rasterize(knobs)
 	if bool(res.get("fallback", true)) or float(res.get("elapsed_ms", -1.0)) < 0.0:
 		out["reason"] = String(res.get("reason", "unknown"))

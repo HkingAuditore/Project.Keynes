@@ -6,6 +6,9 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
+#include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -55,9 +58,8 @@ struct RuntimeClimateSnapshot {
     uint64_t state_hash = 0;
     uint32_t dirty_families = 0;
     RuntimeClimateStore payload;
-    // 没有 store 成员、但仍须回灌 MapData 的场。它们不在 payload 里，因为 payload
-    // 就是 store 本身，而 store 的字段集同时决定 PKEC 存档格式 —— 为了一条不需要
-    // 跨天自持的场去改存档格式并 bump schema 不值得。
+    // 没有 store 成员、但仍须回灌 MapData 的场。不需要跨天自持，不加入 CLM2。
+    // RuntimeClimateStore 不决定 PKEC 或旧 PDP3/PDP4 格式；后者使用独立 POD 类型。
     //
     // soil_moisture 是 distribute 的产物，ACTIVE 下主线程那份 distribute 被抑制，
     // 所以 worker 这份是它唯一的日频写者。空 vector = 这一天 distribute 没跑。
@@ -127,11 +129,45 @@ private:
     std::atomic<uint64_t> _publish_drop_count{0};
 };
 
+// B8 P3：主线程 → worker 的环境输入有界 FIFO ring。
+// 与 writeback ring（最新值）相反：日序必须 FIFO，满时由调用方等待或显式丢最旧。
+class RuntimeEnvironmentInputRing {
+public:
+    static constexpr size_t SLOT_COUNT = 4;
+
+    RuntimeEnvironmentInputRing() = default;
+
+    size_t size() const;
+    size_t capacity() const { return SLOT_COUNT; }
+    bool has_capacity() const { return size() < SLOT_COUNT; }
+
+    // 不满则入队；满则返回 false（不丢天）。调用方应 wait 后再试。
+    bool try_push(std::shared_ptr<const RuntimeEnvironmentSnapshot> snapshot);
+    // 满时弹出最旧 READY 再入队，dropped=true。用于 SHADOW / 非等待路径。
+    bool force_push(std::shared_ptr<const RuntimeEnvironmentSnapshot> snapshot,
+                    bool &dropped);
+    // worker 计划日：最旧未消费输入；空则返回 nullptr。
+    std::shared_ptr<const RuntimeEnvironmentSnapshot> peek_oldest() const;
+    // 诊断 / 物理派生：最近一次成功入队。
+    std::shared_ptr<const RuntimeEnvironmentSnapshot> latest() const;
+    // 消费成功后弹出与 generation 匹配的最旧槽；不匹配则 false。
+    bool pop_generation(uint64_t generation);
+    void reset();
+    static bool self_test(std::string &error);
+
+private:
+    mutable std::mutex _mutex;
+    std::deque<std::shared_ptr<const RuntimeEnvironmentSnapshot>> _queue;
+    std::shared_ptr<const RuntimeEnvironmentSnapshot> _latest;
+};
+
 class RuntimeClimateAuthority {
 public:
     void reset(uint32_t cell_count);
     bool plan_day(int64_t day, const RuntimeEnvironmentSnapshot &environment,
-                  RuntimeClimateVerticalReport &report);
+                  RuntimeClimateVerticalReport &report,
+                  bool compute_hashes = true,
+                  bool validate_input = true);
     bool commit_day(int64_t day, RuntimeClimateVerticalReport &report);
     // Commits the planned day and then overwrites the comparable fields with
     // the production reference for that day.
@@ -188,6 +224,8 @@ public:
         return result;
     }
 
+    // 与 host 外层 climate section 的 64 MiB 上限一致，禁止让外层静默截断。
+    static constexpr size_t MAX_SECTION_BYTES = 64u * 1024u * 1024u;
     bool serialize(std::vector<uint8_t> &bytes, std::string &error) const;
     bool restore(const uint8_t *bytes, size_t size, std::string &error);
     static bool self_test(std::string &error);
@@ -203,6 +241,9 @@ private:
     bool _catalog_ready = false;
     bool _plan_ready = false;
     int64_t _planned_day = -1;
+    // plan_day 已对 `_next` 算过的归约；commit 只做 swap，必须复用，禁止再扫整 store。
+    uint64_t _planned_state_hash = 0;
+    uint64_t _planned_parity_hash = 0;
     uint64_t _last_input_generation = 0;
     RuntimeClimateVerticalReport _last_report{};
 };

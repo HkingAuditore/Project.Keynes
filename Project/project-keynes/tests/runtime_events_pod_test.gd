@@ -42,8 +42,13 @@ func _run() -> void:
 	for field in report_fields:
 		report_complete = report_complete and report.has(field)
 	_expect("Events report fields are complete", report_complete)
-	_expect("Events remains outside ACTIVE authority mask",
-		int(report.get("implemented_domain_mask", 0)) == 0x866)
+	# I8: EVENTS is inside the implemented mask now, but only as a worker-authority
+	# mirror + stage bit. The legacy GameplayEventBus journal is still the
+	# production consumer source, which is what the rest of this fixture exercises.
+	_expect("Events is inside the implemented ACTIVE authority mask (I8 0xA7E)",
+		int(report.get("implemented_domain_mask", 0)) == 0xA7E)
+	_expect("SHADOW does not grant Events production authority",
+		(int(report.get("authoritative_domain_mask", 0)) & 0x200) == 0)
 
 	var empty_snapshot: Dictionary = ext.poll_runtime_events_snapshot(0)
 	_expect("snapshot API is non-blocking before a generation",

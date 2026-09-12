@@ -799,7 +799,16 @@ bool psi_solve_pure(const PsiSolveKnobs &knobs, const PsiSolveLanes &lanes,
     stats = PsiSolveStats{};
     const int n_cells = lanes.n_cells;
     const int n_water = lanes.n_water;
-    if (n_cells <= 0 || n_water <= 0 ||
+    if (n_cells > 0 && n_water == 0 && lanes.out_curl && lanes.out_psi &&
+        lanes.out_ocean_x && lanes.out_ocean_y) {
+        std::fill_n(lanes.out_curl, n_cells, 0.0f);
+        std::fill_n(lanes.out_psi, n_cells, 0.0f);
+        std::fill_n(lanes.out_ocean_x, n_cells, 0.0f);
+        std::fill_n(lanes.out_ocean_y, n_cells, 0.0f);
+        if (lanes.ocean_delta) std::fill_n(lanes.ocean_delta, n_cells, 0.0f);
+        return true;
+    }
+    if (n_cells <= 0 || n_water <= 0 || n_water > n_cells ||
         lanes.neighbors == nullptr || lanes.terrain == nullptr ||
         lanes.is_water_lut == nullptr || lanes.cell_to_water == nullptr ||
         lanes.water_to_cell == nullptr || lanes.nb_w == nullptr ||
@@ -829,8 +838,8 @@ bool psi_solve_pure(const PsiSolveKnobs &knobs, const PsiSolveLanes &lanes,
     const float * const __restrict ICE = lanes.ice;
     const float * const __restrict ELEV = lanes.elevation;
     const float * const __restrict PSI_PREV = lanes.prev_psi;
-    const float * const __restrict OLD_OCX = lanes.old_ocean_x;
-    const float * const __restrict OLD_OCY = lanes.old_ocean_y;
+    const float * const OLD_OCX = lanes.old_ocean_x;
+    const float * const OLD_OCY = lanes.old_ocean_y;
     float * const __restrict TAU_X = scratch.tau_x;
     float * const __restrict TAU_Y = scratch.tau_y;
     float * const __restrict NY_W = scratch.ny_w;
@@ -941,10 +950,13 @@ bool psi_solve_pure(const PsiSolveKnobs &knobs, const PsiSolveLanes &lanes,
     }
     // ── finalize：grad ψ → 洋流 + 密度/地形/高纬项 + 响应 + 限幅 ────────
     for (int i = 0; i < n_cells; ++i) {
+        // 水格稍后全量覆盖；不能先清零与 old_ocean 同址的响应基准。
+        if (lanes.cell_to_water[i] >= 0) continue;
         lanes.out_curl[i] = 0.0f;
         lanes.out_psi[i] = 0.0f;
         lanes.out_ocean_x[i] = 0.0f;
         lanes.out_ocean_y[i] = 0.0f;
+        if (lanes.ocean_delta) lanes.ocean_delta[i] = 0.0f;
     }
     const float HALF_PI = 1.5707963267948966f;
     const float PI_F = 3.14159265358979323846f;
@@ -1854,7 +1866,7 @@ bool physics_state_self_test(std::string &error) {
         return false;
     }
     st.resize_water(5);
-    if (st.n_water != 5 || st.ocean_psi.size() != 5u ||
+    if (st.n_water != 5 || st.ocean_psi.size() != 12u || st.ocean_psi_prev.size() != 12u ||
         st.psi_tau_x.size() != 5u || st.nb_w.size() != 30u) {
         error = "physics_state_water_shape";
         return false;
@@ -1887,6 +1899,24 @@ bool physics_state_self_test(std::string &error) {
         !st.validate(why)) {
         error = "physics_state_resize_shrinks";
         return false;
+    }
+    st.slp_prev[1] = 0.125f;
+    st.ocean_psi[6] = -0.25f;
+    st.synoptic_seeded = true;
+    st.synoptic_tick = 3;
+    st.committed_day = 3;
+    std::vector<uint8_t> blob;
+    RuntimeClimatePhysicsState restored;
+    if (!serialize_physics_state(st, blob, why) ||
+        !restore_physics_state(blob.data(), blob.size(), restored, why) ||
+        st.state_hash() != restored.state_hash()) {
+        error = "physics_state_roundtrip:" + why; return false;
+    }
+    const uint64_t restored_hash = restored.state_hash();
+    blob.back() ^= 1;
+    if (restore_physics_state(blob.data(), blob.size(), restored, why) ||
+        restored.state_hash() != restored_hash) {
+        error = "physics_state_corruption_accepted"; return false;
     }
     return true;
 }
@@ -1996,6 +2026,232 @@ bool self_test(std::string &error) {
         }
     }
     return true;
+}
+
+namespace {
+using PhysicsLane = std::vector<float> RuntimeClimatePhysicsState::*;
+constexpr PhysicsLane saved_physics_lanes[] = {
+    &RuntimeClimatePhysicsState::slp, &RuntimeClimatePhysicsState::slp_prev,
+    &RuntimeClimatePhysicsState::wind_x, &RuntimeClimatePhysicsState::wind_y,
+    &RuntimeClimatePhysicsState::wind_speed,
+    &RuntimeClimatePhysicsState::ocean_current_x, &RuntimeClimatePhysicsState::ocean_current_y,
+    &RuntimeClimatePhysicsState::ocean_psi, &RuntimeClimatePhysicsState::ocean_psi_prev,
+    &RuntimeClimatePhysicsState::upwelling, &RuntimeClimatePhysicsState::wind_stress_curl,
+    &RuntimeClimatePhysicsState::ocean_thermal_anomaly,
+    &RuntimeClimatePhysicsState::synoptic_psi, &RuntimeClimatePhysicsState::synoptic_psi_prev,
+    &RuntimeClimatePhysicsState::monsoon_thermal,
+};
+}
+
+bool RuntimeClimatePhysicsState::validate_values(std::string &error) const {
+    for (auto member : saved_physics_lanes) {
+        for (float v : this->*member) {
+            if (!std::isfinite(v)) { error = "physics_non_finite"; return false; }
+        }
+    }
+    if (committed_day < -1 || committed_day > INT32_MAX ||
+        daily_due_seq > static_cast<uint64_t>(committed_day + 1) ||
+        (!synoptic_seeded && synoptic_tick != 0) ||
+        last_daily_day < -1 || last_slp_day < -1 ||
+        last_wind_day < -1 || last_ocean_day < -1 || synoptic_tick < 0 ||
+        last_daily_day > committed_day || last_slp_day > committed_day ||
+        last_wind_day > committed_day || last_ocean_day > committed_day ||
+        (initialized && (!ready || daily_due_seq == 0 || last_daily_day < 0 ||
+                         last_slp_day < 0 || last_wind_day < 0 || last_ocean_day < 0))) {
+        error = "physics_cadence_invalid"; return false;
+    }
+    for (int i = 0; i < cell_count; ++i) {
+        if (std::abs(wind_x[i]) > 1.0f || std::abs(wind_y[i]) > 1.0f ||
+            wind_speed[i] < 0.0f || std::abs(ocean_current_x[i]) > 1.0f ||
+            std::abs(ocean_current_y[i]) > 1.0f || std::abs(upwelling[i]) > 1.0f ||
+            std::abs(synoptic_psi[i]) > 1.0f || std::abs(synoptic_psi_prev[i]) > 1.0f ||
+            std::abs(monsoon_thermal[i]) > 1.0f) {
+            error = "physics_lane_bounds"; return false;
+        }
+    }
+    if (topo_valid) {
+        for (int i = 0; i < cell_count; ++i) {
+            const int w = cell_to_water[i];
+            if (w < -1 || w >= n_water || (w >= 0 && water_to_cell[w] != i)) {
+                error = "physics_csr_inverse"; return false;
+            }
+        }
+        for (int w = 0; w < n_water; ++w) {
+            const int i = water_to_cell[w];
+            if (i < 0 || i >= cell_count || cell_to_water[i] != w) {
+                error = "physics_csr_cell"; return false;
+            }
+        }
+        for (int32_t w : nb_w) if (w < -1 || w >= n_water) {
+            error = "physics_csr_neighbor"; return false;
+        }
+    }
+    if (wind_traj_valid) {
+        for (int i = 0; i < cell_count; ++i) {
+            float sum = 0.0f;
+            for (int j = 0; j < 3; ++j) {
+                const size_t k = static_cast<size_t>(i) * 3 + j;
+                if (wind_traj_idx[k] < 0 || wind_traj_idx[k] >= cell_count ||
+                    !std::isfinite(wind_traj_w[k]) || wind_traj_w[k] < 0.0f || wind_traj_w[k] > 1.0f) {
+                    error = "physics_traj_bounds"; return false;
+                }
+                sum += wind_traj_w[k];
+            }
+            if (std::abs(sum - 1.0f) > 0.00001f) { error = "physics_traj_sum"; return false; }
+        }
+    }
+    error.clear();
+    return true;
+}
+
+bool serialize_physics_state(const RuntimeClimatePhysicsState &s,
+                             std::vector<uint8_t> &blob, std::string &error) {
+    if (!s.validate(error)) return false;
+    std::vector<uint8_t> out;
+    out.reserve(120u + static_cast<size_t>(s.cell_count) * 60u);
+    auto put = [&out](uint64_t v, int bytes) {
+        for (int i = 0; i < bytes; ++i) out.push_back(static_cast<uint8_t>(v >> (8 * i)));
+    };
+    put(0x31504843u, 4); // CHP1，小端显式字段，不序列化结构 padding/指针/缓存。
+    put(1, 4); put(static_cast<uint32_t>(s.cell_count), 4);
+    put((s.ready ? 1u : 0u) | (s.initialized ? 2u : 0u) | (s.synoptic_seeded ? 4u : 0u), 4);
+    put(s.generation, 8); put(s.input_generation, 8); put(static_cast<uint64_t>(s.committed_day), 8);
+    put(static_cast<uint64_t>(s.last_daily_day), 8); put(static_cast<uint64_t>(s.last_slp_day), 8);
+    put(static_cast<uint64_t>(s.last_wind_day), 8); put(static_cast<uint64_t>(s.last_ocean_day), 8);
+    put(s.daily_due_seq, 8); put(static_cast<uint32_t>(s.synoptic_tick), 4);
+    put(s.wind_traj_generation, 4);
+    put(s.cyclone_total_injected, 8); put(s.cyclone_total_replaced, 8); put(s.cyclone_total_decayed, 8);
+    put(s.state_hash(), 8);
+    for (auto member : saved_physics_lanes) for (float v : s.*member) {
+        uint32_t bits; std::memcpy(&bits, &v, sizeof(bits)); put(bits, 4);
+    }
+    blob.swap(out);
+    error.clear();
+    return true;
+}
+
+bool restore_physics_state(const uint8_t *data, size_t size,
+                           RuntimeClimatePhysicsState &state, std::string &error) {
+    if (size == 0) { state = RuntimeClimatePhysicsState{}; error.clear(); return true; }
+    if (!data || size < 120u) { error = "physics_blob_truncated"; return false; }
+    size_t offset = 0;
+    auto get = [&](int bytes) {
+        uint64_t v = 0;
+        for (int i = 0; i < bytes; ++i) v |= uint64_t(data[offset++]) << (8 * i);
+        return v;
+    };
+    if (get(4) != 0x31504843u || get(4) != 1u) {
+        error = "physics_blob_version"; return false;
+    }
+    const uint64_t n = get(4), flags = get(4);
+    if (n == 0 || n > 10000000u || flags > 7u || size != 120u + n * 60u) {
+        error = "physics_blob_shape"; return false;
+    }
+    RuntimeClimatePhysicsState s;
+    s.resize(static_cast<int>(n));
+    s.ready = (flags & 1u) != 0; s.initialized = (flags & 2u) != 0;
+    s.synoptic_seeded = (flags & 4u) != 0;
+    s.generation = get(8); s.input_generation = get(8); s.committed_day = static_cast<int64_t>(get(8));
+    s.last_daily_day = static_cast<int64_t>(get(8)); s.last_slp_day = static_cast<int64_t>(get(8));
+    s.last_wind_day = static_cast<int64_t>(get(8)); s.last_ocean_day = static_cast<int64_t>(get(8));
+    s.daily_due_seq = get(8); s.synoptic_tick = static_cast<int32_t>(get(4));
+    s.wind_traj_generation = static_cast<uint32_t>(get(4));
+    s.cyclone_total_injected = get(8); s.cyclone_total_replaced = get(8); s.cyclone_total_decayed = get(8);
+    const uint64_t hash = get(8);
+    for (auto member : saved_physics_lanes) for (float &v : s.*member) {
+        const uint32_t bits = static_cast<uint32_t>(get(4)); std::memcpy(&v, &bits, sizeof(v));
+    }
+    s.wind_speed_out = s.wind_speed;
+    if (!s.validate(error)) return false;
+    if (s.state_hash() != hash) { error = "physics_blob_hash"; return false; }
+    state = std::move(s);
+    error.clear();
+    return true;
+}
+
+void wind_divergence_range(int n, int begin, int end, const int32_t *nb,
+                          const float *wx, const float *wy, const float *speed, float *div) {
+    for (int i = begin; i < end; ++i) {
+        const double fx_i = double(wx[i]) * double(speed[i]);
+        const double fy_i = double(wy[i]) * double(speed[i]);
+        double dv = 0.0;
+        for (int d = 0; d < 6; ++d) {
+            const int32_t ni = nb[i * 6 + d];
+            if (ni < 0 || ni >= n) continue;
+            const double dfx = double(wx[ni]) * double(speed[ni]) - fx_i;
+            const double dfy = double(wy[ni]) * double(speed[ni]) - fy_i;
+            dv += dfx * NB_DIR_X[d] + dfy * NB_DIR_Y[d];
+        }
+        div[i] = float(dv / 3.0);
+    }
+}
+
+void wind_divergence_apply_range(int n, int begin, int end, const int32_t *nb,
+                                const float *div, double alpha,
+                                float *wx, float *wy, float *speed) {
+    for (int i = begin; i < end; ++i) {
+        const double self = double(div[i]);
+        double gx = 0.0, gy = 0.0;
+        int count = 0;
+        for (int d = 0; d < 6; ++d) {
+            const int32_t ni = nb[i * 6 + d];
+            if (ni < 0 || ni >= n) continue;
+            gx += (double(div[ni]) - self) * NB_DIR_X[d];
+            gy += (double(div[ni]) - self) * NB_DIR_Y[d];
+            ++count;
+        }
+        if (count == 0) continue;
+        gx /= 3.0; gy /= 3.0;
+        const double fx = double(wx[i]) * double(speed[i]) + alpha * gx;
+        const double fy = double(wy[i]) * double(speed[i]) + alpha * gy;
+        const double len2 = fx * fx + fy * fy;
+        if (len2 > 1e-8) {
+            const double inv = 1.0 / std::sqrt(len2);
+            wx[i] = float(fx * inv); wy[i] = float(fy * inv); speed[i] = float(std::sqrt(len2));
+        }
+    }
+}
+
+void prepare_slp_forcing(SlpPassAKnobs &k, int bins, float season,
+                        float tilt, float daylen, int day, double period,
+                        int mobile_count, float mobile_amp, float mobile_sigma,
+                        double mobile_period, std::vector<float> &base,
+                        std::vector<float> &heat, const float *annual_mean) {
+    bins = std::clamp(bins, 16, 8192);
+    base.resize(bins); heat.resize(bins);
+    for (int b = 0; b < bins; ++b) {
+        const float ny = float(b) / float(bins - 1);
+        const float la = std::fabs((ny - 0.5f) * 2.0f);
+        base[b] = -k.lat_amp * std::cos(la * 3.14159265358979323846f * 3.0f);
+        const float s = std::sin(la * 3.14159265358979323846f);
+        const float factor = s * s;
+        const float now = dc_insolation_now(ny, season, tilt, daylen);
+        const float mean = annual_mean ? annual_mean[b] : dc_insolation_annual_mean(ny, tilt, daylen);
+        heat[b] = dc_insolation_season_dev(ny, now, mean) * factor;
+    }
+    k.lut_bins = bins; k.lut_base = base.data(); k.lut_heat = heat.data();
+    const double sa = double(k.world_seed) * 0.00011;
+    const double sb = double(k.world_seed) * 0.00017;
+    const double phase = double(day) * (6.283185307179586 / std::max(0.5, period));
+    const uint32_t seed = static_cast<uint32_t>(k.world_seed);
+    k.syn_sa = float(sa); k.syn_sb = float(sb); k.syn_phase = float(phase); k.syn_phase2 = float(phase * 0.66);
+    k.syn_k1x = float(3.0 + double(seed & 3u)); k.syn_k1y = float(1.30 + 0.40 * std::cos(sa));
+    k.syn_k2x = float(3.0 + double((seed >> 2) & 3u)); k.syn_k2y = float(1.45 + 0.35 * std::sin(sb));
+    k.n_mobile_low = mobile_amp > 0.0f ? std::clamp(mobile_count, 0, 8) : 0;
+    k.mobile_low_amp = std::max(0.0f, mobile_amp);
+    mobile_sigma = std::max(0.02f, mobile_sigma);
+    k.mobile_low_inv2s2 = 1.0f / (2.0f * mobile_sigma * mobile_sigma);
+    for (int j = 0; j < k.n_mobile_low; ++j) {
+        uint32_t h = uint32_t(k.world_seed) * 2654435761u + uint32_t(j) * 40503u + 1013904223u;
+        h ^= h >> 16; h *= 2246822519u; h ^= h >> 13;
+        const float hx = float(h & 0xFFFFu) / 65535.0f;
+        const float hy = float((h >> 16) & 0xFFFFu) / 65535.0f;
+        double cx = double(hx) + double(day) / std::max(1.0, mobile_period);
+        cx -= std::floor(cx);
+        const float base_y = 0.22f + 0.56f * hy;
+        const float wob = 0.05f * float(std::sin(double(day) * 0.045 + double(j) * 1.7));
+        k.mobile_low_cx[j] = float(cx); k.mobile_low_cy[j] = std::clamp(base_y + wob, 0.04f, 0.96f);
+    }
 }
 
 } // namespace pk_async_physics

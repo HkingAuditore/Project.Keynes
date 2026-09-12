@@ -4,6 +4,7 @@
 // 不依赖 Godot，所以把 ClimateInputBuf 编入环境快照不会破坏"跨线程边界只允许传
 // Godot 无关值"这条约束。
 #include "runtime_climate_passes.h"
+#include "runtime_climate_physics.h"
 
 #include <array>
 #include <cstddef>
@@ -316,11 +317,29 @@ struct RuntimeEnvironmentSnapshot {
         int32_t land_lf_mountain = -1;
         int32_t land_lf_peak = -1;
         int32_t land_lf_hill = -1;
+        pk_async_physics::PsiSolveKnobs psi;
+        pk_async_physics::UpwellingKnobs upwelling;
+        bool psi_warm_start = true;
+        bool daily_split = false;
+        int32_t daily_period_days = 1;
+        int32_t ocean_period_days = 30;
+        int32_t world_seed = 0;
+        double wrap_origin_x = 0.0;
+        double wrap_period_x = 0.0;
+        // 物理水域专用，不能使用 round 的 LAKE/SEA_ICE LUT。
+        std::array<uint8_t, 4> water_terrain_ids{};
+        uint8_t water_id_count = 0;
+        bool enabled = false;
         // 就绪标记 + 诊断
         uint8_t ready = 0;
         char missing_key[48]{};
+        bool validate(std::string &error) const;
     };
     ClimatePhysicsKnobs climate_physics_knobs;
+    // 仅 legacy/cold bootstrap 使用；worker 接管后不再收回这些主线程解。
+    std::vector<float> climate_physics_seed_slp;
+    std::vector<float> climate_physics_seed_psi;
+    std::vector<float> climate_physics_seed_upwelling;
     std::vector<float> cell_ocean_current_x;
     std::vector<float> cell_ocean_current_y;
     std::vector<float> cell_air_mass_temp_anomaly;
@@ -1288,14 +1307,15 @@ struct RuntimeThreadReport {
     // `climate_consumed_generation` 统计 worker 实际尝试过 plan 的环境代次
     // （成功失败都算），所以主线程可以问"这一天输入被看到没有"，而不必等提交成功。
     //
-    // environment_* 三条把"worker 慢"与"输入被覆盖"分开：单槽 latest-value 下发
-    // 时，被新发布顶掉而从未 plan 的天 = superseded；将来的有界 ring 溢出 = dropped。
+    // environment_* 把"worker 慢"与"输入被覆盖/溢出"分开：FIFO ring 下未消费深度 =
+    // pending；溢出丢弃 = dropped；SHADOW force 覆盖 = superseded。
     int64_t climate_committed_day = -1;
     uint64_t climate_consumed_generation = 0;
     uint64_t environment_published_days = 0;
     uint64_t environment_consumed_days = 0;
     uint64_t environment_superseded_days = 0;
     uint64_t environment_dropped_days = 0;
+    uint64_t environment_ring_pending = 0;
     uint64_t climate_wait_total_ms = 0;
     uint64_t climate_wait_last_ms = 0;
     uint64_t climate_wait_max_ms = 0;
@@ -1412,6 +1432,17 @@ struct RuntimeThreadReport {
     int32_t trigger_first_divergence_index = -1;
     char trigger_first_divergence_kind[32]{};
     char trigger_blocker[64]{};
+    // H7/H8 ACTIVE Trigger stage. The parity fields above describe the POD
+    // authority against the synchronous reference frame; these describe the
+    // worker stage that owns it.
+    bool trigger_pod_ready = false;
+    double trigger_pod_plan_ms = 0.0;
+    double trigger_pod_replay_ms = 0.0;
+    uint64_t trigger_pod_state_hash = 0;
+    uint64_t trigger_pod_snapshot_generation = 0;
+    uint32_t trigger_pod_intent_count = 0;
+    uint32_t trigger_pod_ack_count = 0;
+    char trigger_pod_fallback_reason[64]{};
     char fault_code[64]{};
 };
 

@@ -6,7 +6,38 @@ three-card offers, gates, and queued ideology commands. It intentionally does
 not own Country technology/signals, Effect transactions, Modifier instances,
 economy state, or a Godot UI mirror.
 
+## Production worker authority (G8)
+
+G8 promoted the worker mirror to production. When the session grants
+`IDEOLOGY` (`0x010`, part of `implemented_domain_mask() == 0xA7E`), the Host
+stage is the **sole Ideology writer**:
+
+- `submit_ideology_commands` only queues POD commands; it no longer stages the
+  same batch in the legacy queue first, and returns `path=IDEOLOGY_WORKER`.
+- `run_ideology_daily` returns a suppressed ok and `ideology_should_run` is
+  false, so neither the native runtime graph nor `IdeologyRuntimeSystem`
+  evaluates on the main thread.
+- The worker publishes an immutable snapshot into `RuntimeIdeologySnapshotRing`;
+  the main thread applies it with `apply_runtime_ideology_snapshot` →
+  `NativeIdeologyRuntime::apply_pod_snapshot`, so UI, `explain`, receipts and
+  `PKID` keep reading one runtime. The apply is non-blocking and generation
+  gated, so intermediate generations may be skipped.
+- Transition intents address `EFFECT`. With EFFECT granted in the same session
+  the worker ACKs them in-worker right after the Effect stage
+  (`ack_ideology_intents_in_worker`); the main-thread
+  `poll_ideology_worker_intent` / `submit_ideology_worker_ack` pump remains the
+  protocol path and covers an IDEOLOGY-only grant. Either way the ACK carries
+  the `EFFECT` domain tag, which is the only domain the authority accepts.
+
+**Known follow-up**: the POD catalog does not carry effect templates, so
+UniqueSource Modifier template replay cannot be reconstructed from POD intents.
+This is the same class of gap Ideology already had under F8 Effect ACTIVE, not a
+G8 regression.
+
 ## Worker shadow authority (G2-G7)
+
+The section below describes the SHADOW diagnostic stage, which is retained for
+parity work when the authority switch is off.
 
 `RuntimeIdeologyPodAuthority` is the worker-only numeric mirror used by
 `NativeSimulationHost` in `SHADOW`. Its catalog contains immutable CSR/array

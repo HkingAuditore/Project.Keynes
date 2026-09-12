@@ -138,7 +138,8 @@ constexpr size_t RUNTIME_CLIMATE_PARITY_MAX_FIELDS = 64u;
 // Version 3 adds the two succession lanes (vegetation / base_vegetation) that the
 // worker took over in B8-P1. The field set is part of the hash framing, so this
 // must move whenever the table's membership changes.
-constexpr uint32_t RUNTIME_CLIMATE_PARITY_VERSION = 3u;
+// Version 4 adds worker-owned terrain / cover (CLM2 ABI 8 writeback).
+constexpr uint32_t RUNTIME_CLIMATE_PARITY_VERSION = 4u;
 
 size_t runtime_climate_parity_field_count();
 const RuntimeClimateParityField *runtime_climate_parity_fields();

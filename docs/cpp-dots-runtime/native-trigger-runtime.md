@@ -13,6 +13,37 @@ It runs after the committed boundary and before domain consumers (SUS priority 8
 it never writes DataCore slots, ModifierStore, country state, or economy ledgers.
 Effects are commands applied by domain adapters at their next safe boundary.
 
+## Production worker authority (H7/H8)
+
+H7/H8 promoted the worker Trigger POD store from a SHADOW parity mirror to the
+production writer. When the session grants `TRIGGER_INPUT` (`0x008`, part of
+`implemented_domain_mask() == 0xA7E`), `NativeSimulationHost` runs
+`execute_trigger_worker_stage` between Country and Ideology in the fixed stage
+order, and the worker is the **sole Trigger writer**:
+
+- `submit_trigger_*` only queues POD commands; the synchronous facade no longer
+  stages them.
+- `trigger_should_run()` returns false and `run_trigger_daily()` is suppressed,
+  so `trigger_daily_system.gd` no-ops with `path=TRIGGER_WORKER`.
+- The committed day is copied back through `RuntimeTriggerSnapshotRing` and
+  `TriggerRuntime::apply_pod_snapshot`, gated on the snapshot generation. The
+  legacy facade stays the read surface for UI, save, and the Effect handoff.
+- Effect intents are real, not synthetic. The stage publishes them before
+  deciding success, so a day whose ACK barrier is incomplete replays the same
+  intent ids on its next visit instead of queueing duplicates: the worker's
+  Effect stage drains them in-worker under a joint `TRIGGER|EFFECT` grant, and
+  `poll_trigger_worker_intent` / `submit_trigger_worker_ack` is the main-thread
+  protocol path for a TRIGGER-only grant.
+
+Input-not-ready outcomes (`trigger_pod_not_configured`,
+`trigger_pod_not_bootstrapped`, `ack_barrier_incomplete`, `ack_retry`,
+`stale_generation`, `ack_rejected`) **soft-complete**: the stage bit is set so
+the shared Climate/Country/Effect/Modifier grant is not withheld, while
+`trigger_pod_ready` stays false and `trigger_pod_fallback_reason` carries the
+diagnosis. Hard kernel or command failures still isolate Trigger for that day.
+`trigger_worker_authoritative` in the runtime graph report is the single gate
+every main-thread suppression reads.
+
 ## Packed contract
 
 当前 packed protocol 为 v3，PKTR save schema 为 v5。Gameplay event 同时携带兼容

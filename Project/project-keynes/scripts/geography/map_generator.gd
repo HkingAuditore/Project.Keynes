@@ -2100,6 +2100,24 @@ func apply_runtime_effect_snapshot(after_generation: int = -1) -> Dictionary:
 	return _data_core_world_ext.apply_runtime_effect_snapshot(after_generation)
 
 
+## G8 ACTIVE Ideology write-back. Applies the latest worker POD snapshot into
+## legacy NativeIdeologyRuntime. Non-blocking; intermediate generations may be skipped.
+func apply_runtime_ideology_snapshot(after_generation: int = -1) -> Dictionary:
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
+			"apply_runtime_ideology_snapshot"):
+		return {"ok": false, "code": "ideology_snapshot_apply_api_missing"}
+	return _data_core_world_ext.apply_runtime_ideology_snapshot(after_generation)
+
+
+## H8 ACTIVE Trigger write-back. Applies the latest worker POD snapshot into
+## legacy TriggerRuntime. Non-blocking; intermediate generations may be skipped.
+func apply_runtime_trigger_snapshot(after_generation: int = -1) -> Dictionary:
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
+			"apply_runtime_trigger_snapshot"):
+		return {"ok": false, "code": "trigger_snapshot_apply_api_missing"}
+	return _data_core_world_ext.apply_runtime_trigger_snapshot(after_generation)
+
+
 func service_country_worker_peer_adapter(max_intents: int = 64,
 		shadow_replay: bool = true) -> Dictionary:
 	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
@@ -4560,6 +4578,14 @@ func _build_runtime_climate_stage_knobs(map: MapData, day: int,
 	var phys_knobs: Dictionary = {}
 	if _baker != null and _baker.has_method("runtime_physics_knobs"):
 		phys_knobs = _baker.runtime_physics_knobs()
+	if not phys_knobs.is_empty() and _ocean_currents_job != null and _ocean_currents_job.cfg != null:
+		phys_knobs["enabled"] = _baker._use_physical_circulation(_ocean_currents_job.cfg)
+		phys_knobs["world_seed"] = int(_ocean_currents_job.cfg.seed)
+		phys_knobs["daily_period_days"] = _ocean_currents_job.wind_period_ticks
+		phys_knobs["ocean_period_days"] = _ocean_currents_job.ocean_period_ticks
+		phys_knobs["daily_split"] = bool(cp_now.daily_wind_split_passes)
+	else:
+		phys_knobs = {}
 	if not due:
 		if phys_knobs.is_empty():
 			return {}

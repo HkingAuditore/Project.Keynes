@@ -607,51 +607,10 @@ double DCWorldExt::run_wind_field_pass(godot::Dictionary knobs) {
         std::vector<float> div_f(static_cast<size_t>(n_cells), 0.0f);
         float * const __restrict DIV = div_f.data();
         pk::parallel_for_range("pk_wind_div1", n_cells, [&](int rb, int re) {
-            for (int i = rb; i < re; ++i) {
-                const double fx_i = double(WX[i]) * double(WSP_SLOT[i]);
-                const double fy_i = double(WY[i]) * double(WSP_SLOT[i]);
-                double dv = 0.0;
-                const int base = i * 6;
-                for (int d = 0; d < 6; ++d) {
-                    const int32_t ni = NB[base + d];
-                    // Upper bound as well as the -1 "no neighbour" sentinel. A
-                    // neighbour table that is stale or type-confused yields
-                    // indices in the 1e9 range, and an unbounded read here
-                    // faults instead of degrading.
-                    if (ni < 0 || ni >= n_cells) continue;
-                    const double dfx = double(WX[ni]) * double(WSP_SLOT[ni]) - fx_i;
-                    const double dfy = double(WY[ni]) * double(WSP_SLOT[ni]) - fy_i;
-                    dv += dfx * NB_DIR_X[d] + dfy * NB_DIR_Y[d];
-                }
-                DIV[i] = float(dv / 3.0);
-            }
+            pk_async_physics::wind_divergence_range(n_cells, rb, re, NB, WX, WY, WSP_SLOT, DIV);
         });
         pk::parallel_for_range("pk_wind_div2", n_cells, [&](int rb, int re) {
-            for (int i = rb; i < re; ++i) {
-                const double d_self = double(DIV[i]);
-                double gx = 0.0, gy = 0.0;
-                const int base = i * 6;
-                int nb_cnt = 0;
-                for (int d = 0; d < 6; ++d) {
-                    const int32_t ni = NB[base + d];
-                    if (ni < 0 || ni >= n_cells) continue;
-                    gx += (double(DIV[ni]) - d_self) * NB_DIR_X[d];
-                    gy += (double(DIV[ni]) - d_self) * NB_DIR_Y[d];
-                    ++nb_cnt;
-                }
-                if (nb_cnt == 0) continue;
-                gx /= 3.0;
-                gy /= 3.0;
-                const double fx = double(WX[i]) * double(WSP_SLOT[i]) + a_eff * gx;
-                const double fy = double(WY[i]) * double(WSP_SLOT[i]) + a_eff * gy;
-                const double len2 = fx * fx + fy * fy;
-                if (len2 > 1e-8) {
-                    const double inv = 1.0 / std::sqrt(len2);
-                    WX[i] = float(fx * inv);
-                    WY[i] = float(fy * inv);
-                    WSP_SLOT[i] = float(std::sqrt(len2));
-                }
-            }
+            pk_async_physics::wind_divergence_apply_range(n_cells, rb, re, NB, DIV, a_eff, WX, WY, WSP_SLOT);
         });
         div_damp_applied = a_eff;
     }
@@ -789,10 +748,22 @@ godot::Dictionary DCWorldExt::run_ocean_field_rasterize(godot::Dictionary knobs)
         return fail("slot array size mismatch");
     }
 
+    PackedFloat32Array visual_x = s_ocx.arr_f32, visual_y = s_ocy.arr_f32, visual_up = s_up.arr_f32;
+    if (knobs.has("physics_read_view")) {
+        if (knobs["physics_read_view"].get_type() != Variant::DICTIONARY) return fail("physics_view_type");
+        const Dictionary view = knobs["physics_read_view"];
+        for (const char *key : {"ocean_current_x", "ocean_current_y", "upwelling"}) {
+            if (!view.has(key) || view[key].get_type() != Variant::PACKED_FLOAT32_ARRAY ||
+                PackedFloat32Array(view[key]).size() != n_cells) return fail("physics_view_shape");
+            const PackedFloat32Array lane = view[key];
+            for (int i = 0; i < n_cells; ++i) if (!std::isfinite(lane[i])) return fail("physics_view_nonfinite");
+        }
+        visual_x = view["ocean_current_x"]; visual_y = view["ocean_current_y"]; visual_up = view["upwelling"];
+    }
     const uint8_t * const __restrict TERR = s_terr.arr_u8.ptr();
-    const float   * const __restrict OCX  = s_ocx.arr_f32.ptr();
-    const float   * const __restrict OCY  = s_ocy.arr_f32.ptr();
-    const float   * const __restrict UP   = s_up.arr_f32.ptr();
+    const float   * const __restrict OCX  = visual_x.ptr();
+    const float   * const __restrict OCY  = visual_y.ptr();
+    const float   * const __restrict UP   = visual_up.ptr();
     const int32_t * const __restrict P2C  = px2cell.ptr();
     uint8_t       * const __restrict DCUR = dst_cur.ptrw();
     uint8_t       * const __restrict DUP  = dst_up.ptrw();
@@ -972,9 +943,21 @@ godot::Dictionary DCWorldExt::run_wind_field_rasterize(godot::Dictionary knobs) 
         return fail("slot array size mismatch");
     }
 
-    const float   * const __restrict WX  = s_wx.arr_f32.ptr();
-    const float   * const __restrict WY  = s_wy.arr_f32.ptr();
-    const float   * const __restrict WSP = s_wsp.arr_f32.ptr();
+    PackedFloat32Array visual_x = s_wx.arr_f32, visual_y = s_wy.arr_f32, visual_speed = s_wsp.arr_f32;
+    if (knobs.has("physics_read_view")) {
+        if (knobs["physics_read_view"].get_type() != Variant::DICTIONARY) return fail("physics_view_type");
+        const Dictionary view = knobs["physics_read_view"];
+        for (const char *key : {"wind_x", "wind_y", "wind_speed"}) {
+            if (!view.has(key) || view[key].get_type() != Variant::PACKED_FLOAT32_ARRAY ||
+                PackedFloat32Array(view[key]).size() != n_cells) return fail("physics_view_shape");
+            const PackedFloat32Array lane = view[key];
+            for (int i = 0; i < n_cells; ++i) if (!std::isfinite(lane[i])) return fail("physics_view_nonfinite");
+        }
+        visual_x = view["wind_x"]; visual_y = view["wind_y"]; visual_speed = view["wind_speed"];
+    }
+    const float   * const __restrict WX  = visual_x.ptr();
+    const float   * const __restrict WY  = visual_y.ptr();
+    const float   * const __restrict WSP = visual_speed.ptr();
     const int32_t * const __restrict P2C = px2cell.ptr();
     uint8_t       * const __restrict DW  = dst_wind.ptrw();
 
@@ -1319,10 +1302,6 @@ godot::Dictionary DCWorldExt::run_physical_circulation_pass(godot::Dictionary kn
 
     auto t0 = std::chrono::high_resolution_clock::now();
 
-    constexpr double PI_HALF = 1.5707963267948966;
-    constexpr double UPWELLING_EKMAN_GAIN = 0.6;
-    constexpr double UPWELLING_COLD_SINK_GAIN = 0.15;
-    constexpr double UPWELLING_HIGHLAT_ABS_SOLVER = 0.75;
     const PhysLatNorm LATN = phys_make_lat_norm(_phys_lat_norm_ptr(n_cells), POSY, n_cells);
     (void)bounds_pos_y;
     (void)bounds_size_y;
@@ -1331,9 +1310,9 @@ godot::Dictionary DCWorldExt::run_physical_circulation_pass(godot::Dictionary kn
     // 写 UP[i]，无标量累加器）→ 按 cell 区间并行、bit-equal、无需 reduce。
     // B8 P2：循环体已抽到 pk_async_physics::upwelling_range（worker 走同一份）。
     pk_async_physics::UpwellingKnobs up_k;
-    up_k.ekman_gain = float(UPWELLING_EKMAN_GAIN);
-    up_k.cold_sink_gain = float(UPWELLING_COLD_SINK_GAIN);
-    up_k.highlat_abs = float(UPWELLING_HIGHLAT_ABS_SOLVER);
+    up_k.ekman_gain = float(knobs.get("upwelling_ekman_gain", up_k.ekman_gain));
+    up_k.cold_sink_gain = float(knobs.get("upwelling_cold_sink_gain", up_k.cold_sink_gain));
+    up_k.highlat_abs = float(knobs.get("upwelling_highlat_abs", up_k.highlat_abs));
     up_k.cold_sink_temp = float(cold_sink_temp);
     pk_async_physics::UpwellingLanes up_l;
     up_l.lat_norm = LATN.lat;
@@ -1606,7 +1585,6 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
     if (mobile_low_sigma < 0.02f) mobile_low_sigma = 0.02f;
     double mobile_low_period = knobs.has("slp_mobile_low_period_days") ? double(knobs["slp_mobile_low_period_days"]) : 38.0;
     if (mobile_low_period < 1.0) mobile_low_period = 1.0;
-    const float mobile_low_inv2s2 = 1.0f / (2.0f * mobile_low_sigma * mobile_low_sigma);
     const float MOIST_LOW_WEIGHT = float(knobs.has("slp_moist_low_weight") ? double(knobs["slp_moist_low_weight"]) : 0.12);
     const bool SLP_RECENTER = bool(knobs.has("slp_recenter") ? bool(knobs["slp_recenter"]) : true);
     const float SLP_TARGET_P95 = float(knobs.has("slp_target_p95") ? double(knobs["slp_target_p95"]) : 0.18);
@@ -1624,8 +1602,6 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
     // 推动天气系统移动。共用 wind_synoptic_period_days knob。在循环外提升为常量。镜像见 run_wind_field_pass。
     double slp_synoptic_period_days = double(knobs.has("wind_synoptic_period_days") ? double(knobs["wind_synoptic_period_days"]) : 6.0);
     if (slp_synoptic_period_days < 0.5) slp_synoptic_period_days = 0.5;
-    const double slp_syn_phase = double(sim_day) * (6.283185307179586 / slp_synoptic_period_days);
-    const double slp_syn_phase2 = slp_syn_phase * 0.66;
 
     PackedInt32Array nb_arr   = knobs["neighbor_indices"];
     PackedByteArray  water_ids = knobs["water_terrain_ids"];
@@ -1746,7 +1722,6 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
     // 这里改成：pass 内按 ny 预建 B 档 LUT（B×155 次），cell 循环只做一次线性插值。
     // dc_insolation_annual_mean 是年均、与 season 无关，本就对所有同纬度 cell 恒等，
     // 预建后冗余完全消除。B 默认 1024（≈0.18° 纬度分辨率，足以分辨极昼/极夜 acos 拐点）。
-    const float PI_F = 3.14159265358979323846f;
     int slp_lat_lut_bins = int(knobs.has("slp_lat_lut_bins") ? int(knobs["slp_lat_lut_bins"]) : 1024);
     if (slp_lat_lut_bins < 16) slp_lat_lut_bins = 16;
     else if (slp_lat_lut_bins > 8192) slp_lat_lut_bins = 8192;
@@ -1783,20 +1758,7 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
             _slp_insol_mean_lut_valid = true;
         }
     }
-    const float * const __restrict LUT_INSOL_MEAN = _slp_insol_mean_lut.data();
-    for (int b = 0; b < LUT_BINS; ++b) {
-        const float ny_b = float(b) / float(LUT_BINS - 1);
-        const float ls_abs_b = std::fabs((ny_b - 0.5f) * 2.0f);
-        lut_base_lat[b] = -A_LAT * std::cos(ls_abs_b * PI_F * 3.0f);
-        const float s_lat_b = std::sin(ls_abs_b * PI_F);
-        const float lat_temp_factor_b = s_lat_b * s_lat_b;
-        const float insol_now_b = dc_insolation_now(ny_b, float(season_phase), axial_tilt_deg, daylen_amp);
-        const float insol_mean_b = LUT_INSOL_MEAN[b];
-        const float solar_dev_b = dc_insolation_season_dev(ny_b, insol_now_b, insol_mean_b);
-        lut_solar_heat[b] = solar_dev_b * lat_temp_factor_b;
-    }
-    const float * const __restrict LUT_BASE = lut_base_lat.data();
-    const float * const __restrict LUT_HEAT = lut_solar_heat.data();
+    // 年均缓存仍由主线程持有；逐轮 LUT 与空间强迫统一由 prepare_slp_forcing 生成。
 
     // 让天气流动(2026-06-21)：SLP synoptic 由 cell 索引 i 改地理坐标 (px,py) 二维低频空间波。
     // 原 sin(i*4.886) 在索引空间周期≈1.3 格 → 高频碎压差 → 6 邻域 ∇ 放大成碎风向 → 平流相互
@@ -1825,23 +1787,7 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
     // 每个低压由 (world_seed, j) 哈希出确定性初始相位/纬度，随 sim_day 自西向东平移（中纬西风带
     // 主导）并在归一化 x∈[0,1) 环绕（到东缘从西缘重入 → 源源不断的过境系统），纬度叠加慢摆动。
     // 无 cell_pos_x slot（POSX==nullptr）或 amp<=0 时无法/无需定位中心 → 退化关闭，向后兼容。
-    struct MobileLow { float cx; float cy; };
-    MobileLow mlows[8];
-    int n_mlow = (POSX != nullptr && mobile_low_amp > 0.0f) ? mobile_low_count : 0;
-    for (int j = 0; j < n_mlow; ++j) {
-        uint32_t h = uint32_t(world_seed) * 2654435761u + uint32_t(j) * 40503u + 1013904223u;
-        h ^= h >> 16; h *= 2246822519u; h ^= h >> 13;
-        const float hx = float(h & 0xFFFFu) / 65535.0f;
-        const float hy = float((h >> 16) & 0xFFFFu) / 65535.0f;
-        double cx = double(hx) + double(sim_day) / mobile_low_period;
-        cx -= std::floor(cx);                              // x 方向环绕 [0,1)
-        const float base_y = 0.22f + 0.56f * hy;           // 中高纬带 [0.22,0.78]
-        const float wob = 0.05f * float(std::sin(double(sim_day) * 0.045 + double(j) * 1.7));
-        float cy = base_y + wob;
-        if (cy < 0.04f) cy = 0.04f; else if (cy > 0.96f) cy = 0.96f;
-        mlows[j].cx = float(cx);
-        mlows[j].cy = cy;
-    }
+    const int n_mlow = (POSX != nullptr && mobile_low_amp > 0.0f) ? mobile_low_count : 0;
 
     // ─── Pass A: per-cell baseline ────────────────────────────────────────
     // perf (2A): 逐 cell 独立（读 POSY/TR/NB/LUT/可选场 slot，写 slp_buf[i]/thermal_abs[i]，
@@ -1849,19 +1795,12 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
     // perf (Item 5a, 2026-07-05): synoptic 波数 sa/sb/k1x..k2y 只依赖 world_seed，
     // 原在 cell 循环内每 cell 重算 4 次 sin/cos。外提到循环外一次算好 → bit-equal
     // (逐 cell 值不变，只是不再重复 6400 次三角)。
-    const double slp_syn_sa  = double(world_seed) * 0.00011;
-    const double slp_syn_sb  = double(world_seed) * 0.00017;
     // 经向必须采用整数谐波，才能同时保证场值与经向导数在圆柱接缝连续。
     // 波数标定(wind-variability 2026-08-03)：k1x∈{1,2} 时本项经向梯度只有
     // AMP·0.65·2π·k1x/100 ≈ 0.011/格，而静态纬向基线约 0.030/格 → 天气扭不动风向。
     // 改 {3..6}（均值 4.5）后约 0.033/格，与静态基线同量级：竞争得起但不压倒。
     // k1y 只温和提高（[0.9,1.7]，约 0.015/行 = 静态基线一半）—— 纬向 SLP 梯度正是
     // 三圈环流风带的定义者，经向涟漪过强会把风带打碎成涡群而非「会蜿蜒的带」。
-    const uint32_t slp_seed_bits = static_cast<uint32_t>(world_seed);
-    const double slp_syn_k1x = 3.0 + double(slp_seed_bits & 3u);
-    const double slp_syn_k1y = 1.30 + 0.40 * std::cos(slp_syn_sa);
-    const double slp_syn_k2x = 3.0 + double((slp_seed_bits >> 2) & 3u);
-    const double slp_syn_k2y = 1.45 + 0.35 * std::sin(slp_syn_sb);
     // B8 P2：Pass A 已抽成 Godot 无依赖的共享内核（worker 走同一份）。
     // 生产保留 parallel_for_range 分段：逐 cell 独立 → 分段 bit-equal。
     pk_async_physics::SlpPassAKnobs slp_a;
@@ -1875,30 +1814,16 @@ godot::Dictionary DCWorldExt::run_slp_field_pass(godot::Dictionary knobs) {
     slp_a.snow_high_weight = SNOW_HIGH_WEIGHT;
     slp_a.moist_low_weight = MOIST_LOW_WEIGHT;
     slp_a.synoptic_amp = SLP_SYNOPTIC_AMP;
-    slp_a.syn_sa = float(slp_syn_sa);
-    slp_a.syn_sb = float(slp_syn_sb);
-    slp_a.syn_phase = float(slp_syn_phase);
-    slp_a.syn_phase2 = float(slp_syn_phase2);
-    slp_a.syn_k1x = float(slp_syn_k1x);
-    slp_a.syn_k1y = float(slp_syn_k1y);
-    slp_a.syn_k2x = float(slp_syn_k2x);
-    slp_a.syn_k2y = float(slp_syn_k2y);
     slp_a.bounds_pos_x = float(slp_bounds_pos_x);
     slp_a.inv_bounds_w = float(slp_inv_bounds_w);
     slp_a.has_wrap_domain = slp_has_wrap_domain;
     slp_a.wrap_origin_x = wrap_origin_x;
     slp_a.wrap_period_x = wrap_period_x;
     slp_a.world_seed = world_seed;
-    slp_a.n_mobile_low = n_mlow;
-    slp_a.mobile_low_amp = mobile_low_amp;
-    slp_a.mobile_low_inv2s2 = mobile_low_inv2s2;
-    for (int j = 0; j < n_mlow && j < 8; ++j) {
-        slp_a.mobile_low_cx[j] = mlows[j].cx;
-        slp_a.mobile_low_cy[j] = mlows[j].cy;
-    }
-    slp_a.lut_bins = LUT_BINS;
-    slp_a.lut_base = LUT_BASE;
-    slp_a.lut_heat = LUT_HEAT;
+    pk_async_physics::prepare_slp_forcing(slp_a, LUT_BINS, float(season_phase),
+        axial_tilt_deg, daylen_amp, sim_day, slp_synoptic_period_days,
+        n_mlow, mobile_low_amp, mobile_low_sigma, mobile_low_period,
+        lut_base_lat, lut_solar_heat, _slp_insol_mean_lut.data());
     pk_async_physics::SlpPassALanes slp_lanes;
     slp_lanes.lat_norm = LATN.lat;
     slp_lanes.pos_y = LATN.posy;

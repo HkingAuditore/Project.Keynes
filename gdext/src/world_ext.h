@@ -327,6 +327,8 @@ public:
     // stale, and a stale `false` would run a duplicate Climate day while the
     // worker is already producing one.
     bool climate_worker_authoritative() const;
+    bool climate_physics_authoritative() const;
+    godot::Dictionary get_climate_physics_read_view() const;
     // Applies the newest worker-committed Climate day into the DataCore slots
     // and flushes them to MapData. This is the main-thread half of ACTIVE
     // Climate: without it the worker would own the domain while MapData stayed
@@ -487,6 +489,14 @@ public:
     godot::Dictionary submit_trigger_snapshots(const godot::Dictionary &batch);
     godot::Dictionary run_trigger_daily(int64_t day_index);
     bool trigger_should_run(int64_t day_index) const;
+    // H8 ACTIVE Trigger authority. When the worker owns TRIGGER_INPUT the
+    // main thread stops running the daily kernel and instead writes the worker
+    // snapshot back into the facade, plus relays the Trigger->Effect ACK
+    // barrier when the in-worker bridge is not used.
+    bool trigger_worker_authoritative() const;
+    godot::Dictionary apply_runtime_trigger_snapshot(int64_t after_generation = -1);
+    godot::Dictionary poll_trigger_worker_intent();
+    godot::Dictionary submit_trigger_worker_ack(const godot::Dictionary &source);
     godot::Dictionary poll_trigger_effects(int64_t after_effect_id,
                                             int limit = 128) const;
     godot::Dictionary ack_trigger_effects(int64_t up_to_effect_id);
@@ -581,6 +591,7 @@ public:
                                              int32_t limit) const;
     godot::Dictionary run_ideology_daily(int64_t day_index);
     bool ideology_should_run(int64_t day_index) const;
+    godot::Dictionary apply_runtime_ideology_snapshot(int64_t after_generation);
     godot::Dictionary get_ideology_snapshot(int64_t country_handle) const;
     godot::Dictionary explain_ideology(int64_t country_handle, int32_t ideology_id);
     godot::Dictionary explain_ideologies(
@@ -2962,6 +2973,10 @@ private:
     uint64_t                                  _runtime_graph_full_flush_count = 0;
     godot::Dictionary                         _runtime_graph_last_economy_report;
     std::unique_ptr<NativeSimulationHost>     _runtime_host;
+    // 只在主线程应用完整提交后替换；读视图不读 worker scratch、不再次获取 ring。
+    std::shared_ptr<const pk_async_physics::RuntimeClimatePhysicsState> _climate_physics_committed;
+    uint64_t _climate_physics_map_id = 0;
+    bool _climate_physics_capture_ready = false;
     // Main-thread cache for the most recently consumed immutable commit.  The
     // visual patch API reads this exact generation instead of polling the ring
     // a second time and accidentally mixing two different commits.
