@@ -5,6 +5,7 @@
 #endif
 #include "native_simulation_host.h"
 #include "country_core_apply.h"
+#include "economy_runtime.h"
 #include "native_parallel_executor.h"
 #include "runtime_climate_parity.h"
 
@@ -624,6 +625,47 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     _pod_work_units.store(0, std::memory_order_release);
     _pod_intent_count.store(0, std::memory_order_release);
     _pod_fallback_count.store(0, std::memory_order_release);
+    _economy_pod_ready.store(false, std::memory_order_release);
+    _economy_pod_committed.store(false, std::memory_order_release);
+    _economy_pod_authority_ready.store(false, std::memory_order_release);
+    _economy_pod_committed_day.store(-1, std::memory_order_release);
+    _economy_pod_epoch_sample_day.store(-1, std::memory_order_release);
+    _economy_pod_generation.store(0, std::memory_order_release);
+    _economy_pod_state_hash.store(0, std::memory_order_release);
+    _economy_pod_input_generation.store(0, std::memory_order_release);
+    _economy_pod_country_generation.store(0, std::memory_order_release);
+    _economy_pod_completed_stage_mask.store(0, std::memory_order_release);
+    _economy_pod_pending_outbox.store(0, std::memory_order_release);
+    _economy_pod_pending_inbox.store(0, std::memory_order_release);
+    _economy_pod_operation_gate_mask.store(0, std::memory_order_release);
+    _economy_pod_parity_ready_mask.store(0, std::memory_order_release);
+    _economy_sync_writes_forbidden.store(false, std::memory_order_release);
+    _economy_replay_completed_stage_mask.store(0, std::memory_order_release);
+    _economy_replay_stage_cursor.store(0, std::memory_order_release);
+    _economy_replay_input_hash.store(0, std::memory_order_release);
+    _economy_replay_base_hash.store(0, std::memory_order_release);
+    _economy_replay_next_hash.store(0, std::memory_order_release);
+    for (auto &value : _economy_replay_stage_hash)
+        value.store(0, std::memory_order_release);
+    for (auto &value : _economy_replay_stage_work)
+        value.store(0, std::memory_order_release);
+    for (auto &value : _economy_replay_stage_ms)
+        value.store(0.0, std::memory_order_release);
+    _economy_replay_input_captured.store(false, std::memory_order_release);
+    _economy_replay_committed.store(false, std::memory_order_release);
+    _economy_replay_parity_ready.store(false, std::memory_order_release);
+    for (auto &value : _economy_replay_fallback_reason)
+        value.store('\0', std::memory_order_release);
+    _economy_reference_day.store(-1, std::memory_order_release);
+    _economy_reference_generation.store(0, std::memory_order_release);
+    _economy_reference_hash.store(0, std::memory_order_release);
+    for (auto &value : _economy_stage_reference_hash)
+        value.store(0, std::memory_order_release);
+    for (auto &value : _economy_stage_reference_work)
+        value.store(0, std::memory_order_release);
+    for (auto &value : _economy_stage_reference_present)
+        value.store(0, std::memory_order_release);
+    _economy_pod_authority.reset();
     _domain_authority_planned_mask.store(0, std::memory_order_release);
     _domain_authority_committed_mask.store(0, std::memory_order_release);
     _domain_authority_ack_count.store(0, std::memory_order_release);
@@ -921,6 +963,24 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
             return false;
         }
     }
+    if (restore_pending && !_pending_restore_bundle.economy_pod_bytes.empty()) {
+        std::string economy_pod_restore_error;
+        if (!_economy_pod_authority.restore_ecp1(
+                _pending_restore_bundle.economy_pod_bytes.data(),
+                _pending_restore_bundle.economy_pod_bytes.size(),
+                economy_pod_restore_error)) {
+            set_fault(economy_pod_restore_error.empty()
+                ? "economy_pod_restore_failed"
+                : economy_pod_restore_error.c_str());
+            _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
+            return false;
+        }
+        _economy_pod_parity_ready_mask.store(
+            _economy_pod_authority.parity_ready_mask(),
+            std::memory_order_release);
+        _economy_pod_ready.store(true, std::memory_order_release);
+        _economy_pod_committed.store(true, std::memory_order_release);
+    }
     if (restore_pending && !_pending_restore_bundle.domain_pod_bytes.empty()) {
         std::string pod_restore_error;
         if (!_pod_pipeline.restore(_pending_restore_bundle.domain_pod_bytes.data(),
@@ -1201,6 +1261,187 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         _stop_requested.store(true, std::memory_order_release);
         _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
         return false;
+    }
+    return true;
+}
+
+void NativeSimulationHost::publish_economy_reference(
+        int64_t day, uint64_t generation, uint64_t state_hash) noexcept {
+    _economy_reference_day.store(day, std::memory_order_release);
+    _economy_reference_generation.store(generation, std::memory_order_release);
+    _economy_reference_hash.store(state_hash, std::memory_order_release);
+}
+
+void NativeSimulationHost::publish_economy_stage_reference(
+        uint32_t stage, int64_t day, uint64_t generation, uint64_t state_hash,
+        uint64_t work_units) noexcept {
+    if (stage >= RUNTIME_ECONOMY_GRAPH_STAGE_COUNT) return;
+    _economy_stage_reference_hash[stage].store(state_hash,
+                                               std::memory_order_release);
+    _economy_stage_reference_work[stage].store(work_units,
+                                               std::memory_order_release);
+    _economy_stage_reference_present[stage].store(1, std::memory_order_release);
+    if (stage == static_cast<uint32_t>(RuntimeEconomyGraphStage::BUILDING_PLAN)) {
+        publish_economy_reference(day, generation, state_hash);
+    }
+}
+
+void NativeSimulationHost::attach_economy_stage_ops(
+        std::unique_ptr<EconomyGraphStageOps> ops) noexcept {
+    _economy_stage_ops = std::move(ops);
+    _economy_pod_authority.attach_stage_ops(_economy_stage_ops.get());
+}
+
+void NativeSimulationHost::attach_economy_production_runtime(
+        NativeEconomyRuntime *rt) noexcept {
+    _economy_production_runtime = rt;
+    if (rt != nullptr) {
+        class NativeEconomyPodCommandExecutor final
+            : public EconomyPodCommandExecutor {
+        public:
+            explicit NativeEconomyPodCommandExecutor(NativeEconomyRuntime *runtime)
+                : _runtime(runtime) {}
+            bool apply(const RuntimeEconomyPodCommand &command,
+                       std::string &error) override {
+                if (_runtime == nullptr) {
+                    error = "economy_pod_executor_runtime_null";
+                    return false;
+                }
+                return _runtime->apply_pod_command(command, error);
+            }
+
+        private:
+            NativeEconomyRuntime *_runtime = nullptr;
+        };
+        _economy_pod_command_executor =
+            std::make_unique<NativeEconomyPodCommandExecutor>(rt);
+        _economy_pod_authority.attach_command_executor(
+            _economy_pod_command_executor.get());
+        _economy_pod_authority.sync_identity(
+            1u, rt->committed_generation());
+    } else {
+        _economy_pod_authority.attach_command_executor(nullptr);
+        _economy_pod_command_executor.reset();
+    }
+}
+
+bool NativeSimulationHost::submit_economy_pod_command(
+        const RuntimeEconomyPodCommand &command, std::string &error) {
+    return _economy_pod_authority.queue_command(command, error);
+}
+
+bool NativeSimulationHost::poll_economy_pod_receipt(
+        RuntimeEconomyPodReceipt &out) noexcept {
+    return _economy_pod_authority.poll_receipt(out);
+}
+
+void NativeSimulationHost::set_economy_sync_writes_forbidden(
+        bool forbidden) noexcept {
+    _economy_sync_writes_forbidden.store(forbidden, std::memory_order_release);
+}
+
+bool NativeSimulationHost::execute_economy_worker_stage(
+        int64_t day, uint64_t input_generation, uint32_t cell_count,
+        uint64_t country_generation, uint64_t catalog_hash,
+        std::string &error) {
+    error.clear();
+    // Economy POD graph orchestration for SHADOW parity. StageOps are always
+    // attached with mutate=false; production mutations never flow through this
+    // path (ACTIVE uses worker_run_compact_slice on the attached runtime).
+    if (cell_count == 0 || input_generation == 0 || day < 0) {
+        error = "economy_worker_stage_input_invalid";
+        return false;
+    }
+    RuntimeEconomyEpochInput input;
+    input.sample_day = day;
+    input.session_epoch = 1;
+    input.economy_generation =
+        _economy_pod_generation.load(std::memory_order_acquire);
+    input.input_generation = input_generation;
+    input.country_generation = country_generation;
+    input.catalog_hash = catalog_hash;
+    input.policy_hash = country_generation;
+    input.environment_shape_hash = catalog_hash ^ cell_count;
+    input.cell_count = cell_count;
+    input.market_cycle_days = 5;
+    input.production_cycle_days = 10;
+    input.investment_cycle_days = 20;
+    input.valid = true;
+
+    _economy_pod_authority.reset();
+    _economy_pod_authority.attach_stage_ops(_economy_stage_ops.get());
+    for (uint32_t stage = 0; stage < RUNTIME_ECONOMY_GRAPH_STAGE_COUNT; ++stage) {
+        if (_economy_stage_reference_present[stage].load(
+                std::memory_order_acquire) == 0) {
+            continue;
+        }
+        _economy_pod_authority.set_stage_reference(
+            static_cast<RuntimeEconomyGraphStage>(stage), day,
+            _economy_reference_generation.load(std::memory_order_acquire),
+            _economy_stage_reference_hash[stage].load(std::memory_order_acquire),
+            _economy_stage_reference_work[stage].load(std::memory_order_acquire));
+    }
+    if (!_economy_pod_authority.plan_epoch(input, error)) return false;
+    for (size_t i = 0; i < RUNTIME_ECONOMY_GRAPH_STAGE_COUNT; ++i) {
+        if (!_economy_pod_authority.advance_stage(error)) return false;
+    }
+    if (!_economy_pod_authority.commit_epoch(error)) return false;
+
+    const RuntimeEconomyPodReplayReport &replay =
+        _economy_pod_authority.replay_report();
+    _economy_replay_completed_stage_mask.store(replay.completed_stage_mask,
+                                               std::memory_order_release);
+    _economy_replay_stage_cursor.store(replay.stage_cursor,
+                                       std::memory_order_release);
+    _economy_replay_input_hash.store(replay.input_hash,
+                                     std::memory_order_release);
+    _economy_replay_base_hash.store(replay.base_hash, std::memory_order_release);
+    _economy_replay_next_hash.store(replay.next_hash, std::memory_order_release);
+    for (size_t i = 0; i < RUNTIME_ECONOMY_GRAPH_STAGE_COUNT; ++i) {
+        _economy_replay_stage_hash[i].store(replay.stage_hash[i],
+                                            std::memory_order_release);
+        _economy_replay_stage_work[i].store(replay.stage_work[i],
+                                            std::memory_order_release);
+        _economy_replay_stage_ms[i].store(replay.stage_ms[i],
+                                          std::memory_order_release);
+    }
+    _economy_replay_input_captured.store(replay.input_captured != 0,
+                                         std::memory_order_release);
+    _economy_replay_committed.store(replay.committed != 0,
+                                    std::memory_order_release);
+    _economy_replay_parity_ready.store(replay.parity_ready != 0,
+                                       std::memory_order_release);
+    _economy_pod_parity_ready_mask.store(replay.parity_ready_mask,
+                                         std::memory_order_release);
+
+    RuntimeEconomyCommittedSnapshot snap;
+    std::string snap_error;
+    if (_economy_pod_authority.snapshot(snap, snap_error)) {
+        _economy_pod_ready.store(true, std::memory_order_release);
+        _economy_pod_committed.store(snap.committed, std::memory_order_release);
+        _economy_pod_authority_ready.store(snap.authority_ready,
+                                          std::memory_order_release);
+        _economy_pod_committed_day.store(snap.committed_day,
+                                         std::memory_order_release);
+        _economy_pod_epoch_sample_day.store(snap.epoch_sample_day,
+                                            std::memory_order_release);
+        _economy_pod_generation.store(snap.generation, std::memory_order_release);
+        _economy_pod_state_hash.store(snap.state_hash, std::memory_order_release);
+        _economy_pod_input_generation.store(snap.input_generation,
+                                            std::memory_order_release);
+        _economy_pod_country_generation.store(snap.country_generation,
+                                              std::memory_order_release);
+        _economy_pod_completed_stage_mask.store(snap.completed_stage_mask,
+                                                std::memory_order_release);
+        _economy_pod_pending_outbox.store(snap.pending_outbox,
+                                          std::memory_order_release);
+        _economy_pod_pending_inbox.store(snap.pending_inbox,
+                                         std::memory_order_release);
+        _economy_pod_operation_gate_mask.store(snap.operation_gate_mask,
+                                               std::memory_order_release);
+        _economy_pod_parity_ready_mask.store(
+            _economy_pod_authority.parity_ready_mask(),
+            std::memory_order_release);
     }
     return true;
 }
@@ -4198,7 +4439,7 @@ bool NativeSimulationHost::effect_pod_host_stage_self_test(std::string *out_erro
             RuntimeEffectPodTransactionStatus::ACKED) {
         return fail("effect_host_stage_not_acked");
     }
-    // Keep this pin equal to implemented_domain_mask() (H8/I8 = 0xA7E).
+    // Keep this pin equal to implemented_domain_mask() (Phase 2-6 = 0xB7E).
     if (implemented_domain_mask() !=
         (runtime_domain_mask(RuntimeDomainId::COMMIT) |
          runtime_domain_mask(RuntimeDomainId::CLIMATE) |
@@ -4207,7 +4448,8 @@ bool NativeSimulationHost::effect_pod_host_stage_self_test(std::string *out_erro
          runtime_domain_mask(RuntimeDomainId::MODIFIER) |
          runtime_domain_mask(RuntimeDomainId::EFFECT) |
          runtime_domain_mask(RuntimeDomainId::IDEOLOGY) |
-         runtime_domain_mask(RuntimeDomainId::EVENTS))) {
+         runtime_domain_mask(RuntimeDomainId::EVENTS) |
+         runtime_domain_mask(RuntimeDomainId::ECONOMY))) {
         return fail("effect_host_stage_mask_changed");
     }
     return true;
@@ -6813,6 +7055,58 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
         if (authority_ok) {
             const RuntimeDomainAuthorityReport &authority_report =
                 _domain_authority_runner.report();
+            const RuntimeEconomyReplayReport &economy_replay =
+                _domain_authority_runner.economy_replay_report();
+            _economy_replay_completed_stage_mask.store(
+                economy_replay.completed_stage_mask, std::memory_order_release);
+            _economy_replay_stage_cursor.store(
+                economy_replay.stage_cursor, std::memory_order_release);
+            _economy_replay_input_hash.store(
+                economy_replay.input_hash, std::memory_order_release);
+            _economy_replay_base_hash.store(
+                economy_replay.base_hash, std::memory_order_release);
+            _economy_replay_next_hash.store(
+                economy_replay.next_hash, std::memory_order_release);
+            for (size_t i = 0; i < RuntimeEconomyReplayReport::STAGE_COUNT; ++i) {
+                _economy_replay_stage_hash[i].store(
+                    economy_replay.stage_hash[i], std::memory_order_release);
+                _economy_replay_stage_work[i].store(
+                    economy_replay.stage_work[i], std::memory_order_release);
+                _economy_replay_stage_ms[i].store(
+                    economy_replay.stage_ms[i], std::memory_order_release);
+            }
+            _economy_replay_input_captured.store(
+                economy_replay.input_captured != 0, std::memory_order_release);
+            _economy_replay_committed.store(
+                economy_replay.committed != 0, std::memory_order_release);
+            _economy_replay_parity_ready.store(
+                economy_replay.parity_ready != 0, std::memory_order_release);
+            for (size_t i = 0; i < _economy_replay_fallback_reason.size(); ++i) {
+                _economy_replay_fallback_reason[i].store(
+                    economy_replay.fallback_reason[i], std::memory_order_release);
+                if (economy_replay.fallback_reason[i] == '\0') break;
+            }
+            // Dedicated Economy SHADOW stage handler (J2-B). Replays the same
+            // epoch contract through RuntimeEconomyPodAuthority; does not grant
+            // ACTIVE mask.
+            {
+                std::string economy_stage_error;
+                const uint32_t economy_cells =
+                    climate_environment != nullptr
+                        ? climate_environment->cell_count : 0u;
+                const uint64_t economy_catalog =
+                    climate_environment != nullptr
+                        ? climate_environment->generation : 0u;
+                const uint64_t economy_country_generation =
+                    country_snapshot != nullptr ? country_snapshot->generation : 0u;
+                if (economy_cells > 0u) {
+                    (void)execute_economy_worker_stage(
+                        diagnostic_context.day,
+                        diagnostic_context.input_generation, economy_cells,
+                        economy_country_generation, economy_catalog,
+                        economy_stage_error);
+                }
+            }
             _domain_authority_planned_mask.store(
                 authority_report.diagnostic_planned_mask,
                 std::memory_order_release);
@@ -6884,6 +7178,35 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             diagnostic_context, climate_environment, country_snapshot.get(),
             commit, _pod_visual_intents, _pod_receipts);
         const RuntimeDomainPipelineReport &pipeline_report = _pod_pipeline.report();
+        RuntimeEconomyPodSnapshot economy_snapshot;
+        _pod_pipeline.snapshot_economy(economy_snapshot);
+        _economy_pod_ready.store(
+            pipeline_report.domains[static_cast<size_t>(RuntimeDomainId::ECONOMY) - 1u].completed != 0,
+            std::memory_order_release);
+        _economy_pod_committed.store(economy_snapshot.committed,
+                                     std::memory_order_release);
+        _economy_pod_authority_ready.store(economy_snapshot.authority_ready,
+                                            std::memory_order_release);
+        _economy_pod_committed_day.store(economy_snapshot.committed_day,
+                                         std::memory_order_release);
+        _economy_pod_epoch_sample_day.store(economy_snapshot.epoch_sample_day,
+                                            std::memory_order_release);
+        _economy_pod_generation.store(economy_snapshot.generation,
+                                       std::memory_order_release);
+        _economy_pod_state_hash.store(economy_snapshot.state_hash,
+                                      std::memory_order_release);
+        _economy_pod_input_generation.store(economy_snapshot.input_generation,
+                                            std::memory_order_release);
+        _economy_pod_country_generation.store(economy_snapshot.country_generation,
+                                              std::memory_order_release);
+        _economy_pod_completed_stage_mask.store(economy_snapshot.completed_stage_mask,
+                                                std::memory_order_release);
+        _economy_pod_pending_outbox.store(economy_snapshot.pending_outbox,
+                                          std::memory_order_release);
+        _economy_pod_pending_inbox.store(economy_snapshot.pending_inbox,
+                                         std::memory_order_release);
+        _economy_pod_operation_gate_mask.store(economy_snapshot.operation_gate_mask,
+                                               std::memory_order_release);
         _pod_completed_domain_mask.store(pipeline_report.completed_domain_mask,
                                          std::memory_order_release);
         _pod_completed_stage_count.store(
@@ -7429,6 +7752,162 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             }
             continue;
         }
+        if (stage.domain == RuntimeDomainId::ECONOMY &&
+            _mode.load(std::memory_order_acquire) ==
+                RuntimeSimulationMode::ACTIVE &&
+            (_requested_authority_mask.load(std::memory_order_acquire) &
+             runtime_domain_mask(RuntimeDomainId::ECONOMY)) != 0u) {
+            // ACTIVE Economy production: compact ECONOMY_GRAPH slices on the
+            // attached NativeEconomyRuntime. StageOps remain mutate=false and
+            // are never the production mutation path.
+            if (climate_authority_requested && !active_climate_ok) {
+                stage.completed = 0;
+                continue;
+            }
+            if (_economy_production_runtime == nullptr) {
+                // Fail open: leave incomplete so the full mask does not grant
+                // ECONOMY suppression without a production runner.
+                stage.completed = 0;
+                continue;
+            }
+            std::string economy_error;
+            bool economy_day_done = false;
+            uint64_t economy_work = 0;
+            bool economy_fatal = false;
+            bool economy_pending_input = false;
+            for (int slice = 0; slice < 64; ++slice) {
+                bool slice_done = false;
+                bool pending_input = false;
+                if (!_economy_production_runtime->worker_run_compact_slice(
+                        plan.context.day, economy_error, &slice_done,
+                        &pending_input)) {
+                    economy_fatal = true;
+                    break;
+                }
+                if (pending_input) {
+                    // Main thread has not captured same-day inputs yet. Park
+                    // ECONOMY without soft-complete or set_fault.
+                    economy_pending_input = true;
+                    break;
+                }
+                ++economy_work;
+                if (slice_done) {
+                    economy_day_done = true;
+                    break;
+                }
+            }
+            if (economy_fatal) {
+                set_fault(economy_error.empty()
+                              ? "economy_worker_compact_fatal"
+                              : economy_error.c_str());
+                stage.completed = 0;
+                commit.preflight_ok = 0;
+                continue;
+            }
+            if (economy_pending_input) {
+                stage.completed = 0;
+                continue;
+            }
+            // Soft-complete even a partial pulse (epoch still in progress) so
+            // the per-domain grant can include ECONOMY; continuation resumes on
+            // the next worker day the same way sync pulses resume.
+            stage.dirty_families = RUNTIME_DIRTY_ECONOMY_UI;
+            stage.work_units = economy_work;
+            stage.completed = 1;
+            commit.dirty_families |= stage.dirty_families;
+            commit.work_units += stage.work_units;
+            commit.completed_domain_mask |=
+                runtime_domain_mask(RuntimeDomainId::ECONOMY);
+            ++commit.completed_stage_count;
+            _economy_pod_ready.store(true, std::memory_order_release);
+            _economy_pod_committed.store(economy_day_done,
+                                         std::memory_order_release);
+            _economy_pod_authority_ready.store(true, std::memory_order_release);
+            _economy_pod_committed_day.store(
+                economy_day_done ? plan.context.day
+                                 : _economy_pod_committed_day.load(
+                                       std::memory_order_relaxed),
+                std::memory_order_release);
+            _economy_pod_epoch_sample_day.store(plan.context.day,
+                                                std::memory_order_release);
+            _economy_pod_state_hash.store(
+                static_cast<uint64_t>(std::max<int64_t>(
+                    0, _economy_production_runtime->state_hash())),
+                std::memory_order_release);
+            _economy_pod_operation_gate_mask.store(
+                _economy_production_runtime->d7_operation_gate_mask(),
+                std::memory_order_release);
+            // Phase 5: publish production snapshot into the Economy POD ring.
+            {
+                uint32_t ring_index = 0;
+                if (_economy_pod_authority.snapshot_ring().try_begin_write(
+                        ring_index)) {
+                    RuntimeEconomySnapshotPayload &payload =
+                        _economy_pod_authority.snapshot_ring().write_buffer(
+                            ring_index);
+                    payload = RuntimeEconomySnapshotPayload{};
+                    payload.header.session_epoch = 1;
+                    payload.header.generation =
+                        _economy_pod_generation.load(std::memory_order_relaxed);
+                    payload.header.committed_day =
+                        economy_day_done ? plan.context.day
+                                         : _economy_pod_committed_day.load(
+                                               std::memory_order_relaxed);
+                    payload.header.epoch_sample_day = plan.context.day;
+                    payload.header.state_hash =
+                        _economy_pod_state_hash.load(std::memory_order_relaxed);
+                    payload.header.operation_gate_mask =
+                        _economy_pod_operation_gate_mask.load(
+                            std::memory_order_relaxed);
+                    payload.header.committed = economy_day_done;
+                    payload.header.authority_ready = true;
+                    payload.operation_gate_mask =
+                        payload.header.operation_gate_mask;
+                    payload.authority_mode = 1; // ACTIVE production
+                    int64_t pop_err = 0, money_err = 0, goods_err = 0;
+                    int64_t changed_cells = 0, changed_cohorts = 0;
+                    uint32_t dirty_family_mask = 0;
+                    _economy_production_runtime->fill_economy_audit_snapshot(
+                        pop_err, money_err, goods_err, dirty_family_mask,
+                        changed_cells, changed_cohorts);
+                    payload.population_error = pop_err;
+                    payload.money_error = money_err;
+                    payload.goods_error = goods_err;
+                    payload.header.population_error = pop_err;
+                    payload.header.money_error = money_err;
+                    payload.header.goods_error = goods_err;
+                    payload.header.changed_cells =
+                        static_cast<uint32_t>(std::max<int64_t>(0, changed_cells));
+                    payload.header.changed_cohorts =
+                        static_cast<uint32_t>(std::max<int64_t>(0, changed_cohorts));
+                    payload.dirty_family_mask = dirty_family_mask;
+                    _economy_production_runtime->fill_economy_business_summary(
+                        payload.summary_population, payload.summary_funds,
+                        payload.summary_markets, payload.summary_buildings,
+                        payload.summary_cohorts, payload.summary_families);
+                    _economy_pod_authority.set_business_summary(
+                        pop_err, money_err, goods_err,
+                        payload.summary_population, payload.summary_funds,
+                        payload.summary_markets, payload.summary_buildings,
+                        payload.summary_cohorts, payload.summary_families);
+                    _economy_pod_authority.snapshot_ring().publish(ring_index);
+                }
+            }
+            // POD command execute via apply_command, then drain receipts.
+            _economy_pod_authority.sync_identity(
+                1u, _economy_production_runtime->committed_generation());
+            _economy_pod_authority.commit_pending_commands();
+            {
+                RuntimeEconomyPodReceipt receipt;
+                uint32_t ack_n = 0;
+                while (ack_n < 64u &&
+                       _economy_pod_authority.poll_receipt(receipt)) {
+                    ++ack_n;
+                }
+                commit.work_units += ack_n;
+            }
+            continue;
+        }
         if (stage.domain == RuntimeDomainId::EVENTS &&
             _mode.load(std::memory_order_acquire) ==
                 RuntimeSimulationMode::ACTIVE &&
@@ -7738,7 +8217,8 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
                                  RUNTIME_SAVE_SECTION_EVENTS |
                                  RUNTIME_SAVE_SECTION_EFFECT |
                                  RUNTIME_SAVE_SECTION_IDEOLOGY |
-                                 RUNTIME_SAVE_SECTION_ECONOMY_ASSET)) != 0) {
+                                 RUNTIME_SAVE_SECTION_ECONOMY_ASSET |
+                                 RUNTIME_SAVE_SECTION_ECONOMY_POD)) != 0) {
         error = "runtime_bundle_section_mask_invalid";
         return false;
     }
@@ -8196,6 +8676,54 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
             return false;
         }
     }
+    if ((parsed.section_mask & RUNTIME_SAVE_SECTION_ECONOMY_POD) != 0) {
+        constexpr uint32_t ECONOMY_POD_SECTION_MARKER = 0x31504345u; // ECP1
+        uint32_t economy_marker = 0;
+        uint32_t economy_size = 0;
+        if (cursor > payload_end || payload_end - cursor < 16u ||
+            !read_u32(cursor, economy_marker) ||
+            !read_u32(cursor + 4u, economy_size) ||
+            economy_marker != ECONOMY_POD_SECTION_MARKER ||
+            economy_size > 64u * 1024u * 1024u ||
+            economy_size > payload_end - cursor - 16u) {
+            error = "runtime_bundle_economy_pod_section_invalid";
+            return false;
+        }
+        cursor += 8u;
+        parsed.economy_pod_bytes.assign(bytes + cursor,
+                                        bytes + cursor + economy_size);
+        cursor += economy_size;
+        uint64_t economy_checksum = 0;
+        if (!read_u64(cursor, economy_checksum)) {
+            error = "runtime_bundle_economy_pod_section_checksum_missing";
+            return false;
+        }
+        uint64_t computed = 1469598103934665603ull;
+        for (const uint8_t byte : parsed.economy_pod_bytes) {
+            computed ^= static_cast<uint64_t>(byte);
+            computed *= 1099511628211ull;
+        }
+        if (computed != economy_checksum) {
+            error = "runtime_bundle_economy_pod_section_checksum_failed";
+            return false;
+        }
+        cursor += 8u;
+        if (parsed.economy_pod_bytes.size() < 4u ||
+            std::memcmp(parsed.economy_pod_bytes.data(), "ECP1", 4u) != 0) {
+            error = "runtime_bundle_economy_pod_section_marker_invalid";
+            return false;
+        }
+        RuntimeEconomyPodAuthority candidate;
+        std::string economy_restore_error;
+        if (!candidate.restore_ecp1(parsed.economy_pod_bytes.data(),
+                                    parsed.economy_pod_bytes.size(),
+                                    economy_restore_error)) {
+            error = economy_restore_error.empty()
+                ? "runtime_bundle_economy_pod_restore_invalid"
+                : economy_restore_error;
+            return false;
+        }
+    }
     if (cursor != payload_end) {
         error = "runtime_bundle_producer_cursor_invalid";
         return false;
@@ -8382,6 +8910,21 @@ void NativeSimulationHost::build_save_bundle(
             return;
         }
         bundle->section_mask |= RUNTIME_SAVE_SECTION_IDEOLOGY;
+    }
+    {
+        std::string economy_pod_save_error;
+        if (_economy_pod_authority.encode_ecp1(bundle->economy_pod_bytes,
+                                               economy_pod_save_error)) {
+            if (!bundle->economy_pod_bytes.empty())
+                bundle->section_mask |= RUNTIME_SAVE_SECTION_ECONOMY_POD;
+        }
+        // ECP1 is optional when the POD has never committed; encode failure
+        // with empty bytes is not a host fault.
+        if (!economy_pod_save_error.empty() &&
+            economy_pod_save_error != "economy_pod_ecp1_save_blocked") {
+            set_fault(economy_pod_save_error.c_str());
+            return;
+        }
     }
 
     // PKSR v2 is an endian-stable runtime envelope. The fixed scalar header
@@ -8608,6 +9151,23 @@ void NativeSimulationHost::build_save_bundle(
             ideology_checksum *= 1099511628211ull;
         }
         append_u64_le(ideology_checksum);
+    }
+
+    if (!bundle->economy_pod_bytes.empty()) {
+        constexpr uint32_t ECONOMY_POD_SECTION_MARKER = 0x31504345u; // ECP1
+        append_u32_le(ECONOMY_POD_SECTION_MARKER);
+        const uint32_t economy_section_size = static_cast<uint32_t>(
+            std::min<size_t>(bundle->economy_pod_bytes.size(),
+                             64u * 1024u * 1024u));
+        append_u32_le(economy_section_size);
+        append_bytes(bundle->economy_pod_bytes.data(), economy_section_size);
+        uint64_t economy_checksum = 1469598103934665603ull;
+        for (uint32_t i = 0; i < economy_section_size; ++i) {
+            economy_checksum ^=
+                static_cast<uint64_t>(bundle->economy_pod_bytes[i]);
+            economy_checksum *= 1099511628211ull;
+        }
+        append_u64_le(economy_checksum);
     }
 
     uint64_t checksum = 1469598103934665603ull;
@@ -9065,6 +9625,37 @@ RuntimeThreadReport NativeSimulationHost::report() const {
     out.pod_work_units = _pod_work_units.load(std::memory_order_acquire);
     out.pod_intent_count = _pod_intent_count.load(std::memory_order_acquire);
     out.pod_fallback_count = _pod_fallback_count.load(std::memory_order_acquire);
+    out.economy_pod_ready = _economy_pod_ready.load(std::memory_order_acquire);
+    out.economy_pod_committed = _economy_pod_committed.load(std::memory_order_acquire);
+    out.economy_pod_authority_ready = _economy_pod_authority_ready.load(std::memory_order_acquire);
+    out.economy_pod_committed_day = _economy_pod_committed_day.load(std::memory_order_acquire);
+    out.economy_pod_epoch_sample_day = _economy_pod_epoch_sample_day.load(std::memory_order_acquire);
+    out.economy_pod_generation = _economy_pod_generation.load(std::memory_order_acquire);
+    out.economy_pod_state_hash = _economy_pod_state_hash.load(std::memory_order_acquire);
+    out.economy_pod_input_generation = _economy_pod_input_generation.load(std::memory_order_acquire);
+    out.economy_pod_country_generation = _economy_pod_country_generation.load(std::memory_order_acquire);
+    out.economy_pod_completed_stage_mask = _economy_pod_completed_stage_mask.load(std::memory_order_acquire);
+    out.economy_pod_pending_outbox = _economy_pod_pending_outbox.load(std::memory_order_acquire);
+    out.economy_pod_pending_inbox = _economy_pod_pending_inbox.load(std::memory_order_acquire);
+    out.economy_pod_operation_gate_mask = _economy_pod_operation_gate_mask.load(std::memory_order_acquire);
+    out.economy_pod_parity_ready_mask = _economy_pod_parity_ready_mask.load(std::memory_order_acquire);
+    out.economy_replay_completed_stage_mask = _economy_replay_completed_stage_mask.load(std::memory_order_acquire);
+    out.economy_replay_stage_cursor = _economy_replay_stage_cursor.load(std::memory_order_acquire);
+    out.economy_replay_input_hash = _economy_replay_input_hash.load(std::memory_order_acquire);
+    out.economy_replay_base_hash = _economy_replay_base_hash.load(std::memory_order_acquire);
+    out.economy_replay_next_hash = _economy_replay_next_hash.load(std::memory_order_acquire);
+    for (size_t i = 0; i < RUNTIME_ECONOMY_GRAPH_STAGE_COUNT; ++i) {
+        out.economy_replay_stage_hash[i] = _economy_replay_stage_hash[i].load(std::memory_order_acquire);
+        out.economy_replay_stage_work[i] = _economy_replay_stage_work[i].load(std::memory_order_acquire);
+        out.economy_replay_stage_ms[i] = _economy_replay_stage_ms[i].load(std::memory_order_acquire);
+    }
+    out.economy_replay_input_captured = _economy_replay_input_captured.load(std::memory_order_acquire);
+    out.economy_replay_committed = _economy_replay_committed.load(std::memory_order_acquire);
+    out.economy_replay_parity_ready = _economy_replay_parity_ready.load(std::memory_order_acquire);
+    for (size_t i = 0; i < _economy_replay_fallback_reason.size(); ++i) {
+        out.economy_replay_fallback_reason[i] = _economy_replay_fallback_reason[i].load(std::memory_order_acquire);
+        if (out.economy_replay_fallback_reason[i] == '\0') break;
+    }
     out.domain_authority_planned_mask =
         _domain_authority_planned_mask.load(std::memory_order_acquire);
     out.domain_authority_committed_mask =

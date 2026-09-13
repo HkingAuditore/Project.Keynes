@@ -6,6 +6,7 @@
 #include "modifier_runtime.h"
 #include "trigger_runtime.h"
 #include "effect_runtime.h"
+#include "native_simulation_host.h"
 
 #include <algorithm>
 #include <chrono>
@@ -102,7 +103,112 @@ Dictionary DCWorldExt::submit_economy_commands(const Dictionary &packed_batch) {
     if (_economy_runtime == nullptr) {
         return unavailable();
     }
+    // Production opcode admission stays on NativeEconomyRuntime until the full
+    // 23-opcode POD extraction lands. Host POD queue is Phase 4 scaffolding.
     return runtime_from(_economy_runtime)->submit_commands(packed_batch);
+}
+
+Dictionary DCWorldExt::submit_economy_pod_commands(const Dictionary &packed_batch) {
+    Dictionary out;
+    if (_runtime_host == nullptr) {
+        out["ok"] = false;
+        out["code"] = "runtime_worker_not_started";
+        return out;
+    }
+    const PackedInt64Array request_ids =
+        packed_batch.get("request_ids", PackedInt64Array());
+    const PackedInt32Array opcodes =
+        packed_batch.get("opcodes", PackedInt32Array());
+    const PackedInt64Array transactions =
+        packed_batch.get("transaction_ids", PackedInt64Array());
+    const PackedInt64Array session_epochs =
+        packed_batch.get("session_epochs", PackedInt64Array());
+    const PackedInt64Array economy_generations =
+        packed_batch.get("economy_generations", PackedInt64Array());
+    const PackedInt64Array payload0s =
+        packed_batch.get("payload0s", PackedInt64Array());
+    const PackedInt64Array payload1s =
+        packed_batch.get("payload1s", PackedInt64Array());
+    const PackedInt64Array payload2s =
+        packed_batch.get("payload2s", PackedInt64Array());
+    const PackedInt32Array target_cells =
+        packed_batch.get("target_cells", PackedInt32Array());
+    const PackedInt64Array target_countries =
+        packed_batch.get("target_countries", PackedInt64Array());
+    const PackedInt64Array target_cohorts =
+        packed_batch.get("target_cohorts", PackedInt64Array());
+    const PackedInt64Array target_buildings =
+        packed_batch.get("target_buildings", PackedInt64Array());
+    const int64_t n = request_ids.size();
+    if (opcodes.size() != n) {
+        out["ok"] = false;
+        out["code"] = "economy_pod_command_batch_size_mismatch";
+        return out;
+    }
+    PackedInt64Array accepted_ids;
+    for (int64_t i = 0; i < n; ++i) {
+        RuntimeEconomyPodCommand command;
+        command.request_id = static_cast<uint64_t>(request_ids[i]);
+        command.opcode = opcodes[static_cast<int>(i)];
+        if (i < transactions.size())
+            command.transaction_id = static_cast<uint64_t>(transactions[i]);
+        if (i < session_epochs.size())
+            command.session_epoch = static_cast<uint64_t>(session_epochs[i]);
+        if (i < economy_generations.size())
+            command.economy_generation =
+                static_cast<uint64_t>(economy_generations[i]);
+        if (i < payload0s.size()) command.payload0 = payload0s[static_cast<int>(i)];
+        if (i < payload1s.size()) command.payload1 = payload1s[static_cast<int>(i)];
+        if (i < payload2s.size()) command.payload2 = payload2s[static_cast<int>(i)];
+        if (i < target_cells.size())
+            command.target_cell = target_cells[static_cast<int>(i)];
+        if (i < target_countries.size())
+            command.target_country = target_countries[static_cast<int>(i)];
+        if (i < target_cohorts.size())
+            command.target_cohort = target_cohorts[static_cast<int>(i)];
+        if (i < target_buildings.size())
+            command.target_building = target_buildings[static_cast<int>(i)];
+        std::string error;
+        if (!_runtime_host->submit_economy_pod_command(command, error)) {
+            out["ok"] = false;
+            out["code"] = error.empty() ? "economy_pod_command_rejected"
+                                        : error.c_str();
+            out["accepted_request_ids"] = accepted_ids;
+            return out;
+        }
+        accepted_ids.push_back(request_ids[i]);
+    }
+    out["ok"] = true;
+    out["accepted_request_ids"] = accepted_ids;
+    return out;
+}
+
+Dictionary DCWorldExt::poll_economy_pod_receipts(int max_items) {
+    Dictionary out;
+    if (_runtime_host == nullptr) {
+        out["ok"] = false;
+        out["code"] = "runtime_worker_not_started";
+        return out;
+    }
+    const int limit = std::clamp(max_items, 0, 4096);
+    Array rows;
+    for (int i = 0; i < limit; ++i) {
+        RuntimeEconomyPodReceipt receipt;
+        if (!_runtime_host->poll_economy_pod_receipt(receipt)) break;
+        Dictionary row;
+        row["request_id"] = static_cast<int64_t>(receipt.request_id);
+        row["transaction_id"] = static_cast<int64_t>(receipt.transaction_id);
+        row["session_epoch"] = static_cast<int64_t>(receipt.session_epoch);
+        row["economy_generation"] =
+            static_cast<int64_t>(receipt.economy_generation);
+        row["opcode"] = receipt.opcode;
+        row["code"] = static_cast<int>(receipt.code);
+        row["reason"] = String(receipt.reason);
+        rows.push_back(row);
+    }
+    out["ok"] = true;
+    out["receipts"] = rows;
+    return out;
 }
 
 Dictionary DCWorldExt::run_economy_slice(const Dictionary &ctx) {
@@ -113,16 +219,22 @@ Dictionary DCWorldExt::run_economy_slice_compact(const Dictionary &ctx) {
     return run_economy_slice_internal(ctx, true);
 }
 
-Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool compact) {
+Dictionary DCWorldExt::capture_economy_day_inputs(int64_t day_index) {
+    Dictionary out;
+    out["ok"] = false;
+    out["fatal"] = false;
+    out["fatal_reason"] = "";
+    out["stage"] = "";
+    out["captured"] = false;
+    out["path"] = "ECONOMY_GRAPH";
     if (_economy_runtime == nullptr) {
-        Dictionary out = unavailable();
-        out["done"] = true;
-        out["path"] = "ECONOMY_GRAPH";
-        out["mode"] = "native";
+        out["fatal"] = true;
+        out["fatal_reason"] = "economy_not_configured";
+        out["stage"] = "capture_economy_day_inputs";
         return out;
     }
     NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
-    const int64_t day_index = ctx.has("day_index") ? static_cast<int64_t>(ctx["day_index"]) : 0;
+    bool captured_any = false;
     const bool capture_cycle_context = runtime->needs_environment_capture(day_index);
     if (capture_cycle_context && _map_data != nullptr &&
         _map_data->has_method(StringName("neighbor_indices_packed")) &&
@@ -174,15 +286,13 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
                         _slots[canal_water_sid].arr_f32.ptr(),
                         passable.ptr(), costs.ptr(),
                         count, 0, topology_error, landform_ptr, has_river_ptr)) {
-                    Dictionary out;
-                    out["ok"] = false;
-                    out["done"] = true;
                     out["fatal"] = true;
                     out["path"] = "ECONOMY_GRAPH";
                     out["stage"] = "trade_topology_snapshot";
                     out["fatal_reason"] = String(topology_error.c_str());
                     return out;
                 }
+                captured_any = true;
                 if (_canal_topology_generation == 0) {
                     const PackedByteArray &mask = _slots[canal_mask_sid].arr_u8;
                     for (int32_t cell = 0; cell < mask.size(); ++cell) {
@@ -208,9 +318,6 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
         if (!valid_f32(sid_temp) || !valid_f32(sid_temp_30d) ||
             !valid_f32(sid_moisture) || !valid_f32(sid_plant_water) || !valid_f32(sid_snow) ||
             !valid_f32(sid_precip) || !valid_f32(sid_weather)) {
-            Dictionary out;
-            out["ok"] = false;
-            out["done"] = true;
             out["fatal"] = true;
             out["path"] = "ECONOMY_GRAPH";
             out["stage"] = "environment_snapshot";
@@ -224,9 +331,6 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
             _slots[sid_precip].arr_f32.size() != count ||
             _slots[sid_snow].arr_f32.size() != count ||
             _slots[sid_weather].arr_f32.size() != count) {
-            Dictionary out;
-            out["ok"] = false;
-            out["done"] = true;
             out["fatal"] = true;
             out["path"] = "ECONOMY_GRAPH";
             out["stage"] = "environment_snapshot";
@@ -242,15 +346,13 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
                                           _slots[sid_precip].arr_f32.ptr(),
                                           _slots[sid_snow].arr_f32.ptr(),
                                           _slots[sid_weather].arr_f32.ptr(), count, error)) {
-            Dictionary out;
-            out["ok"] = false;
-            out["done"] = true;
             out["fatal"] = true;
             out["path"] = "ECONOMY_GRAPH";
             out["stage"] = "environment_snapshot";
             out["fatal_reason"] = String(error.c_str());
             return out;
         }
+        captured_any = true;
         bool fog_solved = false;
         PackedByteArray visible_bytes;
         const uint8_t *visible_ptr = nullptr;
@@ -273,15 +375,13 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
             std::string vis_error;
             if (!runtime->capture_trade_visibility(visible_ptr, visible_count,
                     fog_solved, true, vis_error)) {
-                Dictionary out;
-                out["ok"] = false;
-                out["done"] = true;
                 out["fatal"] = true;
                 out["path"] = "ECONOMY_GRAPH";
                 out["stage"] = "trade_visibility_snapshot";
                 out["fatal_reason"] = String(vis_error.c_str());
                 return out;
             }
+            captured_any = true;
         }
     }
     if (runtime->needs_building_context_capture(day_index)) {
@@ -303,9 +403,6 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
             const float *reserve = f32_ptr(runtime->building_resource_reserve_slots()[r].c_str());
             const float *extra = f32_ptr(runtime->building_resource_extra_slots()[r].c_str());
             if (reserve != nullptr && extra == nullptr) {
-                Dictionary out;
-                out["ok"] = false;
-                out["done"] = true;
                 out["fatal"] = true;
                 out["path"] = "BUILDING_GRAPH";
                 out["stage"] = "building_context_snapshot";
@@ -334,15 +431,41 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
                 u8_ptr("cell_is_water"), u8_ptr("cell_has_river"), neighbor_ptr, resources,
                 resource_changes,
                 count, error)) {
-            Dictionary out;
-            out["ok"] = false;
-            out["done"] = true;
             out["fatal"] = true;
             out["path"] = "BUILDING_GRAPH";
             out["stage"] = "building_context_snapshot";
             out["fatal_reason"] = String(error.c_str());
             return out;
         }
+        captured_any = true;
+    }
+    out["ok"] = true;
+    out["captured"] = captured_any;
+    out["stage"] = captured_any ? "economy_day_inputs" : "economy_day_inputs_idle";
+    return out;
+}
+
+Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool compact) {
+    if (_economy_runtime == nullptr) {
+        Dictionary out = unavailable();
+        out["done"] = true;
+        out["path"] = "ECONOMY_GRAPH";
+        out["mode"] = "native";
+        return out;
+    }
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    const int64_t day_index = ctx.has("day_index") ? static_cast<int64_t>(ctx["day_index"]) : 0;
+    const Dictionary cap = capture_economy_day_inputs(day_index);
+    if (bool(cap.get("fatal", false))) {
+        Dictionary out;
+        out["ok"] = false;
+        out["done"] = true;
+        out["fatal"] = true;
+        out["path"] = String(cap.get("path", "ECONOMY_GRAPH"));
+        out["stage"] = String(cap.get("stage", "economy_day_inputs"));
+        out["fatal_reason"] = String(cap.get("fatal_reason", "economy_day_input_capture_failed"));
+        out["mode"] = "native";
+        return out;
     }
     Dictionary result = compact
         ? runtime->run_slice_compact(ctx)
@@ -498,6 +621,14 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
 }
 
 bool DCWorldExt::economy_should_run(int64_t day_index) const {
+    // Suppress main-thread production only when the worker both owns ECONOMY
+    // and has an attached production runtime. Fail open to sync otherwise so a
+    // missing attach cannot freeze the economy.
+    if (_runtime_host != nullptr &&
+        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::ECONOMY) &&
+        _runtime_host->economy_production_runtime_attached()) {
+        return false;
+    }
     return _economy_runtime != nullptr &&
            runtime_from(_economy_runtime)->should_run(day_index);
 }

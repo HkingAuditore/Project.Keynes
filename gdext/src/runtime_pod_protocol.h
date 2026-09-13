@@ -5,6 +5,7 @@
 // Godot 无关值"这条约束。
 #include "runtime_climate_passes.h"
 #include "runtime_climate_physics.h"
+#include "economy_graph_kernels.h"
 
 #include <array>
 #include <cstddef>
@@ -76,6 +77,8 @@ constexpr uint32_t RUNTIME_SAVE_SECTION_IDEOLOGY = 1u << 8;
 // D7 Country/Economy transaction journal section. Orthogonal to Economy POD
 // authority; persists Host peer request/result continuation state only.
 constexpr uint32_t RUNTIME_SAVE_SECTION_ECONOMY_ASSET = 1u << 9;
+// Economy POD (ECP1) graph authority section. Orthogonal to D7T1 asset journal.
+constexpr uint32_t RUNTIME_SAVE_SECTION_ECONOMY_POD = 1u << 10;
 
 static_assert(RUNTIME_COMMAND_QUEUE_CAPACITY == 4096u,
               "runtime command queue capacity is part of the ABI");
@@ -1246,6 +1249,32 @@ struct RuntimeThreadReport {
     uint64_t pod_work_units = 0;
     uint32_t pod_intent_count = 0;
     uint32_t pod_fallback_count = 0;
+    bool economy_pod_ready = false;
+    bool economy_pod_committed = false;
+    bool economy_pod_authority_ready = false;
+    int64_t economy_pod_committed_day = -1;
+    int64_t economy_pod_epoch_sample_day = -1;
+    uint64_t economy_pod_generation = 0;
+    uint64_t economy_pod_state_hash = 0;
+    uint64_t economy_pod_input_generation = 0;
+    uint64_t economy_pod_country_generation = 0;
+    uint32_t economy_pod_completed_stage_mask = 0;
+    uint32_t economy_pod_pending_outbox = 0;
+    uint32_t economy_pod_pending_inbox = 0;
+    uint32_t economy_pod_operation_gate_mask = 0;
+    uint32_t economy_pod_parity_ready_mask = 0;
+    uint32_t economy_replay_completed_stage_mask = 0;
+    uint32_t economy_replay_stage_cursor = 0;
+    uint64_t economy_replay_input_hash = 0;
+    uint64_t economy_replay_base_hash = 0;
+    uint64_t economy_replay_next_hash = 0;
+    std::array<uint64_t, RUNTIME_ECONOMY_GRAPH_STAGE_COUNT> economy_replay_stage_hash{};
+    std::array<uint64_t, RUNTIME_ECONOMY_GRAPH_STAGE_COUNT> economy_replay_stage_work{};
+    std::array<double, RUNTIME_ECONOMY_GRAPH_STAGE_COUNT> economy_replay_stage_ms{};
+    bool economy_replay_input_captured = false;
+    bool economy_replay_committed = false;
+    bool economy_replay_parity_ready = false;
+    char economy_replay_fallback_reason[64]{};
     // Consolidated SHADOW domain-authority runner metrics. These are
     // diagnostic only; implemented_domain_mask remains the promotion gate.
     uint32_t domain_authority_planned_mask = 0;
@@ -1483,6 +1512,8 @@ struct RuntimeSaveBundle {
     std::vector<uint8_t> events_bytes;
     std::vector<uint8_t> effect_bytes;
     std::vector<uint8_t> ideology_bytes;
+    // Economy POD ECP1 section (graph authority snapshot).
+    std::vector<uint8_t> economy_pod_bytes;
     // D7T1 Host Country/Economy asset journal. Independent of Economy POD
     // section ownership; restores peer continuation without granting Economy
     // ACTIVE authority.

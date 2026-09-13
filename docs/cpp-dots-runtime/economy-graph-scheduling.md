@@ -216,6 +216,15 @@ PKEC v8 在 `building_employment` 的同一 active-cell slice 内先计算生活
 国内贸易规划/派单同样不能导出预留库存。预留缓存可由已持久化建筑状态确定性重建，因此
 ECONOMY_GRAPH stage、截止日语义和 PKEC 权威布局均不变化。
 
+### Phase 2–6 scheduling note（2026-09-13）
+
+生产 ACTIVE 路径在 Host ECONOMY stage 上调用 `worker_run_compact_slice`（同一
+`NativeEconomyRuntime` 公式 owner），**不**经 StageOps mutate。SHADOW 下
+`execute_economy_worker_stage` + StageOps（mutate=false）做哈希对拍；sync
+`run_slice_internal` 在各 graph stage 成功完成后发布 stage reference
+（`work_units=cell_count`）。`implemented_domain_mask` / 生产 request 为
+`0xB7E`（含 ECONOMY）。13 个独立 mutate TU 仍为后续抽取项。
+
 ### 建筑计划 continuation（2026-07-20）
 
 `building_plan` 不再在 `start_epoch()` 内同步执行全图扫描。原生 runtime 在 sample-day 冻结后持有

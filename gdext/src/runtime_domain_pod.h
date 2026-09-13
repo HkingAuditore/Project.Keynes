@@ -111,6 +111,47 @@ struct RuntimeEconomyPodState {
     std::vector<int64_t> inventory;
     uint64_t generation = 0;
     uint64_t ledger_failures = 0;
+    int64_t committed_day = -1;
+    int64_t epoch_sample_day = -1;
+    uint64_t session_epoch = 0;
+    uint64_t input_generation = 0;
+    uint64_t country_generation = 0;
+    uint32_t stage_index = 0;
+    uint32_t stage_cursor = 0;
+    uint32_t operation_gate_mask = 0;
+    uint32_t pending_outbox = 0;
+    uint32_t pending_inbox = 0;
+    uint32_t completed_stage_mask = 0;
+    bool epoch_active = false;
+    bool waiting_for_peer = false;
+    bool authority_ready = false;
+};
+
+// Immutable Economy publication.  This is deliberately a fixed-size header:
+// detailed market/building/cohort data remains behind the existing bounded
+// query facade and is never copied through the POD worker boundary.
+struct RuntimeEconomyPodSnapshot {
+    uint64_t session_epoch = 0;
+    uint64_t generation = 0;
+    uint64_t state_hash = 0;
+    int64_t committed_day = -1;
+    int64_t from_day = -1;
+    int64_t epoch_sample_day = -1;
+    uint64_t input_generation = 0;
+    uint64_t country_generation = 0;
+    uint32_t dirty_families = 0;
+    uint32_t completed_stage_mask = 0;
+    uint32_t pending_outbox = 0;
+    uint32_t pending_inbox = 0;
+    uint32_t operation_gate_mask = 0;
+    int64_t population_error = 0;
+    int64_t money_error = 0;
+    int64_t goods_error = 0;
+    uint32_t changed_cells = 0;
+    uint32_t changed_cohorts = 0;
+    bool committed = false;
+    bool authority_ready = false;
+    char fallback_reason[64]{};
 };
 
 struct RuntimeEventPodEntry {
@@ -163,6 +204,12 @@ public:
     void snapshot_climate(RuntimeClimatePodSnapshot &out) const;
     bool restore_climate(const RuntimeClimatePodSnapshot &snapshot,
                          std::string &error);
+
+    // Economy publication is a deep copy of the POD header only.  The
+    // mutable vectors remain worker-owned and are never exposed to callers.
+    void snapshot_economy(RuntimeEconomyPodSnapshot &out) const;
+    bool restore_economy_snapshot(const RuntimeEconomyPodSnapshot &snapshot,
+                                  std::string &error);
 
     // Cheap deterministic checks used by CI and by the GDExtension smoke
     // test.  They exercise all state stores without constructing Godot values.

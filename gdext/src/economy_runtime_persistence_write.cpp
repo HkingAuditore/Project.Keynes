@@ -162,7 +162,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
         append_le<int32_t>(payload, _price_ceiling_recover_bp);
         append_le<int64_t>(payload, price_ceiling_state_count());
         append_le<int32_t>(payload, static_cast<int32_t>(
-            _fiscal_peer_journal.size()));
+            _asset_peer_journal.size()));
         append_id_table(payload, _profession_ids);
         append_id_table(payload, _ethnicity_ids);
         append_id_table(payload, _good_ids);
@@ -1220,8 +1220,8 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
     }
     if (_save.section == SAVE_SECTION_FISCAL_PEER) {
         std::vector<uint64_t> request_ids;
-        request_ids.reserve(_fiscal_peer_journal.size());
-        for (const auto &entry : _fiscal_peer_journal)
+        request_ids.reserve(_asset_peer_journal.size());
+        for (const auto &entry : _asset_peer_journal)
             request_ids.push_back(entry.first);
         std::sort(request_ids.begin(), request_ids.end());
         const int32_t begin = _save.fiscal_peer_cursor;
@@ -1229,7 +1229,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             static_cast<int32_t>(request_ids.size()),
             begin + std::max(1, (budget - 16) / 176));
         for (; _save.fiscal_peer_cursor < end; ++_save.fiscal_peer_cursor) {
-            const auto &record = _fiscal_peer_journal.at(request_ids[
+            const auto &record = _asset_peer_journal.at(request_ids[
                 static_cast<size_t>(_save.fiscal_peer_cursor)]);
             append_le<uint64_t>(payload, record.request_id);
             append_le<uint64_t>(payload, record.transaction_id);

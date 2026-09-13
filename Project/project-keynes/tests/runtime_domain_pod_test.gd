@@ -28,7 +28,10 @@ func _init() -> void:
 		var report: Dictionary = ext.get_runtime_thread_report() if ext.has_method("get_runtime_thread_report") else {}
 		_expect("POD diagnostics are present", report.has("pod_completed_domain_mask") \
 			and report.has("pod_work_units") and report.has("pod_fallback_count") \
-			and report.has("climate_pod_plan_ms") and report.has("climate_pod_state_hash"))
+			and report.has("climate_pod_plan_ms") and report.has("climate_pod_state_hash") \
+			and report.has("economy_pod_ready") \
+			and report.has("economy_pod_completed_stage_mask") \
+			and report.has("economy_pod_pending_outbox"))
 		_expect("POD ABI version is exposed", int(report.get("pod_domain_abi_version", 0)) == 3)
 		var inputs: Dictionary = ext.capture_runtime_inputs({
 			"generation": 1,

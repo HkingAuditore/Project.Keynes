@@ -411,7 +411,11 @@ func _run() -> int:
 		if generator != null and generator.has_method("get_effect_report"):
 			effect_report = generator.get_effect_report()
 		if fatal:
-			push_error("[headless-perf] fatal economy report at day %d" % day)
+			push_error("[headless-perf] fatal economy report at day %d reason=%s stage=%s" % [
+				day,
+				String(economy_report.get("fatal_reason", economy_report.get("reason", "?"))),
+				String(economy_report.get("stage", economy_report.get("executed_stage", "?")))
+			])
 			break
 
 	var output_path := String(recorder.call("stop_and_export"))

@@ -14,6 +14,8 @@
 #include "runtime_modifier_pod.h"
 #include "runtime_effect_pod.h"
 #include "runtime_ideology_pod.h"
+#include "runtime_economy_pod.h"
+#include "economy_graph_kernels.h"
 
 #include <array>
 #include <atomic>
@@ -32,6 +34,7 @@
 
 namespace pk {
 
+class NativeEconomyRuntime;
 class NativeSimulationHost {
 public:
     NativeSimulationHost();
@@ -87,6 +90,40 @@ public:
     std::shared_ptr<const RuntimeEnvironmentSnapshot>
     environment_input_for_plan() const;
     bool publish_country_snapshot(const RuntimeCountryPodSnapshot &snapshot);
+    void publish_economy_reference(int64_t day, uint64_t generation,
+                                   uint64_t state_hash) noexcept;
+    // Per-stage sync reference for SHADOW Economy POD parity tooling. Does not
+    // grant ACTIVE authority.
+    void publish_economy_stage_reference(uint32_t stage, int64_t day,
+                                         uint64_t generation,
+                                         uint64_t state_hash,
+                                         uint64_t work_units) noexcept;
+    bool execute_economy_worker_stage(int64_t day, uint64_t input_generation,
+                                      uint32_t cell_count,
+                                      uint64_t country_generation,
+                                      uint64_t catalog_hash,
+                                      std::string &error);
+    void attach_economy_stage_ops(
+        std::unique_ptr<EconomyGraphStageOps> ops) noexcept;
+    // ACTIVE production: point at the live NativeEconomyRuntime formula owner.
+    // StageOps stay mutate=false (SHADOW POD parity hashes only).
+    void attach_economy_production_runtime(class NativeEconomyRuntime *rt) noexcept;
+    NativeEconomyRuntime *economy_production_runtime() const noexcept {
+        return _economy_production_runtime;
+    }
+    bool economy_production_runtime_attached() const noexcept {
+        return _economy_production_runtime != nullptr;
+    }
+    // Phase 4+: POD queue admits opcodes 1..23; commit_pending_commands applies
+    // via EconomyPodCommandExecutor → NativeEconomyRuntime::apply_pod_command.
+    // Sync submit_commands remains a separate facade — do not double-submit.
+    bool submit_economy_pod_command(const RuntimeEconomyPodCommand &command,
+                                    std::string &error);
+    bool poll_economy_pod_receipt(RuntimeEconomyPodReceipt &out) noexcept;
+    void set_economy_sync_writes_forbidden(bool forbidden) noexcept;
+    bool economy_sync_writes_forbidden() const noexcept {
+        return _economy_sync_writes_forbidden.load(std::memory_order_acquire);
+    }
     bool publish_country_catalog(const RuntimeCountryPodCatalog &catalog,
                                  std::string &error);
     bool country_pod_configured() const {
@@ -334,8 +371,8 @@ public:
         //                             be a subset of this one.
         //   completed_domain_mask     per-day report of what actually ran.
         // Climate + Country + Trigger + Modifier + Effect + Ideology + Events
-        // ship ACTIVE-authoritative in production as of H7/H8/I8
-        // (world_runtime_host.gd requests 0xA7E when
+        // + Economy ship ACTIVE-authoritative in production as of Phase 2-6
+        // (world_runtime_host.gd requests 0xB7E when
         // runtime_climate_authority_enabled). Contract:
         // authoritative & EFFECT => worker is the sole Effect writer; snapshot
         // write-back targets legacy EffectRuntime; only effect_runtime /
@@ -348,6 +385,12 @@ public:
         // stage bit and its own snapshot, but the legacy GameplayEventBus journal
         // remains the production consumer source until the consumer migration
         // lands, so nothing on the main thread is suppressed for it.
+        // ECONOMY owns ACTIVE production via attach_economy_production_runtime
+        // + worker_run_compact_slice (same NativeEconomyRuntime formula owner).
+        // StageOps stay mutate=false for SHADOW POD parity hashes only.
+        // Main-thread economy_should_run is suppressed when worker-authoritative
+        // AND the production runtime pointer is attached (fail-open to sync
+        // otherwise).
         return runtime_domain_mask(RuntimeDomainId::COMMIT)
             | runtime_domain_mask(RuntimeDomainId::CLIMATE)
             | runtime_domain_mask(RuntimeDomainId::COUNTRY)
@@ -355,7 +398,8 @@ public:
             | runtime_domain_mask(RuntimeDomainId::MODIFIER)
             | runtime_domain_mask(RuntimeDomainId::EFFECT)
             | runtime_domain_mask(RuntimeDomainId::IDEOLOGY)
-            | runtime_domain_mask(RuntimeDomainId::EVENTS);
+            | runtime_domain_mask(RuntimeDomainId::EVENTS)
+            | runtime_domain_mask(RuntimeDomainId::ECONOMY);
     }
     RuntimeWorkerState state() const {
         return _state.load(std::memory_order_acquire);
@@ -735,6 +779,50 @@ private:
     std::atomic<uint64_t> _pod_work_units{0};
     std::atomic<uint32_t> _pod_intent_count{0};
     std::atomic<uint32_t> _pod_fallback_count{0};
+    std::atomic<bool> _economy_pod_ready{false};
+    std::atomic<bool> _economy_pod_committed{false};
+    std::atomic<bool> _economy_pod_authority_ready{false};
+    std::atomic<int64_t> _economy_pod_committed_day{-1};
+    std::atomic<int64_t> _economy_pod_epoch_sample_day{-1};
+    std::atomic<uint64_t> _economy_pod_generation{0};
+    std::atomic<uint64_t> _economy_pod_state_hash{0};
+    std::atomic<uint64_t> _economy_pod_input_generation{0};
+    std::atomic<uint64_t> _economy_pod_country_generation{0};
+    std::atomic<uint32_t> _economy_pod_completed_stage_mask{0};
+    std::atomic<uint32_t> _economy_pod_pending_outbox{0};
+    std::atomic<uint32_t> _economy_pod_pending_inbox{0};
+    std::atomic<uint32_t> _economy_pod_operation_gate_mask{0};
+    std::atomic<uint32_t> _economy_pod_parity_ready_mask{0};
+    std::atomic<bool> _economy_sync_writes_forbidden{false};
+    std::atomic<uint32_t> _economy_replay_completed_stage_mask{0};
+    std::atomic<uint32_t> _economy_replay_stage_cursor{0};
+    std::atomic<uint64_t> _economy_replay_input_hash{0};
+    std::atomic<uint64_t> _economy_replay_base_hash{0};
+    std::atomic<uint64_t> _economy_replay_next_hash{0};
+    std::array<std::atomic<uint64_t>, RUNTIME_ECONOMY_GRAPH_STAGE_COUNT>
+        _economy_replay_stage_hash{};
+    std::array<std::atomic<uint64_t>, RUNTIME_ECONOMY_GRAPH_STAGE_COUNT>
+        _economy_replay_stage_work{};
+    std::array<std::atomic<double>, RUNTIME_ECONOMY_GRAPH_STAGE_COUNT>
+        _economy_replay_stage_ms{};
+    std::atomic<bool> _economy_replay_input_captured{false};
+    std::atomic<bool> _economy_replay_committed{false};
+    std::atomic<bool> _economy_replay_parity_ready{false};
+    std::array<std::atomic<char>, 64> _economy_replay_fallback_reason{};
+    std::atomic<int64_t> _economy_reference_day{-1};
+    std::atomic<uint64_t> _economy_reference_generation{0};
+    std::atomic<uint64_t> _economy_reference_hash{0};
+    std::array<std::atomic<uint64_t>, RUNTIME_ECONOMY_GRAPH_STAGE_COUNT>
+        _economy_stage_reference_hash{};
+    std::array<std::atomic<uint64_t>, RUNTIME_ECONOMY_GRAPH_STAGE_COUNT>
+        _economy_stage_reference_work{};
+    std::array<std::atomic<uint8_t>, RUNTIME_ECONOMY_GRAPH_STAGE_COUNT>
+        _economy_stage_reference_present{};
+    RuntimeEconomyPodAuthority _economy_pod_authority;
+    std::unique_ptr<EconomyGraphStageOps> _economy_stage_ops;
+    std::unique_ptr<EconomyPodCommandExecutor> _economy_pod_command_executor;
+    // Non-owning: DCWorldExt's NativeEconomyRuntime, ACTIVE production only.
+    NativeEconomyRuntime *_economy_production_runtime = nullptr;
     // Consolidated SHADOW domain runner diagnostics. These values describe a
     // worker-only plan/replay transaction and never unlock ACTIVE.
     std::atomic<uint32_t> _domain_authority_planned_mask{0};

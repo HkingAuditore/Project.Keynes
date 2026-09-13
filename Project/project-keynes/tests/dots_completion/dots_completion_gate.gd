@@ -25,8 +25,8 @@
 #         上有同名字段（用 default-constructed 实例反射 .get 校验）
 #   (d) 当前 H8/I8 authority / D7 transport journal 静态契约
 #       - implemented_domain_mask 包含
-#         COMMIT|CLIMATE|COUNTRY|TRIGGER_INPUT|MODIFIER|EFFECT|IDEOLOGY|EVENTS
-#       - 生产 worker request 为 0xA7E
+#         COMMIT|CLIMATE|COUNTRY|TRIGGER_INPUT|MODIFIER|EFFECT|IDEOLOGY|EVENTS|ECONOMY
+#       - 生产 worker request 为 0xB7E
 #       - D7T1 section 与 Economy fiscal peer journal 仍在源码中
 #   (e) 1000 tick SAME_SOURCE 数值收敛 [SKIP / RUNTIME-GATED]
 #       - 当前脚本静态校验，不真正跑 tick；记录 baseline.json 中的占位指标。
@@ -225,11 +225,11 @@ func _check_authority_contract() -> void:
 		and mask_block.contains("runtime_domain_mask(RuntimeDomainId::IDEOLOGY)") \
 		and mask_block.contains("runtime_domain_mask(RuntimeDomainId::TRIGGER_INPUT)") \
 		and mask_block.contains("runtime_domain_mask(RuntimeDomainId::EVENTS)") \
-		and not mask_block.contains("RuntimeDomainId::ECONOMY")
-	_expect_gate_contract("(d) implemented_domain_mask is COMMIT|CLIMATE|COUNTRY|TRIGGER|MODIFIER|EFFECT|IDEOLOGY|EVENTS", mask_ok)
+		and mask_block.contains("RuntimeDomainId::ECONOMY")
+	_expect_gate_contract("(d) implemented_domain_mask is COMMIT|CLIMATE|COUNTRY|TRIGGER|MODIFIER|EFFECT|IDEOLOGY|EVENTS|ECONOMY", mask_ok)
 
-	var request_ok := world_host.contains("config[\"authoritative_domain_mask\"] = 0xA7E")
-	_expect_gate_contract("(d) production worker request is exactly 0xA7E", request_ok)
+	var request_ok := world_host.contains("config[\"authoritative_domain_mask\"] = 0xB7E")
+	_expect_gate_contract("(d) production worker request is exactly 0xB7E", request_ok)
 
 	var d7_marker_ok := host_source.contains("D7_TRANSACTION_MAGIC") \
 		and host_source.contains("\"D7T1\"") \

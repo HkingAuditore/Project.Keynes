@@ -1,7 +1,7 @@
 extends SceneTree
 
 # F8 contracts:
-# - implemented_domain_mask is 0xA7E after H8/I8 (adds TRIGGER and EVENTS bits)
+# - implemented_domain_mask is 0xB7E after Phase 2-6 (adds ECONOMY bit)
 # - ACTIVE grant makes worker the sole Effect writer; this SHADOW fixture keeps
 #   authoritative & EFFECT == 0
 # - Effect POD catalog resolves registered behaviors via Host resolver
@@ -57,7 +57,7 @@ func _run() -> void:
 	_expect("Effect SHADOW host starts", bool(started.get("ok", false)))
 	var report: Dictionary = ext.get_runtime_thread_report()
 	_expect("Effect is not ACTIVE authority",
-		int(report.get("implemented_domain_mask", 0)) == 0xA7E)
+		int(report.get("implemented_domain_mask", 0)) == 0xB7E)
 	_expect("Effect authoritative bit stays clear",
 		(int(report.get("authoritative_domain_mask", 0)) & 0x020) == 0)
 	var effect_report_fields := [

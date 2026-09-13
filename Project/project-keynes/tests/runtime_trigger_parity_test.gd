@@ -11,7 +11,7 @@ func _init() -> void:
 		quit(1)
 		return
 	# H8: TRIGGER is inside the implemented mask now. Implemented is
-	# CLIMATE|COUNTRY|TRIGGER|IDEOLOGY|EFFECT|MODIFIER|EVENTS|COMMIT = 0xA7E.
+	# CLIMATE|COUNTRY|TRIGGER|IDEOLOGY|EFFECT|MODIFIER|ECONOMY|EVENTS|COMMIT = 0xB7E.
 	# Whole-graph ACTIVE is still refused because required is 0xFFF, so
 	# missing_domain_mask stays 0x581 and authority_ready stays false.
 	var started: Dictionary = ext.start_runtime_worker({
@@ -22,7 +22,7 @@ func _init() -> void:
 		"paused": true,
 	})
 	var report: Dictionary = ext.get_runtime_thread_report()
-	var ok := bool(started.get("ok", false)) and int(report.get("implemented_domain_mask", 0)) == 0xA7E \
+	var ok := bool(started.get("ok", false)) and int(report.get("implemented_domain_mask", 0)) == 0xB7E \
 		and int(report.get("missing_domain_mask", 0)) == 0x581 \
 		and not bool(report.get("authority_ready", true))
 	ext.request_runtime_stop()
@@ -39,7 +39,7 @@ func _init() -> void:
 	var active: Dictionary = active_ext.start_runtime_worker({
 		"simulation_thread_mode": "ACTIVE",
 		"graph_coverage_complete": true,
-		"authoritative_domain_mask": 0xA7E,
+		"authoritative_domain_mask": 0xB7E,
 		"day": 0,
 		"speed_days_per_second": 0.0,
 		"paused": true,

@@ -23,9 +23,27 @@ identity 真正不匹配才拒绝或 fault，且不自动切换同步权威。�
 重复 request 只重发原 terminal，不再次修改 escrow。财政 continuation
 仍由 Economy-owned coordinator 在同步 Economy stage 内推进，但 M1 fiscal bridge 已可在
 Country worker 唯一写者模式下经 Host request/result transport 完成 peer 结果消费；Host
-已具备 `D7T1` transaction journal section 的编解码、checksum 和恢复基础。正式 Economy
-authority 仍为 SYNC，`implemented_domain_mask` 当前为 `0x806`，Economy 本身仍未进入
-ACTIVE mask。
+已具备 `D7T1` transaction journal section 的编解码、checksum 和恢复基础。
+
+2026-09-13 Phase 2–6：`implemented_domain_mask` / 生产 request 为 **`0xB7E`**
+（Climate|Country|Trigger|Ideology|Modifier|Effect|Economy|Events|COMMIT）。
+ACTIVE 日路径在 ECONOMY 授予位下调用
+`NativeEconomyRuntime::worker_run_compact_slice`（同一 `run_slice_compact` 公式
+owner，最多 64 片/日）。StageOps 生产附着 **恒** `mutate=false`（SHADOW POD
+哈希对拍）；`execute_economy_worker_stage` 不做生产突变。主线程
+`economy_should_run` 仅在 worker 权威且 production runtime 已挂接时抑制。
+worker 权威下主线程仍通过 `DCWorldExt::capture_economy_day_inputs` 冻结当日
+环境/建筑上下文（不跑 mutation）；缺捕获时 compact slice 以
+`pending_input` 软停车，不写 ledger fatal。
+Phase 3：权威时 `open_all_d7_operation_gates` + 非财政 peer side-effects。
+Phase 4：POD opcode 1..23 准入/ACK；`commit_pending_commands` 在 Host ACTIVE
+挂接 `EconomyPodCommandExecutor` 后经 `apply_pod_command` → `apply_command`
+执行（与 sync `submit_commands` 单路径，禁止同请求双提交）。无 executor 时
+SHADOW self_test 仍可 Committed-without-mutate。
+Phase 5：`RuntimeEconomySnapshotRing` + PKSR **ECP1 abi2**（业务摘要标量 +
+audit errors）；PKEC 仍管业务态。named kernel TU 经
+`economy_dispatch_mutate_stage` 复用 `NativeEconomyRuntime` 公式。
+Soak：`tests/runtime_economy_authority_soak_test.gd`（`PK_ECONOMY_SOAK_DAYS`）。
 
 ## 2026-09-09 Country treasury typed transaction 边界（K2-B 部分完成）
 

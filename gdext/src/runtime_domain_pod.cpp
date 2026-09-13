@@ -136,6 +136,60 @@ bool RuntimeDomainPodPipeline::restore_climate(
     return true;
 }
 
+void RuntimeDomainPodPipeline::snapshot_economy(RuntimeEconomyPodSnapshot &out) const {
+    out = RuntimeEconomyPodSnapshot{};
+    out.session_epoch = _economy.session_epoch;
+    out.generation = _economy.generation;
+    out.committed_day = _economy.committed_day;
+    out.from_day = _economy.committed_day > 0 ? _economy.committed_day - 1 : -1;
+    out.epoch_sample_day = _economy.epoch_sample_day;
+    out.input_generation = _economy.input_generation;
+    out.country_generation = _economy.country_generation;
+    out.completed_stage_mask = _economy.completed_stage_mask;
+    out.pending_outbox = _economy.pending_outbox;
+    out.pending_inbox = _economy.pending_inbox;
+    out.operation_gate_mask = _economy.operation_gate_mask;
+    out.authority_ready = _economy.authority_ready;
+    out.committed = !_economy.epoch_active && !_economy.waiting_for_peer &&
+        _economy.committed_day >= 0;
+    out.state_hash = hash_mix(FNV_OFFSET, _economy.generation);
+    out.state_hash = hash_mix(out.state_hash,
+        static_cast<uint64_t>(_economy.committed_day));
+    out.state_hash = hash_mix(out.state_hash,
+        static_cast<uint64_t>(_economy.completed_stage_mask));
+}
+
+bool RuntimeDomainPodPipeline::restore_economy_snapshot(
+        const RuntimeEconomyPodSnapshot &snapshot, std::string &error) {
+    error.clear();
+    if (snapshot.generation == 0 || snapshot.committed_day < 0 ||
+        snapshot.from_day > snapshot.committed_day ||
+        snapshot.completed_stage_mask == 0 || snapshot.pending_outbox != 0 ||
+        snapshot.pending_inbox != 0 || !snapshot.committed) {
+        error = "runtime_economy_snapshot_not_committed";
+        return false;
+    }
+    if (snapshot.money_error != 0 || snapshot.population_error != 0 ||
+        snapshot.goods_error != 0) {
+        error = "runtime_economy_snapshot_conservation_failed";
+        return false;
+    }
+    _economy.session_epoch = snapshot.session_epoch;
+    _economy.generation = snapshot.generation;
+    _economy.committed_day = snapshot.committed_day;
+    _economy.epoch_sample_day = snapshot.epoch_sample_day;
+    _economy.input_generation = snapshot.input_generation;
+    _economy.country_generation = snapshot.country_generation;
+    _economy.completed_stage_mask = snapshot.completed_stage_mask;
+    _economy.pending_outbox = 0;
+    _economy.pending_inbox = 0;
+    _economy.operation_gate_mask = snapshot.operation_gate_mask;
+    _economy.epoch_active = false;
+    _economy.waiting_for_peer = false;
+    _economy.authority_ready = snapshot.authority_ready;
+    return true;
+}
+
 void RuntimeDomainPodPipeline::reset(uint32_t cell_count, uint32_t country_count) {
     reserve_store(_modifier.entries, std::max<size_t>(country_count, 64));
     reserve_store(_effect.instances, std::max<size_t>(country_count, 64));
@@ -163,6 +217,20 @@ void RuntimeDomainPodPipeline::reset(uint32_t cell_count, uint32_t country_count
     _climate.anomaly = 0.0;
     _climate.generation = 0;
     _economy.generation = 0; _economy.ledger_failures = 0;
+    _economy.committed_day = -1;
+    _economy.epoch_sample_day = -1;
+    _economy.session_epoch = 0;
+    _economy.input_generation = 0;
+    _economy.country_generation = 0;
+    _economy.stage_index = 0;
+    _economy.stage_cursor = 0;
+    _economy.operation_gate_mask = 0;
+    _economy.pending_outbox = 0;
+    _economy.pending_inbox = 0;
+    _economy.completed_stage_mask = 0;
+    _economy.epoch_active = false;
+    _economy.waiting_for_peer = false;
+    _economy.authority_ready = false;
     _events.next_event_id = 1; _events.generation = 0;
     _report = RuntimeDomainPipelineReport{};
     _restored_legacy_modifier = false;
@@ -512,21 +580,45 @@ RuntimeDomainReport RuntimeDomainPodPipeline::run_economy(
     out.input_generation = context.input_generation;
     out.base_generation = _economy.generation;
     const auto begin = std::chrono::steady_clock::now();
-    const size_t count = country != nullptr ? country->country_count : 0;
-    if (_economy.treasury.size() != count) _economy.treasury.assign(count, 0);
-    uint64_t work = 0;
-    for (size_t i = 0; i < count; ++i) {
-        const int64_t before = _economy.treasury[i];
-        const int64_t source = i < country->country_cash.size() ? country->country_cash[i] : 0;
-        _economy.treasury[i] = source;
-        if (before != source) ++work;
+    if (country == nullptr || !country->bootstrapped) {
+        out.completed = 0;
+        out.preflight_ok = 0;
+        out.fallback = 1;
+        set_fallback_reason(out, country == nullptr
+            ? "missing_country_snapshot" : "country_not_bootstrapped");
+        out.timing.elapsed_ms = elapsed_ms(begin);
+        return out;
     }
+    // J2-B: publish orchestration header only. Do not claim full-stage authority
+    // or invent treasury mutations from the country cash snapshot.
+    _economy.epoch_active = true;
+    _economy.epoch_sample_day = context.day;
+    _economy.input_generation = context.input_generation;
+    _economy.country_generation = country->generation;
+    _economy.stage_index = 0;
+    _economy.stage_cursor = 0;
+    _economy.completed_stage_mask = 0;
+    _economy.pending_outbox = 0;
+    _economy.pending_inbox = 0;
     ++_economy.generation;
-    out.completed = 1; out.dirty_families = work > 0 ? RUNTIME_DIRTY_ECONOMY_UI : 0;
-    out.timing.work_units = count; out.timing.ack_count = static_cast<uint32_t>(acks.size());
+    _economy.committed_day = context.day;
+    // Diagnostic pipeline still marks the stage complete for Host SHADOW
+    // telemetry, but authority_ready stays false until ACTIVE migration.
+    _economy.completed_stage_mask = RUNTIME_ECONOMY_GRAPH_ALL_STAGE_MASK;
+    _economy.epoch_active = false;
+    _economy.authority_ready = false;
+    (void)acks;
+    out.completed = 1;
+    out.dirty_families = RUNTIME_DIRTY_ECONOMY_UI;
+    out.timing.work_units = country->country_count;
+    out.timing.ack_count = 0;
     out.timing.state_hash = hash_mix(FNV_OFFSET, _economy.generation);
-    out.timing.state_hash = hash_mix(out.timing.state_hash, static_cast<uint64_t>(context.day));
-    out.timing.elapsed_ms = elapsed_ms(begin); return out;
+    out.timing.state_hash = hash_mix(out.timing.state_hash,
+        static_cast<uint64_t>(context.day));
+    out.timing.state_hash = hash_mix(out.timing.state_hash,
+        _economy.completed_stage_mask);
+    out.timing.elapsed_ms = elapsed_ms(begin);
+    return out;
 }
 
 RuntimeDomainReport RuntimeDomainPodPipeline::run_events(

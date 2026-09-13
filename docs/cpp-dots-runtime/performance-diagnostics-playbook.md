@@ -1,5 +1,14 @@
 # Performance Diagnostics Playbook
 
+## Economy ACTIVE / SHADOW metrics (Phase 2–6)
+
+For Economy worker authority sessions, keep `main_wait_on_sim_us = 0`. Prefer
+report fields `economy_pod_*`, `economy_pod_parity_ready_mask`,
+`economy_pod_operation_gate_mask`, and per-stage `economy_replay_stage_ms`
+(do not mix with `slice_elapsed_ms`). Snapshot ring publish must not block day
+commit; dropped snapshots are UI-only. Production mutations are compact slices,
+not StageOps mutate.
+
 ## 2026-09 50 倍速归因列
 
 Country 研究需同时看墙钟和确定性工作量。墙钟列为
