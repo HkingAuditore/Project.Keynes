@@ -347,7 +347,7 @@ Dictionary NativeEconomyRuntime::begin_restore() {
         static_cast<size_t>(_cell_count) * ACTIVE_TAX_KIND_COUNT, 0);
     _fiscal_reservation_continuation = {};
     _fiscal_settlement_continuation = {};
-    _fiscal_peer_journal.clear();
+    _asset_peer_journal.clear();
     _epoch_begin_post_fiscal_pending = false;
     _epoch_begin_pending_day = -1;
     _fiscal_last_events.clear();

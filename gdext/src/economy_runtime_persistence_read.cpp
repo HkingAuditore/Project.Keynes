@@ -2598,7 +2598,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 error = "save_fiscal_peer_completed_record_invalid";
                 return false;
             }
-            if (!_fiscal_peer_journal.emplace(record.request_id, record).second) {
+            if (!_asset_peer_journal.emplace(record.request_id, record).second) {
                 error = "save_fiscal_peer_duplicate";
                 return false;
             }

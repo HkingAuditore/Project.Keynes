@@ -9,7 +9,7 @@
 `world_ext_simulation_host.cpp` 做参数校验、PackedArray 深拷贝和轻量轮询；worker 不保存
 `Object`、`Variant`、`Dictionary`、`MapData` 或场景树引用。
 
-当前 `implemented_domain_mask()` 为 `CLIMATE | COUNTRY | TRIGGER_INPUT | IDEOLOGY | MODIFIER | EFFECT | EVENTS | COMMIT = 0xA7E`（H7/H8/I8 之后）。Economy 等仍不在 ACTIVE authority mask，整图 `required` 仍是 `0xFFF`，`missing_domain_mask = 0x581`。因此：
+当前 `implemented_domain_mask()` 为 `CLIMATE | COUNTRY | TRIGGER_INPUT | IDEOLOGY | MODIFIER | EFFECT | ECONOMY | EVENTS | COMMIT = 0xB7E`（Economy Phase 2–6）。整图 `required` 仍是 `0xFFF`，`missing_domain_mask = 0x481`。因此：
 
 - `SHADOW` 可以启动，用于时钟、命令排序、环境快照、提交环和故障路径测试；
 - `ACTIVE` 在缺少任一 native POD domain handler 时直接返回

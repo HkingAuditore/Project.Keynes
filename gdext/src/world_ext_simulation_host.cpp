@@ -4,8 +4,11 @@
 #include "runtime_domain_pod.h"
 #include "runtime_country_pod.h"
 #include "country_runtime.h"
+#include "economy_runtime.h"
 #include "runtime_protocol_guard.h"
 #include "runtime_ideology_pod.h"
+#include "runtime_economy_pod.h"
+#include "economy_graph_kernels.h"
 
 #include <algorithm>
 #include <chrono>
@@ -121,6 +124,43 @@ static Dictionary runtime_report_to_dictionary(const RuntimeThreadReport &report
     out["pod_work_units"] = static_cast<int64_t>(report.pod_work_units);
     out["pod_intent_count"] = static_cast<int>(report.pod_intent_count);
     out["pod_fallback_count"] = static_cast<int>(report.pod_fallback_count);
+    out["economy_pod_ready"] = report.economy_pod_ready;
+    out["economy_pod_committed"] = report.economy_pod_committed;
+    out["economy_pod_authority_ready"] = report.economy_pod_authority_ready;
+    out["economy_pod_committed_day"] = report.economy_pod_committed_day;
+    out["economy_pod_epoch_sample_day"] = report.economy_pod_epoch_sample_day;
+    out["economy_pod_generation"] = static_cast<int64_t>(report.economy_pod_generation);
+    out["economy_pod_state_hash"] = static_cast<int64_t>(report.economy_pod_state_hash);
+    out["economy_pod_input_generation"] = static_cast<int64_t>(report.economy_pod_input_generation);
+    out["economy_pod_country_generation"] = static_cast<int64_t>(report.economy_pod_country_generation);
+    out["economy_pod_completed_stage_mask"] = static_cast<int64_t>(report.economy_pod_completed_stage_mask);
+    out["economy_pod_pending_outbox"] = static_cast<int>(report.economy_pod_pending_outbox);
+    out["economy_pod_pending_inbox"] = static_cast<int>(report.economy_pod_pending_inbox);
+    out["economy_pod_operation_gate_mask"] = static_cast<int>(report.economy_pod_operation_gate_mask);
+    out["economy_pod_parity_ready_mask"] = static_cast<int>(report.economy_pod_parity_ready_mask);
+    out["economy_replay_completed_stage_mask"] = static_cast<int64_t>(report.economy_replay_completed_stage_mask);
+    out["economy_replay_stage_cursor"] = static_cast<int>(report.economy_replay_stage_cursor);
+    out["economy_replay_input_hash"] = static_cast<int64_t>(report.economy_replay_input_hash);
+    out["economy_replay_base_hash"] = static_cast<int64_t>(report.economy_replay_base_hash);
+    out["economy_replay_next_hash"] = static_cast<int64_t>(report.economy_replay_next_hash);
+    out["economy_replay_input_captured"] = report.economy_replay_input_captured;
+    out["economy_replay_committed"] = report.economy_replay_committed;
+    out["economy_replay_parity_ready"] = report.economy_replay_parity_ready;
+    out["economy_replay_fallback_reason"] = String(report.economy_replay_fallback_reason);
+    PackedInt64Array replay_hashes;
+    PackedInt64Array replay_work;
+    PackedFloat64Array replay_ms;
+    replay_hashes.resize(static_cast<int>(pk::RUNTIME_ECONOMY_GRAPH_STAGE_COUNT));
+    replay_work.resize(static_cast<int>(pk::RUNTIME_ECONOMY_GRAPH_STAGE_COUNT));
+    replay_ms.resize(static_cast<int>(pk::RUNTIME_ECONOMY_GRAPH_STAGE_COUNT));
+    for (int i = 0; i < static_cast<int>(pk::RUNTIME_ECONOMY_GRAPH_STAGE_COUNT); ++i) {
+        replay_hashes.set(i, static_cast<int64_t>(report.economy_replay_stage_hash[i]));
+        replay_work.set(i, static_cast<int64_t>(report.economy_replay_stage_work[i]));
+        replay_ms.set(i, report.economy_replay_stage_ms[i]);
+    }
+    out["economy_replay_stage_hash"] = replay_hashes;
+    out["economy_replay_stage_work"] = replay_work;
+    out["economy_replay_stage_ms"] = replay_ms;
     out["domain_authority_planned_mask"] = static_cast<int64_t>(
         report.domain_authority_planned_mask);
     out["domain_authority_committed_mask"] = static_cast<int64_t>(
@@ -394,6 +434,17 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
         return out;
     }
     _runtime_host->set_events_probe_enabled(events_probe_enabled);
+    if (_economy_runtime != nullptr) {
+        auto *economy =
+            static_cast<NativeEconomyRuntime *>(_economy_runtime);
+        economy->attach_simulation_host(_runtime_host.get());
+        // StageOps always mutate=false: SHADOW POD parity hashes only.
+        // ACTIVE production mutations go through attach_economy_production_runtime
+        // + worker_run_compact_slice on the same formula owner.
+        _runtime_host->attach_economy_stage_ops(
+            economy->make_graph_stage_ops(/*mutate=*/false));
+        _runtime_host->attach_economy_production_runtime(economy);
+    }
     if (!_runtime_host->start(mode, complete, day, speed, paused,
                               requested_authority_mask)) {
         out["ok"] = false;
@@ -2209,6 +2260,7 @@ Dictionary DCWorldExt::request_runtime_stop() {
         return out;
     }
     const RuntimeWorkerState before = _runtime_host->state();
+    _runtime_host->attach_economy_production_runtime(nullptr);
     _runtime_host->request_stop();
     out["ok"] = true;
     const RuntimeWorkerState state = _runtime_host->state();
@@ -2311,6 +2363,36 @@ bool DCWorldExt::runtime_events_authority_self_test() const {
             godot::String(error.c_str()));
     }
     return ok;
+}
+
+bool DCWorldExt::runtime_economy_pod_self_test() const {
+    std::string error;
+    const bool ok = RuntimeEconomyPodAuthority::self_test(error);
+    if (!ok) {
+        godot::UtilityFunctions::printerr(
+            godot::String("runtime_economy_pod_self_test: ") +
+            godot::String(error.c_str()));
+    }
+    return ok;
+}
+
+godot::Dictionary DCWorldExt::runtime_economy_stage_order_contract_test() const {
+    godot::Dictionary out;
+    std::string error;
+    const bool ok = economy_graph_kernels_self_test(error);
+    out["ok"] = ok;
+    out["stage_count"] = static_cast<int64_t>(RUNTIME_ECONOMY_GRAPH_STAGE_COUNT);
+    out["all_stage_mask"] = static_cast<int64_t>(RUNTIME_ECONOMY_GRAPH_ALL_STAGE_MASK);
+    godot::PackedStringArray names;
+    names.resize(static_cast<int64_t>(RUNTIME_ECONOMY_GRAPH_STAGE_COUNT));
+    for (size_t i = 0; i < RUNTIME_ECONOMY_GRAPH_STAGE_COUNT; ++i) {
+        names.set(static_cast<int64_t>(i), godot::String(
+            runtime_economy_graph_stage_name(
+                static_cast<RuntimeEconomyGraphStage>(i))));
+    }
+    out["stage_names"] = names;
+    if (!ok) out["error"] = godot::String(error.c_str());
+    return out;
 }
 
 namespace {

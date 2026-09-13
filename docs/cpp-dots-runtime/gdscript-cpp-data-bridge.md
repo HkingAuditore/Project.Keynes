@@ -1,5 +1,22 @@
 # GDScript / C++ Data Bridge
 
+## Economy Phase 2–6 bridge note (2026-09-13)
+
+Production ACTIVE mask is `0xB7E` (includes ECONOMY). Main-thread
+`economy_should_run` is suppressed when the worker owns ECONOMY **and**
+`attach_economy_production_runtime` succeeded; otherwise fail-open to sync.
+When ECONOMY is worker-authoritative, the main thread still calls
+`capture_economy_day_inputs(day)` (and a newer host sample day when needed)
+to freeze MapData/DataCore environment + building context into the shared
+`NativeEconomyRuntime`; worker mutation advances only via
+`worker_run_compact_slice`. Missing same-day capture yields soft
+`pending_input` (not ledger fatal) until the next main-thread pulse captures.
+Worker production uses `worker_run_compact_slice` (Dictionary ctx captured on
+the same formula owner). SHADOW StageOps stay Godot-free hash parity.
+`submit_economy_pod_commands` / `poll_economy_pod_receipts` are POD ACK
+scaffolding; production opcodes still enter via `submit_economy_commands`.
+PKSR ECP1 is orthogonal to PKEC business SoA.
+
 ## Background worker POD boundary (ABI v3)
 
 The main-thread bridge captures Godot values into an immutable

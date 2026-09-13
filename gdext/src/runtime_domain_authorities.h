@@ -2,6 +2,8 @@
 
 #include "runtime_authoritative_domains.h"
 #include "runtime_trigger_pod.h"
+#include "runtime_economy_pod.h"
+#include "economy_graph_kernels.h"
 
 #include <array>
 #include <cstdint>
@@ -47,6 +49,31 @@ struct RuntimeDomainAuthorityReport {
     char fallback_reason[64]{};
 };
 
+// Worker-only replay contract for Economy graph stages. STAGE_COUNT matches
+// RUNTIME_ECONOMY_GRAPH_STAGE_COUNT (13). J2-A population/100 projection is
+// retired; bodies advance through RuntimeEconomyPodAuthority.
+struct RuntimeEconomyReplayReport {
+    static constexpr size_t STAGE_COUNT = RUNTIME_ECONOMY_GRAPH_STAGE_COUNT;
+    uint32_t completed_stage_mask = 0;
+    uint32_t stage_cursor = 0;
+    uint64_t input_hash = 0;
+    uint64_t base_hash = 0;
+    uint64_t next_hash = 0;
+    uint64_t reference_hash = 0;
+    uint64_t reference_generation = 0;
+    int64_t reference_day = -1;
+    std::array<uint64_t, STAGE_COUNT> stage_hash{};
+    std::array<uint64_t, STAGE_COUNT> stage_work{};
+    std::array<double, STAGE_COUNT> stage_ms{};
+    uint8_t input_captured = 0;
+    uint8_t committed = 0;
+    uint8_t parity_ready = 0;
+    uint8_t reference_captured = 0;
+    uint8_t parity_compared = 0;
+    uint8_t parity_matched = 0;
+    char fallback_reason[64]{};
+};
+
 // Explicit aliases keep the per-domain API names stable while the concrete
 // plan/commit storage is still consolidated in one bounded worker runner.
 using RuntimeModifierPlan = RuntimeDomainAuthorityPlan;
@@ -83,6 +110,15 @@ public:
     void discard_plan();
 
     const RuntimeDomainAuthorityReport &report() const { return _report; }
+    const RuntimeEconomyReplayReport &economy_replay_report() const {
+        return _economy_replay_report;
+    }
+    void set_economy_reference(int64_t day, uint64_t generation,
+                               uint64_t state_hash) noexcept {
+        _economy_reference_day = day;
+        _economy_reference_generation = generation;
+        _economy_reference_hash = state_hash;
+    }
     const RuntimeAuthoritativeDomainStores &stores() const { return _current; }
     RuntimeAuthoritativeDomainStores &stores_for_test() { return _current; }
 
@@ -162,6 +198,11 @@ private:
     RuntimeAuthoritativeDomainStores _next;
     RuntimeDomainAuthorityPlan *_active_plan = nullptr;
     RuntimeDomainAuthorityReport _report{};
+    RuntimeEconomyReplayReport _economy_replay_report{};
+    RuntimeEconomyPodAuthority _economy_pod_authority;
+    int64_t _economy_reference_day = -1;
+    uint64_t _economy_reference_generation = 0;
+    uint64_t _economy_reference_hash = 0;
     std::vector<RuntimeDomainIntent> _intents;
     std::vector<RuntimeDomainAck> _acks;
     std::vector<RuntimeEventRecord> _event_scratch;

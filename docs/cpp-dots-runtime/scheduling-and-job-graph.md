@@ -1,5 +1,15 @@
 # Scheduling and Job Graph
 
+## Economy ACTIVE scheduling (Phase 2–6, 2026-09-13)
+
+When `authoritative_domain_mask` includes ECONOMY (`0xB7E` production request),
+the Host ACTIVE day loop runs up to 64 `worker_run_compact_slice` calls per day
+on the attached `NativeEconomyRuntime`. Outer model remains **one** Economy POD
+worker + existing inner `parallel_for_range`; Host does not add a second Economy
+parallel layer. Main-thread `economy_daily` / `economy_should_run` no-op under
+that grant (fail-open if production runtime was not attached). D7 peer transport
+stays on Host bounded rings; POD outbox slots are diagnostic.
+
 ## 2026-09 单一 Country authority 与发布确认
 
 Native Runtime Graph ACTIVE 时，已注册的旧 SUS `country_daily` 仅保留 topology/调试可见性，
@@ -13,8 +23,9 @@ Country worker 的 read-view 消费不属于新的调度 job，也不推进模�
 在 Country transport service 后执行一次非阻塞 get_country_worker_read_view(cursor)：连续
 generation 应用 sparse cell/owner patch，跳过 generation 时只接受 full snapshot。消费完成后
 复用 CountryFacade.country_committed，因此 vision、border、UI 仍由原事件路径驱动。Country 未获
-granted bit 时该消费边界完全不运行；当前正式 `0x806` 下 Country grant 会抑制同步 Country
-写者。read-view 代码是 ACTIVE 准入后的发布适配器，不是提前放行；Economy D7 仍不在 ACTIVE。
+granted bit 时该消费边界完全不运行。正式生产 request 为 `0xB7E`（含 ECONOMY）；
+Country grant 仍抑制同步 Country 写者。read-view 代码是 ACTIVE 准入后的发布适配器。
+Economy D7 peer 在 worker 权威时开放 operation gate（Host 有界 ring 为权威队列）。
 
 Graph dirty family 是 domain commit 的确认集合，不是“再做一次 MapData 全量发布”的请求。
 `flush_runtime_visuals(mask)` 只清除真实交集；未被 mask 选中的 dirty family 必须保留到后续

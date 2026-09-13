@@ -1,5 +1,22 @@
 # 经济存档、catalog migration 与内容扩展 SOP
 
+## ECP1（Economy POD section，abi2 业务摘要）
+
+`RuntimeEconomyPodAuthority::encode_ecp1` / `restore_ecp1` 使用 marker
+`0x31504345`（"ECP1"）。**abi=2**（当前 writer）在既有 header
+（session/generation/state_hash/day/catalog/gate/parity/receipt_count）之后追加：
+
+- `population_error` / `money_error` / `goods_error`（i64）
+- `summary_population` / `summary_funds`（i64）
+- `summary_markets` / `summary_buildings` / `summary_cohorts` / `summary_families`（i32）
+
+然后是 terminal receipt 摘要。这是 Host POD 存档垂直切片，**不是**取代 PKEC
+的生产权威存档。生产人口/市场/建筑状态仍走 legacy
+`economy_runtime_persistence_*`（当前 PKEC v52）。ACTIVE compact-slice 与
+`commit_epoch` 会向 `_snapshot_ring` 发布 header + 上述标量摘要（无全矩阵）。
+`restore_ecp1` 接受 abi1（旧，无摘要）与 abi2；abi2 截断 fail-closed。
+Soak：`runtime_economy_authority_soak_test.gd`（`PK_ECONOMY_SOAK_DAYS`，默认 30）。
+
 财政 peer escrow / PKEC v52：只支持新游戏；旧经济存档显式拒绝。v52 在每个固定 Country
 fiscal record 后追加一个非负 `int64` Economy-owned escrow，并新增
 `SAVE_SECTION_FISCAL_PEER` 持久化 `request_id -> terminal result` 的 Economy-owned

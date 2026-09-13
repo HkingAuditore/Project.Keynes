@@ -4,10 +4,13 @@ extends RefCounted
 ## B8-4：Climate ACTIVE 的单点启用策略。
 ##
 ## 三态 override：
-##   AUTO      —— 由实测阈值决定（默认）；
-##   FORCE_ON  —— 无论规模都开（GM/开发调试；低于阈值时会在诊断里报
-##                below_threshold，允许帧阻塞，但必须可见）；
-##   FORCE_OFF —— 无论规模都关（回主线程权威）。
+##   AUTO      —— 由实测阈值决定（默认）；当前无正阈值可落地时保持开启；
+##   FORCE_ON  —— 无论规模都开（GM「Climate worker 权威」开）；
+##   FORCE_OFF —— 无论规模都关（GM「Climate worker 权威」关）。
+##
+## 「按规模自动判定」GM 开关已移除：关 auto 曾被错误映射成 force_off，
+## 会在运行中硬重启 worker 并堵死主线程。规模阈值仍由本策略对象持有，
+## 供诊断与日后实测落地，但不再暴露成会误伤权威的玩家开关。
 ##
 ## 2026-09-11 C1/C3 尺寸阶梯实测结论（见 tools/runtime/climate_b8_soak_policy.json）：
 ##   60x40 / 120x80 / 180x120 在 x50 下均不满足

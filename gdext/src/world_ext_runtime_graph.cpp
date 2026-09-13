@@ -249,27 +249,72 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
         return peer_report.inspected;
     };
 
+    // Apply Country/Economy ownership before any should_run / economy gate. If
+    // the pulse loop never iterates (budget already spent), peers still must
+    // see sync_store_writes_forbidden so they do not wait on a dead facade.
+    const bool country_worker_authoritative = _runtime_host != nullptr &&
+        (_runtime_host->domain_is_worker_authoritative(
+            RuntimeDomainId::COUNTRY) ||
+         _runtime_host->country_authority_owner_is_worker());
+    const bool economy_worker_authoritative = _runtime_host != nullptr &&
+        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::ECONOMY);
+    if (_country_runtime != nullptr) {
+        static_cast<NativeCountryRuntime *>(_country_runtime)
+            ->set_sync_store_writes_forbidden(country_worker_authoritative);
+        if (_runtime_host != nullptr) {
+            static_cast<NativeCountryRuntime *>(_country_runtime)
+                ->attach_simulation_host(_runtime_host.get());
+        }
+    }
+    if (_economy_runtime != nullptr) {
+        auto *economy =
+            static_cast<NativeEconomyRuntime *>(_economy_runtime);
+        economy->set_sync_writes_forbidden(economy_worker_authoritative);
+        if (_runtime_host != nullptr) {
+            economy->attach_simulation_host(_runtime_host.get());
+            _runtime_host->set_economy_sync_writes_forbidden(
+                economy_worker_authoritative);
+            if (economy_worker_authoritative)
+                economy->open_all_d7_operation_gates();
+        }
+    }
+    // Worker ACTIVE owns economy mutation via compact slices, but MapData /
+    // DataCore environment + building context still live on the main thread.
+    // Capture frozen input lanes here; do not run mutation stages.
+    if (economy_worker_authoritative && _economy_runtime != nullptr) {
+        auto capture_day = [&](int64_t capture_day_index) {
+            Dictionary cap = capture_economy_day_inputs(capture_day_index);
+            if (bool(cap.get("fatal", false))) {
+                _runtime_graph_last_economy_report = cap;
+                _runtime_graph_economy_capture_fatal_reason =
+                    String(cap.get("fatal_reason", "economy_day_input_capture_failed"))
+                        .utf8()
+                        .get_data();
+            } else if (!_runtime_graph_economy_capture_fatal_reason.empty() &&
+                       bool(cap.get("ok", false))) {
+                _runtime_graph_economy_capture_fatal_reason.clear();
+            }
+            return cap;
+        };
+        capture_day(day);
+        if (_runtime_host != nullptr) {
+            const RuntimeThreadReport host = _runtime_host->report();
+            const int64_t need = std::max(
+                day,
+                std::max(host.economy_pod_committed_day + 1,
+                         host.economy_pod_epoch_sample_day));
+            auto *economy =
+                static_cast<NativeEconomyRuntime *>(_economy_runtime);
+            if (need != day && economy->needs_environment_capture(need))
+                capture_day(need);
+        }
+    }
+
     // Stable order mirrors the existing GDScript ACK chain and scheduler
     // priorities. Each runtime owns its own persistent range cursor.
     while (iterations++ < 64 && !over_budget()) {
         bool progressed = false;
         Dictionary ctx = ctx_for();
-        const bool country_worker_authoritative = _runtime_host != nullptr &&
-            (_runtime_host->domain_is_worker_authoritative(
-                RuntimeDomainId::COUNTRY) ||
-             _runtime_host->country_authority_owner_is_worker());
-        if (_country_runtime != nullptr) {
-            static_cast<NativeCountryRuntime *>(_country_runtime)
-                ->set_sync_store_writes_forbidden(country_worker_authoritative);
-            if (_runtime_host != nullptr) {
-                static_cast<NativeCountryRuntime *>(_country_runtime)
-                    ->attach_simulation_host(_runtime_host.get());
-            }
-        }
-        if (_economy_runtime != nullptr && _runtime_host != nullptr) {
-            static_cast<NativeEconomyRuntime *>(_economy_runtime)
-                ->attach_simulation_host(_runtime_host.get());
-        }
         if (!country_worker_authoritative && _country_runtime != nullptr &&
             static_cast<NativeCountryRuntime *>(_country_runtime)->should_run(day)) {
             if (_effect_runtime != nullptr) dispatch_effect_native_country();
@@ -456,16 +501,29 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
     // budget on them must still let WorldClock commit the day. Arming on the
     // budget yield alone froze the calendar for as long as trigger stayed
     // busy, because the frozen day kept trigger's own work queued.
+    //
+    // Worker-owned domains must not arm this barrier: the pulse loop already
+    // skips their synchronous day, but legacy facades can keep should_run()
+    // hot on stale queues. Operator precedence also used to let Effect/Modifier
+    // escape the Country worker gate entirely — that pinned
+    // country_day_barrier/economy_day_barrier with economy_slices=0.
+    const bool country_worker_owns_barrier =
+        _runtime_host != nullptr &&
+        (_runtime_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY) ||
+         _runtime_host->country_authority_owner_is_worker());
+    const bool effect_worker_owns_barrier = _runtime_host != nullptr &&
+        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::EFFECT);
+    const bool modifier_worker_owns_barrier = _runtime_host != nullptr &&
+        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::MODIFIER);
     const bool pending =
-        (_runtime_host == nullptr || !_runtime_host->domain_is_worker_authoritative(
-            RuntimeDomainId::COUNTRY)) &&
-        (_country_runtime != nullptr &&
+        (!country_worker_owns_barrier && _country_runtime != nullptr &&
          static_cast<NativeCountryRuntime *>(_country_runtime)->should_run(day)) ||
-        (_effect_runtime != nullptr &&
+        (!effect_worker_owns_barrier && _effect_runtime != nullptr &&
          static_cast<EffectRuntime *>(_effect_runtime)->should_run(day)) ||
-        (_modifier_runtime != nullptr &&
+        (!modifier_worker_owns_barrier && _modifier_runtime != nullptr &&
          static_cast<ModifierRuntime *>(_modifier_runtime)->should_run(day)) ||
-        (_effect_runtime != nullptr && gameplay_effect_should_run(day)) ||
+        (!effect_worker_owns_barrier && _effect_runtime != nullptr &&
+         gameplay_effect_should_run(day)) ||
         (_economy_runtime != nullptr && economy_should_run(day));
     if (pending) status = 3;
     if (country_peer_adapter_fault) status = 3;
@@ -603,6 +661,43 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
         out["pod_work_units"] = static_cast<int64_t>(host.pod_work_units);
         out["pod_intent_count"] = static_cast<int>(host.pod_intent_count);
         out["pod_fallback_count"] = static_cast<int>(host.pod_fallback_count);
+        out["economy_pod_ready"] = host.economy_pod_ready;
+        out["economy_pod_committed"] = host.economy_pod_committed;
+        out["economy_pod_authority_ready"] = host.economy_pod_authority_ready;
+        out["economy_pod_committed_day"] = host.economy_pod_committed_day;
+        out["economy_pod_epoch_sample_day"] = host.economy_pod_epoch_sample_day;
+        out["economy_pod_generation"] = static_cast<int64_t>(host.economy_pod_generation);
+        out["economy_pod_state_hash"] = static_cast<int64_t>(host.economy_pod_state_hash);
+        out["economy_pod_input_generation"] = static_cast<int64_t>(host.economy_pod_input_generation);
+        out["economy_pod_country_generation"] = static_cast<int64_t>(host.economy_pod_country_generation);
+        out["economy_pod_completed_stage_mask"] = static_cast<int64_t>(host.economy_pod_completed_stage_mask);
+        out["economy_pod_pending_outbox"] = static_cast<int>(host.economy_pod_pending_outbox);
+        out["economy_pod_pending_inbox"] = static_cast<int>(host.economy_pod_pending_inbox);
+        out["economy_pod_operation_gate_mask"] = static_cast<int>(host.economy_pod_operation_gate_mask);
+        out["economy_pod_parity_ready_mask"] = static_cast<int>(host.economy_pod_parity_ready_mask);
+        out["economy_replay_completed_stage_mask"] = static_cast<int64_t>(host.economy_replay_completed_stage_mask);
+        out["economy_replay_stage_cursor"] = static_cast<int>(host.economy_replay_stage_cursor);
+        out["economy_replay_input_hash"] = static_cast<int64_t>(host.economy_replay_input_hash);
+        out["economy_replay_base_hash"] = static_cast<int64_t>(host.economy_replay_base_hash);
+        out["economy_replay_next_hash"] = static_cast<int64_t>(host.economy_replay_next_hash);
+        out["economy_replay_input_captured"] = host.economy_replay_input_captured;
+        out["economy_replay_committed"] = host.economy_replay_committed;
+        out["economy_replay_parity_ready"] = host.economy_replay_parity_ready;
+        out["economy_replay_fallback_reason"] = String(host.economy_replay_fallback_reason);
+        PackedInt64Array replay_hashes;
+        PackedInt64Array replay_work;
+        PackedFloat64Array replay_ms;
+        replay_hashes.resize(static_cast<int>(pk::RUNTIME_ECONOMY_GRAPH_STAGE_COUNT));
+        replay_work.resize(static_cast<int>(pk::RUNTIME_ECONOMY_GRAPH_STAGE_COUNT));
+        replay_ms.resize(static_cast<int>(pk::RUNTIME_ECONOMY_GRAPH_STAGE_COUNT));
+        for (int i = 0; i < static_cast<int>(pk::RUNTIME_ECONOMY_GRAPH_STAGE_COUNT); ++i) {
+            replay_hashes.set(i, static_cast<int64_t>(host.economy_replay_stage_hash[i]));
+            replay_work.set(i, static_cast<int64_t>(host.economy_replay_stage_work[i]));
+            replay_ms.set(i, host.economy_replay_stage_ms[i]);
+        }
+        out["economy_replay_stage_hash"] = replay_hashes;
+        out["economy_replay_stage_work"] = replay_work;
+        out["economy_replay_stage_ms"] = replay_ms;
         out["domain_authority_planned_mask"] = static_cast<int64_t>(
             host.domain_authority_planned_mask);
         out["domain_authority_committed_mask"] = static_cast<int64_t>(
@@ -1115,6 +1210,8 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
     out["budget_yields"] = static_cast<int64_t>(_runtime_graph_budget_yields);
     out["economy_slices"] = static_cast<int64_t>(_runtime_graph_economy_slices);
     out["economy_commits"] = static_cast<int64_t>(_runtime_graph_economy_commits);
+    out["economy_capture_fatal_reason"] =
+        String(_runtime_graph_economy_capture_fatal_reason.c_str());
     out["country_peer_adapter_enabled"] =
         _runtime_graph_country_peer_adapter_enabled;
     out["country_peer_service_calls"] = static_cast<int64_t>(
@@ -1159,17 +1256,27 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
         out["authority"] = String("existing_native_runtimes");
         out["callbacks_in_graph"] = static_cast<int64_t>(_runtime_graph_callback_count);
         const int64_t day = _runtime_graph_day;
-        out["country_pending"] = _country_runtime != nullptr &&
+        const bool country_worker_owns = _runtime_host != nullptr &&
+            (_runtime_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY) ||
+             _runtime_host->country_authority_owner_is_worker());
+        const bool effect_worker_owns = _runtime_host != nullptr &&
+            _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::EFFECT);
+        const bool modifier_worker_owns = _runtime_host != nullptr &&
+            _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::MODIFIER);
+        const bool trigger_worker_owns = trigger_worker_authoritative();
+        const bool ideology_worker_owns = _runtime_host != nullptr &&
+            _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::IDEOLOGY);
+        out["country_pending"] = !country_worker_owns && _country_runtime != nullptr &&
             static_cast<NativeCountryRuntime *>(_country_runtime)->should_run(day);
-        out["trigger_pending"] = _trigger_runtime != nullptr &&
+        out["trigger_pending"] = !trigger_worker_owns && _trigger_runtime != nullptr &&
             static_cast<TriggerRuntime *>(_trigger_runtime)->should_run(day);
-        out["ideology_pending"] = _ideology_runtime != nullptr &&
+        out["ideology_pending"] = !ideology_worker_owns && _ideology_runtime != nullptr &&
             static_cast<NativeIdeologyRuntime *>(_ideology_runtime)->should_run(day);
-        out["effect_pending"] = _effect_runtime != nullptr &&
+        out["effect_pending"] = !effect_worker_owns && _effect_runtime != nullptr &&
             static_cast<EffectRuntime *>(_effect_runtime)->should_run(day);
-        out["modifier_pending"] = _modifier_runtime != nullptr &&
+        out["modifier_pending"] = !modifier_worker_owns && _modifier_runtime != nullptr &&
             static_cast<ModifierRuntime *>(_modifier_runtime)->should_run(day);
-        out["gameplay_effect_pending"] = _effect_runtime != nullptr &&
+        out["gameplay_effect_pending"] = !effect_worker_owns && _effect_runtime != nullptr &&
             gameplay_effect_should_run(day);
         out["economy_pending"] = _economy_runtime != nullptr &&
             economy_should_run(day);

@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <deque>
 #include <limits>
+#include <memory>
 #include <numeric>
 #include <string>
 #include <unordered_map>
@@ -18,6 +19,7 @@
 #include <godot_cpp/variant/string.hpp>
 #include <godot_cpp/variant/string_name.hpp>
 
+#include "economy_graph_kernels.h"
 #include "runtime_pod_protocol.h"
 
 namespace pk {
@@ -29,12 +31,34 @@ class NativeSimulationHost;
 class EconomyCsvRecorder;
 class ModifierRuntime;
 class TriggerRuntime;
+class NativeEconomyBuildingPlanExecutor;
+class NativeEconomyGraphStageOps;
+struct RuntimeEconomyPodCommand;
+
+// Default D7 peer gate: fiscal-only (M1). open_all_d7_operation_gates() expands
+// to all nine RuntimeEconomyAssetOperation bits for M2–M5 peer completion.
+constexpr uint32_t RUNTIME_ECONOMY_D7_FISCAL_GATE_MASK =
+    (1u << static_cast<uint32_t>(RuntimeEconomyAssetOperation::FISCAL_RESERVE)) |
+    (1u << static_cast<uint32_t>(RuntimeEconomyAssetOperation::FISCAL_RETURN)) |
+    (1u << static_cast<uint32_t>(RuntimeEconomyAssetOperation::FISCAL_COLLECT));
+constexpr uint32_t RUNTIME_ECONOMY_D7_ALL_GATE_MASK =
+    ((1u << (static_cast<uint32_t>(RuntimeEconomyAssetOperation::TREASURY_SPEND) +
+             1u)) -
+     2u);
 
 // NativeEconomyRuntime is the sole mutable authority for population cohorts
 // and markets. Godot containers are accepted/emitted only at coarse API
 // boundaries; every graph stage operates on POD/std::vector storage.
 class NativeEconomyRuntime {
 public:
+    friend class NativeEconomyBuildingPlanExecutor;
+    friend class NativeEconomyGraphStageOps;
+    friend bool economy_dispatch_mutate_stage(void *runtime_hook,
+                                              RuntimeEconomyGraphStage stage,
+                                              EconomyStageCursor &cursor,
+                                              const RuntimeEconomyEpochInput &input,
+                                              EconomyStageResult &result,
+                                              std::string &error);
     // 28: persistent per-cell/per-ethnicity Q32 birth residuals.
     // 30: authoritative composite satisfaction dimensions, income baseline EMA,
     //     per-cohort fiscal burden accumulators, family branch satisfaction, and
@@ -285,6 +309,46 @@ public:
     ~NativeEconomyRuntime();
     void attach_country_runtime(NativeCountryRuntime *runtime) { _country_runtime = runtime; }
     void attach_simulation_host(NativeSimulationHost *host) { _simulation_host = host; }
+    void set_sync_writes_forbidden(bool forbidden) {
+        _sync_writes_forbidden = forbidden;
+    }
+    bool sync_writes_forbidden() const { return _sync_writes_forbidden; }
+    void set_d7_operation_gate_mask(uint32_t mask) {
+        _d7_operation_gate_mask = mask;
+    }
+    uint32_t d7_operation_gate_mask() const { return _d7_operation_gate_mask; }
+    // Opens all nine Country/Economy asset ops for peer completion. Non-fiscal
+    // COUNTRY_PREPARED requests journal COMPLETED with prepared amounts; M2–M5
+    // cohort/market ops also apply local SoA via apply_peer_asset_side_effects
+    // (Country has already transferred treasury value on its commit path).
+    void open_all_d7_operation_gates() {
+        _d7_operation_gate_mask = RUNTIME_ECONOMY_D7_ALL_GATE_MASK;
+    }
+    bool bind_soa_view(EconomySoAView &view, std::string &error);
+    std::unique_ptr<EconomyGraphStageOps> make_graph_stage_ops(bool mutate);
+    // POD command path: maps RuntimeEconomyPodCommand → apply_command.
+    // Sync submit_commands remains the facade; do not double-submit the same
+    // request through both POD commit and sync enqueue.
+    bool apply_pod_command(const RuntimeEconomyPodCommand &pod,
+                           std::string &error);
+    bool enqueue_or_apply_pod_command(const RuntimeEconomyPodCommand &pod,
+                                      std::string &error);
+    void fill_economy_audit_snapshot(int64_t &pop_err, int64_t &money_err,
+                                     int64_t &goods_err,
+                                     uint32_t &dirty_family_mask,
+                                     int64_t &changed_cells,
+                                     int64_t &changed_cohorts) const;
+    void fill_economy_business_summary(int64_t &summary_population,
+                                       int64_t &summary_funds,
+                                       int32_t &summary_markets,
+                                       int32_t &summary_buildings,
+                                       int32_t &summary_cohorts,
+                                       int32_t &summary_families) const;
+    // Named-kernel household boundary: one post-building finalize chunk when
+    // phase==1; otherwise ok hash boundary (settle stays on compact slice).
+    bool kernel_run_household_market_boundary(
+        EconomyStageCursor &cursor, const RuntimeEconomyEpochInput &input,
+        EconomyStageResult &result, std::string &error);
     void attach_modifier_runtime(ModifierRuntime *runtime) { _modifier_runtime = runtime; }
     void attach_effect_runtime(EffectRuntime *runtime) { _effect_runtime = runtime; }
     void attach_trigger_runtime(TriggerRuntime *runtime) { _trigger_runtime = runtime; }
@@ -338,6 +402,15 @@ public:
     bool has_pending_effect_commands() const;
     godot::Dictionary run_slice(const godot::Dictionary &ctx);
     godot::Dictionary run_slice_compact(const godot::Dictionary &ctx);
+    // Worker ACTIVE production: one compact ECONOMY_GRAPH slice on the existing
+    // formula owner (no second formula set). Returns false on fatal/ledger error.
+    // When non-null, *done is set from the slice result (epoch idle for the day).
+    // pending_input=true means same-day env/building context is not yet captured
+    // on the main thread; returns true (not fatal) with *done=false so Host can
+    // park the ECONOMY stage without soft-completing.
+    bool worker_run_compact_slice(int64_t day_index, std::string &error,
+                                  bool *done = nullptr,
+                                  bool *pending_input = nullptr);
     bool capture_environment(int64_t day_index, const float *temperature,
                              const float *temperature_30d, const float *moisture,
                              const float *plant_available_water,
@@ -668,6 +741,10 @@ private:
         NOT_APPLICABLE = 0,
         ENQUEUED_PENDING = 1,
         TERMINAL_ERROR = 2,
+        // Country worker is the unique writer, but this operation is not in
+        // the M1 fiscal peer set yet. Callers must soft-skip (no second writer,
+        // no economy-wide fatal) until M2–M5 peer journals exist.
+        GATE_SOFT_UNAVAILABLE = 3,
     };
     enum StructuralOpcode : int32_t {
         STRUCTURAL_BIRTH = -1,
@@ -752,6 +829,8 @@ private:
         std::string last_error;
     };
 
+    // Generalized Country/Economy peer terminal journal (fiscal + M2–M5).
+    // Persistence still serializes under the historical fiscal-peer section.
     struct FiscalPeerJournalRecord {
         uint64_t request_id = 0;
         uint64_t transaction_id = 0;
@@ -773,6 +852,7 @@ private:
         int64_t committed_cash = 0;
         std::array<char, RUNTIME_ECONOMY_ASSET_REASON_CAPACITY> reason{};
     };
+    using AssetPeerJournalRecord = FiscalPeerJournalRecord;
 
     // Epoch-open fiscal reservation is a peer transaction boundary as well.
     // Keep the request plan immutable while countries are reserved one at a
@@ -4632,6 +4712,8 @@ private:
     int32_t _technology_words = 0;
     NativeCountryRuntime *_country_runtime = nullptr;
     NativeSimulationHost *_simulation_host = nullptr;
+    bool _sync_writes_forbidden = false;
+    uint32_t _d7_operation_gate_mask = RUNTIME_ECONOMY_D7_FISCAL_GATE_MASK;
     ModifierRuntime *_modifier_runtime = nullptr;
     EffectRuntime *_effect_runtime = nullptr;
     TriggerRuntime *_trigger_runtime = nullptr;
@@ -4739,8 +4821,7 @@ private:
     std::vector<int64_t> _fiscal_epoch_collected;
     std::vector<int64_t> _fiscal_epoch_paid;
     std::vector<int64_t> _fiscal_escrow_by_country;
-    std::unordered_map<uint64_t, FiscalPeerJournalRecord>
-        _fiscal_peer_journal;
+    std::unordered_map<uint64_t, AssetPeerJournalRecord> _asset_peer_journal;
     std::vector<int64_t> _fiscal_last_bases;
     std::vector<int64_t> _fiscal_last_assessed;
     std::vector<int64_t> _fiscal_last_collected;
@@ -5193,6 +5274,7 @@ private:
     int64_t trade_transit_goods() const;
     int64_t trade_escrow_cash() const;
     bool apply_command(const Command &cmd, std::string &error);
+    Command command_from_pod(const RuntimeEconomyPodCommand &pod) const;
     bool validate_command_pod(const Command &cmd, std::string &error) const;
     bool family_ledger_command_preflight(const Command &cmd) const;
     bool family_split_policy_command_preflight(const Command &cmd) const;
@@ -5654,10 +5736,21 @@ private:
         int64_t &saturation_count) const;
     void prepare_group_climate_capacity(BuildingGroup &group,
                                         const BuildingType &type);
+    // SHADOW-only parity: publish graph stage hash/work to Host when the sync
+    // ECONOMY_GRAPH stage completes and ECONOMY is not worker-authoritative.
+    void publish_shadow_graph_stage_reference(RuntimeEconomyGraphStage stage);
+    // Shared BUILDING_PLAN entry: routes through economy_kernel_prepare_building_plan
+    // so sync and future worker probe worlds share one boundary (no second formula).
     bool prepare_building_economic_plan(int32_t active_begin, int32_t active_end,
                                         const std::vector<int32_t> *cells_override,
                                         BuildingPlanResult &result,
                                         std::string &error);
+    // Mutation body owned by NativeEconomyRuntime SoA; invoked only via the
+    // EconomyBuildingPlanExecutor adapter registered with the shared kernel.
+    bool prepare_building_economic_plan_body(int32_t active_begin, int32_t active_end,
+                                             const std::vector<int32_t> *cells_override,
+                                             BuildingPlanResult &result,
+                                             std::string &error);
     int32_t market_signal_index(int32_t cell, int32_t good) const;
     int64_t epoch_research_demand_daily(int32_t cell, int32_t good) const;
     int64_t epoch_research_demand_daily_for_market(int32_t market,
@@ -5746,8 +5839,10 @@ private:
         int32_t country, int32_t operation, int64_t amount,
         int64_t &committed, std::string &error,
         uint64_t *transport_request_id = nullptr);
-    // M1 peer service. Economy stays main-thread owned; it consumes only
-    // Country-authorized fiscal requests and never writes the Country store.
+    // M1+ peer service. Economy consumes Country-authorized asset requests and
+    // never writes the Country store. Fiscal ops mutate escrow; non-fiscal ops
+    // (when the D7 gate is open) apply local cohort/market side effects then
+    // journal COMPLETED using Country-prepared quantities.
     bool service_country_economy_asset_peer(uint32_t max_requests,
                                             std::string &error);
     bool fiscal_peer_journal_matches(
@@ -5762,6 +5857,11 @@ private:
         RuntimeEconomyAssetState state,
         int64_t committed_quantity, int64_t committed_cash,
         const char *reason);
+    // Economy-side apply for M2–M5 after Country has already committed value.
+    // RESEARCH_PURCHASE / TREASURY_SPEND complete without local mutation when
+    // Country transferred treasury goods/cash on its path.
+    bool apply_peer_asset_side_effects(const RuntimeEconomyAssetRequest &request,
+                                       std::string &error);
     // Economy-owned peer coordinator for Country/cohort cash transfers. The
     // cohort is prepared before Country commit, then mutated exactly once and
     // acknowledged with the same transaction identity.

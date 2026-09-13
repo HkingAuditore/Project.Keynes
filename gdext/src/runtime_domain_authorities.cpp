@@ -178,6 +178,8 @@ void RuntimeDomainAuthorityRunner::reset(uint32_t cell_count,
     _distinct_scratch.reserve(trigger_capacity * 4u);
     _active_plan = nullptr;
     _report = RuntimeDomainAuthorityReport{};
+    _economy_replay_report = RuntimeEconomyReplayReport{};
+    _economy_pod_authority.reset();
     _plan_ready = false;
 }
 
@@ -622,6 +624,7 @@ RuntimeDomainReport RuntimeDomainAuthorityRunner::run_economy(
     out.day = context.day;
     out.input_generation = context.input_generation;
     const auto started = std::chrono::steady_clock::now();
+    _economy_replay_report = RuntimeEconomyReplayReport{};
     std::string validation_error;
     if (!_next.economy.validate(validation_error)) {
         set_report_error(out, validation_error.empty()
@@ -630,36 +633,102 @@ RuntimeDomainReport RuntimeDomainAuthorityRunner::run_economy(
         return out;
     }
     const uint32_t cells = _next.economy.cell_count;
-    for (uint32_t cell = 0; cell < cells; ++cell) {
-        const int64_t old_production = _next.economy.production[cell];
-        const int64_t population = std::max<int64_t>(0, _next.economy.population[cell]);
-        _next.economy.production[cell] = population / 100;
-        _next.economy.household_demand[cell] = _next.economy.production[cell];
-        // Production and demand are balanced in the adapter, so inventory,
-        // money and population are conserved exactly.  The real Economy
-        // authority will replace this projection after its own A/B gate.
-        if (environment != nullptr && !environment->building_resource_reserve.empty()) {
-            const int64_t reserve = static_cast<int64_t>(
-                std::max(0.0f, environment->building_resource_reserve[cell]) * 1000.0f);
-            _next.economy.inventory[cell] = std::max<int64_t>(
-                0, _next.economy.inventory[cell] + reserve - reserve);
-        }
-        if (old_production != _next.economy.production[cell]) ++changed_cells;
-        if (_next.economy.population[cell] < 0 ||
-            _next.economy.treasury[cell] < 0 ||
-            _next.economy.inventory[cell] < 0) {
-            ++_next.economy.ledger_failures;
+    if (environment == nullptr || environment->cell_count != cells) {
+        set_report_error(out, "economy_j2b_environment_shape_invalid");
+        copy_text(_economy_replay_report.fallback_reason,
+                    "economy_input_missing");
+        out.timing.elapsed_ms = elapsed_ms(started);
+        return out;
+    }
+
+    RuntimeEconomyEpochInput input;
+    input.sample_day = context.day;
+    input.session_epoch = 1;
+    input.economy_generation = _next.economy.generation;
+    input.input_generation = context.input_generation;
+    input.country_generation = _next.country.generation;
+    input.catalog_hash = environment->generation;
+    input.policy_hash = _next.country.state_hash();
+    input.environment_shape_hash = environment->generation ^ cells;
+    input.cell_count = cells;
+    input.market_cycle_days = 5;
+    input.production_cycle_days = 10;
+    input.investment_cycle_days = 20;
+    input.valid = true;
+
+    _economy_pod_authority.reset();
+    if (_economy_reference_day == context.day &&
+        _economy_reference_generation != 0) {
+        _economy_pod_authority.set_stage_reference(
+            RuntimeEconomyGraphStage::BUILDING_PLAN, _economy_reference_day,
+            _economy_reference_generation, _economy_reference_hash, cells);
+    }
+    std::string authority_error;
+    if (!_economy_pod_authority.plan_epoch(input, authority_error)) {
+        set_report_error(out, authority_error.empty()
+            ? "economy_pod_plan_failed" : authority_error.c_str());
+        copy_text(_economy_replay_report.fallback_reason,
+                    authority_error.empty()
+                        ? "economy_pod_plan_failed" : authority_error.c_str());
+        out.timing.elapsed_ms = elapsed_ms(started);
+        return out;
+    }
+    for (size_t stage = 0; stage < RUNTIME_ECONOMY_GRAPH_STAGE_COUNT; ++stage) {
+        if (!_economy_pod_authority.advance_stage(authority_error)) {
+            set_report_error(out, authority_error.empty()
+                ? "economy_pod_advance_failed" : authority_error.c_str());
+            copy_text(_economy_replay_report.fallback_reason,
+                        authority_error.empty()
+                            ? "economy_pod_advance_failed"
+                            : authority_error.c_str());
+            out.timing.elapsed_ms = elapsed_ms(started);
+            return out;
         }
     }
+    if (!_economy_pod_authority.commit_epoch(authority_error)) {
+        set_report_error(out, authority_error.empty()
+            ? "economy_pod_commit_failed" : authority_error.c_str());
+        copy_text(_economy_replay_report.fallback_reason,
+                    authority_error.empty()
+                        ? "economy_pod_commit_failed" : authority_error.c_str());
+        out.timing.elapsed_ms = elapsed_ms(started);
+        return out;
+    }
+
+    const RuntimeEconomyPodReplayReport &pod =
+        _economy_pod_authority.replay_report();
+    _economy_replay_report.completed_stage_mask = pod.completed_stage_mask;
+    _economy_replay_report.stage_cursor = pod.stage_cursor;
+    _economy_replay_report.input_hash = pod.input_hash;
+    _economy_replay_report.base_hash = pod.base_hash;
+    _economy_replay_report.next_hash = pod.next_hash;
+    _economy_replay_report.reference_hash = pod.reference_hash;
+    _economy_replay_report.reference_generation = pod.reference_generation;
+    _economy_replay_report.reference_day = pod.reference_day;
+    _economy_replay_report.stage_hash = pod.stage_hash;
+    _economy_replay_report.stage_work = pod.stage_work;
+    _economy_replay_report.stage_ms = pod.stage_ms;
+    _economy_replay_report.input_captured = pod.input_captured;
+    _economy_replay_report.committed = pod.committed;
+    _economy_replay_report.parity_ready = pod.parity_ready;
+    _economy_replay_report.reference_captured = pod.reference_captured;
+    _economy_replay_report.parity_compared = pod.parity_compared;
+    _economy_replay_report.parity_matched = pod.parity_matched;
+    copy_text(_economy_replay_report.fallback_reason, pod.fallback_reason);
+
+    // Diagnostic lanes only: do not invent production/household_demand from
+    // population. Keep committed_day/generation in lockstep with the POD epoch.
     _next.economy.committed_day = context.day;
     _next.economy.generation = _current.economy.generation + 1u;
-    work_units += static_cast<uint64_t>(cells) * 4u;
+    changed_cells = 0;
+    work_units += static_cast<uint64_t>(cells) *
+        static_cast<uint64_t>(RUNTIME_ECONOMY_GRAPH_STAGE_COUNT);
     out.completed = 1;
-    out.preflight_ok = _next.economy.ledger_failures == 0;
-    if (!out.preflight_ok) set_report_error(out, "economy_conservation_failed");
+    out.preflight_ok = 1;
     out.dirty_families = RUNTIME_DIRTY_ECONOMY_UI;
-    out.timing.work_units = static_cast<uint64_t>(cells) * 4u;
-    out.timing.state_hash = _next.economy.state_hash();
+    out.timing.work_units = static_cast<uint64_t>(cells) *
+        static_cast<uint64_t>(RUNTIME_ECONOMY_GRAPH_STAGE_COUNT);
+    out.timing.state_hash = pod.next_hash;
     out.timing.elapsed_ms = elapsed_ms(started);
     return out;
 }
@@ -981,6 +1050,19 @@ bool RuntimeDomainAuthorityRunner::self_test(std::string &error) {
         if (error.empty()) error = "domain_authority_plan_self_test_failed";
         return false;
     }
+    const RuntimeEconomyReplayReport &economy = runner.economy_replay_report();
+    if (economy.completed_stage_mask != RUNTIME_ECONOMY_GRAPH_ALL_STAGE_MASK ||
+        economy.stage_cursor != environment.cell_count ||
+        economy.input_captured == 0 || economy.committed == 0 ||
+        economy.parity_ready != 0 || economy.input_hash == 0 ||
+        economy.base_hash == 0 || economy.next_hash == 0 ||
+        economy.stage_work[0] != environment.cell_count ||
+        economy.stage_work[1] != environment.cell_count ||
+        economy.stage_work[12] != environment.cell_count) {
+        error = "economy_j2b_replay_contract_failed";
+        return false;
+    }
+    const uint64_t first_input_hash = economy.input_hash;
     if (!runner.commit_day(plan, error)) return false;
     const uint64_t first_hash = runner.report().state_hash;
     context.day = 1;
@@ -988,6 +1070,7 @@ bool RuntimeDomainAuthorityRunner::self_test(std::string &error) {
     environment.generation = 2;
     environment.day = 1;
     if (!runner.plan_day(context, &environment, nullptr, plan, error) ||
+        runner.economy_replay_report().input_hash == first_input_hash ||
         !runner.commit_day(plan, error) || runner.report().state_hash == first_hash) {
         if (error.empty()) error = "domain_authority_commit_self_test_failed";
         return false;

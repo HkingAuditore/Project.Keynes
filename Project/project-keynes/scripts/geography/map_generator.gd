@@ -2082,42 +2082,6 @@ func get_country_worker_read_view(after_generation: int = 0) -> Dictionary:
 	return _data_core_world_ext.get_country_worker_read_view(maxi(after_generation, 0))
 
 
-## E8 ACTIVE Modifier write-back. Applies the latest worker POD snapshot into
-## legacy ModifierRuntime. Non-blocking; intermediate generations may be skipped.
-func apply_runtime_modifier_snapshot(after_generation: int = -1) -> Dictionary:
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
-			"apply_runtime_modifier_snapshot"):
-		return {"ok": false, "code": "modifier_snapshot_apply_api_missing"}
-	return _data_core_world_ext.apply_runtime_modifier_snapshot(after_generation)
-
-
-## F8 ACTIVE Effect write-back. Applies the latest worker POD snapshot into
-## legacy EffectRuntime. Non-blocking; intermediate generations may be skipped.
-func apply_runtime_effect_snapshot(after_generation: int = -1) -> Dictionary:
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
-			"apply_runtime_effect_snapshot"):
-		return {"ok": false, "code": "effect_snapshot_apply_api_missing"}
-	return _data_core_world_ext.apply_runtime_effect_snapshot(after_generation)
-
-
-## G8 ACTIVE Ideology write-back. Applies the latest worker POD snapshot into
-## legacy NativeIdeologyRuntime. Non-blocking; intermediate generations may be skipped.
-func apply_runtime_ideology_snapshot(after_generation: int = -1) -> Dictionary:
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
-			"apply_runtime_ideology_snapshot"):
-		return {"ok": false, "code": "ideology_snapshot_apply_api_missing"}
-	return _data_core_world_ext.apply_runtime_ideology_snapshot(after_generation)
-
-
-## H8 ACTIVE Trigger write-back. Applies the latest worker POD snapshot into
-## legacy TriggerRuntime. Non-blocking; intermediate generations may be skipped.
-func apply_runtime_trigger_snapshot(after_generation: int = -1) -> Dictionary:
-	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
-			"apply_runtime_trigger_snapshot"):
-		return {"ok": false, "code": "trigger_snapshot_apply_api_missing"}
-	return _data_core_world_ext.apply_runtime_trigger_snapshot(after_generation)
-
-
 func service_country_worker_peer_adapter(max_intents: int = 64,
 		shadow_replay: bool = true) -> Dictionary:
 	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
@@ -4572,24 +4536,8 @@ func _build_runtime_climate_stage_knobs(map: MapData, day: int,
 			due = day >= first_due_day
 		else:
 			due = (day - _runtime_climate_worker_weather_embed_day) >= stride
-	# B8 P2：物理标量是**静态常量**（bake 期定一次），与 weather 节拍无关。必须在
-	# due 的提前返回之前取出并随每天的 capture 下发，否则不到期的日子整份 dict 为
-	# 空 → worker 侧 readiness 会在 1/0 之间来回跳（实测 day4=1、day5=0）。
-	var phys_knobs: Dictionary = {}
-	if _baker != null and _baker.has_method("runtime_physics_knobs"):
-		phys_knobs = _baker.runtime_physics_knobs()
-	if not phys_knobs.is_empty() and _ocean_currents_job != null and _ocean_currents_job.cfg != null:
-		phys_knobs["enabled"] = _baker._use_physical_circulation(_ocean_currents_job.cfg)
-		phys_knobs["world_seed"] = int(_ocean_currents_job.cfg.seed)
-		phys_knobs["daily_period_days"] = _ocean_currents_job.wind_period_ticks
-		phys_knobs["ocean_period_days"] = _ocean_currents_job.ocean_period_ticks
-		phys_knobs["daily_split"] = bool(cp_now.daily_wind_split_passes)
-	else:
-		phys_knobs = {}
 	if not due:
-		if phys_knobs.is_empty():
-			return {}
-		return {"physics_knobs": phys_knobs}
+		return {}
 	_runtime_climate_worker_weather_embed_day = day
 	_runtime_climate_worker_stage_b_call_index += 1
 	var out: Dictionary = {"weather_round": true}
@@ -4628,33 +4576,6 @@ func _build_runtime_climate_stage_knobs(map: MapData, day: int,
 					float(clock.get("anomaly", 0.0)),
 					float(clock.get("season_phase", 0.0)))
 			if not field_knobs.is_empty():
-				# B8-2：cyclone 的推进/genesis 都已由 worker 自持，而权威下生产
-				# weather 段被抑制 —— 这条 stage_weather 是 worker 唯一能看到这批
-				# ClimateProfile 常量的入口。缺 key 时 host 端按 -1/false 兜底：
-				# storm_type_id=-1 会让 genesis 永不触发（表现为气旋即衰减无出生），
-				# 也就是"ACTIVE 下气旋静默消失"。所以显式带上，不依赖别的段。
-				field_knobs["cyclone_storm_type_id"] = int(WeatherType.WT.STORM)
-				var wake_days_v: Variant = _weather_system.get("_cyclone_wake_days")
-				field_knobs["cyclone_wake_days"] = (
-					int(wake_days_v) if wake_days_v != null else 3)
-				field_knobs["native_tropical_cyclone_enabled"] = \
-					bool(cp_now.native_tropical_cyclone_enabled)
-				field_knobs["tropical_cyclone_capacity"] = \
-					int(cp_now.tropical_cyclone_capacity)
-				field_knobs["tropical_cyclone_births_per_commit"] = \
-					int(cp_now.tropical_cyclone_births_per_commit)
-				field_knobs["tropical_cyclone_min_temp"] = \
-					float(cp_now.tropical_cyclone_min_temp)
-				field_knobs["tropical_cyclone_min_instability"] = \
-					float(cp_now.tropical_cyclone_min_instability)
-				field_knobs["tropical_cyclone_max_shear"] = \
-					float(cp_now.tropical_cyclone_max_shear)
-				field_knobs["tropical_cyclone_min_lat"] = \
-					float(cp_now.tropical_cyclone_min_lat)
-				field_knobs["tropical_cyclone_max_lat"] = \
-					float(cp_now.tropical_cyclone_max_lat)
-				field_knobs["tropical_cyclone_max_radius_cells"] = \
-					int(cp_now.tropical_cyclone_max_radius_cells)
 				out["stage_weather"] = field_knobs
 			elif not _runtime_climate_field_reported:
 				_runtime_climate_field_reported = true
@@ -4667,11 +4588,6 @@ func _build_runtime_climate_stage_knobs(map: MapData, day: int,
 		elif not _runtime_climate_distribute_reported:
 			_runtime_climate_distribute_reported = true
 			push_warning("[climate/worker] distribute knobs came back empty")
-	# B8 P2：物理环流 prepass 的标量（SLP/WIND/PSI/UPWELLING 四个 stage base 的
-	# 标量投影）。worker 用自己的 lane，只缺这批 profile 常量 —— 不接的话物理只能
-	# 继续读生产 transport。缺失不报错（bake 未跑/老 harness），只标记未就绪。
-	if not phys_knobs.is_empty():
-		out["physics_knobs"] = phys_knobs
 	elif not _runtime_climate_distribute_reported:
 		# 权威下 distribute 不接就是 snow_cover 恒零，所以这条缺席必须出声，
 		# 而不是安静地少跑一个 stage。
@@ -17584,19 +17500,6 @@ func commit_weather_refresh_stage_a(map: MapData, world: WorldData) -> Array[Wea
 func runtime_hydrology_enabled() -> bool:
 	var cp_now := _c()
 	return cp_now != null and bool(cp_now.runtime_hydrology_enabled)
-
-
-## B8 主线程抑制门（供 SUS job 查询）。
-##
-## Climate 在 worker 手上时，主线程的 weather 链是第二个写者：它的 field state 不再
-## 被推进/填充，distribute 会把零天气写回 MapData，而且时序正好在 worker writeback
-## 之后 —— 结果是 ACTIVE 下天气场被覆盖成零。唯一写者规则必须在这里显式执行，
-## 而不是靠"两边恰好算出同一个值"。
-func climate_authority_suppressed() -> bool:
-	if _data_core_world_ext == null \
-			or not _data_core_world_ext.has_method("climate_worker_authoritative"):
-		return false
-	return bool(_data_core_world_ext.climate_worker_authoritative())
 
 
 # Stage13「让天气移动」：每个 weather 轮(commit 后)推进一次独立全场 ψ pass。转发到 weather_system。

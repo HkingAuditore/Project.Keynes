@@ -2055,6 +2055,10 @@ bool NativeCountryRuntime::has_pending_effect_commands() const {
 
 bool NativeCountryRuntime::should_run(int64_t day_index) const {
     if (!_configured || !_bootstrapped || _mode == MODE_OFF) return false;
+    // Worker owns the Country day. The sync facade must not keep the
+    // economy/runtime-graph gate hot on leftover local queues / tech state —
+    // main-thread peer work goes through service_peer_intents_main_thread.
+    if (_sync_store_writes_forbidden) return false;
     if (_command_batch.active) return true;
     if (!_peer_pending_intents.empty()) return true;
     if (peer_rejection_needs_service(day_index)) return true;

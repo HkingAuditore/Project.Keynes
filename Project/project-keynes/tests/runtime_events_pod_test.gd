@@ -45,8 +45,8 @@ func _run() -> void:
 	# I8: EVENTS is inside the implemented mask now, but only as a worker-authority
 	# mirror + stage bit. The legacy GameplayEventBus journal is still the
 	# production consumer source, which is what the rest of this fixture exercises.
-	_expect("Events is inside the implemented ACTIVE authority mask (I8 0xA7E)",
-		int(report.get("implemented_domain_mask", 0)) == 0xA7E)
+	_expect("Events is inside the implemented ACTIVE authority mask (Phase 2-6 0xB7E)",
+		int(report.get("implemented_domain_mask", 0)) == 0xB7E)
 	_expect("SHADOW does not grant Events production authority",
 		(int(report.get("authoritative_domain_mask", 0)) & 0x200) == 0)
 

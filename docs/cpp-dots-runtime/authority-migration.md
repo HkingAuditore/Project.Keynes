@@ -1,14 +1,13 @@
 # 运行时权威迁移：目标、设计框架、当前状态与任务
-更新时间：2026-09-13（Trigger H7/H8 与 Events I8 已放行：`implemented` 与生产 request
-均为 `0xA7E`；Ideology G8 / Effect F8 / Climate B8 遗留已收口；Country / Modifier ACTIVE）
+更新时间：2026-09-13（Economy Phase 2–6：`implemented` 与生产 request 为 **`0xB7E`**）
 
-**一句话现状**：十二个 domain 里 Climate、Country、Trigger、Modifier、Effect、Ideology 与 Events 已是生产默认权威（`implemented_domain_mask =
-CLIMATE|COUNTRY|TRIGGER_INPUT|IDEOLOGY|MODIFIER|EFFECT|EVENTS|COMMIT = 0xA7E`；Climate 滞后一日回灌，Country 经 Host read-view 回写，
-Modifier/Effect/Ideology/Trigger snapshot 回灌 legacy runtime）。`runtime_climate_authority_enabled` 为真时生产
-请求 `authoritative_domain_mask=0xA7E`。关掉该开关则退回 SHADOW：同步 Country / 主线程
-modifier·effect·ideology·trigger daily / Climate 回主线程。整图 ACTIVE 仍禁止（required 为 `0xFFF`，
-`missing_domain_mask = 0x581`），放行仍是 **逐域**的。Country D1–D12、
-Modifier E2–E8、Effect F8、Ideology G2–G8、Trigger H2–H8 与 Events I1–I8 完成。
+**一句话现状**：十二个 domain 里 Climate、Country、Trigger、Modifier、Effect、Ideology、
+Events 与 **Economy** 已是生产默认权威（`implemented_domain_mask =
+CLIMATE|COUNTRY|TRIGGER_INPUT|IDEOLOGY|MODIFIER|EFFECT|ECONOMY|EVENTS|COMMIT = 0xB7E`；
+Climate 滞后一日回灌；Economy ACTIVE 经 `worker_run_compact_slice` 推进同一
+`NativeEconomyRuntime` 公式 owner）。`runtime_climate_authority_enabled` 为真时生产
+请求 `authoritative_domain_mask=0xB7E`。关掉该开关则退回 SHADOW。整图 ACTIVE 仍禁止
+（required 为 `0xFFF`，`missing_domain_mask = 0x481`），放行仍是 **逐域**的。
 
 **Events I8 的边界必须读清楚**：EVENTS 的授予只表示 worker 侧 POD store 拥有 EVENTS
 stage 位与自己的 snapshot ring，是 committed journal 的**镜像**。legacy
@@ -1400,17 +1399,55 @@ Climate|Country|Trigger|Effect|Modifier 的 grant 就是重犯 G8 的错误；�
 
 ## 阶段 J：ECONOMY（最大工程）⬜
 
+2026-09-13：J2-B Phase 1 地基已落地（不等于 J2 完成或 ACTIVE 放行）：
+
+- 新增 `RuntimeEconomyPodAuthority`（epoch input、13-stage cursor、committed
+  header、outbox/inbox 骨架）。
+- Host 增加 `execute_economy_worker_stage` 与 `publish_economy_stage_reference`
+  （SHADOW only；**不**改 `implemented_domain_mask`，仍为 `0xA7E`）。
+- BUILDING_PLAN 经 Godot-free `economy_kernel_prepare_building_plan` + executor
+  边界进入 sync body（无第二套公式）；J2-A `population/100` 投影已删除。
+- `RuntimeEconomyReplayReport.STAGE_COUNT` 扩到 13；`parity_ready` 仍为假。
+
+2026-09-13 Phase 2-6（CRITICAL）：生产 mask `0xB7E` 含 ECONOMY 后，主线程
+`economy_should_run` 抑制与 worker StageOps 哈希桩并存会导致经济停摆。修复：
+`worker_run_compact_slice` + `attach_economy_production_runtime`；ACTIVE 日路径
+在 ECONOMY 授予时每轮最多 64 次 compact slice；StageOps 恒 mutate=false；未挂接
+production runtime 时 fail-open 回 sync。POD `submit/poll` 为 Phase 4 脚手架；
+生产命令仍走 sync `submit_commands` 直至 opcode 全量抽出。
+
+2026-09-13 Phase 2–6（续）：
+
+- **Phase 2**：sync `run_slice_internal` 在 TRADE_SETTLE…AGGREGATE_PUBLISH
+  各 stage 成功完成后（与 BUILDING_PLAN 相同的 SHADOW-only 守卫）发布
+  `publish_economy_stage_reference`；`work_units=cell_count` 与 StageOps
+  `!mutate` 对拍。新增 11 个 Godot-free named kernel TU 桩（dispatch/document）；
+  生产突变仍走 compact slice / StageOps 主路径。
+- **Phase 3**：worker 权威时 D7 gate 全开；报告字段
+  `economy_pod_operation_gate_mask` 可观测（见
+  `runtime_economy_d7_gate_test.gd`）。
+- **Phase 4**：POD `queue_command` 准入 opcode∈[1,23]、session/generation
+  失配 → `RejectedAtAdmission`；`commit_pending_commands` 在 `commit_epoch`
+  排水（BUILD_CANAL 无 token → `RejectedAtExecution`）；重复 `request_id`
+  返回既有 terminal。GDScript：`runtime_economy_opcode_ack_test.gd`。
+- **Phase 5**：ACTIVE compact-slice 成功与 `commit_epoch` 均写入
+  `_snapshot_ring`；ECP1 已含 `operation_gate_mask`。
+- **Mask**：保持 `0xB7E`（含 ECONOMY），**不再翻转**。
+
 - [x] J1 `RuntimeEconomyStore` + `RuntimeEconomyPodState`
-- [ ] J2 真实 plan/replay：目前是从 country snapshot 复制 treasury + 简化的
-      population→production 投影（`runtime_domain_pod.cpp:507+`、
-      `runtime_domain_authorities.cpp:581+`，注释明写 "real Economy authority will replace"）
-- [ ] J3 迁移 legacy **23 个 opcode**（`economy_runtime.h` opcode 枚举）
-- [ ] J4 ACK：pipeline ack 槽当前为空（`runtime_domain_pod.cpp` 的 economy 分支）
-- [ ] J5 snapshot 类型（当前无）
+- [~] J2 真实 plan/replay：Phase 2 已接全 stage SHADOW 参考哈希 + named kernel
+      TU 桩；生产前进仍走 compact slice（非 13-TU StageOps mutate）
+- [~] J3 迁移 legacy **23 个 opcode**：POD 准入脚手架已齐；执行仍委托 sync
+      `submit_commands` / compact slice 公式 owner
+- [~] J4 ACK：Host POD receipt + `commit_pending_commands` 已接线；pipeline
+      ack 槽仍空
+- [~] J5 snapshot：双缓冲 ring 已在 ACTIVE/`commit_epoch` 发布 header；业务
+      摘要未齐
 - [ ] J6 **PKSR ECONOMY section**：bundle 里目前完全没有它，存档仍全在 legacy
-      `economy_runtime_persistence_*`
-- [ ] J7 接入 host 真实 stage
-- [ ] J8 放行
+      `economy_runtime_persistence_*`（ECP1 为独立 POD section 脚手架）
+- [~] J7 接入 host 真实 stage：ACTIVE compact-slice + SHADOW
+      `execute_economy_worker_stage`；ECONOMY 已在 `0xB7E`
+- [ ] J8 放行（soak / 业务摘要 / opcode 全量抽出）
 
 **四个特有难点**（这也是它排在最后的原因）：
 
@@ -1472,7 +1509,7 @@ F EFFECT         ████████████ F2-F8 完成；生产 ACTI
 G IDEOLOGY       ████████████ G2-G8 完成；生产 ACTIVE（0x876）
 H TRIGGER_INPUT  ████████████ H2-H8 完成；生产 ACTIVE（0x87E）
 I EVENTS         ████████████ I1-I8 完成；生产 ACTIVE（0xA7E，worker 镜像）
-J ECONOMY        █░░░░░░░░░░░ 仅 store（最大工程，四个特有难点）
+J ECONOMY        ██████░░░░░░ Phase2-6：ACTIVE compact-slice + stage refs + opcode/ECP1 脚手架；13-TU mutate 未完成
 K 三个无 store   ░░░░░░░░░░░░ 未开始
 L 整图收尾       ░░░░░░░░░░░░ 未开始
 ```
@@ -1480,9 +1517,10 @@ L 整图收尾       ░░░░░░░░░░░░ 未开始
 按逐域模板算，阶段 J（Economy）与阶段 K 是这轮迁移剩余工作量的主体，另加 Events 的消费者
 迁移；SHADOW 组件完成不等于生产 authority 放行。
 
-**Climate、Country、Modifier、Effect、Ideology 与 Trigger 是当前生产中真实承担 gameplay
-权威的 worker 域。** Country core 已由 Host worker 承担；同步 Economy-owned 资产 coordinator
-仍是 D7 的生产 peer。Events 只是 worker 侧镜像，legacy journal 仍是消费源。其余未放行域仍是
+**Climate、Country、Modifier、Effect、Ideology、Trigger、Events 与 Economy 是当前生产
+中真实承担 gameplay 权威的 worker 域（Economy 经 compact-slice 复用 sync 公式 owner）。**
+Country core 已由 Host worker 承担；同步 Economy-owned 资产 coordinator 仍是 D7 的生产
+peer。Events 只是 worker 侧镜像，legacy journal 仍是消费源。其余未放行域仍是
 协议切片、SHADOW 或诊断实现，COMMIT 是屏障机制本身。
 
 ## 4.2 域成熟度（对应任务表 B–K）
@@ -1491,8 +1529,8 @@ L 整图收尾       ░░░░░░░░░░░░ 未开始
 | --- | --- | --- | --- |
 | **第 1 类：生产权威** | CLIMATE、COUNTRY、COMMIT | ACTIVE 下真实承担，在 `implemented_domain_mask` | B + D12 |
 | **第 2 类：共享核心与协议切片** | （原 COUNTRY 已升入第 1 类） | — | — |
-| **第 1 类：生产 ACTIVE** | CLIMATE、COUNTRY、TRIGGER_INPUT、IDEOLOGY、MODIFIER、EFFECT、EVENTS、COMMIT | 生产 request `0xA7E`（EVENTS 为 worker 镜像，legacy journal 仍是消费源） | 已放行 |
-| **第 3 类：SHADOW/POD 迁移中** | ECONOMY | Economy 仍主要是诊断投影 | 阶段 J |
+| **第 1 类：生产 ACTIVE** | CLIMATE、COUNTRY、TRIGGER_INPUT、IDEOLOGY、MODIFIER、EFFECT、EVENTS、ECONOMY、COMMIT | 生产 request `0xB7E`（EVENTS 为 worker 镜像；ECONOMY 为 compact-slice ACTIVE） | 已放行 |
+| **第 3 类：SHADOW/POD 迁移中** | ECONOMY（13-TU StageOps） | compact-slice 已 ACTIVE；独立 stage TU / opcode POD 仍在迁 | 阶段 J |
 | **第 4 类：无 store** | GAMEPLAY_EFFECT、VISUAL、INPUT_CAPTURE | 结构上没有可迁移状态，需确认语义 | 阶段 K |
 
 「SHADOW/POD 迁移中」表示代码可在 worker 侧运行并产出协议/对照数据，但尚未取得生产
@@ -1511,7 +1549,7 @@ authority；Modifier、Ideology 和 Trigger 的 plan/replay、ACK、snapshot 与
 | EFFECT | 有 | **独立真实 POD；Host SHADOW 日 stage（F7）** | 6 类 action | 真实多 adapter 状态机 | 独立 immutable | EFP1 | **SHADOW 完整日 stage**（Ideology 后、Modifier 前；fixture Effect→Modifier 在 POD catalog 非空时停用） | 不在 |
 | IDEOLOGY | 有 | **真实双缓冲 plan/replay；ACTIVE 唯一写者** | 固定 POD payload；legacy 9 已迁移 | **真实 Effect ACK barrier；无 synthetic ACK**；ACTIVE 下 Effect stage 后 worker 内 ACK + 主线程 pump | immutable snapshot ring，回灌 legacy `NativeIdeologyRuntime`（Country/Economy 输入校验） | **IDP1**（`1 << 8`，不从 PDP3/PKID 恢复） | **ACTIVE 真 stage**（Country 之后、Effect 之前）；SHADOW 诊断 stage 保留 | **在（0x010）** |
 | TRIGGER_INPUT | 有 | **真实 SHADOW plan/replay** | 6 个固定 opcode；legacy Action `1,2,3,4,10,11,12,13,14,15` 保留 | required ACK + 真实 receipt barrier | immutable POD snapshot | **TPD1**（独立 section，`1 << 4`） | **SHADOW parity bridge** | 不在 |
-| ECONOMY | 有 | 诊断 | legacy 23 | 空槽 | 无 | **无 Economy POD section；D7T1 仅保存跨域 transaction journal** | 无 | 不在 |
+| ECONOMY | 有 | ACTIVE compact-slice + SHADOW StageOps；全 stage reference + named kernel TU 桩 | legacy 23；POD 准入 1..23 | Host POD receipt + commit_pending_commands | ring header（ACTIVE/`commit_epoch`） | **ECP1 编解码含 gate；业务摘要未齐** | ACTIVE compact-slice + SHADOW `execute_economy_worker_stage` | **在（0x100 / 0xB7E）** |
 | EVENTS | 有 | **真实 SHADOW/PROBE deterministic plan/replay** | APPEND_BATCH、ACK_CONSUMER、CONFIGURE_CAPACITY、CLEAR_RESET | **worker ACK + legacy cursor bridge** | **immutable snapshot ring** | **EVT1** | **SHADOW/PROBE 日阶段** | 不在 |
 | GAMEPLAY_EFFECT | **无** | 空转 | 无 | 无 | 无 | 无 | 无 | 不在 |
 | VISUAL | 无（intent） | 诊断 | 无 | 无 | — | 无 | SHADOW 刻意不发布 | 不在 |

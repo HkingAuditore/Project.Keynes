@@ -379,6 +379,8 @@ public:
     bool runtime_effect_host_stage_self_test();
     bool runtime_ideology_pod_self_test() const;
     bool runtime_events_authority_self_test() const;
+    bool runtime_economy_pod_self_test() const;
+    godot::Dictionary runtime_economy_stage_order_contract_test() const;
     bool is_native_daily_visual_commit_pending() const;
     void complete_native_daily_visual_commit();
     // Compatibility alias for callers predating the full visual-snapshot barrier.
@@ -625,8 +627,17 @@ public:
     godot::Dictionary bootstrap_economy(const godot::Dictionary &population_packet,
                                         const godot::Dictionary &market_packet);
     godot::Dictionary submit_economy_commands(const godot::Dictionary &packed_batch);
+    // Phase 4: Host POD command queue scaffolding (admission/receipt). Production
+    // opcode apply remains submit_economy_commands → NativeEconomyRuntime.
+    godot::Dictionary submit_economy_pod_commands(
+        const godot::Dictionary &packed_batch);
+    godot::Dictionary poll_economy_pod_receipts(int max_items = 128);
     godot::Dictionary run_economy_slice(const godot::Dictionary &ctx);
     godot::Dictionary run_economy_slice_compact(const godot::Dictionary &ctx);
+    // Main-thread Godot/MapData → NativeEconomyRuntime frozen input lanes.
+    // Does not run economy mutation stages. Safe to call when ECONOMY is
+    // worker-authoritative so compact slices can start_epoch without fatal.
+    godot::Dictionary capture_economy_day_inputs(int64_t day_index);
     bool economy_should_run(int64_t day_index) const;
     bool economy_deadline_critical(int64_t day_index) const;
     godot::PackedInt32Array get_economy_live_cells();
@@ -2972,6 +2983,7 @@ private:
     uint64_t                                  _runtime_graph_visual_diff_cell_count = 0;
     uint64_t                                  _runtime_graph_full_flush_count = 0;
     godot::Dictionary                         _runtime_graph_last_economy_report;
+    std::string                               _runtime_graph_economy_capture_fatal_reason;
     std::unique_ptr<NativeSimulationHost>     _runtime_host;
     // 只在主线程应用完整提交后替换；读视图不读 worker scratch、不再次获取 ring。
     std::shared_ptr<const pk_async_physics::RuntimeClimatePhysicsState> _climate_physics_committed;

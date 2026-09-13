@@ -33,7 +33,7 @@ func _init() -> void:
 			int(report.get("pod_domain_abi_version", 0)) == 3 \
 			and int(report.get("required_domain_mask", 0)) == 0xFFF)
 		_expect("COMMIT+CLIMATE+COUNTRY+TRIGGER+IDEOLOGY+EFFECT+MODIFIER+EVENTS mask still blocks whole-graph ACTIVE",
-			int(report.get("implemented_domain_mask", 0)) == 0xA7E \
+			int(report.get("implemented_domain_mask", 0)) == 0xB7E \
 			and int(report.get("missing_domain_mask", 0)) == 0x581 \
 			and not bool(report.get("authority_ready", true)))
 		_expect("main thread wait metric is zero",

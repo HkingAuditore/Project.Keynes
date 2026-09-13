@@ -604,10 +604,10 @@ func _start_production_shadow_worker() -> void:
 		# graph_coverage_complete 在 per-domain ACTIVE 下的含义是"请求的这些域
 		# 线程安全"，不是整图。
 		# CLIMATE(0x2)|COUNTRY(0x4)|TRIGGER(0x8)|IDEOLOGY(0x10)|EFFECT(0x20)|
-		# MODIFIER(0x40)|EVENTS(0x200)|COMMIT(0x800)=0xA7E：
+		# MODIFIER(0x40)|ECONOMY(0x100)|EVENTS(0x200)|COMMIT(0x800)=0xB7E：
 		# COMMIT 是 barrier 域本身，C++ 侧也会补上，这里显式写出让配置自解释。
-		# H8/I8：Trigger 与 Events 与 Climate|Country|Modifier|Effect|Ideology 同开关进入
-		# 生产 ACTIVE；不得用 handoff / set_country_sync_store_writes_forbidden 冒充本路径。
+		# Phase 2-6：Economy 与 Climate|Country|Modifier|Effect|Ideology|Trigger|Events
+		# 同开关进入生产 ACTIVE；不得用 handoff / set_country_sync_store_writes_forbidden 冒充本路径。
 		# Events 的授予只表示 worker 侧镜像 + 阶段位；legacy GameplayEventBus journal
 		# 仍是生产消费源，消费者迁移是后续 PR。
 		if not bool(_country_worker_transport_capture.get("ok", false)) \
@@ -617,7 +617,7 @@ func _start_production_shadow_worker() -> void:
 				_generator.capture_country_worker_inputs()
 		if not bool(_country_worker_transport_capture.get("ok", false)):
 			push_error(
-				"[runtime-worker] Climate|Country|Trigger|Modifier|Effect|Ideology|Events ACTIVE refused: Country capture incomplete (%s)" % [
+				"[runtime-worker] Climate|Country|Trigger|Modifier|Effect|Ideology|Events|Economy ACTIVE refused: Country capture incomplete (%s)" % [
 					String(_country_worker_transport_capture.get("code", "missing"))])
 			return
 		# G8: best-effort Economy opinion publish before ACTIVE so Ideology
@@ -629,7 +629,7 @@ func _start_production_shadow_worker() -> void:
 					String(opinion_pub.get("code", "unknown"))])
 		config["simulation_thread_mode"] = "ACTIVE"
 		config["graph_coverage_complete"] = true
-		config["authoritative_domain_mask"] = 0xA7E
+		config["authoritative_domain_mask"] = 0xB7E
 	var started: Dictionary = _generator.start_runtime_worker(config)
 	if not bool(started.get("ok", false)):
 		if climate_authority_active:
@@ -1299,7 +1299,11 @@ func _restart_worker_with_current_policy() -> Dictionary:
 			"simulation_host_state", stop_report.get("state", "STOPPED")))
 		if state in ["STOPPED", "FAULTED"]:
 			break
-		OS.delay_msec(4)
+		# ACTIVE Country parks on peer intents. Blocking here without pumping
+		# peer service deadlocks stop() against the worker day barrier.
+		_service_country_worker_transport()
+		_consume_country_worker_read_view_if_authoritative()
+		OS.delay_msec(1)
 	var policy: Dictionary = _resolve_climate_authority_policy()
 	if bool(policy.get("enabled", false)) \
 			and _generator.has_method("capture_country_worker_inputs"):
@@ -1839,7 +1843,6 @@ func get_gm_capabilities() -> Dictionary:
 		"toggles": [
 			{"id": "simulation.paused", "label": "暂停模拟", "group": "模拟"},
 			{"id": "simulation.climate_worker_authority", "label": "Climate worker 权威", "group": "模拟"},
-			{"id": "simulation.climate_worker_authority_auto", "label": "Climate 权威按规模自动判定", "group": "模拟"},
 			{"id": "simulation.click_claim_territory", "label": "点击地块接管领土", "group": "模拟"},
 			{"id": "system.autosave", "label": "自动存档（每年）", "group": "系统"},
 			{"id": "visual.day_night", "label": "昼夜循环", "group": "视觉"},
@@ -1945,9 +1948,6 @@ func get_gm_toggle_state(toggle_id: String) -> Dictionary:
 			return {"ok": true, "enabled": _world_clock.paused}
 		"simulation.climate_worker_authority":
 			return {"ok": true, "enabled": runtime_climate_authority_enabled}
-		"simulation.climate_worker_authority_auto":
-			return {"ok": true, "enabled":
-				_climate_authority_policy.override == ClimateAuthorityPolicy.Override.AUTO}
 		"simulation.click_claim_territory":
 			return {"ok": true, "enabled": _gm_click_claim_territory_enabled}
 		"system.autosave":
@@ -2048,8 +2048,6 @@ func set_gm_toggle(toggle_id: String, enabled: bool) -> Dictionary:
 			on_clock_running_changed(not enabled)
 		"simulation.climate_worker_authority":
 			set_runtime_climate_authority_enabled(enabled)
-		"simulation.climate_worker_authority_auto":
-			set_climate_authority_override("auto" if enabled else "force_off")
 		"simulation.click_claim_territory":
 			return _gm_set_click_claim_territory_enabled(enabled)
 		"system.autosave":

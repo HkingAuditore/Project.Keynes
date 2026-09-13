@@ -302,6 +302,10 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::runtime_ideology_pod_self_test);
     ClassDB::bind_method(D_METHOD("runtime_events_authority_self_test"),
                          &DCWorldExt::runtime_events_authority_self_test);
+    ClassDB::bind_method(D_METHOD("runtime_economy_pod_self_test"),
+                         &DCWorldExt::runtime_economy_pod_self_test);
+    ClassDB::bind_method(D_METHOD("runtime_economy_stage_order_contract_test"),
+                         &DCWorldExt::runtime_economy_stage_order_contract_test);
     ClassDB::bind_method(D_METHOD("is_native_daily_visual_commit_pending"),
                          &DCWorldExt::is_native_daily_visual_commit_pending);
     ClassDB::bind_method(D_METHOD("complete_native_daily_visual_commit"),
@@ -598,10 +602,16 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::bootstrap_economy);
     ClassDB::bind_method(D_METHOD("submit_economy_commands", "packed_batch"),
                          &DCWorldExt::submit_economy_commands);
+    ClassDB::bind_method(D_METHOD("submit_economy_pod_commands", "packed_batch"),
+                         &DCWorldExt::submit_economy_pod_commands);
+    ClassDB::bind_method(D_METHOD("poll_economy_pod_receipts", "max_items"),
+                         &DCWorldExt::poll_economy_pod_receipts, DEFVAL(128));
     ClassDB::bind_method(D_METHOD("run_economy_slice", "ctx"),
                          &DCWorldExt::run_economy_slice);
     ClassDB::bind_method(D_METHOD("run_economy_slice_compact", "ctx"),
                          &DCWorldExt::run_economy_slice_compact);
+    ClassDB::bind_method(D_METHOD("capture_economy_day_inputs", "day_index"),
+                         &DCWorldExt::capture_economy_day_inputs);
     ClassDB::bind_method(D_METHOD("economy_should_run", "day_index"),
                          &DCWorldExt::economy_should_run);
     ClassDB::bind_method(D_METHOD("economy_deadline_critical", "day_index"),
