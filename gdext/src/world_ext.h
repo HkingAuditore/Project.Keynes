@@ -3035,6 +3035,14 @@ private:
     // economy_runtime.{h,cpp}; opaque here so the existing world header does
     // not expose the large chunk/market implementation to every pass TU.
     void                                     *_economy_runtime        = nullptr;
+    // Frozen economy input capture is immutable for a sample day.  Reuse the
+    // boundary report across compact slices instead of rebuilding bridge
+    // dictionaries and rescanning MapData on every slice.
+    int64_t                                  _economy_captured_day = -1;
+    bool                                     _economy_capture_cached = false;
+    uint64_t                                 _economy_capture_count = 0;
+    uint64_t                                 _economy_capture_reuse_count = 0;
+    godot::Dictionary                        _economy_capture_cached_report;
     uint64_t                                  _canal_topology_generation = 0;
     // 运河编译态。原先是五个独立成员，现在整组进 HydrologyCanalState ——
     // hydrology_pass_pure 要能在 worker 侧跑，而 worker 拿不到 DCWorldExt 的成员。

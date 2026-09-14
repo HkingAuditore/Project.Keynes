@@ -43,6 +43,9 @@ Dictionary DCWorldExt::configure_economy(const Dictionary &catalog,
                                          const Dictionary &profile,
                                          int cell_count,
                                          int64_t seed) {
+    _economy_capture_cached = false;
+    _economy_captured_day = -1;
+    _economy_capture_cached_report.clear();
     // Headless/focused callers that have no explicit country package still
     // receive the same default-country bootstrap as production. MapGenerator
     // configures country first with the real water mask, so this path is only
@@ -93,6 +96,9 @@ Dictionary DCWorldExt::configure_economy(const Dictionary &catalog,
 
 Dictionary DCWorldExt::bootstrap_economy(const Dictionary &population_packet,
                                          const Dictionary &market_packet) {
+    _economy_capture_cached = false;
+    _economy_captured_day = -1;
+    _economy_capture_cached_report.clear();
     if (_economy_runtime == nullptr) {
         return unavailable();
     }
@@ -220,12 +226,24 @@ Dictionary DCWorldExt::run_economy_slice_compact(const Dictionary &ctx) {
 }
 
 Dictionary DCWorldExt::capture_economy_day_inputs(int64_t day_index) {
+    if (_economy_capture_cached && _economy_captured_day == day_index) {
+        Dictionary reused = _economy_capture_cached_report;
+        reused["captured"] = false;
+        reused["input_capture_reused"] = true;
+        reused["input_capture_count"] = static_cast<int64_t>(_economy_capture_count);
+        reused["input_capture_reuse_count"] = static_cast<int64_t>(
+            ++_economy_capture_reuse_count);
+        return reused;
+    }
     Dictionary out;
     out["ok"] = false;
     out["fatal"] = false;
     out["fatal_reason"] = "";
     out["stage"] = "";
     out["captured"] = false;
+    out["input_capture_reused"] = false;
+    out["input_capture_count"] = static_cast<int64_t>(_economy_capture_count);
+    out["input_capture_reuse_count"] = static_cast<int64_t>(_economy_capture_reuse_count);
     out["path"] = "ECONOMY_GRAPH";
     if (_economy_runtime == nullptr) {
         out["fatal"] = true;
@@ -441,6 +459,14 @@ Dictionary DCWorldExt::capture_economy_day_inputs(int64_t day_index) {
     }
     out["ok"] = true;
     out["captured"] = captured_any;
+    if (captured_any) {
+        _economy_captured_day = day_index;
+        _economy_capture_cached = true;
+        ++_economy_capture_count;
+        _economy_capture_cached_report = out;
+        out["input_capture_count"] = static_cast<int64_t>(_economy_capture_count);
+    }
+    out["input_capture_reuse_count"] = static_cast<int64_t>(_economy_capture_reuse_count);
     out["stage"] = captured_any ? "economy_day_inputs" : "economy_day_inputs_idle";
     return out;
 }

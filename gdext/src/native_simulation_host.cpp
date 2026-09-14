@@ -7089,7 +7089,7 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             // Dedicated Economy SHADOW stage handler (J2-B). Replays the same
             // epoch contract through RuntimeEconomyPodAuthority; does not grant
             // ACTIVE mask.
-            {
+            if (_economy_shadow_probe_enabled.load(std::memory_order_acquire)) {
                 std::string economy_stage_error;
                 const uint32_t economy_cells =
                     climate_environment != nullptr
@@ -7837,6 +7837,23 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             _economy_pod_operation_gate_mask.store(
                 _economy_production_runtime->d7_operation_gate_mask(),
                 std::memory_order_release);
+            // Only a fully committed epoch may cross the legacy/POD boundary.
+            // In-progress slices retain their private mutable SoA in the
+            // production runtime and never become observable POD state.
+            if (economy_day_done &&
+                _economy_pod_authority.committed_ledger_state().generation !=
+                    _economy_production_runtime->committed_generation()) {
+                RuntimeEconomyLedgerState ledger_state;
+                _economy_production_runtime->capture_committed_ledger_state(
+                    ledger_state);
+                if (!_economy_pod_authority.capture_committed_ledger_state(
+                        std::move(ledger_state))) {
+                    set_fault("economy_pod_committed_ledger_capture_invalid");
+                    stage.completed = 0;
+                    commit.preflight_ok = 0;
+                    continue;
+                }
+            }
             // Phase 5: publish production snapshot into the Economy POD ring.
             {
                 uint32_t ring_index = 0;
@@ -7863,7 +7880,8 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                     payload.header.authority_ready = true;
                     payload.operation_gate_mask =
                         payload.header.operation_gate_mask;
-                    payload.authority_mode = 1; // ACTIVE production
+                    payload.authority_mode = static_cast<uint32_t>(
+                        _economy_pod_authority.authority_mode());
                     int64_t pop_err = 0, money_err = 0, goods_err = 0;
                     int64_t changed_cells = 0, changed_cohorts = 0;
                     uint32_t dirty_family_mask = 0;
