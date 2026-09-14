@@ -1,13 +1,22 @@
 # Performance Diagnostics Playbook
 
-## Economy ACTIVE / SHADOW metrics (Phase 2–6)
+## Economy ACTIVE / SHADOW metrics (Phase 2–6 + Phase-1 execution mode)
+
+Production default is `economy_execution_mode=ACTIVE_ONLY`: worker compact-slice
+production runs, and SHADOW StageOps work is zero
+(`economy_shadow_stage_invocations=0`). Set `ACTIVE_WITH_PARITY` (or profile
+`economy_execution_mode`) only for explicit hash probes; the same frozen
+`(sample_day, input_generation)` workset is cached so StageOps are not
+re-scanned. `LEGACY_ONLY` strips ECONOMY from the worker authority mask and
+keeps main-thread sync `ECONOMY_GRAPH` as the sole writer.
 
 For Economy worker authority sessions, keep `main_wait_on_sim_us = 0`. Prefer
-report fields `economy_pod_*`, `economy_pod_parity_ready_mask`,
-`economy_pod_operation_gate_mask`, and per-stage `economy_replay_stage_ms`
-(do not mix with `slice_elapsed_ms`). Snapshot ring publish must not block day
-commit; dropped snapshots are UI-only. Production mutations are compact slices,
-not StageOps mutate.
+report fields `economy_execution_mode_name`, `economy_shadow_stage_invocations`,
+`economy_shadow_stage_cache_hits`, `economy_pod_*`,
+`economy_pod_parity_ready_mask`, `economy_pod_operation_gate_mask`, and
+per-stage `economy_replay_stage_ms` (do not mix with `slice_elapsed_ms`).
+Snapshot ring publish must not block day commit; dropped snapshots are UI-only.
+Production mutations are compact slices, not StageOps mutate.
 
 ## 2026-09 50 倍速归因列
 

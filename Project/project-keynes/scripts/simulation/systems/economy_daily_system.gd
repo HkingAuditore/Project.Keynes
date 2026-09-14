@@ -89,9 +89,16 @@ func tick(ctx) -> Dictionary:
 	}
 	var ext: Object = facade.world_ext()
 	var day_index: int = int(ctx.day_index) if ctx != null else 0
+	# When the runtime graph owns the day, economy slices run on the worker /
+	# native graph path. Skip the O(live_cells) main-thread natural-resource
+	# catchup bridge copy that would otherwise run before should_run=false.
+	var runtime_graph_owns: bool = generator != null \
+			and generator.has_method("runtime_graph_active") \
+			and bool(generator.runtime_graph_active())
 	# catchup 内部用 _natural_resource_last_day 去重，所以同一天的第二个 slice 必然
 	# 空跑——但空跑之前已经付掉了 live cells 的跨语言拷贝和整轮遍历。
-	if generator != null and _natural_resource_catchup_day != day_index \
+	if not runtime_graph_owns and generator != null \
+			and _natural_resource_catchup_day != day_index \
 			and generator.has_method("catchup_natural_resources_for_live_cells"):
 		_natural_resource_catchup_day = day_index
 		generator.catchup_natural_resources_for_live_cells(day_index)

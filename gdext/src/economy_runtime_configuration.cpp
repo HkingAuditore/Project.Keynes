@@ -379,6 +379,9 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _settlements.clear(cell_count);
     _market.clear();
     _market_signals.clear(cell_count);
+    mark_market_signal_full_rebuild("configure");
+    mark_labor_signal_full_rebuild("configure");
+    mark_input_reserve_full_rebuild("configure");
     _buildings.clear();
     _pending_building_topology_rebuild = false;
     _building_handle_index_clean = false;

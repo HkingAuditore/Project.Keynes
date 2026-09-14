@@ -1431,7 +1431,9 @@ production runtime 时 fail-open 回 sync。POD `submit/poll` 为 Phase 4 脚手
   排水（BUILD_CANAL 无 token → `RejectedAtExecution`）；重复 `request_id`
   返回既有 terminal。GDScript：`runtime_economy_opcode_ack_test.gd`。
 - **Phase 5**：ACTIVE compact-slice 成功与 `commit_epoch` 均写入
-  `_snapshot_ring`；ECP1 已含 `operation_gate_mask`。
+  `_snapshot_ring`；ECP1 ABI4 已含 `operation_gate_mask`、业务摘要与 committed
+  cohort/market ledger mirror。ABI4 恢复先校验独立 ledger hash 和页拓扑，失败不替换
+  live committed state；ABI1-3 恢复会清空旧的 ABI4 state。
 - **Mask**：保持 `0xB7E`（含 ECONOMY），**不再翻转**。
 
 - [x] J1 `RuntimeEconomyStore` + `RuntimeEconomyPodState`
@@ -1441,10 +1443,12 @@ production runtime 时 fail-open 回 sync。POD `submit/poll` 为 Phase 4 脚手
       `submit_commands` / compact slice 公式 owner
 - [~] J4 ACK：Host POD receipt + `commit_pending_commands` 已接线；pipeline
       ack 槽仍空
-- [~] J5 snapshot：双缓冲 ring 已在 ACTIVE/`commit_epoch` 发布 header；业务
-      摘要未齐
-- [ ] J6 **PKSR ECONOMY section**：bundle 里目前完全没有它，存档仍全在 legacy
-      `economy_runtime_persistence_*`（ECP1 为独立 POD section 脚手架）
+- [~] J5 snapshot：双缓冲 ring 已在 ACTIVE/`commit_epoch` 发布 header 与业务
+      摘要；committed cohort/market ledger 已有独立 POD owner，完整 building/trade 等
+      snapshot 尚未迁移
+- [~] J6 **PKSR ECONOMY section**：bundle 已有可选 ECP1 ABI4，保存 committed
+      cohort/market ledger mirror 并原子恢复；完整生产存档仍在 legacy
+      `economy_runtime_persistence_*`
 - [~] J7 接入 host 真实 stage：ACTIVE compact-slice + SHADOW
       `execute_economy_worker_stage`；ECONOMY 已在 `0xB7E`
 - [ ] J8 放行（soak / 业务摘要 / opcode 全量抽出）
@@ -1549,7 +1553,7 @@ authority；Modifier、Ideology 和 Trigger 的 plan/replay、ACK、snapshot 与
 | EFFECT | 有 | **独立真实 POD；Host SHADOW 日 stage（F7）** | 6 类 action | 真实多 adapter 状态机 | 独立 immutable | EFP1 | **SHADOW 完整日 stage**（Ideology 后、Modifier 前；fixture Effect→Modifier 在 POD catalog 非空时停用） | 不在 |
 | IDEOLOGY | 有 | **真实双缓冲 plan/replay；ACTIVE 唯一写者** | 固定 POD payload；legacy 9 已迁移 | **真实 Effect ACK barrier；无 synthetic ACK**；ACTIVE 下 Effect stage 后 worker 内 ACK + 主线程 pump | immutable snapshot ring，回灌 legacy `NativeIdeologyRuntime`（Country/Economy 输入校验） | **IDP1**（`1 << 8`，不从 PDP3/PKID 恢复） | **ACTIVE 真 stage**（Country 之后、Effect 之前）；SHADOW 诊断 stage 保留 | **在（0x010）** |
 | TRIGGER_INPUT | 有 | **真实 SHADOW plan/replay** | 6 个固定 opcode；legacy Action `1,2,3,4,10,11,12,13,14,15` 保留 | required ACK + 真实 receipt barrier | immutable POD snapshot | **TPD1**（独立 section，`1 << 4`） | **SHADOW parity bridge** | 不在 |
-| ECONOMY | 有 | ACTIVE compact-slice + SHADOW StageOps；全 stage reference + named kernel TU 桩 | legacy 23；POD 准入 1..23 | Host POD receipt + commit_pending_commands | ring header（ACTIVE/`commit_epoch`） | **ECP1 编解码含 gate；业务摘要未齐** | ACTIVE compact-slice + SHADOW `execute_economy_worker_stage` | **在（0x100 / 0xB7E）** |
+| ECONOMY | 有（committed cohort/market mirror） | ACTIVE compact-slice + SHADOW StageOps；全 stage reference + named kernel TU 桩 | legacy 23；POD 准入 1..23 | Host POD receipt + commit_pending_commands | ring header + 业务摘要（ACTIVE/`commit_epoch`） | **ECP1 ABI4：gate + 摘要 + committed ledger；完整 PKEC 业务态未迁** | ACTIVE compact-slice + SHADOW `execute_economy_worker_stage` | **在（0x100 / 0xB7E）** |
 | EVENTS | 有 | **真实 SHADOW/PROBE deterministic plan/replay** | APPEND_BATCH、ACK_CONSUMER、CONFIGURE_CAPACITY、CLEAR_RESET | **worker ACK + legacy cursor bridge** | **immutable snapshot ring** | **EVT1** | **SHADOW/PROBE 日阶段** | 不在 |
 | GAMEPLAY_EFFECT | **无** | 空转 | 无 | 无 | 无 | 无 | 无 | 不在 |
 | VISUAL | 无（intent） | 诊断 | 无 | 无 | — | 无 | SHADOW 刻意不发布 | 不在 |

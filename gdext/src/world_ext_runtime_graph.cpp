@@ -481,7 +481,13 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
                 ++_runtime_graph_economy_commits;
             ran(economy_result, DIRTY_ECONOMY_UI);
             if (_effect_runtime != nullptr) ack_effect_native_economy();
-            _runtime_graph_last_economy_report = economy_result;
+            // Incomplete slices keep the last committed/full diagnostic snapshot.
+            // Overwriting every compact cursor slice re-copies a large Dictionary
+            // across the pulse boundary for no publish benefit.
+            if (bool(economy_result.get("done", false)) ||
+                bool(economy_result.get("fatal", false))) {
+                _runtime_graph_last_economy_report = economy_result;
+            }
             progressed = true;
         }
         if (!progressed) {
@@ -675,6 +681,35 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
         out["economy_pod_pending_inbox"] = static_cast<int>(host.economy_pod_pending_inbox);
         out["economy_pod_operation_gate_mask"] = static_cast<int>(host.economy_pod_operation_gate_mask);
         out["economy_pod_parity_ready_mask"] = static_cast<int>(host.economy_pod_parity_ready_mask);
+        out["economy_pod_mirror_feature_mask"] =
+            static_cast<int>(host.economy_pod_mirror_feature_mask);
+        out["economy_pod_committed_ledger_abi"] =
+            static_cast<int>(host.economy_pod_committed_ledger_abi);
+        out["economy_pod_active_ready"] = host.economy_pod_active_ready;
+        out["economy_execution_mode"] = static_cast<int>(host.economy_execution_mode);
+        out["economy_execution_mode_name"] = String(
+            pk::economy_execution_mode_name(
+                static_cast<pk::EconomyExecutionMode>(host.economy_execution_mode)));
+        out["economy_shadow_probe_enabled"] = host.economy_shadow_probe_enabled;
+        out["economy_shadow_stage_invocations"] =
+            static_cast<int64_t>(host.economy_shadow_stage_invocations);
+        out["economy_shadow_stage_cache_hits"] =
+            static_cast<int64_t>(host.economy_shadow_stage_cache_hits);
+        out["economy_stage_ops_mutate"] = host.economy_stage_ops_mutate;
+        out["economy_auto_pod_active"] = host.economy_auto_pod_active;
+        out["economy_production_writer"] = String(host.economy_production_writer);
+        out["economy_production_writer_requested"] =
+            String(host.economy_production_writer_requested);
+        out["economy_production_writer_effective"] =
+            String(host.economy_production_writer_effective);
+        out["economy_stage_ops_readiness_mask"] =
+            static_cast<int64_t>(host.economy_stage_ops_readiness_mask);
+        out["economy_stage_ops_prelude_ready"] =
+            host.economy_stage_ops_prelude_ready;
+        out["economy_stage_ops_soak_experiment"] =
+            host.economy_stage_ops_soak_experiment;
+        out["economy_stage_ops_soak_parity_ok"] =
+            host.economy_stage_ops_soak_parity_ok;
         out["economy_replay_completed_stage_mask"] = static_cast<int64_t>(host.economy_replay_completed_stage_mask);
         out["economy_replay_stage_cursor"] = static_cast<int>(host.economy_replay_stage_cursor);
         out["economy_replay_input_hash"] = static_cast<int64_t>(host.economy_replay_input_hash);

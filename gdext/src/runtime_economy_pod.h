@@ -9,6 +9,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -19,12 +20,145 @@ constexpr uint32_t RUNTIME_ECONOMY_INBOX_CAPACITY = 64u;
 constexpr uint32_t RUNTIME_ECONOMY_COMMAND_CAPACITY = 256u;
 constexpr uint32_t RUNTIME_ECONOMY_RECEIPT_CAPACITY = 256u;
 constexpr uint32_t RUNTIME_ECONOMY_POD_SECTION_MARKER = 0x31504345u; // ECP1
+// ECP1 ABI versions: 1 header/receipts, 2 summaries, 3 authority mode,
+// 4 committed ledger core, 5 + handle generation / market signal columns,
+// 6 + reservations / population diagnostics, 7 + building / trade-escrow
+// opaque committed payloads (PKEC-shaped blobs), 8 + family/person opaque
+// committed payloads, 9 + resource snapshot / epoch-cursor opaque payloads.
+
+enum EconomyPodMirrorFeature : uint32_t {
+    ECONOMY_POD_MIRROR_COHORT_CORE = 1u << 0,
+    ECONOMY_POD_MIRROR_MARKET_CORE = 1u << 1,
+    ECONOMY_POD_MIRROR_COHORT_GENERATION = 1u << 2,
+    ECONOMY_POD_MIRROR_MARKET_SIGNALS = 1u << 3,
+    ECONOMY_POD_MIRROR_RESERVATIONS = 1u << 4,
+    ECONOMY_POD_MIRROR_POPULATION_DIAGNOSTICS = 1u << 5,
+    ECONOMY_POD_MIRROR_BUILDING = 1u << 6,
+    ECONOMY_POD_MIRROR_TRADE_ESCROW = 1u << 7,
+    ECONOMY_POD_MIRROR_FAMILY = 1u << 8,
+    ECONOMY_POD_MIRROR_RESOURCE = 1u << 9,
+    ECONOMY_POD_MIRROR_EPOCH_CURSOR = 1u << 10,
+};
+
+constexpr uint32_t ECONOMY_POD_MIRROR_PHASE21 =
+    ECONOMY_POD_MIRROR_COHORT_CORE | ECONOMY_POD_MIRROR_MARKET_CORE |
+    ECONOMY_POD_MIRROR_COHORT_GENERATION | ECONOMY_POD_MIRROR_MARKET_SIGNALS;
+
+constexpr uint32_t ECONOMY_POD_MIRROR_PHASE22 =
+    ECONOMY_POD_MIRROR_PHASE21 | ECONOMY_POD_MIRROR_RESERVATIONS |
+    ECONOMY_POD_MIRROR_POPULATION_DIAGNOSTICS;
+
+constexpr uint32_t ECONOMY_POD_MIRROR_PHASE23 =
+    ECONOMY_POD_MIRROR_PHASE22 | ECONOMY_POD_MIRROR_BUILDING |
+    ECONOMY_POD_MIRROR_TRADE_ESCROW;
+
+constexpr uint32_t ECONOMY_POD_MIRROR_PHASE232 =
+    ECONOMY_POD_MIRROR_PHASE23 | ECONOMY_POD_MIRROR_FAMILY;
+
+constexpr uint32_t ECONOMY_POD_MIRROR_PHASE233 =
+    ECONOMY_POD_MIRROR_PHASE232 | ECONOMY_POD_MIRROR_RESOURCE |
+    ECONOMY_POD_MIRROR_EPOCH_CURSOR;
+
+constexpr uint32_t ECONOMY_POD_MIRROR_REQUIRED_FOR_ACTIVE =
+    ECONOMY_POD_MIRROR_PHASE233;
 
 enum class RuntimeEconomyAuthorityMode : uint32_t {
     LEGACY_SYNC = 0,
     POD_ACTIVE_WITH_LEGACY_PARITY = 1,
     POD_ACTIVE = 2,
 };
+
+// Production execution policy for the Economy domain (Phase-1 dedup).
+// Orthogonal to RuntimeEconomyAuthorityMode (POD vs legacy ledger writer).
+// ACTIVE_ONLY: worker compact-slice production; SHADOW StageOps work = 0.
+// ACTIVE_WITH_PARITY: production + explicit SHADOW StageOps hash probe.
+// LEGACY_ONLY: main-thread sync ECONOMY_GRAPH only; no worker production attach.
+enum class EconomyExecutionMode : uint32_t {
+    ACTIVE_ONLY = 0,
+    ACTIVE_WITH_PARITY = 1,
+    LEGACY_ONLY = 2,
+};
+
+inline const char *economy_execution_mode_name(EconomyExecutionMode mode) noexcept {
+    switch (mode) {
+    case EconomyExecutionMode::ACTIVE_WITH_PARITY:
+        return "ACTIVE_WITH_PARITY";
+    case EconomyExecutionMode::LEGACY_ONLY:
+        return "LEGACY_ONLY";
+    case EconomyExecutionMode::ACTIVE_ONLY:
+    default:
+        return "ACTIVE_ONLY";
+    }
+}
+
+inline bool parse_economy_execution_mode(const char *text,
+                                         EconomyExecutionMode &out) noexcept {
+    if (text == nullptr || text[0] == '\0') {
+        out = EconomyExecutionMode::ACTIVE_ONLY;
+        return true;
+    }
+    if (std::strcmp(text, "ACTIVE_ONLY") == 0) {
+        out = EconomyExecutionMode::ACTIVE_ONLY;
+        return true;
+    }
+    if (std::strcmp(text, "ACTIVE_WITH_PARITY") == 0) {
+        out = EconomyExecutionMode::ACTIVE_WITH_PARITY;
+        return true;
+    }
+    if (std::strcmp(text, "LEGACY_ONLY") == 0) {
+        out = EconomyExecutionMode::LEGACY_ONLY;
+        return true;
+    }
+    return false;
+}
+
+// Phase-2.4.2: which path mutates NativeEconomyRuntime on ACTIVE days.
+// Orthogonal to EconomyExecutionMode and RuntimeEconomyAuthorityMode.
+// COMPACT_SLICE (default): Host worker_run_compact_slice loop.
+// STAGE_OPS: reserved; refused until StageOps bounded advance lands (P2.4.3+).
+enum class EconomyProductionWriter : uint32_t {
+    COMPACT_SLICE = 0,
+    STAGE_OPS = 1,
+};
+
+inline const char *economy_production_writer_name(
+        EconomyProductionWriter writer) noexcept {
+    switch (writer) {
+    case EconomyProductionWriter::STAGE_OPS:
+        return "stage_ops";
+    case EconomyProductionWriter::COMPACT_SLICE:
+    default:
+        return "compact_slice";
+    }
+}
+
+inline bool parse_economy_production_writer(const char *text,
+                                            EconomyProductionWriter &out) noexcept {
+    if (text == nullptr || text[0] == '\0') {
+        out = EconomyProductionWriter::COMPACT_SLICE;
+        return true;
+    }
+    if (std::strcmp(text, "compact_slice") == 0) {
+        out = EconomyProductionWriter::COMPACT_SLICE;
+        return true;
+    }
+    if (std::strcmp(text, "stage_ops") == 0) {
+        out = EconomyProductionWriter::STAGE_OPS;
+        return true;
+    }
+    return false;
+}
+
+// Phase-2.4.4.1: checklist for enabling economy_production_writer=stage_ops.
+// P2.4.4.3 sets all four bits (0xF). Writer enablement still requires a soak
+// parity gate outside this mask (see start_runtime_worker soak_pending).
+constexpr uint32_t ECONOMY_STAGE_OPS_READY_PRELUDE = 1u << 0;
+constexpr uint32_t ECONOMY_STAGE_OPS_READY_COMMIT_DRAINS = 1u << 1;
+constexpr uint32_t ECONOMY_STAGE_OPS_READY_BOUNDED_KERNELS = 1u << 2;
+constexpr uint32_t ECONOMY_STAGE_OPS_READY_HOST_LOOP = 1u << 3;
+constexpr uint32_t ECONOMY_STAGE_OPS_READY_REQUIRED_FOR_WRITER =
+    ECONOMY_STAGE_OPS_READY_PRELUDE | ECONOMY_STAGE_OPS_READY_COMMIT_DRAINS |
+    ECONOMY_STAGE_OPS_READY_BOUNDED_KERNELS | ECONOMY_STAGE_OPS_READY_HOST_LOOP;
 
 struct RuntimeEconomyWorkerScratch {
     uint32_t stage_index = 0;
@@ -178,6 +312,22 @@ public:
     RuntimeEconomyPodAuthority();
 
     void reset() noexcept;
+    void initialize_state(int32_t cells, int32_t goods) {
+        _state.clear(cells, goods);
+    }
+    RuntimeEconomyOwnedState &state() noexcept { return _state; }
+    const RuntimeEconomyOwnedState &state() const noexcept { return _state; }
+    bool state_initialized() const noexcept {
+        return _state.market.market_count > 0 &&
+            _state.market.good_count > 0 &&
+            _state.population.cell_first_page.size() ==
+                static_cast<size_t>(_state.market.market_count);
+    }
+    uint64_t state_hash() const noexcept;
+    bool import_committed_ledger(const RuntimeEconomyLedgerState &ledger,
+                                 std::string &error);
+    bool export_committed_ledger(RuntimeEconomyLedgerState &ledger,
+                                 std::string &error) const;
     void set_authority_mode(RuntimeEconomyAuthorityMode mode) noexcept {
         _authority_mode = mode;
     }
@@ -198,6 +348,8 @@ public:
     bool plan_epoch(const RuntimeEconomyEpochInput &input, std::string &error);
     bool advance_stage(std::string &error);
     bool commit_epoch(std::string &error);
+    uint32_t planned_stage_index() const noexcept { return _scratch.stage_index; }
+    bool planned_epoch_active() const noexcept { return _scratch.epoch_active; }
     void discard() noexcept;
 
     void set_stage_reference(RuntimeEconomyGraphStage stage, int64_t day,
@@ -262,6 +414,26 @@ public:
     const RuntimeEconomyLedgerState &committed_ledger_state() const noexcept {
         return _committed_ledger_state;
     }
+    // Features currently present in the committed ledger / owned mirror.
+    uint32_t mirror_feature_mask() const noexcept;
+    // True only when every feature in ECONOMY_POD_MIRROR_REQUIRED_FOR_ACTIVE
+    // is present (Phase-2.3.3 completes the committed mirror feature set).
+    bool pod_active_ready() const noexcept {
+        return (mirror_feature_mask() & ECONOMY_POD_MIRROR_REQUIRED_FOR_ACTIVE) ==
+               ECONOMY_POD_MIRROR_REQUIRED_FOR_ACTIVE;
+    }
+    uint32_t committed_ledger_abi() const noexcept {
+        if (!_committed_ledger_state.valid()) return 3u;
+        if (_committed_ledger_state.has_resource_columns() &&
+            _committed_ledger_state.has_epoch_cursor_columns())
+            return 9u;
+        if (_committed_ledger_state.has_family_columns()) return 8u;
+        if (_committed_ledger_state.has_building_columns() &&
+            _committed_ledger_state.has_trade_escrow_columns())
+            return 7u;
+        if (_committed_ledger_state.has_diagnostics_columns()) return 6u;
+        return _committed_ledger_state.has_extended_columns() ? 5u : 4u;
+    }
     bool epoch_active() const noexcept { return _scratch.epoch_active; }
     bool authority_ready() const noexcept { return _authority_ready; }
     bool fatal() const noexcept { return _replay.fatal != 0; }
@@ -270,6 +442,7 @@ public:
     static bool self_test(std::string &error);
 
 private:
+    RuntimeEconomyOwnedState _state;
     RuntimeEconomyEpochInput _input{};
     RuntimeEconomyWorkerScratch _scratch{};
     RuntimeEconomyPodReplayReport _replay{};

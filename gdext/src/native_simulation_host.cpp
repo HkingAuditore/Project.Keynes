@@ -640,6 +640,13 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     _economy_pod_operation_gate_mask.store(0, std::memory_order_release);
     _economy_pod_parity_ready_mask.store(0, std::memory_order_release);
     _economy_sync_writes_forbidden.store(false, std::memory_order_release);
+    _economy_shadow_stage_invocations.store(0, std::memory_order_release);
+    _economy_shadow_stage_cache_hits.store(0, std::memory_order_release);
+    _economy_shadow_cache_valid = false;
+    _economy_shadow_cache_day = -1;
+    _economy_shadow_cache_input_generation = 0;
+    _economy_shadow_cache_country_generation = 0;
+    _economy_shadow_cache_catalog_hash = 0;
     _economy_replay_completed_stage_mask.store(0, std::memory_order_release);
     _economy_replay_stage_cursor.store(0, std::memory_order_release);
     _economy_replay_input_hash.store(0, std::memory_order_release);
@@ -1292,8 +1299,62 @@ void NativeSimulationHost::attach_economy_stage_ops(
     _economy_pod_authority.attach_stage_ops(_economy_stage_ops.get());
 }
 
+void NativeSimulationHost::set_economy_execution_mode(
+        EconomyExecutionMode mode) noexcept {
+    _economy_execution_mode.store(static_cast<uint32_t>(mode),
+                                  std::memory_order_release);
+    // ACTIVE_WITH_PARITY is the only mode that runs SHADOW StageOps.
+    // ACTIVE_ONLY / LEGACY_ONLY keep probe work at zero.
+    const bool parity =
+        mode == EconomyExecutionMode::ACTIVE_WITH_PARITY;
+    _economy_shadow_probe_enabled.store(parity, std::memory_order_release);
+    if (!parity) {
+        _economy_shadow_cache_valid = false;
+        _economy_shadow_cache_day = -1;
+        _economy_shadow_cache_input_generation = 0;
+        _economy_shadow_cache_country_generation = 0;
+        _economy_shadow_cache_catalog_hash = 0;
+    }
+    if (mode == EconomyExecutionMode::LEGACY_ONLY) {
+        // Detach production runner so main-thread sync remains the writer.
+        attach_economy_production_runtime(nullptr);
+    }
+}
+
+bool NativeSimulationHost::switch_economy_authority(
+        RuntimeEconomyAuthorityMode mode, std::string &error) noexcept {
+    error.clear();
+    switch (mode) {
+    case RuntimeEconomyAuthorityMode::LEGACY_SYNC:
+        _economy_pod_authority.set_authority_mode(mode);
+        return true;
+    case RuntimeEconomyAuthorityMode::POD_ACTIVE_WITH_LEGACY_PARITY:
+        // Parity soak may run against the committed cohort/market mirror.
+        // Production mutations stay on NativeEconomyRuntime until POD_ACTIVE.
+        _economy_pod_authority.set_authority_mode(mode);
+        return true;
+    case RuntimeEconomyAuthorityMode::POD_ACTIVE:
+        // Phase-2.3.3 completes the committed mirror feature mask (ECP ABI9).
+        // Still refuse until a live capture has set every REQUIRED_FOR_ACTIVE
+        // bit. Production writer handoff remains Phase-2.4.
+        if (!_economy_pod_authority.pod_active_ready()) {
+            error = "economy_pod_active_incomplete_ledger_mirror";
+            return false;
+        }
+        _economy_pod_authority.set_authority_mode(mode);
+        return true;
+    }
+    error = "economy_authority_mode_invalid";
+    return false;
+}
+
 void NativeSimulationHost::attach_economy_production_runtime(
         NativeEconomyRuntime *rt) noexcept {
+    if (rt != nullptr &&
+        economy_execution_mode() == EconomyExecutionMode::LEGACY_ONLY) {
+        // LEGACY_ONLY forbids worker production attach; keep sync authority.
+        rt = nullptr;
+    }
     _economy_production_runtime = rt;
     if (rt != nullptr) {
         class NativeEconomyPodCommandExecutor final
@@ -1340,17 +1401,181 @@ void NativeSimulationHost::set_economy_sync_writes_forbidden(
     _economy_sync_writes_forbidden.store(forbidden, std::memory_order_release);
 }
 
+bool NativeSimulationHost::worker_run_stage_ops_slice(
+        int64_t day, uint64_t input_generation, std::string &error, bool *done,
+        bool *pending_input) {
+    error.clear();
+    if (done != nullptr) {
+        *done = false;
+    }
+    if (pending_input != nullptr) {
+        *pending_input = false;
+    }
+    if (_economy_production_runtime == nullptr || _economy_stage_ops == nullptr) {
+        error = "economy_stage_ops_runtime_missing";
+        return false;
+    }
+    if (!economy_stage_ops_mutate()) {
+        error = "economy_stage_ops_mutate_required";
+        return false;
+    }
+    if (day < 0) {
+        error = "economy_stage_ops_day_invalid";
+        return false;
+    }
+
+    // New calendar day resets the StageOps Host continuation machine.
+    if (_stage_ops_day_index != day ||
+        _stage_ops_day_input_generation != input_generation) {
+        _stage_ops_day_index = day;
+        _stage_ops_day_input_generation = input_generation;
+        _stage_ops_day_phase = StageOpsDayPhase::Prelude;
+    }
+
+    switch (_stage_ops_day_phase) {
+    case StageOpsDayPhase::Prelude: {
+        int64_t prelude_work = 0;
+        bool pending = false;
+        bool idle_done = false;
+        if (!_economy_production_runtime->run_epoch_open_prelude_drain(
+                day, prelude_work, error, &pending, &idle_done)) {
+            return false;
+        }
+        if (pending) {
+            if (pending_input != nullptr) {
+                *pending_input = true;
+            }
+            return true;
+        }
+        if (idle_done &&
+            !_economy_production_runtime->stage_ops_epoch_open_ready()) {
+            _stage_ops_day_phase = StageOpsDayPhase::Done;
+            if (done != nullptr) {
+                *done = true;
+            }
+            return true;
+        }
+        if (!_economy_production_runtime->stage_ops_epoch_open_ready()) {
+            error = "economy_stage_ops_prelude_incomplete";
+            return false;
+        }
+        _stage_ops_day_phase = StageOpsDayPhase::PlanEpoch;
+        return true;
+    }
+    case StageOpsDayPhase::PlanEpoch: {
+        _economy_pod_authority.attach_stage_ops(_economy_stage_ops.get());
+        RuntimeEconomyEpochInput input;
+        input.sample_day = day;
+        input.session_epoch = 1;
+        input.economy_generation =
+            _economy_production_runtime->committed_generation();
+        input.input_generation =
+            input_generation != 0
+                ? input_generation
+                : _economy_production_runtime->committed_generation();
+        input.country_generation =
+            _economy_production_runtime->committed_generation();
+        input.catalog_hash =
+            _economy_production_runtime->committed_generation();
+        input.policy_hash = input.country_generation;
+        input.environment_shape_hash =
+            input.catalog_hash ^
+            static_cast<uint64_t>(std::max(
+                0, _economy_production_runtime->cell_count()));
+        input.cell_count = static_cast<uint32_t>(std::max(
+            0, _economy_production_runtime->cell_count()));
+        input.market_cycle_days = 5;
+        input.production_cycle_days = 10;
+        input.investment_cycle_days = 20;
+        input.valid = input.cell_count > 0 && input.input_generation != 0;
+        if (!_economy_pod_authority.plan_epoch(input, error)) {
+            return false;
+        }
+        _stage_ops_day_phase = StageOpsDayPhase::AdvanceStages;
+        return true;
+    }
+    case StageOpsDayPhase::AdvanceStages: {
+        if (!_economy_pod_authority.advance_stage(error)) {
+            return false;
+        }
+        if (_economy_pod_authority.planned_stage_index() >=
+            RUNTIME_ECONOMY_GRAPH_STAGE_COUNT) {
+            _stage_ops_day_phase = StageOpsDayPhase::CommitEpoch;
+        }
+        return true;
+    }
+    case StageOpsDayPhase::CommitEpoch: {
+        if (!_economy_pod_authority.commit_epoch(error)) {
+            return false;
+        }
+        _stage_ops_day_phase = StageOpsDayPhase::Done;
+        if (done != nullptr) {
+            *done = true;
+        }
+        return true;
+    }
+    case StageOpsDayPhase::Done:
+        if (done != nullptr) {
+            *done = true;
+        }
+        return true;
+    }
+    error = "economy_stage_ops_day_phase_invalid";
+    return false;
+}
+
 bool NativeSimulationHost::execute_economy_worker_stage(
         int64_t day, uint64_t input_generation, uint32_t cell_count,
         uint64_t country_generation, uint64_t catalog_hash,
         std::string &error) {
     error.clear();
-    // Economy POD graph orchestration for SHADOW parity. StageOps are always
-    // attached with mutate=false; production mutations never flow through this
-    // path (ACTIVE uses worker_run_compact_slice on the attached runtime).
+    // Economy POD graph orchestration for SHADOW parity. Production mutations
+    // still use worker_run_compact_slice; StageOps mutate may be armed for
+    // Phase-2.4 handoff experiments without replacing that loop yet.
+    if (!economy_parity_shadow_enabled()) {
+        error = "economy_shadow_stage_disabled";
+        return false;
+    }
     if (cell_count == 0 || input_generation == 0 || day < 0) {
         error = "economy_worker_stage_input_invalid";
         return false;
+    }
+    // Reuse stage results for the same frozen (day, input_generation) workset.
+    if (_economy_shadow_cache_valid &&
+        _economy_shadow_cache_day == day &&
+        _economy_shadow_cache_input_generation == input_generation &&
+        _economy_shadow_cache_country_generation == country_generation &&
+        _economy_shadow_cache_catalog_hash == catalog_hash) {
+        _economy_shadow_stage_cache_hits.fetch_add(1, std::memory_order_relaxed);
+        return true;
+    }
+    _economy_shadow_stage_invocations.fetch_add(1, std::memory_order_relaxed);
+    // Phase-2.4.4.1: when StageOps mutate is armed against the live runtime,
+    // open the epoch (trade planner / start_epoch) before POD plan_epoch.
+    // ACTIVE_WITH_PARITY coerces mutate=false, so this is experimental-only.
+    if (economy_stage_ops_mutate() && _economy_production_runtime != nullptr) {
+        int64_t prelude_work = 0;
+        bool pending_input = false;
+        bool idle_done = false;
+        if (!_economy_production_runtime->run_epoch_open_prelude_drain(
+                day, prelude_work, error, &pending_input, &idle_done)) {
+            return false;
+        }
+        if (pending_input) {
+            if (error.empty()) {
+                error = "economy_stage_ops_prelude_pending_input";
+            }
+            return false;
+        }
+        if (idle_done &&
+            !_economy_production_runtime->stage_ops_epoch_open_ready()) {
+            // No economy cycle to open; SHADOW probe has nothing to advance.
+            return true;
+        }
+        if (!_economy_production_runtime->stage_ops_epoch_open_ready()) {
+            error = "economy_stage_ops_prelude_incomplete";
+            return false;
+        }
     }
     RuntimeEconomyEpochInput input;
     input.sample_day = day;
@@ -1443,12 +1668,20 @@ bool NativeSimulationHost::execute_economy_worker_stage(
             _economy_pod_authority.parity_ready_mask(),
             std::memory_order_release);
     }
+    _economy_shadow_cache_day = day;
+    _economy_shadow_cache_input_generation = input_generation;
+    _economy_shadow_cache_country_generation = country_generation;
+    _economy_shadow_cache_catalog_hash = catalog_hash;
+    _economy_shadow_cache_valid = true;
     return true;
 }
 
 void NativeSimulationHost::request_stop() {
     const RuntimeWorkerState current = _state.load(std::memory_order_acquire);
     if (current == RuntimeWorkerState::STOPPED) return;
+    _stage_ops_day_index = -1;
+    _stage_ops_day_input_generation = 0;
+    _stage_ops_day_phase = StageOpsDayPhase::Done;
     // Revoke before the worker has actually wound down. The main-thread
     // schedule gate suppresses a promoted domain for as long as this mask names
     // it, so a domain must stop being worker-owned the instant a stop is asked
@@ -7089,7 +7322,7 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             // Dedicated Economy SHADOW stage handler (J2-B). Replays the same
             // epoch contract through RuntimeEconomyPodAuthority; does not grant
             // ACTIVE mask.
-            if (_economy_shadow_probe_enabled.load(std::memory_order_acquire)) {
+            if (economy_parity_shadow_enabled()) {
                 std::string economy_stage_error;
                 const uint32_t economy_cells =
                     climate_environment != nullptr
@@ -7757,9 +7990,9 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                 RuntimeSimulationMode::ACTIVE &&
             (_requested_authority_mask.load(std::memory_order_acquire) &
              runtime_domain_mask(RuntimeDomainId::ECONOMY)) != 0u) {
-            // ACTIVE Economy production: compact ECONOMY_GRAPH slices on the
-            // attached NativeEconomyRuntime. StageOps remain mutate=false and
-            // are never the production mutation path.
+            // ACTIVE Economy production: compact_slice (default) or StageOps
+            // Host day loop when effective writer is STAGE_OPS (opt-in; start
+            // gate still refuses until BOUNDED_KERNELS lands).
             if (climate_authority_requested && !active_climate_ok) {
                 stage.completed = 0;
                 continue;
@@ -7770,35 +8003,62 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                 stage.completed = 0;
                 continue;
             }
+            const EconomyProductionWriter production_writer =
+                economy_production_writer_effective();
             std::string economy_error;
             bool economy_day_done = false;
             uint64_t economy_work = 0;
             bool economy_fatal = false;
             bool economy_pending_input = false;
-            for (int slice = 0; slice < 64; ++slice) {
-                bool slice_done = false;
-                bool pending_input = false;
-                if (!_economy_production_runtime->worker_run_compact_slice(
-                        plan.context.day, economy_error, &slice_done,
-                        &pending_input)) {
-                    economy_fatal = true;
-                    break;
+            if (production_writer == EconomyProductionWriter::STAGE_OPS) {
+                for (int slice = 0; slice < 64; ++slice) {
+                    bool slice_done = false;
+                    bool pending_input = false;
+                    if (!worker_run_stage_ops_slice(
+                            plan.context.day, plan.context.input_generation,
+                            economy_error, &slice_done, &pending_input)) {
+                        economy_fatal = true;
+                        break;
+                    }
+                    if (pending_input) {
+                        economy_pending_input = true;
+                        break;
+                    }
+                    ++economy_work;
+                    if (slice_done) {
+                        economy_day_done = true;
+                        break;
+                    }
                 }
-                if (pending_input) {
-                    // Main thread has not captured same-day inputs yet. Park
-                    // ECONOMY without soft-complete or set_fault.
-                    economy_pending_input = true;
-                    break;
-                }
-                ++economy_work;
-                if (slice_done) {
-                    economy_day_done = true;
-                    break;
+            } else {
+                for (int slice = 0; slice < 64; ++slice) {
+                    bool slice_done = false;
+                    bool pending_input = false;
+                    if (!_economy_production_runtime->worker_run_compact_slice(
+                            plan.context.day, economy_error, &slice_done,
+                            &pending_input)) {
+                        economy_fatal = true;
+                        break;
+                    }
+                    if (pending_input) {
+                        // Main thread has not captured same-day inputs yet. Park
+                        // ECONOMY without soft-complete or set_fault.
+                        economy_pending_input = true;
+                        break;
+                    }
+                    ++economy_work;
+                    if (slice_done) {
+                        economy_day_done = true;
+                        break;
+                    }
                 }
             }
             if (economy_fatal) {
                 set_fault(economy_error.empty()
-                              ? "economy_worker_compact_fatal"
+                              ? (production_writer ==
+                                         EconomyProductionWriter::STAGE_OPS
+                                     ? "economy_worker_stage_ops_fatal"
+                                     : "economy_worker_compact_fatal")
                               : economy_error.c_str());
                 stage.completed = 0;
                 commit.preflight_ok = 0;
@@ -7830,10 +8090,7 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                 std::memory_order_release);
             _economy_pod_epoch_sample_day.store(plan.context.day,
                                                 std::memory_order_release);
-            _economy_pod_state_hash.store(
-                static_cast<uint64_t>(std::max<int64_t>(
-                    0, _economy_production_runtime->state_hash())),
-                std::memory_order_release);
+            // POD hash is published after committed ledger import below; legacy source hash stays in the ledger record.
             _economy_pod_operation_gate_mask.store(
                 _economy_production_runtime->d7_operation_gate_mask(),
                 std::memory_order_release);
@@ -7846,13 +8103,37 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                 RuntimeEconomyLedgerState ledger_state;
                 _economy_production_runtime->capture_committed_ledger_state(
                     ledger_state);
-                if (!_economy_pod_authority.capture_committed_ledger_state(
+                if (!ledger_state.valid() ||
+                    !_economy_pod_authority.import_committed_ledger(
+                        ledger_state, economy_error) ||
+                    !_economy_pod_authority.capture_committed_ledger_state(
                         std::move(ledger_state))) {
                     set_fault("economy_pod_committed_ledger_capture_invalid");
                     stage.completed = 0;
                     commit.preflight_ok = 0;
                     continue;
                 }
+                // Phase-2.4.1: optional authority promotion after a complete
+                // mirror capture. Production writer stays compact-slice.
+                if (_economy_auto_pod_active.load(std::memory_order_acquire) &&
+                    _economy_pod_authority.pod_active_ready() &&
+                    _economy_pod_authority.authority_mode() !=
+                        RuntimeEconomyAuthorityMode::POD_ACTIVE) {
+                    std::string authority_error;
+                    if (!switch_economy_authority(
+                            RuntimeEconomyAuthorityMode::POD_ACTIVE,
+                            authority_error)) {
+                        set_fault(authority_error.empty()
+                                      ? "economy_auto_pod_active_failed"
+                                      : authority_error.c_str());
+                        stage.completed = 0;
+                        commit.preflight_ok = 0;
+                        continue;
+                    }
+                }
+            }
+            if (economy_day_done) {
+                _economy_pod_state_hash.store(_economy_pod_authority.state_hash(), std::memory_order_release);
             }
             // Phase 5: publish production snapshot into the Economy POD ring.
             {
@@ -7923,6 +8204,26 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                     ++ack_n;
                 }
                 commit.work_units += ack_n;
+            }
+            // ACTIVE_WITH_PARITY: after a completed epoch, replay StageOps
+            // (mutate=false) against frozen stage refs from compact slices.
+            // Incomplete pulses skip — refs would be partial.
+            if (economy_day_done && economy_parity_shadow_enabled()) {
+                std::string parity_error;
+                const uint32_t economy_cells = static_cast<uint32_t>(
+                    std::max(0, _economy_production_runtime->cell_count()));
+                const uint64_t input_generation =
+                    plan.context.input_generation != 0
+                        ? plan.context.input_generation
+                        : static_cast<uint64_t>(std::max<int64_t>(
+                              1, plan.context.day + 1));
+                if (economy_cells > 0u) {
+                    (void)execute_economy_worker_stage(
+                        plan.context.day, input_generation, economy_cells,
+                        _economy_pod_country_generation.load(
+                            std::memory_order_relaxed),
+                        input_generation, parity_error);
+                }
             }
             continue;
         }
@@ -9657,6 +9958,50 @@ RuntimeThreadReport NativeSimulationHost::report() const {
     out.economy_pod_pending_inbox = _economy_pod_pending_inbox.load(std::memory_order_acquire);
     out.economy_pod_operation_gate_mask = _economy_pod_operation_gate_mask.load(std::memory_order_acquire);
     out.economy_pod_parity_ready_mask = _economy_pod_parity_ready_mask.load(std::memory_order_acquire);
+    out.economy_pod_mirror_feature_mask = _economy_pod_authority.mirror_feature_mask();
+    out.economy_pod_committed_ledger_abi =
+        _economy_pod_authority.committed_ledger_abi();
+    out.economy_pod_active_ready = _economy_pod_authority.pod_active_ready();
+    out.economy_execution_mode =
+        _economy_execution_mode.load(std::memory_order_acquire);
+    out.economy_shadow_probe_enabled =
+        _economy_shadow_probe_enabled.load(std::memory_order_acquire);
+    out.economy_shadow_stage_invocations =
+        _economy_shadow_stage_invocations.load(std::memory_order_acquire);
+    out.economy_shadow_stage_cache_hits =
+        _economy_shadow_stage_cache_hits.load(std::memory_order_acquire);
+    out.economy_stage_ops_mutate =
+        _economy_stage_ops_mutate.load(std::memory_order_acquire);
+    out.economy_auto_pod_active =
+        _economy_auto_pod_active.load(std::memory_order_acquire);
+    {
+        const EconomyProductionWriter requested =
+            economy_production_writer_requested();
+        const EconomyProductionWriter effective =
+            economy_production_writer_effective();
+        std::snprintf(out.economy_production_writer,
+                      sizeof(out.economy_production_writer), "%s",
+                      economy_production_writer_name(effective));
+        std::snprintf(out.economy_production_writer_requested,
+                      sizeof(out.economy_production_writer_requested), "%s",
+                      economy_production_writer_name(requested));
+        std::snprintf(out.economy_production_writer_effective,
+                      sizeof(out.economy_production_writer_effective), "%s",
+                      economy_production_writer_name(effective));
+    }
+    // Phase-2.4.4.3: PRELUDE|COMMIT_DRAINS|BOUNDED_KERNELS|HOST_LOOP = 0xF.
+    // Production writer still refused for soak gate (see start_runtime_worker).
+    out.economy_stage_ops_readiness_mask =
+        ECONOMY_STAGE_OPS_READY_PRELUDE | ECONOMY_STAGE_OPS_READY_COMMIT_DRAINS |
+        ECONOMY_STAGE_OPS_READY_BOUNDED_KERNELS |
+        ECONOMY_STAGE_OPS_READY_HOST_LOOP;
+    out.economy_stage_ops_prelude_ready =
+        _economy_production_runtime != nullptr &&
+        _economy_production_runtime->stage_ops_epoch_open_ready();
+    out.economy_stage_ops_soak_experiment =
+        _economy_stage_ops_soak_experiment.load(std::memory_order_acquire);
+    out.economy_stage_ops_soak_parity_ok =
+        _economy_stage_ops_soak_parity_ok.load(std::memory_order_acquire);
     out.economy_replay_completed_stage_mask = _economy_replay_completed_stage_mask.load(std::memory_order_acquire);
     out.economy_replay_stage_cursor = _economy_replay_stage_cursor.load(std::memory_order_acquire);
     out.economy_replay_input_hash = _economy_replay_input_hash.load(std::memory_order_acquire);

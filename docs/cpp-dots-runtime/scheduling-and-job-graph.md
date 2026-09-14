@@ -10,6 +10,12 @@ parallel layer. Main-thread `economy_daily` / `economy_should_run` no-op under
 that grant (fail-open if production runtime was not attached). D7 peer transport
 stays on Host bounded rings; POD outbox slots are diagnostic.
 
+`economy_execution_mode` defaults to `ACTIVE_ONLY` (SHADOW StageOps invocations
+= 0). `ACTIVE_WITH_PARITY` is opt-in for hash probes: compact-slice stage refs
+are published even under worker ECONOMY ownership, and a completed epoch runs
+`execute_economy_worker_stage` (mutate=false). `LEGACY_ONLY` keeps sync
+`ECONOMY_GRAPH` and strips ECONOMY from the worker request mask.
+
 ## 2026-09 单一 Country authority 与发布确认
 
 Native Runtime Graph ACTIVE 时，已注册的旧 SUS `country_daily` 仅保留 topology/调试可见性，

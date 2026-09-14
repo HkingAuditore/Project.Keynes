@@ -37,15 +37,99 @@ Dictionary unavailable() {
     return out;
 }
 
+bool read_generation_u64(const Dictionary &generation, const char *key,
+                         uint64_t &out, std::string &error) {
+    const StringName field(key);
+    if (!generation.has(field)) {
+        out = 0;
+        return true;
+    }
+    const Variant value = generation.get(field, Variant());
+    if (value.get_type() != Variant::INT) {
+        error = std::string("economy_input_generation_field_not_integer:") + key;
+        return false;
+    }
+    const int64_t signed_value = static_cast<int64_t>(value);
+    if (signed_value < 0) {
+        error = std::string("economy_input_generation_field_negative:") + key;
+        return false;
+    }
+    out = static_cast<uint64_t>(signed_value);
+    return true;
+}
+
+bool read_generation_sample_day(const Dictionary &generation, int64_t day_index,
+                                int64_t &out, std::string &error) {
+    const StringName field("sample_day");
+    if (!generation.has(field)) {
+        out = day_index;
+        return true;
+    }
+    const Variant value = generation.get(field, Variant());
+    if (value.get_type() != Variant::INT) {
+        error = "economy_input_generation_sample_day_not_integer";
+        return false;
+    }
+    out = static_cast<int64_t>(value);
+    if (out != day_index) {
+        error = "economy_input_generation_sample_day_mismatch";
+        return false;
+    }
+    return true;
+}
+
+bool parse_economy_input_generation(int64_t day_index,
+                                    const Dictionary &generation,
+                                    EconomyInputGeneration &out,
+                                    std::string &error) {
+    out = {};
+    if (!read_generation_sample_day(generation, day_index, out.sample_day, error) ||
+        !read_generation_u64(generation, "epoch_id", out.epoch_id, error) ||
+        !read_generation_u64(generation,
+            generation.has(StringName("map_generation"))
+                ? "map_generation" : "topology_generation",
+            out.map_generation, error) ||
+        !read_generation_u64(generation, "building_generation",
+                             out.building_generation, error) ||
+        !read_generation_u64(generation, "country_generation",
+                             out.country_generation, error) ||
+        !read_generation_u64(generation, "resource_generation",
+                             out.resource_generation, error)) {
+        return false;
+    }
+    return true;
+}
+
+Dictionary economy_input_generation_dictionary(
+        const EconomyInputGeneration &generation) {
+    Dictionary out;
+    out["sample_day"] = generation.sample_day;
+    out["epoch_id"] = static_cast<int64_t>(generation.epoch_id);
+    out["map_generation"] = static_cast<int64_t>(generation.map_generation);
+    out["building_generation"] =
+        static_cast<int64_t>(generation.building_generation);
+    out["country_generation"] =
+        static_cast<int64_t>(generation.country_generation);
+    out["resource_generation"] =
+        static_cast<int64_t>(generation.resource_generation);
+    return out;
+}
+
 } // namespace
+
+void DCWorldExt::invalidate_economy_input_capture_cache(bool force_full) {
+    _economy_capture_generation = {};
+    _economy_capture_generation_valid = false;
+    _economy_capture_cached = false;
+    _economy_capture_force_full = force_full;
+    _economy_capture_cached_report.clear();
+}
 
 Dictionary DCWorldExt::configure_economy(const Dictionary &catalog,
                                          const Dictionary &profile,
                                          int cell_count,
                                          int64_t seed) {
-    _economy_capture_cached = false;
-    _economy_captured_day = -1;
-    _economy_capture_cached_report.clear();
+    invalidate_economy_input_capture_cache(true);
     // Headless/focused callers that have no explicit country package still
     // receive the same default-country bootstrap as production. MapGenerator
     // configures country first with the real water mask, so this path is only
@@ -96,9 +180,7 @@ Dictionary DCWorldExt::configure_economy(const Dictionary &catalog,
 
 Dictionary DCWorldExt::bootstrap_economy(const Dictionary &population_packet,
                                          const Dictionary &market_packet) {
-    _economy_capture_cached = false;
-    _economy_captured_day = -1;
-    _economy_capture_cached_report.clear();
+    invalidate_economy_input_capture_cache(true);
     if (_economy_runtime == nullptr) {
         return unavailable();
     }
@@ -226,10 +308,39 @@ Dictionary DCWorldExt::run_economy_slice_compact(const Dictionary &ctx) {
 }
 
 Dictionary DCWorldExt::capture_economy_day_inputs(int64_t day_index) {
-    if (_economy_capture_cached && _economy_captured_day == day_index) {
+    return begin_or_reuse_economy_input_epoch(day_index, Dictionary());
+}
+
+Dictionary DCWorldExt::begin_or_reuse_economy_input_epoch(
+        int64_t day_index, const Dictionary &generation) {
+    EconomyInputGeneration input_generation;
+    std::string generation_error;
+    if (!parse_economy_input_generation(day_index, generation,
+                                        input_generation, generation_error)) {
+        Dictionary out;
+        out["ok"] = false;
+        out["fatal"] = true;
+        out["fatal_reason"] = String(generation_error.c_str());
+        out["stage"] = "economy_input_generation";
+        out["captured"] = false;
+        out["input_capture_reused"] = false;
+        out["input_capture_generation"] =
+            economy_input_generation_dictionary(input_generation);
+        out["input_capture_count"] = static_cast<int64_t>(_economy_capture_count);
+        out["input_capture_reuse_count"] =
+            static_cast<int64_t>(_economy_capture_reuse_count);
+        out["path"] = "ECONOMY_GRAPH";
+        return out;
+    }
+    const bool has_cached_generation =
+        _economy_capture_cached && _economy_capture_generation_valid;
+    if (has_cached_generation &&
+        _economy_capture_generation == input_generation) {
         Dictionary reused = _economy_capture_cached_report;
         reused["captured"] = false;
         reused["input_capture_reused"] = true;
+        reused["input_capture_generation"] =
+            economy_input_generation_dictionary(input_generation);
         reused["input_capture_count"] = static_cast<int64_t>(_economy_capture_count);
         reused["input_capture_reuse_count"] = static_cast<int64_t>(
             ++_economy_capture_reuse_count);
@@ -242,6 +353,8 @@ Dictionary DCWorldExt::capture_economy_day_inputs(int64_t day_index) {
     out["stage"] = "";
     out["captured"] = false;
     out["input_capture_reused"] = false;
+    out["input_capture_generation"] =
+        economy_input_generation_dictionary(input_generation);
     out["input_capture_count"] = static_cast<int64_t>(_economy_capture_count);
     out["input_capture_reuse_count"] = static_cast<int64_t>(_economy_capture_reuse_count);
     out["path"] = "ECONOMY_GRAPH";
@@ -252,9 +365,32 @@ Dictionary DCWorldExt::capture_economy_day_inputs(int64_t day_index) {
         return out;
     }
     NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    const bool epoch_active = runtime->epoch_active();
+    const bool force_full = _economy_capture_force_full;
+    const bool sample_day_changed = !has_cached_generation ||
+        _economy_capture_generation.sample_day != input_generation.sample_day;
+    const bool map_generation_changed = !has_cached_generation ||
+        _economy_capture_generation.map_generation != input_generation.map_generation;
+    const bool building_generation_changed = !has_cached_generation ||
+        _economy_capture_generation.building_generation !=
+            input_generation.building_generation;
+    const bool resource_generation_changed = !has_cached_generation ||
+        _economy_capture_generation.resource_generation !=
+            input_generation.resource_generation;
+    // Country and epoch generations identify the frozen workset but do not
+    // change the MapData lanes captured by this boundary. They can therefore
+    // re-key the cache without rewriting an active epoch's inputs.
+    const bool capture_topology = !epoch_active &&
+        (force_full || !has_cached_generation || map_generation_changed);
+    const bool capture_environment = !epoch_active &&
+        (force_full || runtime->needs_environment_capture(day_index) ||
+         !has_cached_generation || sample_day_changed || map_generation_changed);
+    const bool capture_building = !epoch_active &&
+        (force_full || runtime->needs_building_context_capture(day_index) ||
+         !has_cached_generation || sample_day_changed || map_generation_changed ||
+         building_generation_changed || resource_generation_changed);
     bool captured_any = false;
-    const bool capture_cycle_context = runtime->needs_environment_capture(day_index);
-    if (capture_cycle_context && _map_data != nullptr &&
+    if (capture_topology && _map_data != nullptr &&
         _map_data->has_method(StringName("neighbor_indices_packed")) &&
         _map_data->has_method(StringName("economy_trade_passable_lut")) &&
         _map_data->has_method(StringName("economy_trade_move_cost_lut"))) {
@@ -322,7 +458,7 @@ Dictionary DCWorldExt::capture_economy_day_inputs(int64_t day_index) {
             }
         }
     }
-    if (runtime->needs_environment_capture(day_index)) {
+    if (capture_environment) {
         const int sid_temp = component_id(StringName("cell_temp"));
         const int sid_temp_30d = component_id(StringName("cell_temp_30d"));
         const int sid_moisture = component_id(StringName("cell_moisture"));
@@ -402,7 +538,7 @@ Dictionary DCWorldExt::capture_economy_day_inputs(int64_t day_index) {
             captured_any = true;
         }
     }
-    if (runtime->needs_building_context_capture(day_index)) {
+    if (capture_building) {
         auto f32_ptr = [&](const char *name) -> const float * {
             const int sid = component_id(StringName(name));
             return sid >= 0 && sid < _slots.size() && _slots[sid].dtype == SlotDType::F32 &&
@@ -459,15 +595,26 @@ Dictionary DCWorldExt::capture_economy_day_inputs(int64_t day_index) {
     }
     out["ok"] = true;
     out["captured"] = captured_any;
-    if (captured_any) {
-        _economy_captured_day = day_index;
-        _economy_capture_cached = true;
-        ++_economy_capture_count;
-        _economy_capture_cached_report = out;
-        out["input_capture_count"] = static_cast<int64_t>(_economy_capture_count);
-    }
-    out["input_capture_reuse_count"] = static_cast<int64_t>(_economy_capture_reuse_count);
     out["stage"] = captured_any ? "economy_day_inputs" : "economy_day_inputs_idle";
+    // A country/epoch-only change can legitimately leave the input arrays
+    // untouched. Once the runtime is outside an active epoch, remember the
+    // new complete key so subsequent slices do not repeatedly miss the cache.
+    const bool can_cache_key = !epoch_active &&
+        (captured_any || (!runtime->needs_environment_capture(day_index) &&
+                          !runtime->needs_building_context_capture(day_index)));
+    if (can_cache_key) {
+        _economy_capture_generation = input_generation;
+        _economy_capture_generation_valid = true;
+        _economy_capture_cached = true;
+        if (captured_any) {
+            ++_economy_capture_count;
+            _economy_capture_force_full = false;
+        }
+    }
+    out["input_capture_count"] = static_cast<int64_t>(_economy_capture_count);
+    out["input_capture_reuse_count"] = static_cast<int64_t>(_economy_capture_reuse_count);
+    if (can_cache_key)
+        _economy_capture_cached_report = out;
     return out;
 }
 
@@ -481,7 +628,24 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
     }
     NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
     const int64_t day_index = ctx.has("day_index") ? static_cast<int64_t>(ctx["day_index"]) : 0;
-    const Dictionary cap = capture_economy_day_inputs(day_index);
+    Dictionary input_generation;
+    if (ctx.has("input_generation")) {
+        const Variant raw_generation = ctx.get("input_generation", Variant());
+        if (raw_generation.get_type() != Variant::DICTIONARY) {
+            Dictionary out;
+            out["ok"] = false;
+            out["done"] = true;
+            out["fatal"] = true;
+            out["path"] = "ECONOMY_GRAPH";
+            out["stage"] = "economy_input_generation";
+            out["fatal_reason"] = "economy_input_generation_not_dictionary";
+            out["mode"] = "native";
+            return out;
+        }
+        input_generation = raw_generation;
+    }
+    const Dictionary cap = begin_or_reuse_economy_input_epoch(
+        day_index, input_generation);
     if (bool(cap.get("fatal", false))) {
         Dictionary out;
         out["ok"] = false;
@@ -496,6 +660,14 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
     Dictionary result = compact
         ? runtime->run_slice_compact(ctx)
         : runtime->run_slice(ctx);
+    result["input_capture_reused"] = cap.get("input_capture_reused", false);
+    result["input_capture_generation"] = cap.get(
+        "input_capture_generation", Dictionary());
+    result["input_capture_count"] = cap.get("input_capture_count", int64_t{0});
+    result["input_capture_reuse_count"] = cap.get(
+        "input_capture_reuse_count", int64_t{0});
+    result["input_captured"] = cap.get("captured", false);
+    result["published_to_slot"] = false;
     double resource_flush_ms = 0.0;
     double csv_capture_ms = 0.0;
     double gameplay_publish_ms = 0.0;
@@ -503,6 +675,8 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
     const auto resource_flush_started = BridgeClock::now();
     std::vector<size_t> resource_delta_lanes;
     std::vector<int64_t> resource_deltas;
+    // Resource MapData mirror is deferred until AGGREGATE_PUBLISH sets
+    // _resource_deltas_ready. Incomplete slices never flush half-built deltas.
     if (runtime->drain_building_resource_deltas(
             resource_delta_lanes, resource_deltas)) {
         const int32_t count = runtime->cell_count();
@@ -536,7 +710,10 @@ Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool co
         result["building_resource_delta_cells"] = changed;
         result["building_resource_resident_slots"] = resident_slots;
         result["building_resource_mirror_deferred"] = resident_slots > 0;
+        result["building_resource_mirror_committed"] = true;
         result["published_to_slot"] = changed > 0;
+    } else {
+        result["building_resource_mirror_committed"] = false;
     }
     resource_flush_ms = bridge_elapsed_ms(resource_flush_started);
     // The recorder observes only a fully published epoch. Resource slots have
@@ -1158,7 +1335,10 @@ Dictionary DCWorldExt::reset_economy(const String &reason) {
         return out;
     }
     _economy_last_notified_event_id = 0;
-    return runtime_from(_economy_runtime)->reset(reason);
+    Dictionary out = runtime_from(_economy_runtime)->reset(reason);
+    if (static_cast<bool>(out.get("ok", false)))
+        invalidate_economy_input_capture_cache(true);
+    return out;
 }
 
 Dictionary DCWorldExt::start_economy_csv_recording(const Dictionary &config) {
@@ -1266,7 +1446,10 @@ Dictionary DCWorldExt::begin_economy_restore() {
     if (_economy_runtime == nullptr) {
         return unavailable();
     }
-    return runtime_from(_economy_runtime)->begin_restore();
+    Dictionary out = runtime_from(_economy_runtime)->begin_restore();
+    if (static_cast<bool>(out.get("ok", false)))
+        invalidate_economy_input_capture_cache(true);
+    return out;
 }
 
 Dictionary DCWorldExt::feed_economy_restore_chunk(const PackedByteArray &chunk) {
@@ -1280,7 +1463,10 @@ Dictionary DCWorldExt::end_economy_restore() {
     if (_economy_runtime == nullptr) {
         return unavailable();
     }
-    return runtime_from(_economy_runtime)->end_restore();
+    Dictionary out = runtime_from(_economy_runtime)->end_restore();
+    if (static_cast<bool>(out.get("ok", false)))
+        invalidate_economy_input_capture_cache(true);
+    return out;
 }
 
 Dictionary DCWorldExt::get_economy_event_schema() const {

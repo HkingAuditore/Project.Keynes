@@ -61,6 +61,8 @@ var runtime_parity_forcing: bool = false
 ## Events POD remains an opt-in probe in Stage I. It mirrors the legacy journal
 ## and never becomes part of the ACTIVE authority mask.
 var runtime_events_probe_enabled: bool = false
+## Forwarded into start_runtime_worker. Default ACTIVE_ONLY (SHADOW StageOps = 0).
+var runtime_economy_execution_mode: String = "ACTIVE_ONLY"
 ## 把 Climate 域交给 worker 当权威（per-domain ACTIVE），其余十一个域留在主线程。
 ## 打开后 dispatch_system_schedule 一次性抑制 14 个 climate 节点，MapData 由
 ## _consume_runtime_commit_if_ready 里的回灌写。
@@ -599,6 +601,7 @@ func _start_production_shadow_worker() -> void:
 		"speed_days_per_second": 1.0,
 		"paused": true,
 		"events_probe_enabled": runtime_events_probe_enabled,
+		"economy_execution_mode": runtime_economy_execution_mode,
 	}
 	if climate_authority_active:
 		# graph_coverage_complete 在 per-domain ACTIVE 下的含义是"请求的这些域

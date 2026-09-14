@@ -116,6 +116,11 @@ void NativeEconomyRuntime::rebuild_building_role_storage() {
     for (int32_t index = 0; index < static_cast<int32_t>(_buildings.size()); ++index) {
         const BuildingGroup &group = _buildings[index];
         if (group.count <= 0) {
+            if (group.cell >= 0 && group.cell < _cell_count) {
+                mark_market_signal_cell_dirty(group.cell);
+                mark_labor_signal_cell_dirty(group.cell);
+                mark_input_reserve_cell_dirty(group.cell);
+            }
             release_building_role_span(group);
         } else if (group.employee_fill_begin >= 0 &&
                    group.last_input_selection_begin >= 0) {
@@ -150,7 +155,14 @@ void NativeEconomyRuntime::rebuild_building_role_storage() {
 
     auto append_group = [&](int32_t index, bool is_new) {
         BuildingGroup group = _buildings[index];
-        if (is_new) initialize_building_role_span(group);
+        if (is_new) {
+            initialize_building_role_span(group);
+            if (group.cell >= 0 && group.cell < _cell_count) {
+                mark_market_signal_cell_dirty(group.cell);
+                mark_labor_signal_cell_dirty(group.cell);
+                mark_input_reserve_cell_dirty(group.cell);
+            }
+        }
         _building_groups_rebuild_scratch.push_back(group);
         _building_investment_score_rebuild_scratch.push_back(
             !is_new && index < static_cast<int32_t>(

@@ -1,21 +1,86 @@
 # 经济存档、catalog migration 与内容扩展 SOP
 
-## ECP1（Economy POD section，abi2 业务摘要）
+## ECP1（Economy POD section，ABI9 Phase-2.3.3 ledger mirror）
 
 `RuntimeEconomyPodAuthority::encode_ecp1` / `restore_ecp1` 使用 marker
-`0x31504345`（"ECP1"）。**abi=2**（当前 writer）在既有 header
-（session/generation/state_hash/day/catalog/gate/parity/receipt_count）之后追加：
+`0x31504345`（"ECP1"）。当前 writer 在 resource + epoch-cursor 均已捕获时写
+**ABI9**；仅有 family 时写 **ABI8**；building + trade-escrow 均已捕获但无
+family 时写 **ABI7**；仅有 ABI6 诊断列时写 ABI6；仅有 ABI5 形状时写 ABI5；仅有
+ABI4 形状 ledger 时写 ABI4；尚未捕获 ledger 时仍可写 ABI3。共同 header 为
+`session/generation/state_hash/day/catalog/gate/parity/receipt_count`，随后是
+ABI3 authority mode 与 ABI2 业务摘要：
 
 - `population_error` / `money_error` / `goods_error`（i64）
 - `summary_population` / `summary_funds`（i64）
 - `summary_markets` / `summary_buildings` / `summary_cohorts` / `summary_families`（i32）
 
-然后是 terminal receipt 摘要。这是 Host POD 存档垂直切片，**不是**取代 PKEC
+ABI4 在摘要后追加独立 ledger 元数据
+`source_state_hash/ledger_hash/generation/committed_day`，以及：
+
+- `market_count/good_count`；
+- cohort `active/cell/slot/signature/population/funds/income/expense`；
+- market `stock/price/demand_ema`。
+
+ABI5 在 ABI4 market 块之后追加：
+
+- cohort `generation`（uint32，与 active 同长）；
+- market `last_shortage_q16`（uint16，与 market lanes 同长）；
+- market `cell_to_market`（int32，长度为 `market_count`）。
+
+ABI6 在 ABI5 之后追加（与 active 同长）：
+
+- `reserved`（u8）/ `reservation_owner`（u64）；
+- `needs_satisfaction` / `composite_satisfaction`（u16）；
+- `owner_employed` / `employee_employed`（i64）。
+
+ABI7 在 ABI6 之后追加（building 与 trade-escrow **成对**，缺一不可）：
+
+- building：`catalog_hash`/`content_hash`（u64）、`group_count`/`pending_count`/
+  `role_lane_count`（u32）、`payload_size`（u32）+ opaque PKEC-shaped bytes；
+- trade-escrow：`country_trade_revision`（u64）、`next_id`（i64）、`order_count`（u32）、
+  `content_hash`（u64）、`payload_size`（u32）+ opaque order bytes。
+
+ABI8 在 ABI7 之后追加（要求 ABI7 双块已在）：
+
+- family 元数据：`catalog_hash`/`person_catalog_hash`/`trait_catalog_hash`（u64）、
+  `runtime_mode`/`person_runtime_mode`（i32）、各子表 count（u32×8）、
+  `next_expedition_stable_id`（i64）、`content_hash`（u64）、`payload_size`（u32）；
+- opaque payload：family records / membership / ownership / persons / person needs /
+  traits / influences / trait commands / expeditions（含 route/cargo/kit/missing）。
+
+ABI9 在 ABI8 之后追加（resource 与 epoch-cursor **成对**，且要求 ABI8 family）：
+
+- resource：`catalog_hash`/`environment_hash`（u64）、`context_day`（i64）、
+  `resource_count`/`cell_count`（i32）、`lane_count`（u32）、
+  `min_reserve_q16`/`safe_harvest_q16`/`min_horizon_days`（i32）、
+  `content_hash`（u64）、`payload_size` + opaque
+  （dense `_resource_snapshot` + per-cell `_cell_resource_gen`）；
+- epoch-cursor：`sample_day`/`current_day`/`last_committed_day`/`epoch_id`（i64）、
+  `epoch_days`（i32）、`epoch_active`（u8）、`native_stage`（i32）、
+  `graph_completed_mask`（u32）、`content_hash`（u64）、`payload_size` + opaque
+  （committed-day 仅 idle marker；mid-epoch resume 留待生产写者切片）。
+
+最后才是 terminal receipt 摘要。ABI4/5/6/7/8/9 不借用 graph header 的 generation/day
+重建 ledger，因为两者是不同计数器。恢复时先校验内层 ledger hash、slot 顺序、
+active byte、每页统一 cell 和 free-page 不含 active cohort，再在临时
+`RuntimeEconomyOwnedState` 中重建；任何失败都不修改已有 committed state、摘要或
+receipt。ABI1/2/3 可读，但会明确清空目标中已有的 ABI4+ ledger/state，避免旧格式恢复后
+残留新格式业务列。ABI4 恢复后 extended 列为空；ABI5 恢复 generation/signals；
+ABI6 再恢复 reservations/diagnostics；ABI7 再恢复 building/trade opaque 块；
+ABI8 再恢复 family opaque 块；ABI9 再恢复 resource/cursor（均不 unpack 到 live
+SoA writer）。
+
+这是 Host POD 存档垂直切片，**不是**取代 PKEC
 的生产权威存档。生产人口/市场/建筑状态仍走 legacy
 `economy_runtime_persistence_*`（当前 PKEC v52）。ACTIVE compact-slice 与
 `commit_epoch` 会向 `_snapshot_ring` 发布 header + 上述标量摘要（无全矩阵）。
-`restore_ecp1` 接受 abi1（旧，无摘要）与 abi2；abi2 截断 fail-closed。
-Soak：`runtime_economy_authority_soak_test.gd`（`PK_ECONOMY_SOAK_DAYS`，默认 30）。
+Soak：`runtime_economy_authority_soak_test.gd`（`PK_ECONOMY_SOAK_DAYS`，默认 60）。
+
+`economy_pod_mirror_feature_mask` / `economy_pod_active_ready` 报告 Phase-2 镜像完整度；
+Phase-2.3.3 后 `pod_active_ready()` 可为真（`ECONOMY_POD_MIRROR_PHASE233`）。
+Phase-2.4.1 可用 `economy_auto_pod_active` 在完整 capture 后升到 `POD_ACTIVE`。
+Phase-2.4.2 增加 `economy_production_writer`（默认/`effective`=`compact_slice`）；
+请求 `stage_ops` 在 bounded handoff 落地前 fail-closed。
 
 财政 peer escrow / PKEC v52：只支持新游戏；旧经济存档显式拒绝。v52 在每个固定 Country
 fiscal record 后追加一个非负 `int64` Economy-owned escrow，并新增

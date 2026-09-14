@@ -2,6 +2,9 @@ param(
     [string]$RepoRoot = (Get-Location).Path,
     [switch]$Godot,
     [switch]$Build,
+    [switch]$Phase1Gate,
+    [ValidateSet('smoke', 'standard', 'full')]
+    [string]$BenchMatrix = 'smoke',
     [string]$GodotExe = $(if ($env:GODOT_BIN) { $env:GODOT_BIN } else { 'D:\Godot\Godot_v4.6.2-stable_win64.exe\Godot_v4.6.2-stable_win64_console.exe' })
 )
 
@@ -81,6 +84,25 @@ if ($Godot) {
 	if ($LASTEXITCODE -ne 0) { throw 'Economy map generation test failed' }
 	& $GodotExe --headless --path $project --script res://tests/natural_resource_distribution_capacity_test.gd
 	if ($LASTEXITCODE -ne 0) { throw 'Natural resource distribution capacity test failed' }
+    $env:PK_ECONOMY_SOAK_DAYS = '60'
+    & $GodotExe --headless --path $project --script res://tests/runtime_economy_authority_soak_test.gd
+    if ($LASTEXITCODE -ne 0) { throw 'Economy authority soak (60d) failed' }
+    & $GodotExe --headless --path $project --script res://tests/runtime_economy_pod_test.gd
+    if ($LASTEXITCODE -ne 0) { throw 'Economy POD test failed' }
+    & $GodotExe --headless --path $project --script res://tests/runtime_economy_parity_test.gd
+    if ($LASTEXITCODE -ne 0) { throw 'Economy parity test failed' }
+}
+
+if ($Phase1Gate) {
+    if (-not $Godot) {
+        throw 'Phase1Gate requires -Godot so soak/parity run before release benches'
+    }
+    $bench = Join-Path $root 'tools\runtime\Invoke-EconomyPhase1Bench.ps1'
+    if (-not (Test-Path -LiteralPath $bench)) {
+        throw "Missing Phase-1 bench script: $bench"
+    }
+    & $bench -RepoRoot $root -GodotExe $GodotExe -Matrix $BenchMatrix -LabelPrefix 'phase1-gate'
+    if ($LASTEXITCODE -ne 0) { throw 'Phase-1 release benchmark matrix failed' }
 }
 
 Write-Output 'Project.Keynes economy runtime verification passed.'

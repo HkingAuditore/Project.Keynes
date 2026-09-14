@@ -29,8 +29,9 @@ Country worker 唯一写者模式下经 Host request/result transport 完成 pee
 （Climate|Country|Trigger|Ideology|Modifier|Effect|Economy|Events|COMMIT）。
 ACTIVE 日路径在 ECONOMY 授予位下调用
 `NativeEconomyRuntime::worker_run_compact_slice`（同一 `run_slice_compact` 公式
-owner，最多 64 片/日）。StageOps 生产附着 **恒** `mutate=false`（SHADOW POD
-哈希对拍）；`execute_economy_worker_stage` 不做生产突变。主线程
+owner，最多 64 片/日）。StageOps 默认 `mutate=false`（SHADOW POD 哈希对拍）；
+Phase-2.4.1 可用 `economy_stage_ops_mutate` 武装 mutate，但 ACTIVE 日环仍走
+compact-slice，且 `ACTIVE_WITH_PARITY` 会强制 StageOps 只读。主线程
 `economy_should_run` 仅在 worker 权威且 production runtime 已挂接时抑制。
 worker 权威下主线程仍通过 `DCWorldExt::capture_economy_day_inputs` 冻结当日
 环境/建筑上下文（不跑 mutation）；缺捕获时 compact slice 以
@@ -40,8 +41,10 @@ Phase 4：POD opcode 1..23 准入/ACK；`commit_pending_commands` 在 Host ACTIV
 挂接 `EconomyPodCommandExecutor` 后经 `apply_pod_command` → `apply_command`
 执行（与 sync `submit_commands` 单路径，禁止同请求双提交）。无 executor 时
 SHADOW self_test 仍可 Committed-without-mutate。
-Phase 5：`RuntimeEconomySnapshotRing` + PKSR **ECP1 abi2**（业务摘要标量 +
-audit errors）；PKEC 仍管业务态。named kernel TU 经
+Phase 5：`RuntimeEconomySnapshotRing` + PKSR **ECP1 ABI4**（业务摘要、
+committed cohort/market ledger mirror、独立 ledger generation/hash）；恢复先在临时
+POD owner 中校验页拓扑与 hash，失败不替换 live committed state。PKEC 仍管完整业务态。
+named kernel TU 经
 `economy_dispatch_mutate_stage` 复用 `NativeEconomyRuntime` 公式。
 Soak：`tests/runtime_economy_authority_soak_test.gd`（`PK_ECONOMY_SOAK_DAYS`）。
 

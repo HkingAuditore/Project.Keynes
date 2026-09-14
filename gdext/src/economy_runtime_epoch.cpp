@@ -1,5 +1,6 @@
 #include "economy_runtime.h"
 #include "country_runtime.h"
+#include "effect_runtime.h"
 
 #include <algorithm>
 #include <chrono>
@@ -1160,5 +1161,156 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
     return true;
 }
 
+bool NativeEconomyRuntime::run_epoch_open_prelude_drain(
+        int64_t day_index, int64_t &work_done, std::string &error,
+        bool *pending_input, bool *idle_done) {
+    error.clear();
+    work_done = 0;
+    if (pending_input != nullptr) {
+        *pending_input = false;
+    }
+    if (idle_done != nullptr) {
+        *idle_done = false;
+    }
+    if (!_bootstrapped || _fatal) {
+        return true;
+    }
+    if (_epoch_active) {
+        return true;
+    }
+
+    const auto mark_pending = [&](const std::string &reason) {
+        if (pending_input != nullptr) {
+            *pending_input = true;
+        }
+        error = reason;
+    };
+    const auto is_asset_pending = [](const std::string &reason) {
+        return reason == "country_economy_asset_host_pending" ||
+               reason == "country_economy_asset_results_pending" ||
+               reason == "country_economy_asset_rejection_retry_pending" ||
+               reason == "country_economy_asset_completion_retry_pending" ||
+               reason == "country_economy_fiscal_terminal_retry_pending";
+    };
+
+    constexpr int kMaxSteps = 1 << 16;
+    for (int step = 0; step < kMaxSteps && !_epoch_active && !_fatal; ++step) {
+        if (!service_country_economy_asset_peer(64, error)) {
+            if (is_asset_pending(error)) {
+                _executed_stage = Stage::EPOCH_BEGIN;
+                _executed_substage = "country_asset_peer_pending";
+                mark_pending(error);
+                return true;
+            }
+            fail(error.empty() ? "country_economy_fiscal_peer_failed" : error);
+            return false;
+        }
+
+        if (_fiscal_reservation_continuation.active ||
+            _epoch_begin_post_fiscal_pending) {
+            _executed_stage = Stage::EPOCH_BEGIN;
+            _executed_substage = _fiscal_reservation_continuation.active
+                                     ? "fiscal_reserve"
+                                     : "fiscal_finalize";
+            const int64_t fiscal_day = _epoch_begin_pending_day >= 0
+                                           ? _epoch_begin_pending_day
+                                           : day_index;
+            if (_fiscal_reservation_continuation.active) {
+                if (!advance_fiscal_reservation(error)) {
+                    fail(error.empty() ? "fiscal_reservation_failed" : error);
+                    return false;
+                }
+                ++work_done;
+                if (_fiscal_reservation_continuation.active) {
+                    // Compact yields; StageOps prelude parks as pending_input.
+                    mark_pending("fiscal_reserve_peer_results");
+                    return true;
+                }
+            }
+            if (!_fiscal_reservation_continuation.active &&
+                _epoch_begin_post_fiscal_pending) {
+                if (!finish_epoch_start_after_fiscal(fiscal_day, error)) {
+                    fail(error.empty() ? "fiscal_begin_finalize_failed" : error);
+                    return false;
+                }
+                ++work_done;
+            }
+            continue;
+        }
+
+        if (!should_run(day_index)) {
+            if (idle_done != nullptr) {
+                *idle_done = true;
+            }
+            return true;
+        }
+
+        auto pull_due_family_settlements = [this]() {
+            if (_effect_runtime != nullptr) {
+                _effect_runtime->dispatch_native_economy(this);
+            }
+            recover_lost_family_settlement_commands();
+        };
+        pull_due_family_settlements();
+        if (!process_due_canal_projects(day_index, error) ||
+            !process_due_family_expeditions(day_index, error)) {
+            fail(error);
+            return false;
+        }
+        pull_due_family_settlements();
+
+        const bool cycle_due = day_index > _last_committed_day;
+        if (cycle_due && trade_planner_should_run()) {
+            _stage = Stage::TRADE_PLANNING;
+            _executed_stage = Stage::TRADE_PLANNING;
+            if (!run_trade_planner_slice(work_done, error)) {
+                fail(error);
+                return false;
+            }
+            _stage = Stage::EPOCH_BEGIN;
+        }
+        if (!cycle_due && trade_planner_should_run()) {
+            _stage = Stage::TRADE_PLANNING;
+            _executed_stage = Stage::TRADE_PLANNING;
+            if (!run_trade_planner_slice(work_done, error)) {
+                fail(error);
+                return false;
+            }
+            if (!_fatal && _trade_plan.phase == TradePlanStore::IDLE) {
+                _stage = Stage::IDLE;
+            }
+            if (idle_done != nullptr) {
+                *idle_done = true;
+            }
+            return true;
+        }
+
+        _stage = Stage::EPOCH_BEGIN;
+        _executed_stage = Stage::EPOCH_BEGIN;
+        if (!start_epoch(day_index, error)) {
+            if (error == "same_day_environment_not_captured" ||
+                error == "same_day_building_context_not_captured") {
+                _stage = Stage::IDLE;
+                _executed_stage = Stage::IDLE;
+                mark_pending(error);
+                return true;
+            }
+            fail(error);
+            return false;
+        }
+        return true;
+    }
+
+    if (_fatal) {
+        error = error.empty() ? "epoch_open_prelude_fatal" : error;
+        return false;
+    }
+    if (!_epoch_active) {
+        error = "epoch_open_prelude_guard_exhausted";
+        fail(error);
+        return false;
+    }
+    return true;
+}
 
 } // namespace pk
