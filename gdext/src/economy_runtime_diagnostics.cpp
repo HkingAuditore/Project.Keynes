@@ -830,6 +830,23 @@ Dictionary NativeEconomyRuntime::compact_report() const {
         _investment_gate_capital_type_skips;
     out["building_factor_cache_hits"] = _building_factor_cache_hits;
     out["building_factor_cache_misses"] = _building_factor_cache_misses;
+    {
+        const int64_t factor_total =
+            _building_factor_cache_hits + _building_factor_cache_misses;
+        out["building_factor_cache_hit_ratio_q16"] = factor_total > 0
+            ? static_cast<int64_t>(
+                  (_building_factor_cache_hits * 65536) / factor_total)
+            : int64_t{0};
+    }
+    out["market_signal_cells_rebuilt"] = _market_signal_cells_rebuilt;
+    out["labor_signal_cells_rebuilt"] = _labor_signal_cells_rebuilt;
+    out["input_reserve_groups_rebuilt"] = _input_reserve_groups_rebuilt;
+    out["full_rebuild_reason"] = String(
+        !_market_signal_full_rebuild_reason.empty()
+            ? _market_signal_full_rebuild_reason.c_str()
+            : (!_labor_signal_full_rebuild_reason.empty()
+                   ? _labor_signal_full_rebuild_reason.c_str()
+                   : _input_reserve_full_rebuild_reason.c_str()));
     out["city_good_output_shared_count"] = static_cast<int64_t>(
         _city_output_shared_goods_q16.size());
     out["city_good_output_non_neutral_shared_count"] = static_cast<int64_t>(

@@ -43,10 +43,6 @@ bool economy_dispatch_mutate_stage(void *runtime_hook,
         return false;
     }
 
-    const std::vector<int32_t> &building_cells =
-        !runtime->_epoch_building_cells.empty() ? runtime->_epoch_building_cells
-                                                : runtime->_building_active_cells;
-
     switch (stage) {
     case RuntimeEconomyGraphStage::BUILDING_PLAN: {
         NativeEconomyRuntime::BuildingPlanResult plan;
@@ -82,31 +78,22 @@ bool economy_dispatch_mutate_stage(void *runtime_hook,
         return true;
     }
     case RuntimeEconomyGraphStage::LEDGER_APPLY: {
-        const int32_t n =
-            static_cast<int32_t>(runtime->_epoch_commands.size());
-        if (static_cast<int32_t>(cursor.command_cursor) >= n) {
-            finish_ok(result, input, runtime);
-            return true;
+        int64_t work = 0;
+        std::string ledger_error;
+        if (static_cast<int32_t>(cursor.command_cursor) >
+            runtime->_command_cursor) {
+            runtime->_command_cursor =
+                static_cast<int32_t>(cursor.command_cursor);
         }
-        runtime->_command_cursor =
-            static_cast<int32_t>(cursor.command_cursor);
-        const int32_t end = std::min<int32_t>(
-            n, runtime->_command_cursor + runtime->_commands_per_slice);
-        for (; runtime->_command_cursor < end; ++runtime->_command_cursor) {
-            const NativeEconomyRuntime::Command &command =
-                runtime->_epoch_commands[static_cast<size_t>(
-                    runtime->_command_cursor)];
-            std::string cmd_error;
-            if (!runtime->apply_command(command, cmd_error)) {
-                fail_stage(result, error,
-                           cmd_error.empty()
-                               ? "economy_dispatch_ledger_apply_failed"
-                               : cmd_error,
-                           "ledger_apply");
-                cursor.command_cursor =
-                    static_cast<uint32_t>(runtime->_command_cursor);
-                return false;
-            }
+        if (!runtime->run_ledger_apply_drain(work, ledger_error)) {
+            fail_stage(result, error,
+                       ledger_error.empty()
+                           ? "economy_dispatch_ledger_apply_failed"
+                           : ledger_error,
+                       "ledger_apply");
+            cursor.command_cursor =
+                static_cast<uint32_t>(runtime->_command_cursor);
+            return false;
         }
         cursor.command_cursor =
             static_cast<uint32_t>(runtime->_command_cursor);
@@ -114,43 +101,51 @@ bool economy_dispatch_mutate_stage(void *runtime_hook,
         return true;
     }
     case RuntimeEconomyGraphStage::BUILDING_EMPLOYMENT: {
+        int64_t work = 0;
         std::string emp_error;
-        for (int32_t cell : building_cells) {
-            if (!runtime->run_building_employment_cell(cell, true, emp_error)) {
-                fail_stage(result, error,
-                           emp_error.empty()
-                               ? "economy_dispatch_employment_failed"
-                               : emp_error,
-                           "building_employment");
-                return false;
-            }
+        if (!runtime->run_building_employment_drain(work, emp_error)) {
+            fail_stage(result, error,
+                       emp_error.empty()
+                           ? "economy_dispatch_employment_failed"
+                           : emp_error,
+                       "building_employment");
+            return false;
         }
         finish_ok(result, input, runtime);
         return true;
     }
     case RuntimeEconomyGraphStage::BUILDING_PRODUCTION: {
+        int64_t work = 0;
         std::string prod_error;
-        for (int32_t cell : building_cells) {
-            NativeEconomyRuntime::ProductionResult prod;
-            if (!runtime->run_building_production_cell(cell, prod,
-                                                      prod_error)) {
-                fail_stage(result, error,
-                           prod_error.empty()
-                               ? "economy_dispatch_production_failed"
-                               : prod_error,
-                           "building_production");
-                return false;
-            }
+        if (!runtime->run_building_production_drain(work, prod_error)) {
+            fail_stage(result, error,
+                       prod_error.empty()
+                           ? "economy_dispatch_production_failed"
+                           : prod_error,
+                       "building_production");
+            return false;
         }
         finish_ok(result, input, runtime);
         return true;
     }
-    case RuntimeEconomyGraphStage::HOUSEHOLD_MARKET:
-        return runtime->kernel_run_household_market_boundary(cursor, input,
-                                                             result, error);
+    case RuntimeEconomyGraphStage::HOUSEHOLD_MARKET: {
+        int64_t work = 0;
+        std::string household_error;
+        if (!runtime->run_household_market_drain(work, household_error)) {
+            fail_stage(result, error,
+                       household_error.empty()
+                           ? "economy_dispatch_household_failed"
+                           : household_error,
+                       "household_market");
+            return false;
+        }
+        finish_ok(result, input, runtime);
+        return true;
+    }
     case RuntimeEconomyGraphStage::GOVERNMENT_RESEARCH_PROCUREMENT: {
+        int64_t work = 0;
         std::string research_error;
-        if (!runtime->run_government_research_procurement(research_error)) {
+        if (!runtime->run_government_research_drain(work, research_error)) {
             fail_stage(result, error,
                        research_error.empty()
                            ? "economy_dispatch_research_failed"
@@ -175,41 +170,37 @@ bool economy_dispatch_mutate_stage(void *runtime_hook,
         return true;
     }
     case RuntimeEconomyGraphStage::STRUCTURAL_COMMIT: {
-        const int32_t n =
-            static_cast<int32_t>(runtime->_structural_commands.size());
-        if (n <= 0 || runtime->_structural_cursor >= n) {
-            finish_ok(result, input, runtime);
-            return true;
-        }
-        const int32_t end = std::min<int32_t>(
-            n, runtime->_structural_cursor + runtime->_commands_per_slice);
-        for (; runtime->_structural_cursor < end;
-             ++runtime->_structural_cursor) {
-            std::string structural_error;
-            if (!runtime->commit_structural(
-                    runtime->_structural_commands[static_cast<size_t>(
-                        runtime->_structural_cursor)],
-                    structural_error)) {
-                fail_stage(result, error,
-                           structural_error.empty()
-                               ? "economy_dispatch_structural_failed"
-                               : structural_error,
-                           "structural_commit");
-                return false;
-            }
+        int64_t work = 0;
+        std::string structural_error;
+        if (!runtime->run_structural_commit_drain(work, structural_error)) {
+            fail_stage(result, error,
+                       structural_error.empty()
+                           ? "economy_dispatch_structural_failed"
+                           : structural_error,
+                       "structural_commit");
+            return false;
         }
         finish_ok(result, input, runtime);
         return true;
     }
     case RuntimeEconomyGraphStage::BUILDING_COMMIT: {
-        (void)cursor;
+        int64_t work = 0;
+        std::string building_error;
+        if (!runtime->run_building_commit_slice(work, building_error)) {
+            fail_stage(result, error,
+                       building_error.empty()
+                           ? "economy_dispatch_building_commit_failed"
+                           : building_error,
+                       "building_commit");
+            return false;
+        }
         finish_ok(result, input, runtime);
         return true;
     }
     case RuntimeEconomyGraphStage::FAMILY_COMMIT: {
         int64_t work = 0;
         std::string family_error;
-        if (!runtime->run_family_commit_slice(work, family_error)) {
+        if (!runtime->run_family_commit_drain(work, family_error)) {
             fail_stage(result, error,
                        family_error.empty()
                            ? "economy_dispatch_family_commit_failed"
@@ -223,7 +214,7 @@ bool economy_dispatch_mutate_stage(void *runtime_hook,
     case RuntimeEconomyGraphStage::PERSON_COMMIT: {
         int64_t work = 0;
         std::string person_error;
-        if (!runtime->run_person_commit_slice(work, person_error)) {
+        if (!runtime->run_person_commit_drain(work, person_error)) {
             fail_stage(result, error,
                        person_error.empty()
                            ? "economy_dispatch_person_commit_failed"
@@ -237,7 +228,7 @@ bool economy_dispatch_mutate_stage(void *runtime_hook,
     case RuntimeEconomyGraphStage::AGGREGATE_PUBLISH: {
         int64_t work = 0;
         std::string publish_error;
-        if (!runtime->publish_epoch_slice(work, publish_error)) {
+        if (!runtime->run_aggregate_publish_drain(work, publish_error)) {
             fail_stage(result, error,
                        publish_error.empty()
                            ? "economy_dispatch_publish_failed"

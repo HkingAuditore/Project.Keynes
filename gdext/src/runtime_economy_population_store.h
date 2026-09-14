@@ -56,9 +56,11 @@ struct RuntimeEconomyPopulationStore {
     void clear(int32_t cells);
     void reset_satisfaction_slot(int32_t slot);
     int32_t allocate_page(int32_t cell);
+    bool restore_page_at(int32_t page, int32_t cell);
     mutable int64_t scan_steps = 0;  // Diagnostics only.
     int32_t find_signature(int32_t cell, uint32_t signature) const;
     int32_t allocate_slot(int32_t cell, uint32_t signature);
+    int32_t restore_slot_at(int32_t slot, int32_t cell, uint32_t signature);
     int32_t reserve_slot(int32_t cell, uint32_t signature,
                          uint64_t owner);
     int32_t claim_reserved_slot(int32_t slot, int32_t cell,

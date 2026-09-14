@@ -304,6 +304,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::runtime_events_authority_self_test);
     ClassDB::bind_method(D_METHOD("runtime_economy_pod_self_test"),
                          &DCWorldExt::runtime_economy_pod_self_test);
+    ClassDB::bind_method(D_METHOD("switch_economy_authority", "mode"),
+                         &DCWorldExt::switch_economy_authority);
     ClassDB::bind_method(D_METHOD("runtime_economy_stage_order_contract_test"),
                          &DCWorldExt::runtime_economy_stage_order_contract_test);
     ClassDB::bind_method(D_METHOD("is_native_daily_visual_commit_pending"),
@@ -612,6 +614,9 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::run_economy_slice_compact);
     ClassDB::bind_method(D_METHOD("capture_economy_day_inputs", "day_index"),
                          &DCWorldExt::capture_economy_day_inputs);
+    ClassDB::bind_method(D_METHOD("begin_or_reuse_economy_input_epoch",
+                                  "day_index", "generation"),
+                         &DCWorldExt::begin_or_reuse_economy_input_epoch);
     ClassDB::bind_method(D_METHOD("economy_should_run", "day_index"),
                          &DCWorldExt::economy_should_run);
     ClassDB::bind_method(D_METHOD("economy_deadline_critical", "day_index"),

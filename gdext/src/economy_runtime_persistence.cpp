@@ -467,7 +467,21 @@ Dictionary NativeEconomyRuntime::end_restore() {
           _restore.restored_family_trait_commands !=
               _restore.expected_family_trait_commands))) {
         out["ok"] = false;
-        out["reason"] = "restore_section_incomplete";
+        out["reason"] = String("restore_section_incomplete pages=") + String::num_int64(_restore.restored_pages) + String("/") + String::num_int64(_restore.expected_pages) + String(" buildings=") + String::num_int64(_restore.restored_buildings) + String("/") + String::num_int64(_restore.expected_buildings) + String(" construction=") + String::num_int64(_restore.restored_construction) + String("/") + String::num_int64(_restore.expected_construction) + String(" trade_orders=") + String::num_int64(_restore.restored_trade_orders) + String("/") + String::num_int64(_restore.expected_trade_orders);
+        out["expected_pages"] = _restore.expected_pages;
+        out["restored_pages"] = _restore.restored_pages;
+        out["expected_buildings"] = _restore.expected_buildings;
+        out["restored_buildings"] = _restore.restored_buildings;
+        out["expected_construction"] = _restore.expected_construction;
+        out["restored_construction"] = _restore.restored_construction;
+        out["expected_trade_orders"] = _restore.expected_trade_orders;
+        out["restored_trade_orders"] = _restore.restored_trade_orders;
+        out["expected_trade_flows"] = _restore.expected_trade_flows;
+        out["restored_trade_flows"] = _restore.restored_trade_flows;
+        out["expected_tariff_history"] = _restore.expected_tariff_history;
+        out["restored_tariff_history"] = _restore.restored_tariff_history;
+        out["expected_fiscal"] = _restore.expected_fiscal;
+        out["restored_fiscal"] = _restore.restored_fiscal;
         return out;
     }
     if (!_restore.family_expeditions_seen ||
@@ -836,10 +850,25 @@ Dictionary NativeEconomyRuntime::end_restore() {
     }
     for (int32_t cell = 0; cell < _cell_count; ++cell)
         _market_signals.cell_offsets[cell + 1] += _market_signals.cell_offsets[cell];
-    rebuild_market_signals();
+    // PKEC stores the committed signal rows, including zero-valued rows that
+    // keep the stable CSR shape. Rebuild only derived lookups here; the
+    // topology rebuild intentionally prunes rows and would change restored
+    // authority before the next committed building-structure update.
+    rebuild_market_signal_lookup();
+    rebuild_production_input_reserves();
+    _market_signal_force_full = false;
+    _labor_signal_force_full = false;
+    _input_reserve_force_full = false;
+    _market_signal_full_rebuild_reason = "save_restore";
+    _labor_signal_full_rebuild_reason = "save_restore";
+    _input_reserve_full_rebuild_reason = "save_restore";
+    if (_cell_count > 0) {
+        _market_signal_cell_dirty.assign(static_cast<size_t>(_cell_count), 0);
+        _labor_signal_cell_dirty.assign(static_cast<size_t>(_cell_count), 0);
+        _input_reserve_cell_dirty.assign(static_cast<size_t>(_cell_count), 0);
+    }
     for (int32_t cell = 0; cell < _cell_count; ++cell)
         _labor_signals.cell_offsets[cell + 1] += _labor_signals.cell_offsets[cell];
-    rebuild_labor_signals();
     std::string country_restore_error;
     if (!capture_country_epoch(country_restore_error)) {
         out["ok"] = false;

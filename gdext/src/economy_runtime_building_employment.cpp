@@ -783,10 +783,13 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             ? std::max<int64_t>(
                 0, _building_role_contract_wage[role_index])
             : std::max<int64_t>(0, role.reference_wage_per_day);
-        // This low-confidence prior is only available to the unemployed
-        // hiring path. Incumbent workers compare jobs using funded expected
-        // pay, so an unproven nominal contract cannot poach them.
-        return std::max<int64_t>(expected, contract / 8);
+        // A cold-start vacancy has no realized payroll ratio yet. Use the
+        // nominal contract for the unemployed entry path; affordability is
+        // still enforced by the owner/production working-capital and input
+        // gates after the person is admitted. Using contract/8 puts a
+        // break-even role below its own livelihood floor and strands the
+        // initial unemployed pool.
+        return std::max<int64_t>(expected, contract);
     };
     const int32_t professions = static_cast<int32_t>(_profession_ids.size());
     demand.assign(professions, 0);
@@ -907,6 +910,12 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         // construction so retention and hiring use the same hazard.
         auto transition_hurdle_q16 = [&](int32_t source_profession,
                                          int32_t target_profession) -> int64_t {
+            // The unemployed pool is the normal bootstrap and layoff entry
+            // point. Requiring a positive income improvement here makes a
+            // break-even first job unreachable when the target contract wage
+            // equals the target livelihood floor.
+            if (source_profession == _unemployed_profession_id)
+                return 0;
             if (source_profession == target_profession)
                 return std::max<int64_t>(1, _investment_displacement_min_advantage_q16);
             int64_t hurdle = std::max<int64_t>(Q16_ONE / 8,

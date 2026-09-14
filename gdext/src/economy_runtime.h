@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <deque>
 #include <limits>
@@ -416,6 +417,13 @@ public:
     bool worker_run_compact_slice(int64_t day_index, std::string &error,
                                   bool *done = nullptr,
                                   bool *pending_input = nullptr);
+    // Phase-2.4.4.1: StageOps epoch-open prelude (peer/fiscal/trade/start_epoch).
+    // Mirrors compact idle-open semantics without entering graph stages.
+    bool run_epoch_open_prelude_drain(int64_t day_index, int64_t &work_done,
+                                      std::string &error,
+                                      bool *pending_input = nullptr,
+                                      bool *idle_done = nullptr);
+    bool stage_ops_epoch_open_ready() const noexcept { return _epoch_active; }
     bool capture_environment(int64_t day_index, const float *temperature,
                              const float *temperature_30d, const float *moisture,
                              const float *plant_available_water,
@@ -427,6 +435,7 @@ public:
         return !_epoch_active && day_index > _last_committed_day &&
                _environment_day != day_index;
     }
+    bool epoch_active() const { return _epoch_active; }
     bool should_run(int64_t day_index) const;
     bool deadline_critical(int64_t day_index) const;
     // Mutable peer-domain watermark.  `_epoch_id` identifies an Economy
@@ -4102,6 +4111,20 @@ private:
     MarketStore _market;
     MarketSignalStore _market_signals;
     MarketSignalStore _market_signals_rebuild_scratch;
+    // Phase-1 dirty rebuild: only recompute CSR lanes for dirty cells unless a
+    // catalog/save restore forces a full rebuild.
+    std::vector<uint8_t> _market_signal_cell_dirty;
+    std::vector<uint8_t> _labor_signal_cell_dirty;
+    std::vector<uint8_t> _input_reserve_cell_dirty;
+    bool _market_signal_force_full = true;
+    bool _labor_signal_force_full = true;
+    bool _input_reserve_force_full = true;
+    std::string _market_signal_full_rebuild_reason = "bootstrap";
+    std::string _labor_signal_full_rebuild_reason = "bootstrap";
+    std::string _input_reserve_full_rebuild_reason = "bootstrap";
+    int64_t _market_signal_cells_rebuilt = 0;
+    int64_t _labor_signal_cells_rebuilt = 0;
+    int64_t _input_reserve_groups_rebuilt = 0;
     std::vector<int64_t> _epoch_business_demand_ema;
     // Leontief shadow derived demand from unmet final/business deficits through
     // preferred producer BOMs. Recomputed each sample; excluded from PKEC/hash.
@@ -4206,6 +4229,25 @@ private:
     // financially executable but still economically unviable.
     std::vector<int64_t> _building_recovery_probe_capacity_q16;
     std::vector<uint8_t> _building_recovery_liquidation_eligible;
+    // Phase-1 BuildingOutputFactorKey: shared identity for country/type/terrain/
+    // landform/sector composite factors. Per-group cache still also keys owner
+    // and family-owned mix; this struct documents the Plan key and is used when
+    // comparing the geography/policy half of a cache entry.
+    struct BuildingOutputFactorKey {
+        int32_t country = -1;
+        int32_t building_type = -1;
+        int32_t terrain = -1;
+        int32_t landform = -1;
+        int32_t sector = -1;
+
+        bool operator==(const BuildingOutputFactorKey &other) const noexcept {
+            return country == other.country &&
+                   building_type == other.building_type &&
+                   terrain == other.terrain &&
+                   landform == other.landform &&
+                   sector == other.sector;
+        }
+    };
     // Per-group cache for refresh_building_modifier_factors, keyed on every
     // input of group.output_factor_q16 / modifier_handle: every frozen
     // country factor value, country handle, ECONOMY store snapshot_version,
@@ -4215,6 +4257,7 @@ private:
     // Cache hits skip both ensure_building_identity and the ECONOMY
     // effective_value query. Transient; never saved or hashed.
     struct BuildingFactorCacheEntry {
+        BuildingOutputFactorKey output_key{};
         int64_t country_factor_q16 = std::numeric_limits<int64_t>::min();
         int64_t sector_factor_q16 = 0;
         int64_t research_factor_q16 = 0;
@@ -5624,9 +5667,17 @@ private:
     void rebuild_market_signal_lookup();
     bool flush_market_signal_overflow(std::string &error);
     int32_t ensure_market_signal_index(int32_t cell, int32_t good);
+    void mark_market_signal_cell_dirty(int32_t cell);
+    void mark_market_signal_full_rebuild(const char *reason);
+    void mark_labor_signal_cell_dirty(int32_t cell);
+    void mark_labor_signal_full_rebuild(const char *reason);
+    void mark_input_reserve_cell_dirty(int32_t cell);
+    void mark_input_reserve_full_rebuild(const char *reason);
     void rebuild_production_input_reserves(int32_t active_begin = 0,
                                            int32_t active_end = -1,
                                            bool initialize = true);
+    int64_t rebuild_production_input_reserves_for_cell(int32_t cell);
+    void recount_production_input_reserve_totals();
     void resolve_building_maintenance_csr();
     bool is_storable_nonmonetary_good(int32_t good) const;
     int32_t resolved_maintenance_horizon_days(const BuildingType &type) const;
@@ -5805,6 +5856,60 @@ private:
     bool compile_family_effect_catalog(const godot::Dictionary &catalog,
                                        std::string &error);
     bool run_family_commit_slice(int64_t &work_done, std::string &error);
+    // Phase-2.4.3.3: StageOps mutate drains (compact keeps per-slice calls).
+    bool run_family_commit_drain(int64_t &work_done, std::string &error);
+    bool run_person_commit_drain(int64_t &work_done, std::string &error);
+    bool run_aggregate_publish_drain(int64_t &work_done, std::string &error);
+    // Phase-2.4.3.1: shared BUILDING_COMMIT phase driver (no run_slice_compact).
+    // ContinueFusing = stay in stage, outer loop may fuse; StopSlice = yield;
+    // LeftStage = _stage moved past BUILDING_COMMIT; Fatal = fail() already called.
+    enum class BuildingCommitChunkResult : uint8_t {
+        ContinueFusing = 0,
+        StopSlice = 1,
+        LeftStage = 2,
+        Fatal = 3,
+    };
+    BuildingCommitChunkResult advance_building_commit_chunk(
+        int64_t &work_done, int32_t &cursor_start, int32_t &cursor_end,
+        bool &building_range_used, std::string &error, bool yield_enabled,
+        int32_t *chunks_completed, int32_t max_chunks_per_slice,
+        int32_t *phase_fusions, const char **yield_reason,
+        const std::chrono::steady_clock::time_point *slice_start,
+        double slice_budget_ms);
+    // Phase-2.2/2.4.3.1: StageOps mutate entry for BUILDING_COMMIT. Drains the
+    // shared phase driver until the runtime leaves BUILDING_COMMIT — never
+    // re-enters run_slice_compact. Phase-2.4.3.2 then drains fiscal settlement
+    // so FAMILY_COMMIT sees settled escrow (graph has no FISCAL stage).
+    bool run_building_commit_slice(int64_t &work_done, std::string &error);
+    // Phase-2.4.4.3: shared HOUSEHOLD_MARKET phase driver (no run_slice_compact).
+    enum class HouseholdMarketChunkResult : uint8_t {
+        ContinueFusing = 0,
+        StopSlice = 1,
+        LeftStage = 2,
+        Fatal = 3,
+    };
+    HouseholdMarketChunkResult advance_household_market_chunk(
+        int64_t &work_done, int32_t &cursor_start, int32_t &cursor_end,
+        bool &building_range_used, bool &cell_range_used, std::string &error,
+        bool yield_enabled, int32_t batch_multiplier, int32_t *chunks_completed,
+        int32_t max_chunks_per_slice, int32_t *phase_fusions,
+        const char **yield_reason,
+        const std::chrono::steady_clock::time_point *slice_start,
+        double slice_budget_ms);
+    bool run_household_market_drain(int64_t &work_done, std::string &error);
+    // Phase-2.4.3.2: StageOps-only fiscal bridge after BUILDING_COMMIT.
+    // Fail-closed on country peer pending (compact yields; StageOps cannot).
+    bool run_fiscal_settlement_drain(std::string &error);
+    // Phase-2.4.4.3: StageOps bounded mid-graph drains (cursor + slice caps).
+    // Compact keeps its own slice loops; these drains never re-enter
+    // run_slice_compact.
+    bool run_building_employment_drain(int64_t &work_done, std::string &error);
+    bool run_building_production_drain(int64_t &work_done, std::string &error);
+    // Phase-2.4.4.4: StageOps drains for early/late graph stages that were still
+    // single-slice in dispatch (Host advances stage_index once per pulse).
+    bool run_ledger_apply_drain(int64_t &work_done, std::string &error);
+    bool run_government_research_drain(int64_t &work_done, std::string &error);
+    bool run_structural_commit_drain(int64_t &work_done, std::string &error);
     void rebuild_family_indices(bool rebuild_derived = true);
     void rebuild_family_industry_metrics();
     void rebuild_family_owned_output_csr();

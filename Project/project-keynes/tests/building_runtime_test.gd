@@ -484,7 +484,7 @@ func _run() -> void:
 	_expect("building PKCN save completes", bool(ext.end_country_save().get("ok", false)))
 	var chunks: Array[PackedByteArray] = []
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
-	_expect("building v50 save begins", bool(save_begin.get("ok", false)) and int(save_begin.get("schema_version", 0)) == 50)
+	_expect("building v52 save begins", bool(save_begin.get("ok", false)) and int(save_begin.get("schema_version", 0)) == 52)
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty(): break
@@ -645,6 +645,32 @@ func _test_construction_rebuild_preserves_employee_fill(
 	var cohort_employee_fill := 0
 	for filled in pop.employee_employed_by_cohort as PackedInt64Array:
 		cohort_employee_fill += int(filled)
+	if int((after.building_counts_by_type as PackedInt64Array)[mine_id]) != 2 or \
+			after_fill != 16 or cohort_employee_fill != after_fill or \
+			after_required <= after_fill:
+		print("[employment-probe] report=", report)
+		print("[employment-probe] building counts=", after.building_counts_by_type,
+			" filled_owner=", after.filled_owner,
+			" owner_required=", after.owner_required,
+			" owner_capacity=", after.owner_capacity,
+			" employee_required=", after.employee_required,
+			" employee_filled=", after.employee_filled,
+			" employee_contract=", after.employee_contract_wages_per_day,
+			" employee_expected=", after.employee_expected_wages_per_day,
+			" employee_living=", after.employee_role_living_cost_per_day,
+			" employee_forecast=", after.employee_forecast_pay_ratio_q16,
+			" opportunity_owner=", after.opportunity_owner_income_per_day,
+			" opportunity_disposable=", after.opportunity_disposable_survival_power_per_day,
+			" planned_utilization_q16=", after.planned_utilization_q16,
+			" operating_state=", after.operating_state)
+		print("[employment-probe] cohort signatures=", pop.signature_ids,
+			" population=", pop.population,
+			" owner_employed=", pop.owner_employed_by_cohort,
+			" employee_employed=", pop.employee_employed_by_cohort,
+			" unemployed=", pop.unemployed_by_cohort)
+		print("[employment-probe] signature keys=", catalog.signature_keys,
+			" owner_sig=", industrialist_sig, " miner_sig=", miner_sig,
+			" manager_sig=", manager_sig, " merchant_sig=", merchant_sig)
 	_expect("construction rebuild preserves incumbent employee fill",
 		int((after.building_counts_by_type as PackedInt64Array)[mine_id]) == 2 and
 		after_fill == 16 and cohort_employee_fill == after_fill and
@@ -790,6 +816,26 @@ func _test_owner_positions_are_independent_of_utilization(
 		if group >= 0 and buildings.has("opportunity_in_kind_retail_value") else 0
 	var filled_owner := int((buildings.filled_owner as PackedInt64Array)[group]) \
 		if group >= 0 else 0
+	if economic_owner_pool <= 0 or projected_income != economic_owner_pool / period_days:
+		print("[owner-position-probe] ", {
+			"group": group,
+			"period_days": period_days,
+			"last_expected_revenue": int((buildings.last_expected_revenue as PackedInt64Array)[group]) if group >= 0 else -1,
+			"last_in_kind_livelihood_value": int((buildings.last_in_kind_livelihood_value as PackedInt64Array)[group]) if group >= 0 else -1,
+			"projected_owner_income_per_day": projected_income,
+			"opportunity_owner_income_per_day": opportunity_income,
+			"opportunity_in_kind_retail_value": opportunity_in_kind,
+			"last_revenue": int((buildings.last_revenue as PackedInt64Array)[group]) if group >= 0 else -1,
+			"last_input_cost": int((buildings.last_input_cost as PackedInt64Array)[group]) if group >= 0 else -1,
+			"last_maintenance_cost": int((buildings.last_maintenance_cost as PackedInt64Array)[group]) if group >= 0 else -1,
+			"last_wages_paid": int((buildings.last_wages_paid as PackedInt64Array)[group]) if group >= 0 else -1,
+			"last_wages_due": int((buildings.last_wages_due as PackedInt64Array)[group]) if group >= 0 else -1,
+			"owner_livelihood_required": int((buildings.get("owner_livelihood_required", PackedInt64Array([-1])) as PackedInt64Array)[group]) if group >= 0 and buildings.has("owner_livelihood_required") else -1,
+			"observed_capacity_days_q16": int((buildings.observed_capacity_days_q16 as PackedInt64Array)[group]) if group >= 0 and buildings.has("observed_capacity_days_q16") else -1,
+			"filled_owner": filled_owner,
+			"owner_capacity": owner_capacity,
+			"utilization": utilization,
+		})
 	_expect("ACTIVE owner positions stay at physical capacity while output scales",
 		group >= 0 and utilization > 0 and utilization < 65536 and
 		owner_required == owner_capacity and planned_equivalent < owner_capacity and
@@ -4839,7 +4885,14 @@ func _handle_for_profession(snapshot: Dictionary, signature: int) -> int:
 
 func _good_value(snapshot: Dictionary, column: String, good_id: String) -> int:
 	var index := (snapshot.good_ids as PackedStringArray).find(good_id)
-	return int((snapshot[column] as PackedInt64Array)[index]) if index >= 0 else 0
+	if index < 0 or not snapshot.has(column):
+		return 0
+	var values: Variant = snapshot[column]
+	if values is PackedInt64Array:
+		return int((values as PackedInt64Array)[index])
+	if values is PackedInt32Array:
+		return int((values as PackedInt32Array)[index])
+	return 0
 
 func _good_i32_value(snapshot: Dictionary, column: String, good_id: String) -> int:
 	var index := (snapshot.good_ids as PackedStringArray).find(good_id)

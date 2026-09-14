@@ -66,6 +66,26 @@ struct NativeSliceResult {
     uint32_t flags = 0;
 };
 
+// Immutable identity for the MapData -> Economy input workset. The fields
+// are generation-only metadata; captured arrays remain native-owned.
+struct EconomyInputGeneration {
+    int64_t sample_day = -1;
+    uint64_t epoch_id = 0;
+    uint64_t map_generation = 0;
+    uint64_t building_generation = 0;
+    uint64_t country_generation = 0;
+    uint64_t resource_generation = 0;
+
+    bool operator==(const EconomyInputGeneration &other) const noexcept {
+        return sample_day == other.sample_day &&
+               epoch_id == other.epoch_id &&
+               map_generation == other.map_generation &&
+               building_generation == other.building_generation &&
+               country_generation == other.country_generation &&
+               resource_generation == other.resource_generation;
+    }
+};
+
 class DCWorldExt : public godot::RefCounted {
     GDCLASS(DCWorldExt, godot::RefCounted);
 
@@ -380,6 +400,7 @@ public:
     bool runtime_ideology_pod_self_test() const;
     bool runtime_events_authority_self_test() const;
     bool runtime_economy_pod_self_test() const;
+    godot::Dictionary switch_economy_authority(const godot::String &mode);
     godot::Dictionary runtime_economy_stage_order_contract_test() const;
     bool is_native_daily_visual_commit_pending() const;
     void complete_native_daily_visual_commit();
@@ -638,6 +659,10 @@ public:
     // Does not run economy mutation stages. Safe to call when ECONOMY is
     // worker-authoritative so compact slices can start_epoch without fatal.
     godot::Dictionary capture_economy_day_inputs(int64_t day_index);
+    // Generation-aware input boundary. The day-only entry point above remains
+    // available for existing callers and delegates with an empty generation.
+    godot::Dictionary begin_or_reuse_economy_input_epoch(
+        int64_t day_index, const godot::Dictionary &generation);
     bool economy_should_run(int64_t day_index) const;
     bool economy_deadline_critical(int64_t day_index) const;
     godot::PackedInt32Array get_economy_live_cells();
@@ -2618,6 +2643,7 @@ protected:
 private:
     godot::Dictionary run_economy_slice_internal(const godot::Dictionary &ctx,
                                                   bool compact);
+    void invalidate_economy_input_capture_cache(bool force_full);
     // ---- diag log toggle (Fix #11 second pass, 2026-06-16) ----
     bool _diag_logs_enabled = true;
 
@@ -3038,8 +3064,10 @@ private:
     // Frozen economy input capture is immutable for a sample day.  Reuse the
     // boundary report across compact slices instead of rebuilding bridge
     // dictionaries and rescanning MapData on every slice.
-    int64_t                                  _economy_captured_day = -1;
+    EconomyInputGeneration                   _economy_capture_generation;
+    bool                                     _economy_capture_generation_valid = false;
     bool                                     _economy_capture_cached = false;
+    bool                                     _economy_capture_force_full = true;
     uint64_t                                 _economy_capture_count = 0;
     uint64_t                                 _economy_capture_reuse_count = 0;
     godot::Dictionary                        _economy_capture_cached_report;

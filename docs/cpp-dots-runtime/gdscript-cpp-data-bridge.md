@@ -5,17 +5,25 @@
 Production ACTIVE mask is `0xB7E` (includes ECONOMY). Main-thread
 `economy_should_run` is suppressed when the worker owns ECONOMY **and**
 `attach_economy_production_runtime` succeeded; otherwise fail-open to sync.
-When ECONOMY is worker-authoritative, the main thread still calls
-`capture_economy_day_inputs(day)` (and a newer host sample day when needed)
-to freeze MapData/DataCore environment + building context into the shared
-`NativeEconomyRuntime`; worker mutation advances only via
+`economy_execution_mode` (default `ACTIVE_ONLY`) controls whether SHADOW
+StageOps run beside compact-slice production: `ACTIVE_ONLY` keeps
+`economy_shadow_stage_invocations=0`; `ACTIVE_WITH_PARITY` enables the probe
+and caches stage results by `(sample_day, input_generation)`; `LEGACY_ONLY`
+strips ECONOMY from the requested worker mask and leaves sync
+`ECONOMY_GRAPH` as the writer. When ECONOMY is worker-authoritative, the main
+thread still calls `capture_economy_day_inputs(day)` (and a newer host sample
+day when needed) to freeze MapData/DataCore environment + building context into
+the shared `NativeEconomyRuntime`; worker mutation advances only via
 `worker_run_compact_slice`. Missing same-day capture yields soft
 `pending_input` (not ledger fatal) until the next main-thread pulse captures.
 Worker production uses `worker_run_compact_slice` (Dictionary ctx captured on
 the same formula owner). SHADOW StageOps stay Godot-free hash parity.
 `submit_economy_pod_commands` / `poll_economy_pod_receipts` are POD ACK
 scaffolding; production opcodes still enter via `submit_economy_commands`.
-PKSR ECP1 is orthogonal to PKEC business SoA.
+PKSR ECP1 ABI4 carries a committed cohort/market migration mirror with its own
+generation and hash. It remains orthogonal to the complete PKEC business SoA;
+only fully committed epochs are imported and incomplete slices are never
+published through this bridge.
 
 ## Background worker POD boundary (ABI v3)
 

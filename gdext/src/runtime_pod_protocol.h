@@ -1263,6 +1263,31 @@ struct RuntimeThreadReport {
     uint32_t economy_pod_pending_inbox = 0;
     uint32_t economy_pod_operation_gate_mask = 0;
     uint32_t economy_pod_parity_ready_mask = 0;
+    // Phase-2.1 mirror completeness (EconomyPodMirrorFeature bits).
+    uint32_t economy_pod_mirror_feature_mask = 0;
+    uint32_t economy_pod_committed_ledger_abi = 0;
+    bool economy_pod_active_ready = false;
+    // Phase-1 Economy execution mode + SHADOW StageOps accounting.
+    uint32_t economy_execution_mode = 0; // EconomyExecutionMode ordinal
+    bool economy_shadow_probe_enabled = false;
+    uint64_t economy_shadow_stage_invocations = 0;
+    uint64_t economy_shadow_stage_cache_hits = 0;
+    // Phase-2.4.1: production writer observability. Writer remains
+    // compact_slice until StageOps mutate becomes the production loop.
+    bool economy_stage_ops_mutate = false;
+    bool economy_auto_pod_active = false;
+    char economy_production_writer[32]{};
+    // Phase-2.4.2: requested vs effective writer (effective stays compact_slice
+    // while stage_ops production is gated not-ready).
+    char economy_production_writer_requested[32]{};
+    char economy_production_writer_effective[32]{};
+    // Phase-2.4.4.1: StageOps writer readiness checklist (see
+    // ECONOMY_STAGE_OPS_READY_*). PRELUDE bit means API exists; runtime may
+    // still need a successful drain before plan_epoch.
+    uint32_t economy_stage_ops_readiness_mask = 0;
+    bool economy_stage_ops_prelude_ready = false;
+    bool economy_stage_ops_soak_experiment = false;
+    bool economy_stage_ops_soak_parity_ok = false;
     uint32_t economy_replay_completed_stage_mask = 0;
     uint32_t economy_replay_stage_cursor = 0;
     uint64_t economy_replay_input_hash = 0;

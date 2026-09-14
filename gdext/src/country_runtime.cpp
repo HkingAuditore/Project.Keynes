@@ -6019,7 +6019,9 @@ Dictionary NativeCountryRuntime::commit_economy_asset_transaction(
     transaction.committed_cash = commit_cash;
     transaction.committed_quantity = moves_goods
         ? transaction.prepared_quantity
-        : (transaction.operation == ECONOMY_ASSET_FISCAL_RESERVE || credits_country
+        : (transaction.operation == ECONOMY_ASSET_FISCAL_RESERVE ||
+            transaction.operation == ECONOMY_ASSET_CASH_TO_COHORT ||
+            credits_country
             ? commit_cash : transaction.requested_goods_total);
     transaction.committed_goods_total = moves_goods
         ? transaction.prepared_quantity : transaction.requested_goods_total;

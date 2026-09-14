@@ -63,6 +63,11 @@ extends Resource
 ## exact. OFF and PROBE stay available as exact rollback/baseline paths.
 @export_enum("EXACT", "BALANCED", "FAST", "CUSTOM") var economy_accuracy_preset: String = "BALANCED"
 @export_enum("OFF", "PROBE", "ACTIVE") var economy_approximation_runtime_mode: String = "ACTIVE"
+## Production Economy execution policy (Phase-1 ACTIVE/SHADOW dedup).
+## ACTIVE_ONLY (default): worker compact-slice production; SHADOW StageOps = 0.
+## ACTIVE_WITH_PARITY: production + explicit SHADOW StageOps hash probe.
+## LEGACY_ONLY: main-thread sync ECONOMY_GRAPH only; no worker ECONOMY grant.
+@export_enum("ACTIVE_ONLY", "ACTIVE_WITH_PARITY", "LEGACY_ONLY") var economy_execution_mode: String = "ACTIVE_ONLY"
 @export_range(0, 65536, 1) var economy_custom_max_regret_q16: int = 1966
 @export_range(0, 65536, 1) var economy_custom_household_tail_share_q16: int = 655
 @export_range(1, 8, 1) var economy_custom_candidate_top_k: int = 4
@@ -352,6 +357,7 @@ func to_native_profile() -> Dictionary:
 			"economy_closing_audit_mode": economy_closing_audit_mode,
 		"economy_accuracy_preset": economy_accuracy_preset,
 		"economy_approximation_runtime_mode": economy_approximation_runtime_mode,
+		"economy_execution_mode": economy_execution_mode,
 		"economy_custom_max_regret_q16": economy_custom_max_regret_q16,
 		"economy_custom_household_tail_share_q16":
 			economy_custom_household_tail_share_q16,

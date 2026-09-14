@@ -420,15 +420,15 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
 	if not bool(save_begin.get("ok", false)):
 		print("  PKEC begin failed=", save_begin)
-	_expect("v50 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 50)
+	_expect("v52 save begins at committed boundary", bool(save_begin.get("ok", false)) and int(save_begin.schema_version) == 52)
 	var chunks: Array[PackedByteArray] = []
 	while true:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
 		if chunk.is_empty():
 			break
 		chunks.append(chunk)
-	_expect("v50 save emits chunks", chunks.size() >= 12)
-	_expect("v50 save completes", bool(ext.end_economy_save().get("ok", false)))
+	_expect("v52 save emits chunks", chunks.size() >= 12)
+	_expect("v52 save completes", bool(ext.end_economy_save().get("ok", false)))
 	var legacy_target: Object = _new_ext(1, 0.1)
 	legacy_target.configure_economy(catalog, profile, 1, 42)
 	legacy_target.begin_economy_restore()
@@ -461,7 +461,36 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	_expect("restore completes", bool(restored.end_economy_restore().get("ok", false)))
 	var source_hash: int = ext.get_economy_state_hash()
 	var restored_hash: int = restored.get_economy_state_hash()
-	_expect("v29 stream restore hash exact", source_hash == restored_hash)
+	if source_hash != restored_hash:
+		print("  v52 source hash=%d restored hash=%d" % [source_hash, restored_hash])
+		print("  v52 source country hash=%d restored country hash=%d" % [
+			int(ext.get_country_state_hash()), int(restored.get_country_state_hash())])
+		print("  v52 source live country generation=%d restored live country generation=%d" % [
+			int(ext.get_country_report().get("generation", -1)),
+			int(restored.get_country_report().get("generation", -1))])
+		var source_report: Dictionary = ext.get_economy_report()
+		var restored_report: Dictionary = restored.get_economy_report()
+		print("  v52 source day=%d generation=%d country_generation=%d" % [
+			int(source_report.get("commit_day", -1)),
+			int(source_report.get("committed_generation", -1)),
+			int(source_report.get("country_generation", -1))])
+		print("  v52 restored day=%d generation=%d country_generation=%d" % [
+			int(restored_report.get("commit_day", -1)),
+			int(restored_report.get("committed_generation", -1)),
+			int(restored_report.get("country_generation", -1))])
+		var resave_begin: Dictionary = restored.begin_economy_save(65536)
+		if bool(resave_begin.get("ok", false)):
+			var resaved_chunks: Array[PackedByteArray] = []
+			while true:
+				var resaved_chunk: PackedByteArray = restored.read_economy_save_chunk(65536)
+				if resaved_chunk.is_empty():
+					break
+				resaved_chunks.append(resaved_chunk)
+			restored.end_economy_save()
+			_print_persistence_chunk_differences(chunks, resaved_chunks)
+		else:
+			print("  v52 restored resave failed=", resave_begin)
+	_expect("v52 stream restore hash exact", source_hash == restored_hash)
 
 func _test_economy_event_trace(compiled: Dictionary) -> void:
 	var ext: Object = _new_ext(1, 0.2)
@@ -804,11 +833,25 @@ func _test_cycle_deadline_catchup(compiled: Dictionary) -> void:
 		funds.append(1000000)
 	ext.bootstrap_economy({"cell_indices": cells, "signature_ids": signatures,
 		"population": populations, "funds": funds}, {})
-	var day0: Dictionary = ext.run_economy_slice({"day_index": 0, "tick_index": 0})
+	var day0_slice := 0
+	var day0: Dictionary = ext.run_economy_slice({"day_index": 0, "tick_index": day0_slice})
+	while not bool(day0.get("done", false)) and not bool(day0.get("fatal", false)) and \
+			not bool(day0.get("commit_due", false)) and \
+			String(day0.get("stage", "")) == "epoch_begin" and day0_slice < 127:
+		day0_slice += 1
+		day0 = ext.run_economy_slice({"day_index": 0, "tick_index": day0_slice})
+	if bool(day0.done) or not bool(day0.commit_due) or bool(day0.fatal) or \
+			int(day0.due_cells) != 2:
+		print("  catchup first slice done=%s commit_due=%s fatal=%s due=%d processed=%d deferred=%d stage=%s substage=%s" % [
+			str(day0.get("done", false)), str(day0.get("commit_due", false)),
+			str(day0.get("fatal", false)), int(day0.get("due_cells", -1)),
+			int(day0.get("processed_due_cells", -1)),
+			int(day0.get("deferred_cells", -1)), String(day0.get("stage", "")),
+			String(day0.get("executed_substage", ""))])
 	_expect("day zero phase enters bounded catchup without a fatal barrier",
 		not bool(day0.done) and bool(day0.commit_due) and not bool(day0.fatal) and
 		int(day0.due_cells) == 2)
-	for slice in range(1, 128):
+	for slice in range(day0_slice + 1, 128):
 		day0 = ext.run_economy_slice({"day_index": 0, "tick_index": slice})
 		if bool(day0.done):
 			break
@@ -1041,6 +1084,39 @@ func _merchant_funds(snapshot: Dictionary) -> int:
 		if flags[i] != 0:
 			total += funds[i]
 	return total
+
+func _print_persistence_chunk_differences(
+		source: Array[PackedByteArray], restored: Array[PackedByteArray]) -> void:
+	print("  v52 source chunks=%d restored chunks=%d" % [source.size(), restored.size()])
+	var difference_count := 0
+	for chunk_index in range(mini(source.size(), restored.size())):
+		var source_chunk: PackedByteArray = source[chunk_index]
+		var restored_chunk: PackedByteArray = restored[chunk_index]
+		if source_chunk == restored_chunk:
+			continue
+		var first_difference := _first_byte_difference(source_chunk, restored_chunk)
+		var source_section := _persistence_chunk_section(source_chunk)
+		var restored_section := _persistence_chunk_section(restored_chunk)
+		var source_byte := int(source_chunk[first_difference]) \
+			if first_difference >= 0 and first_difference < source_chunk.size() else -1
+		var restored_byte := int(restored_chunk[first_difference]) \
+			if first_difference >= 0 and first_difference < restored_chunk.size() else -1
+		print("  v52 chunk[%d] section=%d/%d bytes=%d/%d first_diff=%d value=%d/%d" % [
+			chunk_index, source_section, restored_section,
+			source_chunk.size(), restored_chunk.size(), first_difference,
+			source_byte, restored_byte])
+		difference_count += 1
+		if difference_count >= 8:
+			break
+
+func _persistence_chunk_section(chunk: PackedByteArray) -> int:
+	return int(chunk[6]) | (int(chunk[7]) << 8) if chunk.size() >= 8 else -1
+
+func _first_byte_difference(first: PackedByteArray, second: PackedByteArray) -> int:
+	for byte_index in range(mini(first.size(), second.size())):
+		if first[byte_index] != second[byte_index]:
+			return byte_index
+	return mini(first.size(), second.size()) if first.size() != second.size() else -1
 
 func _sum_i64(values: PackedInt64Array) -> int:
 	var total := 0

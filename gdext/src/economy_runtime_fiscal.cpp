@@ -1471,4 +1471,43 @@ bool NativeEconomyRuntime::advance_fiscal_settlement(std::string &error) {
     return true;
 }
 
+bool NativeEconomyRuntime::run_fiscal_settlement_drain(std::string &error) {
+    error.clear();
+    if (!_bootstrapped || _fatal) {
+        return true;
+    }
+    if (_stage != Stage::FISCAL_SETTLEMENT) {
+        return true;
+    }
+    _executed_stage = Stage::FISCAL_SETTLEMENT;
+    constexpr int kMaxSteps = 1 << 16;
+    for (int step = 0; step < kMaxSteps && _stage == Stage::FISCAL_SETTLEMENT &&
+                       !_fatal;
+         ++step) {
+        _executed_substage = _fiscal_settlement_continuation.active
+                                 ? "country_transactions"
+                                 : "finalize";
+        if (!advance_fiscal_settlement(error)) {
+            fail(error.empty() ? "fiscal_settlement_failed" : error);
+            return false;
+        }
+        if (_fiscal_settlement_continuation.active) {
+            // Compact-slice yields here for peer results. StageOps cannot park
+            // mid-graph-stage; fail closed rather than skip settlement.
+            error = "fiscal_settlement_peer_pending";
+            fail(error);
+            return false;
+        }
+        _stage = Stage::FAMILY_COMMIT;
+        return true;
+    }
+    if (_fatal) {
+        error = error.empty() ? "fiscal_settlement_fatal" : error;
+        return false;
+    }
+    error = "fiscal_settlement_drain_exhausted";
+    fail(error);
+    return false;
+}
+
 } // namespace pk

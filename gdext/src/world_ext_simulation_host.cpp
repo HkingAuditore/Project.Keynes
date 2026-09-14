@@ -138,6 +138,35 @@ static Dictionary runtime_report_to_dictionary(const RuntimeThreadReport &report
     out["economy_pod_pending_inbox"] = static_cast<int>(report.economy_pod_pending_inbox);
     out["economy_pod_operation_gate_mask"] = static_cast<int>(report.economy_pod_operation_gate_mask);
     out["economy_pod_parity_ready_mask"] = static_cast<int>(report.economy_pod_parity_ready_mask);
+    out["economy_pod_mirror_feature_mask"] =
+        static_cast<int>(report.economy_pod_mirror_feature_mask);
+    out["economy_pod_committed_ledger_abi"] =
+        static_cast<int>(report.economy_pod_committed_ledger_abi);
+    out["economy_pod_active_ready"] = report.economy_pod_active_ready;
+    out["economy_execution_mode"] = static_cast<int>(report.economy_execution_mode);
+    out["economy_execution_mode_name"] = String(
+        pk::economy_execution_mode_name(
+            static_cast<pk::EconomyExecutionMode>(report.economy_execution_mode)));
+    out["economy_shadow_probe_enabled"] = report.economy_shadow_probe_enabled;
+    out["economy_shadow_stage_invocations"] =
+        static_cast<int64_t>(report.economy_shadow_stage_invocations);
+    out["economy_shadow_stage_cache_hits"] =
+        static_cast<int64_t>(report.economy_shadow_stage_cache_hits);
+    out["economy_stage_ops_mutate"] = report.economy_stage_ops_mutate;
+    out["economy_auto_pod_active"] = report.economy_auto_pod_active;
+    out["economy_production_writer"] = String(report.economy_production_writer);
+    out["economy_production_writer_requested"] =
+        String(report.economy_production_writer_requested);
+    out["economy_production_writer_effective"] =
+        String(report.economy_production_writer_effective);
+    out["economy_stage_ops_readiness_mask"] =
+        static_cast<int64_t>(report.economy_stage_ops_readiness_mask);
+    out["economy_stage_ops_prelude_ready"] =
+        report.economy_stage_ops_prelude_ready;
+    out["economy_stage_ops_soak_experiment"] =
+        report.economy_stage_ops_soak_experiment;
+    out["economy_stage_ops_soak_parity_ok"] =
+        report.economy_stage_ops_soak_parity_ok;
     out["economy_replay_completed_stage_mask"] = static_cast<int64_t>(report.economy_replay_completed_stage_mask);
     out["economy_replay_stage_cursor"] = static_cast<int>(report.economy_replay_stage_cursor);
     out["economy_replay_input_hash"] = static_cast<int64_t>(report.economy_replay_input_hash);
@@ -364,6 +393,89 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
     const bool paused = static_cast<bool>(config.get("paused", false));
     const bool events_probe_enabled = static_cast<bool>(
         config.get("events_probe_enabled", false));
+    EconomyExecutionMode economy_execution_mode =
+        EconomyExecutionMode::ACTIVE_ONLY;
+    bool economy_stage_ops_mutate = false;
+    bool economy_auto_pod_active = false;
+    bool economy_stage_ops_soak_experiment = false;
+    EconomyProductionWriter economy_production_writer =
+        EconomyProductionWriter::COMPACT_SLICE;
+    if (config.has("economy_stage_ops_mutate")) {
+        economy_stage_ops_mutate =
+            static_cast<bool>(config.get("economy_stage_ops_mutate", false));
+    }
+    if (config.has("economy_auto_pod_active")) {
+        economy_auto_pod_active =
+            static_cast<bool>(config.get("economy_auto_pod_active", false));
+    }
+    if (config.has("economy_stage_ops_soak_experiment")) {
+        economy_stage_ops_soak_experiment = static_cast<bool>(
+            config.get("economy_stage_ops_soak_experiment", false));
+    }
+    if (config.has("economy_production_writer")) {
+        const Variant writer_var =
+            config.get("economy_production_writer", "compact_slice");
+        if (writer_var.get_type() == Variant::INT ||
+            writer_var.get_type() == Variant::FLOAT) {
+            const int64_t ordinal = static_cast<int64_t>(writer_var);
+            if (ordinal < 0 || ordinal > 1) {
+                out["ok"] = false;
+                out["pending"] = false;
+                out["code"] = "runtime_worker_config_invalid";
+                out["message"] = "economy_production_writer_out_of_range";
+                out["thread_report"] =
+                    runtime_report_to_dictionary(_runtime_host->report());
+                return out;
+            }
+            economy_production_writer =
+                static_cast<EconomyProductionWriter>(
+                    static_cast<uint32_t>(ordinal));
+        } else {
+            const String writer_text = String(writer_var);
+            CharString utf8 = writer_text.utf8();
+            if (!parse_economy_production_writer(utf8.get_data(),
+                                                 economy_production_writer)) {
+                out["ok"] = false;
+                out["pending"] = false;
+                out["code"] = "runtime_worker_config_invalid";
+                out["message"] = "economy_production_writer_invalid";
+                out["thread_report"] =
+                    runtime_report_to_dictionary(_runtime_host->report());
+                return out;
+            }
+        }
+    }
+    if (config.has("economy_execution_mode")) {
+        const Variant mode_var = config.get("economy_execution_mode", "ACTIVE_ONLY");
+        if (mode_var.get_type() == Variant::INT ||
+            mode_var.get_type() == Variant::FLOAT) {
+            const int64_t ordinal = static_cast<int64_t>(mode_var);
+            if (ordinal < 0 || ordinal > 2) {
+                out["ok"] = false;
+                out["pending"] = false;
+                out["code"] = "runtime_worker_config_invalid";
+                out["message"] = "economy_execution_mode_out_of_range";
+                out["thread_report"] =
+                    runtime_report_to_dictionary(_runtime_host->report());
+                return out;
+            }
+            economy_execution_mode =
+                static_cast<EconomyExecutionMode>(static_cast<uint32_t>(ordinal));
+        } else {
+            const String mode_text = String(mode_var);
+            CharString utf8 = mode_text.utf8();
+            if (!parse_economy_execution_mode(utf8.get_data(),
+                                              economy_execution_mode)) {
+                out["ok"] = false;
+                out["pending"] = false;
+                out["code"] = "runtime_worker_config_invalid";
+                out["message"] = "economy_execution_mode_invalid";
+                out["thread_report"] =
+                    runtime_report_to_dictionary(_runtime_host->report());
+                return out;
+            }
+        }
+    }
     if (day < 0 || !std::isfinite(requested_speed)) {
         out["ok"] = false;
         out["pending"] = false;
@@ -434,16 +546,88 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
         return out;
     }
     _runtime_host->set_events_probe_enabled(events_probe_enabled);
+    _runtime_host->set_economy_execution_mode(economy_execution_mode);
+    if (economy_execution_mode == EconomyExecutionMode::LEGACY_ONLY) {
+        // Keep sync ECONOMY_GRAPH as the sole writer; do not grant worker ECONOMY.
+        requested_authority_mask &=
+            ~runtime_domain_mask(RuntimeDomainId::ECONOMY);
+        requested_authority_mask |=
+            runtime_domain_mask(RuntimeDomainId::COMMIT);
+    }
+    // Phase-2.4.2 fail-closed gates for STAGE_OPS production writer.
+    if (economy_production_writer == EconomyProductionWriter::STAGE_OPS) {
+        if (economy_execution_mode ==
+            EconomyExecutionMode::ACTIVE_WITH_PARITY) {
+            out["ok"] = false;
+            out["pending"] = false;
+            out["code"] = "runtime_worker_config_invalid";
+            out["message"] = "economy_production_writer_parity_conflict";
+            out["thread_report"] =
+                runtime_report_to_dictionary(_runtime_host->report());
+            return out;
+        }
+        if (!economy_stage_ops_mutate) {
+            out["ok"] = false;
+            out["pending"] = false;
+            out["code"] = "runtime_worker_config_invalid";
+            out["message"] = "economy_production_writer_requires_mutate";
+            out["thread_report"] =
+                runtime_report_to_dictionary(_runtime_host->report());
+            return out;
+        }
+        // Phase-2.4.4.4: checklist complete (0xF). Opt-in soak experiment (or a
+        // latched soak_parity_ok) may arm STAGE_OPS effective; otherwise refuse.
+        const uint32_t readiness = ECONOMY_STAGE_OPS_READY_PRELUDE |
+                                   ECONOMY_STAGE_OPS_READY_COMMIT_DRAINS |
+                                   ECONOMY_STAGE_OPS_READY_BOUNDED_KERNELS |
+                                   ECONOMY_STAGE_OPS_READY_HOST_LOOP;
+        const uint32_t missing =
+            ECONOMY_STAGE_OPS_READY_REQUIRED_FOR_WRITER & ~readiness;
+        const bool soak_armed =
+            economy_stage_ops_soak_experiment ||
+            _runtime_host->economy_stage_ops_soak_parity_ok();
+        if (!soak_armed) {
+            out["ok"] = false;
+            out["pending"] = false;
+            out["code"] = "runtime_worker_config_invalid";
+            out["message"] = "economy_production_writer_stage_ops_soak_pending";
+            out["economy_stage_ops_readiness_mask"] =
+                static_cast<int64_t>(readiness);
+            out["economy_stage_ops_readiness_missing"] =
+                static_cast<int64_t>(missing);
+            out["economy_stage_ops_soak_experiment"] = false;
+            out["economy_stage_ops_soak_parity_ok"] =
+                _runtime_host->economy_stage_ops_soak_parity_ok();
+            out["thread_report"] =
+                runtime_report_to_dictionary(_runtime_host->report());
+            return out;
+        }
+    }
+    _runtime_host->set_economy_stage_ops_soak_experiment(
+        economy_stage_ops_soak_experiment);
+    _runtime_host->set_economy_production_writer(economy_production_writer);
     if (_economy_runtime != nullptr) {
         auto *economy =
             static_cast<NativeEconomyRuntime *>(_economy_runtime);
         economy->attach_simulation_host(_runtime_host.get());
-        // StageOps always mutate=false: SHADOW POD parity hashes only.
-        // ACTIVE production mutations go through attach_economy_production_runtime
-        // + worker_run_compact_slice on the same formula owner.
+        // Phase-2.4.1: StageOps may be armed with mutate=true via config for
+        // handoff experiments. ACTIVE production still uses compact-slice.
+        // ACTIVE_WITH_PARITY keeps StageOps read-only so the SHADOW probe
+        // cannot double-write beside worker_run_compact_slice.
+        if (economy_execution_mode ==
+                EconomyExecutionMode::ACTIVE_WITH_PARITY &&
+            economy_stage_ops_mutate) {
+            economy_stage_ops_mutate = false;
+        }
+        _runtime_host->set_economy_stage_ops_mutate(economy_stage_ops_mutate);
+        _runtime_host->set_economy_auto_pod_active(economy_auto_pod_active);
         _runtime_host->attach_economy_stage_ops(
-            economy->make_graph_stage_ops(/*mutate=*/false));
-        _runtime_host->attach_economy_production_runtime(economy);
+            economy->make_graph_stage_ops(/*mutate=*/economy_stage_ops_mutate));
+        if (economy_execution_mode != EconomyExecutionMode::LEGACY_ONLY) {
+            _runtime_host->attach_economy_production_runtime(economy);
+        } else {
+            _runtime_host->attach_economy_production_runtime(nullptr);
+        }
     }
     if (!_runtime_host->start(mode, complete, day, speed, paused,
                               requested_authority_mask)) {
@@ -463,6 +647,23 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
     out["pending"] = mode != RuntimeSimulationMode::OFF;
     out["code"] = "ok";
     out["requested_simulation_thread_mode"] = runtime_mode_name(mode);
+    out["economy_execution_mode"] =
+        String(economy_execution_mode_name(economy_execution_mode));
+    out["economy_stage_ops_mutate"] = economy_stage_ops_mutate;
+    out["economy_auto_pod_active"] = economy_auto_pod_active;
+    out["economy_stage_ops_soak_experiment"] =
+        economy_stage_ops_soak_experiment;
+    out["economy_stage_ops_soak_parity_ok"] =
+        _runtime_host->economy_stage_ops_soak_parity_ok();
+    out["economy_production_writer"] = String(
+        economy_production_writer_name(
+            _runtime_host->economy_production_writer_requested()));
+    out["economy_production_writer_requested"] = String(
+        economy_production_writer_name(
+            _runtime_host->economy_production_writer_requested()));
+    out["economy_production_writer_effective"] = String(
+        economy_production_writer_name(
+            _runtime_host->economy_production_writer_effective()));
     out["state"] = runtime_state_name(_runtime_host->state());
     out["thread_report"] = runtime_report_to_dictionary(_runtime_host->report());
     return out;
@@ -2374,6 +2575,42 @@ bool DCWorldExt::runtime_economy_pod_self_test() const {
             godot::String(error.c_str()));
     }
     return ok;
+}
+
+Dictionary DCWorldExt::switch_economy_authority(const String &mode) {
+    Dictionary out;
+    if (!_runtime_host) {
+        out["ok"] = false;
+        out["code"] = "runtime_worker_not_started";
+        return out;
+    }
+    RuntimeEconomyAuthorityMode parsed =
+        RuntimeEconomyAuthorityMode::LEGACY_SYNC;
+    const CharString utf8 = mode.utf8();
+    const char *text = utf8.get_data();
+    if (text == nullptr || text[0] == '\0' ||
+        std::strcmp(text, "LEGACY_SYNC") == 0) {
+        parsed = RuntimeEconomyAuthorityMode::LEGACY_SYNC;
+    } else if (std::strcmp(text, "POD_ACTIVE_WITH_LEGACY_PARITY") == 0) {
+        parsed = RuntimeEconomyAuthorityMode::POD_ACTIVE_WITH_LEGACY_PARITY;
+    } else if (std::strcmp(text, "POD_ACTIVE") == 0) {
+        parsed = RuntimeEconomyAuthorityMode::POD_ACTIVE;
+    } else {
+        out["ok"] = false;
+        out["code"] = "economy_authority_mode_invalid";
+        return out;
+    }
+    std::string error;
+    const bool ok = _runtime_host->switch_economy_authority(parsed, error);
+    out["ok"] = ok;
+    out["code"] = ok ? "ok" : String(error.c_str());
+    out["economy_worker_is_authoritative"] =
+        _runtime_host->economy_worker_is_authoritative();
+    out["economy_legacy_fallback_enabled"] =
+        _runtime_host->economy_legacy_fallback_enabled();
+    out["authority_mode"] = static_cast<int>(
+        _runtime_host->economy_authority_mode());
+    return out;
 }
 
 godot::Dictionary DCWorldExt::runtime_economy_stage_order_contract_test() const {

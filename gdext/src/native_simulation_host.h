@@ -105,16 +105,115 @@ public:
                                       std::string &error);
     void attach_economy_stage_ops(
         std::unique_ptr<EconomyGraphStageOps> ops) noexcept;
-    // Economy StageOps are diagnostics only and are disabled in production to
-    // avoid executing a second economy graph beside the ACTIVE worker path.
+    // Phase-2.4.1: when true, StageOps are attached with mutate=true (armed for
+    // future production handoff). Production ACTIVE still runs compact-slice
+    // unless a later slice replaces that loop.
+    void set_economy_stage_ops_mutate(bool mutate) noexcept {
+        _economy_stage_ops_mutate.store(mutate, std::memory_order_release);
+    }
+    bool economy_stage_ops_mutate() const noexcept {
+        return _economy_stage_ops_mutate.load(std::memory_order_acquire);
+    }
+    // After a complete ledger capture, optionally promote authority to
+    // POD_ACTIVE when pod_active_ready(). Default false.
+    void set_economy_auto_pod_active(bool enabled) noexcept {
+        _economy_auto_pod_active.store(enabled, std::memory_order_release);
+    }
+    bool economy_auto_pod_active() const noexcept {
+        return _economy_auto_pod_active.load(std::memory_order_acquire);
+    }
+    // Phase-2.4.2: production writer selection. STAGE_OPS effective only when
+    // soak experiment or soak_parity_ok is armed (P2.4.4.4); default compact.
+    void set_economy_stage_ops_soak_experiment(bool enabled) noexcept {
+        _economy_stage_ops_soak_experiment.store(enabled,
+                                                 std::memory_order_release);
+    }
+    bool economy_stage_ops_soak_experiment() const noexcept {
+        return _economy_stage_ops_soak_experiment.load(
+            std::memory_order_acquire);
+    }
+    void set_economy_stage_ops_soak_parity_ok(bool ok) noexcept {
+        _economy_stage_ops_soak_parity_ok.store(ok, std::memory_order_release);
+    }
+    bool economy_stage_ops_soak_parity_ok() const noexcept {
+        return _economy_stage_ops_soak_parity_ok.load(
+            std::memory_order_acquire);
+    }
+    void set_economy_production_writer(EconomyProductionWriter writer) noexcept {
+        _economy_production_writer_requested.store(
+            static_cast<uint32_t>(writer), std::memory_order_release);
+        const bool allow_stage_ops =
+            writer == EconomyProductionWriter::STAGE_OPS &&
+            (economy_stage_ops_soak_experiment() ||
+             economy_stage_ops_soak_parity_ok());
+        _economy_production_writer_effective.store(
+            static_cast<uint32_t>(
+                allow_stage_ops ? EconomyProductionWriter::STAGE_OPS
+                                : EconomyProductionWriter::COMPACT_SLICE),
+            std::memory_order_release);
+    }
+    EconomyProductionWriter economy_production_writer_requested() const noexcept {
+        return static_cast<EconomyProductionWriter>(
+            _economy_production_writer_requested.load(std::memory_order_acquire));
+    }
+    EconomyProductionWriter economy_production_writer_effective() const noexcept {
+        return static_cast<EconomyProductionWriter>(
+            _economy_production_writer_effective.load(std::memory_order_acquire));
+    }
+    // Phase-2.4.4.2: one Host pulse of StageOps production orchestration.
+    // Requires mutate StageOps + production runtime. Soft-parks on pending_input.
+    bool worker_run_stage_ops_slice(int64_t day, uint64_t input_generation,
+                                    std::string &error, bool *done = nullptr,
+                                    bool *pending_input = nullptr);
+    // Prefer set_economy_execution_mode(); this remains for probe-only tests.
     void set_economy_shadow_probe_enabled(bool enabled) {
         _economy_shadow_probe_enabled.store(enabled, std::memory_order_release);
     }
     bool economy_shadow_probe_enabled() const {
         return _economy_shadow_probe_enabled.load(std::memory_order_acquire);
     }
+    // Phase-1 execution mode. Default ACTIVE_ONLY (SHADOW StageOps = 0).
+    void set_economy_execution_mode(EconomyExecutionMode mode) noexcept;
+    EconomyExecutionMode economy_execution_mode() const noexcept {
+        return static_cast<EconomyExecutionMode>(
+            _economy_execution_mode.load(std::memory_order_acquire));
+    }
+    bool economy_parity_shadow_enabled() const noexcept {
+        return economy_execution_mode() ==
+                   EconomyExecutionMode::ACTIVE_WITH_PARITY &&
+               economy_shadow_probe_enabled();
+    }
+    bool economy_worker_production_allowed() const noexcept {
+        return economy_execution_mode() != EconomyExecutionMode::LEGACY_ONLY;
+    }
+    // Phase-2 authority switch. POD_ACTIVE is refused until the committed POD
+    // mirror covers the full production ledger (see economy-ledger-migration-status).
+    bool switch_economy_authority(RuntimeEconomyAuthorityMode mode,
+                                  std::string &error) noexcept;
+    bool economy_worker_is_authoritative() const noexcept {
+        return economy_production_runtime_attached() &&
+               economy_execution_mode() != EconomyExecutionMode::LEGACY_ONLY &&
+               domain_is_worker_authoritative(RuntimeDomainId::ECONOMY);
+    }
+    RuntimeEconomyAuthorityMode economy_authority_mode() const noexcept {
+        return _economy_pod_authority.authority_mode();
+    }
+    bool economy_legacy_fallback_enabled() const noexcept {
+        return economy_execution_mode() == EconomyExecutionMode::LEGACY_ONLY ||
+               _economy_pod_authority.authority_mode() ==
+                   RuntimeEconomyAuthorityMode::LEGACY_SYNC ||
+               _economy_pod_authority.authority_mode() ==
+                   RuntimeEconomyAuthorityMode::POD_ACTIVE_WITH_LEGACY_PARITY;
+    }
+    uint64_t economy_shadow_stage_invocations() const noexcept {
+        return _economy_shadow_stage_invocations.load(std::memory_order_acquire);
+    }
+    uint64_t economy_shadow_stage_cache_hits() const noexcept {
+        return _economy_shadow_stage_cache_hits.load(std::memory_order_acquire);
+    }
     // ACTIVE production: point at the live NativeEconomyRuntime formula owner.
-    // StageOps stay mutate=false (SHADOW POD parity hashes only).
+    // StageOps mutate flag is independent; default attach is mutate=false and
+    // production mutations use worker_run_compact_slice.
     void attach_economy_production_runtime(class NativeEconomyRuntime *rt) noexcept;
     NativeEconomyRuntime *economy_production_runtime() const noexcept {
         return _economy_production_runtime;
@@ -828,7 +927,40 @@ private:
         _economy_stage_reference_present{};
     RuntimeEconomyPodAuthority _economy_pod_authority;
     std::unique_ptr<EconomyGraphStageOps> _economy_stage_ops;
+    // Default ACTIVE_ONLY: production compact-slice, SHADOW StageOps off.
+    std::atomic<uint32_t> _economy_execution_mode{
+        static_cast<uint32_t>(EconomyExecutionMode::ACTIVE_ONLY)};
     std::atomic<bool> _economy_shadow_probe_enabled{false};
+    std::atomic<bool> _economy_stage_ops_mutate{false};
+    std::atomic<bool> _economy_auto_pod_active{false};
+    // Phase-2.4.4.4: opt-in StageOps writer for soak experiments; parity_ok is
+    // latched only after an explicit dual-path soak passes (default false).
+    std::atomic<bool> _economy_stage_ops_soak_experiment{false};
+    std::atomic<bool> _economy_stage_ops_soak_parity_ok{false};
+    std::atomic<uint32_t> _economy_production_writer_requested{
+        static_cast<uint32_t>(EconomyProductionWriter::COMPACT_SLICE)};
+    std::atomic<uint32_t> _economy_production_writer_effective{
+        static_cast<uint32_t>(EconomyProductionWriter::COMPACT_SLICE)};
+    // Phase-2.4.4.2: StageOps Host day-loop continuation (ACTIVE writer path).
+    enum class StageOpsDayPhase : uint8_t {
+        Prelude = 0,
+        PlanEpoch = 1,
+        AdvanceStages = 2,
+        CommitEpoch = 3,
+        Done = 4,
+    };
+    int64_t _stage_ops_day_index = -1;
+    uint64_t _stage_ops_day_input_generation = 0;
+    StageOpsDayPhase _stage_ops_day_phase = StageOpsDayPhase::Done;
+    std::atomic<uint64_t> _economy_shadow_stage_invocations{0};
+    std::atomic<uint64_t> _economy_shadow_stage_cache_hits{0};
+    // Parity stage-result cache keyed by (sample_day, input_generation).
+    // Avoids re-running SHADOW StageOps for the same frozen input workset.
+    int64_t _economy_shadow_cache_day = -1;
+    uint64_t _economy_shadow_cache_input_generation = 0;
+    uint64_t _economy_shadow_cache_country_generation = 0;
+    uint64_t _economy_shadow_cache_catalog_hash = 0;
+    bool _economy_shadow_cache_valid = false;
     std::unique_ptr<EconomyPodCommandExecutor> _economy_pod_command_executor;
     // Non-owning: DCWorldExt's NativeEconomyRuntime, ACTIVE production only.
     NativeEconomyRuntime *_economy_production_runtime = nullptr;
