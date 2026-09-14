@@ -1,4 +1,5 @@
 #include "runtime_economy_pod.h"
+#include "runtime_economy_population_store.h"
 
 #include <algorithm>
 #include <chrono>
@@ -187,6 +188,7 @@ void RuntimeEconomyPodAuthority::reset() noexcept {
     _completed_stage_mask = 0;
     _parity_ready_mask = 0;
     _operation_gate_mask = 0;
+    _authority_mode = RuntimeEconomyAuthorityMode::LEGACY_SYNC;
     _generation = 0;
     _authority_ready = false;
     _summary_population = 0;
@@ -195,7 +197,16 @@ void RuntimeEconomyPodAuthority::reset() noexcept {
     _summary_buildings = 0;
     _summary_cohorts = 0;
     _summary_families = 0;
+    _committed_ledger_state.clear();
     // Keep _stage_ops / _command_executor: Host re-attaches identity separately.
+}
+
+bool RuntimeEconomyPodAuthority::capture_committed_ledger_state(
+        RuntimeEconomyLedgerState &&state) noexcept {
+    if (!state.valid()) return false;
+    state.recompute_hash();
+    _committed_ledger_state = std::move(state);
+    return true;
 }
 
 void RuntimeEconomyPodAuthority::sync_identity(uint64_t session_epoch,
@@ -622,7 +633,7 @@ bool RuntimeEconomyPodAuthority::encode_ecp1(std::vector<uint8_t> &out,
     }
     out.clear();
     append_u32(out, RUNTIME_ECONOMY_POD_SECTION_MARKER);
-    append_u32(out, 2u); // abi2: business summary scalars after header
+    append_u32(out, 3u); // abi3: authority mode after receipt count
     const size_t size_at = out.size();
     append_u32(out, 0u);
     append_u64(out, _committed.session_epoch);
@@ -633,6 +644,7 @@ bool RuntimeEconomyPodAuthority::encode_ecp1(std::vector<uint8_t> &out,
     append_u32(out, _operation_gate_mask);
     append_u32(out, _parity_ready_mask);
     append_u32(out, static_cast<uint32_t>(_terminal_receipts.size()));
+    append_u32(out, static_cast<uint32_t>(_authority_mode));
     append_i64(out, _committed.population_error);
     append_i64(out, _committed.money_error);
     append_i64(out, _committed.goods_error);
@@ -676,13 +688,17 @@ bool RuntimeEconomyPodAuthority::restore_ecp1(const uint8_t *data, size_t size,
     const uint8_t *end = data + size - 8;
     uint32_t marker = 0, abi = 0, payload_size = 0;
     if (!read_u32(p, end, marker) || marker != RUNTIME_ECONOMY_POD_SECTION_MARKER ||
-        !read_u32(p, end, abi) || (abi != 1u && abi != 2u) ||
+        !read_u32(p, end, abi) || (abi != 1u && abi != 2u && abi != 3u) ||
         !read_u32(p, end, payload_size)) {
         error = "economy_pod_ecp1_header_invalid";
         return false;
     }
     uint64_t session = 0, generation = 0, state_hash = 0, day = 0, catalog = 0;
-    uint32_t gate = 0, parity = 0, receipt_count = 0;
+    if (payload_size != static_cast<size_t>(end - p)) {
+        error = "economy_pod_ecp1_payload_size_mismatch";
+        return false;
+    }
+    uint32_t gate = 0, parity = 0, receipt_count = 0, authority_mode = 0;
     if (!read_u64(p, end, session) || !read_u64(p, end, generation) ||
         !read_u64(p, end, state_hash) || !read_u64(p, end, day) ||
         !read_u64(p, end, catalog) || !read_u32(p, end, gate) ||
@@ -690,11 +706,15 @@ bool RuntimeEconomyPodAuthority::restore_ecp1(const uint8_t *data, size_t size,
         error = "economy_pod_ecp1_payload_invalid";
         return false;
     }
+    if (abi >= 3u && !read_u32(p, end, authority_mode)) {
+        error = "economy_pod_ecp1_authority_mode_missing";
+        return false;
+    }
     int64_t pop_err = 0, money_err = 0, goods_err = 0;
     int64_t summary_population = 0, summary_funds = 0;
     int32_t summary_markets = 0, summary_buildings = 0;
     int32_t summary_cohorts = 0, summary_families = 0;
-    if (abi == 2u) {
+    if (abi >= 2u) {
         if (!read_i64(p, end, pop_err) || !read_i64(p, end, money_err) ||
             !read_i64(p, end, goods_err) ||
             !read_i64(p, end, summary_population) ||
@@ -707,7 +727,14 @@ bool RuntimeEconomyPodAuthority::restore_ecp1(const uint8_t *data, size_t size,
             return false;
         }
     }
-    _terminal_receipts.clear();
+    constexpr size_t receipt_wire_size = 24;
+    if (receipt_count != static_cast<size_t>(end - p) / receipt_wire_size ||
+        static_cast<size_t>(end - p) % receipt_wire_size != 0) {
+        error = "economy_pod_ecp1_receipt_size_mismatch";
+        return false;
+    }
+    std::vector<RuntimeEconomyPodReceipt> restored_receipts;
+    restored_receipts.reserve(receipt_count);
     for (uint32_t i = 0; i < receipt_count; ++i) {
         RuntimeEconomyPodReceipt receipt;
         uint32_t opcode = 0, code = 0;
@@ -719,8 +746,9 @@ bool RuntimeEconomyPodAuthority::restore_ecp1(const uint8_t *data, size_t size,
         }
         receipt.opcode = static_cast<int32_t>(opcode);
         receipt.code = static_cast<RuntimeEconomyCommandReceiptCode>(code);
-        _terminal_receipts.push_back(receipt);
+        restored_receipts.push_back(receipt);
     }
+    _terminal_receipts = std::move(restored_receipts);
     _committed = RuntimeEconomyCommittedSnapshot{};
     _committed.session_epoch = session;
     _committed.generation = generation;
@@ -732,6 +760,10 @@ bool RuntimeEconomyPodAuthority::restore_ecp1(const uint8_t *data, size_t size,
     _committed.money_error = money_err;
     _committed.goods_error = goods_err;
     _operation_gate_mask = gate;
+    _authority_mode = abi >= 3u && authority_mode <=
+            static_cast<uint32_t>(RuntimeEconomyAuthorityMode::POD_ACTIVE)
+        ? static_cast<RuntimeEconomyAuthorityMode>(authority_mode)
+        : RuntimeEconomyAuthorityMode::LEGACY_SYNC;
     _parity_ready_mask = parity;
     _generation = generation;
     _input.catalog_hash = catalog;
@@ -744,7 +776,7 @@ bool RuntimeEconomyPodAuthority::restore_ecp1(const uint8_t *data, size_t size,
     _summary_cohorts = summary_cohorts;
     _summary_families = summary_families;
     // Preserve abi2 summaries into the snapshot ring for round-trip observers.
-    if (abi == 2u) {
+    if (abi >= 2u) {
         uint32_t ring_index = 0;
         if (_snapshot_ring.try_begin_write(ring_index)) {
             RuntimeEconomySnapshotPayload &payload =
@@ -770,6 +802,32 @@ bool RuntimeEconomyPodAuthority::restore_ecp1(const uint8_t *data, size_t size,
 
 bool RuntimeEconomyPodAuthority::self_test(std::string &error) {
     error.clear();
+    RuntimeEconomyPopulationStore population;
+    population.clear(2);
+    const int32_t reserved = population.reserve_slot(0, 7, 99);
+    const int32_t slot = population.claim_reserved_slot(reserved, 0, 7, 99);
+    if (slot < 0 || population.active_count != 1 ||
+        population.allocate_slot(0, 7) != slot) {
+        error = "economy_population_reservation_contract_failed";
+        return false;
+    }
+    const uint64_t handle = population.handle_for_slot(slot);
+    int32_t resolved = -1;
+    if (!population.valid_handle(handle, resolved) || resolved != slot) {
+        error = "economy_population_handle_contract_failed";
+        return false;
+    }
+    population.release_slot(slot);
+    population.reclaim_empty_pages(0);
+    const int32_t reused = population.allocate_slot(1, 8);
+    if (reused != slot || population.valid_handle(handle, resolved) ||
+        population.find_signature(0, 7) != -1 ||
+        population.find_signature(1, 8) != reused ||
+        population.satisfaction_dims.size() !=
+            population.active.size() * RuntimeEconomyPopulationStore::SAT_DIM_COUNT) {
+        error = "economy_population_page_reuse_contract_failed";
+        return false;
+    }
     if (!economy_graph_kernels_self_test(error)) return false;
     if (!RuntimeEconomySnapshotRing::self_test()) {
         error = "economy_snapshot_ring_self_test_failed";
@@ -952,6 +1010,9 @@ bool RuntimeEconomyPodAuthority::self_test(std::string &error) {
         return false;
     }
 
+    authority.set_authority_mode(
+        RuntimeEconomyAuthorityMode::POD_ACTIVE_WITH_LEGACY_PARITY);
+    authority.set_business_summary(0, 0, 0, 123, 456, 4, 5, 6, 7);
     std::vector<uint8_t> encoded;
     if (!authority.encode_ecp1(encoded, error) || encoded.size() < 24) {
         if (error.empty()) error = "economy_pod_ecp1_encode_failed";
@@ -960,6 +1021,47 @@ bool RuntimeEconomyPodAuthority::self_test(std::string &error) {
     RuntimeEconomyPodAuthority restored;
     if (!restored.restore_ecp1(encoded.data(), encoded.size(), error))
         return false;
+    if (restored.authority_mode() != authority.authority_mode() ||
+        restored._summary_population != 123 || restored._summary_funds != 456 ||
+        restored._summary_families != 7 ||
+        restored._terminal_receipts.size() != authority._terminal_receipts.size()) {
+        error = "economy_pod_ecp3_roundtrip_mismatch";
+        return false;
+    }
+    // Historical headers end at byte 64. ABI2 adds 56 summary bytes;
+    // ABI3 inserts a four-byte authority mode before those summaries.
+    auto reseal = [](std::vector<uint8_t> &bytes) {
+        const uint32_t payload = static_cast<uint32_t>(bytes.size() - 12);
+        for (size_t i = 0; i < 4; ++i)
+            bytes[8 + i] = static_cast<uint8_t>(payload >> (8 * i));
+        append_u64(bytes, fnv1a(bytes.data(), bytes.size()));
+    };
+    for (uint32_t old_abi = 1; old_abi <= 2; ++old_abi) {
+        std::vector<uint8_t> old_bytes(encoded.begin(), encoded.end() - 8);
+        old_bytes.erase(old_bytes.begin() + 64,
+            old_bytes.begin() + (old_abi == 1 ? 124 : 68));
+        old_bytes[4] = static_cast<uint8_t>(old_abi);
+        reseal(old_bytes);
+        RuntimeEconomyPodAuthority old_restored;
+        if (!old_restored.restore_ecp1(old_bytes.data(), old_bytes.size(), error))
+            return false;
+        if (old_restored.authority_mode() != RuntimeEconomyAuthorityMode::LEGACY_SYNC ||
+            old_restored._summary_population != (old_abi == 2 ? 123 : 0) ||
+            old_restored._terminal_receipts.size() != authority._terminal_receipts.size()) {
+            error = "economy_pod_legacy_restore_mismatch";
+            return false;
+        }
+    }
+    std::vector<uint8_t> malformed(encoded.begin(), encoded.end() - 8);
+    malformed.push_back(0);
+    reseal(malformed);
+    std::string rejected_error;
+    if (restored.restore_ecp1(malformed.data(), malformed.size(), rejected_error) ||
+        restored._summary_population != 123 ||
+        restored._terminal_receipts.size() != authority._terminal_receipts.size()) {
+        error = "economy_pod_failed_restore_mutated_state";
+        return false;
+    }
     return true;
 }
 

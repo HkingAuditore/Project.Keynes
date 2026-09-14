@@ -1,6 +1,7 @@
 #pragma once
 
 #include "economy_graph_kernels.h"
+#include "runtime_economy_state.h"
 #include "runtime_domain_pod.h"
 #include "runtime_pod_protocol.h"
 
@@ -18,6 +19,12 @@ constexpr uint32_t RUNTIME_ECONOMY_INBOX_CAPACITY = 64u;
 constexpr uint32_t RUNTIME_ECONOMY_COMMAND_CAPACITY = 256u;
 constexpr uint32_t RUNTIME_ECONOMY_RECEIPT_CAPACITY = 256u;
 constexpr uint32_t RUNTIME_ECONOMY_POD_SECTION_MARKER = 0x31504345u; // ECP1
+
+enum class RuntimeEconomyAuthorityMode : uint32_t {
+    LEGACY_SYNC = 0,
+    POD_ACTIVE_WITH_LEGACY_PARITY = 1,
+    POD_ACTIVE = 2,
+};
 
 struct RuntimeEconomyWorkerScratch {
     uint32_t stage_index = 0;
@@ -171,6 +178,12 @@ public:
     RuntimeEconomyPodAuthority();
 
     void reset() noexcept;
+    void set_authority_mode(RuntimeEconomyAuthorityMode mode) noexcept {
+        _authority_mode = mode;
+    }
+    RuntimeEconomyAuthorityMode authority_mode() const noexcept {
+        return _authority_mode;
+    }
     void attach_stage_ops(EconomyGraphStageOps *ops) noexcept { _stage_ops = ops; }
     void attach_command_executor(EconomyPodCommandExecutor *executor) noexcept {
         _command_executor = executor;
@@ -245,6 +258,10 @@ public:
         _summary_cohorts = summary_cohorts;
         _summary_families = summary_families;
     }
+    bool capture_committed_ledger_state(RuntimeEconomyLedgerState &&state) noexcept;
+    const RuntimeEconomyLedgerState &committed_ledger_state() const noexcept {
+        return _committed_ledger_state;
+    }
     bool epoch_active() const noexcept { return _scratch.epoch_active; }
     bool authority_ready() const noexcept { return _authority_ready; }
     bool fatal() const noexcept { return _replay.fatal != 0; }
@@ -275,6 +292,8 @@ private:
     uint32_t _completed_stage_mask = 0;
     uint32_t _parity_ready_mask = 0;
     uint32_t _operation_gate_mask = 0;
+    RuntimeEconomyAuthorityMode _authority_mode =
+        RuntimeEconomyAuthorityMode::LEGACY_SYNC;
     uint64_t _generation = 0;
     bool _authority_ready = false;
     int64_t _summary_population = 0;
@@ -283,6 +302,7 @@ private:
     int32_t _summary_buildings = 0;
     int32_t _summary_cohorts = 0;
     int32_t _summary_families = 0;
+    RuntimeEconomyLedgerState _committed_ledger_state;
 
     bool run_bound_stage(RuntimeEconomyGraphStage stage, std::string &error);
     void publish_replay_stage(RuntimeEconomyGraphStage stage, uint64_t work,

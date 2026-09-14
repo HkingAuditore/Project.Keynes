@@ -1591,6 +1591,27 @@ void NativeEconomyRuntime::fill_economy_business_summary(
         static_cast<int64_t>(std::numeric_limits<int32_t>::max())));
 }
 
+void NativeEconomyRuntime::capture_committed_ledger_state(
+        RuntimeEconomyLedgerState &out) const {
+    out.clear();
+    if (_epoch_active || _fatal) return;
+    out.source_state_hash = static_cast<uint64_t>(std::max<int64_t>(0, state_hash()));
+    out.generation = _committed_generation;
+    out.committed_day = _current_day;
+    out.market_count = _market.market_count;
+    out.good_count = _market.good_count;
+    out.cohort_active = _population.active;
+    out.cohort_signature_id = _population.signature_id;
+    out.cohort_population = _population.population;
+    out.cohort_funds = _population.funds;
+    out.cohort_epoch_income = _population.epoch_income;
+    out.cohort_epoch_expense = _population.epoch_expense;
+    out.market_stock = _market.stock;
+    out.market_price = _market.price;
+    out.market_demand_ema = _market.demand_ema;
+    out.recompute_hash();
+}
+
 bool NativeEconomyRuntime::kernel_run_household_market_boundary(
         EconomyStageCursor &cursor, const RuntimeEconomyEpochInput &input,
         EconomyStageResult &result, std::string &error) {
@@ -10703,6 +10724,34 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
         return out;
     }
     if (!service_country_economy_asset_peer(64, error)) {
+        // Country is a separately scheduled unique-writer under the migrated
+        // runtime.  A result can legitimately race the Country boundary (the
+        // origin request is admitted in the Economy slice, prepared by the
+        // next Country slice, and only then consumed here).  The adapter
+        // reports this as a retry/pending error after re-queueing the request;
+        // it is backpressure, not an economy-fatal condition.  Treating it as
+        // fatal leaves the epoch half-open and the next audit observes staged
+        // mints without their committed owner funds (the misleading
+        // money_error seen in the UI).
+        const bool asset_pending =
+            error == "country_economy_asset_host_pending" ||
+            error == "country_economy_asset_results_pending" ||
+            error == "country_economy_asset_rejection_retry_pending" ||
+            error == "country_economy_asset_completion_retry_pending" ||
+            error == "country_economy_fiscal_terminal_retry_pending";
+        if (asset_pending) {
+            _executed_stage = Stage::EPOCH_BEGIN;
+            _executed_substage = "country_asset_peer_pending";
+            out = compact ? compact_report() : report();
+            out["done"] = false;
+            out["pending_input"] = true;
+            out["yield_reason"] = String(error.c_str());
+            out["fatal"] = false;
+            out["fatal_reason"] = "";
+            out["work_done"] = 0;
+            out["elapsed_ms"] = elapsed_ms(slice_start);
+            return out;
+        }
         fail(error.empty() ? "country_economy_fiscal_peer_failed" : error);
         out = compact ? compact_report() : report();
         out["done"] = true;

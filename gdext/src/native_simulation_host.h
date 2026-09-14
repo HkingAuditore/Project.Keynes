@@ -105,6 +105,14 @@ public:
                                       std::string &error);
     void attach_economy_stage_ops(
         std::unique_ptr<EconomyGraphStageOps> ops) noexcept;
+    // Economy StageOps are diagnostics only and are disabled in production to
+    // avoid executing a second economy graph beside the ACTIVE worker path.
+    void set_economy_shadow_probe_enabled(bool enabled) {
+        _economy_shadow_probe_enabled.store(enabled, std::memory_order_release);
+    }
+    bool economy_shadow_probe_enabled() const {
+        return _economy_shadow_probe_enabled.load(std::memory_order_acquire);
+    }
     // ACTIVE production: point at the live NativeEconomyRuntime formula owner.
     // StageOps stay mutate=false (SHADOW POD parity hashes only).
     void attach_economy_production_runtime(class NativeEconomyRuntime *rt) noexcept;
@@ -820,6 +828,7 @@ private:
         _economy_stage_reference_present{};
     RuntimeEconomyPodAuthority _economy_pod_authority;
     std::unique_ptr<EconomyGraphStageOps> _economy_stage_ops;
+    std::atomic<bool> _economy_shadow_probe_enabled{false};
     std::unique_ptr<EconomyPodCommandExecutor> _economy_pod_command_executor;
     // Non-owning: DCWorldExt's NativeEconomyRuntime, ACTIVE production only.
     NativeEconomyRuntime *_economy_production_runtime = nullptr;
