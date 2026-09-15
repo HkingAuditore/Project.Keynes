@@ -338,7 +338,7 @@ bool EconomyCsvRecorder::start(const Config &config, NativeEconomyRuntime &runti
     size_t sampled_buildings = 0;
     for (const int32_t cell : _sample_cells) {
         if (_config.enabled[COHORTS])
-            runtime._population.for_each_in_cell(cell, [&](int32_t) { ++sampled_cohorts; });
+            runtime.population_store().for_each_in_cell(cell, [&](int32_t) { ++sampled_cohorts; });
         if (_config.enabled[BUILDINGS]) {
             if (runtime._building_cell_offsets.size() ==
                 static_cast<size_t>(runtime._cell_count + 1)) {
@@ -358,9 +358,9 @@ bool EconomyCsvRecorder::start(const Config &config, NativeEconomyRuntime &runti
         batch.resources.reserve(_config.enabled[RESOURCES]
             ? sampled_cells * _config.resource_ids.size() : 0);
         batch.market.reserve(_config.enabled[MARKET]
-            ? sampled_cells * static_cast<size_t>(runtime._market.good_count) : 0);
+            ? sampled_cells * static_cast<size_t>(runtime.market_store().good_count) : 0);
         const size_t trade_cells = _config.enabled[MARKET]
-            ? sampled_cells * runtime._market.good_count : 0;
+            ? sampled_cells * runtime.market_store().good_count : 0;
         batch.scratch_trade_inbound.reserve(trade_cells);
         batch.scratch_trade_outbound.reserve(trade_cells);
     }
@@ -402,7 +402,7 @@ int64_t EconomyCsvRecorder::projected_rows(const NativeEconomyRuntime &runtime) 
     int64_t rows = _config.enabled[SUMMARY] ? 1 : 0;
     for (const int32_t cell : _sample_cells) {
         if (_config.enabled[COHORTS]) {
-            runtime._population.for_each_in_cell(cell, [&](int32_t) { ++rows; });
+            runtime.population_store().for_each_in_cell(cell, [&](int32_t) { ++rows; });
         }
         if (_config.enabled[BUILDINGS]) {
             if (runtime._building_cell_offsets.size() == static_cast<size_t>(runtime._cell_count + 1)) {
@@ -422,7 +422,7 @@ int64_t EconomyCsvRecorder::projected_rows(const NativeEconomyRuntime &runtime) 
                     runtime._employment_diagnostics.size());
             }
         }
-        if (_config.enabled[MARKET]) rows += runtime._market.good_count;
+        if (_config.enabled[MARKET]) rows += runtime.market_store().good_count;
     }
     if (_config.enabled[RESOURCES]) {
         rows += static_cast<int64_t>(_sample_cells.size()) *
@@ -615,8 +615,8 @@ bool EconomyCsvRecorder::fill_batch(
         row.epoch_row_id = epoch_row_id; row.epoch_id = runtime._epoch_id; row.day_index = day;
         row.epoch_active = runtime._epoch_active; row.stage = static_cast<int32_t>(runtime._stage);
         row.progress_q16 = runtime.stage_progress_q16(); row.sample_day = runtime._sample_day;
-        row.commit_day = runtime._commit_day; row.cohort_count = runtime._population.active_count;
-        row.market_count = runtime._market.market_count; row.good_count = runtime._market.good_count;
+        row.commit_day = runtime._commit_day; row.cohort_count = runtime.population_store().active_count;
+        row.market_count = runtime.market_store().market_count; row.good_count = runtime.market_store().good_count;
         row.building_type_count = runtime._building_types.size();
         row.building_group_count = runtime._buildings.size();
         row.pending_construction_count = runtime._pending_construction.size();
@@ -861,7 +861,7 @@ bool EconomyCsvRecorder::fill_batch(
     std::vector<int64_t> &inbound = batch.scratch_trade_inbound;
     std::vector<int64_t> &outbound = batch.scratch_trade_outbound;
     if (_config.enabled[MARKET]) {
-        const size_t total = _sample_cells.size() * runtime._market.good_count;
+        const size_t total = _sample_cells.size() * runtime.market_store().good_count;
         inbound.assign(total, 0); outbound.assign(total, 0);
         for (int32_t order = 0; order < runtime._trade_orders.size(); ++order) {
             if (runtime._trade_orders.cargo_delivered[order] != 0) continue;
@@ -876,18 +876,18 @@ bool EconomyCsvRecorder::fill_batch(
                 const int32_t dst_pos = dst >= 0 && dst < runtime._cell_count
                     ? _sample_cell_positions[dst] : -1;
                 if (src_pos >= 0)
-                    outbound[static_cast<size_t>(src_pos) * runtime._market.good_count + good] += qty;
+                    outbound[static_cast<size_t>(src_pos) * runtime.market_store().good_count + good] += qty;
                 if (dst_pos >= 0)
-                    inbound[static_cast<size_t>(dst_pos) * runtime._market.good_count + good] += qty;
+                    inbound[static_cast<size_t>(dst_pos) * runtime.market_store().good_count + good] += qty;
             }
         }
     }
 
-    batch.cohorts.reserve(_config.enabled[COHORTS] ? runtime._population.active_count : 0);
+    batch.cohorts.reserve(_config.enabled[COHORTS] ? runtime.population_store().active_count : 0);
     batch.buildings.reserve(_config.enabled[BUILDINGS]
         ? runtime._buildings.size() + runtime._pending_construction.size() : 0);
     if (_config.enabled[MARKET]) batch.market.reserve(
-        _sample_cells.size() * runtime._market.good_count);
+        _sample_cells.size() * runtime.market_store().good_count);
     if (_config.enabled[RESOURCES]) batch.resources.reserve(
         _sample_cells.size() * resource_arrays.size());
 
@@ -896,18 +896,18 @@ bool EconomyCsvRecorder::fill_batch(
                           _config.q[cell], _config.r[cell], _config.s[cell]};
         if (_config.enabled[COHORTS]) {
             int32_t cohort_index = 0;
-            runtime._population.for_each_in_cell(cell, [&](int32_t slot) {
+            runtime.population_store().for_each_in_cell(cell, [&](int32_t slot) {
                 CohortRow row;
                 row.c = common; row.cohort_index = cohort_index++;
-                row.handle = runtime._population.handle_for_slot(slot);
-                row.signature_id = static_cast<int32_t>(runtime._population.signature_id[slot]);
+                row.handle = runtime.population_store().handle_for_slot(slot);
+                row.signature_id = static_cast<int32_t>(runtime.population_store().signature_id[slot]);
                 const auto &signature = runtime._signatures[row.signature_id];
                 row.profession_id = signature.profession_id; row.ethnicity_id = signature.ethnicity_id;
-                row.population = runtime._population.population[slot];
-                row.funds = runtime._population.funds[slot];
-        row.epoch_income = runtime._population.epoch_income[slot];
-        row.epoch_expense = runtime._population.epoch_expense[slot];
-        row.epoch_in_kind_income = runtime._population.epoch_in_kind_income[slot];
+                row.population = runtime.population_store().population[slot];
+                row.funds = runtime.population_store().funds[slot];
+        row.epoch_income = runtime.population_store().epoch_income[slot];
+        row.epoch_expense = runtime.population_store().epoch_expense[slot];
+        row.epoch_in_kind_income = runtime.population_store().epoch_in_kind_income[slot];
         row.cash_expense_coverage_q16 = row.epoch_expense > 0
             ? runtime.mul_div_sat(row.epoch_income, 65536, row.epoch_expense, runtime._saturation_count) : 65536;
         const int64_t livelihood_income = runtime.saturating_add(
@@ -917,13 +917,13 @@ bool EconomyCsvRecorder::fill_batch(
         row.livelihood_coverage_q16 = livelihood_expense > 0
             ? runtime.mul_div_sat(livelihood_income, 65536, livelihood_expense,
                                   runtime._saturation_count) : 65536;
-                row.income_ema = runtime._population.income_ema[slot];
-                row.satisfaction_q16 = runtime._population.needs_satisfaction[slot];
-                const uint16_t worst = runtime._population.worst_need_id[slot];
+                row.income_ema = runtime.population_store().income_ema[slot];
+                row.satisfaction_q16 = runtime.population_store().needs_satisfaction[slot];
+                const uint16_t worst = runtime.population_store().worst_need_id[slot];
                 row.worst_need_id = worst == std::numeric_limits<uint16_t>::max() ? -1 : worst;
                 row.merchant = runtime.is_merchant_slot(slot);
-                row.owner_employed = runtime._population.owner_employed[slot];
-                row.employee_employed = runtime._population.employee_employed[slot];
+                row.owner_employed = runtime.population_store().owner_employed[slot];
+                row.employee_employed = runtime.population_store().employee_employed[slot];
                 row.unemployed = std::max<int64_t>(0, row.population - row.owner_employed - row.employee_employed);
                 batch.cohorts.push_back(row);
             });
@@ -1105,7 +1105,7 @@ bool EconomyCsvRecorder::fill_batch(
                     row.opportunity_in_kind_retail_value =
                         opportunity.in_kind_retail_value;
                     row.survival_priority = opportunity.survival_priority;
-                    const int32_t market = runtime._market.cell_to_market[cell];
+                    const int32_t market = runtime.market_store().cell_to_market[cell];
                     for (int32_t output = 0; output < type.output_count; ++output) {
                         const int32_t good = runtime._building_outputs[
                             type.output_begin + output].good_id;
@@ -1114,8 +1114,8 @@ bool EconomyCsvRecorder::fill_batch(
                             runtime._survival_food_good_mask[good] != 0) {
                             row.survival_shortage_q16 = std::max<int64_t>(
                                 row.survival_shortage_q16,
-                                runtime._market.last_shortage_q16[
-                                    runtime._market.index(market, good)]);
+                                runtime.market_store().last_shortage_q16[
+                                    runtime.market_store().index(market, good)]);
                         }
                     }
                     row.monetary_quota_absorption_q16 =
@@ -1351,23 +1351,23 @@ bool EconomyCsvRecorder::fill_batch(
             }
         }
         if (_config.enabled[MARKET]) {
-            const int32_t market = runtime._market.cell_to_market[cell];
+            const int32_t market = runtime.market_store().cell_to_market[cell];
             int64_t liquidity_sat = 0;
             int64_t merchant_cash = 0;
-            runtime._population.for_each_in_cell(cell, [&](int32_t slot) {
+            runtime.population_store().for_each_in_cell(cell, [&](int32_t slot) {
                 if (!runtime.is_merchant_slot(slot)) return;
                 merchant_cash = runtime.saturating_add(
                     merchant_cash,
-                    std::max<int64_t>(0, runtime._population.funds[slot]),
+                    std::max<int64_t>(0, runtime.population_store().funds[slot]),
                     liquidity_sat);
             });
             int64_t inventory_retail_value = 0;
             int64_t inventory_liquidation_value = 0;
-            for (int32_t good = 0; good < runtime._market.good_count; ++good) {
-                const int64_t mi = runtime._market.index(market, good);
+            for (int32_t good = 0; good < runtime.market_store().good_count; ++good) {
+                const int64_t mi = runtime.market_store().index(market, good);
                 const int64_t retail_value = runtime.mul_div_sat(
-                    std::max<int64_t>(0, runtime._market.stock[mi]),
-                    std::max<int64_t>(0, runtime._market.price[mi]),
+                    std::max<int64_t>(0, runtime.market_store().stock[mi]),
+                    std::max<int64_t>(0, runtime.market_store().price[mi]),
                     NativeEconomyRuntime::GOODS_SCALE, liquidity_sat);
                 inventory_retail_value = runtime.saturating_add(
                     inventory_retail_value, retail_value, liquidity_sat);
@@ -1412,13 +1412,13 @@ bool EconomyCsvRecorder::fill_batch(
                     runtime._market_signals.business_demand_ema.size() &&
                 runtime._epoch_offered_supply_ema.size() ==
                     runtime._market_signals.offered_supply_ema.size();
-            for (int32_t good = 0; good < runtime._market.good_count; ++good) {
+            for (int32_t good = 0; good < runtime.market_store().good_count; ++good) {
                 MarketRow row;
                 row.c = common; row.good_index = good;
-                const int64_t mi = runtime._market.index(market, good);
-                row.stock = runtime._market.stock[mi]; row.price = runtime._market.price[mi];
-                row.demand_ema = runtime._market.demand_ema[mi];
-                row.shortage_q16 = runtime._market.last_shortage_q16[mi];
+                const int64_t mi = runtime.market_store().index(market, good);
+                row.stock = runtime.market_store().stock[mi]; row.price = runtime.market_store().price[mi];
+                row.demand_ema = runtime.market_store().demand_ema[mi];
+                row.shortage_q16 = runtime.market_store().last_shortage_q16[mi];
                 const int32_t signal = runtime.market_signal_index(cell, good);
                 row.business_demand_ema = signal >= 0 ? runtime._market_signals.business_demand_ema[signal] : 0;
                 row.desired_business_demand = signal >= 0 && signal < static_cast<int32_t>(
@@ -1495,7 +1495,7 @@ bool EconomyCsvRecorder::fill_batch(
                 row.trade_deadline_exceeded = first_seen >= 0 && first_dispatch < 0 &&
                     runtime._sample_day - first_seen > runtime._trade_response_days;
                 const size_t flat = static_cast<size_t>(_sample_cell_positions[cell]) *
-                                    runtime._market.good_count + good;
+                                    runtime.market_store().good_count + good;
                 row.trade_inbound = inbound[flat]; row.trade_outbound = outbound[flat];
                 row.merchant_cash = merchant_cash;
                 row.merchant_inventory_retail_value =

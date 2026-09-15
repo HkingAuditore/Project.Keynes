@@ -18,10 +18,10 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
     std::vector<uint8_t> payload;
     if (_save.section == SAVE_SECTION_HEADER) {
         append_le<int32_t>(payload, _cell_count);
-        append_le<int32_t>(payload, _market.market_count);
-        append_le<int32_t>(payload, _market.good_count);
-        append_le<int32_t>(payload, static_cast<int32_t>(_population.page_next.size()));
-        append_le<int64_t>(payload, _population.active_count);
+        append_le<int32_t>(payload, market_store().market_count);
+        append_le<int32_t>(payload, market_store().good_count);
+        append_le<int32_t>(payload, static_cast<int32_t>(population_store().page_next.size()));
+        append_le<int64_t>(payload, population_store().active_count);
         append_le<int32_t>(payload, _epoch_days);
         append_le<int64_t>(payload, _last_committed_day);
         append_le<int64_t>(payload, _epoch_id);
@@ -175,67 +175,67 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
         // and fiscal-burden columns.
         const int32_t record_bytes = 12 + COHORT_PAGE_SIZE * 122;
         const int32_t max_records = std::max(1, (budget - 16) / record_bytes);
-        const int32_t end = std::min<int32_t>(static_cast<int32_t>(_population.page_next.size()),
+        const int32_t end = std::min<int32_t>(static_cast<int32_t>(population_store().page_next.size()),
                                               _save.page_cursor + max_records);
         payload.reserve(static_cast<size_t>(std::max(0, end - _save.page_cursor)) * record_bytes);
         const int32_t begin = _save.page_cursor;
         for (; _save.page_cursor < end; ++_save.page_cursor) {
             const int32_t page = _save.page_cursor;
             append_le<int32_t>(payload, page);
-            append_le<int32_t>(payload, _population.page_next[page]);
-            append_le<int32_t>(payload, _population.page_cell[page]);
+            append_le<int32_t>(payload, population_store().page_next[page]);
+            append_le<int32_t>(payload, population_store().page_cell[page]);
             const int32_t base = page * COHORT_PAGE_SIZE;
             for (int32_t lane = 0; lane < COHORT_PAGE_SIZE; ++lane) {
                 const int32_t slot = base + lane;
-                append_le<uint8_t>(payload, _population.active[slot]);
-                append_le<uint32_t>(payload, _population.signature_id[slot]);
-                append_le<uint32_t>(payload, _population.generation[slot]);
-                append_le<int64_t>(payload, _population.population[slot]);
-                append_le<int64_t>(payload, _population.funds[slot]);
-                append_le<int64_t>(payload, _population.epoch_income[slot]);
-                append_le<int64_t>(payload, _population.epoch_expense[slot]);
-                append_le<int64_t>(payload, _population.income_ema[slot]);
-                append_le<uint16_t>(payload, _population.needs_satisfaction[slot]);
-                append_le<uint16_t>(payload, _population.worst_need_id[slot]);
-                append_le<uint16_t>(payload, _population.flags[slot]);
-                append_le<int64_t>(payload, _population.demography_residual[slot]);
-                append_le<int64_t>(payload, _population.owner_employed[slot]);
-                append_le<int64_t>(payload, _population.employee_employed[slot]);
-                append_le<uint16_t>(payload, _population.composite_satisfaction[slot]);
-                append_le<uint8_t>(payload, _population.worst_dimension_id[slot]);
+                append_le<uint8_t>(payload, population_store().active[slot]);
+                append_le<uint32_t>(payload, population_store().signature_id[slot]);
+                append_le<uint32_t>(payload, population_store().generation[slot]);
+                append_le<int64_t>(payload, population_store().population[slot]);
+                append_le<int64_t>(payload, population_store().funds[slot]);
+                append_le<int64_t>(payload, population_store().epoch_income[slot]);
+                append_le<int64_t>(payload, population_store().epoch_expense[slot]);
+                append_le<int64_t>(payload, population_store().income_ema[slot]);
+                append_le<uint16_t>(payload, population_store().needs_satisfaction[slot]);
+                append_le<uint16_t>(payload, population_store().worst_need_id[slot]);
+                append_le<uint16_t>(payload, population_store().flags[slot]);
+                append_le<int64_t>(payload, population_store().demography_residual[slot]);
+                append_le<int64_t>(payload, population_store().owner_employed[slot]);
+                append_le<int64_t>(payload, population_store().employee_employed[slot]);
+                append_le<uint16_t>(payload, population_store().composite_satisfaction[slot]);
+                append_le<uint8_t>(payload, population_store().worst_dimension_id[slot]);
                 const size_t dims_base = static_cast<size_t>(slot) *
                     static_cast<size_t>(SAT_DIM_COUNT);
                 for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim)
                     append_le<uint16_t>(payload,
-                        _population.satisfaction_dims[dims_base +
+                        population_store().satisfaction_dims[dims_base +
                                                       static_cast<size_t>(dim)]);
-                append_le<int64_t>(payload, _population.income_baseline_ema[slot]);
-                append_le<int64_t>(payload, _population.epoch_tax_paid[slot]);
-                append_le<int64_t>(payload, _population.epoch_subsidy_received[slot]);
+                append_le<int64_t>(payload, population_store().income_baseline_ema[slot]);
+                append_le<int64_t>(payload, population_store().epoch_tax_paid[slot]);
+                append_le<int64_t>(payload, population_store().epoch_subsidy_received[slot]);
             }
         }
-        if (_save.page_cursor >= static_cast<int32_t>(_population.page_next.size())) ++_save.section;
+        if (_save.page_cursor >= static_cast<int32_t>(population_store().page_next.size())) ++_save.section;
         return make_save_chunk(SAVE_SECTION_PAGES,
                                static_cast<uint32_t>(_save.page_cursor - begin), payload);
     }
     if (_save.section == SAVE_SECTION_MARKETS) {
-        const int32_t record_bytes = 4 + _market.good_count * 22;
+        const int32_t record_bytes = 4 + market_store().good_count * 22;
         const int32_t max_records = std::max(1, (budget - 16) / std::max(1, record_bytes));
-        const int32_t end = std::min(_market.market_count, _save.market_cursor + max_records);
+        const int32_t end = std::min(market_store().market_count, _save.market_cursor + max_records);
         payload.reserve(static_cast<size_t>(std::max(0, end - _save.market_cursor)) * record_bytes);
         const int32_t begin = _save.market_cursor;
         for (; _save.market_cursor < end; ++_save.market_cursor) {
             const int32_t market = _save.market_cursor;
             append_le<int32_t>(payload, market);
-            for (int32_t good = 0; good < _market.good_count; ++good) {
-                const int64_t idx = _market.index(market, good);
-                append_le<int64_t>(payload, _market.stock[idx]);
-                append_le<int32_t>(payload, _market.price[idx]);
-                append_le<int64_t>(payload, _market.demand_ema[idx]);
-                append_le<uint16_t>(payload, _market.last_shortage_q16[idx]);
+            for (int32_t good = 0; good < market_store().good_count; ++good) {
+                const int64_t idx = market_store().index(market, good);
+                append_le<int64_t>(payload, market_store().stock[idx]);
+                append_le<int32_t>(payload, market_store().price[idx]);
+                append_le<int64_t>(payload, market_store().demand_ema[idx]);
+                append_le<uint16_t>(payload, market_store().last_shortage_q16[idx]);
             }
         }
-        if (_save.market_cursor >= _market.market_count) ++_save.section;
+        if (_save.market_cursor >= market_store().market_count) ++_save.section;
         return make_save_chunk(SAVE_SECTION_MARKETS,
                                static_cast<uint32_t>(_save.market_cursor - begin), payload);
     }
@@ -248,7 +248,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
         const int32_t begin = _save.cell_cursor;
         for (; _save.cell_cursor < end; ++_save.cell_cursor) {
             append_le<int32_t>(payload, _save.cell_cursor);
-            append_le<int32_t>(payload, _market.cell_to_market[_save.cell_cursor]);
+            append_le<int32_t>(payload, market_store().cell_to_market[_save.cell_cursor]);
             append_le<int32_t>(payload, _environment_temperature_q16[_save.cell_cursor]);
             append_le<int32_t>(payload, _environment_temperature_30d_q16[_save.cell_cursor]);
             append_le<int32_t>(payload, _environment_moisture_q16[_save.cell_cursor]);
@@ -1202,8 +1202,8 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
     }
     if (_save.section == SAVE_SECTION_PRICE_CEILINGS) {
         uint32_t records = 0;
-        while (_save.ceiling_market_cursor < _market.market_count) {
-            const auto &row = _market.price_ceilings[_save.ceiling_market_cursor];
+        while (_save.ceiling_market_cursor < market_store().market_count) {
+            const auto &row = market_store().price_ceilings[_save.ceiling_market_cursor];
             if (_save.ceiling_row_cursor >= static_cast<int32_t>(row.size())) {
                 ++_save.ceiling_market_cursor; _save.ceiling_row_cursor = 0; continue;
             }
@@ -1215,7 +1215,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             append_le<uint16_t>(payload, state.confirmation_days);
             ++records;
         }
-        if (_save.ceiling_market_cursor >= _market.market_count) ++_save.section;
+        if (_save.ceiling_market_cursor >= market_store().market_count) ++_save.section;
         return make_save_chunk(SAVE_SECTION_PRICE_CEILINGS, records, payload);
     }
     if (_save.section == SAVE_SECTION_FISCAL_PEER) {

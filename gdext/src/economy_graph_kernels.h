@@ -11,6 +11,14 @@
 
 namespace pk {
 
+struct RuntimeEconomyPopulationStore;
+struct RuntimeEconomyMarketStore;
+struct RuntimeEconomyBuildingStore;
+struct RuntimeEconomyTradeEscrowStore;
+struct RuntimeEconomyFamilyStore;
+struct RuntimeEconomyResourceStore;
+struct RuntimeEconomyOwnedState;
+
 enum class RuntimeEconomyGraphStage : uint32_t {
     BUILDING_PLAN = 0,
     TRADE_SETTLE = 1,
@@ -122,6 +130,14 @@ struct EconomySoAView {
     int64_t sample_day = -1;
     int64_t committed_day = -1;
     void *runtime_hook = nullptr;
+    // Phase-5 A+Y: formula store pointers (OwnedState when bound).
+    RuntimeEconomyPopulationStore *population = nullptr;
+    RuntimeEconomyMarketStore *market = nullptr;
+    RuntimeEconomyBuildingStore *buildings = nullptr;
+    RuntimeEconomyTradeEscrowStore *trade_orders = nullptr;
+    RuntimeEconomyFamilyStore *families = nullptr;
+    RuntimeEconomyResourceStore *resources = nullptr;
+    RuntimeEconomyOwnedState *owned_state = nullptr;
 };
 
 class EconomyGraphStageOps {

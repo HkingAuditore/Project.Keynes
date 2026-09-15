@@ -115,7 +115,9 @@ public:
         return _economy_stage_ops_mutate.load(std::memory_order_acquire);
     }
     // After a complete ledger capture, optionally promote authority to
-    // POD_ACTIVE when pod_active_ready(). Default false.
+    // Phase-2.6.1: promote to POD_ACTIVE after a complete mirror capture.
+    // Default true; production mutations still run StageOps → NativeEconomyRuntime
+    // via apply_pod_command. Opt out with economy_auto_pod_active=false.
     void set_economy_auto_pod_active(bool enabled) noexcept {
         _economy_auto_pod_active.store(enabled, std::memory_order_release);
     }
@@ -142,15 +144,10 @@ public:
     void set_economy_production_writer(EconomyProductionWriter writer) noexcept {
         _economy_production_writer_requested.store(
             static_cast<uint32_t>(writer), std::memory_order_release);
-        const bool allow_stage_ops =
-            writer == EconomyProductionWriter::STAGE_OPS &&
-            (economy_stage_ops_soak_experiment() ||
-             economy_stage_ops_soak_parity_ok());
+        // Phase-2.4.5: StageOps may be effective once start gates pass (mutate +
+        // readiness). Soak experiment / parity latch remain observability.
         _economy_production_writer_effective.store(
-            static_cast<uint32_t>(
-                allow_stage_ops ? EconomyProductionWriter::STAGE_OPS
-                                : EconomyProductionWriter::COMPACT_SLICE),
-            std::memory_order_release);
+            static_cast<uint32_t>(writer), std::memory_order_release);
     }
     EconomyProductionWriter economy_production_writer_requested() const noexcept {
         return static_cast<EconomyProductionWriter>(
@@ -222,7 +219,10 @@ public:
         return _economy_production_runtime != nullptr;
     }
     // Phase 4+: POD queue admits opcodes 1..23; commit_pending_commands applies
-    // via EconomyPodCommandExecutor → NativeEconomyRuntime::apply_pod_command.
+    // via EconomyPodCommandExecutor. Under POD_ACTIVE, opcodes 1–23 mutate
+    // OwnedState first then pull into NativeEconomyRuntime (heavy opcodes
+    // delegate apply then mirror). Host verifies hash/shape and recaptures only
+    // on mismatch. Phase-5 binds population/market to OwnedState sole SoA.
     // Sync submit_commands remains a separate facade — do not double-submit.
     bool submit_economy_pod_command(const RuntimeEconomyPodCommand &command,
                                     std::string &error);
@@ -927,20 +927,23 @@ private:
         _economy_stage_reference_present{};
     RuntimeEconomyPodAuthority _economy_pod_authority;
     std::unique_ptr<EconomyGraphStageOps> _economy_stage_ops;
-    // Default ACTIVE_ONLY: production compact-slice, SHADOW StageOps off.
+    // Default ACTIVE_ONLY; StageOps mutate/writer are armed at worker start
+    // (Phase-2.4.5 defaults: mutate=true, writer=stage_ops).
     std::atomic<uint32_t> _economy_execution_mode{
         static_cast<uint32_t>(EconomyExecutionMode::ACTIVE_ONLY)};
     std::atomic<bool> _economy_shadow_probe_enabled{false};
     std::atomic<bool> _economy_stage_ops_mutate{false};
-    std::atomic<bool> _economy_auto_pod_active{false};
-    // Phase-2.4.4.4: opt-in StageOps writer for soak experiments; parity_ok is
-    // latched only after an explicit dual-path soak passes (default false).
+    std::atomic<bool> _economy_auto_pod_active{true};
+    std::atomic<uint64_t> _economy_pod_command_recapture_count{0};
+    std::atomic<uint64_t> _economy_pod_command_verify_count{0};
+    // Phase-2.4.4.4 soak experiment flag (observability). Parity latch defaults
+    // true after Phase-2.4.5 dual-path handoff.
     std::atomic<bool> _economy_stage_ops_soak_experiment{false};
-    std::atomic<bool> _economy_stage_ops_soak_parity_ok{false};
+    std::atomic<bool> _economy_stage_ops_soak_parity_ok{true};
     std::atomic<uint32_t> _economy_production_writer_requested{
-        static_cast<uint32_t>(EconomyProductionWriter::COMPACT_SLICE)};
+        static_cast<uint32_t>(EconomyProductionWriter::STAGE_OPS)};
     std::atomic<uint32_t> _economy_production_writer_effective{
-        static_cast<uint32_t>(EconomyProductionWriter::COMPACT_SLICE)};
+        static_cast<uint32_t>(EconomyProductionWriter::STAGE_OPS)};
     // Phase-2.4.4.2: StageOps Host day-loop continuation (ACTIVE writer path).
     enum class StageOpsDayPhase : uint8_t {
         Prelude = 0,

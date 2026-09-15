@@ -54,9 +54,11 @@ constexpr uint32_t RUNTIME_ECONOMY_D7_ALL_GATE_MASK =
 // boundaries; every graph stage operates on POD/std::vector storage.
 class NativeEconomyRuntime {
 public:
+    struct FamilyStore;
+    struct TradeOrderStore;
     friend class NativeEconomyBuildingPlanExecutor;
     friend class NativeEconomyGraphStageOps;
-    friend bool economy_dispatch_mutate_stage(void *runtime_hook,
+    friend bool economy_dispatch_mutate_stage(EconomySoAView &view,
                                               RuntimeEconomyGraphStage stage,
                                               EconomyStageCursor &cursor,
                                               const RuntimeEconomyEpochInput &input,
@@ -328,6 +330,25 @@ public:
         _d7_operation_gate_mask = RUNTIME_ECONOMY_D7_ALL_GATE_MASK;
     }
     bool bind_soa_view(EconomySoAView &view, std::string &error);
+    // Phase-5 A+Y: formula hot path mutates OwnedState population/market in
+    // place. While bound, population_store()/market_store() alias OwnedState.
+    bool bind_formula_owned_state(RuntimeEconomyOwnedState &owned,
+                                  std::string &error);
+    void unbind_formula_owned_state() noexcept;
+    bool formula_owned_bound() const noexcept {
+        return _formula_owned != nullptr;
+    }
+    RuntimeEconomyBuildingStore &buildings_store() noexcept {
+        return _formula_owned != nullptr ? _formula_owned->buildings
+                                         : _buildings_soa_local;
+    }
+    const RuntimeEconomyBuildingStore &buildings_store() const noexcept {
+        return _formula_owned != nullptr ? _formula_owned->buildings
+                                         : _buildings_soa_local;
+    }
+    const char *formula_backing_tag() const noexcept {
+        return _formula_owned != nullptr ? "owned_state" : "ner_local";
+    }
     std::unique_ptr<EconomyGraphStageOps> make_graph_stage_ops(bool mutate);
     // POD command path: maps RuntimeEconomyPodCommand → apply_command.
     // Sync submit_commands remains the facade; do not double-submit the same
@@ -336,6 +357,15 @@ public:
                            std::string &error);
     bool enqueue_or_apply_pod_command(const RuntimeEconomyPodCommand &pod,
                                       std::string &error);
+    // Phase-2.6.3: copy OwnedState columns into production NER after a
+    // POD-first command, coordinate country peers, and recapture mirrors.
+    bool pull_owned_command_result(RuntimeEconomyOwnedState &owned,
+                                   const RuntimeEconomyPodCommand &command,
+                                   int64_t settled, std::string &error);
+    // Legacy narrow pull for mint/burn/stock tests.
+    bool pull_owned_core_columns(const RuntimeEconomyOwnedState &owned,
+                                 int32_t opcode, int64_t settled,
+                                 std::string &error);
     void fill_economy_audit_snapshot(int64_t &pop_err, int64_t &money_err,
                                      int64_t &goods_err,
                                      uint32_t &dirty_family_mask,
@@ -350,6 +380,38 @@ public:
     // Copies only committed ledger columns. This is a cold publish-boundary
     // handoff for POD parity; it is never used while an epoch is mutable.
     void capture_committed_ledger_state(RuntimeEconomyLedgerState &out) const;
+    // Phase-4 layout unification: AoS→OwnedState SoA mirrors (capture path).
+    void flush_formula_owned_domain_mirrors();
+    void sync_owned_building_store(RuntimeEconomyBuildingStore &out) const;
+    // A+Y N2 debug: SoA group count vs `_buildings` scratch (template_debug only).
+    void assert_buildings_soa_matches_scratch() const;
+    void sync_owned_trade_escrow_store(RuntimeEconomyTradeEscrowStore &out) const;
+    void sync_owned_family_store(RuntimeEconomyFamilyStore &out) const;
+    void sync_owned_resource_store(RuntimeEconomyResourceStore &out) const;
+    // Writes OwnedState building counts back to NER AoS (demolish/build parity).
+    void apply_owned_building_store(const RuntimeEconomyBuildingStore &in);
+    void fill_ledger_building_from_store(
+        RuntimeEconomyBuildingCommittedBlock &block,
+        const RuntimeEconomyBuildingStore &store) const;
+    void fill_ledger_trade_escrow_from_store(
+        RuntimeEconomyTradeEscrowCommittedBlock &block,
+        const RuntimeEconomyTradeEscrowStore &store) const;
+    void fill_ledger_family_from_store(
+        RuntimeEconomyFamilyCommittedBlock &block,
+        const RuntimeEconomyFamilyStore &store) const;
+    void fill_ledger_resource_from_store(
+        RuntimeEconomyResourceCommittedBlock &block,
+        const RuntimeEconomyResourceStore &store) const;
+    // Optional alias: publish/resource hot loops read stock lanes through
+    // OwnedState when bound (see resource_stock_lanes()).
+    void bind_resource_store(RuntimeEconomyResourceStore *store) noexcept {
+        _resource_store_alias = store;
+    }
+    RuntimeEconomyResourceStore *bound_resource_store() const noexcept {
+        return _resource_store_alias;
+    }
+    std::vector<int64_t> &resource_stock_lanes() noexcept;
+    const std::vector<int64_t> &resource_stock_lanes() const noexcept;
     // Named-kernel household boundary: one post-building finalize chunk when
     // phase==1; otherwise ok hash boundary (settle stays on compact slice).
     bool kernel_run_household_market_boundary(
@@ -423,6 +485,8 @@ public:
                                       std::string &error,
                                       bool *pending_input = nullptr,
                                       bool *idle_done = nullptr);
+    // Phase-2.4.5: sync StageOps mutate day (prelude + all graph stage drains).
+    bool run_stage_ops_day(int64_t day_index, std::string &error);
     bool stage_ops_epoch_open_ready() const noexcept { return _epoch_active; }
     bool capture_environment(int64_t day_index, const float *temperature,
                              const float *temperature_30d, const float *moisture,
@@ -1840,6 +1904,7 @@ private:
         int64_t requested = 0, unfilled = 0;
     };
     using MarketStore = RuntimeEconomyMarketStore;
+    using ResourceStore = RuntimeEconomyResourceStore;
 
     struct MarketSignalStore {
         std::vector<int32_t> cell_offsets;
@@ -2092,8 +2157,10 @@ private:
         std::vector<int32_t> seller_offsets;
         std::vector<uint64_t> seller_handles;
         std::vector<int64_t> seller_weights;
-        // Derived CSR time buckets. Arrival days remain the persisted authority;
-        // these vectors are rebuilt after dispatch, compaction, and restore.
+        // Derived CSR time buckets — runtime-only cache for due-order scans.
+        // NOT ECP1 / wire_content_hash authority: append_wire and committed
+        // capture hash order SoA columns only; arrival_days[] is the persisted
+        // schedule. Rebuilt after dispatch, compaction, and restore.
         std::vector<int64_t> arrival_bucket_days;
         std::vector<int32_t> arrival_bucket_offsets;
         std::vector<int32_t> arrival_bucket_orders;
@@ -2119,6 +2186,12 @@ private:
         }
         int32_t size() const { return static_cast<int32_t>(ids.size()); }
     };
+
+    // Sole live trade/family storage accessors (see sync/flush helpers above).
+    TradeOrderStore &trade_orders_store() noexcept;
+    const TradeOrderStore &trade_orders_store() const noexcept;
+    FamilyStore &families_store() noexcept;
+    const FamilyStore &families_store() const noexcept;
 
     struct TradeFlowSignalStore {
         std::vector<int32_t> cells;
@@ -3999,7 +4072,18 @@ private:
     AuditTotals _opening_totals;
     AuditTotals _closing_totals;
     AuditTotals _publish_accum;
-    PopulationStore _population;
+    // Local fallback when formula stores are not bound to OwnedState.
+    PopulationStore _population_local;
+    RuntimeEconomyOwnedState *_formula_owned = nullptr;
+    RuntimeEconomyResourceStore *_resource_store_alias = nullptr;
+    PopulationStore &population_store() noexcept {
+        return _formula_owned != nullptr ? _formula_owned->population
+                                         : _population_local;
+    }
+    const PopulationStore &population_store() const noexcept {
+        return _formula_owned != nullptr ? _formula_owned->population
+                                         : _population_local;
+    }
     FamilyStore _families;
     FamilyExpeditionStore _family_expeditions;
     std::vector<int32_t> _family_expedition_route_cells;
@@ -4108,7 +4192,16 @@ private:
     std::vector<uint8_t> _person_previous_job_kind;
     std::vector<int32_t> _person_previous_employee_role_index;
     SettlementStore _settlements;
-    MarketStore _market;
+    MarketStore _market_local;
+    mutable RuntimeEconomyBuildingStore _buildings_soa_local;
+    MarketStore &market_store() noexcept {
+        return _formula_owned != nullptr ? _formula_owned->market
+                                         : _market_local;
+    }
+    const MarketStore &market_store() const noexcept {
+        return _formula_owned != nullptr ? _formula_owned->market
+                                         : _market_local;
+    }
     MarketSignalStore _market_signals;
     MarketSignalStore _market_signals_rebuild_scratch;
     // Phase-1 dirty rebuild: only recompute CSR lanes for dirty cells unless a
@@ -4960,6 +5053,9 @@ private:
     std::vector<ResourceAmount> _building_resources;
     std::vector<ResourceAmount> _building_resource_generation;
     std::vector<ConditionToken> _building_conditions;
+    // A+Y N2: drain scratch only when formula_owned_bound(). Sole committed
+    // columns live in buildings_store() (OwnedState). Do not read `_buildings`
+    // as authority after a stage flush.
     std::vector<BuildingGroup> _buildings;
     // Kit settlement may append groups during LEDGER_APPLY. Reordering and
     // market-signal rebuild wait for BUILDING_COMMIT so frozen epoch group
@@ -5910,6 +6006,8 @@ private:
     bool run_ledger_apply_drain(int64_t &work_done, std::string &error);
     bool run_government_research_drain(int64_t &work_done, std::string &error);
     bool run_structural_commit_drain(int64_t &work_done, std::string &error);
+    // Phase-2.4.5: BUILDING_PLAN evaluate+reserve drain (matches compact).
+    bool run_building_plan_drain(int64_t &work_done, std::string &error);
     void rebuild_family_indices(bool rebuild_derived = true);
     void rebuild_family_industry_metrics();
     void rebuild_family_owned_output_csr();
@@ -6007,6 +6105,11 @@ private:
                                        const std::string &program_key);
     void apply_pending_family_split_gifts();
     void ensure_family_policy_factors();
+    bool sync_owned_columns_to_production(const RuntimeEconomyOwnedState &owned,
+                                          std::string &error);
+    void sync_production_core_columns_to_owned(
+        RuntimeEconomyOwnedState &owned) const;
+    void capture_owned_mirror_stores(RuntimeEconomyOwnedState &owned) const;
     void reset_family_policy_factors(int32_t family_index);
     int32_t family_colonization_population_reward_amount(
         uint64_t family_handle) const;

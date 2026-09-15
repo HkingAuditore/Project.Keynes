@@ -10,8 +10,8 @@ bool economy_kernel_structural(EconomySoAView &view, EconomyStageCursor &cursor,
         return economy_kernel_stage_boundary_stub(view, cursor, input, result,
                                                   error);
     return economy_dispatch_mutate_stage(
-        view.runtime_hook, RuntimeEconomyGraphStage::STRUCTURAL_COMMIT, cursor,
-        input, result, error);
+        view, RuntimeEconomyGraphStage::STRUCTURAL_COMMIT, cursor, input,
+        result, error);
 }
 
 } // namespace pk

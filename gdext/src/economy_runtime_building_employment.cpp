@@ -96,7 +96,7 @@ bool NativeEconomyRuntime::reconcile_building_employment_cells_range(
     thread_local std::vector<uint32_t> signature_stamp;
     thread_local std::vector<uint32_t> profession_stamp;
     thread_local uint32_t scratch_generation = 0;
-    // 本格实际出现过的 signature。摊派循环靠它取代对整张 _signatures 表的扫描。
+    // 鏈牸瀹為檯鍑虹幇杩囩殑 signature銆傛憡娲惧惊鐜潬瀹冨彇浠ｅ鏁村紶 _signatures 琛ㄧ殑鎵弿銆?
     thread_local std::vector<int32_t> touched_signatures;
 
     begin = std::clamp(begin, 0, static_cast<int32_t>(stable_cells.size()));
@@ -159,19 +159,19 @@ bool NativeEconomyRuntime::reconcile_building_employment_cells_range(
         const int32_t first = _building_cell_offsets[cell];
         const int32_t last = _building_cell_offsets[cell + 1];
         int64_t mobile_population_total = 0;
-        _population.for_each_in_cell(cell, [&](int32_t slot) {
-            const uint32_t sig = _population.signature_id[slot];
+        population_store().for_each_in_cell(cell, [&](int32_t slot) {
+            const uint32_t sig = population_store().signature_id[slot];
             if (sig < sig_population.size()) {
                 touch_signature(static_cast<int32_t>(sig));
                 sig_population[sig] = saturating_add(sig_population[sig],
-                    std::max<int64_t>(0, _population.population[slot]), _saturation_count);
+                    std::max<int64_t>(0, population_store().population[slot]), _saturation_count);
                 if (!is_merchant_slot(slot) && sig < _signatures.size()) {
                     const int32_t profession = _signatures[sig].profession_id;
                     if (profession >= 0 && profession < professions) {
-                        const int64_t pop = std::max<int64_t>(0, _population.population[slot]);
+                        const int64_t pop = std::max<int64_t>(0, population_store().population[slot]);
                         const int64_t attached = saturating_add(
-                            std::max<int64_t>(0, _population.owner_employed[slot]),
-                            std::max<int64_t>(0, _population.employee_employed[slot]),
+                            std::max<int64_t>(0, population_store().owner_employed[slot]),
+                            std::max<int64_t>(0, population_store().employee_employed[slot]),
                             _saturation_count);
                         mobile_population_by_profession[profession] = saturating_add(
                             mobile_population_by_profession[profession],
@@ -256,9 +256,9 @@ bool NativeEconomyRuntime::reconcile_building_employment_cells_range(
         // latter would silently evict owners whose ethnicity differs from the
         // building profile during this reconciliation pass.
         //
-        // 下面三处摊派循环原来各扫一遍整张 _signatures 表（随存档单调增长且永不
-        // 收缩），只为挑出本格实际出现的那几个 signature。改成遍历 touched 列表，
-        // 排序一次即可保持同一个 signature id 升序，前缀和摊派逐位不变。
+        // 涓嬮潰涓夊鎽婃淳寰幆鍘熸潵鍚勬壂涓€閬嶆暣寮?_signatures 琛紙闅忓瓨妗ｅ崟璋冨闀夸笖姘镐笉
+        // 鏀剁缉锛夛紝鍙负鎸戝嚭鏈牸瀹為檯鍑虹幇鐨勯偅鍑犱釜 signature銆傛敼鎴愰亶鍘?touched 鍒楄〃锛?
+        // 鎺掑簭涓€娆″嵆鍙繚鎸佸悓涓€涓?signature id 鍗囧簭锛屽墠缂€鍜屾憡娲鹃€愪綅涓嶅彉銆?
         std::sort(touched_signatures.begin(), touched_signatures.end());
         for (const int32_t sig : touched_signatures) {
             if (sig_population[sig] <= 0) continue;
@@ -326,17 +326,17 @@ bool NativeEconomyRuntime::reconcile_building_employment_cells_range(
             owner_distributed_by_profession[profession] = next;
         }
 
-        _population.for_each_in_cell(cell, [&](int32_t slot) {
+        population_store().for_each_in_cell(cell, [&](int32_t slot) {
             if (is_merchant_slot(slot)) return;
-            const int32_t sig = static_cast<int32_t>(_population.signature_id[slot]);
+            const int32_t sig = static_cast<int32_t>(population_store().signature_id[slot]);
             const int32_t profession = _signatures[sig].profession_id;
             if (profession == _unemployed_profession_id) return;
             touch_profession(profession);
             const int64_t owner = std::min(sig_owner_filled[sig],
-                std::max<int64_t>(0, _population.population[slot]));
+                std::max<int64_t>(0, population_store().population[slot]));
             profession_capacity[profession] = saturating_add(
                 profession_capacity[profession],
-                std::max<int64_t>(0, _population.population[slot] - owner),
+                std::max<int64_t>(0, population_store().population[slot] - owner),
                 _saturation_count);
         });
         for (int32_t g : priority) {
@@ -360,10 +360,10 @@ bool NativeEconomyRuntime::reconcile_building_employment_cells_range(
         int64_t owner_after = 0;
         int64_t employee_after = 0;
         int64_t unemployed_after = 0;
-        _population.for_each_in_cell(cell, [&](int32_t slot) {
-            const int32_t sig = static_cast<int32_t>(_population.signature_id[slot]);
+        population_store().for_each_in_cell(cell, [&](int32_t slot) {
+            const int32_t sig = static_cast<int32_t>(population_store().signature_id[slot]);
             const int32_t profession = _signatures[sig].profession_id;
-            const int64_t population = std::max<int64_t>(0, _population.population[slot]);
+            const int64_t population = std::max<int64_t>(0, population_store().population[slot]);
             const int64_t owner = std::min(population, std::max<int64_t>(
                 0, sig_owner_filled[sig] - sig_owner_distributed[sig]));
             sig_owner_distributed[sig] = saturating_add(
@@ -381,8 +381,8 @@ bool NativeEconomyRuntime::reconcile_building_employment_cells_range(
                     0, next - profession_distributed[profession]));
                 profession_distributed[profession] = next;
             }
-            _population.owner_employed[slot] = owner;
-            _population.employee_employed[slot] = employee;
+            population_store().owner_employed[slot] = owner;
+            population_store().employee_employed[slot] = employee;
             owner_after = saturating_add(owner_after, owner, _saturation_count);
             employee_after = saturating_add(employee_after, employee, _saturation_count);
             unemployed_after = saturating_add(unemployed_after,
@@ -413,7 +413,7 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
     const int32_t begin = _building_cell_offsets[cell];
     const int32_t end = _building_cell_offsets[cell + 1];
     if (begin >= end) return true;
-    const int32_t market = _market.cell_to_market[cell];
+    const int32_t market = market_store().cell_to_market[cell];
     int64_t merchant_cash = 0;
     if (market >= 0 && market + 1 < static_cast<int32_t>(
             _merchant_offsets.size())) {
@@ -421,13 +421,13 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
                 i < _merchant_offsets[market + 1]; ++i) {
             const int32_t slot = _merchant_slots[i];
             if (slot < 0 || slot >= static_cast<int32_t>(
-                    _population.active.size()) ||
-                !_population.active[slot] ||
-                _population.page_cell[slot / COHORT_PAGE_SIZE] != cell ||
+                    population_store().active.size()) ||
+                !population_store().active[slot] ||
+                population_store().page_cell[slot / COHORT_PAGE_SIZE] != cell ||
                 !is_merchant_slot(slot)) continue;
             merchant_cash = saturating_add(
                 merchant_cash, std::max<int64_t>(
-                    0, _population.funds[slot]), _saturation_count);
+                    0, population_store().funds[slot]), _saturation_count);
         }
     }
     const int64_t daily_merchant_cash =
@@ -505,9 +505,9 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
                         const int32_t output_flow = trade_flow_index(
                             cell, output.good_id, false);
                         const size_t market_lane =
-                            _market.index(market, output.good_id);
+                            market_store().index(market, output.good_id);
                         const int64_t historical_household_demand =
-                            std::max<int64_t>(0, _market.demand_ema[market_lane]);
+                            std::max<int64_t>(0, market_store().demand_ema[market_lane]);
                         const int64_t historical_withdrawal = output_signal >= 0
                             ? std::max<int64_t>(0,
                                 _market_signals.realized_withdrawal_ema[
@@ -537,16 +537,16 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
                             historical_withdrawal, export_demand, 0,
                             _saturation_count);
                         const int64_t inventory_gap = std::max<int64_t>(
-                            0, output_target - _market.stock[market_lane]);
+                            0, output_target - market_store().stock[market_lane]);
                         funded_output = std::min<int64_t>(
                             effective_output, std::max(
                                 demand_backed_absorption, inventory_gap));
                         const int32_t buy_factor = effective_merchant_buy_factor_q16(
                             market, output.good_id, output_target,
-                            _market.stock[market_lane],
+                            market_store().stock[market_lane],
                             _saturation_count);
                         settlement = mul_div_sat(
-                            _market.price[market_lane],
+                            market_store().price[market_lane],
                             buy_factor, Q16_ONE, _saturation_count);
                     }
                     int64_t &revenue_lane = monetary_issue
@@ -714,8 +714,8 @@ void NativeEconomyRuntime::update_cell_labor_signals(int32_t cell) {
 bool NativeEconomyRuntime::run_building_employment_cell(
         int32_t cell, bool allow_owner_job_reallocation, std::string &error) {
     if (!prepare_cell_wages(cell, error)) return false;
-    // demand[p] = profession p 本周期 employee 目标之和；fill[p] = 夹紧后在岗
-    // employee 之和。二者在 A1 两步逻辑中被 std::fill 重置复用（见下）。
+    // demand[p] = profession p 鏈懆鏈?employee 鐩爣涔嬪拰锛沠ill[p] = 澶圭揣鍚庡湪宀?
+    // employee 涔嬪拰銆備簩鑰呭湪 A1 涓ゆ閫昏緫涓 std::fill 閲嶇疆澶嶇敤锛堣涓嬶級銆?
     thread_local std::vector<int64_t> demand;
     thread_local std::vector<int64_t> fill;
     auto employment_utilization_q16 = [&](const BuildingGroup &group) {
@@ -818,54 +818,54 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         return scaled;
     };
     const bool trace_detail = trace_detail_for_cell(cell);
-    // A1 迁移会 allocate/release slot，裸 slot id 会失效；trace 快照改存稳定
-    // handle，事件生成时用 valid_handle 解析回当前 slot（失效则跳过该 leg）。
+    // A1 杩佺Щ浼?allocate/release slot锛岃８ slot id 浼氬け鏁堬紱trace 蹇収鏀瑰瓨绋冲畾
+    // handle锛屼簨浠剁敓鎴愭椂鐢?valid_handle 瑙ｆ瀽鍥炲綋鍓?slot锛堝け鏁堝垯璺宠繃璇?leg锛夈€?
     thread_local std::vector<uint64_t> trace_handles;
     thread_local std::vector<int64_t> trace_owner_before;
     thread_local std::vector<int64_t> trace_employee_before;
     trace_handles.clear(); trace_owner_before.clear(); trace_employee_before.clear();
     if (trace_detail) {
-        _population.for_each_in_cell(cell, [&](int32_t slot) {
-            trace_handles.push_back(_population.handle_for_slot(slot));
-            trace_owner_before.push_back(_population.owner_employed[slot]);
-            trace_employee_before.push_back(_population.employee_employed[slot]);
+        population_store().for_each_in_cell(cell, [&](int32_t slot) {
+            trace_handles.push_back(population_store().handle_for_slot(slot));
+            trace_owner_before.push_back(population_store().owner_employed[slot]);
+            trace_employee_before.push_back(population_store().employee_employed[slot]);
         });
     }
     // ================================================================
-    // A1 路径：失业池增量就业（统一净增量迁移，用户 2026-07-16 拍板）
+    // A1 璺緞锛氬け涓氭睜澧為噺灏变笟锛堢粺涓€鍑€澧為噺杩佺Щ锛岀敤鎴?2026-07-16 鎷嶆澘锛?
     // ----------------------------------------------------------------
-    // 不变量（employment 结束时对每个非 merchant、非 unemployed 的
-    //   profession|eth slot 成立）：owner_employed + employee_employed
-    //   == population，即在岗 slot 里没有闲置人口；任何未被任何建筑雇佣
-    //   的人都真实迁往 unemployed|eth slot（独立 cohort 身份 + plan_unemployed，
-    //   消费退化为 survival food → satisfaction 掉 → starvation 自然死上升，
-    //   失业惩罚由 demography 自动施加，无需硬编死亡率）。
+    // 涓嶅彉閲忥紙employment 缁撴潫鏃跺姣忎釜闈?merchant銆侀潪 unemployed 鐨?
+    //   profession|eth slot 鎴愮珛锛夛細owner_employed + employee_employed
+    //   == population锛屽嵆鍦ㄥ矖 slot 閲屾病鏈夐棽缃汉鍙ｏ紱浠讳綍鏈浠讳綍寤虹瓚闆囦剑
+    //   鐨勪汉閮界湡瀹炶縼寰€ unemployed|eth slot锛堢嫭绔?cohort 韬唤 + plan_unemployed锛?
+    //   娑堣垂閫€鍖栦负 survival food 鈫?satisfaction 鎺?鈫?starvation 鑷劧姝讳笂鍗囷紝
+    //   澶变笟鎯╃綒鐢?demography 鑷姩鏂藉姞锛屾棤闇€纭紪姝讳骸鐜囷級銆?
     //
-    // 两步结构（数学上等价于"消失清理 + 建筑驱动裁员 + 有限流动招人"三阶段
-    //   合并，但 owner/employee 在同一 slot 内自然竞争 population，无需在阶段
-    //   间显式传递 slot 剩余容量）：
-    //   [第1步 析出] 每个在岗 slot 按本周期 planned_utilization 目标算
-    //     desired_working；surplus = population - desired_working 的部分迁往
-    //     unemployed|eth。消失/不可用建筑目标为 0，其在岗人口自然全部进池。
-    //     执行后所有活跃 group 的 filled_* 被夹到"目标或更少"，多余人口全在池中。
-    //   [第2步 招人] unemployed 池此刻汇集了各 eth 的全部失业者（含本周期刚
-    //     进池的 + 历史长期失业的）。活跃 group 按优先级
+    // 涓ゆ缁撴瀯锛堟暟瀛︿笂绛変环浜?娑堝け娓呯悊 + 寤虹瓚椹卞姩瑁佸憳 + 鏈夐檺娴佸姩鎷涗汉"涓夐樁娈?
+    //   鍚堝苟锛屼絾 owner/employee 鍦ㄥ悓涓€ slot 鍐呰嚜鐒剁珵浜?population锛屾棤闇€鍦ㄩ樁娈?
+    //   闂存樉寮忎紶閫?slot 鍓╀綑瀹归噺锛夛細
+    //   [绗?姝?鏋愬嚭] 姣忎釜鍦ㄥ矖 slot 鎸夋湰鍛ㄦ湡 planned_utilization 鐩爣绠?
+    //     desired_working锛泂urplus = population - desired_working 鐨勯儴鍒嗚縼寰€
+    //     unemployed|eth銆傛秷澶?涓嶅彲鐢ㄥ缓绛戠洰鏍囦负 0锛屽叾鍦ㄥ矖浜哄彛鑷劧鍏ㄩ儴杩涙睜銆?
+    //     鎵ц鍚庢墍鏈夋椿璺?group 鐨?filled_* 琚す鍒?鐩爣鎴栨洿灏?锛屽浣欎汉鍙ｅ叏鍦ㄦ睜涓€?
+    //   [绗?姝?鎷涗汉] unemployed 姹犳鍒绘眹闆嗕簡鍚?eth 鐨勫叏閮ㄥけ涓氳€咃紙鍚湰鍛ㄦ湡鍒?
+    //     杩涙睜鐨?+ 鍘嗗彶闀挎湡澶变笟鐨勶級銆傛椿璺?group 鎸変紭鍏堢骇
     //     (realized_profit_margin_q16 desc, planned_utilization_q16 desc,
-    //      group_index asc) 跨建筑类型排序，依次把 filled_owner/filled_employee
-    //     补到目标，从 unemployed|eth 真实迁回对应 profession|eth slot（受池
-    //     可用量约束）。所有可行候选按 pay ratio 和 utilization 加权比例
-    //     从有限 mobility budget 迁回，不再由单一最高收入 group 吸走整个
-    //     失业池，也不因候选截断而饿死低排名建筑。
-    //     招人跨 profession：失业 farmer 可被招为 miner（profession 是可变就业
-    //     状态，架构决策4）。
+    //      group_index asc) 璺ㄥ缓绛戠被鍨嬫帓搴忥紝渚濇鎶?filled_owner/filled_employee
+    //     琛ュ埌鐩爣锛屼粠 unemployed|eth 鐪熷疄杩佸洖瀵瑰簲 profession|eth slot锛堝彈姹?
+    //     鍙敤閲忕害鏉燂級銆傛墍鏈夊彲琛屽€欓€夋寜 pay ratio 鍜?utilization 鍔犳潈姣斾緥
+    //     浠庢湁闄?mobility budget 杩佸洖锛屼笉鍐嶇敱鍗曚竴鏈€楂樻敹鍏?group 鍚歌蛋鏁翠釜
+    //     澶变笟姹狅紝涔熶笉鍥犲€欓€夋埅鏂€岄タ姝讳綆鎺掑悕寤虹瓚銆?
+    //     鎷涗汉璺?profession锛氬け涓?farmer 鍙鎷涗负 miner锛坧rofession 鏄彲鍙樺氨涓?
+    //     鐘舵€侊紝鏋舵瀯鍐崇瓥4锛夈€?
     //
-    // 关键工程约束：move_cohort_population 会 allocate/release slot，破坏
-    //   for_each_in_cell 的页链迭代器。故所有迁移都"先只读遍历收集计划到
-    //   thread_local 缓冲，遍历结束后再统一执行迁移"（学 ensure_merchant_invariant）。
-    //   Route B: 商栈(merchant_post) owner 现在参与就业分配——merchant slot 的
-    //   owner_employed 计入 filled_owner、纳入析出/聚合；但保底每有人 cell 至少
-    //   1 个 merchant 不被裁(护住 rebuild_merchant_ranges 做市索引不变量)。
-    //   emp_capacity 第一遍仍跳过 merchant(商人不做 employee，仅 owner 岗)。
+    // 鍏抽敭宸ョ▼绾︽潫锛歮ove_cohort_population 浼?allocate/release slot锛岀牬鍧?
+    //   for_each_in_cell 鐨勯〉閾捐凯浠ｅ櫒銆傛晠鎵€鏈夎縼绉婚兘"鍏堝彧璇婚亶鍘嗘敹闆嗚鍒掑埌
+    //   thread_local 缂撳啿锛岄亶鍘嗙粨鏉熷悗鍐嶇粺涓€鎵ц杩佺Щ"锛堝 ensure_merchant_invariant锛夈€?
+    //   Route B: 鍟嗘爤(merchant_post) owner 鐜板湪鍙備笌灏变笟鍒嗛厤鈥斺€攎erchant slot 鐨?
+    //   owner_employed 璁″叆 filled_owner銆佺撼鍏ユ瀽鍑?鑱氬悎锛涗絾淇濆簳姣忔湁浜?cell 鑷冲皯
+    //   1 涓?merchant 涓嶈瑁?鎶や綇 rebuild_merchant_ranges 鍋氬競绱㈠紩涓嶅彉閲?銆?
+    //   emp_capacity 绗竴閬嶄粛璺宠繃 merchant(鍟嗕汉涓嶅仛 employee锛屼粎 owner 宀?銆?
     // ================================================================
     // The same authoritative release/hire path also owns cells whose last
     // building was removed. Empty ranges must release every non-merchant
@@ -970,19 +970,19 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 Q16_ONE, _saturation_count) / owner_demand;
         };
         auto recent_expense_per_day = [&](int32_t slot) -> int64_t {
-            if (slot < 0 || slot >= static_cast<int32_t>(_population.population.size()))
+            if (slot < 0 || slot >= static_cast<int32_t>(population_store().population.size()))
                 return 0;
             const int64_t people = std::max<int64_t>(1,
-                _population.population[slot]);
+                population_store().population[slot]);
             const int64_t days = std::max<int64_t>(1, _epoch_days);
-            return std::max<int64_t>(0, _population.epoch_expense[slot]) /
+            return std::max<int64_t>(0, population_store().epoch_expense[slot]) /
                 people / days;
         };
         auto unemployed_disposable_income = [&](int32_t slot) -> int64_t {
             if (slot < 0 || slot >= static_cast<int32_t>(
-                    _population.population.size())) return 0;
+                    population_store().population.size())) return 0;
             const int32_t signature = static_cast<int32_t>(
-                _population.signature_id[slot]);
+                population_store().signature_id[slot]);
             if (signature < 0 || signature >= static_cast<int32_t>(
                     _signatures.size())) return 0;
             const int32_t profession = _signatures[signature].profession_id;
@@ -1004,20 +1004,20 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 0, signed_transfer, _saturation_count));
         };
 
-        // ---- 目标计算：本周期各 group 期望的 owner / 各 role employee ----
-        // 用 thread_local 缓冲避免每 cell 分配。
-        thread_local std::vector<int64_t> group_owner_target;      // 每 group owner 目标
+        // ---- 鐩爣璁＄畻锛氭湰鍛ㄦ湡鍚?group 鏈熸湜鐨?owner / 鍚?role employee ----
+        // 鐢?thread_local 缂撳啿閬垮厤姣?cell 鍒嗛厤銆?
+        thread_local std::vector<int64_t> group_owner_target;      // 姣?group owner 鐩爣
         group_owner_target.assign(static_cast<size_t>(last - first), 0);
-        // profession 级 employee 目标 / 在岗（跨 eth 聚合，沿用旧 employee 语义）。
-        std::fill(demand.begin(), demand.end(), 0);   // demand[p] = Σ planned_role_demand
-        std::fill(fill.begin(), fill.end(), 0);       // fill[p]   = Σ 当前在岗 employee
+        // profession 绾?employee 鐩爣 / 鍦ㄥ矖锛堣法 eth 鑱氬悎锛屾部鐢ㄦ棫 employee 璇箟锛夈€?
+        std::fill(demand.begin(), demand.end(), 0);   // demand[p] = 危 planned_role_demand
+        std::fill(fill.begin(), fill.end(), 0);       // fill[p]   = 危 褰撳墠鍦ㄥ矖 employee
         for (int32_t g = first; g < last; ++g) {
             BuildingGroup &group = _buildings[g];
             if (group.cell != cell) continue;
             const bool active = group.count > 0 && group.operating_state != 1 &&
                                  building_available(cell, group.type_id, true);
             const BuildingType &type = _building_types[group.type_id];
-            // owner 目标：不可用/count<=0 → 0（其在岗人口将全部进池）。
+            // owner 鐩爣锛氫笉鍙敤/count<=0 鈫?0锛堝叾鍦ㄥ矖浜哄彛灏嗗叏閮ㄨ繘姹狅級銆?
             const bool suspended = group.count > 0 && group.operating_state == 1 &&
                                    building_available(cell, group.type_id, true);
             const int64_t owner_target = (active || suspended)
@@ -1092,14 +1092,14 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             return a < b;
         });
 
-        // ---- 第1步 析出：把超出目标的在岗人口迁往 unemployed|eth ----
-        // (a) 先把每个 group 的 filled_owner / _building_employee_filled 夹到目标
-        //     （裁员：filled > target 的差额释放）。employee 按 profession 稳定序
-        //     在多 group 间削减（同 profession 聚合，逐 group 削到 target）。
-        // (b) 再按 profession|eth slot 聚合"该 slot 应保留的在岗人口"，把
-        //     population - retained 迁往 unemployed|eth。
+        // ---- 绗?姝?鏋愬嚭锛氭妸瓒呭嚭鐩爣鐨勫湪宀椾汉鍙ｈ縼寰€ unemployed|eth ----
+        // (a) 鍏堟妸姣忎釜 group 鐨?filled_owner / _building_employee_filled 澶瑰埌鐩爣
+        //     锛堣鍛橈細filled > target 鐨勫樊棰濋噴鏀撅級銆俥mployee 鎸?profession 绋冲畾搴?
+        //     鍦ㄥ group 闂村墛鍑忥紙鍚?profession 鑱氬悎锛岄€?group 鍓婂埌 target锛夈€?
+        // (b) 鍐嶆寜 profession|eth slot 鑱氬悎"璇?slot 搴斾繚鐣欑殑鍦ㄥ矖浜哄彛"锛屾妸
+        //     population - retained 杩佸線 unemployed|eth銆?
         //
-        // owner 侧夹紧（建筑驱动：每 group 独立按自身 filled-target 裁）。
+        // owner 渚уす绱э紙寤虹瓚椹卞姩锛氭瘡 group 鐙珛鎸夎嚜韬?filled-target 瑁侊級銆?
         const bool trace_employment = cell == _inspector_trace_cell;
         thread_local std::vector<int64_t> trace_filled_before_clamp;
         thread_local std::vector<int64_t> trace_filled_after_profession;
@@ -1123,15 +1123,15 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         // owners hired from another local ethnicity remain valid in the next pass.
         thread_local std::vector<int64_t> owner_remaining_by_profession;
         owner_remaining_by_profession.assign(professions, 0);
-        _population.for_each_in_cell(cell, [&](int32_t slot) {
-            const uint32_t sig = _population.signature_id[slot];
+        population_store().for_each_in_cell(cell, [&](int32_t slot) {
+            const uint32_t sig = population_store().signature_id[slot];
             if (sig >= _signatures.size()) return;
             const int32_t profession = _signatures[sig].profession_id;
             if (profession < 0 || profession >= professions ||
                 profession == _unemployed_profession_id) return;
             owner_remaining_by_profession[profession] = saturating_add(
                 owner_remaining_by_profession[profession],
-                std::max<int64_t>(0, _population.population[slot]),
+                std::max<int64_t>(0, population_store().population[slot]),
                 _saturation_count);
         });
         for (int32_t g : hire_order) {
@@ -1161,15 +1161,15 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         // building group, not an admission rule: it records which families the
         // seated proprietors belong to, and never reduces the fill.
         attribute_family_owner_employment_for_cell(cell);
-        // employee 侧夹紧：profession p 若 Σfilled > Σtarget，按 group 稳定序
-        // 从后往前削减各 role fill 到 demand。用 remaining[p] 追踪该 profession
-        // 允许保留的总在岗数，逐 group 分配 min(role_filled, remaining)。
-        thread_local std::vector<int64_t> emp_remaining;   // 每 profession 允许保留的在岗上限
+        // employee 渚уす绱э細profession p 鑻?危filled > 危target锛屾寜 group 绋冲畾搴?
+        // 浠庡悗寰€鍓嶅墛鍑忓悇 role fill 鍒?demand銆傜敤 remaining[p] 杩借釜璇?profession
+        // 鍏佽淇濈暀鐨勬€诲湪宀楁暟锛岄€?group 鍒嗛厤 min(role_filled, remaining)銆?
+        thread_local std::vector<int64_t> emp_remaining;   // 姣?profession 鍏佽淇濈暀鐨勫湪宀椾笂闄?
         emp_remaining.assign(professions, 0);
         for (int32_t p = 0; p < professions; ++p) {
-            emp_remaining[p] = std::min(fill[p], demand[p]);   // 裁员后保留 = min(在岗, 目标)
+            emp_remaining[p] = std::min(fill[p], demand[p]);   // 瑁佸憳鍚庝繚鐣?= min(鍦ㄥ矖, 鐩爣)
         }
-        std::fill(fill.begin(), fill.end(), 0);   // 重算为夹紧后的实际在岗
+        std::fill(fill.begin(), fill.end(), 0);   // 閲嶇畻涓哄す绱у悗鐨勫疄闄呭湪宀?
         for (int32_t g = first; g < last; ++g) {
             BuildingGroup &group = _buildings[g];
             if (group.cell != cell || group.count <= 0) continue;
@@ -1186,11 +1186,11 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             }
         }
 
-        // (b) 计算每个 profession|eth slot 夹紧后应保留的在岗人口，收集迁往池的差额。
-        //     owner_retained[slot] = 该 signature 各 group filled_owner 之和；
-        //     employee_retained[slot] = 该 profession 在岗 employee 按 slot 稳定序摊派。
-        //     retained = owner_retained + employee_retained（A1: <= population）。
-        //     surplus = population - retained → 迁往 unemployed|eth。
+        // (b) 璁＄畻姣忎釜 profession|eth slot 澶圭揣鍚庡簲淇濈暀鐨勫湪宀椾汉鍙ｏ紝鏀堕泦杩佸線姹犵殑宸銆?
+        //     owner_retained[slot] = 璇?signature 鍚?group filled_owner 涔嬪拰锛?
+        //     employee_retained[slot] = 璇?profession 鍦ㄥ矖 employee 鎸?slot 绋冲畾搴忔憡娲俱€?
+        //     retained = owner_retained + employee_retained锛圓1: <= population锛夈€?
+        //     surplus = population - retained 鈫?杩佸線 unemployed|eth銆?
         //
         // First aggregate filled owner jobs by profession, then distribute them
         // over local profession|ethnicity cohorts in stable signature order. A
@@ -1204,9 +1204,9 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         thread_local std::vector<int64_t> owner_distributed_by_profession;
         thread_local std::vector<int32_t> owner_active_signatures;
         thread_local std::vector<int64_t> sig_owner_distributed;
-        // 这三条 signature 通道原来在每格开头各 assign 一遍整张 _signatures 表。表随
-        // 存档单调增长且永不收缩，而每格实际触碰的 signature 只有本地几个。generation
-        // stamp 让旧值自动失效：stamp 未命中的槽位一律视为 0，与清表后的读法一致。
+        // 杩欎笁鏉?signature 閫氶亾鍘熸潵鍦ㄦ瘡鏍煎紑澶村悇 assign 涓€閬嶆暣寮?_signatures 琛ㄣ€傝〃闅?
+        // 瀛樻。鍗曡皟澧為暱涓旀案涓嶆敹缂╋紝鑰屾瘡鏍煎疄闄呰Е纰扮殑 signature 鍙湁鏈湴鍑犱釜銆俫eneration
+        // stamp 璁╂棫鍊艰嚜鍔ㄥけ鏁堬細stamp 鏈懡涓殑妲戒綅涓€寰嬭涓?0锛屼笌娓呰〃鍚庣殑璇绘硶涓€鑷淬€?
         thread_local std::vector<uint32_t> sig_owner_stamp;
         thread_local uint32_t sig_owner_generation = 0;
         ++sig_owner_generation;
@@ -1238,8 +1238,8 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 owner_filled_by_profession[profession],
                 std::max<int64_t>(0, group.filled_owner), _saturation_count);
         }
-        _population.for_each_in_cell(cell, [&](int32_t slot) {
-            const int32_t sig = static_cast<int32_t>(_population.signature_id[slot]);
+        population_store().for_each_in_cell(cell, [&](int32_t slot) {
+            const int32_t sig = static_cast<int32_t>(population_store().signature_id[slot]);
             if (sig < 0 || sig >= static_cast<int32_t>(_signatures.size())) return;
             const int32_t profession = _signatures[sig].profession_id;
             if (profession < 0 || profession >= professions ||
@@ -1252,7 +1252,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             }
             if (sig_owner_population[sig] == 0) owner_active_signatures.push_back(sig);
             const int64_t population = std::max<int64_t>(0,
-                _population.population[slot]);
+                population_store().population[slot]);
             sig_owner_population[sig] = saturating_add(sig_owner_population[sig],
                 population, _saturation_count);
             owner_population_by_profession[profession] = saturating_add(
@@ -1274,33 +1274,33 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 next - owner_distributed_by_profession[profession]);
             owner_distributed_by_profession[profession] = next;
         }
-        // employee 在岗按 profession 稳定序摊派到各 slot（同 profession 的多 eth
-        // slot 按 signature_id 升序，用 cohort 可容纳量比例摊派，前缀和保确定）。
+        // employee 鍦ㄥ矖鎸?profession 绋冲畾搴忔憡娲惧埌鍚?slot锛堝悓 profession 鐨勫 eth
+        // slot 鎸?signature_id 鍗囧簭锛岀敤 cohort 鍙绾抽噺姣斾緥鎽婃淳锛屽墠缂€鍜屼繚纭畾锛夈€?
         thread_local std::vector<int64_t> emp_prefix;
         thread_local std::vector<int64_t> emp_distributed;
-        thread_local std::vector<int64_t> emp_capacity;   // 每 profession 各 slot 可当 employee 的容量之和
+        thread_local std::vector<int64_t> emp_capacity;   // 姣?profession 鍚?slot 鍙綋 employee 鐨勫閲忎箣鍜?
         emp_prefix.assign(professions, 0);
         emp_distributed.assign(professions, 0);
         emp_capacity.assign(professions, 0);
-        // 第一遍：算每 profession 的 employee 容量总量 = Σ(population - owner_retained)。
-        _population.for_each_in_cell(cell, [&](int32_t slot) {
+        // 绗竴閬嶏細绠楁瘡 profession 鐨?employee 瀹归噺鎬婚噺 = 危(population - owner_retained)銆?
+        population_store().for_each_in_cell(cell, [&](int32_t slot) {
             if (is_merchant_slot(slot)) return;
-            const int32_t sig = static_cast<int32_t>(_population.signature_id[slot]);
+            const int32_t sig = static_cast<int32_t>(population_store().signature_id[slot]);
             const int32_t p = _signatures[sig].profession_id;
             if (p == _unemployed_profession_id) return;
             const int64_t retained_here = sig_owner_stamp[sig] == sig_owner_generation
                 ? sig_owner_retained[sig] : 0;
             const int64_t owner_here = std::min(retained_here,
-                std::max<int64_t>(0, _population.population[slot]));
-            const int64_t cap = std::max<int64_t>(0, _population.population[slot] - owner_here);
+                std::max<int64_t>(0, population_store().population[slot]));
+            const int64_t cap = std::max<int64_t>(0, population_store().population[slot] - owner_here);
             emp_capacity[p] = saturating_add(emp_capacity[p], cap, _saturation_count);
         });
-        // 第二遍：只读收集每个 slot 的 surplus（迁往池）到缓冲，遍历后统一迁移。
-        // owner_retained 按 signature 在多 slot 间也需稳定序摊派（同 signature 通常
-        // 只有一个 slot；多页时按遍历序，前缀和保确定）。
-        thread_local std::vector<int32_t> shed_source_slots;   // surplus 来源 slot
-        thread_local std::vector<int32_t> shed_dest_eth;       // 对应 eth（→ unemployed|eth）
-        thread_local std::vector<int64_t> shed_pop;            // surplus 人数
+        // 绗簩閬嶏細鍙鏀堕泦姣忎釜 slot 鐨?surplus锛堣縼寰€姹狅級鍒扮紦鍐诧紝閬嶅巻鍚庣粺涓€杩佺Щ銆?
+        // owner_retained 鎸?signature 鍦ㄥ slot 闂翠篃闇€绋冲畾搴忔憡娲撅紙鍚?signature 閫氬父
+        // 鍙湁涓€涓?slot锛涘椤垫椂鎸夐亶鍘嗗簭锛屽墠缂€鍜屼繚纭畾锛夈€?
+        thread_local std::vector<int32_t> shed_source_slots;   // surplus 鏉ユ簮 slot
+        thread_local std::vector<int32_t> shed_dest_eth;       // 瀵瑰簲 eth锛堚啋 unemployed|eth锛?
+        thread_local std::vector<int64_t> shed_pop;            // surplus 浜烘暟
         shed_source_slots.clear(); shed_dest_eth.clear(); shed_pop.clear();
         // Route B: merchant slots are no longer skipped wholesale. A merchant
         // slot may now carry a merchant-post owner (sig_owner_retained>0) that
@@ -1309,17 +1309,17 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         // populated cell) forbids shedding the last merchant, so a merchant
         // slot keeps a floor of max(owner_here, 1) retained. Non-merchant slots
         // are unchanged.
-        _population.for_each_in_cell(cell, [&](int32_t slot) {
-            const int32_t sig = static_cast<int32_t>(_population.signature_id[slot]);
+        population_store().for_each_in_cell(cell, [&](int32_t slot) {
+            const int32_t sig = static_cast<int32_t>(population_store().signature_id[slot]);
             const int32_t p = _signatures[sig].profession_id;
             const int32_t eth = _signatures[sig].ethnicity_id;
-            const int64_t pop = std::max<int64_t>(0, _population.population[slot]);
+            const int64_t pop = std::max<int64_t>(0, population_store().population[slot]);
             if (p == _unemployed_profession_id) {
-                // 失业 slot：本步不动（它是池，招人步骤才从中迁出）。
+                // 澶变笟 slot锛氭湰姝ヤ笉鍔紙瀹冩槸姹狅紝鎷涗汉姝ラ鎵嶄粠涓縼鍑猴級銆?
                 return;
             }
             const bool merchant_here = is_merchant_slot(slot);
-            // owner 在本 slot 的份额（同 signature 多 slot 时稳定序摊派）。
+            // owner 鍦ㄦ湰 slot 鐨勪唤棰濓紙鍚?signature 澶?slot 鏃剁ǔ瀹氬簭鎽婃淳锛夈€?
             const bool sig_active = sig_owner_stamp[sig] == sig_owner_generation;
             const int64_t retained_here = sig_active ? sig_owner_retained[sig] : 0;
             const int64_t distributed_here = sig_active ? sig_owner_distributed[sig] : 0;
@@ -1329,11 +1329,11 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 sig_owner_distributed[sig] = saturating_add(distributed_here,
                                                             owner_here, _saturation_count);
             if (merchant_here) {
-                // 商人 slot 不做 employee（仅 owner 岗）；保底 1 个做市商不裁。
+                // 鍟嗕汉 slot 涓嶅仛 employee锛堜粎 owner 宀楋級锛涗繚搴?1 涓仛甯傚晢涓嶈銆?
                 const int64_t retained = std::min(pop,
                     std::max<int64_t>(owner_here, pop > 0 ? 1 : 0));
-                _population.owner_employed[slot] = owner_here;
-                _population.employee_employed[slot] = 0;
+                population_store().owner_employed[slot] = owner_here;
+                population_store().employee_employed[slot] = 0;
                 const int64_t surplus = std::max<int64_t>(0, pop - retained);
                 if (surplus > 0 && eth >= 0 && eth < n_eth) {
                     shed_source_slots.push_back(slot);
@@ -1342,7 +1342,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 }
                 return;
             }
-            // employee 在本 slot 的份额：按容量比例摊派 fill[p]。
+            // employee 鍦ㄦ湰 slot 鐨勪唤棰濓細鎸夊閲忔瘮渚嬫憡娲?fill[p]銆?
             const int64_t cap_here = std::max<int64_t>(0, pop - owner_here);
             emp_prefix[p] = saturating_add(emp_prefix[p], cap_here, _saturation_count);
             const int64_t emp_next = emp_capacity[p] > 0
@@ -1351,8 +1351,8 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             emp_distributed[p] = emp_next;
             const int64_t retained = std::min(pop, saturating_add(owner_here, emp_here,
                                                                    _saturation_count));
-            _population.owner_employed[slot] = owner_here;
-            _population.employee_employed[slot] = std::min(emp_here,
+            population_store().owner_employed[slot] = owner_here;
+            population_store().employee_employed[slot] = std::min(emp_here,
                 std::max<int64_t>(0, pop - owner_here));
             const int64_t surplus = std::max<int64_t>(0, pop - retained);
             if (surplus > 0 && eth >= 0 && eth < n_eth) {
@@ -1367,17 +1367,17 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             trace_shed_by_signature.assign(_signatures.size(), 0);
             for (size_t i = 0; i < shed_source_slots.size(); ++i) {
                 const int32_t sig = static_cast<int32_t>(
-                    _population.signature_id[shed_source_slots[i]]);
+                    population_store().signature_id[shed_source_slots[i]]);
                 if (sig >= 0 && sig < static_cast<int32_t>(_signatures.size()))
                     trace_shed_by_signature[sig] += shed_pop[i];
             }
         }
-        // 遍历外执行析出迁移（在岗 profession|eth → unemployed|eth）。
+        // 閬嶅巻澶栨墽琛屾瀽鍑鸿縼绉伙紙鍦ㄥ矖 profession|eth 鈫?unemployed|eth锛夈€?
         for (size_t i = 0; i < shed_source_slots.size(); ++i) {
             const int32_t src = shed_source_slots[i];
             const int32_t dest_sig = unemployed_signature_for_ethnicity(shed_dest_eth[i]);
-            if (dest_sig < 0) continue;   // 无 unemployed signature（向后兼容）：留原 slot。
-            if (dest_sig == static_cast<int32_t>(_population.signature_id[src])) continue;
+            if (dest_sig < 0) continue;   // 鏃?unemployed signature锛堝悜鍚庡吋瀹癸級锛氱暀鍘?slot銆?
+            if (dest_sig == static_cast<int32_t>(population_store().signature_id[src])) continue;
             bool drained = false;
             if (!move_cohort_population(src, cell, dest_sig, shed_pop[i], error, &drained)) {
                 return false;
@@ -1388,7 +1388,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         // hiring/transfers once knowledge owners+employees reach 30% of the
         // living population, but does not evict incumbents when population
         // later falls.  Keep one slot available in tiny settlements so a
-        // population of 1–3 is not permanently barred from its first scribe.
+        // population of 1鈥? is not permanently barred from its first scribe.
         auto is_knowledge_group = [&](const BuildingGroup &group) -> bool {
             return group.type_id >= 0 &&
                 group.type_id < static_cast<int32_t>(_building_types.size()) &&
@@ -1396,8 +1396,8 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         };
         int64_t local_population_for_knowledge = 0;
         int64_t local_knowledge_employment = 0;
-        _population.for_each_in_cell(cell, [&](int32_t slot) {
-            const int64_t pop = std::max<int64_t>(0, _population.population[slot]);
+        population_store().for_each_in_cell(cell, [&](int32_t slot) {
+            const int64_t pop = std::max<int64_t>(0, population_store().population[slot]);
             local_population_for_knowledge = saturating_add(
                 local_population_for_knowledge, pop, _saturation_count);
         });
@@ -1434,18 +1434,18 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 add <= knowledge_cap - local_knowledge_employment;
         };
 
-        // ---- 第2步 招人：按 cell-local attraction 比例从 unemployed 池增量迁回 ----
-        // 优先级键：(realized_profit_margin_q16 desc, planned_utilization_q16 desc,
-        //            group_index asc)。排序粒度=跨 BuildingGroup（跨建筑类型）；
-        // 同 type_id+同 owner_signature 聚合的组内盈利/利用率相同，组内不排（稳定序）。
-        // 池可用量：按 eth 缓存各 unemployed|eth slot 的当前人口与 slot id。
-        // 招 owner 需精确 eth（group.owner_signature 的 eth）；招 employee 可跨 eth
-        // （按 eth 升序取池，保确定）。招人在遍历外逐 group 执行迁移，每次迁移后
-        // 重新定位池 slot（可能被 drain 释放）。
+        // ---- 绗?姝?鎷涗汉锛氭寜 cell-local attraction 姣斾緥浠?unemployed 姹犲閲忚縼鍥?----
+        // 浼樺厛绾ч敭锛?realized_profit_margin_q16 desc, planned_utilization_q16 desc,
+        //            group_index asc)銆傛帓搴忕矑搴?璺?BuildingGroup锛堣法寤虹瓚绫诲瀷锛夛紱
+        // 鍚?type_id+鍚?owner_signature 鑱氬悎鐨勭粍鍐呯泩鍒?鍒╃敤鐜囩浉鍚岋紝缁勫唴涓嶆帓锛堢ǔ瀹氬簭锛夈€?
+        // 姹犲彲鐢ㄩ噺锛氭寜 eth 缂撳瓨鍚?unemployed|eth slot 鐨勫綋鍓嶄汉鍙ｄ笌 slot id銆?
+        // 鎷?owner 闇€绮剧‘ eth锛坓roup.owner_signature 鐨?eth锛夛紱鎷?employee 鍙法 eth
+        // 锛堟寜 eth 鍗囧簭鍙栨睜锛屼繚纭畾锛夈€傛嫑浜哄湪閬嶅巻澶栭€?group 鎵ц杩佺Щ锛屾瘡娆¤縼绉诲悗
+        // 閲嶆柊瀹氫綅姹?slot锛堝彲鑳借 drain 閲婃斁锛夈€?
         auto pool_slot_for_eth = [&](int32_t eth) -> int32_t {
             const int32_t sig = unemployed_signature_for_ethnicity(eth);
             if (sig < 0) return -1;
-            return _population.find_signature(cell, static_cast<uint32_t>(sig));
+            return population_store().find_signature(cell, static_cast<uint32_t>(sig));
         };
         const bool capture_employment_diagnostics = cell == _inspector_trace_cell;
         if (capture_employment_diagnostics) {
@@ -1471,11 +1471,11 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             const int32_t pool = pool_slot_for_eth(eth);
             if (pool < 0) continue;
             const int32_t source_signature = static_cast<int32_t>(
-                _population.signature_id[pool]);
+                population_store().signature_id[pool]);
             const int64_t source_cost = living_cost_for_signature(
                 cell, source_signature, -1, _saturation_count);
             const int64_t available = std::max<int64_t>(0,
-                _population.population[pool]);
+                population_store().population[pool]);
             const int64_t current_disposable = available > 0
                 ? unemployed_disposable_income(pool) : 0;
             employment_source_pools.push_back({
@@ -1484,14 +1484,14 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                     static_cast<int32_t>(_signatures.size())
                     ? _signatures[source_signature].profession_id : -1,
                 eth, available, current_disposable,
-                std::max<int64_t>(0, _population.funds[pool] -
+                std::max<int64_t>(0, population_store().funds[pool] -
                     saturating_mul(saturating_mul(source_cost, available,
                         _saturation_count), 30, _saturation_count))});
             unemployed_budget_by_eth[static_cast<size_t>(eth)] = mul_div_sat(
                 available,
                 mobility_period_q16, Q16_ONE, _saturation_count);
             if (mobility_period_q16 > 0 &&
-                _population.population[pool] > 0 &&
+                population_store().population[pool] > 0 &&
                 unemployed_budget_by_eth[static_cast<size_t>(eth)] == 0) {
                 unemployed_budget_by_eth[static_cast<size_t>(eth)] = 1;
             }
@@ -1586,8 +1586,8 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 diagnostic.pool_slot = pool;
                 if (pool >= 0) {
                     diagnostic.pool_signature = static_cast<int32_t>(
-                        _population.signature_id[pool]);
-                    diagnostic.pool_population = _population.population[pool];
+                        population_store().signature_id[pool]);
+                    diagnostic.pool_population = population_store().population[pool];
                 }
                 diagnostic.owner_target = group_owner_target[option.group - first];
                 if (trace_employment) {
@@ -1691,10 +1691,10 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             };
             const int32_t pool = pool_slot_for_eth(eth);
             if (pool < 0) return deny(EMPLOYMENT_REJECTION_POOL_MISSING);
-            if (_population.population[pool] <= 0)
+            if (population_store().population[pool] <= 0)
                 return deny(EMPLOYMENT_REJECTION_POOL_EMPTY);
             const int32_t source_signature = static_cast<int32_t>(
-                _population.signature_id[pool]);
+                population_store().signature_id[pool]);
             if (source_signature < 0 || source_signature >=
                     static_cast<int32_t>(_signatures.size()))
                 return deny(EMPLOYMENT_REJECTION_SOURCE_SIGNATURE);
@@ -1716,7 +1716,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 if (improvement < hurdle)
                     return deny(EMPLOYMENT_REJECTION_HURDLE);
             } else {
-                const bool desperate = _population.needs_satisfaction[pool] <
+                const bool desperate = population_store().needs_satisfaction[pool] <
                     _starvation_satisfaction_threshold_q16;
                 const int64_t target_wage = saturating_add(
                     candidate.target_disposable, target_cost, _saturation_count);
@@ -1911,7 +1911,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             const int32_t g = hire_order[oi];
             BuildingGroup &group = _buildings[g];
             const BuildingType &type = _building_types[group.type_id];
-            // --- owner 招募（按来源 ethnicity 保留身份，不要求匹配 canonical owner ethnicity）---
+            // --- owner 鎷涘嫙锛堟寜鏉ユ簮 ethnicity 淇濈暀韬唤锛屼笉瑕佹眰鍖归厤 canonical owner ethnicity锛?--
             const int64_t owner_target = group_owner_target[g - first];
             int64_t owner_need = std::max<int64_t>(0, owner_target - group.filled_owner);
             if (owner_need > 0 && group.owner_signature_id >= 0 &&
@@ -1934,7 +1934,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                         continue;
                     }
                     const int64_t avail = std::max<int64_t>(0,
-                        _population.population[pool]);
+                        population_store().population[pool]);
                     if (avail <= 0 || candidate_allocation(source_eth, g, -1,
                             target_sig) <= 0) {
                         drop(avail <= 0 ? EMPLOYMENT_REJECTION_POOL_EMPTY
@@ -1946,7 +1946,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                     const int64_t source_disposable =
                         unemployed_disposable_income(pool);
                     const int32_t source_profession = _signatures[
-                        _population.signature_id[pool]].profession_id;
+                        population_store().signature_id[pool]].profession_id;
                     const int64_t improvement = improvement_q16(
                         source_disposable, target_disposable);
                     int64_t &budget = unemployed_budget_by_eth[
@@ -1961,9 +1961,9 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                         ? take : std::max<int64_t>(0, knowledge_cap -
                             local_knowledge_employment);
                     if (capped_take <= 0 || target_sig == static_cast<int32_t>(
-                            _population.signature_id[pool])) {
+                            population_store().signature_id[pool])) {
                         if (target_sig == static_cast<int32_t>(
-                                _population.signature_id[pool]))
+                                population_store().signature_id[pool]))
                             drop(EMPLOYMENT_REJECTION_SIGNATURE_SELF);
                         else if (!knowledge_ok)
                             drop(EMPLOYMENT_REJECTION_KNOWLEDGE_CAP);
@@ -1991,18 +1991,18 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                         local_knowledge_employment = saturating_add(
                             local_knowledge_employment, capped_take, _saturation_count);
                     }
-                    const int32_t dest = _population.find_signature(
+                    const int32_t dest = population_store().find_signature(
                         cell, static_cast<uint32_t>(target_sig));
                     if (dest >= 0) {
-                        _population.owner_employed[dest] = saturating_add(
-                            _population.owner_employed[dest], capped_take,
+                        population_store().owner_employed[dest] = saturating_add(
+                            population_store().owner_employed[dest], capped_take,
                             _saturation_count);
                     }
                     budget = std::max<int64_t>(0, budget - capped_take);
                 }
             }
             if (group.operating_state == 1) continue;
-            // --- employee 招募（每 role，profession 匹配，跨 eth 按升序取池）---
+            // --- employee 鎷涘嫙锛堟瘡 role锛宲rofession 鍖归厤锛岃法 eth 鎸夊崌搴忓彇姹狅級---
             for (int32_t r = 0; r < type.employee_count; ++r) {
                 const JobRole &role = _building_employee_roles[type.employee_begin + r];
                 const int32_t p = role.profession_id;
@@ -2026,7 +2026,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                     drop_role_diagnostics(g, r, EMPLOYMENT_REJECTION_KNOWLEDGE_CAP);
                     continue;
                 }
-                // 目标 slot 按具体 eth 定（跨 eth 招募，按 eth 升序稳定取池）。
+                // 鐩爣 slot 鎸夊叿浣?eth 瀹氾紙璺?eth 鎷涘嫙锛屾寜 eth 鍗囧簭绋冲畾鍙栨睜锛夈€?
                 for (int32_t eth = 0; eth < n_eth && need > 0; ++eth) {
                     const int32_t pool = pool_slot_for_eth(eth);
                     const int32_t target_sig = signature_for_profession_ethnicity(p, eth);
@@ -2039,7 +2039,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                         drop(EMPLOYMENT_REJECTION_POOL_MISSING);
                         continue;
                     }
-                    const int64_t avail = std::max<int64_t>(0, _population.population[pool]);
+                    const int64_t avail = std::max<int64_t>(0, population_store().population[pool]);
                     if (avail <= 0) {
                         drop(EMPLOYMENT_REJECTION_POOL_EMPTY);
                         continue;
@@ -2048,7 +2048,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                         drop(EMPLOYMENT_REJECTION_TARGET_SIGNATURE);
                         continue;
                     }
-                    if (target_sig == static_cast<int32_t>(_population.signature_id[pool])) {
+                    if (target_sig == static_cast<int32_t>(population_store().signature_id[pool])) {
                         drop(EMPLOYMENT_REJECTION_SIGNATURE_SELF);
                         continue;
                     }
@@ -2062,10 +2062,10 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                     const int64_t source_disposable =
                         unemployed_disposable_income(pool);
                     const int32_t source_profession = _signatures[
-                        _population.signature_id[pool]].profession_id;
+                        population_store().signature_id[pool]].profession_id;
                     const int64_t improvement = improvement_q16(
                         source_disposable, target_disposable);
-                    const bool desperate = _population.needs_satisfaction[pool] <
+                    const bool desperate = population_store().needs_satisfaction[pool] <
                         _starvation_satisfaction_threshold_q16;
                     const int64_t survival_floor = desperate
                         ? mul_div_sat(target_cost,
@@ -2108,11 +2108,11 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                         local_knowledge_employment = saturating_add(
                             local_knowledge_employment, take, _saturation_count);
                     }
-                    const int32_t dest = _population.find_signature(
+                    const int32_t dest = population_store().find_signature(
                         cell, static_cast<uint32_t>(target_sig));
                     if (dest >= 0) {
-                        _population.employee_employed[dest] = saturating_add(
-                            _population.employee_employed[dest], take, _saturation_count);
+                        population_store().employee_employed[dest] = saturating_add(
+                            population_store().employee_employed[dest], take, _saturation_count);
                     }
                     need -= take;
                     budget = std::max<int64_t>(0, budget - take);
@@ -2217,11 +2217,11 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                                     source.profession, ethnicity);
                             const int32_t candidate_slot =
                                 source_signature >= 0
-                                ? _population.find_signature(
+                                ? population_store().find_signature(
                                     cell, static_cast<uint32_t>(
                                         source_signature)) : -1;
                             if (candidate_slot < 0 ||
-                                _population.employee_employed[
+                                population_store().employee_employed[
                                     candidate_slot] <= 0) continue;
                             const int32_t candidate_target =
                                 signature_for_profession_ethnicity(
@@ -2240,22 +2240,22 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                                 target_signature, 1, error, &source_drained,
                                 preferred_family)) return false;
                         if (!source_drained) {
-                            _population.employee_employed[source_slot] =
+                            population_store().employee_employed[source_slot] =
                                 std::max<int64_t>(0,
-                                    _population.employee_employed[
+                                    population_store().employee_employed[
                                         source_slot] - 1);
                         }
                         const int32_t destination =
-                            _population.find_signature(
+                            population_store().find_signature(
                                 cell, static_cast<uint32_t>(target_signature));
                         if (destination < 0) {
                             error =
                                 "employee_job_reallocation_destination_missing";
                             return false;
                         }
-                        _population.employee_employed[destination] =
+                        population_store().employee_employed[destination] =
                             saturating_add(
-                                _population.employee_employed[destination],
+                                population_store().employee_employed[destination],
                                 1, _saturation_count);
                         ++_building_employee_job_profession_changes;
                     }
@@ -2275,7 +2275,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         // Unemployed hiring remains authoritative and runs first. Remaining
         // ACTIVE owner vacancies may then attract one incumbent owner along the
         // opportunity gradient. Any ACTIVE lot with at least one owner may be a
-        // source; understaffed↔understaffed moves with positive source income
+        // source; understaffed鈫攗nderstaffed moves with positive source income
         // pay an extra hurdle so small noisy gaps cannot thrash each epoch.
         // Targets and sources are snapshotted before matching so a group
         // cannot chain through several jobs in the same employment period.
@@ -2305,18 +2305,18 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 const int32_t signature = signature_for_profession_ethnicity(
                     profession, eth);
                 if (signature < 0) continue;
-                const int32_t slot = _population.find_signature(
+                const int32_t slot = population_store().find_signature(
                     cell, static_cast<uint32_t>(signature));
-                if (slot >= 0 && _population.owner_employed[slot] > 0)
+                if (slot >= 0 && population_store().owner_employed[slot] > 0)
                     return slot;
             }
             return -1;
         };
-        _population.for_each_in_cell(cell, [&](int32_t slot) {
+        population_store().for_each_in_cell(cell, [&](int32_t slot) {
             if (is_merchant_slot(slot)) {
                 local_merchant_population = saturating_add(
                     local_merchant_population,
-                    std::max<int64_t>(0, _population.population[slot]),
+                    std::max<int64_t>(0, population_store().population[slot]),
                     _saturation_count);
             }
         });
@@ -2344,7 +2344,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             if (group.filled_owner > 0 && owner_target > 0) {
                 const int32_t source_slot = owner_slot_for_profession(
                     _signatures[group.owner_signature_id].profession_id);
-                if (source_slot >= 0 && _population.owner_employed[source_slot] > 0) {
+                if (source_slot >= 0 && population_store().owner_employed[source_slot] > 0) {
                     owner_job_sources.push_back(g);
                     owner_job_source_understaffed.push_back(
                         group.filled_owner < owner_target ? uint8_t{1} : uint8_t{0});
@@ -2427,7 +2427,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                     source_profile_profession);
                 if (source_slot_candidate < 0) continue;
                 const int32_t source_signature_id = static_cast<int32_t>(
-                    _population.signature_id[source_slot_candidate]);
+                    population_store().signature_id[source_slot_candidate]);
                 if (source_signature_id < 0 || source_signature_id >=
                         static_cast<int32_t>(_signatures.size())) continue;
                 const Signature &source_signature = _signatures[source_signature_id];
@@ -2448,7 +2448,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 const int64_t base_hurdle = transition_hurdle_q16(
                     source_signature.profession_id, target_owner_profession);
                 // Asymmetric hysteresis: easy exit from non-positive opportunity,
-                // raised bar only for understaffed→understaffed with positive
+                // raised bar only for understaffed鈫抲nderstaffed with positive
                 // source income (the historical thrash pair).
                 int64_t effective_hurdle = base_hurdle;
                 const bool source_understaffed =
@@ -2467,12 +2467,12 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                     local_merchant_population <= 1) continue;
                 if (source_signature.profession_id != target_signature.profession_id) {
                     const int64_t source_population = std::max<int64_t>(1,
-                        _population.population[source_slot_candidate]);
+                        population_store().population[source_slot_candidate]);
                     const int64_t source_reserve = saturating_mul(saturating_mul(
                         source_cost, source_population, _saturation_count), 30,
                         _saturation_count);
                     const int64_t transferable = std::max<int64_t>(0,
-                        _population.funds[source_slot_candidate] - source_reserve);
+                        population_store().funds[source_slot_candidate] - source_reserve);
                     if (transferable < owner_entry_capital(target_group)) continue;
                 }
                 source_group_index = candidate;
@@ -2497,17 +2497,17 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                         return false;
                     }
                     if (!source_drained) {
-                        _population.owner_employed[source_slot] = std::max<int64_t>(
-                            0, _population.owner_employed[source_slot] - 1);
+                        population_store().owner_employed[source_slot] = std::max<int64_t>(
+                            0, population_store().owner_employed[source_slot] - 1);
                     }
-                    const int32_t destination = _population.find_signature(
+                    const int32_t destination = population_store().find_signature(
                         cell, static_cast<uint32_t>(source_target_signature));
                     if (destination < 0) {
                         error = "owner_job_reallocation_destination_missing";
                         return false;
                     }
-                    _population.owner_employed[destination] = saturating_add(
-                        _population.owner_employed[destination], 1,
+                    population_store().owner_employed[destination] = saturating_add(
+                        population_store().owner_employed[destination], 1,
                         _saturation_count);
                     if (source_signature.profession_id == _merchant_profession_id) {
                         local_merchant_population = std::max<int64_t>(
@@ -2566,10 +2566,10 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                         signature_for_profession_ethnicity(candidate.profession,
                             source_eth);
                     if (candidate_source_signature < 0) continue;
-                    const int32_t candidate_employee_slot = _population.find_signature(
+                    const int32_t candidate_employee_slot = population_store().find_signature(
                         cell, static_cast<uint32_t>(candidate_source_signature));
                     if (candidate_employee_slot < 0 ||
-                        _population.employee_employed[candidate_employee_slot] <= 0) continue;
+                        population_store().employee_employed[candidate_employee_slot] <= 0) continue;
                     const int32_t candidate_target_signature =
                         signature_for_profession_ethnicity(target_owner_profession,
                             source_eth);
@@ -2591,16 +2591,16 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                     break;
                 }
                 if (!candidate_eligible) continue;
-                // Even a same-profession employee→owner move opens a new
+                // Even a same-profession employee鈫抩wner move opens a new
                 // business position and therefore needs the target reserve;
                 // only the counter update differs from a profession change.
                 const int64_t source_population = std::max<int64_t>(1,
-                    _population.population[employee_slot]);
+                    population_store().population[employee_slot]);
                 const int64_t source_reserve = saturating_mul(saturating_mul(
                     source_cost, source_population, _saturation_count), 30,
                     _saturation_count);
                 const int64_t transferable = std::max<int64_t>(0,
-                    _population.funds[employee_slot] - source_reserve);
+                    population_store().funds[employee_slot] - source_reserve);
                 if (transferable < owner_entry_capital(target_group)) continue;
 
                 const bool profession_change =
@@ -2616,24 +2616,24 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                         return false;
                     }
                     if (!source_drained) {
-                        _population.employee_employed[employee_slot] =
+                        population_store().employee_employed[employee_slot] =
                             std::max<int64_t>(0,
-                                _population.employee_employed[employee_slot] - 1);
+                                population_store().employee_employed[employee_slot] - 1);
                     }
-                    const int32_t destination = _population.find_signature(
+                    const int32_t destination = population_store().find_signature(
                         cell, static_cast<uint32_t>(selected_employee_target_signature));
                     if (destination < 0) {
                         error = "employee_owner_reallocation_destination_missing";
                         return false;
                     }
-                    _population.owner_employed[destination] = saturating_add(
-                        _population.owner_employed[destination], 1,
+                    population_store().owner_employed[destination] = saturating_add(
+                        population_store().owner_employed[destination], 1,
                         _saturation_count);
                     ++_building_owner_job_profession_changes;
                 } else {
-                    _population.employee_employed[employee_slot] -= 1;
-                    _population.owner_employed[employee_slot] = saturating_add(
-                        _population.owner_employed[employee_slot], 1,
+                    population_store().employee_employed[employee_slot] -= 1;
+                    population_store().owner_employed[employee_slot] = saturating_add(
+                        population_store().owner_employed[employee_slot], 1,
                         _saturation_count);
                 }
                 _building_employee_filled[candidate.fill_index] -= 1;
@@ -2664,32 +2664,32 @@ bool NativeEconomyRuntime::run_building_employment_cell(
     int64_t local_owner = 0;
     int64_t local_employee = 0;
     int64_t local_unemployed = 0;
-    _population.for_each_in_cell(cell, [&](int32_t slot) {
-        local_owner = saturating_add(local_owner, _population.owner_employed[slot],
+    population_store().for_each_in_cell(cell, [&](int32_t slot) {
+        local_owner = saturating_add(local_owner, population_store().owner_employed[slot],
                                      _saturation_count);
-        local_employee = saturating_add(local_employee, _population.employee_employed[slot],
+        local_employee = saturating_add(local_employee, population_store().employee_employed[slot],
                                         _saturation_count);
         const int64_t unemployed = std::max<int64_t>(
-            0, _population.population[slot] - _population.owner_employed[slot] -
-               _population.employee_employed[slot]);
+            0, population_store().population[slot] - population_store().owner_employed[slot] -
+               population_store().employee_employed[slot]);
         local_unemployed = saturating_add(local_unemployed, unemployed, _saturation_count);
     });
     replace_employment_metrics_for_cell(
         cell, local_owner, local_employee, local_unemployed);
     bool employment_identity_valid = true;
-    _population.for_each_in_cell(cell, [&](int32_t slot) {
+    population_store().for_each_in_cell(cell, [&](int32_t slot) {
         if (is_merchant_slot(slot)) return;
-        const int32_t signature = static_cast<int32_t>(_population.signature_id[slot]);
+        const int32_t signature = static_cast<int32_t>(population_store().signature_id[slot]);
         if (signature < 0 || signature >= static_cast<int32_t>(_signatures.size())) {
             employment_identity_valid = false;
             return;
         }
         if (_signatures[signature].profession_id == _unemployed_profession_id) return;
         const int64_t employed = saturating_add(
-            std::max<int64_t>(0, _population.owner_employed[slot]),
-            std::max<int64_t>(0, _population.employee_employed[slot]),
+            std::max<int64_t>(0, population_store().owner_employed[slot]),
+            std::max<int64_t>(0, population_store().employee_employed[slot]),
             _saturation_count);
-        if (employed != std::max<int64_t>(0, _population.population[slot])) {
+        if (employed != std::max<int64_t>(0, population_store().population[slot])) {
             employment_identity_valid = false;
         }
     });
@@ -2701,9 +2701,9 @@ bool NativeEconomyRuntime::run_building_employment_cell(
     if (trace_detail) {
         for (size_t i = 0; i < trace_handles.size(); ++i) {
             int32_t slot = -1;
-            if (!_population.valid_handle(trace_handles[i], slot)) {
-                // 该 cohort 已被 A1 迁移完全 drain（例如整职业裁光进池并释放）：
-                // 记为归零 leg，subject 用快照 handle，便于审计闭合。
+            if (!population_store().valid_handle(trace_handles[i], slot)) {
+                // 璇?cohort 宸茶 A1 杩佺Щ瀹屽叏 drain锛堜緥濡傛暣鑱屼笟瑁佸厜杩涙睜骞堕噴鏀撅級锛?
+                // 璁颁负褰掗浂 leg锛宻ubject 鐢ㄥ揩鐓?handle锛屼究浜庡璁￠棴鍚堛€?
                 if (trace_owner_before[i] != 0) {
                     event_legs.push_back({FIELD_COHORT_OWNER_EMPLOYED, SUBJECT_COHORT,
                                           static_cast<int64_t>(trace_handles[i]), -1,
@@ -2717,15 +2717,15 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 continue;
             }
             const int64_t handle = static_cast<int64_t>(trace_handles[i]);
-            if (trace_owner_before[i] != _population.owner_employed[slot]) {
+            if (trace_owner_before[i] != population_store().owner_employed[slot]) {
                 event_legs.push_back({FIELD_COHORT_OWNER_EMPLOYED, SUBJECT_COHORT, handle,
                                       -1, trace_owner_before[i],
-                                      _population.owner_employed[slot]});
+                                      population_store().owner_employed[slot]});
             }
-            if (trace_employee_before[i] != _population.employee_employed[slot]) {
+            if (trace_employee_before[i] != population_store().employee_employed[slot]) {
                 event_legs.push_back({FIELD_COHORT_EMPLOYEE_EMPLOYED, SUBJECT_COHORT, handle,
                                       -1, trace_employee_before[i],
-                                      _population.employee_employed[slot]});
+                                      population_store().employee_employed[slot]});
             }
         }
     }

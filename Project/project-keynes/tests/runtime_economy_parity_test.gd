@@ -1,10 +1,10 @@
 extends SceneTree
 
-# Soft Economy SHADOW/ACTIVE wiring check for Phase 2-6.
-# Production implemented mask is 0xB7E (includes ECONOMY). ACTIVE production
-# advances via Host attach_economy_production_runtime + worker_run_compact_slice;
-# StageOps default mutate=false (parity). Phase-2.4.2 keeps production_writer
-# default compact_slice and fail-closes stage_ops until bounded handoff.
+# Soft Economy SHADOW/ACTIVE wiring check for Phase 2-6 / Phase-2.6.1.
+# Production implemented mask is 0xB7E (includes ECONOMY). Defaults arm
+# StageOps mutate + economy_production_writer=stage_ops + economy_auto_pod_active;
+# legacy submit_economy_commands is refuse-closed. ACTIVE_WITH_PARITY coerces
+# writer back to compact_slice for the SHADOW probe.
 
 var _checks := 0
 var _failures := 0
@@ -66,16 +66,18 @@ func _run() -> void:
 		and report.has("economy_shadow_stage_invocations")
 		and report.has("economy_stage_ops_mutate")
 		and report.has("economy_auto_pod_active")
+		and report.has("economy_pod_command_recapture_count")
 		and report.has("economy_production_writer"))
 	_expect("default execution mode is ACTIVE_ONLY",
 		int(report.get("economy_execution_mode", -1)) == 0
 		and String(report.get("economy_execution_mode_name", "")) == "ACTIVE_ONLY")
-	_expect("Phase-2.4.1 defaults keep compact_slice writer",
-		not bool(report.get("economy_stage_ops_mutate", true))
-		and not bool(report.get("economy_auto_pod_active", true))
-		and String(report.get("economy_production_writer", "")) == "compact_slice"
+	_expect("Phase-2.6.1 defaults arm StageOps writer + auto POD_ACTIVE",
+		bool(report.get("economy_stage_ops_mutate", false))
+		and bool(report.get("economy_auto_pod_active", false))
+		and String(report.get("economy_production_writer", "")) == "stage_ops"
 		and String(report.get("economy_production_writer_effective", "")) ==
-			"compact_slice")
+			"stage_ops"
+		and bool(report.get("economy_stage_ops_soak_parity_ok", false)))
 	_expect("Phase-2.4.4.3 readiness exposes full StageOps checklist",
 		report.has("economy_stage_ops_readiness_mask")
 		and int(report.get("economy_stage_ops_readiness_mask", 0)) == 0xF
@@ -89,10 +91,25 @@ func _run() -> void:
 	_expect("SHADOW does not grant Economy authority",
 		(int(report.get("authoritative_domain_mask", 0)) & 0x100) == 0)
 
+	# Legacy ingress is fail-closed when StageOps writer is effective.
+	var legacy_submit: Dictionary = ext.submit_economy_commands({
+		"opcodes": PackedInt32Array([1]),
+		"effective_days": PackedInt64Array([0]),
+		"sequences": PackedInt64Array([0]),
+		"target_handles": PackedInt64Array([0]),
+		"i32_0": PackedInt32Array([0]),
+		"i32_1": PackedInt32Array([0]),
+		"i64_0": PackedInt64Array([0]),
+		"i64_1": PackedInt64Array([0]),
+	})
+	_expect("legacy submit refused under default stage_ops writer",
+		not bool(legacy_submit.get("ok", true))
+		and String(legacy_submit.get("reason", "")).contains("legacy_ingress"))
+
 	ext.request_runtime_stop()
 
-	# Phase-2.4.4.3: STAGE_OPS writer refuse moves from not_ready to soak_pending.
-	var refuse_stage_ops: Dictionary = ext.start_runtime_worker({
+	# Phase-2.4.5: STAGE_OPS writer starts when mutate+readiness pass.
+	var started_stage_ops: Dictionary = ext.start_runtime_worker({
 		"simulation_thread_mode": "SHADOW",
 		"graph_coverage_complete": false,
 		"day": 0,
@@ -101,36 +118,15 @@ func _run() -> void:
 		"economy_stage_ops_mutate": true,
 		"economy_production_writer": "stage_ops",
 	})
-	_expect("stage_ops writer refused as soak pending",
-		not bool(refuse_stage_ops.get("ok", true))
-		and String(refuse_stage_ops.get("message", "")).contains("soak_pending"))
-	_expect("stage_ops refuse reports complete readiness checklist",
-		int(refuse_stage_ops.get("economy_stage_ops_readiness_mask", 0)) == 0xF
-		and int(refuse_stage_ops.get("economy_stage_ops_readiness_missing", 0)) ==
-			0)
-	_expect("Phase-2.4.4.4 default soak latch is false",
-		not bool(refuse_stage_ops.get("economy_stage_ops_soak_parity_ok", true))
-		and not bool(refuse_stage_ops.get("economy_stage_ops_soak_experiment", true)))
-	var started_stage_ops_experiment: Dictionary = ext.start_runtime_worker({
-		"simulation_thread_mode": "SHADOW",
-		"graph_coverage_complete": false,
-		"day": 0,
-		"speed_days_per_second": 0.0,
-		"paused": true,
-		"economy_stage_ops_mutate": true,
-		"economy_stage_ops_soak_experiment": true,
-		"economy_production_writer": "stage_ops",
-	})
-	_expect("stage_ops writer allowed under soak experiment",
-		bool(started_stage_ops_experiment.get("ok", false)))
-	if bool(started_stage_ops_experiment.get("ok", false)):
-		var experiment_report: Dictionary = ext.get_runtime_thread_report()
-		_expect("soak experiment arms stage_ops effective writer",
-			bool(experiment_report.get("economy_stage_ops_soak_experiment", false))
-			and String(experiment_report.get(
+	_expect("stage_ops writer starts after soak handoff",
+		bool(started_stage_ops.get("ok", false)))
+	if bool(started_stage_ops.get("ok", false)):
+		var stage_ops_report: Dictionary = ext.get_runtime_thread_report()
+		_expect("stage_ops effective writer armed",
+			String(stage_ops_report.get(
 				"economy_production_writer_effective", "")) == "stage_ops"
-			and not bool(experiment_report.get(
-				"economy_stage_ops_soak_parity_ok", true)))
+			and bool(stage_ops_report.get(
+				"economy_stage_ops_soak_parity_ok", false)))
 		ext.request_runtime_stop()
 	var refuse_stage_ops_no_mutate: Dictionary = ext.start_runtime_worker({
 		"simulation_thread_mode": "SHADOW",
@@ -138,6 +134,7 @@ func _run() -> void:
 		"day": 0,
 		"speed_days_per_second": 0.0,
 		"paused": true,
+		"economy_stage_ops_mutate": false,
 		"economy_production_writer": "stage_ops",
 	})
 	_expect("stage_ops writer requires mutate",

@@ -174,8 +174,8 @@ void NativeEconomyRuntime::fill_colonization_kit_buffer(
         int32_t bridge_days_override) const {
     if (population <= 0 || source_cell < 0 || source_cell >= _cell_count)
         return;
-    const int32_t market = _market.cell_to_market[source_cell];
-    if (market < 0 || market >= _market.market_count) return;
+    const int32_t market = market_store().cell_to_market[source_cell];
+    if (market < 0 || market >= market_store().market_count) return;
     auto extra_stock = [&](const std::vector<int64_t> *lane,
                            int32_t good) -> int64_t {
         if (lane == nullptr || good < 0 ||
@@ -186,15 +186,15 @@ void NativeEconomyRuntime::fill_colonization_kit_buffer(
     // committed to another line of this kit. Household survival remains part
     // of ordinary market settlement rather than a colonization-only floor.
     auto spare_stock = [&](int32_t good) -> int64_t {
-        if (good < 0 || good >= _market.good_count) return 0;
+        if (good < 0 || good >= market_store().good_count) return 0;
         const int64_t stock = std::max<int64_t>(0,
-            _market.stock[_market.index(market, good)]);
+            market_store().stock[market_store().index(market, good)]);
         const int64_t held = reserve == nullptr ? 0
             : extra_stock(reserve->reserved, good);
         return stock + held;
     };
     kit.source_stock_identity = 1469598103934665603ULL;
-    for (int32_t good = 0; good < _market.good_count; ++good) {
+    for (int32_t good = 0; good < market_store().good_count; ++good) {
         kit.source_stock_identity = trace_hash_mix(
             kit.source_stock_identity,
             static_cast<uint64_t>(spare_stock(good)));
@@ -205,7 +205,7 @@ void NativeEconomyRuntime::fill_colonization_kit_buffer(
         : std::max(1, travel_days) + COLONIZATION_KIT_BRIDGE_EXTRA_DAYS;
     int64_t sat = 0;
     auto source_stock = [&](int32_t good) -> int64_t {
-        if (good < 0 || good >= _market.good_count) return 0;
+        if (good < 0 || good >= market_store().good_count) return 0;
         // Construction materials and previously selected bridge goods already
         // reserve the source market stock.  Every subsequent line must draw
         // from the remaining balance, otherwise a good shared by the build
@@ -403,13 +403,13 @@ bool NativeEconomyRuntime::plan_colonization_kit(
     // lane cache stamp. `_resource_current_generation` increments at every
     // epoch begin and would invalidate every live quote after one cycle.
     if (!_resource_ids.empty() &&
-        _resource_snapshot.size() >= _resource_ids.size() *
+        resource_stock_lanes().size() >= _resource_ids.size() *
             static_cast<size_t>(_cell_count)) {
         for (size_t resource = 0; resource < _resource_ids.size(); ++resource) {
             const size_t lane = resource * static_cast<size_t>(_cell_count) +
                 static_cast<size_t>(target_cell);
             kit.dest_identity = trace_hash_mix(kit.dest_identity,
-                static_cast<uint64_t>(_resource_snapshot[lane]));
+                static_cast<uint64_t>(resource_stock_lanes()[lane]));
         }
     }
     if (_country_runtime != nullptr) {
@@ -578,7 +578,7 @@ bool NativeEconomyRuntime::plan_colonization_kit(
     };
     auto spare_source_stock = [&](int32_t market, int32_t good) -> int64_t {
         const int64_t stock = std::max<int64_t>(0,
-            _market.stock[_market.index(market, good)]);
+            market_store().stock[market_store().index(market, good)]);
         const int64_t held = reserve == nullptr ? 0
             : reserve_lane(reserve->reserved, good);
         return stock + held;
@@ -606,9 +606,9 @@ bool NativeEconomyRuntime::plan_colonization_kit(
     bool structurally_unbuildable = false;
     auto materials_fit = [&](std::vector<int32_t> *missing) -> bool {
         std::vector<int64_t> stock(_good_ids.size(), 0);
-        const int32_t market = _market.cell_to_market[source_cell];
-        if (market < 0 || market >= _market.market_count) return false;
-        for (int32_t good = 0; good < _market.good_count; ++good)
+        const int32_t market = market_store().cell_to_market[source_cell];
+        if (market < 0 || market >= market_store().market_count) return false;
+        for (int32_t good = 0; good < market_store().good_count; ++good)
             stock[static_cast<size_t>(good)] = spare_source_stock(market, good);
         kit.cargo.erase(std::remove_if(kit.cargo.begin(), kit.cargo.end(),
             [](const FamilyExpeditionCargoLine &line) {
@@ -740,8 +740,8 @@ bool NativeEconomyRuntime::plan_colonization_kit(
     fill_colonization_kit_buffer(source_cell, target_cell, population,
         travel_days, kit, reserve);
 
-    const int32_t market = _market.cell_to_market[source_cell];
-    if (market >= 0 && market < _market.market_count) {
+    const int32_t market = market_store().cell_to_market[source_cell];
+    if (market >= 0 && market < market_store().market_count) {
         int64_t sat = 0;
         std::vector<int64_t> billed(_good_ids.size(), 0);
         for (const FamilyExpeditionCargoLine &line : kit.cargo) {
@@ -763,7 +763,7 @@ bool NativeEconomyRuntime::plan_colonization_kit(
         for (int32_t good = 0; good < static_cast<int32_t>(billed.size());
              ++good) {
             if (billed[static_cast<size_t>(good)] <= 0) continue;
-            const int64_t stock = good < _market.good_count
+            const int64_t stock = good < market_store().good_count
                 ? spare_source_stock(market, good) : 0;
             const int64_t leftover = std::max<int64_t>(0,
                 stock - reserved[static_cast<size_t>(good)]);
@@ -783,23 +783,23 @@ bool NativeEconomyRuntime::plan_colonization_kit(
 bool NativeEconomyRuntime::adjust_market_stock(
         int32_t cell, int32_t good_id, int64_t delta, std::string &error) {
     if (cell < 0 || cell >= _cell_count || good_id < 0 ||
-        good_id >= _market.good_count) {
+        good_id >= market_store().good_count) {
         error = "colonization_kit_market_invalid";
         return false;
     }
-    const int32_t market = _market.cell_to_market[cell];
-    if (market < 0 || market >= _market.market_count) {
+    const int32_t market = market_store().cell_to_market[cell];
+    if (market < 0 || market >= market_store().market_count) {
         error = "colonization_kit_market_invalid";
         return false;
     }
-    const int64_t index = _market.index(market, good_id);
-    const int64_t next = _market.stock[index] + delta;
+    const int64_t index = market_store().index(market, good_id);
+    const int64_t next = market_store().stock[index] + delta;
     if (next < 0) {
         error = "colonization_kit_materials_short";
         return false;
     }
     audit_touch_market_lane(static_cast<size_t>(index));
-    _market.stock[index] = next;
+    market_store().stock[index] = next;
     return true;
 }
 
@@ -978,10 +978,10 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
     }
     int32_t ethnicity = _families.origin_ethnicity[family];
     if (ethnicity < 0) {
-        _population.for_each_in_cell(destination_cell, [&](int32_t slot) {
+        population_store().for_each_in_cell(destination_cell, [&](int32_t slot) {
             if (ethnicity >= 0) return;
             const int32_t signature =
-                static_cast<int32_t>(_population.signature_id[slot]);
+                static_cast<int32_t>(population_store().signature_id[slot]);
             if (signature >= 0 &&
                 signature < static_cast<int32_t>(_signatures.size()))
                 ethnicity = _signatures[signature].ethnicity_id;
@@ -1141,7 +1141,7 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
             std::max<int64_t>(1, type.owner_slots_per_building),
             _saturation_count);
         int32_t owner_slot = find_cohort_slot(destination_cell, owner_signature);
-        int64_t have = owner_slot >= 0 ? _population.population[owner_slot] : 0;
+        int64_t have = owner_slot >= 0 ? population_store().population[owner_slot] : 0;
         int64_t missing = std::max<int64_t>(0, needed - have);
         struct Candidate {
             int32_t slot = -1;
@@ -1151,10 +1151,10 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
             uint64_t handle = 0;
         };
         std::vector<Candidate> candidates;
-        _population.for_each_in_cell(destination_cell, [&](int32_t slot) {
-            if (_population.population[slot] <= 0) return;
+        population_store().for_each_in_cell(destination_cell, [&](int32_t slot) {
+            if (population_store().population[slot] <= 0) return;
             const int32_t signature =
-                static_cast<int32_t>(_population.signature_id[slot]);
+                static_cast<int32_t>(population_store().signature_id[slot]);
             if (signature == owner_signature) return;
             if (signature < 0 ||
                 signature >= static_cast<int32_t>(_signatures.size()))
@@ -1164,7 +1164,7 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
                     _unemployed_profession_id,
                 _signatures[signature].profession_id,
                 _signatures[signature].ethnicity_id,
-                _population.handle_for_slot(slot)});
+                population_store().handle_for_slot(slot)});
         });
         std::sort(candidates.begin(), candidates.end(),
             [](const Candidate &a, const Candidate &b) {
@@ -1177,12 +1177,12 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
         for (const Candidate &candidate : candidates) {
             if (missing <= 0) break;
             if (candidate.slot < 0 ||
-                candidate.slot >= static_cast<int32_t>(_population.active.size()) ||
-                _population.active[candidate.slot] == 0)
+                candidate.slot >= static_cast<int32_t>(population_store().active.size()) ||
+                population_store().active[candidate.slot] == 0)
                 continue;
             const bool from_merchant = is_merchant_slot(candidate.slot);
             int64_t take = std::min(missing,
-                _population.population[candidate.slot]);
+                population_store().population[candidate.slot]);
             if (from_merchant)
                 take = std::min(take, std::max<int64_t>(0, remaining_merchants - 1));
             if (take <= 0) continue;
@@ -1199,11 +1199,11 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
             destination_cell, row.first, owner_signature);
         if (group_index >= 0) {
             const int64_t filled = owner_slot >= 0
-                ? std::min(needed, _population.population[owner_slot]) : 0;
+                ? std::min(needed, population_store().population[owner_slot]) : 0;
             _buildings[group_index].filled_owner = filled;
             if (owner_slot >= 0)
-                _population.owner_employed[owner_slot] = std::max(
-                    _population.owner_employed[owner_slot], filled);
+                population_store().owner_employed[owner_slot] = std::max(
+                    population_store().owner_employed[owner_slot], filled);
             if (_buildings[group_index].modifier_handle != 0) {
                 bool found = false;
                 for (FamilyBuildingOwnership &edge : _family_ownerships) {

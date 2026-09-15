@@ -603,6 +603,13 @@ func _start_production_shadow_worker() -> void:
 		"events_probe_enabled": runtime_events_probe_enabled,
 		"economy_execution_mode": runtime_economy_execution_mode,
 	}
+	# Phase-2.4.5: StageOps is the production writer unless parity probe mode
+	# (ACTIVE_WITH_PARITY cannot share mutate StageOps with compact).
+	# Phase-2.6.1: auto-promote POD_ACTIVE after complete committed mirror.
+	if String(runtime_economy_execution_mode) != "ACTIVE_WITH_PARITY":
+		config["economy_stage_ops_mutate"] = true
+		config["economy_production_writer"] = "stage_ops"
+		config["economy_auto_pod_active"] = true
 	if climate_authority_active:
 		# graph_coverage_complete 在 per-domain ACTIVE 下的含义是"请求的这些域
 		# 线程安全"，不是整图。

@@ -67,9 +67,9 @@ bool NativeEconomyRuntime::publish_epoch_slice(
             const CellSummary summary = build_cell_summary(cell);
             stage_cell_summary(cell, summary);
             if (summary.population != 0) continue;
-            const int32_t market = _market.cell_to_market[cell];
-            for (int32_t good = 0; good < _market.good_count; ++good) {
-                if (_market.stock[_market.index(market, good)] > 0) {
+            const int32_t market = market_store().cell_to_market[cell];
+            for (int32_t good = 0; good < market_store().good_count; ++good) {
+                if (market_store().stock[market_store().index(market, good)] > 0) {
                     error = "empty_cell_cannot_retain_owned_stock";
                     return false;
                 }
@@ -103,22 +103,22 @@ bool NativeEconomyRuntime::publish_epoch_slice(
         }
     } else if (_publish_phase == PublishPhase::AUDIT_POPULATION) {
         const size_t start = _publish_cursor;
-        const size_t end = std::min(_population.active.size(), start + audit_budget);
+        const size_t end = std::min(population_store().active.size(), start + audit_budget);
         for (; _publish_cursor < end; ++_publish_cursor) {
-            if (_population.active[_publish_cursor] == 0) continue;
-            _closing_totals.population += _population.population[_publish_cursor];
-            _closing_totals.cohort_funds += _population.funds[_publish_cursor];
+            if (population_store().active[_publish_cursor] == 0) continue;
+            _closing_totals.population += population_store().population[_publish_cursor];
+            _closing_totals.cohort_funds += population_store().funds[_publish_cursor];
             if (is_merchant_slot(static_cast<int32_t>(_publish_cursor))) {
                 _closing_totals.merchant_cash = saturating_add(
                     _closing_totals.merchant_cash,
-                    std::max<int64_t>(0, _population.funds[_publish_cursor]),
+                    std::max<int64_t>(0, population_store().funds[_publish_cursor]),
                     _publish_valuation_sat);
             }
         }
         _closing_audit_population_full_scan_entries +=
             static_cast<int64_t>(end - start);
         work_done += static_cast<int64_t>(end - start);
-        if (_publish_cursor >= _population.active.size()) {
+        if (_publish_cursor >= population_store().active.size()) {
             _closing_totals.country_cash =
                 _country_runtime == nullptr ? 0 : _country_runtime->total_cash();
             int64_t expedition_population = 0;
@@ -134,8 +134,8 @@ bool NativeEconomyRuntime::publish_epoch_slice(
             _publish_phase = PublishPhase::AUDIT_MARKET;
         }
     } else if (_publish_phase == PublishPhase::AUDIT_MARKET) {
-        const size_t total = static_cast<size_t>(_market.market_count) *
-                             static_cast<size_t>(_market.good_count);
+        const size_t total = static_cast<size_t>(market_store().market_count) *
+                             static_cast<size_t>(market_store().good_count);
         const size_t start = _publish_cursor;
         const size_t end = std::min(total, start + audit_budget);
         const int32_t entry_count = static_cast<int32_t>(end - start);
@@ -172,11 +172,11 @@ bool NativeEconomyRuntime::publish_epoch_slice(
                         const size_t index =
                             start + static_cast<size_t>(relative);
                         const int32_t good = static_cast<int32_t>(
-                            index % static_cast<size_t>(_market.good_count));
-                        local.goods_stock += _market.stock[index];
+                            index % static_cast<size_t>(market_store().good_count));
+                        local.goods_stock += market_store().stock[index];
                         const int64_t retail_value = mul_div_sat(
-                            std::max<int64_t>(0, _market.stock[index]),
-                            std::max<int64_t>(0, _market.price[index]),
+                            std::max<int64_t>(0, market_store().stock[index]),
+                            std::max<int64_t>(0, market_store().price[index]),
                             GOODS_SCALE, local_sat);
                         local.merchant_inventory_retail_value = saturating_add(
                             local.merchant_inventory_retail_value,
@@ -220,11 +220,11 @@ bool NativeEconomyRuntime::publish_epoch_slice(
         } else {
             for (size_t index = start; index < end; ++index) {
                 const int32_t good = static_cast<int32_t>(
-                    index % static_cast<size_t>(_market.good_count));
-                _closing_totals.goods_stock += _market.stock[index];
+                    index % static_cast<size_t>(market_store().good_count));
+                _closing_totals.goods_stock += market_store().stock[index];
                 const int64_t retail_value = mul_div_sat(
-                    std::max<int64_t>(0, _market.stock[index]),
-                    std::max<int64_t>(0, _market.price[index]),
+                    std::max<int64_t>(0, market_store().stock[index]),
+                    std::max<int64_t>(0, market_store().price[index]),
                     GOODS_SCALE, _publish_valuation_sat);
                 _closing_totals.merchant_inventory_retail_value =
                     saturating_add(
@@ -305,7 +305,7 @@ bool NativeEconomyRuntime::publish_epoch_slice(
     } else if (_publish_phase == PublishPhase::AUDIT_COUNTRY) {
         const size_t start = _publish_cursor;
         const size_t end = std::min(
-            static_cast<size_t>(_market.good_count), start + audit_budget);
+            static_cast<size_t>(market_store().good_count), start + audit_budget);
         if (_country_runtime != nullptr) {
             for (; _publish_cursor < end; ++_publish_cursor) {
                 const int64_t country_good =
@@ -318,7 +318,7 @@ bool NativeEconomyRuntime::publish_epoch_slice(
             _publish_cursor = end;
         }
         work_done += static_cast<int64_t>(end - start);
-        if (_publish_cursor >= static_cast<size_t>(_market.good_count))
+        if (_publish_cursor >= static_cast<size_t>(market_store().good_count))
             _publish_phase = PublishPhase::VERIFY;
     } else if (_publish_phase == PublishPhase::VERIFY) {
         refresh_country_research_goods_consumed();
@@ -537,17 +537,17 @@ bool NativeEconomyRuntime::publish_epoch_slice(
             ++_cell_owner_cash_gen[cell];
             ++_cell_population_gen[cell];
             ++_cell_resource_gen[cell];
-            if (cell < static_cast<int32_t>(_market.cell_to_market.size()) &&
+            if (cell < static_cast<int32_t>(market_store().cell_to_market.size()) &&
                 cell < static_cast<int32_t>(_cell_effect_shortage_q16.size())) {
-                const int32_t market = _market.cell_to_market[cell];
+                const int32_t market = market_store().cell_to_market[cell];
                 int32_t shortage_q16 = 0;
                 int32_t essentials_q16 = 0;
-                if (market >= 0 && market < _market.market_count) {
-                    for (int32_t good = 0; good < _market.good_count; ++good) {
-                        const int64_t lane = _market.index(market, good);
+                if (market >= 0 && market < market_store().market_count) {
+                    for (int32_t good = 0; good < market_store().good_count; ++good) {
+                        const int64_t lane = market_store().index(market, good);
                         if (lane < 0 || lane >= static_cast<int64_t>(
-                                _market.last_shortage_q16.size())) continue;
-                        const int32_t lane_shortage = _market.last_shortage_q16[
+                                market_store().last_shortage_q16.size())) continue;
+                        const int32_t lane_shortage = market_store().last_shortage_q16[
                             static_cast<size_t>(lane)];
                         shortage_q16 = std::max(shortage_q16, lane_shortage);
                         if (good < static_cast<int32_t>(_good_is_essential.size()) &&
@@ -564,7 +564,7 @@ bool NativeEconomyRuntime::publish_epoch_slice(
                             static_cast<int32_t>(Q16_ONE));
             }
             if (cell < static_cast<int32_t>(_cell_resource_abundance_q16.size()) &&
-                _cell_count > 0 && !_resource_snapshot.empty()) {
+                _cell_count > 0 && !resource_stock_lanes().empty()) {
                 int64_t total = 0;
                 int32_t counted = 0;
                 int64_t sat = 0;
@@ -573,13 +573,13 @@ bool NativeEconomyRuntime::publish_epoch_slice(
                 for (int32_t resource = 0; resource < resource_count; ++resource) {
                     const size_t idx = static_cast<size_t>(resource) *
                         static_cast<size_t>(_cell_count) + static_cast<size_t>(cell);
-                    if (idx >= _resource_snapshot.size() ||
-                        _resource_snapshot[idx] <= 0) continue;
+                    if (idx >= resource_stock_lanes().size() ||
+                        resource_stock_lanes()[idx] <= 0) continue;
                     const int64_t remaining = idx < _resource_remaining.size()
                         ? std::max<int64_t>(0, _resource_remaining[idx])
-                        : _resource_snapshot[idx];
+                        : resource_stock_lanes()[idx];
                     total = saturating_add(total, mul_div_sat(remaining, Q16_ONE,
-                        _resource_snapshot[idx], sat), sat);
+                        resource_stock_lanes()[idx], sat), sat);
                     ++counted;
                 }
                 _cell_resource_abundance_q16[static_cast<size_t>(cell)] =

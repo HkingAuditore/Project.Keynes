@@ -2,7 +2,9 @@
 #include "country_runtime.h"
 #include "economy_runtime_variant_helpers.h"
 #include "modifier_runtime.h"
+#include "native_simulation_host.h"
 #include "parallel_dispatcher.h"
+#include "runtime_economy_pod.h"
 
 #include <algorithm>
 #include <limits>
@@ -272,7 +274,7 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _employment_diagnostic_day = -1;
     _employment_diagnostics.clear();
     _family_clamp_traces.clear();
-    _population.clear(cell_count);
+    population_store().clear(cell_count);
     _families.clear();
     _family_expeditions.clear();
     _family_expedition_route_cells.clear();
@@ -377,7 +379,7 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _person_previous_employee_role_index.clear();
     _person_epoch_needs.clear();
     _settlements.clear(cell_count);
-    _market.clear();
+    market_store().clear();
     _market_signals.clear(cell_count);
     mark_market_signal_full_rebuild("configure");
     mark_labor_signal_full_rebuild("configure");
@@ -539,11 +541,11 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
         return out;
     }
     _bootstrapped = false;
-    _population.clear(_cell_count);
+    population_store().clear(_cell_count);
     _birth_residual_q32.assign(
         static_cast<size_t>(_cell_count) * _ethnicity_ids.size(), 0);
     _settlements.clear(_cell_count);
-    _market.clear();
+    market_store().clear();
     _market_signals.clear(_cell_count);
     _labor_signals.clear(_cell_count);
     _trade_plan.clear_transient();
@@ -630,19 +632,19 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
             funds[i] < 0) {
             out["ok"] = false;
             out["reason"] = "population_packet_entry_invalid";
-            _population.clear(_cell_count);
+            population_store().clear(_cell_count);
             return out;
         }
         if (populations[i] == 0) continue;
-        const int32_t slot = _population.allocate_slot(cells[i], static_cast<uint32_t>(signatures[i]));
+        const int32_t slot = population_store().allocate_slot(cells[i], static_cast<uint32_t>(signatures[i]));
         if (slot < 0) {
             out["ok"] = false;
             out["reason"] = "population_page_allocation_failed";
-            _population.clear(_cell_count);
+            population_store().clear(_cell_count);
             return out;
         }
-        _population.population[slot] = saturating_add(_population.population[slot], populations[i], _saturation_count);
-        _population.funds[slot] = saturating_add(_population.funds[slot], funds[i], _saturation_count);
+        population_store().population[slot] = saturating_add(population_store().population[slot], populations[i], _saturation_count);
+        population_store().funds[slot] = saturating_add(population_store().funds[slot], funds[i], _saturation_count);
     }
     std::sort(forced_named_cells.begin(), forced_named_cells.end());
     forced_named_cells.erase(std::unique(
@@ -659,7 +661,7 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
         if (cell < 0 || cell >= _cell_count || !has_population) {
             out["ok"] = false;
             out["reason"] = "forced_named_cell_invalid";
-            _population.clear(_cell_count);
+            population_store().clear(_cell_count);
             return out;
         }
     }
@@ -670,7 +672,7 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
         if (!ensure_merchant_invariant(cell, merchant_repairs, merchant_error)) {
             out["ok"] = false;
             out["reason"] = String(merchant_error.c_str());
-            _population.clear(_cell_count);
+            population_store().clear(_cell_count);
             return out;
         }
     }
@@ -686,36 +688,36 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
         out["reason"] = "market_v2_requires_one_market_per_cell";
         return out;
     }
-    _market.market_count = market_count;
-    _market.price_ceilings.resize(market_count);
-    _market.good_count = static_cast<int32_t>(_good_ids.size());
-    const int64_t matrix_size = static_cast<int64_t>(market_count) * _market.good_count;
+    market_store().market_count = market_count;
+    market_store().price_ceilings.resize(market_count);
+    market_store().good_count = static_cast<int32_t>(_good_ids.size());
+    const int64_t matrix_size = static_cast<int64_t>(market_count) * market_store().good_count;
     if (matrix_size <= 0 || matrix_size > 25000000LL) {
         out["ok"] = false;
         out["reason"] = "market_matrix_capacity_exceeded";
         return out;
     }
-    _market.stock.resize(static_cast<size_t>(matrix_size));
-    _market.price.resize(static_cast<size_t>(matrix_size));
-    _market.demand_ema.assign(static_cast<size_t>(matrix_size), 0);
-    _market.last_shortage_q16.assign(static_cast<size_t>(matrix_size), 0);
+    market_store().stock.resize(static_cast<size_t>(matrix_size));
+    market_store().price.resize(static_cast<size_t>(matrix_size));
+    market_store().demand_ema.assign(static_cast<size_t>(matrix_size), 0);
+    market_store().last_shortage_q16.assign(static_cast<size_t>(matrix_size), 0);
     _trade_active_key_present.assign(static_cast<size_t>(matrix_size), 0);
     const size_t investment_good_words =
-        (static_cast<size_t>(_market.good_count) + 63U) / 64U;
+        (static_cast<size_t>(market_store().good_count) + 63U) / 64U;
     _investment_active_good_words.assign(investment_good_words, 0);
     _investment_active_goods_scratch.clear();
     _startup_demand_values.assign(static_cast<size_t>(matrix_size), 0);
     _startup_demand_stamps.assign(static_cast<size_t>(matrix_size), 0);
     _startup_demand_generation = 0;
     _startup_demand_touched_keys.clear();
-    _market.cell_to_market.resize(_cell_count);
-    for (int32_t c = 0; c < _cell_count; ++c) _market.cell_to_market[c] = c % market_count;
+    market_store().cell_to_market.resize(_cell_count);
+    for (int32_t c = 0; c < _cell_count; ++c) market_store().cell_to_market[c] = c % market_count;
     for (int32_t m = 0; m < market_count; ++m) {
-        for (int32_t g = 0; g < _market.good_count; ++g) {
-            const int64_t idx = _market.index(m, g);
+        for (int32_t g = 0; g < market_store().good_count; ++g) {
+            const int64_t idx = market_store().index(m, g);
             audit_touch_market_lane(static_cast<size_t>(idx));
-            _market.stock[idx] = 0;
-            _market.price[idx] = _good_default_price[g];
+            market_store().stock[idx] = 0;
+            market_store().price[idx] = _good_default_price[g];
         }
     }
 
@@ -733,7 +735,7 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
                 return out;
             }
         }
-        _market.cell_to_market.swap(cell_to_market);
+        market_store().cell_to_market.swap(cell_to_market);
     }
     std::vector<int64_t> stock = packed_i64(market_packet, "stock");
     std::vector<int32_t> price = packed_i32(market_packet, "price");
@@ -749,7 +751,7 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
             out["reason"] = "market_stock_invalid";
             return out;
         }
-        _market.stock.swap(stock);
+        market_store().stock.swap(stock);
     }
     if (!price.empty()) {
         if (price.size() != static_cast<size_t>(matrix_size)) {
@@ -758,8 +760,8 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
             return out;
         }
         for (int32_t m = 0; m < market_count; ++m) {
-            for (int32_t g = 0; g < _market.good_count; ++g) {
-                const int64_t idx = _market.index(m, g);
+            for (int32_t g = 0; g < market_store().good_count; ++g) {
+                const int64_t idx = market_store().index(m, g);
                 if (price[idx] < PRICE_NUMERIC_GUARD_MIN ||
                     price[idx] > PRICE_NUMERIC_GUARD_MAX) {
                     out["ok"] = false;
@@ -768,7 +770,7 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
                 }
             }
         }
-        _market.price.swap(price);
+        market_store().price.swap(price);
     }
     std::string market_range_error;
     if (!rebuild_market_cell_ranges(market_range_error)) {
@@ -899,15 +901,15 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
             if (group_index < 0 || owner_slot < 0 || owner_slots <= 0 ||
                 _buildings[group_index].count <= 0 ||
                 _buildings[group_index].modifier_handle == 0 ||
-                _population.population[owner_slot] < owner_slots) {
+                population_store().population[owner_slot] < owner_slots) {
                 out["ok"] = false;
                 out["reason"] = "founder_family_bootstrap_target_invalid";
                 return out;
             }
             _buildings[group_index].filled_owner = std::max(
                 _buildings[group_index].filled_owner, owner_slots);
-            _population.owner_employed[owner_slot] = std::max(
-                _population.owner_employed[owner_slot], owner_slots);
+            population_store().owner_employed[owner_slot] = std::max(
+                population_store().owner_employed[owner_slot], owner_slots);
             const int64_t founders = family_household_people_for_slot(
                 owner_slot, owner_slots);
             const int32_t family_index = create_family_for_building(
@@ -937,46 +939,59 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
         update_person_equity_shares();
     }
 
-    // Opening food lots are pre-staffed from their owner-profession cohorts so
-    // gathering/hunting produce on the first epoch. Construction-material techs
-    // are not part of the survival-core grant, and these lots must not wait for
-    // a later hire after an unavailable clamp.
+    // Opening lots are pre-staffed from their owner-profession cohorts so an
+    // installed group produces on its first epoch. Otherwise the proprietors are
+    // shed into unemployment before the first employment pass and can only
+    // trickle back at the per-period mobility rate, which leaves a bootstrapped
+    // settlement idle for several epochs. Each cohort seats its own people once,
+    // in building order, so shared owner signatures stay reconciled.
+    std::vector<int64_t> bootstrap_owner_available(
+        population_store().population.size(), -1);
     for (BuildingGroup &group : _buildings) {
         if (group.count <= 0 || group.type_id < 0 ||
-            group.type_id >= static_cast<int32_t>(_building_type_ids.size()) ||
             group.type_id >= static_cast<int32_t>(_building_types.size())) {
-            continue;
-        }
-        const std::string &type_id = _building_type_ids[group.type_id];
-        if (type_id != "gathering_ground" &&
-            type_id != "stone_age_hunting_camp") {
             continue;
         }
         const int64_t owner_slots = saturating_mul(
             group.count,
             _building_types[group.type_id].owner_slots_per_building,
             _saturation_count);
+        if (owner_slots <= group.filled_owner) continue;
         const int32_t owner_slot = find_cohort_slot(
             group.cell, group.owner_signature_id);
-        if (owner_slot < 0 || owner_slots <= 0) continue;
+        if (owner_slot < 0 || owner_slot >= static_cast<int32_t>(
+                bootstrap_owner_available.size())) {
+            continue;
+        }
+        int64_t &available = bootstrap_owner_available[owner_slot];
+        if (available < 0) {
+            available = std::max<int64_t>(0, saturating_sub(
+                population_store().population[owner_slot],
+                std::max<int64_t>(0,
+                    population_store().owner_employed[owner_slot]),
+                _saturation_count));
+        }
         const int64_t fill = std::min(
-            owner_slots,
-            std::max<int64_t>(0, _population.population[owner_slot]));
-        group.filled_owner = std::max(group.filled_owner, fill);
-        _population.owner_employed[owner_slot] = std::max(
-            _population.owner_employed[owner_slot], fill);
+            owner_slots - group.filled_owner, available);
+        if (fill <= 0) continue;
+        group.filled_owner = saturating_add(
+            group.filled_owner, fill, _saturation_count);
+        available -= fill;
+        population_store().owner_employed[owner_slot] = saturating_add(
+            population_store().owner_employed[owner_slot], fill,
+            _saturation_count);
     }
 
     if (_configured_target_cohorts_per_slice == 0) {
-        _target_cohorts_per_slice = _population.active_count <= 500000 ? 4000
-            : (_population.active_count <= 2000000 ? 12000 : 30000);
+        _target_cohorts_per_slice = population_store().active_count <= 500000 ? 4000
+            : (population_store().active_count <= 2000000 ? 12000 : 30000);
     }
     if (_auto_slice_by_scale) {
-        _cells_per_slice = std::clamp(_market.market_count, 1, 128);
+        _cells_per_slice = std::clamp(market_store().market_count, 1, 128);
     }
     if (_auto_building_slice_by_scale)
         _building_cells_per_slice = AUTO_BUILDING_CELLS_PER_SLICE;
-    _epoch_days = choose_epoch_days(_population.active_count);
+    _epoch_days = choose_epoch_days(population_store().active_count);
     _commit_lag_budget_days = std::max(0, locked_market_cycle_days() - 1);
     _last_committed_day = -1;
     _cell_last_settlement_day.resize(_cell_count);
@@ -1022,7 +1037,7 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     _opening_totals = _closing_totals;
     rebuild_incremental_audit_shadow();
     _closing_audit_force_full = true;
-    if (_worker_enabled && _population.active_count >= _worker_market_threshold &&
+    if (_worker_enabled && population_store().active_count >= _worker_market_threshold &&
         parallel_has_real_worker_threads()) {
         const int warm_tasks = _worker_tasks_hint > 0 ? _worker_tasks_hint : 16;
         auto warm_worker = [](int32_t begin, int32_t end) {
@@ -1033,9 +1048,9 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
         parallel_for_range("pk_economy_warmup", 1024, warm_tasks, 1, warm_worker);
     }
     out["ok"] = true;
-    out["cohort_count"] = _population.active_count;
-    out["market_count"] = _market.market_count;
-    out["good_count"] = _market.good_count;
+    out["cohort_count"] = population_store().active_count;
+    out["market_count"] = market_store().market_count;
+    out["good_count"] = market_store().good_count;
     write_cadence_report(out);
     out["markets_per_slice"] = _cells_per_slice;
     out["building_cells_per_slice"] = _building_cells_per_slice;
@@ -1136,6 +1151,16 @@ Dictionary NativeEconomyRuntime::submit_commands(const Dictionary &batch) {
                                          : (_fatal ? "economy_fatal" : "save_restore_active");
         return out;
     }
+    // Phase-2.4.5: fail-closed legacy ingress when worker owns ECONOMY or the
+    // StageOps production writer is effective.
+    if (_sync_writes_forbidden ||
+        (_simulation_host != nullptr &&
+         _simulation_host->economy_production_writer_effective() ==
+             EconomyProductionWriter::STAGE_OPS)) {
+        out["ok"] = false;
+        out["reason"] = "economy_legacy_ingress_disabled";
+        return out;
+    }
     const std::vector<int32_t> opcodes = packed_i32(batch, "opcodes");
     const std::vector<int64_t> days = packed_i64(batch, "effective_days");
     const std::vector<int64_t> sequences = packed_i64(batch, "sequences");
@@ -1181,7 +1206,7 @@ Dictionary NativeEconomyRuntime::submit_commands(const Dictionary &batch) {
             opcodes[i] != COMMAND_COUNTRY_GOOD_TO_MARKET &&
             opcodes[i] != COMMAND_MARKET_GOOD_TO_COUNTRY) {
             int32_t slot = -1;
-            if (!_population.valid_handle(static_cast<uint64_t>(handles[i]), slot)) {
+            if (!population_store().valid_handle(static_cast<uint64_t>(handles[i]), slot)) {
                 out["ok"] = false;
                 out["reason"] = "stale_or_invalid_cohort_handle";
                 out["index"] = static_cast<int64_t>(i);
@@ -1191,8 +1216,8 @@ Dictionary NativeEconomyRuntime::submit_commands(const Dictionary &batch) {
         if ((opcodes[i] == COMMAND_ADD_STOCK || opcodes[i] == COMMAND_REMOVE_STOCK ||
              opcodes[i] == COMMAND_COUNTRY_GOOD_TO_MARKET ||
              opcodes[i] == COMMAND_MARKET_GOOD_TO_COUNTRY) &&
-            (i32_0[i] < 0 || i32_0[i] >= _market.market_count || i32_1[i] < 0 ||
-             i32_1[i] >= _market.good_count)) {
+            (i32_0[i] < 0 || i32_0[i] >= market_store().market_count || i32_1[i] < 0 ||
+             i32_1[i] >= market_store().good_count)) {
             out["ok"] = false;
             out["reason"] = "command_market_target_invalid";
             out["index"] = static_cast<int64_t>(i);
@@ -1347,7 +1372,7 @@ bool NativeEconomyRuntime::validate_command_pod(const Command &cmd,
         cmd.opcode != COMMAND_COUNTRY_GOOD_TO_MARKET &&
         cmd.opcode != COMMAND_MARKET_GOOD_TO_COUNTRY) {
         int32_t slot = -1;
-        if (!_population.valid_handle(cmd.target_handle, slot)) {
+        if (!population_store().valid_handle(cmd.target_handle, slot)) {
             error = "stale_or_invalid_cohort_handle";
             return false;
         }
@@ -1355,8 +1380,8 @@ bool NativeEconomyRuntime::validate_command_pod(const Command &cmd,
     if ((cmd.opcode == COMMAND_ADD_STOCK || cmd.opcode == COMMAND_REMOVE_STOCK ||
          cmd.opcode == COMMAND_COUNTRY_GOOD_TO_MARKET ||
          cmd.opcode == COMMAND_MARKET_GOOD_TO_COUNTRY) &&
-        (cmd.i32_0 < 0 || cmd.i32_0 >= _market.market_count ||
-         cmd.i32_1 < 0 || cmd.i32_1 >= _market.good_count)) {
+        (cmd.i32_0 < 0 || cmd.i32_0 >= market_store().market_count ||
+         cmd.i32_1 < 0 || cmd.i32_1 >= market_store().good_count)) {
         error = "command_market_target_invalid";
         return false;
     }

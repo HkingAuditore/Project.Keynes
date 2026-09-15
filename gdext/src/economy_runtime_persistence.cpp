@@ -69,7 +69,7 @@ Dictionary NativeEconomyRuntime::begin_save(int32_t chunk_bytes) {
         return out;
     }
     const size_t cells = static_cast<size_t>(_cell_count);
-    if (_market.cell_to_market.size() != cells ||
+    if (market_store().cell_to_market.size() != cells ||
         _environment_temperature_q16.size() != cells ||
         _environment_temperature_30d_q16.size() != cells ||
         _environment_moisture_q16.size() != cells ||
@@ -253,7 +253,7 @@ Dictionary NativeEconomyRuntime::begin_restore() {
     _restore = {};
     _restore.active = true;
     _bootstrapped = false;
-    _population.clear(_cell_count);
+    population_store().clear(_cell_count);
     _family_expeditions.clear();
     _family_expedition_route_cells.clear();
     _family_expedition_route_costs.clear();
@@ -269,7 +269,7 @@ Dictionary NativeEconomyRuntime::begin_restore() {
     _birth_residual_q32.assign(
         static_cast<size_t>(_cell_count) * _ethnicity_ids.size(), 0);
     _settlements.clear(_cell_count);
-    _market.clear();
+    market_store().clear();
     _market_signals.clear(_cell_count);
     _labor_signals.clear(_cell_count);
     _trade_plan.clear_transient();
@@ -418,7 +418,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
         return out;
     }
     if (_restore.restored_pages != _restore.expected_pages ||
-        _restore.restored_markets != _market.market_count ||
+        _restore.restored_markets != market_store().market_count ||
         _restore.restored_cells != _cell_count ||
         _restore.restored_commands != _restore.expected_commands ||
         _restore.restored_buildings != _restore.expected_buildings ||
@@ -565,39 +565,39 @@ Dictionary NativeEconomyRuntime::end_restore() {
         return out;
     }
     const size_t expected_population_slots =
-        _population.page_next.size() * static_cast<size_t>(COHORT_PAGE_SIZE);
-    if (_population.active.size() != expected_population_slots ||
-        _population.reserved.size() != expected_population_slots ||
-        _population.reservation_owner.size() != expected_population_slots ||
-        _population.signature_id.size() != expected_population_slots ||
-        _population.generation.size() != expected_population_slots ||
-        _population.population.size() != expected_population_slots ||
-        _population.funds.size() != expected_population_slots) {
+        population_store().page_next.size() * static_cast<size_t>(COHORT_PAGE_SIZE);
+    if (population_store().active.size() != expected_population_slots ||
+        population_store().reserved.size() != expected_population_slots ||
+        population_store().reservation_owner.size() != expected_population_slots ||
+        population_store().signature_id.size() != expected_population_slots ||
+        population_store().generation.size() != expected_population_slots ||
+        population_store().population.size() != expected_population_slots ||
+        population_store().funds.size() != expected_population_slots) {
         out["ok"] = false;
         out["reason"] = "restore_population_lane_shape_invalid";
         return out;
     }
-    std::vector<uint8_t> referenced(_population.page_next.size(), 0);
+    std::vector<uint8_t> referenced(population_store().page_next.size(), 0);
     int64_t actual_active = 0;
-    for (int32_t page = 0; page < static_cast<int32_t>(_population.page_next.size()); ++page) {
-        const int32_t cell = _population.page_cell[page];
-        const int32_t next = _population.page_next[page];
+    for (int32_t page = 0; page < static_cast<int32_t>(population_store().page_next.size()); ++page) {
+        const int32_t cell = population_store().page_cell[page];
+        const int32_t next = population_store().page_next[page];
         if (cell < -1 || cell >= _cell_count || next < -1 ||
-            next >= static_cast<int32_t>(_population.page_next.size()) ||
-            (next >= 0 && _population.page_cell[next] != cell)) {
+            next >= static_cast<int32_t>(population_store().page_next.size()) ||
+            (next >= 0 && population_store().page_cell[next] != cell)) {
             out["ok"] = false;
             out["reason"] = "restore_page_chain_invalid";
             return out;
         }
         if (next >= 0) referenced[next] = 1;
-        if (cell < 0) _population.free_pages.push_back(page);
+        if (cell < 0) population_store().free_pages.push_back(page);
         const int32_t base = page * COHORT_PAGE_SIZE;
         for (int32_t lane = 0; lane < COHORT_PAGE_SIZE; ++lane) {
             const int32_t slot = base + lane;
-            if (_population.active[slot] == 0) continue;
-            if (cell < 0 || _population.signature_id[slot] >= _signatures.size() ||
-                _population.generation[slot] == 0 || _population.population[slot] <= 0 ||
-                _population.funds[slot] < 0) {
+            if (population_store().active[slot] == 0) continue;
+            if (cell < 0 || population_store().signature_id[slot] >= _signatures.size() ||
+                population_store().generation[slot] == 0 || population_store().population[slot] <= 0 ||
+                population_store().funds[slot] < 0) {
                 out["ok"] = false;
                 out["reason"] = "restore_cohort_record_invalid";
                 return out;
@@ -605,23 +605,23 @@ Dictionary NativeEconomyRuntime::end_restore() {
             ++actual_active;
         }
     }
-    _population.cell_first_page.assign(_cell_count, -1);
-    for (int32_t page = 0; page < static_cast<int32_t>(_population.page_next.size()); ++page) {
-        const int32_t cell = _population.page_cell[page];
+    population_store().cell_first_page.assign(_cell_count, -1);
+    for (int32_t page = 0; page < static_cast<int32_t>(population_store().page_next.size()); ++page) {
+        const int32_t cell = population_store().page_cell[page];
         if (cell < 0 || referenced[page] != 0) continue;
-        if (_population.cell_first_page[cell] >= 0) {
+        if (population_store().cell_first_page[cell] >= 0) {
             out["ok"] = false;
             out["reason"] = "restore_multiple_page_chain_heads";
             return out;
         }
-        _population.cell_first_page[cell] = page;
+        population_store().cell_first_page[cell] = page;
     }
-    std::vector<uint8_t> visited(_population.page_next.size(), 0);
+    std::vector<uint8_t> visited(population_store().page_next.size(), 0);
     for (int32_t cell = 0; cell < _cell_count; ++cell) {
         int32_t steps = 0;
-        for (int32_t page = _population.cell_first_page[cell]; page >= 0;
-             page = _population.page_next[page]) {
-            if (++steps > static_cast<int32_t>(_population.page_next.size()) || visited[page] != 0) {
+        for (int32_t page = population_store().cell_first_page[cell]; page >= 0;
+             page = population_store().page_next[page]) {
+            if (++steps > static_cast<int32_t>(population_store().page_next.size()) || visited[page] != 0) {
                 out["ok"] = false;
                 out["reason"] = "restore_page_chain_cycle";
                 return out;
@@ -629,27 +629,27 @@ Dictionary NativeEconomyRuntime::end_restore() {
             visited[page] = 1;
         }
     }
-    for (int32_t page = 0; page < static_cast<int32_t>(_population.page_next.size()); ++page) {
-        if (_population.page_cell[page] >= 0 && visited[page] == 0) {
+    for (int32_t page = 0; page < static_cast<int32_t>(population_store().page_next.size()); ++page) {
+        if (population_store().page_cell[page] >= 0 && visited[page] == 0) {
             out["ok"] = false;
             out["reason"] = "restore_unreachable_page";
             return out;
         }
     }
-    if (actual_active != _population.active_count) {
+    if (actual_active != population_store().active_count) {
         out["ok"] = false;
         out["reason"] = "restore_active_count_mismatch";
         return out;
     }
     for (int32_t cell = 0; cell < _cell_count; ++cell) {
-        if (_market.cell_to_market[cell] < 0 || _market.cell_to_market[cell] >= _market.market_count) {
+        if (market_store().cell_to_market[cell] < 0 || market_store().cell_to_market[cell] >= market_store().market_count) {
             out["ok"] = false;
             out["reason"] = "restore_cell_market_invalid";
             return out;
         }
         std::vector<uint32_t> signatures;
-        _population.for_each_in_cell(cell, [&](int32_t slot) {
-            signatures.push_back(_population.signature_id[slot]);
+        population_store().for_each_in_cell(cell, [&](int32_t slot) {
+            signatures.push_back(population_store().signature_id[slot]);
         });
         std::sort(signatures.begin(), signatures.end());
         if (std::adjacent_find(signatures.begin(), signatures.end()) != signatures.end()) {
@@ -658,12 +658,12 @@ Dictionary NativeEconomyRuntime::end_restore() {
             return out;
         }
     }
-    for (int32_t market = 0; market < _market.market_count; ++market) {
-        for (int32_t good = 0; good < _market.good_count; ++good) {
-            const int64_t idx = _market.index(market, good);
-            if (_market.stock[idx] < 0 || _market.demand_ema[idx] < 0 ||
-                _market.price[idx] < PRICE_NUMERIC_GUARD_MIN ||
-                _market.price[idx] > PRICE_NUMERIC_GUARD_MAX) {
+    for (int32_t market = 0; market < market_store().market_count; ++market) {
+        for (int32_t good = 0; good < market_store().good_count; ++good) {
+            const int64_t idx = market_store().index(market, good);
+            if (market_store().stock[idx] < 0 || market_store().demand_ema[idx] < 0 ||
+                market_store().price[idx] < PRICE_NUMERIC_GUARD_MIN ||
+                market_store().price[idx] > PRICE_NUMERIC_GUARD_MAX) {
                 out["ok"] = false;
                 out["reason"] = "restore_market_value_invalid";
                 return out;
@@ -727,13 +727,13 @@ Dictionary NativeEconomyRuntime::end_restore() {
                    cmd.i64_0 >= 1)
                 : _family_expeditions.valid_handle(cmd.target_handle, expedition))
             : market_target
-            ? (cmd.i32_0 >= 0 && cmd.i32_0 < _market.market_count &&
-               cmd.i32_1 >= 0 && cmd.i32_1 < _market.good_count &&
+            ? (cmd.i32_0 >= 0 && cmd.i32_0 < market_store().market_count &&
+               cmd.i32_1 >= 0 && cmd.i32_1 < market_store().good_count &&
                ((cmd.opcode != COMMAND_COUNTRY_GOOD_TO_MARKET &&
                  cmd.opcode != COMMAND_MARKET_GOOD_TO_COUNTRY) ||
                 (_country_runtime != nullptr && _country_runtime->valid_handle(
                     static_cast<int64_t>(cmd.target_handle)))))
-            : _population.valid_handle(cmd.target_handle, slot);
+            : population_store().valid_handle(cmd.target_handle, slot);
         const bool opcode_ok =
             (cmd.opcode >= COMMAND_TRANSFER_TO_COHORT &&
              cmd.opcode <= COMMAND_BUILD_CANAL) ||
@@ -819,11 +819,11 @@ Dictionary NativeEconomyRuntime::end_restore() {
             }
         }
     }
-    for (size_t slot = 0; slot < _population.active.size(); ++slot) {
-        if (_population.active[slot] == 0) continue;
-        if (_population.owner_employed[slot] < 0 || _population.employee_employed[slot] < 0 ||
-            _population.owner_employed[slot] + _population.employee_employed[slot] >
-                _population.population[slot]) {
+    for (size_t slot = 0; slot < population_store().active.size(); ++slot) {
+        if (population_store().active[slot] == 0) continue;
+        if (population_store().owner_employed[slot] < 0 || population_store().employee_employed[slot] < 0 ||
+            population_store().owner_employed[slot] + population_store().employee_employed[slot] >
+                population_store().population[slot]) {
             out["ok"] = false;
             out["reason"] = "restore_cohort_employment_invalid";
             return out;
@@ -832,7 +832,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
     rebuild_building_cell_offsets();
     _pending_building_topology_rebuild = false;
     if (_auto_slice_by_scale)
-        _cells_per_slice = std::clamp(_market.market_count, 1, 128);
+        _cells_per_slice = std::clamp(market_store().market_count, 1, 128);
     if (_auto_building_slice_by_scale)
         _building_cells_per_slice = AUTO_BUILDING_CELLS_PER_SLICE;
     refresh_cadence_estimates();
@@ -943,18 +943,18 @@ Dictionary NativeEconomyRuntime::end_restore() {
                 return out;
             }
         }
-        std::vector<int64_t> member_people(_population.active.size(), 0);
-        std::vector<int64_t> member_cash(_population.active.size(), 0);
+        std::vector<int64_t> member_people(population_store().active.size(), 0);
+        std::vector<int64_t> member_cash(population_store().active.size(), 0);
         for (const FamilyMembershipEdge &edge : _family_memberships) {
             int32_t slot = -1;
-            if (!_population.valid_handle(edge.cohort_handle, slot)) {
+            if (!population_store().valid_handle(edge.cohort_handle, slot)) {
                 out["ok"] = false;
                 out["reason"] = "restore_family_cohort_handle_invalid";
                 return out;
             }
-            if (edge.people > _population.population[slot] -
+            if (edge.people > population_store().population[slot] -
                     member_people[slot] ||
-                edge.cash_claim > _population.funds[slot] -
+                edge.cash_claim > population_store().funds[slot] -
                     member_cash[slot]) {
                 out["ok"] = false;
                 out["reason"] = "restore_family_claim_exceeds_cohort";
@@ -1122,7 +1122,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
                 _persons.family_handle[i], _persons.cohort_handle[i]);
             if (!_families.valid_handle(_persons.family_handle[i], family) ||
                 (!in_transit &&
-                 !_population.valid_handle(_persons.cohort_handle[i], cohort)) ||
+                 !population_store().valid_handle(_persons.cohort_handle[i], cohort)) ||
                 (!in_transit && membership < 0) ||
                 (in_transit &&
                  transit_person_handles.find(person_handle) ==
@@ -1158,7 +1158,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
                 const int32_t group = building_index_for_handle(
                     _persons.building_handle[i]);
                 if (group < 0 || _buildings[group].cell !=
-                        _population.page_cell[cohort / COHORT_PAGE_SIZE]) {
+                        population_store().page_cell[cohort / COHORT_PAGE_SIZE]) {
                     out["ok"] = false;
                     out["reason"] = "restore_person_building_invalid";
                     return out;
@@ -1302,7 +1302,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
     out["restored_buildings"] = restored_buildings;
     out["restored_trade_orders"] = _trade_orders.size();
     out["restored_trade_flows"] = static_cast<int64_t>(_trade_flows.cells.size());
-    out["cohort_count"] = _population.active_count;
+    out["cohort_count"] = population_store().active_count;
     out["state_hash_catalog"] = _catalog_hash;
     out["restored_families"] = _families.active_count;
     out["restored_persons"] = _persons.active_count;

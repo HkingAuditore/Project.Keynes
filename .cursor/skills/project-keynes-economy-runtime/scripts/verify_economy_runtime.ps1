@@ -91,6 +91,8 @@ if ($Godot) {
     if ($LASTEXITCODE -ne 0) { throw 'Economy POD test failed' }
     & $GodotExe --headless --path $project --script res://tests/runtime_economy_parity_test.gd
     if ($LASTEXITCODE -ne 0) { throw 'Economy parity test failed' }
+    & $GodotExe --headless --path $project --script res://tests/runtime_economy_stage_ops_soak_parity_test.gd
+    if ($LASTEXITCODE -ne 0) { throw 'Economy StageOps soak parity test failed' }
 }
 
 if ($Phase1Gate) {

@@ -45,8 +45,29 @@ Phase 5：`RuntimeEconomySnapshotRing` + PKSR **ECP1 ABI4**（业务摘要、
 committed cohort/market ledger mirror、独立 ledger generation/hash）；恢复先在临时
 POD owner 中校验页拓扑与 hash，失败不替换 live committed state。PKEC 仍管完整业务态。
 named kernel TU 经
-`economy_dispatch_mutate_stage` 复用 `NativeEconomyRuntime` 公式。
+`economy_dispatch_mutate_stage(EconomySoAView&)` 复用 `NativeEconomyRuntime` 公式。
 Soak：`tests/runtime_economy_authority_soak_test.gd`（`PK_ECONOMY_SOAK_DAYS`）。
+
+## A+Y Terminal Closeout（2026-09-15）
+
+Save 轴 **A**：PKEC v52 全量权威；ECP1 ABI9 仅 committed mirror。
+Runtime 轴 **Y**：`POD_ACTIVE` 下 `bind_formula_owned_state` 使
+`population_store()` / `market_store()` / `buildings_store()` /
+`resource_stock_lanes()` 别名 `RuntimeEconomyOwnedState`；trade/family live 经
+`trade_orders_store()` / `families_store()` 单实例，扁平 SoA 为 ECP 投影。
+
+| 域 | 终态 |
+|----|------|
+| Pop / Market | OwnedState sole SoA |
+| Building | Owned SoA 阶段间权威；`_buildings` 为 drain scratch（materialize/flush） |
+| Trade | NER `TradeOrderStore` sole live；arrival buckets 派生不入 ECP hash |
+| Family | NER `FamilyStore` sole live；`RuntimeEconomyFamilyStore` = capture/ECP |
+| Resource | bind 时 stock move 进 Owned；热路径经 `resource_stock_lanes()` |
+| Dispatch | `economy_dispatch_mutate_stage(view)`；bound 时要求 view pop/market/buildings |
+| Capture | 日末 flush → Owned identity pack；命令失配 fault（非静默 recapture） |
+
+报告：`economy_formula_backing=owned_state`（生产 `POD_ACTIVE`）。
+**Still open（非本收口）**：ECP2 取代 PKEC；mid-epoch resume。
 
 ## 2026-09-09 Country treasury typed transaction 边界（K2-B 部分完成）
 

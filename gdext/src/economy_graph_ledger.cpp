@@ -10,8 +10,8 @@ bool economy_kernel_ledger(EconomySoAView &view, EconomyStageCursor &cursor,
         return economy_kernel_stage_boundary_stub(view, cursor, input, result,
                                                   error);
     return economy_dispatch_mutate_stage(
-        view.runtime_hook, RuntimeEconomyGraphStage::LEDGER_APPLY, cursor,
-        input, result, error);
+        view, RuntimeEconomyGraphStage::LEDGER_APPLY, cursor, input, result,
+        error);
 }
 
 } // namespace pk

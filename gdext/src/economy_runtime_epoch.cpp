@@ -497,14 +497,14 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
                   _staging_cell_generation.end(), 0);
         _staging_current_generation = 1;
     }
-    if (_resource_remaining.size() != _resource_snapshot.size())
-        _resource_remaining.resize(_resource_snapshot.size());
-    if (_resource_harvest_remaining.size() != _resource_snapshot.size())
-        _resource_harvest_remaining.resize(_resource_snapshot.size());
-    if (_resource_deltas.size() != _resource_snapshot.size())
-        _resource_deltas.resize(_resource_snapshot.size());
-    if (_resource_lane_generation.size() != _resource_snapshot.size())
-        _resource_lane_generation.assign(_resource_snapshot.size(), 0);
+    if (_resource_remaining.size() != resource_stock_lanes().size())
+        _resource_remaining.resize(resource_stock_lanes().size());
+    if (_resource_harvest_remaining.size() != resource_stock_lanes().size())
+        _resource_harvest_remaining.resize(resource_stock_lanes().size());
+    if (_resource_deltas.size() != resource_stock_lanes().size())
+        _resource_deltas.resize(resource_stock_lanes().size());
+    if (_resource_lane_generation.size() != resource_stock_lanes().size())
+        _resource_lane_generation.assign(resource_stock_lanes().size(), 0);
     ++_resource_current_generation;
     if (_resource_current_generation == 0) {
         std::fill(_resource_lane_generation.begin(),
@@ -512,8 +512,8 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
         _resource_current_generation = 1;
     }
     _resource_touched_lanes.clear();
-    if (_last_published_resource_deltas.size() != _resource_snapshot.size())
-        _last_published_resource_deltas.assign(_resource_snapshot.size(), 0);
+    if (_last_published_resource_deltas.size() != resource_stock_lanes().size())
+        _last_published_resource_deltas.assign(resource_stock_lanes().size(), 0);
     _resource_deltas_ready = false;
 }
 
@@ -710,10 +710,10 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
     }
     if (day_index <= _last_committed_day) return true;
     // All failure-prone checks happen here, before any state mutation.
-    if (_market.good_count != static_cast<int32_t>(_good_ids.size()) ||
-        _market.cell_to_market.size() != static_cast<size_t>(_cell_count) ||
-        _market.stock.size() != static_cast<size_t>(_market.market_count) * _market.good_count ||
-        _market_cell_offsets.size() != static_cast<size_t>(_market.market_count + 1)) {
+    if (market_store().good_count != static_cast<int32_t>(_good_ids.size()) ||
+        market_store().cell_to_market.size() != static_cast<size_t>(_cell_count) ||
+        market_store().stock.size() != static_cast<size_t>(market_store().market_count) * market_store().good_count ||
+        _market_cell_offsets.size() != static_cast<size_t>(market_store().market_count + 1)) {
         error = "market_shape_invariant_broken";
         return false;
     }
@@ -725,7 +725,7 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
     if (!_building_types.empty() && (_building_context_day != day_index ||
         _building_elevation_q16.size() != static_cast<size_t>(_cell_count) ||
         _building_neighbors.size() != static_cast<size_t>(_cell_count) * 6 ||
-        _resource_snapshot.size() != _resource_ids.size() * static_cast<size_t>(_cell_count))) {
+        resource_stock_lanes().size() != _resource_ids.size() * static_cast<size_t>(_cell_count))) {
         error = "same_day_building_context_not_captured";
         return false;
     }
@@ -754,8 +754,8 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
             continue;
         int64_t population = 0;
         bool has_living_merchant = false;
-        _population.for_each_in_cell(cell, [&](int32_t slot) {
-            population = saturating_add(population, _population.population[slot],
+        population_store().for_each_in_cell(cell, [&](int32_t slot) {
+            population = saturating_add(population, population_store().population[slot],
                                         _saturation_count);
             if (!has_living_merchant && is_merchant_slot(slot))
                 has_living_merchant = true;
@@ -796,15 +796,15 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
     _epoch_settlement_cells.clear();
     _epoch_building_cells.clear();
     _epoch_plan_cells.clear();
-    const int32_t market_count = std::max(0, _market.market_count);
+    const int32_t market_count = std::max(0, market_store().market_count);
     const bool have_market_map =
-        _market.cell_to_market.size() == static_cast<size_t>(_cell_count);
+        market_store().cell_to_market.size() == static_cast<size_t>(_cell_count);
     std::vector<uint8_t> market_added(static_cast<size_t>(market_count), 0);
     for (const int32_t cell : _economy_live_cells) {
         if (!cell_in_market_workset(cell, day_index)) continue;
         _epoch_settlement_cells.push_back(cell);
         int32_t market = cell;
-        if (have_market_map) market = _market.cell_to_market[cell];
+        if (have_market_map) market = market_store().cell_to_market[cell];
         if (market < 0 || market >= market_count) continue;
         if (market_added[static_cast<size_t>(market)] != 0) continue;
         market_added[static_cast<size_t>(market)] = 1;
@@ -984,8 +984,8 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
     _epoch_price_ceiling_observations.clear();
     _epoch_ceiling_business_requested.assign(_market_signals.good_ids.size(), 0);
     _epoch_ceiling_business_unfilled.assign(_market_signals.good_ids.size(), 0);
-    _epoch_ceiling_research_requested.assign(_market.market_count, 0);
-    _epoch_ceiling_research_delivered.assign(_market.market_count, 0);
+    _epoch_ceiling_research_requested.assign(market_store().market_count, 0);
+    _epoch_ceiling_research_delivered.assign(market_store().market_count, 0);
     _epoch_offered_supply_ema = _market_signals.offered_supply_ema;
     _epoch_producer_sellable_current.assign(_market_signals.good_ids.size(), 0);
     _epoch_producer_merchant_sold_current.assign(
@@ -1021,7 +1021,7 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
         int64_t current_country_goods = 0;
         if (_country_runtime != nullptr) {
             _opening_totals.country_cash = _country_runtime->total_cash();
-            for (int32_t good = 0; good < _market.good_count; ++good) {
+            for (int32_t good = 0; good < market_store().good_count; ++good) {
                 current_country_goods +=
                     _country_runtime->total_good(good);
             }
@@ -1103,13 +1103,13 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
                                     cmd.opcode != COMMAND_COUNTRY_GOOD_TO_MARKET &&
                                     cmd.opcode != COMMAND_MARKET_GOOD_TO_COUNTRY;
         int32_t slot = -1;
-        if (targets_cohort && !_population.valid_handle(cmd.target_handle, slot))
+        if (targets_cohort && !population_store().valid_handle(cmd.target_handle, slot))
             return reject_epoch_command(cmd);
         if ((cmd.opcode == COMMAND_ADD_STOCK || cmd.opcode == COMMAND_REMOVE_STOCK ||
              cmd.opcode == COMMAND_COUNTRY_GOOD_TO_MARKET ||
              cmd.opcode == COMMAND_MARKET_GOOD_TO_COUNTRY) &&
-            (cmd.i32_0 < 0 || cmd.i32_0 >= _market.market_count || cmd.i32_1 < 0 ||
-             cmd.i32_1 >= _market.good_count)) {
+            (cmd.i32_0 < 0 || cmd.i32_0 >= market_store().market_count || cmd.i32_1 < 0 ||
+             cmd.i32_1 >= market_store().good_count)) {
             return reject_epoch_command(cmd);
         }
         if ((cmd.opcode == COMMAND_ADD_STOCK || cmd.opcode == COMMAND_COUNTRY_GOOD_TO_MARKET) &&
@@ -1222,9 +1222,14 @@ bool NativeEconomyRuntime::run_epoch_open_prelude_drain(
                 }
                 ++work_done;
                 if (_fiscal_reservation_continuation.active) {
-                    // Compact yields; StageOps prelude parks as pending_input.
-                    mark_pending("fiscal_reserve_peer_results");
-                    return true;
+                    // True Country-peer wait parks; otherwise keep draining
+                    // remaining countries in this call (compact yields).
+                    if (_fiscal_reservation_continuation.pending_request_id !=
+                        0) {
+                        mark_pending("fiscal_reserve_peer_results");
+                        return true;
+                    }
+                    continue;
                 }
             }
             if (!_fiscal_reservation_continuation.active &&
@@ -1297,6 +1302,20 @@ bool NativeEconomyRuntime::run_epoch_open_prelude_drain(
             }
             fail(error);
             return false;
+        }
+        // start_epoch may return after admitting fiscal reservation without
+        // setting _epoch_active. Keep draining in this call so one StageOps
+        // day matches compact multi-slice fiscal open.
+        if (_epoch_active) {
+            return true;
+        }
+        if (_fiscal_reservation_continuation.active ||
+            _epoch_begin_post_fiscal_pending) {
+            ++work_done;
+            continue;
+        }
+        if (idle_done != nullptr) {
+            *idle_done = true;
         }
         return true;
     }

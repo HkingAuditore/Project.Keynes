@@ -1,4 +1,5 @@
 #include "runtime_economy_pod.h"
+#include "economy_runtime.h"
 #include "runtime_economy_population_store.h"
 
 #include <algorithm>
@@ -90,6 +91,79 @@ bool read_i32(const uint8_t *&p, const uint8_t *end, int32_t &value) {
     if (!read_u32(p, end, raw)) return false;
     value = static_cast<int32_t>(raw);
     return true;
+}
+
+constexpr int64_t Q16_ONE = 65536;
+
+int32_t find_owned_building_group(const RuntimeEconomyBuildingStore &store,
+                                  int32_t cell, int32_t type_id,
+                                  int32_t signature) {
+    for (size_t i = 0; i < store.cell.size(); ++i) {
+        if (store.cell[i] == cell && store.type_id[i] == type_id &&
+            store.owner_signature_id[i] == signature)
+            return static_cast<int32_t>(i);
+    }
+    return -1;
+}
+
+bool owned_valid_family_handle(const RuntimeEconomyFamilyStore &store,
+                               uint64_t handle, int32_t &index_out) {
+    const uint32_t index = static_cast<uint32_t>(handle & 0xffffffffULL);
+    const uint32_t gen = static_cast<uint32_t>(handle >> 32);
+    if (index >= store.family_active.size() || store.family_active[index] == 0 ||
+        store.family_generation[index] != gen)
+        return false;
+    index_out = static_cast<int32_t>(index);
+    return true;
+}
+
+bool owned_valid_influence_handle(const RuntimeEconomyFamilyStore &store,
+                                  uint64_t handle, int32_t &index_out) {
+    const uint32_t index = static_cast<uint32_t>(handle & 0xffffffffULL);
+    const uint32_t gen = static_cast<uint32_t>(handle >> 32);
+    if (index >= store.influence_active.size() ||
+        store.influence_active[index] == 0 ||
+        store.influence_generation[index] != gen)
+        return false;
+    index_out = static_cast<int32_t>(index);
+    return true;
+}
+
+void apply_owned_family_split_policy_flags(RuntimeEconomyFamilyStore &families,
+                                           int32_t family_index, uint16_t policy,
+                                           uint8_t weight_q8) {
+    if (family_index < 0 ||
+        family_index >= static_cast<int32_t>(families.family_flags.size()) ||
+        family_index >= static_cast<int32_t>(families.family_active.size()) ||
+        families.family_active[static_cast<size_t>(family_index)] == 0)
+        return;
+    uint16_t flags =
+        families.family_flags[static_cast<size_t>(family_index)];
+    flags &= static_cast<uint16_t>(
+        ~(NativeEconomyRuntime::FAMILY_FLAG_SPLIT_POLICY_MASK |
+          (0xFFu << NativeEconomyRuntime::FAMILY_FLAG_SPLIT_WEIGHT_SHIFT)));
+    const uint16_t selected =
+        policy & NativeEconomyRuntime::FAMILY_FLAG_SPLIT_POLICY_MASK;
+    const uint16_t mode =
+        selected & NativeEconomyRuntime::FAMILY_FLAG_SPLIT_MODE_MASK;
+    const uint16_t gifts =
+        selected & (NativeEconomyRuntime::FAMILY_FLAG_SPLIT_GIFT_BUILDING |
+                    NativeEconomyRuntime::FAMILY_FLAG_SPLIT_GIFT_POPULATION);
+    if (mode == NativeEconomyRuntime::FAMILY_FLAG_SPLIT_RETAIN_ONLY ||
+        mode == NativeEconomyRuntime::FAMILY_FLAG_SPLIT_BONUS_WEIGHT ||
+        mode == NativeEconomyRuntime::FAMILY_FLAG_SPLIT_REPLACE)
+        flags |= mode;
+    if (mode == NativeEconomyRuntime::FAMILY_FLAG_SPLIT_BONUS_WEIGHT)
+        flags |= static_cast<uint16_t>(weight_q8)
+                 << NativeEconomyRuntime::FAMILY_FLAG_SPLIT_WEIGHT_SHIFT;
+    flags |= gifts;
+    families.family_flags[static_cast<size_t>(family_index)] = flags;
+}
+
+void ensure_owned_family_purchase_factors(RuntimeEconomyFamilyStore &families) {
+    const size_t n = families.family_active.size();
+    if (families.purchase_factor_q16.size() < n)
+        families.purchase_factor_q16.resize(n, static_cast<int32_t>(Q16_ONE));
 }
 
 uint64_t fnv1a(const uint8_t *data, size_t size) noexcept {
@@ -216,10 +290,20 @@ bool build_owned_state_from_ledger(const RuntimeEconomyLedgerState &ledger,
     candidate.committed_day = ledger.committed_day;
     candidate.committed = ledger;
     candidate.building = ledger.building;
+    if (ledger.building.captured)
+        candidate.buildings = ledger.building.store;
     candidate.trade_escrow = ledger.trade_escrow;
+    if (ledger.trade_escrow.captured)
+        candidate.trade_orders = ledger.trade_escrow.store;
     candidate.family = ledger.family;
+    if (ledger.family.captured)
+        candidate.families = ledger.family.store;
     candidate.resource = ledger.resource;
+    if (ledger.resource.captured)
+        candidate.resources = ledger.resource.store;
     candidate.epoch_cursor = ledger.epoch_cursor;
+    if (ledger.epoch_cursor.captured)
+        candidate.epoch_cursors = ledger.epoch_cursor.store;
     restored = std::move(candidate);
     return true;
 }
@@ -472,6 +556,383 @@ void RuntimeEconomyPodAuthority::sync_identity(uint64_t session_epoch,
     if (session_epoch != 0) _input.session_epoch = session_epoch;
     _generation = generation;
     if (generation != 0) _input.economy_generation = generation;
+}
+
+bool RuntimeEconomyPodAuthority::is_owned_core_opcode(
+        int32_t opcode) noexcept {
+    return opcode >= NativeEconomyRuntime::COMMAND_TRANSFER_TO_COHORT &&
+        opcode <= NativeEconomyRuntime::COMMAND_FAMILY_SET_SPLIT_POLICY;
+}
+
+bool RuntimeEconomyPodAuthority::is_owned_heavy_pod_opcode(
+        int32_t opcode) noexcept {
+    return opcode == NativeEconomyRuntime::COMMAND_BUILD ||
+        (opcode >= NativeEconomyRuntime::COMMAND_FAMILY_FREE_BUILDING &&
+         opcode <= NativeEconomyRuntime::COMMAND_SETTLE_FAMILY_EXPEDITION) ||
+        opcode == NativeEconomyRuntime::COMMAND_BUILD_CANAL ||
+        opcode == NativeEconomyRuntime::COMMAND_FAMILY_ABSORB_ANONYMOUS;
+}
+
+bool RuntimeEconomyPodAuthority::try_apply_owned_core_command(
+        const RuntimeEconomyPodCommand &command, std::string &error,
+        int64_t &settled_out) noexcept {
+    error.clear();
+    settled_out = 0;
+    if (!is_owned_core_opcode(command.opcode)) {
+        error = "economy_pod_owned_core_opcode_unsupported";
+        return false;
+    }
+    if (!state_initialized()) {
+        error = "economy_pod_owned_core_state_uninitialized";
+        return false;
+    }
+    if (is_owned_heavy_pod_opcode(command.opcode)) {
+        settled_out = 0;
+        return true;
+    }
+    auto sat_add = [](int64_t a, int64_t b) -> int64_t {
+        if (b > 0 && a > std::numeric_limits<int64_t>::max() - b)
+            return std::numeric_limits<int64_t>::max();
+        if (b < 0 && a < std::numeric_limits<int64_t>::min() - b)
+            return std::numeric_limits<int64_t>::min();
+        return a + b;
+    };
+    RuntimeEconomyPopulationStore &population = _state.population;
+    RuntimeEconomyMarketStore &market = _state.market;
+    RuntimeEconomyFamilyStore &families = _state.families;
+    RuntimeEconomyBuildingStore &buildings = _state.buildings;
+    const uint64_t target_handle = command.target_cohort != 0
+                                         ? command.target_cohort
+                                         : command.target_building;
+    switch (command.opcode) {
+    case NativeEconomyRuntime::COMMAND_TRANSFER_TO_COHORT: {
+        int32_t slot = -1;
+        if (!population.valid_handle(target_handle, slot)) {
+            error = "stale_cohort_handle_during_ledger";
+            return false;
+        }
+        if (slot < 0 ||
+            static_cast<size_t>(slot) >= population.funds.size() ||
+            static_cast<size_t>(slot) >= population.epoch_income.size()) {
+            error = "economy_pod_owned_core_slot_oob";
+            return false;
+        }
+        const int64_t amount = std::max<int64_t>(0, command.payload0);
+        population.funds[static_cast<size_t>(slot)] = sat_add(
+            population.funds[static_cast<size_t>(slot)], amount);
+        population.epoch_income[static_cast<size_t>(slot)] = sat_add(
+            population.epoch_income[static_cast<size_t>(slot)], amount);
+        settled_out = amount;
+        return true;
+    }
+    case NativeEconomyRuntime::COMMAND_MINT_TO_COHORT: {
+        int32_t slot = -1;
+        if (!population.valid_handle(target_handle, slot)) {
+            error = "stale_cohort_handle_during_mint";
+            return false;
+        }
+        if (slot < 0 ||
+            static_cast<size_t>(slot) >= population.funds.size() ||
+            static_cast<size_t>(slot) >= population.epoch_income.size()) {
+            error = "economy_pod_owned_core_slot_oob";
+            return false;
+        }
+        population.funds[static_cast<size_t>(slot)] = sat_add(
+            population.funds[static_cast<size_t>(slot)], command.payload0);
+        population.epoch_income[static_cast<size_t>(slot)] = sat_add(
+            population.epoch_income[static_cast<size_t>(slot)],
+            command.payload0);
+        settled_out = command.payload0;
+        return true;
+    }
+    case NativeEconomyRuntime::COMMAND_BURN_FROM_COHORT: {
+        int32_t slot = -1;
+        if (!population.valid_handle(target_handle, slot)) {
+            error = "stale_cohort_handle_during_burn";
+            return false;
+        }
+        if (slot < 0 ||
+            static_cast<size_t>(slot) >= population.funds.size() ||
+            static_cast<size_t>(slot) >= population.epoch_expense.size()) {
+            error = "economy_pod_owned_core_slot_oob";
+            return false;
+        }
+        const int64_t funds =
+            population.funds[static_cast<size_t>(slot)];
+        const int64_t amount =
+            std::min(command.payload0, std::max<int64_t>(0, funds));
+        population.funds[static_cast<size_t>(slot)] = funds - amount;
+        population.epoch_expense[static_cast<size_t>(slot)] = sat_add(
+            population.epoch_expense[static_cast<size_t>(slot)], amount);
+        settled_out = amount;
+        return true;
+    }
+    case NativeEconomyRuntime::COMMAND_ADD_STOCK: {
+        const int32_t market_id = command.target_cell;
+        const int32_t good_id = static_cast<int32_t>(command.target_country);
+        if (market.market_count <= 0 || market.good_count <= 0 ||
+            market_id < 0 || market_id >= market.market_count || good_id < 0 ||
+            good_id >= market.good_count) {
+            error = "economy_pod_owned_core_market_oob";
+            return false;
+        }
+        const int64_t idx = market.index(market_id, good_id);
+        if (idx < 0 || static_cast<size_t>(idx) >= market.stock.size()) {
+            error = "economy_pod_owned_core_market_oob";
+            return false;
+        }
+        const int64_t before = market.stock[static_cast<size_t>(idx)];
+        market.stock[static_cast<size_t>(idx)] =
+            sat_add(before, command.payload0);
+        settled_out = market.stock[static_cast<size_t>(idx)] - before;
+        return true;
+    }
+    case NativeEconomyRuntime::COMMAND_REMOVE_STOCK: {
+        const int32_t market_id = command.target_cell;
+        const int32_t good_id = static_cast<int32_t>(command.target_country);
+        if (market.market_count <= 0 || market.good_count <= 0 ||
+            market_id < 0 || market_id >= market.market_count || good_id < 0 ||
+            good_id >= market.good_count) {
+            error = "economy_pod_owned_core_market_oob";
+            return false;
+        }
+        const int64_t idx = market.index(market_id, good_id);
+        if (idx < 0 || static_cast<size_t>(idx) >= market.stock.size()) {
+            error = "economy_pod_owned_core_market_oob";
+            return false;
+        }
+        const int64_t stock = market.stock[static_cast<size_t>(idx)];
+        const int64_t amount =
+            std::min(command.payload0, std::max<int64_t>(0, stock));
+        market.stock[static_cast<size_t>(idx)] = stock - amount;
+        settled_out = amount;
+        return true;
+    }
+    case NativeEconomyRuntime::COMMAND_ADD_POPULATION: {
+        int32_t slot = -1;
+        if (!population.valid_handle(target_handle, slot)) {
+            error = "stale_cohort_handle_during_population_adjust";
+            return false;
+        }
+        if (slot < 0 ||
+            static_cast<size_t>(slot) >= population.population.size()) {
+            error = "economy_pod_owned_core_slot_oob";
+            return false;
+        }
+        const int32_t page = slot / RuntimeEconomyPopulationStore::COHORT_PAGE_SIZE;
+        if (page < 0 ||
+            static_cast<size_t>(page) >= population.page_cell.size()) {
+            error = "economy_pod_owned_core_page_oob";
+            return false;
+        }
+        const int32_t event_cell = population.page_cell[static_cast<size_t>(page)];
+        const int64_t before = population.population[static_cast<size_t>(slot)];
+        const int64_t after =
+            std::max<int64_t>(0, sat_add(before, command.payload0));
+        const int64_t actual_delta = after - before;
+        population.population[static_cast<size_t>(slot)] = after;
+        settled_out = actual_delta;
+        _state.external_population_delta =
+            sat_add(_state.external_population_delta, actual_delta);
+        if (after == 0) {
+            RuntimeEconomyOwnedStructuralCommand structural{};
+            structural.opcode = 0;
+            structural.source_slot = slot;
+            structural.cell = event_cell;
+            if (static_cast<size_t>(slot) < population.signature_id.size())
+                structural.signature = static_cast<int32_t>(
+                    population.signature_id[static_cast<size_t>(slot)]);
+            structural.sequence =
+                static_cast<int64_t>(command.submit_order);
+            _state.structural_commands.push_back(structural);
+        }
+        return true;
+    }
+    case NativeEconomyRuntime::COMMAND_MOVE_POPULATION:
+    case NativeEconomyRuntime::COMMAND_CHANGE_SIGNATURE: {
+        int32_t slot = -1;
+        if (!population.valid_handle(target_handle, slot)) {
+            error = "stale_cohort_handle_during_structure_queue";
+            return false;
+        }
+        const int32_t page = slot / RuntimeEconomyPopulationStore::COHORT_PAGE_SIZE;
+        if (page < 0 ||
+            static_cast<size_t>(page) >= population.page_cell.size()) {
+            error = "economy_pod_owned_core_page_oob";
+            return false;
+        }
+        const int64_t requested =
+            command.payload0 <= 0
+                ? population.population[static_cast<size_t>(slot)]
+                : command.payload0;
+        RuntimeEconomyOwnedStructuralCommand structural{};
+        structural.opcode = command.opcode;
+        structural.source_slot = slot;
+        structural.cell =
+            command.opcode == NativeEconomyRuntime::COMMAND_MOVE_POPULATION
+                ? command.target_cell
+                : population.page_cell[static_cast<size_t>(page)];
+        structural.signature =
+            command.opcode == NativeEconomyRuntime::COMMAND_CHANGE_SIGNATURE
+                ? static_cast<int32_t>(command.target_country)
+                : static_cast<int32_t>(
+                      population.signature_id[static_cast<size_t>(slot)]);
+        structural.population = requested;
+        structural.sequence = static_cast<int64_t>(command.submit_order);
+        _state.structural_commands.push_back(structural);
+        settled_out = requested;
+        return true;
+    }
+    case NativeEconomyRuntime::COMMAND_TRANSFER_FROM_COHORT: {
+        int32_t slot = -1;
+        if (!population.valid_handle(target_handle, slot)) {
+            error = "stale_cohort_handle_during_transfer";
+            return false;
+        }
+        if (slot < 0 ||
+            static_cast<size_t>(slot) >= population.funds.size() ||
+            static_cast<size_t>(slot) >= population.epoch_expense.size()) {
+            error = "economy_pod_owned_core_slot_oob";
+            return false;
+        }
+        const int64_t funds =
+            population.funds[static_cast<size_t>(slot)];
+        const int64_t amount =
+            std::min(command.payload0, std::max<int64_t>(0, funds));
+        population.funds[static_cast<size_t>(slot)] = funds - amount;
+        population.epoch_expense[static_cast<size_t>(slot)] = sat_add(
+            population.epoch_expense[static_cast<size_t>(slot)], amount);
+        settled_out = amount;
+        return true;
+    }
+    case NativeEconomyRuntime::COMMAND_DEMOLISH: {
+        int32_t slot = -1;
+        if (!population.valid_handle(target_handle, slot)) {
+            error = "stale_cohort_handle_during_demolish";
+            return false;
+        }
+        const int32_t cell = command.target_cell;
+        const int32_t type_id = static_cast<int32_t>(command.target_country);
+        const int64_t count = command.payload0;
+        const int32_t page = slot / RuntimeEconomyPopulationStore::COHORT_PAGE_SIZE;
+        if (cell < 0 || cell >= market.market_count || type_id < 0 || count <= 0 ||
+            page < 0 || static_cast<size_t>(page) >= population.page_cell.size() ||
+            population.page_cell[static_cast<size_t>(page)] != cell) {
+            error = "demolish_target_invalid";
+            return false;
+        }
+        const int32_t signature = static_cast<int32_t>(
+            population.signature_id[static_cast<size_t>(slot)]);
+        const int32_t group_id =
+            find_owned_building_group(buildings, cell, type_id, signature);
+        if (group_id < 0 ||
+            static_cast<size_t>(group_id) >= buildings.group_units.size() ||
+            buildings.group_units[static_cast<size_t>(group_id)] < count) {
+            error = "demolish_owned_count_insufficient";
+            return false;
+        }
+        buildings.group_units[static_cast<size_t>(group_id)] -= count;
+        settled_out = count;
+        return true;
+    }
+    case NativeEconomyRuntime::COMMAND_COUNTRY_GOOD_TO_MARKET: {
+        const int32_t market_id = command.target_cell;
+        const int32_t good_id = static_cast<int32_t>(command.target_country);
+        if (market.market_count <= 0 || market.good_count <= 0 ||
+            market_id < 0 || market_id >= market.market_count || good_id < 0 ||
+            good_id >= market.good_count) {
+            error = "economy_pod_owned_core_market_oob";
+            return false;
+        }
+        const int64_t idx = market.index(market_id, good_id);
+        if (idx < 0 || static_cast<size_t>(idx) >= market.stock.size()) {
+            error = "economy_pod_owned_core_market_oob";
+            return false;
+        }
+        const int64_t before = market.stock[static_cast<size_t>(idx)];
+        market.stock[static_cast<size_t>(idx)] =
+            sat_add(before, command.payload0);
+        settled_out = market.stock[static_cast<size_t>(idx)] - before;
+        return true;
+    }
+    case NativeEconomyRuntime::COMMAND_MARKET_GOOD_TO_COUNTRY: {
+        const int32_t market_id = command.target_cell;
+        const int32_t good_id = static_cast<int32_t>(command.target_country);
+        if (market.market_count <= 0 || market.good_count <= 0 ||
+            market_id < 0 || market_id >= market.market_count || good_id < 0 ||
+            good_id >= market.good_count) {
+            error = "economy_pod_owned_core_market_oob";
+            return false;
+        }
+        const int64_t idx = market.index(market_id, good_id);
+        if (idx < 0 || static_cast<size_t>(idx) >= market.stock.size()) {
+            error = "economy_pod_owned_core_market_oob";
+            return false;
+        }
+        const int64_t stock = market.stock[static_cast<size_t>(idx)];
+        const int64_t amount =
+            std::min(command.payload0, std::max<int64_t>(0, stock));
+        market.stock[static_cast<size_t>(idx)] = stock - amount;
+        settled_out = amount;
+        return true;
+    }
+    case NativeEconomyRuntime::COMMAND_FAMILY_PURCHASE_DISCOUNT: {
+        int32_t branch = -1;
+        if (!owned_valid_influence_handle(families, target_handle, branch)) {
+            error = "family_purchase_discount_target_invalid";
+            return false;
+        }
+        int32_t family = -1;
+        if (branch < 0 ||
+            static_cast<size_t>(branch) >=
+                families.influence_family_handle.size() ||
+            !owned_valid_family_handle(
+                families, families.influence_family_handle[static_cast<size_t>(
+                                branch)],
+                family)) {
+            error = "family_purchase_discount_target_invalid";
+            return false;
+        }
+        ensure_owned_family_purchase_factors(families);
+        families.purchase_factor_q16[static_cast<size_t>(family)] =
+            static_cast<int32_t>(
+                std::clamp<int64_t>(command.payload0, 0, Q16_ONE));
+        settled_out = command.payload0;
+        return true;
+    }
+    case NativeEconomyRuntime::COMMAND_FAMILY_SET_SPLIT_POLICY: {
+        int32_t family = -1;
+        int32_t branch = -1;
+        if (owned_valid_family_handle(families, target_handle, family)) {
+        } else if (owned_valid_influence_handle(families, target_handle,
+                                                branch)) {
+            if (branch < 0 ||
+                static_cast<size_t>(branch) >=
+                    families.influence_family_handle.size() ||
+                !owned_valid_family_handle(
+                    families,
+                    families.influence_family_handle[static_cast<size_t>(
+                        branch)],
+                    family)) {
+                error = "family_split_policy_target_invalid";
+                return false;
+            }
+        } else {
+            error = "family_split_policy_target_invalid";
+            return false;
+        }
+        const uint16_t policy = static_cast<uint16_t>(command.target_cell) &
+            NativeEconomyRuntime::FAMILY_FLAG_SPLIT_POLICY_MASK;
+        const uint8_t weight = static_cast<uint8_t>(
+            std::clamp<int64_t>(command.payload0, 0, 255));
+        apply_owned_family_split_policy_flags(families, family, policy, weight);
+        settled_out = command.payload0;
+        return true;
+    }
+    default:
+        error = "economy_pod_owned_core_opcode_unsupported";
+        return false;
+    }
 }
 
 uint64_t RuntimeEconomyPodAuthority::hash_mix(uint64_t current,
@@ -820,9 +1281,10 @@ bool RuntimeEconomyPodAuthority::queue_command(
     return true;
 }
 
-void RuntimeEconomyPodAuthority::commit_pending_commands() noexcept {
+uint32_t RuntimeEconomyPodAuthority::commit_pending_commands() noexcept {
     std::vector<RuntimeEconomyPodReceipt> committed_now;
     committed_now.reserve(_commands.size());
+    uint32_t mutated = 0;
     for (const RuntimeEconomyPodCommand &command : _commands) {
         RuntimeEconomyPodReceipt *existing = nullptr;
         for (RuntimeEconomyPodReceipt &terminal : _terminal_receipts) {
@@ -852,6 +1314,7 @@ void RuntimeEconomyPodAuthority::commit_pending_commands() noexcept {
             if (_command_executor->apply(command, apply_error)) {
                 receipt.code = RuntimeEconomyCommandReceiptCode::Committed;
                 copy_reason(receipt.reason, sizeof(receipt.reason), "committed");
+                ++mutated;
             } else {
                 receipt.code =
                     RuntimeEconomyCommandReceiptCode::RejectedAtExecution;
@@ -860,8 +1323,13 @@ void RuntimeEconomyPodAuthority::commit_pending_commands() noexcept {
                                 ? "economy_command_apply_failed"
                                 : apply_error.c_str());
             }
+        } else if (_authority_mode == RuntimeEconomyAuthorityMode::POD_ACTIVE) {
+            // Phase-2.6.2: POD_ACTIVE forbids silent Committed-without-mutate.
+            receipt.code = RuntimeEconomyCommandReceiptCode::RejectedAtExecution;
+            copy_reason(receipt.reason, sizeof(receipt.reason),
+                        "economy_pod_active_executor_required");
         } else {
-            // No executor: SHADOW self_test keeps Committed-without-mutate.
+            // No executor: SHADOW / parity self_test keeps Committed-without-mutate.
             receipt.code = RuntimeEconomyCommandReceiptCode::Committed;
             copy_reason(receipt.reason, sizeof(receipt.reason), "committed");
         }
@@ -871,6 +1339,7 @@ void RuntimeEconomyPodAuthority::commit_pending_commands() noexcept {
     _commands.clear();
     // Replace admission receipts with terminal outcomes for this commit.
     _receipts = std::move(committed_now);
+    return mutated;
 }
 
 bool RuntimeEconomyPodAuthority::poll_receipt(
@@ -986,17 +1455,18 @@ bool RuntimeEconomyPodAuthority::encode_ecp1(std::vector<uint8_t> &out,
             append_u32(out, ledger.building.group_count);
             append_u32(out, ledger.building.pending_count);
             append_u32(out, ledger.building.role_lane_count);
-            append_u32(out, static_cast<uint32_t>(ledger.building.payload.size()));
-            out.insert(out.end(), ledger.building.payload.begin(),
-                       ledger.building.payload.end());
+            std::vector<uint8_t> building_wire;
+            ledger.building.store.append_wire(building_wire);
+            append_u32(out, static_cast<uint32_t>(building_wire.size()));
+            out.insert(out.end(), building_wire.begin(), building_wire.end());
             append_u64(out, ledger.trade_escrow.country_trade_revision);
             append_i64(out, ledger.trade_escrow.next_id);
             append_u32(out, ledger.trade_escrow.order_count);
             append_u64(out, ledger.trade_escrow.content_hash);
-            append_u32(out,
-                       static_cast<uint32_t>(ledger.trade_escrow.payload.size()));
-            out.insert(out.end(), ledger.trade_escrow.payload.begin(),
-                       ledger.trade_escrow.payload.end());
+            std::vector<uint8_t> trade_wire;
+            ledger.trade_escrow.store.append_wire(trade_wire);
+            append_u32(out, static_cast<uint32_t>(trade_wire.size()));
+            out.insert(out.end(), trade_wire.begin(), trade_wire.end());
         }
         if (ledger_abi >= 8u) {
             append_u64(out, ledger.family.catalog_hash);
@@ -1015,10 +1485,10 @@ bool RuntimeEconomyPodAuthority::encode_ecp1(std::vector<uint8_t> &out,
             append_u32(out, ledger.family.expedition_count);
             append_i64(out, ledger.family.next_expedition_stable_id);
             append_u64(out, ledger.family.content_hash);
-            append_u32(out,
-                       static_cast<uint32_t>(ledger.family.payload.size()));
-            out.insert(out.end(), ledger.family.payload.begin(),
-                       ledger.family.payload.end());
+            std::vector<uint8_t> family_wire;
+            ledger.family.store.append_wire(family_wire);
+            append_u32(out, static_cast<uint32_t>(family_wire.size()));
+            out.insert(out.end(), family_wire.begin(), family_wire.end());
         }
         if (ledger_abi >= 9u) {
             append_u64(out, ledger.resource.catalog_hash);
@@ -1031,10 +1501,10 @@ bool RuntimeEconomyPodAuthority::encode_ecp1(std::vector<uint8_t> &out,
             append_i32(out, ledger.resource.safe_harvest_q16);
             append_i32(out, ledger.resource.min_horizon_days);
             append_u64(out, ledger.resource.content_hash);
-            append_u32(out,
-                       static_cast<uint32_t>(ledger.resource.payload.size()));
-            out.insert(out.end(), ledger.resource.payload.begin(),
-                       ledger.resource.payload.end());
+            std::vector<uint8_t> resource_wire;
+            ledger.resource.store.append_wire(resource_wire);
+            append_u32(out, static_cast<uint32_t>(resource_wire.size()));
+            out.insert(out.end(), resource_wire.begin(), resource_wire.end());
             append_i64(out, ledger.epoch_cursor.sample_day);
             append_i64(out, ledger.epoch_cursor.current_day);
             append_i64(out, ledger.epoch_cursor.last_committed_day);
@@ -1044,10 +1514,10 @@ bool RuntimeEconomyPodAuthority::encode_ecp1(std::vector<uint8_t> &out,
             append_i32(out, ledger.epoch_cursor.native_stage);
             append_u32(out, ledger.epoch_cursor.graph_completed_mask);
             append_u64(out, ledger.epoch_cursor.content_hash);
-            append_u32(out, static_cast<uint32_t>(
-                                ledger.epoch_cursor.payload.size()));
-            out.insert(out.end(), ledger.epoch_cursor.payload.begin(),
-                       ledger.epoch_cursor.payload.end());
+            std::vector<uint8_t> cursor_wire;
+            ledger.epoch_cursor.store.append_wire(cursor_wire);
+            append_u32(out, static_cast<uint32_t>(cursor_wire.size()));
+            out.insert(out.end(), cursor_wire.begin(), cursor_wire.end());
         }
     }
     for (const RuntimeEconomyPodReceipt &receipt : _terminal_receipts) {
@@ -1242,9 +1712,21 @@ bool RuntimeEconomyPodAuthority::restore_ecp1(const uint8_t *data, size_t size,
                 error = "economy_pod_ecp1_building_truncated";
                 return false;
             }
-            restored_ledger.building.payload.assign(p, p + building_payload_size);
+            if (!restored_ledger.building.store.load_wire(
+                    p, building_payload_size,
+                    restored_ledger.building.group_count,
+                    restored_ledger.building.pending_count,
+                    restored_ledger.building.role_lane_count)) {
+                error = "economy_pod_ecp1_building_payload_shape";
+                return false;
+            }
             p += building_payload_size;
             restored_ledger.building.captured = true;
+            if (restored_ledger.building.content_hash !=
+                restored_ledger.building.store.wire_content_hash()) {
+                error = "economy_pod_ecp1_building_content_hash";
+                return false;
+            }
             if (!read_u64(p, end,
                           restored_ledger.trade_escrow.country_trade_revision) ||
                 !read_i64(p, end, restored_ledger.trade_escrow.next_id) ||
@@ -1255,9 +1737,19 @@ bool RuntimeEconomyPodAuthority::restore_ecp1(const uint8_t *data, size_t size,
                 error = "economy_pod_ecp1_trade_escrow_truncated";
                 return false;
             }
-            restored_ledger.trade_escrow.payload.assign(p, p + trade_payload_size);
+            if (!restored_ledger.trade_escrow.store.load_wire(
+                    p, trade_payload_size,
+                    restored_ledger.trade_escrow.order_count)) {
+                error = "economy_pod_ecp1_trade_escrow_payload_shape";
+                return false;
+            }
             p += trade_payload_size;
             restored_ledger.trade_escrow.captured = true;
+            if (restored_ledger.trade_escrow.content_hash !=
+                restored_ledger.trade_escrow.store.wire_content_hash()) {
+                error = "economy_pod_ecp1_trade_escrow_content_hash";
+                return false;
+            }
         }
         if (abi >= 8u) {
             uint32_t family_payload_size = 0;
@@ -1283,9 +1775,26 @@ bool RuntimeEconomyPodAuthority::restore_ecp1(const uint8_t *data, size_t size,
                 error = "economy_pod_ecp1_family_truncated";
                 return false;
             }
-            restored_ledger.family.payload.assign(p, p + family_payload_size);
+            if (!restored_ledger.family.store.load_wire(
+                    p, family_payload_size, restored_ledger.family.family_count,
+                    restored_ledger.family.membership_count,
+                    restored_ledger.family.ownership_count,
+                    restored_ledger.family.person_count,
+                    restored_ledger.family.person_need_count,
+                    restored_ledger.family.trait_count,
+                    restored_ledger.family.influence_count,
+                    restored_ledger.family.trait_command_count,
+                    restored_ledger.family.expedition_count)) {
+                error = "economy_pod_ecp1_family_payload_shape";
+                return false;
+            }
             p += family_payload_size;
             restored_ledger.family.captured = true;
+            if (restored_ledger.family.content_hash !=
+                restored_ledger.family.store.wire_content_hash()) {
+                error = "economy_pod_ecp1_family_content_hash";
+                return false;
+            }
         }
         if (abi >= 9u) {
             uint32_t resource_payload_size = 0;
@@ -1305,9 +1814,23 @@ bool RuntimeEconomyPodAuthority::restore_ecp1(const uint8_t *data, size_t size,
                 error = "economy_pod_ecp1_resource_truncated";
                 return false;
             }
-            restored_ledger.resource.payload.assign(p, p + resource_payload_size);
+            restored_ledger.resource.store.resource_count =
+                restored_ledger.resource.resource_count;
+            restored_ledger.resource.store.cell_count =
+                restored_ledger.resource.cell_count;
+            if (!restored_ledger.resource.store.load_wire(
+                    p, resource_payload_size,
+                    restored_ledger.resource.lane_count)) {
+                error = "economy_pod_ecp1_resource_payload_shape";
+                return false;
+            }
             p += resource_payload_size;
             restored_ledger.resource.captured = true;
+            if (restored_ledger.resource.content_hash !=
+                restored_ledger.resource.store.wire_content_hash()) {
+                error = "economy_pod_ecp1_resource_content_hash";
+                return false;
+            }
             if (!read_i64(p, end, restored_ledger.epoch_cursor.sample_day) ||
                 !read_i64(p, end, restored_ledger.epoch_cursor.current_day) ||
                 !read_i64(p, end,
@@ -1328,10 +1851,18 @@ bool RuntimeEconomyPodAuthority::restore_ecp1(const uint8_t *data, size_t size,
                 error = "economy_pod_ecp1_epoch_cursor_truncated";
                 return false;
             }
-            restored_ledger.epoch_cursor.payload.assign(p,
-                                                       p + cursor_payload_size);
+            if (!restored_ledger.epoch_cursor.store.load_wire(
+                    p, cursor_payload_size)) {
+                error = "economy_pod_ecp1_epoch_cursor_payload_shape";
+                return false;
+            }
             p += cursor_payload_size;
             restored_ledger.epoch_cursor.captured = true;
+            if (restored_ledger.epoch_cursor.content_hash !=
+                restored_ledger.epoch_cursor.store.wire_content_hash()) {
+                error = "economy_pod_ecp1_epoch_cursor_content_hash";
+                return false;
+            }
         }
         if (!restored_ledger.valid()) {
             error = "economy_pod_ecp1_ledger_invalid";
@@ -1634,6 +2165,94 @@ bool RuntimeEconomyPodAuthority::self_test(std::string &error) {
         return false;
     }
 
+    // Phase-2.6.2: POD_ACTIVE without executor must reject, not fake-commit.
+    RuntimeEconomyPodAuthority active_no_exec;
+    if (!active_no_exec.plan_epoch(input, error)) return false;
+    for (size_t i = 0; i < RUNTIME_ECONOMY_GRAPH_STAGE_COUNT; ++i) {
+        active_no_exec.set_stage_reference(
+            static_cast<RuntimeEconomyGraphStage>(i), 3, 7, 0, 4);
+        if (!active_no_exec.advance_stage(error)) return false;
+    }
+    active_no_exec.set_authority_mode(RuntimeEconomyAuthorityMode::POD_ACTIVE);
+    active_no_exec.attach_command_executor(nullptr);
+    RuntimeEconomyPodCommand active_cmd;
+    active_cmd.request_id = 4100;
+    active_cmd.opcode = 1;
+    active_cmd.session_epoch = 1;
+    if (!active_no_exec.queue_command(active_cmd, error)) return false;
+    if (!active_no_exec.commit_epoch(error)) return false;
+    RuntimeEconomyPodReceipt active_receipt;
+    if (!active_no_exec.poll_receipt(active_receipt) ||
+        active_receipt.code !=
+            RuntimeEconomyCommandReceiptCode::RejectedAtExecution ||
+        std::strstr(active_receipt.reason,
+                    "economy_pod_active_executor_required") == nullptr) {
+        error = "economy_pod_active_executor_required_failed";
+        return false;
+    }
+
+    // Phase-2.6.3: OwnedState-first mint under POD_ACTIVE.
+    {
+        RuntimeEconomyPodAuthority owned;
+        owned.initialize_state(2, 3);
+        RuntimeEconomyPopulationStore &pop = owned.state().population;
+        const int32_t slot = pop.allocate_slot(0, 7);
+        if (slot < 0) {
+            error = "economy_pod_owned_core_allocate_failed";
+            return false;
+        }
+        const uint64_t handle = pop.handle_for_slot(slot);
+        pop.funds[static_cast<size_t>(slot)] = 10;
+        pop.epoch_income[static_cast<size_t>(slot)] = 0;
+        owned.set_authority_mode(RuntimeEconomyAuthorityMode::POD_ACTIVE);
+        RuntimeEconomyPodCommand mint;
+        mint.opcode = 2;
+        mint.target_cohort = handle;
+        mint.payload0 = 5;
+        int64_t settled = 0;
+        if (!owned.try_apply_owned_core_command(mint, error, settled) ||
+            settled != 5 ||
+            pop.funds[static_cast<size_t>(slot)] != 15 ||
+            pop.epoch_income[static_cast<size_t>(slot)] != 5) {
+            if (error.empty()) error = "economy_pod_owned_core_mint_failed";
+            return false;
+        }
+        RuntimeEconomyPodCommand burn;
+        burn.opcode = 3;
+        burn.target_cohort = handle;
+        burn.payload0 = 100;
+        if (!owned.try_apply_owned_core_command(burn, error, settled) ||
+            settled != 15 ||
+            pop.funds[static_cast<size_t>(slot)] != 0) {
+            if (error.empty()) error = "economy_pod_owned_core_burn_failed";
+            return false;
+        }
+        owned.state().market.stock[0] = 8;
+        RuntimeEconomyPodCommand add_stock;
+        add_stock.opcode = 4;
+        add_stock.target_cell = 0;
+        add_stock.target_country = 0;
+        add_stock.payload0 = 4;
+        if (!owned.try_apply_owned_core_command(add_stock, error, settled) ||
+            settled != 4 || owned.state().market.stock[0] != 12) {
+            if (error.empty()) error = "economy_pod_owned_core_add_stock_failed";
+            return false;
+        }
+        pop.population[static_cast<size_t>(slot)] = 100;
+        RuntimeEconomyPodCommand add_pop;
+        add_pop.opcode = NativeEconomyRuntime::COMMAND_ADD_POPULATION;
+        add_pop.target_cohort = handle;
+        add_pop.payload0 = 25;
+        if (!owned.try_apply_owned_core_command(add_pop, error, settled) ||
+            settled != 25 ||
+            pop.population[static_cast<size_t>(slot)] != 125 ||
+            owned.state().external_population_delta != 25) {
+            if (error.empty())
+                error = "economy_pod_owned_core_add_population_failed";
+            return false;
+        }
+    }
+
     authority.set_authority_mode(
         RuntimeEconomyAuthorityMode::POD_ACTIVE_WITH_LEGACY_PARITY);
     authority.set_business_summary(0, 0, 0, 123, 456, 4, 5, 6, 7);
@@ -1691,60 +2310,43 @@ bool RuntimeEconomyPodAuthority::self_test(std::string &error) {
     authority.state().market.cell_to_market[1] = 1;
     authority.state().building.captured = true;
     authority.state().building.catalog_hash = 0xB17D;
-    authority.state().building.group_count = 0;
-    authority.state().building.pending_count = 0;
-    authority.state().building.role_lane_count = 0;
-    authority.state().building.content_hash = 1469598103934665603ull;
+    authority.state().building.store.clear();
+    authority.state().building.sync_counts_from_store();
+    authority.state().building.recompute_content_hash();
+    authority.state().buildings = authority.state().building.store;
     authority.state().trade_escrow.captured = true;
     authority.state().trade_escrow.country_trade_revision = 3;
     authority.state().trade_escrow.next_id = 11;
-    authority.state().trade_escrow.order_count = 0;
-    authority.state().trade_escrow.content_hash = 1469598103934665603ull;
+    authority.state().trade_escrow.store.clear();
+    authority.state().trade_escrow.sync_counts_from_store();
+    authority.state().trade_escrow.recompute_content_hash();
+    authority.state().trade_orders = authority.state().trade_escrow.store;
     authority.state().family.captured = true;
     authority.state().family.catalog_hash = 0xF001ull;
     authority.state().family.person_catalog_hash = 0xF002ull;
     authority.state().family.trait_catalog_hash = 0xF003ull;
     authority.state().family.runtime_mode = 1;
     authority.state().family.person_runtime_mode = 1;
-    authority.state().family.family_count = 0;
-    authority.state().family.membership_count = 0;
-    authority.state().family.ownership_count = 0;
-    authority.state().family.person_count = 0;
-    authority.state().family.person_need_count = 0;
-    authority.state().family.trait_count = 0;
-    authority.state().family.influence_count = 0;
-    authority.state().family.trait_command_count = 0;
-    authority.state().family.expedition_count = 0;
     authority.state().family.next_expedition_stable_id = 42;
-    authority.state().family.content_hash = 1469598103934665603ull;
+    authority.state().family.store.clear();
+    authority.state().family.sync_counts_from_store();
+    authority.state().family.recompute_content_hash();
+    authority.state().families = authority.state().family.store;
     authority.state().resource.captured = true;
     authority.state().resource.catalog_hash = 0xC001ull;
     authority.state().resource.environment_hash = 0xE001ull;
     authority.state().resource.context_day = 3;
-    authority.state().resource.resource_count = 0;
-    authority.state().resource.cell_count = 2;
-    authority.state().resource.lane_count = 0;
     authority.state().resource.min_reserve_q16 = 22938;
     authority.state().resource.safe_harvest_q16 = 0;
     authority.state().resource.min_horizon_days = 3650;
-    authority.state().resource.content_hash = 1469598103934665603ull;
     // Empty snapshot + two zero generation stamps for cell_count=2.
-    {
-        const uint32_t zero = 0;
-        const auto *bytes = reinterpret_cast<const uint8_t *>(&zero);
-        authority.state().resource.payload.insert(
-            authority.state().resource.payload.end(), bytes, bytes + sizeof(zero));
-        authority.state().resource.payload.insert(
-            authority.state().resource.payload.end(), bytes, bytes + sizeof(zero));
-        constexpr uint64_t FNV_OFFSET = 1469598103934665603ull;
-        constexpr uint64_t FNV_PRIME = 1099511628211ull;
-        uint64_t hash = FNV_OFFSET;
-        for (uint8_t byte : authority.state().resource.payload) {
-            hash ^= byte;
-            hash *= FNV_PRIME;
-        }
-        authority.state().resource.content_hash = hash;
-    }
+    authority.state().resource.store.resource_count = 0;
+    authority.state().resource.store.cell_count = 2;
+    authority.state().resource.store.stock.clear();
+    authority.state().resource.store.cell_generation.assign(2, 0);
+    authority.state().resource.sync_counts_from_store();
+    authority.state().resource.recompute_content_hash();
+    authority.state().resources = authority.state().resource.store;
     authority.state().epoch_cursor.captured = true;
     authority.state().epoch_cursor.sample_day = 3;
     authority.state().epoch_cursor.current_day = 3;
@@ -1755,17 +2357,9 @@ bool RuntimeEconomyPodAuthority::self_test(std::string &error) {
     authority.state().epoch_cursor.native_stage = 0;
     authority.state().epoch_cursor.graph_completed_mask =
         RUNTIME_ECONOMY_GRAPH_ALL_STAGE_MASK;
-    authority.state().epoch_cursor.payload.push_back(0);
-    {
-        constexpr uint64_t FNV_OFFSET = 1469598103934665603ull;
-        constexpr uint64_t FNV_PRIME = 1099511628211ull;
-        uint64_t hash = FNV_OFFSET;
-        for (uint8_t byte : authority.state().epoch_cursor.payload) {
-            hash ^= byte;
-            hash *= FNV_PRIME;
-        }
-        authority.state().epoch_cursor.content_hash = hash;
-    }
+    authority.state().epoch_cursor.store.idle_marker = 0;
+    authority.state().epoch_cursor.recompute_content_hash();
+    authority.state().epoch_cursors = authority.state().epoch_cursor.store;
     authority.state().state_generation = 7;
     authority.state().committed_day = 3;
     RuntimeEconomyLedgerState fixture_ledger;
@@ -1847,13 +2441,20 @@ bool RuntimeEconomyPodAuthority::self_test(std::string &error) {
             left.building.catalog_hash == right.building.catalog_hash &&
             left.building.content_hash == right.building.content_hash &&
             left.building.group_count == right.building.group_count &&
-            left.building.payload == right.building.payload &&
+            left.building.store.cell == right.building.store.cell &&
+            left.building.store.role_filled == right.building.store.role_filled &&
+            left.building.store.pending_cell ==
+                right.building.store.pending_cell &&
             left.trade_escrow.captured == right.trade_escrow.captured &&
             left.trade_escrow.country_trade_revision ==
                 right.trade_escrow.country_trade_revision &&
             left.trade_escrow.next_id == right.trade_escrow.next_id &&
             left.trade_escrow.content_hash == right.trade_escrow.content_hash &&
-            left.trade_escrow.payload == right.trade_escrow.payload &&
+            left.trade_escrow.store.ids == right.trade_escrow.store.ids &&
+            left.trade_escrow.store.line_goods ==
+                right.trade_escrow.store.line_goods &&
+            left.trade_escrow.store.seller_handles ==
+                right.trade_escrow.store.seller_handles &&
             left.family.captured == right.family.captured &&
             left.family.catalog_hash == right.family.catalog_hash &&
             left.family.person_catalog_hash == right.family.person_catalog_hash &&
@@ -1861,20 +2462,28 @@ bool RuntimeEconomyPodAuthority::self_test(std::string &error) {
             left.family.next_expedition_stable_id ==
                 right.family.next_expedition_stable_id &&
             left.family.content_hash == right.family.content_hash &&
-            left.family.payload == right.family.payload &&
+            left.family.store.family_slot == right.family.store.family_slot &&
+            left.family.store.person_slot == right.family.store.person_slot &&
+            left.family.store.expedition_slot ==
+                right.family.store.expedition_slot &&
+            left.family.store.membership_family_handle ==
+                right.family.store.membership_family_handle &&
             left.resource.captured == right.resource.captured &&
             left.resource.catalog_hash == right.resource.catalog_hash &&
             left.resource.environment_hash == right.resource.environment_hash &&
             left.resource.context_day == right.resource.context_day &&
             left.resource.content_hash == right.resource.content_hash &&
-            left.resource.payload == right.resource.payload &&
+            left.resource.store.stock == right.resource.store.stock &&
+            left.resource.store.cell_generation ==
+                right.resource.store.cell_generation &&
             left.epoch_cursor.captured == right.epoch_cursor.captured &&
             left.epoch_cursor.sample_day == right.epoch_cursor.sample_day &&
             left.epoch_cursor.last_committed_day ==
                 right.epoch_cursor.last_committed_day &&
             left.epoch_cursor.epoch_id == right.epoch_cursor.epoch_id &&
             left.epoch_cursor.content_hash == right.epoch_cursor.content_hash &&
-            left.epoch_cursor.payload == right.epoch_cursor.payload;
+            left.epoch_cursor.store.idle_marker ==
+                right.epoch_cursor.store.idle_marker;
     };
     RuntimeEconomyLedgerState restored_ledger;
     if (!restored.export_committed_ledger(restored_ledger, error)) return false;
@@ -1891,14 +2500,19 @@ bool RuntimeEconomyPodAuthority::self_test(std::string &error) {
         restored.state().population.owner_employed[pod_slot] != 3 ||
         !restored.state().building.captured ||
         restored.state().building.catalog_hash != 0xB17D ||
+        restored.state().buildings.num_groups() != 0 ||
         !restored.state().trade_escrow.captured ||
         restored.state().trade_escrow.next_id != 11 ||
+        restored.state().trade_orders.num_orders() != 0 ||
         !restored.state().family.captured ||
         restored.state().family.catalog_hash != 0xF001ull ||
         restored.state().family.next_expedition_stable_id != 42 ||
+        restored.state().families.num_families() != 0 ||
         !restored.state().resource.captured ||
         restored.state().resource.catalog_hash != 0xC001ull ||
         restored.state().resource.cell_count != 2 ||
+        restored.state().resources.cell_count != 2 ||
+        restored.state().resources.cell_generation.size() != 2 ||
         !restored.state().epoch_cursor.captured ||
         restored.state().epoch_cursor.epoch_id != 9) {
         error = "economy_pod_ecp9_extended_columns_mismatch";

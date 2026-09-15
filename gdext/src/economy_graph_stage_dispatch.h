@@ -9,7 +9,7 @@
 
 namespace pk {
 
-bool economy_dispatch_mutate_stage(void *runtime_hook,
+bool economy_dispatch_mutate_stage(EconomySoAView &view,
                                    RuntimeEconomyGraphStage stage,
                                    EconomyStageCursor &cursor,
                                    const RuntimeEconomyEpochInput &input,

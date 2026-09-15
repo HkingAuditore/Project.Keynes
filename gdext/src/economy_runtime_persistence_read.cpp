@@ -585,50 +585,50 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         _committed_construction_receipts.clear();
         _next_construction_receipt_id = 1;
         _event_consumer_ack.clear();
-        _population.clear(_cell_count);
-        _population.page_next.assign(pages, -1);
-        _population.page_cell.assign(pages, -1);
+        population_store().clear(_cell_count);
+        population_store().page_next.assign(pages, -1);
+        population_store().page_cell.assign(pages, -1);
         const size_t slots = static_cast<size_t>(pages) * COHORT_PAGE_SIZE;
-        _population.active.assign(slots, 0);
+        population_store().active.assign(slots, 0);
         // Reservations are transient and are intentionally not serialized at a
         // committed save boundary.  Recreate their dense lanes explicitly so
         // post-restore allocation/release paths have the same shape as a fresh
         // runtime and cannot index an empty vector.
-        _population.reserved.assign(slots, 0);
-        _population.reservation_owner.assign(slots, 0);
-        _population.signature_id.assign(slots, 0);
-        _population.generation.assign(slots, 1);
-        _population.population.assign(slots, 0);
-        _population.funds.assign(slots, 0);
-        _population.epoch_income.assign(slots, 0);
-        _population.epoch_expense.assign(slots, 0);
-        _population.epoch_in_kind_income.assign(slots, 0);
-        _population.income_ema.assign(slots, 0);
-        _population.epoch_tax_paid.assign(slots, 0);
-        _population.epoch_subsidy_received.assign(slots, 0);
-        _population.income_baseline_ema.assign(slots, 0);
-        _population.needs_satisfaction.assign(slots, static_cast<uint16_t>(Q16_ONE - 1));
-        _population.worst_need_id.assign(slots, std::numeric_limits<uint16_t>::max());
-        _population.composite_satisfaction.assign(
+        population_store().reserved.assign(slots, 0);
+        population_store().reservation_owner.assign(slots, 0);
+        population_store().signature_id.assign(slots, 0);
+        population_store().generation.assign(slots, 1);
+        population_store().population.assign(slots, 0);
+        population_store().funds.assign(slots, 0);
+        population_store().epoch_income.assign(slots, 0);
+        population_store().epoch_expense.assign(slots, 0);
+        population_store().epoch_in_kind_income.assign(slots, 0);
+        population_store().income_ema.assign(slots, 0);
+        population_store().epoch_tax_paid.assign(slots, 0);
+        population_store().epoch_subsidy_received.assign(slots, 0);
+        population_store().income_baseline_ema.assign(slots, 0);
+        population_store().needs_satisfaction.assign(slots, static_cast<uint16_t>(Q16_ONE - 1));
+        population_store().worst_need_id.assign(slots, std::numeric_limits<uint16_t>::max());
+        population_store().composite_satisfaction.assign(
             slots, static_cast<uint16_t>(Q16_ONE - 1));
-        _population.satisfaction_dims.assign(
+        population_store().satisfaction_dims.assign(
             slots * static_cast<size_t>(SAT_DIM_COUNT),
             static_cast<uint16_t>(Q16_ONE - 1));
-        _population.worst_dimension_id.assign(
+        population_store().worst_dimension_id.assign(
             slots, std::numeric_limits<uint8_t>::max());
-        _population.flags.assign(slots, 0);
-        _population.demography_residual.assign(slots, 0);
-        _population.owner_employed.assign(slots, 0);
-        _population.employee_employed.assign(slots, 0);
-        _population.active_count = active_count;
-        _population.high_water_slots = static_cast<int64_t>(slots);
-        _market.market_count = markets;
-        _market.price_ceilings.resize(markets);
-        _market.good_count = goods;
-        _market.stock.assign(static_cast<size_t>(markets) * goods, 0);
-        _market.price.assign(static_cast<size_t>(markets) * goods, 0);
-        _market.demand_ema.assign(static_cast<size_t>(markets) * goods, 0);
-        _market.last_shortage_q16.assign(static_cast<size_t>(markets) * goods, 0);
+        population_store().flags.assign(slots, 0);
+        population_store().demography_residual.assign(slots, 0);
+        population_store().owner_employed.assign(slots, 0);
+        population_store().employee_employed.assign(slots, 0);
+        population_store().active_count = active_count;
+        population_store().high_water_slots = static_cast<int64_t>(slots);
+        market_store().market_count = markets;
+        market_store().price_ceilings.resize(markets);
+        market_store().good_count = goods;
+        market_store().stock.assign(static_cast<size_t>(markets) * goods, 0);
+        market_store().price.assign(static_cast<size_t>(markets) * goods, 0);
+        market_store().demand_ema.assign(static_cast<size_t>(markets) * goods, 0);
+        market_store().last_shortage_q16.assign(static_cast<size_t>(markets) * goods, 0);
         _investment_active_good_words.assign(
             (static_cast<size_t>(goods) + 63U) / 64U, 0);
         _investment_active_goods_scratch.clear();
@@ -640,7 +640,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         _startup_demand_touched_keys.clear();
         _trade_active_keys.clear();
         _trade_active_key_present.assign(static_cast<size_t>(markets) * goods, 0);
-        _market.cell_to_market.assign(_cell_count, -1);
+        market_store().cell_to_market.assign(_cell_count, -1);
         _market_signals.clear(_cell_count);
         _market_signals.good_ids.reserve(signal_count);
         _market_signals.business_demand_ema.reserve(signal_count);
@@ -833,27 +833,27 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 error = "save_page_record_invalid";
                 return false;
             }
-            _population.page_next[page] = next;
-            _population.page_cell[page] = cell;
+            population_store().page_next[page] = next;
+            population_store().page_cell[page] = cell;
             const int32_t base = page * COHORT_PAGE_SIZE;
             for (int32_t lane = 0; lane < COHORT_PAGE_SIZE; ++lane) {
                 const int32_t slot = base + lane;
-                if (!read_le(bytes, cursor, _population.active[slot]) ||
-                    !read_le(bytes, cursor, _population.signature_id[slot]) ||
-                    !read_le(bytes, cursor, _population.generation[slot]) ||
-                    !read_le(bytes, cursor, _population.population[slot]) ||
-                    !read_le(bytes, cursor, _population.funds[slot]) ||
-                    !read_le(bytes, cursor, _population.epoch_income[slot]) ||
-                    !read_le(bytes, cursor, _population.epoch_expense[slot]) ||
-                    !read_le(bytes, cursor, _population.income_ema[slot]) ||
-                    !read_le(bytes, cursor, _population.needs_satisfaction[slot]) ||
-                    !read_le(bytes, cursor, _population.worst_need_id[slot]) ||
-                    !read_le(bytes, cursor, _population.flags[slot]) ||
-                    !read_le(bytes, cursor, _population.demography_residual[slot]) ||
-                    !read_le(bytes, cursor, _population.owner_employed[slot]) ||
-                    !read_le(bytes, cursor, _population.employee_employed[slot]) ||
-                    !read_le(bytes, cursor, _population.composite_satisfaction[slot]) ||
-                    !read_le(bytes, cursor, _population.worst_dimension_id[slot])) {
+                if (!read_le(bytes, cursor, population_store().active[slot]) ||
+                    !read_le(bytes, cursor, population_store().signature_id[slot]) ||
+                    !read_le(bytes, cursor, population_store().generation[slot]) ||
+                    !read_le(bytes, cursor, population_store().population[slot]) ||
+                    !read_le(bytes, cursor, population_store().funds[slot]) ||
+                    !read_le(bytes, cursor, population_store().epoch_income[slot]) ||
+                    !read_le(bytes, cursor, population_store().epoch_expense[slot]) ||
+                    !read_le(bytes, cursor, population_store().income_ema[slot]) ||
+                    !read_le(bytes, cursor, population_store().needs_satisfaction[slot]) ||
+                    !read_le(bytes, cursor, population_store().worst_need_id[slot]) ||
+                    !read_le(bytes, cursor, population_store().flags[slot]) ||
+                    !read_le(bytes, cursor, population_store().demography_residual[slot]) ||
+                    !read_le(bytes, cursor, population_store().owner_employed[slot]) ||
+                    !read_le(bytes, cursor, population_store().employee_employed[slot]) ||
+                    !read_le(bytes, cursor, population_store().composite_satisfaction[slot]) ||
+                    !read_le(bytes, cursor, population_store().worst_dimension_id[slot])) {
                     error = "save_page_payload_truncated";
                     return false;
                 }
@@ -867,26 +867,26 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 // 校验结果，只是去掉死代码。
                 for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim) {
                     if (!read_le(bytes, cursor,
-                                 _population.satisfaction_dims[
+                                 population_store().satisfaction_dims[
                                      dims_base + static_cast<size_t>(dim)])) {
                         error = "save_page_payload_truncated";
                         return false;
                     }
                 }
-                if (!read_le(bytes, cursor, _population.income_baseline_ema[slot]) ||
-                    !read_le(bytes, cursor, _population.epoch_tax_paid[slot]) ||
+                if (!read_le(bytes, cursor, population_store().income_baseline_ema[slot]) ||
+                    !read_le(bytes, cursor, population_store().epoch_tax_paid[slot]) ||
                     !read_le(bytes, cursor,
-                             _population.epoch_subsidy_received[slot])) {
+                             population_store().epoch_subsidy_received[slot])) {
                     error = "save_page_payload_truncated";
                     return false;
                 }
                 // composite_satisfaction 同样是 uint16_t，见上方 satisfaction_dims 的
                 // 注释——「>= Q16_ONE」对该类型恒假，不是遗漏的校验条件。
-                if ((_population.worst_dimension_id[slot] !=
+                if ((population_store().worst_dimension_id[slot] !=
                          std::numeric_limits<uint8_t>::max() &&
-                     _population.worst_dimension_id[slot] >= SAT_DIM_COUNT) ||
-                    _population.epoch_tax_paid[slot] < 0 ||
-                    _population.epoch_subsidy_received[slot] < 0) {
+                     population_store().worst_dimension_id[slot] >= SAT_DIM_COUNT) ||
+                    population_store().epoch_tax_paid[slot] < 0 ||
+                    population_store().epoch_subsidy_received[slot] < 0) {
                     error = "save_page_satisfaction_state_out_of_range";
                     return false;
                 }
@@ -897,16 +897,16 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         for (uint32_t record = 0; record < records; ++record) {
             int32_t market = -1;
             if (!read_le(bytes, cursor, market) || market != _restore.restored_markets ||
-                market < 0 || market >= _market.market_count) {
+                market < 0 || market >= market_store().market_count) {
                 error = "save_market_record_invalid";
                 return false;
             }
-            for (int32_t good = 0; good < _market.good_count; ++good) {
-                const int64_t idx = _market.index(market, good);
-                if (!read_le(bytes, cursor, _market.stock[idx]) ||
-                    !read_le(bytes, cursor, _market.price[idx]) ||
-                    !read_le(bytes, cursor, _market.demand_ema[idx]) ||
-                    !read_le(bytes, cursor, _market.last_shortage_q16[idx])) {
+            for (int32_t good = 0; good < market_store().good_count; ++good) {
+                const int64_t idx = market_store().index(market, good);
+                if (!read_le(bytes, cursor, market_store().stock[idx]) ||
+                    !read_le(bytes, cursor, market_store().price[idx]) ||
+                    !read_le(bytes, cursor, market_store().demand_ema[idx]) ||
+                    !read_le(bytes, cursor, market_store().last_shortage_q16[idx])) {
                     error = "save_market_payload_truncated";
                     return false;
                 }
@@ -1037,7 +1037,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 _food_flow_previous_period_days = std::max(
                     _food_flow_previous_period_days, saved_food_days);
             }
-            _market.cell_to_market[cell] = market;
+            market_store().cell_to_market[cell] = market;
             ++_restore.restored_cells;
         }
     } else if (section == SAVE_SECTION_COMMANDS) {
@@ -1288,7 +1288,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 !read_le(bytes, cursor, business) || !read_le(bytes, cursor, supply) ||
                 (_restore.schema_version >= 12 && !read_le(bytes, cursor, realized)) ||
                 !read_le(bytes, cursor, anchor) || cell < 0 || cell >= _cell_count ||
-                good < 0 || good >= _market.good_count || business < 0 || supply < 0 ||
+                good < 0 || good >= market_store().good_count || business < 0 || supply < 0 ||
                 realized < 0 ||
                 anchor < 0 || (anchor != 0 &&
                     (anchor < PRICE_NUMERIC_GUARD_MIN ||
@@ -1415,7 +1415,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                     (schema >= 46 &&
                      !read_le(bytes, cursor, transaction_transfer)) ||
                     !read_le(bytes, cursor, line_flags) || good < 0 ||
-                    good >= _market.good_count || _good_trade_enabled[good] == 0 ||
+                    good >= market_store().good_count || _good_trade_enabled[good] == 0 ||
                     quantity <= 0 || price < PRICE_NUMERIC_GUARD_MIN ||
                     price > PRICE_NUMERIC_GUARD_MAX || destination_price < 0 ||
                     base_value < 0 || retail_value < 0) {
@@ -1461,7 +1461,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 !read_le(bytes, cursor, export_ema) ||
                 !read_le(bytes, cursor, period_import) ||
                 !read_le(bytes, cursor, period_export) || cell < 0 ||
-                cell >= _cell_count || good < 0 || good >= _market.good_count ||
+                cell >= _cell_count || good < 0 || good >= market_store().good_count ||
                 import_ema < 0 || export_ema < 0 || period_import < 0 ||
                 period_export < 0 || (!_trade_flows.cells.empty() &&
                     (_trade_flows.cells.back() > cell ||
@@ -1718,7 +1718,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 !read_le(bytes, cursor, edge.owner_employed) ||
                 !read_le(bytes, cursor, edge.employee_employed) ||
                 !_families.valid_handle(edge.family_handle, family) ||
-                !_population.valid_handle(edge.cohort_handle, slot) ||
+                !population_store().valid_handle(edge.cohort_handle, slot) ||
                 edge.people <= 0 || edge.cash_claim < 0) {
                 error = "save_family_membership_invalid";
                 return false;
@@ -1794,7 +1794,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                     (stable_id <= 0 ||
                      !_families.valid_handle(family_handle, family) ||
                      (cohort_handle != 0 &&
-                      !_population.valid_handle(cohort_handle, cohort)) ||
+                      !population_store().valid_handle(cohort_handle, cohort)) ||
                      given_name < 0 || given_name >= static_cast<int32_t>(
                         _person_given_name_ids.size()) ||
                      notable_since_day < 0 || cash_claim < 0 ||
@@ -2164,7 +2164,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                     if (!read_le(bytes, cursor, line.good_id) ||
                         !read_le(bytes, cursor, line.quantity) ||
                         !read_le(bytes, cursor, line.flags) ||
-                        line.good_id < 0 || line.good_id >= _market.good_count ||
+                        line.good_id < 0 || line.good_id >= market_store().good_count ||
                         line.quantity <= 0 ||
                         (line.flags != EXPEDITION_CARGO_CONSTRUCTION &&
                          line.flags != EXPEDITION_CARGO_BUFFER) ||
@@ -2301,7 +2301,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 !read_le(bytes, cursor, batch_import_tariff) ||
                 !read_le(bytes, cursor, batch_export_tariff) ||
                 country < 0 || good < 0 ||
-                good >= _market.good_count || import_quantity < 0 ||
+                good >= market_store().good_count || import_quantity < 0 ||
                 export_quantity < 0 || import_base < 0 || export_base < 0 ||
                 batch_epoch < -1 || batch_epoch > _epoch_id ||
                 batch_import_quantity < 0 || batch_export_quantity < 0 ||
@@ -2513,17 +2513,17 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             PriceCeilingState state;
             if (!read_le(bytes, cursor, market) || !read_le(bytes, cursor, state.good) ||
                 !read_le(bytes, cursor, state.limit) || !read_le(bytes, cursor, state.confirmation_days) ||
-                market < 0 || market >= _market.market_count || state.good < 0 ||
-                state.good >= _market.good_count || state.limit < 1 ||
+                market < 0 || market >= market_store().market_count || state.good < 0 ||
+                state.good >= market_store().good_count || state.limit < 1 ||
                 state.confirmation_days > _price_ceiling_confirm_days) {
                 error = "save_price_ceiling_record_invalid"; return false;
             }
-            const int64_t key = int64_t(market) * _market.good_count + state.good;
+            const int64_t key = int64_t(market) * market_store().good_count + state.good;
             if (key <= _restore.last_ceiling_key) {
                 error = "save_price_ceiling_order_invalid"; return false;
             }
             _restore.last_ceiling_key = key;
-            _market.price_ceilings[market].push_back(state);
+            market_store().price_ceilings[market].push_back(state);
             ++_restore.restored_ceilings;
         }
         _restore.ceilings_seen = true;

@@ -149,9 +149,9 @@ inline bool parse_economy_production_writer(const char *text,
     return false;
 }
 
-// Phase-2.4.4.1: checklist for enabling economy_production_writer=stage_ops.
-// P2.4.4.3 sets all four bits (0xF). Writer enablement still requires a soak
-// parity gate outside this mask (see start_runtime_worker soak_pending).
+// Phase-2.4.4.1 / 2.4.5: checklist for economy_production_writer=stage_ops.
+// P2.4.4.3 sets all four bits (0xF). Host start still fail-closes on
+// parity_conflict / requires_mutate / missing readiness bits.
 constexpr uint32_t ECONOMY_STAGE_OPS_READY_PRELUDE = 1u << 0;
 constexpr uint32_t ECONOMY_STAGE_OPS_READY_COMMIT_DRAINS = 1u << 1;
 constexpr uint32_t ECONOMY_STAGE_OPS_READY_BOUNDED_KERNELS = 1u << 2;
@@ -345,6 +345,18 @@ public:
     // Sync session/generation watermarks from the attached production runtime.
     void sync_identity(uint64_t session_epoch, uint64_t generation) noexcept;
 
+    // Phase-2.6.3: opcodes 1–23 mutate OwnedState SoA first under POD_ACTIVE.
+    static bool is_owned_core_opcode(int32_t opcode) noexcept;
+    static bool is_owned_command_opcode(int32_t opcode) noexcept {
+        return is_owned_core_opcode(opcode);
+    }
+    static bool is_owned_heavy_pod_opcode(int32_t opcode) noexcept;
+    // Applies opcode 1–23 to `_state`. Caller must be POD_ACTIVE with an
+    // initialized owned state; returns settled amount.
+    bool try_apply_owned_core_command(const RuntimeEconomyPodCommand &command,
+                                      std::string &error,
+                                      int64_t &settled_out) noexcept;
+
     bool plan_epoch(const RuntimeEconomyEpochInput &input, std::string &error);
     bool advance_stage(std::string &error);
     bool commit_epoch(std::string &error);
@@ -369,7 +381,9 @@ public:
 
     // Drain queued POD commands into terminal receipts (Committed or
     // RejectedAtExecution). Idempotent for duplicate request_id.
-    void commit_pending_commands() noexcept;
+    // Returns the number of commands that mutated via the attached executor
+    // (Phase-2.6.2: host recaptures the committed mirror when > 0).
+    uint32_t commit_pending_commands() noexcept;
 
     bool encode_ecp1(std::vector<uint8_t> &out, std::string &error) const;
     bool restore_ecp1(const uint8_t *data, size_t size, std::string &error);
