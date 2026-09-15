@@ -346,7 +346,7 @@ bool EconomyCsvRecorder::start(const Config &config, NativeEconomyRuntime &runti
                     runtime._building_cell_offsets[cell + 1] -
                     runtime._building_cell_offsets[cell]);
             }
-            for (const auto &pending : runtime._pending_construction)
+            for (const auto pending : runtime.pending_construction())
                 if (pending.cell == cell) ++sampled_buildings;
         }
     }
@@ -411,7 +411,7 @@ int64_t EconomyCsvRecorder::projected_rows(const NativeEconomyRuntime &runtime) 
                     if (runtime.buildings_store().group_units[i] > 0) ++rows;
                 }
             }
-            for (const auto &pending : runtime._pending_construction)
+            for (const auto pending : runtime.pending_construction())
                 if (pending.cell == cell) ++rows;
             if (runtime._investment_diagnostic_cell == cell) {
                 rows += static_cast<int64_t>(
@@ -619,7 +619,7 @@ bool EconomyCsvRecorder::fill_batch(
         row.market_count = runtime.market_store().market_count; row.good_count = runtime.market_store().good_count;
         row.building_type_count = runtime._building_types.size();
         row.building_group_count = runtime.building_count();
-        row.pending_construction_count = runtime._pending_construction.size();
+        row.pending_construction_count = runtime.pending_construction_count();
         row.filled_owner_jobs = runtime._filled_owner_jobs;
         row.filled_employee_jobs = runtime._filled_employee_jobs;
         row.unemployed_population = runtime._unemployed_population;
@@ -852,7 +852,7 @@ bool EconomyCsvRecorder::fill_batch(
             row.merchant_credit_outstanding += group.merchant_debt_principal +
                 group.merchant_debt_premium;
         }
-        for (const auto &pending : runtime._pending_construction) {
+        for (const auto pending : runtime.pending_construction()) {
             row.merchant_credit_outstanding += pending.merchant_debt_principal +
                 pending.merchant_debt_premium;
         }
@@ -886,7 +886,7 @@ bool EconomyCsvRecorder::fill_batch(
 
     batch.cohorts.reserve(_config.enabled[COHORTS] ? runtime.population_store().active_count : 0);
     batch.buildings.reserve(_config.enabled[BUILDINGS]
-        ? runtime.building_count() + runtime._pending_construction.size() : 0);
+        ? runtime.building_count() + runtime.pending_construction_count() : 0);
     if (_config.enabled[MARKET]) batch.market.reserve(
         _sample_cells.size() * runtime.market_store().good_count);
     if (_config.enabled[RESOURCES]) batch.resources.reserve(
@@ -1126,7 +1126,7 @@ bool EconomyCsvRecorder::fill_batch(
                 }
             }
             int32_t construction_index = 0;
-            for (const auto &pending : runtime._pending_construction) {
+            for (const auto pending : runtime.pending_construction()) {
                 if (pending.cell != cell) continue;
                 BuildingRow row;
                 row.c = common; row.construction = true; row.group_index = construction_index++;

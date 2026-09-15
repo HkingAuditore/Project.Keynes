@@ -60,6 +60,18 @@ public:
     // as aliases.
     using FamilyStore = EconomyFamilyStore;
     using TradeOrderStore = EconomyTradeOrderStore;
+    // A+Y N5: the notable-family side tables moved to
+    // runtime_economy_family_side_tables.h for the same reason.
+    using NotablePersonStore = EconomyNotablePersonStore;
+    using PersonNeedState = EconomyPersonNeedState;
+    using FamilyMembershipEdge = EconomyFamilyMembershipEdge;
+    using FamilyBuildingOwnership = EconomyFamilyBuildingOwnership;
+    using FamilyTraitRoll = EconomyFamilyTraitRoll;
+    using FamilyCellInfluenceStore = EconomyFamilyCellInfluenceStore;
+    using FamilyExpeditionPayload = EconomyFamilyExpeditionPayload;
+    using FamilyExpeditionCargoLine = EconomyFamilyExpeditionCargoLine;
+    using FamilyExpeditionKitBuilding = EconomyFamilyExpeditionKitBuilding;
+    using FamilyExpeditionStore = EconomyFamilyExpeditionStore;
     friend class NativeEconomyBuildingPlanExecutor;
     friend class NativeEconomyGraphStageOps;
     friend bool economy_dispatch_mutate_stage(EconomySoAView &view,
@@ -411,6 +423,10 @@ public:
     void fill_ledger_resource_from_store(
         RuntimeEconomyResourceCommittedBlock &block,
         const RuntimeEconomyResourceStore &store) const;
+    // Idle-day cursor identity. Capture and the Owned mirror flush share it so
+    // a day-end export from OwnedState carries the same cursor block.
+    void fill_ledger_epoch_cursor(
+        RuntimeEconomyEpochCursorCommittedBlock &block) const;
     // Optional alias: publish/resource hot loops read stock lanes through
     // OwnedState when bound (see resource_stock_lanes()).
     void bind_resource_store(RuntimeEconomyResourceStore *store) noexcept {
@@ -421,6 +437,16 @@ public:
     }
     std::vector<int64_t> &resource_stock_lanes() noexcept;
     const std::vector<int64_t> &resource_stock_lanes() const noexcept;
+    // A+Y N9: epoch harvest scratch follows the same alias rule as the stock
+    // lanes — the bound store owns it, the NER locals are the unbound fallback.
+    std::vector<int64_t> &resource_remaining_lanes() noexcept;
+    const std::vector<int64_t> &resource_remaining_lanes() const noexcept;
+    std::vector<int64_t> &resource_harvest_remaining_lanes() noexcept;
+    const std::vector<int64_t> &resource_harvest_remaining_lanes() const noexcept;
+    std::vector<int64_t> &resource_delta_lanes() noexcept;
+    const std::vector<int64_t> &resource_delta_lanes() const noexcept;
+    std::vector<uint32_t> &resource_lane_generation_lanes() noexcept;
+    const std::vector<uint32_t> &resource_lane_generation_lanes() const noexcept;
     // Named-kernel household boundary: one post-building finalize chunk when
     // phase==1; otherwise ok hash boundary (settle stays on compact slice).
     bool kernel_run_household_market_boundary(
@@ -509,6 +535,9 @@ public:
                _environment_day != day_index;
     }
     bool epoch_active() const { return _epoch_active; }
+    // Committed-day identity used by the day-end Owned mirror publish. This is
+    // the same day `capture_committed_ledger_state` stamps on the ledger.
+    int64_t current_day() const { return _current_day; }
     bool should_run(int64_t day_index) const;
     bool deadline_critical(int64_t day_index) const;
     // Mutable peer-domain watermark.  `_epoch_id` identifies an Economy
@@ -1397,7 +1426,6 @@ private:
     // `_building_employee_*` lanes. Group columns are already sole, so this is
     // the only projection the ECP wire and ledger capture still need.
     void refresh_building_store_role_lanes() const;
-    void refresh_building_store_pending_lanes() const;
     size_t building_group_memory_bytes() const;
     BuildingGroup building_group_copy(size_t row) const;
     // Gathers every group column through `order`, so index-keyed side tables
@@ -1438,46 +1466,126 @@ private:
         uint64_t sponsor_family_handle = 0;
     };
 
-    struct NotablePersonStore {
-        std::vector<uint8_t> active;
-        std::vector<uint32_t> generation;
-        std::vector<int64_t> stable_id;
-        std::vector<uint64_t> family_handle;
-        std::vector<uint64_t> cohort_handle;
-        std::vector<int32_t> given_name_id;
-        std::vector<uint32_t> name_disambiguator;
-        std::vector<int64_t> notable_since_day;
-        std::vector<uint16_t> flags;
-        std::vector<int64_t> cash_claim;
-        std::vector<int64_t> family_equity_share_q32;
-        std::vector<int64_t> epoch_job_income;
-        std::vector<int64_t> epoch_business_result;
-        std::vector<int64_t> epoch_consumption_expense;
-        std::vector<int64_t> epoch_tax;
-        std::vector<int64_t> income_ema;
-        std::vector<uint16_t> needs_satisfaction;
-        std::vector<uint16_t> worst_need_id;
-        std::vector<uint64_t> building_handle;
-        std::vector<uint8_t> job_kind; // 0=none, 1=owner, 2=employee.
-        std::vector<int32_t> employee_role_index;
-        std::vector<int64_t> job_since_day;
-        std::vector<int32_t> free_indices;
-        int64_t active_count = 0;
+// A+Y N8: buildings_store() pending_* columns are the sole pending-construction
+// storage. This list maps every historical PendingConstruction field to its
+// column and fixes the member order of PendingConstructionRefT, so one row
+// still reads and writes as `pending.count`.
+#define PK_PENDING_CONSTRUCTION_COLUMNS(X)                                     \
+    X(int32_t, cell, pending_cell)                                             \
+    X(int32_t, type_id, pending_type_id)                                       \
+    X(int32_t, owner_signature_id, pending_owner_signature_id)                 \
+    X(int64_t, count, pending_count)                                           \
+    X(int64_t, ready_day, pending_ready_day)                                   \
+    X(int64_t, sequence, pending_sequence)                                     \
+    X(int64_t, merchant_debt_principal, pending_merchant_debt_principal)       \
+    X(int64_t, merchant_debt_premium, pending_merchant_debt_premium)           \
+    X(uint16_t, merchant_debt_term_cycles_left,                                \
+      pending_merchant_debt_term_cycles_left)                                  \
+    X(uint64_t, sponsor_family_handle, pending_sponsor_family_handle)
 
-        void clear();
-        int32_t allocate();
-        void release(int32_t index);
-        uint64_t handle_for_index(int32_t index) const;
-        bool valid_handle(uint64_t handle, int32_t &index_out) const;
+    // Field-reference view over one pending row, mirroring BuildingGroupRefT.
+    template <bool Const>
+    struct PendingConstructionRefT {
+        using StoreType =
+            std::conditional_t<Const, const RuntimeEconomyBuildingStore,
+                               RuntimeEconomyBuildingStore>;
+        template <typename T>
+        using Field = std::conditional_t<Const, const T, T> &;
+
+#define PK_PENDING_CONSTRUCTION_DECL(TYPE, NAME, COLUMN) Field<TYPE> NAME;
+        PK_PENDING_CONSTRUCTION_COLUMNS(PK_PENDING_CONSTRUCTION_DECL)
+#undef PK_PENDING_CONSTRUCTION_DECL
+        size_t index;
+
+        PendingConstructionRefT(StoreType &store, size_t row)
+            :
+#define PK_PENDING_CONSTRUCTION_BIND(TYPE, NAME, COLUMN) NAME(store.COLUMN[row]),
+              PK_PENDING_CONSTRUCTION_COLUMNS(PK_PENDING_CONSTRUCTION_BIND)
+#undef PK_PENDING_CONSTRUCTION_BIND
+              index(row) {}
+
+        template <bool OtherConst,
+                  typename = std::enable_if_t<Const && !OtherConst>>
+        PendingConstructionRefT(const PendingConstructionRefT<OtherConst> &other)
+            :
+#define PK_PENDING_CONSTRUCTION_REBIND(TYPE, NAME, COLUMN) NAME(other.NAME),
+              PK_PENDING_CONSTRUCTION_COLUMNS(PK_PENDING_CONSTRUCTION_REBIND)
+#undef PK_PENDING_CONSTRUCTION_REBIND
+              index(other.index) {}
+
+        PendingConstructionRefT(const PendingConstructionRefT &) = default;
+        PendingConstructionRefT &operator=(const PendingConstructionRefT &) =
+            delete;
     };
 
-    struct PersonNeedState {
-        uint64_t person_handle = 0;
-        int32_t stable_need_id = -1;
-        int64_t desired_period_units = 0;
-        uint16_t satisfaction_q16 = 0;
-        int64_t attributed_spend = 0;
+    using PendingConstructionRef = PendingConstructionRefT<false>;
+    using PendingConstructionConstRef = PendingConstructionRefT<true>;
+
+    // Indexable range over the pending columns. Iteration yields a row view, so
+    // `for (const auto pending : pending_construction())` reads SoA directly.
+    template <bool Const>
+    struct PendingConstructionLaneT {
+        using StoreType =
+            std::conditional_t<Const, const RuntimeEconomyBuildingStore,
+                               RuntimeEconomyBuildingStore>;
+        using Reference = PendingConstructionRefT<Const>;
+
+        StoreType *store;
+
+        struct Iterator {
+            StoreType *store;
+            size_t row;
+            Reference operator*() const { return Reference(*store, row); }
+            Iterator &operator++() {
+                ++row;
+                return *this;
+            }
+            bool operator==(const Iterator &other) const {
+                return row == other.row;
+            }
+            bool operator!=(const Iterator &other) const {
+                return row != other.row;
+            }
+        };
+
+        size_t size() const noexcept { return store->pending_cell.size(); }
+        bool empty() const noexcept { return store->pending_cell.empty(); }
+        Reference operator[](size_t row) const { return Reference(*store, row); }
+        Iterator begin() const { return Iterator{store, 0}; }
+        Iterator end() const { return Iterator{store, size()}; }
     };
+
+    using PendingConstructionLane = PendingConstructionLaneT<false>;
+    using PendingConstructionConstLane = PendingConstructionLaneT<true>;
+
+    PendingConstructionLane pending_construction() noexcept {
+        return PendingConstructionLane{&buildings_store()};
+    }
+    PendingConstructionConstLane pending_construction() const noexcept {
+        return PendingConstructionConstLane{&buildings_store()};
+    }
+    size_t pending_construction_count() const noexcept {
+        return buildings_store().pending_cell.size();
+    }
+    PendingConstructionRef pending_construction_at(size_t row) noexcept {
+        return PendingConstructionRef(buildings_store(), row);
+    }
+    PendingConstructionConstRef pending_construction_at(
+            size_t row) const noexcept {
+        return PendingConstructionConstRef(buildings_store(), row);
+    }
+    // Appends one row to every pending column; returns the new row index.
+    size_t append_pending_construction(const PendingConstruction &pending);
+    void clear_pending_construction();
+    void reserve_pending_construction(size_t capacity);
+    PendingConstruction pending_construction_copy(size_t row) const;
+    size_t pending_construction_memory_bytes() const;
+    // Drops every row with `ready_day <= day` in place, preserving order.
+    // Returns the number of removed rows.
+    size_t erase_ready_pending_construction(int64_t day);
+
+    // NotablePersonStore / PersonNeedState: see
+    // runtime_economy_family_side_tables.h (aliased above).
 
     struct PersonMarketAttribution {
         uint64_t person_handle = 0;
@@ -1493,30 +1601,8 @@ private:
         int64_t deaths = 0;
     };
 
-    struct FamilyMembershipEdge {
-        uint64_t family_handle = 0;
-        uint64_t cohort_handle = 0;
-        int64_t people = 0;
-        int64_t cash_claim = 0;
-        int64_t population_basis = 0;
-        int64_t funds_basis = 0;
-        int64_t owner_employed = 0;
-        int64_t employee_employed = 0;
-    };
-
-    struct FamilyBuildingOwnership {
-        uint64_t family_handle = 0;
-        uint64_t building_handle = 0;
-        int64_t owned_count = 0;
-        int64_t filled_owner = 0;
-    };
-
-    struct FamilyTraitRoll {
-        uint64_t family_handle = 0;
-        int32_t trait_id = -1;
-        int32_t strength_q16 = Q16_ONE;
-        uint8_t core = 0;
-    };
+    // FamilyMembershipEdge / FamilyBuildingOwnership / FamilyTraitRoll: see
+    // runtime_economy_family_side_tables.h (aliased above).
 
     // Compiled family-local behavior factors. This transient CSR is rebuilt
     // only at FAMILY_COMMIT/restore boundaries; consumption, investment and
@@ -1550,35 +1636,8 @@ private:
         int32_t factor_q16 = Q16_ONE;
     };
 
-    struct FamilyCellInfluenceStore {
-        std::vector<uint8_t> active;
-        std::vector<uint32_t> generation;
-        std::vector<uint64_t> family_handle;
-        std::vector<int32_t> cell;
-        std::vector<int64_t> stable_id;
-        std::vector<int64_t> population;
-        std::vector<int64_t> cash;
-        std::vector<int64_t> building_asset;
-        std::vector<int32_t> population_share_q16;
-        std::vector<int32_t> cash_share_q16;
-        std::vector<int32_t> building_share_q16;
-        std::vector<int32_t> score_q16;
-        // Population-weighted composite satisfaction of the member cohorts in
-        // this cell. Feeds branch-survival review; the prestige formula is
-        // deliberately unchanged.
-        std::vector<int32_t> satisfaction_q16;
-        std::vector<uint8_t> prestige_level;
-        std::vector<uint8_t> pending_target_level;
-        std::vector<uint8_t> review_streak;
-        std::vector<int64_t> last_review_day;
-        std::vector<uint32_t> free_indices;
-
-        void clear();
-        int32_t allocate();
-        void release(int32_t index);
-        uint64_t handle_for_index(int32_t index) const;
-        bool valid_handle(uint64_t handle, int32_t &index_out) const;
-    };
+    // FamilyCellInfluenceStore: see runtime_economy_family_side_tables.h
+    // (aliased above).
 
     struct FamilyTraitCommand {
         int32_t operation = 0; // 1=grant, 2=remove, 3=set-strength.
@@ -1615,50 +1674,10 @@ private:
         uint64_t metric_mask = 0;
     };
 
-    enum FamilyExpeditionState : uint8_t {
-        EXPEDITION_OUTBOUND = 1,
-        EXPEDITION_SETTLING = 2,
-        EXPEDITION_RETURNING = 3,
-        EXPEDITION_PREPARING = 4,
-    };
-
-    struct FamilyExpeditionPayload {
-        uint64_t source_cohort_handle = 0;
-        int32_t signature = -1;
-        int64_t people = 0;
-        int64_t funds = 0;
-        int64_t epoch_income = 0;
-        int64_t epoch_expense = 0;
-        int64_t epoch_in_kind_income = 0;
-        int64_t income_ema = 0;
-        int64_t epoch_tax_paid = 0;
-        int64_t epoch_subsidy_received = 0;
-        int64_t income_baseline_ema = 0;
-        int64_t demography_residual = 0;
-        int64_t cash_claim = 0;
-        int64_t owner_employed = 0;
-        int64_t employee_employed = 0;
-        uint32_t person_begin = 0;
-        uint32_t person_count = 0;
-        uint16_t needs_satisfaction = 0;
-        uint16_t worst_need_id = std::numeric_limits<uint16_t>::max();
-        uint16_t composite_satisfaction = 0;
-        std::array<uint16_t, SAT_DIM_COUNT> satisfaction_dims{};
-        uint8_t worst_dimension_id = 0;
-        // Transient lane reservation rebuilt from authoritative payload data.
-        int32_t reserved_slot = -1;
-    };
-
-    struct FamilyExpeditionCargoLine {
-        int32_t good_id = -1;
-        int64_t quantity = 0;
-        uint8_t flags = 0;
-    };
-
-    struct FamilyExpeditionKitBuilding {
-        int32_t type_id = -1;
-        int64_t count = 0;
-    };
+    // FamilyExpeditionState / FamilyExpeditionPayload /
+    // FamilyExpeditionCargoLine / FamilyExpeditionKitBuilding: see
+    // runtime_economy_family_side_tables.h. The enum is a namespace-scope
+    // unscoped enum there, so unqualified EXPEDITION_* still resolves here.
 
     struct ColonizationKitPlan {
         std::vector<FamilyExpeditionKitBuilding> buildings;
@@ -1694,42 +1713,8 @@ private:
         bool prefer_reserved_candidates = false;
     };
 
-    struct FamilyExpeditionStore {
-        std::vector<uint8_t> active;
-        std::vector<uint32_t> generation;
-        std::vector<int64_t> stable_id;
-        std::vector<uint64_t> country_handle;
-        std::vector<uint64_t> family_handle;
-        std::vector<int32_t> source_cell;
-        std::vector<int32_t> target_cell;
-        std::vector<int64_t> departure_day;
-        std::vector<int64_t> due_day;
-        std::vector<int32_t> route_cost;
-        std::vector<int32_t> speed;
-        std::vector<uint8_t> state;
-        std::vector<int64_t> population;
-        std::vector<uint32_t> route_begin;
-        std::vector<uint32_t> route_count;
-        std::vector<uint32_t> payload_begin;
-        std::vector<uint32_t> payload_count;
-        std::vector<uint32_t> cargo_begin;
-        std::vector<uint32_t> cargo_count;
-        std::vector<uint32_t> kit_building_begin;
-        std::vector<uint32_t> kit_building_count;
-        std::vector<uint64_t> kit_missing_stock_identity;
-        std::vector<uint32_t> missing_good_begin;
-        std::vector<uint32_t> missing_good_count;
-        std::vector<int64_t> effect_transaction_id;
-        std::vector<uint64_t> idempotency_key;
-        std::vector<int32_t> free_indices;
-        int64_t active_count = 0;
-
-        void clear();
-        int32_t allocate();
-        void release(int32_t index);
-        uint64_t handle_for_index(int32_t index) const;
-        bool valid_handle(uint64_t handle, int32_t &index_out) const;
-    };
+    // FamilyExpeditionStore: see runtime_economy_family_side_tables.h
+    // (aliased above).
 
     struct ColonizationQuoteCacheEntry {
         uint64_t token = 0;
@@ -2261,6 +2246,81 @@ private:
         return _formula_owned != nullptr ? _formula_owned->live_families
                                          : _families_local;
     }
+
+    // A+Y N5: the notable-family side tables follow the same rule. Every
+    // authoritative person/membership/ownership/expedition/influence/trait/
+    // need row lives on RuntimeEconomyOwnedState while a formula state is
+    // bound; the `_*_local` members are the unbound fallback only.
+    //
+    // Derived CSR rebuild caches (_family_member_offsets,
+    // _person_family_offsets, _person_need_offsets, _family_cell_offsets,
+    // _family_expedition_target_index, _family_expedition_due_heap, ...) are
+    // deliberately NOT moved: they are recomputed from the tables below at
+    // FAMILY_COMMIT / PERSON_COMMIT and after a structural restore, so they
+    // carry no authority and stay NER-local across bind/unbind.
+#define PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(type, name, owned, local)       \
+    type &name() noexcept {                                                   \
+        return _formula_owned != nullptr ? _formula_owned->owned : local;     \
+    }                                                                         \
+    const type &name() const noexcept {                                       \
+        return _formula_owned != nullptr ? _formula_owned->owned : local;     \
+    }
+
+    PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(NotablePersonStore, persons_store,
+                                          live_persons, _persons_local)
+    PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(std::vector<FamilyMembershipEdge>,
+                                          family_memberships, live_memberships,
+                                          _family_memberships_local)
+    PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(std::vector<FamilyBuildingOwnership>,
+                                          family_ownerships, live_ownerships,
+                                          _family_ownerships_local)
+    PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(FamilyExpeditionStore,
+                                          family_expeditions_store,
+                                          live_expeditions,
+                                          _family_expeditions_local)
+    PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(std::vector<int32_t>,
+                                          family_expedition_route_cells,
+                                          live_expedition_route_cells,
+                                          _family_expedition_route_cells_local)
+    PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(std::vector<int32_t>,
+                                          family_expedition_route_costs,
+                                          live_expedition_route_costs,
+                                          _family_expedition_route_costs_local)
+    PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(std::vector<FamilyExpeditionPayload>,
+                                          family_expedition_payloads,
+                                          live_expedition_payloads,
+                                          _family_expedition_payloads_local)
+    PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(std::vector<uint64_t>,
+                                          family_expedition_person_handles,
+                                          live_expedition_person_handles,
+                                          _family_expedition_person_handles_local)
+    PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(std::vector<FamilyExpeditionCargoLine>,
+                                          family_expedition_cargo,
+                                          live_expedition_cargo,
+                                          _family_expedition_cargo_local)
+    PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(
+        std::vector<FamilyExpeditionKitBuilding>,
+        family_expedition_kit_buildings, live_expedition_kit_buildings,
+        _family_expedition_kit_buildings_local)
+    PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(
+        std::vector<int32_t>, family_expedition_missing_good_ids,
+        live_expedition_missing_good_ids,
+        _family_expedition_missing_good_ids_local)
+    PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(
+        std::vector<int64_t>, family_expedition_missing_good_quantities,
+        live_expedition_missing_good_quantities,
+        _family_expedition_missing_good_quantities_local)
+    PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(FamilyCellInfluenceStore,
+                                          family_influences, live_influences,
+                                          _family_influences_local)
+    PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(std::vector<FamilyTraitRoll>,
+                                          family_trait_rolls, live_traits,
+                                          _family_traits_local)
+    PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(std::vector<PersonNeedState>,
+                                          person_needs, live_person_needs,
+                                          _person_needs_local)
+
+#undef PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR
 
     struct TradeFlowSignalStore {
         std::vector<int32_t> cells;
@@ -4155,15 +4215,20 @@ private:
     }
     // A+Y N3/N4: unbound fallback only; see families_store().
     FamilyStore _families_local;
-    FamilyExpeditionStore _family_expeditions;
-    std::vector<int32_t> _family_expedition_route_cells;
-    std::vector<int32_t> _family_expedition_route_costs;
-    std::vector<FamilyExpeditionPayload> _family_expedition_payloads;
-    std::vector<uint64_t> _family_expedition_person_handles;
-    std::vector<FamilyExpeditionCargoLine> _family_expedition_cargo;
-    std::vector<FamilyExpeditionKitBuilding> _family_expedition_kit_buildings;
-    std::vector<int32_t> _family_expedition_missing_good_ids;
-    std::vector<int64_t> _family_expedition_missing_good_quantities;
+    // A+Y N5: unbound fallback only; see family_expeditions_store() and the
+    // companion CSR accessors below.
+    FamilyExpeditionStore _family_expeditions_local;
+    std::vector<int32_t> _family_expedition_route_cells_local;
+    std::vector<int32_t> _family_expedition_route_costs_local;
+    std::vector<FamilyExpeditionPayload> _family_expedition_payloads_local;
+    std::vector<uint64_t> _family_expedition_person_handles_local;
+    std::vector<FamilyExpeditionCargoLine> _family_expedition_cargo_local;
+    std::vector<FamilyExpeditionKitBuilding>
+        _family_expedition_kit_buildings_local;
+    std::vector<int32_t> _family_expedition_missing_good_ids_local;
+    std::vector<int64_t> _family_expedition_missing_good_quantities_local;
+    // Derived lookup/scheduling caches over the expedition store. Rebuilt from
+    // the authoritative columns, so they stay NER-local across bind/unbind.
     std::unordered_map<uint64_t, int32_t> _family_expedition_target_index;
     std::vector<std::pair<int64_t, int32_t>> _family_expedition_due_heap;
     std::vector<ColonizationReceipt> _colonization_receipts;
@@ -4192,11 +4257,12 @@ private:
     uint64_t _next_canal_quote_token = 1;
     uint64_t _next_canal_project_id = 1;
     int64_t _next_canal_receipt_id = 1;
-    FamilyCellInfluenceStore _family_influences;
-    NotablePersonStore _persons;
-    std::vector<FamilyMembershipEdge> _family_memberships;
-    std::vector<FamilyBuildingOwnership> _family_ownerships;
-    std::vector<FamilyTraitRoll> _family_traits;
+    // A+Y N5: unbound fallback only; see the accessors below.
+    FamilyCellInfluenceStore _family_influences_local;
+    NotablePersonStore _persons_local;
+    std::vector<FamilyMembershipEdge> _family_memberships_local;
+    std::vector<FamilyBuildingOwnership> _family_ownerships_local;
+    std::vector<FamilyTraitRoll> _family_traits_local;
     std::vector<int32_t> _family_behavior_factor_offsets;
     std::vector<FamilyBehaviorFactorRow> _family_behavior_factor_rows;
     std::vector<int32_t> _family_purchase_factor_q16;
@@ -4213,7 +4279,8 @@ private:
     std::unordered_map<int32_t, std::vector<int64_t>>
         _family_effect_instances_by_cell;
     std::vector<FamilyTriggerBinding> _family_trigger_bindings;
-    std::vector<PersonNeedState> _person_needs;
+    // A+Y N5: unbound fallback only; see person_needs().
+    std::vector<PersonNeedState> _person_needs_local;
     // Set when a retirement leaves need rows behind. Compaction is deferred to
     // one pass so retiring N people costs O(rows) instead of O(N * rows).
     bool _person_needs_orphaned = false;
@@ -4682,6 +4749,8 @@ private:
     std::vector<uint8_t> _building_is_water;
     std::vector<uint8_t> _building_has_river;
     std::vector<int32_t> _building_neighbors;
+    // A+Y N5/N9: unbound fallback for the live resource lanes. While a store is
+    // bound these stay empty and the accessors alias OwnedState::resources.
     std::vector<int64_t> _resource_snapshot;
     std::vector<int64_t> _resource_remaining;
     // Per-epoch extract allowance for renewable resources. This is derived from
@@ -5183,8 +5252,9 @@ private:
     // employment from demand-backed absorption and is intentionally excluded
     // from PKEC and the authoritative state hash.
     std::vector<int32_t> _building_role_forecast_pay_ratio_q16;
-    std::vector<PendingConstruction> _pending_construction;
-    // Epoch-transient stable CSR over pending construction. This removes the
+    // A+Y N8: pending construction lives in buildings_store().pending_*; hot
+    // paths reach it through pending_construction() / pending_construction_at().
+    // Epoch-transient stable CSR over those pending columns. This removes the
     // previous all-pending scan from every active building cell.
     std::vector<int32_t> _pending_construction_cell_offsets;
     std::vector<int32_t> _pending_construction_cell_indices;

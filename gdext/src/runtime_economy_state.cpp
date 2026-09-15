@@ -19,6 +19,10 @@ void RuntimeEconomyResourceStore::clear() noexcept {
     cell_count = 0;
     stock.clear();
     cell_generation.clear();
+    remaining.clear();
+    harvest_remaining.clear();
+    deltas.clear();
+    lane_generation.clear();
 }
 
 void RuntimeEconomyResourceStore::resize(int32_t resources, int32_t cells) {
@@ -28,6 +32,10 @@ void RuntimeEconomyResourceStore::resize(int32_t resources, int32_t cells) {
         static_cast<size_t>(cell_count);
     stock.assign(lanes, 0);
     cell_generation.assign(static_cast<size_t>(cell_count), 0);
+    remaining.assign(lanes, 0);
+    harvest_remaining.assign(lanes, 0);
+    deltas.assign(lanes, 0);
+    lane_generation.assign(lanes, 0);
 }
 
 bool RuntimeEconomyResourceStore::shape_valid(

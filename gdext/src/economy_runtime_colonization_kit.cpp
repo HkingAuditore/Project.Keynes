@@ -60,12 +60,13 @@ bool NativeEconomyRuntime::cell_has_submitted_or_pending_buildings(
             const int32_t pending_index =
                 _pending_construction_cell_indices[cursor];
             if (pending_index >= 0 && pending_index < static_cast<int32_t>(
-                    _pending_construction.size()) &&
-                _pending_construction[pending_index].count > 0)
+                    pending_construction_count()) &&
+                buildings_store().pending_count[
+                    static_cast<size_t>(pending_index)] > 0)
                 return true;
         }
     } else {
-        for (const PendingConstruction &pending : _pending_construction) {
+        for (const auto pending : pending_construction()) {
             if (pending.cell == cell && pending.count > 0) return true;
         }
     }
@@ -808,15 +809,15 @@ void NativeEconomyRuntime::collect_family_expedition_reserved_stock(
         int32_t expedition, std::vector<int64_t> &reserved) const {
     reserved.assign(_good_ids.size(), 0);
     if (expedition < 0 || expedition >= static_cast<int32_t>(
-            _family_expeditions.active.size()) ||
-        _family_expeditions.active[expedition] == 0) return;
-    const uint32_t begin = _family_expeditions.cargo_begin[expedition];
+            family_expeditions_store().active.size()) ||
+        family_expeditions_store().active[expedition] == 0) return;
+    const uint32_t begin = family_expeditions_store().cargo_begin[expedition];
     const uint32_t end = std::min<uint32_t>(
-        static_cast<uint32_t>(_family_expedition_cargo.size()),
-        begin + _family_expeditions.cargo_count[expedition]);
+        static_cast<uint32_t>(family_expedition_cargo().size()),
+        begin + family_expeditions_store().cargo_count[expedition]);
     int64_t sat = 0;
     for (uint32_t i = begin; i < end; ++i) {
-        const FamilyExpeditionCargoLine &line = _family_expedition_cargo[i];
+        const FamilyExpeditionCargoLine &line = family_expedition_cargo()[i];
         if (line.good_id < 0 ||
             line.good_id >= static_cast<int32_t>(reserved.size())) continue;
         reserved[static_cast<size_t>(line.good_id)] = saturating_add(
@@ -827,10 +828,10 @@ void NativeEconomyRuntime::collect_family_expedition_reserved_stock(
 bool NativeEconomyRuntime::reserve_preparing_family_expedition_cargo(
         int32_t expedition, const ColonizationKitPlan &kit,
         std::string &error) {
-    const int32_t source_cell = _family_expeditions.source_cell[expedition];
-    const uint32_t begin = _family_expeditions.cargo_begin[expedition];
-    const uint32_t count = _family_expeditions.cargo_count[expedition];
-    if (static_cast<size_t>(begin) + count > _family_expedition_cargo.size()) {
+    const int32_t source_cell = family_expeditions_store().source_cell[expedition];
+    const uint32_t begin = family_expeditions_store().cargo_begin[expedition];
+    const uint32_t count = family_expeditions_store().cargo_count[expedition];
+    if (static_cast<size_t>(begin) + count > family_expedition_cargo().size()) {
         error = "colonization_cargo_range_invalid";
         return false;
     }
@@ -846,7 +847,7 @@ bool NativeEconomyRuntime::reserve_preparing_family_expedition_cargo(
     auto held_quantity = [&](int32_t good, uint8_t flags) -> int64_t {
         for (uint32_t i = 0; i < count; ++i) {
             const FamilyExpeditionCargoLine &line =
-                _family_expedition_cargo[begin + i];
+                family_expedition_cargo()[begin + i];
             if (line.good_id == good && line.flags == flags)
                 return line.quantity;
         }
@@ -868,7 +869,7 @@ bool NativeEconomyRuntime::reserve_preparing_family_expedition_cargo(
     };
     for (uint32_t i = 0; i < count; ++i) {
         const FamilyExpeditionCargoLine held =
-            _family_expedition_cargo[begin + i];
+            family_expedition_cargo()[begin + i];
         const int64_t surplus = held.quantity -
             planned_quantity(held.good_id, held.flags);
         if (surplus > 0 && !move_stock(held.good_id, surplus)) return false;
@@ -880,16 +881,16 @@ bool NativeEconomyRuntime::reserve_preparing_family_expedition_cargo(
     }
     if (kit.cargo.size() <= count) {
         for (size_t i = 0; i < kit.cargo.size(); ++i)
-            _family_expedition_cargo[begin + i] = kit.cargo[i];
+            family_expedition_cargo()[begin + i] = kit.cargo[i];
     } else {
         // A newly needed good does not fit the existing range, so relocate the
         // whole escrow to the end of the lane.
-        _family_expeditions.cargo_begin[expedition] = static_cast<uint32_t>(
-            _family_expedition_cargo.size());
-        _family_expedition_cargo.insert(_family_expedition_cargo.end(),
+        family_expeditions_store().cargo_begin[expedition] = static_cast<uint32_t>(
+            family_expedition_cargo().size());
+        family_expedition_cargo().insert(family_expedition_cargo().end(),
             kit.cargo.begin(), kit.cargo.end());
     }
-    _family_expeditions.cargo_count[expedition] =
+    family_expeditions_store().cargo_count[expedition] =
         static_cast<uint32_t>(kit.cargo.size());
     return true;
 }
@@ -897,7 +898,7 @@ bool NativeEconomyRuntime::reserve_preparing_family_expedition_cargo(
 bool NativeEconomyRuntime::extract_family_expedition_cargo(
         int32_t expedition, const ColonizationKitPlan &kit,
         std::string &error) {
-    const int32_t source_cell = _family_expeditions.source_cell[expedition];
+    const int32_t source_cell = family_expeditions_store().source_cell[expedition];
     for (const FamilyExpeditionCargoLine &line : kit.cargo) {
         if (!adjust_market_stock(source_cell, line.good_id, -line.quantity,
                 error)) {
@@ -910,22 +911,22 @@ bool NativeEconomyRuntime::extract_family_expedition_cargo(
             return false;
         }
     }
-    _family_expeditions.cargo_begin[expedition] = static_cast<uint32_t>(
-        _family_expedition_cargo.size());
-    _family_expedition_cargo.insert(_family_expedition_cargo.end(),
+    family_expeditions_store().cargo_begin[expedition] = static_cast<uint32_t>(
+        family_expedition_cargo().size());
+    family_expedition_cargo().insert(family_expedition_cargo().end(),
         kit.cargo.begin(), kit.cargo.end());
-    _family_expeditions.cargo_count[expedition] = static_cast<uint32_t>(
+    family_expeditions_store().cargo_count[expedition] = static_cast<uint32_t>(
         kit.cargo.size());
-    _family_expeditions.kit_building_begin[expedition] = static_cast<uint32_t>(
-        _family_expedition_kit_buildings.size());
+    family_expeditions_store().kit_building_begin[expedition] = static_cast<uint32_t>(
+        family_expedition_kit_buildings().size());
     if (kit.place_buildings != 0) {
-        _family_expedition_kit_buildings.insert(
-            _family_expedition_kit_buildings.end(),
+        family_expedition_kit_buildings().insert(
+            family_expedition_kit_buildings().end(),
             kit.buildings.begin(), kit.buildings.end());
-        _family_expeditions.kit_building_count[expedition] =
+        family_expeditions_store().kit_building_count[expedition] =
             static_cast<uint32_t>(kit.buildings.size());
     } else {
-        _family_expeditions.kit_building_count[expedition] = 0;
+        family_expeditions_store().kit_building_count[expedition] = 0;
     }
     return true;
 }
@@ -933,15 +934,15 @@ bool NativeEconomyRuntime::extract_family_expedition_cargo(
 bool NativeEconomyRuntime::restore_family_expedition_cargo(
         int32_t expedition, int32_t destination_cell, bool consume_construction,
         std::string &error) {
-    const uint32_t begin = _family_expeditions.cargo_begin[expedition];
-    const uint32_t count = _family_expeditions.cargo_count[expedition];
+    const uint32_t begin = family_expeditions_store().cargo_begin[expedition];
+    const uint32_t count = family_expeditions_store().cargo_count[expedition];
     const uint32_t end = begin + count;
-    if (end > _family_expedition_cargo.size()) {
+    if (end > family_expedition_cargo().size()) {
         error = "colonization_cargo_range_invalid";
         return false;
     }
     for (uint32_t i = begin; i < end; ++i) {
-        const FamilyExpeditionCargoLine &line = _family_expedition_cargo[i];
+        const FamilyExpeditionCargoLine &line = family_expedition_cargo()[i];
         if (consume_construction &&
             line.flags == EXPEDITION_CARGO_CONSTRUCTION) {
             _construction_goods_consumed = saturating_add(
@@ -953,7 +954,7 @@ bool NativeEconomyRuntime::restore_family_expedition_cargo(
                 error))
             return false;
     }
-    _family_expeditions.cargo_count[expedition] = 0;
+    family_expeditions_store().cargo_count[expedition] = 0;
     return true;
 }
 
@@ -962,16 +963,16 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
     if (!restore_family_expedition_cargo(expedition, destination_cell, true,
             error))
         return false;
-    const uint32_t begin = _family_expeditions.kit_building_begin[expedition];
-    const uint32_t count = _family_expeditions.kit_building_count[expedition];
+    const uint32_t begin = family_expeditions_store().kit_building_begin[expedition];
+    const uint32_t count = family_expeditions_store().kit_building_count[expedition];
     const uint32_t end = begin + count;
-    if (end > _family_expedition_kit_buildings.size()) {
+    if (end > family_expedition_kit_buildings().size()) {
         error = "colonization_kit_building_range_invalid";
         return false;
     }
     if (count == 0) return true;
     const uint64_t family_handle =
-        _family_expeditions.family_handle[expedition];
+        family_expeditions_store().family_handle[expedition];
     int32_t family = -1;
     if (!families_store().valid_handle(family_handle, family)) {
         error = "colonization_family_invalid";
@@ -993,7 +994,7 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
     std::vector<std::pair<int32_t, int64_t>> placed;
     for (uint32_t i = begin; i < end; ++i) {
         const FamilyExpeditionKitBuilding &row =
-            _family_expedition_kit_buildings[i];
+            family_expedition_kit_buildings()[i];
         if (row.type_id < 0 ||
             row.type_id >= static_cast<int32_t>(_building_types.size()) ||
             row.count <= 0)
@@ -1050,7 +1051,7 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
             _saturation_count), _saturation_count);
     }
     const int64_t remaining_slots = std::max<int64_t>(0,
-        _family_expeditions.population[expedition] - used_slots);
+        family_expeditions_store().population[expedition] - used_slots);
     if (remaining_slots > 0 &&
         plan_colonization_kit(destination_cell, destination_cell,
             remaining_slots, 1, true, extra, true) &&
@@ -1207,7 +1208,7 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
                     population_store().owner_employed[owner_slot], filled);
             if (buildings_store().modifier_handle[group_index] != 0) {
                 bool found = false;
-                for (FamilyBuildingOwnership &edge : _family_ownerships) {
+                for (FamilyBuildingOwnership &edge : family_ownerships()) {
                     if (edge.family_handle == family_handle &&
                         edge.building_handle ==
                             buildings_store().modifier_handle[group_index]) {
@@ -1220,7 +1221,7 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
                     }
                 }
                 if (!found) {
-                    _family_ownerships.push_back({family_handle,
+                    family_ownerships().push_back({family_handle,
                         buildings_store().modifier_handle[group_index], row.second,
                         filled});
                 }

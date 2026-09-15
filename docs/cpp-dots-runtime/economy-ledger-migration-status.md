@@ -4,12 +4,14 @@ As of 2026-09-15 (**A+Y Terminal Closeout landed**), production default writer
 is `economy_production_writer=stage_ops` and `economy_auto_pod_active=true`.
 Under `POD_ACTIVE`, opcodes 1–23 mutate `RuntimeEconomyOwnedState` first
 (heavy opcodes delegate then mirror). Host binds NER stores to OwnedState
-(`economy_formula_backing=owned_state`). Building drain still uses AoS scratch
-with SoA sole between stages; trade/family live tables are owned by
-`RuntimeEconomyOwnedState` (`live_trade_orders` / `live_families`) when bound,
-resource stock lanes by N5, and identity export lands in N6.
-PKEC v52 remains full-authority save; ECP1 ABI9 is committed
-mirror only. **Still open:** ECP2 and mid-epoch resume only.
+(`economy_formula_backing=owned_state`). Building groups and pending
+construction are sole on `RuntimeEconomyBuildingStore` with no AoS scratch
+(N2 / N8); trade/family live tables are owned by `RuntimeEconomyOwnedState`
+(`live_trade_orders` / `live_families`) when bound; resource stock lanes plus
+the epoch harvest scratch live on `owned.resources` (N5 / N9); and bound
+day-end publishes the committed mirror from OwnedState in place instead of
+re-importing it (N10). PKEC v52 remains full-authority save; ECP1 ABI9 is
+committed mirror only. **Still open:** ECP2 and mid-epoch resume only.
 
 ## Phase-1 landed
 
@@ -223,7 +225,8 @@ Frozen checklist for sole-writer completion beyond pop/market. Tick IDs as stage
 `employee_fill_begin` (live uses `role_begin`), `last_input_selection_begin`,
 `last_maintenance_cost`, `sample_unit_input_cost`, `sample_unit_maintenance_cost`,
 `recovery_cooldown_cycles` (capture historically wrote `recovery_cooldown_compat=0`),
-`modifier_handle`, `output_factor_q16`. Pending lives in `_pending_construction`;
+`modifier_handle`, `output_factor_q16`. Pending lived in `_pending_construction`
+(closed by N8: the store's `pending_*` columns are now sole);
 role fills in `_building_employee_*` parallel vectors.
 
 **Hot write sites**: `prepare_building_economic_plan_body`;
@@ -248,18 +251,20 @@ role fills in `_building_employee_*` parallel vectors.
 ### GAP-F1–F2 Family
 
 - Live authority: `families_store()` + persons/membership/ownership/influences.
-  Superseded by N3+N4: the family identity table lives on
-  `RuntimeEconomyOwnedState::live_families` while bound; persons/membership/
-  ownership/influences stay on NER.
+  Superseded by N3+N4 (family identity table) and the family side-table move
+  below: persons, membership/ownership edges, expeditions, influences, traits
+  and person needs now live on `RuntimeEconomyOwnedState` while bound. Only the
+  derived CSR rebuild caches over those rows stay on NER.
 - Owned flat `RuntimeEconomyFamilyStore` is capture/ECP projection.
 - Command path may push flags/purchase_factor into NER; commit/buff write NER.
 
-### GAP-R1–R3 Resource (N5 landed)
+### GAP-R1–R3 Resource (N5 + N9 landed)
 
 - Live stock lanes: `resource_stock_lanes()` → `_resource_snapshot` when unbound,
   `OwnedState.resources.stock` when `bind_resource_store` is active.
-- Epoch shadow columns (`_resource_remaining`, harvest/deltas) stay on NER; publish
-  and `sync_owned_resource_store` read stock through the accessor.
+- Epoch shadow columns (remaining / harvest / deltas / lane generation) moved to
+  `OwnedState.resources` in N9 and are reached through accessors that mirror
+  `resource_stock_lanes()`; the NER locals are the unbound fallback only.
 - Owned `RuntimeEconomyResourceStore` is the ECP/capture projection via
   `sync_owned_resource_store` / `flush_formula_owned_domain_mirrors`.
 
@@ -268,10 +273,12 @@ role fills in `_building_employee_*` parallel vectors.
 - `EconomySoAView` store pointers often dead (dispatch uses `runtime_hook` only).
 - `bind_formula_owned_state` initially moved only pop/market.
 - Heavy commands: NER apply + `capture_owned_mirror_stores`.
-- Day-end Host still called `NER::capture_committed_ledger_state` → POD import.
+- Day-end Host still called `NER::capture_committed_ledger_state` → POD import
+  (closed by N10: bound day-end publishes the Owned mirror in place).
 
 Migration order: N1 building SoA+bind → N2 hotpath → N3 trade → N4 family →
-N5 resource+identity export → N6 dispatch cleanup → N7 gates/docs.
+N5 resource+identity export → N6 dispatch cleanup → N7 gates/docs →
+N8 pending SoA → N9 resource epoch scratch → N10 Owned identity export.
 
 ### N1 landed (building SoA + bind + sync/apply)
 
@@ -341,7 +348,8 @@ projections and copies when the destination is a foreign store.
 ### N4 landed (family store projection)
 
 - `families_store()` accessor exposes the sole live `FamilyStore`
-  (+ persons/membership/ownership/influences on NER).
+  (persons/membership/ownership/influences followed it onto Owned later; see
+  the family side-table section below).
 - Flat `RuntimeEconomyFamilyStore` on OwnedState is the ECP projection filled
   via `sync_owned_family_store` / `flush_formula_owned_domain_mirrors`; command
   commit paths may push flags/purchase_factor into the live table, then flush
@@ -367,8 +375,40 @@ projections and copies when the destination is a foreign store.
   `unbind_formula_owned_state` moves them back and clears the OwnedState copies.
 - Arrival buckets travel with the live `TradeOrderStore` and remain a derived
   cache excluded from wire/hash authority.
-- Family expedition tables, persons, membership/ownership edges and influences
-  stay on NER; only the family identity table moved.
+- At N3+N4 only the family identity table moved. The family side tables
+  followed later (see below).
+
+### Family side tables on Owned (code tag `A+Y N5`)
+
+Follow-up to N3+N4, applying the exact `live_families` pattern to the rest of
+the notable-family data. Note the `A+Y N5` tag in the source comments collides
+with the resource phase also called N5; the two are unrelated.
+
+- `NotablePersonStore`, `PersonNeedState`, `FamilyMembershipEdge`,
+  `FamilyBuildingOwnership`, `FamilyTraitRoll`, `FamilyCellInfluenceStore`,
+  `FamilyExpeditionStore` and the expedition payload/cargo/kit structs are no
+  longer nested in `NativeEconomyRuntime`. They are freestanding `pk::Economy*`
+  types in `runtime_economy_family_side_tables.h`; the nested names survive as
+  `using` aliases so call sites are unchanged.
+- `RuntimeEconomyOwnedState` owns the live instances as `live_persons`,
+  `live_memberships`, `live_ownerships`, `live_expeditions` (+ the route/
+  payload/person-handle/cargo/kit/missing-good CSR vectors), `live_influences`,
+  `live_traits` and `live_person_needs`.
+- `persons_store()`, `family_memberships()`, `family_ownerships()`,
+  `family_expeditions_store()`, `family_expedition_*()`, `family_influences()`,
+  `family_trait_rolls()` and `person_needs()` return the OwnedState instance
+  when `_formula_owned != nullptr`, else the `_*_local` fallback.
+- `bind_formula_owned_state` moves all of them into OwnedState in the same bind
+  as `live_families`, before the ECP projections are packed, so
+  `sync_owned_family_store` already reads the new home.
+  `unbind_formula_owned_state` moves them back and clears the Owned copies.
+- Derived CSR rebuild caches (`_family_member_offsets`,
+  `_person_family_offsets`, `_person_need_offsets`, `_family_cell_offsets`,
+  `_family_expedition_target_index`, `_family_expedition_due_heap`) stay
+  NER-local: they are recomputed from the authoritative rows at
+  FAMILY_COMMIT / PERSON_COMMIT and after a structural restore, so they carry
+  no authority and survive bind/unbind unchanged.
+- The flat `RuntimeEconomyFamilyStore` remains the wire-facing ECP projection.
 
 ### N5 landed (resource sole stock lanes)
 
@@ -384,7 +424,9 @@ projections and copies when the destination is a foreign store.
   publish abundance, colonization identity export, and `sync_owned_resource_store`
   use `resource_stock_lanes()` — no second live stock vector under bind.
 - Host calls `flush_formula_owned_domain_mirrors()` before day-end
-  `capture_committed_ledger_state` when formula-bound (resource identity export).
+  `capture_committed_ledger_state` when formula-bound (resource identity
+  export). Superseded by N10: the bound day-end now flushes and then
+  republishes the Owned mirror instead of capturing through NER.
 
 ## Phase-3 landed (OwnedState-first opcodes 1–23)
 
@@ -446,8 +488,78 @@ projections and copies when the destination is a foreign store.
   worse on 2026-09-14 HEAD before Terminal Closeout). Not treated as A+Y
   Terminal regression; conservation soak/parity/pod remain the merge gate.
 - **Still open only (product scope)**: ECP2, mid-epoch resume.
-- Residual engineering debt (not product Still-open): `_pending_construction`
-  remains AoS; building group AoS scratch is retired (N2).
+- Residual engineering debt at N7: `_pending_construction` remained AoS;
+  building group AoS scratch was already retired (N2). Closed by N8–N10 below.
+
+### N8 landed (pending construction sole on building SoA)
+
+- `buildings_store().pending_*` is the sole pending-construction storage.
+  `std::vector<PendingConstruction> _pending_construction` is deleted and
+  `refresh_building_store_pending_lanes()` is gone — there is no projection
+  step left, so the store columns are identity, not a mirror.
+- `PendingConstruction` survives only as a POD for temporaries: build-command
+  staging, PKEC load rows, and construction-completion receipts.
+- `PK_PENDING_CONSTRUCTION_COLUMNS` maps every historical field to its column
+  and drives `PendingConstructionRefT` (row view, mirrors `BuildingGroupRefT`)
+  plus `PendingConstructionLaneT` (indexable range). Call sites keep their
+  shape: `for (const auto pending : pending_construction())`.
+- Storage helpers in `economy_runtime_building_storage.cpp`:
+  `append_pending_construction`, `clear_pending_construction`,
+  `reserve_pending_construction`, `pending_construction_copy`,
+  `pending_construction_memory_bytes`, and `erase_ready_pending_construction`
+  (single in-place stable compaction of all ten columns, replacing the old
+  `remove_if` over the AoS in BUILDING_COMMIT).
+- `_pending_construction_cell_offsets` / `_cell_indices` CSR is rebuilt from
+  `buildings_store().pending_cell` in `economy_runtime_epoch.cpp`.
+- `sync_owned_building_store` no longer copies pending: only the packed role
+  CSR still needs repacking, and only a foreign destination gets a copy.
+
+### N9 landed (resource epoch scratch on Owned resource store)
+
+- `RuntimeEconomyResourceStore` gains `remaining`, `harvest_remaining`,
+  `deltas`, and `lane_generation`, resized and cleared together with `stock`.
+- The scratch lanes are deliberately absent from the ABI9 wire,
+  `wire_content_hash()`, and `shape_valid()`;
+  `fill_ledger_resource_from_store` copies only `resource_count`/`cell_count`/
+  `stock`/`cell_generation`, so epoch harvest state is never published into the
+  committed mirror.
+- `resource_remaining_lanes()` / `resource_harvest_remaining_lanes()` /
+  `resource_delta_lanes()` / `resource_lane_generation_lanes()` mirror
+  `resource_stock_lanes()`: the bound store's column when
+  `bind_resource_store` is active, the NER local otherwise.
+- `bind_formula_owned_state` moves all four locals into `owned.resources`
+  alongside `stock`; `unbind_formula_owned_state` moves them back. There is no
+  second live copy of the epoch harvest bookkeeping under bind.
+
+### N10 landed (day-end Owned identity export)
+
+- When formula-bound, POD `state()` **is** the OwnedState the production
+  runtime writes through, so `import_committed_ledger` (which replaces
+  `_state`) would break the bind. Day-end and command-verify must not use it.
+- New `RuntimeEconomyPodAuthority::publish_owned_committed_mirror(generation,
+  committed_day, error)`: requires `state_initialized()`, stamps
+  `_state.state_generation` (max) and `_state.committed_day`, exports the
+  ledger from the live `_state`, then `capture_committed_ledger_state`. It
+  never replaces `_state`, so live pop/market/building storage is untouched.
+- Host day-end ledger sync (`native_simulation_host.cpp`): bound path calls
+  `flush_formula_owned_domain_mirrors()` then
+  `publish_owned_committed_mirror(committed_generation(), current_day())`.
+  Unbound path keeps the old NER capture → `import_committed_ledger`.
+- `flush_formula_owned_domain_mirrors` now also refreshes the Owned building
+  and epoch-cursor committed blocks (`fill_ledger_building_from_store`,
+  `fill_ledger_epoch_cursor`), so the republished snapshot is not stale.
+- Command-verify path: when bound, flush + republish instead of a NER capture
+  compared against itself; `economy_pod_command_verify_count` still advances.
+  Unbound keeps export-vs-export comparison.
+
+### N8–N10 gates
+
+- Builds: `scons` `template_debug` + `template_release`, zero errors.
+- Conservation suite (all green, `PK_ECONOMY_SOAK_DAYS=60`):
+  - `runtime_economy_pod_test` 8/0
+  - `runtime_economy_parity_test` 26/0
+  - `runtime_economy_stage_ops_soak_parity_test` 370/0
+  - `runtime_economy_authority_soak_test` 12/0 at 60 days
 
 ## Phase-7 landed (gates / freeze)
 

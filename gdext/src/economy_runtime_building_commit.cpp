@@ -51,7 +51,7 @@ bool NativeEconomyRuntime::commit_ready_construction(
     std::unordered_map<AppendedGroupKey, int32_t, AppendedGroupKeyHash>
         appended_group_indices;
     appended_group_indices.reserve(std::min<size_t>(
-        _pending_construction.size(), 8192));
+        pending_construction_count(), 8192));
     const RuntimeEconomyBuildingStore &group_store = buildings_store();
     const auto group_key = [&](int32_t row) {
         return std::tuple(group_store.cell[row], group_store.type_id[row],
@@ -76,7 +76,12 @@ bool NativeEconomyRuntime::commit_ready_construction(
         if (appended != appended_group_indices.end()) return appended->second;
         return -1;
     };
-    for (const PendingConstruction &pending : _pending_construction) {
+    // Appending a group must not invalidate a reference into the pending
+    // columns, so rows are copied out by index instead of iterated in place.
+    for (size_t pending_row = 0; pending_row < pending_construction_count();
+         ++pending_row) {
+        const PendingConstruction pending =
+            pending_construction_copy(pending_row);
         if (pending.ready_day > _current_day) continue;
         if (pending.sponsor_family_handle != 0)
             sponsored_completed.push_back(pending);
@@ -147,12 +152,7 @@ bool NativeEconomyRuntime::commit_ready_construction(
             _staging_gameplay_facts.push_back(fact);
         }
     }
-    const size_t pending_before = _pending_construction.size();
-    _pending_construction.erase(std::remove_if(_pending_construction.begin(),
-                                               _pending_construction.end(),
-        [&](const PendingConstruction &p) { return p.ready_day <= _current_day; }),
-        _pending_construction.end());
-    changed = changed || _pending_construction.size() != pending_before;
+    changed = erase_ready_pending_construction(_current_day) > 0 || changed;
     if (prune_empty_groups || topology_changed) {
         for (size_t pk_row = 0; pk_row < building_count(); ++pk_row) {
             const auto group = building_at(pk_row);
@@ -180,7 +180,7 @@ bool NativeEconomyRuntime::commit_ready_construction(
             pending.cell, pending.type_id, pending.owner_signature_id);
         if (group_index < 0 || buildings_store().modifier_handle[group_index] == 0)
             continue;
-        _family_ownerships.push_back({pending.sponsor_family_handle,
+        family_ownerships().push_back({pending.sponsor_family_handle,
             buildings_store().modifier_handle[group_index], pending.count, 0});
         _family_indices_dirty = true;
     }

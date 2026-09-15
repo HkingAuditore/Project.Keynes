@@ -123,8 +123,8 @@ bool NativeEconomyRuntime::publish_epoch_slice(
                 _country_runtime == nullptr ? 0 : _country_runtime->total_cash();
             int64_t expedition_population = 0;
             for (int32_t expedition = 0; expedition < static_cast<int32_t>(
-                    _family_expeditions.active.size()); ++expedition) {
-                if (_family_expeditions.active[expedition] == 0) continue;
+                    family_expeditions_store().active.size()); ++expedition) {
+                if (family_expeditions_store().active[expedition] == 0) continue;
                 expedition_population += family_expedition_payload_people(
                     expedition);
             }
@@ -575,8 +575,9 @@ bool NativeEconomyRuntime::publish_epoch_slice(
                         static_cast<size_t>(_cell_count) + static_cast<size_t>(cell);
                     if (idx >= resource_stock_lanes().size() ||
                         resource_stock_lanes()[idx] <= 0) continue;
-                    const int64_t remaining = idx < _resource_remaining.size()
-                        ? std::max<int64_t>(0, _resource_remaining[idx])
+                    const int64_t remaining =
+                        idx < resource_remaining_lanes().size()
+                        ? std::max<int64_t>(0, resource_remaining_lanes()[idx])
                         : resource_stock_lanes()[idx];
                     total = saturating_add(total, mul_div_sat(remaining, Q16_ONE,
                         resource_stock_lanes()[idx], sat), sat);
@@ -614,8 +615,8 @@ bool NativeEconomyRuntime::publish_epoch_slice(
         _resource_deltas_ready = std::any_of(
             _resource_touched_lanes.begin(), _resource_touched_lanes.end(),
             [&](size_t index) {
-                return index < _resource_deltas.size() &&
-                    _resource_deltas[index] != 0;
+                return index < resource_delta_lanes().size() &&
+                    resource_delta_lanes()[index] != 0;
             });
         _epoch_commands.clear();
         _structural_commands.clear();

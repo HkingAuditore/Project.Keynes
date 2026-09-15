@@ -55,7 +55,7 @@ bool route_heap_less(const std::pair<int64_t, int32_t> &a,
 
 } // namespace
 
-void NativeEconomyRuntime::FamilyExpeditionStore::clear() {
+void EconomyFamilyExpeditionStore::clear() {
     active.clear(); generation.clear(); stable_id.clear();
     country_handle.clear(); family_handle.clear(); source_cell.clear();
     target_cell.clear(); departure_day.clear(); due_day.clear();
@@ -69,7 +69,7 @@ void NativeEconomyRuntime::FamilyExpeditionStore::clear() {
     idempotency_key.clear(); free_indices.clear(); active_count = 0;
 }
 
-int32_t NativeEconomyRuntime::FamilyExpeditionStore::allocate() {
+int32_t EconomyFamilyExpeditionStore::allocate() {
     int32_t index = -1;
     if (!free_indices.empty()) {
         index = free_indices.back();
@@ -100,7 +100,7 @@ int32_t NativeEconomyRuntime::FamilyExpeditionStore::allocate() {
     return index;
 }
 
-void NativeEconomyRuntime::FamilyExpeditionStore::release(int32_t index) {
+void EconomyFamilyExpeditionStore::release(int32_t index) {
     if (index < 0 || index >= static_cast<int32_t>(active.size()) ||
         active[index] == 0) return;
     active[index] = 0;
@@ -110,7 +110,7 @@ void NativeEconomyRuntime::FamilyExpeditionStore::release(int32_t index) {
     --active_count;
 }
 
-uint64_t NativeEconomyRuntime::FamilyExpeditionStore::handle_for_index(
+uint64_t EconomyFamilyExpeditionStore::handle_for_index(
         int32_t index) const {
     if (index < 0 || index >= static_cast<int32_t>(active.size()) ||
         active[index] == 0) return 0;
@@ -118,7 +118,7 @@ uint64_t NativeEconomyRuntime::FamilyExpeditionStore::handle_for_index(
         static_cast<uint32_t>(index);
 }
 
-bool NativeEconomyRuntime::FamilyExpeditionStore::valid_handle(
+bool EconomyFamilyExpeditionStore::valid_handle(
         uint64_t handle, int32_t &index_out) const {
     const int32_t index = static_cast<int32_t>(handle & 0xffffffffULL);
     const uint32_t expected = static_cast<uint32_t>(handle >> 32U);
@@ -156,9 +156,9 @@ int64_t NativeEconomyRuntime::family_population_in_cell(
     const bool csr = _family_member_offsets.size() == families_store().active.size() + 1;
     const int32_t begin = csr ? _family_member_offsets[family] : 0;
     const int32_t end = csr ? _family_member_offsets[family + 1]
-        : static_cast<int32_t>(_family_memberships.size());
+        : static_cast<int32_t>(family_memberships().size());
     for (int32_t p = begin; p < end; ++p) {
-        const FamilyMembershipEdge &edge = _family_memberships[
+        const FamilyMembershipEdge &edge = family_memberships()[
             csr ? _family_member_edge_indices[p] : p];
         if (edge.family_handle != family_handle) continue;
         int32_t slot = -1;
@@ -662,7 +662,7 @@ Dictionary NativeEconomyRuntime::family_colonization_quote_detail(
     out["route_cost"] = quote.route_cost; out["travel_days"] = quote.travel_days;
     out["route_cells"] = route; out["cumulative_costs"] = cumulative;
     std::vector<int64_t> profession_totals(_profession_ids.size(), 0);
-    for (const FamilyMembershipEdge &edge : _family_memberships) {
+    for (const FamilyMembershipEdge &edge : family_memberships()) {
         if (edge.family_handle != quote.family_handle) continue;
         int32_t cohort = -1;
         if (!population_store().valid_handle(edge.cohort_handle, cohort) ||
@@ -809,15 +809,15 @@ Dictionary NativeEconomyRuntime::submit_family_colonization_start(
     }
     const int32_t expedition = _family_expedition_target_index[target_key];
     const bool preparing =
-        _family_expeditions.state[expedition] == EXPEDITION_PREPARING;
+        family_expeditions_store().state[expedition] == EXPEDITION_PREPARING;
     out["ok"] = true;
     out["code"] = preparing ? "colonization_preparing" : "colonization_started";
     out["message"] = preparing ? "Family expedition is preparing"
                                : "Family expedition started";
     out["effective_day"] = effective_day; out["sequence"] = sequence;
     out["expedition_handle"] = static_cast<int64_t>(
-        _family_expeditions.handle_for_index(expedition));
-    out["arrival_day"] = _family_expeditions.due_day[expedition];
+        family_expeditions_store().handle_for_index(expedition));
+    out["arrival_day"] = family_expeditions_store().due_day[expedition];
     return out;
 }
 
@@ -831,9 +831,9 @@ Dictionary NativeEconomyRuntime::submit_family_colonization_cancel(
         return out;
     }
     int32_t expedition = -1;
-    if (!_family_expeditions.valid_handle(
+    if (!family_expeditions_store().valid_handle(
             static_cast<uint64_t>(expedition_handle_value), expedition) ||
-        _family_expeditions.country_handle[expedition] !=
+        family_expeditions_store().country_handle[expedition] !=
             static_cast<uint64_t>(country_handle_value)) {
         out["ok"] = false; out["code"] = "colonization_expedition_invalid";
         return out;
@@ -844,7 +844,7 @@ Dictionary NativeEconomyRuntime::submit_family_colonization_cancel(
         return out;
     }
     const bool preparing =
-        _family_expeditions.state[expedition] == EXPEDITION_PREPARING;
+        family_expeditions_store().state[expedition] == EXPEDITION_PREPARING;
     Command command;
     command.opcode = COMMAND_CANCEL_FAMILY_EXPEDITION;
     command.effective_day = effective_day; command.sequence = sequence;
@@ -873,7 +873,7 @@ Dictionary NativeEconomyRuntime::submit_family_colonization_cancel(
 
 void NativeEconomyRuntime::push_family_expedition_due(int32_t expedition) {
     _family_expedition_due_heap.emplace_back(
-        _family_expeditions.due_day[expedition], expedition);
+        family_expeditions_store().due_day[expedition], expedition);
     std::push_heap(_family_expedition_due_heap.begin(),
                    _family_expedition_due_heap.end(), due_heap_less);
 }
@@ -882,11 +882,11 @@ void NativeEconomyRuntime::append_colonization_receipt(
         int32_t expedition, int64_t sequence, int64_t effective_day,
         int64_t settled_day, uint8_t kind, const char *code) {
     if (expedition < 0 || expedition >= static_cast<int32_t>(
-            _family_expeditions.active.size())) return;
+            family_expeditions_store().active.size())) return;
     append_colonization_command_receipt(
-        _family_expeditions.country_handle[expedition],
-        _family_expeditions.handle_for_index(expedition),
-        _family_expeditions.target_cell[expedition],
+        family_expeditions_store().country_handle[expedition],
+        family_expeditions_store().handle_for_index(expedition),
+        family_expeditions_store().target_cell[expedition],
         sequence, effective_day, settled_day, kind, code);
 }
 
@@ -975,9 +975,9 @@ bool NativeEconomyRuntime::apply_family_expedition_player_command(
         }
     } else {
         int32_t expedition = -1;
-        if (_family_expeditions.valid_handle(cmd.target_handle, expedition)) {
-            country = _family_expeditions.country_handle[expedition];
-            target_cell = _family_expeditions.target_cell[expedition];
+        if (family_expeditions_store().valid_handle(cmd.target_handle, expedition)) {
+            country = family_expeditions_store().country_handle[expedition];
+            target_cell = family_expeditions_store().target_cell[expedition];
         }
     }
     append_colonization_command_receipt(country, cmd.target_handle, target_cell,
@@ -990,11 +990,11 @@ bool NativeEconomyRuntime::apply_family_expedition_player_command(
 int64_t NativeEconomyRuntime::family_expedition_displayed_population(
         int32_t expedition) const {
     if (expedition < 0 ||
-        expedition >= static_cast<int32_t>(_family_expeditions.active.size()) ||
-        _family_expeditions.active[expedition] == 0)
+        expedition >= static_cast<int32_t>(family_expeditions_store().active.size()) ||
+        family_expeditions_store().active[expedition] == 0)
         return 0;
-    if (_family_expeditions.state[expedition] == EXPEDITION_PREPARING)
-        return std::max<int64_t>(0, _family_expeditions.population[expedition]);
+    if (family_expeditions_store().state[expedition] == EXPEDITION_PREPARING)
+        return std::max<int64_t>(0, family_expeditions_store().population[expedition]);
     return family_expedition_payload_people(expedition);
 }
 
@@ -1029,15 +1029,15 @@ uint64_t NativeEconomyRuntime::hash_preparing_missing_stock(
 
 void NativeEconomyRuntime::store_preparing_missing_goods(
         int32_t expedition, const ColonizationKitPlan &kit) {
-    _family_expeditions.missing_good_begin[expedition] =
-        static_cast<uint32_t>(_family_expedition_missing_good_ids.size());
-    const int32_t source = _family_expeditions.source_cell[expedition];
+    family_expeditions_store().missing_good_begin[expedition] =
+        static_cast<uint32_t>(family_expedition_missing_good_ids().size());
+    const int32_t source = family_expeditions_store().source_cell[expedition];
     for (const int32_t good : kit.missing_good_ids) {
-        _family_expedition_missing_good_ids.push_back(good);
-        _family_expedition_missing_good_quantities.push_back(
+        family_expedition_missing_good_ids().push_back(good);
+        family_expedition_missing_good_quantities().push_back(
             market_stock(source, good));
     }
-    _family_expeditions.missing_good_count[expedition] =
+    family_expeditions_store().missing_good_count[expedition] =
         static_cast<uint32_t>(kit.missing_good_ids.size());
     uint64_t identity = hash_preparing_missing_stock(source,
         kit.missing_good_ids.empty() ? nullptr : kit.missing_good_ids.data(),
@@ -1054,24 +1054,24 @@ void NativeEconomyRuntime::store_preparing_missing_goods(
         identity = trace_hash_mix(identity,
             static_cast<uint64_t>(line.quantity));
     }
-    _family_expeditions.kit_missing_stock_identity[expedition] =
+    family_expeditions_store().kit_missing_stock_identity[expedition] =
         identity == 0 ? 1 : identity;
 }
 
 void NativeEconomyRuntime::refresh_preparing_family_expedition_missing(
         int32_t expedition) {
-    const uint32_t count = _family_expeditions.missing_good_count[expedition];
-    const uint32_t begin = _family_expeditions.missing_good_begin[expedition];
-    const int32_t source = _family_expeditions.source_cell[expedition];
+    const uint32_t count = family_expeditions_store().missing_good_count[expedition];
+    const uint32_t begin = family_expeditions_store().missing_good_begin[expedition];
+    const int32_t source = family_expeditions_store().source_cell[expedition];
     if (count == 0 ||
-        begin + count > _family_expedition_missing_good_ids.size()) {
-        _family_expeditions.kit_missing_stock_identity[expedition] = 0;
+        begin + count > family_expedition_missing_good_ids().size()) {
+        family_expeditions_store().kit_missing_stock_identity[expedition] = 0;
         return;
     }
     for (uint32_t i = 0; i < count; ++i) {
-        const int32_t good = _family_expedition_missing_good_ids[begin + i];
-        if (begin + i < _family_expedition_missing_good_quantities.size())
-            _family_expedition_missing_good_quantities[begin + i] =
+        const int32_t good = family_expedition_missing_good_ids()[begin + i];
+        if (begin + i < family_expedition_missing_good_quantities().size())
+            family_expedition_missing_good_quantities()[begin + i] =
                 market_stock(source, good);
     }
 }
@@ -1080,18 +1080,18 @@ void NativeEconomyRuntime::abort_preparing_family_expedition(
         int32_t expedition, int64_t day, uint8_t kind, const char *code) {
     // Stocked goods were drawn from the source market and must go back there,
     // or cancelling a preparation would destroy them.
-    if (_family_expeditions.cargo_count[expedition] > 0) {
+    if (family_expeditions_store().cargo_count[expedition] > 0) {
         std::string ignored;
         restore_family_expedition_cargo(expedition,
-            _family_expeditions.source_cell[expedition], false, ignored);
+            family_expeditions_store().source_cell[expedition], false, ignored);
     }
     const uint64_t key = family_expedition_target_key(
-        _family_expeditions.country_handle[expedition],
-        _family_expeditions.target_cell[expedition]);
+        family_expeditions_store().country_handle[expedition],
+        family_expeditions_store().target_cell[expedition]);
     append_colonization_receipt(expedition, 0,
-        _family_expeditions.departure_day[expedition], day, kind, code);
+        family_expeditions_store().departure_day[expedition], day, kind, code);
     _family_expedition_target_index.erase(key);
-    _family_expeditions.release(expedition);
+    family_expeditions_store().release(expedition);
     note_family_expedition_audit_invalidation();
 }
 
@@ -1101,35 +1101,35 @@ bool NativeEconomyRuntime::launch_preparing_family_expedition(
     // The escrow already holds every kit line, so only the people still have
     // to leave. A blocked payload extract keeps the stocked goods and retries
     // tomorrow instead of dumping them back on the market.
-    _family_expeditions.kit_building_begin[expedition] = static_cast<uint32_t>(
-        _family_expedition_kit_buildings.size());
+    family_expeditions_store().kit_building_begin[expedition] = static_cast<uint32_t>(
+        family_expedition_kit_buildings().size());
     if (kit.place_buildings != 0) {
-        _family_expedition_kit_buildings.insert(
-            _family_expedition_kit_buildings.end(),
+        family_expedition_kit_buildings().insert(
+            family_expedition_kit_buildings().end(),
             kit.buildings.begin(), kit.buildings.end());
-        _family_expeditions.kit_building_count[expedition] =
+        family_expeditions_store().kit_building_count[expedition] =
             static_cast<uint32_t>(kit.buildings.size());
     } else {
-        _family_expeditions.kit_building_count[expedition] = 0;
+        family_expeditions_store().kit_building_count[expedition] = 0;
     }
     if (!extract_family_expedition_payload(expedition,
-            _family_expeditions.population[expedition], error)) {
+            family_expeditions_store().population[expedition], error)) {
         error.clear();
-        _family_expeditions.kit_building_count[expedition] = 0;
+        family_expeditions_store().kit_building_count[expedition] = 0;
         store_preparing_missing_goods(expedition, kit);
-        _family_expeditions.due_day[expedition] = day + 1;
+        family_expeditions_store().due_day[expedition] = day + 1;
         push_family_expedition_due(expedition);
         return true;
     }
     const int32_t travel = std::max(1,
-        (_family_expeditions.route_cost[expedition] +
-         std::max(1, _family_expeditions.speed[expedition]) - 1) /
-        std::max(1, _family_expeditions.speed[expedition]));
-    _family_expeditions.state[expedition] = EXPEDITION_OUTBOUND;
-    _family_expeditions.departure_day[expedition] = day;
-    _family_expeditions.due_day[expedition] = day + travel;
-    _family_expeditions.missing_good_count[expedition] = 0;
-    _family_expeditions.kit_missing_stock_identity[expedition] = 0;
+        (family_expeditions_store().route_cost[expedition] +
+         std::max(1, family_expeditions_store().speed[expedition]) - 1) /
+        std::max(1, family_expeditions_store().speed[expedition]));
+    family_expeditions_store().state[expedition] = EXPEDITION_OUTBOUND;
+    family_expeditions_store().departure_day[expedition] = day;
+    family_expeditions_store().due_day[expedition] = day + travel;
+    family_expeditions_store().missing_good_count[expedition] = 0;
+    family_expeditions_store().kit_missing_stock_identity[expedition] = 0;
     push_family_expedition_due(expedition);
     note_family_expedition_audit_invalidation();
     append_colonization_receipt(expedition, 0, day, day, 1, "STARTED");
@@ -1138,11 +1138,11 @@ bool NativeEconomyRuntime::launch_preparing_family_expedition(
 
 bool NativeEconomyRuntime::advance_preparing_family_expedition(
         int32_t expedition, int64_t day, std::string &error) {
-    const int32_t source = _family_expeditions.source_cell[expedition];
-    const int32_t target = _family_expeditions.target_cell[expedition];
-    const uint64_t country = _family_expeditions.country_handle[expedition];
-    const uint64_t family = _family_expeditions.family_handle[expedition];
-    const int64_t people = _family_expeditions.population[expedition];
+    const int32_t source = family_expeditions_store().source_cell[expedition];
+    const int32_t target = family_expeditions_store().target_cell[expedition];
+    const uint64_t country = family_expeditions_store().country_handle[expedition];
+    const uint64_t family = family_expeditions_store().family_handle[expedition];
+    const int64_t people = family_expeditions_store().population[expedition];
     if (!colonization_target_owner_allowed(country, target)) {
         abort_preparing_family_expedition(expedition, day, 3,
             "TARGET_LOST_RETURNING");
@@ -1164,9 +1164,9 @@ bool NativeEconomyRuntime::advance_preparing_family_expedition(
     reserve.prefer_reserved_candidates = true;
     ColonizationKitPlan kit;
     const int32_t travel = std::max(1,
-        (_family_expeditions.route_cost[expedition] +
-         std::max(1, _family_expeditions.speed[expedition]) - 1) /
-        std::max(1, _family_expeditions.speed[expedition]));
+        (family_expeditions_store().route_cost[expedition] +
+         std::max(1, family_expeditions_store().speed[expedition]) - 1) /
+        std::max(1, family_expeditions_store().speed[expedition]));
     if (!plan_colonization_kit(source, target, people, travel, false, kit,
             false, &reserve)) {
         abort_preparing_family_expedition(expedition, day, 7, "PREPARING_ABORTED");
@@ -1186,14 +1186,14 @@ bool NativeEconomyRuntime::advance_preparing_family_expedition(
         // held, report the shortfall, and try again tomorrow.
         error.clear();
         store_preparing_missing_goods(expedition, kit);
-        _family_expeditions.due_day[expedition] = day + 1;
+        family_expeditions_store().due_day[expedition] = day + 1;
         push_family_expedition_due(expedition);
         return true;
     }
     if (kit.kit_partial == 0 && !kit.buildings.empty())
         return launch_preparing_family_expedition(expedition, day, kit, error);
     store_preparing_missing_goods(expedition, kit);
-    _family_expeditions.due_day[expedition] = day + 1;
+    family_expeditions_store().due_day[expedition] = day + 1;
     push_family_expedition_due(expedition);
     return true;
 }
@@ -1217,46 +1217,46 @@ bool NativeEconomyRuntime::apply_start_family_expedition(
     if (!_epoch_active && kit.dest_identity != quote.dest_kit_identity) {
         error = "colonization_kit_requote_required"; return false;
     }
-    const int32_t expedition = _family_expeditions.allocate();
-    _family_expeditions.stable_id[expedition] =
+    const int32_t expedition = family_expeditions_store().allocate();
+    family_expeditions_store().stable_id[expedition] =
         _next_family_expedition_stable_id++;
-    _family_expeditions.country_handle[expedition] = quote.country_handle;
-    _family_expeditions.family_handle[expedition] = quote.family_handle;
-    _family_expeditions.source_cell[expedition] = quote.source_cell;
-    _family_expeditions.target_cell[expedition] = quote.target_cell;
-    _family_expeditions.departure_day[expedition] = cmd.effective_day;
-    _family_expeditions.route_cost[expedition] = quote.route_cost;
-    _family_expeditions.speed[expedition] = COLONIZATION_SPEED;
-    _family_expeditions.due_day[expedition] = cmd.effective_day +
+    family_expeditions_store().country_handle[expedition] = quote.country_handle;
+    family_expeditions_store().family_handle[expedition] = quote.family_handle;
+    family_expeditions_store().source_cell[expedition] = quote.source_cell;
+    family_expeditions_store().target_cell[expedition] = quote.target_cell;
+    family_expeditions_store().departure_day[expedition] = cmd.effective_day;
+    family_expeditions_store().route_cost[expedition] = quote.route_cost;
+    family_expeditions_store().speed[expedition] = COLONIZATION_SPEED;
+    family_expeditions_store().due_day[expedition] = cmd.effective_day +
         std::max(1, quote.travel_days);
-    _family_expeditions.state[expedition] = EXPEDITION_OUTBOUND;
-    _family_expeditions.population[expedition] = cmd.i64_0;
-    _family_expeditions.route_begin[expedition] = static_cast<uint32_t>(
-        _family_expedition_route_cells.size());
-    _family_expeditions.route_count[expedition] = quote.route_count;
+    family_expeditions_store().state[expedition] = EXPEDITION_OUTBOUND;
+    family_expeditions_store().population[expedition] = cmd.i64_0;
+    family_expeditions_store().route_begin[expedition] = static_cast<uint32_t>(
+        family_expedition_route_cells().size());
+    family_expeditions_store().route_count[expedition] = quote.route_count;
     for (uint32_t i = 0; i < quote.route_count; ++i) {
-        _family_expedition_route_cells.push_back(
+        family_expedition_route_cells().push_back(
             _colonization_quote_route_cells[quote.route_begin + i]);
-        _family_expedition_route_costs.push_back(
+        family_expedition_route_costs().push_back(
             _colonization_quote_route_costs[quote.route_begin + i]);
     }
     uint64_t idempotency_key = 1469598103934665603ULL;
     idempotency_key = trace_hash_mix(idempotency_key,
-        static_cast<uint64_t>(_family_expeditions.stable_id[expedition]));
+        static_cast<uint64_t>(family_expeditions_store().stable_id[expedition]));
     idempotency_key = trace_hash_mix(idempotency_key,
         static_cast<uint64_t>(cmd.sequence));
-    _family_expeditions.idempotency_key[expedition] =
+    family_expeditions_store().idempotency_key[expedition] =
         idempotency_key == 0 ? 1 : idempotency_key;
     const bool needs_complete_kit = kit.place_buildings != 0 &&
         cmd.i64_0 >= COLONIZATION_KIT_MIN_OWNER_SLOTS;
     const bool kit_incomplete = kit.kit_partial != 0 || kit.buildings.empty();
     auto occupy_preparing = [&]() {
-        _family_expeditions.payload_count[expedition] = 0;
-        _family_expeditions.cargo_count[expedition] = 0;
-        _family_expeditions.kit_building_count[expedition] = 0;
+        family_expeditions_store().payload_count[expedition] = 0;
+        family_expeditions_store().cargo_count[expedition] = 0;
+        family_expeditions_store().kit_building_count[expedition] = 0;
         store_preparing_missing_goods(expedition, kit);
-        _family_expeditions.state[expedition] = EXPEDITION_PREPARING;
-        _family_expeditions.due_day[expedition] = cmd.effective_day;
+        family_expeditions_store().state[expedition] = EXPEDITION_PREPARING;
+        family_expeditions_store().due_day[expedition] = cmd.effective_day;
         _family_expedition_target_index[family_expedition_target_key(
             quote.country_handle, quote.target_cell)] = expedition;
         push_family_expedition_due(expedition);
@@ -1272,7 +1272,7 @@ bool NativeEconomyRuntime::apply_start_family_expedition(
             error.clear();
             return occupy_preparing();
         }
-        _family_expeditions.release(expedition);
+        family_expeditions_store().release(expedition);
         if (error.empty()) error = "colonization_kit_materials_short";
         return false;
     }
@@ -1284,7 +1284,7 @@ bool NativeEconomyRuntime::apply_start_family_expedition(
             error.clear();
             return occupy_preparing();
         }
-        _family_expeditions.release(expedition);
+        family_expeditions_store().release(expedition);
         return false;
     }
     _family_expedition_target_index[family_expedition_target_key(
@@ -1299,21 +1299,21 @@ bool NativeEconomyRuntime::apply_start_family_expedition(
 void NativeEconomyRuntime::unwind_family_expedition_payload_extract(
         int32_t expedition) {
     if (expedition < 0 ||
-        expedition >= static_cast<int32_t>(_family_expeditions.active.size()) ||
-        _family_expeditions.active[expedition] == 0) return;
-    const uint64_t family_handle = _family_expeditions.family_handle[expedition];
-    const uint64_t owner = _family_expeditions.handle_for_index(expedition);
-    const uint32_t begin = _family_expeditions.payload_begin[expedition];
-    uint32_t count = _family_expeditions.payload_count[expedition];
-    if (begin > _family_expedition_payloads.size()) return;
-    if (count == 0 && _family_expedition_payloads.size() > begin)
-        count = static_cast<uint32_t>(_family_expedition_payloads.size() - begin);
+        expedition >= static_cast<int32_t>(family_expeditions_store().active.size()) ||
+        family_expeditions_store().active[expedition] == 0) return;
+    const uint64_t family_handle = family_expeditions_store().family_handle[expedition];
+    const uint64_t owner = family_expeditions_store().handle_for_index(expedition);
+    const uint32_t begin = family_expeditions_store().payload_begin[expedition];
+    uint32_t count = family_expeditions_store().payload_count[expedition];
+    if (begin > family_expedition_payloads().size()) return;
+    if (count == 0 && family_expedition_payloads().size() > begin)
+        count = static_cast<uint32_t>(family_expedition_payloads().size() - begin);
     const uint32_t end = std::min<uint32_t>(
-        begin + count, static_cast<uint32_t>(_family_expedition_payloads.size()));
+        begin + count, static_cast<uint32_t>(family_expedition_payloads().size()));
     uint32_t person_begin = static_cast<uint32_t>(
-        _family_expedition_person_handles.size());
+        family_expedition_person_handles().size());
     for (uint32_t p = begin; p < end; ++p) {
-        FamilyExpeditionPayload &payload = _family_expedition_payloads[p];
+        FamilyExpeditionPayload &payload = family_expedition_payloads()[p];
         population_store().release_reserved_slot(payload.reserved_slot, owner);
         payload.reserved_slot = -1;
         person_begin = std::min(person_begin, payload.person_begin);
@@ -1333,13 +1333,13 @@ void NativeEconomyRuntime::unwind_family_expedition_payload_extract(
             population_store().income_baseline_ema[slot] += payload.income_baseline_ema;
             population_store().demography_residual[slot] += payload.demography_residual;
         }
-        auto membership = std::find_if(_family_memberships.begin(),
-            _family_memberships.end(), [&](const FamilyMembershipEdge &edge) {
+        auto membership = std::find_if(family_memberships().begin(),
+            family_memberships().end(), [&](const FamilyMembershipEdge &edge) {
                 return edge.family_handle == family_handle &&
                     edge.cohort_handle == payload.source_cohort_handle;
             });
-        if (membership == _family_memberships.end()) {
-            _family_memberships.push_back({family_handle,
+        if (membership == family_memberships().end()) {
+            family_memberships().push_back({family_handle,
                 payload.source_cohort_handle, payload.people, payload.cash_claim,
                 payload.people, payload.funds, payload.owner_employed,
                 payload.employee_employed});
@@ -1353,20 +1353,20 @@ void NativeEconomyRuntime::unwind_family_expedition_payload_extract(
         }
         const uint32_t person_end = std::min<uint32_t>(
             payload.person_begin + payload.person_count,
-            static_cast<uint32_t>(_family_expedition_person_handles.size()));
+            static_cast<uint32_t>(family_expedition_person_handles().size()));
         for (uint32_t i = payload.person_begin; i < person_end; ++i) {
             int32_t person = -1;
-            if (_persons.valid_handle(_family_expedition_person_handles[i],
+            if (persons_store().valid_handle(family_expedition_person_handles()[i],
                     person))
-                _persons.cohort_handle[person] = payload.source_cohort_handle;
+                persons_store().cohort_handle[person] = payload.source_cohort_handle;
         }
     }
     if (end > begin)
-        _family_expedition_payloads.resize(begin);
-    if (person_begin < _family_expedition_person_handles.size())
-        _family_expedition_person_handles.resize(person_begin);
-    _family_expeditions.payload_count[expedition] = 0;
-    _family_expeditions.population[expedition] = 0;
+        family_expedition_payloads().resize(begin);
+    if (person_begin < family_expedition_person_handles().size())
+        family_expedition_person_handles().resize(person_begin);
+    family_expeditions_store().payload_count[expedition] = 0;
+    family_expeditions_store().population[expedition] = 0;
     _family_indices_dirty = true;
     _person_indices_dirty = true;
 }
@@ -1374,8 +1374,8 @@ void NativeEconomyRuntime::unwind_family_expedition_payload_extract(
 bool NativeEconomyRuntime::extract_family_expedition_payload(
         int32_t expedition, int64_t requested, std::string &error) {
     const auto started = std::chrono::steady_clock::now();
-    const uint64_t family_handle = _family_expeditions.family_handle[expedition];
-    const int32_t source_cell = _family_expeditions.source_cell[expedition];
+    const uint64_t family_handle = family_expeditions_store().family_handle[expedition];
+    const int32_t source_cell = family_expeditions_store().source_cell[expedition];
     struct Candidate { int32_t edge; int32_t slot; int64_t people;
         bool unemployed; uint64_t stable; int64_t selected = 0; };
     std::vector<Candidate> candidates;
@@ -1386,10 +1386,10 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
     const bool csr = _family_member_offsets.size() == families_store().active.size() + 1;
     const int32_t begin = csr ? _family_member_offsets[family] : 0;
     const int32_t end = csr ? _family_member_offsets[family + 1]
-        : static_cast<int32_t>(_family_memberships.size());
+        : static_cast<int32_t>(family_memberships().size());
     for (int32_t p = begin; p < end; ++p) {
         const int32_t edge_index = csr ? _family_member_edge_indices[p] : p;
-        const FamilyMembershipEdge &edge = _family_memberships[edge_index];
+        const FamilyMembershipEdge &edge = family_memberships()[edge_index];
         int32_t slot = -1;
         if (edge.family_handle != family_handle || edge.people <= 0 ||
             !population_store().valid_handle(edge.cohort_handle, slot) ||
@@ -1489,12 +1489,12 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
         error = "colonization_population_insufficient";
         return false;
     }
-    _family_expeditions.payload_begin[expedition] = static_cast<uint32_t>(
-        _family_expedition_payloads.size());
-    _family_expeditions.payload_count[expedition] = 0;
+    family_expeditions_store().payload_begin[expedition] = static_cast<uint32_t>(
+        family_expedition_payloads().size());
+    family_expeditions_store().payload_count[expedition] = 0;
     for (Candidate &candidate : candidates) {
         if (candidate.selected <= 0) continue;
-        FamilyMembershipEdge &edge = _family_memberships[candidate.edge];
+        FamilyMembershipEdge &edge = family_memberships()[candidate.edge];
         const int32_t slot = candidate.slot;
         const int64_t source_population = population_store().population[slot];
         if (candidate.selected > edge.people || candidate.selected >=
@@ -1544,18 +1544,18 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
             payload.satisfaction_dims[dim] = population_store().satisfaction_dims[
                 static_cast<size_t>(slot) * SAT_DIM_COUNT + dim];
         payload.person_begin = static_cast<uint32_t>(
-            _family_expedition_person_handles.size());
+            family_expedition_person_handles().size());
         std::vector<int32_t> people;
         for (int32_t person = 0; person < static_cast<int32_t>(
-                _persons.active.size()); ++person) {
-            if (_persons.active[person] != 0 &&
-                _persons.family_handle[person] == family_handle &&
-                _persons.cohort_handle[person] == edge.cohort_handle)
+                persons_store().active.size()); ++person) {
+            if (persons_store().active[person] != 0 &&
+                persons_store().family_handle[person] == family_handle &&
+                persons_store().cohort_handle[person] == edge.cohort_handle)
                 people.push_back(person);
         }
         std::sort(people.begin(), people.end(), [&](int32_t a, int32_t b) {
-            return std::tie(_persons.stable_id[a], a) <
-                   std::tie(_persons.stable_id[b], b);
+            return std::tie(persons_store().stable_id[a], a) <
+                   std::tie(persons_store().stable_id[b], b);
         });
         int64_t remaining_people = edge.people;
         int64_t remaining_selected = candidate.selected;
@@ -1563,24 +1563,24 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
             uint64_t hash = 1469598103934665603ULL;
             hash = trace_hash_mix(hash, static_cast<uint64_t>(_seed));
             hash = trace_hash_mix(hash, static_cast<uint64_t>(
-                _family_expeditions.stable_id[expedition]));
+                family_expeditions_store().stable_id[expedition]));
             hash = trace_hash_mix(hash, static_cast<uint64_t>(
-                _persons.stable_id[person]));
+                persons_store().stable_id[person]));
             if (remaining_people > 0 && remaining_selected > 0 &&
                 static_cast<int64_t>(hash % static_cast<uint64_t>(
                     remaining_people)) < remaining_selected) {
-                _family_expedition_person_handles.push_back(
-                    _persons.handle_for_index(person));
-                _persons.cohort_handle[person] = 0;
-                _persons.building_handle[person] = 0;
-                _persons.job_kind[person] = 0;
-                _persons.employee_role_index[person] = -1;
+                family_expedition_person_handles().push_back(
+                    persons_store().handle_for_index(person));
+                persons_store().cohort_handle[person] = 0;
+                persons_store().building_handle[person] = 0;
+                persons_store().job_kind[person] = 0;
+                persons_store().employee_role_index[person] = -1;
                 --remaining_selected;
             }
             --remaining_people;
         }
         payload.person_count = static_cast<uint32_t>(
-            _family_expedition_person_handles.size()) - payload.person_begin;
+            family_expedition_person_handles().size()) - payload.person_begin;
         audit_touch_population_lane(slot);
         population_store().population[slot] -= payload.people;
         population_store().funds[slot] -= payload.funds;
@@ -1599,28 +1599,28 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
             edge.population_basis - payload.people);
         edge.funds_basis = std::max<int64_t>(0,
             edge.funds_basis - payload.cash_claim);
-        _family_expedition_payloads.push_back(payload);
-        _family_expeditions.payload_count[expedition] =
-            static_cast<uint32_t>(_family_expedition_payloads.size()) -
-            _family_expeditions.payload_begin[expedition];
+        family_expedition_payloads().push_back(payload);
+        family_expeditions_store().payload_count[expedition] =
+            static_cast<uint32_t>(family_expedition_payloads().size()) -
+            family_expeditions_store().payload_begin[expedition];
     }
-    _family_expeditions.payload_count[expedition] = static_cast<uint32_t>(
-        _family_expedition_payloads.size()) -
-        _family_expeditions.payload_begin[expedition];
-    if (_family_expeditions.payload_count[expedition] == 0) {
+    family_expeditions_store().payload_count[expedition] = static_cast<uint32_t>(
+        family_expedition_payloads().size()) -
+        family_expeditions_store().payload_begin[expedition];
+    if (family_expeditions_store().payload_count[expedition] == 0) {
         error = "colonization_payload_empty";
         unwind_family_expedition_payload_extract(expedition);
         return false;
     }
     const uint64_t reservation_owner =
-        _family_expeditions.handle_for_index(expedition);
-    const uint32_t payload_begin = _family_expeditions.payload_begin[expedition];
+        family_expeditions_store().handle_for_index(expedition);
+    const uint32_t payload_begin = family_expeditions_store().payload_begin[expedition];
     const uint32_t payload_end = payload_begin +
-        _family_expeditions.payload_count[expedition];
+        family_expeditions_store().payload_count[expedition];
     for (uint32_t p = payload_begin; p < payload_end; ++p) {
-        FamilyExpeditionPayload &payload = _family_expedition_payloads[p];
+        FamilyExpeditionPayload &payload = family_expedition_payloads()[p];
         payload.reserved_slot = population_store().reserve_slot(
-            _family_expeditions.target_cell[expedition],
+            family_expeditions_store().target_cell[expedition],
             static_cast<uint32_t>(payload.signature), reservation_owner);
         if (payload.reserved_slot < 0) {
             error = "colonization_target_slot_reservation_failed";
@@ -1628,7 +1628,7 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
             return false;
         }
     }
-    _family_expeditions.population[expedition] =
+    family_expeditions_store().population[expedition] =
         family_expedition_payload_people(expedition);
     _family_indices_dirty = true; _person_indices_dirty = true;
     _structural_touched_cells.push_back(source_cell);
@@ -1646,18 +1646,18 @@ bool NativeEconomyRuntime::restore_family_expedition_payload(
     if (destination_cell < 0 || destination_cell >= _cell_count) {
         error = "colonization_destination_invalid"; return false;
     }
-    const uint64_t family_handle = _family_expeditions.family_handle[expedition];
-    const uint32_t begin = _family_expeditions.payload_begin[expedition];
-    const uint32_t end = begin + _family_expeditions.payload_count[expedition];
-    if (end > _family_expedition_payloads.size()) {
+    const uint64_t family_handle = family_expeditions_store().family_handle[expedition];
+    const uint32_t begin = family_expeditions_store().payload_begin[expedition];
+    const uint32_t end = begin + family_expeditions_store().payload_count[expedition];
+    if (end > family_expedition_payloads().size()) {
         error = "colonization_payload_range_invalid"; return false;
     }
     for (uint32_t p = begin; p < end; ++p) {
-        FamilyExpeditionPayload &payload = _family_expedition_payloads[p];
+        FamilyExpeditionPayload &payload = family_expedition_payloads()[p];
         const uint64_t reservation_owner =
-            _family_expeditions.handle_for_index(expedition);
+            family_expeditions_store().handle_for_index(expedition);
         int32_t slot = -1;
-        if (destination_cell == _family_expeditions.target_cell[expedition]) {
+        if (destination_cell == family_expeditions_store().target_cell[expedition]) {
             slot = population_store().claim_reserved_slot(payload.reserved_slot,
                 destination_cell, static_cast<uint32_t>(payload.signature),
                 reservation_owner);
@@ -1704,19 +1704,19 @@ bool NativeEconomyRuntime::restore_family_expedition_payload(
             population_store().worst_dimension_id[slot] = payload.worst_dimension_id;
         }
         const uint64_t cohort_handle = population_store().handle_for_slot(slot);
-        _family_memberships.push_back({family_handle, cohort_handle,
+        family_memberships().push_back({family_handle, cohort_handle,
             payload.people, payload.cash_claim, merged_population,
             population_store().funds[slot], 0, 0});
         if (static_cast<size_t>(payload.person_begin) + payload.person_count >
-                _family_expedition_person_handles.size()) {
+                family_expedition_person_handles().size()) {
             error = "colonization_person_payload_range_invalid"; return false;
         }
         for (uint32_t i = 0; i < payload.person_count; ++i) {
             int32_t person = -1;
-            if (_persons.valid_handle(
-                    _family_expedition_person_handles[payload.person_begin + i],
+            if (persons_store().valid_handle(
+                    family_expedition_person_handles()[payload.person_begin + i],
                     person))
-                _persons.cohort_handle[person] = cohort_handle;
+                persons_store().cohort_handle[person] = cohort_handle;
         }
     }
     _family_indices_dirty = true; _person_indices_dirty = true;
@@ -1758,49 +1758,49 @@ bool NativeEconomyRuntime::finalize_immediate_family_expedition_settlement(
 void NativeEconomyRuntime::release_family_expedition_reservations(
         int32_t expedition) {
     if (expedition < 0 || expedition >= static_cast<int32_t>(
-            _family_expeditions.active.size()) ||
-        _family_expeditions.active[expedition] == 0) return;
-    const uint64_t owner = _family_expeditions.handle_for_index(expedition);
-    const uint32_t begin = _family_expeditions.payload_begin[expedition];
+            family_expeditions_store().active.size()) ||
+        family_expeditions_store().active[expedition] == 0) return;
+    const uint64_t owner = family_expeditions_store().handle_for_index(expedition);
+    const uint32_t begin = family_expeditions_store().payload_begin[expedition];
     const uint32_t end = std::min<uint32_t>(
-        begin + _family_expeditions.payload_count[expedition],
-        static_cast<uint32_t>(_family_expedition_payloads.size()));
+        begin + family_expeditions_store().payload_count[expedition],
+        static_cast<uint32_t>(family_expedition_payloads().size()));
     for (uint32_t p = begin; p < end; ++p) {
-        FamilyExpeditionPayload &payload = _family_expedition_payloads[p];
+        FamilyExpeditionPayload &payload = family_expedition_payloads()[p];
         population_store().release_reserved_slot(payload.reserved_slot, owner);
         payload.reserved_slot = -1;
     }
-    population_store().reclaim_empty_pages(_family_expeditions.target_cell[expedition]);
+    population_store().reclaim_empty_pages(family_expeditions_store().target_cell[expedition]);
 }
 
 bool NativeEconomyRuntime::apply_cancel_family_expedition(
         const Command &cmd, std::string &error) {
     int32_t expedition = -1;
-    if (!_family_expeditions.valid_handle(cmd.target_handle, expedition)) {
+    if (!family_expeditions_store().valid_handle(cmd.target_handle, expedition)) {
         error = "colonization_expedition_invalid"; return false;
     }
-    if (_family_expeditions.state[expedition] == EXPEDITION_RETURNING) return true;
-    if (_family_expeditions.state[expedition] == EXPEDITION_PREPARING) {
+    if (family_expeditions_store().state[expedition] == EXPEDITION_RETURNING) return true;
+    if (family_expeditions_store().state[expedition] == EXPEDITION_PREPARING) {
         abort_preparing_family_expedition(expedition, cmd.effective_day, 2,
             "CANCELLED");
         return true;
     }
-    if (_family_expeditions.state[expedition] == EXPEDITION_SETTLING &&
-        _family_expeditions.effect_transaction_id[expedition] != 0) {
+    if (family_expeditions_store().state[expedition] == EXPEDITION_SETTLING &&
+        family_expeditions_store().effect_transaction_id[expedition] != 0) {
         error = "colonization_settlement_already_committed"; return false;
     }
     const int64_t elapsed = std::max<int64_t>(0,
-        cmd.effective_day - _family_expeditions.departure_day[expedition]);
+        cmd.effective_day - family_expeditions_store().departure_day[expedition]);
     const int64_t progressed = std::min<int64_t>(
-        _family_expeditions.route_cost[expedition], elapsed *
-        std::max(1, _family_expeditions.speed[expedition]));
+        family_expeditions_store().route_cost[expedition], elapsed *
+        std::max(1, family_expeditions_store().speed[expedition]));
     const int64_t return_days = (progressed +
-        std::max(1, _family_expeditions.speed[expedition]) - 1) /
-        std::max(1, _family_expeditions.speed[expedition]);
-    _family_expeditions.state[expedition] = EXPEDITION_RETURNING;
+        std::max(1, family_expeditions_store().speed[expedition]) - 1) /
+        std::max(1, family_expeditions_store().speed[expedition]);
+    family_expeditions_store().state[expedition] = EXPEDITION_RETURNING;
     release_family_expedition_reservations(expedition);
     note_family_expedition_audit_invalidation();
-    _family_expeditions.due_day[expedition] = cmd.effective_day + return_days;
+    family_expeditions_store().due_day[expedition] = cmd.effective_day + return_days;
     push_family_expedition_due(expedition);
     append_colonization_receipt(expedition, cmd.sequence, cmd.effective_day,
         cmd.effective_day, 2, "CANCELLED_RETURNING");
@@ -1810,45 +1810,45 @@ bool NativeEconomyRuntime::apply_cancel_family_expedition(
 bool NativeEconomyRuntime::apply_settle_family_expedition(
         const Command &cmd, std::string &error) {
     int32_t expedition = -1;
-    if (!_family_expeditions.valid_handle(cmd.target_handle, expedition))
+    if (!family_expeditions_store().valid_handle(cmd.target_handle, expedition))
         return true; // idempotent replay after a successful release.
-    if (_family_expeditions.state[expedition] != EXPEDITION_SETTLING)
+    if (family_expeditions_store().state[expedition] != EXPEDITION_SETTLING)
         return true;
     const int64_t owner = _country_runtime == nullptr ? 0 :
         _country_runtime->country_handle_for_cell(
-            _family_expeditions.target_cell[expedition]);
+            family_expeditions_store().target_cell[expedition]);
     if (owner != static_cast<int64_t>(
-            _family_expeditions.country_handle[expedition])) {
-        _family_expeditions.state[expedition] = EXPEDITION_RETURNING;
+            family_expeditions_store().country_handle[expedition])) {
+        family_expeditions_store().state[expedition] = EXPEDITION_RETURNING;
         release_family_expedition_reservations(expedition);
         note_family_expedition_audit_invalidation();
-        _family_expeditions.due_day[expedition] = _current_day +
-            std::max<int64_t>(1, (_family_expeditions.route_cost[expedition] +
-                _family_expeditions.speed[expedition] - 1) /
-                _family_expeditions.speed[expedition]);
+        family_expeditions_store().due_day[expedition] = _current_day +
+            std::max<int64_t>(1, (family_expeditions_store().route_cost[expedition] +
+                family_expeditions_store().speed[expedition] - 1) /
+                family_expeditions_store().speed[expedition]);
         push_family_expedition_due(expedition);
         append_colonization_receipt(expedition, cmd.sequence,
             cmd.effective_day, _current_day, 3, "TARGET_LOST_RETURNING");
         return true;
     }
-    const int32_t destination = _family_expeditions.target_cell[expedition];
-    const uint64_t country_handle = _family_expeditions.country_handle[expedition];
+    const int32_t destination = family_expeditions_store().target_cell[expedition];
+    const uint64_t country_handle = family_expeditions_store().country_handle[expedition];
     if (!restore_family_expedition_payload(expedition, destination, error))
         return false;
     if (!settle_family_expedition_kit(expedition, destination, error))
         return false;
     if (cmd.i32_1 > 0)
         apply_family_colonization_population_reward(destination,
-            _family_expeditions.family_handle[expedition], cmd.i32_1);
+            family_expeditions_store().family_handle[expedition], cmd.i32_1);
     bool claimed = cmd.i64_0 != 0;
     if (!claimed && _effect_runtime != nullptr)
         claimed = _effect_runtime->family_colonization_includes_claim(
-            _family_expeditions.effect_transaction_id[expedition]);
+            family_expeditions_store().effect_transaction_id[expedition]);
     append_colonization_receipt(expedition, cmd.sequence, cmd.effective_day,
         _current_day, claimed ? 4 : 6, claimed ? "CLAIMED" : "RELOCATED");
     _family_expedition_target_index.erase(family_expedition_target_key(
         country_handle, destination));
-    _family_expeditions.release(expedition);
+    family_expeditions_store().release(expedition);
     return finalize_immediate_family_expedition_settlement(destination, error);
 }
 
@@ -1868,17 +1868,17 @@ bool NativeEconomyRuntime::family_expedition_settle_inflight(
 void NativeEconomyRuntime::recover_lost_family_settlement_commands() {
     if (_effect_runtime == nullptr) return;
     for (int32_t expedition = 0; expedition < static_cast<int32_t>(
-            _family_expeditions.active.size()); ++expedition) {
-        if (_family_expeditions.active[expedition] == 0 ||
-            _family_expeditions.state[expedition] != EXPEDITION_SETTLING)
+            family_expeditions_store().active.size()); ++expedition) {
+        if (family_expeditions_store().active[expedition] == 0 ||
+            family_expeditions_store().state[expedition] != EXPEDITION_SETTLING)
             continue;
-        const uint64_t handle = _family_expeditions.handle_for_index(expedition);
+        const uint64_t handle = family_expeditions_store().handle_for_index(expedition);
         if (handle == 0 || family_expedition_settle_inflight(handle)) continue;
         const uint64_t settle_key =
             _effect_runtime->family_colonization_settle_idempotency_key(
-                _family_expeditions.stable_id[expedition],
-                _family_expeditions.generation[expedition],
-                _family_expeditions.idempotency_key[expedition]);
+                family_expeditions_store().stable_id[expedition],
+                family_expeditions_store().generation[expedition],
+                family_expeditions_store().idempotency_key[expedition]);
         const auto found = _effect_idempotency_requests.find(settle_key);
         if (found == _effect_idempotency_requests.end()) continue;
         const auto result = _effect_command_results.find(found->second);
@@ -1889,13 +1889,13 @@ void NativeEconomyRuntime::recover_lost_family_settlement_commands() {
         command.effective_day = _current_day;
         command.sequence = static_cast<int64_t>(settle_key & 0x7fffffffffffffffULL);
         command.target_handle = handle;
-        command.i32_0 = _family_expeditions.target_cell[expedition];
+        command.i32_0 = family_expeditions_store().target_cell[expedition];
         command.i32_1 = _effect_runtime->family_colonization_population_reward(
-            _family_expeditions.effect_transaction_id[expedition]);
+            family_expeditions_store().effect_transaction_id[expedition]);
         command.i64_0 = _effect_runtime->family_colonization_includes_claim(
-            _family_expeditions.effect_transaction_id[expedition]) ? 1 : 0;
+            family_expeditions_store().effect_transaction_id[expedition]) ? 1 : 0;
         command.i64_1 = static_cast<int64_t>(
-            _family_expeditions.country_handle[expedition]);
+            family_expeditions_store().country_handle[expedition]);
         command.submit_order = _next_submit_order++;
         command.effect_request_id = found->second;
         command.effect_idempotency_key = settle_key;
@@ -1936,17 +1936,17 @@ bool NativeEconomyRuntime::process_due_family_expeditions(
         _family_expedition_due_heap.pop_back();
         const int32_t expedition = top.second;
         if (expedition < 0 || expedition >= static_cast<int32_t>(
-                _family_expeditions.active.size()) ||
-            _family_expeditions.active[expedition] == 0 ||
-            _family_expeditions.due_day[expedition] != top.first) continue;
-        if (_family_expeditions.state[expedition] == EXPEDITION_PREPARING) {
+                family_expeditions_store().active.size()) ||
+            family_expeditions_store().active[expedition] == 0 ||
+            family_expeditions_store().due_day[expedition] != top.first) continue;
+        if (family_expeditions_store().state[expedition] == EXPEDITION_PREPARING) {
             if (!advance_preparing_family_expedition(expedition, day, error))
                 return false;
             continue;
         }
-        if (_family_expeditions.state[expedition] == EXPEDITION_SETTLING) {
+        if (family_expeditions_store().state[expedition] == EXPEDITION_SETTLING) {
             const int64_t transaction_id =
-                _family_expeditions.effect_transaction_id[expedition];
+                family_expeditions_store().effect_transaction_id[expedition];
             const int32_t status = _effect_runtime == nullptr ? 0 :
                 _effect_runtime->transaction_status_pod(transaction_id);
             if (status == EffectRuntime::REJECTED ||
@@ -1954,31 +1954,31 @@ bool NativeEconomyRuntime::process_due_family_expeditions(
                 if (_effect_runtime != nullptr && transaction_id != 0)
                     _effect_runtime->consume_rejected_transaction_pod(
                         transaction_id,
-                        _family_expeditions.stable_id[expedition]);
-                _family_expeditions.effect_transaction_id[expedition] = 0;
-                _family_expeditions.state[expedition] = EXPEDITION_RETURNING;
+                        family_expeditions_store().stable_id[expedition]);
+                family_expeditions_store().effect_transaction_id[expedition] = 0;
+                family_expeditions_store().state[expedition] = EXPEDITION_RETURNING;
                 release_family_expedition_reservations(expedition);
-                _family_expeditions.due_day[expedition] = day +
+                family_expeditions_store().due_day[expedition] = day +
                     std::max<int64_t>(1,
-                        (_family_expeditions.route_cost[expedition] +
-                         _family_expeditions.speed[expedition] - 1) /
-                        _family_expeditions.speed[expedition]);
+                        (family_expeditions_store().route_cost[expedition] +
+                         family_expeditions_store().speed[expedition] - 1) /
+                        family_expeditions_store().speed[expedition]);
                 push_family_expedition_due(expedition);
                 append_colonization_receipt(expedition, 0,
-                    _family_expeditions.departure_day[expedition], day, 3,
+                    family_expeditions_store().departure_day[expedition], day, 3,
                     "TARGET_LOST_RETURNING");
             } else {
                 // ACKs normally complete within the same scheduler boundary.
                 // Keeping one sparse heap entry makes stalled transactions
                 // observable without scanning every active expedition daily.
-                _family_expeditions.due_day[expedition] = day + 1;
+                family_expeditions_store().due_day[expedition] = day + 1;
                 push_family_expedition_due(expedition);
             }
             continue;
         }
-        if (_family_expeditions.state[expedition] == EXPEDITION_RETURNING) {
+        if (family_expeditions_store().state[expedition] == EXPEDITION_RETURNING) {
             const int32_t source_cell =
-                _family_expeditions.source_cell[expedition];
+                family_expeditions_store().source_cell[expedition];
             if (!restore_family_expedition_payload(expedition,
                     source_cell, error)) return false;
             if (!restore_family_expedition_cargo(expedition,
@@ -1988,29 +1988,29 @@ bool NativeEconomyRuntime::process_due_family_expeditions(
                 return false;
             note_family_expedition_audit_invalidation();
             append_colonization_receipt(expedition, 0,
-                _family_expeditions.departure_day[expedition], day, 5, "RETURNED");
+                family_expeditions_store().departure_day[expedition], day, 5, "RETURNED");
             _family_expedition_target_index.erase(family_expedition_target_key(
-                _family_expeditions.country_handle[expedition],
-                _family_expeditions.target_cell[expedition]));
-            _family_expeditions.release(expedition);
+                family_expeditions_store().country_handle[expedition],
+                family_expeditions_store().target_cell[expedition]));
+            family_expeditions_store().release(expedition);
             continue;
         }
-        if (_family_expeditions.state[expedition] == EXPEDITION_OUTBOUND) {
+        if (family_expeditions_store().state[expedition] == EXPEDITION_OUTBOUND) {
             const int64_t owner = _country_runtime == nullptr ? 0 :
                 _country_runtime->country_handle_for_cell(
-                    _family_expeditions.target_cell[expedition]);
+                    family_expeditions_store().target_cell[expedition]);
             if (_country_runtime == nullptr ||
                 (owner != 0 && owner != static_cast<int64_t>(
-                    _family_expeditions.country_handle[expedition]))) {
-                _family_expeditions.state[expedition] = EXPEDITION_RETURNING;
+                    family_expeditions_store().country_handle[expedition]))) {
+                family_expeditions_store().state[expedition] = EXPEDITION_RETURNING;
                 release_family_expedition_reservations(expedition);
-                _family_expeditions.due_day[expedition] = day +
-                    std::max<int64_t>(1, (_family_expeditions.route_cost[expedition] +
-                        _family_expeditions.speed[expedition] - 1) /
-                        _family_expeditions.speed[expedition]);
+                family_expeditions_store().due_day[expedition] = day +
+                    std::max<int64_t>(1, (family_expeditions_store().route_cost[expedition] +
+                        family_expeditions_store().speed[expedition] - 1) /
+                        family_expeditions_store().speed[expedition]);
                 push_family_expedition_due(expedition);
                 append_colonization_receipt(expedition, 0,
-                    _family_expeditions.departure_day[expedition], day, 3,
+                    family_expeditions_store().departure_day[expedition], day, 3,
                     "TARGET_LOST_RETURNING");
                 continue;
             }
@@ -2018,25 +2018,25 @@ bool NativeEconomyRuntime::process_due_family_expeditions(
                 error = "colonization_effect_runtime_unavailable"; return false;
             }
             const uint64_t handle =
-                _family_expeditions.handle_for_index(expedition);
+                family_expeditions_store().handle_for_index(expedition);
             int64_t transaction_id = 0;
             const bool claim_unowned = owner == 0;
             const int32_t population_reward =
                 family_colonization_population_reward_amount(
-                    _family_expeditions.family_handle[expedition]);
+                    family_expeditions_store().family_handle[expedition]);
             if (!_effect_runtime->enqueue_family_colonization_pod(
-                    _family_expeditions.stable_id[expedition], day,
-                    _family_expeditions.stable_id[expedition],
-                    _family_expeditions.country_handle[expedition],
+                    family_expeditions_store().stable_id[expedition], day,
+                    family_expeditions_store().stable_id[expedition],
+                    family_expeditions_store().country_handle[expedition],
                     static_cast<uint32_t>(
-                        _family_expeditions.country_handle[expedition] >> 32U),
-                    handle, _family_expeditions.generation[expedition],
-                    _family_expeditions.target_cell[expedition],
-                    _family_expeditions.idempotency_key[expedition], error,
+                        family_expeditions_store().country_handle[expedition] >> 32U),
+                    handle, family_expeditions_store().generation[expedition],
+                    family_expeditions_store().target_cell[expedition],
+                    family_expeditions_store().idempotency_key[expedition], error,
                     &transaction_id, claim_unowned, population_reward)) return false;
-            _family_expeditions.effect_transaction_id[expedition] = transaction_id;
-            _family_expeditions.state[expedition] = EXPEDITION_SETTLING;
-            _family_expeditions.due_day[expedition] = day + 1;
+            family_expeditions_store().effect_transaction_id[expedition] = transaction_id;
+            family_expeditions_store().state[expedition] = EXPEDITION_SETTLING;
+            family_expeditions_store().due_day[expedition] = day + 1;
             push_family_expedition_due(expedition);
         }
     }
@@ -2049,26 +2049,26 @@ void NativeEconomyRuntime::rebuild_family_expedition_indices() {
     _family_expedition_target_index.clear();
     _family_expedition_due_heap.clear();
     for (int32_t i = 0; i < static_cast<int32_t>(
-            _family_expeditions.active.size()); ++i) {
-        if (_family_expeditions.active[i] == 0) continue;
+            family_expeditions_store().active.size()); ++i) {
+        if (family_expeditions_store().active[i] == 0) continue;
         _family_expedition_target_index[family_expedition_target_key(
-            _family_expeditions.country_handle[i],
-            _family_expeditions.target_cell[i])] = i;
-        if (_family_expeditions.state[i] != EXPEDITION_RETURNING) {
-            const uint64_t owner = _family_expeditions.handle_for_index(i);
-            const uint32_t begin = _family_expeditions.payload_begin[i];
+            family_expeditions_store().country_handle[i],
+            family_expeditions_store().target_cell[i])] = i;
+        if (family_expeditions_store().state[i] != EXPEDITION_RETURNING) {
+            const uint64_t owner = family_expeditions_store().handle_for_index(i);
+            const uint32_t begin = family_expeditions_store().payload_begin[i];
             const uint32_t end = std::min<uint32_t>(begin +
-                _family_expeditions.payload_count[i], static_cast<uint32_t>(
-                    _family_expedition_payloads.size()));
+                family_expeditions_store().payload_count[i], static_cast<uint32_t>(
+                    family_expedition_payloads().size()));
             for (uint32_t p = begin; p < end; ++p) {
                 FamilyExpeditionPayload &payload =
-                    _family_expedition_payloads[p];
+                    family_expedition_payloads()[p];
                 payload.reserved_slot = population_store().reserve_slot(
-                    _family_expeditions.target_cell[i],
+                    family_expeditions_store().target_cell[i],
                     static_cast<uint32_t>(payload.signature), owner);
             }
         }
-        if (_family_expeditions.due_day[i] !=
+        if (family_expeditions_store().due_day[i] !=
                 std::numeric_limits<int64_t>::max())
             push_family_expedition_due(i);
     }
@@ -2080,15 +2080,15 @@ Dictionary NativeEconomyRuntime::family_expeditions(
     fill_colonization_query_flags(out);
     std::vector<int32_t> rows;
     for (int32_t i = 0; i < static_cast<int32_t>(
-            _family_expeditions.active.size()); ++i)
-        if (_family_expeditions.active[i] != 0 &&
-            _family_expeditions.country_handle[i] ==
+            family_expeditions_store().active.size()); ++i)
+        if (family_expeditions_store().active[i] != 0 &&
+            family_expeditions_store().country_handle[i] ==
                 static_cast<uint64_t>(country_handle_value)) rows.push_back(i);
     std::sort(rows.begin(), rows.end(), [&](int32_t a, int32_t b) {
-        return std::tie(_family_expeditions.due_day[a],
-                        _family_expeditions.stable_id[a]) <
-               std::tie(_family_expeditions.due_day[b],
-                        _family_expeditions.stable_id[b]);
+        return std::tie(family_expeditions_store().due_day[a],
+                        family_expeditions_store().stable_id[a]) <
+               std::tie(family_expeditions_store().due_day[b],
+                        family_expeditions_store().stable_id[b]);
     });
     offset = std::max(0, offset); limit = std::clamp(limit, 1, 256);
     const int32_t end = std::min<int32_t>(rows.size(), offset + limit);
@@ -2098,18 +2098,18 @@ Dictionary NativeEconomyRuntime::family_expeditions(
     for (int32_t p = offset; p < end; ++p) {
         const int32_t i = rows[p];
         handles.push_back(static_cast<int64_t>(
-            _family_expeditions.handle_for_index(i)));
+            family_expeditions_store().handle_for_index(i)));
         families.push_back(static_cast<int64_t>(
-            _family_expeditions.family_handle[i]));
-        sources.push_back(_family_expeditions.source_cell[i]);
-        targets.push_back(_family_expeditions.target_cell[i]);
+            family_expeditions_store().family_handle[i]));
+        sources.push_back(family_expeditions_store().source_cell[i]);
+        targets.push_back(family_expeditions_store().target_cell[i]);
         populations.push_back(family_expedition_displayed_population(i));
-        departures.push_back(_family_expeditions.departure_day[i]);
-        dues.push_back(_family_expeditions.due_day[i]);
-        costs.push_back(_family_expeditions.route_cost[i]);
-        states.push_back(_family_expeditions.state[i]);
+        departures.push_back(family_expeditions_store().departure_day[i]);
+        dues.push_back(family_expeditions_store().due_day[i]);
+        costs.push_back(family_expeditions_store().route_cost[i]);
+        states.push_back(family_expeditions_store().state[i]);
         missing_identities.push_back(static_cast<int64_t>(
-            _family_expeditions.kit_missing_stock_identity[i]));
+            family_expeditions_store().kit_missing_stock_identity[i]));
     }
     out["ok"] = true; out["expedition_handles"] = handles;
     out["family_handles"] = families; out["source_cells"] = sources;
@@ -2127,58 +2127,58 @@ Dictionary NativeEconomyRuntime::family_expedition_snapshot(
         int64_t country_handle_value, int64_t expedition_handle_value) const {
     Dictionary out;
     int32_t expedition = -1;
-    if (!_family_expeditions.valid_handle(
+    if (!family_expeditions_store().valid_handle(
             static_cast<uint64_t>(expedition_handle_value), expedition) ||
-        _family_expeditions.country_handle[expedition] !=
+        family_expeditions_store().country_handle[expedition] !=
             static_cast<uint64_t>(country_handle_value)) {
         out["ok"] = false; out["code"] = "colonization_expedition_invalid";
         return out;
     }
     PackedInt32Array route, cumulative;
-    const uint32_t begin = _family_expeditions.route_begin[expedition];
-    const uint32_t count = _family_expeditions.route_count[expedition];
+    const uint32_t begin = family_expeditions_store().route_begin[expedition];
+    const uint32_t count = family_expeditions_store().route_count[expedition];
     for (uint32_t i = 0; i < count; ++i) {
-        route.push_back(_family_expedition_route_cells[begin + i]);
-        cumulative.push_back(_family_expedition_route_costs[begin + i]);
+        route.push_back(family_expedition_route_cells()[begin + i]);
+        cumulative.push_back(family_expedition_route_costs()[begin + i]);
     }
     out["ok"] = true; out["expedition_handle"] = expedition_handle_value;
     out["family_handle"] = static_cast<int64_t>(
-        _family_expeditions.family_handle[expedition]);
-    out["source_cell"] = _family_expeditions.source_cell[expedition];
-    out["target_cell"] = _family_expeditions.target_cell[expedition];
+        family_expeditions_store().family_handle[expedition]);
+    out["source_cell"] = family_expeditions_store().source_cell[expedition];
+    out["target_cell"] = family_expeditions_store().target_cell[expedition];
     out["population"] = family_expedition_displayed_population(expedition);
-    out["departure_day"] = _family_expeditions.departure_day[expedition];
-    out["due_day"] = _family_expeditions.due_day[expedition];
-    out["route_cost"] = _family_expeditions.route_cost[expedition];
-    out["speed"] = _family_expeditions.speed[expedition];
-    out["state"] = _family_expeditions.state[expedition];
+    out["departure_day"] = family_expeditions_store().departure_day[expedition];
+    out["due_day"] = family_expeditions_store().due_day[expedition];
+    out["route_cost"] = family_expeditions_store().route_cost[expedition];
+    out["speed"] = family_expeditions_store().speed[expedition];
+    out["state"] = family_expeditions_store().state[expedition];
     out["effect_transaction_id"] =
-        _family_expeditions.effect_transaction_id[expedition];
+        family_expeditions_store().effect_transaction_id[expedition];
     out["route_cells"] = route; out["cumulative_costs"] = cumulative;
     PackedInt32Array cargo_good_ids, cargo_flags, missing_good_ids;
     PackedInt64Array cargo_quantities, missing_good_quantities;
-    const uint32_t cargo_begin = _family_expeditions.cargo_begin[expedition];
-    const uint32_t cargo_count = _family_expeditions.cargo_count[expedition];
+    const uint32_t cargo_begin = family_expeditions_store().cargo_begin[expedition];
+    const uint32_t cargo_count = family_expeditions_store().cargo_count[expedition];
     for (uint32_t i = 0; i < cargo_count; ++i) {
-        if (cargo_begin + i >= _family_expedition_cargo.size()) break;
+        if (cargo_begin + i >= family_expedition_cargo().size()) break;
         const FamilyExpeditionCargoLine &line =
-            _family_expedition_cargo[cargo_begin + i];
+            family_expedition_cargo()[cargo_begin + i];
         cargo_good_ids.push_back(line.good_id);
         cargo_quantities.push_back(line.quantity);
         cargo_flags.push_back(line.flags);
     }
     const uint32_t missing_begin =
-        _family_expeditions.missing_good_begin[expedition];
+        family_expeditions_store().missing_good_begin[expedition];
     const uint32_t missing_count =
-        _family_expeditions.missing_good_count[expedition];
+        family_expeditions_store().missing_good_count[expedition];
     for (uint32_t i = 0; i < missing_count; ++i) {
-        if (missing_begin + i >= _family_expedition_missing_good_ids.size())
+        if (missing_begin + i >= family_expedition_missing_good_ids().size())
             break;
         missing_good_ids.push_back(
-            _family_expedition_missing_good_ids[missing_begin + i]);
+            family_expedition_missing_good_ids()[missing_begin + i]);
         missing_good_quantities.push_back(
-            missing_begin + i < _family_expedition_missing_good_quantities.size()
-                ? _family_expedition_missing_good_quantities[missing_begin + i]
+            missing_begin + i < family_expedition_missing_good_quantities().size()
+                ? family_expedition_missing_good_quantities()[missing_begin + i]
                 : 0);
     }
     out["cargo_good_ids"] = cargo_good_ids;
@@ -2187,13 +2187,13 @@ Dictionary NativeEconomyRuntime::family_expedition_snapshot(
     out["kit_missing_good_ids"] = missing_good_ids;
     out["kit_missing_good_quantities"] = missing_good_quantities;
     out["kit_missing_stock_identity"] = static_cast<int64_t>(
-        _family_expeditions.kit_missing_stock_identity[expedition]);
+        family_expeditions_store().kit_missing_stock_identity[expedition]);
     int64_t bridge_required = 0;
     int64_t bridge_missing = 0;
     int64_t material_required = 0;
     int64_t material_missing = 0;
     String blocker;
-    if (_family_expeditions.state[expedition] == EXPEDITION_PREPARING) {
+    if (family_expeditions_store().state[expedition] == EXPEDITION_PREPARING) {
         // Stocking progress needs the unclamped survival-bridge demand, which
         // only the planner knows. Replan read-only against the live escrow.
         ColonizationReserveContext reserve;
@@ -2203,13 +2203,13 @@ Dictionary NativeEconomyRuntime::family_expedition_snapshot(
         reserve.prefer_reserved_candidates = true;
         ColonizationKitPlan kit;
         const int32_t travel = std::max(1,
-            (_family_expeditions.route_cost[expedition] +
-             std::max(1, _family_expeditions.speed[expedition]) - 1) /
-            std::max(1, _family_expeditions.speed[expedition]));
+            (family_expeditions_store().route_cost[expedition] +
+             std::max(1, family_expeditions_store().speed[expedition]) - 1) /
+            std::max(1, family_expeditions_store().speed[expedition]));
         if (plan_colonization_kit(
-                _family_expeditions.source_cell[expedition],
-                _family_expeditions.target_cell[expedition],
-                _family_expeditions.population[expedition], travel,
+                family_expeditions_store().source_cell[expedition],
+                family_expeditions_store().target_cell[expedition],
+                family_expeditions_store().population[expedition], travel,
                 _epoch_active, kit, false, &reserve)) {
             bridge_required = kit.bridge_required_units;
             bridge_missing = kit.bridge_missing_units;

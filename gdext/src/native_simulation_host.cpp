@@ -8137,17 +8137,32 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             if (economy_day_done &&
                 _economy_pod_authority.committed_ledger_state().generation !=
                     _economy_production_runtime->committed_generation()) {
-                RuntimeEconomyLedgerState ledger_state;
-                if (_economy_production_runtime->formula_owned_bound())
+                bool ledger_published = false;
+                if (_economy_production_runtime->formula_owned_bound()) {
+                    // N10 Owned identity export: POD `state()` is the very
+                    // OwnedState the production runtime is bound to, so a NER
+                    // capture → POD import would replace the bound object.
+                    // Flush the domain mirrors into the Owned committed blocks
+                    // and republish the snapshot from that live state instead.
                     _economy_production_runtime
                         ->flush_formula_owned_domain_mirrors();
-                _economy_production_runtime->capture_committed_ledger_state(
-                    ledger_state);
-                if (!ledger_state.valid() ||
-                    !_economy_pod_authority.import_committed_ledger(
-                        ledger_state, economy_error) ||
-                    !_economy_pod_authority.capture_committed_ledger_state(
-                        std::move(ledger_state))) {
+                    ledger_published =
+                        _economy_pod_authority.publish_owned_committed_mirror(
+                            _economy_production_runtime->committed_generation(),
+                            _economy_production_runtime->current_day(),
+                            economy_error);
+                } else {
+                    RuntimeEconomyLedgerState ledger_state;
+                    _economy_production_runtime
+                        ->capture_committed_ledger_state(ledger_state);
+                    ledger_published =
+                        ledger_state.valid() &&
+                        _economy_pod_authority.import_committed_ledger(
+                            ledger_state, economy_error) &&
+                        _economy_pod_authority.capture_committed_ledger_state(
+                            std::move(ledger_state));
+                }
+                if (!ledger_published) {
                     set_fault("economy_pod_committed_ledger_capture_invalid");
                     stage.completed = 0;
                     commit.preflight_ok = 0;
@@ -8240,11 +8255,30 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                 _economy_pod_authority.commit_pending_commands();
             // Phase-3: verify owned mirror hash/shape before full recapture.
             if (command_mutations > 0u &&
-                !_economy_production_runtime->epoch_active()) {
+                !_economy_production_runtime->epoch_active() &&
+                _economy_production_runtime->formula_owned_bound()) {
+                // N10: bound means POD and NER share the same OwnedState, so a
+                // NER capture would only be compared against itself. Refresh
+                // the Owned committed blocks and republish the snapshot.
+                _economy_production_runtime
+                    ->flush_formula_owned_domain_mirrors();
+                if (!_economy_pod_authority.publish_owned_committed_mirror(
+                        _economy_production_runtime->committed_generation(),
+                        _economy_production_runtime->current_day(),
+                        economy_error)) {
+                    set_fault("economy_pod_command_recapture_failed");
+                    stage.completed = 0;
+                    commit.preflight_ok = 0;
+                    continue;
+                }
+                _economy_pod_command_verify_count.fetch_add(
+                    command_mutations, std::memory_order_relaxed);
+                _economy_pod_state_hash.store(
+                    _economy_pod_authority.state_hash(),
+                    std::memory_order_release);
+            } else if (command_mutations > 0u &&
+                       !_economy_production_runtime->epoch_active()) {
                 RuntimeEconomyLedgerState ledger_state;
-                if (_economy_production_runtime->formula_owned_bound())
-                    _economy_production_runtime
-                        ->flush_formula_owned_domain_mirrors();
                 _economy_production_runtime->capture_committed_ledger_state(
                     ledger_state);
                 if (!ledger_state.valid()) {
@@ -8273,11 +8307,6 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                     owned_export.computed_hash() == ner_ledger_hash) {
                     _economy_pod_command_verify_count.fetch_add(
                         command_mutations, std::memory_order_relaxed);
-                } else if (_economy_production_runtime->formula_owned_bound()) {
-                    set_fault("economy_pod_command_verify_mismatch");
-                    stage.completed = 0;
-                    commit.preflight_ok = 0;
-                    continue;
                 } else {
                     if (!export_ok ||
                         !_economy_pod_authority.import_committed_ledger(
