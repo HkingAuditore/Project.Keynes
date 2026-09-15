@@ -162,8 +162,8 @@ int64_t NativeEconomyRuntime::family_population_in_cell(
             csr ? _family_member_edge_indices[p] : p];
         if (edge.family_handle != family_handle) continue;
         int32_t slot = -1;
-        if (_population.valid_handle(edge.cohort_handle, slot) &&
-            _population.page_cell[slot / COHORT_PAGE_SIZE] == cell)
+        if (population_store().valid_handle(edge.cohort_handle, slot) &&
+            population_store().page_cell[slot / COHORT_PAGE_SIZE] == cell)
             total += std::max<int64_t>(0, edge.people);
     }
     return total;
@@ -665,10 +665,10 @@ Dictionary NativeEconomyRuntime::family_colonization_quote_detail(
     for (const FamilyMembershipEdge &edge : _family_memberships) {
         if (edge.family_handle != quote.family_handle) continue;
         int32_t cohort = -1;
-        if (!_population.valid_handle(edge.cohort_handle, cohort) ||
-            _population.page_cell[cohort / COHORT_PAGE_SIZE] !=
+        if (!population_store().valid_handle(edge.cohort_handle, cohort) ||
+            population_store().page_cell[cohort / COHORT_PAGE_SIZE] !=
                 quote.source_cell) continue;
-        const int32_t signature = _population.signature_id[cohort];
+        const int32_t signature = population_store().signature_id[cohort];
         if (signature < 0 || signature >= static_cast<int32_t>(_signatures.size()))
             continue;
         profession_totals[_signatures[signature].profession_id] += edge.people;
@@ -1000,11 +1000,11 @@ int64_t NativeEconomyRuntime::family_expedition_displayed_population(
 
 int64_t NativeEconomyRuntime::market_stock(int32_t cell, int32_t good_id) const {
     if (cell < 0 || cell >= _cell_count || good_id < 0 ||
-        good_id >= _market.good_count)
+        good_id >= market_store().good_count)
         return 0;
-    const int32_t market = _market.cell_to_market[cell];
-    if (market < 0 || market >= _market.market_count) return 0;
-    return std::max<int64_t>(0, _market.stock[_market.index(market, good_id)]);
+    const int32_t market = market_store().cell_to_market[cell];
+    if (market < 0 || market >= market_store().market_count) return 0;
+    return std::max<int64_t>(0, market_store().stock[market_store().index(market, good_id)]);
 }
 
 bool NativeEconomyRuntime::colonization_good_is_tools(int32_t good_id) const {
@@ -1314,24 +1314,24 @@ void NativeEconomyRuntime::unwind_family_expedition_payload_extract(
         _family_expedition_person_handles.size());
     for (uint32_t p = begin; p < end; ++p) {
         FamilyExpeditionPayload &payload = _family_expedition_payloads[p];
-        _population.release_reserved_slot(payload.reserved_slot, owner);
+        population_store().release_reserved_slot(payload.reserved_slot, owner);
         payload.reserved_slot = -1;
         person_begin = std::min(person_begin, payload.person_begin);
         int32_t slot = -1;
-        if (_population.valid_handle(payload.source_cohort_handle, slot)) {
+        if (population_store().valid_handle(payload.source_cohort_handle, slot)) {
             audit_touch_population_lane(slot);
             touch_accounting_slot(slot);
-            _population.population[slot] += payload.people;
-            _population.funds[slot] += payload.funds;
-            _population.epoch_income[slot] += payload.epoch_income;
-            _population.epoch_expense[slot] += payload.epoch_expense;
-            _population.epoch_in_kind_income[slot] += payload.epoch_in_kind_income;
-            _population.income_ema[slot] += payload.income_ema;
-            _population.epoch_tax_paid[slot] += payload.epoch_tax_paid;
-            _population.epoch_subsidy_received[slot] +=
+            population_store().population[slot] += payload.people;
+            population_store().funds[slot] += payload.funds;
+            population_store().epoch_income[slot] += payload.epoch_income;
+            population_store().epoch_expense[slot] += payload.epoch_expense;
+            population_store().epoch_in_kind_income[slot] += payload.epoch_in_kind_income;
+            population_store().income_ema[slot] += payload.income_ema;
+            population_store().epoch_tax_paid[slot] += payload.epoch_tax_paid;
+            population_store().epoch_subsidy_received[slot] +=
                 payload.epoch_subsidy_received;
-            _population.income_baseline_ema[slot] += payload.income_baseline_ema;
-            _population.demography_residual[slot] += payload.demography_residual;
+            population_store().income_baseline_ema[slot] += payload.income_baseline_ema;
+            population_store().demography_residual[slot] += payload.demography_residual;
         }
         auto membership = std::find_if(_family_memberships.begin(),
             _family_memberships.end(), [&](const FamilyMembershipEdge &edge) {
@@ -1392,10 +1392,10 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
         const FamilyMembershipEdge &edge = _family_memberships[edge_index];
         int32_t slot = -1;
         if (edge.family_handle != family_handle || edge.people <= 0 ||
-            !_population.valid_handle(edge.cohort_handle, slot) ||
-            _population.page_cell[slot / COHORT_PAGE_SIZE] != source_cell) continue;
+            !population_store().valid_handle(edge.cohort_handle, slot) ||
+            population_store().page_cell[slot / COHORT_PAGE_SIZE] != source_cell) continue;
         const int32_t signature = static_cast<int32_t>(
-            _population.signature_id[slot]);
+            population_store().signature_id[slot]);
         candidates.push_back({edge_index, slot, edge.people,
             _signatures[signature].profession_id == _unemployed_profession_id,
             edge.cohort_handle, 0});
@@ -1429,7 +1429,7 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
                 pool, _saturation_count);
             allocated += candidate.selected;
             const int32_t signature = static_cast<int32_t>(
-                _population.signature_id[candidate.slot]);
+                population_store().signature_id[candidate.slot]);
             remainders.push_back({i, static_cast<int64_t>(mul_mod_u64(
                     static_cast<uint64_t>(remaining),
                     static_cast<uint64_t>(candidate.people),
@@ -1496,7 +1496,7 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
         if (candidate.selected <= 0) continue;
         FamilyMembershipEdge &edge = _family_memberships[candidate.edge];
         const int32_t slot = candidate.slot;
-        const int64_t source_population = _population.population[slot];
+        const int64_t source_population = population_store().population[slot];
         if (candidate.selected > edge.people || candidate.selected >=
                 family_population_in_cell(family_handle, source_cell)) {
             error = "colonization_population_guard_failed";
@@ -1505,29 +1505,29 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
         }
         FamilyExpeditionPayload payload;
         payload.source_cohort_handle = edge.cohort_handle;
-        payload.signature = static_cast<int32_t>(_population.signature_id[slot]);
+        payload.signature = static_cast<int32_t>(population_store().signature_id[slot]);
         payload.people = candidate.selected;
-        payload.funds = mul_div_sat(_population.funds[slot], candidate.selected,
+        payload.funds = mul_div_sat(population_store().funds[slot], candidate.selected,
             source_population, _saturation_count);
-        payload.epoch_income = mul_div_sat(_population.epoch_income[slot],
+        payload.epoch_income = mul_div_sat(population_store().epoch_income[slot],
             candidate.selected, source_population, _saturation_count);
-        payload.epoch_expense = mul_div_sat(_population.epoch_expense[slot],
+        payload.epoch_expense = mul_div_sat(population_store().epoch_expense[slot],
             candidate.selected, source_population, _saturation_count);
         payload.epoch_in_kind_income = mul_div_sat(
-            _population.epoch_in_kind_income[slot], candidate.selected,
+            population_store().epoch_in_kind_income[slot], candidate.selected,
             source_population, _saturation_count);
-        payload.income_ema = mul_div_sat(_population.income_ema[slot],
+        payload.income_ema = mul_div_sat(population_store().income_ema[slot],
             candidate.selected, source_population, _saturation_count);
-        payload.epoch_tax_paid = mul_div_sat(_population.epoch_tax_paid[slot],
+        payload.epoch_tax_paid = mul_div_sat(population_store().epoch_tax_paid[slot],
             candidate.selected, source_population, _saturation_count);
         payload.epoch_subsidy_received = mul_div_sat(
-            _population.epoch_subsidy_received[slot], candidate.selected,
+            population_store().epoch_subsidy_received[slot], candidate.selected,
             source_population, _saturation_count);
         payload.income_baseline_ema = mul_div_sat(
-            _population.income_baseline_ema[slot], candidate.selected,
+            population_store().income_baseline_ema[slot], candidate.selected,
             source_population, _saturation_count);
         payload.demography_residual = mul_div_sat(
-            _population.demography_residual[slot], candidate.selected,
+            population_store().demography_residual[slot], candidate.selected,
             source_population, _saturation_count);
         payload.cash_claim = mul_div_sat(edge.cash_claim, candidate.selected,
             edge.people, _saturation_count);
@@ -1535,13 +1535,13 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
             candidate.selected, edge.people, _saturation_count);
         payload.employee_employed = mul_div_sat(edge.employee_employed,
             candidate.selected, edge.people, _saturation_count);
-        payload.needs_satisfaction = _population.needs_satisfaction[slot];
-        payload.worst_need_id = _population.worst_need_id[slot];
+        payload.needs_satisfaction = population_store().needs_satisfaction[slot];
+        payload.worst_need_id = population_store().worst_need_id[slot];
         payload.composite_satisfaction =
-            _population.composite_satisfaction[slot];
-        payload.worst_dimension_id = _population.worst_dimension_id[slot];
+            population_store().composite_satisfaction[slot];
+        payload.worst_dimension_id = population_store().worst_dimension_id[slot];
         for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim)
-            payload.satisfaction_dims[dim] = _population.satisfaction_dims[
+            payload.satisfaction_dims[dim] = population_store().satisfaction_dims[
                 static_cast<size_t>(slot) * SAT_DIM_COUNT + dim];
         payload.person_begin = static_cast<uint32_t>(
             _family_expedition_person_handles.size());
@@ -1582,16 +1582,16 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
         payload.person_count = static_cast<uint32_t>(
             _family_expedition_person_handles.size()) - payload.person_begin;
         audit_touch_population_lane(slot);
-        _population.population[slot] -= payload.people;
-        _population.funds[slot] -= payload.funds;
-        _population.epoch_income[slot] -= payload.epoch_income;
-        _population.epoch_expense[slot] -= payload.epoch_expense;
-        _population.epoch_in_kind_income[slot] -= payload.epoch_in_kind_income;
-        _population.income_ema[slot] -= payload.income_ema;
-        _population.epoch_tax_paid[slot] -= payload.epoch_tax_paid;
-        _population.epoch_subsidy_received[slot] -= payload.epoch_subsidy_received;
-        _population.income_baseline_ema[slot] -= payload.income_baseline_ema;
-        _population.demography_residual[slot] -= payload.demography_residual;
+        population_store().population[slot] -= payload.people;
+        population_store().funds[slot] -= payload.funds;
+        population_store().epoch_income[slot] -= payload.epoch_income;
+        population_store().epoch_expense[slot] -= payload.epoch_expense;
+        population_store().epoch_in_kind_income[slot] -= payload.epoch_in_kind_income;
+        population_store().income_ema[slot] -= payload.income_ema;
+        population_store().epoch_tax_paid[slot] -= payload.epoch_tax_paid;
+        population_store().epoch_subsidy_received[slot] -= payload.epoch_subsidy_received;
+        population_store().income_baseline_ema[slot] -= payload.income_baseline_ema;
+        population_store().demography_residual[slot] -= payload.demography_residual;
         edge.people -= payload.people; edge.cash_claim -= payload.cash_claim;
         edge.owner_employed -= payload.owner_employed;
         edge.employee_employed -= payload.employee_employed;
@@ -1619,7 +1619,7 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
         _family_expeditions.payload_count[expedition];
     for (uint32_t p = payload_begin; p < payload_end; ++p) {
         FamilyExpeditionPayload &payload = _family_expedition_payloads[p];
-        payload.reserved_slot = _population.reserve_slot(
+        payload.reserved_slot = population_store().reserve_slot(
             _family_expeditions.target_cell[expedition],
             static_cast<uint32_t>(payload.signature), reservation_owner);
         if (payload.reserved_slot < 0) {
@@ -1658,18 +1658,18 @@ bool NativeEconomyRuntime::restore_family_expedition_payload(
             _family_expeditions.handle_for_index(expedition);
         int32_t slot = -1;
         if (destination_cell == _family_expeditions.target_cell[expedition]) {
-            slot = _population.claim_reserved_slot(payload.reserved_slot,
+            slot = population_store().claim_reserved_slot(payload.reserved_slot,
                 destination_cell, static_cast<uint32_t>(payload.signature),
                 reservation_owner);
         } else {
-            _population.release_reserved_slot(payload.reserved_slot,
+            population_store().release_reserved_slot(payload.reserved_slot,
                                                reservation_owner);
-            slot = _population.allocate_slot(destination_cell,
+            slot = population_store().allocate_slot(destination_cell,
                 static_cast<uint32_t>(payload.signature));
         }
         if (slot < 0) { error = "colonization_reserved_slot_unavailable"; return false; }
         payload.reserved_slot = -1;
-        const int64_t old_population = _population.population[slot];
+        const int64_t old_population = population_store().population[slot];
         const int64_t merged_population = old_population + payload.people;
         auto blend = [&](uint16_t old_value, uint16_t incoming) {
             if (merged_population <= 0) return incoming;
@@ -1678,35 +1678,35 @@ bool NativeEconomyRuntime::restore_family_expedition_payload(
                 merged_population);
         };
         audit_touch_population_lane(slot); touch_accounting_slot(slot);
-        _population.population[slot] = merged_population;
-        _population.funds[slot] += payload.funds;
-        _population.epoch_income[slot] += payload.epoch_income;
-        _population.epoch_expense[slot] += payload.epoch_expense;
-        _population.epoch_in_kind_income[slot] += payload.epoch_in_kind_income;
-        _population.income_ema[slot] += payload.income_ema;
-        _population.epoch_tax_paid[slot] += payload.epoch_tax_paid;
-        _population.epoch_subsidy_received[slot] += payload.epoch_subsidy_received;
-        _population.income_baseline_ema[slot] += payload.income_baseline_ema;
-        _population.demography_residual[slot] += payload.demography_residual;
-        _population.needs_satisfaction[slot] = blend(
-            _population.needs_satisfaction[slot], payload.needs_satisfaction);
-        _population.composite_satisfaction[slot] = blend(
-            _population.composite_satisfaction[slot],
+        population_store().population[slot] = merged_population;
+        population_store().funds[slot] += payload.funds;
+        population_store().epoch_income[slot] += payload.epoch_income;
+        population_store().epoch_expense[slot] += payload.epoch_expense;
+        population_store().epoch_in_kind_income[slot] += payload.epoch_in_kind_income;
+        population_store().income_ema[slot] += payload.income_ema;
+        population_store().epoch_tax_paid[slot] += payload.epoch_tax_paid;
+        population_store().epoch_subsidy_received[slot] += payload.epoch_subsidy_received;
+        population_store().income_baseline_ema[slot] += payload.income_baseline_ema;
+        population_store().demography_residual[slot] += payload.demography_residual;
+        population_store().needs_satisfaction[slot] = blend(
+            population_store().needs_satisfaction[slot], payload.needs_satisfaction);
+        population_store().composite_satisfaction[slot] = blend(
+            population_store().composite_satisfaction[slot],
             payload.composite_satisfaction);
         for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim) {
             const size_t lane = static_cast<size_t>(slot) * SAT_DIM_COUNT + dim;
-            _population.satisfaction_dims[lane] = blend(
-                _population.satisfaction_dims[lane],
+            population_store().satisfaction_dims[lane] = blend(
+                population_store().satisfaction_dims[lane],
                 payload.satisfaction_dims[dim]);
         }
         if (old_population == 0) {
-            _population.worst_need_id[slot] = payload.worst_need_id;
-            _population.worst_dimension_id[slot] = payload.worst_dimension_id;
+            population_store().worst_need_id[slot] = payload.worst_need_id;
+            population_store().worst_dimension_id[slot] = payload.worst_dimension_id;
         }
-        const uint64_t cohort_handle = _population.handle_for_slot(slot);
+        const uint64_t cohort_handle = population_store().handle_for_slot(slot);
         _family_memberships.push_back({family_handle, cohort_handle,
             payload.people, payload.cash_claim, merged_population,
-            _population.funds[slot], 0, 0});
+            population_store().funds[slot], 0, 0});
         if (static_cast<size_t>(payload.person_begin) + payload.person_count >
                 _family_expedition_person_handles.size()) {
             error = "colonization_person_payload_range_invalid"; return false;
@@ -1767,10 +1767,10 @@ void NativeEconomyRuntime::release_family_expedition_reservations(
         static_cast<uint32_t>(_family_expedition_payloads.size()));
     for (uint32_t p = begin; p < end; ++p) {
         FamilyExpeditionPayload &payload = _family_expedition_payloads[p];
-        _population.release_reserved_slot(payload.reserved_slot, owner);
+        population_store().release_reserved_slot(payload.reserved_slot, owner);
         payload.reserved_slot = -1;
     }
-    _population.reclaim_empty_pages(_family_expeditions.target_cell[expedition]);
+    population_store().reclaim_empty_pages(_family_expeditions.target_cell[expedition]);
 }
 
 bool NativeEconomyRuntime::apply_cancel_family_expedition(
@@ -2063,7 +2063,7 @@ void NativeEconomyRuntime::rebuild_family_expedition_indices() {
             for (uint32_t p = begin; p < end; ++p) {
                 FamilyExpeditionPayload &payload =
                     _family_expedition_payloads[p];
-                payload.reserved_slot = _population.reserve_slot(
+                payload.reserved_slot = population_store().reserve_slot(
                     _family_expeditions.target_cell[i],
                     static_cast<uint32_t>(payload.signature), owner);
             }

@@ -4,6 +4,9 @@
 #include <algorithm>
 #include <vector>
 #include "runtime_economy_population_store.h"
+#include "runtime_economy_building_store.h"
+#include "runtime_economy_trade_escrow_store.h"
+#include "runtime_economy_family_store.h"
 
 namespace pk {
 
@@ -31,6 +34,32 @@ struct RuntimeEconomyMarketStore {
     }
 };
 
+// Phase-2.5.1: live resource SoA (dense resource×cell stock + per-cell gen).
+// Replaces the ABI9 opaque payload as the in-memory authority for the committed
+// mirror; ECP ABI9 still packs these columns to/from wire bytes.
+struct RuntimeEconomyResourceStore {
+    int32_t resource_count = 0;
+    int32_t cell_count = 0;
+    std::vector<int64_t> stock;
+    std::vector<uint32_t> cell_generation;
+
+    void clear() noexcept;
+    void resize(int32_t resources, int32_t cells);
+    uint32_t lane_count() const noexcept {
+        return static_cast<uint32_t>(stock.size());
+    }
+    bool shape_valid(uint32_t expected_lanes) const noexcept;
+    // Pack / unpack the historical ABI9 opaque wire layout
+    // (int64 stock lanes + uint32 cell gens).
+    void append_wire(std::vector<uint8_t> &out) const;
+    bool load_wire(const uint8_t *data, size_t size, uint32_t expected_lanes);
+    uint64_t wire_content_hash() const noexcept;
+
+    int64_t index(int32_t resource, int32_t cell) const {
+        return static_cast<int64_t>(resource) * cell_count + cell;
+    }
+};
+
 // Committed-only business columns shared by the legacy-to-POD migration.
 // Derived CSR, catalog data, and any partially settled epoch state remain in
 // their current owners until their stages move to the worker.
@@ -42,6 +71,13 @@ struct RuntimeEconomyMarketStore {
 // equivalent opaque records).
 // Phase-2.3.2 (ECP ABI8): family/person opaque committed payloads.
 // Phase-2.3.3 (ECP ABI9): resource snapshot + epoch-cursor committed payloads.
+// Phase-2.5.1: resource payload unpacked into RuntimeEconomyResourceStore SoA.
+// Phase-2.5.2: building payload unpacked into RuntimeEconomyBuildingStore SoA;
+// ECP ABI7 wire remains packed bytes for save compatibility.
+// Phase-2.5.3: trade-escrow payload unpacked into RuntimeEconomyTradeEscrowStore;
+// ECP ABI7 wire remains packed bytes for save compatibility.
+// Phase-2.5.5: family payload unpacked into RuntimeEconomyFamilyStore SoA;
+// ECP ABI8 wire remains packed bytes for save compatibility.
 struct RuntimeEconomyBuildingCommittedBlock {
     bool captured = false;
     uint64_t catalog_hash = 0;
@@ -49,8 +85,8 @@ struct RuntimeEconomyBuildingCommittedBlock {
     uint32_t group_count = 0;
     uint32_t pending_count = 0;
     uint32_t role_lane_count = 0;
-    // Concatenated PKEC-shaped building + pending-construction records.
-    std::vector<uint8_t> payload;
+    // Phase-2.5.2: typed SoA (was ABI7 opaque payload).
+    RuntimeEconomyBuildingStore store;
 
     void clear() noexcept {
         captured = false;
@@ -59,9 +95,20 @@ struct RuntimeEconomyBuildingCommittedBlock {
         group_count = 0;
         pending_count = 0;
         role_lane_count = 0;
-        payload.clear();
+        store.clear();
     }
-    bool valid() const noexcept { return true; }
+    void sync_counts_from_store() noexcept {
+        group_count = store.num_groups();
+        pending_count = store.num_pending();
+        role_lane_count = store.num_role_lanes();
+    }
+    void recompute_content_hash() noexcept {
+        content_hash = store.wire_content_hash();
+    }
+    bool valid() const noexcept {
+        if (!captured) return true;
+        return store.shape_valid(group_count, pending_count, role_lane_count);
+    }
 };
 
 struct RuntimeEconomyTradeEscrowCommittedBlock {
@@ -70,8 +117,8 @@ struct RuntimeEconomyTradeEscrowCommittedBlock {
     int64_t next_id = 1;
     uint32_t order_count = 0;
     uint64_t content_hash = 0;
-    // Concatenated PKEC-shaped trade-order records (header + lines + sellers).
-    std::vector<uint8_t> payload;
+    // Phase-2.5.3: typed SoA (was ABI7 opaque payload).
+    RuntimeEconomyTradeEscrowStore store;
 
     void clear() noexcept {
         captured = false;
@@ -79,9 +126,18 @@ struct RuntimeEconomyTradeEscrowCommittedBlock {
         next_id = 1;
         order_count = 0;
         content_hash = 0;
-        payload.clear();
+        store.clear();
     }
-    bool valid() const noexcept { return true; }
+    void sync_counts_from_store() noexcept {
+        order_count = store.num_orders();
+    }
+    void recompute_content_hash() noexcept {
+        content_hash = store.wire_content_hash();
+    }
+    bool valid() const noexcept {
+        if (!captured) return true;
+        return store.shape_valid(order_count);
+    }
 };
 
 struct RuntimeEconomyFamilyCommittedBlock {
@@ -102,8 +158,8 @@ struct RuntimeEconomyFamilyCommittedBlock {
     uint32_t expedition_count = 0;
     int64_t next_expedition_stable_id = 1;
     uint64_t content_hash = 0;
-    // Concatenated PKEC-shaped family/person/expedition records.
-    std::vector<uint8_t> payload;
+    // Phase-2.5.5: typed SoA (was ABI8 opaque payload).
+    RuntimeEconomyFamilyStore store;
 
     void clear() noexcept {
         captured = false;
@@ -123,9 +179,29 @@ struct RuntimeEconomyFamilyCommittedBlock {
         expedition_count = 0;
         next_expedition_stable_id = 1;
         content_hash = 0;
-        payload.clear();
+        store.clear();
     }
-    bool valid() const noexcept { return true; }
+    void sync_counts_from_store() noexcept {
+        family_count = store.num_families();
+        membership_count = store.num_memberships();
+        ownership_count = store.num_ownerships();
+        person_count = store.num_persons();
+        person_need_count = store.num_person_needs();
+        trait_count = store.num_traits();
+        influence_count = store.num_influences();
+        trait_command_count = store.num_trait_commands();
+        expedition_count = store.num_expeditions();
+    }
+    void recompute_content_hash() noexcept {
+        content_hash = store.wire_content_hash();
+    }
+    bool valid() const noexcept {
+        if (!captured) return true;
+        return store.shape_valid(
+            family_count, membership_count, ownership_count, person_count,
+            person_need_count, trait_count, influence_count,
+            trait_command_count, expedition_count);
+    }
 };
 
 struct RuntimeEconomyResourceCommittedBlock {
@@ -140,8 +216,8 @@ struct RuntimeEconomyResourceCommittedBlock {
     int32_t safe_harvest_q16 = 0;
     int32_t min_horizon_days = 0;
     uint64_t content_hash = 0;
-    // Dense resource snapshot + per-cell generation stamps.
-    std::vector<uint8_t> payload;
+    // Phase-2.5.1: typed SoA (was ABI9 opaque payload).
+    RuntimeEconomyResourceStore store;
 
     void clear() noexcept {
         captured = false;
@@ -155,9 +231,50 @@ struct RuntimeEconomyResourceCommittedBlock {
         safe_harvest_q16 = 0;
         min_horizon_days = 0;
         content_hash = 0;
-        payload.clear();
+        store.clear();
     }
-    bool valid() const noexcept { return true; }
+    void sync_counts_from_store() noexcept {
+        resource_count = store.resource_count;
+        cell_count = store.cell_count;
+        lane_count = store.lane_count();
+    }
+    void recompute_content_hash() noexcept {
+        content_hash = store.wire_content_hash();
+    }
+    bool valid() const noexcept {
+        if (!captured) return true;
+        if (resource_count < 0 || cell_count < 0) return false;
+        if (store.resource_count != resource_count ||
+            store.cell_count != cell_count) {
+            return false;
+        }
+        return store.shape_valid(lane_count);
+    }
+};
+
+// Phase-2.5.4: epoch-cursor idle marker unpacked from ABI9 opaque payload.
+// Mid-epoch resume blobs remain future work; committed-day mirror is idle-only.
+struct RuntimeEconomyEpochCursorStore {
+    uint8_t idle_marker = 0;
+
+    void clear() noexcept { idle_marker = 0; }
+    void append_wire(std::vector<uint8_t> &out) const {
+        out.push_back(idle_marker);
+    }
+    bool load_wire(const uint8_t *data, size_t size) {
+        if (size != 1 || data == nullptr) return false;
+        idle_marker = data[0];
+        return true;
+    }
+    uint64_t wire_content_hash() const noexcept {
+        constexpr uint64_t kFnvOffset = 1469598103934665603ull;
+        constexpr uint64_t kFnvPrime = 1099511628211ull;
+        uint64_t hash = kFnvOffset;
+        hash ^= idle_marker;
+        hash *= kFnvPrime;
+        return hash;
+    }
+    bool shape_valid() const noexcept { return true; }
 };
 
 struct RuntimeEconomyEpochCursorCommittedBlock {
@@ -171,8 +288,8 @@ struct RuntimeEconomyEpochCursorCommittedBlock {
     int32_t native_stage = 0;
     uint32_t graph_completed_mask = 0;
     uint64_t content_hash = 0;
-    // Mid-epoch resume blob; empty when committed-day idle.
-    std::vector<uint8_t> payload;
+    // Phase-2.5.4: typed idle marker (was ABI9 opaque payload).
+    RuntimeEconomyEpochCursorStore store;
 
     void clear() noexcept {
         captured = false;
@@ -185,9 +302,15 @@ struct RuntimeEconomyEpochCursorCommittedBlock {
         native_stage = 0;
         graph_completed_mask = 0;
         content_hash = 0;
-        payload.clear();
+        store.clear();
     }
-    bool valid() const noexcept { return true; }
+    void recompute_content_hash() noexcept {
+        content_hash = store.wire_content_hash();
+    }
+    bool valid() const noexcept {
+        if (!captured) return true;
+        return store.shape_valid();
+    }
 };
 
 struct RuntimeEconomyLedgerState {
@@ -243,6 +366,17 @@ struct RuntimeEconomyLedgerState {
     bool valid() const noexcept;
 };
 
+// Mirrors NativeEconomyRuntime::StructuralCommand for OwnedState queues.
+struct RuntimeEconomyOwnedStructuralCommand {
+    int32_t opcode = 0;
+    int32_t source_slot = -1;
+    int32_t cell = -1;
+    int32_t signature = -1;
+    int64_t population = 0;
+    int64_t funds = 0;
+    int64_t sequence = 0;
+};
+
 // Migration-owned state container.  During the staged migration this is an
 // independent POD state, not a view into NativeEconomyRuntime.  Keeping the
 // container explicit prevents a copied summary from being mistaken for an
@@ -252,13 +386,26 @@ struct RuntimeEconomyOwnedState {
     RuntimeEconomyMarketStore market;
     RuntimeEconomyLedgerState committed;
     RuntimeEconomyBuildingCommittedBlock building;
+    // Phase-2.5.2: live building SoA view (mirrors building.store when captured).
+    RuntimeEconomyBuildingStore buildings;
     RuntimeEconomyTradeEscrowCommittedBlock trade_escrow;
+    // Phase-2.5.3: live trade-escrow SoA view (mirrors trade_escrow.store).
+    RuntimeEconomyTradeEscrowStore trade_orders;
     RuntimeEconomyFamilyCommittedBlock family;
+    // Phase-2.5.5: live family SoA view (mirrors family.store when captured).
+    RuntimeEconomyFamilyStore families;
     RuntimeEconomyResourceCommittedBlock resource;
+    // Phase-2.5.1: live resource SoA view (mirrors resource.store when captured).
+    RuntimeEconomyResourceStore resources;
     RuntimeEconomyEpochCursorCommittedBlock epoch_cursor;
+    // Phase-2.5.4: live epoch-cursor view (mirrors epoch_cursor.store).
+    RuntimeEconomyEpochCursorStore epoch_cursors;
     uint64_t state_generation = 0;
     int64_t sample_day = -1;
     int64_t committed_day = -1;
+    // Phase-3: population command side effects mirrored before NER pull.
+    int64_t external_population_delta = 0;
+    std::vector<RuntimeEconomyOwnedStructuralCommand> structural_commands;
 
     void clear(int32_t cells, int32_t goods) {
         population.clear(cells);
@@ -277,13 +424,20 @@ struct RuntimeEconomyOwnedState {
         market.price_ceilings.resize(static_cast<size_t>(market.market_count));
         committed.clear();
         building.clear();
+        buildings.clear();
         trade_escrow.clear();
+        trade_orders.clear();
         family.clear();
+        families.clear();
         resource.clear();
+        resources.clear();
         epoch_cursor.clear();
+        epoch_cursors.clear();
         state_generation = 0;
         sample_day = -1;
         committed_day = -1;
+        external_population_delta = 0;
+        structural_commands.clear();
     }
 };
 

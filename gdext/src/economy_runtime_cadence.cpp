@@ -118,13 +118,13 @@ void NativeEconomyRuntime::rebuild_economy_live_cells() {
         _cell_population_total.assign(cell_slots, 0);
     else
         std::fill(_cell_population_total.begin(), _cell_population_total.end(), 0);
-    const int32_t page_count = static_cast<int32_t>(_population.page_cell.size());
+    const int32_t page_count = static_cast<int32_t>(population_store().page_cell.size());
     for (int32_t page = 0; page < page_count; ++page) {
-        const int32_t cell = _population.page_cell[page];
+        const int32_t cell = population_store().page_cell[page];
         if (cell < 0 || cell >= _cell_count) continue;
         int64_t total = 0;
-        _population.for_each_in_cell(cell, [&](int32_t slot) {
-            total += std::max<int64_t>(0, _population.population[slot]);
+        population_store().for_each_in_cell(cell, [&](int32_t slot) {
+            total += std::max<int64_t>(0, population_store().population[slot]);
         });
         _cell_population_total[static_cast<size_t>(cell)] = total;
         if (total > 0) _economy_live_cells.push_back(cell);
@@ -403,13 +403,13 @@ void NativeEconomyRuntime::refresh_cadence_estimates() {
     rebuild_economy_live_cells();
     int32_t populated_markets = 0;
     const int32_t populated_cells = static_cast<int32_t>(_economy_live_cells.size());
-    const int32_t market_count = std::max(0, _market.market_count);
+    const int32_t market_count = std::max(0, market_store().market_count);
     std::vector<uint8_t> market_seen(static_cast<size_t>(market_count), 0);
     const bool have_market_map =
-        _market.cell_to_market.size() == static_cast<size_t>(_cell_count);
+        market_store().cell_to_market.size() == static_cast<size_t>(_cell_count);
     for (const int32_t cell : _economy_live_cells) {
         if (!have_market_map) continue;
-        const int32_t market = _market.cell_to_market[cell];
+        const int32_t market = market_store().cell_to_market[cell];
         if (market < 0 || market >= market_count) continue;
         if (market_seen[static_cast<size_t>(market)] != 0) continue;
         market_seen[static_cast<size_t>(market)] = 1;
@@ -417,7 +417,7 @@ void NativeEconomyRuntime::refresh_cadence_estimates() {
     }
     if (!have_market_map) populated_markets = populated_cells;
 
-    const int64_t cohorts = std::max<int64_t>(0, _population.active_count);
+    const int64_t cohorts = std::max<int64_t>(0, population_store().active_count);
     const int32_t market_cap = std::max(1, std::min(_cells_per_slice, 128));
     const int64_t market_cell_slices = ceil_div_nonneg(populated_markets, market_cap);
     const int64_t cohort_budget = std::max<int64_t>(1, _target_cohorts_per_slice);

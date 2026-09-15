@@ -154,6 +154,11 @@ static Dictionary runtime_report_to_dictionary(const RuntimeThreadReport &report
         static_cast<int64_t>(report.economy_shadow_stage_cache_hits);
     out["economy_stage_ops_mutate"] = report.economy_stage_ops_mutate;
     out["economy_auto_pod_active"] = report.economy_auto_pod_active;
+    out["economy_pod_command_recapture_count"] =
+        static_cast<int64_t>(report.economy_pod_command_recapture_count);
+    out["economy_pod_command_verify_count"] =
+        static_cast<int64_t>(report.economy_pod_command_verify_count);
+    out["economy_formula_backing"] = String(report.economy_formula_backing);
     out["economy_production_writer"] = String(report.economy_production_writer);
     out["economy_production_writer_requested"] =
         String(report.economy_production_writer_requested);
@@ -395,18 +400,20 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
         config.get("events_probe_enabled", false));
     EconomyExecutionMode economy_execution_mode =
         EconomyExecutionMode::ACTIVE_ONLY;
-    bool economy_stage_ops_mutate = false;
-    bool economy_auto_pod_active = false;
+    bool economy_stage_ops_mutate = true;
+    bool economy_auto_pod_active = true;
     bool economy_stage_ops_soak_experiment = false;
     EconomyProductionWriter economy_production_writer =
-        EconomyProductionWriter::COMPACT_SLICE;
+        EconomyProductionWriter::STAGE_OPS;
+    const bool economy_production_writer_explicit =
+        config.has("economy_production_writer");
     if (config.has("economy_stage_ops_mutate")) {
         economy_stage_ops_mutate =
-            static_cast<bool>(config.get("economy_stage_ops_mutate", false));
+            static_cast<bool>(config.get("economy_stage_ops_mutate", true));
     }
     if (config.has("economy_auto_pod_active")) {
         economy_auto_pod_active =
-            static_cast<bool>(config.get("economy_auto_pod_active", false));
+            static_cast<bool>(config.get("economy_auto_pod_active", true));
     }
     if (config.has("economy_stage_ops_soak_experiment")) {
         economy_stage_ops_soak_experiment = static_cast<bool>(
@@ -554,6 +561,17 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
         requested_authority_mask |=
             runtime_domain_mask(RuntimeDomainId::COMMIT);
     }
+    // ACTIVE_WITH_PARITY needs compact production + read-only SHADOW StageOps.
+    // Default writer is stage_ops; coerce unless the caller explicitly asked
+    // for stage_ops (that remains a hard conflict).
+    if (economy_execution_mode == EconomyExecutionMode::ACTIVE_WITH_PARITY) {
+        economy_stage_ops_mutate = false;
+        if (economy_production_writer == EconomyProductionWriter::STAGE_OPS &&
+            !economy_production_writer_explicit) {
+            economy_production_writer =
+                EconomyProductionWriter::COMPACT_SLICE;
+        }
+    }
     // Phase-2.4.2 fail-closed gates for STAGE_OPS production writer.
     if (economy_production_writer == EconomyProductionWriter::STAGE_OPS) {
         if (economy_execution_mode ==
@@ -575,29 +593,23 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
                 runtime_report_to_dictionary(_runtime_host->report());
             return out;
         }
-        // Phase-2.4.4.4: checklist complete (0xF). Opt-in soak experiment (or a
-        // latched soak_parity_ok) may arm STAGE_OPS effective; otherwise refuse.
+        // Phase-2.4.5: StageOps writer is production-ready after dual-path soak
+        // handoff. Keep parity / mutate fail-closed gates above.
         const uint32_t readiness = ECONOMY_STAGE_OPS_READY_PRELUDE |
                                    ECONOMY_STAGE_OPS_READY_COMMIT_DRAINS |
                                    ECONOMY_STAGE_OPS_READY_BOUNDED_KERNELS |
                                    ECONOMY_STAGE_OPS_READY_HOST_LOOP;
         const uint32_t missing =
             ECONOMY_STAGE_OPS_READY_REQUIRED_FOR_WRITER & ~readiness;
-        const bool soak_armed =
-            economy_stage_ops_soak_experiment ||
-            _runtime_host->economy_stage_ops_soak_parity_ok();
-        if (!soak_armed) {
+        if (missing != 0u) {
             out["ok"] = false;
             out["pending"] = false;
             out["code"] = "runtime_worker_config_invalid";
-            out["message"] = "economy_production_writer_stage_ops_soak_pending";
+            out["message"] = "economy_production_writer_stage_ops_not_ready";
             out["economy_stage_ops_readiness_mask"] =
                 static_cast<int64_t>(readiness);
             out["economy_stage_ops_readiness_missing"] =
                 static_cast<int64_t>(missing);
-            out["economy_stage_ops_soak_experiment"] = false;
-            out["economy_stage_ops_soak_parity_ok"] =
-                _runtime_host->economy_stage_ops_soak_parity_ok();
             out["thread_report"] =
                 runtime_report_to_dictionary(_runtime_host->report());
             return out;
@@ -606,21 +618,15 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
     _runtime_host->set_economy_stage_ops_soak_experiment(
         economy_stage_ops_soak_experiment);
     _runtime_host->set_economy_production_writer(economy_production_writer);
+    _runtime_host->set_economy_stage_ops_mutate(economy_stage_ops_mutate);
+    _runtime_host->set_economy_auto_pod_active(economy_auto_pod_active);
     if (_economy_runtime != nullptr) {
         auto *economy =
             static_cast<NativeEconomyRuntime *>(_economy_runtime);
         economy->attach_simulation_host(_runtime_host.get());
-        // Phase-2.4.1: StageOps may be armed with mutate=true via config for
-        // handoff experiments. ACTIVE production still uses compact-slice.
+        // Phase-2.4.5: StageOps mutate is the default production writer.
         // ACTIVE_WITH_PARITY keeps StageOps read-only so the SHADOW probe
         // cannot double-write beside worker_run_compact_slice.
-        if (economy_execution_mode ==
-                EconomyExecutionMode::ACTIVE_WITH_PARITY &&
-            economy_stage_ops_mutate) {
-            economy_stage_ops_mutate = false;
-        }
-        _runtime_host->set_economy_stage_ops_mutate(economy_stage_ops_mutate);
-        _runtime_host->set_economy_auto_pod_active(economy_auto_pod_active);
         _runtime_host->attach_economy_stage_ops(
             economy->make_graph_stage_ops(/*mutate=*/economy_stage_ops_mutate));
         if (economy_execution_mode != EconomyExecutionMode::LEGACY_ONLY) {

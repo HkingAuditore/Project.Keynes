@@ -10,8 +10,8 @@ bool economy_kernel_trade_settle(EconomySoAView &view, EconomyStageCursor &curso
         return economy_kernel_stage_boundary_stub(view, cursor, input, result,
                                                   error);
     return economy_dispatch_mutate_stage(
-        view.runtime_hook, RuntimeEconomyGraphStage::TRADE_SETTLE, cursor,
-        input, result, error);
+        view, RuntimeEconomyGraphStage::TRADE_SETTLE, cursor, input, result,
+        error);
 }
 
 } // namespace pk

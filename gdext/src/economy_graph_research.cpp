@@ -10,8 +10,7 @@ bool economy_kernel_research(EconomySoAView &view, EconomyStageCursor &cursor,
         return economy_kernel_stage_boundary_stub(view, cursor, input, result,
                                                   error);
     return economy_dispatch_mutate_stage(
-        view.runtime_hook,
-        RuntimeEconomyGraphStage::GOVERNMENT_RESEARCH_PROCUREMENT, cursor,
+        view, RuntimeEconomyGraphStage::GOVERNMENT_RESEARCH_PROCUREMENT, cursor,
         input, result, error);
 }
 

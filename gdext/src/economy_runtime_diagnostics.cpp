@@ -84,7 +84,7 @@ int32_t NativeEconomyRuntime::stage_progress_q16() const {
         case Stage::HOUSEHOLD_MARKET:
             return static_cast<int32_t>(Q16_ONE / 2 +
                 (static_cast<int64_t>(_cell_cursor) * (Q16_ONE * 3 / 10)) /
-                    std::max(1, _market.market_count));
+                    std::max(1, market_store().market_count));
         case Stage::STRUCTURAL_COMMIT:
             return static_cast<int32_t>(Q16_ONE * 4 / 5 +
                 (_structural_commands.empty() ? Q16_ONE / 10
@@ -126,23 +126,23 @@ int32_t NativeEconomyRuntime::stage_progress_q16() const {
 int64_t NativeEconomyRuntime::memory_bytes() const {
     int64_t bytes = 0;
     auto cap = [&](const auto &v) { bytes += static_cast<int64_t>(v.capacity() * sizeof(typename std::decay_t<decltype(v)>::value_type)); };
-    cap(_market.price_ceilings);
-    for (const auto &row : _market.price_ceilings) cap(row);
+    cap(market_store().price_ceilings);
+    for (const auto &row : market_store().price_ceilings) cap(row);
     cap(_epoch_price_ceiling_observations);
     cap(_epoch_ceiling_business_requested); cap(_epoch_ceiling_business_unfilled);
     cap(_epoch_ceiling_research_requested); cap(_epoch_ceiling_research_delivered);
-    cap(_population.cell_first_page); cap(_population.page_next); cap(_population.page_cell);
-    cap(_population.free_pages); cap(_population.active); cap(_population.reserved);
-    cap(_population.reservation_owner); cap(_population.signature_id);
-    cap(_population.generation); cap(_population.population); cap(_population.funds);
-    cap(_population.epoch_income); cap(_population.epoch_expense);
-    cap(_population.epoch_in_kind_income); cap(_population.income_ema);
-    cap(_population.epoch_tax_paid); cap(_population.epoch_subsidy_received);
-    cap(_population.income_baseline_ema);
-    cap(_population.needs_satisfaction); cap(_population.worst_need_id);
-    cap(_population.composite_satisfaction); cap(_population.satisfaction_dims);
-    cap(_population.worst_dimension_id);
-    cap(_population.flags); cap(_population.demography_residual);
+    cap(population_store().cell_first_page); cap(population_store().page_next); cap(population_store().page_cell);
+    cap(population_store().free_pages); cap(population_store().active); cap(population_store().reserved);
+    cap(population_store().reservation_owner); cap(population_store().signature_id);
+    cap(population_store().generation); cap(population_store().population); cap(population_store().funds);
+    cap(population_store().epoch_income); cap(population_store().epoch_expense);
+    cap(population_store().epoch_in_kind_income); cap(population_store().income_ema);
+    cap(population_store().epoch_tax_paid); cap(population_store().epoch_subsidy_received);
+    cap(population_store().income_baseline_ema);
+    cap(population_store().needs_satisfaction); cap(population_store().worst_need_id);
+    cap(population_store().composite_satisfaction); cap(population_store().satisfaction_dims);
+    cap(population_store().worst_dimension_id);
+    cap(population_store().flags); cap(population_store().demography_residual);
     cap(_birth_residual_q32);
     cap(_cell_support_ema_q16);
     cap(_cell_carrying_k_geo); cap(_cell_carrying_k_eff);
@@ -154,7 +154,7 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_cell_food_output_eq_previous); cap(_cell_food_input_eq_previous);
     cap(_cell_food_import_eq_previous); cap(_cell_food_export_eq_previous);
     cap(_cell_food_access_eq_previous); cap(_cell_food_flow_valid);
-    cap(_population.owner_employed); cap(_population.employee_employed);
+    cap(population_store().owner_employed); cap(population_store().employee_employed);
     cap(_families.active); cap(_families.generation); cap(_families.stable_id);
     cap(_families.surname_id); cap(_families.surname_disambiguator);
     cap(_families.founded_day); cap(_families.home_cell);
@@ -234,8 +234,8 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_settlements.name_roll_generation);
     cap(_settlements.prefix); cap(_settlements.root); cap(_settlements.suffix);
     cap(_settlements.disambiguator);
-    cap(_market.stock); cap(_market.price); cap(_market.demand_ema);
-    cap(_market.last_shortage_q16); cap(_market.cell_to_market);
+    cap(market_store().stock); cap(market_store().price); cap(market_store().demand_ema);
+    cap(market_store().last_shortage_q16); cap(market_store().cell_to_market);
     cap(_environment_temperature_q16); cap(_environment_temperature_30d_q16);
     cap(_environment_moisture_q16); cap(_environment_plant_available_water_q16);
     cap(_environment_precipitation_q16);
@@ -537,7 +537,7 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_pending_construction);
     cap(_pending_construction_cell_offsets);
     cap(_pending_construction_cell_indices);
-    cap(_resource_snapshot); cap(_resource_remaining);
+    cap(resource_stock_lanes()); cap(_resource_remaining);
     cap(_resource_harvest_remaining);
     cap(_resource_gen_base); cap(_resource_gen_temp); cap(_resource_gen_moisture);
     cap(_resource_gen_self); cap(_resource_decay_base); cap(_resource_decay_temp);
@@ -1865,9 +1865,9 @@ Dictionary NativeEconomyRuntime::report() const {
         _city_output_good_indices.capacity() * sizeof(int32_t) +
         _city_output_factors_q16.capacity() * sizeof(int32_t));
     out["canal_next_project_id"] = static_cast<int64_t>(_next_canal_project_id);
-    out["cohort_count"] = _population.active_count;
-    out["market_count"] = _market.market_count;
-    out["good_count"] = _market.good_count;
+    out["cohort_count"] = population_store().active_count;
+    out["market_count"] = market_store().market_count;
+    out["good_count"] = market_store().good_count;
     out["building_type_count"] = static_cast<int64_t>(_building_types.size());
     out["building_group_count"] = static_cast<int64_t>(_buildings.size());
     out["pending_construction_count"] = static_cast<int64_t>(_pending_construction.size());
@@ -2460,7 +2460,7 @@ Dictionary NativeEconomyRuntime::report() const {
     out["price_ceiling_blocked_rises"] = _price_ceiling_blocked_rises;
     out["price_ceiling_active_states"] = price_ceiling_state_count();
     int64_t ceiling_capacity_bytes = 0;
-    for (const auto &row : _market.price_ceilings)
+    for (const auto &row : market_store().price_ceilings)
         ceiling_capacity_bytes += static_cast<int64_t>(row.capacity() * sizeof(PriceCeilingState));
     out["price_ceiling_state_bytes"] = ceiling_capacity_bytes;
     out["price_ceiling_confirm_days"] = _price_ceiling_confirm_days;

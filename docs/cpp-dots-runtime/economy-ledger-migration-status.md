@@ -1,17 +1,13 @@
 # Economy Ledger Migration Status
 
-As of 2026-09-14 (Phase-2.4.4.4), production still executes
-`NativeEconomyRuntime::worker_run_compact_slice` by default.
-`RuntimeEconomyOwnedState` is an independent POD-owned committed mirror, not the
-production formula or ledger authority. Host imports it only after a complete
-legacy economy epoch; in-progress slices never cross this boundary.
-`economy_pod_active_ready` may be true after ABI9 capture; Host may accept
-`POD_ACTIVE` (opt-in `economy_auto_pod_active`) but `economy_production_writer`
-defaults to / remains effective `compact_slice`. StageOps readiness checklist is
-complete (`0xF`). Requesting `stage_ops` remains fail-closed as
-`economy_production_writer_stage_ops_soak_pending` unless
-`economy_stage_ops_soak_experiment=true` or a latched
-`economy_stage_ops_soak_parity_ok` (default false).
+As of 2026-09-15 (**A+Y Terminal Closeout landed**), production default writer
+is `economy_production_writer=stage_ops` and `economy_auto_pod_active=true`.
+Under `POD_ACTIVE`, opcodes 1–23 mutate `RuntimeEconomyOwnedState` first
+(heavy opcodes delegate then mirror). Host binds NER stores to OwnedState
+(`economy_formula_backing=owned_state`). Building drain still uses AoS scratch
+with SoA sole between stages; trade/family/resource sole-bind + identity export
+are in N3–N6. PKEC v52 remains full-authority save; ECP1 ABI9 is committed
+mirror only. **Still open:** ECP2 and mid-epoch resume only.
 
 ## Phase-1 landed
 
@@ -208,48 +204,268 @@ complete (`0xF`). Requesting `stage_ops` remains fail-closed as
 - Dual-path compact↔StageOps multi-day `state_hash` soak that latches
   `soak_parity_ok` remains open before default writer handoff.
 
-## Still open before production POD_ACTIVE
+## Still open (out of Terminal Closeout scope)
 
-`RuntimeEconomyLedgerState` currently carries committed cohort
+Explicitly **not** in A+Y Terminal Closeout:
+
+- **ECP2** replacing PKEC as the full-authority save.
+- **Mid-epoch resume** blob on the epoch-cursor store.
+
+## A+Y Terminal Closeout — gap inventory (N0)
+
+Frozen checklist for sole-writer completion beyond pop/market. Tick IDs as stages land.
+
+### GAP-B1 Building (NER AoS vs Owned SoA)
+
+**AoS-only columns** (must enter `RuntimeEconomyBuildingStore` or explicit sidecar):
+`employee_fill_begin` (live uses `role_begin`), `last_input_selection_begin`,
+`last_maintenance_cost`, `sample_unit_input_cost`, `sample_unit_maintenance_cost`,
+`recovery_cooldown_cycles` (capture historically wrote `recovery_cooldown_compat=0`),
+`modifier_handle`, `output_factor_q16`. Pending lives in `_pending_construction`;
+role fills in `_building_employee_*` parallel vectors.
+
+**Hot write sites**: `prepare_building_economic_plan_body`;
+`run_building_production_cell` / `prepare_group_climate_capacity`;
+`run_building_employment_cell` / `prepare_cell_wages` / reconcile;
+`commit_ready_construction`; `apply_demolish_command`; `review_recovery_building_group`;
+`finalize_household_building_cell`; `run_building_commit_slice`;
+`refresh_building_modifier_factors`; investment/storage rebuild.
+
+**Declared helpers** (were header-only): `sync_owned_building_store`,
+`apply_owned_building_store`, `fill_ledger_building_from_store`.
+
+### GAP-T1–T3 Trade
+
+- Live authority: NER `TradeOrderStore _trade_orders` (settle/dispatch).
+- Owned: `RuntimeEconomyTradeEscrowStore` mirror from capture; **no** arrival buckets.
+- Arrival buckets: derived cache on NER only (`rebuild_trade_arrival_buckets`).
+- Dispatch does not mutate `view.trade_orders`.
+
+### GAP-F1–F2 Family
+
+- Live authority: NER `FamilyStore _families` + persons/membership/ownership/influences.
+- Owned flat `RuntimeEconomyFamilyStore` is capture/ECP projection.
+- Command path may push flags/purchase_factor into NER; commit/buff write NER.
+
+### GAP-R1–R3 Resource (N5 landed)
+
+- Live stock lanes: `resource_stock_lanes()` → `_resource_snapshot` when unbound,
+  `OwnedState.resources.stock` when `bind_resource_store` is active.
+- Epoch shadow columns (`_resource_remaining`, harvest/deltas) stay on NER; publish
+  and `sync_owned_resource_store` read stock through the accessor.
+- Owned `RuntimeEconomyResourceStore` is the ECP/capture projection via
+  `sync_owned_resource_store` / `flush_formula_owned_domain_mirrors`.
+
+### GAP-D1–D2 / C1–C2 / CAP1 Dispatch & capture
+
+- `EconomySoAView` store pointers often dead (dispatch uses `runtime_hook` only).
+- `bind_formula_owned_state` initially moved only pop/market.
+- Heavy commands: NER apply + `capture_owned_mirror_stores`.
+- Day-end Host still called `NER::capture_committed_ledger_state` → POD import.
+
+Migration order: N1 building SoA+bind → N2 hotpath → N3 trade → N4 family →
+N5 resource+identity export → N6 dispatch cleanup → N7 gates/docs.
+
+### N1 landed (building SoA + bind + sync/apply)
+
+- `buildings_store()` aliases `RuntimeEconomyOwnedState::buildings` when
+  `formula_owned_bound()`; otherwise `_buildings_soa_local`.
+- `sync_owned_building_store` / `apply_owned_building_store` /
+  `fill_ledger_building_from_store` implemented (AoS scratch ↔ Owned SoA).
+- `bind_formula_owned_state` seeds Owned building columns from live AoS at bind.
+
+### N2 landed (building hotpath — drain scratch, partial)
+
+**Authority model (honest):** `_buildings` (`std::vector<BuildingGroup>`) still
+exists — deleting it would require rewriting 1000+ refs in one pass. N2 **demotes**
+it to **drain-only scratch**: between graph stages, `buildings_store()` on
+OwnedState is the sole committed authority; AoS is materialized before building
+drains (`apply_owned_building_store`) and flushed after (`sync_owned_building_store`).
+
+**Dispatch stage boundaries** (`economy_graph_stage_dispatch.cpp`):
+materialize → drain → sync for `BUILDING_PLAN`, `BUILDING_EMPLOYMENT`,
+`BUILDING_PRODUCTION`, `BUILDING_COMMIT`; plus `LEDGER_APPLY` and
+`STRUCTURAL_COMMIT` (build/demolish commands and employment reconcile touch
+scratch). Investment kernels run inside existing building commit/plan drains —
+no separate graph stage.
+
+**Debug:** `assert_buildings_soa_matches_scratch()` (template_debug /
+`DEBUG_ENABLED`) compares `group_units.size()` to `_buildings.size()` at end of
+`sync_owned_building_store`.
+
+**GAP-B tick (partial):**
+
+| ID | N2 status |
+|----|-----------|
+| GAP-B1 AoS-only columns in store | **Done** — columns on `RuntimeEconomyBuildingStore`; sync/apply round-trip |
+| GAP-B1 hot write sites | **Open** — drains still mutate `_buildings` scratch; SoA-direct rewrite is N2+ |
+| GAP-B1 declared helpers | **Done** — sync/apply/fill implemented |
+| GAP-D1 dispatch materialize/sync | **Done** — building stages + ledger/structural |
+| GAP-D2 capture path | **Unchanged** — capture still reads AoS; sync at stage flush keeps Owned aligned |
+
+**Still open for building sole-writer:** rewrite hot loops to write
+`buildings_store()` directly; remove `_buildings` member (N6+ or dedicated pass).
+
+### N3 landed (trade escrow sole live store)
+
+- `trade_orders_store()` accessor exposes the sole live `TradeOrderStore` on NER
+  (`_trade_orders`); settle/dispatch never mutates `EconomySoAView::trade_orders`
+  pointers.
+- `flush_formula_owned_domain_mirrors` / `sync_owned_trade_escrow_store` pack
+  live escrow into `RuntimeEconomyOwnedState::trade_orders` at stage boundaries
+  and day-end capture.
+- Live `TradeOrderStore` remains NER-hosted sole instance; arrival buckets are
+  derived cache only (`rebuild_trade_arrival_buckets`) — no second live CSR.
+- ECP `RuntimeEconomyTradeEscrowStore` is the committed/projection mirror.
+
+### N4 landed (family store projection)
+
+- `families_store()` accessor exposes the sole live `FamilyStore` on NER
+  (`_families` + persons/membership/ownership/influences).
+- Flat `RuntimeEconomyFamilyStore` on OwnedState is the ECP projection filled
+  via `sync_owned_family_store` / `flush_formula_owned_domain_mirrors`; command
+  commit paths may push flags/purchase_factor into NER, then flush mirrors Owned
+  for capture.
+- No second live family SoA under `POD_ACTIVE`.
+
+### N5 landed (resource sole stock lanes)
+
+- Mutable `resource_stock_lanes()` / const overload: returns
+  `_resource_store_alias->stock` when bound, else `_resource_snapshot`.
+- `bind_formula_owned_state`: moves live `_resource_snapshot` into
+  `owned.resources.stock` (sets `resource_count`/`cell_count`/`cell_generation`),
+  then `bind_resource_store(&owned.resources)`; local snapshot empty while bound.
+- `unbind_formula_owned_state`: moves `owned.resources.stock` back into
+  `_resource_snapshot` and clears the alias.
+- Hot-path reads in `available_resource_amount`, `ensure_resource_lane`,
+  `consume_resource_amount`, `carrying_resource_stock`, epoch lane resize,
+  publish abundance, colonization identity export, and `sync_owned_resource_store`
+  use `resource_stock_lanes()` — no second live stock vector under bind.
+- Host calls `flush_formula_owned_domain_mirrors()` before day-end
+  `capture_committed_ledger_state` when formula-bound (resource identity export).
+
+## Phase-3 landed (OwnedState-first opcodes 1–23)
+
+- `is_owned_core_opcode` covers COMMAND opcodes 1–23 under `POD_ACTIVE`.
+- Light opcodes mutate OwnedState SoA first (pop/market/building units/family
+  flags/purchase factor/structural queue); heavy opcodes (build/expedition/
+  canal/family ledger gifts) delegate via `pull_owned_command_result` then
+  mirror stores back into OwnedState.
+- Host executor never takes a NER-only success path under `POD_ACTIVE`.
+- Post-command path verifies ledger hash/shape (`economy_pod_command_verify_count`);
+  under `formula_owned_bound()` mismatch **faults** (no silent recapture);
+  legacy unbound path may still recapture (`economy_pod_command_recapture_count`).
+
+## Phase-4 landed (layout unify — pop/market sole instance + mirrors)
+
+- Population/market: same SoA type; under `POD_ACTIVE` a single instance lives
+  in `RuntimeEconomyOwnedState` (see Phase-5 bind).
+- Building: Owned SoA + drain AoS scratch (N1–N2). Trade/family: NER live sole
+  stores + Owned flat ECP projections (N3–N4). Resource: stock lanes on Owned
+  when bound (N5). Trade arrival buckets remain derived.
+
+## Phase-5 landed (kernels bind OwnedState)
+
+- `NativeEconomyRuntime::bind_formula_owned_state` aliases
+  `population_store()` / `market_store()` / `buildings_store()` /
+  `resource_stock_lanes()` to OwnedState; seeds trade/family projections.
+- Host `switch_economy_authority(POD_ACTIVE)` binds after `pod_active_ready()`.
+- `EconomySoAView` exposes population/market/building/trade/family/resource
+  pointers plus `owned_state`.
+- Report field `economy_formula_backing` = `owned_state` | `ner_local`.
+
+## Phase-6 landed (PKEC from OwnedState)
+
+- Persistence encode/decode paths use `population_store()` / `market_store()`,
+  which under bind are OwnedState columns (no second pop/market SoA).
+- PKEC v52 remains the full-authority save; ECP1 ABI9 stays committed mirror.
+- Command pull is identity for core columns when formula-bound.
+
+### N6 landed (dispatch SoAView + recapture cleanup)
+
+- `economy_dispatch_mutate_stage(EconomySoAView &view, …)`; bound mutate requires
+  `view.population` / `market` / `buildings` non-null.
+- Host: formula-bound command hash mismatch → fault, not silent import.
+- `pull_owned_*` same_instance skips pop/market dual memcpy.
+
+### N7 landed (gates / docs freeze)
+
+- Builds: `scons` `template_debug` + `template_release`.
+- Conservation suite (Terminal Closeout hard gate):
+  - `runtime_economy_pod_test` 8/0
+  - `runtime_economy_parity_test` 26/0
+  - `runtime_economy_stage_ops_soak_parity_test` 370/0
+  - `runtime_economy_authority_soak_test` with `PK_ECONOMY_SOAK_DAYS=60`
+- Docs frozen: `economy-ledger-migration-status.md`,
+  `economy-save-migration-sop.md`, `native-economy-runtime.md`.
+- Full `verify_economy_runtime.ps1 -Godot` also runs `building_runtime_test.gd`,
+  which has **pre-existing assertion drift** (same ~40+ FAILs since 2026-08-29 /
+  worse on 2026-09-14 HEAD before Terminal Closeout). Not treated as A+Y
+  Terminal regression; conservation soak/parity/pod remain the merge gate.
+- **Still open only (product scope)**: ECP2, mid-epoch resume.
+- Residual engineering debt (not product Still-open): `_buildings` AoS drain
+  scratch member; SoA-direct hot loops.
+
+## Phase-7 landed (gates / freeze)
+
+- Default production: StageOps writer + auto `POD_ACTIVE` + OwnedState formula
+  backing (`economy_formula_backing=owned_state`).
+- Soak/parity/pod/`stage_ops` soak remain conservation gates.
+- Future optional work only: ECP2, mid-epoch resume.
+
+---
+
+## Historical: open notes before A+Y (superseded)
+
+Committed mirror opaque→SoA unpack is complete (Phase-2.5.x). StageOps is the
+default production day writer (Phase-2.4.5). Phase-2.6.1 defaults
+`economy_auto_pod_active=true` so authority mode promotes to `POD_ACTIVE` after
+the first complete capture when `pod_active_ready()`. Phase-2.6.2 keeps POD
+OwnedState aligned after command mutations via post-commit recapture and
+refuses silent Committed-without-mutate under `POD_ACTIVE`.
+
+`RuntimeEconomyLedgerState` carries committed cohort
 active/cell/slot/signature/population/funds/income/expense columns plus market
-stock/price/demand EMA. The cell and slot columns preserve the exact page index,
-allocated/free page identity, and stable per-cell page chain. Import validates
-that every slot is sequential, every active byte is 0 or 1, every page has one
-uniform cell, and no active cohort occupies a free page. Restore builds a
-temporary `RuntimeEconomyOwnedState` and swaps it into the authority only after
-shape, topology, and ledger-hash validation succeeds.
+stock/price/demand EMA, plus ABI5–ABI9 extensions. Import validates page
+topology and ledger hash before swapping into the authority.
 
-`RuntimeEconomyMarketStore` defines the live market columns outside
-`NativeEconomyRuntime`, including shortage ratios, cell-to-market mapping and
-sparse price ceilings. `NativeEconomyRuntime::MarketStore` is a type alias and
-the existing runtime still owns the production instance. Likewise,
-`RuntimeEconomyPopulationStore` owns the complete population column layout and
-page/slot/reservation/handle operations in Godot-free source files, while the
-legacy runtime still owns the production instance through an alias. These type
-extractions add no second writer.
+`RuntimeEconomyMarketStore` / `RuntimeEconomyPopulationStore` define live column
+layouts; under `POD_ACTIVE` they are the sole formula backing via bind.
 
-The committed feature mask for `pod_active_ready` is complete after Phase-2.3.3
-(ECP ABI5–ABI9). Opaque blobs are still not unpacked into live POD SoA writers.
-Phase-2.4.1 only arms StageOps mutate / auto-`POD_ACTIVE` behind flags;
-StageOps is still not the production day loop. Production therefore remains on
-legacy compact-slice until a later Phase-2.4 handoff.
-Its hash covers the mirrored ledger columns and metadata only; it is not the
-full PKEC state hash. Capture and import still perform full column copies at
-each completed generation, so no performance improvement is claimed for this
-migration step.
+Legacy `submit_economy_commands` is refuse-closed under the StageOps writer;
+POD command admission (opcodes 1..23) + `commit_pending_commands` is the
+command ingress. Under `POD_ACTIVE`, opcodes 1–23 apply OwnedState-first then
+`pull_owned_command_result`.
 
-ECP1 ABI4 serializes the committed mirror after the ABI3 authority mode and ABI2
-business summaries. The ledger block carries its own source hash, ledger hash,
-generation and committed day rather than borrowing the graph snapshot counters.
-ABI1 has no business summaries, ABI2 adds summaries, and ABI3 adds authority
-mode. Restoring ABI1-3 explicitly clears any pre-existing ABI4 ledger and owned
-state. Any failed ABI4 restore leaves the prior committed snapshot, summaries,
-receipts, owned state and exported ledger unchanged.
+## Phase-2.6.3 landed (OwnedState-first core opcodes)
 
-The existing `submit_economy_commands` facade remains enabled. POD command
-admission and terminal receipts are migration scaffolding; the worker ownership
-flag alone cannot disable the legacy ingress before a complete replacement is
-connected.
+- `RuntimeEconomyPodAuthority::try_apply_owned_core_command` mutates owned
+  population funds/income/expense and market stock for opcodes 2–5.
+- Host `EconomyPodCommandExecutor` under `POD_ACTIVE` prefers that path when
+  owned state is initialized, then
+  `NativeEconomyRuntime::pull_owned_core_columns` (plus explicit mint/burn/stock
+  audit counters).
+- Self-test covers mint/burn/add-stock on OwnedState.
+
+## Phase-2.6.2 landed (command→POD recapture)
+
+- `commit_pending_commands` returns mutation count (executor-applied commits).
+- Under `POD_ACTIVE`, missing executor → `RejectedAtExecution`
+  (`economy_pod_active_executor_required`); no silent fake-commit.
+- Host ACTIVE day loop: after command drain, if mutations > 0 and epoch is
+  idle, recapture NER → POD ledger (`economy_pod_command_recapture_failed` on
+  failure) and bump `economy_pod_command_recapture_count`.
+- Closes the stale-mirror window where commands applied after day-end capture.
+
+## Phase-2.6.1 landed (default auto POD_ACTIVE)
+
+- Default `economy_auto_pod_active=true` on Host start / `WorldRuntimeHost`
+  (opt out with `false`).
+- After a complete committed ledger capture with `pod_active_ready()`, Host
+  promotes authority to `POD_ACTIVE`.
+- Production day loop remains StageOps → `NativeEconomyRuntime`; POD_ACTIVE is
+  the ECP/command authority mode, not a second formula owner.
+- Parity test expects the new default flag.
 
 Validation completed on 2026-09-14 (Phase-1 closeout):
 
@@ -261,13 +477,78 @@ Validation completed on 2026-09-14 (Phase-1 closeout):
 - release bench matrix via `Invoke-EconomyPhase1Bench.ps1`.
 
 Phase-1 production-path de-dupe is complete. Phase-2.1–2.3.3 thickened the
-committed ledger mirror (ECP ABI5–ABI9) through `pod_active_ready` feature
-completeness, and wired BUILDING_COMMIT StageOps mutate. Phase-2.4.1–2.4.4.2 add
-opt-in StageOps mutate arming, auto-`POD_ACTIVE`, fail-closed `stage_ops`
-writer gate, commit-stage drains, epoch-open prelude, and Host StageOps day-loop
-API, Phase-2.4.4.3 adds bounded mid-graph drains (`0xF`), and Phase-2.4.4.4
-adds LEDGER/RESEARCH/STRUCTURAL drains plus an opt-in soak experiment latch.
-Remaining work before default production handoff: latch
-`economy_stage_ops_soak_parity_ok` via dual-path soak, then enable StageOps as
-default effective writer, disable legacy ingress, and allow default
-`POD_ACTIVE`.
+committed ledger mirror (ECP ABI5–ABI9). Phase-2.4.5 landed StageOps production
+handoff. Phase-2.5.x unpacked all committed opaque blobs to live SoA.
+Phase-2.6.1 defaults auto `POD_ACTIVE` promotion.
+
+## Phase-2.4.5 landed (StageOps production handoff)
+
+- Dual-path soak: `runtime_economy_stage_ops_soak_parity_test.gd` compares
+  `run_economy_slice` vs `run_economy_stage_ops_day` state hashes (default 5d,
+  `PK_ECONOMY_SOAK_DAYS` up to 60) and latches `economy_stage_ops_soak_parity_ok`.
+- `run_economy_stage_ops_day` captures same-day inputs then drains prelude + all
+  graph stages; fiscal reservation/settlement continue multi-country in-drain
+  (peer wait only when `pending_request_id != 0`).
+- Default `start_runtime_worker`: `economy_production_writer=stage_ops`,
+  `economy_stage_ops_mutate=true`, `economy_stage_ops_soak_parity_ok=true`.
+- `ACTIVE_WITH_PARITY` coerces writer to `compact_slice` unless stage_ops was
+  requested explicitly (explicit combo still `parity_conflict`).
+- Legacy `submit_economy_commands` refused with `economy_legacy_ingress_disabled`
+  when StageOps writer is effective (WorldExt + NativeEconomyRuntime).
+- `WorldRuntimeHost` ACTIVE path sets stage_ops writer unless parity mode.
+
+## Phase-2.5.1 landed (resource opaque → live SoA)
+
+- New `RuntimeEconomyResourceStore`: dense `stock` (resource×cell int64) +
+  `cell_generation` (per-cell uint32).
+- `RuntimeEconomyResourceCommittedBlock` holds typed `store` instead of opaque
+  `payload`; `content_hash` remains the ABI9 wire-byte FNV for compatibility.
+- Capture fills typed columns from `_resource_snapshot` / `_cell_resource_gen`.
+- Import populates `OwnedState.resources` live SoA view from the block.
+- ECP ABI9 encode/restore pack/unpack the same wire layout (old saves load).
+- `NativeEconomyRuntime::ResourceStore` alias added; production hot loops still
+  use existing `_resource_snapshot` vectors (no second writer).
+- Remaining opaque blobs: building, trade-escrow, family, epoch-cursor.
+
+## Phase-2.5.2 landed (building opaque → live SoA)
+
+- New `RuntimeEconomyBuildingStore`: group SoA + CSR role lanes + pending SoA.
+- `RuntimeEconomyBuildingCommittedBlock` holds typed `store`; ABI7 wire pack/
+  unpack preserves historical layout and `content_hash`.
+- Capture fills store from `_buildings` / employee role lanes / pending.
+- Import populates `OwnedState.buildings` live view.
+- Remaining opaque: trade-escrow, family, epoch-cursor.
+
+## Phase-2.5.3 landed (trade-escrow opaque → live SoA)
+
+- New `RuntimeEconomyTradeEscrowStore`: order SoA + CSR line/seller lanes
+  (matches production `TradeOrderStore` wire columns; arrival buckets stay
+  derived and out of the committed mirror).
+- `RuntimeEconomyTradeEscrowCommittedBlock` holds typed `store`; ABI7 wire
+  pack/unpack preserves historical per-order nested layout and `content_hash`.
+- Capture fills store from `_trade_orders` columns.
+- Import populates `OwnedState.trade_orders` live view.
+- Remaining opaque: family, epoch-cursor.
+
+## Phase-2.5.4 landed (epoch-cursor opaque → live SoA)
+
+- `RuntimeEconomyEpochCursorStore` holds the committed-day idle marker
+  (currently a single `uint8_t`); mid-epoch resume blobs remain future work.
+- `RuntimeEconomyEpochCursorCommittedBlock` holds typed `store`; ABI9 wire
+  pack/unpack preserves the historical one-byte idle payload and `content_hash`.
+- Import populates `OwnedState.epoch_cursors` live view.
+
+## Phase-2.5.5 landed (family opaque → live SoA)
+
+- New `RuntimeEconomyFamilyStore`: family/person/influence/expedition slot SoA
+  plus membership/ownership/need/trait/command tables and expedition CSR
+  (route/payload/cargo/kit/missing + nested payload person handles).
+- `RuntimeEconomyFamilyCommittedBlock` holds typed `store`; ABI8 wire pack/
+  unpack preserves historical nested layout and `content_hash`.
+- Capture fills store from `_families` / `_persons` / memberships / ownerships /
+  needs / traits / influences / trait commands / expeditions.
+- Import populates `OwnedState.families` live view.
+- **Committed-ledger opaque→SoA unpack is complete** for the current ABI9
+  mirror surface. Production formula authority remains
+  `NativeEconomyRuntime` via StageOps; Phase-2.6.1 defaults auto `POD_ACTIVE`
+  authority-mode promotion (not a second formula owner).

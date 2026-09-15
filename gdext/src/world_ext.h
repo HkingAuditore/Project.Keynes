@@ -655,6 +655,10 @@ public:
     godot::Dictionary poll_economy_pod_receipts(int max_items = 128);
     godot::Dictionary run_economy_slice(const godot::Dictionary &ctx);
     godot::Dictionary run_economy_slice_compact(const godot::Dictionary &ctx);
+    // Phase-2.4.5: sync StageOps mutate day for dual-path soak parity tests.
+    godot::Dictionary run_economy_stage_ops_day(int64_t day_index);
+    void set_economy_stage_ops_soak_parity_ok(bool ok);
+    bool get_economy_stage_ops_soak_parity_ok() const;
     // Main-thread Godot/MapData → NativeEconomyRuntime frozen input lanes.
     // Does not run economy mutation stages. Safe to call when ECONOMY is
     // worker-authoritative so compact slices can start_epoch without fatal.

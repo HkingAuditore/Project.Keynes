@@ -697,6 +697,11 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
             static_cast<int64_t>(host.economy_shadow_stage_cache_hits);
         out["economy_stage_ops_mutate"] = host.economy_stage_ops_mutate;
         out["economy_auto_pod_active"] = host.economy_auto_pod_active;
+        out["economy_pod_command_recapture_count"] =
+            static_cast<int64_t>(host.economy_pod_command_recapture_count);
+        out["economy_pod_command_verify_count"] =
+            static_cast<int64_t>(host.economy_pod_command_verify_count);
+        out["economy_formula_backing"] = String(host.economy_formula_backing);
         out["economy_production_writer"] = String(host.economy_production_writer);
         out["economy_production_writer_requested"] =
             String(host.economy_production_writer_requested);

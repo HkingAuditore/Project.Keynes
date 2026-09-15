@@ -115,16 +115,16 @@ int64_t NativeEconomyRuntime::food_flow_capacity_for_cell(
     // household-available stock into equivalent flow for the current period,
     // excluding production/construction reserves from the stock contribution.
     int64_t stock_food_eq = 0;
-    if (cell < _market.market_count) {
+    if (cell < market_store().market_count) {
         const int32_t market = cell;
-        for (int32_t good = 0; good < _market.good_count; ++good) {
+        for (int32_t good = 0; good < market_store().good_count; ++good) {
             if (good < 0 || good >= static_cast<int32_t>(
                     _good_food_equivalent_q16.size())) continue;
             const int32_t coefficient = _good_food_equivalent_q16[
                 static_cast<size_t>(good)];
             if (coefficient <= 0) continue;
-            const int64_t idx = _market.index(market, good);
-            if (idx < 0 || idx >= static_cast<int64_t>(_market.stock.size())) continue;
+            const int64_t idx = market_store().index(market, good);
+            if (idx < 0 || idx >= static_cast<int64_t>(market_store().stock.size())) continue;
             int64_t reserve = 0;
             const int32_t signal = market_signal_index(market, good);
             if (signal >= 0) {
@@ -136,7 +136,7 @@ int64_t NativeEconomyRuntime::food_flow_capacity_for_cell(
                         static_cast<size_t>(signal)]);
             }
             const int64_t available = std::max<int64_t>(0,
-                _market.stock[static_cast<size_t>(idx)] - reserve);
+                market_store().stock[static_cast<size_t>(idx)] - reserve);
             stock_food_eq = saturating_add(stock_food_eq,
                 mul_div_sat(available, coefficient, Q16_ONE, sat), sat);
         }
@@ -447,8 +447,8 @@ int64_t NativeEconomyRuntime::carrying_resource_stock(int32_t resource_id,
         resource_id >= static_cast<int32_t>(_resource_ids.size())) return 0;
     const size_t idx = static_cast<size_t>(resource_id) *
         static_cast<size_t>(_cell_count) + static_cast<size_t>(cell);
-    if (idx >= _resource_snapshot.size()) return 0;
-    return std::max<int64_t>(0, _resource_snapshot[idx]);
+    if (idx >= resource_stock_lanes().size()) return 0;
+    return std::max<int64_t>(0, resource_stock_lanes()[idx]);
 }
 
 int64_t NativeEconomyRuntime::cell_k_geo_persons(int32_t cell, int64_t &sat) const {
@@ -584,7 +584,7 @@ int64_t NativeEconomyRuntime::cell_family_surplus_q16(
         int64_t food_desired, const int64_t *good_demand,
         const int64_t *good_sales, int64_t &sat) const {
     if (family < 0 || family >= CARRYING_FAMILY_COUNT ||
-        market < 0 || market >= _market.market_count) return Q16_ONE;
+        market < 0 || market >= market_store().market_count) return Q16_ONE;
     if (_carrying_family_good_offsets.size() != CARRYING_FAMILY_COUNT + 1)
         return Q16_ONE;
     const int32_t availability_cell = cell >= 0 ? cell : market;
@@ -597,30 +597,30 @@ int64_t NativeEconomyRuntime::cell_family_surplus_q16(
         const int32_t good = _carrying_family_goods[static_cast<size_t>(edge)];
         if (!good_available(availability_cell, good, true)) continue;
         bindable = true;
-        const int64_t idx = _market.index(market, good);
-        if (idx < 0 || idx >= static_cast<int64_t>(_market.demand_ema.size())) continue;
-        const int64_t demand_ema = std::max<int64_t>(0, _market.demand_ema[
+        const int64_t idx = market_store().index(market, good);
+        if (idx < 0 || idx >= static_cast<int64_t>(market_store().demand_ema.size())) continue;
+        const int64_t demand_ema = std::max<int64_t>(0, market_store().demand_ema[
             static_cast<size_t>(idx)]);
         if (demand_ema <= 0) continue;
         int64_t shortage = 0;
         if (good_demand != nullptr && good_sales != nullptr &&
-            good >= 0 && good < _market.good_count) {
+            good >= 0 && good < market_store().good_count) {
             shortage = good_demand[good] <= 0 ? 0 : std::clamp<int64_t>(
                 Q16_ONE - mul_div_sat(good_sales[good], Q16_ONE,
                                       good_demand[good], sat),
                 0, Q16_ONE);
-        } else if (idx < static_cast<int64_t>(_market.last_shortage_q16.size())) {
-            shortage = std::clamp<int64_t>(_market.last_shortage_q16[
+        } else if (idx < static_cast<int64_t>(market_store().last_shortage_q16.size())) {
+            shortage = std::clamp<int64_t>(market_store().last_shortage_q16[
                 static_cast<size_t>(idx)], 0, Q16_ONE);
         }
         int64_t cover = Q16_ONE - shortage;
-        if (idx < static_cast<int64_t>(_market.stock.size()) &&
+        if (idx < static_cast<int64_t>(market_store().stock.size()) &&
             good < static_cast<int32_t>(_good_target_inventory_days_q16.size())) {
             const int64_t target = std::max<int64_t>(GOODS_SCALE, mul_div_sat(
                 demand_ema, std::max(1, _good_target_inventory_days_q16[
                     static_cast<size_t>(good)]), Q16_ONE, sat));
             const int64_t stock_cover = mul_div_sat(
-                std::max<int64_t>(0, _market.stock[static_cast<size_t>(idx)]),
+                std::max<int64_t>(0, market_store().stock[static_cast<size_t>(idx)]),
                 Q16_ONE, target, sat);
             cover = (cover + std::clamp<int64_t>(stock_cover, 0, Q16_ONE * 4)) / 2;
         }
@@ -655,15 +655,15 @@ void NativeEconomyRuntime::append_carrying_capacity_fields(
             _cell_food_export_eq_previous[cell]) : 0;
     int64_t sat = 0;
     int64_t stock_food_eq = 0;
-    if (cell_idx < _market.market_count) {
-        for (int32_t good = 0; good < _market.good_count; ++good) {
+    if (cell_idx < market_store().market_count) {
+        for (int32_t good = 0; good < market_store().good_count; ++good) {
             if (good < 0 || good >= static_cast<int32_t>(
                     _good_food_equivalent_q16.size())) continue;
             const int32_t coefficient = _good_food_equivalent_q16[
                 static_cast<size_t>(good)];
             if (coefficient <= 0) continue;
-            const int64_t idx = _market.index(cell_idx, good);
-            if (idx < 0 || idx >= static_cast<int64_t>(_market.stock.size())) continue;
+            const int64_t idx = market_store().index(cell_idx, good);
+            if (idx < 0 || idx >= static_cast<int64_t>(market_store().stock.size())) continue;
             int64_t reserve = 0;
             const int32_t signal = market_signal_index(cell_idx, good);
             if (signal >= 0) {
@@ -675,7 +675,7 @@ void NativeEconomyRuntime::append_carrying_capacity_fields(
                         static_cast<size_t>(signal)]);
             }
             const int64_t available = std::max<int64_t>(0,
-                _market.stock[static_cast<size_t>(idx)] - reserve);
+                market_store().stock[static_cast<size_t>(idx)] - reserve);
             stock_food_eq = saturating_add(stock_food_eq,
                 mul_div_sat(available, coefficient, Q16_ONE, sat), sat);
         }
@@ -685,9 +685,9 @@ void NativeEconomyRuntime::append_carrying_capacity_fields(
     const int64_t local_daily = local_net / flow_days;
     const int64_t effective_daily = effective_supply / flow_days;
     int64_t population = 0;
-    _population.for_each_in_cell(cell_idx, [&](int32_t slot) {
+    population_store().for_each_in_cell(cell_idx, [&](int32_t slot) {
         population = saturating_add(population,
-            std::max<int64_t>(0, _population.population[slot]),
+            std::max<int64_t>(0, population_store().population[slot]),
             sat);
     });
     int64_t access_q16 = Q16_ONE;

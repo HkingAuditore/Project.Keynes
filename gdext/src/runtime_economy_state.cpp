@@ -1,5 +1,6 @@
 #include "runtime_economy_state.h"
 #include <cstddef>
+#include <cstring>
 
 namespace pk {
 void RuntimeEconomyMarketStore::clear() {
@@ -11,6 +12,95 @@ void RuntimeEconomyMarketStore::clear() {
     last_shortage_q16.clear();
     cell_to_market.clear();
     price_ceilings.clear();
+}
+
+void RuntimeEconomyResourceStore::clear() noexcept {
+    resource_count = 0;
+    cell_count = 0;
+    stock.clear();
+    cell_generation.clear();
+}
+
+void RuntimeEconomyResourceStore::resize(int32_t resources, int32_t cells) {
+    resource_count = std::max(0, resources);
+    cell_count = std::max(0, cells);
+    const size_t lanes = static_cast<size_t>(resource_count) *
+        static_cast<size_t>(cell_count);
+    stock.assign(lanes, 0);
+    cell_generation.assign(static_cast<size_t>(cell_count), 0);
+}
+
+bool RuntimeEconomyResourceStore::shape_valid(
+        uint32_t expected_lanes) const noexcept {
+    if (resource_count < 0 || cell_count < 0) return false;
+    const size_t expected =
+        static_cast<size_t>(resource_count) * static_cast<size_t>(cell_count);
+    if (expected_lanes != static_cast<uint32_t>(expected)) return false;
+    if (stock.size() != expected) return false;
+    if (cell_generation.size() != static_cast<size_t>(cell_count)) return false;
+    return true;
+}
+
+void RuntimeEconomyResourceStore::append_wire(
+        std::vector<uint8_t> &out) const {
+    for (int64_t value : stock) {
+        const auto *bytes = reinterpret_cast<const uint8_t *>(&value);
+        out.insert(out.end(), bytes, bytes + sizeof(value));
+    }
+    for (uint32_t value : cell_generation) {
+        const auto *bytes = reinterpret_cast<const uint8_t *>(&value);
+        out.insert(out.end(), bytes, bytes + sizeof(value));
+    }
+}
+
+bool RuntimeEconomyResourceStore::load_wire(const uint8_t *data, size_t size,
+                                            uint32_t expected_lanes) {
+    if (data == nullptr && size != 0) return false;
+    if (resource_count < 0 || cell_count < 0) return false;
+    const size_t lanes = static_cast<size_t>(resource_count) *
+        static_cast<size_t>(cell_count);
+    if (static_cast<uint32_t>(lanes) != expected_lanes) return false;
+    const size_t expected_bytes =
+        lanes * sizeof(int64_t) +
+        static_cast<size_t>(cell_count) * sizeof(uint32_t);
+    if (size != expected_bytes) return false;
+    stock.resize(lanes);
+    cell_generation.resize(static_cast<size_t>(cell_count));
+    size_t offset = 0;
+    for (size_t i = 0; i < lanes; ++i) {
+        int64_t value = 0;
+        std::memcpy(&value, data + offset, sizeof(value));
+        stock[i] = value;
+        offset += sizeof(value);
+    }
+    for (int32_t cell = 0; cell < cell_count; ++cell) {
+        uint32_t value = 0;
+        std::memcpy(&value, data + offset, sizeof(value));
+        cell_generation[static_cast<size_t>(cell)] = value;
+        offset += sizeof(value);
+    }
+    return offset == size;
+}
+
+uint64_t RuntimeEconomyResourceStore::wire_content_hash() const noexcept {
+    constexpr uint64_t kOffset = 1469598103934665603ull;
+    constexpr uint64_t kPrime = 1099511628211ull;
+    uint64_t hash = kOffset;
+    auto mix_bytes = [&](const uint8_t *bytes, size_t count) {
+        for (size_t i = 0; i < count; ++i) {
+            hash ^= bytes[i];
+            hash *= kPrime;
+        }
+    };
+    for (int64_t value : stock) {
+        const auto *bytes = reinterpret_cast<const uint8_t *>(&value);
+        mix_bytes(bytes, sizeof(value));
+    }
+    for (uint32_t value : cell_generation) {
+        const auto *bytes = reinterpret_cast<const uint8_t *>(&value);
+        mix_bytes(bytes, sizeof(value));
+    }
+    return hash;
 }
 
 namespace {
@@ -155,13 +245,21 @@ uint64_t RuntimeEconomyLedgerState::computed_hash() const noexcept {
     hash = mix(hash, building.group_count);
     hash = mix(hash, building.pending_count);
     hash = mix(hash, building.role_lane_count);
-    mix_vector(hash, building.payload);
+    {
+        std::vector<uint8_t> building_wire;
+        building.store.append_wire(building_wire);
+        mix_vector(hash, building_wire);
+    }
     hash = mix(hash, trade_escrow.captured ? 1u : 0u);
     hash = mix(hash, trade_escrow.country_trade_revision);
     hash = mix(hash, static_cast<uint64_t>(trade_escrow.next_id));
     hash = mix(hash, trade_escrow.order_count);
     hash = mix(hash, trade_escrow.content_hash);
-    mix_vector(hash, trade_escrow.payload);
+    {
+        std::vector<uint8_t> trade_wire;
+        trade_escrow.store.append_wire(trade_wire);
+        mix_vector(hash, trade_wire);
+    }
     hash = mix(hash, family.captured ? 1u : 0u);
     hash = mix(hash, family.catalog_hash);
     hash = mix(hash, family.person_catalog_hash);
@@ -179,7 +277,11 @@ uint64_t RuntimeEconomyLedgerState::computed_hash() const noexcept {
     hash = mix(hash, family.expedition_count);
     hash = mix(hash, static_cast<uint64_t>(family.next_expedition_stable_id));
     hash = mix(hash, family.content_hash);
-    mix_vector(hash, family.payload);
+    {
+        std::vector<uint8_t> family_wire;
+        family.store.append_wire(family_wire);
+        mix_vector(hash, family_wire);
+    }
     hash = mix(hash, resource.captured ? 1u : 0u);
     hash = mix(hash, resource.catalog_hash);
     hash = mix(hash, resource.environment_hash);
@@ -191,7 +293,8 @@ uint64_t RuntimeEconomyLedgerState::computed_hash() const noexcept {
     hash = mix(hash, static_cast<uint64_t>(resource.safe_harvest_q16));
     hash = mix(hash, static_cast<uint64_t>(resource.min_horizon_days));
     hash = mix(hash, resource.content_hash);
-    mix_vector(hash, resource.payload);
+    mix_vector(hash, resource.store.stock);
+    mix_vector(hash, resource.store.cell_generation);
     hash = mix(hash, epoch_cursor.captured ? 1u : 0u);
     hash = mix(hash, static_cast<uint64_t>(epoch_cursor.sample_day));
     hash = mix(hash, static_cast<uint64_t>(epoch_cursor.current_day));
@@ -202,7 +305,11 @@ uint64_t RuntimeEconomyLedgerState::computed_hash() const noexcept {
     hash = mix(hash, static_cast<uint64_t>(epoch_cursor.native_stage));
     hash = mix(hash, epoch_cursor.graph_completed_mask);
     hash = mix(hash, epoch_cursor.content_hash);
-    mix_vector(hash, epoch_cursor.payload);
+    {
+        std::vector<uint8_t> cursor_wire;
+        epoch_cursor.store.append_wire(cursor_wire);
+        mix_vector(hash, cursor_wire);
+    }
     return hash;
 }
 

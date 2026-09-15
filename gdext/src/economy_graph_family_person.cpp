@@ -14,22 +14,22 @@ bool economy_kernel_family_person(EconomySoAView &view,
     // evaluate_phase 0 → FAMILY only; 1 → PERSON only; else both sequentially.
     if (cursor.evaluate_phase == 0) {
         return economy_dispatch_mutate_stage(
-            view.runtime_hook, RuntimeEconomyGraphStage::FAMILY_COMMIT, cursor,
-            input, result, error);
+            view, RuntimeEconomyGraphStage::FAMILY_COMMIT, cursor, input,
+            result, error);
     }
     if (cursor.evaluate_phase == 1) {
         return economy_dispatch_mutate_stage(
-            view.runtime_hook, RuntimeEconomyGraphStage::PERSON_COMMIT, cursor,
-            input, result, error);
+            view, RuntimeEconomyGraphStage::PERSON_COMMIT, cursor, input,
+            result, error);
     }
     if (!economy_dispatch_mutate_stage(
-            view.runtime_hook, RuntimeEconomyGraphStage::FAMILY_COMMIT, cursor,
-            input, result, error)) {
+            view, RuntimeEconomyGraphStage::FAMILY_COMMIT, cursor, input,
+            result, error)) {
         return false;
     }
     return economy_dispatch_mutate_stage(
-        view.runtime_hook, RuntimeEconomyGraphStage::PERSON_COMMIT, cursor,
-        input, result, error);
+        view, RuntimeEconomyGraphStage::PERSON_COMMIT, cursor, input, result,
+        error);
 }
 
 } // namespace pk

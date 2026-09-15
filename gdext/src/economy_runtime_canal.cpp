@@ -312,8 +312,8 @@ bool NativeEconomyRuntime::plan_canal_route(
         return false;
     }
     quote.material_quantities = {{material_total, material_total}};
-    const int32_t market = _market.cell_to_market[start_cell];
-    if (market < 0 || market >= _market.market_count) {
+    const int32_t market = market_store().cell_to_market[start_cell];
+    if (market < 0 || market >= market_store().market_count) {
         error = "canal_market_unavailable";
         return false;
     }
@@ -325,14 +325,14 @@ bool NativeEconomyRuntime::plan_canal_route(
         const int64_t treasury = std::max<int64_t>(0, _country_runtime->good_for_handle(
             static_cast<int64_t>(country_handle), good));
         const int64_t market_needed = required - std::min(required, treasury);
-        const int64_t lane = _market.index(market, good);
-        if (_market.stock[lane] < market_needed) {
+        const int64_t lane = market_store().index(market, good);
+        if (market_store().stock[lane] < market_needed) {
             error = "canal_materials_insufficient";
             return false;
         }
-        quote.cash_required += (market_needed * _market.price[lane]) / GOODS_SCALE;
-        quote.price_hash = canal_mix(quote.price_hash, static_cast<uint64_t>(_market.price[lane]));
-        quote.price_hash = canal_mix(quote.price_hash, static_cast<uint64_t>(_market.stock[lane]));
+        quote.cash_required += (market_needed * market_store().price[lane]) / GOODS_SCALE;
+        quote.price_hash = canal_mix(quote.price_hash, static_cast<uint64_t>(market_store().price[lane]));
+        quote.price_hash = canal_mix(quote.price_hash, static_cast<uint64_t>(market_store().stock[lane]));
         quote.price_hash = canal_mix(quote.price_hash, static_cast<uint64_t>(treasury));
     }
     if (_country_runtime->cash_for_handle(static_cast<int64_t>(country_handle)) <
@@ -398,12 +398,12 @@ bool NativeEconomyRuntime::validate_canal_quote_snapshot(
         return false;
     }
     uint64_t price_hash = 1469598103934665603ULL;
-    const int32_t market = _market.cell_to_market[quote.route_cells.front()];
+    const int32_t market = market_store().cell_to_market[quote.route_cells.front()];
     for (int i = 0; i < 2; ++i) {
         const int32_t good = quote.material_good_ids[static_cast<size_t>(i)];
-        const int64_t lane = _market.index(market, good);
-        price_hash = canal_mix(price_hash, static_cast<uint64_t>(_market.price[lane]));
-        price_hash = canal_mix(price_hash, static_cast<uint64_t>(_market.stock[lane]));
+        const int64_t lane = market_store().index(market, good);
+        price_hash = canal_mix(price_hash, static_cast<uint64_t>(market_store().price[lane]));
+        price_hash = canal_mix(price_hash, static_cast<uint64_t>(market_store().stock[lane]));
         price_hash = canal_mix(price_hash, static_cast<uint64_t>(
             _country_runtime->good_for_handle(static_cast<int64_t>(quote.country_handle), good)));
     }
@@ -482,7 +482,7 @@ bool NativeEconomyRuntime::apply_canal_build_command(
         stage_canal_receipt(cmd, false, "canal_quote_stale");
         return true;
     }
-    const int32_t market = _market.cell_to_market[quote.route_cells.front()];
+    const int32_t market = market_store().cell_to_market[quote.route_cells.front()];
     std::array<int64_t, 2> treasury_used{{0, 0}};
     std::array<int64_t, 2> market_used{{0, 0}};
     int64_t cash = 0;
@@ -494,12 +494,12 @@ bool NativeEconomyRuntime::apply_canal_build_command(
         treasury_used[i] = std::min(required, std::max<int64_t>(0,
             _country_runtime->good_for_handle(static_cast<int64_t>(cmd.target_handle), good)));
         market_used[i] = required - treasury_used[i];
-        const int64_t lane = _market.index(market, good);
-        if (_market.stock[lane] < market_used[i]) {
+        const int64_t lane = market_store().index(market, good);
+        if (market_store().stock[lane] < market_used[i]) {
             stage_canal_receipt(cmd, false, "canal_materials_insufficient");
             return true;
         }
-        cash += (market_used[i] * _market.price[lane]) / GOODS_SCALE;
+        cash += (market_used[i] * market_store().price[lane]) / GOODS_SCALE;
         treasury_total += treasury_used[i];
         market_total += market_used[i];
     }

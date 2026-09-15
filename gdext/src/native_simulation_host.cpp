@@ -642,6 +642,8 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     _economy_sync_writes_forbidden.store(false, std::memory_order_release);
     _economy_shadow_stage_invocations.store(0, std::memory_order_release);
     _economy_shadow_stage_cache_hits.store(0, std::memory_order_release);
+    _economy_pod_command_recapture_count.store(0, std::memory_order_release);
+    _economy_pod_command_verify_count.store(0, std::memory_order_release);
     _economy_shadow_cache_valid = false;
     _economy_shadow_cache_day = -1;
     _economy_shadow_cache_input_generation = 0;
@@ -1326,20 +1328,32 @@ bool NativeSimulationHost::switch_economy_authority(
     error.clear();
     switch (mode) {
     case RuntimeEconomyAuthorityMode::LEGACY_SYNC:
+        if (_economy_production_runtime != nullptr &&
+            _economy_production_runtime->formula_owned_bound()) {
+            _economy_production_runtime->unbind_formula_owned_state();
+        }
         _economy_pod_authority.set_authority_mode(mode);
         return true;
     case RuntimeEconomyAuthorityMode::POD_ACTIVE_WITH_LEGACY_PARITY:
         // Parity soak may run against the committed cohort/market mirror.
-        // Production mutations stay on NativeEconomyRuntime until POD_ACTIVE.
+        // Production mutations stay on NativeEconomyRuntime; POD mirrors them.
         _economy_pod_authority.set_authority_mode(mode);
         return true;
     case RuntimeEconomyAuthorityMode::POD_ACTIVE:
         // Phase-2.3.3 completes the committed mirror feature mask (ECP ABI9).
         // Still refuse until a live capture has set every REQUIRED_FOR_ACTIVE
-        // bit. Production writer handoff remains Phase-2.4.
+        // bit. Phase-5 A+Y: bind NER population/market to OwnedState so
+        // StageOps formulas mutate the sole SoA instance.
         if (!_economy_pod_authority.pod_active_ready()) {
             error = "economy_pod_active_incomplete_ledger_mirror";
             return false;
+        }
+        if (_economy_production_runtime != nullptr &&
+            !_economy_production_runtime->formula_owned_bound()) {
+            if (!_economy_production_runtime->bind_formula_owned_state(
+                    _economy_pod_authority.state(), error)) {
+                return false;
+            }
         }
         _economy_pod_authority.set_authority_mode(mode);
         return true;
@@ -1360,22 +1374,45 @@ void NativeSimulationHost::attach_economy_production_runtime(
         class NativeEconomyPodCommandExecutor final
             : public EconomyPodCommandExecutor {
         public:
-            explicit NativeEconomyPodCommandExecutor(NativeEconomyRuntime *runtime)
-                : _runtime(runtime) {}
+            NativeEconomyPodCommandExecutor(
+                NativeEconomyRuntime *runtime,
+                RuntimeEconomyPodAuthority *authority)
+                : _runtime(runtime), _authority(authority) {}
             bool apply(const RuntimeEconomyPodCommand &command,
                        std::string &error) override {
                 if (_runtime == nullptr) {
                     error = "economy_pod_executor_runtime_null";
                     return false;
                 }
+                // Phase-3: under POD_ACTIVE, opcodes 1–23 mutate OwnedState
+                // first, then pull into NativeEconomyRuntime.
+                if (_authority != nullptr &&
+                    _authority->authority_mode() ==
+                        RuntimeEconomyAuthorityMode::POD_ACTIVE &&
+                    RuntimeEconomyPodAuthority::is_owned_command_opcode(
+                        command.opcode) &&
+                    _authority->state_initialized()) {
+                    int64_t settled = 0;
+                    if (!_authority->try_apply_owned_core_command(
+                            command, error, settled)) {
+                        return false;
+                    }
+                    if (!_runtime->pull_owned_command_result(
+                            _authority->state(), command, settled, error)) {
+                        return false;
+                    }
+                    return true;
+                }
                 return _runtime->apply_pod_command(command, error);
             }
 
         private:
             NativeEconomyRuntime *_runtime = nullptr;
+            RuntimeEconomyPodAuthority *_authority = nullptr;
         };
         _economy_pod_command_executor =
-            std::make_unique<NativeEconomyPodCommandExecutor>(rt);
+            std::make_unique<NativeEconomyPodCommandExecutor>(
+                rt, &_economy_pod_authority);
         _economy_pod_authority.attach_command_executor(
             _economy_pod_command_executor.get());
         _economy_pod_authority.sync_identity(
@@ -8101,6 +8138,9 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                 _economy_pod_authority.committed_ledger_state().generation !=
                     _economy_production_runtime->committed_generation()) {
                 RuntimeEconomyLedgerState ledger_state;
+                if (_economy_production_runtime->formula_owned_bound())
+                    _economy_production_runtime
+                        ->flush_formula_owned_domain_mirrors();
                 _economy_production_runtime->capture_committed_ledger_state(
                     ledger_state);
                 if (!ledger_state.valid() ||
@@ -8113,8 +8153,9 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                     commit.preflight_ok = 0;
                     continue;
                 }
-                // Phase-2.4.1: optional authority promotion after a complete
-                // mirror capture. Production writer stays compact-slice.
+                // Phase-2.6.1: optional authority promotion after a complete
+                // mirror capture (default on). Production StageOps writer is
+                // unchanged; POD_ACTIVE marks ECP/command authority mode.
                 if (_economy_auto_pod_active.load(std::memory_order_acquire) &&
                     _economy_pod_authority.pod_active_ready() &&
                     _economy_pod_authority.authority_mode() !=
@@ -8195,7 +8236,66 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             // POD command execute via apply_command, then drain receipts.
             _economy_pod_authority.sync_identity(
                 1u, _economy_production_runtime->committed_generation());
-            _economy_pod_authority.commit_pending_commands();
+            const uint32_t command_mutations =
+                _economy_pod_authority.commit_pending_commands();
+            // Phase-3: verify owned mirror hash/shape before full recapture.
+            if (command_mutations > 0u &&
+                !_economy_production_runtime->epoch_active()) {
+                RuntimeEconomyLedgerState ledger_state;
+                if (_economy_production_runtime->formula_owned_bound())
+                    _economy_production_runtime
+                        ->flush_formula_owned_domain_mirrors();
+                _economy_production_runtime->capture_committed_ledger_state(
+                    ledger_state);
+                if (!ledger_state.valid()) {
+                    set_fault("economy_pod_command_recapture_failed");
+                    stage.completed = 0;
+                    commit.preflight_ok = 0;
+                    continue;
+                }
+                ledger_state.recompute_hash();
+                const uint64_t ner_ledger_hash = ledger_state.computed_hash();
+                RuntimeEconomyLedgerState owned_export;
+                std::string verify_error;
+                const bool export_ok =
+                    _economy_pod_authority.export_committed_ledger(
+                        owned_export, verify_error);
+                if (export_ok) owned_export.recompute_hash();
+                const bool shape_ok =
+                    export_ok &&
+                    owned_export.cohort_funds.size() ==
+                        ledger_state.cohort_funds.size() &&
+                    owned_export.market_stock.size() ==
+                        ledger_state.market_stock.size() &&
+                    owned_export.cohort_population.size() ==
+                        ledger_state.cohort_population.size();
+                if (shape_ok &&
+                    owned_export.computed_hash() == ner_ledger_hash) {
+                    _economy_pod_command_verify_count.fetch_add(
+                        command_mutations, std::memory_order_relaxed);
+                } else if (_economy_production_runtime->formula_owned_bound()) {
+                    set_fault("economy_pod_command_verify_mismatch");
+                    stage.completed = 0;
+                    commit.preflight_ok = 0;
+                    continue;
+                } else {
+                    if (!export_ok ||
+                        !_economy_pod_authority.import_committed_ledger(
+                            ledger_state, economy_error) ||
+                        !_economy_pod_authority.capture_committed_ledger_state(
+                            std::move(ledger_state))) {
+                        set_fault("economy_pod_command_recapture_failed");
+                        stage.completed = 0;
+                        commit.preflight_ok = 0;
+                        continue;
+                    }
+                    _economy_pod_command_recapture_count.fetch_add(
+                        command_mutations, std::memory_order_relaxed);
+                }
+                _economy_pod_state_hash.store(
+                    _economy_pod_authority.state_hash(),
+                    std::memory_order_release);
+            }
             {
                 RuntimeEconomyPodReceipt receipt;
                 uint32_t ack_n = 0;
@@ -9974,6 +10074,17 @@ RuntimeThreadReport NativeSimulationHost::report() const {
         _economy_stage_ops_mutate.load(std::memory_order_acquire);
     out.economy_auto_pod_active =
         _economy_auto_pod_active.load(std::memory_order_acquire);
+    out.economy_pod_command_recapture_count =
+        _economy_pod_command_recapture_count.load(std::memory_order_acquire);
+    out.economy_pod_command_verify_count =
+        _economy_pod_command_verify_count.load(std::memory_order_acquire);
+    {
+        const char *backing = "ner_local";
+        if (_economy_production_runtime != nullptr)
+            backing = _economy_production_runtime->formula_backing_tag();
+        std::snprintf(out.economy_formula_backing,
+                      sizeof(out.economy_formula_backing), "%s", backing);
+    }
     {
         const EconomyProductionWriter requested =
             economy_production_writer_requested();

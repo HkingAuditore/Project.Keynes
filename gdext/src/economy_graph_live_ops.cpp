@@ -82,8 +82,8 @@ bool NativeEconomyGraphStageOps::run_stage(
     // mutate=true: named kernel TUs are the mutate path (dispatch → formulas).
     switch (stage) {
     case RuntimeEconomyGraphStage::BUILDING_PLAN:
-        return economy_dispatch_mutate_stage(view.runtime_hook, stage, cursor,
-                                             input, result, error);
+        return economy_dispatch_mutate_stage(view, stage, cursor, input,
+                                             result, error);
     case RuntimeEconomyGraphStage::TRADE_SETTLE:
         return economy_kernel_trade_settle(view, cursor, input, result, error);
     case RuntimeEconomyGraphStage::LEDGER_APPLY:

@@ -612,6 +612,12 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::run_economy_slice);
     ClassDB::bind_method(D_METHOD("run_economy_slice_compact", "ctx"),
                          &DCWorldExt::run_economy_slice_compact);
+    ClassDB::bind_method(D_METHOD("run_economy_stage_ops_day", "day_index"),
+                         &DCWorldExt::run_economy_stage_ops_day);
+    ClassDB::bind_method(D_METHOD("set_economy_stage_ops_soak_parity_ok", "ok"),
+                         &DCWorldExt::set_economy_stage_ops_soak_parity_ok);
+    ClassDB::bind_method(D_METHOD("get_economy_stage_ops_soak_parity_ok"),
+                         &DCWorldExt::get_economy_stage_ops_soak_parity_ok);
     ClassDB::bind_method(D_METHOD("capture_economy_day_inputs", "day_index"),
                          &DCWorldExt::capture_economy_day_inputs);
     ClassDB::bind_method(D_METHOD("begin_or_reuse_economy_input_epoch",

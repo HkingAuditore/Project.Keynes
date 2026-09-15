@@ -1276,6 +1276,10 @@ struct RuntimeThreadReport {
     // compact_slice until StageOps mutate becomes the production loop.
     bool economy_stage_ops_mutate = false;
     bool economy_auto_pod_active = false;
+    uint64_t economy_pod_command_recapture_count = 0;
+    uint64_t economy_pod_command_verify_count = 0;
+    // Phase-5 A+Y: "owned_state" when StageOps formulas alias OwnedState SoA.
+    char economy_formula_backing[32]{};
     char economy_production_writer[32]{};
     // Phase-2.4.2: requested vs effective writer (effective stays compact_slice
     // while stage_ops production is gated not-ready).

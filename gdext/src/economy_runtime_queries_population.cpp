@@ -288,39 +288,39 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
     PackedInt64Array employee_employed;
     PackedInt64Array unemployed;
     std::vector<int32_t> slots;
-    _population.for_each_in_cell(cell_idx, [&](int32_t slot) { slots.push_back(slot); });
+    population_store().for_each_in_cell(cell_idx, [&](int32_t slot) { slots.push_back(slot); });
     for (int32_t slot : slots) {
-        handles.push_back(static_cast<int64_t>(_population.handle_for_slot(slot)));
-        const int32_t signature = static_cast<int32_t>(_population.signature_id[slot]);
+        handles.push_back(static_cast<int64_t>(population_store().handle_for_slot(slot)));
+        const int32_t signature = static_cast<int32_t>(population_store().signature_id[slot]);
         signatures.push_back(signature);
         professions.push_back(_signatures[signature].profession_id);
         ethnicities.push_back(_signatures[signature].ethnicity_id);
-        populations.push_back(_population.population[slot]);
-        funds.push_back(_population.funds[slot]);
-        incomes.push_back(_population.epoch_income[slot]);
-        expenses.push_back(_population.epoch_expense[slot]);
-        const int64_t in_kind = _population.epoch_in_kind_income[slot];
+        populations.push_back(population_store().population[slot]);
+        funds.push_back(population_store().funds[slot]);
+        incomes.push_back(population_store().epoch_income[slot]);
+        expenses.push_back(population_store().epoch_expense[slot]);
+        const int64_t in_kind = population_store().epoch_in_kind_income[slot];
         in_kind_income.push_back(in_kind);
         int64_t diagnostic_sat = 0;
-        cash_expense_coverage_q16.push_back(_population.epoch_expense[slot] > 0
-            ? mul_div_sat(_population.epoch_income[slot], Q16_ONE,
-                          _population.epoch_expense[slot], diagnostic_sat) : Q16_ONE);
+        cash_expense_coverage_q16.push_back(population_store().epoch_expense[slot] > 0
+            ? mul_div_sat(population_store().epoch_income[slot], Q16_ONE,
+                          population_store().epoch_expense[slot], diagnostic_sat) : Q16_ONE);
         const int64_t livelihood_income = saturating_add(
-            _population.epoch_income[slot], in_kind, diagnostic_sat);
+            population_store().epoch_income[slot], in_kind, diagnostic_sat);
         const int64_t livelihood_expense = saturating_add(
-            _population.epoch_expense[slot], in_kind, diagnostic_sat);
+            population_store().epoch_expense[slot], in_kind, diagnostic_sat);
         livelihood_coverage_q16.push_back(livelihood_expense > 0
             ? mul_div_sat(livelihood_income, Q16_ONE,
                           livelihood_expense, diagnostic_sat) : Q16_ONE);
-        income_ema.push_back(_population.income_ema[slot]);
-        satisfaction.push_back(_population.needs_satisfaction[slot]);
-        worst_need_ids.push_back(_population.worst_need_id[slot] == std::numeric_limits<uint16_t>::max()
-                                     ? -1 : _population.worst_need_id[slot]);
+        income_ema.push_back(population_store().income_ema[slot]);
+        satisfaction.push_back(population_store().needs_satisfaction[slot]);
+        worst_need_ids.push_back(population_store().worst_need_id[slot] == std::numeric_limits<uint16_t>::max()
+                                     ? -1 : population_store().worst_need_id[slot]);
         merchant_flags.push_back(is_merchant_slot(slot) ? 1 : 0);
-        owner_employed.push_back(_population.owner_employed[slot]);
-        employee_employed.push_back(_population.employee_employed[slot]);
-        unemployed.push_back(std::max<int64_t>(0, _population.population[slot] -
-            _population.owner_employed[slot] - _population.employee_employed[slot]));
+        owner_employed.push_back(population_store().owner_employed[slot]);
+        employee_employed.push_back(population_store().employee_employed[slot]);
+        unemployed.push_back(std::max<int64_t>(0, population_store().population[slot] -
+            population_store().owner_employed[slot] - population_store().employee_employed[slot]));
     }
     out["handles"] = handles;
     out["signature_ids"] = signatures;
@@ -389,7 +389,7 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
         settlement_offsets.push_back(0);
     }
     for (int32_t slot : slots) {
-        const uint64_t handle = _population.handle_for_slot(slot);
+        const uint64_t handle = population_store().handle_for_slot(slot);
         int64_t total_income = 0;
         int64_t total_expense = 0;
         if (settlement_batch != nullptr) {
@@ -444,12 +444,12 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
     bool welfare_complete = include_details && settlement_batch != nullptr &&
         settlement_batch->welfare_entries.size() == slots.size();
     for (int32_t slot : slots) {
-        const int64_t composite_q16 = _population.composite_satisfaction[slot];
+        const int64_t composite_q16 = population_store().composite_satisfaction[slot];
         overall_satisfaction.push_back(static_cast<int32_t>(composite_q16));
         living_standard_levels.push_back(living_standard_level_for(composite_q16));
         if (!include_details)
             continue;
-        const uint64_t handle = _population.handle_for_slot(slot);
+        const uint64_t handle = population_store().handle_for_slot(slot);
         const CohortWelfareEntry *welfare = nullptr;
         if (settlement_batch != nullptr) {
             for (const CohortWelfareEntry &candidate : settlement_batch->welfare_entries) {
@@ -467,14 +467,14 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
             static_cast<size_t>(SAT_DIM_COUNT);
         for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim)
             satisfaction_dims.push_back(static_cast<int32_t>(
-                _population.satisfaction_dims[dims_base + static_cast<size_t>(dim)]));
+                population_store().satisfaction_dims[dims_base + static_cast<size_t>(dim)]));
         worst_dimensions.push_back(
-            _population.worst_dimension_id[slot] ==
+            population_store().worst_dimension_id[slot] ==
                     std::numeric_limits<uint8_t>::max()
-                ? -1 : static_cast<int32_t>(_population.worst_dimension_id[slot]));
+                ? -1 : static_cast<int32_t>(population_store().worst_dimension_id[slot]));
         worst_needs.push_back(
-            _population.worst_need_id[slot] == std::numeric_limits<uint16_t>::max()
-                ? -1 : static_cast<int32_t>(_population.worst_need_id[slot]));
+            population_store().worst_need_id[slot] == std::numeric_limits<uint16_t>::max()
+                ? -1 : static_cast<int32_t>(population_store().worst_need_id[slot]));
         if (welfare != nullptr) {
             for (int32_t i = 0; i < static_cast<int32_t>(welfare->need_ids.size()); ++i) {
                 welfare_need_ids.push_back(welfare->need_ids[i]);
@@ -488,7 +488,7 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
             }
         }
         welfare_need_offsets.push_back(welfare_need_ids.size());
-        for (int32_t good = 0; good < _market.good_count; ++good) {
+        for (int32_t good = 0; good < market_store().good_count; ++good) {
             wealth_demand_deltas.push_back(welfare != nullptr &&
                     good < static_cast<int32_t>(welfare->wealth_demand_delta_per_capita_daily.size())
                 ? welfare->wealth_demand_delta_per_capita_daily[good] : 0);
@@ -510,7 +510,7 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
         out["welfare_need_satisfaction_q16"] = welfare_need_satisfaction;
         out["welfare_need_weight_q16"] = welfare_need_weights;
         out["welfare_need_tiers"] = welfare_need_tiers;
-        out["demand_attribution_good_count"] = _market.good_count;
+        out["demand_attribution_good_count"] = market_store().good_count;
         out["demand_wealth_delta_per_capita_daily"] = wealth_demand_deltas;
         out["demand_price_delta_per_capita_daily"] = price_demand_deltas;
     } else {
@@ -555,21 +555,21 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
     demand_need_offsets.push_back(0);
     demand_need_variant_offsets.push_back(0);
     demand_variant_component_offsets.push_back(0);
-    const int32_t market = _market.cell_to_market[cell_idx];
+    const int32_t market = market_store().cell_to_market[cell_idx];
     std::vector<int64_t> variant_scores;
     std::vector<int64_t> variant_prices;
     std::vector<int64_t> need_score_sums;
     std::vector<int64_t> need_composites;
     std::vector<int64_t> need_environment;
-    std::vector<int64_t> good_quantities(_market.good_count, 0);
+    std::vector<int64_t> good_quantities(market_store().good_count, 0);
     int64_t preview_saturation_count = 0;
     build_demand_basis(market, sample, variant_scores, variant_prices,
                        need_score_sums, need_composites, need_environment,
                        preview_saturation_count);
     for (int32_t slot : slots) {
         std::fill(good_quantities.begin(), good_quantities.end(), int64_t{0});
-        const int64_t population = std::max<int64_t>(1, _population.population[slot]);
-        const uint32_t signature_id = _population.signature_id[slot];
+        const int64_t population = std::max<int64_t>(1, population_store().population[slot]);
+        const uint32_t signature_id = population_store().signature_id[slot];
         if (signature_id < _signatures.size()) {
             const Signature &signature = _signatures[signature_id];
             const Plan &plan = _plans[signature.plan_id];
@@ -615,7 +615,7 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
             }
         }
         demand_need_offsets.push_back(demand_need_indices.size());
-        for (int32_t good = 0; good < _market.good_count; ++good) {
+        for (int32_t good = 0; good < market_store().good_count; ++good) {
             const int64_t per_capita = good_quantities[good] / population;
             if (per_capita <= 0) continue;
             demand_good_indices.push_back(good);

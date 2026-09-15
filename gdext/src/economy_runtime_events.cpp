@@ -58,11 +58,11 @@ void NativeEconomyRuntime::publish_social_pressure_facts() {
         int64_t population = 0;
         int32_t grievance_slot = -1;
         int64_t grievance_q16 = Q16_ONE;
-        _population.for_each_in_cell(cell, [&](int32_t slot) {
+        population_store().for_each_in_cell(cell, [&](int32_t slot) {
             const int64_t people = std::max<int64_t>(
-                0, _population.population[slot]);
+                0, population_store().population[slot]);
             if (people <= 0) return;
-            const int64_t composite = _population.composite_satisfaction[slot];
+            const int64_t composite = population_store().composite_satisfaction[slot];
             population = saturating_add(population, people, _saturation_count);
             weighted = saturating_add(weighted,
                 saturating_mul(composite, people, _saturation_count),
@@ -86,14 +86,14 @@ void NativeEconomyRuntime::publish_social_pressure_facts() {
             population, 0, std::numeric_limits<int32_t>::max()));
         fact.value = composite_q16;
         const int32_t worst_dimension = grievance_slot >= 0 &&
-                _population.worst_dimension_id[grievance_slot] !=
+                population_store().worst_dimension_id[grievance_slot] !=
                     std::numeric_limits<uint8_t>::max()
-            ? static_cast<int32_t>(_population.worst_dimension_id[grievance_slot])
+            ? static_cast<int32_t>(population_store().worst_dimension_id[grievance_slot])
             : -1;
         const int32_t worst_need = grievance_slot >= 0 &&
-                _population.worst_need_id[grievance_slot] !=
+                population_store().worst_need_id[grievance_slot] !=
                     std::numeric_limits<uint16_t>::max()
-            ? static_cast<int32_t>(_population.worst_need_id[grievance_slot])
+            ? static_cast<int32_t>(population_store().worst_need_id[grievance_slot])
             : -1;
         fact.payload = {level, worst_dimension, worst_need, previous};
         fact.flags = level < previous ? 1 : 0;
@@ -473,19 +473,20 @@ void NativeEconomyRuntime::publish_country_development_facts() {
 
             int64_t cell_population = 0;
             int64_t cell_satisfaction = 0;
-            _population.for_each_in_cell(cell, [&](int32_t slot) {
+            population_store().for_each_in_cell(cell, [&](int32_t slot) {
                 ++slots_scanned;
                 const int64_t people = std::max<int64_t>(
-                    0, _population.population[static_cast<size_t>(slot)]);
+                    0, population_store().population[static_cast<size_t>(slot)]);
                 if (people <= 0) return;
                 cell_population = saturating_add(cell_population, people,
                                                  _saturation_count);
                 cell_satisfaction = saturating_add(cell_satisfaction,
-                    saturating_mul(static_cast<int64_t>(_population
-                        .composite_satisfaction[static_cast<size_t>(slot)]),
+                    saturating_mul(static_cast<int64_t>(
+                        population_store().composite_satisfaction[
+                            static_cast<size_t>(slot)]),
                         people, _saturation_count), _saturation_count);
                 const uint32_t signature_id =
-                    _population.signature_id[static_cast<size_t>(slot)];
+                    population_store().signature_id[static_cast<size_t>(slot)];
                 if (signature_id >= _signatures.size()) return;
                 const int32_t profession =
                     _signatures[signature_id].profession_id;
@@ -507,17 +508,17 @@ void NativeEconomyRuntime::publish_country_development_facts() {
                     _saturation_count);
                 class_snapshot.funds[class_row] = saturating_add(
                     class_snapshot.funds[class_row],
-                    std::max<int64_t>(0, _population.funds[
+                    std::max<int64_t>(0, population_store().funds[
                         static_cast<size_t>(slot)]), _saturation_count);
                 class_snapshot.owner_employed[class_row] = saturating_add(
                     class_snapshot.owner_employed[class_row],
-                    std::max<int64_t>(0, _population.owner_employed[
+                    std::max<int64_t>(0, population_store().owner_employed[
                         static_cast<size_t>(slot)]), _saturation_count);
                 class_snapshot.satisfaction_weighted[class_row] =
                     saturating_add(
                         class_snapshot.satisfaction_weighted[class_row],
                         saturating_mul(static_cast<int64_t>(
-                            _population.composite_satisfaction[
+                            population_store().composite_satisfaction[
                                 static_cast<size_t>(slot)]),
                             people, _saturation_count),
                         _saturation_count);
@@ -791,8 +792,8 @@ void NativeEconomyRuntime::trace_record_cashflow(int32_t cell, uint64_t cohort_h
 void NativeEconomyRuntime::trace_reconcile_inspector_cashflows() {
     const int32_t cell = _staging_events.cashflow_cell;
     if (cell < 0 || cell >= _cell_count) return;
-    _population.for_each_in_cell(cell, [&](int32_t slot) {
-        const uint64_t handle = _population.handle_for_slot(slot);
+    population_store().for_each_in_cell(cell, [&](int32_t slot) {
+        const uint64_t handle = population_store().handle_for_slot(slot);
         int64_t recorded_income = 0;
         int64_t recorded_expense = 0;
         for (const CashflowEntry &entry : _staging_events.cashflows) {
@@ -801,9 +802,9 @@ void NativeEconomyRuntime::trace_reconcile_inspector_cashflows() {
             recorded_expense = saturating_add(recorded_expense, entry.expense, _saturation_count);
         }
         const int64_t missing_income = std::max<int64_t>(
-            0, _population.epoch_income[slot] - recorded_income);
+            0, population_store().epoch_income[slot] - recorded_income);
         const int64_t missing_expense = std::max<int64_t>(
-            0, _population.epoch_expense[slot] - recorded_expense);
+            0, population_store().epoch_expense[slot] - recorded_expense);
         trace_record_cashflow(cell, handle, CASHFLOW_OTHER,
                               missing_income, missing_expense);
     });
@@ -852,7 +853,7 @@ void NativeEconomyRuntime::trace_begin_epoch() {
     _staging_events.stream_hash = trace_hash_mix(
         _staging_events.stream_hash, static_cast<uint64_t>(_staging_events.sample_day));
     if (_trace_mode != TRACE_OFF) {
-        const int64_t estimated_events = static_cast<int64_t>(_market.market_count) +
+        const int64_t estimated_events = static_cast<int64_t>(market_store().market_count) +
             static_cast<int64_t>(_buildings.size()) * 3 +
             static_cast<int64_t>(_pending_commands.size()) + 64;
         _staging_events.events.reserve(static_cast<size_t>(std::clamp<int64_t>(

@@ -19,8 +19,8 @@ bool NativeEconomyRuntime::plan_construction_materials(
             _building_construction_goods.size() + 1) {
         return false;
     }
-    const int32_t market = _market.cell_to_market[cell];
-    if (market < 0 || market >= _market.market_count) return false;
+    const int32_t market = market_store().cell_to_market[cell];
+    if (market < 0 || market >= market_store().market_count) return false;
     int64_t sat = 0;
     const BuildingType &type = _building_types[type_id];
     if (type.construction_begin < 0 || type.construction_count < 0 ||
@@ -31,9 +31,9 @@ bool NativeEconomyRuntime::plan_construction_materials(
     std::vector<int64_t> *virtual_stock = stock_inout;
     if (virtual_stock == nullptr) {
         local_stock.assign(_good_ids.size(), 0);
-        for (int32_t good = 0; good < _market.good_count; ++good) {
+        for (int32_t good = 0; good < market_store().good_count; ++good) {
             local_stock[static_cast<size_t>(good)] = std::max<int64_t>(0,
-                _market.stock[_market.index(market, good)]);
+                market_store().stock[market_store().index(market, good)]);
         }
         if (additional_stock != nullptr) {
             for (size_t good = 0; good < local_stock.size() &&
@@ -103,7 +103,7 @@ bool NativeEconomyRuntime::plan_construction_materials(
                         (*virtual_stock)[static_cast<size_t>(candidate.good_id)] -=
                             physical;
                         add_selection(candidate.good_id, physical);
-                        const int64_t price = _market.price[_market.index(
+                        const int64_t price = market_store().price[market_store().index(
                             market, candidate.good_id)];
                         plan.total_cost = saturating_add(plan.total_cost,
                             construction_bill.add(physical, price, sat), sat);
@@ -142,7 +142,7 @@ bool NativeEconomyRuntime::plan_construction_materials(
                         physical) {
                     continue;
                 }
-                const int64_t price = _market.price[_market.index(
+                const int64_t price = market_store().price[market_store().index(
                     market, candidate.good_id)];
                 const int64_t effective_cost = goods_cost(physical, price, sat);
                 const bool preferred_candidate = candidate.good_id ==
@@ -167,7 +167,7 @@ bool NativeEconomyRuntime::plan_construction_materials(
             add_selection(selected_good, selected_quantity);
             plan.total_cost = saturating_add(plan.total_cost,
                 construction_bill.add(selected_quantity,
-                    _market.price[_market.index(market, selected_good)], sat), sat);
+                    market_store().price[market_store().index(market, selected_good)], sat), sat);
         }
     }
     plan.feasible = true;
@@ -202,15 +202,15 @@ int32_t NativeEconomyRuntime::treasury_build_owner_signature(
     }
     std::vector<int64_t> population_by_ethnicity(_ethnicity_ids.size(), 0);
     int64_t local_sat = 0;
-    _population.for_each_in_cell(cell, [&](int32_t slot) {
-        const int32_t signature = static_cast<int32_t>(_population.signature_id[slot]);
+    population_store().for_each_in_cell(cell, [&](int32_t slot) {
+        const int32_t signature = static_cast<int32_t>(population_store().signature_id[slot]);
         if (signature < 0 || signature >= static_cast<int32_t>(_signatures.size())) return;
         const int32_t ethnicity = _signatures[signature].ethnicity_id;
         if (ethnicity < 0 || ethnicity >= static_cast<int32_t>(
                 population_by_ethnicity.size())) return;
         population_by_ethnicity[ethnicity] = saturating_add(
             population_by_ethnicity[ethnicity],
-            std::max<int64_t>(0, _population.population[slot]), local_sat);
+            std::max<int64_t>(0, population_store().population[slot]), local_sat);
     });
     int32_t dominant_ethnicity = -1;
     int64_t dominant_population = -1;
@@ -260,8 +260,8 @@ bool NativeEconomyRuntime::apply_treasury_sponsored_build_command(
 
     const int32_t owner_signature = treasury_build_owner_signature(cell, type_id);
     if (owner_signature < 0) return reject("construction_owner_signature_unavailable");
-    const int32_t market = _market.cell_to_market[cell];
-    if (market < 0 || market >= _market.market_count)
+    const int32_t market = market_store().cell_to_market[cell];
+    if (market < 0 || market >= market_store().market_count)
         return reject("construction_market_unavailable");
     const int32_t country_slot = cell < static_cast<int32_t>(
             _epoch_cell_country.size()) ? _epoch_cell_country[cell] : -1;
@@ -294,10 +294,10 @@ bool NativeEconomyRuntime::apply_treasury_sponsored_build_command(
             _country_runtime->good_for_handle(
                 static_cast<int64_t>(cmd.target_handle), good_ids[i])));
         market_used[i] = required[i] - treasury_used[i];
-        const int64_t lane = _market.index(market, good_ids[i]);
-        if (_market.stock[lane] < market_used[i])
+        const int64_t lane = market_store().index(market, good_ids[i]);
+        if (market_store().stock[lane] < market_used[i])
             return reject("construction_materials_insufficient");
-        total_cash = saturating_add(total_cash, treasury_bill.add(market_used[i], _market.price[lane], _saturation_count), _saturation_count);
+        total_cash = saturating_add(total_cash, treasury_bill.add(market_used[i], market_store().price[lane], _saturation_count), _saturation_count);
         treasury_goods_total = saturating_add(
             treasury_goods_total, treasury_used[i], _saturation_count);
         market_goods_total = saturating_add(
@@ -318,7 +318,7 @@ bool NativeEconomyRuntime::apply_treasury_sponsored_build_command(
                                     : error.c_str());
 
     for (size_t i = 0; i < good_ids.size(); ++i) {
-        const int64_t lane = _market.index(market, good_ids[i]);
+        const int64_t lane = market_store().index(market, good_ids[i]);
         _construction_goods_consumed = saturating_add(
             _construction_goods_consumed, required[i], _saturation_count);
         const int32_t signal = ensure_market_signal_index(cell, good_ids[i]);
@@ -354,12 +354,12 @@ bool NativeEconomyRuntime::apply_build_command(const Command &cmd, int32_t owner
     const int64_t count = cmd.i64_0;
     if (cell < 0 || cell >= _cell_count || type_id < 0 ||
         type_id >= static_cast<int32_t>(_building_types.size()) || count <= 0 ||
-        _population.page_cell[owner_slot / COHORT_PAGE_SIZE] != cell) {
+        population_store().page_cell[owner_slot / COHORT_PAGE_SIZE] != cell) {
         _last_building_rejection_reason = "building_target_invalid";
         ++_rejected_commands;
         return true;
     }
-    const int32_t owner_signature = static_cast<int32_t>(_population.signature_id[owner_slot]);
+    const int32_t owner_signature = static_cast<int32_t>(population_store().signature_id[owner_slot]);
     const BuildingType &type = _building_types[type_id];
     if (!building_available(cell, type_id, true)) {
         _last_building_rejection_reason = "building_technology_locked";
@@ -381,7 +381,7 @@ bool NativeEconomyRuntime::apply_build_command(const Command &cmd, int32_t owner
         ++_rejected_commands;
         return true;
     }
-    const int32_t market = _market.cell_to_market[cell];
+    const int32_t market = market_store().cell_to_market[cell];
     const int32_t country_slot = cell < static_cast<int32_t>(
             _epoch_cell_country.size()) ? _epoch_cell_country[cell] : -1;
     const int32_t construction_cost_factor = country_slot >= 0 &&
@@ -426,7 +426,7 @@ bool NativeEconomyRuntime::apply_build_command(const Command &cmd, int32_t owner
     int64_t construction_debt_principal = 0;
     int64_t construction_debt_premium = 0;
     const int64_t funding_gap = std::max<int64_t>(
-        0, total_cost - std::max<int64_t>(0, _population.funds[owner_slot]));
+        0, total_cost - std::max<int64_t>(0, population_store().funds[owner_slot]));
     if (funding_gap > 0) {
         const bool cached_investment_credit =
             _investment_merchant_cash_by_cell.size() ==
@@ -444,7 +444,7 @@ bool NativeEconomyRuntime::apply_build_command(const Command &cmd, int32_t owner
                  k < _merchant_offsets[cell + 1]; ++k) {
                 merchant_cash = saturating_add(merchant_cash,
                     std::max<int64_t>(
-                        0, _population.funds[_merchant_slots[k]]),
+                        0, population_store().funds[_merchant_slots[k]]),
                     _saturation_count);
             }
         }
@@ -483,9 +483,9 @@ bool NativeEconomyRuntime::apply_build_command(const Command &cmd, int32_t owner
             return true;
         }
         touch_accounting_slot(owner_slot);
-        _population.funds[owner_slot] = saturating_add(
-            _population.funds[owner_slot], funding_gap, _saturation_count);
-        trace_record_cashflow(cell, _population.handle_for_slot(owner_slot),
+        population_store().funds[owner_slot] = saturating_add(
+            population_store().funds[owner_slot], funding_gap, _saturation_count);
+        trace_record_cashflow(cell, population_store().handle_for_slot(owner_slot),
                               CASHFLOW_OTHER, funding_gap, 0);
         construction_debt_principal = funding_gap;
         construction_debt_premium = saturating_add(saturating_mul(
@@ -523,23 +523,23 @@ bool NativeEconomyRuntime::commit_preflighted_build_command(
     const int32_t cell = cmd.i32_0;
     const int32_t type_id = cmd.i32_1;
     const int64_t count = cmd.i64_0;
-    const int32_t market = _market.cell_to_market[cell];
+    const int32_t market = market_store().cell_to_market[cell];
     const int32_t owner_signature = static_cast<int32_t>(
-        _population.signature_id[owner_slot]);
+        population_store().signature_id[owner_slot]);
     const std::vector<int32_t> &planned_good_ids = material_plan.good_ids;
     const std::vector<int64_t> &planned_quantities = material_plan.quantities;
     const int64_t total_cost = material_plan.total_cost;
     if (!material_plan.feasible || planned_good_ids.size() !=
             planned_quantities.size() ||
-        _population.funds[owner_slot] < total_cost) {
+        population_store().funds[owner_slot] < total_cost) {
         error = "building_construction_preflight_funds_drift";
         return false;
     }
     for (size_t i = 0; i < planned_good_ids.size(); ++i) {
         const int32_t good_id = planned_good_ids[i];
-        if (good_id < 0 || good_id >= _market.good_count ||
+        if (good_id < 0 || good_id >= market_store().good_count ||
             planned_quantities[i] < 0 ||
-            _market.stock[_market.index(market, good_id)] <
+            market_store().stock[market_store().index(market, good_id)] <
                 planned_quantities[i]) {
             error = "building_construction_preflight_stock_drift";
             return false;
@@ -547,9 +547,9 @@ bool NativeEconomyRuntime::commit_preflighted_build_command(
     }
     std::vector<EventLeg> event_legs;
     const bool trace_detail = trace_detail_for_cell(cell);
-    const int64_t owner_handle = static_cast<int64_t>(_population.handle_for_slot(owner_slot));
-    const int64_t owner_funds_before = _population.funds[owner_slot];
-    const int64_t owner_expense_before = _population.epoch_expense[owner_slot];
+    const int64_t owner_handle = static_cast<int64_t>(population_store().handle_for_slot(owner_slot));
+    const int64_t owner_funds_before = population_store().funds[owner_slot];
+    const int64_t owner_expense_before = population_store().epoch_expense[owner_slot];
     std::vector<int32_t> merchant_trace_slots;
     std::vector<int64_t> merchant_trace_funds;
     std::vector<int64_t> merchant_trace_income;
@@ -557,24 +557,24 @@ bool NativeEconomyRuntime::commit_preflighted_build_command(
         for (int32_t k = _merchant_offsets[cell]; k < _merchant_offsets[cell + 1]; ++k) {
             const int32_t merchant_slot = _merchant_slots[k];
             merchant_trace_slots.push_back(merchant_slot);
-            merchant_trace_funds.push_back(_population.funds[merchant_slot]);
-            merchant_trace_income.push_back(_population.epoch_income[merchant_slot]);
+            merchant_trace_funds.push_back(population_store().funds[merchant_slot]);
+            merchant_trace_income.push_back(population_store().epoch_income[merchant_slot]);
         }
         for (size_t i = 0; i < planned_good_ids.size(); ++i) {
             const int32_t good_id = planned_good_ids[i];
-            const int64_t idx = _market.index(market, good_id);
+            const int64_t idx = market_store().index(market, good_id);
             const int64_t qty = planned_quantities[i];
             event_legs.push_back({FIELD_MARKET_STOCK, SUBJECT_MARKET, market, good_id,
-                                  _market.stock[idx], _market.stock[idx] - qty});
+                                  market_store().stock[idx], market_store().stock[idx] - qty});
         }
     }
     touch_accounting_slot(owner_slot);
     for (size_t i = 0; i < planned_good_ids.size(); ++i) {
         const int32_t good_id = planned_good_ids[i];
         const int64_t qty = planned_quantities[i];
-        const int64_t stock_index = _market.index(market, good_id);
+        const int64_t stock_index = market_store().index(market, good_id);
         audit_touch_market_lane(static_cast<size_t>(stock_index));
-        _market.stock[stock_index] -= qty;
+        market_store().stock[stock_index] -= qty;
         _construction_goods_consumed = saturating_add(_construction_goods_consumed, qty,
                                                        _saturation_count);
         const int32_t signal = ensure_market_signal_index(cell, good_id);
@@ -584,10 +584,10 @@ bool NativeEconomyRuntime::commit_preflighted_build_command(
                 _epoch_nonhousehold_withdrawals[signal], qty, _saturation_count);
         }
     }
-    _population.funds[owner_slot] -= total_cost;
-    _population.epoch_expense[owner_slot] = saturating_add(
-        _population.epoch_expense[owner_slot], total_cost, _saturation_count);
-    trace_record_cashflow(cell, _population.handle_for_slot(owner_slot),
+    population_store().funds[owner_slot] -= total_cost;
+    population_store().epoch_expense[owner_slot] = saturating_add(
+        population_store().epoch_expense[owner_slot], total_cost, _saturation_count);
+    trace_record_cashflow(cell, population_store().handle_for_slot(owner_slot),
                           CASHFLOW_CONSTRUCTION, 0, total_cost);
     if (credit_local_merchants(cell, total_cost, CASHFLOW_MERCHANT_BUSINESS) != total_cost) {
         error = "building_construction_has_no_merchant_owner";
@@ -607,30 +607,30 @@ bool NativeEconomyRuntime::commit_preflighted_build_command(
         construction_debt_principal, construction_debt_premium,
         static_cast<uint16_t>(construction_debt_principal > 0
             ? _merchant_credit_term_cycles : 0),
-        sponsor_family_for_cohort(_population.handle_for_slot(owner_slot),
+        sponsor_family_for_cohort(population_store().handle_for_slot(owner_slot),
                                   cell)});
-    if (trace_detail && owner_funds_before != _population.funds[owner_slot]) {
+    if (trace_detail && owner_funds_before != population_store().funds[owner_slot]) {
         event_legs.push_back({FIELD_COHORT_FUNDS, SUBJECT_COHORT, owner_handle, -1,
-                              owner_funds_before, _population.funds[owner_slot]});
+                              owner_funds_before, population_store().funds[owner_slot]});
     }
-    if (trace_detail && owner_expense_before != _population.epoch_expense[owner_slot]) {
+    if (trace_detail && owner_expense_before != population_store().epoch_expense[owner_slot]) {
         event_legs.push_back({FIELD_COHORT_EPOCH_EXPENSE, SUBJECT_COHORT, owner_handle, -1,
-                              owner_expense_before, _population.epoch_expense[owner_slot]});
+                              owner_expense_before, population_store().epoch_expense[owner_slot]});
     }
     if (trace_detail) {
         for (size_t i = 0; i < merchant_trace_slots.size(); ++i) {
             const int32_t merchant_slot = merchant_trace_slots[i];
             const int64_t handle = static_cast<int64_t>(
-                _population.handle_for_slot(merchant_slot));
-            if (merchant_trace_funds[i] != _population.funds[merchant_slot]) {
+                population_store().handle_for_slot(merchant_slot));
+            if (merchant_trace_funds[i] != population_store().funds[merchant_slot]) {
                 event_legs.push_back({FIELD_COHORT_FUNDS, SUBJECT_COHORT, handle, -1,
                                       merchant_trace_funds[i],
-                                      _population.funds[merchant_slot]});
+                                      population_store().funds[merchant_slot]});
             }
-            if (merchant_trace_income[i] != _population.epoch_income[merchant_slot]) {
+            if (merchant_trace_income[i] != population_store().epoch_income[merchant_slot]) {
                 event_legs.push_back({FIELD_COHORT_EPOCH_INCOME, SUBJECT_COHORT, handle, -1,
                                       merchant_trace_income[i],
-                                      _population.epoch_income[merchant_slot]});
+                                      population_store().epoch_income[merchant_slot]});
             }
         }
     }
@@ -648,12 +648,12 @@ bool NativeEconomyRuntime::apply_demolish_command(const Command &cmd, int32_t ow
     const int64_t count = cmd.i64_0;
     if (cell < 0 || cell >= _cell_count || type_id < 0 ||
         type_id >= static_cast<int32_t>(_building_types.size()) || count <= 0 ||
-        _population.page_cell[owner_slot / COHORT_PAGE_SIZE] != cell) {
+        population_store().page_cell[owner_slot / COHORT_PAGE_SIZE] != cell) {
         _last_building_rejection_reason = "demolish_target_invalid";
         ++_rejected_commands;
         return true;
     }
-    const int32_t signature = static_cast<int32_t>(_population.signature_id[owner_slot]);
+    const int32_t signature = static_cast<int32_t>(population_store().signature_id[owner_slot]);
     const int32_t group_id = find_building_group(cell, type_id, signature);
     if (group_id < 0 || _buildings[group_id].count < count) {
         _last_building_rejection_reason = "demolish_owned_count_insufficient";

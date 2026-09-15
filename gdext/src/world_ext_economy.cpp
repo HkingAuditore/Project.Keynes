@@ -188,6 +188,16 @@ Dictionary DCWorldExt::bootstrap_economy(const Dictionary &population_packet,
 }
 
 Dictionary DCWorldExt::submit_economy_commands(const Dictionary &packed_batch) {
+    // Phase-2.4.5: refuse legacy ingress whenever StageOps is the effective
+    // production writer, even before economy is configured.
+    if (_runtime_host != nullptr &&
+        _runtime_host->economy_production_writer_effective() ==
+            EconomyProductionWriter::STAGE_OPS) {
+        Dictionary out;
+        out["ok"] = false;
+        out["reason"] = "economy_legacy_ingress_disabled";
+        return out;
+    }
     if (_economy_runtime == nullptr) {
         return unavailable();
     }
@@ -1315,6 +1325,54 @@ Dictionary DCWorldExt::run_economy_production_climate_math_probe(
 
 int64_t DCWorldExt::get_economy_state_hash() const {
     return _economy_runtime == nullptr ? 0 : runtime_from(_economy_runtime)->state_hash();
+}
+
+Dictionary DCWorldExt::run_economy_stage_ops_day(int64_t day_index) {
+    Dictionary out;
+    if (_economy_runtime == nullptr) {
+        return unavailable();
+    }
+    // Match run_economy_slice_internal: same-day env/building capture must land
+    // before epoch open, or prelude parks as pending_input forever.
+    const Dictionary cap =
+        begin_or_reuse_economy_input_epoch(day_index, Dictionary());
+    if (bool(cap.get("fatal", false))) {
+        out["ok"] = false;
+        out["done"] = true;
+        out["fatal"] = true;
+        out["day_index"] = day_index;
+        out["reason"] = String(
+            cap.get("fatal_reason", "economy_day_input_capture_failed"));
+        out["message"] = out["reason"];
+        out["stage"] = String(cap.get("stage", "economy_day_inputs"));
+        return out;
+    }
+    std::string error;
+    const bool ok =
+        runtime_from(_economy_runtime)->run_stage_ops_day(day_index, error);
+    out["ok"] = ok;
+    out["done"] = ok;
+    out["fatal"] = !ok;
+    out["day_index"] = day_index;
+    out["input_capture_reused"] = cap.get("input_capture_reused", false);
+    out["input_captured"] = cap.get("captured", false);
+    if (!ok) {
+        out["reason"] = String(error.c_str());
+        out["message"] = String(error.c_str());
+    }
+    return out;
+}
+
+void DCWorldExt::set_economy_stage_ops_soak_parity_ok(bool ok) {
+    if (!_runtime_host) {
+        _runtime_host = std::make_unique<NativeSimulationHost>();
+    }
+    _runtime_host->set_economy_stage_ops_soak_parity_ok(ok);
+}
+
+bool DCWorldExt::get_economy_stage_ops_soak_parity_ok() const {
+    return _runtime_host != nullptr &&
+           _runtime_host->economy_stage_ops_soak_parity_ok();
 }
 
 Dictionary DCWorldExt::inject_economy_cadence_timing(double market_cycle_ms,

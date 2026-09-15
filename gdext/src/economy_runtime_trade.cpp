@@ -340,14 +340,14 @@ int32_t NativeEconomyRuntime::trade_edge_cost(
 
 int32_t NativeEconomyRuntime::estimate_trade_price(
         int32_t market, int32_t good, int64_t stock_after, int64_t &sat) const {
-    const int64_t index = _market.index(market, good);
+    const int64_t index = market_store().index(market, good);
     const int32_t signal = market_signal_index(market, good);
     const PricePressure pressure = price_pressure(
-        market, good, _market.demand_ema[index], std::max<int64_t>(0, stock_after),
-        _market.last_shortage_q16[index], signal, sat);
+        market, good, market_store().demand_ema[index], std::max<int64_t>(0, stock_after),
+        market_store().last_shortage_q16[index], signal, sat);
     bool rate_clamped = false;
     bool rise_damped = false;
-    const int64_t current_price = _market.price[index];
+    const int64_t current_price = market_store().price[index];
     const int64_t next = next_price_v6(good, current_price, pressure,
         std::max(1, _epoch_days), sat, rate_clamped, rise_damped);
     // Share the settlement shaping so a planned destination price can never
@@ -359,9 +359,9 @@ int32_t NativeEconomyRuntime::estimate_trade_price(
 
 int64_t NativeEconomyRuntime::trade_relief_pressure_q16(
         int32_t market, int32_t good, int64_t &sat) const {
-    if (market < 0 || market >= _market.market_count || good < 0 ||
-        good >= _market.good_count) return 0;
-    const int64_t index = _market.index(market, good);
+    if (market < 0 || market >= market_store().market_count || good < 0 ||
+        good >= market_store().good_count) return 0;
+    const int64_t index = market_store().index(market, good);
     int64_t pressure = 0;
     const bool survival_good =
         (good < static_cast<int32_t>(_survival_food_good_mask.size()) &&
@@ -370,7 +370,7 @@ int64_t NativeEconomyRuntime::trade_relief_pressure_q16(
          _survival_clothing_good_mask[good] != 0);
     if (survival_good) {
         pressure = std::max<int64_t>(pressure,
-            std::clamp<int64_t>(_market.last_shortage_q16[index], 0, Q16_ONE));
+            std::clamp<int64_t>(market_store().last_shortage_q16[index], 0, Q16_ONE));
     }
     const int32_t signal = market_signal_index(market, good);
     if (signal >= 0 && signal < static_cast<int32_t>(
@@ -394,7 +394,7 @@ int64_t NativeEconomyRuntime::trade_relief_pressure_q16(
                 std::clamp<int64_t>(_derived_business_demand_weight_q16, 0, Q16_ONE),
                 Q16_ONE, sat);
             const int64_t household = std::max<int64_t>(
-                GOODS_SCALE, _market.demand_ema[index]);
+                GOODS_SCALE, market_store().demand_ema[index]);
             pressure = std::max<int64_t>(pressure, std::clamp<int64_t>(
                 mul_div_sat(weighted, Q16_ONE,
                     saturating_add(household, weighted, sat), sat),
@@ -404,7 +404,7 @@ int64_t NativeEconomyRuntime::trade_relief_pressure_q16(
     if (signal >= 0 && signal < static_cast<int32_t>(
             _production_input_reserve.size())) {
         const int64_t reserve = merchant_protected_reserve(signal);
-        const int64_t stock = std::max<int64_t>(0, _market.stock[index]);
+        const int64_t stock = std::max<int64_t>(0, market_store().stock[index]);
         if (reserve > stock) {
             pressure = std::max<int64_t>(pressure, std::clamp<int64_t>(
                 mul_div_sat(reserve - stock, Q16_ONE, std::max<int64_t>(1, reserve), sat),
@@ -416,10 +416,10 @@ int64_t NativeEconomyRuntime::trade_relief_pressure_q16(
 
 int64_t NativeEconomyRuntime::trade_local_stock_target(
         int32_t market, int32_t good, int64_t &sat) const {
-    if (market < 0 || market >= _market.market_count || good < 0 ||
-        good >= _market.good_count) return 0;
-    const int64_t index = _market.index(market, good);
-    int64_t demand = _market.demand_ema[index];
+    if (market < 0 || market >= market_store().market_count || good < 0 ||
+        good >= market_store().good_count) return 0;
+    const int64_t index = market_store().index(market, good);
+    int64_t demand = market_store().demand_ema[index];
     const int32_t signal = market_signal_index(market, good);
     if (signal >= 0) demand = saturating_add(
         demand, _market_signals.business_demand_ema[signal], sat);
@@ -448,15 +448,15 @@ int64_t NativeEconomyRuntime::trade_local_stock_target(
 
 int64_t NativeEconomyRuntime::trade_export_floor(
         int32_t market, int32_t good, int64_t &sat) const {
-    if (market < 0 || market >= _market.market_count || good < 0 ||
-        good >= _market.good_count) return 0;
+    if (market < 0 || market >= market_store().market_count || good < 0 ||
+        good >= market_store().good_count) return 0;
     const int32_t signal = market_signal_index(market, good);
     const int32_t flow = const_cast<NativeEconomyRuntime *>(this)->trade_flow_index(
         market, good, false);
     const int64_t realized = signal >= 0
         ? _market_signals.realized_withdrawal_ema[signal] : 0;
     const int64_t exports = flow >= 0 ? _trade_flows.export_ema[flow] : 0;
-    const int64_t stock = _market.stock[_market.index(market, good)];
+    const int64_t stock = market_store().stock[market_store().index(market, good)];
     const int64_t merchant_target = merchant_inventory_target(
         market, good, signal, realized, exports, 0, sat);
     int64_t floor = mul_div_sat(
@@ -477,8 +477,8 @@ int64_t NativeEconomyRuntime::profitable_trade_quantity(
     source_price = destination_price = 0;
     profit = margin_q16 = 0;
     if (max_quantity <= 0) return 0;
-    const int64_t source_stock = _market.stock[_market.index(source, good)];
-    const int64_t destination_stock = _market.stock[_market.index(destination, good)];
+    const int64_t source_stock = market_store().stock[market_store().index(source, good)];
+    const int64_t destination_stock = market_store().stock[market_store().index(destination, good)];
     auto quote = [&](int64_t quantity, int32_t &quoted_source,
                      int32_t &quoted_destination, int64_t &quoted_profit,
                      int64_t &quoted_margin) {
@@ -611,10 +611,10 @@ int64_t NativeEconomyRuntime::merchant_inventory_target(
         int32_t market, int32_t good, int32_t signal_index,
         int64_t realized_withdrawal,
         int64_t export_ema, int64_t cold_start_daily_supply, int64_t &sat) const {
-    if (market < 0 || market >= _market.market_count || good < 0 ||
-        good >= _market.good_count || _good_storage_modes[good] != 0) return 0;
-    const int64_t index = _market.index(market, good);
-    int64_t feasible_daily = _market.demand_ema[index];
+    if (market < 0 || market >= market_store().market_count || good < 0 ||
+        good >= market_store().good_count || _good_storage_modes[good] != 0) return 0;
+    const int64_t index = market_store().index(market, good);
+    int64_t feasible_daily = market_store().demand_ema[index];
     if (signal_index >= 0) feasible_daily = saturating_add(
         feasible_daily, _market_signals.business_demand_ema[signal_index], sat);
     feasible_daily = saturating_add(
@@ -1061,18 +1061,18 @@ bool NativeEconomyRuntime::run_trade_planner_slice(
             const int32_t country = _epoch_cell_country[market];
             if (country < 0 || _merchant_offsets[market] >= _merchant_offsets[market + 1])
                 continue;
-            const int64_t index = _market.index(market, good);
+            const int64_t index = market_store().index(market, good);
             int64_t sat = 0;
             const int64_t target = trade_local_stock_target(market, good, sat);
             const int64_t export_floor = trade_export_floor(market, good, sat);
-            const int64_t stock = _market.stock[index];
+            const int64_t stock = market_store().stock[index];
             if (stock > export_floor && static_cast<int32_t>(_trade_plan.sources.size()) <
                     _trade_max_signals) {
                 const int64_t cap = mul_div_sat(
                     stock, _trade_max_stock_share_q16, Q16_ONE, sat);
                 const int64_t quantity = std::min(stock - export_floor, cap);
                 if (quantity > 0) _trade_plan.sources.push_back(
-                    {market, good, country, _market.price[index], quantity, 0});
+                    {market, good, country, market_store().price[index], quantity, 0});
             } else if (target > stock + _trade_plan.scan_inbound[_trade_plan.scan_cursor] &&
                        static_cast<int32_t>(_trade_plan.destinations.size()) <
                            _trade_max_signals) {
@@ -1108,7 +1108,7 @@ bool NativeEconomyRuntime::run_trade_planner_slice(
                     response_priority = 2;
                 }
                 _trade_plan.destinations.push_back(
-                    {market, good, country, _market.price[index],
+                    {market, good, country, market_store().price[index],
                      target - stock - _trade_plan.scan_inbound[_trade_plan.scan_cursor], age,
                      response_priority});
             }
@@ -1478,9 +1478,9 @@ int64_t NativeEconomyRuntime::credit_trade_sellers(
     valid.reserve(static_cast<size_t>(std::max(0, end - begin)));
     for (int32_t i = begin; i < end; ++i) {
         int32_t slot = -1;
-        if (!_population.valid_handle(_trade_orders.seller_handles[i], slot) ||
+        if (!population_store().valid_handle(_trade_orders.seller_handles[i], slot) ||
             !is_merchant_slot(slot) ||
-            _population.page_cell[slot / COHORT_PAGE_SIZE] != _trade_orders.sources[order_index])
+            population_store().page_cell[slot / COHORT_PAGE_SIZE] != _trade_orders.sources[order_index])
             continue;
         const int64_t weight = std::max<int64_t>(1, _trade_orders.seller_weights[i]);
         valid.push_back({slot, weight});
@@ -1512,12 +1512,12 @@ int64_t NativeEconomyRuntime::credit_trade_sellers(
         const int64_t next = mul_div_sat(amount, prefix, total_weight, _saturation_count);
         const int64_t share = std::max<int64_t>(0, next - distributed);
         distributed = next;
-        _population.funds[slot] = saturating_add(
-            _population.funds[slot], share, _saturation_count);
-        _population.epoch_income[slot] = saturating_add(
-            _population.epoch_income[slot], share, _saturation_count);
+        population_store().funds[slot] = saturating_add(
+            population_store().funds[slot], share, _saturation_count);
+        population_store().epoch_income[slot] = saturating_add(
+            population_store().epoch_income[slot], share, _saturation_count);
         trace_record_cashflow(_trade_orders.sources[order_index],
-            _population.handle_for_slot(slot), cashflow_source, share, 0);
+            population_store().handle_for_slot(slot), cashflow_source, share, 0);
     }
     if (distributed > 0) {
         _merchant_trade_sale_cash = saturating_add(
@@ -1544,11 +1544,11 @@ int64_t NativeEconomyRuntime::debit_trade_sellers(
     int64_t total_funds = 0;
     for (int32_t i = begin; i < end; ++i) {
         int32_t slot = -1;
-        if (!_population.valid_handle(_trade_orders.seller_handles[i], slot) ||
+        if (!population_store().valid_handle(_trade_orders.seller_handles[i], slot) ||
             !is_merchant_slot(slot) ||
-            _population.page_cell[slot / COHORT_PAGE_SIZE] !=
+            population_store().page_cell[slot / COHORT_PAGE_SIZE] !=
                 _trade_orders.sources[order_index]) continue;
-        const int64_t funds = std::max<int64_t>(0, _population.funds[slot]);
+        const int64_t funds = std::max<int64_t>(0, population_store().funds[slot]);
         if (funds <= 0) continue;
         valid.push_back({slot, funds});
         total_funds = saturating_add(total_funds, funds, _saturation_count);
@@ -1567,13 +1567,13 @@ int64_t NativeEconomyRuntime::debit_trade_sellers(
             _saturation_count);
         const int64_t share = std::min(
             std::max<int64_t>(0, next - distributed),
-            std::max<int64_t>(0, _population.funds[slot]));
+            std::max<int64_t>(0, population_store().funds[slot]));
         distributed = saturating_add(distributed, share, _saturation_count);
-        _population.funds[slot] -= share;
-        _population.epoch_expense[slot] = saturating_add(
-            _population.epoch_expense[slot], share, _saturation_count);
+        population_store().funds[slot] -= share;
+        population_store().epoch_expense[slot] = saturating_add(
+            population_store().epoch_expense[slot], share, _saturation_count);
         trace_record_cashflow(_trade_orders.sources[order_index],
-            _population.handle_for_slot(slot), cashflow_source, 0, share);
+            population_store().handle_for_slot(slot), cashflow_source, 0, share);
     }
     if (distributed > 0 && cashflow_source == CASHFLOW_EXPORT_TAX) {
         _merchant_trade_sale_cash = saturating_sub(
@@ -1694,7 +1694,7 @@ bool NativeEconomyRuntime::settle_due_trade_orders(std::string &error) {
         }
         if (_trade_orders.cargo_delivered[order] == 0) {
             const int32_t destination = _trade_orders.destinations[order];
-            if (destination < 0 || destination >= _market.market_count) {
+            if (destination < 0 || destination >= market_store().market_count) {
                 error = "trade_order_destination_invalid";
                 return false;
             }
@@ -1708,14 +1708,14 @@ bool NativeEconomyRuntime::settle_due_trade_orders(std::string &error) {
                  line < _trade_orders.line_offsets[order + 1]; ++line) {
                 const int32_t good = _trade_orders.line_goods[line];
                 const int64_t quantity = _trade_orders.line_quantities[line];
-                if (good < 0 || good >= _market.good_count || quantity <= 0) {
+                if (good < 0 || good >= market_store().good_count || quantity <= 0) {
                     error = "trade_order_line_invalid";
                     return false;
                 }
-                const int64_t index = _market.index(destination, good);
+                const int64_t index = market_store().index(destination, good);
                 audit_touch_market_lane(static_cast<size_t>(index));
-                _market.stock[index] = saturating_add(
-                    _market.stock[index], quantity, _saturation_count);
+                market_store().stock[index] = saturating_add(
+                    market_store().stock[index], quantity, _saturation_count);
                 delivered = saturating_add(delivered, quantity, _saturation_count);
                 const int32_t flow = trade_flow_index(destination, good, true);
                 if (flow >= 0) _trade_flows.period_import[flow] = saturating_add(
@@ -2082,7 +2082,7 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
         const int32_t destination_country = candidate.destination_country >= 0
             ? candidate.destination_country : candidate.country;
         if (candidate.source < 0 || candidate.destination < 0 ||
-            candidate.good < 0 || candidate.good >= _market.good_count ||
+            candidate.good < 0 || candidate.good >= market_store().good_count ||
             source_country < 0 || source_country >= _epoch_country_count ||
             destination_country < 0 || destination_country >= _epoch_country_count ||
             candidate.topology_generation != _trade_topology.topology_generation ||
@@ -2123,7 +2123,7 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
             continue;
         }
         TradeCandidate clipped = candidate;
-        const int64_t market_index = _market.index(candidate.source, candidate.good);
+        const int64_t market_index = market_store().index(candidate.source, candidate.good);
         int64_t target_sat = 0;
         const int64_t local_stock_target = trade_export_floor(
             candidate.source, candidate.good, target_sat);
@@ -2135,7 +2135,7 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
         auto source_it = source_remaining.find(source_key);
         if (source_it == source_remaining.end()) {
             source_it = source_remaining.emplace(source_key, std::max<int64_t>(
-                0, _market.stock[market_index] - local_stock_target)).first;
+                0, market_store().stock[market_index] - local_stock_target)).first;
         }
         int64_t reserved_stock = 0;
         clipped.quantity = std::min(clipped.quantity,
@@ -2158,7 +2158,7 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
                             _trade_orders.line_quantities[line], destination_sat);
                 }
             }
-            const int64_t destination_stock = _market.stock[_market.index(
+            const int64_t destination_stock = market_store().stock[market_store().index(
                 candidate.destination, candidate.good)];
             destination_it = destination_remaining.emplace(destination_key,
                 std::max<int64_t>(0, target - destination_stock - inbound)).first;
@@ -2183,13 +2183,13 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
             }
             continue;
         }
-        const int64_t destination_index = _market.index(
+        const int64_t destination_index = market_store().index(
             candidate.destination, candidate.good);
         clipped.source_price = estimate_trade_price(candidate.source, candidate.good,
-            _market.stock[market_index] - clipped.quantity, sat);
+            market_store().stock[market_index] - clipped.quantity, sat);
         clipped.destination_price = estimate_trade_price(
             candidate.destination, candidate.good,
-            _market.stock[destination_index] + clipped.quantity, sat);
+            market_store().stock[destination_index] + clipped.quantity, sat);
         auto destination_cash_it = destination_trade_cash_remaining.find(
             candidate.destination);
         if (destination_cash_it == destination_trade_cash_remaining.end()) {
@@ -2198,7 +2198,7 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
                  k < _merchant_offsets[candidate.destination + 1]; ++k) {
                 merchant_cash = saturating_add(merchant_cash,
                     std::max<int64_t>(0,
-                        _population.funds[_merchant_slots[k]]), sat);
+                        population_store().funds[_merchant_slots[k]]), sat);
             }
             int64_t existing_order_reserved_cash = 0;
             for (int32_t order = 0; order < _trade_orders.size(); ++order) {
@@ -2254,10 +2254,10 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
                                       int64_t &destination_work) {
             const int32_t quoted_source = estimate_trade_price(
                 candidate.source, candidate.good,
-                _market.stock[market_index] - quantity, sat);
+                market_store().stock[market_index] - quantity, sat);
             const int32_t quoted_destination = estimate_trade_price(
                 candidate.destination, candidate.good,
-                _market.stock[destination_index] + quantity, sat);
+                market_store().stock[destination_index] + quantity, sat);
             quote = make_trade_quote(candidate.source, candidate.destination,
                 candidate.good, quantity, quoted_source, quoted_destination,
                 relief_route, sat);
@@ -2521,7 +2521,7 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
         clipped.density_q16 = mul_div_sat(
             density_profit, Q16_ONE, clipped.capacity_work, sat);
         const int64_t purchase_cash = best_quote.importer_outlay;
-        if (_market.stock[market_index] - local_stock_target - reserved_stock <
+        if (market_store().stock[market_index] - local_stock_target - reserved_stock <
                 clipped.quantity) {
             ++_trade_rejected_stock;
             ++_trade_true_source_stock_failures;
@@ -2665,7 +2665,7 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
                     purchase_cash, _saturation_count);
         }
         audit_touch_market_lane(static_cast<size_t>(market_index));
-        _market.stock[market_index] -= clipped.quantity;
+        market_store().stock[market_index] -= clipped.quantity;
         // Household settlement already contributed its closing totals. Move the
         // dispatched value from those local totals into trade escrow/transit so
         // the later conservation audit counts it exactly once.
@@ -2972,9 +2972,9 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
         for (int32_t k = _merchant_offsets[first.source];
              k < _merchant_offsets[first.source + 1]; ++k) {
             const int32_t slot = _merchant_slots[k];
-            _trade_orders.seller_handles.push_back(_population.handle_for_slot(slot));
+            _trade_orders.seller_handles.push_back(population_store().handle_for_slot(slot));
             _trade_orders.seller_weights.push_back(
-                std::max<int64_t>(1, _population.population[slot]));
+                std::max<int64_t>(1, population_store().population[slot]));
         }
         _trade_orders.seller_offsets.push_back(
             static_cast<int32_t>(_trade_orders.seller_handles.size()));
