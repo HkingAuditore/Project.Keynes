@@ -190,7 +190,7 @@ bool NativeEconomyRuntime::reconcile_building_employment_cells_range(
         priority_income.assign(static_cast<size_t>(last - first), 0);
         priority_survival.assign(static_cast<size_t>(last - first), 0);
         for (int32_t g = first; g < last; ++g) {
-            BuildingGroup &group = _buildings[g];
+            auto group = building_at(static_cast<size_t>(g));
             if (group.cell != cell || group.count <= 0 ||
                 !building_available(cell, group.type_id, true)) {
                 group.filled_owner = 0;
@@ -270,7 +270,7 @@ bool NativeEconomyRuntime::reconcile_building_employment_cells_range(
                 _saturation_count);
         }
         for (int32_t g : priority) {
-            BuildingGroup &group = _buildings[g];
+            auto group = building_at(static_cast<size_t>(g));
             const int32_t sig = group.owner_signature_id;
             if (sig < 0 || sig >= static_cast<int32_t>(sig_population.size())) {
                 error = "building_owner_signature_invalid_after_population_change";
@@ -340,7 +340,7 @@ bool NativeEconomyRuntime::reconcile_building_employment_cells_range(
                 _saturation_count);
         });
         for (int32_t g : priority) {
-            BuildingGroup &group = _buildings[g];
+            auto group = building_at(static_cast<size_t>(g));
             const BuildingType &type = _building_types[group.type_id];
             for (int32_t r = 0; r < type.employee_count; ++r) {
                 const JobRole &role = _building_employee_roles[type.employee_begin + r];
@@ -440,7 +440,7 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
         int64_t reference_total = 0;
         int64_t reference_weight = 0;
         for (int32_t g = begin; g < end; ++g) {
-            const BuildingGroup &group = _buildings[g];
+            const auto group = building_at(static_cast<size_t>(g));
             if (!building_available(cell, group.type_id, true)) continue;
             const BuildingType &type = _building_types[group.type_id];
             for (int32_t r = 0; r < type.employee_count; ++r) {
@@ -461,7 +461,7 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
         const int64_t local_average = _labor_signals.contract_wage_ema[signal] > 0
             ? _labor_signals.contract_wage_ema[signal] : reference;
         for (int32_t g = begin; g < end; ++g) {
-            BuildingGroup &group = _buildings[g];
+            auto group = building_at(static_cast<size_t>(g));
             if (!building_available(cell, group.type_id, true)) continue;
             const BuildingType &type = _building_types[group.type_id];
             // Affordability damping is a daily-flow calculation. Historical
@@ -672,7 +672,7 @@ void NativeEconomyRuntime::update_cell_labor_signals(int32_t cell) {
         int64_t paid = 0;
         for (int32_t g = _building_cell_offsets[cell];
              g < _building_cell_offsets[cell + 1]; ++g) {
-            const BuildingGroup &group = _buildings[g];
+            const auto group = building_at(static_cast<size_t>(g));
             const BuildingType &type = _building_types[group.type_id];
             for (int32_t r = 0; r < type.employee_count; ++r) {
                 const JobRole &role = _building_employee_roles[type.employee_begin + r];
@@ -718,8 +718,8 @@ bool NativeEconomyRuntime::run_building_employment_cell(
     // employee 涔嬪拰銆備簩鑰呭湪 A1 涓ゆ閫昏緫涓 std::fill 閲嶇疆澶嶇敤锛堣涓嬶級銆?
     thread_local std::vector<int64_t> demand;
     thread_local std::vector<int64_t> fill;
-    auto employment_utilization_q16 = [&](const BuildingGroup &group) {
-        const int32_t index = static_cast<int32_t>(&group - _buildings.data());
+    auto employment_utilization_q16 = [&](BuildingGroupConstRef group) {
+        const int32_t index = static_cast<int32_t>(group.index);
         int64_t utilization = index >= 0 && index < static_cast<int32_t>(
                 _building_planned_capacity_before_climate_q16.size())
             ? _building_planned_capacity_before_climate_q16[index]
@@ -807,7 +807,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
     }
     const int64_t mobility_period_q16 = std::clamp<int64_t>(
         Q16_ONE - stay_q16, 0, Q16_ONE);
-    auto planned_role_demand = [&](const BuildingGroup &group,
+    auto planned_role_demand = [&](BuildingGroupConstRef group,
                                    const JobRole &role, int32_t role_index) {
         const int64_t full = saturating_mul(group.count, role.slots_per_building,
                                             _saturation_count);
@@ -876,7 +876,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         // Owner mobility always uses the read-only opportunity quote. This is
         // intentionally independent of realized filled_owner so an established
         // but temporarily vacant lot can attract labor again.
-        auto owner_mobility_income = [&](const BuildingGroup &group,
+        auto owner_mobility_income = [&](BuildingGroupConstRef group,
                                          int64_t &sat) -> int64_t {
             if (group.type_id < 0 || group.type_id >= static_cast<int32_t>(
                     _building_types.size()) || group.operating_state == 1 ||
@@ -954,7 +954,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 saturating_add(Q16_ONE, softened, _saturation_count),
                 Q16_ONE, Q16_ONE * 5);
         };
-        auto owner_entry_capital = [&](const BuildingGroup &group) -> int64_t {
+        auto owner_entry_capital = [&](BuildingGroupConstRef group) -> int64_t {
             const int64_t owner_demand = std::max<int64_t>(1,
                 planned_owner_demand(group, _saturation_count));
             if (group.sample_unit_input_cost <= 0 || group.count <= 0)
@@ -1012,7 +1012,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         std::fill(demand.begin(), demand.end(), 0);   // demand[p] = 危 planned_role_demand
         std::fill(fill.begin(), fill.end(), 0);       // fill[p]   = 危 褰撳墠鍦ㄥ矖 employee
         for (int32_t g = first; g < last; ++g) {
-            BuildingGroup &group = _buildings[g];
+            auto group = building_at(static_cast<size_t>(g));
             if (group.cell != cell) continue;
             const bool active = group.count > 0 && group.operating_state != 1 &&
                                  building_available(cell, group.type_id, true);
@@ -1045,7 +1045,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         labor_expected_employee_income.assign(static_cast<size_t>(last - first), 0);
         labor_expected_owner_income.assign(static_cast<size_t>(last - first), 0);
         for (int32_t g = first; g < last; ++g) {
-            BuildingGroup &group = _buildings[g];
+            auto group = building_at(static_cast<size_t>(g));
             if (group.cell != cell || group.count <= 0 ||
                 !building_available(cell, group.type_id, true) ||
                 group_owner_target[g - first] <= 0) continue;
@@ -1075,8 +1075,8 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         }
         std::stable_sort(hire_order.begin(), hire_order.end(),
                          [&](int32_t a, int32_t b) {
-            const BuildingGroup &ga = _buildings[a];
-            const BuildingGroup &gb = _buildings[b];
+            const auto ga = building_at(static_cast<size_t>(a));
+            const auto gb = building_at(static_cast<size_t>(b));
             if ((ga.operating_state == 0) != (gb.operating_state == 0))
                 return ga.operating_state == 0;
             const size_t local_a = static_cast<size_t>(a - first);
@@ -1109,10 +1109,10 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             trace_filled_after_profession.assign(
                 static_cast<size_t>(std::max(0, last - first)), 0);
             for (int32_t g = first; g < last; ++g)
-                trace_filled_before_clamp[g - first] = _buildings[g].filled_owner;
+                trace_filled_before_clamp[g - first] = buildings_store().filled_owner[g];
         }
         for (int32_t g = first; g < last; ++g) {
-            BuildingGroup &group = _buildings[g];
+            auto group = building_at(static_cast<size_t>(g));
             if (group.cell != cell || group.count <= 0) continue;
             if (group.filled_owner > group_owner_target[g - first]) {
                 group.filled_owner = group_owner_target[g - first];
@@ -1135,7 +1135,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 _saturation_count);
         });
         for (int32_t g : hire_order) {
-            BuildingGroup &group = _buildings[g];
+            auto group = building_at(static_cast<size_t>(g));
             if (group.owner_signature_id < 0 ||
                 group.owner_signature_id >= static_cast<int32_t>(_signatures.size())) {
                 group.filled_owner = 0;
@@ -1155,7 +1155,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         if (trace_employment) {
             for (int32_t g = first; g < last; ++g)
                 trace_filled_after_profession[g - first] =
-                    _buildings[g].filled_owner;
+                    buildings_store().filled_owner[g];
         }
         // Family ownership is a sparse attribution overlay on the aggregated
         // building group, not an admission rule: it records which families the
@@ -1171,7 +1171,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         }
         std::fill(fill.begin(), fill.end(), 0);   // 閲嶇畻涓哄す绱у悗鐨勫疄闄呭湪宀?
         for (int32_t g = first; g < last; ++g) {
-            BuildingGroup &group = _buildings[g];
+            auto group = building_at(static_cast<size_t>(g));
             if (group.cell != cell || group.count <= 0) continue;
             const BuildingType &type = _building_types[group.type_id];
             for (int32_t r = 0; r < type.employee_count; ++r) {
@@ -1226,7 +1226,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         owner_distributed_by_profession.assign(professions, 0);
         owner_active_signatures.clear();
         for (int32_t g = first; g < last; ++g) {
-            BuildingGroup &group = _buildings[g];
+            auto group = building_at(static_cast<size_t>(g));
             if (group.cell != cell || group.count <= 0) continue;
             if (group.owner_signature_id < 0 ||
                 group.owner_signature_id >= static_cast<int32_t>(_signatures.size())) continue;
@@ -1389,7 +1389,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         // living population, but does not evict incumbents when population
         // later falls.  Keep one slot available in tiny settlements so a
         // population of 1鈥? is not permanently barred from its first scribe.
-        auto is_knowledge_group = [&](const BuildingGroup &group) -> bool {
+        auto is_knowledge_group = [&](BuildingGroupConstRef group) -> bool {
             return group.type_id >= 0 &&
                 group.type_id < static_cast<int32_t>(_building_types.size()) &&
                 _building_types[static_cast<size_t>(group.type_id)].economic_sector == 4;
@@ -1405,7 +1405,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         // profession totals: one cohort may own/serve both knowledge and
         // non-knowledge groups, while the cap is about actual knowledge jobs.
         for (int32_t g = first; g < last; ++g) {
-            const BuildingGroup &group = _buildings[g];
+            const auto group = building_at(static_cast<size_t>(g));
             if (group.cell != cell || !is_knowledge_group(group)) continue;
             local_knowledge_employment = saturating_add(
                 local_knowledge_employment, std::max<int64_t>(0, group.filled_owner),
@@ -1427,7 +1427,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         const int64_t knowledge_cap = local_population_for_knowledge > 0
             ? std::max<int64_t>(1, mul_div_sat(
                 local_population_for_knowledge, 30, 100, _saturation_count)) : 0;
-        auto knowledge_slot_available = [&](const BuildingGroup &group,
+        auto knowledge_slot_available = [&](BuildingGroupConstRef group,
                                             int64_t add, bool source_is_knowledge) {
             if (!is_knowledge_group(group) || source_is_knowledge) return true;
             return local_knowledge_employment < knowledge_cap &&
@@ -1570,9 +1570,9 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 // rows join against the regular building rows.
                 int32_t dense_group = 0;
                 for (int32_t prior = first; prior < option.group; ++prior)
-                    if (_buildings[prior].count > 0) ++dense_group;
+                    if (buildings_store().group_units[prior] > 0) ++dense_group;
                 diagnostic.group_index = dense_group;
-                diagnostic.type_id = _buildings[option.group].type_id;
+                diagnostic.type_id = buildings_store().type_id[option.group];
                 diagnostic.role = option.role;
                 diagnostic.target_signature = option.target_signature;
                 diagnostic.profession_id = option.profession;
@@ -1596,7 +1596,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                     diagnostic.filled_after_profession_clamp =
                         trace_filled_after_profession[option.group - first];
                     const int32_t owner_sig =
-                        _buildings[option.group].owner_signature_id;
+                        buildings_store().owner_signature_id[option.group];
                     if (owner_sig >= 0 && owner_sig < static_cast<int32_t>(
                             trace_shed_by_signature.size()))
                         diagnostic.shed_surplus =
@@ -1631,7 +1631,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         // each successive job receives its proportional share of the remaining
         // mobile unemployed pool rather than winning by loop order.
         for (int32_t g : hire_order) {
-            const BuildingGroup &group = _buildings[g];
+            const auto group = building_at(static_cast<size_t>(g));
             const BuildingType &type = _building_types[group.type_id];
             const int64_t owner_need = std::max<int64_t>(0,
                 group_owner_target[g - first] - group.filled_owner);
@@ -1909,7 +1909,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         };
         for (size_t oi = 0; oi < hire_order.size(); ++oi) {
             const int32_t g = hire_order[oi];
-            BuildingGroup &group = _buildings[g];
+            auto group = building_at(static_cast<size_t>(g));
             const BuildingType &type = _building_types[group.type_id];
             // --- owner 鎷涘嫙锛堟寜鏉ユ簮 ethnicity 淇濈暀韬唤锛屼笉瑕佹眰鍖归厤 canonical owner ethnicity锛?--
             const int64_t owner_target = group_owner_target[g - first];
@@ -2138,7 +2138,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         employee_targets.clear();
         if (mobility_period_q16 > 0) {
             for (int32_t group_index = first; group_index < last; ++group_index) {
-                BuildingGroup &group = _buildings[group_index];
+                auto group = building_at(static_cast<size_t>(group_index));
                 if (group.cell != cell || group.count <= 0 ||
                     group.operating_state == 1 ||
                     !building_available(cell, group.type_id, true)) continue;
@@ -2321,7 +2321,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             }
         });
         for (int32_t g = first; g < last; ++g) {
-            const BuildingGroup &group = _buildings[g];
+            const auto group = building_at(static_cast<size_t>(g));
             if (group.cell != cell || group.count <= 0 ||
                 group.operating_state == 1 ||
                 !building_available(cell, group.type_id, true)) continue;
@@ -2403,7 +2403,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         });
         for (int32_t target_group_index : owner_job_targets) {
             if (owner_job_group_used[target_group_index - first] != 0) continue;
-            BuildingGroup &target_group = _buildings[target_group_index];
+            auto target_group = building_at(static_cast<size_t>(target_group_index));
             if (target_group.filled_owner >=
                     group_owner_target[target_group_index - first]) continue;
             const Signature &target_signature =
@@ -2420,7 +2420,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 const int32_t candidate = owner_job_sources[source_i];
                 if (candidate == target_group_index ||
                     owner_job_group_used[candidate - first] != 0) continue;
-                const BuildingGroup &source_group = _buildings[candidate];
+                const auto source_group = building_at(static_cast<size_t>(candidate));
                 const int32_t source_profile_profession =
                     _signatures[source_group.owner_signature_id].profession_id;
                 const int32_t source_slot_candidate = owner_slot_for_profession(
@@ -2482,7 +2482,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 break;
             }
             if (source_group_index >= 0) {
-                BuildingGroup &source_group = _buildings[source_group_index];
+                auto source_group = building_at(static_cast<size_t>(source_group_index));
                 const bool source_is_knowledge = is_knowledge_group(source_group);
                 const Signature &source_signature =
                     _signatures[source_group.owner_signature_id];
@@ -2549,7 +2549,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             for (const EmployeeOwnerSource &candidate : employee_owner_sources) {
                 if (owner_job_group_used[candidate.group - first] != 0 ||
                     _building_employee_filled[candidate.fill_index] <= 0) continue;
-                const BuildingGroup &source_group = _buildings[candidate.group];
+                const auto source_group = building_at(static_cast<size_t>(candidate.group));
                 const bool source_is_knowledge = is_knowledge_group(source_group);
                 if (!knowledge_slot_available(target_group, 1,
                                               source_is_knowledge)) continue;

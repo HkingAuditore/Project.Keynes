@@ -5,8 +5,10 @@ is `economy_production_writer=stage_ops` and `economy_auto_pod_active=true`.
 Under `POD_ACTIVE`, opcodes 1–23 mutate `RuntimeEconomyOwnedState` first
 (heavy opcodes delegate then mirror). Host binds NER stores to OwnedState
 (`economy_formula_backing=owned_state`). Building drain still uses AoS scratch
-with SoA sole between stages; trade/family/resource sole-bind + identity export
-are in N3–N6. PKEC v52 remains full-authority save; ECP1 ABI9 is committed
+with SoA sole between stages; trade/family live tables are owned by
+`RuntimeEconomyOwnedState` (`live_trade_orders` / `live_families`) when bound,
+resource stock lanes by N5, and identity export lands in N6.
+PKEC v52 remains full-authority save; ECP1 ABI9 is committed
 mirror only. **Still open:** ECP2 and mid-epoch resume only.
 
 ## Phase-1 landed
@@ -236,14 +238,19 @@ role fills in `_building_employee_*` parallel vectors.
 
 ### GAP-T1–T3 Trade
 
-- Live authority: NER `TradeOrderStore _trade_orders` (settle/dispatch).
+- Live authority: `trade_orders_store()` (settle/dispatch). Superseded by N3+N4:
+  the live table now lives on `RuntimeEconomyOwnedState::live_trade_orders`
+  while bound; `_trade_orders_local` is only the unbound fallback.
 - Owned: `RuntimeEconomyTradeEscrowStore` mirror from capture; **no** arrival buckets.
 - Arrival buckets: derived cache on NER only (`rebuild_trade_arrival_buckets`).
 - Dispatch does not mutate `view.trade_orders`.
 
 ### GAP-F1–F2 Family
 
-- Live authority: NER `FamilyStore _families` + persons/membership/ownership/influences.
+- Live authority: `families_store()` + persons/membership/ownership/influences.
+  Superseded by N3+N4: the family identity table lives on
+  `RuntimeEconomyOwnedState::live_families` while bound; persons/membership/
+  ownership/influences stay on NER.
 - Owned flat `RuntimeEconomyFamilyStore` is capture/ECP projection.
 - Command path may push flags/purchase_factor into NER; commit/buff write NER.
 
@@ -274,59 +281,94 @@ N5 resource+identity export → N6 dispatch cleanup → N7 gates/docs.
   `fill_ledger_building_from_store` implemented (AoS scratch ↔ Owned SoA).
 - `bind_formula_owned_state` seeds Owned building columns from live AoS at bind.
 
-### N2 landed (building hotpath — drain scratch, partial)
+### N2 landed (building group SoA is sole storage — `_buildings` deleted)
 
-**Authority model (honest):** `_buildings` (`std::vector<BuildingGroup>`) still
-exists — deleting it would require rewriting 1000+ refs in one pass. N2 **demotes**
-it to **drain-only scratch**: between graph stages, `buildings_store()` on
-OwnedState is the sole committed authority; AoS is materialized before building
-drains (`apply_owned_building_store`) and flushed after (`sync_owned_building_store`).
+**Authority model:** `std::vector<BuildingGroup> _buildings` **no longer exists**.
+`buildings_store()` (OwnedState::buildings when `formula_owned_bound()`, else
+`_buildings_soa_local`) is the single live storage for every group column. The
+`BuildingGroup` struct survives only as a POD used for temporary row copies
+(persistence load, structural append, synthetic quote rows).
 
-**Dispatch stage boundaries** (`economy_graph_stage_dispatch.cpp`):
-materialize → drain → sync for `BUILDING_PLAN`, `BUILDING_EMPLOYMENT`,
-`BUILDING_PRODUCTION`, `BUILDING_COMMIT`; plus `LEDGER_APPLY` and
-`STRUCTURAL_COMMIT` (build/demolish commands and employment reconcile touch
-scratch). Investment kernels run inside existing building commit/plan drains —
-no separate graph stage.
+**Access shape** (`economy_runtime.h`):
 
-**Debug:** `assert_buildings_soa_matches_scratch()` (template_debug /
-`DEBUG_ENABLED`) compares `group_units.size()` to `_buildings.size()` at end of
-`sync_owned_building_store`.
+- `PK_BUILDING_GROUP_COLUMNS(X)` is the single field↔column mapping macro.
+- `BuildingGroupRefT<Const>` is a reference proxy that binds one row's columns;
+  `BuildingGroupRef` / `BuildingGroupConstRef` are the mutable/const aliases.
+  `g.count`, `g.cell`, `g.employee_fill_begin`, … keep working as lvalues, so
+  hot loops read and write SoA directly with no AoS row in between.
+- `building_count()`, `building_at(i)`, `append_building_group(const BuildingGroup&)`,
+  `write_building_group(i, const BuildingGroup&)`, `building_group_copy(i)`,
+  `permute_building_group_columns(order)`, `clear_building_groups()`,
+  `reserve_building_groups(n)` are the only structural entry points.
+- `employee_fill_begin` is now a first-class store column (wire-loaded rows
+  reset it to `-1` so `rebuild_building_role_storage` re-allocates the span).
 
-**GAP-B tick (partial):**
+**Role CSR safety:** role lanes stay in the sparse `_building_employee_*`
+vectors, keyed by `employee_fill_begin` / `last_input_selection_begin`.
+`rebuild_building_role_storage` now permutes the group columns *first*, then
+allocates spans for new rows through their final index, so packed role data is
+never assigned over sparse lanes without begins. `refresh_building_store_role_lanes()`
+repacks `store.role_*` for export/capture only.
+
+**Dispatch:** the materialize→drain→sync AoS sandwich is gone from
+`economy_graph_stage_dispatch.cpp` (`materialize_buildings_if_formula_bound` /
+`sync_buildings_if_formula_bound` removed). Drains mutate SoA in place.
+`apply_owned_building_store` and `assert_buildings_soa_matches_scratch` are
+deleted; `sync_owned_building_store` only refreshes the packed role/pending
+projections and copies when the destination is a foreign store.
+
+**GAP-B tick:**
 
 | ID | N2 status |
 |----|-----------|
-| GAP-B1 AoS-only columns in store | **Done** — columns on `RuntimeEconomyBuildingStore`; sync/apply round-trip |
-| GAP-B1 hot write sites | **Open** — drains still mutate `_buildings` scratch; SoA-direct rewrite is N2+ |
-| GAP-B1 declared helpers | **Done** — sync/apply/fill implemented |
-| GAP-D1 dispatch materialize/sync | **Done** — building stages + ledger/structural |
-| GAP-D2 capture path | **Unchanged** — capture still reads AoS; sync at stage flush keeps Owned aligned |
-
-**Still open for building sole-writer:** rewrite hot loops to write
-`buildings_store()` directly; remove `_buildings` member (N6+ or dedicated pass).
+| GAP-B1 AoS-only columns in store | **Done** — every `BuildingGroup` field is a store column |
+| GAP-B1 hot write sites | **Done** — drains write `buildings_store()` through `building_at()` |
+| GAP-B1 declared helpers | **Done** — `apply_*` removed; `sync_*`/`fill_ledger_building_from_store` remain |
+| GAP-D1 dispatch materialize/sync | **Done** — sandwich removed entirely |
+| GAP-D2 capture path | **Done** — capture reads `buildings_store()` (no AoS source) |
 
 ### N3 landed (trade escrow sole live store)
 
-- `trade_orders_store()` accessor exposes the sole live `TradeOrderStore` on NER
-  (`_trade_orders`); settle/dispatch never mutates `EconomySoAView::trade_orders`
-  pointers.
+- `trade_orders_store()` accessor exposes the sole live `TradeOrderStore`;
+  settle/dispatch never mutates `EconomySoAView::trade_orders` pointers.
 - `flush_formula_owned_domain_mirrors` / `sync_owned_trade_escrow_store` pack
   live escrow into `RuntimeEconomyOwnedState::trade_orders` at stage boundaries
   and day-end capture.
-- Live `TradeOrderStore` remains NER-hosted sole instance; arrival buckets are
-  derived cache only (`rebuild_trade_arrival_buckets`) — no second live CSR.
+- Arrival buckets are derived cache only (`rebuild_trade_arrival_buckets`) —
+  no second live CSR.
 - ECP `RuntimeEconomyTradeEscrowStore` is the committed/projection mirror.
 
 ### N4 landed (family store projection)
 
-- `families_store()` accessor exposes the sole live `FamilyStore` on NER
-  (`_families` + persons/membership/ownership/influences).
+- `families_store()` accessor exposes the sole live `FamilyStore`
+  (+ persons/membership/ownership/influences on NER).
 - Flat `RuntimeEconomyFamilyStore` on OwnedState is the ECP projection filled
   via `sync_owned_family_store` / `flush_formula_owned_domain_mirrors`; command
-  commit paths may push flags/purchase_factor into NER, then flush mirrors Owned
-  for capture.
+  commit paths may push flags/purchase_factor into the live table, then flush
+  mirrors Owned for capture.
 - No second live family SoA under `POD_ACTIVE`.
+
+### N3+N4 completion (live tables owned by `RuntimeEconomyOwnedState`)
+
+- `TradeOrderStore` / `FamilyStore` are no longer nested in
+  `NativeEconomyRuntime`. They are freestanding `pk::EconomyTradeOrderStore` /
+  `pk::EconomyFamilyStore` in `runtime_economy_live_tables.h/.cpp`; the nested
+  names survive as `using` aliases so existing call sites are unchanged.
+- `RuntimeEconomyOwnedState` owns the live instances as `live_trade_orders` /
+  `live_families`. The flat `trade_orders` / `families` fields stay as the ECP
+  wire projections.
+- `trade_orders_store()` / `families_store()` are inline accessors that return
+  the OwnedState instance when `_formula_owned != nullptr`, else the NER-local
+  fallback `_trade_orders_local` / `_families_local` — identical to the
+  `population_store()` / `market_store()` pattern.
+- `bind_formula_owned_state` moves both live tables into OwnedState *before*
+  packing the ECP projections, so `sync_owned_trade_escrow_store` /
+  `sync_owned_family_store` already read the new home.
+  `unbind_formula_owned_state` moves them back and clears the OwnedState copies.
+- Arrival buckets travel with the live `TradeOrderStore` and remain a derived
+  cache excluded from wire/hash authority.
+- Family expedition tables, persons, membership/ownership edges and influences
+  stay on NER; only the family identity table moved.
 
 ### N5 landed (resource sole stock lanes)
 
@@ -360,9 +402,10 @@ no separate graph stage.
 
 - Population/market: same SoA type; under `POD_ACTIVE` a single instance lives
   in `RuntimeEconomyOwnedState` (see Phase-5 bind).
-- Building: Owned SoA + drain AoS scratch (N1–N2). Trade/family: NER live sole
-  stores + Owned flat ECP projections (N3–N4). Resource: stock lanes on Owned
-  when bound (N5). Trade arrival buckets remain derived.
+- Building: Owned SoA sole storage, no AoS scratch (N1–N2). Trade/family: live
+  tables on Owned when bound (`live_trade_orders` / `live_families`) plus Owned
+  flat ECP projections (N3–N4). Resource: stock lanes on Owned when bound (N5).
+  Trade arrival buckets remain derived.
 
 ## Phase-5 landed (kernels bind OwnedState)
 
@@ -403,8 +446,8 @@ no separate graph stage.
   worse on 2026-09-14 HEAD before Terminal Closeout). Not treated as A+Y
   Terminal regression; conservation soak/parity/pod remain the merge gate.
 - **Still open only (product scope)**: ECP2, mid-epoch resume.
-- Residual engineering debt (not product Still-open): `_buildings` AoS drain
-  scratch member; SoA-direct hot loops.
+- Residual engineering debt (not product Still-open): `_pending_construction`
+  remains AoS; building group AoS scratch is retired (N2).
 
 ## Phase-7 landed (gates / freeze)
 
@@ -515,7 +558,7 @@ Phase-2.6.1 defaults auto `POD_ACTIVE` promotion.
 - New `RuntimeEconomyBuildingStore`: group SoA + CSR role lanes + pending SoA.
 - `RuntimeEconomyBuildingCommittedBlock` holds typed `store`; ABI7 wire pack/
   unpack preserves historical layout and `content_hash`.
-- Capture fills store from `_buildings` / employee role lanes / pending.
+- Capture fills store from the live group columns / employee role lanes / pending.
 - Import populates `OwnedState.buildings` live view.
 - Remaining opaque: trade-escrow, family, epoch-cursor.
 
@@ -526,8 +569,8 @@ Phase-2.6.1 defaults auto `POD_ACTIVE` promotion.
   derived and out of the committed mirror).
 - `RuntimeEconomyTradeEscrowCommittedBlock` holds typed `store`; ABI7 wire
   pack/unpack preserves historical per-order nested layout and `content_hash`.
-- Capture fills store from `_trade_orders` columns.
-- Import populates `OwnedState.trade_orders` live view.
+- Capture fills store from `trade_orders_store()` columns.
+- Import populates the `OwnedState.trade_orders` ECP projection.
 - Remaining opaque: family, epoch-cursor.
 
 ## Phase-2.5.4 landed (epoch-cursor opaque → live SoA)
@@ -545,9 +588,9 @@ Phase-2.6.1 defaults auto `POD_ACTIVE` promotion.
   (route/payload/cargo/kit/missing + nested payload person handles).
 - `RuntimeEconomyFamilyCommittedBlock` holds typed `store`; ABI8 wire pack/
   unpack preserves historical nested layout and `content_hash`.
-- Capture fills store from `_families` / `_persons` / memberships / ownerships /
-  needs / traits / influences / trait commands / expeditions.
-- Import populates `OwnedState.families` live view.
+- Capture fills store from `families_store()` / `_persons` / memberships /
+  ownerships / needs / traits / influences / trait commands / expeditions.
+- Import populates the `OwnedState.families` ECP projection.
 - **Committed-ledger opaque→SoA unpack is complete** for the current ABI9
   mirror surface. Production formula authority remains
   `NativeEconomyRuntime` via StageOps; Phase-2.6.1 defaults auto `POD_ACTIVE`

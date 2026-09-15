@@ -603,7 +603,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
         if (_building_cell_offsets.size() != static_cast<size_t>(_cell_count + 1)) continue;
         for (int32_t g = _building_cell_offsets[cell];
              g < _building_cell_offsets[cell + 1]; ++g) {
-            const BuildingGroup &group = _buildings[g];
+            const auto group = building_at(static_cast<size_t>(g));
             if (group.count <= 0 || group.operating_state == 1 ||
                 !building_available(cell, group.type_id, true)) continue;
             const BuildingType &type = _building_types[group.type_id];
@@ -1580,9 +1580,9 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             result.retained_output_discarded = saturating_add(
                 result.retained_output_discarded, entry->quantity, sat);
             if (entry->quantity > 0 && entry->building_group >= 0 &&
-                entry->building_group < static_cast<int32_t>(_buildings.size())) {
-                _buildings[entry->building_group].last_discarded = saturating_add(
-                    _buildings[entry->building_group].last_discarded,
+                entry->building_group < static_cast<int32_t>(building_count())) {
+                buildings_store().last_discarded[entry->building_group] = saturating_add(
+                    buildings_store().last_discarded[entry->building_group],
                     entry->quantity, sat);
             }
             entry->quantity = 0;
@@ -2047,7 +2047,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                         _family_cohort_edge_indices[p]];
                     if (edge.people <= 0 || edge.family_handle == 0) continue;
                     int32_t family = -1;
-                    if (!_families.valid_handle(edge.family_handle, family) ||
+                    if (!families_store().valid_handle(edge.family_handle, family) ||
                         family < 0 || family >= static_cast<int32_t>(
                             _family_birth_factor_q16.size()))
                         continue;

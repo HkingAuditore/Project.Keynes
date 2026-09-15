@@ -22,7 +22,7 @@ bool NativeEconomyRuntime::commit_ready_construction(
         changed = true;
     }
     std::vector<PendingConstruction> sponsored_completed;
-    const int32_t sorted_group_count = static_cast<int32_t>(_buildings.size());
+    const int32_t sorted_group_count = static_cast<int32_t>(building_count());
     // The sorted prefix contains all groups that existed before this commit.
     // Groups appended while committing this batch are not in that prefix, so
     // keep a transient exact-key index instead of re-scanning the growing
@@ -52,20 +52,25 @@ bool NativeEconomyRuntime::commit_ready_construction(
         appended_group_indices;
     appended_group_indices.reserve(std::min<size_t>(
         _pending_construction.size(), 8192));
-    const auto group_key = [](const BuildingGroup &group) {
-        return std::tuple(group.cell, group.type_id, group.owner_signature_id);
+    const RuntimeEconomyBuildingStore &group_store = buildings_store();
+    const auto group_key = [&](int32_t row) {
+        return std::tuple(group_store.cell[row], group_store.type_id[row],
+                          group_store.owner_signature_id[row]);
     };
     const auto find_for_commit = [&](int32_t cell, int32_t type_id,
                                      int32_t owner_signature_id) {
         const auto target = std::tuple(cell, type_id, owner_signature_id);
-        const auto first = _buildings.begin();
-        const auto last = first + sorted_group_count;
-        const auto it = std::lower_bound(first, last, target,
-            [&](const BuildingGroup &group, const auto &value) {
-                return group_key(group) < value;
-            });
-        if (it != last && group_key(*it) == target)
-            return static_cast<int32_t>(it - first);
+        int32_t low = 0;
+        int32_t high = sorted_group_count;
+        while (low < high) {
+            const int32_t mid = low + (high - low) / 2;
+            if (group_key(mid) < target) {
+                low = mid + 1;
+            } else {
+                high = mid;
+            }
+        }
+        if (low < sorted_group_count && group_key(low) == target) return low;
         const auto appended = appended_group_indices.find(
             {cell, type_id, owner_signature_id});
         if (appended != appended_group_indices.end()) return appended->second;
@@ -79,21 +84,21 @@ bool NativeEconomyRuntime::commit_ready_construction(
         changed_cells.push_back(pending.cell);
         const int32_t existing = find_for_commit(
             pending.cell, pending.type_id, pending.owner_signature_id);
-        const int64_t before_count = existing >= 0 ? _buildings[existing].count : 0;
+        const int64_t before_count = existing >= 0 ? buildings_store().group_units[existing] : 0;
         if (existing >= 0) {
             ++_building_structure_count_only_updates;
-            _buildings[existing].count = saturating_add(_buildings[existing].count,
+            buildings_store().group_units[existing] = saturating_add(buildings_store().group_units[existing],
                                                         pending.count, _saturation_count);
             _building_handle_index_clean = false;
-            _buildings[existing].merchant_debt_principal = saturating_add(
-                _buildings[existing].merchant_debt_principal,
+            buildings_store().merchant_debt_principal[existing] = saturating_add(
+                buildings_store().merchant_debt_principal[existing],
                 pending.merchant_debt_principal, _saturation_count);
-            _buildings[existing].merchant_debt_premium = saturating_add(
-                _buildings[existing].merchant_debt_premium,
+            buildings_store().merchant_debt_premium[existing] = saturating_add(
+                buildings_store().merchant_debt_premium[existing],
                 pending.merchant_debt_premium, _saturation_count);
             if (pending.merchant_debt_principal > 0 ||
                 pending.merchant_debt_premium > 0) {
-                _buildings[existing].merchant_debt_term_cycles_left =
+                buildings_store().merchant_debt_term_cycles_left[existing] =
                     static_cast<uint16_t>(_merchant_credit_term_cycles);
             }
         } else {
@@ -106,16 +111,16 @@ bool NativeEconomyRuntime::commit_ready_construction(
             group.merchant_debt_premium = pending.merchant_debt_premium;
             group.merchant_debt_term_cycles_left =
                 pending.merchant_debt_term_cycles_left;
-            _buildings.push_back(group);
+            append_building_group(group);
             appended_group_indices.emplace(
                 AppendedGroupKey{pending.cell, pending.type_id,
                     pending.owner_signature_id},
-                static_cast<int32_t>(_buildings.size()) - 1);
+                static_cast<int32_t>(building_count()) - 1);
             topology_changed = true;
             ++_building_structure_new_groups;
         }
-        const int64_t after_count = existing >= 0 ? _buildings[existing].count
-                                                   : _buildings.back().count;
+        const int64_t after_count = existing >= 0 ? buildings_store().group_units[existing]
+                                                   : buildings_store().group_units.back();
         std::vector<EventLeg> legs;
         if (trace_detail_for_cell(pending.cell)) {
             legs.push_back({FIELD_BUILDING_COUNT, SUBJECT_BUILDING_GROUP,
@@ -149,7 +154,8 @@ bool NativeEconomyRuntime::commit_ready_construction(
         _pending_construction.end());
     changed = changed || _pending_construction.size() != pending_before;
     if (prune_empty_groups || topology_changed) {
-        for (const BuildingGroup &group : _buildings) {
+        for (size_t pk_row = 0; pk_row < building_count(); ++pk_row) {
+            const auto group = building_at(pk_row);
             if (group.count > 0) continue;
             if (_modifier_runtime != nullptr)
                 _modifier_runtime->retire_building_identity(
@@ -168,14 +174,14 @@ bool NativeEconomyRuntime::commit_ready_construction(
     }
     for (const PendingConstruction &pending : sponsored_completed) {
         int32_t family = -1;
-        if (!_families.valid_handle(pending.sponsor_family_handle, family))
+        if (!families_store().valid_handle(pending.sponsor_family_handle, family))
             continue;
         const int32_t group_index = find_building_group(
             pending.cell, pending.type_id, pending.owner_signature_id);
-        if (group_index < 0 || _buildings[group_index].modifier_handle == 0)
+        if (group_index < 0 || buildings_store().modifier_handle[group_index] == 0)
             continue;
         _family_ownerships.push_back({pending.sponsor_family_handle,
-            _buildings[group_index].modifier_handle, pending.count, 0});
+            buildings_store().modifier_handle[group_index], pending.count, 0});
         _family_indices_dirty = true;
     }
     return changed;

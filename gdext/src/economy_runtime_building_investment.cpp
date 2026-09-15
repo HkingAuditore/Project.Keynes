@@ -411,21 +411,21 @@ void NativeEconomyRuntime::prepare_startup_demand() {
         return;
     }
 
-    const int32_t order_count = _trade_orders.size();
-    if (_trade_orders.line_offsets.size() !=
+    const int32_t order_count = trade_orders_store().size();
+    if (trade_orders_store().line_offsets.size() !=
             static_cast<size_t>(order_count + 1)) {
         _startup_demand_prepare_ms += elapsed_ms(started);
         return;
     }
     for (int32_t order = 0; order < order_count; ++order) {
-        if (_trade_orders.cargo_delivered[order] != 0 ||
-            _trade_orders.destinations[order] < 0 ||
-            _trade_orders.destinations[order] >= _cell_count) continue;
-        const int32_t destination = _trade_orders.destinations[order];
-        for (int32_t line = _trade_orders.line_offsets[order];
-             line < _trade_orders.line_offsets[order + 1]; ++line) {
-            const int32_t good = _trade_orders.line_goods[line];
-            const int64_t quantity = _trade_orders.line_quantities[line];
+        if (trade_orders_store().cargo_delivered[order] != 0 ||
+            trade_orders_store().destinations[order] < 0 ||
+            trade_orders_store().destinations[order] >= _cell_count) continue;
+        const int32_t destination = trade_orders_store().destinations[order];
+        for (int32_t line = trade_orders_store().line_offsets[order];
+             line < trade_orders_store().line_offsets[order + 1]; ++line) {
+            const int32_t good = trade_orders_store().line_goods[line];
+            const int64_t quantity = trade_orders_store().line_quantities[line];
             if (good < 0 || good >= market_store().good_count || quantity <= 0) continue;
             _startup_inbound_lanes.push_back({
                 (static_cast<uint64_t>(static_cast<uint32_t>(destination)) << 32) |
@@ -567,7 +567,7 @@ void NativeEconomyRuntime::prepare_startup_demand() {
                 static_cast<size_t>(_cell_count + 1)) {
             for (int32_t group_index = _building_cell_offsets[cell];
                  group_index < _building_cell_offsets[cell + 1]; ++group_index) {
-                const BuildingGroup &group = _buildings[group_index];
+                const auto group = building_at(static_cast<size_t>(group_index));
                 if (group.count <= 0 || group.operating_state == 1 ||
                     group.type_id < 0 || group.type_id >= static_cast<int32_t>(
                         _building_types.size())) continue;
@@ -1025,9 +1025,9 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
     };
     if (initialize) {
         const auto prepare_lanes_started = Clock::now();
-        _building_investment_score_q16.assign(_buildings.size(), 0);
-        _building_investment_payback_days.assign(_buildings.size(), 0);
-        _building_investment_rejection.assign(_buildings.size(), 0);
+        _building_investment_score_q16.assign(building_count(), 0);
+        _building_investment_payback_days.assign(building_count(), 0);
+        _building_investment_rejection.assign(building_count(), 0);
         _investment_pending_by_cell_type.clear();
         _investment_existing_by_cell_type.clear();
         const size_t review_divisor = static_cast<size_t>(
@@ -1035,7 +1035,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
         _investment_pending_by_cell_type.reserve(
             _pending_construction.size() / review_divisor * 2 + 1);
         _investment_existing_by_cell_type.reserve(
-            _buildings.size() / review_divisor * 2 + 1);
+            building_count() / review_divisor * 2 + 1);
         begin_investment_scratch_generation();
         _investment_monetary_units_by_cell.assign(
             static_cast<size_t>(std::max(0, _cell_count)), 0);
@@ -1115,10 +1115,10 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                               int32_t reason) {
         if (existing == nullptr || existing->first_group < 0) return;
         const int32_t end = std::min<int32_t>(
-            static_cast<int32_t>(_buildings.size()), existing->last_group + 1);
+            static_cast<int32_t>(building_count()), existing->last_group + 1);
         for (int32_t group = existing->first_group; group < end; ++group) {
-            if (_buildings[group].cell != _buildings[existing->first_group].cell ||
-                _buildings[group].type_id != _buildings[existing->first_group].type_id)
+            if (buildings_store().cell[group] != buildings_store().cell[existing->first_group] ||
+                buildings_store().type_id[group] != buildings_store().type_id[existing->first_group])
                 break;
             if (group < static_cast<int32_t>(_building_investment_rejection.size()))
                 _building_investment_rejection[group] = reason;
@@ -1176,7 +1176,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
        if (!is_review_cell(active_cell)) continue;
        for (int32_t g = _building_cell_offsets[active_cell];
             g < _building_cell_offsets[active_cell + 1]; ++g) {
-       const BuildingGroup &group = _buildings[g];
+       const auto group = building_at(static_cast<size_t>(g));
         if (group.count <= 0 || group.cell < 0 || group.cell >= _cell_count ||
             group.type_id < 0 || group.type_id >= static_cast<int32_t>(_building_types.size()))
             continue;
@@ -1211,8 +1211,8 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
         if (existing.first_group < 0) existing.first_group = g;
         existing.last_group = g;
         if (existing.representative_group < 0 ||
-            (group.operating_state != 1 && _buildings[
-                existing.representative_group].operating_state == 1))
+            (group.operating_state != 1 && buildings_store().operating_state[
+                existing.representative_group] == 1))
             existing.representative_group = g;
         existing.installed_count = saturating_add(
             existing.installed_count, group.count, _saturation_count);
@@ -1505,7 +1505,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                         static_cast<size_t>(_cell_count + 1)) {
                     for (int32_t group = _building_cell_offsets[cell];
                          group < _building_cell_offsets[cell + 1]; ++group) {
-                        const int32_t local_type = _buildings[group].type_id;
+                        const int32_t local_type = buildings_store().type_id[group];
                         mark_type(local_type);
                         if (local_type < 0 ||
                             local_type >= static_cast<int32_t>(
@@ -1629,7 +1629,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
             for (int32_t group_index = _building_cell_offsets[cell];
                  group_index < _building_cell_offsets[cell + 1];
                  ++group_index) {
-                const BuildingGroup &group = _buildings[group_index];
+                const auto group = building_at(static_cast<size_t>(group_index));
                 if (group.count <= 0 || group.operating_state == 1 ||
                     group.type_id < 0 ||
                     group.type_id >= static_cast<int32_t>(
@@ -1736,9 +1736,8 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 ? existing->representative_group : -1;
             bool survival_vacancy = false;
             if (existing != nullptr && existing->representative_group >= 0 &&
-                existing->representative_group < static_cast<int32_t>(_buildings.size())) {
-                const BuildingGroup &existing_group_ref =
-                    _buildings[existing->representative_group];
+                existing->representative_group < static_cast<int32_t>(building_count())) {
+                const auto existing_group_ref = building_at(static_cast<size_t>(existing->representative_group));
                 int64_t vacancy_employee_fillability = Q16_ONE;
                 const BuildingType &existing_type = _building_types[
                     existing_group_ref.type_id];
@@ -1787,12 +1786,13 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
             for (int32_t i = 0; i < type.output_count; ++i) {
                 const GoodAmount &output = _building_outputs[type.output_begin + i];
                 const int32_t representative_owner = existing_group >= 0
-                    ? _buildings[existing_group].owner_signature_id
+                    ? buildings_store().owner_signature_id[existing_group]
                     : signature_for_profession_ethnicity(
                         type.owner_profession_id, 0);
                 int64_t effective_unit_output = existing_group >= 0
                     ? effective_building_output_quantity(
-                        _buildings[existing_group], output.good_id, output.quantity,
+                        building_at(static_cast<size_t>(existing_group)), output.good_id,
+                        output.quantity,
                         Q16_ONE, 1, _saturation_count)
                     : effective_building_output_quantity_for_target(
                         cell, type_id, representative_owner,
@@ -2829,7 +2829,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     candidate.score_q16 = mul_div_sat(candidate.score_q16,
                         sector_preference, Q16_ONE, _saturation_count);
                     int32_t family_index = -1;
-                    if (_families.valid_handle(candidate.sponsor_family_handle,
+                    if (families_store().valid_handle(candidate.sponsor_family_handle,
                             family_index) &&
                         family_index >= 0 && family_index < static_cast<int32_t>(
                             _family_investment_factor_q16.size())) {
@@ -2887,8 +2887,8 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     mark_rejection(existing, INVESTMENT_REJECTION_NONE);
                     for (int32_t group = existing->first_group;
                          group <= existing->last_group; ++group) {
-                        if (_buildings[group].cell != cell ||
-                            _buildings[group].type_id != type_id) break;
+                        if (buildings_store().cell[group] != cell ||
+                            buildings_store().type_id[group] != type_id) break;
                         _building_investment_score_q16[group] = candidate.score_q16;
                         _building_investment_payback_days[group] = payback;
                     }

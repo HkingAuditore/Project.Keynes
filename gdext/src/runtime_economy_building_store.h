@@ -13,6 +13,10 @@ struct RuntimeEconomyBuildingStore {
     std::vector<int32_t> cell;
     std::vector<int32_t> type_id;
     std::vector<int32_t> owner_signature_id;
+    // Begin index into the sparse `_building_employee_*` role lanes owned by
+    // NativeEconomyRuntime. Distinct from `role_begin`, which is the packed
+    // projection used by the ECP wire.
+    std::vector<int32_t> employee_fill_begin;
     std::vector<int32_t> last_input_selection_begin;
     std::vector<int64_t> group_units;
     std::vector<int64_t> filled_owner;

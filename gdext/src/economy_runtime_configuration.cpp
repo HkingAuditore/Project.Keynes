@@ -275,7 +275,7 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _employment_diagnostics.clear();
     _family_clamp_traces.clear();
     population_store().clear(cell_count);
-    _families.clear();
+    families_store().clear();
     _family_expeditions.clear();
     _family_expedition_route_cells.clear();
     _family_expedition_route_costs.clear();
@@ -384,10 +384,11 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     mark_market_signal_full_rebuild("configure");
     mark_labor_signal_full_rebuild("configure");
     mark_input_reserve_full_rebuild("configure");
-    _buildings.clear();
+    clear_building_groups();
     _pending_building_topology_rebuild = false;
     _building_handle_index_clean = false;
-    _building_groups_rebuild_scratch.clear();
+    _building_group_order_scratch.clear();
+    _building_group_is_new_scratch.clear();
     _building_existing_indices_scratch.clear();
     _building_new_indices_scratch.clear();
     _building_investment_score_rebuild_scratch.clear();
@@ -559,15 +560,16 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     _trade_signal_last_rejection_reason.clear();
     _trade_signal_deadline_reported.clear();
     _trade_response_deadline_misses_cumulative = 0;
-    _trade_orders.clear();
+    trade_orders_store().clear();
     _trade_flows.clear();
     _pending_commands.clear();
     _epoch_commands.clear();
     _structural_commands.clear();
-    _buildings.clear();
+    clear_building_groups();
     _pending_building_topology_rebuild = false;
     _building_handle_index_clean = false;
-    _building_groups_rebuild_scratch.clear();
+    _building_group_order_scratch.clear();
+    _building_group_is_new_scratch.clear();
     _building_existing_indices_scratch.clear();
     _building_new_indices_scratch.clear();
     _building_investment_score_rebuild_scratch.clear();
@@ -847,7 +849,7 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
         const int32_t existing = find_building_group(building_cells[i], building_types[i],
                                                      building_owners[i]);
         if (existing >= 0) {
-            _buildings[existing].count = saturating_add(_buildings[existing].count,
+            buildings_store().group_units[existing] = saturating_add(buildings_store().group_units[existing],
                                                         building_counts[i], _saturation_count);
             _building_handle_index_clean = false;
         } else {
@@ -856,7 +858,7 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
             group.type_id = building_types[i];
             group.owner_signature_id = building_owners[i];
             group.count = building_counts[i];
-            _buildings.push_back(group);
+            append_building_group(group);
         }
     }
     rebuild_building_role_storage();
@@ -899,15 +901,15 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
             const int64_t owner_slots =
                 _building_types[type_id].owner_slots_per_building;
             if (group_index < 0 || owner_slot < 0 || owner_slots <= 0 ||
-                _buildings[group_index].count <= 0 ||
-                _buildings[group_index].modifier_handle == 0 ||
+                buildings_store().group_units[group_index] <= 0 ||
+                buildings_store().modifier_handle[group_index] == 0 ||
                 population_store().population[owner_slot] < owner_slots) {
                 out["ok"] = false;
                 out["reason"] = "founder_family_bootstrap_target_invalid";
                 return out;
             }
-            _buildings[group_index].filled_owner = std::max(
-                _buildings[group_index].filled_owner, owner_slots);
+            buildings_store().filled_owner[group_index] = std::max(
+                buildings_store().filled_owner[group_index], owner_slots);
             population_store().owner_employed[owner_slot] = std::max(
                 population_store().owner_employed[owner_slot], owner_slots);
             const int64_t founders = family_household_people_for_slot(
@@ -947,7 +949,8 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     // in building order, so shared owner signatures stay reconciled.
     std::vector<int64_t> bootstrap_owner_available(
         population_store().population.size(), -1);
-    for (BuildingGroup &group : _buildings) {
+    for (size_t pk_row = 0; pk_row < building_count(); ++pk_row) {
+        const auto group = building_at(pk_row);
         if (group.count <= 0 || group.type_id < 0 ||
             group.type_id >= static_cast<int32_t>(_building_types.size())) {
             continue;
@@ -1098,10 +1101,10 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
         _employment_choice_temperature_q16;
     out["merchant_count"] = static_cast<int64_t>(_merchant_slots.size());
     out["merchant_repairs"] = merchant_repairs;
-    out["building_group_count"] = static_cast<int64_t>(_buildings.size());
+    out["building_group_count"] = static_cast<int64_t>(building_count());
     out["family_runtime_mode"] = _family_runtime_mode == 0 ? "OFF" :
         (_family_runtime_mode == 1 ? "PROBE" : "ACTIVE");
-    out["family_count"] = _families.active_count;
+    out["family_count"] = families_store().active_count;
     out["family_membership_edge_count"] = static_cast<int64_t>(
         _family_memberships.size());
     out["family_ownership_edge_count"] = static_cast<int64_t>(
@@ -1339,9 +1342,9 @@ bool NativeEconomyRuntime::family_split_policy_command_preflight(
     if (cmd.i64_0 < 0 || cmd.i64_0 > 255) return false;
     int32_t family = -1;
     int32_t branch = -1;
-    if (_families.valid_handle(cmd.target_handle, family)) return true;
+    if (families_store().valid_handle(cmd.target_handle, family)) return true;
     return _family_influences.valid_handle(cmd.target_handle, branch) &&
-        _families.valid_handle(_family_influences.family_handle[branch], family);
+        families_store().valid_handle(_family_influences.family_handle[branch], family);
 }
 
 bool NativeEconomyRuntime::validate_command_pod(const Command &cmd,
@@ -1429,7 +1432,7 @@ bool NativeEconomyRuntime::validate_command_pod(const Command &cmd,
     if (expedition_player) {
         if (cmd.opcode == COMMAND_START_FAMILY_EXPEDITION) {
             int32_t family = -1;
-            if (!_families.valid_handle(cmd.target_handle, family) ||
+            if (!families_store().valid_handle(cmd.target_handle, family) ||
                 cmd.i32_0 < 0 || cmd.i32_0 >= _cell_count ||
                 cmd.i32_1 < 0 || cmd.i32_1 >= _cell_count ||
                 cmd.i64_0 < 1) {

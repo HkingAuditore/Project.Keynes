@@ -408,7 +408,7 @@ int64_t EconomyCsvRecorder::projected_rows(const NativeEconomyRuntime &runtime) 
             if (runtime._building_cell_offsets.size() == static_cast<size_t>(runtime._cell_count + 1)) {
                 for (int32_t i = runtime._building_cell_offsets[cell];
                      i < runtime._building_cell_offsets[cell + 1]; ++i) {
-                    if (runtime._buildings[i].count > 0) ++rows;
+                    if (runtime.buildings_store().group_units[i] > 0) ++rows;
                 }
             }
             for (const auto &pending : runtime._pending_construction)
@@ -618,7 +618,7 @@ bool EconomyCsvRecorder::fill_batch(
         row.commit_day = runtime._commit_day; row.cohort_count = runtime.population_store().active_count;
         row.market_count = runtime.market_store().market_count; row.good_count = runtime.market_store().good_count;
         row.building_type_count = runtime._building_types.size();
-        row.building_group_count = runtime._buildings.size();
+        row.building_group_count = runtime.building_count();
         row.pending_construction_count = runtime._pending_construction.size();
         row.filled_owner_jobs = runtime._filled_owner_jobs;
         row.filled_employee_jobs = runtime._filled_employee_jobs;
@@ -780,7 +780,7 @@ bool EconomyCsvRecorder::fill_batch(
         row.trade_rejected_cash = runtime._trade_rejected_cash;
         row.trade_rejected_route = runtime._trade_rejected_route;
         row.trade_rejected_order_cap = runtime._trade_rejected_order_cap;
-        row.trade_orders_in_flight = runtime._trade_orders.size();
+        row.trade_orders_in_flight = runtime.trade_orders_store().size();
         row.trade_orders_dispatched = runtime._trade_orders_dispatched;
         row.trade_orders_arrived = runtime._trade_orders_arrived;
         row.trade_unclaimed_orders = runtime._trade_unclaimed_orders;
@@ -847,7 +847,8 @@ bool EconomyCsvRecorder::fill_batch(
                         runtime._merchant_procurement_spent,
                     0, NativeEconomyRuntime::Q16_ONE))
                 : NativeEconomyRuntime::Q16_ONE;
-        for (const auto &group : runtime._buildings) {
+        for (size_t pk_row = 0; pk_row < runtime.building_count(); ++pk_row) {
+            const auto group = runtime.building_at(pk_row);
             row.merchant_credit_outstanding += group.merchant_debt_principal +
                 group.merchant_debt_premium;
         }
@@ -863,14 +864,14 @@ bool EconomyCsvRecorder::fill_batch(
     if (_config.enabled[MARKET]) {
         const size_t total = _sample_cells.size() * runtime.market_store().good_count;
         inbound.assign(total, 0); outbound.assign(total, 0);
-        for (int32_t order = 0; order < runtime._trade_orders.size(); ++order) {
-            if (runtime._trade_orders.cargo_delivered[order] != 0) continue;
-            const int32_t src = runtime._trade_orders.sources[order];
-            const int32_t dst = runtime._trade_orders.destinations[order];
-            for (int32_t line = runtime._trade_orders.line_offsets[order];
-                 line < runtime._trade_orders.line_offsets[order + 1]; ++line) {
-                const int32_t good = runtime._trade_orders.line_goods[line];
-                const int64_t qty = runtime._trade_orders.line_quantities[line];
+        for (int32_t order = 0; order < runtime.trade_orders_store().size(); ++order) {
+            if (runtime.trade_orders_store().cargo_delivered[order] != 0) continue;
+            const int32_t src = runtime.trade_orders_store().sources[order];
+            const int32_t dst = runtime.trade_orders_store().destinations[order];
+            for (int32_t line = runtime.trade_orders_store().line_offsets[order];
+                 line < runtime.trade_orders_store().line_offsets[order + 1]; ++line) {
+                const int32_t good = runtime.trade_orders_store().line_goods[line];
+                const int64_t qty = runtime.trade_orders_store().line_quantities[line];
                 const int32_t src_pos = src >= 0 && src < runtime._cell_count
                     ? _sample_cell_positions[src] : -1;
                 const int32_t dst_pos = dst >= 0 && dst < runtime._cell_count
@@ -885,7 +886,7 @@ bool EconomyCsvRecorder::fill_batch(
 
     batch.cohorts.reserve(_config.enabled[COHORTS] ? runtime.population_store().active_count : 0);
     batch.buildings.reserve(_config.enabled[BUILDINGS]
-        ? runtime._buildings.size() + runtime._pending_construction.size() : 0);
+        ? runtime.building_count() + runtime._pending_construction.size() : 0);
     if (_config.enabled[MARKET]) batch.market.reserve(
         _sample_cells.size() * runtime.market_store().good_count);
     if (_config.enabled[RESOURCES]) batch.resources.reserve(
@@ -933,7 +934,7 @@ bool EconomyCsvRecorder::fill_batch(
             if (runtime._building_cell_offsets.size() == static_cast<size_t>(runtime._cell_count + 1)) {
                 for (int32_t index = runtime._building_cell_offsets[cell];
                      index < runtime._building_cell_offsets[cell + 1]; ++index) {
-                    const auto &group = runtime._buildings[index];
+                    const auto group = runtime.building_at(static_cast<size_t>(index));
                     if (group.count <= 0) continue;
                     BuildingRow row;
                     row.c = common; row.group_index = group_index++; row.type_id = group.type_id;
@@ -1307,7 +1308,7 @@ bool EconomyCsvRecorder::fill_batch(
                         for (int32_t group_index = runtime._building_cell_offsets[cell];
                              group_index < runtime._building_cell_offsets[cell + 1];
                              ++group_index) {
-                            const auto &group = runtime._buildings[group_index];
+                            const auto group = runtime.building_at(static_cast<size_t>(group_index));
                             const auto &type = runtime._building_types[group.type_id];
                             for (int32_t edge = 0; edge < type.resource_count; ++edge) {
                                 const auto &item = runtime._building_resources[

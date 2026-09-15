@@ -150,10 +150,10 @@ uint64_t NativeEconomyRuntime::colonization_visibility_hash(
 int64_t NativeEconomyRuntime::family_population_in_cell(
         uint64_t family_handle, int32_t cell) const {
     int32_t family = -1;
-    if (!_families.valid_handle(family_handle, family) || cell < 0 ||
+    if (!families_store().valid_handle(family_handle, family) || cell < 0 ||
         cell >= _cell_count) return 0;
     int64_t total = 0;
-    const bool csr = _family_member_offsets.size() == _families.active.size() + 1;
+    const bool csr = _family_member_offsets.size() == families_store().active.size() + 1;
     const int32_t begin = csr ? _family_member_offsets[family] : 0;
     const int32_t end = csr ? _family_member_offsets[family + 1]
         : static_cast<int32_t>(_family_memberships.size());
@@ -489,7 +489,7 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
         for (int32_t p = _family_cell_offsets[source];
              p < _family_cell_offsets[source + 1]; ++p) {
             const int32_t family = _family_cell_indices[p];
-            const uint64_t family_handle = _families.handle_for_index(family);
+            const uint64_t family_handle = families_store().handle_for_index(family);
             if (family_handle == 0 || source == target_cell ||
                 (family_filter != 0 && family_handle != family_filter) ||
                 !colonization_destination_family_allowed(family_handle,
@@ -588,13 +588,13 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
     for (int32_t i = offset; i < end; ++i) {
         families.push_back(static_cast<int64_t>(candidates[i].family));
         int32_t family_index = -1;
-        if (_families.valid_handle(candidates[i].family, family_index)) {
-            const int32_t surname_id = _families.surname_id[family_index];
+        if (families_store().valid_handle(candidates[i].family, family_index)) {
+            const int32_t surname_id = families_store().surname_id[family_index];
             surnames.push_back(surname_id >= 0 && surname_id <
                     static_cast<int32_t>(_family_surname_text.size())
                 ? from_utf8(_family_surname_text[surname_id]) : String());
             surname_disambiguators.push_back(
-                _families.surname_disambiguator[family_index]);
+                families_store().surname_disambiguator[family_index]);
         } else {
             surnames.push_back(String()); surname_disambiguators.push_back(0);
         }
@@ -968,10 +968,10 @@ bool NativeEconomyRuntime::apply_family_expedition_player_command(
             target_cell = _colonization_quote_cache[found->second].target_cell;
         } else {
             int32_t family = -1;
-            if (_families.valid_handle(cmd.target_handle, family))
+            if (families_store().valid_handle(cmd.target_handle, family))
                 country = _country_runtime == nullptr ? 0 :
                     static_cast<uint64_t>(_country_runtime->country_handle_for_cell(
-                        _families.home_cell[family]));
+                        families_store().home_cell[family]));
         }
     } else {
         int32_t expedition = -1;
@@ -1380,10 +1380,10 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
         bool unemployed; uint64_t stable; int64_t selected = 0; };
     std::vector<Candidate> candidates;
     int32_t family = -1;
-    if (!_families.valid_handle(family_handle, family)) {
+    if (!families_store().valid_handle(family_handle, family)) {
         error = "colonization_family_invalid"; return false;
     }
-    const bool csr = _family_member_offsets.size() == _families.active.size() + 1;
+    const bool csr = _family_member_offsets.size() == families_store().active.size() + 1;
     const int32_t begin = csr ? _family_member_offsets[family] : 0;
     const int32_t end = csr ? _family_member_offsets[family + 1]
         : static_cast<int32_t>(_family_memberships.size());

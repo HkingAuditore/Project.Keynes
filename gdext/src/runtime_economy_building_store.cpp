@@ -33,6 +33,7 @@ void RuntimeEconomyBuildingStore::clear() noexcept {
     cell.clear();
     type_id.clear();
     owner_signature_id.clear();
+    employee_fill_begin.clear();
     last_input_selection_begin.clear();
     group_units.clear();
     filled_owner.clear();
@@ -118,6 +119,7 @@ bool RuntimeEconomyBuildingStore::shape_valid(
     const size_t roles = static_cast<size_t>(expected_roles);
     if (!(column_size(cell, groups) && column_size(type_id, groups) &&
           column_size(owner_signature_id, groups) &&
+          column_size(employee_fill_begin, groups) &&
           column_size(last_input_selection_begin, groups) &&
           column_size(group_units, groups) && column_size(filled_owner, groups) &&
           column_size(last_capacity_q16, groups) &&
@@ -447,6 +449,7 @@ bool RuntimeEconomyBuildingStore::load_wire(
     }
     // ABI7 wire omits live-only AoS columns; default them after unpack.
     const size_t groups = cell.size();
+    employee_fill_begin.assign(groups, -1);
     last_input_selection_begin.assign(groups, -1);
     last_maintenance_cost.assign(groups, 0);
     sample_unit_input_cost.assign(groups, 0);

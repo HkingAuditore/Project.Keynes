@@ -7,6 +7,7 @@
 #include "runtime_economy_building_store.h"
 #include "runtime_economy_trade_escrow_store.h"
 #include "runtime_economy_family_store.h"
+#include "runtime_economy_live_tables.h"
 
 namespace pk {
 
@@ -389,11 +390,16 @@ struct RuntimeEconomyOwnedState {
     // Phase-2.5.2: live building SoA view (mirrors building.store when captured).
     RuntimeEconomyBuildingStore buildings;
     RuntimeEconomyTradeEscrowCommittedBlock trade_escrow;
-    // Phase-2.5.3: live trade-escrow SoA view (mirrors trade_escrow.store).
+    // Phase-2.5.3: ECP trade-escrow projection (packed from live_trade_orders).
     RuntimeEconomyTradeEscrowStore trade_orders;
     RuntimeEconomyFamilyCommittedBlock family;
-    // Phase-2.5.5: live family SoA view (mirrors family.store when captured).
+    // Phase-2.5.5: ECP family projection (packed from live_families).
     RuntimeEconomyFamilyStore families;
+    // A+Y N3/N4: live trade/family authority. NativeEconomyRuntime aliases
+    // these through trade_orders_store()/families_store() while bound; its
+    // own locals are only the unbound fallback.
+    EconomyTradeOrderStore live_trade_orders;
+    EconomyFamilyStore live_families;
     RuntimeEconomyResourceCommittedBlock resource;
     // Phase-2.5.1: live resource SoA view (mirrors resource.store when captured).
     RuntimeEconomyResourceStore resources;
@@ -427,8 +433,10 @@ struct RuntimeEconomyOwnedState {
         buildings.clear();
         trade_escrow.clear();
         trade_orders.clear();
+        live_trade_orders.clear();
         family.clear();
         families.clear();
+        live_families.clear();
         resource.clear();
         resources.clear();
         epoch_cursor.clear();
