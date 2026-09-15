@@ -8,6 +8,7 @@
 #include "runtime_economy_trade_escrow_store.h"
 #include "runtime_economy_family_store.h"
 #include "runtime_economy_live_tables.h"
+#include "runtime_economy_family_side_tables.h"
 
 namespace pk {
 
@@ -43,6 +44,15 @@ struct RuntimeEconomyResourceStore {
     int32_t cell_count = 0;
     std::vector<int64_t> stock;
     std::vector<uint32_t> cell_generation;
+    // A+Y N9: epoch harvest scratch, parallel to `stock`. These lanes are the
+    // live home for NativeEconomyRuntime's per-epoch remaining/harvest/delta
+    // bookkeeping while the store is bound, so there is no second copy. They
+    // are deliberately absent from the ABI9 wire, `wire_content_hash()` and
+    // `shape_valid()`, which stay stock + cell_generation only.
+    std::vector<int64_t> remaining;
+    std::vector<int64_t> harvest_remaining;
+    std::vector<int64_t> deltas;
+    std::vector<uint32_t> lane_generation;
 
     void clear() noexcept;
     void resize(int32_t resources, int32_t cells);
@@ -400,6 +410,25 @@ struct RuntimeEconomyOwnedState {
     // own locals are only the unbound fallback.
     EconomyTradeOrderStore live_trade_orders;
     EconomyFamilyStore live_families;
+    // A+Y N5: live notable-family side tables. Same rule as live_families —
+    // NativeEconomyRuntime aliases these through persons_store(),
+    // family_memberships(), family_expeditions_store(), ... while bound.
+    // Derived CSR rebuild caches over these rows stay NER-local.
+    EconomyNotablePersonStore live_persons;
+    std::vector<EconomyFamilyMembershipEdge> live_memberships;
+    std::vector<EconomyFamilyBuildingOwnership> live_ownerships;
+    EconomyFamilyExpeditionStore live_expeditions;
+    std::vector<int32_t> live_expedition_route_cells;
+    std::vector<int32_t> live_expedition_route_costs;
+    std::vector<EconomyFamilyExpeditionPayload> live_expedition_payloads;
+    std::vector<uint64_t> live_expedition_person_handles;
+    std::vector<EconomyFamilyExpeditionCargoLine> live_expedition_cargo;
+    std::vector<EconomyFamilyExpeditionKitBuilding> live_expedition_kit_buildings;
+    std::vector<int32_t> live_expedition_missing_good_ids;
+    std::vector<int64_t> live_expedition_missing_good_quantities;
+    EconomyFamilyCellInfluenceStore live_influences;
+    std::vector<EconomyFamilyTraitRoll> live_traits;
+    std::vector<EconomyPersonNeedState> live_person_needs;
     RuntimeEconomyResourceCommittedBlock resource;
     // Phase-2.5.1: live resource SoA view (mirrors resource.store when captured).
     RuntimeEconomyResourceStore resources;
@@ -437,6 +466,21 @@ struct RuntimeEconomyOwnedState {
         family.clear();
         families.clear();
         live_families.clear();
+        live_persons.clear();
+        live_memberships.clear();
+        live_ownerships.clear();
+        live_expeditions.clear();
+        live_expedition_route_cells.clear();
+        live_expedition_route_costs.clear();
+        live_expedition_payloads.clear();
+        live_expedition_person_handles.clear();
+        live_expedition_cargo.clear();
+        live_expedition_kit_buildings.clear();
+        live_expedition_missing_good_ids.clear();
+        live_expedition_missing_good_quantities.clear();
+        live_influences.clear();
+        live_traits.clear();
+        live_person_needs.clear();
         resource.clear();
         resources.clear();
         epoch_cursor.clear();

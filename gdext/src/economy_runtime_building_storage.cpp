@@ -183,35 +183,74 @@ void NativeEconomyRuntime::refresh_building_store_role_lanes() const {
     }
 }
 
-void NativeEconomyRuntime::refresh_building_store_pending_lanes() const {
-    RuntimeEconomyBuildingStore &store = mutable_buildings_store();
-    store.pending_cell.clear();
-    store.pending_type_id.clear();
-    store.pending_owner_signature_id.clear();
-    store.pending_count.clear();
-    store.pending_ready_day.clear();
-    store.pending_sequence.clear();
-    store.pending_merchant_debt_principal.clear();
-    store.pending_merchant_debt_premium.clear();
-    store.pending_merchant_debt_term_cycles_left.clear();
-    store.pending_sponsor_family_handle.clear();
-    store.pending_cell.reserve(_pending_construction.size());
-    for (const PendingConstruction &pending : _pending_construction) {
-        store.pending_cell.push_back(pending.cell);
-        store.pending_type_id.push_back(pending.type_id);
-        store.pending_owner_signature_id.push_back(pending.owner_signature_id);
-        store.pending_count.push_back(pending.count);
-        store.pending_ready_day.push_back(pending.ready_day);
-        store.pending_sequence.push_back(pending.sequence);
-        store.pending_merchant_debt_principal.push_back(
-            pending.merchant_debt_principal);
-        store.pending_merchant_debt_premium.push_back(
-            pending.merchant_debt_premium);
-        store.pending_merchant_debt_term_cycles_left.push_back(
-            pending.merchant_debt_term_cycles_left);
-        store.pending_sponsor_family_handle.push_back(
-            pending.sponsor_family_handle);
+size_t NativeEconomyRuntime::append_pending_construction(
+        const PendingConstruction &pending) {
+    RuntimeEconomyBuildingStore &store = buildings_store();
+    const size_t row = store.pending_cell.size();
+#define PK_PENDING_CONSTRUCTION_PUSH(TYPE, NAME, COLUMN) \
+    store.COLUMN.push_back(pending.NAME);
+    PK_PENDING_CONSTRUCTION_COLUMNS(PK_PENDING_CONSTRUCTION_PUSH)
+#undef PK_PENDING_CONSTRUCTION_PUSH
+    return row;
+}
+
+void NativeEconomyRuntime::clear_pending_construction() {
+    RuntimeEconomyBuildingStore &store = buildings_store();
+#define PK_PENDING_CONSTRUCTION_CLEAR(TYPE, NAME, COLUMN) store.COLUMN.clear();
+    PK_PENDING_CONSTRUCTION_COLUMNS(PK_PENDING_CONSTRUCTION_CLEAR)
+#undef PK_PENDING_CONSTRUCTION_CLEAR
+}
+
+void NativeEconomyRuntime::reserve_pending_construction(size_t capacity) {
+    RuntimeEconomyBuildingStore &store = buildings_store();
+#define PK_PENDING_CONSTRUCTION_RESERVE(TYPE, NAME, COLUMN) \
+    store.COLUMN.reserve(capacity);
+    PK_PENDING_CONSTRUCTION_COLUMNS(PK_PENDING_CONSTRUCTION_RESERVE)
+#undef PK_PENDING_CONSTRUCTION_RESERVE
+}
+
+NativeEconomyRuntime::PendingConstruction
+NativeEconomyRuntime::pending_construction_copy(size_t row) const {
+    PendingConstruction pending;
+    const RuntimeEconomyBuildingStore &store = buildings_store();
+    if (row >= store.pending_cell.size()) return pending;
+#define PK_PENDING_CONSTRUCTION_READ(TYPE, NAME, COLUMN) \
+    pending.NAME = static_cast<TYPE>(store.COLUMN[row]);
+    PK_PENDING_CONSTRUCTION_COLUMNS(PK_PENDING_CONSTRUCTION_READ)
+#undef PK_PENDING_CONSTRUCTION_READ
+    return pending;
+}
+
+size_t NativeEconomyRuntime::pending_construction_memory_bytes() const {
+    const RuntimeEconomyBuildingStore &store = buildings_store();
+    size_t bytes = 0;
+#define PK_PENDING_CONSTRUCTION_BYTES(TYPE, NAME, COLUMN) \
+    bytes += store.COLUMN.capacity() * sizeof(TYPE);
+    PK_PENDING_CONSTRUCTION_COLUMNS(PK_PENDING_CONSTRUCTION_BYTES)
+#undef PK_PENDING_CONSTRUCTION_BYTES
+    return bytes;
+}
+
+size_t NativeEconomyRuntime::erase_ready_pending_construction(int64_t day) {
+    RuntimeEconomyBuildingStore &store = buildings_store();
+    const size_t before = store.pending_cell.size();
+    size_t keep = 0;
+    for (size_t row = 0; row < before; ++row) {
+        if (store.pending_ready_day[row] <= day) continue;
+        if (keep != row) {
+#define PK_PENDING_CONSTRUCTION_COMPACT(TYPE, NAME, COLUMN) \
+            store.COLUMN[keep] = store.COLUMN[row];
+            PK_PENDING_CONSTRUCTION_COLUMNS(PK_PENDING_CONSTRUCTION_COMPACT)
+#undef PK_PENDING_CONSTRUCTION_COMPACT
+        }
+        ++keep;
     }
+    if (keep == before) return 0;
+#define PK_PENDING_CONSTRUCTION_TRUNCATE(TYPE, NAME, COLUMN) \
+    store.COLUMN.resize(keep);
+    PK_PENDING_CONSTRUCTION_COLUMNS(PK_PENDING_CONSTRUCTION_TRUNCATE)
+#undef PK_PENDING_CONSTRUCTION_TRUNCATE
+    return before - keep;
 }
 
 int32_t NativeEconomyRuntime::find_building_group(int32_t cell, int32_t type_id,

@@ -40,13 +40,13 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _food_access_events = 0;
     _carrying_old_resource_scan_steps = 0;
     _person_epoch_needs.clear();
-    _person_opening_cash_claim = _persons.cash_claim;
-    for (int32_t i = 0; i < static_cast<int32_t>(_persons.active.size()); ++i) {
-        if (_persons.active[i] == 0) continue;
-        _persons.epoch_job_income[i] = 0;
-        _persons.epoch_business_result[i] = 0;
-        _persons.epoch_consumption_expense[i] = 0;
-        _persons.epoch_tax[i] = 0;
+    _person_opening_cash_claim = persons_store().cash_claim;
+    for (int32_t i = 0; i < static_cast<int32_t>(persons_store().active.size()); ++i) {
+        if (persons_store().active[i] == 0) continue;
+        persons_store().epoch_job_income[i] = 0;
+        persons_store().epoch_business_result[i] = 0;
+        persons_store().epoch_consumption_expense[i] = 0;
+        persons_store().epoch_tax[i] = 0;
     }
     _epoch_business_demand_ema.clear();
     _epoch_derived_business_demand.clear();
@@ -497,18 +497,19 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
                   _staging_cell_generation.end(), 0);
         _staging_current_generation = 1;
     }
-    if (_resource_remaining.size() != resource_stock_lanes().size())
-        _resource_remaining.resize(resource_stock_lanes().size());
-    if (_resource_harvest_remaining.size() != resource_stock_lanes().size())
-        _resource_harvest_remaining.resize(resource_stock_lanes().size());
-    if (_resource_deltas.size() != resource_stock_lanes().size())
-        _resource_deltas.resize(resource_stock_lanes().size());
-    if (_resource_lane_generation.size() != resource_stock_lanes().size())
-        _resource_lane_generation.assign(resource_stock_lanes().size(), 0);
+    const size_t resource_lanes = resource_stock_lanes().size();
+    if (resource_remaining_lanes().size() != resource_lanes)
+        resource_remaining_lanes().resize(resource_lanes);
+    if (resource_harvest_remaining_lanes().size() != resource_lanes)
+        resource_harvest_remaining_lanes().resize(resource_lanes);
+    if (resource_delta_lanes().size() != resource_lanes)
+        resource_delta_lanes().resize(resource_lanes);
+    if (resource_lane_generation_lanes().size() != resource_lanes)
+        resource_lane_generation_lanes().assign(resource_lanes, 0);
     ++_resource_current_generation;
     if (_resource_current_generation == 0) {
-        std::fill(_resource_lane_generation.begin(),
-                  _resource_lane_generation.end(), 0);
+        std::fill(resource_lane_generation_lanes().begin(),
+                  resource_lane_generation_lanes().end(), 0);
         _resource_current_generation = 1;
     }
     _resource_touched_lanes.clear();
@@ -910,11 +911,13 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
     }
     _epoch_begin_resource_lane_ms += elapsed_ms(resource_lane_2_started);
     const auto construction_csr_started = Clock::now();
+    // A+Y N8: CSR is rebuilt straight from the sole pending columns.
+    const std::vector<int32_t> &pending_cells = buildings_store().pending_cell;
     _pending_construction_cell_offsets.assign(
         static_cast<size_t>(_cell_count) + 1, 0);
-    for (const PendingConstruction &pending : _pending_construction) {
-        if (pending.cell >= 0 && pending.cell < _cell_count)
-            ++_pending_construction_cell_offsets[pending.cell + 1];
+    for (const int32_t pending_cell : pending_cells) {
+        if (pending_cell >= 0 && pending_cell < _cell_count)
+            ++_pending_construction_cell_offsets[pending_cell + 1];
     }
     for (int32_t cell = 0; cell < _cell_count; ++cell) {
         _pending_construction_cell_offsets[cell + 1] +=
@@ -926,9 +929,9 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
         _pending_construction_cell_offsets.begin(),
         _pending_construction_cell_offsets.end() - 1);
     for (int32_t pending_index = 0;
-         pending_index < static_cast<int32_t>(_pending_construction.size());
+         pending_index < static_cast<int32_t>(pending_cells.size());
          ++pending_index) {
-        const int32_t cell = _pending_construction[pending_index].cell;
+        const int32_t cell = pending_cells[pending_index];
         if (cell >= 0 && cell < _cell_count)
             _pending_construction_cell_indices[pending_cursors[cell]++] = pending_index;
     }
@@ -1142,10 +1145,10 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
         }
         if (cmd.opcode == COMMAND_SETTLE_FAMILY_EXPEDITION) {
             int32_t expedition = -1;
-            if (!_family_expeditions.valid_handle(cmd.target_handle, expedition) ||
-                cmd.i32_0 != _family_expeditions.target_cell[expedition] ||
+            if (!family_expeditions_store().valid_handle(cmd.target_handle, expedition) ||
+                cmd.i32_0 != family_expeditions_store().target_cell[expedition] ||
                 cmd.i64_1 != static_cast<int64_t>(
-                    _family_expeditions.country_handle[expedition])) {
+                    family_expeditions_store().country_handle[expedition])) {
                 return reject_epoch_command(cmd);
             }
         }

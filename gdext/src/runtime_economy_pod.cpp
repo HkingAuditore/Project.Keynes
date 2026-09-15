@@ -423,6 +423,27 @@ bool RuntimeEconomyPodAuthority::import_committed_ledger(
     return true;
 }
 
+bool RuntimeEconomyPodAuthority::publish_owned_committed_mirror(
+        uint64_t generation, int64_t committed_day, std::string &error) {
+    error.clear();
+    if (!state_initialized()) {
+        error = "economy_pod_owned_mirror_state_uninitialized";
+        return false;
+    }
+    RuntimeEconomyLedgerState ledger;
+    // Stamp identity before the export so `valid()` sees a nonzero generation
+    // and a committed day even on the very first publish.
+    _state.state_generation = std::max(generation, _state.state_generation);
+    if (committed_day >= 0) _state.committed_day = committed_day;
+    if (!export_committed_ledger(ledger, error)) return false;
+    _state.committed = ledger;
+    if (!capture_committed_ledger_state(std::move(ledger))) {
+        error = "economy_pod_owned_mirror_capture_invalid";
+        return false;
+    }
+    return true;
+}
+
 bool RuntimeEconomyPodAuthority::export_committed_ledger(
         RuntimeEconomyLedgerState &ledger, std::string &error) const {
     error.clear();

@@ -24,17 +24,20 @@ int64_t NativeEconomyRuntime::available_resource_amount(
     // resource epoch has allocated all lanes. Treat an absent lane as zero
     // available capacity instead of indexing an uninitialised vector.
     if (idx >= resource_stock_lanes().size()) return 0;
-    const bool initialized = idx < _resource_lane_generation.size() &&
-        _resource_lane_generation[idx] == _resource_current_generation;
+    const std::vector<uint32_t> &lane_generation =
+        resource_lane_generation_lanes();
+    const bool initialized = idx < lane_generation.size() &&
+        lane_generation[idx] == _resource_current_generation;
     const int64_t remaining = std::max<int64_t>(0,
-        initialized ? _resource_remaining[idx] : resource_stock_lanes()[idx]);
+        initialized ? resource_remaining_lanes()[idx]
+                    : resource_stock_lanes()[idx]);
     // A capacity edge represents standing habitat/capacity. Only extract edges
     // draw down the renewable harvest budget shared by this cell's producers.
-    if (item.mode != 0 || idx >= _resource_harvest_remaining.size())
+    if (item.mode != 0 || idx >= resource_harvest_remaining_lanes().size())
         return remaining;
     if (initialized)
         return std::min(remaining,
-            std::max<int64_t>(0, _resource_harvest_remaining[idx]));
+            std::max<int64_t>(0, resource_harvest_remaining_lanes()[idx]));
     int64_t sat = 0;
     const int64_t harvest = resource_is_renewable(item.resource_id) &&
             _resource_safe_harvest_q16 > 0
@@ -45,26 +48,29 @@ int64_t NativeEconomyRuntime::available_resource_amount(
 }
 
 void NativeEconomyRuntime::ensure_resource_lane(size_t idx) {
+    std::vector<int64_t> &remaining_lanes = resource_remaining_lanes();
+    std::vector<int64_t> &harvest_lanes = resource_harvest_remaining_lanes();
+    std::vector<uint32_t> &lane_generation = resource_lane_generation_lanes();
     if (idx >= resource_stock_lanes().size() ||
-        idx >= _resource_remaining.size() ||
-        idx >= _resource_harvest_remaining.size() ||
-        idx >= _resource_deltas.size() ||
-        idx >= _resource_lane_generation.size() ||
-        _resource_lane_generation[idx] == _resource_current_generation) {
+        idx >= remaining_lanes.size() ||
+        idx >= harvest_lanes.size() ||
+        idx >= resource_delta_lanes().size() ||
+        idx >= lane_generation.size() ||
+        lane_generation[idx] == _resource_current_generation) {
         return;
     }
-    _resource_lane_generation[idx] = _resource_current_generation;
-    _resource_remaining[idx] = resource_stock_lanes()[idx];
-    _resource_deltas[idx] = 0;
+    lane_generation[idx] = _resource_current_generation;
+    remaining_lanes[idx] = resource_stock_lanes()[idx];
+    resource_delta_lanes()[idx] = 0;
     const int32_t resource = _cell_count > 0
         ? static_cast<int32_t>(idx / static_cast<size_t>(_cell_count)) : -1;
     const int32_t cell = _cell_count > 0
         ? static_cast<int32_t>(idx % static_cast<size_t>(_cell_count)) : -1;
-    _resource_harvest_remaining[idx] =
+    harvest_lanes[idx] =
         resource_is_renewable(resource) && _resource_safe_harvest_q16 > 0
         ? saturating_mul(renewable_safe_harvest(resource, cell),
               std::max<int64_t>(1, _epoch_days), _saturation_count)
-        : std::max<int64_t>(0, _resource_remaining[idx]);
+        : std::max<int64_t>(0, remaining_lanes[idx]);
     if (_production_result_sink != nullptr) {
         _production_result_sink->resource_touched_lanes.push_back(idx);
     } else {
@@ -78,16 +84,19 @@ void NativeEconomyRuntime::consume_resource_amount(
         item.resource_id >= static_cast<int32_t>(_resource_ids.size())) return;
     const size_t idx = static_cast<size_t>(item.resource_id) * _cell_count + cell;
     ensure_resource_lane(idx);
+    std::vector<int64_t> &remaining_lanes = resource_remaining_lanes();
     const int64_t taken = std::min<int64_t>(
-        std::max<int64_t>(0, quantity), std::max<int64_t>(0, _resource_remaining[idx]));
+        std::max<int64_t>(0, quantity),
+        std::max<int64_t>(0, remaining_lanes[idx]));
     if (taken <= 0) return;
-    _resource_remaining[idx] -= taken;
-    if (item.mode == 0 && idx < _resource_harvest_remaining.size()) {
-        _resource_harvest_remaining[idx] = std::max<int64_t>(0,
-            _resource_harvest_remaining[idx] - taken);
+    remaining_lanes[idx] -= taken;
+    std::vector<int64_t> &harvest_lanes = resource_harvest_remaining_lanes();
+    if (item.mode == 0 && idx < harvest_lanes.size()) {
+        harvest_lanes[idx] = std::max<int64_t>(0, harvest_lanes[idx] - taken);
     }
-    _resource_deltas[idx] = saturating_sub(
-        _resource_deltas[idx], taken, _saturation_count);
+    std::vector<int64_t> &delta_lanes = resource_delta_lanes();
+    delta_lanes[idx] = saturating_sub(
+        delta_lanes[idx], taken, _saturation_count);
 }
 
 bool NativeEconomyRuntime::resource_is_renewable(int32_t resource_id) const {
@@ -108,10 +117,12 @@ int32_t NativeEconomyRuntime::resource_stock_density_q16(
     if (idx >= resource_stock_lanes().size() ||
         resource >= _resource_ecology_capacity.size())
         return Q16_ONE;
-    const int64_t remaining = idx < _resource_lane_generation.size() &&
-            _resource_lane_generation[idx] == _resource_current_generation &&
-            idx < _resource_remaining.size()
-        ? std::max<int64_t>(0, _resource_remaining[idx])
+    const std::vector<uint32_t> &lane_generation =
+        resource_lane_generation_lanes();
+    const int64_t remaining = idx < lane_generation.size() &&
+            lane_generation[idx] == _resource_current_generation &&
+            idx < resource_remaining_lanes().size()
+        ? std::max<int64_t>(0, resource_remaining_lanes()[idx])
         : std::max<int64_t>(0, resource_stock_lanes()[idx]);
     int64_t sat = 0;
     int64_t runtime_fit_q16 = Q16_ONE;
@@ -179,24 +190,23 @@ int64_t NativeEconomyRuntime::renewable_safe_harvest(
     if (_resource_safe_harvest_q16 <= 0 || !resource_is_renewable(resource_id) ||
         cell < 0 || cell >= _cell_count) return 0;
     const size_t idx = static_cast<size_t>(resource_id) * _cell_count + cell;
-    if (idx >= _resource_remaining.size() ||
+    if (idx >= resource_remaining_lanes().size() ||
         idx >= resource_stock_lanes().size()) return 0;
     int64_t sat = 0;
     const int64_t capacity = _resource_ecology_capacity[resource_id];
+    const std::vector<uint32_t> &lane_generation =
+        resource_lane_generation_lanes();
+    const int64_t lane_remaining =
+        idx < lane_generation.size() &&
+                lane_generation[idx] == _resource_current_generation
+            ? resource_remaining_lanes()[idx] : resource_stock_lanes()[idx];
     // Catalog capacity is a biome-wide ceiling, not the climate-adjusted local
     // carrying capacity. Retain a share of this cell's frozen stock instead of
     // applying a false global absolute floor to naturally sparse cells.
     const int64_t reserve_floor = mul_div_sat(
-        std::max<int64_t>(0,
-            idx < _resource_lane_generation.size() &&
-                    _resource_lane_generation[idx] ==
-                        _resource_current_generation
-                ? _resource_remaining[idx] : resource_stock_lanes()[idx]),
+        std::max<int64_t>(0, lane_remaining),
         _resource_min_reserve_q16, Q16_ONE, sat);
-    const int64_t remaining =
-        idx < _resource_lane_generation.size() &&
-                _resource_lane_generation[idx] == _resource_current_generation
-            ? _resource_remaining[idx] : resource_stock_lanes()[idx];
+    const int64_t remaining = lane_remaining;
     const int64_t harvestable_stock = std::max<int64_t>(
         0, remaining - reserve_floor);
     const int64_t biomass = std::min<int64_t>(capacity / 8, harvestable_stock);

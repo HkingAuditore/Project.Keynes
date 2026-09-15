@@ -328,6 +328,15 @@ public:
                                  std::string &error);
     bool export_committed_ledger(RuntimeEconomyLedgerState &ledger,
                                  std::string &error) const;
+    // N10 Owned identity export. When NativeEconomyRuntime is formula-bound,
+    // `_state` IS the runtime's live state, so `import_committed_ledger` would
+    // replace the very object the bind aliases. This republishes the committed
+    // snapshot from the live `_state` instead: export, stamp the runtime's
+    // committed generation / day, and capture. Live population, market,
+    // building and domain stores are never replaced.
+    bool publish_owned_committed_mirror(uint64_t generation,
+                                        int64_t committed_day,
+                                        std::string &error);
     void set_authority_mode(RuntimeEconomyAuthorityMode mode) noexcept {
         _authority_mode = mode;
     }

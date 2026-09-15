@@ -473,7 +473,7 @@ bool NativeEconomyRuntime::compile_family_effect_catalog(
     return true;
 }
 
-void NativeEconomyRuntime::FamilyCellInfluenceStore::clear() {
+void EconomyFamilyCellInfluenceStore::clear() {
     active.clear(); generation.clear(); family_handle.clear(); cell.clear();
     stable_id.clear(); population.clear(); cash.clear(); building_asset.clear();
     population_share_q16.clear(); cash_share_q16.clear();
@@ -483,7 +483,7 @@ void NativeEconomyRuntime::FamilyCellInfluenceStore::clear() {
     free_indices.clear();
 }
 
-int32_t NativeEconomyRuntime::FamilyCellInfluenceStore::allocate() {
+int32_t EconomyFamilyCellInfluenceStore::allocate() {
     int32_t index = -1;
     if (!free_indices.empty()) {
         const auto reusable = std::min_element(free_indices.begin(),
@@ -511,7 +511,7 @@ int32_t NativeEconomyRuntime::FamilyCellInfluenceStore::allocate() {
     return index;
 }
 
-void NativeEconomyRuntime::FamilyCellInfluenceStore::release(int32_t index) {
+void EconomyFamilyCellInfluenceStore::release(int32_t index) {
     if (index < 0 || index >= static_cast<int32_t>(active.size()) ||
         active[index] == 0) return;
     active[index] = 0;
@@ -519,7 +519,7 @@ void NativeEconomyRuntime::FamilyCellInfluenceStore::release(int32_t index) {
     free_indices.push_back(index);
 }
 
-uint64_t NativeEconomyRuntime::FamilyCellInfluenceStore::handle_for_index(
+uint64_t EconomyFamilyCellInfluenceStore::handle_for_index(
         int32_t index) const {
     if (index < 0 || index >= static_cast<int32_t>(active.size()) ||
         active[index] == 0) return 0;
@@ -527,7 +527,7 @@ uint64_t NativeEconomyRuntime::FamilyCellInfluenceStore::handle_for_index(
         static_cast<uint32_t>(index);
 }
 
-bool NativeEconomyRuntime::FamilyCellInfluenceStore::valid_handle(
+bool EconomyFamilyCellInfluenceStore::valid_handle(
         uint64_t handle, int32_t &index_out) const {
     const uint32_t index = static_cast<uint32_t>(handle & 0xffffffffULL);
     const uint32_t gen = static_cast<uint32_t>(handle >> 32);

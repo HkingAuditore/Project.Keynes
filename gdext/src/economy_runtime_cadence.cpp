@@ -133,7 +133,7 @@ void NativeEconomyRuntime::rebuild_economy_live_cells() {
         if (cell >= 0 && cell < _cell_count)
             _economy_live_cells.push_back(cell);
     }
-    for (const PendingConstruction &pending : _pending_construction) {
+    for (const auto pending : pending_construction()) {
         if (pending.count > 0 && pending.cell >= 0 && pending.cell < _cell_count)
             _economy_live_cells.push_back(pending.cell);
     }

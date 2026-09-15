@@ -539,9 +539,9 @@ void NativeEconomyRuntime::prepare_startup_demand() {
                 const int32_t pending_index =
                     _pending_construction_cell_indices[cursor];
                 if (pending_index < 0 || pending_index >= static_cast<int32_t>(
-                        _pending_construction.size())) continue;
-                const PendingConstruction &pending =
-                    _pending_construction[pending_index];
+                        pending_construction_count())) continue;
+                const auto pending =
+                    pending_construction()[static_cast<size_t>(pending_index)];
                 if (pending.count <= 0 || pending.type_id < 0 ||
                     pending.type_id >= static_cast<int32_t>(
                         _building_types.size())) continue;
@@ -1033,7 +1033,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
         const size_t review_divisor = static_cast<size_t>(
             std::max(1, _investment_review_days));
         _investment_pending_by_cell_type.reserve(
-            _pending_construction.size() / review_divisor * 2 + 1);
+            pending_construction_count() / review_divisor * 2 + 1);
         _investment_existing_by_cell_type.reserve(
             building_count() / review_divisor * 2 + 1);
         begin_investment_scratch_generation();
@@ -1130,7 +1130,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                                     _investment_review_cell_indices.end(), cell);
       };
       const auto prepare_pending_started = Clock::now();
-      for (const PendingConstruction &pending : _pending_construction) {
+      for (const auto pending : pending_construction()) {
         if (!is_review_cell(pending.cell)) continue;
         ensure_investment_cell_finance_lane(pending.cell);
         const uint64_t key = cell_key(pending.cell, pending.type_id);
@@ -1529,9 +1529,9 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                             _pending_construction_cell_indices[cursor];
                         if (pending_index >= 0 &&
                             pending_index < static_cast<int32_t>(
-                                _pending_construction.size())) {
-                            mark_type(
-                                _pending_construction[pending_index].type_id);
+                                pending_construction_count())) {
+                            mark_type(buildings_store().pending_type_id[
+                                static_cast<size_t>(pending_index)]);
                         }
                     }
                 }
@@ -2115,9 +2115,10 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     if (resource_is_renewable(item.resource_id)) {
                         daily_budget = renewable_safe_harvest(
                             item.resource_id, cell);
-                    } else if (resource_idx < _resource_remaining.size()) {
+                    } else if (resource_idx <
+                               resource_remaining_lanes().size()) {
                         daily_budget = std::max<int64_t>(0,
-                            _resource_remaining[resource_idx]) /
+                            resource_remaining_lanes()[resource_idx]) /
                             std::max<int64_t>(1, _resource_min_horizon_days);
                     }
                     const int64_t effective_quantity =
@@ -3127,9 +3128,10 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     if (resource_is_renewable(item.resource_id)) {
                         daily_budget = renewable_safe_harvest(
                             item.resource_id, cell);
-                    } else if (resource_idx < _resource_remaining.size()) {
+                    } else if (resource_idx <
+                               resource_remaining_lanes().size()) {
                         daily_budget = std::max<int64_t>(0,
-                            _resource_remaining[resource_idx]) /
+                            resource_remaining_lanes()[resource_idx]) /
                             std::max<int64_t>(1, _resource_min_horizon_days);
                     }
                     const int64_t effective_quantity = std::max<int64_t>(1,
@@ -3593,7 +3595,8 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     command, owner_slot, commit_material_plans[i],
                     effective_construction_days, 0, 0, 0, error)) return false;
             if (candidate.merchant_credit > 0) {
-                PendingConstruction &pending = _pending_construction.back();
+                auto pending =
+                    pending_construction_at(pending_construction_count() - 1);
                 const int64_t credit = saturating_mul(
                     candidate.allocated_count, candidate.merchant_credit,
                     _saturation_count);
@@ -3610,8 +3613,8 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 pending.merchant_debt_term_cycles_left = static_cast<uint16_t>(
                     _merchant_credit_term_cycles);
             }
-            _pending_construction.back().sponsor_family_handle =
-                candidate.sponsor_family_handle;
+            pending_construction_at(pending_construction_count() - 1)
+                .sponsor_family_handle = candidate.sponsor_family_handle;
             const int64_t consumed =
                 _construction_goods_consumed - consumed_before;
             _publish_accum.goods_stock = saturating_sub(

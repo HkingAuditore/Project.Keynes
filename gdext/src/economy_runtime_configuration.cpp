@@ -276,15 +276,15 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _family_clamp_traces.clear();
     population_store().clear(cell_count);
     families_store().clear();
-    _family_expeditions.clear();
-    _family_expedition_route_cells.clear();
-    _family_expedition_route_costs.clear();
-    _family_expedition_payloads.clear();
-    _family_expedition_person_handles.clear();
-    _family_expedition_cargo.clear();
-    _family_expedition_kit_buildings.clear();
-    _family_expedition_missing_good_ids.clear();
-    _family_expedition_missing_good_quantities.clear();
+    family_expeditions_store().clear();
+    family_expedition_route_cells().clear();
+    family_expedition_route_costs().clear();
+    family_expedition_payloads().clear();
+    family_expedition_person_handles().clear();
+    family_expedition_cargo().clear();
+    family_expedition_kit_buildings().clear();
+    family_expedition_missing_good_ids().clear();
+    family_expedition_missing_good_quantities().clear();
     _family_expedition_target_index.clear();
     _family_expedition_due_heap.clear();
     _colonization_receipts.clear();
@@ -308,11 +308,11 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _colonization_parent_stamp.clear();
     _colonization_route_heap.clear();
     _colonization_search_stamp = 0;
-    _family_influences.clear();
-    _persons.clear();
-    _family_memberships.clear();
-    _family_ownerships.clear();
-    _family_traits.clear();
+    family_influences().clear();
+    persons_store().clear();
+    family_memberships().clear();
+    family_ownerships().clear();
+    family_trait_rolls().clear();
     _family_behavior_factor_offsets.clear();
     _family_behavior_factor_rows.clear();
     _family_behavior_cache_dirty = true;
@@ -344,7 +344,7 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _family_owned_output_rows.clear();
     _family_modifier_bindings.clear();
     _family_trigger_bindings.clear();
-    _person_needs.clear();
+    person_needs().clear();
     _person_needs_normalized = false;
     _family_member_offsets.clear();
     _family_member_edge_indices.clear();
@@ -420,7 +420,7 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _epoch_plan_cells.clear();
     _building_employee_filled.clear();
     _building_last_input_selected_goods.clear();
-    _pending_construction.clear();
+    clear_pending_construction();
     _investment_pending_by_cell_type.clear();
     _investment_existing_by_cell_type.clear();
     _investment_merchant_cash_by_cell.clear();
@@ -589,7 +589,7 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     _building_role_bonus_due.clear();
     _building_role_bonus_paid.clear();
     _building_role_forecast_pay_ratio_q16.clear();
-    _pending_construction.clear();
+    clear_pending_construction();
     _investment_pending_by_cell_type.clear();
     _investment_existing_by_cell_type.clear();
     _investment_merchant_cash_by_cell.clear();
@@ -927,9 +927,9 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
         rebuild_family_indices();
         rebuild_person_indices();
         for (int32_t family_index : founder_family_indices) {
-            const int64_t before = _persons.active_count;
+            const int64_t before = persons_store().active_count;
             promote_person_for_family(family_index);
-            if (_persons.active_count != before + 1) {
+            if (persons_store().active_count != before + 1) {
                 out["ok"] = false;
                 out["reason"] = "founder_person_bootstrap_failed";
                 return out;
@@ -1106,13 +1106,13 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
         (_family_runtime_mode == 1 ? "PROBE" : "ACTIVE");
     out["family_count"] = families_store().active_count;
     out["family_membership_edge_count"] = static_cast<int64_t>(
-        _family_memberships.size());
+        family_memberships().size());
     out["family_ownership_edge_count"] = static_cast<int64_t>(
-        _family_ownerships.size());
+        family_ownerships().size());
     out["family_trait_roll_count"] = static_cast<int64_t>(
-        _family_traits.size());
+        family_trait_rolls().size());
     out["family_branch_count"] = static_cast<int64_t>(std::count(
-        _family_influences.active.begin(), _family_influences.active.end(),
+        family_influences().active.begin(), family_influences().active.end(),
         uint8_t{1}));
     out["family_modifier_binding_count"] = static_cast<int64_t>(
         _family_modifier_bindings.size());
@@ -1134,8 +1134,8 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     out["family_owner_jobs_vacant"] = _family_owner_jobs_vacant;
     out["notable_person_runtime_mode"] = _person_runtime_mode == 0 ? "OFF" :
         (_person_runtime_mode == 1 ? "PROBE" : "ACTIVE");
-    out["notable_person_count"] = _persons.active_count;
-    out["person_need_edge_count"] = static_cast<int64_t>(_person_needs.size());
+    out["notable_person_count"] = persons_store().active_count;
+    out["person_need_edge_count"] = static_cast<int64_t>(person_needs().size());
     out["persons_promoted"] = _persons_promoted;
     out["persons_died"] = _persons_died;
     out["persons_migrated"] = _persons_migrated;
@@ -1308,7 +1308,7 @@ Dictionary NativeEconomyRuntime::submit_commands(const Dictionary &batch) {
 bool NativeEconomyRuntime::family_ledger_command_preflight(const Command &cmd) const {
     if (!is_family_ledger_command(cmd.opcode)) return false;
     int32_t branch = -1;
-    if (!_family_influences.valid_handle(cmd.target_handle, branch)) return false;
+    if (!family_influences().valid_handle(cmd.target_handle, branch)) return false;
     if (cmd.opcode == COMMAND_FAMILY_FREE_BUILDING)
         return cmd.i32_0 >= 0 && cmd.i32_0 <= 1 && cmd.i64_0 > 0 &&
             family_free_building_type_id(cmd) >= 0;
@@ -1343,8 +1343,8 @@ bool NativeEconomyRuntime::family_split_policy_command_preflight(
     int32_t family = -1;
     int32_t branch = -1;
     if (families_store().valid_handle(cmd.target_handle, family)) return true;
-    return _family_influences.valid_handle(cmd.target_handle, branch) &&
-        families_store().valid_handle(_family_influences.family_handle[branch], family);
+    return family_influences().valid_handle(cmd.target_handle, branch) &&
+        families_store().valid_handle(family_influences().family_handle[branch], family);
 }
 
 bool NativeEconomyRuntime::validate_command_pod(const Command &cmd,
@@ -1421,10 +1421,10 @@ bool NativeEconomyRuntime::validate_command_pod(const Command &cmd,
     }
     if (expedition_settle) {
         int32_t expedition = -1;
-        if (!_family_expeditions.valid_handle(cmd.target_handle, expedition) ||
-            cmd.i32_0 != _family_expeditions.target_cell[expedition] ||
+        if (!family_expeditions_store().valid_handle(cmd.target_handle, expedition) ||
+            cmd.i32_0 != family_expeditions_store().target_cell[expedition] ||
             cmd.i64_1 != static_cast<int64_t>(
-                _family_expeditions.country_handle[expedition])) {
+                family_expeditions_store().country_handle[expedition])) {
             error = "colonization_settlement_target_invalid";
             return false;
         }
@@ -1441,7 +1441,7 @@ bool NativeEconomyRuntime::validate_command_pod(const Command &cmd,
             }
         } else {
             int32_t expedition = -1;
-            if (!_family_expeditions.valid_handle(cmd.target_handle, expedition)) {
+            if (!family_expeditions_store().valid_handle(cmd.target_handle, expedition)) {
                 error = "colonization_expedition_invalid";
                 return false;
             }

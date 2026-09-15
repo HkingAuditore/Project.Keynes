@@ -140,9 +140,9 @@ int32_t NativeEconomyRuntime::family_group_owned_output_factor_q16(
         const int32_t edge_index = _family_building_edge_indices[
             static_cast<size_t>(cursor)];
         if (edge_index < 0 || edge_index >= static_cast<int32_t>(
-                _family_ownerships.size()))
+                family_ownerships().size()))
             continue;
-        const FamilyBuildingOwnership &edge = _family_ownerships[
+        const FamilyBuildingOwnership &edge = family_ownerships()[
             static_cast<size_t>(edge_index)];
         int32_t family = -1;
         if (!families_store().valid_handle(edge.family_handle, family)) continue;
@@ -182,13 +182,13 @@ void NativeEconomyRuntime::rebuild_family_industry_metrics() {
     }
     std::vector<std::vector<int32_t>> family_cells(families_store().active.size());
     for (int32_t branch = 0; branch < static_cast<int32_t>(
-            _family_influences.active.size()); ++branch) {
-        if (_family_influences.active[branch] == 0) continue;
+            family_influences().active.size()); ++branch) {
+        if (family_influences().active[branch] == 0) continue;
         int32_t family = -1;
-        if (!families_store().valid_handle(_family_influences.family_handle[branch], family) ||
+        if (!families_store().valid_handle(family_influences().family_handle[branch], family) ||
             family < 0 || family >= static_cast<int32_t>(family_cells.size()))
             continue;
-        const int32_t cell = _family_influences.cell[branch];
+        const int32_t cell = family_influences().cell[branch];
         if (cell >= 0 && cell < _cell_count)
             family_cells[static_cast<size_t>(family)].push_back(cell);
     }
@@ -218,9 +218,9 @@ void NativeEconomyRuntime::rebuild_family_industry_metrics() {
                     const int32_t edge_index = _family_owned_edge_indices[
                         static_cast<size_t>(cursor)];
                     if (edge_index < 0 || edge_index >= static_cast<int32_t>(
-                            _family_ownerships.size()))
+                            family_ownerships().size()))
                         continue;
-                    const FamilyBuildingOwnership &edge = _family_ownerships[
+                    const FamilyBuildingOwnership &edge = family_ownerships()[
                         static_cast<size_t>(edge_index)];
                     if (edge.family_handle != family_handle) continue;
                     const auto found = building_by_handle.find(edge.building_handle);
@@ -346,10 +346,10 @@ void NativeEconomyRuntime::rebuild_family_owned_output_csr() {
     for (const FamilyEffectBinding &binding : _family_effect_bindings) {
         int32_t branch = -1;
         int32_t family = -1;
-        if (!_family_influences.valid_handle(binding.branch_handle, branch) ||
-            !families_store().valid_handle(_family_influences.family_handle[branch], family))
+        if (!family_influences().valid_handle(binding.branch_handle, branch) ||
+            !families_store().valid_handle(family_influences().family_handle[branch], family))
             continue;
-        const int32_t cell = _family_influences.cell[branch];
+        const int32_t cell = family_influences().cell[branch];
         const FamilyIndustryStats *stats = family_industry_stats_for(family, cell);
         if (stats == nullptr) continue;
         const int32_t magnitude = clamp_factor_q16(binding.strength_q16);
@@ -430,8 +430,8 @@ bool NativeEconomyRuntime::apply_family_set_split_policy(const Command &cmd,
     int32_t family = -1;
     int32_t branch = -1;
     if (families_store().valid_handle(cmd.target_handle, family)) {
-    } else if (_family_influences.valid_handle(cmd.target_handle, branch)) {
-        if (!families_store().valid_handle(_family_influences.family_handle[branch], family)) {
+    } else if (family_influences().valid_handle(cmd.target_handle, branch)) {
+        if (!families_store().valid_handle(family_influences().family_handle[branch], family)) {
             ++_rejected_commands;
             return true;
         }
@@ -464,8 +464,8 @@ void NativeEconomyRuntime::grant_random_pool_family_effect(
     bool has_random_pool = false;
     for (const FamilyEffectBinding &binding : _family_effect_bindings) {
         int32_t branch = -1;
-        if (!_family_influences.valid_handle(binding.branch_handle, branch) ||
-            _family_influences.family_handle[branch] != family_handle)
+        if (!family_influences().valid_handle(binding.branch_handle, branch) ||
+            family_influences().family_handle[branch] != family_handle)
             continue;
         const int32_t effect_id = family_effect_id_for_key(binding.definition_key);
         if (effect_id >= 0) owned.push_back(effect_id);
@@ -540,11 +540,11 @@ void NativeEconomyRuntime::grant_random_pool_family_effect(
     const std::string &key = _family_effect_keys[static_cast<size_t>(chosen)];
     int32_t prestige = 0;
     for (int32_t branch = 0; branch < static_cast<int32_t>(
-            _family_influences.active.size()); ++branch) {
-        if (_family_influences.active[branch] == 0 ||
-            _family_influences.family_handle[branch] != family_handle) continue;
+            family_influences().active.size()); ++branch) {
+        if (family_influences().active[branch] == 0 ||
+            family_influences().family_handle[branch] != family_handle) continue;
         prestige = std::max(prestige,
-            static_cast<int32_t>(_family_influences.prestige_level[branch]));
+            static_cast<int32_t>(family_influences().prestige_level[branch]));
     }
     const int32_t magnitude = family_effect_prestige_magnitude_q16(chosen, prestige);
     if (key == kEffectRetain)
@@ -560,13 +560,13 @@ void NativeEconomyRuntime::grant_random_pool_family_effect(
         apply_family_split_policy_flags(family_index,
             FAMILY_FLAG_SPLIT_GIFT_BUILDING | FAMILY_FLAG_SPLIT_GIFT_POPULATION, 0);
     for (int32_t branch = 0; branch < static_cast<int32_t>(
-            _family_influences.active.size()); ++branch) {
-        if (_family_influences.active[branch] == 0 ||
-            _family_influences.family_handle[branch] != family_handle) continue;
-        const uint64_t branch_handle = _family_influences.handle_for_index(branch);
+            family_influences().active.size()); ++branch) {
+        if (family_influences().active[branch] == 0 ||
+            family_influences().family_handle[branch] != family_handle) continue;
+        const uint64_t branch_handle = family_influences().handle_for_index(branch);
         EffectRuntime::FamilyEffectMetadataPod metadata;
         if (!_effect_runtime->family_effect_metadata_pod(key, metadata)) continue;
-        const int32_t source_cell = _family_influences.cell[branch];
+        const int32_t source_cell = family_influences().cell[branch];
         std::vector<int32_t> target_cells;
         collect_family_effect_target_cells(source_cell, metadata.target_selector_kind,
             target_cells);
@@ -576,7 +576,7 @@ void NativeEconomyRuntime::grant_random_pool_family_effect(
         const bool event_once = metadata.lifecycle == kLifecycleEventOnce;
         auto bind_one = [&](int32_t target_cell) {
             uint64_t identity = trace_hash_mix(1469598103934665603ULL,
-                static_cast<uint64_t>(_family_influences.stable_id[branch]));
+                static_cast<uint64_t>(family_influences().stable_id[branch]));
             identity = trace_hash_mix(identity, static_cast<uint32_t>(source_cell));
             identity = trace_hash_mix(identity, static_cast<uint32_t>(
                 std::max(0, target_cell)));
@@ -610,7 +610,7 @@ void NativeEconomyRuntime::grant_random_pool_family_effect(
                 std::string error;
                 if (!_effect_runtime->upsert_instance_pod(instance_id, key,
                         static_cast<uint32_t>(branch_handle >> 32U), 0x46414d50,
-                        static_cast<int64_t>(_family_influences.stable_id[branch]),
+                        static_cast<int64_t>(family_influences().stable_id[branch]),
                         branch_handle, target_handle, target_generation, prestige,
                         _current_day, true, error))
                     return;
@@ -654,17 +654,17 @@ void NativeEconomyRuntime::grant_ancestral_precept_for_country(
             continue;
         const uint64_t family_handle = families_store().handle_for_index(family);
         for (int32_t branch = 0; branch < static_cast<int32_t>(
-                _family_influences.active.size()); ++branch) {
-            if (_family_influences.active[branch] == 0 ||
-                _family_influences.family_handle[branch] != family_handle) continue;
-            const uint64_t branch_handle = _family_influences.handle_for_index(branch);
-            const int32_t prestige = _family_influences.prestige_level[branch];
+                family_influences().active.size()); ++branch) {
+            if (family_influences().active[branch] == 0 ||
+                family_influences().family_handle[branch] != family_handle) continue;
+            const uint64_t branch_handle = family_influences().handle_for_index(branch);
+            const int32_t prestige = family_influences().prestige_level[branch];
             const int32_t magnitude = family_effect_prestige_magnitude_q16(
                 effect_id, prestige);
             uint64_t identity = trace_hash_mix(1469598103934665603ULL,
-                static_cast<uint64_t>(_family_influences.stable_id[branch]));
+                static_cast<uint64_t>(family_influences().stable_id[branch]));
             identity = trace_hash_mix(identity, static_cast<uint32_t>(
-                _family_influences.cell[branch]));
+                family_influences().cell[branch]));
             uint64_t definition_hash = 1469598103934665603ULL;
             for (unsigned char ch : std::string(kEffectAncestral))
                 definition_hash = trace_hash_mix(definition_hash, ch);
@@ -680,13 +680,13 @@ void NativeEconomyRuntime::grant_ancestral_precept_for_country(
                 target_handle = branch_handle;
                 target_generation = static_cast<uint32_t>(branch_handle >> 32U);
             } else if (metadata.target_domain == 2 || metadata.target_domain == 5) {
-                target_handle = static_cast<uint64_t>(_family_influences.cell[branch]);
+                target_handle = static_cast<uint64_t>(family_influences().cell[branch]);
                 target_generation = 1;
             }
             std::string error;
             if (!_effect_runtime->upsert_instance_pod(instance_id, kEffectAncestral,
                     static_cast<uint32_t>(branch_handle >> 32U), 0x46414d43,
-                    static_cast<int64_t>(_family_influences.stable_id[branch]),
+                    static_cast<int64_t>(family_influences().stable_id[branch]),
                     branch_handle, target_handle, target_generation, prestige,
                     _current_day, true, error))
                 continue;
@@ -757,21 +757,21 @@ void NativeEconomyRuntime::fire_family_event_once_effect(int32_t family_index,
         FamilyEffectBinding &binding = _family_effect_bindings[i];
         if (binding.definition_key != program_key) continue;
         int32_t branch = -1;
-        if (!_family_influences.valid_handle(binding.branch_handle, branch) ||
-            _family_influences.family_handle[branch] != family_handle)
+        if (!family_influences().valid_handle(binding.branch_handle, branch) ||
+            family_influences().family_handle[branch] != family_handle)
             continue;
         EffectRuntime::FamilyEffectMetadataPod metadata;
         if (!_effect_runtime->family_effect_metadata_pod(program_key, metadata) ||
             metadata.lifecycle != kLifecycleEventOnce)
             continue;
-        const int32_t prestige = _family_influences.prestige_level[branch];
+        const int32_t prestige = family_influences().prestige_level[branch];
         const int32_t magnitude = effect_id >= 0
             ? family_effect_prestige_magnitude_q16(effect_id, prestige)
             : binding.strength_q16;
         std::string error;
         if (!_effect_runtime->upsert_instance_pod(binding.instance_id, program_key,
                 binding.generation, 0x46414d45,
-                static_cast<int64_t>(_family_influences.stable_id[branch]),
+                static_cast<int64_t>(family_influences().stable_id[branch]),
                 binding.branch_handle, binding.target_handle,
                 binding.target_generation, prestige, _current_day, true, error))
             continue;
@@ -791,17 +791,17 @@ void NativeEconomyRuntime::apply_pending_family_split_gifts() {
         int32_t family = -1;
         if (!families_store().valid_handle(gift.family_handle, family)) continue;
         int32_t branch = -1;
-        for (int32_t i = 0; i < static_cast<int32_t>(_family_influences.active.size());
+        for (int32_t i = 0; i < static_cast<int32_t>(family_influences().active.size());
              ++i) {
-            if (_family_influences.active[i] != 0 &&
-                _family_influences.family_handle[i] == gift.family_handle &&
-                _family_influences.cell[i] == gift.cell) {
+            if (family_influences().active[i] != 0 &&
+                family_influences().family_handle[i] == gift.family_handle &&
+                family_influences().cell[i] == gift.cell) {
                 branch = i;
                 break;
             }
         }
         if (branch < 0) continue;
-        const uint64_t branch_handle = _family_influences.handle_for_index(branch);
+        const uint64_t branch_handle = family_influences().handle_for_index(branch);
         std::string error;
         if ((gift.flags & FAMILY_FLAG_SPLIT_GIFT_BUILDING) != 0 &&
             gift.building_type_id >= 0) {
@@ -882,10 +882,10 @@ void NativeEconomyRuntime::rebuild_family_policy_scalars() {
     for (const FamilyEffectBinding &binding : _family_effect_bindings) {
         int32_t branch = -1;
         int32_t family = -1;
-        if (!_family_influences.valid_handle(binding.branch_handle, branch) ||
-            !families_store().valid_handle(_family_influences.family_handle[branch], family))
+        if (!family_influences().valid_handle(binding.branch_handle, branch) ||
+            !families_store().valid_handle(family_influences().family_handle[branch], family))
             continue;
-        const int32_t cell = _family_influences.cell[branch];
+        const int32_t cell = family_influences().cell[branch];
         const int32_t magnitude = clamp_factor_q16(binding.strength_q16);
         fill_family_behavior_metrics(family, branch, cell, metrics.data(),
             FAMILY_METRIC_COUNT);

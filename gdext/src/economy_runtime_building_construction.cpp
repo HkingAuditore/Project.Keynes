@@ -335,7 +335,7 @@ bool NativeEconomyRuntime::apply_treasury_sponsored_build_command(
     const int32_t construction_days = type.construction_days <= 0 ? 0 :
         std::max<int32_t>(1, static_cast<int32_t>(mul_div_sat(
             type.construction_days, time_factor, Q16_ONE, _saturation_count)));
-    _pending_construction.push_back({cell, type_id, owner_signature, 1,
+    append_pending_construction({cell, type_id, owner_signature, 1,
         _sample_day + construction_days, cmd.sequence, 0, 0, 0, 0});
     trace_append(EVENT_CONSTRUCTION_STARTED, static_cast<int32_t>(_stage),
         cell, SUBJECT_BUILDING_GROUP, owner_signature, type_id,
@@ -458,8 +458,7 @@ bool NativeEconomyRuntime::apply_build_command(const Command &cmd, int32_t owner
                     std::max<int64_t>(0, group.merchant_debt_principal),
                     _saturation_count);
             }
-            for (const PendingConstruction &pending :
-                 _pending_construction) {
+            for (const auto pending : pending_construction()) {
                 if (pending.cell == cell) outstanding = saturating_add(
                     outstanding,
                     std::max<int64_t>(
@@ -603,7 +602,7 @@ bool NativeEconomyRuntime::commit_preflighted_build_command(
             _investment_merchant_cash_by_cell[cell],
             total_cost - funding_gap, _saturation_count);
     }
-    _pending_construction.push_back({cell, type_id, owner_signature, count,
+    append_pending_construction({cell, type_id, owner_signature, count,
         _sample_day + effective_construction_days, cmd.sequence,
         construction_debt_principal, construction_debt_premium,
         static_cast<uint16_t>(construction_debt_principal > 0

@@ -454,8 +454,8 @@ bool NativeEconomyRuntime::run_building_production_cell(
         }
         trace_resource_delta.resize(_resource_ids.size());
         for (size_t resource = 0; resource < _resource_ids.size(); ++resource) {
-            trace_resource_delta[resource] =
-                _resource_deltas[resource * static_cast<size_t>(_cell_count) + cell];
+            trace_resource_delta[resource] = resource_delta_lanes()[
+                resource * static_cast<size_t>(_cell_count) + cell];
         }
     }
     thread_local std::vector<BuildingGroup> trace_before;
@@ -1376,8 +1376,8 @@ bool NativeEconomyRuntime::run_building_production_cell(
                         cell, item.resource_id, raw_qty, _saturation_count);
                     const size_t idx = static_cast<size_t>(item.resource_id) * _cell_count + cell;
                     ensure_resource_lane(idx);
-                    _resource_deltas[idx] = saturating_add(
-                        _resource_deltas[idx], qty, _saturation_count);
+                    resource_delta_lanes()[idx] = saturating_add(
+                        resource_delta_lanes()[idx], qty, _saturation_count);
                     group.last_resource_generated = saturating_add(
                         group.last_resource_generated, qty, _saturation_count);
                     _building_resource_generated = saturating_add(
@@ -3051,7 +3051,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 trace_market_stock[good], market_store().stock[market_store().index(market, good)]);
         }
         for (size_t resource = 0; resource < _resource_ids.size(); ++resource) {
-            const int64_t after = _resource_deltas[
+            const int64_t after = resource_delta_lanes()[
                 resource * static_cast<size_t>(_cell_count) + cell];
             add(FIELD_RESOURCE_DELTA, SUBJECT_RESOURCE, cell,
                 static_cast<int32_t>(resource), trace_resource_delta[resource], after);

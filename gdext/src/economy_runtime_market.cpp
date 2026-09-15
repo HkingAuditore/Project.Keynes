@@ -1806,10 +1806,10 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             local_persons.clear();
             for (int32_t p = begin_person; p < end_person; ++p) {
                 const int32_t person = _person_cohort_indices[p];
-                if (_persons.active[person] == 0) continue;
+                if (persons_store().active[person] == 0) continue;
                 local_persons.push_back(person);
                 result.person_attributions.push_back({
-                    _persons.handle_for_index(person), 0, 0,
+                    persons_store().handle_for_index(person), 0, 0,
                     static_cast<uint16_t>(cohort_worst_q16[local]),
                     cohort_worst_need[local]});
             }
@@ -1829,7 +1829,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                     const int64_t funds = person < static_cast<int32_t>(
                             _person_opening_cash_claim.size())
                         ? _person_opening_cash_claim[person]
-                        : _persons.cash_claim[person];
+                        : persons_store().cash_claim[person];
                     int64_t desired = desired_need_units_for_actor(
                         slot, state.need_index, _epoch_days,
                         need_environment_cache[state.need_index],
@@ -1857,7 +1857,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                     distributed_spend = next_spend;
                     const int32_t person = local_persons[pi];
                     result.person_needs.push_back({
-                        _persons.handle_for_index(person), stable_need,
+                        persons_store().handle_for_index(person), stable_need,
                         person_weights[pi], static_cast<uint16_t>(satisfaction),
                         share});
                     result.person_attributions[attr_begin + pi].consumption_expense =
@@ -2043,7 +2043,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 int64_t weighted = saturating_mul(cohort_population, Q16_ONE, sat);
                 for (int32_t p = _family_cohort_offsets[slot];
                      p < _family_cohort_offsets[slot + 1]; ++p) {
-                    const FamilyMembershipEdge &edge = _family_memberships[
+                    const FamilyMembershipEdge &edge = family_memberships()[
                         _family_cohort_edge_indices[p]];
                     if (edge.people <= 0 || edge.family_handle == 0) continue;
                     int32_t family = -1;

@@ -160,8 +160,8 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(families_store().founded_day); cap(families_store().home_cell);
     cap(families_store().origin_ethnicity); cap(families_store().decline_reviews);
     cap(families_store().flags); cap(families_store().free_indices);
-    cap(_family_memberships); cap(_family_ownerships);
-    cap(_family_traits); cap(_family_trait_commands);
+    cap(family_memberships()); cap(family_ownerships());
+    cap(family_trait_rolls()); cap(_family_trait_commands);
     cap(_family_behavior_factor_offsets); cap(_family_behavior_factor_rows);
     cap(_family_purchase_factor_q16); cap(_family_investment_factor_q16);
     cap(_family_birth_factor_q16); cap(_family_absorb_bonus_q16);
@@ -188,19 +188,19 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_family_cohort_offsets); cap(_family_cohort_edge_indices);
     cap(_family_building_offsets); cap(_family_building_edge_indices);
     cap(_family_cell_offsets); cap(_family_cell_indices);
-    cap(_family_expeditions.active); cap(_family_expeditions.generation);
-    cap(_family_expeditions.stable_id); cap(_family_expeditions.country_handle);
-    cap(_family_expeditions.family_handle); cap(_family_expeditions.source_cell);
-    cap(_family_expeditions.target_cell); cap(_family_expeditions.departure_day);
-    cap(_family_expeditions.due_day); cap(_family_expeditions.route_cost);
-    cap(_family_expeditions.speed); cap(_family_expeditions.state);
-    cap(_family_expeditions.population); cap(_family_expeditions.route_begin);
-    cap(_family_expeditions.route_count); cap(_family_expeditions.payload_begin);
-    cap(_family_expeditions.payload_count);
-    cap(_family_expeditions.effect_transaction_id);
-    cap(_family_expeditions.idempotency_key); cap(_family_expeditions.free_indices);
-    cap(_family_expedition_route_cells); cap(_family_expedition_route_costs);
-    cap(_family_expedition_payloads); cap(_family_expedition_person_handles);
+    cap(family_expeditions_store().active); cap(family_expeditions_store().generation);
+    cap(family_expeditions_store().stable_id); cap(family_expeditions_store().country_handle);
+    cap(family_expeditions_store().family_handle); cap(family_expeditions_store().source_cell);
+    cap(family_expeditions_store().target_cell); cap(family_expeditions_store().departure_day);
+    cap(family_expeditions_store().due_day); cap(family_expeditions_store().route_cost);
+    cap(family_expeditions_store().speed); cap(family_expeditions_store().state);
+    cap(family_expeditions_store().population); cap(family_expeditions_store().route_begin);
+    cap(family_expeditions_store().route_count); cap(family_expeditions_store().payload_begin);
+    cap(family_expeditions_store().payload_count);
+    cap(family_expeditions_store().effect_transaction_id);
+    cap(family_expeditions_store().idempotency_key); cap(family_expeditions_store().free_indices);
+    cap(family_expedition_route_cells()); cap(family_expedition_route_costs());
+    cap(family_expedition_payloads()); cap(family_expedition_person_handles());
     cap(_family_expedition_due_heap); cap(_colonization_receipts);
     cap(_colonization_quote_cache); cap(_colonization_quote_route_cells);
     cap(_colonization_quote_route_costs); cap(_colonization_distance);
@@ -210,17 +210,17 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
         static_cast<int64_t>(sizeof(uint64_t) + sizeof(int32_t));
     bytes += static_cast<int64_t>(_colonization_quote_index.size()) *
         static_cast<int64_t>(sizeof(uint64_t) + sizeof(int32_t));
-    cap(_persons.active); cap(_persons.generation); cap(_persons.stable_id);
-    cap(_persons.family_handle); cap(_persons.cohort_handle);
-    cap(_persons.given_name_id); cap(_persons.name_disambiguator);
-    cap(_persons.notable_since_day); cap(_persons.flags); cap(_persons.cash_claim);
-    cap(_persons.family_equity_share_q32); cap(_persons.epoch_job_income);
-    cap(_persons.epoch_business_result); cap(_persons.epoch_consumption_expense);
-    cap(_persons.epoch_tax); cap(_persons.income_ema);
-    cap(_persons.needs_satisfaction); cap(_persons.worst_need_id);
-    cap(_persons.building_handle); cap(_persons.job_kind);
-    cap(_persons.employee_role_index); cap(_persons.job_since_day);
-    cap(_persons.free_indices); cap(_person_needs); cap(_person_epoch_needs);
+    cap(persons_store().active); cap(persons_store().generation); cap(persons_store().stable_id);
+    cap(persons_store().family_handle); cap(persons_store().cohort_handle);
+    cap(persons_store().given_name_id); cap(persons_store().name_disambiguator);
+    cap(persons_store().notable_since_day); cap(persons_store().flags); cap(persons_store().cash_claim);
+    cap(persons_store().family_equity_share_q32); cap(persons_store().epoch_job_income);
+    cap(persons_store().epoch_business_result); cap(persons_store().epoch_consumption_expense);
+    cap(persons_store().epoch_tax); cap(persons_store().income_ema);
+    cap(persons_store().needs_satisfaction); cap(persons_store().worst_need_id);
+    cap(persons_store().building_handle); cap(persons_store().job_kind);
+    cap(persons_store().employee_role_index); cap(persons_store().job_since_day);
+    cap(persons_store().free_indices); cap(person_needs()); cap(_person_epoch_needs);
     cap(_person_family_offsets); cap(_person_family_indices);
     cap(_person_cohort_offsets); cap(_person_cohort_indices);
     cap(_person_cell_offsets); cap(_person_cell_indices);
@@ -535,11 +535,11 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_building_role_base_wage_due); cap(_building_role_base_wage_paid);
     cap(_building_role_bonus_due); cap(_building_role_bonus_paid);
     cap(_building_role_forecast_pay_ratio_q16);
-    cap(_pending_construction);
+    bytes += static_cast<int64_t>(pending_construction_memory_bytes());
     cap(_pending_construction_cell_offsets);
     cap(_pending_construction_cell_indices);
-    cap(resource_stock_lanes()); cap(_resource_remaining);
-    cap(_resource_harvest_remaining);
+    cap(resource_stock_lanes()); cap(resource_remaining_lanes());
+    cap(resource_harvest_remaining_lanes());
     cap(_resource_gen_base); cap(_resource_gen_temp); cap(_resource_gen_moisture);
     cap(_resource_gen_self); cap(_resource_decay_base); cap(_resource_decay_temp);
     cap(_resource_decay_moisture); cap(_resource_decay_self_q16);
@@ -550,8 +550,8 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_resource_climate_moisture_tol_q16);
     cap(_resource_runtime_fit_weight_q16);
     cap(_resource_temperature_signal); cap(_resource_moisture_signal);
-    cap(_resource_deltas); cap(_last_published_resource_deltas);
-    cap(_resource_lane_generation); cap(_resource_touched_lanes);
+    cap(resource_delta_lanes()); cap(_last_published_resource_deltas);
+    cap(resource_lane_generation_lanes()); cap(_resource_touched_lanes);
     cap(_last_published_resource_touched_lanes);
     cap(_building_elevation_q16); cap(_building_terrain);
     cap(_building_landform); cap(_building_vegetation); cap(_building_is_water);
@@ -896,13 +896,13 @@ Dictionary NativeEconomyRuntime::compact_report() const {
         (_family_runtime_mode == 1 ? "PROBE" : "ACTIVE");
     out["family_count"] = families_store().active_count;
     out["family_membership_edge_count"] = static_cast<int64_t>(
-        _family_memberships.size());
+        family_memberships().size());
     out["family_ownership_edge_count"] = static_cast<int64_t>(
-        _family_ownerships.size());
+        family_ownerships().size());
     out["family_trait_roll_count"] = static_cast<int64_t>(
-        _family_traits.size());
+        family_trait_rolls().size());
     out["family_branch_count"] = static_cast<int64_t>(std::count(
-        _family_influences.active.begin(), _family_influences.active.end(),
+        family_influences().active.begin(), family_influences().active.end(),
         uint8_t{1}));
     out["family_modifier_binding_count"] = static_cast<int64_t>(
         _family_modifier_bindings.size());
@@ -929,15 +929,15 @@ Dictionary NativeEconomyRuntime::compact_report() const {
     out["family_behavior_cache_last_dirty_reasons"] = static_cast<int64_t>(
         _family_behavior_cache_last_reasons);
     out["family_expedition_active_count"] = static_cast<int64_t>(std::count(
-        _family_expeditions.active.begin(), _family_expeditions.active.end(),
+        family_expeditions_store().active.begin(), family_expeditions_store().active.end(),
         uint8_t{1}));
     out["family_expedition_due_heap_count"] = static_cast<int64_t>(
         _family_expedition_due_heap.size());
     out["family_expedition_transit_population"] = [&]() {
         int64_t total = 0;
         int64_t local_saturation_count = 0;
-        for (size_t index = 0; index < _family_expeditions.active.size(); ++index)
-            if (_family_expeditions.active[index] != 0)
+        for (size_t index = 0; index < family_expeditions_store().active.size(); ++index)
+            if (family_expeditions_store().active[index] != 0)
                 total = saturating_add(total,
                     family_expedition_payload_people(static_cast<int32_t>(index)),
                     local_saturation_count);
@@ -984,8 +984,8 @@ Dictionary NativeEconomyRuntime::compact_report() const {
     out["family_owner_jobs_vacant"] = _family_owner_jobs_vacant;
     out["notable_person_runtime_mode"] = _person_runtime_mode == 0 ? "OFF" :
         (_person_runtime_mode == 1 ? "PROBE" : "ACTIVE");
-    out["notable_person_count"] = _persons.active_count;
-    out["person_need_edge_count"] = static_cast<int64_t>(_person_needs.size());
+    out["notable_person_count"] = persons_store().active_count;
+    out["person_need_edge_count"] = static_cast<int64_t>(person_needs().size());
     out["persons_promoted"] = _persons_promoted;
     out["persons_died"] = _persons_died;
     out["persons_migrated"] = _persons_migrated;
@@ -1751,13 +1751,13 @@ Dictionary NativeEconomyRuntime::report() const {
         (_family_runtime_mode == 1 ? "PROBE" : "ACTIVE");
     out["family_count"] = families_store().active_count;
     out["family_membership_edge_count"] = static_cast<int64_t>(
-        _family_memberships.size());
+        family_memberships().size());
     out["family_ownership_edge_count"] = static_cast<int64_t>(
-        _family_ownerships.size());
+        family_ownerships().size());
     out["family_trait_roll_count"] = static_cast<int64_t>(
-        _family_traits.size());
+        family_trait_rolls().size());
     out["family_branch_count"] = static_cast<int64_t>(std::count(
-        _family_influences.active.begin(), _family_influences.active.end(),
+        family_influences().active.begin(), family_influences().active.end(),
         uint8_t{1}));
     out["family_modifier_binding_count"] = static_cast<int64_t>(
         _family_modifier_bindings.size());
@@ -1784,15 +1784,15 @@ Dictionary NativeEconomyRuntime::report() const {
     out["family_behavior_cache_last_dirty_reasons"] = static_cast<int64_t>(
         _family_behavior_cache_last_reasons);
     out["family_expedition_active_count"] = static_cast<int64_t>(std::count(
-        _family_expeditions.active.begin(), _family_expeditions.active.end(),
+        family_expeditions_store().active.begin(), family_expeditions_store().active.end(),
         uint8_t{1}));
     out["family_expedition_due_heap_count"] = static_cast<int64_t>(
         _family_expedition_due_heap.size());
     out["family_expedition_transit_population"] = [&]() {
         int64_t total = 0;
         int64_t local_saturation_count = 0;
-        for (size_t index = 0; index < _family_expeditions.active.size(); ++index)
-            if (_family_expeditions.active[index] != 0)
+        for (size_t index = 0; index < family_expeditions_store().active.size(); ++index)
+            if (family_expeditions_store().active[index] != 0)
                 total = saturating_add(total,
                     family_expedition_payload_people(static_cast<int32_t>(index)),
                     local_saturation_count);
@@ -1838,8 +1838,8 @@ Dictionary NativeEconomyRuntime::report() const {
     out["family_owner_jobs_vacant"] = _family_owner_jobs_vacant;
     out["notable_person_runtime_mode"] = _person_runtime_mode == 0 ? "OFF" :
         (_person_runtime_mode == 1 ? "PROBE" : "ACTIVE");
-    out["notable_person_count"] = _persons.active_count;
-    out["person_need_edge_count"] = static_cast<int64_t>(_person_needs.size());
+    out["notable_person_count"] = persons_store().active_count;
+    out["person_need_edge_count"] = static_cast<int64_t>(person_needs().size());
     out["persons_promoted"] = _persons_promoted;
     out["persons_died"] = _persons_died;
     out["persons_migrated"] = _persons_migrated;
@@ -1871,7 +1871,7 @@ Dictionary NativeEconomyRuntime::report() const {
     out["good_count"] = market_store().good_count;
     out["building_type_count"] = static_cast<int64_t>(_building_types.size());
     out["building_group_count"] = static_cast<int64_t>(building_count());
-    out["pending_construction_count"] = static_cast<int64_t>(_pending_construction.size());
+    out["pending_construction_count"] = static_cast<int64_t>(pending_construction_count());
     out["processed_building_groups"] = _processed_building_groups;
     out["climate_profiled_building_groups"] =
         _climate_profiled_building_groups;
@@ -2149,7 +2149,7 @@ Dictionary NativeEconomyRuntime::report() const {
                 group.merchant_debt_principal, group.merchant_debt_premium,
                 report_sat), report_sat);
     }
-    for (const PendingConstruction &pending : _pending_construction) {
+    for (const auto pending : pending_construction()) {
         merchant_credit_outstanding = saturating_add(
             merchant_credit_outstanding, saturating_add(
                 pending.merchant_debt_principal, pending.merchant_debt_premium,
