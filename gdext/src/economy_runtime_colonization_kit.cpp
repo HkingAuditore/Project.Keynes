@@ -36,19 +36,20 @@ bool NativeEconomyRuntime::cell_has_submitted_or_pending_buildings(
     if (_building_cell_offsets.size() == static_cast<size_t>(_cell_count + 1)) {
         for (int32_t group = _building_cell_offsets[cell];
              group < _building_cell_offsets[cell + 1]; ++group) {
-            if (_buildings[group].count > 0) return true;
+            if (buildings_store().group_units[group] > 0) return true;
         }
         if (_pending_building_topology_rebuild) {
             const int32_t sorted_end = _building_cell_offsets[_cell_count];
             for (int32_t group = sorted_end;
-                 group < static_cast<int32_t>(_buildings.size()); ++group) {
-                if (_buildings[group].cell == cell &&
-                    _buildings[group].count > 0)
+                 group < static_cast<int32_t>(building_count()); ++group) {
+                if (buildings_store().cell[group] == cell &&
+                    buildings_store().group_units[group] > 0)
                     return true;
             }
         }
     } else {
-        for (const BuildingGroup &group : _buildings) {
+        for (size_t pk_row = 0; pk_row < building_count(); ++pk_row) {
+            const auto group = building_at(pk_row);
             if (group.cell == cell && group.count > 0) return true;
         }
     }
@@ -972,11 +973,11 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
     const uint64_t family_handle =
         _family_expeditions.family_handle[expedition];
     int32_t family = -1;
-    if (!_families.valid_handle(family_handle, family)) {
+    if (!families_store().valid_handle(family_handle, family)) {
         error = "colonization_family_invalid";
         return false;
     }
-    int32_t ethnicity = _families.origin_ethnicity[family];
+    int32_t ethnicity = families_store().origin_ethnicity[family];
     if (ethnicity < 0) {
         population_store().for_each_in_cell(destination_cell, [&](int32_t slot) {
             if (ethnicity >= 0) return;
@@ -1004,12 +1005,12 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
         const int32_t existing = find_building_group(
             destination_cell, row.type_id, owner_signature);
         if (existing >= 0) {
-            _buildings[existing].count = saturating_add(
-                _buildings[existing].count, row.count, _saturation_count);
+            buildings_store().group_units[existing] = saturating_add(
+                buildings_store().group_units[existing], row.count, _saturation_count);
             _building_handle_index_clean = false;
             if (_modifier_runtime != nullptr &&
-                _buildings[existing].modifier_handle == 0) {
-                _buildings[existing].modifier_handle =
+                buildings_store().modifier_handle[existing] == 0) {
+                buildings_store().modifier_handle[existing] =
                     _modifier_runtime->ensure_building_identity(
                         destination_cell, row.type_id, owner_signature);
             }
@@ -1024,7 +1025,7 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
                     _modifier_runtime->ensure_building_identity(
                         destination_cell, row.type_id, owner_signature);
             }
-            _buildings.push_back(group);
+            append_building_group(group);
             ++_building_structure_new_groups;
             inserted_new_group = true;
         }
@@ -1033,17 +1034,17 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
     }
     ColonizationKitPlan extra;
     int64_t used_slots = 0;
-    for (int32_t group = 0; group < static_cast<int32_t>(_buildings.size());
+    for (int32_t group = 0; group < static_cast<int32_t>(building_count());
          ++group) {
-        if (_buildings[group].cell != destination_cell ||
-            _buildings[group].count <= 0)
+        if (buildings_store().cell[group] != destination_cell ||
+            buildings_store().group_units[group] <= 0)
             continue;
-        const int32_t type_id = _buildings[group].type_id;
+        const int32_t type_id = buildings_store().type_id[group];
         if (type_id < 0 ||
             type_id >= static_cast<int32_t>(_building_types.size()))
             continue;
         used_slots = saturating_add(used_slots, saturating_mul(
-            _buildings[group].count,
+            buildings_store().group_units[group],
             std::max<int64_t>(1,
                 _building_types[type_id].owner_slots_per_building),
             _saturation_count), _saturation_count);
@@ -1086,13 +1087,13 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
                 const int32_t existing = find_building_group(
                     destination_cell, row.type_id, owner_signature);
                 if (existing >= 0) {
-                    _buildings[existing].count = saturating_add(
-                        _buildings[existing].count, row.count,
+                    buildings_store().group_units[existing] = saturating_add(
+                        buildings_store().group_units[existing], row.count,
                         _saturation_count);
                     _building_handle_index_clean = false;
                     if (_modifier_runtime != nullptr &&
-                        _buildings[existing].modifier_handle == 0) {
-                        _buildings[existing].modifier_handle =
+                        buildings_store().modifier_handle[existing] == 0) {
+                        buildings_store().modifier_handle[existing] =
                             _modifier_runtime->ensure_building_identity(
                                 destination_cell, row.type_id, owner_signature);
                     }
@@ -1107,7 +1108,7 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
                             _modifier_runtime->ensure_building_identity(
                                 destination_cell, row.type_id, owner_signature);
                     }
-                    _buildings.push_back(group);
+                    append_building_group(group);
                     ++_building_structure_new_groups;
                     inserted_new_group = true;
                 }
@@ -1200,16 +1201,16 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
         if (group_index >= 0) {
             const int64_t filled = owner_slot >= 0
                 ? std::min(needed, population_store().population[owner_slot]) : 0;
-            _buildings[group_index].filled_owner = filled;
+            buildings_store().filled_owner[group_index] = filled;
             if (owner_slot >= 0)
                 population_store().owner_employed[owner_slot] = std::max(
                     population_store().owner_employed[owner_slot], filled);
-            if (_buildings[group_index].modifier_handle != 0) {
+            if (buildings_store().modifier_handle[group_index] != 0) {
                 bool found = false;
                 for (FamilyBuildingOwnership &edge : _family_ownerships) {
                     if (edge.family_handle == family_handle &&
                         edge.building_handle ==
-                            _buildings[group_index].modifier_handle) {
+                            buildings_store().modifier_handle[group_index]) {
                         edge.owned_count = saturating_add(
                             edge.owned_count, row.second, _saturation_count);
                         edge.filled_owner = std::max(edge.filled_owner,
@@ -1220,7 +1221,7 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
                 }
                 if (!found) {
                     _family_ownerships.push_back({family_handle,
-                        _buildings[group_index].modifier_handle, row.second,
+                        buildings_store().modifier_handle[group_index], row.second,
                         filled});
                 }
                 _family_indices_dirty = true;

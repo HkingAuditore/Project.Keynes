@@ -26,17 +26,6 @@ void fail_stage(EconomyStageResult &result, std::string &error,
                   reason_tag != nullptr ? reason_tag : "economy_stage");
 }
 
-void sync_buildings_if_formula_bound(NativeEconomyRuntime *runtime) {
-    if (runtime != nullptr && runtime->formula_owned_bound())
-        runtime->sync_owned_building_store(runtime->buildings_store());
-}
-
-void materialize_buildings_if_formula_bound(NativeEconomyRuntime *runtime) {
-    // SoA is sole between stages; AoS is drain working-set.
-    if (runtime != nullptr && runtime->formula_owned_bound())
-        runtime->apply_owned_building_store(runtime->buildings_store());
-}
-
 void flush_formula_owned_mirrors(NativeEconomyRuntime *runtime) {
     if (runtime == nullptr || !runtime->formula_owned_bound()) return;
     runtime->flush_formula_owned_domain_mirrors();
@@ -71,7 +60,6 @@ bool economy_dispatch_mutate_stage(EconomySoAView &view,
     case RuntimeEconomyGraphStage::BUILDING_PLAN: {
         int64_t work = 0;
         std::string plan_error;
-        materialize_buildings_if_formula_bound(runtime);
         if (!runtime->run_building_plan_drain(work, plan_error)) {
             fail_stage(result, error,
                        plan_error.empty()
@@ -80,7 +68,6 @@ bool economy_dispatch_mutate_stage(EconomySoAView &view,
                        "building_plan");
             return false;
         }
-        sync_buildings_if_formula_bound(runtime);
         finish_ok(result, input, runtime);
         return true;
     }
@@ -106,7 +93,6 @@ bool economy_dispatch_mutate_stage(EconomySoAView &view,
             runtime->_command_cursor =
                 static_cast<int32_t>(cursor.command_cursor);
         }
-        materialize_buildings_if_formula_bound(runtime);
         if (!runtime->run_ledger_apply_drain(work, ledger_error)) {
             fail_stage(result, error,
                        ledger_error.empty()
@@ -119,14 +105,12 @@ bool economy_dispatch_mutate_stage(EconomySoAView &view,
         }
         cursor.command_cursor =
             static_cast<uint32_t>(runtime->_command_cursor);
-        sync_buildings_if_formula_bound(runtime);
         finish_ok(result, input, runtime);
         return true;
     }
     case RuntimeEconomyGraphStage::BUILDING_EMPLOYMENT: {
         int64_t work = 0;
         std::string emp_error;
-        materialize_buildings_if_formula_bound(runtime);
         if (!runtime->run_building_employment_drain(work, emp_error)) {
             fail_stage(result, error,
                        emp_error.empty()
@@ -135,14 +119,12 @@ bool economy_dispatch_mutate_stage(EconomySoAView &view,
                        "building_employment");
             return false;
         }
-        sync_buildings_if_formula_bound(runtime);
         finish_ok(result, input, runtime);
         return true;
     }
     case RuntimeEconomyGraphStage::BUILDING_PRODUCTION: {
         int64_t work = 0;
         std::string prod_error;
-        materialize_buildings_if_formula_bound(runtime);
         if (!runtime->run_building_production_drain(work, prod_error)) {
             fail_stage(result, error,
                        prod_error.empty()
@@ -151,7 +133,6 @@ bool economy_dispatch_mutate_stage(EconomySoAView &view,
                        "building_production");
             return false;
         }
-        sync_buildings_if_formula_bound(runtime);
         finish_ok(result, input, runtime);
         return true;
     }
@@ -200,7 +181,6 @@ bool economy_dispatch_mutate_stage(EconomySoAView &view,
     case RuntimeEconomyGraphStage::STRUCTURAL_COMMIT: {
         int64_t work = 0;
         std::string structural_error;
-        materialize_buildings_if_formula_bound(runtime);
         if (!runtime->run_structural_commit_drain(work, structural_error)) {
             fail_stage(result, error,
                        structural_error.empty()
@@ -209,14 +189,12 @@ bool economy_dispatch_mutate_stage(EconomySoAView &view,
                        "structural_commit");
             return false;
         }
-        sync_buildings_if_formula_bound(runtime);
         finish_ok(result, input, runtime);
         return true;
     }
     case RuntimeEconomyGraphStage::BUILDING_COMMIT: {
         int64_t work = 0;
         std::string building_error;
-        materialize_buildings_if_formula_bound(runtime);
         if (!runtime->run_building_commit_slice(work, building_error)) {
             fail_stage(result, error,
                        building_error.empty()
@@ -225,7 +203,6 @@ bool economy_dispatch_mutate_stage(EconomySoAView &view,
                        "building_commit");
             return false;
         }
-        sync_buildings_if_formula_bound(runtime);
         finish_ok(result, input, runtime);
         return true;
     }

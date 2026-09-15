@@ -9,6 +9,7 @@
 #include <memory>
 #include <numeric>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -54,8 +55,11 @@ constexpr uint32_t RUNTIME_ECONOMY_D7_ALL_GATE_MASK =
 // boundaries; every graph stage operates on POD/std::vector storage.
 class NativeEconomyRuntime {
 public:
-    struct FamilyStore;
-    struct TradeOrderStore;
+    // A+Y N3/N4: live tables now live in runtime_economy_live_tables.h so
+    // RuntimeEconomyOwnedState can own them; the historical nested names stay
+    // as aliases.
+    using FamilyStore = EconomyFamilyStore;
+    using TradeOrderStore = EconomyTradeOrderStore;
     friend class NativeEconomyBuildingPlanExecutor;
     friend class NativeEconomyGraphStageOps;
     friend bool economy_dispatch_mutate_stage(EconomySoAView &view,
@@ -346,6 +350,13 @@ public:
         return _formula_owned != nullptr ? _formula_owned->buildings
                                          : _buildings_soa_local;
     }
+    // Same lane as buildings_store(), reachable from const members. Only the
+    // role/pending projections are refreshed through it; group columns stay
+    // read-only for const callers.
+    RuntimeEconomyBuildingStore &mutable_buildings_store() const noexcept {
+        return _formula_owned != nullptr ? _formula_owned->buildings
+                                         : _buildings_soa_local;
+    }
     const char *formula_backing_tag() const noexcept {
         return _formula_owned != nullptr ? "owned_state" : "ner_local";
     }
@@ -382,14 +393,12 @@ public:
     void capture_committed_ledger_state(RuntimeEconomyLedgerState &out) const;
     // Phase-4 layout unification: AoS→OwnedState SoA mirrors (capture path).
     void flush_formula_owned_domain_mirrors();
+    // A+Y N2: refreshes the role/pending projections on the sole live group
+    // lane, then copies it out when `out` is a different store.
     void sync_owned_building_store(RuntimeEconomyBuildingStore &out) const;
-    // A+Y N2 debug: SoA group count vs `_buildings` scratch (template_debug only).
-    void assert_buildings_soa_matches_scratch() const;
     void sync_owned_trade_escrow_store(RuntimeEconomyTradeEscrowStore &out) const;
     void sync_owned_family_store(RuntimeEconomyFamilyStore &out) const;
     void sync_owned_resource_store(RuntimeEconomyResourceStore &out) const;
-    // Writes OwnedState building counts back to NER AoS (demolish/build parity).
-    void apply_owned_building_store(const RuntimeEconomyBuildingStore &in);
     void fill_ledger_building_from_store(
         RuntimeEconomyBuildingCommittedBlock &block,
         const RuntimeEconomyBuildingStore &store) const;
@@ -1265,6 +1274,136 @@ private:
         int32_t output_factor_q16 = Q16_ONE;
     };
 
+// A+Y N2: buildings_store() is the sole building-group storage. This list maps
+// every historical BuildingGroup field to its column and fixes the member order
+// of BuildingGroupRefT, so one row still reads and writes as `group.count`.
+#define PK_BUILDING_GROUP_COLUMNS(X)                                           \
+    X(int32_t, cell, cell)                                                     \
+    X(int32_t, type_id, type_id)                                               \
+    X(int32_t, owner_signature_id, owner_signature_id)                         \
+    X(int64_t, count, group_units)                                             \
+    X(int64_t, filled_owner, filled_owner)                                     \
+    X(int32_t, employee_fill_begin, employee_fill_begin)                       \
+    X(int32_t, last_input_selection_begin, last_input_selection_begin)         \
+    X(int64_t, last_capacity_q16, last_capacity_q16)                           \
+    X(int64_t, last_temperature_fit_q16, last_temperature_fit_q16)             \
+    X(int64_t, last_water_fit_q16, last_water_fit_q16)                         \
+    X(int64_t, last_climate_capacity_q16, last_climate_capacity_q16)           \
+    X(int64_t, last_climate_lost_output, last_climate_lost_output)             \
+    X(int64_t, last_input, last_input)                                         \
+    X(int64_t, last_output, last_output)                                       \
+    X(int64_t, last_sold, last_sold)                                           \
+    X(int64_t, last_discarded, last_discarded)                                 \
+    X(int64_t, last_resource, last_resource)                                   \
+    X(int64_t, last_resource_generated, last_resource_generated)               \
+    X(int64_t, last_revenue, last_revenue)                                     \
+    X(int64_t, last_input_cost, last_input_cost)                               \
+    X(int64_t, last_wages_paid, last_wages_paid)                               \
+    X(int64_t, last_wages_due, last_wages_due)                                 \
+    X(int64_t, last_expected_revenue, last_expected_revenue)                   \
+    X(int64_t, last_operating_cost, last_operating_cost)                       \
+    X(int64_t, last_maintenance_cost, last_maintenance_cost)                   \
+    X(int64_t, last_market_receipt, last_market_receipt)                       \
+    X(int64_t, last_bullion_mint_receipt, last_bullion_mint_receipt)           \
+    X(int64_t, last_producer_support_receipt, last_producer_support_receipt)   \
+    X(int64_t, last_business_tax_paid, last_business_tax_paid)                 \
+    X(int64_t, last_business_subsidy_received, last_business_subsidy_received) \
+    X(int64_t, last_maintenance_due, last_maintenance_due)                     \
+    X(int64_t, last_observed_capacity_days_q16,                                \
+      last_observed_capacity_days_q16)                                         \
+    X(int64_t, last_quoted_market_receipt, last_quoted_market_receipt)         \
+    X(int64_t, last_quoted_operating_cost, last_quoted_operating_cost)         \
+    X(int32_t, last_margin_gap_q16, last_margin_gap_q16)                       \
+    X(int32_t, planned_utilization_q16, planned_utilization_q16)               \
+    X(int64_t, sample_unit_input_cost, sample_unit_input_cost)                 \
+    X(int64_t, sample_unit_maintenance_cost, sample_unit_maintenance_cost)     \
+    X(int64_t, last_base_wages_paid, last_base_wages_paid)                     \
+    X(int64_t, last_base_wages_due, last_base_wages_due)                       \
+    X(int64_t, last_bonus_paid, last_bonus_paid)                               \
+    X(int64_t, last_bonus_due, last_bonus_due)                                 \
+    X(int64_t, purchase_intent_capacity_q16, purchase_intent_capacity_q16)     \
+    X(int32_t, realized_profit_margin_q16, realized_profit_margin_q16)         \
+    X(uint16_t, severe_loss_cycles, severe_loss_cycles)                        \
+    X(uint16_t, recovery_cycles, recovery_cycles)                              \
+    X(uint16_t, recovery_failed_reviews, recovery_failed_reviews)              \
+    X(uint16_t, merchant_debt_term_cycles_left,                                \
+      merchant_debt_term_cycles_left)                                          \
+    X(uint16_t, merchant_debt_delinquent_cycles,                               \
+      merchant_debt_delinquent_cycles)                                         \
+    X(uint8_t, operating_state, operating_state)                               \
+    X(uint8_t, wage_suspended, wage_suspended)                                 \
+    X(int64_t, merchant_debt_principal, merchant_debt_principal)               \
+    X(int64_t, merchant_debt_premium, merchant_debt_premium)                   \
+    X(int64_t, last_in_kind_livelihood_value, last_in_kind_livelihood_value)   \
+    X(uint8_t, pending_operating_state, pending_operating_state)               \
+    X(uint16_t, recovery_cooldown_cycles, recovery_cooldown_cycles)            \
+    X(uint64_t, modifier_handle, modifier_handle)                              \
+    X(int32_t, output_factor_q16, output_factor_q16)
+
+    // Field-reference view over one buildings_store() row. Copying the view is
+    // cheap and never copies group state; the referenced columns stay sole.
+    template <bool Const>
+    struct BuildingGroupRefT {
+        using StoreType =
+            std::conditional_t<Const, const RuntimeEconomyBuildingStore,
+                               RuntimeEconomyBuildingStore>;
+        template <typename T>
+        using Field = std::conditional_t<Const, const T, T> &;
+
+#define PK_BUILDING_GROUP_DECL(TYPE, NAME, COLUMN) Field<TYPE> NAME;
+        PK_BUILDING_GROUP_COLUMNS(PK_BUILDING_GROUP_DECL)
+#undef PK_BUILDING_GROUP_DECL
+        size_t index;
+
+        BuildingGroupRefT(StoreType &store, size_t row)
+            :
+#define PK_BUILDING_GROUP_BIND(TYPE, NAME, COLUMN) NAME(store.COLUMN[row]),
+              PK_BUILDING_GROUP_COLUMNS(PK_BUILDING_GROUP_BIND)
+#undef PK_BUILDING_GROUP_BIND
+              index(row) {}
+
+        template <bool OtherConst,
+                  typename = std::enable_if_t<Const && !OtherConst>>
+        BuildingGroupRefT(const BuildingGroupRefT<OtherConst> &other)
+            :
+#define PK_BUILDING_GROUP_REBIND(TYPE, NAME, COLUMN) NAME(other.NAME),
+              PK_BUILDING_GROUP_COLUMNS(PK_BUILDING_GROUP_REBIND)
+#undef PK_BUILDING_GROUP_REBIND
+              index(other.index) {}
+
+        BuildingGroupRefT(const BuildingGroupRefT &) = default;
+        BuildingGroupRefT &operator=(const BuildingGroupRefT &) = delete;
+    };
+
+    using BuildingGroupRef = BuildingGroupRefT<false>;
+    using BuildingGroupConstRef = BuildingGroupRefT<true>;
+
+    size_t building_count() const noexcept {
+        return buildings_store().cell.size();
+    }
+    BuildingGroupRef building_at(size_t row) noexcept {
+        return BuildingGroupRef(buildings_store(), row);
+    }
+    BuildingGroupConstRef building_at(size_t row) const noexcept {
+        return BuildingGroupConstRef(buildings_store(), row);
+    }
+    // Appends one row to every group column. Role spans are not allocated
+    // here; rebuild_building_role_storage() assigns them for new rows.
+    size_t append_building_group(const BuildingGroup &group);
+    void write_building_group(size_t row, const BuildingGroup &group);
+    void clear_building_groups();
+    void reserve_building_groups(size_t capacity);
+    // Repacks buildings_store() role_count/role_begin/role_* from the sparse
+    // `_building_employee_*` lanes. Group columns are already sole, so this is
+    // the only projection the ECP wire and ledger capture still need.
+    void refresh_building_store_role_lanes() const;
+    void refresh_building_store_pending_lanes() const;
+    size_t building_group_memory_bytes() const;
+    BuildingGroup building_group_copy(size_t row) const;
+    // Gathers every group column through `order`, so index-keyed side tables
+    // (investment score, factor cache) stay aligned with the same permutation.
+    void permute_building_group_columns(const std::vector<int32_t> &order);
+
     // Epoch-derived quote used by employment, investment and diagnostics. It
     // is rebuilt from frozen inputs and is intentionally absent from PKEC.
     struct OwnerOpportunityQuote {
@@ -1297,30 +1436,6 @@ private:
         int64_t merchant_debt_premium = 0;
         uint16_t merchant_debt_term_cycles_left = 0;
         uint64_t sponsor_family_handle = 0;
-    };
-
-    struct FamilyStore {
-        std::vector<uint8_t> active;
-        std::vector<uint32_t> generation;
-        std::vector<int64_t> stable_id;
-        std::vector<int32_t> surname_id;
-        std::vector<uint32_t> surname_disambiguator;
-        std::vector<int64_t> founded_day;
-        std::vector<int32_t> home_cell;
-        std::vector<int32_t> origin_cell;
-        std::vector<int32_t> origin_ethnicity;
-        std::vector<int32_t> culture_group_id;
-        std::vector<uint32_t> split_sequence;
-        std::vector<uint16_t> decline_reviews;
-        std::vector<uint16_t> flags;
-        std::vector<int32_t> free_indices;
-        int64_t active_count = 0;
-
-        void clear();
-        int32_t allocate();
-        void release(int32_t index);
-        uint64_t handle_for_index(int32_t index) const;
-        bool valid_handle(uint64_t handle, int32_t &index_out) const;
     };
 
     struct NotablePersonStore {
@@ -2127,71 +2242,25 @@ private:
         }
     };
 
-    struct TradeOrderStore {
-        enum State : uint8_t { IN_TRANSIT = 0, WAITING_RECEIVER = 1 };
-        std::vector<int64_t> ids;
-        std::vector<int32_t> sources;
-        std::vector<int32_t> destinations;
-        std::vector<int32_t> countries;
-        std::vector<uint64_t> source_country_handles;
-        std::vector<uint64_t> destination_country_handles;
-        std::vector<int32_t> source_country_slots;
-        std::vector<int32_t> destination_country_slots;
-        std::vector<int64_t> departure_days;
-        std::vector<int64_t> arrival_days;
-        std::vector<int64_t> cash_escrow;
-        std::vector<int64_t> capacity_work;
-        std::vector<uint8_t> states;
-        std::vector<uint8_t> cargo_delivered;
-        std::vector<int32_t> line_offsets;
-        std::vector<int32_t> line_goods;
-        std::vector<int64_t> line_quantities;
-        std::vector<int32_t> line_unit_prices;
-        std::vector<int32_t> line_destination_prices;
-        std::vector<int64_t> line_base_values;
-        std::vector<int64_t> line_retail_values;
-        std::vector<int64_t> line_import_transfers;
-        std::vector<int64_t> line_export_transfers;
-        std::vector<int64_t> line_transaction_transfers;
-        std::vector<uint8_t> line_flags;
-        std::vector<int32_t> seller_offsets;
-        std::vector<uint64_t> seller_handles;
-        std::vector<int64_t> seller_weights;
-        // Derived CSR time buckets — runtime-only cache for due-order scans.
-        // NOT ECP1 / wire_content_hash authority: append_wire and committed
-        // capture hash order SoA columns only; arrival_days[] is the persisted
-        // schedule. Rebuilt after dispatch, compaction, and restore.
-        std::vector<int64_t> arrival_bucket_days;
-        std::vector<int32_t> arrival_bucket_offsets;
-        std::vector<int32_t> arrival_bucket_orders;
-        bool arrival_buckets_dirty = true;
-        int64_t next_id = 1;
-
-        void clear() {
-            ids.clear(); sources.clear(); destinations.clear(); countries.clear();
-            source_country_handles.clear(); destination_country_handles.clear();
-            source_country_slots.clear(); destination_country_slots.clear();
-            departure_days.clear(); arrival_days.clear(); cash_escrow.clear();
-            capacity_work.clear(); states.clear(); cargo_delivered.clear();
-            line_offsets.assign(1, 0); line_goods.clear(); line_quantities.clear();
-            line_unit_prices.clear(); line_destination_prices.clear();
-            line_base_values.clear(); line_retail_values.clear();
-            line_import_transfers.clear(); line_export_transfers.clear();
-            line_transaction_transfers.clear();
-            line_flags.clear(); seller_offsets.assign(1, 0);
-            seller_handles.clear(); seller_weights.clear();
-            arrival_bucket_days.clear(); arrival_bucket_offsets.assign(1, 0);
-            arrival_bucket_orders.clear(); arrival_buckets_dirty = true;
-            next_id = 1;
-        }
-        int32_t size() const { return static_cast<int32_t>(ids.size()); }
-    };
-
     // Sole live trade/family storage accessors (see sync/flush helpers above).
-    TradeOrderStore &trade_orders_store() noexcept;
-    const TradeOrderStore &trade_orders_store() const noexcept;
-    FamilyStore &families_store() noexcept;
-    const FamilyStore &families_store() const noexcept;
+    // A+Y N3/N4: these alias RuntimeEconomyOwnedState while a formula state is
+    // bound; `_trade_orders_local` / `_families_local` are the unbound fallback.
+    TradeOrderStore &trade_orders_store() noexcept {
+        return _formula_owned != nullptr ? _formula_owned->live_trade_orders
+                                         : _trade_orders_local;
+    }
+    const TradeOrderStore &trade_orders_store() const noexcept {
+        return _formula_owned != nullptr ? _formula_owned->live_trade_orders
+                                         : _trade_orders_local;
+    }
+    FamilyStore &families_store() noexcept {
+        return _formula_owned != nullptr ? _formula_owned->live_families
+                                         : _families_local;
+    }
+    const FamilyStore &families_store() const noexcept {
+        return _formula_owned != nullptr ? _formula_owned->live_families
+                                         : _families_local;
+    }
 
     struct TradeFlowSignalStore {
         std::vector<int32_t> cells;
@@ -4084,7 +4153,8 @@ private:
         return _formula_owned != nullptr ? _formula_owned->population
                                          : _population_local;
     }
-    FamilyStore _families;
+    // A+Y N3/N4: unbound fallback only; see families_store().
+    FamilyStore _families_local;
     FamilyExpeditionStore _family_expeditions;
     std::vector<int32_t> _family_expedition_route_cells;
     std::vector<int32_t> _family_expedition_route_costs;
@@ -4344,7 +4414,7 @@ private:
     // Per-group cache for refresh_building_modifier_factors, keyed on every
     // input of group.output_factor_q16 / modifier_handle: every frozen
     // country factor value, country handle, ECONOMY store snapshot_version,
-    // and the (type, owner) identity. During a frozen epoch `_buildings` is
+    // and the (type, owner) identity. During a frozen epoch the group lane is
     // append-only; topology rebuilds permute the compact lane only at
     // BUILDING_COMMIT / idle boundaries and remap this cache with them.
     // Cache hits skip both ensure_building_identity and the ECONOMY
@@ -4484,7 +4554,8 @@ private:
     std::vector<OwnerRetainedOutput> _owner_retained_outputs;
     TradeTopologyStore _trade_topology;
     TradePlanStore _trade_plan;
-    TradeOrderStore _trade_orders;
+    // A+Y N3/N4: unbound fallback only; see trade_orders_store().
+    TradeOrderStore _trade_orders_local;
     TradeFlowSignalStore _trade_flows;
     CountryGoodTradeAggregateStore _country_good_trade;
     CountryPartnerTradeAggregateStore _country_partner_trade;
@@ -5053,16 +5124,15 @@ private:
     std::vector<ResourceAmount> _building_resources;
     std::vector<ResourceAmount> _building_resource_generation;
     std::vector<ConditionToken> _building_conditions;
-    // A+Y N2: drain scratch only when formula_owned_bound(). Sole committed
-    // columns live in buildings_store() (OwnedState). Do not read `_buildings`
-    // as authority after a stage flush.
-    std::vector<BuildingGroup> _buildings;
+    // A+Y N2: buildings_store() is the sole building-group storage. Hot paths
+    // read and write it through building_at() / building_count(); there is no
+    // AoS scratch lane to materialize or flush.
     // Kit settlement may append groups during LEDGER_APPLY. Reordering and
     // market-signal rebuild wait for BUILDING_COMMIT so frozen epoch group
     // indices and production reserves stay aligned. Idle-boundary landings
     // rebuild immediately and leave this false.
     bool _pending_building_topology_rebuild = false;
-    // Handle -> compact group index acceleration for `_buildings`. Rebuilt
+    // Handle -> compact group index acceleration for the group lane. Rebuilt
     // lazily whenever the group lane changes size and verified on every hit,
     // so a stale entry degrades into a rebuild instead of a wrong index.
     mutable std::unordered_map<uint64_t, int32_t> _building_handle_index;
@@ -5071,7 +5141,10 @@ private:
     // Transient topology scratch and reusable role/input spans. Structural
     // commits swap the compact group lane but keep authoritative role arrays
     // in place; these caches are reconstructed after configure/restore.
-    std::vector<BuildingGroup> _building_groups_rebuild_scratch;
+    // Destination order over the current group lane plus the matching
+    // is-new flags, consumed by permute_building_group_columns().
+    std::vector<int32_t> _building_group_order_scratch;
+    std::vector<uint8_t> _building_group_is_new_scratch;
     std::vector<int32_t> _building_existing_indices_scratch;
     std::vector<int32_t> _building_new_indices_scratch;
     std::vector<int64_t> _building_investment_score_rebuild_scratch;
@@ -5697,16 +5770,21 @@ private:
                                      int64_t &income_improvement_q16,
                                      uint64_t &sponsor_family_handle,
                                      const std::vector<int64_t> *living_cost_cache = nullptr) const;
-    int64_t projected_owner_income_per_day(const BuildingGroup &group,
+    int64_t projected_owner_income_per_day(BuildingGroupConstRef group,
                                            int64_t &sat) const;
     OwnerOpportunityQuote owner_opportunity_quote(
-        const BuildingGroup &group, int64_t owner_fillability_q16,
+        BuildingGroupConstRef group, int64_t owner_fillability_q16,
         int64_t employee_fillability_q16, int64_t &sat) const;
     int64_t projected_employee_tax_retention_q16(
-        const BuildingGroup &group, int64_t &sat) const;
+        BuildingGroupConstRef group, int64_t &sat) const;
     int64_t effective_building_output_quantity(
-        const BuildingGroup &group, int32_t good_id, int64_t base_quantity,
+        BuildingGroupConstRef group, int32_t good_id, int64_t base_quantity,
         int64_t utilization_q16, int64_t building_days,
+        int64_t &sat) const;
+    // Same math for a synthetic target that has no row in the group lane.
+    int64_t effective_building_output_quantity_at(
+        int32_t cell, int32_t output_factor_q16, int32_t good_id,
+        int64_t base_quantity, int64_t utilization_q16, int64_t building_days,
         int64_t &sat) const;
     int64_t effective_building_output_quantity_for_target(
         int32_t cell, int32_t type_id, int32_t owner_signature_id,
@@ -5728,11 +5806,11 @@ private:
     void refresh_city_modifier_factors();
     void refresh_city_output_modifier_factors();
     int32_t city_good_output_factor_q16(int32_t cell, int32_t good_id) const;
-    int64_t planned_owner_demand(const BuildingGroup &group,
+    int64_t planned_owner_demand(BuildingGroupConstRef group,
                                  int64_t &sat) const;
-    int64_t building_debt_due(const BuildingGroup &group, int64_t &sat) const;
+    int64_t building_debt_due(BuildingGroupConstRef group, int64_t &sat) const;
     int64_t repay_building_debt(int32_t cell, int32_t owner_slot,
-                                BuildingGroup &group, int64_t payment_cap,
+                                BuildingGroupRef group, int64_t payment_cap,
                                 int64_t &premium_paid);
     int64_t available_resource_amount(const ResourceAmount &item, int32_t cell) const;
     void ensure_resource_lane(size_t index);
@@ -5744,8 +5822,8 @@ private:
     int64_t renewable_safe_harvest(int32_t resource_id, int32_t cell) const;
     bool commit_ready_construction(std::vector<int32_t> &changed_cells,
                                    bool prune_empty_groups = true);
-    void initialize_building_role_span(BuildingGroup &group);
-    void release_building_role_span(const BuildingGroup &group);
+    void initialize_building_role_span(BuildingGroupRef group);
+    void release_building_role_span(BuildingGroupConstRef group);
     void rebuild_building_role_storage();
     void rebuild_building_cell_offsets();
     void rebuild_building_visual_snapshot();
@@ -5797,7 +5875,7 @@ private:
         const BuildingType &type, int32_t cell,
         int64_t *temperature_fit_q16, int64_t *water_fit_q16,
         int64_t &saturation_count) const;
-    void prepare_group_climate_capacity(BuildingGroup &group,
+    void prepare_group_climate_capacity(BuildingGroupRef group,
                                         const BuildingType &type);
     // SHADOW-only parity: publish graph stage hash/work to Host when the sync
     // ECONOMY_GRAPH stage completes and ECONOMY is not worker-authoritative.
@@ -6127,7 +6205,7 @@ private:
                                          int32_t axis,
                                          int32_t selector_kind,
                                          int32_t selector_id) const;
-    int64_t building_reset_capital_value(const BuildingGroup &group) const;
+    int64_t building_reset_capital_value(BuildingGroupConstRef group) const;
     bool family_free_building_resources_legal(int32_t cell, int32_t type_id,
                                               int64_t count) const;
     void dissolve_family(uint64_t family_handle);

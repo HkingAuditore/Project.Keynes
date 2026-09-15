@@ -191,7 +191,7 @@ int32_t NativeEconomyRuntime::treasury_build_owner_signature(
     if (_building_cell_offsets.size() == static_cast<size_t>(_cell_count + 1)) {
         for (int32_t group = _building_cell_offsets[cell];
              group < _building_cell_offsets[cell + 1]; ++group) {
-            const BuildingGroup &candidate = _buildings[group];
+            const auto candidate = building_at(static_cast<size_t>(group));
             if (candidate.type_id == type_id && candidate.count > 0 &&
                 candidate.owner_signature_id >= 0 &&
                 candidate.owner_signature_id < static_cast<int32_t>(_signatures.size()) &&
@@ -451,7 +451,8 @@ bool NativeEconomyRuntime::apply_build_command(const Command &cmd, int32_t owner
         int64_t outstanding = cached_investment_credit
             ? investment_outstanding_credit(cell) : 0;
         if (!cached_investment_credit) {
-            for (const BuildingGroup &group : _buildings) {
+            for (size_t pk_row = 0; pk_row < building_count(); ++pk_row) {
+                const auto group = building_at(pk_row);
                 if (group.cell == cell) outstanding = saturating_add(
                     outstanding,
                     std::max<int64_t>(0, group.merchant_debt_principal),
@@ -655,22 +656,22 @@ bool NativeEconomyRuntime::apply_demolish_command(const Command &cmd, int32_t ow
     }
     const int32_t signature = static_cast<int32_t>(population_store().signature_id[owner_slot]);
     const int32_t group_id = find_building_group(cell, type_id, signature);
-    if (group_id < 0 || _buildings[group_id].count < count) {
+    if (group_id < 0 || buildings_store().group_units[group_id] < count) {
         _last_building_rejection_reason = "demolish_owned_count_insufficient";
         ++_rejected_commands;
         return true;
     }
-    const int64_t before = _buildings[group_id].count;
-    _buildings[group_id].count -= count;
+    const int64_t before = buildings_store().group_units[group_id];
+    buildings_store().group_units[group_id] -= count;
     _building_handle_index_clean = false;
     std::vector<EventLeg> event_legs;
     if (trace_detail_for_cell(cell)) {
         event_legs.push_back({FIELD_BUILDING_COUNT, SUBJECT_BUILDING_GROUP, signature,
-                              type_id, before, _buildings[group_id].count});
+                              type_id, before, buildings_store().group_units[group_id]});
     }
     trace_append(EVENT_BUILDING_DEMOLISHED, static_cast<int32_t>(Stage::LEDGER_APPLY),
                  cell, SUBJECT_BUILDING_GROUP, signature, type_id, -1,
-                 count, before, _buildings[group_id].count, cmd.sequence,
+                 count, before, buildings_store().group_units[group_id], cmd.sequence,
                  event_legs.empty() ? nullptr : &event_legs);
     _structural_touched_cells.push_back(cell);
     return true;

@@ -12,13 +12,213 @@ using Clock = std::chrono::steady_clock;
 double elapsed_ms(const Clock::time_point &start) {
     return std::chrono::duration<double, std::milli>(Clock::now() - start).count();
 }
+
+// Gathers one group column through `order`. The scratch buffer is reused so a
+// topology rebuild does not allocate once per column.
+template <typename T>
+void gather_column(std::vector<T> &column, const std::vector<int32_t> &order) {
+    static thread_local std::vector<T> scratch;
+    scratch.clear();
+    scratch.reserve(order.size());
+    for (const int32_t src : order) {
+        scratch.push_back(src >= 0 && static_cast<size_t>(src) < column.size()
+                              ? column[static_cast<size_t>(src)]
+                              : T{});
+    }
+    column.swap(scratch);
+}
 } // namespace
+
+size_t NativeEconomyRuntime::append_building_group(const BuildingGroup &group) {
+    RuntimeEconomyBuildingStore &store = buildings_store();
+    const size_t row = store.cell.size();
+#define PK_BUILDING_GROUP_PUSH(TYPE, NAME, COLUMN) \
+    store.COLUMN.push_back(group.NAME);
+    PK_BUILDING_GROUP_COLUMNS(PK_BUILDING_GROUP_PUSH)
+#undef PK_BUILDING_GROUP_PUSH
+    store.role_count.push_back(
+        group.type_id >= 0 &&
+                group.type_id < static_cast<int32_t>(_building_types.size())
+            ? _building_types[static_cast<size_t>(group.type_id)].employee_count
+            : 0);
+    // Packed projection; refresh_building_store_role_lanes() recomputes it
+    // before any wire or ledger read.
+    store.role_begin.push_back(0);
+    _building_handle_index_clean = false;
+    return row;
+}
+
+void NativeEconomyRuntime::write_building_group(size_t row,
+                                                const BuildingGroup &group) {
+    RuntimeEconomyBuildingStore &store = buildings_store();
+    if (row >= store.cell.size()) return;
+#define PK_BUILDING_GROUP_STORE(TYPE, NAME, COLUMN) \
+    store.COLUMN[row] = group.NAME;
+    PK_BUILDING_GROUP_COLUMNS(PK_BUILDING_GROUP_STORE)
+#undef PK_BUILDING_GROUP_STORE
+    _building_handle_index_clean = false;
+}
+
+NativeEconomyRuntime::BuildingGroup
+NativeEconomyRuntime::building_group_copy(size_t row) const {
+    BuildingGroup group;
+    const RuntimeEconomyBuildingStore &store = buildings_store();
+    if (row >= store.cell.size()) return group;
+#define PK_BUILDING_GROUP_READ(TYPE, NAME, COLUMN) \
+    group.NAME = static_cast<TYPE>(store.COLUMN[row]);
+    PK_BUILDING_GROUP_COLUMNS(PK_BUILDING_GROUP_READ)
+#undef PK_BUILDING_GROUP_READ
+    return group;
+}
+
+void NativeEconomyRuntime::clear_building_groups() {
+    RuntimeEconomyBuildingStore &store = buildings_store();
+#define PK_BUILDING_GROUP_CLEAR(TYPE, NAME, COLUMN) store.COLUMN.clear();
+    PK_BUILDING_GROUP_COLUMNS(PK_BUILDING_GROUP_CLEAR)
+#undef PK_BUILDING_GROUP_CLEAR
+    store.role_count.clear();
+    store.role_begin.clear();
+    store.role_filled.clear();
+    store.role_contract_wage.clear();
+    store.role_base_living_cost.clear();
+    store.role_living_cost.clear();
+    store.role_local_average_wage.clear();
+    store.role_base_wage_due.clear();
+    store.role_base_wage_paid.clear();
+    store.role_bonus_due.clear();
+    store.role_bonus_paid.clear();
+    _building_handle_index_clean = false;
+}
+
+void NativeEconomyRuntime::reserve_building_groups(size_t capacity) {
+    RuntimeEconomyBuildingStore &store = buildings_store();
+#define PK_BUILDING_GROUP_RESERVE(TYPE, NAME, COLUMN) \
+    store.COLUMN.reserve(capacity);
+    PK_BUILDING_GROUP_COLUMNS(PK_BUILDING_GROUP_RESERVE)
+#undef PK_BUILDING_GROUP_RESERVE
+    store.role_count.reserve(capacity);
+    store.role_begin.reserve(capacity);
+}
+
+void NativeEconomyRuntime::permute_building_group_columns(
+        const std::vector<int32_t> &order) {
+    RuntimeEconomyBuildingStore &store = buildings_store();
+#define PK_BUILDING_GROUP_GATHER(TYPE, NAME, COLUMN) \
+    gather_column(store.COLUMN, order);
+    PK_BUILDING_GROUP_COLUMNS(PK_BUILDING_GROUP_GATHER)
+#undef PK_BUILDING_GROUP_GATHER
+    gather_column(store.role_count, order);
+    gather_column(store.role_begin, order);
+    _building_handle_index_clean = false;
+}
+
+size_t NativeEconomyRuntime::building_group_memory_bytes() const {
+    const RuntimeEconomyBuildingStore &store = buildings_store();
+    size_t bytes = 0;
+#define PK_BUILDING_GROUP_BYTES(TYPE, NAME, COLUMN) \
+    bytes += store.COLUMN.capacity() * sizeof(TYPE);
+    PK_BUILDING_GROUP_COLUMNS(PK_BUILDING_GROUP_BYTES)
+#undef PK_BUILDING_GROUP_BYTES
+    bytes += store.role_count.capacity() * sizeof(int32_t);
+    bytes += store.role_begin.capacity() * sizeof(int32_t);
+    return bytes;
+}
+
+void NativeEconomyRuntime::refresh_building_store_role_lanes() const {
+    RuntimeEconomyBuildingStore &store = mutable_buildings_store();
+    const size_t groups = store.cell.size();
+    store.role_count.assign(groups, 0);
+    store.role_begin.assign(groups, 0);
+    store.role_filled.clear();
+    store.role_contract_wage.clear();
+    store.role_base_living_cost.clear();
+    store.role_living_cost.clear();
+    store.role_local_average_wage.clear();
+    store.role_base_wage_due.clear();
+    store.role_base_wage_paid.clear();
+    store.role_bonus_due.clear();
+    store.role_bonus_paid.clear();
+    store.role_filled.reserve(_building_employee_filled.size());
+    for (size_t g = 0; g < groups; ++g) {
+        const int32_t type_id = store.type_id[g];
+        const int32_t roles =
+            (type_id >= 0 &&
+             type_id < static_cast<int32_t>(_building_types.size()))
+                ? _building_types[static_cast<size_t>(type_id)].employee_count
+                : 0;
+        store.role_count[g] = roles;
+        store.role_begin[g] = static_cast<int32_t>(store.role_filled.size());
+        const int32_t begin = store.employee_fill_begin[g];
+        for (int32_t r = 0; r < roles; ++r) {
+            const int32_t lane = begin + r;
+            if (begin < 0 || lane < 0 ||
+                lane >= static_cast<int32_t>(_building_employee_filled.size())) {
+                store.role_filled.push_back(0);
+                store.role_contract_wage.push_back(0);
+                store.role_base_living_cost.push_back(0);
+                store.role_living_cost.push_back(0);
+                store.role_local_average_wage.push_back(0);
+                store.role_base_wage_due.push_back(0);
+                store.role_base_wage_paid.push_back(0);
+                store.role_bonus_due.push_back(0);
+                store.role_bonus_paid.push_back(0);
+                continue;
+            }
+            const size_t index = static_cast<size_t>(lane);
+            store.role_filled.push_back(_building_employee_filled[index]);
+            store.role_contract_wage.push_back(
+                _building_role_contract_wage[index]);
+            store.role_base_living_cost.push_back(
+                _building_role_base_living_cost[index]);
+            store.role_living_cost.push_back(_building_role_living_cost[index]);
+            store.role_local_average_wage.push_back(
+                _building_role_local_average_wage[index]);
+            store.role_base_wage_due.push_back(
+                _building_role_base_wage_due[index]);
+            store.role_base_wage_paid.push_back(
+                _building_role_base_wage_paid[index]);
+            store.role_bonus_due.push_back(_building_role_bonus_due[index]);
+            store.role_bonus_paid.push_back(_building_role_bonus_paid[index]);
+        }
+    }
+}
+
+void NativeEconomyRuntime::refresh_building_store_pending_lanes() const {
+    RuntimeEconomyBuildingStore &store = mutable_buildings_store();
+    store.pending_cell.clear();
+    store.pending_type_id.clear();
+    store.pending_owner_signature_id.clear();
+    store.pending_count.clear();
+    store.pending_ready_day.clear();
+    store.pending_sequence.clear();
+    store.pending_merchant_debt_principal.clear();
+    store.pending_merchant_debt_premium.clear();
+    store.pending_merchant_debt_term_cycles_left.clear();
+    store.pending_sponsor_family_handle.clear();
+    store.pending_cell.reserve(_pending_construction.size());
+    for (const PendingConstruction &pending : _pending_construction) {
+        store.pending_cell.push_back(pending.cell);
+        store.pending_type_id.push_back(pending.type_id);
+        store.pending_owner_signature_id.push_back(pending.owner_signature_id);
+        store.pending_count.push_back(pending.count);
+        store.pending_ready_day.push_back(pending.ready_day);
+        store.pending_sequence.push_back(pending.sequence);
+        store.pending_merchant_debt_principal.push_back(
+            pending.merchant_debt_principal);
+        store.pending_merchant_debt_premium.push_back(
+            pending.merchant_debt_premium);
+        store.pending_merchant_debt_term_cycles_left.push_back(
+            pending.merchant_debt_term_cycles_left);
+        store.pending_sponsor_family_handle.push_back(
+            pending.sponsor_family_handle);
+    }
+}
 
 int32_t NativeEconomyRuntime::find_building_group(int32_t cell, int32_t type_id,
                                                    int32_t owner_signature_id) const {
     ++_scan_calls_find_building_group;
-    for (int32_t i = 0; i < static_cast<int32_t>(_buildings.size()); ++i) {
-        const BuildingGroup &group = _buildings[i];
+    for (int32_t i = 0; i < static_cast<int32_t>(building_count()); ++i) {
+        const auto group = building_at(static_cast<size_t>(i));
         if (group.cell == cell && group.type_id == type_id &&
             group.owner_signature_id == owner_signature_id) {
             _scan_steps_find_building_group += i + 1;
@@ -26,12 +226,13 @@ int32_t NativeEconomyRuntime::find_building_group(int32_t cell, int32_t type_id,
             return i;
         }
     }
-    _scan_steps_find_building_group += static_cast<int64_t>(_buildings.size());
-    note_scan_steps(static_cast<int64_t>(_buildings.size()));
+    _scan_steps_find_building_group += static_cast<int64_t>(building_count());
+    note_scan_steps(static_cast<int64_t>(building_count()));
     return -1;
 }
 
-void NativeEconomyRuntime::initialize_building_role_span(BuildingGroup &group) {
+void NativeEconomyRuntime::initialize_building_role_span(
+        BuildingGroupRef group) {
     if (group.type_id < 0 ||
         group.type_id >= static_cast<int32_t>(_building_types.size())) return;
     if (_building_free_role_spans_by_type.size() < _building_types.size())
@@ -87,7 +288,7 @@ void NativeEconomyRuntime::initialize_building_role_span(BuildingGroup &group) {
 }
 
 void NativeEconomyRuntime::release_building_role_span(
-        const BuildingGroup &group) {
+        BuildingGroupConstRef group) {
     if (group.type_id < 0 ||
         group.type_id >= static_cast<int32_t>(_building_types.size()) ||
         group.employee_fill_begin < 0 || group.last_input_selection_begin < 0)
@@ -108,13 +309,13 @@ void NativeEconomyRuntime::rebuild_building_role_storage() {
         }
     } role_storage_timer{this, merge_started};
     auto key = [&](int32_t index) {
-        const BuildingGroup &group = _buildings[index];
+        const auto group = building_at(static_cast<size_t>(index));
         return std::tuple(group.cell, group.type_id, group.owner_signature_id);
     };
     _building_existing_indices_scratch.clear();
     _building_new_indices_scratch.clear();
-    for (int32_t index = 0; index < static_cast<int32_t>(_buildings.size()); ++index) {
-        const BuildingGroup &group = _buildings[index];
+    for (int32_t index = 0; index < static_cast<int32_t>(building_count()); ++index) {
+        const auto group = building_at(static_cast<size_t>(index));
         if (group.count <= 0) {
             if (group.cell >= 0 && group.cell < _cell_count) {
                 mark_market_signal_cell_dirty(group.cell);
@@ -142,8 +343,10 @@ void NativeEconomyRuntime::rebuild_building_role_storage() {
 
     const size_t active_count = _building_existing_indices_scratch.size() +
         _building_new_indices_scratch.size();
-    _building_groups_rebuild_scratch.clear();
-    _building_groups_rebuild_scratch.reserve(active_count);
+    _building_group_order_scratch.clear();
+    _building_group_order_scratch.reserve(active_count);
+    _building_group_is_new_scratch.clear();
+    _building_group_is_new_scratch.reserve(active_count);
     _building_investment_score_rebuild_scratch.clear();
     _building_investment_score_rebuild_scratch.reserve(active_count);
     _building_investment_payback_rebuild_scratch.clear();
@@ -153,17 +356,12 @@ void NativeEconomyRuntime::rebuild_building_role_storage() {
     _building_factor_cache_rebuild_scratch.clear();
     _building_factor_cache_rebuild_scratch.reserve(active_count);
 
+    // Role spans for new rows are assigned after the permutation, so the
+    // sparse employee lanes are written through their final group index.
     auto append_group = [&](int32_t index, bool is_new) {
-        BuildingGroup group = _buildings[index];
-        if (is_new) {
-            initialize_building_role_span(group);
-            if (group.cell >= 0 && group.cell < _cell_count) {
-                mark_market_signal_cell_dirty(group.cell);
-                mark_labor_signal_cell_dirty(group.cell);
-                mark_input_reserve_cell_dirty(group.cell);
-            }
-        }
-        _building_groups_rebuild_scratch.push_back(group);
+        _building_group_order_scratch.push_back(index);
+        _building_group_is_new_scratch.push_back(is_new ? uint8_t{1}
+                                                        : uint8_t{0});
         _building_investment_score_rebuild_scratch.push_back(
             !is_new && index < static_cast<int32_t>(
                 _building_investment_score_q16.size())
@@ -198,7 +396,17 @@ void NativeEconomyRuntime::rebuild_building_role_storage() {
             append_group(_building_new_indices_scratch[new_cursor++], true);
         }
     }
-    _buildings.swap(_building_groups_rebuild_scratch);
+    permute_building_group_columns(_building_group_order_scratch);
+    for (size_t row = 0; row < _building_group_is_new_scratch.size(); ++row) {
+        if (_building_group_is_new_scratch[row] == 0) continue;
+        auto group = building_at(row);
+        initialize_building_role_span(group);
+        if (group.cell >= 0 && group.cell < _cell_count) {
+            mark_market_signal_cell_dirty(group.cell);
+            mark_labor_signal_cell_dirty(group.cell);
+            mark_input_reserve_cell_dirty(group.cell);
+        }
+    }
     _building_handle_index_clean = false;
     _building_investment_score_q16.swap(
         _building_investment_score_rebuild_scratch);
@@ -221,7 +429,8 @@ void NativeEconomyRuntime::rebuild_building_role_storage() {
 void NativeEconomyRuntime::rebuild_building_cell_offsets() {
     _building_cell_offsets.assign(static_cast<size_t>(std::max(0, _cell_count)) + 1, 0);
     _building_active_cells.clear();
-    for (const BuildingGroup &group : _buildings) {
+    for (size_t pk_row = 0; pk_row < building_count(); ++pk_row) {
+        const auto group = building_at(pk_row);
         if (group.cell >= 0 && group.cell < _cell_count && group.count > 0) {
             ++_building_cell_offsets[group.cell + 1];
         }
@@ -244,7 +453,8 @@ void NativeEconomyRuntime::rebuild_building_visual_snapshot() {
     int32_t current_cell = 0;
     int32_t last_cell = -1;
     int32_t last_type = -1;
-    for (const BuildingGroup &group : _buildings) {
+    for (size_t pk_row = 0; pk_row < building_count(); ++pk_row) {
+        const auto group = building_at(pk_row);
         if (group.count <= 0 || group.cell < 0 || group.cell >= _cell_count ||
             group.type_id < 0 ||
             group.type_id >= static_cast<int32_t>(_building_types.size()))
@@ -298,8 +508,8 @@ void NativeEconomyRuntime::rebuild_building_review_buckets() {
     _building_special_reset_group_indices.clear();
 
     for (int32_t group_index = 0;
-         group_index < static_cast<int32_t>(_buildings.size()); ++group_index) {
-        const BuildingGroup &group = _buildings[group_index];
+         group_index < static_cast<int32_t>(building_count()); ++group_index) {
+        const auto group = building_at(static_cast<size_t>(group_index));
         if (group.count <= 0 || group.cell < 0 || group.cell >= _cell_count ||
             group.type_id < 0 ||
             group.type_id >= static_cast<int32_t>(_building_types.size())) continue;
@@ -315,8 +525,8 @@ void NativeEconomyRuntime::rebuild_building_review_buckets() {
         static_cast<size_t>(_building_review_phase_offsets.back()));
     int32_t cursor = _building_review_phase_offsets[0];
     for (int32_t group_index = 0;
-         group_index < static_cast<int32_t>(_buildings.size()); ++group_index) {
-        const BuildingGroup &group = _buildings[group_index];
+         group_index < static_cast<int32_t>(building_count()); ++group_index) {
+        const auto group = building_at(static_cast<size_t>(group_index));
         if (group.count <= 0 || group.cell < 0 || group.cell >= _cell_count ||
             group.type_id < 0 ||
             group.type_id >= static_cast<int32_t>(_building_types.size()) ||

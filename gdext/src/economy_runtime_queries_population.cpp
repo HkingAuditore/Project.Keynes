@@ -92,7 +92,7 @@ void NativeEconomyRuntime::append_population_employment_fields(
         for (int32_t group_index = _building_cell_offsets[cell_idx];
              group_index < _building_cell_offsets[cell_idx + 1];
              ++group_index) {
-            const BuildingGroup &group = _buildings[group_index];
+            const auto group = building_at(static_cast<size_t>(group_index));
             if (group.count <= 0 || group.operating_state == 1 ||
                 group.type_id < 0 || group.type_id >= static_cast<int32_t>(
                     _building_types.size())) continue;

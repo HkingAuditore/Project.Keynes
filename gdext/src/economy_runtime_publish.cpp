@@ -243,31 +243,31 @@ bool NativeEconomyRuntime::publish_epoch_slice(
         work_done += static_cast<int64_t>(end - start);
         if (_publish_cursor >= total) {
             _publish_order_cursor = 0;
-            _publish_line_cursor = _trade_orders.line_offsets.empty()
-                ? 0 : _trade_orders.line_offsets[0];
+            _publish_line_cursor = trade_orders_store().line_offsets.empty()
+                ? 0 : trade_orders_store().line_offsets[0];
             _publish_phase = PublishPhase::AUDIT_TRANSIT;
         }
     } else if (_publish_phase == PublishPhase::AUDIT_TRANSIT) {
         size_t processed = 0;
-        while (_publish_order_cursor < _trade_orders.size() &&
+        while (_publish_order_cursor < trade_orders_store().size() &&
                processed < audit_budget) {
             const int32_t order = _publish_order_cursor;
-            if (_publish_line_cursor >= _trade_orders.line_offsets[order + 1]) {
+            if (_publish_line_cursor >= trade_orders_store().line_offsets[order + 1]) {
                 ++_publish_order_cursor;
-                if (_publish_order_cursor < _trade_orders.size())
-                    _publish_line_cursor = _trade_orders.line_offsets[_publish_order_cursor];
+                if (_publish_order_cursor < trade_orders_store().size())
+                    _publish_line_cursor = trade_orders_store().line_offsets[_publish_order_cursor];
                 continue;
             }
             const int32_t line = _publish_line_cursor++;
-            if (_trade_orders.cargo_delivered[order] == 0) {
+            if (trade_orders_store().cargo_delivered[order] == 0) {
                 _closing_totals.transit_goods = saturating_add(
                     _closing_totals.transit_goods,
-                    _trade_orders.line_quantities[line], _publish_valuation_sat);
+                    trade_orders_store().line_quantities[line], _publish_valuation_sat);
             }
             ++processed;
         }
         work_done += static_cast<int64_t>(processed);
-        if (_publish_order_cursor >= _trade_orders.size()) {
+        if (_publish_order_cursor >= trade_orders_store().size()) {
             _closing_totals.goods_stock += _closing_totals.transit_goods;
             _publish_cursor = 0;
             _publish_phase = PublishPhase::AUDIT_ESCROW;
@@ -275,14 +275,14 @@ bool NativeEconomyRuntime::publish_epoch_slice(
     } else if (_publish_phase == PublishPhase::AUDIT_ESCROW) {
         const size_t start = _publish_cursor;
         const size_t end = std::min(
-            _trade_orders.cash_escrow.size(), start + audit_budget);
+            trade_orders_store().cash_escrow.size(), start + audit_budget);
         for (; _publish_cursor < end; ++_publish_cursor) {
             _closing_totals.escrow_cash = saturating_add(
                 _closing_totals.escrow_cash,
-                _trade_orders.cash_escrow[_publish_cursor], _publish_valuation_sat);
+                trade_orders_store().cash_escrow[_publish_cursor], _publish_valuation_sat);
         }
         work_done += static_cast<int64_t>(end - start);
-        if (_publish_cursor >= _trade_orders.cash_escrow.size()) {
+        if (_publish_cursor >= trade_orders_store().cash_escrow.size()) {
             int64_t expedition_population = 0;
             int64_t expedition_funds = 0;
             sum_family_expedition_holdings(expedition_population,

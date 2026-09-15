@@ -155,11 +155,11 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_cell_food_import_eq_previous); cap(_cell_food_export_eq_previous);
     cap(_cell_food_access_eq_previous); cap(_cell_food_flow_valid);
     cap(population_store().owner_employed); cap(population_store().employee_employed);
-    cap(_families.active); cap(_families.generation); cap(_families.stable_id);
-    cap(_families.surname_id); cap(_families.surname_disambiguator);
-    cap(_families.founded_day); cap(_families.home_cell);
-    cap(_families.origin_ethnicity); cap(_families.decline_reviews);
-    cap(_families.flags); cap(_families.free_indices);
+    cap(families_store().active); cap(families_store().generation); cap(families_store().stable_id);
+    cap(families_store().surname_id); cap(families_store().surname_disambiguator);
+    cap(families_store().founded_day); cap(families_store().home_cell);
+    cap(families_store().origin_ethnicity); cap(families_store().decline_reviews);
+    cap(families_store().flags); cap(families_store().free_indices);
     cap(_family_memberships); cap(_family_ownerships);
     cap(_family_traits); cap(_family_trait_commands);
     cap(_family_behavior_factor_offsets); cap(_family_behavior_factor_rows);
@@ -464,17 +464,17 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_trade_plan_init.inflight_keys);
     cap(_trade_plan_init.retained_active_keys);
     cap(_trade_plan_init.rotated_inbound);
-    cap(_trade_orders.ids); cap(_trade_orders.sources); cap(_trade_orders.destinations);
-    cap(_trade_orders.countries); cap(_trade_orders.departure_days);
-    cap(_trade_orders.arrival_days); cap(_trade_orders.cash_escrow);
-    cap(_trade_orders.capacity_work); cap(_trade_orders.states);
-    cap(_trade_orders.cargo_delivered); cap(_trade_orders.line_offsets);
-    cap(_trade_orders.line_goods); cap(_trade_orders.line_quantities);
-    cap(_trade_orders.line_unit_prices); cap(_trade_orders.seller_offsets);
-    cap(_trade_orders.seller_handles); cap(_trade_orders.seller_weights);
-    cap(_trade_orders.arrival_bucket_days);
-    cap(_trade_orders.arrival_bucket_offsets);
-    cap(_trade_orders.arrival_bucket_orders);
+    cap(trade_orders_store().ids); cap(trade_orders_store().sources); cap(trade_orders_store().destinations);
+    cap(trade_orders_store().countries); cap(trade_orders_store().departure_days);
+    cap(trade_orders_store().arrival_days); cap(trade_orders_store().cash_escrow);
+    cap(trade_orders_store().capacity_work); cap(trade_orders_store().states);
+    cap(trade_orders_store().cargo_delivered); cap(trade_orders_store().line_offsets);
+    cap(trade_orders_store().line_goods); cap(trade_orders_store().line_quantities);
+    cap(trade_orders_store().line_unit_prices); cap(trade_orders_store().seller_offsets);
+    cap(trade_orders_store().seller_handles); cap(trade_orders_store().seller_weights);
+    cap(trade_orders_store().arrival_bucket_days);
+    cap(trade_orders_store().arrival_bucket_offsets);
+    cap(trade_orders_store().arrival_bucket_orders);
     cap(_trade_flows.cells); cap(_trade_flows.goods); cap(_trade_flows.import_ema);
     cap(_trade_flows.export_ema); cap(_trade_flows.period_import);
     cap(_trade_flows.period_export);
@@ -516,8 +516,9 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
 	cap(_building_output_cost_shares_q16);
 	cap(_cycle_flow_good_ids);
     cap(_building_resource_generation);
-    cap(_building_conditions); cap(_buildings);
-    cap(_building_groups_rebuild_scratch);
+    cap(_building_conditions);
+    bytes += building_group_memory_bytes();
+    cap(_building_group_order_scratch); cap(_building_group_is_new_scratch);
     cap(_building_existing_indices_scratch); cap(_building_new_indices_scratch);
     cap(_building_investment_score_rebuild_scratch);
     cap(_building_investment_payback_rebuild_scratch);
@@ -893,7 +894,7 @@ Dictionary NativeEconomyRuntime::compact_report() const {
         _budgeted_publish_phase_fusions;
     out["family_runtime_mode"] = _family_runtime_mode == 0 ? "OFF" :
         (_family_runtime_mode == 1 ? "PROBE" : "ACTIVE");
-    out["family_count"] = _families.active_count;
+    out["family_count"] = families_store().active_count;
     out["family_membership_edge_count"] = static_cast<int64_t>(
         _family_memberships.size());
     out["family_ownership_edge_count"] = static_cast<int64_t>(
@@ -1748,7 +1749,7 @@ Dictionary NativeEconomyRuntime::report() const {
     out["auto_slice_by_scale"] = _auto_slice_by_scale;
     out["family_runtime_mode"] = _family_runtime_mode == 0 ? "OFF" :
         (_family_runtime_mode == 1 ? "PROBE" : "ACTIVE");
-    out["family_count"] = _families.active_count;
+    out["family_count"] = families_store().active_count;
     out["family_membership_edge_count"] = static_cast<int64_t>(
         _family_memberships.size());
     out["family_ownership_edge_count"] = static_cast<int64_t>(
@@ -1869,7 +1870,7 @@ Dictionary NativeEconomyRuntime::report() const {
     out["market_count"] = market_store().market_count;
     out["good_count"] = market_store().good_count;
     out["building_type_count"] = static_cast<int64_t>(_building_types.size());
-    out["building_group_count"] = static_cast<int64_t>(_buildings.size());
+    out["building_group_count"] = static_cast<int64_t>(building_count());
     out["pending_construction_count"] = static_cast<int64_t>(_pending_construction.size());
     out["processed_building_groups"] = _processed_building_groups;
     out["climate_profiled_building_groups"] =
@@ -2141,7 +2142,8 @@ Dictionary NativeEconomyRuntime::report() const {
                 0, Q16_ONE)
             : Q16_ONE;
     int64_t merchant_credit_outstanding = 0;
-    for (const BuildingGroup &group : _buildings) {
+    for (size_t pk_row = 0; pk_row < building_count(); ++pk_row) {
+        const auto group = building_at(pk_row);
         merchant_credit_outstanding = saturating_add(
             merchant_credit_outstanding, saturating_add(
                 group.merchant_debt_principal, group.merchant_debt_premium,
@@ -2302,9 +2304,9 @@ Dictionary NativeEconomyRuntime::report() const {
         _trade_candidates_arbitrated_out;
     out["trade_true_source_stock_failures"] =
         _trade_true_source_stock_failures;
-    out["trade_orders_in_flight"] = _trade_orders.size();
+    out["trade_orders_in_flight"] = trade_orders_store().size();
     out["trade_arrival_bucket_count"] = static_cast<int64_t>(
-        _trade_orders.arrival_bucket_days.size());
+        trade_orders_store().arrival_bucket_days.size());
     out["trade_orders_dispatched"] = _trade_orders_dispatched;
     out["trade_orders_arrived"] = _trade_orders_arrived;
     out["trade_unclaimed_orders"] = _trade_unclaimed_orders;
@@ -2326,8 +2328,8 @@ Dictionary NativeEconomyRuntime::report() const {
     out["price_inactive_reversions"] = _price_inactive_reversions;
     out["unprofitable_building_groups"] = _unprofitable_building_groups;
     out["zero_utilization_building_groups"] = _zero_utilization_building_groups;
-    out["average_planned_utilization_q16"] = _buildings.empty() ? Q16_ONE :
-        _utilization_sum_q16 / static_cast<int64_t>(_buildings.size());
+    out["average_planned_utilization_q16"] = building_count() == 0 ? Q16_ONE :
+        _utilization_sum_q16 / static_cast<int64_t>(building_count());
     out["building_resource_capacity_checks"] = _building_resource_capacity_checks;
     out["building_resource_capacity_limited_groups"] =
         _building_resource_capacity_limited_groups;

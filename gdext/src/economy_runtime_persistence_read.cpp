@@ -655,9 +655,9 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         _labor_signals.paid_wage_ema.reserve(labor_signal_count);
         _labor_signals.job_days.reserve(labor_signal_count);
         _labor_signals.pay_ratio_q16.reserve(labor_signal_count);
-        _trade_orders.clear();
-        _trade_orders.next_id = next_trade_order_id;
-        _trade_orders.ids.reserve(trade_order_count);
+        trade_orders_store().clear();
+        trade_orders_store().next_id = next_trade_order_id;
+        trade_orders_store().ids.reserve(trade_order_count);
         _trade_flows.clear();
         _trade_flows.cells.reserve(trade_flow_count);
         _tariff_history.clear();
@@ -764,9 +764,10 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         _seed = seed;
         _next_submit_order = next_submit;
         _pending_commands.reserve(pending_count);
-        _buildings.clear();
+        clear_building_groups();
         _building_handle_index_clean = false;
-        _building_groups_rebuild_scratch.clear();
+        _building_group_order_scratch.clear();
+        _building_group_is_new_scratch.clear();
         _building_existing_indices_scratch.clear();
         _building_new_indices_scratch.clear();
         _building_investment_score_rebuild_scratch.clear();
@@ -775,10 +776,10 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         _building_free_role_spans_by_type.assign(_building_types.size(), {});
         _building_cell_offsets.clear();
         _building_active_cells.clear();
-        _buildings.reserve(building_count);
+        reserve_building_groups(static_cast<size_t>(building_count));
         _pending_construction.clear();
         _pending_construction.reserve(construction_count);
-        _families.clear();
+        families_store().clear();
         _family_expeditions.clear();
         _family_expedition_route_cells.clear();
         _family_expedition_route_costs.clear();
@@ -1225,7 +1226,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 _building_role_bonus_paid.push_back(bonus_paid);
                 _building_role_forecast_pay_ratio_q16.push_back(0);
             }
-            _buildings.push_back(group);
+            append_building_group(group);
             ++_restore.restored_buildings;
         }
     } else if (section == SAVE_SECTION_CONSTRUCTION) {
@@ -1368,7 +1369,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 !read_le(bytes, cursor, state) || !read_le(bytes, cursor, delivered) ||
                 !read_le(bytes, cursor, line_count) ||
                 !read_le(bytes, cursor, seller_count) || id <= 0 ||
-                (!_trade_orders.ids.empty() && id <= _trade_orders.ids.back()) ||
+                (!trade_orders_store().ids.empty() && id <= trade_orders_store().ids.back()) ||
                 source_country_handle == 0 || destination_country_handle == 0 ||
                 source_country_slot < 0 || destination_country_slot < 0 ||
                 source < 0 || source >= _cell_count || destination < 0 ||
@@ -1382,22 +1383,22 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 error = "save_trade_order_record_invalid";
                 return false;
             }
-            _trade_orders.ids.push_back(id);
-            _trade_orders.sources.push_back(source);
-            _trade_orders.destinations.push_back(destination);
-            _trade_orders.countries.push_back(country);
-            _trade_orders.source_country_handles.push_back(source_country_handle);
-            _trade_orders.destination_country_handles.push_back(
+            trade_orders_store().ids.push_back(id);
+            trade_orders_store().sources.push_back(source);
+            trade_orders_store().destinations.push_back(destination);
+            trade_orders_store().countries.push_back(country);
+            trade_orders_store().source_country_handles.push_back(source_country_handle);
+            trade_orders_store().destination_country_handles.push_back(
                 destination_country_handle);
-            _trade_orders.source_country_slots.push_back(source_country_slot);
-            _trade_orders.destination_country_slots.push_back(
+            trade_orders_store().source_country_slots.push_back(source_country_slot);
+            trade_orders_store().destination_country_slots.push_back(
                 destination_country_slot);
-            _trade_orders.departure_days.push_back(departure);
-            _trade_orders.arrival_days.push_back(arrival);
-            _trade_orders.cash_escrow.push_back(cash);
-            _trade_orders.capacity_work.push_back(capacity);
-            _trade_orders.states.push_back(state);
-            _trade_orders.cargo_delivered.push_back(delivered);
+            trade_orders_store().departure_days.push_back(departure);
+            trade_orders_store().arrival_days.push_back(arrival);
+            trade_orders_store().cash_escrow.push_back(cash);
+            trade_orders_store().capacity_work.push_back(capacity);
+            trade_orders_store().states.push_back(state);
+            trade_orders_store().cargo_delivered.push_back(delivered);
             for (int32_t line = 0; line < line_count; ++line) {
                 int32_t good = -1, price = 0, destination_price = 0;
                 int64_t quantity = 0, base_value = 0, retail_value = 0;
@@ -1422,20 +1423,20 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                     error = "save_trade_order_line_invalid";
                     return false;
                 }
-                _trade_orders.line_goods.push_back(good);
-                _trade_orders.line_quantities.push_back(quantity);
-                _trade_orders.line_unit_prices.push_back(price);
-                _trade_orders.line_destination_prices.push_back(destination_price);
-                _trade_orders.line_base_values.push_back(base_value);
-                _trade_orders.line_retail_values.push_back(retail_value);
-                _trade_orders.line_import_transfers.push_back(import_transfer);
-                _trade_orders.line_export_transfers.push_back(export_transfer);
-                _trade_orders.line_transaction_transfers.push_back(
+                trade_orders_store().line_goods.push_back(good);
+                trade_orders_store().line_quantities.push_back(quantity);
+                trade_orders_store().line_unit_prices.push_back(price);
+                trade_orders_store().line_destination_prices.push_back(destination_price);
+                trade_orders_store().line_base_values.push_back(base_value);
+                trade_orders_store().line_retail_values.push_back(retail_value);
+                trade_orders_store().line_import_transfers.push_back(import_transfer);
+                trade_orders_store().line_export_transfers.push_back(export_transfer);
+                trade_orders_store().line_transaction_transfers.push_back(
                     transaction_transfer);
-                _trade_orders.line_flags.push_back(line_flags);
+                trade_orders_store().line_flags.push_back(line_flags);
             }
-            _trade_orders.line_offsets.push_back(
-                static_cast<int32_t>(_trade_orders.line_goods.size()));
+            trade_orders_store().line_offsets.push_back(
+                static_cast<int32_t>(trade_orders_store().line_goods.size()));
             for (int32_t seller = 0; seller < seller_count; ++seller) {
                 uint64_t handle = 0;
                 int64_t weight = 0;
@@ -1444,11 +1445,11 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                     error = "save_trade_order_seller_invalid";
                     return false;
                 }
-                _trade_orders.seller_handles.push_back(handle);
-                _trade_orders.seller_weights.push_back(weight);
+                trade_orders_store().seller_handles.push_back(handle);
+                trade_orders_store().seller_weights.push_back(weight);
             }
-            _trade_orders.seller_offsets.push_back(
-                static_cast<int32_t>(_trade_orders.seller_handles.size()));
+            trade_orders_store().seller_offsets.push_back(
+                static_cast<int32_t>(trade_orders_store().seller_handles.size()));
             ++_restore.restored_trade_orders;
         }
     } else if (schema >= 11 && section == SAVE_SECTION_TRADE_FLOWS) {
@@ -1660,7 +1661,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 (schema >= 40 && !read_le(bytes, cursor, split_sequence)) ||
                 !read_le(bytes, cursor, decline) ||
                 !read_le(bytes, cursor, flags) ||
-                index != static_cast<int32_t>(_families.active.size()) ||
+                index != static_cast<int32_t>(families_store().active.size()) ||
                 active > 1 || generation == 0 ||
                 (active != 0 && (stable_id <= 0 || surname < 0 ||
                     surname >= static_cast<int32_t>(_family_surname_ids.size()) ||
@@ -1673,24 +1674,24 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 error = "save_family_record_invalid";
                 return false;
             }
-            _families.active.push_back(active);
-            _families.generation.push_back(generation);
-            _families.stable_id.push_back(stable_id);
-            _families.surname_id.push_back(surname);
-            _families.surname_disambiguator.push_back(disambiguator);
-            _families.founded_day.push_back(founded_day);
-            _families.home_cell.push_back(home_cell);
-            _families.origin_cell.push_back(schema >= 40 ? origin_cell : home_cell);
-            _families.origin_ethnicity.push_back(ethnicity);
-            _families.culture_group_id.push_back(schema >= 40 ? culture_group :
+            families_store().active.push_back(active);
+            families_store().generation.push_back(generation);
+            families_store().stable_id.push_back(stable_id);
+            families_store().surname_id.push_back(surname);
+            families_store().surname_disambiguator.push_back(disambiguator);
+            families_store().founded_day.push_back(founded_day);
+            families_store().home_cell.push_back(home_cell);
+            families_store().origin_cell.push_back(schema >= 40 ? origin_cell : home_cell);
+            families_store().origin_ethnicity.push_back(ethnicity);
+            families_store().culture_group_id.push_back(schema >= 40 ? culture_group :
                 (ethnicity >= 0 && ethnicity < static_cast<int32_t>(
                     _ethnicity_culture_group_ids.size())
                     ? _ethnicity_culture_group_ids[ethnicity] : 0));
-            _families.split_sequence.push_back(schema >= 40 ? split_sequence : 0);
-            _families.decline_reviews.push_back(decline);
-            _families.flags.push_back(flags);
+            families_store().split_sequence.push_back(schema >= 40 ? split_sequence : 0);
+            families_store().decline_reviews.push_back(decline);
+            families_store().flags.push_back(flags);
             if (active != 0) {
-                ++_families.active_count;
+                ++families_store().active_count;
                 _family_stable_ids.insert(stable_id);
                 if (static_cast<size_t>(surname) >=
                     _family_surname_members.size())
@@ -1699,7 +1700,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 _family_surname_members[static_cast<size_t>(surname)]
                     .push_back(index);
             } else {
-                _families.free_indices.push_back(index);
+                families_store().free_indices.push_back(index);
             }
             ++_restore.restored_families;
         }
@@ -1717,7 +1718,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 !read_le(bytes, cursor, edge.funds_basis) ||
                 !read_le(bytes, cursor, edge.owner_employed) ||
                 !read_le(bytes, cursor, edge.employee_employed) ||
-                !_families.valid_handle(edge.family_handle, family) ||
+                !families_store().valid_handle(edge.family_handle, family) ||
                 !population_store().valid_handle(edge.cohort_handle, slot) ||
                 edge.people <= 0 || edge.cash_claim < 0) {
                 error = "save_family_membership_invalid";
@@ -1740,7 +1741,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 !read_le(bytes, cursor, edge.building_handle) ||
                 !read_le(bytes, cursor, edge.owned_count) ||
                 !read_le(bytes, cursor, edge.filled_owner) ||
-                !_families.valid_handle(edge.family_handle, family) ||
+                !families_store().valid_handle(edge.family_handle, family) ||
                 edge.building_handle == 0 || edge.owned_count <= 0 ||
                 edge.filled_owner < 0) {
                 error = "save_family_ownership_invalid";
@@ -1792,7 +1793,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 active > 1 || generation == 0 || job_kind > 2 ||
                 (active != 0 &&
                     (stable_id <= 0 ||
-                     !_families.valid_handle(family_handle, family) ||
+                     !families_store().valid_handle(family_handle, family) ||
                      (cohort_handle != 0 &&
                       !population_store().valid_handle(cohort_handle, cohort)) ||
                      given_name < 0 || given_name >= static_cast<int32_t>(
@@ -1872,7 +1873,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 !read_le(bytes, cursor, roll.trait_id) ||
                 !read_le(bytes, cursor, roll.strength_q16) ||
                 !read_le(bytes, cursor, roll.core) || roll.core > 1 ||
-                !_families.valid_handle(roll.family_handle, family) ||
+                !families_store().valid_handle(roll.family_handle, family) ||
                 roll.trait_id < 0 || roll.trait_id >= static_cast<int32_t>(
                     _family_trait_ids.size()) ||
                 roll.strength_q16 < _family_trait_strength_min_q16[roll.trait_id] ||
@@ -1919,7 +1920,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 index != static_cast<int32_t>(
                     _family_influences.active.size()) || active > 1 ||
                 generation == 0 || (active != 0 &&
-                    (!_families.valid_handle(family_handle, family) ||
+                    (!families_store().valid_handle(family_handle, family) ||
                      cell < 0 || cell >= _cell_count || stable_id <= 0 ||
                      population < 0 || cash < 0 || asset < 0 || level > 5 ||
                      pending > 5 || population_share < 0 ||
@@ -1965,7 +1966,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 !read_le(bytes, cursor, command.sequence) ||
                 !read_le(bytes, cursor, command.submit_order) ||
                 command.operation < 1 || command.operation > 3 ||
-                !_families.valid_handle(command.family_handle, family) ||
+                !families_store().valid_handle(command.family_handle, family) ||
                 command.trait_id < 0 || command.trait_id >= static_cast<int32_t>(
                     _family_trait_ids.size()) || command.effective_day < 0 ||
                 command.submit_order == 0) {
@@ -2019,7 +2020,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                     error = "save_family_expedition_country_identity_invalid";
                     return false;
                 }
-                if (!_families.valid_handle(family_handle, family)) {
+                if (!families_store().valid_handle(family_handle, family)) {
                     error = "save_family_expedition_family_handle_invalid";
                     return false;
                 }

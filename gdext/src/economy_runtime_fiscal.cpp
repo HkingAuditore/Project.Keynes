@@ -930,7 +930,7 @@ void NativeEconomyRuntime::settle_absolute_daily_taxes_for_cell(
     const int32_t begin = _building_cell_offsets[static_cast<size_t>(cell)];
     const int32_t end = _building_cell_offsets[static_cast<size_t>(cell + 1)];
     for (int32_t group_index = begin; group_index < end; ++group_index) {
-        BuildingGroup &group = _buildings[static_cast<size_t>(group_index)];
+        auto group = building_at(static_cast<size_t>(static_cast<size_t>(group_index)));
         if (group.count <= 0) continue;
         if (frozen_tax_mode(cell, NativeCountryRuntime::TAX_BUSINESS,
                             group.type_id) !=

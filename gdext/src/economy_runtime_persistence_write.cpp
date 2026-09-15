@@ -31,7 +31,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
         append_le<int64_t>(payload, _seed);
         append_le<int64_t>(payload, _catalog_hash);
         append_le<int64_t>(payload, _building_catalog_hash);
-        append_le<int32_t>(payload, static_cast<int32_t>(_buildings.size()));
+        append_le<int32_t>(payload, static_cast<int32_t>(building_count()));
         append_le<int32_t>(payload, static_cast<int32_t>(_pending_construction.size()));
         append_le<int64_t>(payload, _environment_day);
         append_le<int64_t>(payload, _environment_hash);
@@ -47,7 +47,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                            static_cast<int32_t>(_labor_signals.profession_ids.size()));
         append_le<int64_t>(payload, _next_event_id);
         append_le<uint64_t>(payload, _event_stream_hash);
-        append_le<int32_t>(payload, _trade_orders.size());
+        append_le<int32_t>(payload, trade_orders_store().size());
         append_le<int32_t>(payload, static_cast<int32_t>(_trade_flows.cells.size()));
         append_le<int32_t>(payload, static_cast<int32_t>(
             _tariff_history.countries.size()));
@@ -56,7 +56,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
         append_le<int32_t>(payload, static_cast<int32_t>(
             _country_partner_trade.countries.size()));
         append_le<uint64_t>(payload, _country_trade_revision);
-        append_le<int64_t>(payload, _trade_orders.next_id);
+        append_le<int64_t>(payload, trade_orders_store().next_id);
         append_le<int32_t>(payload, _trade_runtime_mode);
         append_le<int64_t>(payload, _trade_capacity_per_merchant_q16);
         append_le<int32_t>(payload, _trade_speed_cost_per_day);
@@ -347,11 +347,11 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
     }
     if (_save.section == SAVE_SECTION_BUILDINGS) {
         const int32_t max_records = std::max(1, (budget - 16) / 1024);
-        const int32_t end = std::min<int32_t>(static_cast<int32_t>(_buildings.size()),
+        const int32_t end = std::min<int32_t>(static_cast<int32_t>(building_count()),
                                               _save.building_cursor + max_records);
         const int32_t begin = _save.building_cursor;
         for (; _save.building_cursor < end; ++_save.building_cursor) {
-            const BuildingGroup &group = _buildings[_save.building_cursor];
+            const auto group = building_at(static_cast<size_t>(_save.building_cursor));
             append_le<int32_t>(payload, group.cell);
             append_le<int32_t>(payload, group.type_id);
             append_le<int32_t>(payload, group.owner_signature_id);
@@ -425,7 +425,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                 append_le<int64_t>(payload, _building_role_bonus_paid[index]);
             }
         }
-        if (_save.building_cursor >= static_cast<int32_t>(_buildings.size())) ++_save.section;
+        if (_save.building_cursor >= static_cast<int32_t>(building_count())) ++_save.section;
         return make_save_chunk(SAVE_SECTION_BUILDINGS,
                                static_cast<uint32_t>(_save.building_cursor - begin), payload);
     }
@@ -534,59 +534,59 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
     }
     if (_save.section == SAVE_SECTION_TRADE_ORDERS) {
         const int32_t begin = _save.trade_order_cursor;
-        const int32_t end = std::min(_trade_orders.size(), begin + 1);
+        const int32_t end = std::min(trade_orders_store().size(), begin + 1);
         for (; _save.trade_order_cursor < end; ++_save.trade_order_cursor) {
             const int32_t order = _save.trade_order_cursor;
-            append_le<int64_t>(payload, _trade_orders.ids[order]);
-            append_le<int32_t>(payload, _trade_orders.sources[order]);
-            append_le<int32_t>(payload, _trade_orders.destinations[order]);
-            append_le<int32_t>(payload, _trade_orders.countries[order]);
+            append_le<int64_t>(payload, trade_orders_store().ids[order]);
+            append_le<int32_t>(payload, trade_orders_store().sources[order]);
+            append_le<int32_t>(payload, trade_orders_store().destinations[order]);
+            append_le<int32_t>(payload, trade_orders_store().countries[order]);
             append_le<uint64_t>(payload,
-                _trade_orders.source_country_handles[order]);
+                trade_orders_store().source_country_handles[order]);
             append_le<uint64_t>(payload,
-                _trade_orders.destination_country_handles[order]);
+                trade_orders_store().destination_country_handles[order]);
             append_le<int32_t>(payload,
-                _trade_orders.source_country_slots[order]);
+                trade_orders_store().source_country_slots[order]);
             append_le<int32_t>(payload,
-                _trade_orders.destination_country_slots[order]);
-            append_le<int64_t>(payload, _trade_orders.departure_days[order]);
-            append_le<int64_t>(payload, _trade_orders.arrival_days[order]);
-            append_le<int64_t>(payload, _trade_orders.cash_escrow[order]);
-            append_le<int64_t>(payload, _trade_orders.capacity_work[order]);
-            append_le<uint8_t>(payload, _trade_orders.states[order]);
-            append_le<uint8_t>(payload, _trade_orders.cargo_delivered[order]);
-            const int32_t line_count = _trade_orders.line_offsets[order + 1] -
-                _trade_orders.line_offsets[order];
-            const int32_t seller_count = _trade_orders.seller_offsets[order + 1] -
-                _trade_orders.seller_offsets[order];
+                trade_orders_store().destination_country_slots[order]);
+            append_le<int64_t>(payload, trade_orders_store().departure_days[order]);
+            append_le<int64_t>(payload, trade_orders_store().arrival_days[order]);
+            append_le<int64_t>(payload, trade_orders_store().cash_escrow[order]);
+            append_le<int64_t>(payload, trade_orders_store().capacity_work[order]);
+            append_le<uint8_t>(payload, trade_orders_store().states[order]);
+            append_le<uint8_t>(payload, trade_orders_store().cargo_delivered[order]);
+            const int32_t line_count = trade_orders_store().line_offsets[order + 1] -
+                trade_orders_store().line_offsets[order];
+            const int32_t seller_count = trade_orders_store().seller_offsets[order + 1] -
+                trade_orders_store().seller_offsets[order];
             append_le<int32_t>(payload, line_count);
             append_le<int32_t>(payload, seller_count);
-            for (int32_t line = _trade_orders.line_offsets[order];
-                 line < _trade_orders.line_offsets[order + 1]; ++line) {
-                append_le<int32_t>(payload, _trade_orders.line_goods[line]);
-                append_le<int64_t>(payload, _trade_orders.line_quantities[line]);
-                append_le<int32_t>(payload, _trade_orders.line_unit_prices[line]);
+            for (int32_t line = trade_orders_store().line_offsets[order];
+                 line < trade_orders_store().line_offsets[order + 1]; ++line) {
+                append_le<int32_t>(payload, trade_orders_store().line_goods[line]);
+                append_le<int64_t>(payload, trade_orders_store().line_quantities[line]);
+                append_le<int32_t>(payload, trade_orders_store().line_unit_prices[line]);
                 append_le<int32_t>(payload,
-                    _trade_orders.line_destination_prices[line]);
+                    trade_orders_store().line_destination_prices[line]);
                 append_le<int64_t>(payload,
-                    _trade_orders.line_base_values[line]);
+                    trade_orders_store().line_base_values[line]);
                 append_le<int64_t>(payload,
-                    _trade_orders.line_retail_values[line]);
+                    trade_orders_store().line_retail_values[line]);
                 append_le<int64_t>(payload,
-                    _trade_orders.line_import_transfers[line]);
+                    trade_orders_store().line_import_transfers[line]);
                 append_le<int64_t>(payload,
-                    _trade_orders.line_export_transfers[line]);
+                    trade_orders_store().line_export_transfers[line]);
                 append_le<int64_t>(payload,
-                    _trade_orders.line_transaction_transfers[line]);
-                append_le<uint8_t>(payload, _trade_orders.line_flags[line]);
+                    trade_orders_store().line_transaction_transfers[line]);
+                append_le<uint8_t>(payload, trade_orders_store().line_flags[line]);
             }
-            for (int32_t seller = _trade_orders.seller_offsets[order];
-                 seller < _trade_orders.seller_offsets[order + 1]; ++seller) {
-                append_le<uint64_t>(payload, _trade_orders.seller_handles[seller]);
-                append_le<int64_t>(payload, _trade_orders.seller_weights[seller]);
+            for (int32_t seller = trade_orders_store().seller_offsets[order];
+                 seller < trade_orders_store().seller_offsets[order + 1]; ++seller) {
+                append_le<uint64_t>(payload, trade_orders_store().seller_handles[seller]);
+                append_le<int64_t>(payload, trade_orders_store().seller_weights[seller]);
             }
         }
-        if (_save.trade_order_cursor >= _trade_orders.size()) ++_save.section;
+        if (_save.trade_order_cursor >= trade_orders_store().size()) ++_save.section;
         return make_save_chunk(SAVE_SECTION_TRADE_ORDERS,
             static_cast<uint32_t>(_save.trade_order_cursor - begin), payload);
     }
@@ -699,27 +699,27 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
     if (_save.section == SAVE_SECTION_FAMILY_RECORDS) {
         constexpr int32_t record_bytes = 57;
         const int32_t max_records = std::max(1, (budget - 16) / record_bytes);
-        const int32_t end = std::min<int32_t>(_families.active.size(),
+        const int32_t end = std::min<int32_t>(families_store().active.size(),
             _save.family_cursor + max_records);
         const int32_t begin = _save.family_cursor;
         for (; _save.family_cursor < end; ++_save.family_cursor) {
             const int32_t i = _save.family_cursor;
             append_le<int32_t>(payload, i);
-            append_le<uint8_t>(payload, _families.active[i]);
-            append_le<uint32_t>(payload, _families.generation[i]);
-            append_le<int64_t>(payload, _families.stable_id[i]);
-            append_le<int32_t>(payload, _families.surname_id[i]);
-            append_le<uint32_t>(payload, _families.surname_disambiguator[i]);
-            append_le<int64_t>(payload, _families.founded_day[i]);
-            append_le<int32_t>(payload, _families.home_cell[i]);
-            append_le<int32_t>(payload, _families.origin_cell[i]);
-            append_le<int32_t>(payload, _families.origin_ethnicity[i]);
-            append_le<int32_t>(payload, _families.culture_group_id[i]);
-            append_le<uint32_t>(payload, _families.split_sequence[i]);
-            append_le<uint16_t>(payload, _families.decline_reviews[i]);
-            append_le<uint16_t>(payload, _families.flags[i]);
+            append_le<uint8_t>(payload, families_store().active[i]);
+            append_le<uint32_t>(payload, families_store().generation[i]);
+            append_le<int64_t>(payload, families_store().stable_id[i]);
+            append_le<int32_t>(payload, families_store().surname_id[i]);
+            append_le<uint32_t>(payload, families_store().surname_disambiguator[i]);
+            append_le<int64_t>(payload, families_store().founded_day[i]);
+            append_le<int32_t>(payload, families_store().home_cell[i]);
+            append_le<int32_t>(payload, families_store().origin_cell[i]);
+            append_le<int32_t>(payload, families_store().origin_ethnicity[i]);
+            append_le<int32_t>(payload, families_store().culture_group_id[i]);
+            append_le<uint32_t>(payload, families_store().split_sequence[i]);
+            append_le<uint16_t>(payload, families_store().decline_reviews[i]);
+            append_le<uint16_t>(payload, families_store().flags[i]);
         }
-        if (_save.family_cursor >= static_cast<int32_t>(_families.active.size()))
+        if (_save.family_cursor >= static_cast<int32_t>(families_store().active.size()))
             ++_save.section;
         return make_save_chunk(SAVE_SECTION_FAMILY_RECORDS,
             static_cast<uint32_t>(_save.family_cursor - begin), payload);

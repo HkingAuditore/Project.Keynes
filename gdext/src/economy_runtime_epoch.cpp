@@ -942,7 +942,7 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
             continue;
         for (int32_t g = _building_cell_offsets[cell];
              g < _building_cell_offsets[cell + 1]; ++g) {
-            BuildingGroup &group = _buildings[g];
+            auto group = building_at(static_cast<size_t>(g));
             const bool applying_pending = group.pending_operating_state <= 1;
             if (applying_pending) {
                 group.operating_state = group.pending_operating_state;
@@ -968,13 +968,13 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
     _rolling_due_cells = static_cast<int32_t>(_epoch_settlement_cells.size());
     _rolling_processed_cells = 0;
     _rolling_deferred_cells = 0;
-    _building_survival_utilization_floor_q16.assign(_buildings.size(), 0);
+    _building_survival_utilization_floor_q16.assign(building_count(), 0);
     _building_planned_capacity_before_climate_q16.assign(
-        _buildings.size(), Q16_ONE);
-    _building_owner_livelihood_credit.assign(_buildings.size(), 0);
-    _building_merchant_credit_limit.assign(_buildings.size(), 0);
-    _building_recovery_probe_capacity_q16.assign(_buildings.size(), 0);
-    _building_recovery_liquidation_eligible.assign(_buildings.size(), 0);
+        building_count(), Q16_ONE);
+    _building_owner_livelihood_credit.assign(building_count(), 0);
+    _building_merchant_credit_limit.assign(building_count(), 0);
+    _building_recovery_probe_capacity_q16.assign(building_count(), 0);
+    _building_recovery_liquidation_eligible.assign(building_count(), 0);
     _production_input_reserve.assign(_market_signals.good_ids.size(), 0);
     _construction_material_reserve.assign(_market_signals.good_ids.size(), 0);
     _epoch_business_demand_ema = _market_signals.business_demand_ema;
@@ -1155,7 +1155,7 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
         return false;
     }), _epoch_commands.end());
     _epoch_begin_commands_ms = elapsed_ms(commands_started);
-    _stage = _buildings.empty() ? Stage::TRADE_SETTLE : Stage::BUILDING_PLAN;
+    _stage = building_count() == 0 ? Stage::TRADE_SETTLE : Stage::BUILDING_PLAN;
     _epoch_begin_post_fiscal_pending = false;
     _epoch_begin_pending_day = -1;
     return true;

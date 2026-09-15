@@ -121,11 +121,12 @@ void NativeEconomyRuntime::publish_technology_practice_facts() {
         if (aggregate.first_cells[static_cast<size_t>(rule)] < 0)
             aggregate.first_cells[static_cast<size_t>(rule)] = cell;
     };
-    auto active_group = [](const BuildingGroup &group) {
+    auto active_group = [](BuildingGroupConstRef group) {
         return group.count > 0 && group.last_output > 0 &&
             group.last_capacity_q16 > 0;
     };
-    for (const BuildingGroup &group : _buildings) {
+    for (size_t pk_row = 0; pk_row < building_count(); ++pk_row) {
+        const auto group = building_at(pk_row);
         if (group.count <= 0 || group.cell < 0 || group.cell >= _cell_count ||
             group.type_id < 0 ||
             group.type_id >= static_cast<int32_t>(_building_types.size()) ||
@@ -561,7 +562,8 @@ void NativeEconomyRuntime::publish_country_development_facts() {
     if (!publish_development) return;
 
     const int64_t period_days = std::max<int64_t>(1, _epoch_days);
-    for (const BuildingGroup &group : _buildings) {
+    for (size_t pk_row = 0; pk_row < building_count(); ++pk_row) {
+        const auto group = building_at(pk_row);
         if (group.count <= 0 || group.cell < 0 || group.cell >= _cell_count ||
             group.type_id < 0 || group.type_id >= static_cast<int32_t>(_building_types.size()) ||
             group.cell >= static_cast<int32_t>(_epoch_cell_country.size()))
@@ -854,7 +856,7 @@ void NativeEconomyRuntime::trace_begin_epoch() {
         _staging_events.stream_hash, static_cast<uint64_t>(_staging_events.sample_day));
     if (_trace_mode != TRACE_OFF) {
         const int64_t estimated_events = static_cast<int64_t>(market_store().market_count) +
-            static_cast<int64_t>(_buildings.size()) * 3 +
+            static_cast<int64_t>(building_count()) * 3 +
             static_cast<int64_t>(_pending_commands.size()) + 64;
         _staging_events.events.reserve(static_cast<size_t>(std::clamp<int64_t>(
             estimated_events, 64, 250000)));

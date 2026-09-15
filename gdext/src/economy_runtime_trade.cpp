@@ -1470,30 +1470,30 @@ void NativeEconomyRuntime::update_trade_flow_ema() {
 
 int64_t NativeEconomyRuntime::credit_trade_sellers(
         int32_t order_index, int64_t amount, int32_t cashflow_source) {
-    if (order_index < 0 || order_index >= _trade_orders.size() || amount <= 0) return 0;
-    const int32_t begin = _trade_orders.seller_offsets[order_index];
-    const int32_t end = _trade_orders.seller_offsets[order_index + 1];
+    if (order_index < 0 || order_index >= trade_orders_store().size() || amount <= 0) return 0;
+    const int32_t begin = trade_orders_store().seller_offsets[order_index];
+    const int32_t end = trade_orders_store().seller_offsets[order_index + 1];
     int64_t total_weight = 0;
     std::vector<std::pair<int32_t, int64_t>> valid;
     valid.reserve(static_cast<size_t>(std::max(0, end - begin)));
     for (int32_t i = begin; i < end; ++i) {
         int32_t slot = -1;
-        if (!population_store().valid_handle(_trade_orders.seller_handles[i], slot) ||
+        if (!population_store().valid_handle(trade_orders_store().seller_handles[i], slot) ||
             !is_merchant_slot(slot) ||
-            population_store().page_cell[slot / COHORT_PAGE_SIZE] != _trade_orders.sources[order_index])
+            population_store().page_cell[slot / COHORT_PAGE_SIZE] != trade_orders_store().sources[order_index])
             continue;
-        const int64_t weight = std::max<int64_t>(1, _trade_orders.seller_weights[i]);
+        const int64_t weight = std::max<int64_t>(1, trade_orders_store().seller_weights[i]);
         valid.push_back({slot, weight});
         total_weight = saturating_add(total_weight, weight, _saturation_count);
     }
     if (valid.empty() || total_weight <= 0) {
         const int64_t credited = credit_local_merchants(
-            _trade_orders.sources[order_index], amount,
+            trade_orders_store().sources[order_index], amount,
             cashflow_source);
         if (credited > 0) {
             _merchant_trade_sale_cash = saturating_add(
                 _merchant_trade_sale_cash, credited, _saturation_count);
-            const int32_t cell = _trade_orders.sources[order_index];
+            const int32_t cell = trade_orders_store().sources[order_index];
             if (cell >= 0 && cell < static_cast<int32_t>(
                     _merchant_trade_sale_by_cell.size())) {
                 _merchant_trade_sale_by_cell[cell] = saturating_add(
@@ -1516,13 +1516,13 @@ int64_t NativeEconomyRuntime::credit_trade_sellers(
             population_store().funds[slot], share, _saturation_count);
         population_store().epoch_income[slot] = saturating_add(
             population_store().epoch_income[slot], share, _saturation_count);
-        trace_record_cashflow(_trade_orders.sources[order_index],
+        trace_record_cashflow(trade_orders_store().sources[order_index],
             population_store().handle_for_slot(slot), cashflow_source, share, 0);
     }
     if (distributed > 0) {
         _merchant_trade_sale_cash = saturating_add(
             _merchant_trade_sale_cash, distributed, _saturation_count);
-        const int32_t cell = _trade_orders.sources[order_index];
+        const int32_t cell = trade_orders_store().sources[order_index];
         if (cell >= 0 && cell < static_cast<int32_t>(
                 _merchant_trade_sale_by_cell.size())) {
             _merchant_trade_sale_by_cell[cell] = saturating_add(
@@ -1535,26 +1535,26 @@ int64_t NativeEconomyRuntime::credit_trade_sellers(
 
 int64_t NativeEconomyRuntime::debit_trade_sellers(
         int32_t order_index, int64_t amount, int32_t cashflow_source) {
-    if (order_index < 0 || order_index >= _trade_orders.size() || amount <= 0)
+    if (order_index < 0 || order_index >= trade_orders_store().size() || amount <= 0)
         return 0;
-    const int32_t begin = _trade_orders.seller_offsets[order_index];
-    const int32_t end = _trade_orders.seller_offsets[order_index + 1];
+    const int32_t begin = trade_orders_store().seller_offsets[order_index];
+    const int32_t end = trade_orders_store().seller_offsets[order_index + 1];
     std::vector<std::pair<int32_t, int64_t>> valid;
     valid.reserve(static_cast<size_t>(std::max(0, end - begin)));
     int64_t total_funds = 0;
     for (int32_t i = begin; i < end; ++i) {
         int32_t slot = -1;
-        if (!population_store().valid_handle(_trade_orders.seller_handles[i], slot) ||
+        if (!population_store().valid_handle(trade_orders_store().seller_handles[i], slot) ||
             !is_merchant_slot(slot) ||
             population_store().page_cell[slot / COHORT_PAGE_SIZE] !=
-                _trade_orders.sources[order_index]) continue;
+                trade_orders_store().sources[order_index]) continue;
         const int64_t funds = std::max<int64_t>(0, population_store().funds[slot]);
         if (funds <= 0) continue;
         valid.push_back({slot, funds});
         total_funds = saturating_add(total_funds, funds, _saturation_count);
     }
     if (valid.empty() || total_funds <= 0)
-        return debit_local_merchants(_trade_orders.sources[order_index], amount,
+        return debit_local_merchants(trade_orders_store().sources[order_index], amount,
             cashflow_source);
     const int64_t target = std::min(amount, total_funds);
     int64_t prefix = 0;
@@ -1572,13 +1572,13 @@ int64_t NativeEconomyRuntime::debit_trade_sellers(
         population_store().funds[slot] -= share;
         population_store().epoch_expense[slot] = saturating_add(
             population_store().epoch_expense[slot], share, _saturation_count);
-        trace_record_cashflow(_trade_orders.sources[order_index],
+        trace_record_cashflow(trade_orders_store().sources[order_index],
             population_store().handle_for_slot(slot), cashflow_source, 0, share);
     }
     if (distributed > 0 && cashflow_source == CASHFLOW_EXPORT_TAX) {
         _merchant_trade_sale_cash = saturating_sub(
             _merchant_trade_sale_cash, distributed, _saturation_count);
-        const int32_t cell = _trade_orders.sources[order_index];
+        const int32_t cell = trade_orders_store().sources[order_index];
         if (cell >= 0 && cell < static_cast<int32_t>(
                 _merchant_trade_sale_by_cell.size())) {
             _merchant_trade_sale_by_cell[cell] = saturating_sub(
@@ -1590,110 +1590,110 @@ int64_t NativeEconomyRuntime::debit_trade_sellers(
 }
 
 void NativeEconomyRuntime::rebuild_trade_arrival_buckets() {
-    _trade_orders.arrival_bucket_days.clear();
-    _trade_orders.arrival_bucket_offsets.assign(1, 0);
-    _trade_orders.arrival_bucket_orders.clear();
-    std::vector<int32_t> order_indices(static_cast<size_t>(_trade_orders.size()));
+    trade_orders_store().arrival_bucket_days.clear();
+    trade_orders_store().arrival_bucket_offsets.assign(1, 0);
+    trade_orders_store().arrival_bucket_orders.clear();
+    std::vector<int32_t> order_indices(static_cast<size_t>(trade_orders_store().size()));
     std::iota(order_indices.begin(), order_indices.end(), 0);
     std::stable_sort(order_indices.begin(), order_indices.end(), [&](int32_t a, int32_t b) {
-        if (_trade_orders.arrival_days[a] != _trade_orders.arrival_days[b])
-            return _trade_orders.arrival_days[a] < _trade_orders.arrival_days[b];
-        return _trade_orders.ids[a] < _trade_orders.ids[b];
+        if (trade_orders_store().arrival_days[a] != trade_orders_store().arrival_days[b])
+            return trade_orders_store().arrival_days[a] < trade_orders_store().arrival_days[b];
+        return trade_orders_store().ids[a] < trade_orders_store().ids[b];
     });
     int64_t current_day = std::numeric_limits<int64_t>::min();
     for (const int32_t order : order_indices) {
-        const int64_t day = _trade_orders.arrival_days[order];
-        if (_trade_orders.arrival_bucket_days.empty() || day != current_day) {
-            if (!_trade_orders.arrival_bucket_days.empty())
-                _trade_orders.arrival_bucket_offsets.push_back(
-                    static_cast<int32_t>(_trade_orders.arrival_bucket_orders.size()));
-            _trade_orders.arrival_bucket_days.push_back(day);
+        const int64_t day = trade_orders_store().arrival_days[order];
+        if (trade_orders_store().arrival_bucket_days.empty() || day != current_day) {
+            if (!trade_orders_store().arrival_bucket_days.empty())
+                trade_orders_store().arrival_bucket_offsets.push_back(
+                    static_cast<int32_t>(trade_orders_store().arrival_bucket_orders.size()));
+            trade_orders_store().arrival_bucket_days.push_back(day);
             current_day = day;
         }
-        _trade_orders.arrival_bucket_orders.push_back(order);
+        trade_orders_store().arrival_bucket_orders.push_back(order);
     }
-    if (!_trade_orders.arrival_bucket_days.empty())
-        _trade_orders.arrival_bucket_offsets.push_back(
-            static_cast<int32_t>(_trade_orders.arrival_bucket_orders.size()));
-    _trade_orders.arrival_buckets_dirty = false;
+    if (!trade_orders_store().arrival_bucket_days.empty())
+        trade_orders_store().arrival_bucket_offsets.push_back(
+            static_cast<int32_t>(trade_orders_store().arrival_bucket_orders.size()));
+    trade_orders_store().arrival_buckets_dirty = false;
 }
 
 void NativeEconomyRuntime::compact_trade_orders(const std::vector<uint8_t> &remove) {
-    if (remove.size() != _trade_orders.ids.size()) return;
+    if (remove.size() != trade_orders_store().ids.size()) return;
     TradeOrderStore next;
     next.clear();
-    next.next_id = _trade_orders.next_id;
-    for (int32_t i = 0; i < _trade_orders.size(); ++i) {
+    next.next_id = trade_orders_store().next_id;
+    for (int32_t i = 0; i < trade_orders_store().size(); ++i) {
         if (remove[i] != 0) continue;
-        next.ids.push_back(_trade_orders.ids[i]);
-        next.sources.push_back(_trade_orders.sources[i]);
-        next.destinations.push_back(_trade_orders.destinations[i]);
-        next.countries.push_back(_trade_orders.countries[i]);
+        next.ids.push_back(trade_orders_store().ids[i]);
+        next.sources.push_back(trade_orders_store().sources[i]);
+        next.destinations.push_back(trade_orders_store().destinations[i]);
+        next.countries.push_back(trade_orders_store().countries[i]);
         next.source_country_handles.push_back(
-            _trade_orders.source_country_handles[i]);
+            trade_orders_store().source_country_handles[i]);
         next.destination_country_handles.push_back(
-            _trade_orders.destination_country_handles[i]);
+            trade_orders_store().destination_country_handles[i]);
         next.source_country_slots.push_back(
-            _trade_orders.source_country_slots[i]);
+            trade_orders_store().source_country_slots[i]);
         next.destination_country_slots.push_back(
-            _trade_orders.destination_country_slots[i]);
-        next.departure_days.push_back(_trade_orders.departure_days[i]);
-        next.arrival_days.push_back(_trade_orders.arrival_days[i]);
-        next.cash_escrow.push_back(_trade_orders.cash_escrow[i]);
-        next.capacity_work.push_back(_trade_orders.capacity_work[i]);
-        next.states.push_back(_trade_orders.states[i]);
-        next.cargo_delivered.push_back(_trade_orders.cargo_delivered[i]);
-        for (int32_t line = _trade_orders.line_offsets[i];
-             line < _trade_orders.line_offsets[i + 1]; ++line) {
-            next.line_goods.push_back(_trade_orders.line_goods[line]);
-            next.line_quantities.push_back(_trade_orders.line_quantities[line]);
-            next.line_unit_prices.push_back(_trade_orders.line_unit_prices[line]);
+            trade_orders_store().destination_country_slots[i]);
+        next.departure_days.push_back(trade_orders_store().departure_days[i]);
+        next.arrival_days.push_back(trade_orders_store().arrival_days[i]);
+        next.cash_escrow.push_back(trade_orders_store().cash_escrow[i]);
+        next.capacity_work.push_back(trade_orders_store().capacity_work[i]);
+        next.states.push_back(trade_orders_store().states[i]);
+        next.cargo_delivered.push_back(trade_orders_store().cargo_delivered[i]);
+        for (int32_t line = trade_orders_store().line_offsets[i];
+             line < trade_orders_store().line_offsets[i + 1]; ++line) {
+            next.line_goods.push_back(trade_orders_store().line_goods[line]);
+            next.line_quantities.push_back(trade_orders_store().line_quantities[line]);
+            next.line_unit_prices.push_back(trade_orders_store().line_unit_prices[line]);
             next.line_destination_prices.push_back(
-                _trade_orders.line_destination_prices[line]);
+                trade_orders_store().line_destination_prices[line]);
             next.line_base_values.push_back(
-                _trade_orders.line_base_values[line]);
+                trade_orders_store().line_base_values[line]);
             next.line_retail_values.push_back(
-                _trade_orders.line_retail_values[line]);
+                trade_orders_store().line_retail_values[line]);
             next.line_import_transfers.push_back(
-                _trade_orders.line_import_transfers[line]);
+                trade_orders_store().line_import_transfers[line]);
             next.line_export_transfers.push_back(
-                _trade_orders.line_export_transfers[line]);
+                trade_orders_store().line_export_transfers[line]);
             next.line_transaction_transfers.push_back(
-                _trade_orders.line_transaction_transfers[line]);
-            next.line_flags.push_back(_trade_orders.line_flags[line]);
+                trade_orders_store().line_transaction_transfers[line]);
+            next.line_flags.push_back(trade_orders_store().line_flags[line]);
         }
         next.line_offsets.push_back(static_cast<int32_t>(next.line_goods.size()));
-        for (int32_t seller = _trade_orders.seller_offsets[i];
-             seller < _trade_orders.seller_offsets[i + 1]; ++seller) {
-            next.seller_handles.push_back(_trade_orders.seller_handles[seller]);
-            next.seller_weights.push_back(_trade_orders.seller_weights[seller]);
+        for (int32_t seller = trade_orders_store().seller_offsets[i];
+             seller < trade_orders_store().seller_offsets[i + 1]; ++seller) {
+            next.seller_handles.push_back(trade_orders_store().seller_handles[seller]);
+            next.seller_weights.push_back(trade_orders_store().seller_weights[seller]);
         }
         next.seller_offsets.push_back(static_cast<int32_t>(next.seller_handles.size()));
     }
-    _trade_orders = std::move(next);
+    trade_orders_store() = std::move(next);
     rebuild_trade_arrival_buckets();
 }
 
 bool NativeEconomyRuntime::settle_due_trade_orders(std::string &error) {
     const auto started = Clock::now();
-    if (_trade_orders.ids.empty()) {
+    if (trade_orders_store().ids.empty()) {
         _trade_settle_ms += elapsed_ms(started);
         return true;
     }
-    if (_trade_orders.arrival_buckets_dirty) rebuild_trade_arrival_buckets();
-    std::vector<uint8_t> remove(static_cast<size_t>(_trade_orders.size()), 0);
+    if (trade_orders_store().arrival_buckets_dirty) rebuild_trade_arrival_buckets();
+    std::vector<uint8_t> remove(static_cast<size_t>(trade_orders_store().size()), 0);
     for (int32_t bucket = 0;
-         bucket < static_cast<int32_t>(_trade_orders.arrival_bucket_days.size()) &&
-         _trade_orders.arrival_bucket_days[bucket] <= _sample_day; ++bucket) {
-      for (int32_t position = _trade_orders.arrival_bucket_offsets[bucket];
-           position < _trade_orders.arrival_bucket_offsets[bucket + 1]; ++position) {
-        const int32_t order = _trade_orders.arrival_bucket_orders[position];
-        if (order < 0 || order >= _trade_orders.size()) {
+         bucket < static_cast<int32_t>(trade_orders_store().arrival_bucket_days.size()) &&
+         trade_orders_store().arrival_bucket_days[bucket] <= _sample_day; ++bucket) {
+      for (int32_t position = trade_orders_store().arrival_bucket_offsets[bucket];
+           position < trade_orders_store().arrival_bucket_offsets[bucket + 1]; ++position) {
+        const int32_t order = trade_orders_store().arrival_bucket_orders[position];
+        if (order < 0 || order >= trade_orders_store().size()) {
             error = "trade_arrival_bucket_invalid";
             return false;
         }
-        if (_trade_orders.cargo_delivered[order] == 0) {
-            const int32_t destination = _trade_orders.destinations[order];
+        if (trade_orders_store().cargo_delivered[order] == 0) {
+            const int32_t destination = trade_orders_store().destinations[order];
             if (destination < 0 || destination >= market_store().market_count) {
                 error = "trade_order_destination_invalid";
                 return false;
@@ -1702,12 +1702,12 @@ bool NativeEconomyRuntime::settle_due_trade_orders(std::string &error) {
             int32_t trade_event_flags = 0;
             std::vector<EventLeg> trade_legs;
             trade_legs.reserve(static_cast<size_t>(std::max(0,
-                _trade_orders.line_offsets[order + 1] -
-                _trade_orders.line_offsets[order])) * 6U);
-            for (int32_t line = _trade_orders.line_offsets[order];
-                 line < _trade_orders.line_offsets[order + 1]; ++line) {
-                const int32_t good = _trade_orders.line_goods[line];
-                const int64_t quantity = _trade_orders.line_quantities[line];
+                trade_orders_store().line_offsets[order + 1] -
+                trade_orders_store().line_offsets[order])) * 6U);
+            for (int32_t line = trade_orders_store().line_offsets[order];
+                 line < trade_orders_store().line_offsets[order + 1]; ++line) {
+                const int32_t good = trade_orders_store().line_goods[line];
+                const int64_t quantity = trade_orders_store().line_quantities[line];
                 if (good < 0 || good >= market_store().good_count || quantity <= 0) {
                     error = "trade_order_line_invalid";
                     return false;
@@ -1724,21 +1724,21 @@ bool NativeEconomyRuntime::settle_due_trade_orders(std::string &error) {
                 fact.kind = GAMEPLAY_FACT_TRADE_ARRIVED;
                 fact.cell = destination;
                 fact.entity_handle = static_cast<uint64_t>(
-                    _trade_orders.ids[order]);
+                    trade_orders_store().ids[order]);
                 fact.entity_id = static_cast<int32_t>(std::clamp<int64_t>(
-                    _trade_orders.ids[order], 0,
+                    trade_orders_store().ids[order], 0,
                     std::numeric_limits<int32_t>::max()));
                 fact.value = quantity;
-                const int32_t source = _trade_orders.sources[order];
+                const int32_t source = trade_orders_store().sources[order];
                 const int32_t source_country =
-                    _trade_orders.source_country_slots[order];
+                    trade_orders_store().source_country_slots[order];
                 const int32_t destination_country =
-                    _trade_orders.destination_country_slots[order];
+                    trade_orders_store().destination_country_slots[order];
                 fact.payload = {source, source_country,
                                 destination_country, good};
                 const uint8_t line_flags = line < static_cast<int32_t>(
-                        _trade_orders.line_flags.size())
-                    ? _trade_orders.line_flags[line] : 0;
+                        trade_orders_store().line_flags.size())
+                    ? trade_orders_store().line_flags[line] : 0;
                 fact.flags = line_flags;
                 _staging_gameplay_facts.push_back(fact);
                 int32_t contact_rule = -1;
@@ -1774,27 +1774,27 @@ bool NativeEconomyRuntime::settle_due_trade_orders(std::string &error) {
                     }
                 }
                 trade_event_flags |= static_cast<int32_t>(line_flags) << 8;
-                const int64_t order_id = _trade_orders.ids[order];
+                const int64_t order_id = trade_orders_store().ids[order];
                 trade_legs.push_back({FIELD_TRADE_QUANTITY,
                     SUBJECT_TRADE_ORDER, order_id, good, 0, quantity});
                 trade_legs.push_back({FIELD_TRADE_BASE_VALUE,
                     SUBJECT_TRADE_ORDER, order_id, good, 0,
-                    _trade_orders.line_base_values[line]});
+                    trade_orders_store().line_base_values[line]});
                 trade_legs.push_back({FIELD_TRADE_RETAIL_VALUE,
                     SUBJECT_TRADE_ORDER, order_id, good, 0,
-                    _trade_orders.line_retail_values[line]});
+                    trade_orders_store().line_retail_values[line]});
                 trade_legs.push_back({FIELD_TRADE_IMPORT_TRANSFER,
                     SUBJECT_TRADE_ORDER, order_id, good, 0,
-                    _trade_orders.line_import_transfers[line]});
+                    trade_orders_store().line_import_transfers[line]});
                 trade_legs.push_back({FIELD_TRADE_EXPORT_TRANSFER,
                     SUBJECT_TRADE_ORDER, order_id, good, 0,
-                    _trade_orders.line_export_transfers[line]});
+                    trade_orders_store().line_export_transfers[line]});
                 trade_legs.push_back({FIELD_TRADE_TRANSACTION_TRANSFER,
                     SUBJECT_TRADE_ORDER, order_id, good, 0,
-                    _trade_orders.line_transaction_transfers[line]});
+                    trade_orders_store().line_transaction_transfers[line]});
             }
-            _trade_orders.cargo_delivered[order] = 1;
-            const int32_t source_cell = _trade_orders.sources[order];
+            trade_orders_store().cargo_delivered[order] = 1;
+            const int32_t source_cell = trade_orders_store().sources[order];
             // 货物按日历到达，不看目的地的分级节奏。休眠格必须在到货当日被拉回
             // T0，否则库存会挂在一个下次结算在 30 天后的市场上。
             request_cell_wake(destination);
@@ -1812,28 +1812,28 @@ bool NativeEconomyRuntime::settle_due_trade_orders(std::string &error) {
                 increment_trade_fact(destination);
             }
             _trade_settlement_lag_days = std::max<int64_t>(_trade_settlement_lag_days,
-                _sample_day - _trade_orders.arrival_days[order]);
+                _sample_day - trade_orders_store().arrival_days[order]);
             const bool trace_trade_detail = trace_detail_for_cell(destination) ||
-                trace_detail_for_cell(_trade_orders.sources[order]);
+                trace_detail_for_cell(trade_orders_store().sources[order]);
             trace_append(EVENT_TRADE_ARRIVED, static_cast<int32_t>(Stage::TRADE_SETTLE),
-                destination, SUBJECT_TRADE_ORDER, _trade_orders.ids[order],
-                _trade_orders.sources[order], destination, delivered,
-                _trade_orders.cash_escrow[order], _trade_orders.departure_days[order],
-                _trade_orders.arrival_days[order],
+                destination, SUBJECT_TRADE_ORDER, trade_orders_store().ids[order],
+                trade_orders_store().sources[order], destination, delivered,
+                trade_orders_store().cash_escrow[order], trade_orders_store().departure_days[order],
+                trade_orders_store().arrival_days[order],
                 trace_trade_detail ? &trade_legs : nullptr,
                 trade_event_flags);
             ++_trade_orders_arrived;
         }
-        const int64_t escrow = _trade_orders.cash_escrow[order];
+        const int64_t escrow = trade_orders_store().cash_escrow[order];
         int64_t base_receipt = 0;
         int64_t export_tax = 0;
         int64_t export_subsidy = 0;
-        for (int32_t line = _trade_orders.line_offsets[order];
-             line < _trade_orders.line_offsets[order + 1]; ++line) {
+        for (int32_t line = trade_orders_store().line_offsets[order];
+             line < trade_orders_store().line_offsets[order + 1]; ++line) {
             base_receipt = saturating_add(base_receipt,
-                std::max<int64_t>(0, _trade_orders.line_base_values[line]),
+                std::max<int64_t>(0, trade_orders_store().line_base_values[line]),
                 _saturation_count);
-            const int64_t transfer = _trade_orders.line_export_transfers[line];
+            const int64_t transfer = trade_orders_store().line_export_transfers[line];
             if (transfer > 0)
                 export_tax = saturating_add(export_tax, transfer,
                     _saturation_count);
@@ -1854,10 +1854,10 @@ bool NativeEconomyRuntime::settle_due_trade_orders(std::string &error) {
                 credit_trade_sellers(order, export_subsidy,
                     CASHFLOW_EXPORT_SUBSIDY), _saturation_count);
         if (credited == escrow) {
-            _trade_orders.cash_escrow[order] = 0;
+            trade_orders_store().cash_escrow[order] = 0;
             remove[order] = 1;
         } else {
-            _trade_orders.states[order] = TradeOrderStore::WAITING_RECEIVER;
+            trade_orders_store().states[order] = TradeOrderStore::WAITING_RECEIVER;
             ++_trade_unclaimed_orders;
         }
       }
@@ -2074,7 +2074,7 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
     };
     accepted.reserve(std::min<int32_t>(static_cast<int32_t>(
         _trade_plan.ready_candidates.size()),
-        std::max(0, _trade_max_orders - _trade_orders.size())));
+        std::max(0, _trade_max_orders - trade_orders_store().size())));
     merchant_funds_touched.reserve(accepted.capacity());
     for (const TradeCandidate &candidate : _trade_plan.ready_candidates) {
         const int32_t source_country = candidate.source_country >= 0
@@ -2149,13 +2149,13 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
             const int64_t target = trade_local_stock_target(
                 candidate.destination, candidate.good, destination_sat);
             int64_t inbound = 0;
-            for (int32_t order = 0; order < _trade_orders.size(); ++order) {
-                if (_trade_orders.destinations[order] != candidate.destination) continue;
-                for (int32_t line = _trade_orders.line_offsets[order];
-                     line < _trade_orders.line_offsets[order + 1]; ++line) {
-                    if (_trade_orders.line_goods[line] == candidate.good)
+            for (int32_t order = 0; order < trade_orders_store().size(); ++order) {
+                if (trade_orders_store().destinations[order] != candidate.destination) continue;
+                for (int32_t line = trade_orders_store().line_offsets[order];
+                     line < trade_orders_store().line_offsets[order + 1]; ++line) {
+                    if (trade_orders_store().line_goods[line] == candidate.good)
                         inbound = saturating_add(inbound,
-                            _trade_orders.line_quantities[line], destination_sat);
+                            trade_orders_store().line_quantities[line], destination_sat);
                 }
             }
             const int64_t destination_stock = market_store().stock[market_store().index(
@@ -2201,13 +2201,13 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
                         population_store().funds[_merchant_slots[k]]), sat);
             }
             int64_t existing_order_reserved_cash = 0;
-            for (int32_t order = 0; order < _trade_orders.size(); ++order) {
-                if (_trade_orders.destinations[order] ==
+            for (int32_t order = 0; order < trade_orders_store().size(); ++order) {
+                if (trade_orders_store().destinations[order] ==
                         candidate.destination) {
                     existing_order_reserved_cash = saturating_add(
                         existing_order_reserved_cash,
                         std::max<int64_t>(0,
-                            _trade_orders.cash_escrow[order]), sat);
+                            trade_orders_store().cash_escrow[order]), sat);
                 }
             }
             const int64_t operating_floor = mul_div_sat(
@@ -2530,7 +2530,7 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
             continue;
         }
         if (_trade_runtime_mode == 2 &&
-            _trade_orders.size() + static_cast<int32_t>(accepted.size()) >=
+            trade_orders_store().size() + static_cast<int32_t>(accepted.size()) >=
                 _trade_max_orders) {
             ++_trade_rejected_order_cap;
             record_trade_signal_attempt(candidate.destination, candidate.good,
@@ -2903,21 +2903,21 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
                accepted[cursor].source == first.source &&
                accepted[cursor].destination == first.destination &&
                arrival_for(accepted[cursor]) == arrival) ++cursor;
-        _trade_orders.ids.push_back(_trade_orders.next_id++);
-        _trade_orders.sources.push_back(first.source);
-        _trade_orders.destinations.push_back(first.destination);
-        _trade_orders.countries.push_back(first.country);
-        _trade_orders.source_country_handles.push_back(
+        trade_orders_store().ids.push_back(trade_orders_store().next_id++);
+        trade_orders_store().sources.push_back(first.source);
+        trade_orders_store().destinations.push_back(first.destination);
+        trade_orders_store().countries.push_back(first.country);
+        trade_orders_store().source_country_handles.push_back(
             first.source_country_handle);
-        _trade_orders.destination_country_handles.push_back(
+        trade_orders_store().destination_country_handles.push_back(
             first.destination_country_handle);
-        _trade_orders.source_country_slots.push_back(first.source_country);
-        _trade_orders.destination_country_slots.push_back(
+        trade_orders_store().source_country_slots.push_back(first.source_country);
+        trade_orders_store().destination_country_slots.push_back(
             first.destination_country);
-        _trade_orders.departure_days.push_back(_sample_day);
-        _trade_orders.arrival_days.push_back(arrival);
-        _trade_orders.states.push_back(TradeOrderStore::IN_TRANSIT);
-        _trade_orders.cargo_delivered.push_back(0);
+        trade_orders_store().departure_days.push_back(_sample_day);
+        trade_orders_store().arrival_days.push_back(arrival);
+        trade_orders_store().states.push_back(TradeOrderStore::IN_TRANSIT);
+        trade_orders_store().cargo_delivered.push_back(0);
         int64_t cash = 0;
         int64_t capacity = 0;
         int32_t trade_event_flags = 0;
@@ -2930,22 +2930,22 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
                 candidate.base_value, candidate.export_transfer, sat);
             cash = saturating_add(cash, line_cash, _saturation_count);
             capacity = saturating_add(capacity, candidate.capacity_work, _saturation_count);
-            _trade_orders.line_goods.push_back(candidate.good);
-            _trade_orders.line_quantities.push_back(candidate.quantity);
-            _trade_orders.line_unit_prices.push_back(candidate.source_price);
-            _trade_orders.line_destination_prices.push_back(
+            trade_orders_store().line_goods.push_back(candidate.good);
+            trade_orders_store().line_quantities.push_back(candidate.quantity);
+            trade_orders_store().line_unit_prices.push_back(candidate.source_price);
+            trade_orders_store().line_destination_prices.push_back(
                 candidate.destination_price);
-            _trade_orders.line_base_values.push_back(candidate.base_value);
-            _trade_orders.line_retail_values.push_back(candidate.retail_value);
-            _trade_orders.line_import_transfers.push_back(
+            trade_orders_store().line_base_values.push_back(candidate.base_value);
+            trade_orders_store().line_retail_values.push_back(candidate.retail_value);
+            trade_orders_store().line_import_transfers.push_back(
                 candidate.import_transfer);
-            _trade_orders.line_export_transfers.push_back(
+            trade_orders_store().line_export_transfers.push_back(
                 candidate.export_transfer);
-            _trade_orders.line_transaction_transfers.push_back(
+            trade_orders_store().line_transaction_transfers.push_back(
                 candidate.transaction_transfer);
-            _trade_orders.line_flags.push_back(candidate.flags);
+            trade_orders_store().line_flags.push_back(candidate.flags);
             trade_event_flags |= static_cast<int32_t>(candidate.flags) << 8;
-            const int64_t order_id = _trade_orders.ids.back();
+            const int64_t order_id = trade_orders_store().ids.back();
             trade_legs.push_back({FIELD_TRADE_QUANTITY,
                 SUBJECT_TRADE_ORDER, order_id, candidate.good, 0,
                 candidate.quantity});
@@ -2965,31 +2965,31 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
                 SUBJECT_TRADE_ORDER, order_id, candidate.good, 0,
                 candidate.transaction_transfer});
         }
-        _trade_orders.cash_escrow.push_back(cash);
-        _trade_orders.capacity_work.push_back(capacity);
-        _trade_orders.line_offsets.push_back(
-            static_cast<int32_t>(_trade_orders.line_goods.size()));
+        trade_orders_store().cash_escrow.push_back(cash);
+        trade_orders_store().capacity_work.push_back(capacity);
+        trade_orders_store().line_offsets.push_back(
+            static_cast<int32_t>(trade_orders_store().line_goods.size()));
         for (int32_t k = _merchant_offsets[first.source];
              k < _merchant_offsets[first.source + 1]; ++k) {
             const int32_t slot = _merchant_slots[k];
-            _trade_orders.seller_handles.push_back(population_store().handle_for_slot(slot));
-            _trade_orders.seller_weights.push_back(
+            trade_orders_store().seller_handles.push_back(population_store().handle_for_slot(slot));
+            trade_orders_store().seller_weights.push_back(
                 std::max<int64_t>(1, population_store().population[slot]));
         }
-        _trade_orders.seller_offsets.push_back(
-            static_cast<int32_t>(_trade_orders.seller_handles.size()));
+        trade_orders_store().seller_offsets.push_back(
+            static_cast<int32_t>(trade_orders_store().seller_handles.size()));
         const bool trace_trade_detail = trace_detail_for_cell(first.source) ||
             trace_detail_for_cell(first.destination);
         trace_append(EVENT_TRADE_DISPATCHED,
             static_cast<int32_t>(Stage::TRADE_DISPATCH), first.destination,
-            SUBJECT_TRADE_ORDER, _trade_orders.ids.back(), first.source,
+            SUBJECT_TRADE_ORDER, trade_orders_store().ids.back(), first.source,
             first.destination, static_cast<int64_t>(cursor - begin), cash,
             capacity, arrival, trace_trade_detail ? &trade_legs : nullptr,
             trade_event_flags);
         ++_trade_orders_dispatched;
-        _trade_orders.arrival_buckets_dirty = true;
+        trade_orders_store().arrival_buckets_dirty = true;
     }
-    if (_trade_orders.arrival_buckets_dirty) rebuild_trade_arrival_buckets();
+    if (trade_orders_store().arrival_buckets_dirty) rebuild_trade_arrival_buckets();
     _trade_dispatch_ms += elapsed_ms(started);
     return true;
 }
@@ -2997,11 +2997,11 @@ bool NativeEconomyRuntime::dispatch_trade_candidates(std::string &error) {
 int64_t NativeEconomyRuntime::trade_transit_goods() const {
     int64_t total = 0;
     int64_t sat = 0;
-    for (int32_t order = 0; order < _trade_orders.size(); ++order) {
-        if (_trade_orders.cargo_delivered[order] != 0) continue;
-        for (int32_t line = _trade_orders.line_offsets[order];
-             line < _trade_orders.line_offsets[order + 1]; ++line)
-            total = saturating_add(total, _trade_orders.line_quantities[line], sat);
+    for (int32_t order = 0; order < trade_orders_store().size(); ++order) {
+        if (trade_orders_store().cargo_delivered[order] != 0) continue;
+        for (int32_t line = trade_orders_store().line_offsets[order];
+             line < trade_orders_store().line_offsets[order + 1]; ++line)
+            total = saturating_add(total, trade_orders_store().line_quantities[line], sat);
     }
     return total;
 }
@@ -3009,7 +3009,7 @@ int64_t NativeEconomyRuntime::trade_transit_goods() const {
 int64_t NativeEconomyRuntime::trade_escrow_cash() const {
     int64_t total = 0;
     int64_t sat = 0;
-    for (int64_t cash : _trade_orders.cash_escrow)
+    for (int64_t cash : trade_orders_store().cash_escrow)
         total = saturating_add(total, cash, sat);
     return total;
 }

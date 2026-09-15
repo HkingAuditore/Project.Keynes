@@ -98,24 +98,24 @@ Dictionary NativeEconomyRuntime::market_cell_snapshot(int32_t cell_idx) const {
     int64_t next_arrival = -1;
     int64_t inbound_escrow = 0;
     int64_t outbound_escrow = 0;
-    for (int32_t order = 0; order < _trade_orders.size(); ++order) {
-        const bool destination_order = _trade_orders.destinations[order] == cell_idx;
-        const bool source_order = _trade_orders.sources[order] == cell_idx;
+    for (int32_t order = 0; order < trade_orders_store().size(); ++order) {
+        const bool destination_order = trade_orders_store().destinations[order] == cell_idx;
+        const bool source_order = trade_orders_store().sources[order] == cell_idx;
         const bool is_inbound = destination_order &&
-            _trade_orders.cargo_delivered[order] == 0;
+            trade_orders_store().cargo_delivered[order] == 0;
         const bool is_outbound = source_order &&
-            _trade_orders.cargo_delivered[order] == 0;
+            trade_orders_store().cargo_delivered[order] == 0;
         if (!destination_order && !source_order) continue;
         if ((is_inbound || is_outbound) &&
-            (next_arrival < 0 || _trade_orders.arrival_days[order] < next_arrival))
-            next_arrival = _trade_orders.arrival_days[order];
-        if (destination_order) inbound_escrow += _trade_orders.cash_escrow[order];
-        if (source_order) outbound_escrow += _trade_orders.cash_escrow[order];
-        for (int32_t line = _trade_orders.line_offsets[order];
-             line < _trade_orders.line_offsets[order + 1]; ++line) {
-            const int32_t good = _trade_orders.line_goods[line];
-            if (is_inbound) inbound[good] += _trade_orders.line_quantities[line];
-            if (is_outbound) outbound[good] += _trade_orders.line_quantities[line];
+            (next_arrival < 0 || trade_orders_store().arrival_days[order] < next_arrival))
+            next_arrival = trade_orders_store().arrival_days[order];
+        if (destination_order) inbound_escrow += trade_orders_store().cash_escrow[order];
+        if (source_order) outbound_escrow += trade_orders_store().cash_escrow[order];
+        for (int32_t line = trade_orders_store().line_offsets[order];
+             line < trade_orders_store().line_offsets[order + 1]; ++line) {
+            const int32_t good = trade_orders_store().line_goods[line];
+            if (is_inbound) inbound[good] += trade_orders_store().line_quantities[line];
+            if (is_outbound) outbound[good] += trade_orders_store().line_quantities[line];
         }
     }
     for (int32_t g = 0; g < market_store().good_count; ++g) {
@@ -1033,7 +1033,7 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
         return nullptr;
     };
     for (int32_t group_idx = group_begin; group_idx < group_end; ++group_idx) {
-        const BuildingGroup &group = _buildings[group_idx];
+        const auto group = building_at(static_cast<size_t>(group_idx));
         if (group.cell != cell_idx || group.count <= 0) continue;
         type_counts.set(group.type_id, type_counts[group.type_id] + group.count);
         const BuildingType &type = _building_types[group.type_id];
@@ -1104,7 +1104,7 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
         filled_owner.push_back(group.filled_owner);
         owner_openings.push_back(std::max<int64_t>(
             0, planned_owner_required - group.filled_owner));
-        if (_family_building_offsets.size() == _buildings.size() + 1) {
+        if (_family_building_offsets.size() == building_count() + 1) {
             for (int32_t p = _family_building_offsets[group_idx];
                  p < _family_building_offsets[group_idx + 1]; ++p) {
                 const FamilyBuildingOwnership &ownership =
@@ -1914,12 +1914,12 @@ Dictionary NativeEconomyRuntime::family_cell_snapshot(
             indices.push_back(_family_cell_indices[p]);
     }
     std::sort(indices.begin(), indices.end(), [&](int32_t a, int32_t b) {
-        const uint64_t ah = _families.handle_for_index(a);
-        const uint64_t bh = _families.handle_for_index(b);
+        const uint64_t ah = families_store().handle_for_index(a);
+        const uint64_t bh = families_store().handle_for_index(b);
         const int64_t ap = family_population(ah);
         const int64_t bp = family_population(bh);
-        return ap != bp ? ap > bp : _families.stable_id[a] <
-            _families.stable_id[b];
+        return ap != bp ? ap > bp : families_store().stable_id[a] <
+            families_store().stable_id[b];
     });
     PackedInt64Array handles, stable_ids, populations, cash_claims,
         owned_buildings;
@@ -1930,24 +1930,24 @@ Dictionary NativeEconomyRuntime::family_cell_snapshot(
     const int32_t end = std::min<int32_t>(indices.size(), offset + limit);
     for (int32_t pos = offset; pos < end; ++pos) {
         const int32_t index = indices[pos];
-        const uint64_t handle = _families.handle_for_index(index);
+        const uint64_t handle = families_store().handle_for_index(index);
         handles.push_back(static_cast<int64_t>(handle));
-        stable_ids.push_back(_families.stable_id[index]);
-        const int32_t surname = _families.surname_id[index];
+        stable_ids.push_back(families_store().stable_id[index]);
+        const int32_t surname = families_store().surname_id[index];
         surnames.push_back(surname >= 0 && surname < static_cast<int32_t>(
             _family_surname_text.size()) ? from_utf8(
                 _family_surname_text[surname]) : String());
         disambiguators.push_back(static_cast<int32_t>(
-            _families.surname_disambiguator[index]));
+            families_store().surname_disambiguator[index]));
         populations.push_back(family_population(handle));
         cash_claims.push_back(family_cash_claim(handle));
         owned_buildings.push_back(family_owned_buildings(handle));
-        home_cells.push_back(_families.home_cell[index]);
-        origin_cells.push_back(_families.origin_cell[index]);
-        origin_ethnicities.push_back(_families.origin_ethnicity[index]);
-        culture_groups.push_back(_families.culture_group_id[index]);
+        home_cells.push_back(families_store().home_cell[index]);
+        origin_cells.push_back(families_store().origin_cell[index]);
+        origin_ethnicities.push_back(families_store().origin_ethnicity[index]);
+        culture_groups.push_back(families_store().culture_group_id[index]);
         notable_person_counts.push_back(_person_family_offsets.size() ==
-                _families.active.size() + 1
+                families_store().active.size() + 1
             ? _person_family_offsets[index + 1] - _person_family_offsets[index]
             : 0);
         int32_t prestige = 0, score = 0;
@@ -2022,7 +2022,7 @@ Dictionary NativeEconomyRuntime::submit_family_trait_commands(
         int32_t family = -1;
         if (operations[i] < 1 || operations[i] > 3 ||
             trait_it == _family_trait_ids.end() || *trait_it != keys[i] ||
-            !_families.valid_handle(static_cast<uint64_t>(handles[i]), family) ||
+            !families_store().valid_handle(static_cast<uint64_t>(handles[i]), family) ||
             days[i] < 0) {
             out["ok"] = false;
             out["reason"] = "family_trait_command_entry_invalid";
@@ -2058,7 +2058,7 @@ Dictionary NativeEconomyRuntime::family_snapshot(int64_t family_handle_value) co
     Dictionary out;
     const uint64_t handle = static_cast<uint64_t>(family_handle_value);
     int32_t index = -1;
-    if (!_bootstrapped || !_families.valid_handle(handle, index)) {
+    if (!_bootstrapped || !families_store().valid_handle(handle, index)) {
         out["ok"] = false;
         out["reason"] = !_bootstrapped ? "economy_not_bootstrapped" :
             "family_handle_invalid";
@@ -2068,7 +2068,7 @@ Dictionary NativeEconomyRuntime::family_snapshot(int64_t family_handle_value) co
     std::vector<int64_t> profession_owner(_profession_ids.size(), 0);
     std::vector<int64_t> profession_employee(_profession_ids.size(), 0);
     const bool member_csr_ready = _family_member_offsets.size() ==
-        _families.active.size() + 1;
+        families_store().active.size() + 1;
     const int32_t member_begin = member_csr_ready
         ? _family_member_offsets[index] : 0;
     const int32_t member_end = member_csr_ready
@@ -2117,7 +2117,7 @@ Dictionary NativeEconomyRuntime::family_snapshot(int64_t family_handle_value) co
     int64_t asset_value = 0;
     int64_t asset_sat = 0;
     const bool owned_csr_ready = _family_owned_offsets.size() ==
-        _families.active.size() + 1;
+        families_store().active.size() + 1;
     const int32_t owned_begin = owned_csr_ready
         ? _family_owned_offsets[index] : 0;
     const int32_t owned_end = owned_csr_ready
@@ -2128,51 +2128,51 @@ Dictionary NativeEconomyRuntime::family_snapshot(int64_t family_handle_value) co
             owned_csr_ready ? _family_owned_edge_indices[p] : p];
         if (ownership.family_handle != handle) continue;
         const int32_t group = building_index_for_handle(ownership.building_handle);
-        if (group < 0 || _buildings[group].count <= 0) continue;
+        if (group < 0 || buildings_store().group_units[group] <= 0) continue;
         asset_value += mul_div_sat(std::max<int64_t>(
-            _buildings[group].last_expected_revenue,
-            _buildings[group].last_operating_cost), ownership.owned_count,
-            _buildings[group].count, asset_sat);
+            buildings_store().last_expected_revenue[group],
+            buildings_store().last_operating_cost[group]), ownership.owned_count,
+            buildings_store().group_units[group], asset_sat);
     }
     const int64_t cash = family_cash_claim(handle);
-    const int32_t surname = _families.surname_id[index];
+    const int32_t surname = families_store().surname_id[index];
     out["ok"] = true;
     out["family_handle"] = family_handle_value;
-    out["stable_id"] = _families.stable_id[index];
+    out["stable_id"] = families_store().stable_id[index];
     out["surname_pack_id"] = from_utf8(_family_surname_pack_id);
     out["surname_id"] = surname >= 0 ? from_utf8(
         _family_surname_ids[surname]) : String();
     out["surname"] = surname >= 0 ? from_utf8(
         _family_surname_text[surname]) : String();
     out["surname_disambiguator"] = static_cast<int32_t>(
-        _families.surname_disambiguator[index]);
-    out["founded_day"] = _families.founded_day[index];
-    out["home_cell"] = _families.home_cell[index];
-    out["origin_cell"] = _families.origin_cell[index];
-    out["origin_ethnicity_id"] = _families.origin_ethnicity[index];
-    out["culture_group_id"] = _families.culture_group_id[index];
-    out["culture_group_stable_id"] = _families.culture_group_id[index] >= 0 &&
-        _families.culture_group_id[index] < static_cast<int32_t>(
+        families_store().surname_disambiguator[index]);
+    out["founded_day"] = families_store().founded_day[index];
+    out["home_cell"] = families_store().home_cell[index];
+    out["origin_cell"] = families_store().origin_cell[index];
+    out["origin_ethnicity_id"] = families_store().origin_ethnicity[index];
+    out["culture_group_id"] = families_store().culture_group_id[index];
+    out["culture_group_stable_id"] = families_store().culture_group_id[index] >= 0 &&
+        families_store().culture_group_id[index] < static_cast<int32_t>(
             _family_culture_group_ids.size())
-        ? from_utf8(_family_culture_group_ids[_families.culture_group_id[index]]) : String();
-    out["culture_group_display_name"] = _families.culture_group_id[index] >= 0 &&
-        _families.culture_group_id[index] < static_cast<int32_t>(
+        ? from_utf8(_family_culture_group_ids[families_store().culture_group_id[index]]) : String();
+    out["culture_group_display_name"] = families_store().culture_group_id[index] >= 0 &&
+        families_store().culture_group_id[index] < static_cast<int32_t>(
             _family_culture_group_display_names.size())
-        ? from_utf8(_family_culture_group_display_names[_families.culture_group_id[index]]) : String();
-    out["culture_group_naming_format"] = _families.culture_group_id[index] >= 0 &&
-        _families.culture_group_id[index] < static_cast<int32_t>(
+        ? from_utf8(_family_culture_group_display_names[families_store().culture_group_id[index]]) : String();
+    out["culture_group_naming_format"] = families_store().culture_group_id[index] >= 0 &&
+        families_store().culture_group_id[index] < static_cast<int32_t>(
             _family_culture_group_naming_formats.size())
-        ? from_utf8(_family_culture_group_naming_formats[_families.culture_group_id[index]]) : String();
-    out["culture_group_separator"] = _families.culture_group_id[index] >= 0 &&
-        _families.culture_group_id[index] < static_cast<int32_t>(
+        ? from_utf8(_family_culture_group_naming_formats[families_store().culture_group_id[index]]) : String();
+    out["culture_group_separator"] = families_store().culture_group_id[index] >= 0 &&
+        families_store().culture_group_id[index] < static_cast<int32_t>(
             _family_culture_group_separators.size())
-        ? from_utf8(_family_culture_group_separators[_families.culture_group_id[index]]) : String();
-    out["culture_group_suffix"] = _families.culture_group_id[index] >= 0 &&
-        _families.culture_group_id[index] < static_cast<int32_t>(
+        ? from_utf8(_family_culture_group_separators[families_store().culture_group_id[index]]) : String();
+    out["culture_group_suffix"] = families_store().culture_group_id[index] >= 0 &&
+        families_store().culture_group_id[index] < static_cast<int32_t>(
             _family_culture_group_suffixes.size())
-        ? from_utf8(_family_culture_group_suffixes[_families.culture_group_id[index]]) : String();
-    out["decline_reviews"] = _families.decline_reviews[index];
-    out["flags"] = static_cast<int32_t>(_families.flags[index]);
+        ? from_utf8(_family_culture_group_suffixes[families_store().culture_group_id[index]]) : String();
+    out["decline_reviews"] = families_store().decline_reviews[index];
+    out["flags"] = static_cast<int32_t>(families_store().flags[index]);
     out["population"] = family_population(handle);
     out["transit_population"] = transit_population;
     out["cash_claim"] = cash;
@@ -2184,7 +2184,7 @@ Dictionary NativeEconomyRuntime::family_snapshot(int64_t family_handle_value) co
     out["profession_owner_employed"] = owners;
     out["profession_employee_employed"] = employees;
     out["notable_person_count"] = _person_family_offsets.size() ==
-            _families.active.size() + 1
+            families_store().active.size() + 1
         ? _person_family_offsets[index + 1] - _person_family_offsets[index] : 0;
     out["trait_count"] = static_cast<int32_t>(std::count_if(
         _family_traits.begin(), _family_traits.end(),
@@ -2199,7 +2199,7 @@ Dictionary NativeEconomyRuntime::family_traits(
     Dictionary out;
     const uint64_t handle = static_cast<uint64_t>(family_handle_value);
     int32_t family = -1;
-    if (!_families.valid_handle(handle, family)) {
+    if (!families_store().valid_handle(handle, family)) {
         out["ok"] = false;
         out["reason"] = "family_handle_invalid";
         return out;
@@ -2265,7 +2265,7 @@ Dictionary NativeEconomyRuntime::family_branch_effects(
     Dictionary out;
     const uint64_t family_handle = static_cast<uint64_t>(family_handle_value);
     int32_t family = -1, branch = -1;
-    if (!_families.valid_handle(family_handle, family)) {
+    if (!families_store().valid_handle(family_handle, family)) {
         out["ok"] = false;
         out["reason"] = "family_handle_invalid";
         return out;
@@ -2351,7 +2351,7 @@ Dictionary NativeEconomyRuntime::family_branches(
     Dictionary out;
     const uint64_t handle = static_cast<uint64_t>(family_handle_value);
     int32_t index = -1;
-    if (!_families.valid_handle(handle, index)) {
+    if (!families_store().valid_handle(handle, index)) {
         out["ok"] = false;
         out["reason"] = "family_handle_invalid";
         return out;
@@ -2359,7 +2359,7 @@ Dictionary NativeEconomyRuntime::family_branches(
     struct Branch { int32_t cell; int64_t people; int64_t cash; int64_t asset; };
     std::unordered_map<int32_t, Branch> by_cell;
     const bool member_csr_ready = _family_member_offsets.size() ==
-        _families.active.size() + 1;
+        families_store().active.size() + 1;
     const int32_t member_begin = member_csr_ready
         ? _family_member_offsets[index] : 0;
     const int32_t member_end = member_csr_ready
@@ -2377,7 +2377,7 @@ Dictionary NativeEconomyRuntime::family_branches(
         branch.cash += edge.cash_claim;
     }
     const bool owned_csr_ready = _family_owned_offsets.size() ==
-        _families.active.size() + 1;
+        families_store().active.size() + 1;
     const int32_t owned_begin = owned_csr_ready
         ? _family_owned_offsets[index] : 0;
     const int32_t owned_end = owned_csr_ready
@@ -2389,12 +2389,12 @@ Dictionary NativeEconomyRuntime::family_branches(
         if (edge.family_handle != handle) continue;
         const int32_t group = building_index_for_handle(edge.building_handle);
         if (group < 0) continue;
-        const int32_t cell = _buildings[group].cell;
+        const int32_t cell = buildings_store().cell[group];
         Branch &branch = by_cell[cell];
         branch.cell = cell;
         int64_t sat = 0;
         branch.asset = saturating_add(branch.asset, saturating_mul(
-            building_reset_capital_value(_buildings[group]),
+            building_reset_capital_value(building_at(static_cast<size_t>(group))),
             std::max<int64_t>(0, edge.owned_count), sat), sat);
     }
     std::vector<Branch> rows;
@@ -2472,13 +2472,13 @@ Dictionary NativeEconomyRuntime::family_industries(
     Dictionary out;
     const uint64_t handle = static_cast<uint64_t>(family_handle_value);
     int32_t index = -1;
-    if (!_families.valid_handle(handle, index)) {
+    if (!families_store().valid_handle(handle, index)) {
         out["ok"] = false; out["reason"] = "family_handle_invalid";
         return out;
     }
     std::vector<const FamilyBuildingOwnership *> rows;
     const bool owned_csr_ready = _family_owned_offsets.size() ==
-        _families.active.size() + 1;
+        families_store().active.size() + 1;
     const int32_t owned_begin = owned_csr_ready
         ? _family_owned_offsets[index] : 0;
     const int32_t owned_end = owned_csr_ready
@@ -2492,11 +2492,11 @@ Dictionary NativeEconomyRuntime::family_industries(
     std::sort(rows.begin(), rows.end(), [&](const auto *a, const auto *b) {
         const int32_t ai = building_index_for_handle(a->building_handle);
         const int32_t bi = building_index_for_handle(b->building_handle);
-        const auto ak = ai >= 0 ? std::tuple(_buildings[ai].cell,
-            _buildings[ai].type_id, _buildings[ai].owner_signature_id) :
+        const auto ak = ai >= 0 ? std::tuple(buildings_store().cell[ai],
+            buildings_store().type_id[ai], buildings_store().owner_signature_id[ai]) :
             std::tuple(INT32_MAX, INT32_MAX, INT32_MAX);
-        const auto bk = bi >= 0 ? std::tuple(_buildings[bi].cell,
-            _buildings[bi].type_id, _buildings[bi].owner_signature_id) :
+        const auto bk = bi >= 0 ? std::tuple(buildings_store().cell[bi],
+            buildings_store().type_id[bi], buildings_store().owner_signature_id[bi]) :
             std::tuple(INT32_MAX, INT32_MAX, INT32_MAX);
         return ak < bk;
     });
@@ -2509,9 +2509,9 @@ Dictionary NativeEconomyRuntime::family_industries(
         const int32_t group = building_index_for_handle(edge.building_handle);
         if (group < 0) continue;
         building_handles.push_back(static_cast<int64_t>(edge.building_handle));
-        cells.push_back(_buildings[group].cell);
-        types.push_back(_buildings[group].type_id);
-        owner_signatures.push_back(_buildings[group].owner_signature_id);
+        cells.push_back(buildings_store().cell[group]);
+        types.push_back(buildings_store().type_id[group]);
+        owner_signatures.push_back(buildings_store().owner_signature_id[group]);
         counts.push_back(edge.owned_count);
         filled.push_back(edge.filled_owner);
     }
@@ -2530,11 +2530,11 @@ Dictionary NativeEconomyRuntime::family_notable_people(
     Dictionary out;
     const uint64_t handle = static_cast<uint64_t>(family_handle_value);
     int32_t family = -1;
-    if (!_families.valid_handle(handle, family)) {
+    if (!families_store().valid_handle(handle, family)) {
         out["ok"] = false; out["reason"] = "family_handle_invalid"; return out;
     }
     std::vector<int32_t> rows;
-    if (_person_family_offsets.size() == _families.active.size() + 1)
+    if (_person_family_offsets.size() == families_store().active.size() + 1)
         for (int32_t p = _person_family_offsets[family];
              p < _person_family_offsets[family + 1]; ++p)
             rows.push_back(_person_family_indices[p]);
@@ -2591,29 +2591,29 @@ Dictionary NativeEconomyRuntime::notable_person_snapshot(
         out["ok"] = false; out["reason"] = "person_handle_invalid"; return out;
     }
     int32_t family = -1, slot = -1;
-    if (!_families.valid_handle(_persons.family_handle[person], family) ||
+    if (!families_store().valid_handle(_persons.family_handle[person], family) ||
         !population_store().valid_handle(_persons.cohort_handle[person], slot)) {
         out["ok"] = false; out["reason"] = "person_relation_invalid"; return out;
     }
     const int32_t signature = static_cast<int32_t>(population_store().signature_id[slot]);
     const int32_t profession = signature >= 0 && signature < static_cast<int32_t>(
         _signatures.size()) ? _signatures[signature].profession_id : -1;
-    const int32_t surname = _families.surname_id[family];
+    const int32_t surname = families_store().surname_id[family];
     const int32_t given = _persons.given_name_id[person];
     const int32_t building = building_index_for_handle(
         _persons.building_handle[person]);
     int64_t family_assets = 0, asset_sat = 0;
-    if (_family_owned_offsets.size() == _families.active.size() + 1)
+    if (_family_owned_offsets.size() == families_store().active.size() + 1)
         for (int32_t p = _family_owned_offsets[family];
              p < _family_owned_offsets[family + 1]; ++p) {
             const FamilyBuildingOwnership &ownership = _family_ownerships[
                 _family_owned_edge_indices[p]];
             const int32_t group = building_index_for_handle(ownership.building_handle);
-            if (group < 0 || _buildings[group].count <= 0) continue;
+            if (group < 0 || buildings_store().group_units[group] <= 0) continue;
             family_assets = saturating_add(family_assets, mul_div_sat(
-                std::max(_buildings[group].last_expected_revenue,
-                         _buildings[group].last_operating_cost),
-                ownership.owned_count, _buildings[group].count, asset_sat), asset_sat);
+                std::max(buildings_store().last_expected_revenue[group],
+                         buildings_store().last_operating_cost[group]),
+                ownership.owned_count, buildings_store().group_units[group], asset_sat), asset_sat);
         }
     const int64_t attributed_asset = mul_div_sat(family_assets,
         _persons.family_equity_share_q32[person], Q32_ONE, asset_sat);
@@ -2641,7 +2641,7 @@ Dictionary NativeEconomyRuntime::notable_person_snapshot(
     out["needs_satisfaction_q16"] = _persons.needs_satisfaction[person];
     out["worst_need_id"] = _persons.worst_need_id[person];
     out["building_handle"] = static_cast<int64_t>(_persons.building_handle[person]);
-    out["building_type_id"] = building >= 0 ? _buildings[building].type_id : -1;
+    out["building_type_id"] = building >= 0 ? buildings_store().type_id[building] : -1;
     out["job_kind"] = _persons.job_kind[person];
     out["employee_role_index"] = _persons.employee_role_index[person];
     out["job_since_day"] = _persons.job_since_day[person];
@@ -2689,9 +2689,9 @@ Dictionary NativeEconomyRuntime::building_notable_people(
     if (building < 0) {
         out["ok"] = false; out["reason"] = "building_handle_invalid"; return out;
     }
-    const int32_t begin = _person_building_offsets.size() == _buildings.size() + 1
+    const int32_t begin = _person_building_offsets.size() == building_count() + 1
         ? _person_building_offsets[building] : 0;
-    const int32_t finish = _person_building_offsets.size() == _buildings.size() + 1
+    const int32_t finish = _person_building_offsets.size() == building_count() + 1
         ? _person_building_offsets[building + 1] : 0;
     offset = std::max(0, offset); limit = std::clamp(limit, 1, 256);
     const int32_t end = std::min(finish, begin + offset + limit);
@@ -2764,51 +2764,51 @@ Dictionary NativeEconomyRuntime::trade_orders_for_cell(
     PackedInt64Array line_transaction_transfers;
     PackedByteArray line_flags;
     line_offsets.push_back(0);
-    for (int32_t order = 0; order < _trade_orders.size(); ++order) {
-        const bool outbound = _trade_orders.sources[order] == cell_idx;
-        const bool inbound = _trade_orders.destinations[order] == cell_idx;
+    for (int32_t order = 0; order < trade_orders_store().size(); ++order) {
+        const bool outbound = trade_orders_store().sources[order] == cell_idx;
+        const bool inbound = trade_orders_store().destinations[order] == cell_idx;
         if (!outbound && !inbound) continue;
         if (total++ < offset || order_ids.size() >= limit) continue;
-        order_ids.push_back(_trade_orders.ids[order]);
+        order_ids.push_back(trade_orders_store().ids[order]);
         directions.push_back(outbound ? -1 : 1);
-        sources.push_back(_trade_orders.sources[order]);
-        destinations.push_back(_trade_orders.destinations[order]);
-        countries.push_back(_trade_orders.countries[order]);
+        sources.push_back(trade_orders_store().sources[order]);
+        destinations.push_back(trade_orders_store().destinations[order]);
+        countries.push_back(trade_orders_store().countries[order]);
         source_country_handles.push_back(
-            static_cast<int64_t>(_trade_orders.source_country_handles[order]));
+            static_cast<int64_t>(trade_orders_store().source_country_handles[order]));
         destination_country_handles.push_back(
-            static_cast<int64_t>(_trade_orders.destination_country_handles[order]));
-        source_country_slots.push_back(_trade_orders.source_country_slots[order]);
+            static_cast<int64_t>(trade_orders_store().destination_country_handles[order]));
+        source_country_slots.push_back(trade_orders_store().source_country_slots[order]);
         destination_country_slots.push_back(
-            _trade_orders.destination_country_slots[order]);
-        departure_days.push_back(_trade_orders.departure_days[order]);
-        arrival_days.push_back(_trade_orders.arrival_days[order]);
+            trade_orders_store().destination_country_slots[order]);
+        departure_days.push_back(trade_orders_store().departure_days[order]);
+        arrival_days.push_back(trade_orders_store().arrival_days[order]);
         int64_t order_base = 0;
         int64_t query_saturation = 0;
         uint8_t combined_flags = 0;
-        cash_escrow.push_back(_trade_orders.cash_escrow[order]);
-        capacity_work.push_back(_trade_orders.capacity_work[order]);
-        states.push_back(_trade_orders.states[order]);
-        cargo_delivered.push_back(_trade_orders.cargo_delivered[order]);
-        for (int32_t line = _trade_orders.line_offsets[order];
-             line < _trade_orders.line_offsets[order + 1]; ++line) {
-            line_goods.push_back(_trade_orders.line_goods[line]);
-            line_quantities.push_back(_trade_orders.line_quantities[line]);
-            line_unit_prices.push_back(_trade_orders.line_unit_prices[line]);
+        cash_escrow.push_back(trade_orders_store().cash_escrow[order]);
+        capacity_work.push_back(trade_orders_store().capacity_work[order]);
+        states.push_back(trade_orders_store().states[order]);
+        cargo_delivered.push_back(trade_orders_store().cargo_delivered[order]);
+        for (int32_t line = trade_orders_store().line_offsets[order];
+             line < trade_orders_store().line_offsets[order + 1]; ++line) {
+            line_goods.push_back(trade_orders_store().line_goods[line]);
+            line_quantities.push_back(trade_orders_store().line_quantities[line]);
+            line_unit_prices.push_back(trade_orders_store().line_unit_prices[line]);
             line_destination_prices.push_back(
-                _trade_orders.line_destination_prices[line]);
-            line_base_values.push_back(_trade_orders.line_base_values[line]);
-            line_retail_values.push_back(_trade_orders.line_retail_values[line]);
+                trade_orders_store().line_destination_prices[line]);
+            line_base_values.push_back(trade_orders_store().line_base_values[line]);
+            line_retail_values.push_back(trade_orders_store().line_retail_values[line]);
             line_import_transfers.push_back(
-                _trade_orders.line_import_transfers[line]);
+                trade_orders_store().line_import_transfers[line]);
             line_export_transfers.push_back(
-                _trade_orders.line_export_transfers[line]);
+                trade_orders_store().line_export_transfers[line]);
             line_transaction_transfers.push_back(
-                _trade_orders.line_transaction_transfers[line]);
-            line_flags.push_back(_trade_orders.line_flags[line]);
+                trade_orders_store().line_transaction_transfers[line]);
+            line_flags.push_back(trade_orders_store().line_flags[line]);
             order_base = saturating_add(order_base,
-                _trade_orders.line_base_values[line], query_saturation);
-            combined_flags |= _trade_orders.line_flags[line];
+                trade_orders_store().line_base_values[line], query_saturation);
+            combined_flags |= trade_orders_store().line_flags[line];
         }
         base_cash.push_back(order_base);
         order_flags.push_back(combined_flags);

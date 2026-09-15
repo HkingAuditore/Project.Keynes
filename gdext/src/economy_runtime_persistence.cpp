@@ -281,7 +281,7 @@ Dictionary NativeEconomyRuntime::begin_restore() {
     _trade_signal_last_rejection_reason.clear();
     _trade_signal_deadline_reported.clear();
     _trade_response_deadline_misses_cumulative = 0;
-    _trade_orders.clear();
+    trade_orders_store().clear();
     _trade_flows.clear();
     _tariff_history.clear();
     _country_good_trade.clear();
@@ -297,9 +297,10 @@ Dictionary NativeEconomyRuntime::begin_restore() {
     _pending_commands.clear();
     _epoch_commands.clear();
     _structural_commands.clear();
-    _buildings.clear();
+    clear_building_groups();
     _building_handle_index_clean = false;
-    _building_groups_rebuild_scratch.clear();
+    _building_group_order_scratch.clear();
+    _building_group_is_new_scratch.clear();
     _building_existing_indices_scratch.clear();
     _building_new_indices_scratch.clear();
     _building_investment_score_rebuild_scratch.clear();
@@ -721,7 +722,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
                    static_cast<int64_t>(cmd.target_handle)) && cmd.i64_0 > 0)
             : expedition_player
             ? (cmd.opcode == COMMAND_START_FAMILY_EXPEDITION
-                ? (_families.valid_handle(cmd.target_handle, family) &&
+                ? (families_store().valid_handle(cmd.target_handle, family) &&
                    cmd.i32_0 >= 0 && cmd.i32_0 < _cell_count &&
                    cmd.i32_1 >= 0 && cmd.i32_1 < _cell_count &&
                    cmd.i64_0 >= 1)
@@ -748,7 +749,8 @@ Dictionary NativeEconomyRuntime::end_restore() {
             return out;
         }
     }
-    for (const BuildingGroup &group : _buildings) {
+    for (size_t pk_row = 0; pk_row < building_count(); ++pk_row) {
+        const auto group = building_at(pk_row);
         if (_signatures[group.owner_signature_id].profession_id !=
                 _building_types[group.type_id].owner_profession_id ||
             group.filled_owner < 0 || group.filled_owner >
@@ -899,10 +901,10 @@ Dictionary NativeEconomyRuntime::end_restore() {
             return out;
         }
     }
-    if ((!_trade_orders.ids.empty() &&
-         _trade_orders.next_id <= _trade_orders.ids.back()) ||
-        _trade_orders.line_offsets.size() != _trade_orders.ids.size() + 1 ||
-        _trade_orders.seller_offsets.size() != _trade_orders.ids.size() + 1) {
+    if ((!trade_orders_store().ids.empty() &&
+         trade_orders_store().next_id <= trade_orders_store().ids.back()) ||
+        trade_orders_store().line_offsets.size() != trade_orders_store().ids.size() + 1 ||
+        trade_orders_store().seller_offsets.size() != trade_orders_store().ids.size() + 1) {
         out["ok"] = false;
         out["reason"] = "restore_trade_order_index_invalid";
         return out;
@@ -930,13 +932,13 @@ Dictionary NativeEconomyRuntime::end_restore() {
     {
         std::unordered_set<int64_t> stable_family_ids;
         std::unordered_set<uint64_t> visible_family_names;
-        for (int32_t i = 0; i < static_cast<int32_t>(_families.active.size()); ++i) {
-            if (_families.active[i] == 0) continue;
+        for (int32_t i = 0; i < static_cast<int32_t>(families_store().active.size()); ++i) {
+            if (families_store().active[i] == 0) continue;
             const uint64_t visible_key =
                 (static_cast<uint64_t>(static_cast<uint32_t>(
-                    _families.surname_id[i])) << 32) |
-                _families.surname_disambiguator[i];
-            if (!stable_family_ids.insert(_families.stable_id[i]).second ||
+                    families_store().surname_id[i])) << 32) |
+                families_store().surname_disambiguator[i];
+            if (!stable_family_ids.insert(families_store().stable_id[i]).second ||
                 !visible_family_names.insert(visible_key).second) {
                 out["ok"] = false;
                 out["reason"] = "restore_family_identity_duplicate";
@@ -967,7 +969,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
         // ahead of a liquidation or owner-slot change. Repair them instead of
         // rejecting an otherwise loadable world; handles stay authoritative.
         sanitize_family_ownership_edges();
-        std::vector<int64_t> owned(_buildings.size(), 0);
+        std::vector<int64_t> owned(building_count(), 0);
         for (const FamilyBuildingOwnership &edge : _family_ownerships) {
             const int32_t group = building_index_for_handle(edge.building_handle);
             if (group < 0) {
@@ -975,7 +977,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
                 out["reason"] = "restore_family_building_handle_invalid";
                 return out;
             }
-            if (edge.owned_count > _buildings[group].count - owned[group]) {
+            if (edge.owned_count > buildings_store().group_units[group] - owned[group]) {
                 out["ok"] = false;
                 out["reason"] = "restore_family_ownership_exceeds_building";
                 return out;
@@ -983,7 +985,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
             owned[group] += edge.owned_count;
             int64_t capacity_sat = 0;
             const int64_t owner_capacity = saturating_mul(edge.owned_count,
-                _building_types[_buildings[group].type_id].owner_slots_per_building,
+                _building_types[buildings_store().type_id[group]].owner_slots_per_building,
                 capacity_sat);
             if (capacity_sat != 0 ||
                 edge.filled_owner > owner_capacity) {
@@ -995,7 +997,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
         for (const PendingConstruction &pending : _pending_construction) {
             int32_t family = -1;
             if (pending.sponsor_family_handle != 0 &&
-                !_families.valid_handle(pending.sponsor_family_handle, family)) {
+                !families_store().valid_handle(pending.sponsor_family_handle, family)) {
                 out["ok"] = false;
                 out["reason"] = "restore_construction_family_handle_invalid";
                 return out;
@@ -1029,9 +1031,9 @@ Dictionary NativeEconomyRuntime::end_restore() {
             }
         }
         for (int32_t family = 0; family < static_cast<int32_t>(
-                 _families.active.size()); ++family) {
-            if (_families.active[family] == 0) continue;
-            const uint64_t family_handle = _families.handle_for_index(family);
+                 families_store().active.size()); ++family) {
+            if (families_store().active[family] == 0) continue;
+            const uint64_t family_handle = families_store().handle_for_index(family);
             const int32_t core_count = core_traits_by_family[family_handle];
             if (core_count < _family_core_trait_min ||
                 core_count > _family_core_trait_max) {
@@ -1071,7 +1073,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
                  _family_influences.active.size()); ++branch) {
             if (_family_influences.active[branch] == 0) continue;
             int32_t family = -1;
-            if (!_families.valid_handle(
+            if (!families_store().valid_handle(
                     _family_influences.family_handle[branch], family)) {
                 out["ok"] = false;
                 out["reason"] = "restore_family_influence_family_invalid";
@@ -1082,7 +1084,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
                 static_cast<uint32_t>(_family_influences.cell[branch]);
             uint64_t expected_hash = 1469598103934665603ULL;
             expected_hash = trace_hash_mix(expected_hash, static_cast<uint64_t>(
-                _families.stable_id[family]));
+                families_store().stable_id[family]));
             expected_hash = trace_hash_mix(expected_hash, static_cast<uint32_t>(
                 _family_influences.cell[branch]));
             const int64_t expected_stable_id = static_cast<int64_t>(
@@ -1120,7 +1122,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
             const bool in_transit = _persons.cohort_handle[i] == 0;
             const int32_t membership = family_membership_index(
                 _persons.family_handle[i], _persons.cohort_handle[i]);
-            if (!_families.valid_handle(_persons.family_handle[i], family) ||
+            if (!families_store().valid_handle(_persons.family_handle[i], family) ||
                 (!in_transit &&
                  !population_store().valid_handle(_persons.cohort_handle[i], cohort)) ||
                 (!in_transit && membership < 0) ||
@@ -1157,7 +1159,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
             if (_persons.job_kind[i] != 0) {
                 const int32_t group = building_index_for_handle(
                     _persons.building_handle[i]);
-                if (group < 0 || _buildings[group].cell !=
+                if (group < 0 || buildings_store().cell[group] !=
                         population_store().page_cell[cohort / COHORT_PAGE_SIZE]) {
                     out["ok"] = false;
                     out["reason"] = "restore_person_building_invalid";
@@ -1165,7 +1167,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
                 }
                 if (_persons.job_kind[i] == 2) {
                     const BuildingType &type =
-                        _building_types[_buildings[group].type_id];
+                        _building_types[buildings_store().type_id[group]];
                     if (_persons.employee_role_index[i] >= type.employee_count) {
                         out["ok"] = false;
                         out["reason"] = "restore_person_role_invalid";
@@ -1300,11 +1302,11 @@ Dictionary NativeEconomyRuntime::end_restore() {
     out["restored_pages"] = restored_pages;
     out["restored_commands"] = restored_commands;
     out["restored_buildings"] = restored_buildings;
-    out["restored_trade_orders"] = _trade_orders.size();
+    out["restored_trade_orders"] = trade_orders_store().size();
     out["restored_trade_flows"] = static_cast<int64_t>(_trade_flows.cells.size());
     out["cohort_count"] = population_store().active_count;
     out["state_hash_catalog"] = _catalog_hash;
-    out["restored_families"] = _families.active_count;
+    out["restored_families"] = families_store().active_count;
     out["restored_persons"] = _persons.active_count;
     out["restored_person_needs"] = static_cast<int64_t>(_person_needs.size());
     out["migration"] = restored_schema == 27
