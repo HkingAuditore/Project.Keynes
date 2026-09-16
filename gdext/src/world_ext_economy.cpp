@@ -7,13 +7,27 @@
 #include "trigger_runtime.h"
 #include "effect_runtime.h"
 #include "native_simulation_host.h"
+#include "runtime_economy_ecp2.h"
 
 #include <algorithm>
 #include <chrono>
 #include <cmath>
+#include <cstring>
 #include <limits>
 
 namespace pk {
+
+namespace {
+uint64_t ecp2_wire_hash(const godot::PackedByteArray &bytes) {
+    uint64_t hash = 1469598103934665603ull;
+    // The ECP2 content hash covers the bytes after the fixed 24-byte header.
+    for (int64_t i = 24; i < bytes.size(); ++i) {
+        hash ^= static_cast<uint64_t>(bytes[i]);
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
+}
 
 using namespace godot;
 
@@ -1498,6 +1512,82 @@ Dictionary DCWorldExt::end_economy_save() {
         return unavailable();
     }
     return runtime_from(_economy_runtime)->end_save();
+}
+
+Dictionary DCWorldExt::capture_economy_ecp2(int flags) const {
+    Dictionary out;
+    if (_economy_runtime == nullptr) {
+        out["ok"] = false;
+        out["reason"] = "economy_runtime_unavailable";
+        return out;
+    }
+    RuntimeEconomyEcp2State state;
+    std::string error;
+    if (!runtime_from(_economy_runtime)->capture_ecp2_authority(
+            state, error, static_cast<uint32_t>(std::max(0, flags)))) {
+        out["ok"] = false;
+        out["reason"] = String(error.c_str());
+        return out;
+    }
+    std::vector<uint8_t> encoded;
+    if (!encode_ecp2(state, encoded, error)) {
+        out["ok"] = false;
+        out["reason"] = String(error.c_str());
+        return out;
+    }
+    PackedByteArray bytes;
+    bytes.resize(static_cast<int64_t>(encoded.size()));
+    if (!encoded.empty()) std::memcpy(bytes.ptrw(), encoded.data(), encoded.size());
+    out["ok"] = true;
+    out["schema_version"] = state.schema_version;
+    out["format"] = "ECP2";
+    out["authority"] = "economy_owned_state_soa";
+    out["authority_domain_mask"] = static_cast<int64_t>(state.authority_domain_mask);
+    out["content_hash"] = static_cast<int64_t>(ecp2_wire_hash(bytes));
+    out["catalog_hash"] = state.envelope.catalog_hash;
+    out["committed_generation"] = static_cast<int64_t>(state.envelope.committed_generation);
+    out["committed_day"] = state.envelope.last_committed_day;
+    out["current_day"] = state.envelope.current_day;
+    out["mid_epoch"] = (state.authority_domain_mask & ECP2_DOMAIN_EPOCH_RESUME) != 0;
+    out["resume_stage"] = state.resume.native_stage;
+    out["resume_cell_cursor"] = static_cast<int64_t>(state.resume.cell_cursor);
+    out["bytes"] = bytes;
+    out["byte_count"] = bytes.size();
+    return out;
+}
+
+Dictionary DCWorldExt::restore_economy_ecp2(const PackedByteArray &bytes) {
+    Dictionary out;
+    if (_economy_runtime == nullptr) {
+        out["ok"] = false;
+        out["reason"] = "economy_runtime_unavailable";
+        return out;
+    }
+    RuntimeEconomyEcp2State state;
+    std::string error;
+    if (!decode_ecp2(bytes.ptr(), static_cast<size_t>(bytes.size()), state, error)) {
+        out["ok"] = false;
+        out["reason"] = String(error.c_str());
+        return out;
+    }
+    if (!runtime_from(_economy_runtime)->apply_ecp2_authority(state, error)) {
+        out["ok"] = false;
+        out["reason"] = String(error.c_str());
+        return out;
+    }
+    invalidate_economy_input_capture_cache(true);
+    out["ok"] = true;
+    out["schema_version"] = state.schema_version;
+    out["format"] = "ECP2";
+    out["authority"] = "economy_owned_state_soa";
+    out["authority_domain_mask"] = static_cast<int64_t>(state.authority_domain_mask);
+    // The decoder has already verified this hash; expose it for audit and
+    // save/restore continuity diagnostics.
+    out["content_hash"] = static_cast<int64_t>(state.content_hash);
+    out["committed_day"] = state.envelope.last_committed_day;
+    out["current_day"] = state.envelope.current_day;
+    out["mid_epoch"] = (state.authority_domain_mask & ECP2_DOMAIN_EPOCH_RESUME) != 0;
+    return out;
 }
 
 Dictionary DCWorldExt::begin_economy_restore() {

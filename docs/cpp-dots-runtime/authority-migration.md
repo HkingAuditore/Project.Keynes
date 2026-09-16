@@ -1,5 +1,11 @@
 # 运行时权威迁移：目标、设计框架、当前状态与任务
-更新时间：2026-09-13（Economy Phase 2–6：`implemented` 与生产 request 为 **`0xB7E`**）
+更新时间：2026-09-16（M5/M6 机制已落地；M7 仍受 building 回归与完整证据链阻断）
+
+> 事实校正（2026-09-16）：M5/M6 的 gate 机制与诊断字段已实现，但 INPUT_CAPTURE、GAMEPLAY_EFFECT、VISUAL 尚未形成完整 ACTIVE 证据，`implemented_domain_mask` 仍为 `0xB7E`。M6 的切换入口已有边界与 fault 拒绝逻辑，长期双 hash/audit soak 仍待完成。
+
+**M0–M3 当前执行状态（2026-09-16）**：M0 尚未关闭；`building_runtime_test.gd` 在当前工作树当前复现为 24 个真实回归失败，不能以迁移代码或测试降级代替修复。M1 已接入 D7 typed transport、全 gate 开启路径、request/sequence/effective-day 以及 Host transaction journal；D7 scoped ACTIVE gate 已通过 4/0，Country peer bridge 通过 106/0；九类 operation 的 continuation/late-ACK 长程验证仍未全部形成绿证据。M2 的 ECP2 capture/restore、resource wire、resume cursor、原子事务回滚和独立 OwnedState SoA (`OSOA` v1) 已落地；focused Economy cadence/POD/parity 测试在 debug/release 均通过，并验证 mid-epoch restore 后继续到 commit。PKEC v52 仍作为明确保留的兼容 decoder/writer，长期 60/730/3650 日 soak、公开 save coordinator 的 ECP2-only 切换与 E10 默认切换仍待后续门禁。M3 的 Events ACTIVE journal/ACK 已与 legacy deque 和 consumer cursor 隔离，poll/replay/save 读取 worker snapshot；GameplayEffect typed worker packet 现在严格解码并在同一 sealed day 生成 Events APPEND_BATCH，Events 失败会阻止 COMMIT。新增 GMP1 transaction section 及 checksum/pending 交叉校验，并保留 native Effect ACK → Events committed snapshot 的端到端 self-test；GAMEPLAY_EFFECT bit 仍等待 M5 的真实 catalog/长期 ACTIVE soak 后才能放行。因而本轮交付是 M1/M2/M3 的可验证代码边界，M0 与 M1/M2/M3 的发布门禁仍未全部关闭。
+
+**M4–M7 当前执行状态（2026-09-16）**：M4 的 input manifest 与 visual refresh 机制已接入 day barrier。M5 的 fail-closed completion gate 已接入，但 `INPUT_CAPTURE|GAMEPLAY_EFFECT|VISUAL` 缺完整生产 handler、ACTIVE 端到端证据和 M0 回归绿灯，故 `implemented_domain_mask` 保持 `0xB7E`。M6 的 `switch_economy_authority()` 已实现边界、in-flight、STOPPING/SAVE_PENDING 与 FAULTED 拒绝，并记录切换诊断；长期双 hash/audit soak 与真实生产 fault soak 尚未形成发布门禁。M7 尚未通过 PROBE→逐域 parity→`0xFFF` parity→`0xFFF` ACTIVE 顺序，也未完成性能收口报告。
 
 **一句话现状**：十二个 domain 里 Climate、Country、Trigger、Modifier、Effect、Ideology、
 Events 与 **Economy** 已是生产默认权威（`implemented_domain_mask =
@@ -291,14 +297,14 @@ Worker 权威下还要多问两层，这两层各让 Climate 栽过一次：
 
 | mask | 在哪 | 语义 | 当前值 |
 | --- | --- | --- | --- |
-| `implemented_domain_mask()` | **编译期 constexpr**（`native_simulation_host.h`） | 该域**有真实 POD handler**，不代表它是权威 | `CLIMATE\|COUNTRY\|TRIGGER_INPUT\|IDEOLOGY\|EFFECT\|MODIFIER\|EVENTS\|COMMIT = 0xA7E` |
-| `authoritative_domain_mask` | 启动配置键，由 GDScript 传入（`world_runtime_host.gd`） | 本次会话**实际要 worker 承担权威**的域 | ACTIVE 时 `0xA7E` |
-| `completed_domain_mask` | 每日报告 | 当天实际跑完的域 | ACTIVE 下含上述八位；TRIGGER/EVENTS/IDEOLOGY 的输入未就绪日走 soft-complete |
+| `implemented_domain_mask()` | **编译期 constexpr**（`native_simulation_host.h`） | 该域**有真实 POD handler**，不代表它是权威 | `CLIMATE\|COUNTRY\|TRIGGER_INPUT\|IDEOLOGY\|EFFECT\|MODIFIER\|ECONOMY\|EVENTS\|COMMIT = 0xB7E` |
+| `authoritative_domain_mask` | 启动配置键，由 GDScript 传入（`world_runtime_host.gd`） | 本次会话**实际要 worker 承担权威**的域 | 生产 request `0xFFF`（按域可缩小） |
+| `completed_domain_mask` | 每日报告 | 当天实际跑完的域 | ACTIVE 下含上述九位；输入未就绪日按域走 soft-complete |
 
 准入逻辑（`native_simulation_host.cpp` 的 `start()` / ACTIVE 分支）：ACTIVE 要求
 `authoritative_domain_mask & ~implemented_domain_mask() == 0` 且 `graph_coverage_complete`。
 **整图 ACTIVE**（不传 `authoritative_domain_mask`）要求 `implemented == 0xFFF`，当前
-`0xA7E ≠ 0xFFF`（`missing_domain_mask = 0x581`），所以结构上就不可能——这是刻意的。
+`implemented == 0xB7E`，因此整图 ACTIVE 仍被 gate 阻断。
 
 这三者的区别就写在 `implemented_domain_mask()` 的注释里（2026-09-08 重写；此前它说
 "Climate POD handler is live in SHADOW，ACTIVE 还需要剩下十个 gameplay domain"，那是
@@ -1365,37 +1371,34 @@ pump 作为协议路径。触发日第一次访问必然 `ack_barrier_incomplete
 之前），这被列入 soft-complete：intent 已发布、ACK 下一次访问到位、`discard_plan()` 重放
 同一批 intent id，所以是收敛的而不是卡死。
 
-## 阶段 I：EVENTS ✅（I1–I8 完成；worker 镜像，legacy journal 仍是消费源）
+## 阶段 I：EVENTS ✅（I1–I8 完成；worker journal 为 ACTIVE 消费源）
 
 - [x] I1 `RuntimeEventsAuthority` + `RuntimeEventsSnapshot` + bounded snapshot ring
 - [x] I2 真实 deterministic plan/replay：APPEND_BATCH、ACK_CONSUMER、容量淘汰和
       FNV-1a state hash；legacy journal event id 作为 bridge 幂等证据
 - [x] I3 命令层：固定 little-endian ABI、ABI/count header、单批最多
       `RUNTIME_EVENTS_MAX_BATCH_RECORDS`，worker preflight 允许 Events probe
-- [x] I4 ACK：legacy `ack_gameplay_events()` 先提交自己的 consumer cursor，再 best-effort
-      镜像稳定 UTF-8 consumer key；bridge 失败只回传诊断，不影响 legacy consumer
+- [x] I4 ACK：ACTIVE 下 `ack_gameplay_events()` 只提交稳定 UTF-8 consumer key 的
+      typed ACK，poll 默认游标直接读取 worker snapshot；SHADOW/回退才保留 legacy cursor
 - [x] I5 immutable snapshot：generation/hash/day、事件列、consumer ACK 列和幂等证据列；
       `poll_runtime_events_snapshot(after_generation)` 读取后立即释放 ring slot，旧 READY
       槽在 ring 满时可被最新写者回收
 - [x] I6 独立 `EVT1` 存档 section：checksum、截断/版本/ABI/状态 hash 校验，restore
       事务性拒绝；不从 legacy `PDP3` 推导 Events POD state
 - [x] I7 接入 `NativeSimulationHost` 日阶段、report、GDExtension 绑定和 GDScript wrapper；
-      Events 可在 SHADOW/ACTIVE worker 中 probe，但不进入 `implemented_domain_mask`
+      Events 可在 SHADOW probe 或 ACTIVE authority 中运行
 - [x] I8 放行（`0xA7E`；EVENTS 进入 `implemented_domain_mask` 并在 ACTIVE stage loop 里拥有
       自己的阶段位；请求掩码含 EVENTS 时 `start()` 强制打开 `_events_probe_enabled`，否则
       阶段会永远 soft-complete 而不产出 snapshot）
 
-**当前边界（I8）——务实放行，请读清楚**：I8 授予的是 **worker-authority 镜像 + stage 位**，
-不是 journal 搬迁。legacy `GameplayEventBus` journal 仍是生产消费源：Trigger ingest、UI、
-存档都还读它，主线程的 append/ACK **一条都没有抑制**，POD snapshot 也不回灌
-`GameplayEventBus`。这样做是为了不在同一个 PR 里同时动 Trigger 权威和 Events 消费边界。
-Events 阶段无条件 soft-complete（空日、被拒批次都算完成），因为让一个镜像扣住
-Climate|Country|Trigger|Effect|Modifier 的 grant 就是重犯 G8 的错误；真实结果由
-`events_pod_ready` + `events_pod_fallback_reason` 承载。
+**当前边界（M3）**：请求掩码授予 EVENTS 后，`RuntimeEventsAuthority` 是唯一生产 journal。
+主线程 producer 只提交 APPEND_BATCH；legacy deque 不再追加，poll/replay/ACK 从 worker
+snapshot 和 consumer cursor 读取。ACTIVE Events 对畸形批次 fail-closed，并保留同一 sealed
+day 重试，不能 soft-complete 后发布半成品。SHADOW/显式回退仍保留 legacy journal。
 
-**遗留（后续 PR）**：消费者迁移——把 Trigger ingest、UI 与存档从 legacy journal 切到
-`poll_runtime_events_snapshot()`，然后才能抑制主线程 append/ACK。在那之前
-`events_worker_authoritative` 为真**不**代表 journal 已经在 worker 侧。
+GAMEPLAY_EFFECT typed ingress 会在 worker 内校验固定 payload，生成私有 Events APPEND_BATCH，
+随后由 EVENTS stage 原子提交。独立 `GMP1` section 保存 generation、pending/terminal 计数和
+state hash；pending packet 本体仍由 PKSR 通用 pending-command section 保存并交叉校验。
 
 ## 阶段 J：ECONOMY（最大工程）⬜
 
@@ -1409,7 +1412,7 @@ Climate|Country|Trigger|Effect|Modifier 的 grant 就是重犯 G8 的错误；�
   边界进入 sync body（无第二套公式）；J2-A `population/100` 投影已删除。
 - `RuntimeEconomyReplayReport.STAGE_COUNT` 扩到 13；`parity_ready` 仍为假。
 
-2026-09-13 Phase 2-6（CRITICAL）：生产 mask `0xB7E` 含 ECONOMY 后，主线程
+2026-09-13 Phase 2-6（CRITICAL）：生产 mask `0xFFF` 含 ECONOMY 后，主线程
 `economy_should_run` 抑制与 worker StageOps 哈希桩并存会导致经济停摆。修复：
 `worker_run_compact_slice` + `attach_economy_production_runtime`；ACTIVE 日路径
 在 ECONOMY 授予时每轮最多 64 次 compact slice；StageOps 恒 mutate=false；未挂接
@@ -1434,7 +1437,7 @@ production runtime 时 fail-open 回 sync。POD `submit/poll` 为 Phase 4 脚手
   `_snapshot_ring`；ECP1 ABI4 已含 `operation_gate_mask`、业务摘要与 committed
   cohort/market ledger mirror。ABI4 恢复先校验独立 ledger hash 和页拓扑，失败不替换
   live committed state；ABI1-3 恢复会清空旧的 ABI4 state。
-- **Mask**：保持 `0xB7E`（含 ECONOMY），**不再翻转**。
+- **Mask**：保持 `0xFFF`（含 ECONOMY），**不再翻转**。
 
 - [x] J1 `RuntimeEconomyStore` + `RuntimeEconomyPodState`
 - [~] J2 真实 plan/replay：Phase 2 已接全 stage SHADOW 参考哈希 + named kernel
@@ -1450,7 +1453,7 @@ production runtime 时 fail-open 回 sync。POD `submit/poll` 为 Phase 4 脚手
       cohort/market ledger mirror 并原子恢复；完整生产存档仍在 legacy
       `economy_runtime_persistence_*`
 - [~] J7 接入 host 真实 stage：ACTIVE compact-slice + SHADOW
-      `execute_economy_worker_stage`；ECONOMY 已在 `0xB7E`
+      `execute_economy_worker_stage`；ECONOMY 已在 `0xFFF`
 - [ ] J8 放行（soak / 业务摘要 / opcode 全量抽出）
 
 **四个特有难点**（这也是它排在最后的原因）：
@@ -1533,7 +1536,7 @@ peer。Events 只是 worker 侧镜像，legacy journal 仍是消费源。其余�
 | --- | --- | --- | --- |
 | **第 1 类：生产权威** | CLIMATE、COUNTRY、COMMIT | ACTIVE 下真实承担，在 `implemented_domain_mask` | B + D12 |
 | **第 2 类：共享核心与协议切片** | （原 COUNTRY 已升入第 1 类） | — | — |
-| **第 1 类：生产 ACTIVE** | CLIMATE、COUNTRY、TRIGGER_INPUT、IDEOLOGY、MODIFIER、EFFECT、EVENTS、ECONOMY、COMMIT | 生产 request `0xB7E`（EVENTS 为 worker 镜像；ECONOMY 为 compact-slice ACTIVE） | 已放行 |
+| **第 1 类：生产 ACTIVE** | CLIMATE、COUNTRY、TRIGGER_INPUT、IDEOLOGY、MODIFIER、EFFECT、EVENTS、ECONOMY、COMMIT | 生产 request `0xFFF`（EVENTS 为 worker 镜像；ECONOMY 为 compact-slice ACTIVE） | 已放行 |
 | **第 3 类：SHADOW/POD 迁移中** | ECONOMY（13-TU StageOps） | compact-slice 已 ACTIVE；独立 stage TU / opcode POD 仍在迁 | 阶段 J |
 | **第 4 类：无 store** | GAMEPLAY_EFFECT、VISUAL、INPUT_CAPTURE | 结构上没有可迁移状态，需确认语义 | 阶段 K |
 
@@ -1554,8 +1557,8 @@ authority；Modifier、Ideology 和 Trigger 的 plan/replay、ACK、snapshot 与
 | IDEOLOGY | 有 | **真实双缓冲 plan/replay；ACTIVE 唯一写者** | 固定 POD payload；legacy 9 已迁移 | **真实 Effect ACK barrier；无 synthetic ACK**；ACTIVE 下 Effect stage 后 worker 内 ACK + 主线程 pump | immutable snapshot ring，回灌 legacy `NativeIdeologyRuntime`（Country/Economy 输入校验） | **IDP1**（`1 << 8`，不从 PDP3/PKID 恢复） | **ACTIVE 真 stage**（Country 之后、Effect 之前）；SHADOW 诊断 stage 保留 | **在（0x010）** |
 | TRIGGER_INPUT | 有 | **真实 SHADOW plan/replay** | 6 个固定 opcode；legacy Action `1,2,3,4,10,11,12,13,14,15` 保留 | required ACK + 真实 receipt barrier | immutable POD snapshot | **TPD1**（独立 section，`1 << 4`） | **SHADOW parity bridge** | 不在 |
 | ECONOMY | 有（committed cohort/market mirror） | ACTIVE compact-slice + SHADOW StageOps；全 stage reference + named kernel TU 桩 | legacy 23；POD 准入 1..23 | Host POD receipt + commit_pending_commands | ring header + 业务摘要（ACTIVE/`commit_epoch`） | **ECP1 ABI4：gate + 摘要 + committed ledger；完整 PKEC 业务态未迁** | ACTIVE compact-slice + SHADOW `execute_economy_worker_stage` | **在（0x100 / 0xB7E）** |
-| EVENTS | 有 | **真实 SHADOW/PROBE deterministic plan/replay** | APPEND_BATCH、ACK_CONSUMER、CONFIGURE_CAPACITY、CLEAR_RESET | **worker ACK + legacy cursor bridge** | **immutable snapshot ring** | **EVT1** | **SHADOW/PROBE 日阶段** | 不在 |
-| GAMEPLAY_EFFECT | **无** | 空转 | 无 | 无 | 无 | 无 | 无 | 不在 |
+| EVENTS | 有 | **真实 ACTIVE deterministic plan/replay** | APPEND_BATCH、ACK_CONSUMER、CONFIGURE_CAPACITY、CLEAR_RESET | **worker-owned cursor** | **immutable snapshot ring** | **EVT1** | **ACTIVE fail-closed stage** | **在（0x200）** |
+| GAMEPLAY_EFFECT | 有（transaction header + pending packet） | typed decode → Events plan | Effect gameplay/publish opcode | terminal after downstream commit | report snapshot | **GMP1** | handler 已实现，待 M5 grant | 不在 |
 | VISUAL | 无（intent） | 诊断 | 无 | 无 | — | 无 | SHADOW 刻意不发布 | 不在 |
 | INPUT_CAPTURE | 无（只读快照） | 校验 | — | — | 有 | — | 两模式均校验 | 不在 |
 
@@ -1635,15 +1638,16 @@ Economy 正式 ACTIVE 接管：
 | IDEOLOGY | 独立 POD SHADOW authority：9 opcode、确定性排序、bounded slice/continuation、deferred Effect intent 和真实 ACK barrier；legacy runtime 仍为生产参考 | `runtime_ideology_pod.{h,cpp}`、`native_simulation_host.{h,cpp}` |
 | TRIGGER_INPUT | 共享 Trigger kernel 的真实 POD plan/replay、6-opcode 命令层、ACK barrier、immutable snapshot、TPD1 save 和 SHADOW parity；主线程 `TriggerRuntime` 仍是生产 authority | `runtime_trigger_kernel.{h,cpp}`、`runtime_trigger_pod.{h,cpp}`、`native_simulation_host.{h,cpp}`、`world_ext_trigger.cpp` |
 | ECONOMY | 从 country snapshot 复制 treasury；简化 population→production 投影 | `runtime_domain_pod.cpp:507+`、`runtime_domain_authorities.cpp:581+`（注释："real Economy authority will replace"） |
-| EVENTS | legacy journal 的独立 SHADOW/PROBE 镜像：确定性 append/ACK、容量淘汰、snapshot 与 EVT1 restore；不重复派发给 legacy consumer | `runtime_events_authority.{h,cpp}`、`world_ext_events.cpp`、`native_simulation_host.{h,cpp}` |
+| EVENTS | ACTIVE 唯一 journal：确定性 append/ACK、容量淘汰、snapshot 与 EVT1 restore；legacy API 路由到 worker snapshot | `runtime_events_authority.{h,cpp}`、`world_ext_events.cpp`、`native_simulation_host.{h,cpp}` |
 
 **ECONOMY 额外缺独立 POD 存档** → J6：PKSR bundle 已有 Trigger 等独立 domain section，
 但仍没有 Economy POD section；Economy 存档仍全在 legacy `economy_runtime_persistence_*`。
 
 ### 第 4 类三个
 
-- **GAMEPLAY_EFFECT**：`RuntimeAuthoritativeDomainStores` 无对应成员，`run_gameplay_effect`
-  只递增 generation/work_units（`runtime_domain_pod.cpp:493`）。需确认是真实域还是历史占位 → K1。
+- **GAMEPLAY_EFFECT**：生产 Host 已有 typed ingress、严格 payload 校验、Events publication
+  和 GMP1 transaction section；通用 `runtime_domain_pod.cpp` 投影仍只用于诊断。该 bit 保持
+  不在 `implemented_domain_mask`，直到 M5 的 ACTIVE 证据齐全。
 - **VISUAL**：只有 `RuntimeVisualIntent`。SHADOW 下**刻意不把 shadow intents 泄漏到 visual
   ring**（`native_simulation_host.cpp:4183`）。
 - **INPUT_CAPTURE**：只读快照，两种模式都只做校验。
@@ -1653,7 +1657,7 @@ Economy 正式 ACTIVE 接管：
 ### 怎么跑
 
 ```powershell
-# 统一 runner：23 个 runtime_* + dots_completion_gate（共 24；长期验收看 failures=0）
+# 统一 runner：24 个 runtime_* + dots_completion_gate（共 25；长期验收看 failures=0）
 tools\runtime\Invoke-RuntimeTests.ps1
 
 # 单个测试
@@ -1993,3 +1997,5 @@ max 恒等于当日增量上限）；缺 knob 落到结构默认值（默认值�
 E2-E8 已完成。Modifier POD 在生产 ACTIVE 下为唯一写者：日循环 plan/replay、四域隔离、Effect POD intents ACK、immutable snapshot ring、MDF2，以及回灌 legacy ModifierRuntime。implemented/request 均为 CLIMATE|COUNTRY|TRIGGER_INPUT|IDEOLOGY|MODIFIER|EFFECT|EVENTS|COMMIT = 0xA7E；主线程抑制 modifier_daily、effect daily、ideology daily 与 trigger daily；Effect 为 F8 ACTIVE，Ideology 为 G8 ACTIVE，Trigger 为 H8 ACTIVE，Events 为 I8 worker 镜像。
 
 Modifier snapshot 只在安全日边界发布并按 generation 单调消费。capture barrier 之后到达的 Modifier command 顺延到下一日；当前日中途不插入。新 composite 状态写入 PDP4，Modifier 独立写入 save bit 1 << 5 的 MDF2；旧 PDP3 只保留一次性兼容迁移读取。
+
+

@@ -3,6 +3,7 @@
 #include "economy_runtime_persistence_codec.h"
 #include "effect_runtime.h"
 #include "modifier_runtime.h"
+#include "runtime_economy_ecp2.h"
 
 #include <algorithm>
 #include <cstring>
@@ -15,6 +16,140 @@ namespace pk {
 
 using namespace godot;
 using namespace persistence_codec;
+
+namespace {
+constexpr uint32_t OWNED_STATE_MAGIC = 0x414F534Fu; // "OSOA"
+constexpr uint32_t OWNED_STATE_VERSION = 1u;
+
+void owned_put_u32(std::vector<uint8_t> &out, uint32_t value) {
+    for (int i = 0; i < 4; ++i)
+        out.push_back(static_cast<uint8_t>((value >> (i * 8)) & 0xffu));
+}
+void owned_put_u64(std::vector<uint8_t> &out, uint64_t value) {
+    for (int i = 0; i < 8; ++i)
+        out.push_back(static_cast<uint8_t>((value >> (i * 8)) & 0xffu));
+}
+void owned_put_i64(std::vector<uint8_t> &out, int64_t value) {
+    owned_put_u64(out, static_cast<uint64_t>(value));
+}
+
+uint64_t owned_fnv1a(const uint8_t *data, size_t size) {
+    uint64_t hash = 1469598103934665603ull;
+    for (size_t i = 0; i < size; ++i) {
+        hash ^= static_cast<uint64_t>(data[i]);
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
+
+bool append_owned_block(std::vector<uint8_t> &out, uint32_t id,
+                        const std::vector<uint8_t> &payload) {
+    owned_put_u32(out, id);
+    owned_put_u32(out, static_cast<uint32_t>(payload.size()));
+    out.insert(out.end(), payload.begin(), payload.end());
+    return true;
+}
+
+void encode_owned_state_soa(const RuntimeEconomyLedgerState &ledger,
+                            std::vector<uint8_t> &out) {
+    out.clear();
+    owned_put_u32(out, OWNED_STATE_MAGIC);
+    owned_put_u32(out, OWNED_STATE_VERSION);
+    owned_put_u64(out, ledger.ledger_hash);
+    owned_put_u64(out, ledger.generation);
+    owned_put_i64(out, ledger.committed_day);
+    const size_t hash_at = out.size();
+    owned_put_u64(out, 0u);
+    std::vector<uint8_t> block;
+    ledger.building.store.append_wire(block);
+    append_owned_block(out, 1u, block);
+    block.clear();
+    ledger.trade_escrow.store.append_wire(block);
+    append_owned_block(out, 2u, block);
+    block.clear();
+    ledger.family.store.append_wire(block);
+    append_owned_block(out, 3u, block);
+    block.clear();
+    ledger.resource.store.append_wire(block);
+    append_owned_block(out, 4u, block);
+    block.clear();
+    owned_put_u32(block, static_cast<uint32_t>(ledger.cohort_active.size()));
+    for (size_t i = 0; i < ledger.cohort_active.size(); ++i) {
+        block.push_back(ledger.cohort_active[i]);
+        owned_put_u32(block, static_cast<uint32_t>(ledger.cohort_cell[i]));
+        owned_put_u32(block, static_cast<uint32_t>(ledger.cohort_slot[i]));
+        owned_put_u32(block, ledger.cohort_signature_id[i]);
+        owned_put_u64(block, static_cast<uint64_t>(ledger.cohort_population[i]));
+        owned_put_u64(block, static_cast<uint64_t>(ledger.cohort_funds[i]));
+    }
+    append_owned_block(out, 5u, block);
+    block.clear();
+    owned_put_u32(block, static_cast<uint32_t>(ledger.market_stock.size()));
+    for (size_t i = 0; i < ledger.market_stock.size(); ++i) {
+        owned_put_u64(block, static_cast<uint64_t>(ledger.market_stock[i]));
+        owned_put_u32(block, static_cast<uint32_t>(ledger.market_price[i]));
+        owned_put_u64(block, static_cast<uint64_t>(ledger.market_demand_ema[i]));
+    }
+    append_owned_block(out, 6u, block);
+    const uint64_t hash = owned_fnv1a(out.data() + hash_at + 8u,
+                                     out.size() - hash_at - 8u);
+    for (int i = 0; i < 8; ++i)
+        out[hash_at + static_cast<size_t>(i)] =
+            static_cast<uint8_t>((hash >> (i * 8)) & 0xffu);
+}
+
+bool read_owned_u32(const uint8_t *data, size_t size, size_t &cursor,
+                    uint32_t &value) {
+    if (cursor > size || size - cursor < 4u) return false;
+    value = static_cast<uint32_t>(data[cursor]) |
+        (static_cast<uint32_t>(data[cursor + 1]) << 8u) |
+        (static_cast<uint32_t>(data[cursor + 2]) << 16u) |
+        (static_cast<uint32_t>(data[cursor + 3]) << 24u);
+    cursor += 4u;
+    return true;
+}
+bool read_owned_u64(const uint8_t *data, size_t size, size_t &cursor,
+                    uint64_t &value) {
+    if (cursor > size || size - cursor < 8u) return false;
+    value = 0;
+    for (int i = 0; i < 8; ++i)
+        value |= static_cast<uint64_t>(data[cursor + static_cast<size_t>(i)]) <<
+            (i * 8u);
+    cursor += 8u;
+    return true;
+}
+bool validate_owned_state_soa(const std::vector<uint8_t> &wire) {
+    if (wire.size() < 40u) return false;
+    size_t cursor = 0;
+    uint32_t magic = 0, version = 0;
+    uint64_t ignored = 0, expected_hash = 0;
+    if (!read_owned_u32(wire.data(), wire.size(), cursor, magic) ||
+        !read_owned_u32(wire.data(), wire.size(), cursor, version) ||
+        !read_owned_u64(wire.data(), wire.size(), cursor, ignored) ||
+        !read_owned_u64(wire.data(), wire.size(), cursor, ignored) ||
+        !read_owned_u64(wire.data(), wire.size(), cursor, ignored) ||
+        cursor > wire.size() - 8u ||
+        !read_owned_u64(wire.data(), wire.size(), cursor, expected_hash) ||
+        magic != OWNED_STATE_MAGIC || version != OWNED_STATE_VERSION) {
+        return false;
+    }
+    const size_t hash_at = 32u;
+    const uint64_t actual_hash = owned_fnv1a(
+        wire.data() + hash_at + 8u, wire.size() - hash_at - 8u);
+    if (actual_hash != expected_hash) return false;
+    uint32_t seen = 0;
+    while (cursor < wire.size()) {
+        uint32_t id = 0, payload_size = 0;
+        if (!read_owned_u32(wire.data(), wire.size(), cursor, id) ||
+            !read_owned_u32(wire.data(), wire.size(), cursor, payload_size) ||
+            id < 1u || id > 6u || (seen & (1u << id)) != 0u ||
+            payload_size > wire.size() - cursor) return false;
+        seen |= 1u << id;
+        cursor += payload_size;
+    }
+    return cursor == wire.size() && seen == 0x7Eu;
+}
+} // namespace
 
 Dictionary NativeEconomyRuntime::begin_save(int32_t chunk_bytes) {
     Dictionary out;
@@ -55,7 +190,8 @@ Dictionary NativeEconomyRuntime::begin_save(int32_t chunk_bytes) {
         out["last_collected"] = _fiscal_settlement_continuation.last_collected;
         return out;
     }
-    if (!_bootstrapped || _epoch_active || _fatal || _save.active || _restore.active) {
+    if (!_bootstrapped || _fatal || _save.active || _restore.active ||
+        (_epoch_active && !_ecp2_allow_mid_epoch_export)) {
         out["ok"] = false;
         out["reason"] = !_bootstrapped ? "economy_not_bootstrapped"
                          : (_epoch_active ? "save_requires_committed_boundary"
@@ -448,6 +584,8 @@ Dictionary NativeEconomyRuntime::end_restore() {
           _restore.restored_fiscal != _restore.expected_fiscal ||
           !_restore.fiscal_peer_seen ||
           _restore.restored_fiscal_peer != _restore.expected_fiscal_peer)) ||
+        (_restore.schema_version >= 52 && _restore.resource_stock_seen &&
+         _restore.restored_resource_rows != _restore.expected_resource_rows) ||
         (_restore.schema_version >= 24 &&
          !_restore.settlement_names_seen) ||
         (_restore.schema_version >= 26 &&
@@ -1237,7 +1375,11 @@ Dictionary NativeEconomyRuntime::end_restore() {
     rebuild_family_behavior_cache();
     rebuild_person_indices();
     _bootstrapped = true;
-    if (++_committed_generation == 0) _committed_generation = 1;
+    if (_restore.committed_generation_seen) {
+        _committed_generation = _restore.restored_committed_generation;
+    } else if (++_committed_generation == 0) {
+        _committed_generation = 1;
+    }
     _fatal = false;
     _fatal_reason.clear();
     _epoch_active = false;
@@ -1290,6 +1432,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
     const int32_t restored_commands = _restore.restored_commands;
     const int32_t restored_buildings = _restore.restored_buildings;
     const int32_t restored_schema = _restore.schema_version;
+    _resource_stock_restored_pending_capture = _restore.resource_stock_seen;
     _restore = {};
     trace_begin_epoch();
     trace_append(EVENT_RESTORE_BOUNDARY,
@@ -1320,6 +1463,385 @@ Dictionary NativeEconomyRuntime::end_restore() {
         : (restored_schema == 14
             ? "v14_rolling_phase_bootstrap" : "none"))));
     return out;
+}
+
+bool NativeEconomyRuntime::begin_restore_internal(std::string &error) {
+    error.clear();
+    const Dictionary out = begin_restore();
+    if (!static_cast<bool>(out.get("ok", false))) {
+        error = String(out.get("reason", "restore_begin_failed")).utf8().get_data();
+        return false;
+    }
+    return true;
+}
+
+bool NativeEconomyRuntime::end_restore_internal(std::string &error) {
+    error.clear();
+    const Dictionary out = end_restore();
+    if (!static_cast<bool>(out.get("ok", false))) {
+        error = String(out.get("reason", "restore_end_failed")).utf8().get_data();
+        return false;
+    }
+    return true;
+}
+
+bool NativeEconomyRuntime::capture_ecp2_authority(RuntimeEconomyEcp2State &out,
+                                                  std::string &error,
+                                                  uint32_t flags) const {
+    error.clear();
+    out = RuntimeEconomyEcp2State{};
+    if (!_bootstrapped || _fatal) {
+        error = !_bootstrapped ? "economy_not_bootstrapped" : "economy_fatal";
+        return false;
+    }
+    if (_epoch_active && (flags & ECP2_CAPTURE_ALLOW_MID_EPOCH) == 0) {
+        error = "save_requires_committed_boundary";
+        return false;
+    }
+
+    NativeEconomyRuntime *self = const_cast<NativeEconomyRuntime *>(this);
+    RuntimeEconomyLedgerState pre_owned_ledger;
+    self->capture_committed_ledger_state(pre_owned_ledger);
+    if (!pre_owned_ledger.valid()) {
+        error = "ecp2_owned_state_capture_invalid";
+        return false;
+    }
+    const bool saved_allow = self->_ecp2_allow_mid_epoch_export;
+    if ((flags & ECP2_CAPTURE_ALLOW_MID_EPOCH) != 0)
+        self->_ecp2_allow_mid_epoch_export = true;
+
+    Dictionary begin = self->begin_save(4 * 1024 * 1024);
+    if (!static_cast<bool>(begin.get("ok", false))) {
+        self->_ecp2_allow_mid_epoch_export = saved_allow;
+        error = String(begin.get("reason", "ecp2_begin_save_failed"))
+                    .utf8()
+                    .get_data();
+        return false;
+    }
+
+    out.schema_version = SCHEMA_VERSION;
+    out.abi_version = RUNTIME_ECONOMY_ECP2_ABI_VERSION;
+    out.envelope.schema_version = SCHEMA_VERSION;
+    out.envelope.abi_version = RUNTIME_ECONOMY_ECP2_ABI_VERSION;
+    out.envelope.cell_count = _cell_count;
+    out.envelope.market_count = market_store().market_count;
+    out.envelope.good_count = market_store().good_count;
+    out.envelope.catalog_hash = _catalog_hash;
+    out.envelope.building_catalog_hash = _building_catalog_hash;
+    out.envelope.settlement_catalog_hash = _settlement_catalog_hash;
+    out.envelope.family_catalog_hash = _family_catalog_hash;
+    out.envelope.person_catalog_hash = _person_catalog_hash;
+    out.envelope.market_cycle_days = locked_market_cycle_days();
+    out.envelope.plan_cycle_days = locked_plan_cycle_days();
+    out.envelope.investment_cycle_days = locked_investment_cycle_days();
+    out.envelope.epoch_id = _epoch_id;
+    out.envelope.last_committed_day = _last_committed_day;
+    out.envelope.current_day = _current_day;
+    out.envelope.sample_day = _sample_day;
+    out.envelope.epoch_days = _epoch_days;
+    out.envelope.committed_generation = _committed_generation;
+    out.envelope.seed = _seed;
+    out.authority_domain_mask = ECP2_DOMAIN_ENVELOPE;
+
+    while (true) {
+        const PackedByteArray chunk = self->read_save_chunk(4 * 1024 * 1024);
+        if (chunk.is_empty()) break;
+        const int64_t chunk_size = chunk.size();
+        if (chunk_size < 16) {
+            self->_ecp2_allow_mid_epoch_export = saved_allow;
+            error = "ecp2_save_chunk_truncated";
+            self->end_save();
+            return false;
+        }
+        std::vector<uint8_t> bytes(static_cast<size_t>(chunk_size));
+        std::memcpy(bytes.data(), chunk.ptr(), bytes.size());
+        const uint16_t section = static_cast<uint16_t>(bytes[6]) |
+            static_cast<uint16_t>(static_cast<uint16_t>(bytes[7]) << 8u);
+        if (section == SAVE_SECTION_END) continue;
+        const uint32_t domain = ecp2_domain_for_pkec_section(section);
+        if (domain == 0) continue;
+        std::vector<uint8_t> &blob = out.domain_blobs[domain];
+        blob.insert(blob.end(), bytes.begin(), bytes.end());
+        out.authority_domain_mask |= domain;
+    }
+
+    Dictionary end = self->end_save();
+    self->_ecp2_allow_mid_epoch_export = saved_allow;
+    if (!static_cast<bool>(end.get("ok", false))) {
+        error = String(end.get("reason", "ecp2_end_save_failed")).utf8().get_data();
+        return false;
+    }
+
+    RuntimeEconomyResourceStore resource_store;
+    resource_store.resource_count =
+        static_cast<int32_t>(_resource_ids.size());
+    resource_store.cell_count = _cell_count;
+    resource_store.stock = resource_stock_lanes();
+    if (_resource_store_alias != nullptr)
+        resource_store.cell_generation = _resource_store_alias->cell_generation;
+    else
+        resource_store.cell_generation = _cell_resource_gen;
+    std::vector<uint8_t> resource_wire;
+    resource_store.append_wire(resource_wire);
+    out.domain_blobs[ECP2_DOMAIN_RESOURCE] = std::move(resource_wire);
+    out.authority_domain_mask |= ECP2_DOMAIN_RESOURCE;
+
+    // ECP2's authority payload is independent from the PKEC compatibility
+    // chunks. Capture the typed SoA stores as one canonical, content-addressed
+    // OwnedState block; restore still keeps PKEC as a compatibility decoder,
+    // while this block is the cutover/audit proof for the native owner.
+    std::vector<uint8_t> owned_state_wire;
+    encode_owned_state_soa(pre_owned_ledger, owned_state_wire);
+    if (owned_state_wire.empty()) {
+        error = "ecp2_owned_state_capture_empty";
+        return false;
+    }
+    out.domain_blobs[ECP2_DOMAIN_OWNED_STATE] = std::move(owned_state_wire);
+    out.authority_domain_mask |= ECP2_DOMAIN_OWNED_STATE;
+
+    if ((flags & ECP2_CAPTURE_INCLUDE_RESUME) != 0 && _epoch_active) {
+        RuntimeEconomyEcp2Resume &resume = out.resume;
+        resume.epoch_active = 1;
+        resume.native_stage = static_cast<int32_t>(_stage);
+        resume.graph_completed_mask = 0;
+        resume.sample_day = _sample_day;
+        resume.current_day = _current_day;
+        resume.epoch_id = _epoch_id;
+        resume.epoch_days = _epoch_days;
+        resume.publish_cursor = _publish_cursor;
+        resume.publish_order_cursor = _publish_order_cursor;
+        resume.publish_line_cursor = _publish_line_cursor;
+        resume.executed_stage = static_cast<int32_t>(_executed_stage);
+        resume.publish_phase = static_cast<int32_t>(_publish_phase);
+        resume.cell_cursor = static_cast<uint32_t>(std::max(0, _cell_cursor));
+        resume.command_cursor =
+            static_cast<uint32_t>(std::max(0, _command_cursor));
+        resume.structural_cursor =
+            static_cast<uint32_t>(std::max(0, _structural_cursor));
+        resume.building_cell_cursor =
+            static_cast<uint32_t>(std::max(0, _building_cell_cursor));
+        resume.plan_evaluate_cursor =
+            static_cast<uint32_t>(std::max(0, _plan_evaluate_cursor));
+        resume.building_plan_phase = _building_plan_phase;
+        resume.household_market_phase = _household_market_phase;
+        resume.household_post_cursor = _household_post_cursor;
+        resume.building_commit_phase = _building_commit_phase;
+        resume.building_commit_cursor = _building_commit_cursor;
+        resume.building_finalize_phase = _building_finalize_phase;
+        resume.family_commit_cursor = _family_commit_cursor;
+        resume.family_commit_phase = _family_commit_phase;
+        resume.person_commit_cursor = _person_commit_cursor;
+        resume.person_commit_phase = _person_commit_phase;
+        resume.trade_plan_phase = static_cast<uint8_t>(
+            std::max(0, std::min(255, _trade_plan.phase)));
+        resume.trade_plan_scan_cursor = static_cast<uint32_t>(
+            std::max<int64_t>(0, _trade_plan.scan_cursor));
+        resume.trade_plan_route_cursor = static_cast<uint32_t>(
+            std::max(0, _trade_plan.route_cursor));
+        resume.waiting_for_peer =
+            (_fiscal_reservation_continuation.active ||
+             _fiscal_settlement_continuation.active ||
+             _country_research_procurement_continuation.active)
+                ? 1
+                : 0;
+        out.authority_domain_mask |= ECP2_DOMAIN_EPOCH_RESUME;
+    }
+
+    return true;
+}
+
+bool NativeEconomyRuntime::apply_ecp2_authority_internal(
+        const RuntimeEconomyEcp2State &in, std::string &error) {
+    error.clear();
+    if ((in.authority_domain_mask & ECP2_DOMAIN_ENVELOPE) == 0) {
+        error = "ecp2_envelope_missing";
+        return false;
+    }
+    const auto owned_state_it = in.domain_blobs.find(ECP2_DOMAIN_OWNED_STATE);
+    if ((in.authority_domain_mask & ECP2_DOMAIN_OWNED_STATE) == 0 ||
+        owned_state_it == in.domain_blobs.end() ||
+        !validate_owned_state_soa(owned_state_it->second)) {
+        error = "ecp2_owned_state_missing_or_invalid";
+        return false;
+    }
+    if (_bootstrapped && in.envelope.catalog_hash != 0 &&
+        in.envelope.catalog_hash != _catalog_hash) {
+        error = "ecp2_catalog_hash_mismatch";
+        return false;
+    }
+    if (_bootstrapped && in.envelope.cell_count > 0 &&
+        in.envelope.cell_count != _cell_count) {
+        error = "ecp2_cell_count_mismatch";
+        return false;
+    }
+
+    if (!begin_restore_internal(error)) return false;
+
+    std::vector<std::vector<uint8_t>> ordered_chunks;
+    for (uint16_t section = SAVE_SECTION_HEADER;
+         section <= SAVE_SECTION_CADENCE_STATE; ++section) {
+        ecp2_collect_pkec_chunks_for_section(in.domain_blobs, section,
+                                             ordered_chunks);
+    }
+    {
+        std::vector<std::vector<uint8_t>> end_chunks;
+        ecp2_collect_pkec_chunks_for_section(in.domain_blobs, SAVE_SECTION_END,
+                                             end_chunks);
+        if (end_chunks.empty()) {
+            std::vector<uint8_t> payload;
+            const godot::PackedByteArray end_chunk =
+                make_save_chunk(SAVE_SECTION_END, 0, payload);
+            ordered_chunks.emplace_back(
+                static_cast<size_t>(end_chunk.size()));
+            std::memcpy(ordered_chunks.back().data(), end_chunk.ptr(),
+                        ordered_chunks.back().size());
+        } else {
+            ordered_chunks.insert(ordered_chunks.end(),
+                                  end_chunks.begin(), end_chunks.end());
+        }
+    }
+
+    for (const std::vector<uint8_t> &bytes : ordered_chunks) {
+        godot::PackedByteArray chunk;
+        chunk.resize(static_cast<int64_t>(bytes.size()));
+        if (!bytes.empty())
+            std::memcpy(chunk.ptrw(), bytes.data(), bytes.size());
+        const Dictionary fed = feed_restore_chunk(chunk);
+        if (!static_cast<bool>(fed.get("ok", false))) {
+            error = String(fed.get("reason", "ecp2_restore_chunk_failed"))
+                        .utf8()
+                        .get_data();
+            _restore = {};
+            return false;
+        }
+    }
+
+    if (!end_restore_internal(error)) {
+        _restore = {};
+        return false;
+    }
+
+    const auto resource_it = in.domain_blobs.find(ECP2_DOMAIN_RESOURCE);
+    if (resource_it != in.domain_blobs.end() &&
+        !resource_it->second.empty()) {
+        // The resource domain may contain both the optional PKEC resource
+        // section and the typed ABI9 resource wire. Strip framed PKEC chunks
+        // before decoding the raw wire payload.
+        size_t resource_wire_offset = 0;
+        const std::vector<uint8_t> &resource_blob = resource_it->second;
+        while (resource_wire_offset + 16u <= resource_blob.size()) {
+            const uint8_t *chunk = resource_blob.data() + resource_wire_offset;
+            const uint32_t magic = static_cast<uint32_t>(chunk[0]) |
+                (static_cast<uint32_t>(chunk[1]) << 8u) |
+                (static_cast<uint32_t>(chunk[2]) << 16u) |
+                (static_cast<uint32_t>(chunk[3]) << 24u);
+            if (magic != SAVE_MAGIC) break;
+            const uint32_t payload_size = static_cast<uint32_t>(chunk[12]) |
+                (static_cast<uint32_t>(chunk[13]) << 8u) |
+                (static_cast<uint32_t>(chunk[14]) << 16u) |
+                (static_cast<uint32_t>(chunk[15]) << 24u);
+            const size_t chunk_size = 16u + static_cast<size_t>(payload_size);
+            if (chunk_size > resource_blob.size() - resource_wire_offset) break;
+            resource_wire_offset += chunk_size;
+        }
+        RuntimeEconomyResourceStore store;
+        store.resource_count = static_cast<int32_t>(_resource_ids.size());
+        store.cell_count = _cell_count;
+        const uint32_t expected_lanes = static_cast<uint32_t>(
+            resource_stock_lanes().size());
+        if (!store.load_wire(resource_blob.data() + resource_wire_offset,
+                             resource_blob.size() - resource_wire_offset,
+                             expected_lanes)) {
+            error = "ecp2_resource_wire_invalid";
+            return false;
+        }
+        if (_resource_store_alias != nullptr) {
+            _resource_store_alias->stock = store.stock;
+            _resource_store_alias->cell_generation = store.cell_generation;
+        } else {
+            _resource_snapshot = store.stock;
+            _cell_resource_gen = store.cell_generation;
+        }
+    }
+
+    if ((in.authority_domain_mask & ECP2_DOMAIN_EPOCH_RESUME) != 0) {
+        const RuntimeEconomyEcp2Resume &resume = in.resume;
+        _epoch_active = resume.epoch_active != 0;
+        _stage = static_cast<Stage>(resume.native_stage);
+        if (resume.epoch_id != 0) _epoch_id = resume.epoch_id;
+        if (resume.epoch_days != 0) _epoch_days = resume.epoch_days;
+        if (resume.sample_day >= 0) _sample_day = resume.sample_day;
+        if (resume.current_day >= 0) _current_day = resume.current_day;
+        _publish_cursor = static_cast<size_t>(resume.publish_cursor);
+        _publish_order_cursor = resume.publish_order_cursor;
+        _publish_line_cursor = resume.publish_line_cursor;
+        _executed_stage = static_cast<Stage>(resume.executed_stage);
+        _publish_phase = static_cast<PublishPhase>(resume.publish_phase);
+        _cell_cursor = static_cast<int32_t>(resume.cell_cursor);
+        _command_cursor = static_cast<int32_t>(resume.command_cursor);
+        _structural_cursor = static_cast<int32_t>(resume.structural_cursor);
+        _building_cell_cursor =
+            static_cast<int32_t>(resume.building_cell_cursor);
+        _plan_evaluate_cursor =
+            static_cast<int32_t>(resume.plan_evaluate_cursor);
+        _building_plan_phase = resume.building_plan_phase;
+        _household_market_phase = resume.household_market_phase;
+        _household_post_cursor = resume.household_post_cursor;
+        _building_commit_phase = resume.building_commit_phase;
+        _building_commit_cursor = resume.building_commit_cursor;
+        _building_finalize_phase = resume.building_finalize_phase;
+        _family_commit_cursor = resume.family_commit_cursor;
+        _family_commit_phase = resume.family_commit_phase;
+        _person_commit_cursor = resume.person_commit_cursor;
+        _person_commit_phase = resume.person_commit_phase;
+        _trade_plan.phase = resume.trade_plan_phase;
+        _trade_plan.scan_cursor = resume.trade_plan_scan_cursor;
+        _trade_plan.route_cursor =
+            static_cast<int32_t>(resume.trade_plan_route_cursor);
+    }
+
+    return true;
+}
+
+bool NativeEconomyRuntime::apply_ecp2_authority(
+        const RuntimeEconomyEcp2State &in, std::string &error) {
+    error.clear();
+
+    // ECP2 restore is a transaction at the runtime boundary. The streaming
+    // PKEC reader intentionally mutates lanes as chunks arrive, so an error
+    // after the first accepted chunk must be repaired before the caller can
+    // observe the world again. Capture the current authority before touching
+    // it and use the same validated path for rollback.
+    RuntimeEconomyEcp2State backup;
+    bool backup_ready = false;
+    if (_bootstrapped) {
+        uint32_t capture_flags = 0;
+        if (_epoch_active) {
+            capture_flags |= ECP2_CAPTURE_ALLOW_MID_EPOCH |
+                             ECP2_CAPTURE_INCLUDE_RESUME;
+        }
+        std::string backup_error;
+        if (!capture_ecp2_authority(backup, backup_error, capture_flags)) {
+            error = "ecp2_atomic_backup_failed:" + backup_error;
+            return false;
+        }
+        backup_ready = true;
+    }
+
+    std::string apply_error;
+    if (apply_ecp2_authority_internal(in, apply_error)) return true;
+
+    if (backup_ready) {
+        std::string rollback_error;
+        if (apply_ecp2_authority_internal(backup, rollback_error)) {
+            error = apply_error + ";rolled_back";
+        } else {
+            error = apply_error + ";rollback_failed:" + rollback_error;
+        }
+    } else {
+        error = apply_error;
+    }
+    return false;
 }
 
 

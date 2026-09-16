@@ -1000,8 +1000,20 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             const int64_t signed_transfer = expected_resolved_fiscal_transfer(
                 cell, NativeCountryRuntime::TAX_INCOME, profession,
                 daily_floor, 1, _saturation_count);
-            return std::max<int64_t>(0, saturating_sub(
+            const int64_t funded_transfer = std::max<int64_t>(0, saturating_sub(
                 0, signed_transfer, _saturation_count));
+            // A funded unemployment lane is reservation income during the
+            // employment decision itself. Settlement runs later in the same
+            // epoch, so expose the already reserved floor here as well.
+            const int32_t fulfillment = static_cast<int32_t>(std::clamp<int64_t>(
+                _fiscal_fulfillment_q16[static_cast<size_t>(cell) *
+                    ACTIVE_TAX_KIND_COUNT + NativeCountryRuntime::TAX_INCOME],
+                0, Q16_ONE));
+            const int64_t funded_period_floor = mul_div_sat(
+                saturating_mul(daily_floor, std::max<int64_t>(1, _epoch_days),
+                    _saturation_count),
+                fulfillment, Q16_ONE, _saturation_count);
+            return std::max<int64_t>(funded_transfer, funded_period_floor);
         };
 
         // ---- 鐩爣璁＄畻锛氭湰鍛ㄦ湡鍚?group 鏈熸湜鐨?owner / 鍚?role employee ----
@@ -1639,10 +1651,6 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 group.owner_signature_id < static_cast<int32_t>(_signatures.size())) {
                 const int32_t owner_profession =
                     _signatures[group.owner_signature_id].profession_id;
-                // Owner eligibility is profession-based.  Generate one target
-                // signature per source ethnicity so migration preserves the
-                // person's identity instead of forcing the building's
-                // canonical ethnicity onto the cohort.
                 for (int32_t eth = 0; eth < n_eth; ++eth) {
                     const int32_t target_sig = signature_for_profession_ethnicity(
                         owner_profession, eth);
@@ -1713,6 +1721,11 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             if (candidate.role < 0) {
                 if (candidate.target_disposable < 0)
                     return deny(EMPLOYMENT_REJECTION_TARGET_DISPOSABLE);
+                // A funded unemployment transfer is reservation income. An
+                // owner vacancy may not consume that pool when its projected
+                // disposable return is lower than the guaranteed transfer.
+                if (source_disposable > candidate.target_disposable)
+                    return deny(EMPLOYMENT_REJECTION_HURDLE);
                 if (improvement < hurdle)
                     return deny(EMPLOYMENT_REJECTION_HURDLE);
             } else {
@@ -1951,7 +1964,8 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                         source_disposable, target_disposable);
                     int64_t &budget = unemployed_budget_by_eth[
                         static_cast<size_t>(source_eth)];
-                    const bool eligible = target_disposable >= 0 && improvement >=
+                    const bool eligible = target_disposable >= 0 &&
+                        target_disposable >= source_disposable && improvement >=
                         transition_hurdle_q16(source_profession, owner_profession);
                     const int64_t proportional = eligible
                         ? candidate_allocation(source_eth, g, -1, target_sig) : 0;

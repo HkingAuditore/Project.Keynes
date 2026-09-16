@@ -1072,7 +1072,7 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     out["workload_deadline_feasible"] = _workload_deadline_feasible;
     out["workload_cycle_clamped"] = _workload_cycle_clamped;
     out["approximation_model"] =
-        "rolling_cell_settlement_v21_funded_cold_start_labor";
+        "rolling_cell_settlement_v19_class_good_elasticity";
     out["economy_accuracy_preset"] = _accuracy_preset == 0 ? "EXACT" :
         (_accuracy_preset == 1 ? "BALANCED" :
         (_accuracy_preset == 2 ? "FAST" : "CUSTOM"));

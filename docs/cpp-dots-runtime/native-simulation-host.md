@@ -1,5 +1,5 @@
 # NativeSimulationHost 线程边界
-
+当前 `implemented_domain_mask()` 覆盖十二个运行时域，值为 `0xFFF`；生产 `WorldRuntimeHost` 默认请求整图 ACTIVE。整图 COMMIT 只有在每个请求域完成同日 bounded continuation 后才发布。
 本文记录后台模拟线程隔离的当前实现边界。它描述的是已经落到代码里的契约，不表示
 所有游戏领域已经迁移完成。
 
@@ -9,7 +9,7 @@
 `world_ext_simulation_host.cpp` 做参数校验、PackedArray 深拷贝和轻量轮询；worker 不保存
 `Object`、`Variant`、`Dictionary`、`MapData` 或场景树引用。
 
-当前 `implemented_domain_mask()` 为 `CLIMATE | COUNTRY | TRIGGER_INPUT | IDEOLOGY | MODIFIER | EFFECT | ECONOMY | EVENTS | COMMIT = 0xB7E`（Economy Phase 2–6）。整图 `required` 仍是 `0xFFF`，`missing_domain_mask = 0x481`。因此：
+当前 `implemented_domain_mask()` 覆盖十二个运行时域，值为 `0xFFF`；生产 `WorldRuntimeHost` 默认请求整图 ACTIVE。整图 COMMIT 只有在每个请求域完成同日 bounded continuation 后才发布。因此：
 
 - `SHADOW` 可以启动，用于时钟、命令排序、环境快照、提交环和故障路径测试；
 - `ACTIVE` 在缺少任一 native POD domain handler 时直接返回
@@ -20,11 +20,17 @@
   request/result transport 与独立 `D7T1` transaction journal，Economy-owned fiscal peer
   journal 也已在 PKEC v52 持久化。当前只有 fiscal reserve/return/collect 进入 M1 bridge
   gate；cohort、market、research、treasury 的跨帧 continuation 和逐 operation gated
-  rollout 尚未完成，Economy 未加入 ACTIVE mask。
+  rollout 尚未完成。Economy 已进入 `0xFFF` 的 compact-slice ACTIVE writer，完整独立
+  OwnedState SoA 与长期 soak 仍是后续门禁。
 - 生产 Trigger 在同一开关下由 Host worker 负责（H7/H8），主线程 `run_trigger_daily`
   被抑制、快照回灌 legacy `TriggerRuntime`；Events（I8）只拿到 stage 位与 worker 侧
   镜像 snapshot，legacy `GameplayEventBus` journal 仍是生产消费源。
-  Economy 仍需完成独立 authority/barrier。
+  Economy 的 authority switch 另受 epoch-boundary、pending mutation 和 fault pause
+  门禁约束；`switch_economy_authority()` 的返回值和线程报告同时提供双
+  hash/generation、reason/blocker、audit sequence、switch latency 与 command latency。
+  `worker_day_inflight`、`economy_inflight_mutations` 和
+  `economy_pending_command_count` 是切换是否处于安全边界的直接观测值，不能用队列深度
+  单独推断。
 
 ## POD domain pipeline（当前 SHADOW）
 
@@ -111,6 +117,12 @@ Country 快照还携带 `research_active_country_slots` 与
 
 提交头与视觉内容分离。权威 generation/day/hash 即使三缓冲都处于 `READING` 也会发布；视觉
 快照最多 20Hz，缓冲满时只丢视觉发布并累计 `snapshot_publish_drop_count`。
+
+M4/M5 的输入与视觉边界也在同一份报告中暴露：`input_capture_generation/day/hash/count`
+只在同日、同 generation 且 topology validation 成功后更新，失败日不会覆盖上一次 manifest；
+`gameplay_effect_generation/pending/terminal/state_hash` 与
+`visual_intent_generation/count/full_refresh` 只在对应 sealed-day commit 后推进。ACTIVE
+COMMIT 要求请求掩码中的每一位都完成，否则保留旧 generation、旧 snapshot 和旧视觉 batch。
 
 线程诊断同时提供 `simulation_time_debt_days`（CSV/性能记录字段）和
 `time_debt_days`（直接 host 查询别名）；两者均受 100 天上限约束。`main_wait_on_sim_us`
@@ -236,3 +248,5 @@ stage 位和自己的 snapshot ring，legacy `GameplayEventBus` journal 仍是�
 真实结果由 `events_pod_ready` / `events_pod_fallback_reason` 承载。
 
 Report 暴露 `events_pod_*` 与 `events_worker_authoritative`。消费者迁移是后续 PR。
+
+

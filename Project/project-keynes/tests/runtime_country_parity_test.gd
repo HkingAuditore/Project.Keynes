@@ -3,7 +3,7 @@ extends SceneTree
 # Country SHADOW plan/replay: unified business hash, command dual-write,
 # reference publication, probe formula parity, and a 30–100 day soak window.
 # Production implemented mask is Climate|Country|Trigger|Ideology|Modifier|Effect|Events|COMMIT
-# = 0xB7E after Phase 2-6.
+# = 0xFFF after Phase 2-6.
 # This harness stays on SHADOW Country compare evidence (sync writer + Host
 # mirror); it does not grant Country ACTIVE.
 
@@ -474,3 +474,4 @@ func _expect(label: String, ok: bool) -> void:
 func _fail(label: String) -> void:
 	_failures += 1
 	push_error("[FAIL] %s" % label)
+

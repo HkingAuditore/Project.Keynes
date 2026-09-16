@@ -859,6 +859,30 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
             if (cell_due_plan_review(cell, day_index))
                 _epoch_plan_cells.push_back(cell);
         }
+        // Lifecycle health is an every-settlement observation. A producer
+        // that has already recorded a severe loss must be reconsidered on the
+        // next market boundary even when the slower investment cadence is not
+        // due; otherwise hysteresis can stall between plan buckets.
+        if (_building_cell_offsets.size() == static_cast<size_t>(_cell_count + 1)) {
+            for (const int32_t cell : _epoch_building_cells) {
+                if (!cell_in_market_workset(cell, day_index)) continue;
+                bool needs_lifecycle_review = false;
+                for (int32_t g = _building_cell_offsets[cell];
+                     g < _building_cell_offsets[cell + 1]; ++g) {
+                    const auto group = building_at(static_cast<size_t>(g));
+                    if (group.count > 0 && group.severe_loss_cycles >= 2) {
+                        needs_lifecycle_review = true;
+                        break;
+                    }
+                }
+                if (needs_lifecycle_review && std::find(
+                        _epoch_plan_cells.begin(), _epoch_plan_cells.end(), cell) ==
+                        _epoch_plan_cells.end()) {
+                    _epoch_plan_cells.push_back(cell);
+                }
+            }
+            std::sort(_epoch_plan_cells.begin(), _epoch_plan_cells.end());
+        }
     }
     _epoch_days = workset_elapsed_days(day_index);
     capture_cell_elapsed_days(day_index);
@@ -1051,6 +1075,9 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
     _current_day = day_index;
     begin_incremental_audit_epoch();
     _epoch_active = true;
+    // Keep restored resource lanes through every preflight capture; after the
+    // epoch starts live MapData captures may resume their normal ownership.
+    _resource_stock_restored_pending_capture = false;
     // Worker-local result lanes are registered on the owning thread when each
     // market/production range is merged. This avoids scanning every due cell
     // and every good at epoch open while preserving the incremental audit

@@ -401,6 +401,7 @@ public:
     bool runtime_events_authority_self_test() const;
     bool runtime_economy_pod_self_test() const;
     godot::Dictionary switch_economy_authority(const godot::String &mode);
+    bool runtime_economy_authority_fault_gate_self_test() const;
     godot::Dictionary runtime_economy_stage_order_contract_test() const;
     bool is_native_daily_visual_commit_pending() const;
     void complete_native_daily_visual_commit();
@@ -771,6 +772,8 @@ public:
     godot::Dictionary begin_economy_save(int chunk_bytes = 4 * 1024 * 1024);
     godot::PackedByteArray read_economy_save_chunk(int max_bytes = 4 * 1024 * 1024);
     godot::Dictionary end_economy_save();
+    godot::Dictionary capture_economy_ecp2(int flags = 0) const;
+    godot::Dictionary restore_economy_ecp2(const godot::PackedByteArray &bytes);
     godot::Dictionary begin_economy_restore();
     godot::Dictionary feed_economy_restore_chunk(const godot::PackedByteArray &chunk);
     godot::Dictionary end_economy_restore();
@@ -801,6 +804,8 @@ public:
     godot::Dictionary clear_gameplay_events(godot::Dictionary opts);
     godot::Dictionary get_gameplay_event_bus_report() const;
     godot::Dictionary poll_runtime_events_snapshot(int64_t after_generation = 0);
+    godot::Dictionary poll_runtime_events_snapshot_opts(
+        const godot::Dictionary &opts);
 
     godot::Dictionary run_native_world_generate_base_pass(int seed,
                                                           const godot::Dictionary &cfg,

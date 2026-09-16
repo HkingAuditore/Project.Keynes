@@ -28,16 +28,27 @@ func _run() -> void:
 	})
 	_expect("partial graph is rejected", not bool(blocked.get("ok", true)))
 	_expect("rejection is explicit", str(blocked.get("code", "")) == "runtime_graph_not_thread_safe")
-	var incomplete_active: Dictionary = ext.start_runtime_worker({
+	var complete_active: Dictionary = ext.start_runtime_worker({
 		"simulation_thread_mode": "ACTIVE",
 		"graph_coverage_complete": true,
 		"day": 0,
 		"speed_days_per_second": 50.0,
 		"paused": true,
 	})
-	_expect("ACTIVE is blocked until every native domain handler exists",
-		not bool(incomplete_active.get("ok", true)) \
-		and str(incomplete_active.get("code", "")) == "runtime_native_domains_incomplete")
+	_expect("complete 0xFFF ACTIVE graph is admitted",
+		bool(complete_active.get("ok", false)) \
+		and int(complete_active.get("thread_report", {}).get(
+			"implemented_domain_mask", 0)) == 0xFFF)
+	if bool(complete_active.get("ok", false)):
+		ext.request_runtime_stop()
+		var active_stop_deadline := Time.get_ticks_msec() + 5000
+		while Time.get_ticks_msec() < active_stop_deadline \
+				and str(ext.get_runtime_thread_report().get(
+					"simulation_host_state", "")) != "STOPPED":
+			OS.delay_msec(2)
+	_expect("ACTIVE admission probe stops cleanly",
+		str(ext.get_runtime_thread_report().get(
+			"simulation_host_state", "")) == "STOPPED")
 
 	var started: Dictionary = ext.start_runtime_worker({
 		"simulation_thread_mode": "SHADOW",
@@ -58,10 +69,11 @@ func _run() -> void:
 	_expect("worker waits for OFF reference trace at day barrier", barrier_blocked)
 	_expect("main thread never waits for simulation", int(report.get("main_wait_on_sim_us", -1)) == 0)
 	_expect("time debt remains bounded", float(report.get("simulation_time_debt_days", report.get("time_debt_days", 101.0))) <= 100.0)
-	_expect("coverage reports missing native domain handlers", str(report.get("graph_coverage_state", "")) == "partial" \
-		and str(report.get("simulation_worker_blocker", "")) == "missing_native_domain_handlers" \
-		and int(report.get("missing_domain_mask", 0)) != 0 \
-		and int(report.get("implemented_domain_mask", 0)) != int(report.get("missing_domain_mask", 0)))
+	_expect("coverage distinguishes complete handlers from a pending SHADOW reference", \
+		str(report.get("graph_coverage_state", "")) == "partial" \
+		and str(report.get("simulation_worker_blocker", "")) == "runtime_graph_not_ready" \
+		and int(report.get("missing_domain_mask", -1)) == 0 \
+		and int(report.get("implemented_domain_mask", 0)) == 0xFFF)
 	# Without a reference-backed input trace, no simulation day or visual
 	# commit may be published. This is the strict replay contract; the rest of
 	# this test exercises commit/save behavior only after a committed day exists.

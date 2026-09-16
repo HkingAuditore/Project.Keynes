@@ -90,6 +90,9 @@ var runtime_economy_execution_mode: String = "ACTIVE_ONLY"
 ## 这是运行时可回退的开关（见下方 set_runtime_climate_authority_enabled），回退
 ## 不需要重新生成世界。
 var runtime_climate_authority_enabled: bool = true
+## Domains requested for worker authority. M5 production default is the full
+## twelve-domain graph; focused diagnostics and recovery may request a subset.
+@export var runtime_authority_domain_mask: int = 0xFFF
 ## Climate 权威下的回灌游标。worker 自带单调序号，与 commit generation 无关。
 var _runtime_climate_writeback_generation: int = 0
 var _runtime_climate_writeback_days: int = 0
@@ -609,13 +612,14 @@ func _start_production_shadow_worker() -> void:
 	if String(runtime_economy_execution_mode) != "ACTIVE_WITH_PARITY":
 		config["economy_stage_ops_mutate"] = true
 		config["economy_production_writer"] = "stage_ops"
-		config["economy_auto_pod_active"] = true
+		# M6: mirror readiness is diagnostic; authority handoff is an explicit
+		# epoch-boundary operation and must not be triggered by the worker.
+		config["economy_auto_pod_active"] = false
 	if climate_authority_active:
 		# graph_coverage_complete 在 per-domain ACTIVE 下的含义是"请求的这些域
 		# 线程安全"，不是整图。
-		# CLIMATE(0x2)|COUNTRY(0x4)|TRIGGER(0x8)|IDEOLOGY(0x10)|EFFECT(0x20)|
-		# MODIFIER(0x40)|ECONOMY(0x100)|EVENTS(0x200)|COMMIT(0x800)=0xB7E：
-		# COMMIT 是 barrier 域本身，C++ 侧也会补上，这里显式写出让配置自解释。
+		# M5 production request is the complete graph (0xFFF). COMMIT is the
+		# barrier domain itself; C++ also adds it for focused subset requests.
 		# Phase 2-6：Economy 与 Climate|Country|Modifier|Effect|Ideology|Trigger|Events
 		# 同开关进入生产 ACTIVE；不得用 handoff / set_country_sync_store_writes_forbidden 冒充本路径。
 		# Events 的授予只表示 worker 侧镜像 + 阶段位；legacy GameplayEventBus journal
@@ -639,7 +643,7 @@ func _start_production_shadow_worker() -> void:
 					String(opinion_pub.get("code", "unknown"))])
 		config["simulation_thread_mode"] = "ACTIVE"
 		config["graph_coverage_complete"] = true
-		config["authoritative_domain_mask"] = 0xB7E
+		config["authoritative_domain_mask"] = runtime_authority_domain_mask
 	var started: Dictionary = _generator.start_runtime_worker(config)
 	if not bool(started.get("ok", false)):
 		if climate_authority_active:

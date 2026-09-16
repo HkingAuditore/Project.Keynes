@@ -32,10 +32,10 @@ func _init() -> void:
 		_expect("report exposes ABI v3 and all required domain mask",
 			int(report.get("pod_domain_abi_version", 0)) == 3 \
 			and int(report.get("required_domain_mask", 0)) == 0xFFF)
-		_expect("COMMIT+CLIMATE+COUNTRY+TRIGGER+IDEOLOGY+EFFECT+MODIFIER+EVENTS mask still blocks whole-graph ACTIVE",
-			int(report.get("implemented_domain_mask", 0)) == 0xB7E \
-			and int(report.get("missing_domain_mask", 0)) == 0x581 \
-			and not bool(report.get("authority_ready", true)))
+		_expect("all twelve domains are implemented and no capability bits are missing",
+			int(report.get("implemented_domain_mask", 0)) == 0xFFF \
+			and int(report.get("missing_domain_mask", 0)) == 0 \
+			and not bool(report.get("active_gate_blocked", false)))
 		_expect("main thread wait metric is zero",
 			int(report.get("main_wait_on_sim_us", -1)) == 0)
 		ext.request_runtime_stop()
@@ -51,3 +51,4 @@ func _expect(label: String, ok: bool) -> void:
 func _fail(label: String) -> void:
 	_failures += 1
 	push_error("[FAIL] %s" % label)
+

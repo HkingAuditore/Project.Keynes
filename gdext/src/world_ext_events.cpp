@@ -55,6 +55,7 @@ constexpr int PK_PAYLOAD_ECONOMY_TRADE_V2 = 8;
 
 constexpr uint32_t EVENTS_BRIDGE_PRODUCER_ID = 0x45564201u;
 constexpr uint64_t EVENTS_BRIDGE_REQUEST_PREFIX = 0x4556420000000000ull;
+constexpr uint32_t GAMEPLAY_EFFECT_PRODUCER_ID = 0x45464601u;
 constexpr uint64_t FNV_OFFSET = 1469598103934665603ull;
 constexpr uint64_t FNV_PRIME = 1099511628211ull;
 
@@ -252,6 +253,12 @@ int64_t DCWorldExt::_emit_gameplay_event(int64_t tick,
     ev.payload_i1 = payload_i1;
     ev.payload_i2 = payload_i2;
     ev.payload_i3 = payload_i3;
+    if (_runtime_host && _runtime_host->events_worker_authoritative()) {
+        // ACTIVE Events assigns the durable event id when APPEND_BATCH commits.
+        // This provisional id is only a synchronous ingress receipt; the
+        // legacy deque must remain untouched so there is a single journal.
+        return ev.event_id;
+    }
     _gameplay_events.push_back(ev);
     while (int(_gameplay_events.size()) > _gameplay_max_events) {
         if (_gameplay_first_dropped_event_id == 0) {
@@ -320,6 +327,59 @@ bool DCWorldExt::submit_effect_gameplay_commands_pod(
         error = "effect_gameplay_request_id_exhausted";
         return false;
     }
+
+    // In ACTIVE GAMEPLAY_EFFECT authority the main thread is an ingress
+    // boundary only. Encode the typed rows once and submit them atomically to
+    // the worker queue; the legacy journal path remains for SHADOW/PROBE.
+    const bool worker_authoritative = _runtime_host &&
+        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::GAMEPLAY_EFFECT);
+    if (worker_authoritative && !staged.empty()) {
+        const RuntimeThreadReport report = _runtime_host->report();
+        if (report.state == RuntimeWorkerState::STOPPED ||
+            report.state == RuntimeWorkerState::STOPPING ||
+            report.state == RuntimeWorkerState::FAULTED ||
+            report.mode == RuntimeSimulationMode::OFF) {
+            error = "gameplay_effect_worker_unavailable";
+            return false;
+        }
+        std::vector<RuntimeCommandPacket> packets;
+        packets.reserve(staged.size());
+        for (const EffectGameplayCommand &command : staged) {
+            const uint64_t sequence = _runtime_host->allocate_producer_sequence(
+                GAMEPLAY_EFFECT_PRODUCER_ID);
+            RuntimeCommandPacket packet{};
+            packet.envelope.request_id = static_cast<uint64_t>(command.request_id);
+            packet.envelope.producer_id = GAMEPLAY_EFFECT_PRODUCER_ID;
+            packet.envelope.sequence = sequence;
+            packet.envelope.observed_generation = report.generation;
+            packet.envelope.requested_day = std::max<int64_t>(0, command.effective_day);
+            packet.envelope.effective_day = command.effective_day;
+            packet.envelope.domain = static_cast<uint16_t>(RuntimeDomainId::GAMEPLAY_EFFECT);
+            packet.envelope.opcode = static_cast<uint16_t>(command.opcode);
+            std::vector<uint8_t> payload;
+            payload.reserve(96);
+            append_le<int32_t>(payload, command.action);
+            append_le<int32_t>(payload, command.domain);
+            append_le<int32_t>(payload, command.opcode);
+            append_le<int64_t>(payload, command.effective_day);
+            append_le<uint64_t>(payload, command.target_handle);
+            append_le<uint32_t>(payload, command.target_generation);
+            append_le<int64_t>(payload, command.value_i64);
+            for (const int64_t value : command.payload) append_le<int64_t>(payload, value);
+            append_le<uint64_t>(payload, command.idempotency_key);
+            if (payload.size() > RUNTIME_MAX_COMMAND_PAYLOAD) {
+                error = "gameplay_effect_payload_exceeded";
+                return false;
+            }
+            packet.envelope.payload_size = static_cast<uint32_t>(payload.size());
+            std::memcpy(packet.payload.data(), payload.data(), payload.size());
+            packets.push_back(packet);
+        }
+        if (!_runtime_host->enqueue_batch(std::move(packets))) {
+            error = "gameplay_effect_worker_queue_full";
+            return false;
+        }
+    }
     for (const EffectGameplayCommand &command : staged) {
         _effect_gameplay_idempotency.emplace(command.idempotency_key,
             command.request_id);
@@ -357,6 +417,38 @@ Dictionary DCWorldExt::run_gameplay_effects(int64_t day_index) {
     Dictionary out;
     int32_t committed = 0;
     int32_t rejected = 0;
+    const bool worker_authoritative = _runtime_host &&
+        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::GAMEPLAY_EFFECT);
+    if (worker_authoritative) {
+        const RuntimeThreadReport report = _runtime_host->report();
+        const bool worker_failed = report.state == RuntimeWorkerState::FAULTED ||
+            report.state == RuntimeWorkerState::STOPPED;
+        const uint32_t terminal = report.gameplay_effect_terminal;
+        uint32_t completed = 0;
+        std::vector<EffectGameplayCommand> retained;
+        retained.reserve(_effect_gameplay_commands.size());
+        for (const EffectGameplayCommand &command : _effect_gameplay_commands) {
+            if (command.effective_day > day_index) { retained.push_back(command); continue; }
+            EffectGameplayCommandResult &result = _effect_gameplay_results[command.request_id];
+            if (worker_failed) {
+                result.complete = 1; result.ok = 0; result.reason = "gameplay_effect_worker_faulted"; ++rejected;
+            } else if (terminal > completed) {
+                result.complete = 1; result.ok = 1; result.reason.clear(); ++completed; ++committed;
+            } else {
+                retained.push_back(command);
+            }
+        }
+        _effect_gameplay_commands.swap(retained);
+        out["ok"] = rejected == 0;
+        out["committed"] = committed;
+        out["rejected"] = rejected;
+        out["pending"] = static_cast<int32_t>(_effect_gameplay_commands.size());
+        out["done"] = _effect_gameplay_commands.empty();
+        out["stage"] = "gameplay_effect";
+        out["path"] = "GAMEPLAY_EFFECT_WORKER";
+        out["worker_terminal"] = static_cast<int64_t>(terminal);
+        return out;
+    }
     std::vector<EffectGameplayCommand> retained;
     retained.reserve(_effect_gameplay_commands.size());
     for (const EffectGameplayCommand &command : _effect_gameplay_commands) {
@@ -738,6 +830,15 @@ Dictionary DCWorldExt::publish_gameplay_events(Dictionary batch) {
 
     auto t1 = std::chrono::high_resolution_clock::now();
     _gameplay_last_native_ms = std::chrono::duration<double, std::milli>(t1 - t0).count();
+    const bool worker_authoritative =
+        _runtime_host && _runtime_host->events_worker_authoritative();
+    const bool durable = !worker_authoritative || _events_bridge_failed == 0;
+    if (!durable) {
+        published = 0;
+        first_id = 0;
+        last_id = 0;
+    }
+    out["ok"] = durable;
     out["published"] = published;
     out["first_event_id"] = first_id;
     out["last_event_id"] = last_id;
@@ -748,6 +849,9 @@ Dictionary DCWorldExt::publish_gameplay_events(Dictionary batch) {
     out["events_bridge_queued"] = static_cast<int64_t>(_events_bridge_queued);
     out["events_bridge_failed"] = static_cast<int64_t>(_events_bridge_failed);
     out["events_bridge_reason"] = _events_bridge_last_reason;
+    out["authority_source"] = worker_authoritative
+        ? String("runtime_events_worker") : String("legacy_gameplay_event_bus");
+    out["legacy_journal_used"] = !worker_authoritative;
     return out;
 }
 
@@ -787,6 +891,16 @@ void DCWorldExt::_append_gameplay_event_to_arrays(const GameplayEventRecord &ev,
 Dictionary DCWorldExt::poll_gameplay_events(Dictionary opts) {
     auto t0 = std::chrono::high_resolution_clock::now();
     const StringName consumer_id = opts.has("consumer_id") ? StringName(opts["consumer_id"]) : StringName("default");
+    // Once EVENTS is authoritative, the worker snapshot is the only
+    // production source. Keep the legacy API shape and annotate the source so
+    // callers can migrate without maintaining a second journal.
+    if (_runtime_host && _runtime_host->events_worker_authoritative()) {
+        Dictionary worker = poll_runtime_events_snapshot_opts(opts);
+        worker["consumer_id"] = consumer_id;
+        worker["authority_source"] = String("runtime_events_worker");
+        worker["legacy_journal_used"] = false;
+        return worker;
+    }
     const int64_t acked = _gameplay_consumer_ack.has(consumer_id) ? _gameplay_consumer_ack[consumer_id] : 0;
     const int64_t after_id = int64_t(opts.get("after_event_id", acked));
     const int max_events = std::max(0, int(opts.get("max_events", 256)));
@@ -857,9 +971,15 @@ Dictionary DCWorldExt::poll_gameplay_events(Dictionary opts) {
 
 Dictionary DCWorldExt::ack_gameplay_events(StringName consumer_id, int64_t up_to_event_id) {
     Dictionary out;
-    const int64_t prev = _gameplay_consumer_ack.has(consumer_id) ? _gameplay_consumer_ack[consumer_id] : 0;
+    const bool worker_authoritative =
+        _runtime_host && _runtime_host->events_worker_authoritative();
+    const int64_t prev = _gameplay_consumer_ack.has(consumer_id)
+        ? _gameplay_consumer_ack[consumer_id] : 0;
     const int64_t next = std::max(prev, up_to_event_id);
-    _gameplay_consumer_ack[consumer_id] = next;
+    // ACTIVE Events owns the consumer cursor in the worker snapshot. Keep the
+    // legacy cursor untouched there; probe/fallback retains the old API state.
+    if (!worker_authoritative)
+        _gameplay_consumer_ack[consumer_id] = next;
     out["consumer_id"] = consumer_id;
     out["previous_event_id"] = prev;
     out["acked_event_id"] = next;
@@ -867,9 +987,12 @@ Dictionary DCWorldExt::ack_gameplay_events(StringName consumer_id, int64_t up_to
     out["events_bridge_queued"] = int64_t(0);
     out["events_bridge_failed"] = int64_t(0);
     out["events_bridge_reason"] = String();
-    // Legacy consumers remain authoritative. The POD ACK is only a best-effort
-    // mirror and must never make a successful legacy ACK fail.
-    if (_runtime_host && _runtime_host->events_probe_enabled() && next >= 0) {
+    // In EVENTS-authoritative mode the typed ACK is the production path. In
+    // probe/fallback mode it remains best-effort and cannot make the legacy
+    // acknowledgement fail.
+    if (_runtime_host && (_runtime_host->events_probe_enabled() ||
+                          worker_authoritative) &&
+        next >= 0) {
         std::string bridge_error;
         if (queue_events_bridge_ack(_runtime_host.get(), consumer_id, next,
                                     bridge_error)) {
@@ -883,6 +1006,12 @@ Dictionary DCWorldExt::ack_gameplay_events(StringName consumer_id, int64_t up_to
 }
 
 Dictionary DCWorldExt::poll_runtime_events_snapshot(int64_t after_generation) {
+    Dictionary opts;
+    opts["after_generation"] = after_generation;
+    return poll_runtime_events_snapshot_opts(opts);
+}
+
+Dictionary DCWorldExt::poll_runtime_events_snapshot_opts(const Dictionary &opts) {
     Dictionary out;
     if (!_runtime_host) {
         out["ok"] = false;
@@ -891,19 +1020,46 @@ Dictionary DCWorldExt::poll_runtime_events_snapshot(int64_t after_generation) {
         out["reason"] = "runtime_worker_not_started";
         return out;
     }
-    const uint64_t after = after_generation < 0
-        ? 0u : static_cast<uint64_t>(after_generation);
+    const StringName consumer_id = opts.has("consumer_id")
+        ? StringName(opts["consumer_id"]) : StringName("default");
+    const int type_filter = int(opts.get("type", 0));
+    const int max_events = std::max(0, int(opts.get("max_events", 256)));
+    const bool auto_ack = bool(opts.get("auto_ack", false));
+    const int64_t start_tick = int64_t(opts.get(
+        "start_tick", std::numeric_limits<int64_t>::min()));
+    const int64_t end_tick = int64_t(opts.get(
+        "end_tick", std::numeric_limits<int64_t>::max()));
+    const int64_t acked = _gameplay_consumer_ack.has(consumer_id)
+        ? _gameplay_consumer_ack[consumer_id] : 0;
+    const bool explicit_after_event_id = opts.has("after_event_id");
+    int64_t after_event_id = int64_t(opts.get("after_event_id", acked));
+    const uint64_t requested_generation = static_cast<uint64_t>(std::max<int64_t>(
+        0, int64_t(opts.get("after_generation", 0))));
+    const uint64_t after = requested_generation;
     uint32_t slot = 0;
     if (!_runtime_host->try_acquire_events_snapshot(after, slot)) {
         out["ok"] = true;
         out["available"] = false;
         out["fallback"] = false;
         out["generation"] = static_cast<int64_t>(after);
+        out["consumer_id"] = consumer_id;
+        out["last_event_id"] = after_event_id;
+        out["consumer_lag"] = int64_t(0);
         return out;
     }
 
     const RuntimeEventsSnapshot &snapshot =
         _runtime_host->events_snapshot_buffer(slot);
+    if (!explicit_after_event_id && _runtime_host->events_worker_authoritative()) {
+        const uint64_t consumer_key = stable_consumer_key(consumer_id);
+        const auto found = std::lower_bound(snapshot.consumer_acks.begin(),
+            snapshot.consumer_acks.end(), consumer_key,
+            [](const RuntimeEventsConsumerAck &entry, uint64_t key) {
+                return entry.consumer_key < key;
+            });
+        after_event_id = found != snapshot.consumer_acks.end() &&
+            found->consumer_key == consumer_key ? found->event_id : 0;
+    }
     PackedInt64Array ids;
     PackedInt64Array ticks;
     PackedInt32Array phases;
@@ -919,39 +1075,32 @@ Dictionary DCWorldExt::poll_runtime_events_snapshot(int64_t after_generation) {
     PackedInt32Array payload_i1;
     PackedInt32Array payload_i2;
     PackedInt32Array payload_i3;
-    ids.resize(static_cast<int64_t>(snapshot.events.size()));
-    ticks.resize(static_cast<int64_t>(snapshot.events.size()));
-    phases.resize(static_cast<int64_t>(snapshot.events.size()));
-    types.resize(static_cast<int64_t>(snapshot.events.size()));
-    sources.resize(static_cast<int64_t>(snapshot.events.size()));
-    flags.resize(static_cast<int64_t>(snapshot.events.size()));
-    entity_handles.resize(static_cast<int64_t>(snapshot.events.size()));
-    entity_ids.resize(static_cast<int64_t>(snapshot.events.size()));
-    cell_indices.resize(static_cast<int64_t>(snapshot.events.size()));
-    payload_schemas.resize(static_cast<int64_t>(snapshot.events.size()));
-    values.resize(static_cast<int64_t>(snapshot.events.size()));
-    payload_i0.resize(static_cast<int64_t>(snapshot.events.size()));
-    payload_i1.resize(static_cast<int64_t>(snapshot.events.size()));
-    payload_i2.resize(static_cast<int64_t>(snapshot.events.size()));
-    payload_i3.resize(static_cast<int64_t>(snapshot.events.size()));
-    for (int64_t i = 0; i < static_cast<int64_t>(snapshot.events.size()); ++i) {
-        const RuntimeEventsRecord &event = snapshot.events[static_cast<size_t>(i)];
-        ids[i] = event.event_id;
-        ticks[i] = event.tick;
-        phases[i] = event.phase;
-        types[i] = event.type;
-        sources[i] = event.source;
-        flags[i] = event.flags;
-        entity_handles[i] = static_cast<int64_t>(event.entity_handle);
-        entity_ids[i] = event.entity_id;
-        cell_indices[i] = event.cell_idx;
-        payload_schemas[i] = event.payload_schema;
-        values[i] = event.value_i64;
-        payload_i0[i] = event.payload_i0;
-        payload_i1[i] = event.payload_i1;
-        payload_i2[i] = event.payload_i2;
-        payload_i3[i] = event.payload_i3;
+    int64_t last_event_id = after_event_id;
+    for (const RuntimeEventsRecord &event : snapshot.events) {
+        if (event.event_id <= after_event_id || event.tick < start_tick ||
+            event.tick > end_tick ||
+            (type_filter > 0 && event.type != type_filter)) continue;
+        ids.append(event.event_id);
+        ticks.append(event.tick);
+        phases.append(event.phase);
+        types.append(event.type);
+        sources.append(event.source);
+        flags.append(event.flags);
+        entity_handles.append(static_cast<int64_t>(event.entity_handle));
+        entity_ids.append(event.entity_id);
+        cell_indices.append(event.cell_idx);
+        payload_schemas.append(event.payload_schema);
+        values.append(event.value_i64);
+        payload_i0.append(event.payload_i0);
+        payload_i1.append(event.payload_i1);
+        payload_i2.append(event.payload_i2);
+        payload_i3.append(event.payload_i3);
+        last_event_id = event.event_id;
+        if (max_events > 0 && ids.size() >= max_events) break;
     }
+    if (auto_ack && last_event_id > after_event_id &&
+        !_runtime_host->events_worker_authoritative())
+        _gameplay_consumer_ack[consumer_id] = last_event_id;
     PackedInt64Array ack_keys;
     PackedInt64Array ack_event_ids;
     ack_keys.resize(static_cast<int64_t>(snapshot.consumer_acks.size()));
@@ -1002,6 +1151,10 @@ Dictionary DCWorldExt::poll_runtime_events_snapshot(int64_t after_generation) {
     out["payload_i2"] = payload_i2;
     out["payload_i3"] = payload_i3;
     out["count"] = ids.size();
+    out["consumer_id"] = consumer_id;
+    out["last_event_id"] = last_event_id;
+    out["consumer_lag"] = snapshot.events.empty() ? 0 :
+        int64_t(snapshot.events.back().event_id - last_event_id);
     out["consumer_key"] = ack_keys;
     out["consumer_event_id"] = ack_event_ids;
     out["ack_count"] = ack_keys.size();
@@ -1009,11 +1162,35 @@ Dictionary DCWorldExt::poll_runtime_events_snapshot(int64_t after_generation) {
     out["idempotency_request_id"] = idempotency_requests;
     out["idempotency_event_id"] = idempotency_events;
     out["idempotency_count"] = idempotency_keys.size();
+    if (auto_ack && last_event_id >= 0) {
+        std::string ack_error;
+        if (queue_events_bridge_ack(_runtime_host.get(), consumer_id,
+                                    last_event_id, ack_error)) {
+            out["auto_ack_queued"] = true;
+        } else {
+            out["auto_ack_queued"] = false;
+            out["auto_ack_error"] = String(ack_error.c_str());
+        }
+    } else {
+        out["auto_ack_queued"] = false;
+    }
     _runtime_host->release_events_snapshot(slot);
     return out;
 }
 
 Dictionary DCWorldExt::replay_gameplay_events(Dictionary opts) const {
+    if (_runtime_host && _runtime_host->events_worker_authoritative()) {
+        Dictionary worker_opts = opts;
+        worker_opts["consumer_id"] = StringName("__events_replay__");
+        worker_opts["after_event_id"] = int64_t(0);
+        worker_opts["after_generation"] = int64_t(0);
+        worker_opts["auto_ack"] = false;
+        Dictionary out = const_cast<DCWorldExt *>(this)->
+            poll_runtime_events_snapshot_opts(worker_opts);
+        out["authority_source"] = String("runtime_events_worker");
+        out["legacy_journal_used"] = false;
+        return out;
+    }
     const int64_t start_tick = int64_t(opts.get("start_tick", std::numeric_limits<int64_t>::min()));
     const int64_t end_tick = int64_t(opts.get("end_tick", std::numeric_limits<int64_t>::max()));
     const int type_filter = int(opts.get("type", 0));

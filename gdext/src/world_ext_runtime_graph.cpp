@@ -620,6 +620,9 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
         out["required_domain_mask"] = static_cast<int64_t>(host.required_domain_mask);
         out["implemented_domain_mask"] = static_cast<int64_t>(host.implemented_domain_mask);
         out["missing_domain_mask"] = static_cast<int64_t>(host.missing_domain_mask);
+        out["completion_gate_missing_domain_mask"] = static_cast<int64_t>(
+            host.completion_gate_missing_domain_mask);
+        out["active_gate_blocked"] = host.active_gate_blocked;
         out["requested_authority_mask"] =
             static_cast<int64_t>(host.requested_authority_mask);
         out["authoritative_domain_mask"] =
@@ -686,6 +689,50 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
         out["economy_pod_committed_ledger_abi"] =
             static_cast<int>(host.economy_pod_committed_ledger_abi);
         out["economy_pod_active_ready"] = host.economy_pod_active_ready;
+        out["economy_authority_switch_count"] = static_cast<int64_t>(
+            host.economy_authority_switch_count);
+        out["economy_authority_switch_before_hash"] = static_cast<int64_t>(
+            host.economy_authority_switch_before_hash);
+        out["economy_authority_switch_after_hash"] = static_cast<int64_t>(
+            host.economy_authority_switch_after_hash);
+        out["economy_authority_switch_latency_us"] = static_cast<int64_t>(
+            host.economy_authority_switch_latency_us);
+        out["economy_authority_switch_latency_p95_us"] = static_cast<int64_t>(
+            host.economy_authority_switch_latency_p95_us);
+        out["economy_authority_switch_latency_max_us"] = static_cast<int64_t>(
+            host.economy_authority_switch_latency_max_us);
+        out["economy_authority_switch_command_latency_us"] = static_cast<int64_t>(
+            host.economy_authority_switch_command_latency_us);
+        out["economy_authority_switch_command_latency_p95_us"] = static_cast<int64_t>(
+            host.economy_authority_switch_command_latency_p95_us);
+        out["economy_authority_switch_command_latency_max_us"] = static_cast<int64_t>(
+            host.economy_authority_switch_command_latency_max_us);
+        out["economy_authority_switch_latency_sample_count"] = static_cast<int64_t>(
+            host.economy_authority_switch_latency_sample_count);
+        out["economy_authority_switch_rejected"] = static_cast<int64_t>(
+            host.economy_authority_switch_rejected);
+        out["economy_authority_switch_audit_sequence"] = static_cast<int64_t>(
+            host.economy_authority_switch_audit_sequence);
+        out["economy_authority_switch_before_generation"] = static_cast<int64_t>(
+            host.economy_authority_switch_before_generation);
+        out["economy_authority_switch_after_generation"] = static_cast<int64_t>(
+            host.economy_authority_switch_after_generation);
+        out["economy_authority_fault_paused"] = host.economy_authority_fault_paused;
+        out["economy_authority_last_committed_generation"] = static_cast<int64_t>(
+            host.economy_authority_last_committed_generation);
+        out["economy_authority_last_committed_hash"] = static_cast<int64_t>(
+            host.economy_authority_last_committed_hash);
+        out["economy_inflight_mutations"] = static_cast<int>(host.economy_inflight_mutations);
+        out["worker_day_inflight"] = static_cast<int>(host.worker_day_inflight);
+        out["economy_pending_command_count"] = static_cast<int>(host.economy_pending_command_count);
+        out["economy_authority_switch_reason"] = String(
+            host.economy_authority_switch_reason);
+        out["economy_authority_switch_blocker"] = String(
+            host.economy_authority_switch_blocker);
+        out["economy_authority_switch_audit_before"] = String(
+            host.economy_authority_switch_audit_before);
+        out["economy_authority_switch_audit_after"] = String(
+            host.economy_authority_switch_audit_after);
         out["economy_execution_mode"] = static_cast<int>(host.economy_execution_mode);
         out["economy_execution_mode_name"] = String(
             pk::economy_execution_mode_name(
@@ -1071,6 +1118,9 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
         out["required_domain_mask"] = static_cast<int64_t>(host.required_domain_mask);
         out["implemented_domain_mask"] = static_cast<int64_t>(host.implemented_domain_mask);
         out["missing_domain_mask"] = static_cast<int64_t>(host.missing_domain_mask);
+        out["completion_gate_missing_domain_mask"] = static_cast<int64_t>(
+            host.completion_gate_missing_domain_mask);
+        out["active_gate_blocked"] = host.active_gate_blocked;
         out["authoritative_domain_mask"] =
             static_cast<int64_t>(host.authoritative_domain_mask);
         out["climate_worker_authoritative"] =
@@ -1145,6 +1195,47 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
         out["events_worker_authoritative"] =
             (host.authoritative_domain_mask &
              runtime_domain_mask(RuntimeDomainId::EVENTS)) != 0u;
+        out["economy_authority_switch_count"] = static_cast<int64_t>(
+            host.economy_authority_switch_count);
+        out["economy_authority_switch_before_hash"] = static_cast<int64_t>(
+            host.economy_authority_switch_before_hash);
+        out["economy_authority_switch_after_hash"] = static_cast<int64_t>(
+            host.economy_authority_switch_after_hash);
+        out["economy_authority_switch_latency_us"] = static_cast<int64_t>(
+            host.economy_authority_switch_latency_us);
+        out["economy_authority_switch_latency_p95_us"] = static_cast<int64_t>(
+            host.economy_authority_switch_latency_p95_us);
+        out["economy_authority_switch_latency_max_us"] = static_cast<int64_t>(
+            host.economy_authority_switch_latency_max_us);
+        out["economy_authority_switch_command_latency_us"] = static_cast<int64_t>(
+            host.economy_authority_switch_command_latency_us);
+        out["economy_authority_switch_command_latency_p95_us"] = static_cast<int64_t>(
+            host.economy_authority_switch_command_latency_p95_us);
+        out["economy_authority_switch_command_latency_max_us"] = static_cast<int64_t>(
+            host.economy_authority_switch_command_latency_max_us);
+        out["economy_authority_switch_latency_sample_count"] = static_cast<int64_t>(
+            host.economy_authority_switch_latency_sample_count);
+        out["economy_authority_switch_rejected"] = static_cast<int64_t>(
+            host.economy_authority_switch_rejected);
+        out["economy_authority_switch_audit_sequence"] = static_cast<int64_t>(
+            host.economy_authority_switch_audit_sequence);
+        out["economy_authority_switch_before_generation"] = static_cast<int64_t>(
+            host.economy_authority_switch_before_generation);
+        out["economy_authority_switch_after_generation"] = static_cast<int64_t>(
+            host.economy_authority_switch_after_generation);
+        out["economy_authority_fault_paused"] = host.economy_authority_fault_paused;
+        out["economy_authority_last_committed_generation"] = static_cast<int64_t>(
+            host.economy_authority_last_committed_generation);
+        out["economy_authority_last_committed_hash"] = static_cast<int64_t>(
+            host.economy_authority_last_committed_hash);
+        out["economy_authority_switch_reason"] = String(
+            host.economy_authority_switch_reason);
+        out["economy_authority_switch_blocker"] = String(
+            host.economy_authority_switch_blocker);
+        out["economy_authority_switch_audit_before"] = String(
+            host.economy_authority_switch_audit_before);
+        out["economy_authority_switch_audit_after"] = String(
+            host.economy_authority_switch_audit_after);
         out["country_parity_compared"] = host.country_parity_compared != 0;
         out["country_parity_matched"] = host.country_parity_matched != 0;
         out["country_parity_compared_count"] = static_cast<int64_t>(

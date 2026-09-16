@@ -3,6 +3,7 @@
 #include "economy_graph_kernels.h"
 #include "runtime_economy_state.h"
 #include "runtime_domain_pod.h"
+#include "runtime_economy_ecp2.h"
 #include "runtime_pod_protocol.h"
 
 #include <array>
@@ -14,6 +15,8 @@
 #include <vector>
 
 namespace pk {
+
+class NativeEconomyRuntime;
 
 constexpr uint32_t RUNTIME_ECONOMY_OUTBOX_CAPACITY = 64u;
 constexpr uint32_t RUNTIME_ECONOMY_INBOX_CAPACITY = 64u;
@@ -396,6 +399,13 @@ public:
 
     bool encode_ecp1(std::vector<uint8_t> &out, std::string &error) const;
     bool restore_ecp1(const uint8_t *data, size_t size, std::string &error);
+    bool encode_ecp2(const RuntimeEconomyEcp2State &state,
+                     std::vector<uint8_t> &out, std::string &error) const;
+    bool encode_ecp2(std::vector<uint8_t> &out, std::string &error) const;
+    bool restore_ecp2(const uint8_t *data, size_t size, std::string &error);
+    bool capture_ecp2_from_runtime(NativeEconomyRuntime &runtime,
+                                   uint32_t flags, std::string &error);
+    const RuntimeEconomyEcp2State &ecp2_state() const noexcept { return _ecp2; }
 
     const RuntimeEconomyPodReplayReport &replay_report() const noexcept {
         return _replay;
@@ -499,6 +509,7 @@ private:
     int32_t _summary_cohorts = 0;
     int32_t _summary_families = 0;
     RuntimeEconomyLedgerState _committed_ledger_state;
+    RuntimeEconomyEcp2State _ecp2{};
 
     bool run_bound_stage(RuntimeEconomyGraphStage stage, std::string &error);
     void publish_replay_stage(RuntimeEconomyGraphStage stage, uint64_t work,

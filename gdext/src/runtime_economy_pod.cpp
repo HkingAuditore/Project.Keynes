@@ -1,5 +1,6 @@
 #include "runtime_economy_pod.h"
 #include "economy_runtime.h"
+#include "runtime_economy_ecp2.h"
 #include "runtime_economy_population_store.h"
 
 #include <algorithm>
@@ -536,6 +537,7 @@ void RuntimeEconomyPodAuthority::reset() noexcept {
     _summary_cohorts = 0;
     _summary_families = 0;
     _committed_ledger_state.clear();
+    _ecp2 = RuntimeEconomyEcp2State{};
     // Keep _stage_ops / _command_executor: Host re-attaches identity separately.
 }
 
@@ -1286,8 +1288,10 @@ bool RuntimeEconomyPodAuthority::queue_command(
         return reject_admission("economy_command_generation_mismatch");
     }
     if (_commands.size() >= RUNTIME_ECONOMY_COMMAND_CAPACITY) {
-        error = "economy_pod_command_queue_full";
-        return false;
+        // Queue pressure is a terminal admission outcome. Returning only a
+        // boolean used to strand the caller without a request-level receipt,
+        // which made retry/idempotency indistinguishable from packet loss.
+        return reject_admission("economy_pod_command_queue_full");
     }
     _commands.push_back(command);
     RuntimeEconomyPodReceipt accepted;
@@ -1976,8 +1980,42 @@ bool RuntimeEconomyPodAuthority::restore_ecp1(const uint8_t *data, size_t size,
     return true;
 }
 
+bool RuntimeEconomyPodAuthority::encode_ecp2(
+        const RuntimeEconomyEcp2State &state, std::vector<uint8_t> &out,
+        std::string &error) const {
+    return pk::encode_ecp2(state, out, error);
+}
+
+bool RuntimeEconomyPodAuthority::encode_ecp2(std::vector<uint8_t> &out,
+                                             std::string &error) const {
+    if (_ecp2.authority_domain_mask == 0) {
+        error = "economy_pod_ecp2_state_empty";
+        return false;
+    }
+    return pk::encode_ecp2(_ecp2, out, error);
+}
+
+bool RuntimeEconomyPodAuthority::restore_ecp2(const uint8_t *data, size_t size,
+                                              std::string &error) {
+    error.clear();
+    RuntimeEconomyEcp2State decoded;
+    if (!pk::decode_ecp2(data, size, decoded, error)) return false;
+    _ecp2 = std::move(decoded);
+    return true;
+}
+
+bool RuntimeEconomyPodAuthority::capture_ecp2_from_runtime(
+        NativeEconomyRuntime &runtime, uint32_t flags, std::string &error) {
+    error.clear();
+    RuntimeEconomyEcp2State captured;
+    if (!runtime.capture_ecp2_authority(captured, error, flags)) return false;
+    _ecp2 = std::move(captured);
+    return true;
+}
+
 bool RuntimeEconomyPodAuthority::self_test(std::string &error) {
     error.clear();
+    if (!runtime_economy_ecp2_self_test(error)) return false;
     RuntimeEconomyPopulationStore population;
     population.clear(2);
     const int32_t reserved = population.reserve_slot(0, 7, 99);

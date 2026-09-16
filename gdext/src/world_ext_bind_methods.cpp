@@ -306,6 +306,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::runtime_economy_pod_self_test);
     ClassDB::bind_method(D_METHOD("switch_economy_authority", "mode"),
                          &DCWorldExt::switch_economy_authority);
+    ClassDB::bind_method(D_METHOD("runtime_economy_authority_fault_gate_self_test"),
+                         &DCWorldExt::runtime_economy_authority_fault_gate_self_test);
     ClassDB::bind_method(D_METHOD("runtime_economy_stage_order_contract_test"),
                          &DCWorldExt::runtime_economy_stage_order_contract_test);
     ClassDB::bind_method(D_METHOD("is_native_daily_visual_commit_pending"),
@@ -785,6 +787,10 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::read_economy_save_chunk, DEFVAL(4 * 1024 * 1024));
     ClassDB::bind_method(D_METHOD("end_economy_save"),
                          &DCWorldExt::end_economy_save);
+    ClassDB::bind_method(D_METHOD("capture_economy_ecp2", "flags"),
+                         &DCWorldExt::capture_economy_ecp2, DEFVAL(0));
+    ClassDB::bind_method(D_METHOD("restore_economy_ecp2", "bytes"),
+                         &DCWorldExt::restore_economy_ecp2);
     ClassDB::bind_method(D_METHOD("begin_economy_restore"),
                          &DCWorldExt::begin_economy_restore);
     ClassDB::bind_method(D_METHOD("feed_economy_restore_chunk", "chunk"),
