@@ -1,0 +1,515 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+=== native building runtime test ===
+  [PASS] building catalog compiles
+  [PASS] coal mine type exists
+  [PASS] role-rebuild country bootstraps
+  [PASS] role-rebuild runtime configures
+  [PASS] role-rebuild fixture bootstraps
+  [PASS] role-rebuild expansion queues
+  [PASS] same-key construction uses the count-only topology fast path
+  [PASS] construction rebuild preserves incumbent employee fill
+  [PASS] role-rebuild expansion conserves every ledger
+  [PASS] zero-resource country bootstraps
+  [PASS] zero-resource runtime configures
+  [PASS] zero-resource fixture bootstraps
+  [PASS] zero natural resource preserves assets, owner positions, and releases employees
+  [PASS] zero-resource cycle conserves every ledger
+  [PASS] owner-position country bootstraps
+  [PASS] owner-position runtime configures
+  [PASS] owner-position fixture bootstraps
+  [PASS] ACTIVE owner positions stay at physical capacity while output scales
+  [PASS] projected building income uses retained owners and includes retained livelihood
+  [PASS] multi-building owner opportunity quote scales output and in-kind value
+  [PASS] owner-position employment conserves every ledger
+  [PASS] positive self-employment does not oscillate through suspension
+  [PASS] birth-employment country bootstraps
+  [PASS] birth-employment runtime configures
+  [PASS] birth-employment fixture bootstraps
+  [PASS] birth structural commit creates one unemployed cohort member
+  [PASS] newborn does not fill the active owner opening in the same period
+  [PASS] phase-order country bootstraps
+  [PASS] phase-order runtime configures
+  [PASS] phase-order population and plant bootstrap
+  [PASS] phase-order cycle conserves all ledgers
+  [PASS] zero-cash employees spend same-cycle wage income
+  [PASS] same-cycle produced food is sold before household clearing
+  [PASS] cost-floor country bootstraps
+  [PASS] cost-floor runtime configures
+  [PASS] cost-floor plant bootstraps
+  [PASS] scarce output remains below its target inventory
+  [PASS] scarce output price rises to the rate-limited producer cost floor
+  [PASS] retention-cap country bootstraps
+  [PASS] retention-cap runtime configures
+  [PASS] retention-cap settlement bootstraps
+  [PASS] survival retention is positive but capped below production
+  [PASS] consumed retained output offsets livelihood without minting cash
+  [PASS] retention-cap output reconciles sale, retention, and discard
+  [PASS] retention-cap cycle conserves every ledger
+  [PASS] survival-food production keeps the subsistence probe floor
+  [PASS] rounding-tolerance cycle conserves every ledger
+  [PASS] multi-food retention country bootstraps
+  [PASS] multi-food retention runtime configures
+  [PASS] multi-food retention settlement bootstraps
+  [PASS] produce output remains retained beside a staple output
+  [PASS] multi-food retention cycle conserves every ledger
+  [PASS] flow-replacement country bootstraps
+  [PASS] flow-replacement runtime configures
+  [PASS] flow-replacement settlement bootstraps
+  [PASS] flow-replacement stock band is scheduled
+  [PASS] survival producer is paid while opening stock is above target
+  [PASS] flow-replacement procurement conserves every ledger
+  [PASS] open-access CPUE country bootstraps
+  [PASS] open-access CPUE runtime configures
+  [PASS] open-access CPUE fixture bootstraps
+  [PASS] open-access CPUE country bootstraps
+  [PASS] open-access CPUE runtime configures
+  [PASS] open-access CPUE fixture bootstraps
+  [PASS] open-access CPUE falls continuously with renewable stock density
+  [PASS] renewable-budget country bootstraps
+  [PASS] renewable-budget runtime configures
+  [PASS] renewable-budget fixture bootstraps
+  [PASS] renewable extractors share the five-day safe-harvest budget
+  [PASS] hunter-subsistence country bootstraps
+  [PASS] hunter-subsistence runtime configures
+  [PASS] hunter-subsistence settlement bootstraps
+SCRIPT ERROR: Invalid access to property or key 'working_capital_allocated' on a base object of type 'Dictionary'.
+   at: _test_hunter_subsistence_and_working_capital (res://tests/building_runtime_test.gd:3828)
+   GDScript backtrace (most recent call first):
+       [0] _test_hunter_subsistence_and_working_capital (res://tests/building_runtime_test.gd:3828)
+       [1] _run (res://tests/building_runtime_test.gd:70)
+       [2] _init (res://tests/building_runtime_test.gd:9)
+  [PASS] household-stock recovery country bootstraps
+  [PASS] household-stock recovery runtime configures
+  [PASS] household-stock recovery settlement bootstraps
+  [PASS] non-survival hearth cannot reserve staple food ahead of households
+  [PASS] household-stock recovery drain queues
+  [PASS] one-unit raw stock does not block shortage recovery
+  [PASS] business-demand recovery country bootstraps
+  [PASS] business-demand recovery runtime configures
+  [PASS] business-demand recovery fixture bootstraps
+  [PASS] business-only tool demand remains visible to production planning
+  [FAIL] business shortage keeps knapping above the industrial probe floor
+  [PASS] business-demand recovery cycles conserve every ledger
+  [PASS] shortage-propagation country bootstraps
+  [PASS] shortage-propagation runtime configures
+  [PASS] shortage-propagation fixture bootstraps
+  [PASS] missing input keeps a bounded purchase intent
+  [PASS] missing input publishes unfunded upstream demand
+  [PASS] upstream demand reaches the business-demand EMA
+  [PASS] flint quarry receives a production opportunity
+  [PASS] flint stock recovers without synthetic goods
+  [PASS] knapping eventually resumes after flint recovery
+  [PASS] shortage-propagation cycles conserve every ledger
+  [PASS] leontief-derived country bootstraps
+  [PASS] leontief-derived runtime configures
+  [PASS] leontief-derived fixture bootstraps
+  [FAIL] vacant knapping remains unstaffed in derived-demand fixture
+  [PASS] tool shortage derives flint shadow demand without knapping sales
+  [FAIL] derived flint demand lifts flint price over cold-start cycles
+  [PASS] leontief-derived cycles conserve every ledger
+  [PASS] derived demand diagnostics are published
+  [PASS] input-reserve country bootstraps
+  [PASS] input-reserve runtime configures
+  [PASS] input-reserve settlement bootstraps
+  [PASS] tool stock protects the complete next-period hunting input
+  [PASS] reserved tools start the next hunting period
+  [PASS] input-reserve cycles conserve every ledger
+  [PASS] soft-input country bootstraps 184
+  [PASS] soft-input runtime configures 184
+  [PASS] soft-input settlement bootstraps 184
+  [PASS] soft-input country bootstraps 185
+  [PASS] soft-input runtime configures 185
+  [PASS] soft-input settlement bootstraps 185
+  [PASS] soft hunting input keeps partial output without tools
+  [PASS] soft hunting input still rewards available tools
+  [PASS] soft-input shortage cycles conserve every ledger
+  [PASS] producer-support country bootstraps
+  [PASS] producer-support runtime configures
+  [PASS] producer-support settlement bootstraps
+  [PASS] producer-support trace target registers
+  [PASS] zero-cash merchant spends nothing on producer output
+  [PASS] bounded support accepts its quota and explicitly reports the remainder
+  [PASS] support issuance uses exactly twenty percent of frozen retail value
+  [PASS] support issuance is a distinct producer cashflow
+  [PASS] support issuance is explicitly audited
+  [PASS] cycle-flow clearing country bootstraps
+  [PASS] cycle-flow clearing runtime configures
+  [PASS] cycle-flow clearing settlement bootstraps
+  [PASS] cycle-flow output receives low-price clearing before discard
+  [PASS] cycle-flow clearing still discards transient stock at boundary
+  [PASS] cycle-flow support cycle conserves every ledger
+  [PASS] construction-shortage country bootstraps
+  [PASS] construction-shortage runtime configures
+  [PASS] construction-shortage settlement bootstraps
+  [PASS] construction-shortage build command queues
+  [PASS] construction shortage rejects the build command
+  [PASS] rejected construction does not pollute business demand EMA
+  [PASS] rejected construction preserves every ledger
+  [PASS] owner-reconcile country bootstraps
+  [PASS] owner-reconcile runtime configures
+  [PASS] owner-reconcile fixture bootstraps
+  [PASS] owner-reconcile artisan handle exists
+  [PASS] owner-reconcile population loss queues
+  [PASS] owner snapshot separates capacity, planned jobs, and openings
+  [PASS] shared owner signature fill reconciles to cohort employment
+  [PASS] released owner target hires from the unemployed pool
+  [PASS] owner reconciliation conserves every ledger
+  [PASS] last-demolition country bootstraps
+  [PASS] last-demolition runtime configures
+  [PASS] last-demolition fixture bootstraps
+  [PASS] last-demolition mine initially employs miners
+  [PASS] last-demolition command queues
+  [PASS] last demolition removes the final building group
+  [PASS] idle professions migrate into the unemployed cohort
+  [PASS] last-demolition reconciliation conserves every ledger
+  [PASS] non-due construction country bootstraps
+  [PASS] non-due construction runtime configures
+  [PASS] non-due construction fixture bootstraps
+  [PASS] non-due construction command queues
+  [PASS] non-due employment metrics atomically add the first cell contribution
+  [PASS] non-due construction conserves every ledger
+  [PASS] owner-job mobility country bootstraps
+  [PASS] owner-job mobility runtime configures
+  [PASS] owner-job mobility fixture bootstraps
+  [PASS] higher owner income attracts the final low-income ACTIVE owner
+  [PASS] cross-profession owner movement transfers population and funds proportionally
+  [PASS] income-driven owner movement restores target production
+  [PASS] owner-job mobility conserves every ledger
+  [PASS] employee-owner mobility country bootstraps
+  [PASS] employee-owner mobility runtime configures
+  [PASS] employee-owner mobility fixture bootstraps
+  employee-owner debug={ "gathering_income": 0, "gathering_filled": 0, "timber_filled": 2, "gathering_sold": 2140, "gathering_output": 14500, "realloc": 1, "profession_changes": 1 }
+  [FAIL] higher food owner income attracts an incumbent mining employee
+  [PASS] employee-owner mobility retains the final merchant and produces food
+  [PASS] employee-owner mobility conserves every ledger
+  [PASS] job-to-job country bootstraps
+  [PASS] job-to-job runtime configures
+  [PASS] job-to-job fixture bootstraps
+  [PASS] zero-unemployment employee moves to higher collectible pay
+  [PASS] unfunded new good cannot advertise its nominal contract
+  [PASS] job-to-job transition conserves every ledger
+  [PASS] merchant mobility country bootstraps
+  [PASS] merchant mobility runtime configures
+  [PASS] merchant mobility fixture bootstraps
+  [PASS] surplus merchant changes profession while final merchant is retained
+  [PASS] same-profession mobility country bootstraps
+  [PASS] same-profession mobility runtime configures
+  [PASS] same-profession mobility fixture bootstraps
+  [PASS] same-profession owner movement only reallocates group fill
+  [PASS] same-profession owner movement conserves every ledger
+  [PASS] owner-job probability country bootstraps
+  [PASS] owner-job probability runtime configures
+  [PASS] owner-job probability fixture bootstraps
+  probability fixture=[47847, 0]/[1, 0]/0/0
+  [PASS] lower-income vacancy does not attract an incumbent owner
+  [PASS] unemployed-first mobility country bootstraps
+  [PASS] unemployed-first mobility runtime configures
+  [PASS] unemployed-first mobility fixture bootstraps
+  [PASS] unemployed owner hiring precedes ACTIVE owner attraction
+  [PASS] unemployed-first owner hiring conserves every ledger
+  [PASS] understaffed-raid country bootstraps
+  [PASS] understaffed-raid runtime configures
+  [PASS] understaffed-raid fixture bootstraps
+  [FAIL] understaffed owner lots do not thrash on a small opportunity gap
+  [PASS] understaffed-raid conserves every ledger
+  [PASS] understaffed-flow country bootstraps
+  [PASS] understaffed-flow runtime configures
+  [PASS] understaffed-flow fixture bootstraps
+  [PASS] understaffed labor concentrates on the higher-opportunity lot
+  [PASS] understaffed-flow conserves every ledger
+  [PASS] unemployment-subsidy country configures
+  [PASS] unemployment-subsidy country bootstraps
+  [PASS] unemployment-subsidy policy commits
+  [PASS] unemployment-subsidy economy configures
+  [PASS] unemployment-subsidy fixture bootstraps
+M7_SUBSIDY { "paid": 0, "owner": 1, "unemployed": 0, "opportunity": 17514, "money": 0, "pop": 0, "goods": 0 }
+  [FAIL] funded unemployment subsidy is job reservation income
+  [FAIL] funded unemployment subsidy remains a fiscal transfer
+  [PASS] owner-investment country bootstraps
+  [PASS] owner-investment runtime configures
+  [PASS] owner-investment settlement bootstraps
+  [PASS] owner-investment diagnostic trace registers
+  [FAIL] employment fills the existing profitable owner opening first
+  [PASS] existing owner-opening employment conserves every ledger
+  [PASS] profitable unlocked-building investment transitions its sponsor and starts construction
+  [PASS] investment v9 publishes one consistent marginal-output driver
+  [PASS] legacy signal thresholds and sales ratios do not veto positive marginal demand
+  [PASS] endogenous construction conserves every ledger
+  [PASS] non-review day prevents repeat expansion
+  [PASS] merit-order country bootstraps
+  [PASS] merit-order runtime configures
+  [PASS] merit-order settlement bootstraps
+M7_MERIT { "types": [42, 353], "sold": [0, 23028], "output": [0, 5070000], "opcost": [12445, 1635611] }
+  [FAIL] low-cost plant captures merchant quota before high-cost leftover
+  [PASS] merit-order offtake conserves every ledger
+  [PASS] displacement country bootstraps
+  [PASS] displacement runtime configures
+  [PASS] displacement settlement bootstraps
+  [PASS] displacement diagnostic trace registers
+  displacement debug={ "steam_row": 353, "reject": 0, "stealable": 0, "pending": false, "starts": 0, "catchup_cells": 1, "cheap_count": 1 }
+  [FAIL] cheaper unlocked type can displace covered high-cost incumbents
+  [PASS] displacement investment conserves every ledger
+  [PASS] first-research fixture catalog contains the required entries
+  [PASS] first-research country configures
+  [PASS] first-research country bootstraps
+  [PASS] first-research queue and automatic procurement commit
+  [PASS] first-research economy configures
+  [PASS] first-research economy fixture bootstraps
+  [PASS] first-research fixture starts without a research building
+M7_RESEARCH { "row": 2, "reject": 0, "pressure": 65536, "util": 65536, "starts": 2, "report": { "path": "ECONOMY_GRAPH", "mode": "native", "report_mode": "full", "configured": true, "bootstrapped": true, "epoch_active": false, "epoch_id": 4, "committed_generation": 6, "settlement_mode": "locked_cycle", "market_cycle_days": 5, "epoch_days": 5, "epoch_elapsed_days_max": 5, "epoch_elapsed_days_spread_cells": 0, "epoch_elapsed_days_lost": 0, "total_elapsed_days_lost": 0, "peak_elapsed_days_spread_cells": 0, "tier_t0_cells": 0, "tier_t1_cells": 1, "tier_t2_cells": 0, "tier_t3_cells": 0, "tier_forced_wakes": 0, "tier_reasons": { "player_territory": 1, "visible": 0, "forced_wake": 0, "effect_shortage": 0, "essentials_shortage": 0, "construction": 0, "recent_change": 0, "quiet_short": 0, "quiet_with_buildings": 0, "dormant": 0, "out_of_range": 0 }, "tier_dormancy_cap_days": 30, "market_configured_cycle_days": 5, "market_min_cycle_days": 1, "market_max_cycle_days": 5, "locked_market_cycle_days": 5, "market_cycle_start_day": 15, "market_cycle_days_remaining": 0, "locked_slow_cycle_days": 10, "locked_plan_cycle_days": 10, "slow_cycle_start_day": 10, "plan_cycle_start_day": 10, "slow_cycle_days_remaining": 0, "plan_cycle_days_remaining": 0, "locked_investment_cycle_days": 10, "investment_cycle_start_day": 10, "investment_cycle_days_remaining": 0, "building_plan_days": 10, "investment_review_days": 10, "settlement_phase": 0, "settlement_phase_count": 5, "cadence_populated_knives": 7, "cadence_slow_knives": 1, "cadence_plan_knives": 1, "cadence_investment_knives": 1, "cadence_target_ms": 8.0, "cadence_market_ms_per_knife": 0.1, "cadence_slow_ms_per_knife": 0.1, "cadence_plan_ms_per_knife": 0.1, "cadence_investment_ms_per_knife": 0.1, "cadence_machine_knives_per_day": 80, "cadence_slow_knives_per_day": 80, "cadence_plan_knives_per_day": 80, "cadence_investment_knives_per_day": 80, "economy_live_cells": 1, "cadence_change_reason": "hold", "cadence_timing_injected": false, "cadence_forced": true, "estimated_market_slices_per_epoch": 2, "estimated_building_slices_per_epoch": 3, "estimated_total_slices_per_epoch": 5, "sample_day": 15, "current_day": 20, "commit_day": 15, "age_days": 0, "stage": "aggregate_publish", "next_stage": "aggregate_publish", "executed_stage": "aggregate_publish", "executed_substage": "", "progress_q16": 65535, "publish_phase": "done", "publish_entries_per_slice": 4096, "publish_audit_entries_per_slice": 131072, "building_review_groups_per_slice": 4096, "investment_cells_per_slice": 96, "building_finalize_cells_per_slice": 128, "building_plan_cells_per_slice": 128, "plan_evaluate_cells": 0, "household_post_building_cells_per_slice": 512, "epoch_available_building_type_count": 3, "household_market_phase": -1, "building_plan_phase": -1, "building_commit_phase": -1, "processed_cells": 1, "processed_cohorts": 3, "processed_rules": 3, "processed_commands": 0, "rejected_commands": 0, "formula_ms": 0.0091, "clear_ms": 0.0028, "ledger_ms": 0.0, "processed_needs": 3, "processed_variants": 24, "processed_components": 3, "carrying_old_resource_scan_steps": 0, "food_output_events": 0, "food_input_events": 0, "food_trade_events": 0, "food_access_events": 3, "fallback_ms": 0.0001, "merchant_settle_ms": 0.0043, "price_ms": 0.1105, "structure_ms": 0.0, "prosperity_changed_cells": 0, "prosperity_promotions": 0, "prosperity_demotions": 0, "settlement_names_assigned": 0, "settlement_names_released": 0, "settlement_name_collision_probes": 0, "prosperity_update_ms": 0.0004, "settlement_revision": 1, "settlement_memory_bytes": 27, "publish_ms": 0.0228, "publish_commit_cells_ms": 0.001, "publish_commit_prepare_ms": 0.0009, "publish_commit_finalize_ms": 0.0163, "class_opinion_revision": 4, "class_opinion_class_hash": 8141371772495636646, "class_opinion_country_count": 1, "class_opinion_class_count": 4, "class_opinion_cells": 4, "class_opinion_slots_scanned": 10, "class_opinion_zero_population_rows": 10, "class_opinion_last_cells_scanned": 1, "class_opinion_last_slots_scanned": 3, "class_opinion_last_zero_population_rows": 2, "class_opinion_ms": 0.0031, "publish_breakdown_ms": { "aggregate_publish.prepare": 0.0, "aggregate_publish.audit_population": 0.0, "aggregate_publish.audit_market": 0.0, "aggregate_publish.audit_transit": 0.0, "aggregate_publish.audit_escrow": 0.0, "aggregate_publish.audit_country": 0.0, "aggregate_publish.verify": 0.0, "aggregate_publish.watermark": 0.0, "aggregate_publish.trade_flow": 0.0, "aggregate_publish.trade_diagnostics": 0.0, "aggregate_publish.trade_init": 0.0, "aggregate_publish.commit": 0.0, "aggregate_publish.done": 0.0, "aggregate_publish.class_opinion": 0.0031, "aggregate_publish.commit_cells": 0.0, "aggregate_publish.commit_prepare": 0.0, "aggregate_publish.commit_finalize": 0.0 }, "publish_breakdown_work": { "aggregate_publish.prepare": 0, "aggregate_publish.audit_population": 0, "aggregate_publish.audit_market": 0, "aggregate_publish.audit_transit": 0, "aggregate_publish.audit_escrow": 0, "aggregate_publish.audit_country": 0, "aggregate_publish.verify": 0, "aggregate_publish.watermark": 0, "aggregate_publish.trade_flow": 0, "aggregate_publish.trade_diagnostics": 0, "aggregate_publish.trade_init": 0, "aggregate_publish.commit": 0, "aggregate_publish.done": 0, "aggregate_publish.class_opinion": 3, "aggregate_publish.commit_cells": 0, "aggregate_publish.commit_prepare": 0, "aggregate_publish.commit_finalize": 0 }, "publish_cumulative_breakdown_ms": { "aggregate_publish.prepare": 0.0023, "aggregate_publish.audit_population": 0.0, "aggregate_publish.audit_market": 0.0, "aggregate_publish.audit_transit": 0.0, "aggregate_publish.audit_escrow": 0.0, "aggregate_publish.audit_country": 0.0, "aggregate_publish.verify": 0.0005, "aggregate_publish.watermark": 0.0003, "aggregate_publish.trade_flow": 0.0003, "aggregate_publish.trade_diagnostics": 0.0007, "aggregate_publish.trade_init": 0.0004, "aggregate_publish.commit": 0.0183, "aggregate_publish.done": 0.0 }, "publish_cumulative_breakdown_work": { "aggregate_publish.prepare": 1, "aggregate_publish.audit_population": 0, "aggregate_publish.audit_market": 0, "aggregate_publish.audit_transit": 0, "aggregate_publish.audit_escrow": 0, "aggregate_publish.audit_country": 0, "aggregate_publish.verify": 1, "aggregate_publish.watermark": 1, "aggregate_publish.trade_flow": 0, "aggregate_publish.trade_diagnostics": 133, "aggregate_publish.trade_init": 0, "aggregate_publish.commit": 2, "aggregate_publish.done": 0 }, "household_market_breakdown_ms": { "household_market.settle.prepare": 0.0, "household_market.settle.worker": 0.0, "household_market.settle.merge_aggregate": 0.0, "household_market.settle.merge_trade": 0.0, "household_market.settle.trace": 0.0, "household_market.settle.other": 0.0, "household_market.post_buildings": 0.0, "household_market.reserve_shortfall": 0.0, "household_market.income_subsidy": 0.0, "household_market.structural_sort": 0.0 }, "household_market_breakdown_work": { "household_market.settle.prepare": 0, "household_market.settle.worker": 0, "household_market.settle.merge_aggregate": 0, "household_market.settle.merge_trade": 0, "household_market.settle.trace": 0, "household_market.settle.other": 0, "household_market.post_buildings": 0, "household_market.reserve_shortfall": 0, "household_market.income_subsidy": 0, "household_market.structural_sort": 0 }, "building_commit_breakdown_ms": { "building_commit.review_prepare": 0.0, "building_commit.special_reset": 0.0, "building_commit.recovery_review": 0.0, "building_commit.construction_commit": 0.0, "building_commit.investment_prepare": 0.0, "building_commit.investment": 0.0, "building_commit.finalize": 0.0 }, "building_commit_breakdown_work": { "building_commit.review_prepare": 0, "building_commit.special_reset": 0, "building_commit.recovery_review": 0, "building_commit.construction_commit": 0, "building_commit.investment_prepare": 0, "building_commit.investment": 0, "building_commit.finalize": 0 }, "building_employment_ms": 0.0432, "building_production_ms": 0.0344, "building_production_merge_ms": 0.0023, "building_production_worker_ms": 0.0312, "household_market_worker_ms": 0.131, "household_market_prepare_ms": 0.0005, "household_market_merge_ms": 0.0156, "household_market_merge_aggregate_ms": 0.0012, "household_market_merge_trade_ms": 0.0125, "prepare_reuse_count": 15, "workset_cells_planned": 1, "workset_cells_executed": 1, "duplicate_range_count": 0, "market_result_allocation_growth_count": 1, "market_result_allocation_growth_bytes": 712, "production_result_allocation_growth_count": 1, "production_result_allocation_growth_bytes": 920, "building_plan_ms": 0.0038, "building_plan_evaluate_ms": 0.0026, "building_plan_reserve_ms": 0.0012, "building_structure_count_only_updates": 0, "building_structure_new_groups": 0, "building_structure_removed_groups": 0, "building_structure_topology_rebuilds": 0, "building_structure_role_span_reuses": 0, "building_structure_role_span_appends": 0, "building_structure_group_merge_ms": 0.0, "building_structure_market_cache_ms": 0.0, "building_structure_labor_cache_ms": 0.0, "market_signal_lookup_mode": "dense", "market_signal_lookup_entries": 134, "pending_construction_index_entries": 0, "building_investment_ms": 0.0029, "investment_evaluate_ms": 0.0, "investment_allocate_ms": 0.0, "working_capital_scale_error_bound_q16": 0, "market_signal_ms": 0.0043, "market_signal_insert_ms": 0.0, "market_signal_flush_ms": 0.0, "market_signal_insert_count": 0, "wage_plan_ms": 0.0002, "labor_signal_ms": 0.0001, "trade_plan_ms": 0.0, "trade_plan_breakdown_ms": { "trade_planning.scan_body": 0.0, "trade_planning.scan_finalize": 0.0, "trade_planning.route_prepare": 0.0, "trade_planning.route_expand": 0.0, "trade_planning.route_finalize": 0.0, "trade_planning.other": 0.0 }, "trade_plan_breakdown_work": { "trade_planning.scan_pairs": 0, "trade_planning.route_sources_prepared": 0, "trade_planning.route_expansions": 0, "trade_planning.candidates_finalized": 0 }, "trade_plan_substage": "", "trade_settle_ms": 0.0, "trade_dispatch_ms": 0.0043, "epoch_begin_ms": 0.046, "epoch_begin_reset_ms": 0.0016, "epoch_begin_country_ms": 0.0388, "epoch_begin_city_factor_ms": 0.0004, "epoch_begin_building_factor_ms": 0.0014, "scan_steps_stage_idle": 3, "scan_steps_stage_epoch_begin": 0, "scan_steps_stage_ledger_apply": 0, "scan_steps_stage_household_market": 0, "scan_steps_stage_structural_commit": 0, "scan_steps_stage_wait_commit": 0, "scan_steps_stage_building_employment": 0, "scan_steps_stage_building_production": 18, "scan_steps_stage_building_commit": 8, "scan_steps_stage_aggregate_publish": 0, "scan_steps_stage_fatal": 0, "scan_steps_stage_trade_settle": 0, "scan_steps_stage_trade_dispatch": 0, "scan_steps_stage_trade_planning": 0, "scan_steps_stage_building_plan": 0, "scan_steps_stage_government_research_procurement": 0, "scan_steps_stage_family_commit": 0, "scan_steps_stage_person_commit": 0, "scan_steps_find_building_group": 0, "scan_steps_find_signature": 29, "scan_steps_membership_fallback": 0, "scan_steps_person_linear": 0, "scan_steps_family_linear": 0, "scan_calls_find_building_group": 1, "scan_calls_find_signature": 10, "scan_calls_membership_fallback": 0, "family_commit_normalize_ms": 0.0, "family_commit_attribution_ms": 0.0, "family_commit_form_ms": 0.0, "family_commit_index_ms": 0.0, "family_commit_lifecycle_ms": 0.0, "family_commit_influence_ms": 0.0, "rebuild_family_membership_ms": 0.0, "rebuild_family_ownership_ms": 0.0, "rebuild_family_csr_ms": 0.0, "rebuild_family_cellindex_ms": 0.0, "rebuild_person_needs_ms": 0.0004, "rebuild_person_count_ms": 0.0003, "rebuild_person_fill_ms": 0.0007, "rebuild_person_sort_ms": 0.0001, "rebuild_person_needoffsets_ms": 0.0, "person_retire_call_ms": 0.0, "person_retire_calls": 0, "person_commit_retire_ms": 0.0, "person_commit_index_ms": 0.0018, "person_commit_bind_jobs_ms": 0.0008, "person_commit_claims_ms": 0.0002, "person_commit_equity_ms": 0.0002, "person_commit_promote_ms": 0.0, "epoch_begin_workset_ms": 0.0032, "epoch_begin_resource_lane_ms": 0.0014, "epoch_begin_fiscal_ms": 0.0019, "epoch_begin_construction_csr_ms": 0.0002, "epoch_begin_recovery_apply_ms": 0.0003, "epoch_begin_vector_init_ms": 0.0136, "epoch_begin_audit_lane_ms": 0.0, "epoch_begin_commands_ms": 0.0002, "epoch_preflight_ms": 0.0005, "prepare_ms": 0.0454, "audit_ms": 0.001, "watermark_ms": 0.0003, "event_summary_ms": 0.0017, "event_detail_ms": 0.0, "event_publish_ms": 0.0067, "event_stream_hash": -2267376469848958515, "economy_event_newest_id": 26, "economy_event_last_batch_count": 8, "economy_trace_memory_bytes": 92065, "economy_trace_detail_truncated": 0, "worker_tasks": 1, "high_speed_batching_enabled": true, "high_speed_batch_multiplier": 1, "high_speed_market_dispatches_saved": 0, "high_speed_production_dispatches_saved": 0, "building_production_worker_tasks": 1, "market_worker_tasks_max": 1, "market_worker_task_sum": 1, "market_worker_dispatches": 1, "market_worker_parallel_dispatches": 0, "building_production_worker_tasks_max": 1, "building_production_worker_task_sum": 1, "building_production_worker_dispatches": 1, "building_production_worker_parallel_dispatches": 0, "building_production_worker_weight_total": 42, "building_production_worker_task_weight_min": 0, "building_production_worker_task_weight_max": 0, "building_production_worker_imbalance_q16_max": 0, "building_production_worker_cpu_ms": 0.0, "audit_worker_tasks_max": 1, "audit_worker_dispatches": 0, "audit_worker_cpu_ms": 0.0, "building_plan_worker_tasks_max": 1, "building_plan_worker_parallel_dispatches": 0, "building_plan_worker_cpu_ms": 0.0017, "opening_audit_fast_paths": 1, "opening_audit_full_verifications": 0, "closing_audit_mode": "INCREMENTAL", "closing_audit_runtime_disabled": false, "closing_audit_fast_paths": 1, "closing_audit_full_verifications": 0, "closing_audit_mismatches": 0, "closing_audit_mismatch_ledger": "none", "closing_audit_mismatch_lane": -1, "closing_audit_population_touched_lanes": 3, "closing_audit_market_touched_lanes": 134, "closing_audit_population_full_scan_entries": 0, "closing_audit_market_full_scan_entries": 0, "closing_audit_incremental_this_epoch": true, "investment_scheduled_review_cells": 0, "investment_review_cells": 0, "investment_type_evaluations": 0, "investment_market_signal_rejections": 0, "investment_ethnicity_evaluations": 0, "investment_sparse_mode": "ACTIVE", "investment_sparse_runtime_disabled": false, "investment_sparse_considered_types": 0, "investment_sparse_selected_types": 0, "investment_sparse_skipped_types": 0, "investment_sparse_mismatches": 0, "investment_sparse_dense_fallbacks": 0, "investment_displacement_type_evaluations": 0, "investment_gate_capital_type_skips": 0, "approximation_probe_violations": 0, "approximation_probe_max_spend_error_q16": 0, "approximation_probe_max_demand_error_q16": 0, "approximation_cooldown_epochs_left": 7, "budgeted_building_commit_phase_fusions": 9, "budgeted_publish_phase_fusions": 6, "last_completed_price_numeric_floor_hits": 0, "last_completed_price_numeric_ceiling_hits": 0, "last_completed_price_min_tick_hits": 0, "last_completed_price_glut_cost_damp_hits": 0, "last_completed_small_payment_roundups": 0, "last_completed_price_ms": 0.1105, "last_completed_perf_valid": true, "last_completed_epoch_id": 4, "last_completed_sample_day": 15, "last_completed_continuation_slices": 17, "last_completed_market_worker_tasks_max": 1, "last_completed_market_worker_task_sum": 1, "last_completed_market_worker_dispatches": 1, "last_completed_market_worker_parallel_dispatches": 0, "last_completed_building_production_worker_tasks_max": 1, "last_completed_building_production_worker_task_sum": 1, "last_completed_building_production_worker_dispatches": 1, "last_completed_building_production_worker_parallel_dispatches": 0, "last_completed_building_production_worker_weight_total": 42, "last_completed_building_production_worker_task_weight_min": 0, "last_completed_building_production_worker_task_weight_max": 0, "last_completed_building_production_worker_imbalance_q16_max": 0, "last_completed_building_production_worker_cpu_ms": 0.0, "last_completed_audit_worker_tasks_max": 1, "last_completed_audit_worker_dispatches": 0, "last_completed_audit_worker_cpu_ms": 0.0, "last_completed_building_plan_worker_tasks_max": 1, "last_completed_building_plan_worker_parallel_dispatches": 0, "last_completed_building_plan_worker_cpu_ms": 0.0017, "last_completed_opening_audit_fast_paths": 1, "last_completed_opening_audit_full_verifications": 0, "last_completed_closing_audit_fast_paths": 1, "last_completed_closing_audit_full_verifications": 0, "last_completed_closing_audit_mismatches": 0, "last_completed_closing_audit_mismatch_ledger": "none", "last_completed_closing_audit_mismatch_lane": -1, "last_completed_closing_audit_population_touched_lanes": 3, "last_completed_closing_audit_market_touched_lanes": 134, "last_completed_closing_audit_population_full_scan_entries": 0, "last_completed_closing_audit_market_full_scan_entries": 0, "last_completed_investment_scheduled_review_cells": 0, "last_completed_investment_review_cells": 0, "last_completed_investment_type_evaluations": 0, "last_completed_investment_market_signal_rejections": 0, "last_completed_investment_ethnicity_evaluations": 0, "last_completed_investment_sparse_considered_types": 0, "last_completed_investment_sparse_selected_types": 0, "last_completed_investment_sparse_skipped_types": 0, "last_completed_investment_sparse_mismatches": 0, "last_completed_investment_sparse_dense_fallbacks": 0, "last_completed_investment_displacement_type_evaluations": 0, "last_completed_building_investment_displacement_starts": 0, "last_completed_approximation_decisions": 0, "last_completed_approximation_exact_probes": 0, "last_completed_approximation_certificate_failures": 0, "last_completed_approximation_exact_fallbacks": 0, "last_completed_approximation_frontier_candidates": 0, "last_completed_approximation_frontier_pruned": 0, "last_completed_approximation_max_observed_regret_q16": 0, "last_completed_approximation_probe_violations": 0, "last_completed_approximation_probe_max_spend_error_q16": 0, "last_completed_approximation_probe_max_demand_error_q16": 0, "last_completed_approximation_cooldown_epochs_left": 7, "last_completed_high_speed_batch_multiplier": 1, "last_completed_high_speed_market_dispatches_saved": 0, "last_completed_high_speed_production_dispatches_saved": 0, "last_completed_budgeted_building_commit_phase_fusions": 9, "last_completed_budgeted_publish_phase_fusions": 6, "last_completed_building_plan_ms": 0.0038, "last_completed_building_plan_evaluate_ms": 0.0026, "last_completed_building_plan_reserve_ms": 0.0012, "last_completed_building_employment_ms": 0.0432, "last_completed_building_production_ms": 0.0344, "last_completed_building_production_worker_ms": 0.0312, "last_completed_building_production_merge_ms": 0.0023, "last_completed_household_market_worker_ms": 0.131, "last_completed_household_market_prepare_ms": 0.0005, "last_completed_household_market_merge_ms": 0.0, "last_completed_household_market_merge_aggregate_ms": 0.0012, "last_completed_household_market_merge_trade_ms": 0.0125, "last_completed_prepare_reuse_count": 15, "last_completed_workset_cells_planned": 1, "last_completed_workset_cells_executed": 1, "last_completed_duplicate_range_count": 0, "last_completed_building_investment_ms": 0.0029, "last_completed_investment_evaluate_ms": 0.0, "last_completed_investment_allocate_ms": 0.0, "last_completed_investment_prepare_lanes_ms": 0.0013, "last_completed_investment_prepare_pending_ms": 0.0002, "last_completed_investment_prepare_groups_ms": 0.0003, "last_completed_startup_demand_prepare_ms": 0.0001, "last_completed_startup_demand_seed_count": 0, "last_completed_startup_demand_touched_lanes": 0, "last_completed_startup_demand_catalog_edges": 0, "last_completed_startup_demand_cycle_skips": 0, "last_completed_startup_demand_remote_lanes": 0, "last_completed_startup_demand_matched_review_cells": 0, "last_completed_startup_demand_buildings_started": 0, "last_completed_startup_demand_scratch_bytes": 1608, "last_completed_finalize_construction_ms": 0.0008, "last_completed_finalize_reconcile_ms": 0.0003, "last_completed_building_factor_refresh_ms": 0.0014, "last_completed_building_role_storage_ms": 0.0, "last_completed_building_factor_cache_hits": 2, "last_completed_building_factor_cache_misses": 0, "last_completed_building_factor_miss_modver": 0, "last_completed_building_factor_miss_country": 0, "last_completed_building_factor_miss_sector": 0, "last_completed_building_factor_miss_research": 0, "last_completed_building_factor_miss_identity": 0, "last_completed_aggregate_publish_ms": 0.0228, "last_completed_aggregate_audit_ms": 0.001, "last_completed_market_result_allocation_growth_count": 1, "last_completed_market_result_allocation_growth_bytes": 712, "last_completed_production_result_allocation_growth_count": 1, "last_completed_production_result_allocation_growth_bytes": 920, "last_completed_building_structure_count_only_updates": 0, "last_completed_building_structure_new_groups": 0, "last_completed_building_structure_removed_groups": 0, "last_completed_building_structure_topology_rebuilds": 0, "last_completed_building_structure_role_span_reuses": 0, "last_completed_building_structure_role_span_appends": 0, "last_completed_building_structure_group_merge_ms": 0.0, "last_completed_building_structure_market_cache_ms": 0.0, "last_completed_building_structure_labor_cache_ms": 0.0, "due_cells": 1, "processed_due_cells": 1, "deferred_cells": 0, "settlement_watermark": 15, "newest_state_day": 15, "max_state_age_days": 0, "rolling_deadline_violations": 0, "worker_enabled": true, "worker_market_threshold": 64, "markets_per_slice": 1, "building_cells_per_slice": 256, "building_groups_per_slice": 512, "auto_slice_by_scale": true, "family_runtime_mode": "OFF", "family_count": 0, "family_membership_edge_count": 0, "family_ownership_edge_count": 0, "family_trait_roll_count": 0, "family_branch_count": 0, "family_modifier_binding_count": 0, "family_trigger_binding_count": 0, "family_effect_binding_count": 0, "family_owned_output_row_count": 0, "family_industry_stat_count": 0, "family_behavior_factor_row_count": 0, "family_behavior_class_row_count": 0, "family_behavior_cache_rebuilds": 0, "family_behavior_cache_skips": 0, "family_behavior_metric_contexts_built": 0, "family_behavior_condition_edges_evaluated": 0, "family_behavior_cache_ms": 0.0, "family_behavior_cache_dirty": true, "family_behavior_cache_last_dirty_reasons": 0, "family_expedition_active_count": 0, "family_expedition_due_heap_count": 0, "family_expedition_transit_population": 0, "colonization_route_query_ms": 0.0, "colonization_payload_split_ms": 0.0, "colonization_cross_domain_ms": 0.0002, "canal_quote_count": 0, "canal_active_quote_count": 0, "canal_project_count": 0, "canal_receipt_count": 0, "canal_project_building_count": 0, "canal_project_awaiting_effect_count": 0, "canal_project_completed_count": 0, "canal_project_failed_count": 0, "canal_topology_hash": 0, "canal_edge_count": 0, "family_membership_edges_processed": 0, "family_ownership_edges_processed": 0, "families_formed": 0, "families_dissolved": 0, "family_owner_jobs_filled": 0, "family_owner_jobs_vacant": 0, "notable_person_runtime_mode": "ACTIVE", "notable_person_count": 0, "person_need_edge_count": 0, "persons_promoted": 0, "persons_died": 0, "persons_migrated": 0, "person_jobs_bound": 0, "person_need_edges_processed": 0, "memory_bytes": 399353, "city_good_output_shared_count": 134, "city_good_output_non_neutral_shared_count": 0, "city_good_output_override_count": 0, "city_good_output_override_cell_count": 0, "city_good_output_cache_bytes": 544, "canal_next_project_id": 1, "cohort_count": 3, "market_count": 1, "good_count": 134, "building_type_count": 400, "building_group_count": 2, "pending_construction_count": 0, "processed_building_groups": 1, "climate_profiled_building_groups": 0, "climate_limited_building_groups": 0, "average_climate_capacity_q16": 65536, "filled_owner_jobs": 1, "filled_employee_jobs": 0, "unemployed_population": 30, "construction_goods_consumed": 0, "explicit_stock_delta": 0, "building_investment_model": "endogenous_owner_portfolio_v9", "startup_demand_runtime_mode": "OFF", "startup_demand_seed_count": 0, "startup_demand_touched_lanes": 0, "startup_demand_catalog_edges": 0, "startup_demand_cycle_skips": 0, "startup_demand_remote_lanes": 0, "startup_demand_matched_review_cells": 0, "startup_demand_buildings_started": 0, "startup_demand_prepare_ms": 0.0001, "startup_demand_scratch_bytes": 1608, "investment_gap_fill_share_q16": 16384, "investment_portfolio_max_types": 4, "investment_max_type_owner_share_q16": 32768, "investment_max_growth_share_q16": 16384, "investment_new_type_seed_buildings": 1, "investment_displacement_min_advantage_q16": 4096, "investment_merchant_transition_min_improvement_q16": 32768, "recovery_liquidation_max_share_q16": 16384, "building_investment_candidates": 0, "building_owner_mobility": 0, "building_owner_job_reallocations": 0, "building_owner_understaffed_reallocations": 0, "building_employee_job_reallocations": 0, "building_employee_job_profession_changes": 0, "building_employee_job_hurdle_rejections": 0, "building_employee_cold_start_forecasts": 0, "building_employee_funding_limited_forecasts": 0, "building_survival_priority_candidates": 0, "building_owner_opportunity_quotes": 1, "building_owner_opportunity_zero_feasible": 0, "building_owner_survival_reallocations": 0, "bullion_quota_pressure_clamps": 0, "bullion_quote_overallocation_prevented": 0, "building_owner_job_profession_changes": 0, "building_owner_job_probability_skips": 0, "building_employee_to_owner_reallocations": 0, "building_investments_started": 0, "building_investment_displacement_starts": 0, "building_investment_blocked_funds": 0, "building_investment_blocked_materials": 0, "building_investment_blocked_sponsor_capital": 0, "building_investment_blocked_resources": 0, "building_investment_probability_skips": 0, "building_investment_capital_transferred": 0, "building_investment_buildings_started": 0, "building_investment_portfolios_started": 0, "building_investment_types_started": 0, "building_investment_owner_population_moved": 0, "building_investment_max_type_owner_share_q16": 0, "building_investment_demand_limited": 0, "building_investment_material_limited": 0, "building_investment_capital_limited": 0, "building_investment_cost_envelope_trimmed": 0, "building_investment_owner_population_limited": 0, "building_investment_jobs_started": 0, "building_investment_employment_gap": 0, "building_investment_employment_catchup_cells": 0, "desired_business_demand": 0, "derived_business_demand_total": 0, "derived_business_demand_lanes": 0, "derived_business_demand_edges": 23, "derived_business_demand_weight_q16": 32768, "funded_business_demand": 0, "unfunded_business_demand": 0, "owner_working_capital_allocated": 0, "production_inputs_consumed": 0, "production_output_stock": 105710, "production_output_discarded": 0, "production_output_retained": 0, "production_output_supported": 0, "owner_output_consumed": 0, "producer_revenue": 1298225, "producer_support_money_issued": 0, "producer_support_price_numerator": 1, "producer_support_price_denominator": 5, "bullion_money_issued": 0, "bullion_stock_consumed": 0, "gold_accepted": 0, "silver_accepted": 0, "gold_money_issued": 0, "silver_money_issued": 0, "bullion_quota_initial": 6663004, "bullion_quota_remaining": 6663004, "bullion_quota_remainder_units": 0, "cycle_flow_produced": 0, "cycle_flow_consumed": 0, "cycle_flow_discarded": 0, "consumed_goods": 99922, "building_wages_paid": 0, "building_wages_unpaid": 0, "building_base_wages_due": 0, "building_base_wages_paid": 0, "building_bonus_due": 0, "building_bonus_paid": 0, "wage_suspended_building_groups": 0, "loss_suspended_building_groups": 0, "merchant_procurement_budget": 879990646, "merchant_procurement_opportunity": 1298225, "merchant_procurement_allocated": 1298225, "merchant_procurement_unspent_allocated": 0, "merchant_survival_procurement_required": 0, "merchant_survival_procurement_allocated": 0, "merchant_input_procurement_required": 0, "merchant_input_procurement_allocated": 0, "merchant_procurement_reserved": 125712950, "merchant_procurement_spent": 1298225, "merchant_cash": 1006225028, "merchant_inventory_retail_value": 3486766580380, "merchant_inventory_liquidation_value": 3312417610516, "merchant_economic_assets": 3313423835544, "merchant_procurement_margin_value": 68393, "merchant_trade_purchase_cash": 0, "merchant_trade_sale_cash": 0, "government_research_procured_points": 105710, "government_research_procurement_cash": 1447170, "government_research_procurement_orders": 1, "country_research_procurement_cursor": 1, "country_research_procurement_candidate_count": 1, "country_research_procurement_phase": 2, "country_research_procurement_done": true, "country_research_procurement_slices": 1, "country_research_procurement_transactions": 1, "country_research_procurement_rejections": 0, "country_research_procurement_continuation_active": false, "country_research_procurement_continuation_phase": 0, "country_research_procurement_continuation_candidate": -1, "country_research_procurement_continuation_country": -1, "country_research_procurement_continuation_market": -1, "country_research_procurement_continuation_good": -1, "country_research_procurement_continuation_quantity": 0, "country_research_procurement_continuation_cash": 0, "country_research_procurement_continuation_transaction_id": 0, "country_research_procurement_continuation_merchants": 0, "country_research_procurement_continuation_merchant_cursor": 0, "country_research_procurement_continuation_market_applied": false, "country_research_procurement_continuation_session_epoch": 0, "country_research_procurement_continuation_country_generation": 0, "country_research_procurement_continuation_peer_generation": 0, "country_research_procurement_last_error": "", "fiscal_settlement_continuation_active": false, "fiscal_settlement_continuation_phase": 2, "fiscal_settlement_country_cursor": 1, "fiscal_settlement_country_count": 1, "fiscal_settlement_last_unused": 0, "fiscal_settlement_last_collected": 0, "fiscal_settlement_last_error": "", "merchant_operating_outflow": 1298225, "merchant_liquidity_coverage_q16": 50795481, "merchant_effective_buy_factor_q16": 62259, "merchant_credit_runtime_mode": "ACTIVE", "merchant_credit_budget": 0, "merchant_credit_committed": 0, "merchant_credit_drawn": 0, "merchant_credit_repaid": 0, "merchant_credit_premium_repaid": 0, "merchant_credit_outstanding": 0, "merchant_credit_bad_debt": 0, "recovery_candidates": 0, "recovery_approved": 0, "recovery_restarted": 0, "recovery_failed": 0, "recovery_liquidated_buildings": 0, "recovery_partially_liquidated_buildings": 0, "recovery_fully_liquidated_groups": 0, "production_input_reserved": 0, "production_input_reserve_shortfall": 0, "construction_material_reserved": 395, "maintenance_goods_consumed": 395, "maintenance_unmet": 0, "maintenance_unpaid_value": 0, "owner_working_capital_reserved": 0, "building_severe_loss_threshold_q16": -16384, "building_severe_loss_cycles": 3, "building_restart_margin_q16": 6554, "building_restart_cycles": 2, "merchant_procurement_cash_reserve_q16": 8192, "merchant_market_making_days_q16": 1966080, "labor_signal_edges": 0, "labor_signal_updates": 0, "building_resource_generated": 0, "building_resource_consumed": 0, "building_resource_net_delta": 0, "building_resource_limited_groups": 0, "market_signal_edges": 9, "market_signal_updates": 9, "trade_runtime_mode": "ACTIVE", "trade_topology_ready": false, "trade_topology_generation": 0, "trade_topology_hash": 0, "trade_water_portal_count": 0, "trade_water_portal_edges": 0, "trade_country_generation": 0, "trade_country_topology_hash": 3554543661169652019, "trade_plan_phase": "IDLE", "trade_scan_cursor": 0, "trade_scan_total": 0, "trade_active_key_count": 133, "trade_scan_progress_q16": 0, "trade_completed_scans": 0, "trade_route_cursor": 0, "trade_route_total": 0, "trade_source_signals": 0, "trade_destination_signals": 0, "trade_route_current_source_cell": -1, "trade_route_current_source_good": -1, "trade_route_current_source_country": -1, "trade_route_search_active": false, "trade_route_search_source": -1, "trade_route_expansion_cursor": 0, "trade_route_expansions_per_slice": 256, "trade_route_pending_targets": 0, "trade_route_accepted_targets": 0, "trade_plan_reset_count": 0, "trade_topology_content_change_count": 0, "trade_last_plan_reset_reason": "none", "trade_ready_candidates": 0, "trade_signal_max_age_days": 0, "trade_first_dispatch_delay_max_days": 0, "trade_response_deadline_misses": 0, "trade_response_deadline_misses_cumulative": 0, "trade_unresolved_no_attempt": 0, "trade_unresolved_no_spread": 0, "trade_unresolved_margin": 0, "trade_unresolved_route": 0, "trade_unresolved_stock": 0, "trade_unresolved_capacity": 0, "trade_unresolved_cash": 0, "trade_unresolved_order_cap": 0, "trade_route_expansions": 0, "trade_route_cache_hits": 0, "trade_route_cache_misses": 0, "trade_candidates_generated": 0, "trade_candidates_accepted": 0, "trade_rejected_profit": 0, "trade_rejected_no_spread": 0, "trade_rejected_margin": 0, "trade_quantity_profit_clips": 0, "trade_relief_candidates": 0, "trade_rejected_capacity": 0, "trade_rejected_stock": 0, "trade_rejected_cash": 0, "trade_rejected_route": 0, "trade_rejected_vision": 0, "trade_vision_gated": false, "trade_rejected_order_cap": 0, "trade_active_keys_pruned": 0, "trade_deficit_episodes_started": 0, "trade_deficit_episodes_resolved": 0, "trade_candidates_stale_generation": 0, "trade_candidates_arbitrated_out": 0, "trade_true_source_stock_failures": 0, "trade_orders_in_flight": 0, "trade_arrival_bucket_count": 0, "trade_orders_dispatched": 0, "trade_orders_arrived": 0, "trade_unclaimed_orders": 0, "trade_capacity_available": 4194304, "trade_capacity_used": 0, "trade_capacity_utilization_q16": 0, "trade_tariff_lane_count": 0, "trade_country_good_aggregate_count": 0, "trade_country_partner_aggregate_count": 0, "trade_transit_goods": 0, "trade_escrow_cash": 0, "trade_settlement_lag_days": 0, "price_cost_anchor_hits": 0, "price_inactive_reversions": 0, "unprofitable_building_groups": 0, "zero_utilization_building_groups": 0, "average_planned_utilization_q16": 0, "building_resource_capacity_checks": 0, "building_resource_capacity_limited_groups": 0, "last_building_rejection_reason": "", "population_error": 0, "opening_population": 31, "closing_population": 31, "population_expected": 31, "external_population_delta": 0, "money_error": 0, "money_open": 4000000000, "money_close": 4000000000, "money_expected": 4000000000, "explicit_money_mint": 0, "explicit_money_burn": 0, "opening_cohort_funds": 3000000000, "closing_cohort_funds": 3001447170, "opening_country_cash": 1000000000, "closing_country_cash": 998552830, "opening_escrow_cash": 0, "closing_escrow_cash": 0, "opening_expedition_funds": 0, "closing_expedition_funds": 0, "opening_transit_population": 0, "closing_transit_population": 0, "opening_goods_stock": 131999143364, "closing_goods_stock": 131999148757, "opening_country_goods": 0, "closing_country_goods": 105710, "goods_expected": 131999148757, "goods_error": 0, "country_research_goods_consumed": 0, "saturation_count": 0, "fatal_reason": "", "fatal": false, "commit_lag_budget_days": 4, "commit_over_budget": false, "commit_due": false, "boundary_continuation_required": false, "fiscal_reservation_continuation_active": false, "fiscal_reservation_continuation_phase": 2, "fiscal_reservation_country_cursor": 1, "fiscal_reservation_country_count": 1, "fiscal_reservation_day": 15, "fiscal_reservation_last_requested": 0, "fiscal_reservation_last_reserved": 0, "fiscal_reservation_last_error": "", "epoch_begin_post_fiscal_pending": false, "epoch_begin_pending_day": -1, "fiscal_settlement_day": 15, "cycle_deadline_day": 15, "days_until_commit": 0, "market_target_cohorts_per_slice": 4000, "market_cells_per_slice": 1, "workload_deadline_feasible": true, "workload_cycle_clamped": false, "approximation_version": 19, "approximation_model": "rolling_cell_settlement_v19_class_good_elasticity", "economy_accuracy_preset": "BALANCED", "economy_approximation_runtime_mode": "ACTIVE", "approximation_large_world_scalar_guard": false, "approximation_authoritative": false, "accuracy_max_regret_q16": 1966, "accuracy_household_tail_share_q16": 655, "accuracy_candidate_top_k": 2, "accuracy_choice_temperature_q16": 983, "employment_mobility_daily_q16": 13107, "employment_understaffed_reallocation_hurdle_mult_q16": 131072, "employment_choice_temperature_q16": 6554, "accuracy_exact_probe_rate_q16": 655, "accuracy_fallback_cooldown_epochs": 10, "approximation_decisions": 0, "approximation_exact_probes": 0, "approximation_certificate_failures": 0, "approximation_exact_fallbacks": 0, "approximation_frontier_candidates": 0, "approximation_frontier_pruned": 0, "approximation_max_observed_regret_q16": 0, "starvation_satisfaction_threshold_q16": 32768, "survival_production_target_q16": 65536, "starvation_death_rate_q32": 0, "births": 0, "deaths": 0, "period_transactions": true, "max_command_latency_days": 5, "pending_commands": 0, "catalog_hash": 27676592241239068, "building_catalog_hash": 44241247762182233, "environment_day": 20, "environment_hash": 5969735340517827795, "country_schema_version": 13, "country_generation": 2, "country_state_hash": -117458212373512043, "country_commands_due": true, "merchant_count": 1, "merchant_repairs": 0, "price_cap_hits": 0, "price_rate_clamp_hits": 0, "price_ceiling_expansions": 0, "price_ceiling_recoveries": 0, "price_ceiling_blocked_rises": 0, "price_ceiling_active_states": 0, "price_ceiling_state_bytes": 0, "price_ceiling_confirm_days": 30, "price_ceiling_expand_bp": 50, "price_ceiling_recover_bp": 10, "price_numeric_floor_hits": 0, "price_numeric_ceiling_hits": 0, "price_ceiling_limit_hits": 0, "price_min_tick_hits": 0, "price_glut_cost_damp_hits": 0, "small_payment_roundups": 0, "price_rise_fade_hits": 0, "price_headroom_damp_hits": 0, "price_catalog_bound_hits": 0, "price_rise_fade_model": "disabled_price_v6", "price_runtime_bounds": "numeric_min_dynamic_ceiling", "price_model": "price_v6_dynamic_ceiling", "price_numeric_guard_min": 1, "price_numeric_guard_max": 2147483647, "continuation_slices": 17, "market_runtime_mode": "ACTIVE" }, "country": { "ok": true, "cell": 0, "country_slot": 0, "owned": true, "country_handle": 4294967296, "country_id": "country.first_research", "country_name": "First Research", "territory_count": 1, "cash": 998552830, "nonzero_good_count": 1, "technology_count": 4, "state_version": 4, "generation": 3 } }
+  [PASS] automatic investment starts the first research building
+  [PASS] first research building is committed after investment
+  [PASS] research auto-investment preserves every ledger
+  [PASS] employment-catchup country bootstraps
+  [PASS] employment-catchup runtime configures
+  [PASS] employment-catchup fixture injects 35 additional unemployed
+M7_CATCHUP { "seen": true, "jobs": 0, "first": -1, "credit": 0, "unemployed": 46, "knap": 3, "hunt": 5, "timber": 3 }
+  [FAIL] high unemployment activates catch-up and starts jobs within 30 days
+  [FAIL] employment catch-up lowers unemployment strictly below 25 percent in 365 days
+  [PASS] employment-catchup regression conserves every ledger
+  [PASS] collector-investment country bootstraps
+  [PASS] collector-investment runtime configures
+  [PASS] collector-investment fixture bootstraps
+  [PASS] collector-investment diagnostic trace registers
+  [PASS] logs demand can fund and construct a local timber collector
+  [PASS] collector investment conserves every ledger
+  [PASS] substitute-price country bootstraps
+  [PASS] substitute-price runtime configures
+  [PASS] substitute-price fixture bootstraps
+  [PASS] expensive construction substitute never aborts the economy runtime
+  [PASS] investment batch stays within the funded construction invoice
+  [PASS] substitute-capped investment conserves every ledger
+  [PASS] non-starter producers consume positive explicit construction materials
+  [PASS] maintenance CSR columns exist
+  [PASS] farm and kiln maintenance recipes differ
+  [PASS] ocean fishery has an executable oceanic-vessel replacement sink
+  [PASS] installed-maintenance country bootstraps
+  [PASS] installed-maintenance runtime configures
+  [PASS] installed-maintenance fixture bootstraps
+  [PASS] installed mine keeps construction-material buffer without new starts
+  [PASS] maintenance is a paid operating cost
+  [PASS] storable industrial continuity still conserves ledgers
+  [PASS] existing-market entry country bootstraps
+  [PASS] existing-market entry runtime configures
+  [PASS] existing-market entry fixture bootstraps
+  [PASS] existing-market investment diagnostics register
+  [PASS] collector investment reaches economic gates alongside industrial reviews
+  [PASS] existing-market entry review conserves every ledger
+  [PASS] input-coverage country bootstraps
+  [PASS] input-coverage runtime configures
+  [PASS] input-coverage fixture bootstraps
+  [PASS] missing input coverage blocks further entry
+  [PASS] input-coverage review conserves every ledger
+  [PASS] owner-livelihood country bootstraps
+  [PASS] owner-livelihood runtime configures
+  [PASS] owner-livelihood fixture bootstraps
+  [PASS] shortage cannot approve a workshop that misses owner livelihood
+  [PASS] realized workshop margin includes owner livelihood
+  [PASS] incumbent-gathering country bootstraps
+  [PASS] incumbent-gathering runtime configures
+  [PASS] incumbent-gathering fixture bootstraps
+  [PASS] incumbent-gathering diagnostic trace registers
+  [PASS] incumbent gathering camps settled with positive livelihood
+  [PASS] incumbent gathering expansion is not rejected for owner livelihood
+  [PASS] incumbent gathering livelihood review conserves every ledger
+  [PASS] owner-only loss country bootstraps
+  [PASS] owner-only loss runtime configures
+  [PASS] owner-only loss fixture bootstraps
+  [PASS] installed loom keeps logs construction reserve
+  [PASS] owner livelihood loss counts without input or payroll cost
+  [PASS] third owner-only livelihood loss suspends the workshop
+  [PASS] recovery-pending country bootstraps
+  [PASS] recovery-pending runtime configures
+  [PASS] recovery-pending fixture bootstraps
+  [PASS] recovery-pending fixture reaches suspension with released owner
+  [PASS] recovery-pending owner removal queues
+  [PASS] failed restart remains fully suspended without a probe state
+  [PASS] next due cycle keeps suspension without rehiring
+  [PASS] suspended building has no recovery cooldown or probe capacity
+  [PASS] recovery-pending cycles conserve every ledger
+  [PASS] service lifecycle country bootstraps
+  [PASS] service lifecycle runtime configures
+  [PASS] service lifecycle fixture bootstraps
+  [PASS] merchant post never enters producer loss suspension
+  [PASS] dead-merchant investment country bootstraps
+  [PASS] dead-merchant investment runtime configures
+  [PASS] dead-merchant investment fixture bootstraps
+  [PASS] structural commit repairs merchant before the capital review
+  [PASS] repaired merchant supports the next endogenous construction review
+  [PASS] dead-merchant construction conserves every ledger
+  [PASS] continuation country bootstraps
+  [PASS] continuation runtime configures
+  [PASS] continuation fixture bootstraps
+  [PASS] one-cell building budget enters bounded continuation
+  [PASS] due rolling bucket completes through continuation slices
+  [PASS] completed rolling transaction can save immediately
+  [PASS] sliced building plan commits with exact conservation
+  [PASS] reference continuation country bootstraps
+  [PASS] reference continuation runtime configures
+  [PASS] reference continuation fixture bootstraps
+  [PASS] continuation slice budget preserves authoritative hash
+  [PASS] production scalar country bootstraps
+  [PASS] production worker country bootstraps
+  [PASS] production scalar runtime configures
+  [PASS] production worker runtime configures
+  [PASS] production scalar fixture bootstraps
+  [PASS] production worker fixture bootstraps
+  [PASS] building production dispatches multiple worker tasks
+  [PASS] sub-threshold production uses weighted parallel dispatch
+  [PASS] building plan uses weighted parallel dispatch
+  [PASS] building production worker and scalar hashes match
+  [PASS] building production worker and scalar event hashes match
+  [PASS] building production worker conserves all ledgers
+  [PASS] weighted worker remains scalar-equivalent across rolling phases
+  [PASS] incremental opening audit preserves exact rolling ledgers
+  [PASS] opening audit exercises fast and full verification paths
+  [PASS] INCREMENTAL closing audit exercises fast and full verification paths
+  [PASS] INCREMENTAL closing audit remains enabled and exact
+  [PASS] investment review list executes every scheduled cell exactly once
+  [PASS] ACTIVE investment sparse filter evaluates a strict candidate subset
+  [PASS] ACTIVE investment sparse filter reports no viable-candidate mismatch
+  [PASS] merchant-finance country bootstraps
+  [PASS] merchant-finance runtime configures
+  [PASS] merchant-finance fixture bootstraps
+  [PASS] cashless owner submits merchant-financed construction
+  [PASS] merchant financing draws principal and records five-percent premium
+  [PASS] last local merchant remains a merchant while financing construction
+  [PASS] merchant-financed construction conserves all ledgers
+  [PASS] all-technology test country bootstraps
+  [PASS] building runtime configures
+  [PASS] employment mobility policy is exposed deterministically
+  [PASS] building population bootstraps
+  [PASS] untracked settlement detail is unavailable
+  [PASS] inspector trace target registers
+  [PASS] new inspector trace reports pending until commit
+  [PASS] industrialist owner handle exists
+  [PASS] build command accepted
+  [PASS] construction cycle commits
+  [PASS] new building group triggers one batched topology rebuild
+  [PASS] mine completes at cycle boundary
+  [PASS] production cycle conserves population
+  [PASS] production cycle conserves money
+  [PASS] production cycle conserves market goods
+  [PASS] building snapshot reports five-day production period
+  [PASS] owner job filled
+  [PASS] active utilization remains bounded and keeps jobs
+  [PASS] mine produces output
+  [PASS] merchant buys at least part of output
+  [PASS] installed mine keeps construction-material buffer
+  [PASS] maintenance is a paid operating cost
+  [PASS] merchant procurement freezes a 12.5 percent reserve and stays in budget
+  [PASS] shortage cannot lift merchant producer settlement above configured factor
+  [PASS] merchant liquidity report reconciles assets and operating outflow
+  [PASS] selected market exposes merchant economic assets instead of cohort funds only
+  [PASS] ordinary non-survival coal enters the market instead of owner retention
+  [PASS] building output reconciles sale, owner retention, and discard
+  [PASS] adaptive contract wages respect each role living floor
+  [PASS] building snapshot separates base wage and bonus
+  [PASS] zero filled employee roles cannot carry paid base wages
+  [PASS] owner-lot bonus is exact after fully funded base payroll
+  [PASS] building snapshot reports priced tool input cost
+  [PASS] worker cohort has real employee count
+  [PASS] adaptive wages reach worker and manager cohorts
+  [PASS] owner expense includes base payroll and bonus
+  [PASS] committed settlement cashflow detail is available
+  [PASS] worker cashflow sources reconcile to epoch ledger
+  [PASS] manager cashflow sources reconcile to epoch ledger
+  [PASS] owner cashflow sources reconcile to epoch ledger
+  [PASS] settlement classifies wages and owner operations
+  [PASS] settlement classifies merchant household and procurement flows
+  [PASS] wage report is exact and fully funded
+  [PASS] sold coal enters local stock
+  [PASS] price v3 publishes sparse coal supply and cost anchor
+  [PASS] market publishes realized withdrawals and merchant inventory targets
+  [PASS] building snapshot publishes economic cost diagnostics
+  [PASS] resource extraction publishes negative extra delta
+  [PASS] extractive building reports no generated resource
+  [PASS] building snapshot exposes current and effective resource reserves
+  [PASS] building snapshot stays committed
+  [PASS] merchant cash purchase and bounded support stop at the inventory target
+  [PASS] owner cash drain command accepted
+  [PASS] unfunded active employment keeps its payroll commitment
+  [PASS] unpaid role lowers collectible expected wage below contract
+  [PASS] producer-income inventory floor preserves the next active production plan
+  [PASS] zero owner input funds preserve intent but suppress funded production
+  [PASS] unfunded active contract remains explicitly wage-suspended
+  [PASS] insolvent wage cycle conserves money and goods
+  [PASS] cash-drained cycle preserves the prior profitable settlement once
+  [PASS] treasury transfer is exposed as a settlement source
+  [PASS] first execution-blocked cycle is not classified as a loss
+  [PASS] repeated execution blockage remains active without loss accumulation
+  [PASS] recovery fixture schedules cash drain and merchant input replenishment
+  [PASS] third execution-blocked cycle remains active
+  [PASS] blocked active building retains its owner and restart intent
+  [PASS] blocked producer keeps explicit unfunded upstream demand
+  [PASS] building PKCN save begins
+  [PASS] building PKCN save completes
+  [PASS] building v52 save begins
+  [PASS] building save completes
+  [PASS] building restore country configures first
+  [PASS] building PKCN restore begins
+  [PASS] building PKCN chunk accepted
+  [PASS] building PKCN chunk accepted
+  [PASS] building PKCN chunk accepted
+  [PASS] building PKCN chunk accepted
+  [PASS] building PKCN chunk accepted
+  [PASS] building PKCN chunk accepted
+  [PASS] building PKCN chunk accepted
+  [PASS] building PKCN chunk accepted
+  [PASS] building PKCN chunk accepted
+  [PASS] building PKCN chunk accepted
+  [PASS] building PKCN restore completes
+  [PASS] building restore target configures
+  [PASS] building restore begins
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore completes
+  [PASS] building save hash round-trips
+  [PASS] restored mine preserves active blocked lifecycle classification
+  [FAIL] restored building input spans survive the first production cycle
+  [PASS] restored inputs resume through the active path without a recovery probe
+  [PASS] first recovery cycle conserves all ledgers
+  [PASS] profitable alternative coexists with the active blocked building
+  [PASS] restart cycle conserves all ledgers
+  [PASS] blocked building remains retryable without losing either building group
+  [PASS] resumed production conserves all ledgers
+=== native building runtime FAIL ===
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 276 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

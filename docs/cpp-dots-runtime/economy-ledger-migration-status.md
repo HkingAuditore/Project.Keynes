@@ -9,9 +9,38 @@ construction are sole on `RuntimeEconomyBuildingStore` with no AoS scratch
 (N2 / N8); trade/family live tables are owned by `RuntimeEconomyOwnedState`
 (`live_trade_orders` / `live_families`) when bound; resource stock lanes plus
 the epoch harvest scratch live on `owned.resources` (N5 / N9); and bound
-day-end publishes the committed mirror from OwnedState in place instead of
-re-importing it (N10). PKEC v52 remains full-authority save; ECP1 ABI9 is
-committed mirror only. **Still open:** ECP2 and mid-epoch resume only.
+ day-end publishes the committed mirror from OwnedState in place instead of
+ re-importing it (N10). ECP2 is now the typed capture/restore boundary for
+ Economy authority; PKEC v52 remains a compatibility decoder/writer until the
+ production cutover gate and long soak are closed. ECP1 ABI9 remains a
+ committed mirror only.
+
+## ECP2 / mid-epoch（working path landed）
+
+- **Landed:** `runtime_economy_ecp2.{h,cpp}` wire (ABI 1, schema 52, marker
+  `ECP2`); typed envelope + PKEC section→`ECP2_DOMAIN_*` opaque remapping
+  (HEADER chunks preserved under envelope); Resource dense stock as
+  `ECP2_DOMAIN_RESOURCE`; `capture_ecp2_authority` / `apply_ecp2_authority`;
+  PodAuthority `encode_ecp2` / `restore_ecp2`; PKSR
+  `RUNTIME_SAVE_SECTION_ECONOMY_ECP2`; Host dual-write
+  (`economy_ecp2_dual_write`, default true); restore prefers ECP2 when CORE
+  domains present; E10 cutover flag `economy_ecp2_authority` (default false →
+  skip ECP1 when FULL_AUTHORITY); mid-epoch
+  `economy_ecp2_mid_epoch_save` (default false) + `ECP2_DOMAIN_EPOCH_RESUME`
+  with stage/cursors/trade-plan/peer-wait apply; self_test covers envelope,
+  opaque domain, HEADER chunk, resume roundtrip.
+- **M2 implementation:** ECP2 now carries a canonical independent `OwnedState` SoA
+  block (`OSOA` v1) for population/market/building/trade/family/resource typed
+  lanes. Capture requires a valid block; restore rejects missing, duplicate,
+  malformed, or hash-tampered blocks before mutating live state. Mid-epoch
+  capture includes the typed resume cursor and the fixture verifies restore to
+  a later commit. Debug and release builds both pass the focused Economy
+  cadence/POD/parity tests. PKEC v52 remains an explicitly retained
+  compatibility decoder and writer during the migration window.
+- **M2 release gates still open:** switch the public save coordinator to ECP2
+  only, complete the 60/730/3650-day mid-epoch soak and daily hash continuity,
+  then remove the compatibility writer. These gates are deliberately separate
+  from the typed ECP2 implementation and are not claimed as complete here.
 
 ## Phase-1 landed
 

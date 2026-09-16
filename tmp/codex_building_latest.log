@@ -1,0 +1,75 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+=== native building runtime test ===
+  [PASS] building catalog compiles
+  [PASS] coal mine type exists
+  [PASS] role-rebuild country bootstraps
+  [PASS] role-rebuild runtime configures
+  [PASS] role-rebuild fixture bootstraps
+  [PASS] role-rebuild expansion queues
+  [PASS] same-key construction uses the count-only topology fast path
+  [PASS] construction rebuild preserves incumbent employee fill
+  [PASS] role-rebuild expansion conserves every ledger
+  [PASS] zero-resource country bootstraps
+  [PASS] zero-resource runtime configures
+  [PASS] zero-resource fixture bootstraps
+  [PASS] zero natural resource preserves assets, owner positions, and releases employees
+  [PASS] zero-resource cycle conserves every ledger
+  [PASS] owner-position country bootstraps
+  [PASS] owner-position runtime configures
+  [PASS] owner-position fixture bootstraps
+  [PASS] ACTIVE owner positions stay at physical capacity while output scales
+  [PASS] projected building income uses retained owners and includes retained livelihood
+  [PASS] multi-building owner opportunity quote scales output and in-kind value
+  [PASS] owner-position employment conserves every ledger
+  [PASS] positive self-employment does not oscillate through suspension
+  [PASS] birth-employment country bootstraps
+  [PASS] birth-employment runtime configures
+  [PASS] birth-employment fixture bootstraps
+  [PASS] birth structural commit creates one unemployed cohort member
+  [PASS] newborn does not fill the active owner opening in the same period
+  [PASS] phase-order country bootstraps
+  [PASS] phase-order runtime configures
+  [PASS] phase-order population and plant bootstrap
+  [PASS] phase-order cycle conserves all ledgers
+  [PASS] zero-cash employees spend same-cycle wage income
+  [PASS] same-cycle produced food is sold before household clearing
+  [PASS] cost-floor country bootstraps
+  [PASS] cost-floor runtime configures
+  [PASS] cost-floor plant bootstraps
+  [PASS] scarce output remains below its target inventory
+  [PASS] scarce output price rises to the rate-limited producer cost floor
+  [PASS] retention-cap country bootstraps
+  [PASS] retention-cap runtime configures
+  [PASS] retention-cap settlement bootstraps
+  [PASS] survival retention is positive but capped below production
+  [PASS] consumed retained output offsets livelihood without minting cash
+  [PASS] retention-cap output reconciles sale, retention, and discard
+  [PASS] retention-cap cycle conserves every ledger
+  [PASS] survival-food production keeps the subsistence probe floor
+  [PASS] rounding-tolerance cycle conserves every ledger
+  [PASS] multi-food retention country bootstraps
+  [PASS] multi-food retention runtime configures
+  [PASS] multi-food retention settlement bootstraps
+  [PASS] produce output remains retained beside a staple output
+  [PASS] multi-food retention cycle conserves every ledger
+  [PASS] flow-replacement country bootstraps
+  [PASS] flow-replacement runtime configures
+  [PASS] flow-replacement settlement bootstraps
+  [PASS] flow-replacement stock band is scheduled
+  [PASS] survival producer is paid while opening stock is above target
+  [PASS] flow-replacement procurement conserves every ledger
+  [PASS] open-access CPUE country bootstraps
+  [PASS] open-access CPUE runtime configures
+  [PASS] open-access CPUE fixture bootstraps
+  [PASS] open-access CPUE country bootstraps
+  [PASS] open-access CPUE runtime configures
+  [PASS] open-access CPUE fixture bootstraps
+  [FAIL] open-access CPUE falls continuously with renewable stock density
+  [PASS] renewable-budget country bootstraps
+  [PASS] renewable-budget runtime configures
+  [PASS] renewable-budget fixture bootstraps
+  [PASS] renewable extractors share the five-day safe-harvest budget
+  [PASS] hunter-subsistence country bootstraps
+  [PASS] hunter-subsistence runtime configures
+  [PASS] hunter-subsistence settlement bootstraps

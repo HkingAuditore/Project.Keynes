@@ -39,8 +39,8 @@ func _run() -> void:
 		and report.has("economy_pod_parity_ready_mask"))
 	_expect("Economy is inside implemented ACTIVE mask (Phase 2-6)",
 		(int(report.get("implemented_domain_mask", 0)) & 0x100) != 0)
-	_expect("Production implemented mask is 0xB7E with ECONOMY",
-		int(report.get("implemented_domain_mask", 0)) == 0xB7E)
+	_expect("Production implemented mask is 0xFFF with ECONOMY",
+		int(report.get("implemented_domain_mask", 0)) == 0xFFF)
 	_expect("SHADOW does not grant Economy production authority",
 		(int(report.get("authoritative_domain_mask", 0)) & 0x100) == 0)
 
@@ -66,3 +66,4 @@ func _fail(label: String) -> void:
 func _finish() -> void:
 	print("runtime_economy_pod_test checks=%s failures=%s" % [_checks, _failures])
 	quit(1 if _failures > 0 else 0)
+

@@ -1,7 +1,7 @@
 extends SceneTree
 
 # F8 contracts:
-# - implemented_domain_mask is 0xB7E after Phase 2-6 (adds ECONOMY bit)
+# - implemented_domain_mask is 0xFFF after Phase 2-6 (adds ECONOMY bit)
 # - ACTIVE grant makes worker the sole Effect writer; this SHADOW fixture keeps
 #   authoritative & EFFECT == 0
 # - Effect POD catalog resolves registered behaviors via Host resolver
@@ -28,7 +28,7 @@ func _run() -> void:
 	_expect("Effect Host stage self-test is exported",
 		ext.has_method("runtime_effect_host_stage_self_test"))
 	if ext.has_method("runtime_effect_host_stage_self_test"):
-		_expect("F7 Host stage plan/commit/intent/ACK smoke passes",
+		_expect("F7/M3 Host Effect ACK -> Events publication E2E passes",
 			bool(ext.runtime_effect_host_stage_self_test()))
 
 	_expect("Effect SHADOW transport methods are exported",
@@ -57,7 +57,7 @@ func _run() -> void:
 	_expect("Effect SHADOW host starts", bool(started.get("ok", false)))
 	var report: Dictionary = ext.get_runtime_thread_report()
 	_expect("Effect is not ACTIVE authority",
-		int(report.get("implemented_domain_mask", 0)) == 0xB7E)
+		int(report.get("implemented_domain_mask", 0)) == 0xFFF)
 	_expect("Effect authoritative bit stays clear",
 		(int(report.get("authoritative_domain_mask", 0)) & 0x020) == 0)
 	var effect_report_fields := [
@@ -110,6 +110,10 @@ func _run() -> void:
 		bool(saved.get("ready", false)) and
 		(int(saved.get("section_mask", 0)) & (1 << 7)) != 0 and
 		int(saved.get("effect_bytes", 0)) > 0)
+	_expect("PKSR contains independent GMP1 transaction section",
+		bool(saved.get("ready", false)) and
+		(int(saved.get("section_mask", 0)) & (1 << 12)) != 0 and
+		int(saved.get("gameplay_effect_bytes", 0)) > 0)
 	var bytes: PackedByteArray = saved.get("bytes", PackedByteArray())
 	ext.request_runtime_stop()
 	var stop_deadline := Time.get_ticks_msec() + 1000
@@ -123,6 +127,18 @@ func _run() -> void:
 			restored, saved, ext.get_runtime_thread_report()])
 	_expect("EFP1 bundle validates transactionally",
 		bool(restored.get("restored", false)))
+	var gmp_tampered := bytes.duplicate()
+	var gmp_marker := -1
+	for i in range(maxi(0, gmp_tampered.size() - 3)):
+		if (gmp_tampered[i] == 71 and gmp_tampered[i + 1] == 77 and
+			gmp_tampered[i + 2] == 80 and gmp_tampered[i + 3] == 49):
+			gmp_marker = i
+			break
+	if gmp_marker >= 0 and gmp_marker + 16 < gmp_tampered.size():
+		gmp_tampered[gmp_marker + 16] = gmp_tampered[gmp_marker + 16] ^ 1
+	_expect("tampered GMP1 transaction state is rejected atomically",
+		gmp_marker >= 0 and
+		not bool(ext.restore_runtime_bundle(gmp_tampered).get("ok", true)))
 
 	if not bytes.is_empty():
 		var missing := bytes.duplicate()
@@ -146,3 +162,4 @@ func _fail(label: String) -> void:
 func _finish() -> void:
 	print("=== runtime Effect POD: %d checks, %d failures ===" % [_checks, _failures])
 	quit(0 if _failures == 0 else 1)
+

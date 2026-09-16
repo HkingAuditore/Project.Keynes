@@ -115,14 +115,33 @@ public:
         return _economy_stage_ops_mutate.load(std::memory_order_acquire);
     }
     // After a complete ledger capture, optionally promote authority to
-    // Phase-2.6.1: promote to POD_ACTIVE after a complete mirror capture.
-    // Default true; production mutations still run StageOps → NativeEconomyRuntime
-    // via apply_pod_command. Opt out with economy_auto_pod_active=false.
+    // M6 keeps authority switches explicit. Mirror readiness is diagnostic;
+    // it never changes the writer without an epoch-boundary API call.
     void set_economy_auto_pod_active(bool enabled) noexcept {
         _economy_auto_pod_active.store(enabled, std::memory_order_release);
     }
     bool economy_auto_pod_active() const noexcept {
         return _economy_auto_pod_active.load(std::memory_order_acquire);
+    }
+    // ECP2 dual-write / mid-epoch / authority cutover (E10). Dual-write defaults
+    // on; mid-epoch and authority cutover default off until self_test proves RT.
+    void set_economy_ecp2_dual_write(bool enabled) noexcept {
+        _economy_ecp2_dual_write.store(enabled, std::memory_order_release);
+    }
+    bool economy_ecp2_dual_write() const noexcept {
+        return _economy_ecp2_dual_write.load(std::memory_order_acquire);
+    }
+    void set_economy_ecp2_mid_epoch_save(bool enabled) noexcept {
+        _economy_ecp2_mid_epoch_save.store(enabled, std::memory_order_release);
+    }
+    bool economy_ecp2_mid_epoch_save() const noexcept {
+        return _economy_ecp2_mid_epoch_save.load(std::memory_order_acquire);
+    }
+    void set_economy_ecp2_authority(bool enabled) noexcept {
+        _economy_ecp2_authority.store(enabled, std::memory_order_release);
+    }
+    bool economy_ecp2_authority() const noexcept {
+        return _economy_ecp2_authority.load(std::memory_order_acquire);
     }
     // Phase-2.4.2: production writer selection. STAGE_OPS effective only when
     // soak experiment or soak_parity_ok is armed (P2.4.4.4); default compact.
@@ -187,6 +206,9 @@ public:
     // mirror covers the full production ledger (see economy-ledger-migration-status).
     bool switch_economy_authority(RuntimeEconomyAuthorityMode mode,
                                   std::string &error) noexcept;
+    // Deterministic release-gate probe for the fault handoff contract. It
+    // uses an isolated host and never mutates the live simulation worker.
+    bool economy_authority_fault_gate_self_test(std::string &error) const noexcept;
     bool economy_worker_is_authoritative() const noexcept {
         return economy_production_runtime_attached() &&
                economy_execution_mode() != EconomyExecutionMode::LEGACY_ONLY &&
@@ -477,10 +499,12 @@ public:
         //   requested_authority_mask  per-session, from the start() caller; must
         //                             be a subset of this one.
         //   completed_domain_mask     per-day report of what actually ran.
-        // Climate + Country + Trigger + Modifier + Effect + Ideology + Events
-        // + Economy ship ACTIVE-authoritative in production as of Phase 2-6
-        // (world_runtime_host.gd requests 0xB7E when
-        // runtime_climate_authority_enabled). Contract:
+        // M5: all twelve domains have a bounded POD handler and participate
+        // in the same frozen-input -> continuation -> atomic-COMMIT barrier.
+        // This is the implementation capability mask; a session still has to
+        // request a subset and prove it at a commit before it is granted.
+        // Production requests the complete graph (0xFFF); focused diagnostics
+        // may still request a smaller subset. Contract:
         // authoritative & EFFECT => worker is the sole Effect writer; snapshot
         // write-back targets legacy EffectRuntime; only effect_runtime /
         // run_effect_daily is suppressed. IDEOLOGY follows the same shape
@@ -489,24 +513,27 @@ public:
         // EFFECT-targeted intents ACK in-worker after the Effect stage and
         // through the main-thread pump; other domains use the main-thread intent
         // pump. EVENTS is a worker-authority mirror only: the POD store owns the
-        // stage bit and its own snapshot, but the legacy GameplayEventBus journal
-        // remains the production consumer source until the consumer migration
-        // lands, so nothing on the main thread is suppressed for it.
+        // stage bit, snapshot, and consumer cursor. The legacy
+        // GameplayEventBus facade remains available only for explicit recovery
+        // and compatibility reads.
         // ECONOMY owns ACTIVE production via attach_economy_production_runtime
         // + worker_run_compact_slice (same NativeEconomyRuntime formula owner).
         // StageOps stay mutate=false for SHADOW POD parity hashes only.
         // Main-thread economy_should_run is suppressed when worker-authoritative
         // AND the production runtime pointer is attached (fail-open to sync
         // otherwise).
-        return runtime_domain_mask(RuntimeDomainId::COMMIT)
+        return runtime_domain_mask(RuntimeDomainId::INPUT_CAPTURE)
             | runtime_domain_mask(RuntimeDomainId::CLIMATE)
             | runtime_domain_mask(RuntimeDomainId::COUNTRY)
             | runtime_domain_mask(RuntimeDomainId::TRIGGER_INPUT)
-            | runtime_domain_mask(RuntimeDomainId::MODIFIER)
-            | runtime_domain_mask(RuntimeDomainId::EFFECT)
             | runtime_domain_mask(RuntimeDomainId::IDEOLOGY)
+            | runtime_domain_mask(RuntimeDomainId::EFFECT)
+            | runtime_domain_mask(RuntimeDomainId::MODIFIER)
+            | runtime_domain_mask(RuntimeDomainId::GAMEPLAY_EFFECT)
+            | runtime_domain_mask(RuntimeDomainId::ECONOMY)
             | runtime_domain_mask(RuntimeDomainId::EVENTS)
-            | runtime_domain_mask(RuntimeDomainId::ECONOMY);
+            | runtime_domain_mask(RuntimeDomainId::VISUAL)
+            | runtime_domain_mask(RuntimeDomainId::COMMIT);
     }
     RuntimeWorkerState state() const {
         return _state.load(std::memory_order_acquire);
@@ -533,6 +560,13 @@ public:
     }
     uint64_t climate_writeback_drop_count() const {
         return _climate_writeback.publish_drop_count();
+    }
+    static constexpr size_t ECONOMY_AUTHORITY_SWITCH_LATENCY_SAMPLE_CAPACITY = 256u;
+    // Worker-owned event snapshot boundary.  Consumers use this only after
+    // EVENTS has been granted; legacy journal polling remains available for
+    // explicit fallback/parity sessions.
+    bool events_worker_authoritative() const {
+        return domain_is_worker_authoritative(RuntimeDomainId::EVENTS);
     }
     // B8 P3：ACTIVE Climate 的主线程等待边界。
     // - after_generation > 0：等到 worker 已评估过该代次（plan 尝试，不要求提交）。
@@ -705,6 +739,8 @@ private:
     std::atomic<bool> _authority_ready{false};
     std::atomic<uint32_t> _requested_authority_mask{0};
     std::atomic<uint32_t> _authoritative_domain_mask{0};
+    std::atomic<uint32_t> _completion_gate_missing_domain_mask{0};
+    std::atomic<bool> _active_gate_blocked{false};
     std::atomic<int64_t> _committed_day{0};
     std::atomic<uint64_t> _generation{0};
     // Lightweight commit header retained independently from the visual ring.
@@ -718,6 +754,24 @@ private:
     std::atomic<uint32_t> _latest_receipt_count{0};
     std::atomic<uint64_t> _last_visual_publish_us{0};
     std::atomic<uint64_t> _snapshot_publish_throttled_count{0};
+    // M4/M5 diagnostics. These fields describe the frozen input manifest and
+    // the committed visual-intent batch without exposing worker vectors.
+    std::atomic<uint64_t> _input_capture_count{0};
+    std::atomic<uint64_t> _input_capture_reused{0};
+    std::atomic<uint64_t> _input_capture_generation{0};
+    std::atomic<int64_t> _input_capture_day{-1};
+    std::atomic<uint64_t> _input_capture_hash{0};
+    // Worker-owned frozen manifest. The scalar report fields above are the
+    // lock-free diagnostic projection; this POD value is retained for the
+    // current day barrier and ECP2/checkpoint handoff.
+    RuntimeInputCaptureManifest _input_manifest{};
+    std::atomic<uint64_t> _gameplay_effect_generation{0};
+    std::atomic<uint32_t> _gameplay_effect_pending{0};
+    std::atomic<uint32_t> _gameplay_effect_terminal{0};
+    std::atomic<uint64_t> _gameplay_effect_state_hash{0};
+    std::atomic<uint64_t> _visual_intent_generation{0};
+    std::atomic<uint32_t> _visual_intent_count{0};
+    std::atomic<bool> _visual_full_refresh{false};
     std::atomic<uint64_t> _last_commit_produced_at_us{0};
     std::array<std::atomic<uint64_t>, RUNTIME_DIRTY_FAMILY_COUNT>
         _dirty_family_generations{};
@@ -933,7 +987,53 @@ private:
         static_cast<uint32_t>(EconomyExecutionMode::ACTIVE_ONLY)};
     std::atomic<bool> _economy_shadow_probe_enabled{false};
     std::atomic<bool> _economy_stage_ops_mutate{false};
-    std::atomic<bool> _economy_auto_pod_active{true};
+    std::atomic<bool> _economy_auto_pod_active{false};
+    std::atomic<bool> _economy_ecp2_dual_write{true};
+    std::atomic<bool> _economy_ecp2_mid_epoch_save{false};
+    std::atomic<bool> _economy_ecp2_authority{false};
+    std::atomic<uint64_t> _economy_authority_switch_count{0};
+    std::atomic<uint64_t> _economy_authority_switch_before_hash{0};
+    std::atomic<uint64_t> _economy_authority_switch_after_hash{0};
+    std::atomic<uint64_t> _economy_authority_switch_latency_us{0};
+    std::atomic<uint64_t> _economy_authority_switch_latency_p95_us{0};
+    std::atomic<uint64_t> _economy_authority_switch_latency_max_us{0};
+    std::atomic<uint64_t> _economy_authority_switch_command_latency_us{0};
+    std::atomic<uint64_t> _economy_authority_switch_command_latency_p95_us{0};
+    std::atomic<uint64_t> _economy_authority_switch_command_latency_max_us{0};
+    std::atomic<uint64_t> _economy_authority_switch_latency_sample_count{0};
+    std::array<std::atomic<uint64_t>,
+               ECONOMY_AUTHORITY_SWITCH_LATENCY_SAMPLE_CAPACITY>
+        _economy_authority_switch_latency_samples{};
+    std::array<std::atomic<uint64_t>,
+               ECONOMY_AUTHORITY_SWITCH_LATENCY_SAMPLE_CAPACITY>
+        _economy_authority_switch_command_latency_samples{};
+    // The write cursor is published after both sample slots are written.
+    // Authority switches are serialized by _economy_authority_boundary_mutex;
+    // readers only need acquire ordering and never wait on this ring.
+    std::atomic<uint64_t> _economy_authority_switch_latency_sample_write{0};
+    std::atomic<uint64_t> _economy_authority_switch_rejected{0};
+    std::atomic<uint64_t> _economy_authority_switch_audit_sequence{0};
+    std::atomic<uint64_t> _economy_authority_switch_before_generation{0};
+    std::atomic<uint64_t> _economy_authority_switch_after_generation{0};
+    std::atomic<uint64_t> _economy_authority_last_committed_generation{0};
+    std::atomic<uint64_t> _economy_authority_last_committed_hash{0};
+    std::atomic<bool> _economy_authority_fault_paused{false};
+    std::array<std::atomic<char>, 64> _economy_authority_switch_reason{};
+    std::array<std::atomic<char>, 64> _economy_authority_switch_blocker{};
+    std::array<std::atomic<char>, 128> _economy_authority_switch_audit_before{};
+    std::array<std::atomic<char>, 128> _economy_authority_switch_audit_after{};
+    // A switch is valid only while the worker is between semantic day plans.
+    // These counters make that boundary observable instead of inferring it
+    // from the command ring alone (the worker owns a private pending vector).
+    std::atomic<uint32_t> _worker_day_inflight{0};
+    std::atomic<uint32_t> _economy_inflight_mutations{0};
+    std::atomic<uint32_t> _economy_pending_command_count{0};
+    std::atomic<uint64_t> _last_command_admitted_us{0};
+    // Serializes the semantic-day transaction with an explicit Economy
+    // authority handoff.  The counters above are diagnostic evidence; this
+    // mutex is the actual epoch-boundary gate that prevents a switch from
+    // passing an idle check while the worker starts the next day.
+    mutable std::mutex _economy_authority_boundary_mutex;
     std::atomic<uint64_t> _economy_pod_command_recapture_count{0};
     std::atomic<uint64_t> _economy_pod_command_verify_count{0};
     // Phase-2.4.4.4 soak experiment flag (observability). Parity latch defaults
@@ -955,6 +1055,8 @@ private:
     int64_t _stage_ops_day_index = -1;
     uint64_t _stage_ops_day_input_generation = 0;
     StageOpsDayPhase _stage_ops_day_phase = StageOpsDayPhase::Done;
+    std::atomic<uint8_t> _stage_ops_day_phase_atomic{
+        static_cast<uint8_t>(StageOpsDayPhase::Done)};
     std::atomic<uint64_t> _economy_shadow_stage_invocations{0};
     std::atomic<uint64_t> _economy_shadow_stage_cache_hits{0};
     // Parity stage-result cache keyed by (sample_day, input_generation).

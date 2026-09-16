@@ -45,6 +45,14 @@ inline constexpr uint16_t SAVE_SECTION_CANAL_PROJECTS = 28;
 inline constexpr uint16_t SAVE_SECTION_PRICE_CEILINGS = 29;
 inline constexpr uint16_t SAVE_SECTION_FISCAL_PEER = 30;
 inline constexpr uint16_t SAVE_SECTION_END = 31;
+// Optional v52 extension. Older saves omit it and continue to use the
+// captured map resource context; new saves preserve the mutable stock lanes
+// needed for deterministic post-restore building production.
+inline constexpr uint16_t SAVE_SECTION_RESOURCE_STOCK = 32;
+// Optional v52 extension carrying the scheduling history that decides the
+// next activity-tier workset. Older v52 streams remain readable; new streams
+// preserve deterministic continuation across a committed-boundary restore.
+inline constexpr uint16_t SAVE_SECTION_CADENCE_STATE = 33;
 inline constexpr uint16_t SAVE_SECTION_END_V33 = 27;
 inline constexpr uint16_t SAVE_SECTION_END_V26 = 18;
 inline constexpr uint16_t SAVE_SECTION_END_V24_TO_V25 = 15;

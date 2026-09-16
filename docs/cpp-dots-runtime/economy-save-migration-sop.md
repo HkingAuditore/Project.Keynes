@@ -1,5 +1,46 @@
 # 经济存档、catalog migration 与内容扩展 SOP
 
+## ECP2（Economy full-authority section，P0–E10 / M0–M4 scaffold）
+
+`encode_ecp2` / `decode_ecp2`（`runtime_economy_ecp2.{h,cpp}`）使用 marker
+`0x32504345`（"ECP2"）。PKSR 段位 `RUNTIME_SAVE_SECTION_ECONOMY_ECP2 = 1<<11`。
+
+Wire 布局（little-endian）：
+
+- `u32 marker` ECP2
+- `u32 abi_version`（当前 1 = envelope + opaque domain blobs）
+- `u32 schema_version`（52，与 PKEC 对齐）
+- `u32 authority_domain_mask`
+- `u64 content_hash` — FNV-1a over **hash 字段之后的全部字节**（envelope +
+  各 domain payload）
+- 若 `ENVELOPE` 置位：`u32 envelope_size` + typed envelope（catalog/cycle/day 等）
+  + 其后可选拼接的 PKEC `HEADER` chunk 字节（restore 重建 §0）
+- 对每个其它置位 domain（除 ENVELOPE）：`u32 domain_bit` + `u32 size` + bytes
+  （`EPOCH_RESUME` 的 payload 为 typed resume：stage/cursors/trade-plan/peer-wait）
+
+Domain 与 PKEC section 映射：`SAVE_SECTION_*` → `ECP2_DOMAIN_*`；同一 domain
+内按 save 发射顺序拼接 **完整 PKEC chunk**（magic+schema+section+records+size+
+payload），restore 时按 section 0..30 重建顺序并走既有 `feed_restore_chunk`。
+`ECP2_DOMAIN_RESOURCE` 单独打包 dense stock wire（PKEC 无等价段）。
+`ECP2_DOMAIN_EPOCH_RESUME`（M 系列）为 mid-epoch 游标 blob；开启
+`economy_ecp2_mid_epoch_save` 时 capture/apply 会恢复 `_stage` 与 slice cursors。
+
+Mask 常量：
+
+- `ECP2_DOMAIN_CORE_AUTHORITY` — ENVELOPE..FISCAL（不含 resume）
+- `ECP2_DOMAIN_FULL_AUTHORITY` — 除 `EPOCH_RESUME` 外全部 domain
+
+Host 行为（默认）：
+
+- `economy_ecp2_dual_write=true`：committed save 在 ECP1/PKEC 之外 **额外** 写 ECP2
+- `economy_ecp2_mid_epoch_save=false`：mid-epoch capture 默认拒绝（`ALLOW_MID_EPOCH`）
+- `economy_ecp2_authority=false`（E10 cutover）：为 true 且 ECP2 含 FULL_AUTHORITY 时
+  restore 跳过 ECP1 POD；PKEC/ECP1 路径仍保留 compat
+
+API：`NativeEconomyRuntime::capture_ecp2_authority` /
+`apply_ecp2_authority`；`RuntimeEconomyPodAuthority::encode_ecp2` /
+`restore_ecp2` / `capture_ecp2_from_runtime`。
+
 ## ECP1（Economy POD section，ABI9 Phase-2.3.3 ledger mirror）
 
 `RuntimeEconomyPodAuthority::encode_ecp1` / `restore_ecp1` 使用 marker
@@ -77,9 +118,10 @@ ABI6 再恢复 reservations/diagnostics；ABI7 再恢复 building/trade opaque �
 ABI8 再恢复 family opaque 块；ABI9 再恢复 resource/cursor（resource 在
 Phase-2.5.1 已 unpack 到 `RuntimeEconomyResourceStore`；其余 opaque 仍不 unpack）。
 
-这是 Host POD 存档垂直切片，**不是**取代 PKEC
-的生产权威存档。生产人口/市场/建筑状态仍走
-`economy_runtime_persistence_*`（当前 PKEC v52）；在 `POD_ACTIVE` 下
+这是 Host POD 存档垂直切片，当前已升级为 ECP2 的 Economy 权威捕获/恢复边界。
+生产人口/市场/建筑状态在 ECP2 中由独立 OwnedState SoA 和映射的 section
+共同承载；`economy_runtime_persistence_*`（当前 PKEC v52）仍只作为兼容
+输入和迁移窗口 writer。在 `POD_ACTIVE` 下
 `population_store()`/`market_store()` 已绑定 `RuntimeEconomyOwnedState`，
 因此 PKEC 编码源与公式 sole SoA 为同一实例。ECP1 ABI9 仍只是 committed mirror。
 ACTIVE StageOps 日环与 `commit_epoch` 会向 `_snapshot_ring` 发布 header + 标量摘要。
@@ -94,7 +136,9 @@ Phase-2.6.1 默认 `economy_auto_pod_active=true`，在完整 capture 后升到 
 （`economy_pod_command_verify_count`）。在 `formula_owned_bound()` 下失配直接
 Host fault（不静默 recapture）；仅未绑定的 legacy 路径才允许 recapture。
 日末先 `flush_formula_owned_domain_mirrors()`，再 identity 导出 OwnedState 镜像。
-**本 SOP 明确不做（Still open）**：ECP2 取代 PKEC、mid-epoch resume blob。
+**本 SOP 明确仍开放（Still open）**：公开 save coordinator 的 ECP2-only
+切换、长程 mid-epoch soak 和兼容 writer 的删除。ECP2 resume blob、原子校验
+和中断后继续执行已经实现并由 focused fixture 覆盖。
 
 财政 peer escrow / PKEC v52：只支持新游戏；旧经济存档显式拒绝。v52 在每个固定 Country
 fiscal record 后追加一个非负 `int64` Economy-owned escrow，并新增

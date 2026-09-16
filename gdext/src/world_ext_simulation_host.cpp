@@ -88,6 +88,8 @@ static Dictionary runtime_report_to_dictionary(const RuntimeThreadReport &report
     out["required_domain_mask"] = static_cast<int64_t>(report.required_domain_mask);
     out["implemented_domain_mask"] = static_cast<int64_t>(report.implemented_domain_mask);
     out["missing_domain_mask"] = static_cast<int64_t>(report.missing_domain_mask);
+    out["completion_gate_missing_domain_mask"] = static_cast<int64_t>(report.completion_gate_missing_domain_mask);
+    out["active_gate_blocked"] = report.active_gate_blocked;
     out["graph_coverage_state"] = String(report.graph_coverage_state);
     out["coverage_blocker"] = String(report.coverage_blocker);
     out["simulation_worker_blocker"] = String(report.coverage_blocker);
@@ -110,6 +112,18 @@ static Dictionary runtime_report_to_dictionary(const RuntimeThreadReport &report
     out["environment_topology_validated"] = report.environment_topology_validated;
     out["invalid_environment_rejected"] = static_cast<int64_t>(report.invalid_environment_rejected);
     out["stale_environment_rejected"] = static_cast<int64_t>(report.stale_environment_rejected);
+    out["input_capture_count"] = static_cast<int64_t>(report.input_capture_count);
+    out["input_capture_reused"] = static_cast<int64_t>(report.input_capture_reused);
+    out["input_capture_generation"] = static_cast<int64_t>(report.input_capture_generation);
+    out["input_capture_day"] = report.input_capture_day;
+    out["input_capture_hash"] = static_cast<int64_t>(report.input_capture_hash);
+    out["gameplay_effect_generation"] = static_cast<int64_t>(report.gameplay_effect_generation);
+    out["gameplay_effect_pending"] = static_cast<int>(report.gameplay_effect_pending);
+    out["gameplay_effect_terminal"] = static_cast<int>(report.gameplay_effect_terminal);
+    out["gameplay_effect_state_hash"] = static_cast<int64_t>(report.gameplay_effect_state_hash);
+    out["visual_intent_generation"] = static_cast<int64_t>(report.visual_intent_generation);
+    out["visual_intent_count"] = static_cast<int>(report.visual_intent_count);
+    out["visual_full_refresh"] = report.visual_full_refresh != 0;
     out["command_queue_capacity_exceeded"] = static_cast<int64_t>(report.command_queue_capacity_exceeded);
     out["receipt_queue_capacity_exceeded"] = static_cast<int64_t>(report.receipt_queue_capacity_exceeded);
     out["snapshot_publish_drop_count"] = static_cast<int64_t>(report.snapshot_publish_drop_count);
@@ -143,6 +157,37 @@ static Dictionary runtime_report_to_dictionary(const RuntimeThreadReport &report
     out["economy_pod_committed_ledger_abi"] =
         static_cast<int>(report.economy_pod_committed_ledger_abi);
     out["economy_pod_active_ready"] = report.economy_pod_active_ready;
+    out["economy_authority_switch_count"] = report.economy_authority_switch_count;
+    out["economy_authority_switch_before_hash"] = report.economy_authority_switch_before_hash;
+    out["economy_authority_switch_after_hash"] = report.economy_authority_switch_after_hash;
+    out["economy_authority_switch_latency_us"] = report.economy_authority_switch_latency_us;
+    out["economy_authority_switch_latency_p95_us"] =
+        report.economy_authority_switch_latency_p95_us;
+    out["economy_authority_switch_latency_max_us"] =
+        report.economy_authority_switch_latency_max_us;
+    out["economy_authority_switch_command_latency_us"] =
+        report.economy_authority_switch_command_latency_us;
+    out["economy_authority_switch_command_latency_p95_us"] =
+        report.economy_authority_switch_command_latency_p95_us;
+    out["economy_authority_switch_command_latency_max_us"] =
+        report.economy_authority_switch_command_latency_max_us;
+    out["economy_authority_switch_latency_sample_count"] =
+        report.economy_authority_switch_latency_sample_count;
+    out["economy_authority_switch_rejected"] = report.economy_authority_switch_rejected;
+    out["economy_authority_switch_audit_sequence"] =
+        report.economy_authority_switch_audit_sequence;
+    out["economy_authority_switch_before_generation"] = static_cast<int64_t>(report.economy_authority_switch_before_generation);
+    out["economy_authority_switch_after_generation"] = static_cast<int64_t>(report.economy_authority_switch_after_generation);
+    out["economy_authority_fault_paused"] = report.economy_authority_fault_paused;
+    out["economy_authority_last_committed_generation"] = static_cast<int64_t>(report.economy_authority_last_committed_generation);
+    out["economy_authority_last_committed_hash"] = static_cast<int64_t>(report.economy_authority_last_committed_hash);
+    out["economy_inflight_mutations"] = static_cast<int>(report.economy_inflight_mutations);
+    out["worker_day_inflight"] = static_cast<int>(report.worker_day_inflight);
+    out["economy_pending_command_count"] = static_cast<int>(report.economy_pending_command_count);
+    out["economy_authority_switch_reason"] = String(report.economy_authority_switch_reason);
+    out["economy_authority_switch_blocker"] = String(report.economy_authority_switch_blocker);
+    out["economy_authority_switch_audit_before"] = String(report.economy_authority_switch_audit_before);
+    out["economy_authority_switch_audit_after"] = String(report.economy_authority_switch_audit_after);
     out["economy_execution_mode"] = static_cast<int>(report.economy_execution_mode);
     out["economy_execution_mode_name"] = String(
         pk::economy_execution_mode_name(
@@ -401,7 +446,12 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
     EconomyExecutionMode economy_execution_mode =
         EconomyExecutionMode::ACTIVE_ONLY;
     bool economy_stage_ops_mutate = true;
-    bool economy_auto_pod_active = true;
+    // M6: authority handoff is explicit; this flag is retained only as a
+    // compatibility/report field and no longer triggers a worker-side switch.
+    bool economy_auto_pod_active = false;
+    bool economy_ecp2_dual_write = true;
+    bool economy_ecp2_mid_epoch_save = false;
+    bool economy_ecp2_authority = false;
     bool economy_stage_ops_soak_experiment = false;
     EconomyProductionWriter economy_production_writer =
         EconomyProductionWriter::STAGE_OPS;
@@ -413,7 +463,19 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
     }
     if (config.has("economy_auto_pod_active")) {
         economy_auto_pod_active =
-            static_cast<bool>(config.get("economy_auto_pod_active", true));
+            static_cast<bool>(config.get("economy_auto_pod_active", false));
+    }
+    if (config.has("economy_ecp2_dual_write")) {
+        economy_ecp2_dual_write =
+            static_cast<bool>(config.get("economy_ecp2_dual_write", true));
+    }
+    if (config.has("economy_ecp2_mid_epoch_save")) {
+        economy_ecp2_mid_epoch_save =
+            static_cast<bool>(config.get("economy_ecp2_mid_epoch_save", false));
+    }
+    if (config.has("economy_ecp2_authority")) {
+        economy_ecp2_authority =
+            static_cast<bool>(config.get("economy_ecp2_authority", false));
     }
     if (config.has("economy_stage_ops_soak_experiment")) {
         economy_stage_ops_soak_experiment = static_cast<bool>(
@@ -549,6 +611,9 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
         out["requested_authority_mask"] =
             static_cast<int64_t>(requested_authority_mask);
         out["missing_domain_mask"] = static_cast<int64_t>(missing_requested);
+        out["completion_gate_missing_domain_mask"] =
+            static_cast<int64_t>(missing_requested);
+        out["active_gate_blocked"] = true;
         out["thread_report"] = runtime_report_to_dictionary(_runtime_host->report());
         return out;
     }
@@ -620,6 +685,9 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
     _runtime_host->set_economy_production_writer(economy_production_writer);
     _runtime_host->set_economy_stage_ops_mutate(economy_stage_ops_mutate);
     _runtime_host->set_economy_auto_pod_active(economy_auto_pod_active);
+    _runtime_host->set_economy_ecp2_dual_write(economy_ecp2_dual_write);
+    _runtime_host->set_economy_ecp2_mid_epoch_save(economy_ecp2_mid_epoch_save);
+    _runtime_host->set_economy_ecp2_authority(economy_ecp2_authority);
     if (_economy_runtime != nullptr) {
         auto *economy =
             static_cast<NativeEconomyRuntime *>(_economy_runtime);
@@ -2419,6 +2487,8 @@ Dictionary DCWorldExt::poll_runtime_save(int64_t request_id) {
     out["events_bytes"] = static_cast<int64_t>(bundle->events_bytes.size());
     out["modifier_bytes"] = static_cast<int64_t>(bundle->modifier_bytes.size());
     out["effect_bytes"] = static_cast<int64_t>(bundle->effect_bytes.size());
+    out["gameplay_effect_bytes"] = static_cast<int64_t>(
+        bundle->gameplay_effect_bytes.size());
     out["ideology_bytes"] = static_cast<int64_t>(bundle->ideology_bytes.size());
     out["country_pkcn"] = country_pkcn;
     out["checksum"] = static_cast<int64_t>(bundle->checksum);
@@ -2616,7 +2686,56 @@ Dictionary DCWorldExt::switch_economy_authority(const String &mode) {
         _runtime_host->economy_legacy_fallback_enabled();
     out["authority_mode"] = static_cast<int>(
         _runtime_host->economy_authority_mode());
+    const RuntimeThreadReport audit = _runtime_host->report();
+    out["economy_authority_switch_count"] = static_cast<int64_t>(
+        audit.economy_authority_switch_count);
+    out["economy_authority_switch_audit_sequence"] = static_cast<int64_t>(
+        audit.economy_authority_switch_audit_sequence);
+    out["economy_authority_switch_before_hash"] = static_cast<int64_t>(
+        audit.economy_authority_switch_before_hash);
+    out["economy_authority_switch_after_hash"] = static_cast<int64_t>(
+        audit.economy_authority_switch_after_hash);
+    out["economy_authority_switch_before_generation"] = static_cast<int64_t>(
+        audit.economy_authority_switch_before_generation);
+    out["economy_authority_switch_after_generation"] = static_cast<int64_t>(
+        audit.economy_authority_switch_after_generation);
+    out["economy_authority_switch_latency_us"] = static_cast<int64_t>(
+        audit.economy_authority_switch_latency_us);
+    out["economy_authority_switch_latency_p95_us"] = static_cast<int64_t>(
+        audit.economy_authority_switch_latency_p95_us);
+    out["economy_authority_switch_latency_max_us"] = static_cast<int64_t>(
+        audit.economy_authority_switch_latency_max_us);
+    out["economy_authority_switch_command_latency_us"] = static_cast<int64_t>(
+        audit.economy_authority_switch_command_latency_us);
+    out["economy_authority_switch_command_latency_p95_us"] = static_cast<int64_t>(
+        audit.economy_authority_switch_command_latency_p95_us);
+    out["economy_authority_switch_command_latency_max_us"] = static_cast<int64_t>(
+        audit.economy_authority_switch_command_latency_max_us);
+    out["economy_authority_switch_latency_sample_count"] = static_cast<int64_t>(
+        audit.economy_authority_switch_latency_sample_count);
+    out["economy_authority_switch_rejected"] = static_cast<int64_t>(
+        audit.economy_authority_switch_rejected);
+    out["economy_authority_switch_reason"] = String(
+        audit.economy_authority_switch_reason);
+    out["economy_authority_switch_blocker"] = String(
+        audit.economy_authority_switch_blocker);
+    out["economy_authority_switch_audit_before"] = String(
+        audit.economy_authority_switch_audit_before);
+    out["economy_authority_switch_audit_after"] = String(
+        audit.economy_authority_switch_audit_after);
     return out;
+}
+
+bool DCWorldExt::runtime_economy_authority_fault_gate_self_test() const {
+    auto probe = std::make_unique<NativeSimulationHost>();
+    std::string error;
+    const bool ok = probe->economy_authority_fault_gate_self_test(error);
+    if (!ok) {
+        godot::UtilityFunctions::printerr(
+            godot::String("runtime_economy_authority_fault_gate_self_test: ") +
+            godot::String(error.c_str()));
+    }
+    return ok;
 }
 
 godot::Dictionary DCWorldExt::runtime_economy_stage_order_contract_test() const {

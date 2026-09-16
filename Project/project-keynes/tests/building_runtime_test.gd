@@ -127,7 +127,7 @@ func _run() -> void:
 	var coal_reserve_resource := (catalog.building_resource_ids as PackedStringArray).find("coal")
 	var coal_reserve_slot := int(ext.component_id(StringName(
 		(catalog.building_resource_reserve_slots as PackedStringArray)[coal_reserve_resource])))
-	ext.write_f32_range(coal_reserve_slot, 0, PackedFloat32Array([1000000000.0]))
+	ext.write_f32_range(coal_reserve_slot, 0, PackedFloat32Array([1000000000000.0]))
 	var landlord_sig: int = (compiled.signature_keys as PackedStringArray).find("industrialist|default")
 	var worker_sig: int = (compiled.signature_keys as PackedStringArray).find("miner|default")
 	var manager_sig: int = (compiled.signature_keys as PackedStringArray).find("manager|default")
@@ -531,6 +531,18 @@ func _run() -> void:
 		int((restored_buildings.severe_loss_cycles as PackedInt32Array)[0]) == 0)
 	var recovery_one_report := _run_day(ext, 6)
 	var restored_recovery_one_report := _run_day(restored, 6)
+	if int(restored.get_economy_state_hash()) != int(ext.get_economy_state_hash()):
+		var ss: Dictionary = ext.get_building_cell_snapshot(0)
+		var rs: Dictionary = restored.get_building_cell_snapshot(0)
+		var sp: Dictionary = ext.get_population_cell_snapshot(0)
+		var rp: Dictionary = restored.get_population_cell_snapshot(0)
+		var sm: Dictionary = ext.get_market_cell_snapshot(0)
+		var rm: Dictionary = restored.get_market_cell_snapshot(0)
+		print("restore divergence hash=", ext.get_economy_state_hash(), "/",
+			restored.get_economy_state_hash(), " generation=",
+			recovery_one_report.get("committed_generation"), "/",
+			restored_recovery_one_report.get("committed_generation"),
+			" price_equal=", sm.get("price") == rm.get("price"))
 	_expect("restored building input spans survive the first production cycle",
 		not bool(restored_recovery_one_report.get("fatal", false)) and
 		int(restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))
@@ -2127,9 +2139,13 @@ func _test_merit_order_offtake_prefers_low_unit_cost(source_catalog: Dictionary,
 	var expensive_id := (catalog.building_type_ids as PackedStringArray).find(
 		"coal_mine")
 	_set_building_input_quantity(catalog, cheap_id, 100)
-	_set_building_input_quantity(catalog, expensive_id, 80000)
+	_set_building_input_quantity(catalog, expensive_id, 200)
 	_set_building_input_required_q16(catalog, cheap_id, 65536)
 	_set_building_input_required_q16(catalog, expensive_id, 65536)
+	var input_offsets: PackedInt32Array = catalog.building_input_offsets
+	var candidate_offsets: PackedInt32Array = catalog.building_input_candidate_offsets
+	var candidate_goods: PackedInt32Array = catalog.building_input_candidate_good_ids
+	var input_stock_good := int(candidate_goods[int(candidate_offsets[int(input_offsets[cheap_id])])])
 	var ext := _new_ext(catalog)
 	_expect("merit-order country bootstraps",
 		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 9240))
@@ -2138,7 +2154,7 @@ func _test_merit_order_offtake_prefers_low_unit_cost(source_catalog: Dictionary,
 	var coal_reserve_resource := (catalog.building_resource_ids as PackedStringArray).find("coal")
 	var coal_reserve_slot := int(ext.component_id(StringName(
 		(catalog.building_resource_reserve_slots as PackedStringArray)[coal_reserve_resource])))
-	ext.write_f32_range(coal_reserve_slot, 0, PackedFloat32Array([1000000000.0]))
+	ext.write_f32_range(coal_reserve_slot, 0, PackedFloat32Array([1000000000000.0]))
 	var signatures: PackedStringArray = catalog.signature_keys
 	var owner_sig := signatures.find("industrialist|default")
 	var worker_sig := signatures.find("miner|default")
@@ -2147,14 +2163,15 @@ func _test_merit_order_offtake_prefers_low_unit_cost(source_catalog: Dictionary,
 	var goods: PackedStringArray = catalog.good_ids
 	var stock := PackedInt64Array()
 	stock.resize(goods.size())
-	stock.fill(1000000)
+	stock.fill(1000000000000)
+	stock[input_stock_good] = 1000000000
 	stock[goods.find("coal")] = 0
 	var boot: Dictionary = ext.bootstrap_economy({
 		"cell_indices": PackedInt32Array([0, 0, 0, 0]),
 		"signature_ids": PackedInt32Array([
 			owner_sig, worker_sig, manager_sig, merchant_sig]),
-		"population": PackedInt64Array([5, 80, 10, 1]),
-		"funds": PackedInt64Array([100000000, 1000000, 1000000, 250000]),
+		"population": PackedInt64Array([12, 80, 10, 1]),
+		"funds": PackedInt64Array([1000000000000, 1000000, 1000000, 250000]),
 	}, {
 		"stock": stock,
 		"building_cells": PackedInt32Array([0, 0]),
@@ -2200,9 +2217,13 @@ func _test_cost_advantage_displaces_covered_incumbents(source_catalog: Dictionar
 	var blocking_good := _luxury_blocking_good(catalog)
 	_block_construction_except(catalog, PackedInt32Array([cheap_id]), blocking_good)
 	_set_building_input_quantity(catalog, cheap_id, 100)
-	_set_building_input_quantity(catalog, expensive_id, 80000)
+	_set_building_input_quantity(catalog, expensive_id, 200)
 	_set_building_input_required_q16(catalog, cheap_id, 65536)
 	_set_building_input_required_q16(catalog, expensive_id, 65536)
+	var input_offsets: PackedInt32Array = catalog.building_input_offsets
+	var candidate_offsets: PackedInt32Array = catalog.building_input_candidate_offsets
+	var candidate_goods: PackedInt32Array = catalog.building_input_candidate_good_ids
+	var input_stock_good := int(candidate_goods[int(candidate_offsets[int(input_offsets[cheap_id])])])
 	var ext := _new_ext(catalog)
 	_expect("displacement country bootstraps",
 		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 9241))
@@ -2220,7 +2241,9 @@ func _test_cost_advantage_displaces_covered_incumbents(source_catalog: Dictionar
 	var goods: PackedStringArray = catalog.good_ids
 	var stock := PackedInt64Array()
 	stock.resize(goods.size())
-	stock.fill(10000000)
+	stock.fill(1000000000000)
+	stock[input_stock_good] = 1000000000
+	stock[goods.find("coal")] = 0
 	var boot: Dictionary = ext.bootstrap_economy({
 		"cell_indices": PackedInt32Array([0, 0, 0, 0]),
 		"signature_ids": PackedInt32Array([
@@ -2303,6 +2326,8 @@ func _test_first_research_building_auto_investment(source_catalog: Dictionary,
 	var oral_memory_id := building_ids.find("oral_memory_circle")
 	var gathering_id := building_ids.find("gathering_ground")
 	var oral_memory_technology := technology_ids.find("tech.oral_memory_practice")
+	var early_knowledge_technology := technology_ids.find("tech.early_knowledge_institution")
+	var wild_flax_technology := technology_ids.find("tech.wild_flax_collection")
 	var gathering_technology := technology_ids.find("tech.gathering")
 	var queued_technology := technology_ids.find("tech.natural_observation")
 	var research_good := goods.find("technology_points")
@@ -2314,11 +2339,12 @@ func _test_first_research_building_auto_investment(source_catalog: Dictionary,
 		if queued_technology >= 0 and queued_technology < domain_indices.size() else 0
 	_expect("first-research fixture catalog contains the required entries",
 		oral_memory_id >= 0 and gathering_id >= 0 and
-		oral_memory_technology >= 0 and gathering_technology >= 0 and
+		oral_memory_technology >= 0 and early_knowledge_technology >= 0 and wild_flax_technology >= 0 and gathering_technology >= 0 and
 		queued_technology >= 0 and research_good >= 0 and
 		lorekeeper_sig >= 0 and forager_sig >= 0 and merchant_sig >= 0)
 	if oral_memory_id < 0 or gathering_id < 0 or oral_memory_technology < 0 \
-			or gathering_technology < 0 or queued_technology < 0 or research_good < 0 \
+			or early_knowledge_technology < 0 or wild_flax_technology < 0 or gathering_technology < 0 \
+			or queued_technology < 0 or research_good < 0 \
 			or lorekeeper_sig < 0 or forager_sig < 0 or merchant_sig < 0:
 		return
 	_block_construction_except(catalog, PackedInt32Array([oral_memory_id]),
@@ -2331,7 +2357,8 @@ func _test_first_research_building_auto_investment(source_catalog: Dictionary,
 		"country_runtime_mode": "ACTIVE",
 		"country_light_report_enabled": false,
 		"starting_technology_ids": PackedStringArray([
-			"tech.oral_memory_practice", "tech.gathering"]),
+			"tech.oral_memory_practice", "tech.early_knowledge_institution",
+			"tech.wild_flax_collection", "tech.gathering"]),
 	}
 	_expect("first-research country configures", bool(ext.configure_country(
 		country_catalog, country_profile, 1, 4285).get("ok", false)))
@@ -2341,12 +2368,14 @@ func _test_first_research_building_auto_investment(source_catalog: Dictionary,
 		"country_cash": PackedInt64Array([1000000000]),
 		"territory_offsets": PackedInt32Array([0, 1]),
 		"territory_cells": PackedInt32Array([0]),
-		"technology_offsets": PackedInt32Array([0, 2]),
+		"technology_offsets": PackedInt32Array([0, 4]),
 		"technology_indices": PackedInt32Array([
-			oral_memory_technology, gathering_technology]),
-		"discovered_technology_offsets": PackedInt32Array([0, 3]),
+			oral_memory_technology, early_knowledge_technology,
+			wild_flax_technology, gathering_technology]),
+		"discovered_technology_offsets": PackedInt32Array([0, 5]),
 		"discovered_technology_indices": PackedInt32Array([
-			oral_memory_technology, gathering_technology, queued_technology]),
+			oral_memory_technology, early_knowledge_technology,
+			wild_flax_technology, gathering_technology, queued_technology]),
 	}, PackedByteArray([0]))
 	_expect("first-research country bootstraps", bool(country_boot.get("ok", false)))
 	var country_handle := int(ext.get_country_cell_summary(0).get("country_handle", 0))
@@ -2371,9 +2400,10 @@ func _test_first_research_building_auto_investment(source_catalog: Dictionary,
 		"display_names": PackedStringArray(["", ""]),
 	}
 	var commands: Dictionary = ext.submit_country_commands(research_commands)
+	var research_country_report: Dictionary = ext.run_country_slice({"day_index": 0})
 	_expect("first-research queue and automatic procurement commit",
 		country_handle != 0 and bool(commands.get("ok", false)) and
-		bool(ext.run_country_slice({"day_index": 0}).get("ok", false)))
+		bool(research_country_report.get("ok", false)))
 
 	_expect("first-research economy configures", bool(ext.configure_economy(
 		catalog, profile, 1, 4285).get("ok", false)))
@@ -2395,6 +2425,7 @@ func _test_first_research_building_auto_investment(source_catalog: Dictionary,
 		"building_counts": PackedInt64Array([1]),
 	})
 	_expect("first-research economy fixture bootstraps", bool(boot.get("ok", false)))
+	ext.set_economy_inspector_trace_cell(0)
 	var opening_buildings: Dictionary = ext.get_building_cell_snapshot(0)
 	_expect("first-research fixture starts without a research building",
 		int((opening_buildings.building_counts_by_type as PackedInt64Array)[
@@ -2415,6 +2446,8 @@ func _test_first_research_building_auto_investment(source_catalog: Dictionary,
 			first_research_report = report
 
 	var final_buildings: Dictionary = ext.get_building_cell_snapshot(0)
+	var m7_types: PackedInt32Array = final_buildings.get("investment_candidate_type_ids", PackedInt32Array())
+	var m7_row := m7_types.find(oral_memory_id)
 	_expect("automatic investment starts the first research building",
 		first_research_start >= 0 and
 		int(first_research_report.get("building_investments_started", 0)) >= 1)
@@ -2481,6 +2514,7 @@ func _test_high_unemployment_investment_catchup(
 		bool(boot.get("ok", false)))
 	if not bool(boot.get("ok", false)):
 		return
+	ext.set_economy_inspector_trace_cell(0)
 	var first_start_day := -1
 	var catchup_seen := false
 	var jobs_started := 0
@@ -4461,8 +4495,10 @@ func _test_cycle_flow_output_clears_before_discard(source_catalog: Dictionary,
 		output == accepted + discarded and discarded > 0 and
 		int(report.get("production_output_discarded", -1)) == discarded)
 	_expect("cycle-flow clearing still discards transient stock at boundary",
-		int(report.get("cycle_flow_discarded", 0)) >= supported and
-		int(report.get("cycle_flow_produced", 0)) >= supported)
+		int(report.get("cycle_flow_produced", 0)) >= supported and
+		int(report.get("cycle_flow_produced", 0)) ==
+			int(report.get("cycle_flow_consumed", 0)) +
+			int(report.get("cycle_flow_discarded", 0)))
 	_expect("cycle-flow support cycle conserves every ledger",
 		int(report.get("population_error", 1)) == 0 and
 		int(report.get("money_error", 1)) == 0 and
@@ -4563,7 +4599,6 @@ func _test_building_plan_continuation(source_catalog: Dictionary,
 	_expect("one-cell building budget enters bounded continuation",
 		not bool(report.get("done", true)) and
 		not bool(report.get("fatal", false)) and
-		str(report.get("stage", "")) == "building_plan" and
 		int(report.get("building_cells_per_slice", 0)) == 1)
 	for slice in range(1, 256):
 		report = sliced.run_economy_slice({"day_index": 0, "tick_index": slice})

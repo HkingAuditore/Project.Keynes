@@ -1,0 +1,97 @@
+diff --git a/Project/project-keynes/tests/building_runtime_test.gd b/Project/project-keynes/tests/building_runtime_test.gd
+index a37740ec..64064cd0 100644
+--- a/Project/project-keynes/tests/building_runtime_test.gd
++++ b/Project/project-keynes/tests/building_runtime_test.gd
+@@ -4197,6 +4197,8 @@ func _test_leontief_derived_demand_cold_start(source_catalog: Dictionary,
+ 		var knap_group := (buildings.group_type_ids as PackedInt32Array).find(knapping_id)
+ 		if knap_group >= 0 and int((buildings.filled_owner as PackedInt64Array)[knap_group]) > 0:
+ 			knapping_stayed_vacant = false
++	var derived_market: Dictionary = ext.get_market_cell_snapshot(0)
++	var derived_buildings: Dictionary = ext.get_building_cell_snapshot(0)
+ 	_expect("vacant knapping remains unstaffed in derived-demand fixture",
+ 		knapping_stayed_vacant)
+ 	_expect("tool shortage derives flint shadow demand without knapping sales",
+diff --git a/gdext/src/economy_runtime_building_production.cpp b/gdext/src/economy_runtime_building_production.cpp
+index 3b8e45ca..63ef9d01 100644
+--- a/gdext/src/economy_runtime_building_production.cpp
++++ b/gdext/src/economy_runtime_building_production.cpp
+@@ -791,8 +791,32 @@ bool NativeEconomyRuntime::run_building_production_cell(
+         int64_t scale = std::clamp<int64_t>(mul_div_sat(
+             available, Q16_ONE, base, _saturation_count), 0, Q16_ONE);
+         if (item.mode == 0 && resource_is_renewable(item.resource_id)) {
+-            scale = std::min<int64_t>(scale,
+-                resource_stock_density_q16(item.resource_id, resource_cell));
++            // Open-access extraction uses the same fixed-point stock units as
++            // the captured reserve (GOODS_SCALE).  Its CPUE must therefore see
++            // the reserve-to-ecology-capacity ratio even when the configured
++            // safe-harvest budget is disabled.  The bounded renewable path
++            // keeps the climate/runtime-fit density helper unchanged.
++            int64_t density_q16 = resource_stock_density_q16(
++                item.resource_id, resource_cell);
++            if (_resource_safe_harvest_q16 <= 0 &&
++                item.resource_id >= 0 && item.resource_id <
++                    static_cast<int32_t>(_resource_ecology_capacity.size())) {
++                const int64_t capacity = _resource_ecology_capacity[
++                    static_cast<size_t>(item.resource_id)];
++                if (capacity > 0) {
++                    int64_t sat = 0;
++                    const int64_t fixed_capacity = saturating_mul(
++                        capacity, GOODS_SCALE, sat);
++                    if (fixed_capacity > 0) {
++                        const int64_t remaining = std::max<int64_t>(0,
++                            available_resource_amount(item, resource_cell));
++                        density_q16 = static_cast<int64_t>(std::clamp<int64_t>(
++                            mul_div_sat(remaining, Q16_ONE, fixed_capacity, sat),
++                            0, Q16_ONE));
++                    }
++                }
++            }
++            scale = std::min<int64_t>(scale, density_q16);
+         }
+         // Keep a positive probe for a positive but sub-Q16 stock ratio. The
+         // later integer quantity and stock checks remain authoritative.
+diff --git a/gdext/src/economy_runtime_epoch.cpp b/gdext/src/economy_runtime_epoch.cpp
+index ab18183f..9eb1f5dd 100644
+--- a/gdext/src/economy_runtime_epoch.cpp
++++ b/gdext/src/economy_runtime_epoch.cpp
+@@ -859,6 +859,30 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
+             if (cell_due_plan_review(cell, day_index))
+                 _epoch_plan_cells.push_back(cell);
+         }
++        // Lifecycle health is an every-settlement observation. A producer
++        // that has already recorded a severe loss must be reconsidered on the
++        // next market boundary even when the slower investment cadence is not
++        // due; otherwise hysteresis can stall between plan buckets.
++        if (_building_cell_offsets.size() == static_cast<size_t>(_cell_count + 1)) {
++            for (const int32_t cell : _epoch_building_cells) {
++                if (!cell_in_market_workset(cell, day_index)) continue;
++                bool needs_lifecycle_review = false;
++                for (int32_t g = _building_cell_offsets[cell];
++                     g < _building_cell_offsets[cell + 1]; ++g) {
++                    const auto group = building_at(static_cast<size_t>(g));
++                    if (group.count > 0 && group.severe_loss_cycles >= 2) {
++                        needs_lifecycle_review = true;
++                        break;
++                    }
++                }
++                if (needs_lifecycle_review && std::find(
++                        _epoch_plan_cells.begin(), _epoch_plan_cells.end(), cell) ==
++                        _epoch_plan_cells.end()) {
++                    _epoch_plan_cells.push_back(cell);
++                }
++            }
++            std::sort(_epoch_plan_cells.begin(), _epoch_plan_cells.end());
++        }
+     }
+     _epoch_days = workset_elapsed_days(day_index);
+     capture_cell_elapsed_days(day_index);
+@@ -1051,6 +1075,9 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
+     _current_day = day_index;
+     begin_incremental_audit_epoch();
+     _epoch_active = true;
++    // Keep restored resource lanes through every preflight capture; after the
++    // epoch starts live MapData captures may resume their normal ownership.
++    _resource_stock_restored_pending_capture = false;
+     // Worker-local result lanes are registered on the owning thread when each
+     // market/production range is merged. This avoids scanning every due cell
+     // and every good at epoch open while preserving the incremental audit

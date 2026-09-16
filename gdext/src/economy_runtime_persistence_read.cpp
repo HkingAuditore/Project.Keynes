@@ -409,6 +409,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             return false;
         }
         _restore.expected_fiscal_peer = schema >= 52 ? fiscal_peer_count : 0;
+        _restore.expected_resource_rows = static_cast<int64_t>(_resource_ids.size()) *
+            static_cast<int64_t>(_cell_count);
         if (!read_id_table(bytes, cursor, professions) || !read_id_table(bytes, cursor, ethnicities) ||
             !read_id_table(bytes, cursor, good_ids) || !read_id_table(bytes, cursor, plan_ids) ||
             cursor != bytes.size()) {
@@ -2606,6 +2608,95 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             ++_restore.restored_fiscal_peer;
         }
         _restore.fiscal_peer_seen = true;
+    } else if (schema >= 52 && section == SAVE_SECTION_RESOURCE_STOCK) {
+        if (!_restore.resource_stock_seen) {
+            resource_stock_lanes().assign(static_cast<size_t>(
+                std::max<int64_t>(0, _restore.expected_resource_rows)), 0);
+            resource_lane_generation_lanes().assign(static_cast<size_t>(
+                std::max<int64_t>(0, _restore.expected_resource_rows)), 0);
+            _restore.resource_stock_seen = true;
+        }
+        for (uint32_t i = 0; i < records; ++i) {
+            int32_t resource = -1;
+            int32_t cell = -1;
+            int64_t stock = 0;
+            uint32_t generation = 0;
+            if (!read_le(bytes, cursor, resource) || !read_le(bytes, cursor, cell) ||
+                !read_le(bytes, cursor, stock) || !read_le(bytes, cursor, generation) ||
+                resource < 0 || resource >= static_cast<int32_t>(_resource_ids.size()) ||
+                cell < 0 || cell >= _cell_count || stock < 0) {
+                error = "save_resource_stock_record_invalid";
+                return false;
+            }
+            const int64_t key = static_cast<int64_t>(resource) * _cell_count + cell;
+            if (key <= _restore.last_resource_key ||
+                key >= static_cast<int64_t>(resource_stock_lanes().size())) {
+                error = "save_resource_stock_order_invalid";
+                return false;
+            }
+            _restore.last_resource_key = key;
+            resource_stock_lanes()[static_cast<size_t>(key)] = stock;
+            resource_lane_generation_lanes()[static_cast<size_t>(key)] = generation;
+            ++_restore.restored_resource_rows;
+        }
+    } else if (schema >= 52 && section == SAVE_SECTION_CADENCE_STATE) {
+        if (!_restore.cadence_state_seen) {
+            _cell_tier.assign(static_cast<size_t>(_cell_count), 1);
+            _cell_next_review_day.assign(static_cast<size_t>(_cell_count), 0);
+            _cell_force_wake.assign(static_cast<size_t>(_cell_count), 0);
+            _cell_tier_seen_gen.assign(static_cast<size_t>(_cell_count), 0);
+            _cell_tier_seen_population.assign(static_cast<size_t>(_cell_count), -1);
+            _cell_tier_change_day.assign(static_cast<size_t>(_cell_count),
+                                         _last_committed_day);
+            _cell_shortage_since_day.assign(static_cast<size_t>(_cell_count), -1);
+            _restore.cadence_state_seen = true;
+        }
+        for (uint32_t i = 0; i < records; ++i) {
+            int32_t cell = -1;
+            uint8_t tier = 0, force_wake = 0;
+            int64_t next_review = 0, seen_population = 0,
+                    change_day = 0, shortage_since = 0;
+            int32_t effect_shortage = 0, essentials_shortage = 0;
+            uint32_t seen_gen = 0;
+            if (!read_le(bytes, cursor, cell) ||
+                !read_le(bytes, cursor, tier) ||
+                !read_le(bytes, cursor, next_review) ||
+                !read_le(bytes, cursor, force_wake) ||
+                !read_le(bytes, cursor, seen_gen) ||
+                !read_le(bytes, cursor, seen_population) ||
+                !read_le(bytes, cursor, change_day) ||
+                !read_le(bytes, cursor, shortage_since) ||
+                !read_le(bytes, cursor, effect_shortage) ||
+                !read_le(bytes, cursor, essentials_shortage) ||
+                cell < 0 || cell >= _cell_count || tier > 3 || force_wake > 1 ||
+                effect_shortage < 0 || essentials_shortage < 0 ||
+                cell != _restore.restored_cadence_cells) {
+                error = "save_cadence_state_record_invalid";
+                return false;
+            }
+            const size_t index = static_cast<size_t>(cell);
+            _cell_tier[index] = tier;
+            _cell_next_review_day[index] = next_review;
+            _cell_force_wake[index] = force_wake;
+            _cell_tier_seen_gen[index] = seen_gen;
+            _cell_tier_seen_population[index] = seen_population;
+            _cell_tier_change_day[index] = change_day;
+            _cell_shortage_since_day[index] = shortage_since;
+            _cell_effect_shortage_q16[index] = effect_shortage;
+            _cell_essentials_shortage_q16[index] = essentials_shortage;
+            ++_restore.restored_cadence_cells;
+        }
+        if (cursor < bytes.size()) {
+            uint64_t generation = 0;
+            if (bytes.size() - cursor != sizeof(uint64_t) ||
+                !read_le(bytes, cursor, generation) || generation == 0 ||
+                _restore.committed_generation_seen) {
+                error = "save_cadence_generation_footer_invalid";
+                return false;
+            }
+            _restore.committed_generation_seen = true;
+            _restore.restored_committed_generation = generation;
+        }
     } else if (section == SAVE_SECTION_END ||
                (schema == 33 && section == SAVE_SECTION_END_V33)) {
         if (records != 0 || payload_bytes != 0) {

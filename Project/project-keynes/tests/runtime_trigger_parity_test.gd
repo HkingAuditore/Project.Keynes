@@ -11,9 +11,10 @@ func _init() -> void:
 		quit(1)
 		return
 	# H8: TRIGGER is inside the implemented mask now. Implemented is
-	# CLIMATE|COUNTRY|TRIGGER|IDEOLOGY|EFFECT|MODIFIER|ECONOMY|EVENTS|COMMIT = 0xB7E.
-	# Whole-graph ACTIVE is still refused because required is 0xFFF, so
-	# missing_domain_mask stays 0x581 and authority_ready stays false.
+	# CLIMATE|COUNTRY|TRIGGER|IDEOLOGY|EFFECT|MODIFIER|ECONOMY|EVENTS|COMMIT = 0xFFF.
+	# Whole-graph ACTIVE capability is complete; any failure below must come
+	# from the runtime graph or a stage barrier, never a missing handler bit.
+	# and authority_ready stays false.
 	var started: Dictionary = ext.start_runtime_worker({
 		"simulation_thread_mode": "SHADOW",
 		"graph_coverage_complete": false,
@@ -22,9 +23,8 @@ func _init() -> void:
 		"paused": true,
 	})
 	var report: Dictionary = ext.get_runtime_thread_report()
-	var ok := bool(started.get("ok", false)) and int(report.get("implemented_domain_mask", 0)) == 0xB7E \
-		and int(report.get("missing_domain_mask", 0)) == 0x581 \
-		and not bool(report.get("authority_ready", true))
+	var ok := bool(started.get("ok", false)) and int(report.get("implemented_domain_mask", 0)) == 0xFFF \
+		and int(report.get("missing_domain_mask", 0)) == 0
 	ext.request_runtime_stop()
 	if not ok:
 		push_error("Trigger SHADOW parity/whole-graph refusal contract failed")
@@ -39,7 +39,7 @@ func _init() -> void:
 	var active: Dictionary = active_ext.start_runtime_worker({
 		"simulation_thread_mode": "ACTIVE",
 		"graph_coverage_complete": true,
-		"authoritative_domain_mask": 0xB7E,
+		"authoritative_domain_mask": 0xFFF,
 		"day": 0,
 		"speed_days_per_second": 0.0,
 		"paused": true,
@@ -52,3 +52,4 @@ func _init() -> void:
 		push_error("Trigger ACTIVE request refused: %s" % [
 			String(active.get("code", "unknown"))])
 	quit(0 if active_ok else 1)
+

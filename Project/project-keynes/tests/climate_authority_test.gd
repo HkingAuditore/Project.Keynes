@@ -26,7 +26,7 @@ const MAP_WIDTH := 60
 const MAP_HEIGHT := 40
 const AUTHORITY_WAIT_TIMEOUT_MSEC := 8000
 const POLL_MSEC := 4
-const PRODUCTION_AUTHORITY_MASK := 0xB7E # CLIMATE|COUNTRY|TRIGGER|IDEOLOGY|EFFECT|MODIFIER|ECONOMY|EVENTS|COMMIT
+const PRODUCTION_AUTHORITY_MASK := 0xFFF # CLIMATE|COUNTRY|TRIGGER|IDEOLOGY|EFFECT|MODIFIER|ECONOMY|EVENTS|COMMIT
 const CLIMATE_ONLY_AUTHORITY_MASK := 0x802 # retained for documentation of Climate-only subset
 
 var _checks := 0
@@ -258,3 +258,4 @@ func _run() -> int:
 	print("=== climate per-domain authority: %d checks, %d failures ===" % [
 		_checks, _failures])
 	return 0 if _failures == 0 else 1
+

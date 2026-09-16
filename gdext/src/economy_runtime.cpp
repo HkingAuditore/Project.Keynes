@@ -2502,7 +2502,10 @@ PK_RESOURCE_SCRATCH_ACCESSOR(uint32_t, resource_lane_generation_lanes,
 void NativeEconomyRuntime::capture_committed_ledger_state(
         RuntimeEconomyLedgerState &out) const {
     out.clear();
-    if (_epoch_active || _fatal) return;
+    // ECP2 mid-epoch checkpoints need the live SoA shape as a rollback source;
+    // the public legacy save gate still rejects mid-epoch writes unless its
+    // explicit ECP2 flag is enabled.
+    if (_fatal) return;
     out.source_state_hash = static_cast<uint64_t>(std::max<int64_t>(0, state_hash()));
     out.generation = _committed_generation;
     out.committed_day = _current_day;
@@ -3524,21 +3527,28 @@ bool NativeEconomyRuntime::capture_building_context(
         error = "building_resource_change_shape_invalid";
         return false;
     }
-    resource_stock_lanes().assign(static_cast<size_t>(count) * resources.size(), 0);
-    for (size_t r = 0; r < resources.size(); ++r) {
-        const float *src = resources[r];
-        const float *change = resource_changes[r];
-        if (src == nullptr) continue;
-        for (int32_t cell = 0; cell < count; ++cell) {
-            const double reserve = std::isfinite(src[cell])
-                ? static_cast<double>(src[cell]) : 0.0;
-            const double pending = change != nullptr && std::isfinite(change[cell])
-                ? static_cast<double>(change[cell]) : 0.0;
-            const double value = std::max(0.0, reserve + std::min(0.0, pending));
-            resource_stock_lanes()[r * static_cast<size_t>(count) + cell] =
-                static_cast<int64_t>(std::min<double>(
-                    value * static_cast<double>(GOODS_SCALE),
-                    static_cast<double>(std::numeric_limits<int64_t>::max())));
+    const size_t expected_resource_lanes =
+        static_cast<size_t>(count) * resources.size();
+    const bool preserve_restored_stock =
+        _resource_stock_restored_pending_capture &&
+        resource_stock_lanes().size() == expected_resource_lanes;
+    if (!preserve_restored_stock) {
+        resource_stock_lanes().assign(expected_resource_lanes, 0);
+        for (size_t r = 0; r < resources.size(); ++r) {
+            const float *src = resources[r];
+            const float *change = resource_changes[r];
+            if (src == nullptr) continue;
+            for (int32_t cell = 0; cell < count; ++cell) {
+                const double reserve = std::isfinite(src[cell])
+                    ? static_cast<double>(src[cell]) : 0.0;
+                const double pending = change != nullptr && std::isfinite(change[cell])
+                    ? static_cast<double>(change[cell]) : 0.0;
+                const double value = std::max(0.0, reserve + std::min(0.0, pending));
+                resource_stock_lanes()[r * static_cast<size_t>(count) + cell] =
+                    static_cast<int64_t>(std::min<double>(
+                        value * static_cast<double>(GOODS_SCALE),
+                        static_cast<double>(std::numeric_limits<int64_t>::max())));
+            }
         }
     }
     _building_context_day = day_index;
@@ -7768,15 +7778,19 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
             // owner-operated workshops.
             const bool settled_production = group.last_output > 0 ||
                 group.last_input > 0 || group.last_resource > 0 ||
-                group.last_resource_generated > 0;
+                group.last_resource_generated > 0 ||
+                (type.employee_count == 0 && type.input_count == 0 &&
+                 type.resource_count == 0 && group.filled_owner > 0 &&
+                 owner_living_cost > 0);
             const int64_t owner_business_income = saturating_add(
                 group.last_revenue,
                 std::max<int64_t>(0, group.last_in_kind_livelihood_value),
                 _saturation_count);
             const int64_t owner_business_cost = saturating_add(
-                saturating_add(group.last_input_cost, group.last_base_wages_due,
-                _saturation_count),
-                group.last_maintenance_cost, _saturation_count);
+                saturating_add(saturating_add(group.last_input_cost,
+                    group.last_base_wages_due, _saturation_count),
+                    group.last_maintenance_cost, _saturation_count),
+                owner_living_cost, _saturation_count);
             const int64_t realized_taxable_cost = saturating_add(
                 saturating_add(group.last_input_cost, group.last_base_wages_paid,
                     _saturation_count),
@@ -7834,14 +7848,18 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                 !positive_self_employment &&
                 realized_after_tax_margin <= _building_severe_loss_threshold_q16;
             if (realized_severe_loss) {
-                // The observed monetary loss is itself the adaptation signal.
-                // Keep the legacy counter as a diagnostic bit for old saves, but
-                // do not make owners wait through arbitrary review cycles.
-                group.severe_loss_cycles = 1;
-                group.operating_state = 1;
-                group.recovery_cycles = 0;
-                suspended_now = true;
-                invalidate_cell_monetary_units(group.cell);
+                // Count consecutive observed owner losses. A single settled loss
+                // must remain visible to employment and audit while the configured
+                // hysteresis threshold decides when the group is suspended.
+                const int32_t threshold = std::max(1, _building_severe_loss_cycles);
+                group.severe_loss_cycles = static_cast<uint16_t>(std::min<int32_t>(
+                    threshold, static_cast<int32_t>(group.severe_loss_cycles) + 1));
+                if (group.severe_loss_cycles >= threshold) {
+                    group.operating_state = 1;
+                    group.recovery_cycles = 0;
+                    suspended_now = true;
+                    invalidate_cell_monetary_units(group.cell);
+                }
             } else {
                 // Zero settlement covers labor, input, resource and financing
                 // blockages. None is a realized loss observation.
@@ -7917,7 +7935,14 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                 (_merchant_credit_runtime_mode != 0 &&
                  group.merchant_debt_delinquent_cycles == 0 &&
                  credit_needed <= cell_credit_remaining);
-            const bool executable = physical_inputs_available &&
+            // Owner-operated buildings cannot restart without a live owner
+            // cohort. A zero-cost restart quote must not turn a released-owner
+            // suspension into an automatic reactivation.
+            const bool owner_available = type.owner_slots_per_building <= 0 ||
+                (owner_slot >= 0 && owner_slot < static_cast<int32_t>(
+                    population_store().population.size()) &&
+                 population_store().population[owner_slot] > 0);
+            const bool executable = owner_available && physical_inputs_available &&
                 physical_resources_available && finance_available;
             if (group_index < static_cast<int32_t>(
                     _building_recovery_liquidation_eligible.size())) {
@@ -11694,6 +11719,13 @@ void NativeEconomyRuntime::review_recovery_building_group(int32_t g) {
             _building_recovery_liquidation_eligible.size()) &&
         _building_recovery_liquidation_eligible[g] != 0;
     if (!liquidation_eligible) {
+        group.recovery_failed_reviews = 0;
+        return;
+    }
+    // Recovery liquidation is debt recovery. An owner-financed building with
+    // no merchant principal/premium remains addressable while suspended so
+    // owner release and a later restart can inspect the same group.
+    if (group.merchant_debt_principal <= 0 && group.merchant_debt_premium <= 0) {
         group.recovery_failed_reviews = 0;
         return;
     }
@@ -16671,7 +16703,7 @@ NativeEconomyRuntime::advance_building_commit_chunk(
         work_done += end - cursor_start;
         cursor_end = _building_commit_cursor;
         if (_building_commit_cursor >=
-            static_cast<int32_t>(_building_special_reset_group_indices.size())) {
+                static_cast<int32_t>(_building_special_reset_group_indices.size())) {
             _building_commit_cursor = 0;
             _building_commit_phase = 2;
         }
@@ -20633,6 +20665,7 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     resource_harvest_remaining_lanes().clear();
     resource_delta_lanes().clear();
     resource_lane_generation_lanes().clear();
+    _resource_stock_restored_pending_capture = false;
     _resource_touched_lanes.clear();
     _last_published_resource_touched_lanes.clear();
     _resource_current_generation = 0;

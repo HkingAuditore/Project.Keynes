@@ -1,7 +1,7 @@
 extends SceneTree
 
 # Soft Economy SHADOW/ACTIVE wiring check for Phase 2-6 / Phase-2.6.1.
-# Production implemented mask is 0xB7E (includes ECONOMY). Defaults arm
+# Production implemented mask is 0xFFF (includes ECONOMY). Defaults arm
 # StageOps mutate + economy_production_writer=stage_ops + economy_auto_pod_active;
 # legacy submit_economy_commands is refuse-closed. ACTIVE_WITH_PARITY coerces
 # writer back to compact_slice for the SHADOW probe.
@@ -71,9 +71,9 @@ func _run() -> void:
 	_expect("default execution mode is ACTIVE_ONLY",
 		int(report.get("economy_execution_mode", -1)) == 0
 		and String(report.get("economy_execution_mode_name", "")) == "ACTIVE_ONLY")
-	_expect("Phase-2.6.1 defaults arm StageOps writer + auto POD_ACTIVE",
+	_expect("M6 defaults arm StageOps writer without an implicit authority switch",
 		bool(report.get("economy_stage_ops_mutate", false))
-		and bool(report.get("economy_auto_pod_active", false))
+		and not bool(report.get("economy_auto_pod_active", true))
 		and String(report.get("economy_production_writer", "")) == "stage_ops"
 		and String(report.get("economy_production_writer_effective", "")) ==
 			"stage_ops"
@@ -86,8 +86,8 @@ func _run() -> void:
 	_expect("ACTIVE_ONLY keeps SHADOW StageOps at zero",
 		not bool(report.get("economy_shadow_probe_enabled", true))
 		and int(report.get("economy_shadow_stage_invocations", -1)) == 0)
-	_expect("implemented mask includes ECONOMY (0xB7E)",
-		int(report.get("implemented_domain_mask", 0)) == 0xB7E)
+	_expect("implemented mask includes ECONOMY (0xFFF)",
+		int(report.get("implemented_domain_mask", 0)) == 0xFFF)
 	_expect("SHADOW does not grant Economy authority",
 		(int(report.get("authoritative_domain_mask", 0)) & 0x100) == 0)
 
@@ -179,7 +179,7 @@ func _run() -> void:
 		"day": 0,
 		"speed_days_per_second": 0.0,
 		"paused": true,
-		"authoritative_domain_mask": 0xB7E,
+		"authoritative_domain_mask": 0xFFF,
 		"economy_execution_mode": "LEGACY_ONLY",
 	})
 	if bool(started_legacy.get("ok", false)):
@@ -187,7 +187,7 @@ func _run() -> void:
 		_expect("LEGACY_ONLY strips ECONOMY from request mask",
 			String(legacy_report.get("economy_execution_mode_name", "")) ==
 				"LEGACY_ONLY"
-			and (int(legacy_report.get("requested_authority_mask", 0xB7E)) & 0x100) == 0)
+			and (int(legacy_report.get("requested_authority_mask", 0xFFF)) & 0x100) == 0)
 		ext.request_runtime_stop()
 	else:
 		_expect("LEGACY_ONLY ACTIVE without capture fails closed (soft)",
@@ -199,7 +199,7 @@ func _run() -> void:
 		"day": 0,
 		"speed_days_per_second": 0.0,
 		"paused": true,
-		"authoritative_domain_mask": 0xB7E,
+		"authoritative_domain_mask": 0xFFF,
 	})
 	# Soft: start may refuse without country capture; still require method surface.
 	if bool(started_active.get("ok", false)):
@@ -231,3 +231,4 @@ func _fail(label: String) -> void:
 func _finish() -> void:
 	print("runtime_economy_parity_test checks=%s failures=%s" % [_checks, _failures])
 	quit(1 if _failures > 0 else 0)
+

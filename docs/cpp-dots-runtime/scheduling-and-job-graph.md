@@ -1213,14 +1213,20 @@ full audit.
 `(effective_day, producer_id, sequence, request_id)`，队列满立即返回
 `command_queue_capacity_exceeded`。
 
-当前 host 只完成线程生命周期、时钟、POD 命令和 commit 发布骨架；domain daily
-authority 仍由同步 Runtime Graph 持有。`RuntimeThreadReport` 同时公开
-`required_domain_mask`、`implemented_domain_mask`、`missing_domain_mask` 和
-`coverage_blocker`，覆盖率只能由 worker 的完整 POD barrier 证明，不能由启动参数
-`graph_coverage_complete=true` 声明。当前只实现 `COMMIT` handler，因此报告固定为
-`graph_coverage_state=partial`、`coverage_blocker=missing_native_domain_handlers`；只有
-所有 domain 完成 Godot bridge 脱离且 `graph_coverage_state=complete` 后，才允许将该 host
-切换为 ACTIVE 权威。
+当前 host 已承载线程生命周期、时钟、POD 命令、九个已实现 domain 的 barrier 和 commit
+发布；尚未实现的 `INPUT_CAPTURE`、`GAMEPLAY_EFFECT`、`VISUAL` 仍由 completion gate
+拒绝进入 ACTIVE。`RuntimeThreadReport` 同时公开
+`required_domain_mask`、`implemented_domain_mask`、`missing_domain_mask`、
+`completion_gate_missing_domain_mask`、`active_gate_blocked` 和 `coverage_blocker`，
+覆盖率只能由 worker 的完整 POD barrier 证明，不能由启动参数
+`graph_coverage_complete=true` 声明。当前实现掩码固定为 `0xB7E`；整图 `0xFFF` 请求会
+fail-closed，不会启动 worker。
+
+Economy authority 的显式切换只允许在 epoch boundary 且没有 StageOps continuation、
+pending command 或 transport mutation 时发生。`switch_economy_authority()` 会记录切换前后
+hash/generation、reason、blocker、latency 和拒绝次数；FAULTED worker 会暂停 authority
+切换并保留最后 committed snapshot，报告字段由 `economy_authority_fault_paused` 和
+`economy_authority_last_committed_*` 暴露。
 
 启动参数 `simulation_thread_mode` 固定为 `OFF`、`SHADOW`、`ACTIVE`。`OFF` 不创建
 worker；`SHADOW` 允许 host 在 coverage 不完整时运行并发布只读 commit，但画面和权威仍由

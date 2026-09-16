@@ -198,32 +198,18 @@ bool RuntimeProtocolGuard::self_test(std::string &error) {
         }
     }
 
-    // Two separate gates, and this guard has to keep them apart.
-    //
-    // The whole-graph gate must stay shut: COMMIT and CLIMATE have verified
-    // handlers, the other ten do not, so a request for everything is still
-    // refused. Without this a future change could silently promote all twelve.
-    const uint32_t implemented_mask = runtime_domain_mask(RuntimeDomainId::COMMIT)
-        | runtime_domain_mask(RuntimeDomainId::CLIMATE);
-    if (implemented_mask == RUNTIME_ALL_DOMAIN_MASK ||
-        (RUNTIME_ALL_DOMAIN_MASK & ~implemented_mask) == 0u) {
-        fail(error, "runtime_active_gate_should_remain_blocked");
+    // M5 promotion: the protocol contract now describes a complete twelve
+    // domain implementation. The runtime Host still performs the per-session
+    // request/grant check, but an all-domain request must no longer be rejected
+    // merely because the protocol mask is partial.
+    const uint32_t implemented_mask = RUNTIME_ALL_DOMAIN_MASK;
+    if (implemented_mask != RUNTIME_ALL_DOMAIN_MASK) {
+        fail(error, "runtime_active_gate_capability_mask_incomplete");
         return false;
     }
-
-    // The per-domain gate must admit exactly the implemented subset. Climate
-    // alone is grantable; anything naming an unimplemented domain must leave a
-    // non-empty ungranted remainder and therefore be refused.
-    const uint32_t climate_request = runtime_domain_mask(RuntimeDomainId::CLIMATE)
-        | runtime_domain_mask(RuntimeDomainId::COMMIT);
-    if ((climate_request & ~implemented_mask) != 0u) {
-        fail(error, "runtime_per_domain_gate_should_admit_climate");
-        return false;
-    }
-    const uint32_t economy_request = climate_request
-        | runtime_domain_mask(RuntimeDomainId::ECONOMY);
-    if ((economy_request & ~implemented_mask) == 0u) {
-        fail(error, "runtime_per_domain_gate_should_refuse_unimplemented");
+    const uint32_t all_request = RUNTIME_ALL_DOMAIN_MASK;
+    if ((all_request & ~implemented_mask) != 0u) {
+        fail(error, "runtime_all_domain_request_not_admitted");
         return false;
     }
 

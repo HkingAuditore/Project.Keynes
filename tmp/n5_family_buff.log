@@ -1,0 +1,60 @@
+﻿Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] load_default hydrates 98 official family traits
+  [PASS] load_default hydrates 48 official family effects
+  [PASS] official family effects have Chinese names and descriptions
+  [PASS] official family effects keep five prestige statements
+  [PASS] official family traits keep placeholder ranges from the design table
+  [PASS] 楹﹂ cannot roll before wild wheat collection is unlocked
+  [PASS] 绫抽 cannot roll before paddy rice cultivation is unlocked
+  [PASS] 鐜夌背鍡滃ソ cannot roll before wild maize collection is unlocked
+  [PASS] 鐜夌背涓撳 cannot enter the random pool before wild maize collection
+  [PASS] 娓旀埛姘磋剦 uses ANY freshwater or coastal fishing
+  [PASS] 閲嶇熆 requires identified mineral technologies
+  [PASS] 鐭夸笟缁忚惀 identification ANY includes petroleum extraction
+  [PASS] 鏋楃熆涓栦笟 does not employ petroleum workers
+  [PASS] 妞嶆爲閫犳灄 cannot enter the pool before deadwood collection
+  [PASS] 瑙傛疆鐢熻 uses ANY freshwater or coastal fishing
+  [PASS] 灞卞湴鐭胯剦 uses ANY mineral identification
+  [PASS] trade pool effects require early trade
+  [PASS] industry pool effects require the agrarian milestone
+  [PASS] knowledge pool effects require writing
+  [PASS] official family catalogs compile into economy IR
+  [PASS] compiled catalogs pack ANY flags for fishing and mineral gates
+  [PASS] family effect display copy does not change family_effect_catalog_hash
+  [PASS] effect domain catalog builds with official family effects
+  [PASS] effect domain catalog compiles opcode 23 and metrics 22-36
+  [PASS] behavior selector * expands every profession dense id
+  [PASS] READ_STATE 3 remaining-days program compiles
+  [PASS] READ_STATE 3 remaining-days program configures
+  [PASS] fixture family-effect catalog compiles
+  [PASS] fixture packs one random-pool family effect
+  [PASS] effect domain catalog accepts the fixture family effect
+  [PASS] fixture effect IR compiles
+  [PASS] effect runtime configures with fixture programs
+  [PASS] economy configures with fixture family effects
+  [PASS] opening family bootstraps
+  [PASS] opening day conserves ledgers
+  [PASS] random-pool grant is exactly one independent effect
+  [PASS] independent family effects survive a later reconcile
+  [PASS] owned-output CSR stays empty without authored structure effects
+  [FAIL] family.set_split_policy retain-only is accepted
+retain submit={ "ok": false, "reason": "economy_legacy_ingress_disabled" }
+  [FAIL] retain-only split flags are written onto the family
+  [FAIL] family.set_split_policy bonus-weight is accepted
+  [FAIL] bonus-weight split flags replace retain-only and keep Q8 weight
+  [PASS] invalid split policy is rejected at submit
+=== family buff runtime foundation FAIL ===
+Godot_v4.6.2-stable_win64_console.exe : ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyText
+ureE' were leaked at exit.
+所在位置 C:\Users\hkinghuang\AppData\Local\Temp\ps-script-53d1cb79-1ad7-41a1-bbb3-0d6587f9a5a9.ps1:93 字符: 204
++ ... ct-keynes"; & $godot --headless --path $proj --script "res://tests/fa ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (ERROR: 11 RID a...leaked at exit.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 276 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

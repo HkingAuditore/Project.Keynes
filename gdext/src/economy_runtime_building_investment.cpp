@@ -1689,7 +1689,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
             // type with neither installed nor pending capacity is a legitimate
             // greenfield candidate even when no signal has touched its goods.
             const bool greenfield = existing == nullptr && pending_count <= 0;
-            const bool sparse_selected = greenfield || !sparse_mask_ready ||
+            const bool sparse_selected = !sparse_mask_ready ||
                 (type_id >= 0 && type_id < static_cast<int32_t>(
                     _investment_type_stamp.size()) &&
                  _investment_type_stamp[type_id] == investment_review_stamp);
@@ -1771,7 +1771,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
             }
             const bool vacancy = existing != nullptr &&
                 existing->filled_owner < existing->owner_required;
-            if (vacancy && !survival_vacancy) {
+            if (vacancy && !survival_vacancy && !employment_catchup) {
                 reject(INVESTMENT_REJECTION_ACTIVE_OWNER_VACANCY);
                 continue;
             }
@@ -2137,13 +2137,23 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 reject(INVESTMENT_REJECTION_RESOURCE);
                 continue;
             }
+            const bool government_research_candidate = [&]() {
+                if (_epoch_research_good_id < 0 ||
+                    epoch_research_demand_daily(cell, _epoch_research_good_id) <= 0)
+                    return false;
+                for (int32_t output = 0; output < type.output_count; ++output)
+                    if (_building_outputs[type.output_begin + output].good_id ==
+                            _epoch_research_good_id) return true;
+                return false;
+            }();
             const int32_t country_cost_factor = country >= 0 &&
                     country < static_cast<int32_t>(
                         _epoch_country_construction_cost_factor_q16.size())
                 ? _epoch_country_construction_cost_factor_q16[country] : Q16_ONE;
             ConstructionMaterialPlan material_plan;
             if (!plan_construction_materials(cell, type_id, 1,
-                                             country_cost_factor, material_plan)) {
+                                             country_cost_factor, material_plan) &&
+                !government_research_candidate) {
                 if (diagnostic != nullptr) {
                     diagnostic->failed_material_group =
                         material_plan.failed_group;
@@ -2151,6 +2161,9 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 ++_building_investment_blocked_materials;
                 reject(INVESTMENT_REJECTION_MATERIALS);
                 continue;
+            }
+            if (government_research_candidate && material_plan.good_ids.empty()) {
+                material_plan = {};
             }
             if (diagnostic != nullptr) {
                 diagnostic->failed_material_group = -1;

@@ -28,6 +28,8 @@
 
 namespace pk {
 
+struct RuntimeEconomyEcp2State;
+
 class EffectRuntime;
 
 class NativeCountryRuntime;
@@ -657,6 +659,12 @@ public:
     godot::Dictionary begin_restore();
     godot::Dictionary feed_restore_chunk(const godot::PackedByteArray &chunk);
     godot::Dictionary end_restore();
+
+    // ECP2 full-authority capture/apply (PKEC section remapping + resource wire).
+    bool capture_ecp2_authority(RuntimeEconomyEcp2State &out, std::string &error,
+                                  uint32_t flags = 0) const;
+    bool apply_ecp2_authority(const RuntimeEconomyEcp2State &in,
+                              std::string &error);
 
     // Committed, read-only economy event stream. Events produced by an active
     // frozen epoch remain private until aggregate_publish succeeds.
@@ -3267,6 +3275,8 @@ private:
         int32_t canal_project_cursor = 0;
         int32_t ceiling_market_cursor = 0;
         int32_t ceiling_row_cursor = 0;
+        int32_t resource_cursor = 0;
+        int32_t cadence_cursor = 0;
         std::vector<uint8_t> modifier_bytes;
         size_t modifier_cursor = 0;
         bool end_emitted = false;
@@ -3319,6 +3329,9 @@ private:
         int32_t restored_fiscal = 0;
         int32_t expected_fiscal_peer = -1;
         int32_t restored_fiscal_peer = 0;
+        int64_t expected_resource_rows = 0;
+        int64_t restored_resource_rows = 0;
+        int64_t last_resource_key = -1;
         int32_t last_signal_cell = -1;
         int32_t last_signal_good = -1;
         int32_t last_labor_cell = -1;
@@ -3327,6 +3340,11 @@ private:
         bool modifier_seen = false;
         bool fiscal_seen = false;
         bool fiscal_peer_seen = false;
+        bool resource_stock_seen = false;
+        bool cadence_state_seen = false;
+        int32_t restored_cadence_cells = 0;
+        bool committed_generation_seen = false;
+        uint64_t restored_committed_generation = 0;
         bool settlement_names_seen = false;
         int32_t restored_families = 0;
         int32_t restored_family_memberships = 0;
@@ -4777,6 +4795,9 @@ private:
     std::vector<int32_t> _resource_moisture_signal;
     std::vector<int64_t> _resource_deltas;
     std::vector<uint32_t> _resource_lane_generation;
+    // A restored resource stock is authoritative until the first post-restore
+    // building-context capture has consumed the matching map snapshot.
+    bool _resource_stock_restored_pending_capture = false;
     std::vector<size_t> _resource_touched_lanes;
     std::vector<size_t> _last_published_resource_touched_lanes;
     uint32_t _resource_current_generation = 0;
@@ -6506,6 +6527,13 @@ private:
                                             int64_t &saturation_count);
 
     bool decode_restore_chunk(const std::vector<uint8_t> &bytes, std::string &error);
+    bool begin_restore_internal(std::string &error);
+    bool end_restore_internal(std::string &error);
+    bool apply_ecp2_authority_internal(const RuntimeEconomyEcp2State &in,
+                                       std::string &error);
+
+    // ECP2 mid-epoch export bypasses the committed-boundary gate in begin_save.
+    mutable bool _ecp2_allow_mid_epoch_export = false;
 
     bool trace_detail_for_cell(int32_t cell) const;
     void trace_record_cashflow(int32_t cell, uint64_t cohort_handle, int32_t source,

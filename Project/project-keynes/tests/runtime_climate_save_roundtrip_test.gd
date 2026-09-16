@@ -74,8 +74,10 @@ func _run() -> int:
 	host.map_width = MAP_WIDTH
 	host.map_height = MAP_HEIGHT
 	host.initial_seed = SEED
-	host.generate_test_economy_data = true
-	host.test_economy_population_scale = 0
+	# This test owns the Climate save boundary. Keep Economy on its valid empty
+	# production bootstrap; the synthetic economy fixture requires construction
+	# resources that this climate seed intentionally does not guarantee.
+	host.generate_test_economy_data = false
 	host.runtime_parity_forcing = true
 	# This harness measures CLM2 bytes on the SHADOW trace path. ACTIVE
 	# suppresses production Climate and would starve climate_pod_parity_compared.
@@ -113,7 +115,9 @@ func _run() -> int:
 
 	var polled := _capture_bundle(ext)
 	if not bool(polled.get("ready", false)):
-		_expect("save bundle became ready (%s)" % String(polled.get("code", "timeout")), false)
+		_expect("save bundle became ready (%s; report=%s)" % [
+			String(polled.get("code", "timeout")),
+			str(polled.get("thread_report", {}))], false)
 		_teardown(host, clock)
 		return 7
 	var bytes: PackedByteArray = polled.get("bytes", PackedByteArray())
@@ -320,7 +324,8 @@ func _capture_bundle(ext, request_id: int = 1) -> Dictionary:
 		if not bool(polled.get("ok", true)):
 			return {"ready": false, "code": String(polled.get("code", "poll_failed"))}
 		OS.delay_msec(WORKER_POLL_MSEC)
-	return {"ready": false, "code": "save_poll_timeout"}
+	return {"ready": false, "code": "save_poll_timeout",
+		"thread_report": ext.get_runtime_thread_report()}
 
 
 # Ticks the production path and lets the worker consume one trace frame per tick

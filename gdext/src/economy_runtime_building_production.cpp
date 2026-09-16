@@ -791,8 +791,27 @@ bool NativeEconomyRuntime::run_building_production_cell(
         int64_t scale = std::clamp<int64_t>(mul_div_sat(
             available, Q16_ONE, base, _saturation_count), 0, Q16_ONE);
         if (item.mode == 0 && resource_is_renewable(item.resource_id)) {
-            scale = std::min<int64_t>(scale,
-                resource_stock_density_q16(item.resource_id, resource_cell));
+            int64_t density_q16 = resource_stock_density_q16(
+                item.resource_id, resource_cell);
+            if (_resource_safe_harvest_q16 <= 0 &&
+                item.resource_id >= 0 && item.resource_id <
+                    static_cast<int32_t>(_resource_ecology_capacity.size())) {
+                const int64_t capacity = _resource_ecology_capacity[
+                    static_cast<size_t>(item.resource_id)];
+                if (capacity > 0) {
+                    int64_t sat = 0;
+                    const int64_t fixed_capacity = saturating_mul(
+                        capacity, GOODS_SCALE, sat);
+                    if (fixed_capacity > 0) {
+                        const int64_t remaining = std::max<int64_t>(0,
+                            available_resource_amount(item, resource_cell));
+                        density_q16 = static_cast<int64_t>(std::clamp<int64_t>(
+                            mul_div_sat(remaining, Q16_ONE, fixed_capacity, sat),
+                            0, Q16_ONE));
+                    }
+                }
+            }
+            scale = std::min<int64_t>(scale, density_q16);
         }
         // Keep a positive probe for a positive but sub-Q16 stock ratio. The
         // later integer quantity and stock checks remain authoritative.
@@ -1086,6 +1105,17 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 _saturation_count);
             int64_t executable_scale = desired_scale;
             if (survival_output) {
+                // Survival output retained by the owner household is executable
+                // even when the merchant inventory quota is temporarily zero.
+                // Keep at least the owner share in the working-capital quote so
+                // a subsistence producer can finance its required inputs.
+                if (group.filled_owner > 0 && group.count > 0) {
+                    survival_absorption_q16 = std::max<int64_t>(
+                        survival_absorption_q16,
+                        std::clamp<int64_t>(mul_div_sat(
+                            std::min(group.filled_owner, group.count), Q16_ONE,
+                            group.count, _saturation_count), 1, Q16_ONE));
+                }
                 executable_scale = mul_div_sat(executable_scale,
                     survival_absorption_q16, Q16_ONE, _saturation_count);
                 if (type.behavior_id == 1 || type.behavior_id == 2) {
@@ -1659,14 +1689,6 @@ bool NativeEconomyRuntime::run_building_production_cell(
                     retention_clothing_used[owner] = saturating_add(
                         retention_clothing_used[owner], offer.retained,
                         _saturation_count);
-                } else {
-                    const int32_t lane = retention_lane(owner, offer.good);
-                    if (lane >= 0) {
-                        offer.retained = std::min<int64_t>(offer.qty, std::max<int64_t>(
-                            0, retention_targets[lane] - retention_used[lane]));
-                        retention_used[lane] = saturating_add(
-                            retention_used[lane], offer.retained, _saturation_count);
-                    }
                 }
             }
             offer.sellable = offer.qty - offer.retained;

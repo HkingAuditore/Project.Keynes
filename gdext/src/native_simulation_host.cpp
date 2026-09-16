@@ -6,6 +6,7 @@
 #include "native_simulation_host.h"
 #include "country_core_apply.h"
 #include "economy_runtime.h"
+#include "runtime_economy_ecp2.h"
 #include "native_parallel_executor.h"
 #include "runtime_climate_parity.h"
 
@@ -25,6 +26,31 @@
 namespace pk {
 
 namespace {
+bool d7_read_u32(const uint8_t *bytes, size_t size, size_t &cursor,
+                 uint32_t &out);
+bool d7_read_u64(const uint8_t *bytes, size_t size, size_t &cursor,
+                 uint64_t &out);
+
+// Scope helper for the two authority-boundary counters below.  The worker
+// never exposes a partially executed day as an epoch boundary; the counters
+// make that fact available to a concurrent switch request without taking a
+// mutex in the hot path.
+class AtomicCounterScope {
+public:
+    explicit AtomicCounterScope(std::atomic<uint32_t> &counter) noexcept
+        : _counter(counter) {
+        _counter.fetch_add(1u, std::memory_order_acq_rel);
+    }
+    AtomicCounterScope(const AtomicCounterScope &) = delete;
+    AtomicCounterScope &operator=(const AtomicCounterScope &) = delete;
+    ~AtomicCounterScope() {
+        _counter.fetch_sub(1u, std::memory_order_release);
+    }
+
+private:
+    std::atomic<uint32_t> &_counter;
+};
+
 template <typename T>
 bool read_modifier_payload(const uint8_t *data, size_t size, size_t &cursor, T &value) {
     if (data == nullptr || cursor > size || size - cursor < sizeof(T)) return false;
@@ -394,6 +420,18 @@ NativeSimulationHost::NativeSimulationHost() {
         generation.store(0, std::memory_order_relaxed);
     }
     for (auto &character : _fault_code) character.store('\0', std::memory_order_relaxed);
+    for (auto &character : _economy_authority_switch_reason)
+        character.store('\0', std::memory_order_relaxed);
+    for (auto &character : _economy_authority_switch_blocker)
+        character.store('\0', std::memory_order_relaxed);
+    for (auto &character : _economy_authority_switch_audit_before)
+        character.store('\0', std::memory_order_relaxed);
+    for (auto &character : _economy_authority_switch_audit_after)
+        character.store('\0', std::memory_order_relaxed);
+    for (auto &sample : _economy_authority_switch_latency_samples)
+        sample.store(0, std::memory_order_relaxed);
+    for (auto &sample : _economy_authority_switch_command_latency_samples)
+        sample.store(0, std::memory_order_relaxed);
     for (auto &character : _domain_authority_fallback_reason) {
         character.store('\0', std::memory_order_relaxed);
     }
@@ -502,6 +540,14 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
         return false;
     }
+    // The previous worker is fully reaped here, so reset the continuation
+    // machine before publishing STARTING.  This avoids touching its
+    // non-atomic bookkeeping from request_stop while a worker is still live.
+    _stage_ops_day_index = -1;
+    _stage_ops_day_input_generation = 0;
+    _stage_ops_day_phase = StageOpsDayPhase::Done;
+    _stage_ops_day_phase_atomic.store(static_cast<uint8_t>(StageOpsDayPhase::Done),
+                                      std::memory_order_release);
     if (mode == RuntimeSimulationMode::OFF) {
         _mode.store(RuntimeSimulationMode::OFF, std::memory_order_release);
         _graph_coverage_complete.store(false, std::memory_order_release);
@@ -519,8 +565,11 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         ? (requested_authority_mask | runtime_domain_mask(RuntimeDomainId::COMMIT))
         : 0u;
     const uint32_t ungranted = wanted & ~implemented_domain_mask();
+    _completion_gate_missing_domain_mask.store(ungranted, std::memory_order_release);
+    _active_gate_blocked.store(false, std::memory_order_release);
     if (mode == RuntimeSimulationMode::ACTIVE &&
         (!graph_coverage_complete || wanted == 0u || ungranted != 0u)) {
+        _active_gate_blocked.store(true, std::memory_order_release);
         _mode.store(RuntimeSimulationMode::OFF, std::memory_order_release);
         _graph_coverage_complete.store(false, std::memory_order_release);
         _authority_ready.store(false, std::memory_order_release);
@@ -583,6 +632,7 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     // by the worker after a complete RuntimeDayPlan barrier; accepting an
     // external `true` here must never make the facade report ACTIVE.
     _graph_coverage_complete.store(false, std::memory_order_release);
+    _economy_authority_fault_paused.store(false, std::memory_order_release);
     _authority_ready.store(false, std::memory_order_release);
     // The request is recorded now; the grant is published only after a barrier
     // proves the worker actually ran those domains (see publish_day).
@@ -610,6 +660,32 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     _last_visual_publish_us.store(0, std::memory_order_release);
     _snapshot_publish_throttled_count.store(0, std::memory_order_release);
     _last_commit_produced_at_us.store(0, std::memory_order_release);
+    _worker_day_inflight.store(0, std::memory_order_release);
+    _economy_inflight_mutations.store(0, std::memory_order_release);
+    _economy_pending_command_count.store(0, std::memory_order_release);
+    _last_command_admitted_us.store(0, std::memory_order_release);
+    _economy_authority_switch_command_latency_us.store(0,
+                                                       std::memory_order_release);
+    _economy_authority_switch_latency_us.store(0,
+                                                std::memory_order_release);
+    _economy_authority_switch_latency_p95_us.store(0,
+                                                    std::memory_order_release);
+    _economy_authority_switch_latency_max_us.store(0,
+                                                    std::memory_order_release);
+    _economy_authority_switch_command_latency_p95_us.store(
+        0, std::memory_order_release);
+    _economy_authority_switch_command_latency_max_us.store(
+        0, std::memory_order_release);
+    _economy_authority_switch_latency_sample_count.store(
+        0, std::memory_order_release);
+    _economy_authority_switch_latency_sample_write.store(
+        0, std::memory_order_release);
+    for (auto &sample : _economy_authority_switch_latency_samples)
+        sample.store(0, std::memory_order_release);
+    for (auto &sample : _economy_authority_switch_command_latency_samples)
+        sample.store(0, std::memory_order_release);
+    _economy_authority_switch_audit_sequence.store(0,
+                                                    std::memory_order_release);
     for (auto &family_generation : _dirty_family_generations) {
         family_generation.store(0, std::memory_order_release);
     }
@@ -972,7 +1048,52 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
             return false;
         }
     }
-    if (restore_pending && !_pending_restore_bundle.economy_pod_bytes.empty()) {
+    const bool ecp2_authority_cutover =
+        _economy_ecp2_authority.load(std::memory_order_acquire);
+    const bool has_ecp2 =
+        !_pending_restore_bundle.economy_ecp2_bytes.empty();
+    RuntimeEconomyEcp2State restored_ecp2;
+    std::string ecp2_apply_error;
+    if (restore_pending && has_ecp2) {
+        if (!decode_ecp2(_pending_restore_bundle.economy_ecp2_bytes.data(),
+                         _pending_restore_bundle.economy_ecp2_bytes.size(),
+                         restored_ecp2, ecp2_apply_error)) {
+            set_fault(ecp2_apply_error.empty()
+                ? "economy_ecp2_decode_failed"
+                : ecp2_apply_error.c_str());
+            _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
+            return false;
+        }
+        if (_economy_production_runtime != nullptr &&
+            ecp2_has_required_domains(restored_ecp2.authority_domain_mask,
+                                      ECP2_DOMAIN_CORE_AUTHORITY)) {
+            if (!_economy_production_runtime->apply_ecp2_authority(
+                    restored_ecp2, ecp2_apply_error)) {
+                set_fault(ecp2_apply_error.empty()
+                    ? "economy_ecp2_apply_failed"
+                    : ecp2_apply_error.c_str());
+                _state.store(RuntimeWorkerState::STOPPED,
+                              std::memory_order_release);
+                return false;
+            }
+        }
+        if (!_economy_pod_authority.restore_ecp2(
+                _pending_restore_bundle.economy_ecp2_bytes.data(),
+                _pending_restore_bundle.economy_ecp2_bytes.size(),
+                ecp2_apply_error)) {
+            set_fault(ecp2_apply_error.empty()
+                ? "economy_ecp2_pod_cache_failed"
+                : ecp2_apply_error.c_str());
+            _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
+            return false;
+        }
+    }
+    const bool skip_ecp1_for_cutover =
+        ecp2_authority_cutover && has_ecp2 &&
+        ecp2_has_required_domains(restored_ecp2.authority_domain_mask,
+                                  ECP2_DOMAIN_FULL_AUTHORITY);
+    if (restore_pending && !_pending_restore_bundle.economy_pod_bytes.empty() &&
+        !skip_ecp1_for_cutover) {
         std::string economy_pod_restore_error;
         if (!_economy_pod_authority.restore_ecp1(
                 _pending_restore_bundle.economy_pod_bytes.data(),
@@ -987,6 +1108,9 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         _economy_pod_parity_ready_mask.store(
             _economy_pod_authority.parity_ready_mask(),
             std::memory_order_release);
+        _economy_pod_ready.store(true, std::memory_order_release);
+        _economy_pod_committed.store(true, std::memory_order_release);
+    } else if (restore_pending && has_ecp2) {
         _economy_pod_ready.store(true, std::memory_order_release);
         _economy_pod_committed.store(true, std::memory_order_release);
     }
@@ -1070,6 +1194,34 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
             _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
             return false;
         }
+    }
+    if (restore_pending && !_pending_restore_bundle.gameplay_effect_bytes.empty()) {
+        const std::vector<uint8_t> &gmp =
+            _pending_restore_bundle.gameplay_effect_bytes;
+        size_t gmp_cursor = 0;
+        uint32_t marker = 0;
+        uint32_t abi = 0;
+        uint64_t generation = 0;
+        uint32_t pending = 0;
+        uint32_t terminal = 0;
+        uint64_t state_hash = 0;
+        if (!d7_read_u32(gmp.data(), gmp.size(), gmp_cursor, marker) ||
+            !d7_read_u32(gmp.data(), gmp.size(), gmp_cursor, abi) ||
+            !d7_read_u64(gmp.data(), gmp.size(), gmp_cursor, generation) ||
+            !d7_read_u32(gmp.data(), gmp.size(), gmp_cursor, pending) ||
+            !d7_read_u32(gmp.data(), gmp.size(), gmp_cursor, terminal) ||
+            !d7_read_u64(gmp.data(), gmp.size(), gmp_cursor, state_hash) ||
+            gmp_cursor != gmp.size() || marker != 0x31504d47u || abi != 1u) {
+            set_fault("gameplay_effect_gmp1_restore_failed");
+            _state.store(RuntimeWorkerState::STOPPED, std::memory_order_release);
+            return false;
+        }
+        _gameplay_effect_generation.store(generation,
+                                          std::memory_order_release);
+        _gameplay_effect_pending.store(pending, std::memory_order_release);
+        _gameplay_effect_terminal.store(terminal, std::memory_order_release);
+        _gameplay_effect_state_hash.store(state_hash,
+                                          std::memory_order_release);
     }
     CountryCoreCheckpoint restored_country_checkpoint;
     bool restored_country_checkpoint_valid = false;
@@ -1325,7 +1477,152 @@ void NativeSimulationHost::set_economy_execution_mode(
 
 bool NativeSimulationHost::switch_economy_authority(
         RuntimeEconomyAuthorityMode mode, std::string &error) noexcept {
+    // Hold the boundary lock for the complete check + mode mutation + audit.
+    // The worker takes the same lock around execute_day_plan/publish_day, so
+    // an observed idle boundary cannot be invalidated by the next day starting
+    // between the check and the actual authority change.
+    std::unique_lock<std::mutex> boundary_lock(
+        _economy_authority_boundary_mutex);
+    const uint64_t switch_started_us = now_us();
     error.clear();
+    const RuntimeEconomyAuthorityMode current = _economy_pod_authority.authority_mode();
+    const RuntimeWorkerState worker_state = state();
+    auto remember_blocker = [&](const char *reason) noexcept {
+        const char *value = reason ? reason : "unknown";
+        size_t i = 0;
+        for (; i + 1 < _economy_authority_switch_blocker.size() && value[i] != '\0'; ++i)
+            _economy_authority_switch_blocker[i].store(value[i], std::memory_order_relaxed);
+        for (; i < _economy_authority_switch_blocker.size(); ++i)
+            _economy_authority_switch_blocker[i].store('\0', std::memory_order_relaxed);
+    };
+    auto remember_reason = [&](const char *reason) noexcept {
+        const char *value = reason ? reason : "unknown";
+        size_t i = 0;
+        for (; i + 1 < _economy_authority_switch_reason.size() && value[i] != '\0'; ++i)
+            _economy_authority_switch_reason[i].store(value[i], std::memory_order_relaxed);
+        for (; i < _economy_authority_switch_reason.size(); ++i)
+            _economy_authority_switch_reason[i].store('\0', std::memory_order_relaxed);
+    };
+    if (worker_state == RuntimeWorkerState::FAULTED) {
+        // A faulted worker must remain parked on its last committed snapshot;
+        // authority cannot move while an unsafe partial mutation may exist.
+        _economy_authority_fault_paused.store(true, std::memory_order_release);
+        _economy_authority_switch_rejected.fetch_add(1, std::memory_order_relaxed);
+        remember_blocker("worker_fault_paused_committed_snapshot");
+        error = "economy_authority_switch_worker_fault_paused";
+        remember_reason(error.c_str());
+        return false;
+    }
+    if (worker_state == RuntimeWorkerState::STOPPING ||
+        worker_state == RuntimeWorkerState::SAVE_PENDING) {
+        _economy_authority_switch_rejected.fetch_add(1, std::memory_order_relaxed);
+        remember_blocker("worker_lifecycle_not_at_boundary");
+        error = "economy_authority_switch_requires_epoch_boundary";
+        remember_reason(error.c_str());
+        return false;
+    }
+    const bool command_queue_pending =
+        _command_enqueue_pos.load(std::memory_order_acquire) !=
+        _command_dequeue_pos.load(std::memory_order_acquire);
+    const uint32_t worker_day_inflight =
+        _worker_day_inflight.load(std::memory_order_acquire);
+    const uint32_t economy_inflight =
+        _economy_inflight_mutations.load(std::memory_order_acquire);
+    const uint32_t worker_pending =
+        _economy_pending_command_count.load(std::memory_order_acquire);
+    if (static_cast<StageOpsDayPhase>(_stage_ops_day_phase_atomic.load(
+            std::memory_order_acquire)) != StageOpsDayPhase::Done ||
+        _economy_pod_pending_outbox.load(std::memory_order_acquire) != 0 ||
+        _economy_pod_pending_inbox.load(std::memory_order_acquire) != 0 ||
+        command_queue_pending || worker_day_inflight != 0 ||
+        economy_inflight != 0 || worker_pending != 0) {
+        _economy_authority_switch_rejected.fetch_add(1, std::memory_order_relaxed);
+        const char *blocker = command_queue_pending
+            ? "pending_command_queue"
+            : (worker_pending != 0 ? "pending_worker_command"
+               : (economy_inflight != 0 ? "economy_mutation_inflight"
+                  : (worker_day_inflight != 0 ? "worker_day_inflight"
+                     : "pending_epoch_mutation")));
+        remember_blocker(blocker);
+        error = "economy_authority_switch_requires_epoch_boundary";
+        remember_reason(error.c_str());
+        return false;
+    }
+    // Idempotent requests are safe once the worker is healthy and idle; keep
+    // the fault/lifecycle/pending-work checks authoritative even for same-mode
+    // calls.
+    if (current == mode) return true;
+    const uint64_t before_hash = _economy_pod_authority.state_hash();
+    const uint64_t before_generation =
+        _economy_pod_authority.committed_ledger_state().generation;
+    const auto record_switch = [&]() noexcept {
+        const uint64_t after_hash = _economy_pod_authority.state_hash();
+        const uint64_t after_generation =
+            _economy_pod_authority.committed_ledger_state().generation;
+        _economy_authority_switch_count.fetch_add(1, std::memory_order_relaxed);
+        _economy_authority_switch_audit_sequence.fetch_add(
+            1u, std::memory_order_acq_rel);
+        _economy_authority_switch_before_hash.store(before_hash, std::memory_order_release);
+        _economy_authority_switch_after_hash.store(after_hash, std::memory_order_release);
+        _economy_authority_switch_before_generation.store(before_generation, std::memory_order_release);
+        _economy_authority_switch_after_generation.store(after_generation, std::memory_order_release);
+        _economy_authority_last_committed_generation.store(after_generation, std::memory_order_release);
+        _economy_authority_last_committed_hash.store(after_hash, std::memory_order_release);
+        const char *reason = "epoch_boundary_authority_switch";
+        size_t i = 0;
+        remember_reason(reason);
+        char audit[128];
+        std::snprintf(audit, sizeof(audit), "mode=%u generation=%llu hash=%llu",
+                      static_cast<unsigned>(current),
+                      static_cast<unsigned long long>(before_generation),
+                      static_cast<unsigned long long>(before_hash));
+        i = 0;
+        for (; i + 1 < _economy_authority_switch_audit_before.size() && audit[i] != '\0'; ++i)
+            _economy_authority_switch_audit_before[i].store(audit[i], std::memory_order_relaxed);
+        for (; i < _economy_authority_switch_audit_before.size(); ++i)
+            _economy_authority_switch_audit_before[i].store('\0', std::memory_order_relaxed);
+        std::snprintf(audit, sizeof(audit), "mode=%u generation=%llu hash=%llu",
+                      static_cast<unsigned>(mode),
+                      static_cast<unsigned long long>(after_generation),
+                      static_cast<unsigned long long>(after_hash));
+        i = 0;
+        for (; i + 1 < _economy_authority_switch_audit_after.size() && audit[i] != '\0'; ++i)
+            _economy_authority_switch_audit_after[i].store(audit[i], std::memory_order_relaxed);
+        for (; i < _economy_authority_switch_audit_after.size(); ++i)
+            _economy_authority_switch_audit_after[i].store('\0', std::memory_order_relaxed);
+        remember_blocker("");
+        const uint64_t completed_at = now_us();
+        const uint64_t switch_latency = completed_at >= switch_started_us
+            ? completed_at - switch_started_us : 0u;
+        const uint64_t admitted_at =
+            _last_command_admitted_us.load(std::memory_order_acquire);
+        const uint64_t command_latency =
+            admitted_at != 0 && completed_at >= admitted_at
+                ? completed_at - admitted_at : 0u;
+        _economy_authority_switch_latency_us.store(
+            switch_latency, std::memory_order_release);
+        _economy_authority_switch_command_latency_us.store(
+            command_latency, std::memory_order_release);
+        // Keep a bounded sample history for p95/max reporting. The write
+        // cursor is advanced only after both slots are visible, so a report
+        // observing the new count can never include an uninitialised sample.
+        const uint64_t sample_sequence =
+            _economy_authority_switch_latency_sample_write.load(
+                std::memory_order_relaxed);
+        const size_t sample_slot = static_cast<size_t>(
+            sample_sequence % ECONOMY_AUTHORITY_SWITCH_LATENCY_SAMPLE_CAPACITY);
+        _economy_authority_switch_latency_samples[sample_slot].store(
+            switch_latency, std::memory_order_relaxed);
+        _economy_authority_switch_command_latency_samples[sample_slot].store(
+            command_latency, std::memory_order_relaxed);
+        _economy_authority_switch_latency_sample_write.store(
+            sample_sequence + 1u, std::memory_order_release);
+        const uint64_t sample_count = std::min<uint64_t>(
+            sample_sequence + 1u,
+            ECONOMY_AUTHORITY_SWITCH_LATENCY_SAMPLE_CAPACITY);
+        _economy_authority_switch_latency_sample_count.store(
+            sample_count, std::memory_order_release);
+    };
     switch (mode) {
     case RuntimeEconomyAuthorityMode::LEGACY_SYNC:
         if (_economy_production_runtime != nullptr &&
@@ -1333,11 +1630,13 @@ bool NativeSimulationHost::switch_economy_authority(
             _economy_production_runtime->unbind_formula_owned_state();
         }
         _economy_pod_authority.set_authority_mode(mode);
+        record_switch();
         return true;
     case RuntimeEconomyAuthorityMode::POD_ACTIVE_WITH_LEGACY_PARITY:
         // Parity soak may run against the committed cohort/market mirror.
         // Production mutations stay on NativeEconomyRuntime; POD mirrors them.
         _economy_pod_authority.set_authority_mode(mode);
+        record_switch();
         return true;
     case RuntimeEconomyAuthorityMode::POD_ACTIVE:
         // Phase-2.3.3 completes the committed mirror feature mask (ECP ABI9).
@@ -1346,20 +1645,87 @@ bool NativeSimulationHost::switch_economy_authority(
         // StageOps formulas mutate the sole SoA instance.
         if (!_economy_pod_authority.pod_active_ready()) {
             error = "economy_pod_active_incomplete_ledger_mirror";
+            remember_blocker("economy_pod_active_incomplete_ledger_mirror");
+            remember_reason(error.c_str());
             return false;
         }
         if (_economy_production_runtime != nullptr &&
             !_economy_production_runtime->formula_owned_bound()) {
-            if (!_economy_production_runtime->bind_formula_owned_state(
+                if (!_economy_production_runtime->bind_formula_owned_state(
                     _economy_pod_authority.state(), error)) {
+                remember_blocker(error.c_str());
+                remember_reason(error.c_str());
                 return false;
             }
         }
         _economy_pod_authority.set_authority_mode(mode);
+        record_switch();
         return true;
     }
     error = "economy_authority_mode_invalid";
     return false;
+}
+
+bool NativeSimulationHost::economy_authority_fault_gate_self_test(
+        std::string &error) const noexcept {
+    error.clear();
+    // First exercise the epoch-boundary half on a worker-shaped host without
+    // starting a thread.  The switch must observe the explicit in-flight
+    // counters even when the command ring itself is empty.
+    const auto boundary_probe = std::make_unique<NativeSimulationHost>();
+    boundary_probe->_state.store(RuntimeWorkerState::RUNNING,
+                                  std::memory_order_release);
+    boundary_probe->_worker_day_inflight.store(1u, std::memory_order_release);
+    std::string boundary_error;
+    if (boundary_probe->switch_economy_authority(
+            RuntimeEconomyAuthorityMode::POD_ACTIVE_WITH_LEGACY_PARITY,
+            boundary_error) ||
+        boundary_error != "economy_authority_switch_requires_epoch_boundary") {
+        error = "economy_authority_inflight_switch_not_rejected";
+        return false;
+    }
+    boundary_probe->_worker_day_inflight.store(0u, std::memory_order_release);
+    boundary_probe->_state.store(RuntimeWorkerState::PAUSED,
+                                  std::memory_order_release);
+    boundary_error.clear();
+    if (!boundary_probe->switch_economy_authority(
+            RuntimeEconomyAuthorityMode::POD_ACTIVE_WITH_LEGACY_PARITY,
+            boundary_error) ||
+        boundary_probe->_economy_authority_switch_audit_sequence.load(
+            std::memory_order_acquire) != 1u) {
+        error = "economy_authority_idle_switch_not_audited";
+        return false;
+    }
+    // Keep this probe isolated: constructing a temporary host does not start a
+    // thread, and the live host (if any) remains untouched.
+    const auto probe = std::make_unique<NativeSimulationHost>();
+    probe->set_fault("self_test_worker_fault");
+    if (probe->state() != RuntimeWorkerState::FAULTED ||
+        !probe->_economy_authority_fault_paused.load(std::memory_order_acquire)) {
+        error = "economy_authority_fault_pause_not_armed";
+        return false;
+    }
+    std::string switch_error;
+    if (probe->switch_economy_authority(
+            RuntimeEconomyAuthorityMode::POD_ACTIVE_WITH_LEGACY_PARITY,
+            switch_error) ||
+        switch_error != "economy_authority_switch_worker_fault_paused") {
+        error = "economy_authority_fault_switch_not_rejected";
+        return false;
+    }
+    const uint64_t committed_generation =
+        probe->_economy_authority_last_committed_generation.load(
+            std::memory_order_acquire);
+    const uint64_t committed_hash =
+        probe->_economy_authority_last_committed_hash.load(
+            std::memory_order_acquire);
+    if (committed_generation !=
+            probe->_economy_pod_authority.committed_ledger_state().generation ||
+        committed_hash != probe->_economy_pod_authority.state_hash()) {
+        error = "economy_authority_fault_snapshot_not_retained";
+        return false;
+    }
+    return true;
 }
 
 void NativeSimulationHost::attach_economy_production_runtime(
@@ -1467,6 +1833,7 @@ bool NativeSimulationHost::worker_run_stage_ops_slice(
         _stage_ops_day_index = day;
         _stage_ops_day_input_generation = input_generation;
         _stage_ops_day_phase = StageOpsDayPhase::Prelude;
+        _stage_ops_day_phase_atomic.store(static_cast<uint8_t>(StageOpsDayPhase::Prelude), std::memory_order_release);
     }
 
     switch (_stage_ops_day_phase) {
@@ -1487,6 +1854,7 @@ bool NativeSimulationHost::worker_run_stage_ops_slice(
         if (idle_done &&
             !_economy_production_runtime->stage_ops_epoch_open_ready()) {
             _stage_ops_day_phase = StageOpsDayPhase::Done;
+            _stage_ops_day_phase_atomic.store(static_cast<uint8_t>(StageOpsDayPhase::Done), std::memory_order_release);
             if (done != nullptr) {
                 *done = true;
             }
@@ -1497,6 +1865,7 @@ bool NativeSimulationHost::worker_run_stage_ops_slice(
             return false;
         }
         _stage_ops_day_phase = StageOpsDayPhase::PlanEpoch;
+        _stage_ops_day_phase_atomic.store(static_cast<uint8_t>(StageOpsDayPhase::PlanEpoch), std::memory_order_release);
         return true;
     }
     case StageOpsDayPhase::PlanEpoch: {
@@ -1529,6 +1898,7 @@ bool NativeSimulationHost::worker_run_stage_ops_slice(
             return false;
         }
         _stage_ops_day_phase = StageOpsDayPhase::AdvanceStages;
+        _stage_ops_day_phase_atomic.store(static_cast<uint8_t>(StageOpsDayPhase::AdvanceStages), std::memory_order_release);
         return true;
     }
     case StageOpsDayPhase::AdvanceStages: {
@@ -1538,6 +1908,7 @@ bool NativeSimulationHost::worker_run_stage_ops_slice(
         if (_economy_pod_authority.planned_stage_index() >=
             RUNTIME_ECONOMY_GRAPH_STAGE_COUNT) {
             _stage_ops_day_phase = StageOpsDayPhase::CommitEpoch;
+            _stage_ops_day_phase_atomic.store(static_cast<uint8_t>(StageOpsDayPhase::CommitEpoch), std::memory_order_release);
         }
         return true;
     }
@@ -1546,6 +1917,7 @@ bool NativeSimulationHost::worker_run_stage_ops_slice(
             return false;
         }
         _stage_ops_day_phase = StageOpsDayPhase::Done;
+        _stage_ops_day_phase_atomic.store(static_cast<uint8_t>(StageOpsDayPhase::Done), std::memory_order_release);
         if (done != nullptr) {
             *done = true;
         }
@@ -1716,9 +2088,7 @@ bool NativeSimulationHost::execute_economy_worker_stage(
 void NativeSimulationHost::request_stop() {
     const RuntimeWorkerState current = _state.load(std::memory_order_acquire);
     if (current == RuntimeWorkerState::STOPPED) return;
-    _stage_ops_day_index = -1;
-    _stage_ops_day_input_generation = 0;
-    _stage_ops_day_phase = StageOpsDayPhase::Done;
+    _stage_ops_day_phase_atomic.store(static_cast<uint8_t>(StageOpsDayPhase::Done), std::memory_order_release);
     // Revoke before the worker has actually wound down. The main-thread
     // schedule gate suppresses a promoted domain for as long as this mask names
     // it, so a domain must stop being worker-owned the instant a stop is asked
@@ -4706,20 +5076,82 @@ bool NativeSimulationHost::effect_pod_host_stage_self_test(std::string *out_erro
     const auto &snapshot = _effect_pod_authority.snapshot();
     if (snapshot.transactions.empty() ||
         snapshot.transactions.front().status !=
-            RuntimeEffectPodTransactionStatus::ACKED) {
+        RuntimeEffectPodTransactionStatus::ACKED) {
         return fail("effect_host_stage_not_acked");
     }
-    // Keep this pin equal to implemented_domain_mask() (Phase 2-6 = 0xB7E).
-    if (implemented_domain_mask() !=
-        (runtime_domain_mask(RuntimeDomainId::COMMIT) |
-         runtime_domain_mask(RuntimeDomainId::CLIMATE) |
-         runtime_domain_mask(RuntimeDomainId::COUNTRY) |
-         runtime_domain_mask(RuntimeDomainId::TRIGGER_INPUT) |
-         runtime_domain_mask(RuntimeDomainId::MODIFIER) |
-         runtime_domain_mask(RuntimeDomainId::EFFECT) |
-         runtime_domain_mask(RuntimeDomainId::IDEOLOGY) |
-         runtime_domain_mask(RuntimeDomainId::EVENTS) |
-         runtime_domain_mask(RuntimeDomainId::ECONOMY))) {
+    // M3 end-to-end pin: an ACKED Effect transaction must publish one typed
+    // event through the same Events authority used by the worker stage. This
+    // deliberately exercises the real APPEND_BATCH wire instead of merely
+    // checking that the two POD self-tests pass independently.
+    {
+        RuntimeEventsRecord event;
+        event.tick = 0;
+        event.phase = 7;
+        event.type = 900; // effect transaction publication fixture
+        event.source = 1;
+        event.entity_handle = static_cast<uint64_t>(
+            snapshot.transactions.front().source_instance_id);
+        event.payload_schema = 1;
+        event.value_i64 = snapshot.transactions.front().transaction_id;
+        std::vector<uint8_t> payload;
+        const auto put_u32 = [&payload](uint32_t value) {
+            for (int i = 0; i < 4; ++i)
+                payload.push_back(static_cast<uint8_t>((value >> (i * 8)) & 0xffu));
+        };
+        const auto put_i32 = [&put_u32](int32_t value) {
+            put_u32(static_cast<uint32_t>(value));
+        };
+        const auto put_u64 = [&payload](uint64_t value) {
+            for (int i = 0; i < 8; ++i)
+                payload.push_back(static_cast<uint8_t>((value >> (i * 8)) & 0xffu));
+        };
+        const auto put_i64 = [&put_u64](int64_t value) {
+            put_u64(static_cast<uint64_t>(value));
+        };
+        put_u32(RUNTIME_EVENTS_ABI_VERSION);
+        put_u32(1u);
+        put_i64(event.tick);
+        put_i32(event.phase);
+        put_i32(event.type);
+        put_i32(event.source);
+        put_i32(event.flags);
+        put_u64(event.entity_handle);
+        put_i32(event.entity_id);
+        put_i32(event.cell_idx);
+        put_i32(event.payload_schema);
+        put_i64(event.value_i64);
+        put_i32(event.payload_i0);
+        put_i32(event.payload_i1);
+        put_i32(event.payload_i2);
+        put_i32(event.payload_i3);
+        put_u64(static_cast<uint64_t>(event.value_i64));
+        RuntimeCommandPacket event_packet{};
+        event_packet.envelope.request_id = 0xEFFE0001u;
+        event_packet.envelope.producer_id = 77u;
+        event_packet.envelope.sequence = 1u;
+        event_packet.envelope.requested_day = 0;
+        event_packet.envelope.effective_day = 0;
+        event_packet.envelope.domain = static_cast<uint16_t>(RuntimeDomainId::EVENTS);
+        event_packet.envelope.opcode = static_cast<uint16_t>(RuntimeEventsCommand::APPEND_BATCH);
+        event_packet.envelope.payload_size = static_cast<uint32_t>(payload.size());
+        std::memcpy(event_packet.payload.data(), payload.data(), payload.size());
+        std::vector<RuntimeCommandPacket> event_commands{event_packet};
+        RuntimeEventsSnapshot planned_events;
+        std::vector<RuntimeCommandReceipt> event_receipts;
+        RuntimeEventsReport event_report;
+        if (!_events_authority.plan_day(0, event_commands, planned_events,
+                                        event_receipts, event_report, error) ||
+            !event_report.preflight_ok || event_report.appended_events != 1u ||
+            !_events_authority.commit_day(planned_events, error) ||
+            _events_authority.snapshot().events.empty() ||
+            _events_authority.snapshot().events.back().type != event.type) {
+            return fail("effect_host_stage_events_publication_failed");
+        }
+    }
+    // M5 pin: every protocol stage is now represented by the implementation
+    // capability mask, including input capture, gameplay effects and visual
+    // intent publication.
+    if (implemented_domain_mask() != RUNTIME_ALL_DOMAIN_MASK) {
         return fail("effect_host_stage_mask_changed");
     }
     return true;
@@ -5186,6 +5618,7 @@ bool NativeSimulationHost::enqueue_batch(
     }
     _command_enqueue_pos.store(write + packets.size(),
                                std::memory_order_release);
+    _last_command_admitted_us.store(now_us(), std::memory_order_release);
     _control_cv.notify_one();
     return true;
 }
@@ -6741,10 +7174,61 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
         std::vector<RuntimeCommandReceipt> &day_receipts,
         uint64_t admitted_submit_order) {
     RuntimeDayCommit commit;
+    _pod_visual_intents.clear();
+    // INPUT_CAPTURE is a real freeze boundary, not merely a validation bit.
+    // Capture only an input that belongs to this exact sealed day. A stale or
+    // future frame must never replace the last accepted manifest before the
+    // stage has had a chance to reject it.
+    const auto capture_input_manifest = [&](const RuntimeEnvironmentSnapshot &accepted) {
+        const uint64_t prior_generation =
+            _input_capture_generation.load(std::memory_order_relaxed);
+        const int64_t prior_day =
+            _input_capture_day.load(std::memory_order_relaxed);
+        if (prior_generation == accepted.generation &&
+            prior_day == accepted.day) {
+            _input_capture_reused.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+        {
+            RuntimeInputCaptureManifest manifest{};
+            manifest.session_epoch = _country_worker_session_epoch;
+            manifest.input_generation = accepted.generation;
+            manifest.effective_day = accepted.day;
+            manifest.map_generation = accepted.topology_generation;
+            manifest.country_generation = _country_read_view_generation;
+            manifest.building_generation = accepted.vision_revision;
+            manifest.resource_generation = _economy_pod_input_generation.load(
+                std::memory_order_relaxed);
+            manifest.catalog_hash = accepted.climate_catalog_hash;
+            manifest.command_watermark = admitted_submit_order;
+            uint64_t manifest_hash = RuntimeClimateKernel::input_hash(accepted);
+            manifest_hash = mix_hash(manifest_hash, manifest.session_epoch);
+            manifest_hash = mix_hash(manifest_hash, manifest.input_generation);
+            manifest_hash = mix_hash(manifest_hash, static_cast<uint64_t>(manifest.effective_day));
+            manifest_hash = mix_hash(manifest_hash, manifest.map_generation);
+            manifest_hash = mix_hash(manifest_hash, manifest.country_generation);
+            manifest_hash = mix_hash(manifest_hash, manifest.building_generation);
+            manifest_hash = mix_hash(manifest_hash, manifest.resource_generation);
+            manifest_hash = mix_hash(manifest_hash, manifest.catalog_hash);
+            manifest_hash = mix_hash(manifest_hash, manifest.command_watermark);
+            manifest.input_hash = manifest_hash;
+            manifest.frozen = 1;
+            manifest.validated = accepted.topology_validated ? 1 : 0;
+            _input_manifest = manifest;
+            _input_capture_generation.store(accepted.generation,
+                                            std::memory_order_relaxed);
+            _input_capture_day.store(accepted.day, std::memory_order_relaxed);
+            _input_capture_hash.store(manifest_hash, std::memory_order_relaxed);
+            _input_capture_count.fetch_add(1, std::memory_order_relaxed);
+        }
+    };
     // Returns false only on a hard Events plan/commit failure. "Disabled" and
     // "already processed this host day" are true: an I8 ACTIVE Events stage
     // soft-completes on them so the shared grant is not held hostage by a
     // diagnostic mirror with no work.
+    // GAMEPLAY_EFFECT produces typed Events commands inside the same sealed
+    // worker day. They are private until the subsequent EVENTS stage commits.
+    std::vector<RuntimeCommandPacket> gameplay_event_commands;
     const auto run_events_probe = [&](int64_t event_day) -> bool {
         if (!_events_probe_enabled.load(std::memory_order_acquire) ||
             _events_last_processed_day >= event_day) {
@@ -6758,8 +7242,20 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
         // intentionally clears its output before replaying Events commands.
         std::vector<RuntimeCommandReceipt> event_receipts;
         const auto events_plan_started = std::chrono::steady_clock::now();
+        const std::vector<RuntimeCommandPacket> *event_inputs = &day_commands;
+        std::vector<RuntimeCommandPacket> merged_event_inputs;
+        if (!gameplay_event_commands.empty()) {
+            merged_event_inputs.reserve(day_commands.size() +
+                                        gameplay_event_commands.size());
+            merged_event_inputs.insert(merged_event_inputs.end(),
+                                       day_commands.begin(), day_commands.end());
+            merged_event_inputs.insert(merged_event_inputs.end(),
+                                       gameplay_event_commands.begin(),
+                                       gameplay_event_commands.end());
+            event_inputs = &merged_event_inputs;
+        }
         bool events_ok = _events_authority.plan_day(
-            event_day, day_commands, events_snapshot, event_receipts,
+            event_day, *event_inputs, events_snapshot, event_receipts,
             events_report, events_error);
         const double events_plan_ms = std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - events_plan_started).count();
@@ -6772,9 +7268,15 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
         } else {
             _events_authority.discard_plan();
         }
-        // Mark the attempt even on a rejected payload. Events is probe-only and
-        // must not be replayed by a Climate barrier retry for the same day.
-        _events_last_processed_day = event_day;
+        const bool events_authoritative =
+            _mode.load(std::memory_order_acquire) ==
+                RuntimeSimulationMode::ACTIVE &&
+            (_requested_authority_mask.load(std::memory_order_acquire) &
+             runtime_domain_mask(RuntimeDomainId::EVENTS)) != 0u;
+        // Probe mode records a rejected attempt once. Authority mode must retry
+        // the same sealed day and cannot advance its watermark on failure.
+        if (events_ok || !events_authoritative)
+            _events_last_processed_day = event_day;
         _events_pod_ready.store(events_ok, std::memory_order_release);
         _events_pod_plan_ms.store(events_plan_ms, std::memory_order_release);
         _events_pod_replay_ms.store(events_replay_ms, std::memory_order_release);
@@ -7646,6 +8148,34 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
 
     for (uint32_t i = 0; i < plan.stage_count; ++i) {
         RuntimeDomainPlan &stage = plan.stages[i];
+        if (stage.domain == RuntimeDomainId::INPUT_CAPTURE &&
+            _mode.load(std::memory_order_acquire) ==
+                RuntimeSimulationMode::ACTIVE &&
+            (_requested_authority_mask.load(std::memory_order_acquire) &
+             runtime_domain_mask(RuntimeDomainId::INPUT_CAPTURE)) != 0u) {
+            // M4/M5: INPUT_CAPTURE owns the immutable manifest for the whole
+            // sealed day.  A missing, stale, or malformed frame parks the
+            // day before any downstream domain can publish a partial result.
+            std::string input_error;
+            const bool input_ok = environment != nullptr &&
+                environment->generation == plan.context.input_generation &&
+                environment->day == plan.context.day &&
+                validate_runtime_environment_snapshot(*environment, input_error);
+            if (!input_ok) {
+                stage.completed = 0;
+                commit.preflight_ok = 0;
+                commit.continuation_pending = 1;
+                continue;
+            }
+            capture_input_manifest(*environment);
+            stage.work_units = 1;
+            stage.completed = 1;
+            commit.work_units += stage.work_units;
+            commit.completed_domain_mask |=
+                runtime_domain_mask(RuntimeDomainId::INPUT_CAPTURE);
+            ++commit.completed_stage_count;
+            continue;
+        }
         if (stage.domain == RuntimeDomainId::CLIMATE && active_climate_ok) {
             stage.dirty_families = RUNTIME_DIRTY_CLIMATE_FIELDS | RUNTIME_DIRTY_WEATHER;
             stage.work_units = _climate_pod_work_units.load(std::memory_order_relaxed);
@@ -8027,6 +8557,7 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                 RuntimeSimulationMode::ACTIVE &&
             (_requested_authority_mask.load(std::memory_order_acquire) &
              runtime_domain_mask(RuntimeDomainId::ECONOMY)) != 0u) {
+            AtomicCounterScope economy_scope(_economy_inflight_mutations);
             // ACTIVE Economy production: compact_slice (default) or StageOps
             // Host day loop when effective writer is STAGE_OPS (opt-in; start
             // gate still refuses until BOUNDED_KERNELS lands).
@@ -8168,25 +8699,10 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                     commit.preflight_ok = 0;
                     continue;
                 }
-                // Phase-2.6.1: optional authority promotion after a complete
-                // mirror capture (default on). Production StageOps writer is
-                // unchanged; POD_ACTIVE marks ECP/command authority mode.
-                if (_economy_auto_pod_active.load(std::memory_order_acquire) &&
-                    _economy_pod_authority.pod_active_ready() &&
-                    _economy_pod_authority.authority_mode() !=
-                        RuntimeEconomyAuthorityMode::POD_ACTIVE) {
-                    std::string authority_error;
-                    if (!switch_economy_authority(
-                            RuntimeEconomyAuthorityMode::POD_ACTIVE,
-                            authority_error)) {
-                        set_fault(authority_error.empty()
-                                      ? "economy_auto_pod_active_failed"
-                                      : authority_error.c_str());
-                        stage.completed = 0;
-                        commit.preflight_ok = 0;
-                        continue;
-                    }
-                }
+                // M6: mirror readiness never changes the production writer
+                // implicitly.  The caller must request switch_economy_authority
+                // at a later, observable epoch boundary; this prevents a
+                // silent dual-writer handoff in the middle of a day.
             }
             if (economy_day_done) {
                 _economy_pod_state_hash.store(_economy_pod_authority.state_hash(), std::memory_order_release);
@@ -8356,16 +8872,170 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             }
             continue;
         }
+        if (stage.domain == RuntimeDomainId::GAMEPLAY_EFFECT &&
+            _mode.load(std::memory_order_acquire) ==
+                RuntimeSimulationMode::ACTIVE &&
+            (_requested_authority_mask.load(std::memory_order_acquire) &
+             runtime_domain_mask(RuntimeDomainId::GAMEPLAY_EFFECT)) != 0u) {
+            if (climate_authority_requested && !active_climate_ok) {
+                stage.completed = 0;
+                continue;
+            }
+            // Gameplay commands arrive as typed RuntimeCommandPacket rows.
+            // The worker owns admission, deterministic ordering and terminal
+            // accounting here; publication of the resulting event is handled
+            // by the subsequent EVENTS stage. No Godot value is touched.
+            uint32_t terminal = 0;
+            uint64_t effect_hash = 1469598103934665603ull;
+            bool gameplay_effect_ok = true;
+            for (const RuntimeCommandPacket &packet : day_commands) {
+                if (packet.envelope.domain != static_cast<uint16_t>(
+                        RuntimeDomainId::GAMEPLAY_EFFECT) ||
+                    packet.envelope.effective_day > plan.context.day) {
+                    continue;
+                }
+                const bool payload_bounds =
+                    packet.envelope.payload_offset <= RUNTIME_MAX_COMMAND_PAYLOAD &&
+                    packet.envelope.payload_size <= RUNTIME_MAX_COMMAND_PAYLOAD &&
+                    packet.envelope.payload_offset <=
+                        RUNTIME_MAX_COMMAND_PAYLOAD - packet.envelope.payload_size;
+                const uint8_t *payload = payload_bounds
+                    ? packet.payload.data() + packet.envelope.payload_offset : nullptr;
+                const size_t payload_size = payload_bounds
+                    ? packet.envelope.payload_size : 0u;
+                size_t cursor = 0;
+                int32_t action = 0;
+                int32_t target_domain = 0;
+                int32_t opcode = 0;
+                int64_t effective_day = -1;
+                uint64_t target_handle = 0;
+                uint32_t target_generation = 0;
+                int64_t value_i64 = 0;
+                std::array<int64_t, 4> typed_payload{};
+                uint64_t idempotency_key = 0;
+                const bool decoded = payload_bounds &&
+                    d7_read_i32(payload, payload_size, cursor, action) &&
+                    d7_read_i32(payload, payload_size, cursor, target_domain) &&
+                    d7_read_i32(payload, payload_size, cursor, opcode) &&
+                    d7_read_i64(payload, payload_size, cursor, effective_day) &&
+                    d7_read_u64(payload, payload_size, cursor, target_handle) &&
+                    d7_read_u32(payload, payload_size, cursor, target_generation) &&
+                    d7_read_i64(payload, payload_size, cursor, value_i64) &&
+                    d7_read_i64(payload, payload_size, cursor, typed_payload[0]) &&
+                    d7_read_i64(payload, payload_size, cursor, typed_payload[1]) &&
+                    d7_read_i64(payload, payload_size, cursor, typed_payload[2]) &&
+                    d7_read_i64(payload, payload_size, cursor, typed_payload[3]) &&
+                    d7_read_u64(payload, payload_size, cursor, idempotency_key) &&
+                    cursor == payload_size;
+                const bool publishes_event =
+                    (action == 4 && target_domain == 3) ||
+                    (action == 5 && target_domain == 4);
+                if (!decoded || !publishes_event || opcode <= 0 ||
+                    effective_day != packet.envelope.effective_day ||
+                    target_handle == 0 || target_generation == 0 ||
+                    idempotency_key == 0) {
+                    gameplay_effect_ok = false;
+                    break;
+                }
+                RuntimeCommandPacket event_packet{};
+                event_packet.envelope.request_id = packet.envelope.request_id;
+                event_packet.envelope.producer_id = packet.envelope.producer_id;
+                event_packet.envelope.sequence = packet.envelope.sequence;
+                event_packet.envelope.observed_generation =
+                    packet.envelope.observed_generation;
+                event_packet.envelope.requested_day = packet.envelope.requested_day;
+                event_packet.envelope.effective_day = effective_day;
+                event_packet.envelope.domain = static_cast<uint16_t>(
+                    RuntimeDomainId::EVENTS);
+                event_packet.envelope.opcode = static_cast<uint16_t>(
+                    RuntimeEventsCommand::APPEND_BATCH);
+                std::vector<uint8_t> event_payload;
+                event_payload.reserve(88u);
+                const auto put_u32 = [&event_payload](uint32_t value) {
+                    for (uint32_t i = 0; i < 4u; ++i)
+                        event_payload.push_back(static_cast<uint8_t>(
+                            (value >> (i * 8u)) & 0xffu));
+                };
+                const auto put_u64 = [&event_payload](uint64_t value) {
+                    for (uint32_t i = 0; i < 8u; ++i)
+                        event_payload.push_back(static_cast<uint8_t>(
+                            (value >> (i * 8u)) & 0xffu));
+                };
+                const auto put_i32 = [&put_u32](int32_t value) {
+                    put_u32(static_cast<uint32_t>(value));
+                };
+                const auto put_i64 = [&put_u64](int64_t value) {
+                    put_u64(static_cast<uint64_t>(value));
+                };
+                put_u32(RUNTIME_EVENTS_ABI_VERSION);
+                put_u32(1u);
+                put_i64(effective_day);
+                put_i32(95);
+                put_i32(opcode);
+                put_i32(4); // PK_EVENT_SOURCE_EFFECT
+                put_i32(0);
+                put_u64(target_handle);
+                put_i32(static_cast<int32_t>(typed_payload[0]));
+                put_i32(static_cast<int32_t>(typed_payload[1]));
+                put_i32(static_cast<int32_t>(typed_payload[2]));
+                put_i64(value_i64);
+                put_i32(static_cast<int32_t>(typed_payload[0]));
+                put_i32(static_cast<int32_t>(typed_payload[1]));
+                put_i32(static_cast<int32_t>(typed_payload[2]));
+                put_i32(static_cast<int32_t>(typed_payload[3]));
+                put_u64(idempotency_key);
+                event_packet.envelope.payload_size = static_cast<uint32_t>(
+                    event_payload.size());
+                if (event_payload.size() > event_packet.payload.size()) {
+                    gameplay_effect_ok = false;
+                    break;
+                }
+                std::memcpy(event_packet.payload.data(), event_payload.data(),
+                            event_payload.size());
+                gameplay_event_commands.push_back(event_packet);
+                ++terminal;
+                effect_hash = mix_hash(effect_hash, packet.envelope.request_id);
+                effect_hash = mix_hash(effect_hash, packet.envelope.sequence);
+                effect_hash = mix_hash(effect_hash, packet.envelope.opcode);
+                // GAMEPLAY_EFFECT packets carry the fixed typed ingress row
+                // (action/domain/opcode/day/target/value/payload/key). Hash
+                // the bytes as part of the worker state so receipts cannot
+                // report success for an envelope whose typed body was lost.
+                effect_hash = mix_hash(effect_hash, packet.envelope.payload_size);
+                for (uint32_t i = 0; i < packet.envelope.payload_size; ++i)
+                    effect_hash = mix_hash(effect_hash, packet.payload[i]);
+            }
+            if (!gameplay_effect_ok) {
+                gameplay_event_commands.clear();
+                _gameplay_effect_pending.store(terminal + 1u,
+                                               std::memory_order_release);
+                _gameplay_effect_terminal.store(0, std::memory_order_release);
+                stage.completed = 0;
+                commit.preflight_ok = 0;
+                continue;
+            }
+            _gameplay_effect_generation.fetch_add(1, std::memory_order_release);
+            _gameplay_effect_pending.store(0, std::memory_order_release);
+            _gameplay_effect_terminal.store(terminal, std::memory_order_release);
+            _gameplay_effect_state_hash.store(effect_hash,
+                                               std::memory_order_release);
+            stage.work_units = std::max<uint64_t>(1u, terminal);
+            stage.dirty_families = terminal != 0 ? RUNTIME_DIRTY_EVENTS : 0;
+            stage.completed = 1;
+            commit.work_units += stage.work_units;
+            commit.dirty_families |= stage.dirty_families;
+            commit.completed_domain_mask |=
+                runtime_domain_mask(RuntimeDomainId::GAMEPLAY_EFFECT);
+            ++commit.completed_stage_count;
+            continue;
+        }
         if (stage.domain == RuntimeDomainId::EVENTS &&
             _mode.load(std::memory_order_acquire) ==
                 RuntimeSimulationMode::ACTIVE &&
             (_requested_authority_mask.load(std::memory_order_acquire) &
              runtime_domain_mask(RuntimeDomainId::EVENTS)) != 0u) {
-            // I8 ACTIVE Events stage. The POD store is the worker-authority
-            // mirror of the journal: it owns this stage bit and its own snapshot
-            // ring, but the legacy GameplayEventBus journal is still the
-            // production consumer source, so no main-thread append/ACK is
-            // suppressed here. Park with Climate like the other domains.
+            // ACTIVE Events is the production journal and consumer-cursor
+            // owner. A rejected batch holds COMMIT at the sealed day.
             if (climate_authority_requested && !active_climate_ok) {
                 stage.completed = 0;
                 continue;
@@ -8378,14 +9048,45 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             stage.work_units =
                 _events_pod_event_count.load(std::memory_order_relaxed);
             commit.work_units += stage.work_units;
-            // Soft-complete even a rejected batch: this is a mirror, and holding
-            // Climate|Country|Trigger|Effect|Modifier hostage to it would be the
-            // G8 mistake again. `events_pod_ready` plus
-            // `events_pod_fallback_reason` carry the real outcome.
-            (void)events_ok;
+            if (!events_ok) {
+                stage.completed = 0;
+                commit.preflight_ok = 0;
+                continue;
+            }
             stage.completed = 1;
             commit.completed_domain_mask |=
                 runtime_domain_mask(RuntimeDomainId::EVENTS);
+            ++commit.completed_stage_count;
+            continue;
+        }
+        if (stage.domain == RuntimeDomainId::VISUAL &&
+            _mode.load(std::memory_order_acquire) ==
+                RuntimeSimulationMode::ACTIVE &&
+            (_requested_authority_mask.load(std::memory_order_acquire) &
+             runtime_domain_mask(RuntimeDomainId::VISUAL)) != 0u) {
+            // VISUAL authority ends at deterministic intent production.  The
+            // Godot renderer/GPU remains outside the worker; publish_day()
+            // later sorts, deduplicates and commits this POD batch atomically.
+            uint32_t intent_index = 0;
+            const uint32_t dirty = commit.dirty_families;
+            for (uint32_t bit = 0; bit < RUNTIME_DIRTY_FAMILY_COUNT; ++bit) {
+                const uint32_t family_bit = 1u << bit;
+                if ((dirty & family_bit) == 0u) continue;
+                RuntimeVisualIntent intent{};
+                intent.family = family_bit;
+                intent.cell_index = 0;
+                intent.field_id = bit;
+                intent.value_i32 = static_cast<int32_t>(plan.context.day);
+                intent.value_f32 = 0.0f;
+                _pod_visual_intents.push_back(intent);
+                ++intent_index;
+            }
+            stage.work_units = intent_index;
+            stage.dirty_families = 0;
+            stage.completed = 1;
+            commit.work_units += stage.work_units;
+            commit.completed_domain_mask |=
+                runtime_domain_mask(RuntimeDomainId::VISUAL);
             ++commit.completed_stage_count;
             continue;
         }
@@ -8397,6 +9098,19 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
         commit.work_units += stage.work_units;
         commit.completed_domain_mask |= runtime_domain_mask(stage.domain);
         ++commit.completed_stage_count;
+    }
+    // M5 atomic COMMIT gate: every domain explicitly requested for ACTIVE
+    // authority must have completed before the worker clock or snapshot can
+    // advance.  Unrequested domains remain on their legacy writer and are
+    // intentionally absent from this mask.  This closes the old hole where a
+    // missing stage could still let COMMIT publish a half-day.
+    const uint32_t active_requested =
+        _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE
+            ? _requested_authority_mask.load(std::memory_order_acquire) : 0u;
+    if (active_requested != 0u &&
+        (commit.completed_domain_mask & active_requested) != active_requested) {
+        commit.preflight_ok = 0;
+        commit.continuation_pending = 1;
     }
     run_events_probe(plan.context.day);
     // A failed authoritative Climate day must not advance the clock. The main
@@ -8472,7 +9186,34 @@ void NativeSimulationHost::publish_day(
         commit.header.dirty_family_generations[family_index] =
             _dirty_family_generations[family_index].load(std::memory_order_acquire);
     }
+    // VISUAL is a committed intent boundary. Sort and deduplicate worker
+    // intents before exposing them, so consumers never observe order that
+    // depends on worker traversal or a half-built batch.
+    std::stable_sort(_pod_visual_intents.begin(), _pod_visual_intents.end(),
+        [](const RuntimeVisualIntent &a, const RuntimeVisualIntent &b) {
+            if (a.family != b.family) return a.family < b.family;
+            if (a.cell_index != b.cell_index) return a.cell_index < b.cell_index;
+            return a.field_id < b.field_id;
+        });
+    _pod_visual_intents.erase(std::unique(_pod_visual_intents.begin(),
+        _pod_visual_intents.end(), [](const RuntimeVisualIntent &a,
+                                      const RuntimeVisualIntent &b) {
+            return a.family == b.family && a.cell_index == b.cell_index &&
+                   a.field_id == b.field_id && a.value_i32 == b.value_i32 &&
+                   a.value_f32 == b.value_f32;
+        }), _pod_visual_intents.end());
+    _visual_intent_generation.store(generation, std::memory_order_release);
+    _visual_intent_count.store(static_cast<uint32_t>(
+        std::min<size_t>(_pod_visual_intents.size(),
+                         std::numeric_limits<uint32_t>::max())),
+        std::memory_order_release);
+    _visual_full_refresh.store(_snapshots.publish_drop_count() != 0,
+                               std::memory_order_release);
     commit.visual_intents.clear();
+    commit.visual_intents.reserve(_pod_visual_intents.size());
+    commit.visual_intents.insert(commit.visual_intents.end(),
+                                 _pod_visual_intents.begin(),
+                                 _pod_visual_intents.end());
     commit.receipts.clear();
     commit.receipts.reserve(day_receipts.size());
     for (const RuntimeCommandReceipt &receipt : day_receipts) {
@@ -8499,6 +9240,12 @@ void NativeSimulationHost::set_fault(const char *code) {
         _fault_code[i].store('\0', std::memory_order_relaxed);
     }
     _state.store(RuntimeWorkerState::FAULTED, std::memory_order_release);
+    _economy_authority_fault_paused.store(true, std::memory_order_release);
+    _economy_authority_last_committed_generation.store(
+        _economy_pod_authority.committed_ledger_state().generation,
+        std::memory_order_release);
+    _economy_authority_last_committed_hash.store(
+        _economy_pod_authority.state_hash(), std::memory_order_release);
 }
 
 bool NativeSimulationHost::request_save(uint64_t request_id) {
@@ -8666,7 +9413,9 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
                                  RUNTIME_SAVE_SECTION_EFFECT |
                                  RUNTIME_SAVE_SECTION_IDEOLOGY |
                                  RUNTIME_SAVE_SECTION_ECONOMY_ASSET |
-                                 RUNTIME_SAVE_SECTION_ECONOMY_POD)) != 0) {
+                                 RUNTIME_SAVE_SECTION_ECONOMY_POD |
+                                 RUNTIME_SAVE_SECTION_ECONOMY_ECP2 |
+                                 RUNTIME_SAVE_SECTION_GAMEPLAY_EFFECT)) != 0) {
         error = "runtime_bundle_section_mask_invalid";
         return false;
     }
@@ -9022,6 +9771,73 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
             return false;
         }
     }
+    if ((parsed.section_mask & RUNTIME_SAVE_SECTION_GAMEPLAY_EFFECT) != 0) {
+        constexpr uint32_t GMP1_MARKER = 0x31504d47u; // GMP1
+        uint32_t marker = 0;
+        uint32_t section_size = 0;
+        if (cursor > payload_end || payload_end - cursor < 16u ||
+            !read_u32(cursor, marker) ||
+            !read_u32(cursor + 4u, section_size) || marker != GMP1_MARKER ||
+            section_size != 32u || section_size > payload_end - cursor - 16u) {
+            error = "runtime_bundle_gameplay_effect_section_invalid";
+            return false;
+        }
+        cursor += 8u;
+        parsed.gameplay_effect_bytes.assign(bytes + cursor,
+                                            bytes + cursor + section_size);
+        cursor += section_size;
+        uint64_t stored_checksum = 0;
+        if (!read_u64(cursor, stored_checksum)) {
+            error = "runtime_bundle_gameplay_effect_checksum_missing";
+            return false;
+        }
+        uint64_t computed_checksum = 1469598103934665603ull;
+        for (const uint8_t byte : parsed.gameplay_effect_bytes) {
+            computed_checksum ^= static_cast<uint64_t>(byte);
+            computed_checksum *= 1099511628211ull;
+        }
+        if (computed_checksum != stored_checksum) {
+            error = "runtime_bundle_gameplay_effect_checksum_failed";
+            return false;
+        }
+        cursor += 8u;
+        size_t gmp_cursor = 0;
+        uint32_t inner_marker = 0;
+        uint32_t abi = 0;
+        uint64_t generation = 0;
+        uint32_t pending = 0;
+        uint32_t terminal = 0;
+        uint64_t state_hash = 0;
+        if (!d7_read_u32(parsed.gameplay_effect_bytes.data(), section_size,
+                         gmp_cursor, inner_marker) ||
+            !d7_read_u32(parsed.gameplay_effect_bytes.data(), section_size,
+                         gmp_cursor, abi) ||
+            !d7_read_u64(parsed.gameplay_effect_bytes.data(), section_size,
+                         gmp_cursor, generation) ||
+            !d7_read_u32(parsed.gameplay_effect_bytes.data(), section_size,
+                         gmp_cursor, pending) ||
+            !d7_read_u32(parsed.gameplay_effect_bytes.data(), section_size,
+                         gmp_cursor, terminal) ||
+            !d7_read_u64(parsed.gameplay_effect_bytes.data(), section_size,
+                         gmp_cursor, state_hash) || gmp_cursor != section_size ||
+            inner_marker != GMP1_MARKER || abi != 1u) {
+            error = "runtime_bundle_gameplay_effect_payload_invalid";
+            return false;
+        }
+        uint32_t actual_pending = 0;
+        for (const RuntimeCommandPacket &packet : parsed.pending_commands) {
+            if (packet.envelope.domain == static_cast<uint16_t>(
+                    RuntimeDomainId::GAMEPLAY_EFFECT))
+                ++actual_pending;
+        }
+        if (pending != actual_pending) {
+            error = "runtime_bundle_gameplay_effect_pending_mismatch";
+            return false;
+        }
+        (void)generation;
+        (void)terminal;
+        (void)state_hash;
+    }
     if ((parsed.section_mask & RUNTIME_SAVE_SECTION_EFFECT) != 0) {
         constexpr uint32_t EFFECT_SECTION_MARKER = 0x31504645u; // EFP1
         uint32_t effect_marker = 0;
@@ -9172,12 +9988,69 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
             return false;
         }
     }
+    if ((parsed.section_mask & RUNTIME_SAVE_SECTION_ECONOMY_ECP2) != 0) {
+        constexpr uint32_t ECONOMY_ECP2_SECTION_MARKER = 0x32504345u; // ECP2
+        uint32_t economy_marker = 0;
+        uint32_t economy_size = 0;
+        if (cursor > payload_end || payload_end - cursor < 16u ||
+            !read_u32(cursor, economy_marker) ||
+            !read_u32(cursor + 4u, economy_size) ||
+            economy_marker != ECONOMY_ECP2_SECTION_MARKER ||
+            economy_size > 64u * 1024u * 1024u ||
+            economy_size > payload_end - cursor - 16u) {
+            error = "runtime_bundle_economy_ecp2_section_invalid";
+            return false;
+        }
+        cursor += 8u;
+        parsed.economy_ecp2_bytes.assign(bytes + cursor,
+                                         bytes + cursor + economy_size);
+        cursor += economy_size;
+        uint64_t economy_checksum = 0;
+        if (!read_u64(cursor, economy_checksum)) {
+            error = "runtime_bundle_economy_ecp2_section_checksum_missing";
+            return false;
+        }
+        uint64_t computed = 1469598103934665603ull;
+        for (const uint8_t byte : parsed.economy_ecp2_bytes) {
+            computed ^= static_cast<uint64_t>(byte);
+            computed *= 1099511628211ull;
+        }
+        if (computed != economy_checksum) {
+            error = "runtime_bundle_economy_ecp2_section_checksum_failed";
+            return false;
+        }
+        cursor += 8u;
+        if (parsed.economy_ecp2_bytes.size() < 4u ||
+            std::memcmp(parsed.economy_ecp2_bytes.data(), "ECP2", 4u) != 0) {
+            error = "runtime_bundle_economy_ecp2_section_marker_invalid";
+            return false;
+        }
+        RuntimeEconomyEcp2State candidate_ecp2;
+        std::string economy_ecp2_restore_error;
+        if (!decode_ecp2(parsed.economy_ecp2_bytes.data(),
+                         parsed.economy_ecp2_bytes.size(), candidate_ecp2,
+                         economy_ecp2_restore_error)) {
+            error = economy_ecp2_restore_error.empty()
+                ? "runtime_bundle_economy_ecp2_restore_invalid"
+                : economy_ecp2_restore_error;
+            return false;
+        }
+        if (!ecp2_has_required_domains(candidate_ecp2.authority_domain_mask,
+                                       ECP2_DOMAIN_CORE_AUTHORITY)) {
+            error = "runtime_bundle_economy_ecp2_core_domains_missing";
+            return false;
+        }
+    }
     if (cursor != payload_end) {
         error = "runtime_bundle_producer_cursor_invalid";
         return false;
     }
     _pending_restore_bundle = std::move(parsed);
     _has_pending_restore = true;
+    // GPU/Object state is intentionally outside the runtime bundle. The next
+    // committed visual batch must therefore be a reconstructible full refresh
+    // after any successful restore, even when the visual ring had no drop.
+    _visual_full_refresh.store(true, std::memory_order_release);
     return true;
 }
 
@@ -9339,6 +10212,28 @@ void NativeSimulationHost::build_save_bundle(
         }
         bundle->section_mask |= RUNTIME_SAVE_SECTION_EVENTS;
     }
+    {
+        constexpr uint32_t GMP1_MARKER = 0x31504d47u; // GMP1
+        constexpr uint32_t GMP1_ABI = 1u;
+        uint32_t pending_gameplay = 0;
+        for (const RuntimeCommandPacket &packet : pending_commands) {
+            if (packet.envelope.domain == static_cast<uint16_t>(
+                    RuntimeDomainId::GAMEPLAY_EFFECT))
+                ++pending_gameplay;
+        }
+        std::vector<uint8_t> &gmp = bundle->gameplay_effect_bytes;
+        gmp.clear();
+        d7_append_u32(gmp, GMP1_MARKER);
+        d7_append_u32(gmp, GMP1_ABI);
+        d7_append_u64(gmp, _gameplay_effect_generation.load(
+            std::memory_order_acquire));
+        d7_append_u32(gmp, pending_gameplay);
+        d7_append_u32(gmp, _gameplay_effect_terminal.load(
+            std::memory_order_acquire));
+        d7_append_u64(gmp, _gameplay_effect_state_hash.load(
+            std::memory_order_acquire));
+        bundle->section_mask |= RUNTIME_SAVE_SECTION_GAMEPLAY_EFFECT;
+    }
     if (_effect_pod_configured) {
         std::string effect_save_error;
         if (!encode_effect_pod_save(bundle->effect_bytes, effect_save_error)) {
@@ -9371,6 +10266,31 @@ void NativeSimulationHost::build_save_bundle(
         if (!economy_pod_save_error.empty() &&
             economy_pod_save_error != "economy_pod_ecp1_save_blocked") {
             set_fault(economy_pod_save_error.c_str());
+            return;
+        }
+    }
+    if (_economy_ecp2_dual_write.load(std::memory_order_acquire) &&
+        _economy_production_runtime != nullptr) {
+        uint32_t capture_flags = 0;
+        if (_economy_ecp2_mid_epoch_save.load(std::memory_order_acquire))
+            capture_flags |= ECP2_CAPTURE_ALLOW_MID_EPOCH |
+                             ECP2_CAPTURE_INCLUDE_RESUME;
+        RuntimeEconomyEcp2State ecp2_state;
+        std::string ecp2_capture_error;
+        if (_economy_production_runtime->capture_ecp2_authority(
+                ecp2_state, ecp2_capture_error, capture_flags)) {
+            std::string ecp2_encode_error;
+            if (encode_ecp2(ecp2_state, bundle->economy_ecp2_bytes,
+                            ecp2_encode_error) &&
+                !bundle->economy_ecp2_bytes.empty()) {
+                bundle->section_mask |= RUNTIME_SAVE_SECTION_ECONOMY_ECP2;
+            } else if (!ecp2_encode_error.empty()) {
+                set_fault(ecp2_encode_error.c_str());
+                return;
+            }
+        } else if (!ecp2_capture_error.empty() &&
+                   ecp2_capture_error != "save_requires_committed_boundary") {
+            set_fault(ecp2_capture_error.c_str());
             return;
         }
     }
@@ -9570,6 +10490,24 @@ void NativeSimulationHost::build_save_bundle(
         append_u64_le(events_checksum);
     }
 
+    if (!bundle->gameplay_effect_bytes.empty()) {
+        constexpr uint32_t GAMEPLAY_EFFECT_SECTION_MARKER = 0x31504d47u; // GMP1
+        append_u32_le(GAMEPLAY_EFFECT_SECTION_MARKER);
+        const uint32_t gameplay_effect_section_size = static_cast<uint32_t>(
+            std::min<size_t>(bundle->gameplay_effect_bytes.size(),
+                             64u * 1024u * 1024u));
+        append_u32_le(gameplay_effect_section_size);
+        append_bytes(bundle->gameplay_effect_bytes.data(),
+                     gameplay_effect_section_size);
+        uint64_t gameplay_effect_checksum = 1469598103934665603ull;
+        for (uint32_t i = 0; i < gameplay_effect_section_size; ++i) {
+            gameplay_effect_checksum ^= static_cast<uint64_t>(
+                bundle->gameplay_effect_bytes[i]);
+            gameplay_effect_checksum *= 1099511628211ull;
+        }
+        append_u64_le(gameplay_effect_checksum);
+    }
+
     if (!bundle->effect_bytes.empty()) {
         constexpr uint32_t EFFECT_SECTION_MARKER = 0x31504645u; // EFP1
         append_u32_le(EFFECT_SECTION_MARKER);
@@ -9616,6 +10554,23 @@ void NativeSimulationHost::build_save_bundle(
             economy_checksum *= 1099511628211ull;
         }
         append_u64_le(economy_checksum);
+    }
+
+    if (!bundle->economy_ecp2_bytes.empty()) {
+        constexpr uint32_t ECONOMY_ECP2_SECTION_MARKER = 0x32504345u; // ECP2
+        append_u32_le(ECONOMY_ECP2_SECTION_MARKER);
+        const uint32_t ecp2_section_size = static_cast<uint32_t>(
+            std::min<size_t>(bundle->economy_ecp2_bytes.size(),
+                             64u * 1024u * 1024u));
+        append_u32_le(ecp2_section_size);
+        append_bytes(bundle->economy_ecp2_bytes.data(), ecp2_section_size);
+        uint64_t ecp2_checksum = 1469598103934665603ull;
+        for (uint32_t i = 0; i < ecp2_section_size; ++i) {
+            ecp2_checksum ^=
+                static_cast<uint64_t>(bundle->economy_ecp2_bytes[i]);
+            ecp2_checksum *= 1099511628211ull;
+        }
+        append_u64_le(ecp2_checksum);
     }
 
     uint64_t checksum = 1469598103934665603ull;
@@ -9688,6 +10643,21 @@ void NativeSimulationHost::worker_main() {
         pending_commands.resize(pending_commands.size() - pending_begin);
         pending_begin = 0;
     };
+    const auto publish_pending_count = [&]() {
+        const size_t active = pending_commands.size() >= pending_begin
+            ? pending_commands.size() - pending_begin : 0u;
+        _economy_pending_command_count.store(static_cast<uint32_t>(std::min<size_t>(
+            active, std::numeric_limits<uint32_t>::max())),
+            std::memory_order_release);
+        // A switch audit should measure the command that is still crossing
+        // the boundary, never an unrelated command from an earlier epoch.
+        if (active == 0u &&
+            _command_enqueue_pos.load(std::memory_order_acquire) ==
+                _command_dequeue_pos.load(std::memory_order_acquire)) {
+            _last_command_admitted_us.store(0u, std::memory_order_release);
+        }
+    };
+    publish_pending_count();
     std::shared_ptr<const RuntimeEnvironmentSnapshot> active_environment;
     try {
         while (!_stop_requested.load(std::memory_order_acquire) &&
@@ -9708,6 +10678,7 @@ void NativeSimulationHost::worker_main() {
                     pending_commands_dirty = true;
                 }
                 compact_pending_commands(true);
+                publish_pending_count();
                 _state.store(RuntimeWorkerState::SAVE_PENDING, std::memory_order_release);
                 build_save_bundle(request_id, pending_commands);
                 _save_request_id.store(0, std::memory_order_release);
@@ -9747,6 +10718,7 @@ void NativeSimulationHost::worker_main() {
                 pending_commands.push_back(incoming);
                 pending_commands_dirty = true;
             }
+            publish_pending_count();
             const auto now = std::chrono::steady_clock::now();
             const double elapsed = std::chrono::duration<double>(now - last).count();
             last = now;
@@ -9769,6 +10741,14 @@ void NativeSimulationHost::worker_main() {
                 if (_stop_requested.load(std::memory_order_acquire)) break;
                 const int64_t from_day = _committed_day.load(std::memory_order_acquire);
                 const int64_t day = from_day + 1;
+                // Keep the authority switch closed across the whole semantic
+                // day transaction, including publish_day() and generation
+                // release. Counting only execute_day_plan() leaves a small
+                // race where the worker has produced a commit but has not yet
+                // made that commit observable.
+                std::unique_lock<std::mutex> boundary_lock(
+                    _economy_authority_boundary_mutex);
+                AtomicCounterScope day_scope(_worker_day_inflight);
                 day_receipts.clear();
                 if (pending_commands_dirty) {
                     std::stable_sort(pending_commands.begin() +
@@ -9805,7 +10785,7 @@ void NativeSimulationHost::worker_main() {
                     receipt.effective_day = std::max(command.envelope.effective_day, day);
                     receipt.generation = _generation.load(std::memory_order_relaxed) + 1;
                     const bool domain_valid =
-                        command.envelope.domain >= static_cast<uint16_t>(RuntimeDomainId::COUNTRY) &&
+                        command.envelope.domain >= static_cast<uint16_t>(RuntimeDomainId::INPUT_CAPTURE) &&
                         command.envelope.domain <= static_cast<uint16_t>(RuntimeDomainId::COMMIT);
                     const bool events_probe = domain_valid &&
                         static_cast<RuntimeDomainId>(command.envelope.domain) ==
@@ -9889,6 +10869,7 @@ void NativeSimulationHost::worker_main() {
                     if (consumed_commands > pending_begin) {
                         pending_begin = consumed_commands;
                         compact_pending_commands();
+                        publish_pending_count();
                     }
                 }
                 if (day_commit.preflight_ok == 0) {
@@ -10032,6 +11013,8 @@ RuntimeThreadReport NativeSimulationHost::report() const {
     out.required_domain_mask = RUNTIME_ALL_DOMAIN_MASK;
     out.implemented_domain_mask = implemented_domain_mask();
     out.missing_domain_mask = out.required_domain_mask & ~out.implemented_domain_mask;
+    out.completion_gate_missing_domain_mask = _completion_gate_missing_domain_mask.load(std::memory_order_acquire);
+    out.active_gate_blocked = _active_gate_blocked.load(std::memory_order_acquire);
     out.requested_authority_mask =
         _requested_authority_mask.load(std::memory_order_acquire);
     out.authoritative_domain_mask =
@@ -10059,6 +11042,18 @@ RuntimeThreadReport NativeSimulationHost::report() const {
     out.generation = _generation.load(std::memory_order_acquire);
     out.command_queue_capacity_exceeded = _command_queue_capacity_exceeded.load(std::memory_order_relaxed);
     out.receipt_queue_capacity_exceeded = _receipt_queue_capacity_exceeded.load(std::memory_order_relaxed);
+    out.input_capture_count = _input_capture_count.load(std::memory_order_acquire);
+    out.input_capture_reused = _input_capture_reused.load(std::memory_order_acquire);
+    out.input_capture_generation = _input_capture_generation.load(std::memory_order_acquire);
+    out.input_capture_day = _input_capture_day.load(std::memory_order_acquire);
+    out.input_capture_hash = _input_capture_hash.load(std::memory_order_acquire);
+    out.gameplay_effect_generation = _gameplay_effect_generation.load(std::memory_order_acquire);
+    out.gameplay_effect_pending = _gameplay_effect_pending.load(std::memory_order_acquire);
+    out.gameplay_effect_terminal = _gameplay_effect_terminal.load(std::memory_order_acquire);
+    out.gameplay_effect_state_hash = _gameplay_effect_state_hash.load(std::memory_order_acquire);
+    out.visual_intent_generation = _visual_intent_generation.load(std::memory_order_acquire);
+    out.visual_intent_count = _visual_intent_count.load(std::memory_order_acquire);
+    out.visual_full_refresh = _visual_full_refresh.load(std::memory_order_acquire);
     out.snapshot_publish_drop_count = _snapshots.publish_drop_count();
     out.snapshot_publish_throttled_count =
         _snapshot_publish_throttled_count.load(std::memory_order_relaxed);
@@ -10091,6 +11086,92 @@ RuntimeThreadReport NativeSimulationHost::report() const {
     out.economy_pod_committed_ledger_abi =
         _economy_pod_authority.committed_ledger_abi();
     out.economy_pod_active_ready = _economy_pod_authority.pod_active_ready();
+    out.economy_authority_switch_count = _economy_authority_switch_count.load(std::memory_order_acquire);
+    out.economy_authority_switch_before_hash = _economy_authority_switch_before_hash.load(std::memory_order_acquire);
+    out.economy_authority_switch_after_hash = _economy_authority_switch_after_hash.load(std::memory_order_acquire);
+    out.economy_authority_switch_latency_us = _economy_authority_switch_latency_us.load(std::memory_order_acquire);
+    out.economy_authority_switch_latency_p95_us =
+        _economy_authority_switch_latency_p95_us.load(std::memory_order_acquire);
+    out.economy_authority_switch_latency_max_us =
+        _economy_authority_switch_latency_max_us.load(std::memory_order_acquire);
+    out.economy_authority_switch_command_latency_us =
+        _economy_authority_switch_command_latency_us.load(std::memory_order_acquire);
+    out.economy_authority_switch_command_latency_p95_us =
+        _economy_authority_switch_command_latency_p95_us.load(
+            std::memory_order_acquire);
+    out.economy_authority_switch_command_latency_max_us =
+        _economy_authority_switch_command_latency_max_us.load(
+            std::memory_order_acquire);
+    out.economy_authority_switch_latency_sample_count =
+        _economy_authority_switch_latency_sample_count.load(
+            std::memory_order_acquire);
+    // Derive bounded p95/max from the ring at report time. A concurrent switch
+    // may add one newer sample after the cursor is read; that sample appears in
+    // the next report and cannot corrupt the current aggregate.
+    {
+        const uint64_t write_cursor =
+            _economy_authority_switch_latency_sample_write.load(
+                std::memory_order_acquire);
+        const uint64_t sample_count = std::min<uint64_t>(
+            write_cursor, ECONOMY_AUTHORITY_SWITCH_LATENCY_SAMPLE_CAPACITY);
+        if (sample_count != 0u) {
+            std::vector<uint64_t> switch_samples;
+            std::vector<uint64_t> command_samples;
+            switch_samples.reserve(static_cast<size_t>(sample_count));
+            command_samples.reserve(static_cast<size_t>(sample_count));
+            const uint64_t first = write_cursor - sample_count;
+            for (uint64_t sequence = first; sequence < write_cursor;
+                 ++sequence) {
+                const size_t slot = static_cast<size_t>(
+                    sequence % ECONOMY_AUTHORITY_SWITCH_LATENCY_SAMPLE_CAPACITY);
+                switch_samples.push_back(
+                    _economy_authority_switch_latency_samples[slot].load(
+                        std::memory_order_relaxed));
+                command_samples.push_back(
+                    _economy_authority_switch_command_latency_samples[slot].load(
+                        std::memory_order_relaxed));
+            }
+            std::sort(switch_samples.begin(), switch_samples.end());
+            std::sort(command_samples.begin(), command_samples.end());
+            const size_t p95_index = static_cast<size_t>(
+                (sample_count * 95u + 99u) / 100u - 1u);
+            out.economy_authority_switch_latency_p95_us =
+                switch_samples[std::min(p95_index, switch_samples.size() - 1u)];
+            out.economy_authority_switch_latency_max_us =
+                switch_samples.back();
+            out.economy_authority_switch_command_latency_p95_us =
+                command_samples[std::min(p95_index, command_samples.size() - 1u)];
+            out.economy_authority_switch_command_latency_max_us =
+                command_samples.back();
+            out.economy_authority_switch_latency_sample_count = sample_count;
+        }
+    }
+    out.economy_authority_switch_rejected = _economy_authority_switch_rejected.load(std::memory_order_acquire);
+    out.economy_authority_switch_audit_sequence =
+        _economy_authority_switch_audit_sequence.load(std::memory_order_acquire);
+    out.economy_authority_switch_before_generation = _economy_authority_switch_before_generation.load(std::memory_order_acquire);
+    out.economy_authority_switch_after_generation = _economy_authority_switch_after_generation.load(std::memory_order_acquire);
+    out.economy_authority_fault_paused = _economy_authority_fault_paused.load(std::memory_order_acquire);
+    out.economy_authority_last_committed_generation = _economy_authority_last_committed_generation.load(std::memory_order_acquire);
+    out.economy_authority_last_committed_hash = _economy_authority_last_committed_hash.load(std::memory_order_acquire);
+    out.economy_inflight_mutations =
+        _economy_inflight_mutations.load(std::memory_order_acquire);
+    out.worker_day_inflight =
+        _worker_day_inflight.load(std::memory_order_acquire);
+    out.economy_pending_command_count =
+        _economy_pending_command_count.load(std::memory_order_acquire);
+    for (size_t i = 0; i + 1 < sizeof(out.economy_authority_switch_reason); ++i) {
+        out.economy_authority_switch_reason[i] = _economy_authority_switch_reason[i].load(std::memory_order_relaxed);
+        out.economy_authority_switch_blocker[i] = _economy_authority_switch_blocker[i].load(std::memory_order_relaxed);
+    }
+    out.economy_authority_switch_reason[sizeof(out.economy_authority_switch_reason) - 1] = '\0';
+    out.economy_authority_switch_blocker[sizeof(out.economy_authority_switch_blocker) - 1] = '\0';
+    for (size_t i = 0; i + 1 < sizeof(out.economy_authority_switch_audit_before); ++i) {
+        out.economy_authority_switch_audit_before[i] = _economy_authority_switch_audit_before[i].load(std::memory_order_relaxed);
+        out.economy_authority_switch_audit_after[i] = _economy_authority_switch_audit_after[i].load(std::memory_order_relaxed);
+    }
+    out.economy_authority_switch_audit_before[sizeof(out.economy_authority_switch_audit_before) - 1] = '\0';
+    out.economy_authority_switch_audit_after[sizeof(out.economy_authority_switch_audit_after) - 1] = '\0';
     out.economy_execution_mode =
         _economy_execution_mode.load(std::memory_order_acquire);
     out.economy_shadow_probe_enabled =

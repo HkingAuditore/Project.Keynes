@@ -79,6 +79,11 @@ constexpr uint32_t RUNTIME_SAVE_SECTION_IDEOLOGY = 1u << 8;
 constexpr uint32_t RUNTIME_SAVE_SECTION_ECONOMY_ASSET = 1u << 9;
 // Economy POD (ECP1) graph authority section. Orthogonal to D7T1 asset journal.
 constexpr uint32_t RUNTIME_SAVE_SECTION_ECONOMY_POD = 1u << 10;
+// Economy ECP2 full-authority section (PKEC domain remapping + resource wire).
+constexpr uint32_t RUNTIME_SAVE_SECTION_ECONOMY_ECP2 = 1u << 11;
+// M3 GAMEPLAY_EFFECT transaction state. This section is independent from
+// Effect's EFP1 catalog/instance state and Events' EVT1 journal.
+constexpr uint32_t RUNTIME_SAVE_SECTION_GAMEPLAY_EFFECT = 1u << 12;
 
 static_assert(RUNTIME_COMMAND_QUEUE_CAPACITY == 4096u,
               "runtime command queue capacity is part of the ABI");
@@ -452,6 +457,26 @@ struct RuntimeEnvironmentSnapshot {
     // round 不变量（neighbor_indices / donor / foliage / albedo 表）。与 per-day
     // 输入分开，因为它只在 bind_map_data 之后变一次。
     pk_async_climate::ClimateRoundStaticKnobs climate_round_static_knobs;
+};
+
+// Frozen input manifest for the twelve-domain barrier.  This is deliberately
+// numeric-only: it is safe to retain in the worker and in ECP2 without
+// crossing the Godot/Object boundary.  A manifest is valid only for one
+// effective day and one input generation.
+struct RuntimeInputCaptureManifest {
+    uint32_t abi_version = RUNTIME_DOMAIN_POD_ABI_VERSION;
+    uint64_t session_epoch = 0;
+    uint64_t input_generation = 0;
+    int64_t effective_day = -1;
+    uint64_t map_generation = 0;
+    uint64_t country_generation = 0;
+    uint64_t building_generation = 0;
+    uint64_t resource_generation = 0;
+    uint64_t catalog_hash = 0;
+    uint64_t command_watermark = 0;
+    uint64_t input_hash = 0;
+    uint8_t frozen = 0;
+    uint8_t validated = 0;
 };
 
 // Shared validation for the main-thread facade and the worker publish gate.
@@ -1176,6 +1201,14 @@ struct RuntimeVisualIntent {
     float value_f32 = 0.0f;
 };
 
+struct RuntimeVisualIntentBatch {
+    uint64_t generation = 0;
+    int64_t committed_day = -1;
+    uint64_t state_hash = 0;
+    uint8_t full_refresh = 0;
+    std::vector<RuntimeVisualIntent> intents;
+};
+
 struct RuntimeCommit {
     RuntimeCommitHeader header;
     std::vector<RuntimeVisualIntent> visual_intents;
@@ -1232,6 +1265,18 @@ struct RuntimeThreadReport {
     uint32_t environment_cell_count = 0;
     bool environment_topology_validated = false;
     uint64_t invalid_environment_rejected = 0;
+    uint64_t input_capture_count = 0;
+    uint64_t input_capture_reused = 0;
+    uint64_t input_capture_generation = 0;
+    int64_t input_capture_day = -1;
+    uint64_t input_capture_hash = 0;
+    uint64_t gameplay_effect_generation = 0;
+    uint32_t gameplay_effect_pending = 0;
+    uint32_t gameplay_effect_terminal = 0;
+    uint64_t gameplay_effect_state_hash = 0;
+    uint64_t visual_intent_generation = 0;
+    uint32_t visual_intent_count = 0;
+    uint8_t visual_full_refresh = 0;
     uint64_t stale_environment_rejected = 0;
     uint64_t command_queue_capacity_exceeded = 0;
     uint64_t receipt_queue_capacity_exceeded = 0;
@@ -1267,6 +1312,38 @@ struct RuntimeThreadReport {
     uint32_t economy_pod_mirror_feature_mask = 0;
     uint32_t economy_pod_committed_ledger_abi = 0;
     bool economy_pod_active_ready = false;
+    uint64_t economy_authority_switch_count = 0;
+    uint64_t economy_authority_switch_before_hash = 0;
+    uint64_t economy_authority_switch_after_hash = 0;
+    uint64_t economy_authority_switch_latency_us = 0;
+    // Rolling latency evidence for the accepted authority handoffs. The
+    // scalar above is the last sample; these aggregates are computed from the
+    // bounded worker-owned ring so long-running soak tests can assert p95/max
+    // without retaining unbounded history.
+    uint64_t economy_authority_switch_latency_p95_us = 0;
+    uint64_t economy_authority_switch_latency_max_us = 0;
+    // Time from the last accepted command admission to the completed authority
+    // handoff. This stays zero when the boundary had no command traffic.
+    uint64_t economy_authority_switch_command_latency_us = 0;
+    uint64_t economy_authority_switch_command_latency_p95_us = 0;
+    uint64_t economy_authority_switch_command_latency_max_us = 0;
+    uint64_t economy_authority_switch_latency_sample_count = 0;
+    uint64_t economy_authority_switch_rejected = 0;
+    uint64_t economy_authority_switch_audit_sequence = 0;
+    uint64_t economy_authority_switch_before_generation = 0;
+    uint64_t economy_authority_switch_after_generation = 0;
+    uint32_t economy_inflight_mutations = 0;
+    uint32_t worker_day_inflight = 0;
+    uint32_t economy_pending_command_count = 0;
+    bool economy_authority_fault_paused = false;
+    uint64_t economy_authority_last_committed_generation = 0;
+    uint64_t economy_authority_last_committed_hash = 0;
+    char economy_authority_switch_reason[64]{};
+    char economy_authority_switch_blocker[64]{};
+    char economy_authority_switch_audit_before[128]{};
+    char economy_authority_switch_audit_after[128]{};
+    uint32_t completion_gate_missing_domain_mask = 0;
+    bool active_gate_blocked = false;
     // Phase-1 Economy execution mode + SHADOW StageOps accounting.
     uint32_t economy_execution_mode = 0; // EconomyExecutionMode ordinal
     bool economy_shadow_probe_enabled = false;
@@ -1540,9 +1617,12 @@ struct RuntimeSaveBundle {
     std::vector<uint8_t> modifier_bytes;
     std::vector<uint8_t> events_bytes;
     std::vector<uint8_t> effect_bytes;
+    std::vector<uint8_t> gameplay_effect_bytes;
     std::vector<uint8_t> ideology_bytes;
     // Economy POD ECP1 section (graph authority snapshot).
     std::vector<uint8_t> economy_pod_bytes;
+    // Economy ECP2 full-authority section (dual-write alongside ECP1/PKEC).
+    std::vector<uint8_t> economy_ecp2_bytes;
     // D7T1 Host Country/Economy asset journal. Independent of Economy POD
     // section ownership; restores peer continuation without granting Economy
     // ACTIVE authority.

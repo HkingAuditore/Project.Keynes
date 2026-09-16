@@ -42,11 +42,10 @@ func _run() -> void:
 	for field in report_fields:
 		report_complete = report_complete and report.has(field)
 	_expect("Events report fields are complete", report_complete)
-	# I8: EVENTS is inside the implemented mask now, but only as a worker-authority
-	# mirror + stage bit. The legacy GameplayEventBus journal is still the
-	# production consumer source, which is what the rest of this fixture exercises.
-	_expect("Events is inside the implemented ACTIVE authority mask (Phase 2-6 0xB7E)",
-		int(report.get("implemented_domain_mask", 0)) == 0xB7E)
+	# I8/M3: EVENTS is inside the implemented mask. This SHADOW fixture verifies
+	# the fallback bridge; ACTIVE routes journal reads and ACKs to the worker.
+	_expect("Events is inside the implemented ACTIVE authority mask (Phase 2-6 0xFFF)",
+		int(report.get("implemented_domain_mask", 0)) == 0xFFF)
 	_expect("SHADOW does not grant Events production authority",
 		(int(report.get("authoritative_domain_mask", 0)) & 0x200) == 0)
 
@@ -84,3 +83,4 @@ func _fail(label: String) -> void:
 func _finish() -> void:
 	print("=== runtime Events POD: %d checks, %d failures ===" % [_checks, _failures])
 	quit(0 if _failures == 0 else 1)
+

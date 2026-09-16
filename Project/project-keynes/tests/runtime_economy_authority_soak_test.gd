@@ -2,10 +2,10 @@ extends SceneTree
 
 ## Economy authority soak: soft SHADOW / optional ACTIVE over N days.
 ## Env PK_ECONOMY_SOAK_DAYS default 60, clamp 1..100 (1000 via PK_ECONOMY_SOAK_LONG).
-## Does not flip implemented mask (stays 0xB7E). Light path — no full map gen required.
+## Does not flip implemented mask (stays 0xFFF). Light path — no full map gen required.
 ## Phase-1 gate also asserts conservation fields are readable and zero when present.
 
-const PRODUCTION_MASK := 0xB7E
+const PRODUCTION_MASK := 0xFFF
 
 var _checks := 0
 var _failures := 0
@@ -56,7 +56,7 @@ func _run() -> void:
 		return
 
 	var report: Dictionary = ext.get_runtime_thread_report()
-	_expect("implemented mask is 0xB7E",
+	_expect("implemented mask is 0xFFF",
 		int(report.get("implemented_domain_mask", 0)) == PRODUCTION_MASK)
 	_expect("economy_pod_parity / gate / operation fields present",
 		report.has("economy_pod_ready")
@@ -111,7 +111,7 @@ func _run() -> void:
 		var active_report: Dictionary = ext.get_runtime_thread_report()
 		_expect("ACTIVE exposes economy_pod_parity_ready_mask",
 			active_report.has("economy_pod_parity_ready_mask"))
-		_expect("ACTIVE implemented mask 0xB7E",
+		_expect("ACTIVE implemented mask 0xFFF",
 			int(active_report.get("implemented_domain_mask", 0)) == PRODUCTION_MASK)
 		if ext.has_method("set_runtime_clock"):
 			ext.set_runtime_clock(false, 100.0)
@@ -125,7 +125,7 @@ func _run() -> void:
 	else:
 		_expect("ACTIVE without capture fails closed (soft) — SHADOW parity soak stands",
 			not String(started_active.get("code", "")).is_empty())
-		_expect("fallback asserts mask 0xB7E + ECP1/self_test already covered",
+		_expect("fallback asserts mask 0xFFF + ECP1/self_test already covered",
 			true)
 
 	_finish()
@@ -146,3 +146,4 @@ func _finish() -> void:
 	print("runtime_economy_authority_soak_test checks=%d failures=%d soak_days=%d" % [
 		_checks, _failures, _soak_days()])
 	quit(_failures)
+

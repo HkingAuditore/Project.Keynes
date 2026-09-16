@@ -1256,9 +1256,78 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                 append_le<uint8_t>(payload, static_cast<uint8_t>(value));
         }
         if (_save.fiscal_peer_cursor >= static_cast<int32_t>(request_ids.size()))
-            ++_save.section;
+            _save.section = SAVE_SECTION_RESOURCE_STOCK;
         return make_save_chunk(SAVE_SECTION_FISCAL_PEER,
             static_cast<uint32_t>(_save.fiscal_peer_cursor - begin), payload);
+    }
+    if (_save.section == SAVE_SECTION_RESOURCE_STOCK) {
+        // Optional v52 extension: persist mutable resource stock and the
+        // per-cell generation watermark in stable resource-major order.
+        constexpr int32_t record_bytes = 4 + 4 + 8 + 4;
+        const int32_t lane_count = static_cast<int32_t>(resource_stock_lanes().size());
+        const int32_t max_records = std::max(1, (budget - 16) / record_bytes);
+        const int32_t begin = _save.resource_cursor;
+        const int32_t end = std::min(lane_count, begin + max_records);
+        payload.reserve(static_cast<size_t>(std::max(0, end - begin)) * record_bytes);
+        for (; _save.resource_cursor < end; ++_save.resource_cursor) {
+            const int32_t lane = _save.resource_cursor;
+            const int32_t resource = _cell_count > 0 ? lane / _cell_count : 0;
+            const int32_t cell = _cell_count > 0 ? lane % _cell_count : 0;
+            append_le<int32_t>(payload, resource);
+            append_le<int32_t>(payload, cell);
+            append_le<int64_t>(payload, resource_stock_lanes()[static_cast<size_t>(lane)]);
+            append_le<uint32_t>(payload,
+                static_cast<size_t>(lane) < resource_lane_generation_lanes().size()
+                    ? resource_lane_generation_lanes()[static_cast<size_t>(lane)] : 0u);
+        }
+        if (_save.resource_cursor >= lane_count)
+            _save.section = SAVE_SECTION_CADENCE_STATE;
+        return make_save_chunk(SAVE_SECTION_RESOURCE_STOCK,
+            static_cast<uint32_t>(_save.resource_cursor - begin), payload);
+    }
+    if (_save.section == SAVE_SECTION_CADENCE_STATE) {
+        constexpr int32_t record_bytes = 50;
+        const int32_t max_records = std::max(1, (budget - 16) / record_bytes);
+        const int32_t begin = _save.cadence_cursor;
+        const int32_t end = std::min(_cell_count, begin + max_records);
+        payload.reserve(static_cast<size_t>(std::max(0, end - begin)) *
+                        record_bytes);
+        for (; _save.cadence_cursor < end; ++_save.cadence_cursor) {
+            const size_t cell = static_cast<size_t>(_save.cadence_cursor);
+            append_le<int32_t>(payload, _save.cadence_cursor);
+            append_le<uint8_t>(payload,
+                cell < _cell_tier.size() ? _cell_tier[cell] : uint8_t{1});
+            append_le<int64_t>(payload,
+                cell < _cell_next_review_day.size()
+                    ? _cell_next_review_day[cell] : _last_committed_day);
+            append_le<uint8_t>(payload,
+                cell < _cell_force_wake.size() ? _cell_force_wake[cell] : 0);
+            append_le<uint32_t>(payload,
+                cell < _cell_tier_seen_gen.size() ? _cell_tier_seen_gen[cell] : 0);
+            append_le<int64_t>(payload,
+                cell < _cell_tier_seen_population.size()
+                    ? _cell_tier_seen_population[cell] : -1);
+            append_le<int64_t>(payload,
+                cell < _cell_tier_change_day.size()
+                    ? _cell_tier_change_day[cell] : _last_committed_day);
+            append_le<int64_t>(payload,
+                cell < _cell_shortage_since_day.size()
+                    ? _cell_shortage_since_day[cell] : -1);
+            append_le<int32_t>(payload,
+                cell < _cell_effect_shortage_q16.size()
+                    ? _cell_effect_shortage_q16[cell] : 0);
+            append_le<int32_t>(payload,
+                cell < _cell_essentials_shortage_q16.size()
+                    ? _cell_essentials_shortage_q16[cell] : 0);
+        }
+        if (_save.cadence_cursor >= _cell_count) {
+            // Optional v52 footer. Older v52 streams end after the fixed-size
+            // cell records; readers accept both layouts.
+            append_le<uint64_t>(payload, _committed_generation);
+            ++_save.section;
+        }
+        return make_save_chunk(SAVE_SECTION_CADENCE_STATE,
+            static_cast<uint32_t>(_save.cadence_cursor - begin), payload);
     }
     _save.end_emitted = true;
     return make_save_chunk(SAVE_SECTION_END, 0, payload);

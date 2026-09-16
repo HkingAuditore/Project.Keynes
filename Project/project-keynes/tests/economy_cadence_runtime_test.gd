@@ -29,6 +29,7 @@ func _run() -> void:
 	_test_no_missed_cells_on_n3(compiled)
 	_test_sparse_live_workset(compiled)
 	_test_save_restore_keeps_buckets(compiled)
+	_test_ecp2_owned_state_roundtrip(compiled)
 
 func _test_opening_daily(compiled: Dictionary) -> void:
 	var ext := _boot(compiled, 1, 0.01, 0.01, 11)
@@ -191,6 +192,75 @@ func _test_save_restore_keeps_buckets(compiled: Dictionary) -> void:
 		int(restored.get_economy_report().get("locked_investment_cycle_days", 0)) == before_invest and
 		int(restored.get_economy_report().get("investment_cycle_start_day", -2)) == before_invest_start and
 		restored.get_economy_state_hash() == before_hash)
+
+func _test_ecp2_owned_state_roundtrip(compiled: Dictionary) -> void:
+	var source := _boot(compiled, 4, 20.0, 20.0, 611)
+	var source_report := _run_day(source, 0)
+	_expect("ECP2 source reaches a committed boundary",
+		bool(source_report.get("done", false)) and
+		not bool(source_report.get("fatal", false)))
+	_expect("ECP2 capture/restore API is exported",
+		source.has_method("capture_economy_ecp2") and
+		source.has_method("restore_economy_ecp2"))
+	var captured: Dictionary = source.capture_economy_ecp2(0)
+	var owned_bit := 1 << 17
+	_expect("ECP2 capture contains independent OwnedState SoA domain",
+		bool(captured.get("ok", false)) and
+		(int(captured.get("authority_domain_mask", 0)) & owned_bit) != 0 and
+		int(captured.get("byte_count", 0)) > 0)
+	if not bool(captured.get("ok", false)):
+		return
+	var twin := _boot(compiled, 4, 20.0, 20.0, 611)
+	_run_day(twin, 0)
+	var restored: Dictionary = twin.restore_economy_ecp2(
+		captured.get("bytes", PackedByteArray()))
+	if not bool(restored.get("ok", false)):
+		print("  [info] ECP2 restore reason=", restored.get("reason", ""))
+	else:
+		print("  [info] ECP2 hashes source=", source.get_economy_state_hash(),
+			" twin=", twin.get_economy_state_hash())
+	_expect("ECP2 typed OwnedState restores atomically",
+		bool(restored.get("ok", false)) and
+		int(twin.get_economy_state_hash()) == int(source.get_economy_state_hash()))
+	var damaged: PackedByteArray = captured.get("bytes", PackedByteArray())
+	if damaged.size() > 0:
+		damaged[damaged.size() - 1] = damaged[damaged.size() - 1] ^ 1
+	var rejected: Dictionary = twin.restore_economy_ecp2(damaged)
+	_expect("ECP2 tampered OwnedState is rejected before mutation",
+		not bool(rejected.get("ok", true)) and
+		String(rejected.get("reason", "")).find("hash") >= 0)
+	var mid := _boot(compiled, 4, 1000000.0, 1000000.0, 612,
+		{"building_plan_cells_per_slice": 1})
+	var partial: Dictionary = {}
+	for slice in range(32):
+		partial = mid.run_economy_slice({"day_index": 0, "tick_index": slice})
+		if (bool(partial.get("epoch_active", false)) and
+			not bool(partial.get("fiscal_reservation_continuation_active", false))):
+			break
+	var mid_capture: Dictionary = mid.capture_economy_ecp2(3)
+	if not bool(mid_capture.get("ok", false)):
+		print("  [info] mid ECP2 capture reason=", mid_capture.get("reason", ""),
+			" epoch_active=", partial.get("epoch_active", false))
+	_expect("ECP2 mid-epoch capture carries resume cursor",
+		bool(partial.get("done", false)) == false and
+		bool(mid_capture.get("ok", false)) and
+		(int(mid_capture.get("authority_domain_mask", 0)) & (1 << 16)) != 0)
+	if bool(mid_capture.get("ok", false)):
+		var resume_twin := _boot(compiled, 4, 1000000.0, 1000000.0, 612,
+			{"building_plan_cells_per_slice": 1})
+		_run_day(resume_twin, 0)
+		var restored_mid: Dictionary = resume_twin.restore_economy_ecp2(
+			mid_capture.get("bytes", PackedByteArray()))
+		if not bool(restored_mid.get("ok", false)):
+			print("  [info] mid ECP2 restore reason=", restored_mid.get("reason", ""))
+		_expect("ECP2 mid-epoch restore succeeds", bool(restored_mid.get("ok", false)))
+		var resumed_done := false
+		for slice in range(256):
+			var resumed: Dictionary = resume_twin.run_economy_slice({"day_index": 0, "tick_index": slice})
+			if bool(resumed.get("done", false)):
+				resumed_done = true
+				break
+		_expect("ECP2 mid-epoch restore resumes to commit", resumed_done)
 
 func _restore_country(ext: Object, chunks: Array) -> bool:
 	if not bool(ext.begin_country_restore().get("ok", false)):

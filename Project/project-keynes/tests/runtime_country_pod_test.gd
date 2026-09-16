@@ -101,8 +101,9 @@ func _run() -> void:
 	_expect("active research index diagnostics are exported",
 		report.has("country_pod_active_index_count")
 		and int(report.get("country_pod_active_index_count", -1)) >= 0)
-	_expect("active authority remains blocked", not bool(report.get("simulation_worker_ready", true))
-		and int(report.get("missing_domain_mask", 0)) != 0)
+	_expect("active authority capability mask is complete",
+		int(report.get("implemented_domain_mask", 0)) == 0xFFF
+		and int(report.get("missing_domain_mask", 1)) == 0)
 	ext.request_runtime_stop()
 	OS.delay_msec(30)
 

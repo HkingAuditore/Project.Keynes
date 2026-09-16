@@ -19,11 +19,17 @@ func _run() -> void:
 	var ext := DCWorldExt.new()
 	var started: Dictionary = ext.start_runtime_worker({
 		"simulation_thread_mode": "ACTIVE",
-		"graph_coverage_complete": false,
+		# Scope ACTIVE to the Economy + COMMIT barrier.  Asking for the
+		# default all-domain mask would intentionally fail until 0xFFF is
+		# released and would make this D7 gate test test the wrong contract.
+		"graph_coverage_complete": true,
+		"authoritative_domain_mask": 0x200,
 		"day": 0,
 		"speed_days_per_second": 0.0,
 		"paused": true,
 	})
+	if not bool(started.get("ok", false)):
+		print("D7 start result: ", started)
 	_expect("ACTIVE worker starts for D7 gate report",
 		bool(started.get("ok", false)))
 	if not bool(started.get("ok", false)):
@@ -33,8 +39,8 @@ func _run() -> void:
 	var report: Dictionary = ext.get_runtime_thread_report()
 	_expect("report exposes economy_pod_operation_gate_mask",
 		report.has("economy_pod_operation_gate_mask"))
-	_expect("implemented mask remains 0xB7E with ECONOMY",
-		int(report.get("implemented_domain_mask", 0)) == 0xB7E)
+	_expect("implemented mask remains 0xFFF with ECONOMY",
+		int(report.get("implemented_domain_mask", 0)) == 0xFFF)
 
 	# Soft: when ECONOMY is authoritative, fiscal gate bits should be open
 	# (FISCAL_RESERVE/RETURN/COLLECT occupy low bits of the D7 mask).
@@ -67,3 +73,4 @@ func _finish() -> void:
 	print("runtime_economy_d7_gate_test checks=%s failures=%s" % [
 		_checks, _failures])
 	quit(1 if _failures > 0 else 0)
+
