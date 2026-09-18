@@ -88,6 +88,7 @@ static Dictionary runtime_report_to_dictionary(const RuntimeThreadReport &report
     out["required_domain_mask"] = static_cast<int64_t>(report.required_domain_mask);
     out["implemented_domain_mask"] = static_cast<int64_t>(report.implemented_domain_mask);
     out["missing_domain_mask"] = static_cast<int64_t>(report.missing_domain_mask);
+    out["active_evidence_mask"] = static_cast<int64_t>(report.active_evidence_mask);
     out["completion_gate_missing_domain_mask"] = static_cast<int64_t>(report.completion_gate_missing_domain_mask);
     out["active_gate_blocked"] = report.active_gate_blocked;
     out["graph_coverage_state"] = String(report.graph_coverage_state);
@@ -176,6 +177,8 @@ static Dictionary runtime_report_to_dictionary(const RuntimeThreadReport &report
     out["economy_authority_switch_rejected"] = report.economy_authority_switch_rejected;
     out["economy_authority_switch_audit_sequence"] =
         report.economy_authority_switch_audit_sequence;
+    out["economy_authority_switch_audit_hash"] = static_cast<int64_t>(
+        report.economy_authority_switch_audit_hash);
     out["economy_authority_switch_before_generation"] = static_cast<int64_t>(report.economy_authority_switch_before_generation);
     out["economy_authority_switch_after_generation"] = static_cast<int64_t>(report.economy_authority_switch_after_generation);
     out["economy_authority_fault_paused"] = report.economy_authority_fault_paused;
@@ -415,6 +418,10 @@ static Dictionary runtime_report_to_dictionary(const RuntimeThreadReport &report
     out["events_pod_drop_count"] = static_cast<int64_t>(report.events_pod_drop_count);
     out["events_pod_fallback_reason"] = String(report.events_pod_fallback_reason);
     out["fault_code"] = String(report.fault_code);
+    out["fault_injection_armed"] = report.fault_injection_armed;
+    out["fault_injection_trip_count"] = static_cast<int64_t>(
+        report.fault_injection_trip_count);
+    out["fault_injection_point"] = String(report.fault_injection_point);
     return out;
 }
 
@@ -2723,6 +2730,14 @@ Dictionary DCWorldExt::switch_economy_authority(const String &mode) {
         audit.economy_authority_switch_audit_before);
     out["economy_authority_switch_audit_after"] = String(
         audit.economy_authority_switch_audit_after);
+    out["economy_authority_switch_audit_hash"] = static_cast<int64_t>(
+        audit.economy_authority_switch_audit_hash);
+    // Compact aliases matching the M6 switch evidence contract.
+    out["before_hash"] = out["economy_authority_switch_before_hash"];
+    out["after_hash"] = out["economy_authority_switch_after_hash"];
+    out["audit_hash"] = out["economy_authority_switch_audit_hash"];
+    out["generation"] = out["economy_authority_switch_after_generation"];
+    out["latency_us"] = out["economy_authority_switch_latency_us"];
     return out;
 }
 
@@ -2736,6 +2751,17 @@ bool DCWorldExt::runtime_economy_authority_fault_gate_self_test() const {
             godot::String(error.c_str()));
     }
     return ok;
+}
+
+bool DCWorldExt::arm_runtime_fault_injection(const godot::String &point) {
+    if (!_runtime_host) return false;
+    const CharString utf8 = point.utf8();
+    return _runtime_host->arm_fault_injection(utf8.get_data());
+}
+
+void DCWorldExt::clear_runtime_fault_injection() {
+    if (!_runtime_host) return;
+    _runtime_host->clear_fault_injection();
 }
 
 godot::Dictionary DCWorldExt::runtime_economy_stage_order_contract_test() const {

@@ -402,6 +402,8 @@ public:
     bool runtime_economy_pod_self_test() const;
     godot::Dictionary switch_economy_authority(const godot::String &mode);
     bool runtime_economy_authority_fault_gate_self_test() const;
+    bool arm_runtime_fault_injection(const godot::String &point);
+    void clear_runtime_fault_injection();
     godot::Dictionary runtime_economy_stage_order_contract_test() const;
     bool is_native_daily_visual_commit_pending() const;
     void complete_native_daily_visual_commit();
@@ -775,8 +777,12 @@ public:
     godot::Dictionary capture_economy_ecp2(int flags = 0) const;
     godot::Dictionary restore_economy_ecp2(const godot::PackedByteArray &bytes);
     godot::Dictionary begin_economy_restore();
+    // Explicit one-shot PKEC→scratch migrate helper. Production save/load must
+    // use restore_economy_ecp2 instead.
+    godot::Dictionary begin_economy_restore_pkec_migrate();
     godot::Dictionary feed_economy_restore_chunk(const godot::PackedByteArray &chunk);
     godot::Dictionary end_economy_restore();
+    godot::String get_economy_restore_rejected_reason() const;
     godot::Dictionary get_economy_event_schema() const;
     godot::Dictionary set_economy_trace_filter(const godot::Dictionary &filter);
     godot::Dictionary set_economy_inspector_trace_cell(int cell_idx);

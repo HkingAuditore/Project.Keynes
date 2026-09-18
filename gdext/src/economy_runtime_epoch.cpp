@@ -195,6 +195,8 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _desired_business_demand = 0;
     _funded_business_demand = 0;
     _unfunded_business_demand = 0;
+    _active_unfunded_building_groups = 0;
+    _last_merchant_protected_rejects = 0;
     _derived_business_demand_total = 0;
     _derived_business_demand_lanes = 0;
     _derived_business_demand_edges = 0;
@@ -1184,6 +1186,42 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
         }
         return false;
     }), _epoch_commands.end());
+    // Population adjustments must be visible to building plan / recovery. The
+    // normal LEDGER_APPLY stage runs after BUILDING_PLAN, which previously let
+    // recovery approve against labour that the same epoch was about to remove.
+    {
+        std::vector<Command> remaining;
+        remaining.reserve(_epoch_commands.size());
+        for (const Command &cmd : _epoch_commands) {
+            if (cmd.opcode != COMMAND_ADD_POPULATION) {
+                remaining.push_back(cmd);
+                continue;
+            }
+            std::string apply_error;
+            if (!apply_command(cmd, apply_error)) {
+                if (cmd.effect_request_id != 0) {
+                    EffectCommandResult &result =
+                        _effect_command_results[cmd.effect_request_id];
+                    result.complete = 1;
+                    result.ok = 0;
+                    result.reason = apply_error.empty()
+                        ? "effect_economy_commit_failed" : apply_error;
+                }
+                error = apply_error.empty() ? "ledger_apply_failed" : apply_error;
+                fail(error);
+                return false;
+            }
+            if (cmd.effect_request_id != 0) {
+                EffectCommandResult &result =
+                    _effect_command_results[cmd.effect_request_id];
+                result.complete = 1;
+                result.ok = 1;
+                result.reason.clear();
+            }
+            ++_processed_commands;
+        }
+        _epoch_commands.swap(remaining);
+    }
     _epoch_begin_commands_ms = elapsed_ms(commands_started);
     _stage = building_count() == 0 ? Stage::TRADE_SETTLE : Stage::BUILDING_PLAN;
     _epoch_begin_post_fiscal_pending = false;

@@ -121,6 +121,9 @@ public:
     godot::Dictionary resync_source(const godot::Dictionary &snapshot);
     godot::Dictionary report() const;
     bool should_run(int64_t day_index) const;
+    int64_t pending_effect_count() const {
+        return static_cast<int64_t>(_effects.size());
+    }
 
     godot::PackedByteArray capture() const;
     godot::Dictionary restore(const godot::PackedByteArray &bytes);

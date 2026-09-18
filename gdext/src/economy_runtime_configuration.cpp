@@ -1561,6 +1561,10 @@ bool NativeEconomyRuntime::submit_effect_commands_pod(
         staged.size() == 1 &&
         staged.front().opcode == COMMAND_SETTLE_FAMILY_EXPEDITION &&
         staged.front().effective_day <= _current_day;
+    // When no epoch is open, due effect commands must apply (or fail) now.
+    // Queuing them for a future begin_epoch deadlocks WorldClock: Effect ACK
+    // arms the day barrier, and the next epoch never starts.
+    const int64_t due_day = std::max(_current_day, _last_committed_day);
     for (Command &command : staged) {
         command.submit_order = _next_submit_order++;
         _effect_idempotency_requests.emplace(command.effect_idempotency_key,
@@ -1578,12 +1582,50 @@ bool NativeEconomyRuntime::submit_effect_commands_pod(
                     ? "effect_economy_commit_failed" : commit_error);
         } else if (command.opcode == COMMAND_SETTLE_FAMILY_EXPEDITION) {
             queue_family_settlement_command(command);
+        } else if (command.effective_day <= due_day) {
+            // Apply due Effect commands even mid-epoch. Queuing them until
+            // commit finalize deadlocks play: Effect hard_ack pins the day
+            // barrier while Economy stays inflight waiting for that day.
+            std::string commit_error;
+            const bool applied = apply_command(command, commit_error);
+            result.complete = 1;
+            result.ok = applied ? 1 : 0;
+            result.reason = applied ? std::string{} :
+                (commit_error.empty()
+                    ? "effect_economy_commit_failed" : commit_error);
         } else {
             _pending_commands.push_back(command);
         }
     }
     _next_effect_request_id += static_cast<int64_t>(staged.size());
     return true;
+}
+
+void NativeEconomyRuntime::drain_due_effect_pending_commands() {
+    if (_epoch_active || _fatal || !_bootstrapped || _pending_commands.empty())
+        return;
+    const int64_t due_day = std::max(_current_day, _last_committed_day);
+    std::vector<Command> kept;
+    kept.reserve(_pending_commands.size());
+    for (const Command &command : _pending_commands) {
+        if (command.effect_request_id == 0 || command.effective_day > due_day) {
+            kept.push_back(command);
+            continue;
+        }
+        if (command.opcode == COMMAND_SETTLE_FAMILY_EXPEDITION) {
+            queue_family_settlement_command(command);
+            continue;
+        }
+        EffectCommandResult &result =
+            _effect_command_results[command.effect_request_id];
+        std::string commit_error;
+        const bool applied = apply_command(command, commit_error);
+        result.complete = 1;
+        result.ok = applied ? 1 : 0;
+        result.reason = applied ? std::string{} :
+            (commit_error.empty() ? "effect_economy_commit_failed" : commit_error);
+    }
+    _pending_commands.swap(kept);
 }
 
 bool NativeEconomyRuntime::effect_command_result_pod(int64_t request_id,

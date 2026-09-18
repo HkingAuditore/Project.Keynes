@@ -2,7 +2,7 @@
 
 ## Economy ACTIVE scheduling (Phase 2–6, 2026-09-13)
 
-When `authoritative_domain_mask` includes ECONOMY (`0xB7E` production request),
+When `authoritative_domain_mask` includes ECONOMY (`0xFFF` production request),
 the Host ACTIVE day loop runs up to 64 `worker_run_compact_slice` calls per day
 on the attached `NativeEconomyRuntime`. Outer model remains **one** Economy POD
 worker + existing inner `parallel_for_range`; Host does not add a second Economy
@@ -29,7 +29,7 @@ Country worker 的 read-view 消费不属于新的调度 job，也不推进模�
 在 Country transport service 后执行一次非阻塞 get_country_worker_read_view(cursor)：连续
 generation 应用 sparse cell/owner patch，跳过 generation 时只接受 full snapshot。消费完成后
 复用 CountryFacade.country_committed，因此 vision、border、UI 仍由原事件路径驱动。Country 未获
-granted bit 时该消费边界完全不运行。正式生产 request 为 `0xB7E`（含 ECONOMY）；
+granted bit 时该消费边界完全不运行。正式生产 request 为 `0xFFF`（含 ECONOMY）；
 Country grant 仍抑制同步 Country 写者。read-view 代码是 ACTIVE 准入后的发布适配器。
 Economy D7 peer 在 worker 权威时开放 operation gate（Host 有界 ring 为权威队列）。
 
@@ -1213,14 +1213,16 @@ full audit.
 `(effective_day, producer_id, sequence, request_id)`，队列满立即返回
 `command_queue_capacity_exceeded`。
 
-当前 host 已承载线程生命周期、时钟、POD 命令、九个已实现 domain 的 barrier 和 commit
-发布；尚未实现的 `INPUT_CAPTURE`、`GAMEPLAY_EFFECT`、`VISUAL` 仍由 completion gate
-拒绝进入 ACTIVE。`RuntimeThreadReport` 同时公开
+当前 host 已承载线程生命周期、时钟、POD 命令、十二个 domain 的 barrier 和 commit
+发布；`implemented_domain_mask()` 固定为完整图 `0xFFF`（含 `INPUT_CAPTURE`、
+`GAMEPLAY_EFFECT`、`VISUAL`）。整图 ACTIVE 仍受 completion/evidence gate 约束：缺
+ACTIVE 证据或 `active_evidence_mask` 未齐时 fail-closed，不会把 partial mask 写成
+full ACTIVE。`RuntimeThreadReport` 同时公开
 `required_domain_mask`、`implemented_domain_mask`、`missing_domain_mask`、
 `completion_gate_missing_domain_mask`、`active_gate_blocked` 和 `coverage_blocker`，
 覆盖率只能由 worker 的完整 POD barrier 证明，不能由启动参数
-`graph_coverage_complete=true` 声明。当前实现掩码固定为 `0xB7E`；整图 `0xFFF` 请求会
-fail-closed，不会启动 worker。
+`graph_coverage_complete=true` 声明。当前实现掩码固定为 `0xFFF`；生产 request 也是
+`0xFFF`，但 M7 仍要求逐阶段 evidence 齐套后才放行。
 
 Economy authority 的显式切换只允许在 epoch boundary 且没有 StageOps continuation、
 pending command 或 transport mutation 时发生。`switch_economy_authority()` 会记录切换前后

@@ -485,14 +485,18 @@ func _run() -> void:
 		if country_chunk.is_empty(): break
 		country_chunks.append(country_chunk)
 	_expect("building PKCN save completes", bool(ext.end_country_save().get("ok", false)))
-	var chunks: Array[PackedByteArray] = []
-	var save_begin: Dictionary = ext.begin_economy_save(65536)
-	_expect("building v52 save begins", bool(save_begin.get("ok", false)) and int(save_begin.get("schema_version", 0)) == 52)
-	while true:
-		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
-		if chunk.is_empty(): break
-		chunks.append(chunk)
-	_expect("building save completes", bool(ext.end_economy_save().get("ok", false)))
+	# Production restore is ECP2-only (ABI2/schema53). PKEC chunk streaming is
+	# reserved for the explicit one-shot migrate helper and must not be used
+	# as the building runtime round-trip authority.
+	_expect("building ECP2 capture API is bound",
+		ext.has_method("capture_economy_ecp2") and ext.has_method("restore_economy_ecp2"))
+	var ecp2_capture: Dictionary = ext.capture_economy_ecp2(0)
+	_expect("building ECP2 save captures OwnedState",
+		bool(ecp2_capture.get("ok", false)) and
+		str(ecp2_capture.get("format", "")) == "ECP2" and
+		int(ecp2_capture.get("schema_version", 0)) == 53)
+	var ecp2_bytes: PackedByteArray = ecp2_capture.get("bytes", PackedByteArray())
+	_expect("building ECP2 payload is non-empty", not ecp2_bytes.is_empty())
 	var restored := _new_ext(compiled)
 	_expect("building restore country configures first",
 		CountryTestHelper.configure_all_technologies(restored, catalog, 1, 77))
@@ -502,10 +506,10 @@ func _run() -> void:
 	_expect("building PKCN restore completes", bool(restored.end_country_restore().get("ok", false)))
 	_expect("building restore target configures", bool(restored.configure_economy(
 		catalog, profile, 1, 77).get("ok", false)))
-	_expect("building restore begins", bool(restored.begin_economy_restore().get("ok", false)))
-	for chunk in chunks:
-		_expect("building restore chunk accepted", bool(restored.feed_economy_restore_chunk(chunk).get("ok", false)))
-	_expect("building restore completes", bool(restored.end_economy_restore().get("ok", false)))
+	var ecp2_restore: Dictionary = restored.restore_economy_ecp2(ecp2_bytes)
+	_expect("building ECP2 restore completes", bool(ecp2_restore.get("ok", false)))
+	if not bool(ecp2_restore.get("ok", false)):
+		print("  building ECP2 restore rejected=", ecp2_restore)
 	var source_hash: int = ext.get_economy_state_hash()
 	var restored_hash: int = restored.get_economy_state_hash()
 	if source_hash != restored_hash:
@@ -3414,20 +3418,31 @@ func _test_recovery_failure_commits_next_cycle(source_catalog: Dictionary,
 		"building_counts": PackedInt64Array([1]),
 	})
 	_expect("recovery-pending fixture bootstraps", bool(boot.get("ok", false)))
-	for day in range(4):
+	# Stop on the first suspended day and drain hireable labour before the next
+	# plan boundary. Released owners now count as restart labour, so leaving
+	# them in the unemployed pool for another cycle would legitimately reopen
+	# the lot and miss the no-labour failure path this fixture covers.
+	var suspended_day := -1
+	for day in range(8):
 		_run_day(ext, day)
+		var probe: Dictionary = ext.get_building_cell_snapshot(0)
+		var probe_group := (probe.group_type_ids as PackedInt32Array).find(loom_id)
+		if probe_group >= 0 and int((probe.operating_state as PackedByteArray)[probe_group]) == 1:
+			suspended_day = day
+			break
 	var suspended: Dictionary = ext.get_building_cell_snapshot(0)
 	var group := (suspended.group_type_ids as PackedInt32Array).find(loom_id)
 	var population: Dictionary = ext.get_population_cell_snapshot(0)
 	var unemployed_handle := _handle_for_profession(population, unemployed_sig)
 	_expect("recovery-pending fixture reaches suspension with released owner",
+		suspended_day >= 0 and
 		group >= 0 and
 		int((suspended.operating_state as PackedByteArray)[group]) == 1 and
 		int((suspended.filled_owner as PackedInt64Array)[group]) == 0 and
 		unemployed_handle != 0)
 	var remove_owner: Dictionary = ext.submit_economy_commands({
 		"opcodes": PackedInt32Array([6]),
-		"effective_days": PackedInt64Array([20]),
+		"effective_days": PackedInt64Array([0]),
 		"sequences": PackedInt64Array([1]),
 		"target_handles": PackedInt64Array([unemployed_handle]),
 		"i32_0": PackedInt32Array([0]),
@@ -3437,7 +3452,8 @@ func _test_recovery_failure_commits_next_cycle(source_catalog: Dictionary,
 	})
 	_expect("recovery-pending owner removal queues",
 		bool(remove_owner.get("ok", false)))
-	var failed_report := _run_day(ext, 4)
+	var failed_day := suspended_day + 1
+	var failed_report := _run_day(ext, failed_day)
 	var failed: Dictionary = ext.get_building_cell_snapshot(0)
 	group = (failed.group_type_ids as PackedInt32Array).find(loom_id)
 	_expect("failed restart remains fully suspended without a probe state",
@@ -3445,7 +3461,7 @@ func _test_recovery_failure_commits_next_cycle(source_catalog: Dictionary,
 		int((failed.pending_operating_state as PackedByteArray)[group]) == 255 and
 		int((failed.recovery_cooldown_cycles as PackedInt32Array)[group]) == 0 and
 		int((failed.filled_owner as PackedInt64Array)[group]) == 0)
-	var commit_report := _run_day(ext, 5)
+	var commit_report := _run_day(ext, failed_day + 1)
 	var committed: Dictionary = ext.get_building_cell_snapshot(0)
 	group = (committed.group_type_ids as PackedInt32Array).find(loom_id)
 	_expect("next due cycle keeps suspension without rehiring",
@@ -3453,7 +3469,7 @@ func _test_recovery_failure_commits_next_cycle(source_catalog: Dictionary,
 		int((committed.pending_operating_state as PackedByteArray)[group]) == 255 and
 		int((committed.recovery_cooldown_cycles as PackedInt32Array)[group]) == 0 and
 		int((committed.filled_owner as PackedInt64Array)[group]) == 0)
-	var cooldown_report := _run_day(ext, 6)
+	var cooldown_report := _run_day(ext, failed_day + 2)
 	var cooldown: Dictionary = ext.get_building_cell_snapshot(0)
 	group = (cooldown.group_type_ids as PackedInt32Array).find(loom_id)
 	_expect("suspended building has no recovery cooldown or probe capacity",

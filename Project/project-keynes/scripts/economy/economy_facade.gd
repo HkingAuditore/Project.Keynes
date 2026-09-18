@@ -1620,34 +1620,48 @@ func end_save() -> Dictionary:
 	return _world_ext.end_economy_save() if _configured else {"ok": false, "reason": "not configured"}
 
 func restore_bytes(bytes: PackedByteArray, _chunk_bytes: int = -1) -> Dictionary:
+	# Production restore is ECP2-only. Bare PKEC streaming is rejected here;
+	# use restore_ecp2() or the explicit begin_economy_restore_pkec_migrate
+	# migrate helper on WorldExt.
+	if not _configured:
+		return {"ok": false, "reason": "not configured",
+			"restore_rejected_reason": "not configured"}
+	if bytes.is_empty():
+		return {"ok": false, "reason": "restore_requires_ecp2",
+			"restore_rejected_reason": "restore_requires_ecp2"}
+	if bytes.size() >= 4 and bytes[0] == 0x45 and bytes[1] == 0x43 \
+			and bytes[2] == 0x50 and bytes[3] == 0x32:
+		return restore_ecp2(bytes)
+	return {"ok": false, "reason": "restore_requires_ecp2",
+		"restore_rejected_reason": "restore_requires_ecp2"}
+
+
+func restore_ecp2(bytes: PackedByteArray) -> Dictionary:
+	if not _configured:
+		return {"ok": false, "reason": "not configured",
+			"restore_rejected_reason": "not configured"}
+	if not _world_ext.has_method("restore_economy_ecp2"):
+		return {"ok": false, "reason": "economy_ecp2_api_unavailable",
+			"restore_rejected_reason": "economy_ecp2_api_unavailable"}
+	var result: Dictionary = _world_ext.restore_economy_ecp2(bytes)
+	if not bool(result.get("ok", false)) and not result.has("restore_rejected_reason"):
+		result["restore_rejected_reason"] = String(result.get("reason", ""))
+	return result
+
+
+func capture_ecp2(flags: int = 0) -> Dictionary:
 	if not _configured:
 		return {"ok": false, "reason": "not configured"}
-	var begun: Dictionary = _world_ext.begin_economy_restore()
-	if not bool(begun.get("ok", false)):
-		return begun
-	var cursor := 0
-	while cursor < bytes.size():
-		# PKSV stores concatenated native PKEC frames. Recover each exact frame
-		# boundary from its 16-byte little-endian header before feeding C++.
-		if bytes.size() - cursor < 16:
-			return {"ok": false, "reason": "save_chunk_header_invalid"}
-		var payload_bytes := _read_u32_le(bytes, cursor + 12)
-		var chunk_end := cursor + 16 + payload_bytes
-		if payload_bytes < 0 or chunk_end > bytes.size():
-			return {"ok": false, "reason": "save_chunk_header_invalid"}
-		var fed: Dictionary = _world_ext.feed_economy_restore_chunk(
-			bytes.slice(cursor, chunk_end))
-		if not bool(fed.get("ok", false)):
-			return fed
-		cursor = chunk_end
-	return _world_ext.end_economy_restore()
+	if not _world_ext.has_method("capture_economy_ecp2"):
+		return {"ok": false, "reason": "economy_ecp2_api_unavailable"}
+	return _world_ext.capture_economy_ecp2(flags)
 
 
-static func _read_u32_le(bytes: PackedByteArray, offset: int) -> int:
-	return int(bytes[offset]) \
-		| (int(bytes[offset + 1]) << 8) \
-		| (int(bytes[offset + 2]) << 16) \
-		| (int(bytes[offset + 3]) << 24)
+func restore_rejected_reason() -> String:
+	if not _configured or not _world_ext.has_method(
+			"get_economy_restore_rejected_reason"):
+		return ""
+	return String(_world_ext.get_economy_restore_rejected_reason())
 
 
 func event_schema() -> Dictionary:

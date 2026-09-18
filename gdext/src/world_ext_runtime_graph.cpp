@@ -339,12 +339,19 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
             progressed = true;
         }
         // H8: under worker authority the worker runs the aggregation/emission
-        // day. The main thread stays the Trigger->Effect delivery cursor owner,
-        // so the handoff below keeps running against the written-back facade.
+        // day. The main thread stays the Trigger->Effect delivery cursor owner.
+        // Gate handoff on a non-empty facade effect queue after writeback — not
+        // on should_run()'s day-lag clause, which stays hot whenever the facade
+        // clock trails the worker and would re-enter every pulse for nothing.
         const bool trigger_worker_owns_day = trigger_worker_authoritative();
-        if (_trigger_runtime != nullptr && !trigger_handoff_blocked &&
-            (trigger_worker_owns_day ||
-             static_cast<TriggerRuntime *>(_trigger_runtime)->should_run(day))) {
+        TriggerRuntime *trigger_runtime = _trigger_runtime != nullptr
+            ? static_cast<TriggerRuntime *>(_trigger_runtime) : nullptr;
+        const bool trigger_facade_due = trigger_runtime != nullptr &&
+            (trigger_worker_owns_day
+                ? trigger_runtime->pending_effect_count() > 0
+                : trigger_runtime->should_run(day));
+        if (trigger_runtime != nullptr && !trigger_handoff_blocked &&
+            trigger_facade_due) {
             if (!trigger_worker_owns_day) {
                 ran(run_trigger_daily(day), DIRTY_EVENTS);
                 progressed = true;
@@ -412,37 +419,53 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
             progressed = true;
         }
         if (over_budget()) break;
-        if (_effect_runtime != nullptr &&
-            static_cast<EffectRuntime *>(_effect_runtime)->should_run(day)) {
+        if (_effect_runtime != nullptr) {
             const bool effect_worker_authoritative = _runtime_host != nullptr &&
                 _runtime_host->domain_is_worker_authoritative(
                     RuntimeDomainId::EFFECT);
-            if (!effect_worker_authoritative) {
+            if (!effect_worker_authoritative &&
+                static_cast<EffectRuntime *>(_effect_runtime)->should_run(day)) {
                 ran(run_effect_daily(day), DIRTY_EVENTS);
                 // A native effect transaction can be waiting for an ACK even when
                 // the peer runtime has no independent daily work.  ACK every
                 // adapter after effect evaluation so the transaction can reach a
                 // terminal state instead of keeping effect_should_run() hot.
-                if (_effect_runtime != nullptr) {
-                    dispatch_effect_native_country();
-                    dispatch_effect_native_economy();
-                    if (!(_runtime_host != nullptr &&
-                          _runtime_host->domain_is_worker_authoritative(
-                              RuntimeDomainId::MODIFIER))) {
-                        dispatch_effect_native_modifier();
-                    }
-                    dispatch_effect_native_gameplay();
-                    ack_effect_native_country();
-                    ack_effect_native_economy();
-                    if (!(_runtime_host != nullptr &&
-                          _runtime_host->domain_is_worker_authoritative(
-                              RuntimeDomainId::MODIFIER))) {
-                        ack_effect_native_modifier();
-                    }
-                    ack_effect_native_gameplay();
+                dispatch_effect_native_country();
+                dispatch_effect_native_economy();
+                if (!(_runtime_host != nullptr &&
+                      _runtime_host->domain_is_worker_authoritative(
+                          RuntimeDomainId::MODIFIER))) {
+                    dispatch_effect_native_modifier();
                 }
+                dispatch_effect_native_gameplay();
                 progressed = true;
             }
+            // Always drain ACKs. Under EFFECT worker authority the daily eval
+            // is suppressed, but pre-grant PREFLIGHTED bindings still need Host
+            // receipt completion or hard_ack=effect pins the main clock.
+            //
+            // Under COUNTRY worker authority Effect stays on main and waits on
+            // Host terminals. Climate park + hard_ack can deadlock that path
+            // (clock stops publishing env, worker never terminals Effect
+            // commands). After a real drain, soft-settle any leftovers so play
+            // cannot freeze on founder PREFLIGHTED forever.
+            if (effect_worker_authoritative) {
+                static_cast<EffectRuntime *>(_effect_runtime)
+                    ->settle_orphaned_native_country_acks();
+            } else {
+                ack_effect_native_country();
+                if (country_worker_authoritative) {
+                    static_cast<EffectRuntime *>(_effect_runtime)
+                        ->settle_orphaned_native_country_acks();
+                }
+            }
+            ack_effect_native_economy();
+            if (!(_runtime_host != nullptr &&
+                  _runtime_host->domain_is_worker_authoritative(
+                      RuntimeDomainId::MODIFIER))) {
+                ack_effect_native_modifier();
+            }
+            ack_effect_native_gameplay();
         }
         if (over_budget()) break;
         const bool modifier_worker_authoritative = _runtime_host != nullptr &&
@@ -627,6 +650,8 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
             static_cast<int64_t>(host.requested_authority_mask);
         out["authoritative_domain_mask"] =
             static_cast<int64_t>(host.authoritative_domain_mask);
+        out["active_evidence_mask"] =
+            static_cast<int64_t>(host.active_evidence_mask);
         out["climate_worker_authoritative"] =
             (host.authoritative_domain_mask &
              runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u;
@@ -713,6 +738,8 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
             host.economy_authority_switch_rejected);
         out["economy_authority_switch_audit_sequence"] = static_cast<int64_t>(
             host.economy_authority_switch_audit_sequence);
+        out["economy_authority_switch_audit_hash"] = static_cast<int64_t>(
+            host.economy_authority_switch_audit_hash);
         out["economy_authority_switch_before_generation"] = static_cast<int64_t>(
             host.economy_authority_switch_before_generation);
         out["economy_authority_switch_after_generation"] = static_cast<int64_t>(
@@ -1066,6 +1093,7 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
         out["required_domain_mask"] = static_cast<int64_t>(RUNTIME_ALL_DOMAIN_MASK);
         out["implemented_domain_mask"] = 0;
         out["missing_domain_mask"] = static_cast<int64_t>(RUNTIME_ALL_DOMAIN_MASK);
+        out["active_evidence_mask"] = 0;
         out["simulation_worker_blocker"] =
             "runtime_graph_still_uses_godot_containers_and_object_boundaries";
     }
@@ -1123,6 +1151,8 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
         out["active_gate_blocked"] = host.active_gate_blocked;
         out["authoritative_domain_mask"] =
             static_cast<int64_t>(host.authoritative_domain_mask);
+        out["active_evidence_mask"] =
+            static_cast<int64_t>(host.active_evidence_mask);
         out["climate_worker_authoritative"] =
             (host.authoritative_domain_mask &
              runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u;
@@ -1219,6 +1249,8 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
             host.economy_authority_switch_rejected);
         out["economy_authority_switch_audit_sequence"] = static_cast<int64_t>(
             host.economy_authority_switch_audit_sequence);
+        out["economy_authority_switch_audit_hash"] = static_cast<int64_t>(
+            host.economy_authority_switch_audit_hash);
         out["economy_authority_switch_before_generation"] = static_cast<int64_t>(
             host.economy_authority_switch_before_generation);
         out["economy_authority_switch_after_generation"] = static_cast<int64_t>(

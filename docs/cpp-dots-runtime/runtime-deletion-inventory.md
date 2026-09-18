@@ -32,6 +32,10 @@
 
 | File / Symbol | Class | Current Decision | Why Not Delete Yet | Retirement Condition |
 | --- | --- | --- | --- | --- |
+| `[EMPDBG]` / `owner_debug_line` in `economy_runtime_building_employment.cpp` | Immediate delete | **Deleted 2026-09-18** | Temporary employment mobility diagnostics polluted production logs. | `rg "EMPDBG\|owner_debug_line" gdext/src` returns no matches. |
+| `[RECONDBG]` print in `economy_runtime_building_employment.cpp` | Immediate delete | **Deleted 2026-09-18** | Reconstruction diagnostic printed on cell0 early days. | `rg "RECONDBG" gdext/src` returns no matches. |
+| Docs hardcoding production mask `0xB7E` / `0xA7E` | Immediate delete after migration | **Updated 2026-09-18** to `0xFFF` in current-status docs (`scheduling-and-job-graph.md`, `runtime-authority-matrix.md`, `authority-migration.md`, and related runtime docs). Prose contradictions (Economy outside ACTIVE while claiming `0xFFF`) corrected. | Stale mask text contradicted `implemented_domain_mask() == 0xFFF`. | `rg "0xB7E\|0xA7E" docs/cpp-dots-runtime` only finds historical notes inside `修复方案.md` if any. |
+| PKEC runtime fallback / default decode path | Delete after migration | Inventory active; keep explicit compatibility decoder until ECP2-only soak closes. Listed for #21 cleanup after soak. | Save/restore still needs a precise legacy rejection or migration path for older bundles. | ECP2-only coordinator + 60/730/3650 soak green; `rg "PKEC\|pkec" gdext/src` shows only intentional compatibility rejection. |
 | `run_native_daily_tick_from_job()` | Isolate | Keep as debug/full-run helper only. | Probe/debug still use full graph to validate readiness and stale DLL behavior. | Dedicated debug/probe bridge owns all call sites; no ACTIVE registration can reach it. |
 | `run_native_sim_tick_from_job()` | Isolate | Keep as SHADOW/A-B/hash diff helper. | Needed for native-vs-legacy comparisons. | A/B runner has a separate explicit entry and production `NativeDailySimJob` no longer checks it first. |
 | `EconomyDailySystem.tick()` / `_continue_economy_inflight()` legacy SUS path | Isolate | ACTIVE no longer reaches the Economy GDScript wrapper; `should_run()` is policy-gated and continuation uses `advance_runtime_pulse()` after native same-day barriers. | OFF/SHADOW, save boundary and compatibility DLLs still need the wrapper and its event/receipt bridge. | Remove only after independent A/B hash, save/restore, event/receipt and 1000-day soak prove the graph boundary complete. |
@@ -52,4 +56,16 @@ rg -n "_use_dc_system_scheduler|RefreshClimateDailyJobScript|SeasonRefreshJobScr
 rg -n "run_native_sim_tick_from_job|run_native_daily_tick_from_job" Project/project-keynes/scripts/simulation/sus/jobs/native_daily_sim_job.gd Project/project-keynes/scripts/geography/map_generator.gd
 rg -n "refresh_climate_daily_job\\.gd|season_refresh_job\\.gd|RefreshClimateDailyJob|SeasonRefreshJob" Project/project-keynes/scripts docs/cpp-dots-runtime references/system-map.md
 rg -n "enum_atlas_upload_job\\.gd|sea_ice_atlas_upload_job\\.gd|sea_ice_atlas_upload_system\\.gd|EnumAtlasUploadJob|SeaIceAtlasUpload(Job|System)" Project/project-keynes/scripts docs/cpp-dots-runtime references/system-map.md
+rg -n "EMPDBG|owner_debug_line|RECONDBG" gdext/src
+rg -n "0xB7E|0xA7E" docs/cpp-dots-runtime
 ```
+
+## tmp/ experimental artifacts (classify first; do not delete yet)
+
+Working-tree `tmp/` experiment logs and sandboxes remain classified-only until formal evidence is migrated. Do not mass-delete:
+
+- `tmp/building-after-plan-stage*.log` (EMPDBG historical evidence)
+- `tmp/wage-debug.log`
+- `tmp/codex_colonization_test_*` sandboxes
+
+Record → migrate formal diagnostics → then clean.

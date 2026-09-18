@@ -110,7 +110,9 @@ public:
     // not. 52: fiscal records persist the Economy-owned per-Country escrow
     // used by the D7 fiscal peer. Older economy saves are rejected by the
     // same-version reader.
-    static constexpr int32_t SCHEMA_VERSION = 52;
+    // 53: optional D7 peer journal extension (session/domains/hashes) after
+    // cadence; base fiscal-peer wire shape stays schema-52 compatible.
+    static constexpr int32_t SCHEMA_VERSION = 53;
     static constexpr uint32_t BUILDING_KIT_ROLE_TRADE = 1u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CONSTRUCTION = 2u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CLOTHING_INPUT = 4u;
@@ -502,6 +504,9 @@ public:
     bool submit_effect_commands_pod(const EffectCommand *commands, size_t count,
                                     std::vector<int64_t> &request_ids,
                                     std::string &error);
+    // Apply due effect-tagged pending commands while no epoch is open so
+    // Effect ACK cannot pin WorldClock waiting for the next begin_epoch.
+    void drain_due_effect_pending_commands();
     bool effect_command_result_pod(int64_t request_id, bool &complete,
                                    bool &ok, std::string &reason) const;
     bool has_pending_effect_commands() const;
@@ -665,6 +670,12 @@ public:
                                   uint32_t flags = 0) const;
     bool apply_ecp2_authority(const RuntimeEconomyEcp2State &in,
                               std::string &error);
+    const std::string &restore_rejected_reason() const noexcept {
+        return _restore_rejected_reason;
+    }
+    // Explicit one-shot PKEC migrate helper: arms restore and clears into a
+    // candidate scratch. Production coordinator/facade must not call this.
+    godot::Dictionary begin_restore_pkec_migrate();
 
     // Committed, read-only economy event stream. Events produced by an active
     // frozen epoch remain private until aggregate_publish succeeds.
@@ -954,27 +965,40 @@ private:
     };
 
     // Generalized Country/Economy peer terminal journal (fiscal + M2–M5).
-    // Persistence still serializes under the historical fiscal-peer section.
+    // Base fields persist under SAVE_SECTION_FISCAL_PEER (schema 52 shape).
+    // Extended D7 contract fields persist under SAVE_SECTION_D7_PEER_EXT
+    // when SCHEMA_VERSION >= 53 (aligned with ECP2 schema 53 cutover).
     struct FiscalPeerJournalRecord {
         uint64_t request_id = 0;
         uint64_t transaction_id = 0;
+        uint64_t session_epoch = 0;
         uint64_t country_handle = 0;
         uint64_t country_generation = 0;
         uint64_t peer_generation = 0;
         uint64_t committed_peer_generation = 0;
         int64_t day = -1;
+        int64_t effective_day = -1;
         uint64_t operation_sequence = 0;
+        uint64_t sequence = 0;
         uint32_t continuation_index = 0;
+        uint32_t source_domain = static_cast<uint32_t>(RuntimeDomainId::COUNTRY);
+        uint32_t target_domain = static_cast<uint32_t>(RuntimeDomainId::ECONOMY);
         int32_t country_slot = -1;
         RuntimeEconomyAssetOperation operation = RuntimeEconomyAssetOperation::FISCAL_RESERVE;
         RuntimeEconomyAssetResultCode result_code = RuntimeEconomyAssetResultCode::REJECTED;
         RuntimeEconomyAssetState state = RuntimeEconomyAssetState::REJECTED;
+        RuntimeD7ReservationState reservation_state = RuntimeD7ReservationState::REJECTED;
+        RuntimeD7TerminalResult terminal_result = RuntimeD7TerminalResult::REJECTED;
         uint8_t accepted = 0;
         int64_t requested_quantity = 0;
         int64_t requested_cash = 0;
         int64_t committed_quantity = 0;
         int64_t committed_cash = 0;
+        uint64_t retry_identity = 0;
+        uint64_t state_hash_before = 0;
+        uint64_t state_hash_after = 0;
         std::array<char, RUNTIME_ECONOMY_ASSET_REASON_CAPACITY> reason{};
+        std::array<char, RUNTIME_ECONOMY_ASSET_REASON_CAPACITY> late_ack_rejection_reason{};
     };
     using AssetPeerJournalRecord = FiscalPeerJournalRecord;
 
@@ -1929,11 +1953,106 @@ private:
         bool startup_incremental = false;
     };
 
+    // Scratch lane used while evaluating one cell's investment review. The
+    // authoritative history lives in InvestmentIncumbentRecord after publish.
     struct InvestmentIncumbentLane {
         int32_t good_id = -1;
         int32_t type_id = -1;
         int64_t unit_cost = 0;
         int64_t daily_offered = 0;
+        int64_t stealable_capacity = 0;
+        int64_t owner_fill = 0;
+        int64_t employee_fill = 0;
+    };
+
+    // quote → reserve → commit → publish transaction records. Quote stages
+    // freeze selections; commit must not re-pick inputs, prices, or owners.
+    enum class EconomyReservationState : uint8_t {
+        EMPTY = 0,
+        QUOTED = 1,
+        RESERVED = 2,
+        COMMITTED = 3,
+        ROLLED_BACK = 4,
+    };
+
+    struct ProductionQuote {
+        int32_t cell = -1;
+        int32_t group_index = -1;
+        int32_t type_id = -1;
+        int64_t target_capacity_q16 = 0;
+        int64_t real_business_demand = 0;
+        int64_t shadow_derived_demand = 0;
+        int64_t selected_input_good = -1;
+        int64_t selected_input_quantity = 0;
+        int64_t resource_demand = 0;
+        int64_t owner_cash = 0;
+        int64_t merchant_credit = 0;
+        int64_t debt_service = 0;
+        int64_t minimum_production_floor_q16 = 0;
+        uint8_t active_unfunded = 0;
+    };
+
+    struct EconomyReservation {
+        int64_t request_id = 0;
+        int64_t generation = 0;
+        int32_t cell = -1;
+        int32_t group_index = -1;
+        int64_t market_stock_delta = 0;
+        int64_t owner_cash_delta = 0;
+        int64_t merchant_cash_delta = 0;
+        int64_t credit_principal = 0;
+        int64_t credit_premium = 0;
+        int64_t wages = 0;
+        int64_t livelihood = 0;
+        int64_t output_sale_slot = -1;
+        EconomyReservationState state = EconomyReservationState::EMPTY;
+    };
+
+    struct EmploymentMoveReservation {
+        int32_t cell = -1;
+        int32_t source_handle = -1;
+        int32_t target_handle = -1;
+        int32_t source_group = -1;
+        int32_t target_group = -1;
+        int32_t profession = -1;
+        int32_t role = -1; // 0=owner, 1=employee, 2=employee_to_owner.
+        int64_t quantity = 0;
+        int64_t expected_income = 0;
+        int64_t hurdle_q16 = 0;
+        int64_t cooldown_until_day = 0;
+        EconomyReservationState state = EconomyReservationState::EMPTY;
+        uint8_t last_merchant_protected = 0;
+    };
+
+    struct InvestmentIncumbentRecord {
+        int32_t cell = -1;
+        int32_t type_id = -1;
+        int32_t output_good = -1;
+        int64_t settled_unit_cost = 0;
+        int64_t daily_offered_capacity = 0;
+        int64_t owner_fill = 0;
+        int64_t employee_fill = 0;
+        int64_t settled_day = -1;
+        int64_t generation = 0;
+        int64_t stealable_capacity = 0;
+    };
+
+    struct ActiveEvidenceRecord {
+        int32_t domain = -1;
+        int64_t day = -1;
+        int64_t generation = 0;
+        uint64_t input_hash = 0;
+        uint64_t state_hash = 0;
+        uint64_t audit_hash = 0;
+        int64_t real_work_units = 0;
+        std::string failure_reason;
+    };
+
+    struct OwnerMobilityCooldown {
+        int32_t cell = -1;
+        int32_t source_group = -1;
+        int32_t target_group = -1;
+        int64_t until_day = -1;
     };
 
     struct StartupRemoteLane {
@@ -3023,6 +3142,7 @@ private:
         int64_t desired_business_demand = 0;
         int64_t funded_business_demand = 0;
         int64_t unfunded_business_demand = 0;
+        int64_t active_unfunded_building_groups = 0;
         int64_t market_signal_updates = 0;
         int64_t merchant_credit_committed = 0;
         int64_t merchant_credit_drawn = 0;
@@ -3258,6 +3378,7 @@ private:
         int32_t fiscal_cursor = 0;
         int32_t fiscal_country_count = 0;
         int32_t fiscal_peer_cursor = 0;
+        int32_t d7_peer_ext_cursor = 0;
         int32_t settlement_cursor = 0;
         int32_t family_cursor = 0;
         int32_t family_membership_cursor = 0;
@@ -3284,6 +3405,11 @@ private:
 
     struct RestoreState {
         bool active = false;
+        // Live lanes stay intact until prepare_restore_candidate_scratch() runs
+        // (only from the ECP2 backup/rollback transaction). Streaming feed
+        // rejects chunks while this is false so begin_restore alone cannot
+        // wipe or partially overwrite a committed snapshot.
+        bool scratch_prepared = false;
         bool header_seen = false;
         bool end_seen = false;
         bool ceilings_seen = false;
@@ -3329,6 +3455,8 @@ private:
         int32_t restored_fiscal = 0;
         int32_t expected_fiscal_peer = -1;
         int32_t restored_fiscal_peer = 0;
+        int32_t expected_d7_peer_ext = -1;
+        int32_t restored_d7_peer_ext = 0;
         int64_t expected_resource_rows = 0;
         int64_t restored_resource_rows = 0;
         int64_t last_resource_key = -1;
@@ -3340,6 +3468,7 @@ private:
         bool modifier_seen = false;
         bool fiscal_seen = false;
         bool fiscal_peer_seen = false;
+        bool d7_peer_ext_seen = false;
         bool resource_stock_seen = false;
         bool cadence_state_seen = false;
         int32_t restored_cadence_cells = 0;
@@ -3552,6 +3681,8 @@ private:
     // still has positive opportunity income. Keeps opportunity-gradient flow
     // while suppressing small-gap understaffed↔understaffed thrashing.
     int32_t _employment_understaffed_reallocation_hurdle_mult_q16 = Q16_ONE * 2;
+    // Authoritative understaffed↔understaffed reverse-move cooldown (simulation days).
+    int32_t _employment_understaffed_mobility_cooldown_days = 30;
     int32_t _employment_choice_temperature_q16 = 6554;
     int32_t _wage_max_rise_q16_per_day = 1311;
     int32_t _wage_max_fall_q16_per_day = 1311;
@@ -3780,6 +3911,12 @@ private:
     int64_t _desired_business_demand = 0;
     int64_t _funded_business_demand = 0;
     int64_t _unfunded_business_demand = 0;
+    // ACTIVE groups that retained purchase intent but could not fund inputs.
+    // Must not be recorded as SUSPENDED_LOSS or severe-loss financing failure.
+    int64_t _active_unfunded_building_groups = 0;
+    int64_t _derived_snapshot_generation = 0;
+    uint64_t _derived_snapshot_hash = 0;
+    int64_t _last_merchant_protected_rejects = 0;
     int64_t _owner_working_capital_allocated = 0;
     int64_t _merchant_credit_budget = 0;
     int64_t _merchant_credit_committed = 0;
@@ -4576,6 +4713,10 @@ private:
     uint32_t _investment_scratch_generation = 0;
     std::vector<OutputInvestmentSignal> _investment_output_signals_scratch;
     std::vector<InvestmentIncumbentLane> _investment_incumbent_lanes_scratch;
+    // Persistent settled incumbents keyed by (cell, output_good, type_id).
+    // Updated only after a successful aggregate publish.
+    std::vector<InvestmentIncumbentRecord> _investment_incumbent_records;
+    std::vector<OwnerMobilityCooldown> _owner_mobility_cooldowns;
     std::vector<int32_t> _investment_employment_cells;
     std::vector<int32_t> _investment_review_cell_indices;
     // Catalog-derived output-good -> building-type CSR plus the current review
@@ -6529,11 +6670,21 @@ private:
     bool decode_restore_chunk(const std::vector<uint8_t> &bytes, std::string &error);
     bool begin_restore_internal(std::string &error);
     bool end_restore_internal(std::string &error);
+    // Clears live SoA into an empty candidate rebuild surface. Must only run
+    // after apply_ecp2_authority has captured a rollback backup (or from the
+    // explicit PKEC migrate helper).
+    void prepare_restore_candidate_scratch();
     bool apply_ecp2_authority_internal(const RuntimeEconomyEcp2State &in,
                                        std::string &error);
+    void set_restore_rejected_reason(const std::string &reason);
+    bool validate_ecp2_candidate(const RuntimeEconomyEcp2State &in,
+                                 std::string &error) const;
+    bool validate_restored_committed_snapshot(std::string &error) const;
 
     // ECP2 mid-epoch export bypasses the committed-boundary gate in begin_save.
     mutable bool _ecp2_allow_mid_epoch_export = false;
+    // Stable reject code for the last failed restore/ECP2 apply (diagnostics).
+    std::string _restore_rejected_reason;
 
     bool trace_detail_for_cell(int32_t cell) const;
     void trace_record_cashflow(int32_t cell, uint64_t cohort_handle, int32_t source,

@@ -308,6 +308,10 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::switch_economy_authority);
     ClassDB::bind_method(D_METHOD("runtime_economy_authority_fault_gate_self_test"),
                          &DCWorldExt::runtime_economy_authority_fault_gate_self_test);
+    ClassDB::bind_method(D_METHOD("arm_runtime_fault_injection", "point"),
+                         &DCWorldExt::arm_runtime_fault_injection);
+    ClassDB::bind_method(D_METHOD("clear_runtime_fault_injection"),
+                         &DCWorldExt::clear_runtime_fault_injection);
     ClassDB::bind_method(D_METHOD("runtime_economy_stage_order_contract_test"),
                          &DCWorldExt::runtime_economy_stage_order_contract_test);
     ClassDB::bind_method(D_METHOD("is_native_daily_visual_commit_pending"),
@@ -793,6 +797,10 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::restore_economy_ecp2);
     ClassDB::bind_method(D_METHOD("begin_economy_restore"),
                          &DCWorldExt::begin_economy_restore);
+    ClassDB::bind_method(D_METHOD("begin_economy_restore_pkec_migrate"),
+                         &DCWorldExt::begin_economy_restore_pkec_migrate);
+    ClassDB::bind_method(D_METHOD("get_economy_restore_rejected_reason"),
+                         &DCWorldExt::get_economy_restore_rejected_reason);
     ClassDB::bind_method(D_METHOD("feed_economy_restore_chunk", "chunk"),
                          &DCWorldExt::feed_economy_restore_chunk);
     ClassDB::bind_method(D_METHOD("end_economy_restore"),

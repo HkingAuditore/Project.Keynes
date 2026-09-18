@@ -453,22 +453,17 @@ const char *country_economy_asset_operation_name(
 }
 
 const char *country_economy_asset_state_name(RuntimeEconomyAssetState state) {
-    switch (state) {
-    case RuntimeEconomyAssetState::CREATED: return "created";
-    case RuntimeEconomyAssetState::COUNTRY_PREPARED: return "country_prepared";
-    case RuntimeEconomyAssetState::PEER_PREPARED: return "peer_prepared";
-    case RuntimeEconomyAssetState::COMMIT_DECIDED: return "commit_decided";
-    case RuntimeEconomyAssetState::COUNTRY_APPLIED: return "country_applied";
-    case RuntimeEconomyAssetState::PEER_APPLIED: return "peer_applied";
-    case RuntimeEconomyAssetState::COMPLETED: return "completed";
-    case RuntimeEconomyAssetState::REJECTED: return "rejected";
-    case RuntimeEconomyAssetState::AWAITING_PEER_PREPARED:
-        return "awaiting_peer_prepared";
-    case RuntimeEconomyAssetState::AWAITING_PEER_APPLIED:
-        return "awaiting_peer_applied";
-    case RuntimeEconomyAssetState::FAULTED: return "faulted";
-    default: return "unknown";
-    }
+    // External reports use the stage-5 D7 vocabulary; wire values stay as-is.
+    return runtime_d7_reservation_state_name(
+        runtime_d7_reservation_state_from_asset(state));
+}
+
+const char *country_economy_asset_state_name(
+        RuntimeEconomyAssetState state,
+        RuntimeEconomyAssetResultCode code,
+        const char *reason) {
+    return runtime_d7_reservation_state_name(
+        runtime_d7_reservation_state_from_asset(state, code, reason));
 }
 
 const char *country_economy_asset_result_code_name(
@@ -522,6 +517,10 @@ Dictionary country_economy_asset_request_dictionary(
     out["operation_name"] = country_economy_asset_operation_name(request.operation);
     out["state"] = static_cast<int64_t>(request.state);
     out["state_name"] = country_economy_asset_state_name(request.state);
+    out["reservation_state"] = static_cast<int64_t>(
+        runtime_d7_reservation_state_from_asset(request.state));
+    out["reservation_state_name"] = String(country_economy_asset_state_name(
+        request.state));
     out["all_or_nothing"] = request.all_or_nothing != 0;
     out["session_epoch"] = static_cast<int64_t>(request.session_epoch);
     out["transaction_id"] = static_cast<int64_t>(request.transaction_id);
@@ -566,7 +565,19 @@ Dictionary country_economy_asset_result_dictionary(
     out["code"] = static_cast<int64_t>(result.code);
     out["result_code"] = country_economy_asset_result_code_name(result.code);
     out["state"] = static_cast<int64_t>(result.state);
-    out["state_name"] = country_economy_asset_state_name(result.state);
+    out["state_name"] = country_economy_asset_state_name(
+        result.state, result.code, result.reason.data());
+    out["reservation_state"] = static_cast<int64_t>(
+        runtime_d7_reservation_state_from_asset(
+            result.state, result.code, result.reason.data()));
+    out["reservation_state_name"] = String(country_economy_asset_state_name(
+        result.state, result.code, result.reason.data()));
+    out["terminal_result"] = static_cast<int64_t>(
+        runtime_d7_terminal_result_from_asset(
+            result.code, result.state, result.reason.data()));
+    out["terminal_result_name"] = String(runtime_d7_terminal_result_name(
+        runtime_d7_terminal_result_from_asset(
+            result.code, result.state, result.reason.data())));
     out["accepted"] = result.accepted != 0;
     out["session_epoch"] = static_cast<int64_t>(result.session_epoch);
     out["transaction_id"] = static_cast<int64_t>(result.transaction_id);

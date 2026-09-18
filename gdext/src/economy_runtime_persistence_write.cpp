@@ -1324,10 +1324,52 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             // Optional v52 footer. Older v52 streams end after the fixed-size
             // cell records; readers accept both layouts.
             append_le<uint64_t>(payload, _committed_generation);
-            ++_save.section;
+            _save.section = SCHEMA_VERSION >= 53
+                ? SAVE_SECTION_D7_PEER_EXT
+                : SAVE_SECTION_END;
         }
         return make_save_chunk(SAVE_SECTION_CADENCE_STATE,
             static_cast<uint32_t>(_save.cadence_cursor - begin), payload);
+    }
+    if (_save.section == SAVE_SECTION_D7_PEER_EXT && SCHEMA_VERSION >= 53) {
+        // Optional schema-53 extension: public D7 contract fields. Keeps the
+        // schema-52 fiscal-peer record size intact for dual-read.
+        constexpr int32_t record_bytes =
+            8 + 8 + 8 + 4 + 4 + 8 + 8 + 1 + 1 + 2 + 8 + 64 + 8 + 8;
+        std::vector<uint64_t> request_ids;
+        request_ids.reserve(_asset_peer_journal.size());
+        for (const auto &entry : _asset_peer_journal)
+            request_ids.push_back(entry.first);
+        std::sort(request_ids.begin(), request_ids.end());
+        const int32_t begin = _save.d7_peer_ext_cursor;
+        const int32_t end = std::min<int32_t>(
+            static_cast<int32_t>(request_ids.size()),
+            begin + std::max(1, (budget - 16) / record_bytes));
+        for (; _save.d7_peer_ext_cursor < end; ++_save.d7_peer_ext_cursor) {
+            const auto &record = _asset_peer_journal.at(request_ids[
+                static_cast<size_t>(_save.d7_peer_ext_cursor)]);
+            append_le<uint64_t>(payload, record.request_id);
+            append_le<uint64_t>(payload, record.transaction_id);
+            append_le<uint64_t>(payload, record.session_epoch);
+            append_le<uint32_t>(payload, record.source_domain);
+            append_le<uint32_t>(payload, record.target_domain);
+            append_le<int64_t>(payload, record.effective_day);
+            append_le<uint64_t>(payload, record.sequence);
+            append_le<uint8_t>(payload,
+                static_cast<uint8_t>(record.reservation_state));
+            append_le<uint8_t>(payload,
+                static_cast<uint8_t>(record.terminal_result));
+            append_le<uint16_t>(payload, 0);
+            append_le<uint64_t>(payload, record.retry_identity);
+            for (const char value : record.late_ack_rejection_reason)
+                append_le<uint8_t>(payload, static_cast<uint8_t>(value));
+            append_le<uint64_t>(payload, record.state_hash_before);
+            append_le<uint64_t>(payload, record.state_hash_after);
+        }
+        if (_save.d7_peer_ext_cursor >= static_cast<int32_t>(request_ids.size()))
+            _save.section = SAVE_SECTION_END;
+        return make_save_chunk(SAVE_SECTION_D7_PEER_EXT,
+            static_cast<uint32_t>(_save.d7_peer_ext_cursor - begin), payload);
     }
     _save.end_emitted = true;
     return make_save_chunk(SAVE_SECTION_END, 0, payload);

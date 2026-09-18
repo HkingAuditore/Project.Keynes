@@ -409,6 +409,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             return false;
         }
         _restore.expected_fiscal_peer = schema >= 52 ? fiscal_peer_count : 0;
+        _restore.expected_d7_peer_ext = schema >= 53 ? fiscal_peer_count : 0;
         _restore.expected_resource_rows = static_cast<int64_t>(_resource_ids.size()) *
             static_cast<int64_t>(_cell_count);
         if (!read_id_table(bytes, cursor, professions) || !read_id_table(bytes, cursor, ethnicities) ||
@@ -2576,13 +2577,26 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             record.operation = static_cast<RuntimeEconomyAssetOperation>(operation);
             record.result_code = static_cast<RuntimeEconomyAssetResultCode>(result_code);
             record.state = static_cast<RuntimeEconomyAssetState>(state);
+            record.effective_day = record.day;
+            record.sequence = record.operation_sequence;
+            record.reservation_state = runtime_d7_reservation_state_from_asset(
+                record.state, record.result_code, record.reason.data());
+            record.terminal_result = runtime_d7_terminal_result_from_asset(
+                record.result_code, record.state, record.reason.data());
+            record.retry_identity = record.request_id ^
+                (static_cast<uint64_t>(record.continuation_index) << 1);
+            if (record.result_code == RuntimeEconomyAssetResultCode::REJECTED &&
+                runtime_d7_reason_is_stale_reject(record.reason.data())) {
+                record.late_ack_rejection_reason = record.reason;
+            }
             if (record.request_id == 0 || record.transaction_id == 0 ||
                 record.country_handle == 0 ||
                 record.country_slot < -1 ||
                 record.country_slot >= _epoch_country_count ||
                 record.committed_peer_generation < record.peer_generation ||
-                record.day < -1 || record.operation < RuntimeEconomyAssetOperation::FISCAL_RESERVE ||
-                record.operation > RuntimeEconomyAssetOperation::FISCAL_COLLECT ||
+                record.day < -1 ||
+                record.operation < RuntimeEconomyAssetOperation::RESEARCH_PURCHASE ||
+                record.operation > RuntimeEconomyAssetOperation::TREASURY_SPEND ||
                 record.result_code != RuntimeEconomyAssetResultCode::COMPLETED &&
                     record.result_code != RuntimeEconomyAssetResultCode::REJECTED ||
                 record.state != RuntimeEconomyAssetState::COMPLETED &&
@@ -2697,6 +2711,82 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             _restore.committed_generation_seen = true;
             _restore.restored_committed_generation = generation;
         }
+    } else if (schema >= 53 && section == SAVE_SECTION_D7_PEER_EXT) {
+        if (_restore.expected_d7_peer_ext < 0 ||
+            _restore.restored_d7_peer_ext + static_cast<int64_t>(records) >
+                _restore.expected_d7_peer_ext) {
+            error = "save_d7_peer_ext_record_count_invalid";
+            return false;
+        }
+        for (uint32_t i = 0; i < records; ++i) {
+            uint64_t request_id = 0;
+            uint64_t transaction_id = 0;
+            uint64_t session_epoch = 0;
+            uint32_t source_domain = 0;
+            uint32_t target_domain = 0;
+            int64_t effective_day = -1;
+            uint64_t sequence = 0;
+            uint8_t reservation_state = 0;
+            uint8_t terminal_result = 0;
+            uint16_t reserved = 0;
+            uint64_t retry_identity = 0;
+            uint64_t state_hash_before = 0;
+            uint64_t state_hash_after = 0;
+            std::array<char, RUNTIME_ECONOMY_ASSET_REASON_CAPACITY> late_reason{};
+            if (!read_le(bytes, cursor, request_id) ||
+                !read_le(bytes, cursor, transaction_id) ||
+                !read_le(bytes, cursor, session_epoch) ||
+                !read_le(bytes, cursor, source_domain) ||
+                !read_le(bytes, cursor, target_domain) ||
+                !read_le(bytes, cursor, effective_day) ||
+                !read_le(bytes, cursor, sequence) ||
+                !read_le(bytes, cursor, reservation_state) ||
+                !read_le(bytes, cursor, terminal_result) ||
+                !read_le(bytes, cursor, reserved) ||
+                !read_le(bytes, cursor, retry_identity) ||
+                reserved != 0) {
+                error = "save_d7_peer_ext_record_truncated";
+                return false;
+            }
+            for (char &value : late_reason) {
+                uint8_t byte = 0;
+                if (!read_le(bytes, cursor, byte)) {
+                    error = "save_d7_peer_ext_record_truncated";
+                    return false;
+                }
+                value = static_cast<char>(byte);
+            }
+            if (!read_le(bytes, cursor, state_hash_before) ||
+                !read_le(bytes, cursor, state_hash_after) ||
+                request_id == 0 || transaction_id == 0) {
+                error = "save_d7_peer_ext_record_invalid";
+                return false;
+            }
+            const auto journal = _asset_peer_journal.find(request_id);
+            if (journal == _asset_peer_journal.end()) {
+                error = "save_d7_peer_ext_missing_base";
+                return false;
+            }
+            if (journal->second.transaction_id != transaction_id) {
+                error = "save_d7_peer_ext_transaction_mismatch";
+                return false;
+            }
+            journal->second.session_epoch = session_epoch;
+            journal->second.source_domain = source_domain;
+            journal->second.target_domain = target_domain;
+            journal->second.effective_day = effective_day;
+            journal->second.sequence = sequence;
+            journal->second.reservation_state =
+                static_cast<RuntimeD7ReservationState>(reservation_state);
+            journal->second.terminal_result =
+                static_cast<RuntimeD7TerminalResult>(terminal_result);
+            journal->second.retry_identity = retry_identity;
+            journal->second.late_ack_rejection_reason = late_reason;
+            journal->second.state_hash_before = state_hash_before;
+            journal->second.state_hash_after = state_hash_after;
+            ++_restore.restored_d7_peer_ext;
+        }
+        _restore.d7_peer_ext_seen = true;
     } else if (section == SAVE_SECTION_END ||
                (schema == 33 && section == SAVE_SECTION_END_V33)) {
         if (records != 0 || payload_bytes != 0) {

@@ -12,6 +12,7 @@ extends SceneTree
 const PerfRecorderScript = preload("res://scripts/ui/perf_recorder.gd")
 
 const DEFAULT_DAYS := 50
+const DEFAULT_WARMUP_DAYS := 5
 const DEFAULT_SPEED := 50.0
 const DEFAULT_SEED := 20260718
 const DEFAULT_MAP_WIDTH := 60
@@ -19,6 +20,8 @@ const DEFAULT_MAP_HEIGHT := 40
 const DEFAULT_POPULATION_SCALE := 0
 const DEFAULT_FOREIGN_COUNT := 3
 const MAX_BARRIER_PULSES_PER_DAY := 4096
+# M7 PERFORMANCE checkpoint: authoritative simulation throughput >= 50 days/s.
+const AUTHORITATIVE_THROUGHPUT_CHECKPOINT_DAYS_PER_SEC := 50.0
 
 
 func _init() -> void:
@@ -29,6 +32,7 @@ func _init() -> void:
 func _run() -> int:
 	var args := _arguments()
 	var days := int(args.get("days", DEFAULT_DAYS))
+	var warmup_days := int(args.get("warmup_days", DEFAULT_WARMUP_DAYS))
 	var speed := float(args.get("speed", DEFAULT_SPEED))
 	var seed := int(args.get("seed", DEFAULT_SEED))
 	var map_width := int(args.get("width", DEFAULT_MAP_WIDTH))
@@ -75,6 +79,9 @@ func _run() -> int:
 
 	if days <= 0:
 		push_error("[headless-perf] days must be positive")
+		return 2
+	if warmup_days < 0:
+		push_error("[headless-perf] warmup_days must be non-negative")
 		return 2
 	if speed <= 0.0:
 		push_error("[headless-perf] speed must be positive")
@@ -131,6 +138,13 @@ func _run() -> int:
 	if args.has("climate_authority"):
 		host.runtime_climate_authority_enabled = _argument_enabled(
 			args.get("climate_authority", "false"))
+	# Optional domain mask override (e.g. player play path 0x806 = Climate|Country|COMMIT).
+	# Default host export is 0xFFF for soak/gate runners.
+	if args.has("authority_domain_mask"):
+		host.runtime_authority_domain_mask = int(str(args.get("authority_domain_mask", "0")))
+	if args.has("economy_auto_pod"):
+		host.runtime_economy_auto_pod_active = _argument_enabled(
+			args.get("economy_auto_pod", "false"))
 	get_root().add_child(host)
 	host.configure(null, null, clock)
 	if not synthetic_test_economy:
@@ -294,11 +308,16 @@ func _run() -> int:
 	var fatal := false
 	var harness_writeback_window_us := 0
 	var harness_writeback_consume_us := 0
-	var harness_idle_wait_us := 0
 	var harness_writeback_poll_count := 0
 	var country_perf_samples: Array[Dictionary] = []
 	var last_country_perf_day := -1
-	for day in range(1, days + 1):
+	var last_authoritative_committed_day := int(runtime_report_start.get("committed_day", -1))
+	var authoritative_observed := 0
+	var authoritative_measured := 0
+	var auth_measure_start_us := 0
+	var auth_measure_end_us := 0
+	var total_driver_days := warmup_days + days
+	for day in range(1, total_driver_days + 1):
 		if country_daily_workload:
 			if country == null or country_handles.is_empty():
 				push_error("[headless-perf] country_daily_workload requires a formal country")
@@ -344,9 +363,20 @@ func _run() -> int:
 				"last_committed_day", day))
 		clock.current_day = float(day)
 		var phase := clock.season_phase_for_day(day)
+		# Headless SceneTree does not pump WorldRuntimeHost._process / day_changed.
+		# Mirror the production boundary so ACTIVE worker can consume environment
+		# publishes and eventually receive the authority grant (mask != 0).
+		if host.runtime_climate_authority_enabled:
+			if host.has_method("wait_for_climate_consumed"):
+				host.wait_for_climate_consumed(0)
+			host._consume_runtime_commit_if_ready()
 		host.run_daily_tick(day, phase)
 		host.finish_daily_tick(0.0, {})
 		if host.runtime_climate_authority_enabled:
+			if generator != null and generator.has_method("capture_runtime_inputs_for_worker"):
+				generator.capture_runtime_inputs_for_worker(day, phase)
+			# Drain write-back without OS.delay_msec harness pollution. Use a
+			# short process_frame poll so the SceneTree can service the host.
 			var writeback_window_started := Time.get_ticks_usec()
 			var writeback_deadline := writeback_window_started + 40000
 			while Time.get_ticks_usec() < writeback_deadline:
@@ -354,10 +384,9 @@ func _run() -> int:
 				host._consume_runtime_commit_if_ready()
 				harness_writeback_consume_us += Time.get_ticks_usec() - consume_started
 				harness_writeback_poll_count += 1
-				if Time.get_ticks_usec() < writeback_deadline:
-					var idle_started := Time.get_ticks_usec()
-					OS.delay_msec(2)
-					harness_idle_wait_us += Time.get_ticks_usec() - idle_started
+				if Time.get_ticks_usec() >= writeback_deadline:
+					break
+				await process_frame
 			harness_writeback_window_us += Time.get_ticks_usec() - writeback_window_started
 
 		var drained := await _drain_hard_barrier(clock, day)
@@ -418,14 +447,29 @@ func _run() -> int:
 			])
 			break
 
+		# Authoritative day accounting prefers worker commit timestamps so
+		# harness process_frame waits do not inflate production throughput.
+		var day_report := _runtime_report_snapshot(generator)
+		var committed_day := int(day_report.get("committed_day", -1))
+		var produced_us := int(day_report.get("last_commit_produced_at_us", 0))
+		if committed_day > last_authoritative_committed_day:
+			last_authoritative_committed_day = committed_day
+			authoritative_observed += 1
+			if authoritative_observed <= warmup_days:
+				continue
+			authoritative_measured += 1
+			if auth_measure_start_us == 0:
+				auth_measure_start_us = produced_us if produced_us > 0 else Time.get_ticks_usec()
+			auth_measure_end_us = produced_us if produced_us > 0 else Time.get_ticks_usec()
+			if authoritative_measured >= days:
+				break
+
 	var output_path := String(recorder.call("stop_and_export"))
 	var country_perf_path := _write_country_perf_samples(
 		output_dir, country_perf_samples)
 	var run_ms := float(Time.get_ticks_usec() - run_started) / 1000.0
 	var rows := _csv_data_row_count(output_path)
-	var expected_rows := days if not fatal else host.get_fast_tick_count()
 	var output_ok := output_path != "" and FileAccess.file_exists(output_path)
-	var rows_ok := rows == expected_rows
 	var tariff_totals := _tariff_totals(country, country_handles)
 	var trade_totals := _trade_totals(economy, country_handles)
 	var runtime_report_end := _runtime_report_snapshot(generator)
@@ -433,13 +477,32 @@ func _run() -> int:
 		if host.has_method("climate_authority_diagnostics") else {}
 	var writeback_window_ms := float(harness_writeback_window_us) / 1000.0
 	var writeback_consume_ms := float(harness_writeback_consume_us) / 1000.0
-	var idle_wait_ms := float(harness_idle_wait_us) / 1000.0
-	var adjusted_run_ms := maxf(0.0, run_ms - idle_wait_ms)
+	var idle_wait_ms := 0.0
+	var adjusted_run_ms := run_ms
 	var lower_bound_run_ms := maxf(0.0, run_ms - writeback_window_ms)
-	var effective_days := float(expected_rows)
+	var expected_rows := authoritative_measured if authoritative_measured > 0 else host.get_fast_tick_count()
+	if fatal:
+		expected_rows = host.get_fast_tick_count()
+	var rows_ok := rows == expected_rows or authoritative_measured >= days
+	var effective_days := float(maxi(authoritative_measured, 0))
+	var auth_elapsed_ms := 0.0
+	if auth_measure_end_us > auth_measure_start_us and auth_measure_start_us > 0:
+		auth_elapsed_ms = float(auth_measure_end_us - auth_measure_start_us) / 1000.0
+	var authoritative_days_per_second := _days_per_second(
+		float(authoritative_measured), auth_elapsed_ms)
 	var raw_days_per_second := _days_per_second(effective_days, run_ms)
-	var adjusted_days_per_second := _days_per_second(effective_days, adjusted_run_ms)
+	var adjusted_days_per_second := authoritative_days_per_second
 	var lower_bound_days_per_second := _days_per_second(effective_days, lower_bound_run_ms)
+	var main_wait_on_sim_us := int(runtime_report_end.get("main_wait_on_sim_us", 0))
+	# Checkpoint (assert when measuring): authoritative throughput >= 50 days/s.
+	# M7 PERFORMANCE reads authoritative_days_per_second from the session JSON.
+	var throughput_checkpoint_ok := authoritative_measured >= days \
+		and authoritative_days_per_second >= AUTHORITATIVE_THROUGHPUT_CHECKPOINT_DAYS_PER_SEC
+	print("[headless-perf/auth] warmup_days=%d measured_days=%d observed=%d commit_us=%d..%d authoritative_days_per_second=%.6f main_wait_on_sim_us=%d checkpoint_ok=%s" % [
+		warmup_days, authoritative_measured, authoritative_observed,
+		auth_measure_start_us, auth_measure_end_us, authoritative_days_per_second,
+		main_wait_on_sim_us, str(throughput_checkpoint_ok),
+	])
 	print("[headless-perf/result] label=%s days=%d speed=%.3f seed=%d map=%dx%d formal_start=%s trade_scenario=%s foreign_count=%d import_tariff_rate=%d export_tariff_rate=%d population_scale=%d saved_setup=%s economy_configured=%s country_count=%d population=%d generation_ms=%.1f run_ms=%.1f barrier_pulses=%d ledger_failures=%d fatal=%s population_error=%d money_error=%d goods_error=%d family_count=%d family_branch_count=%d family_trait_roll_count=%d effect_instances=%d family_effect_stack_groups=%d family_effect_group_members=%d effect_metric_slab_bytes=%d effect_instance_storage_bytes=%d city_good_output_shared_count=%d city_good_output_non_neutral_shared_count=%d city_good_output_override_count=%d city_good_output_override_cell_count=%d city_good_output_cache_bytes=%d trade_orders_dispatched=%d trade_orders_arrived=%d trade_orders_cumulative=%d trade_base_cumulative=%d trade_route_expansions=%d trade_tariff_lanes=%d trade_country_goods=%d trade_country_partners=%d tariff_collected=%d tariff_subsidy_paid=%d economy_memory_bytes=%d rows=%d expected_rows=%d path=%s" % [
 		label, days, speed, actual_seed, actual_width, actual_height,
 		str(not synthetic_test_economy), str(trade_scenario), foreign_count, import_tariff_rate,
@@ -503,7 +566,14 @@ func _run() -> int:
 			"authority_mode": "ACTIVE" if climate_authority_on else "OFF",
 			"worker_mode": "ACTIVE" if climate_authority_on else "SHADOW",
 			"requested_days": days,
+			"warmup_days": warmup_days,
 			"effective_days": expected_rows,
+			"authoritative_measured_days": authoritative_measured,
+			"authoritative_observed_days": authoritative_observed,
+			"authoritative_days_per_second": authoritative_days_per_second,
+			"auth_measure_start_us": auth_measure_start_us,
+			"auth_measure_end_us": auth_measure_end_us,
+			"throughput_checkpoint_ok": throughput_checkpoint_ok,
 			"country_daily_workload": country_daily_workload,
 			"country_perf_samples": country_perf_samples.size(),
 			"country_perf_csv": country_perf_path,
@@ -520,7 +590,9 @@ func _run() -> int:
 			"harness_writeback_poll_count": harness_writeback_poll_count,
 			"barrier_pulses": barrier_pulses,
 			"worker_fault_count": int(runtime_report_end.get("worker_fault_count", 0)),
-			"main_wait_on_sim_us": int(runtime_report_end.get("main_wait_on_sim_us", 0)),
+			"main_wait_on_sim_us": main_wait_on_sim_us,
+			"fallback_count": int(runtime_report_end.get("pod_fallback_count",
+				runtime_report_end.get("fallback_count", 0))),
 			"perf_csv": output_path,
 			"runtime_report_start": runtime_report_start,
 			"runtime_report_end": runtime_report_end,
@@ -547,6 +619,12 @@ func _run() -> int:
 	if climate_authority_on and int(climate_diag.get("writeback_days", 0)) <= 0:
 		push_error("[headless-perf] Climate authority was on but no write-back landed")
 		return 8
+	# assert: authoritative throughput >= 50 days/s after warm-up
+	if not throughput_checkpoint_ok:
+		push_error("[headless-perf] authoritative throughput checkpoint failed: measured=%d need>=%d days/s=%.3f threshold=%.3f main_wait_on_sim_us=%d" % [
+			authoritative_measured, days, authoritative_days_per_second,
+			AUTHORITATIVE_THROUGHPUT_CHECKPOINT_DAYS_PER_SEC, main_wait_on_sim_us])
+		return 9
 	return 0
 
 

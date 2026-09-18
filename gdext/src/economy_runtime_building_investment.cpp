@@ -895,6 +895,21 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
             }
         }
     }
+    ++_derived_snapshot_generation;
+    uint64_t derived_hash = 14695981039346656037ull;
+    auto mix = [&](uint64_t value) {
+        derived_hash ^= value;
+        derived_hash *= 1099511628211ull;
+    };
+    mix(static_cast<uint64_t>(_derived_snapshot_generation));
+    mix(static_cast<uint64_t>(_derived_business_demand_total));
+    mix(static_cast<uint64_t>(_derived_business_demand_lanes));
+    for (size_t i = 0; i < _epoch_derived_business_demand.size(); ++i) {
+        if (_epoch_derived_business_demand[i] == 0) continue;
+        mix(static_cast<uint64_t>(i));
+        mix(static_cast<uint64_t>(_epoch_derived_business_demand[i]));
+    }
+    _derived_snapshot_hash = derived_hash;
 }
 
 void NativeEconomyRuntime::propagate_startup_demand_for_cell(int32_t cell) {
@@ -1718,6 +1733,57 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
         std::vector<InvestmentIncumbentLane> &incumbent_lanes =
             _investment_incumbent_lanes_scratch;
         incumbent_lanes.clear();
+        auto upsert_incumbent_record = [&](const InvestmentIncumbentRecord &rec) {
+            if (rec.cell < 0 || rec.output_good < 0 || rec.type_id < 0 ||
+                rec.daily_offered_capacity <= 0 || rec.settled_unit_cost <= 0) {
+                return;
+            }
+            for (InvestmentIncumbentRecord &existing :
+                 _investment_incumbent_records) {
+                if (existing.cell == rec.cell &&
+                    existing.output_good == rec.output_good &&
+                    existing.type_id == rec.type_id) {
+                    existing = rec;
+                    return;
+                }
+            }
+            _investment_incumbent_records.push_back(rec);
+        };
+        auto push_incumbent_lane = [&](const InvestmentIncumbentLane &lane) {
+            if (lane.good_id < 0 || lane.type_id < 0 ||
+                lane.daily_offered <= 0 || lane.unit_cost <= 0) return;
+            for (InvestmentIncumbentLane &existing : incumbent_lanes) {
+                if (existing.good_id == lane.good_id &&
+                    existing.type_id == lane.type_id) {
+                    if (lane.unit_cost < existing.unit_cost)
+                        existing.unit_cost = lane.unit_cost;
+                    existing.daily_offered = saturating_add(
+                        existing.daily_offered, lane.daily_offered,
+                        _saturation_count);
+                    existing.stealable_capacity = saturating_add(
+                        existing.stealable_capacity, lane.stealable_capacity,
+                        _saturation_count);
+                    return;
+                }
+            }
+            incumbent_lanes.push_back(lane);
+        };
+        // Prefer the persistent settled incumbent table. Current-cycle last_*
+        // fields may be zero mid-review and must not erase prior evidence.
+        for (const InvestmentIncumbentRecord &rec :
+             _investment_incumbent_records) {
+            if (rec.cell != cell) continue;
+            InvestmentIncumbentLane lane;
+            lane.good_id = rec.output_good;
+            lane.type_id = rec.type_id;
+            lane.unit_cost = rec.settled_unit_cost;
+            lane.daily_offered = rec.daily_offered_capacity;
+            lane.stealable_capacity = std::max<int64_t>(
+                rec.stealable_capacity, rec.daily_offered_capacity);
+            lane.owner_fill = rec.owner_fill;
+            lane.employee_fill = rec.employee_fill;
+            push_incumbent_lane(lane);
+        }
         if (_building_cell_offsets.size() ==
                 static_cast<size_t>(_cell_count + 1)) {
             const int64_t epoch_days = std::max(1, _epoch_days);
@@ -1733,32 +1799,70 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     _building_types[group.type_id];
                 const int64_t building_days = saturating_mul(
                     group.count, epoch_days, _saturation_count);
+                int64_t employee_fill = 0;
+                for (int32_t r = 0; r < incumbent_type.employee_count; ++r) {
+                    const int32_t role_index = group.employee_fill_begin + r;
+                    if (role_index >= 0 && role_index < static_cast<int32_t>(
+                            _building_employee_filled.size())) {
+                        employee_fill = saturating_add(employee_fill,
+                            std::max<int64_t>(0,
+                                _building_employee_filled[role_index]),
+                            _saturation_count);
+                    }
+                }
+                const int64_t owner_livelihood = saturating_mul(
+                    living_cost_for_signature(cell, group.owner_signature_id,
+                        -1, _saturation_count),
+                    std::max<int64_t>(0, group.filled_owner), _saturation_count);
+                const int64_t period_livelihood = saturating_mul(
+                    owner_livelihood, epoch_days, _saturation_count);
+                const int64_t settled_operating = saturating_sub(
+                    saturating_add(saturating_add(saturating_add(
+                        std::max<int64_t>(0, group.last_input_cost),
+                        std::max<int64_t>(0, group.last_base_wages_paid),
+                        _saturation_count),
+                        std::max<int64_t>(0, group.last_maintenance_cost),
+                        _saturation_count),
+                        period_livelihood, _saturation_count),
+                    std::max<int64_t>(0, group.last_in_kind_livelihood_value),
+                    _saturation_count);
                 for (int32_t output = 0;
                      output < incumbent_type.output_count; ++output) {
                     const GoodAmount &item = _building_outputs[
                         incumbent_type.output_begin + output];
-                    const int64_t qty = effective_building_output_quantity(
-                        group, item.good_id, item.quantity,
-                        group.last_capacity_q16, building_days,
-                        _saturation_count);
-                    if (qty <= 0) continue;
+                    const int64_t qty = std::max<int64_t>(0, group.last_output) > 0
+                        ? effective_building_output_quantity(
+                            group, item.good_id, item.quantity,
+                            std::max<int64_t>(1, group.last_capacity_q16),
+                            building_days, _saturation_count)
+                        : 0;
+                    if (qty <= 0 || settled_operating <= 0) continue;
                     const int64_t allocated = allocated_output_operating_cost(
-                        incumbent_type, output,
-                        std::max<int64_t>(0, group.last_operating_cost),
+                        incumbent_type, output, settled_operating,
                         _saturation_count);
                     InvestmentIncumbentLane lane;
                     lane.good_id = item.good_id;
                     lane.type_id = group.type_id;
                     lane.unit_cost = mul_div_sat(
                         allocated, GOODS_SCALE, qty, _saturation_count);
-                    // Keep a revealed incumbent visible to displacement even
-                    // when its period output is smaller than the epoch span.
-                    // Flooring to zero erased the lane before unit-cost
-                    // comparison and made every cheaper challenger look like
-                    // a greenfield investment.
                     lane.daily_offered = (qty + epoch_days - 1) / epoch_days;
-                    if (lane.daily_offered <= 0) continue;
-                    incumbent_lanes.push_back(lane);
+                    if (lane.daily_offered <= 0 || lane.unit_cost <= 0) continue;
+                    lane.stealable_capacity = lane.daily_offered;
+                    lane.owner_fill = std::max<int64_t>(0, group.filled_owner);
+                    lane.employee_fill = employee_fill;
+                    push_incumbent_lane(lane);
+                    InvestmentIncumbentRecord rec;
+                    rec.cell = cell;
+                    rec.type_id = group.type_id;
+                    rec.output_good = item.good_id;
+                    rec.settled_unit_cost = lane.unit_cost;
+                    rec.daily_offered_capacity = lane.daily_offered;
+                    rec.owner_fill = lane.owner_fill;
+                    rec.employee_fill = lane.employee_fill;
+                    rec.settled_day = _current_day;
+                    rec.generation = static_cast<int64_t>(_committed_generation);
+                    rec.stealable_capacity = lane.stealable_capacity;
+                    upsert_incumbent_record(rec);
                 }
             }
             std::stable_sort(incumbent_lanes.begin(), incumbent_lanes.end(),
@@ -2501,8 +2605,10 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 if (lane.good_id != driver.good_id ||
                     lane.type_id == type_id) continue;
                 if (lane.unit_cost <= cost_threshold) continue;
+                const int64_t lane_stealable = std::max<int64_t>(
+                    lane.stealable_capacity, lane.daily_offered);
                 stealable = saturating_add(
-                    stealable, lane.daily_offered, _saturation_count);
+                    stealable, lane_stealable, _saturation_count);
                 if (incumbent_unit_cost <= 0 ||
                     lane.unit_cost < incumbent_unit_cost) {
                     incumbent_unit_cost = lane.unit_cost;

@@ -209,6 +209,18 @@ public:
     // Deterministic release-gate probe for the fault handoff contract. It
     // uses an isolated host and never mutates the live simulation worker.
     bool economy_authority_fault_gate_self_test(std::string &error) const noexcept;
+    // One-shot fault injection by domain/stage point name. Armed points trip
+    // exactly once when the worker reaches that boundary (plan/reservation/
+    // commit/Events/save/restore/authority switch). Returns false when the
+    // point name is empty or truncated.
+    bool arm_fault_injection(const char *point) noexcept;
+    void clear_fault_injection() noexcept;
+    bool fault_injection_armed() const noexcept {
+        return _fault_injection_armed.load(std::memory_order_acquire);
+    }
+    uint64_t fault_injection_trip_count() const noexcept {
+        return _fault_injection_trip_count.load(std::memory_order_acquire);
+    }
     bool economy_worker_is_authoritative() const noexcept {
         return economy_production_runtime_attached() &&
                economy_execution_mode() != EconomyExecutionMode::LEGACY_ONLY &&
@@ -463,6 +475,10 @@ public:
     bool poll_country_command_receipts(
             uint64_t after_request_id, uint32_t limit,
             std::vector<CountryCommandReceipt> &out);
+    // Point lookup for Effect ACK. Cursor polls skip lower Effect terminals
+    // once an unrelated Country commit advances the high-water mark.
+    bool try_country_command_terminal(
+            uint64_t request_id, CountryCommandReceipt &out);
     bool country_command_receipt_self_test(std::string &error) const;
     bool country_peer_rejection_self_test(std::string &error) const;
     bool publish_country_economy_asset_requests(
@@ -690,6 +706,10 @@ private:
                      const RuntimeDayCommit &day_commit,
                      const std::vector<RuntimeCommandReceipt> &day_receipts);
     void set_fault(const char *code);
+    // Returns true when an armed one-shot injection matched `point` and
+    // transitioned the worker into FAULTED. Call sites must abort the current
+    // boundary immediately after a true return.
+    bool try_fault_injection(const char *point) noexcept;
     // Publishes the first diverging Climate field/cell into the report slots.
     // These slots existed in the ABI but nothing ever wrote them, so a parity
     // failure could only be observed as two unequal hashes.
@@ -739,6 +759,7 @@ private:
     std::atomic<bool> _authority_ready{false};
     std::atomic<uint32_t> _requested_authority_mask{0};
     std::atomic<uint32_t> _authoritative_domain_mask{0};
+    std::atomic<uint32_t> _active_evidence_mask{0};
     std::atomic<uint32_t> _completion_gate_missing_domain_mask{0};
     std::atomic<bool> _active_gate_blocked{false};
     std::atomic<int64_t> _committed_day{0};
@@ -1013,6 +1034,7 @@ private:
     std::atomic<uint64_t> _economy_authority_switch_latency_sample_write{0};
     std::atomic<uint64_t> _economy_authority_switch_rejected{0};
     std::atomic<uint64_t> _economy_authority_switch_audit_sequence{0};
+    std::atomic<uint64_t> _economy_authority_switch_audit_hash{0};
     std::atomic<uint64_t> _economy_authority_switch_before_generation{0};
     std::atomic<uint64_t> _economy_authority_switch_after_generation{0};
     std::atomic<uint64_t> _economy_authority_last_committed_generation{0};
@@ -1132,6 +1154,12 @@ private:
     std::atomic<int32_t> _climate_cyclone_touched{0};
     std::atomic<double> _time_debt_days{0.0};
     std::array<std::atomic<char>, 64> _fault_code{};
+    // Controllable one-shot fault injection. Empty / disarmed by default so
+    // production paths never trip. Point names are stable ASCII tokens such as
+    // "economy.plan.before" or "authority.switch.after".
+    std::atomic<bool> _fault_injection_armed{false};
+    std::atomic<uint64_t> _fault_injection_trip_count{0};
+    std::array<std::atomic<char>, 64> _fault_injection_point{};
     std::atomic<uint64_t> _state_hash{1469598103934665603ull};
     RuntimeDomainPodPipeline _pod_pipeline;
     // Phase-C migration aggregate.  It is reset and owned exclusively by the
@@ -1189,6 +1217,7 @@ private:
     // Day-local MODIFIER-targeted intents produced by the Effect stage for
     // Modifier E7. Cleared at the start of each Effect stage visit.
     std::vector<RuntimeDomainIntent> _effect_day_modifier_intents;
+    std::vector<RuntimeDomainIntent> _effect_day_intents;
     bool _effect_day_stage_ok = false;
     std::atomic<bool> _effect_pod_ready{false};
     std::atomic<double> _effect_pod_plan_ms{0.0};

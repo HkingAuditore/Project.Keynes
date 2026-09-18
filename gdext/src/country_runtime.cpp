@@ -464,6 +464,8 @@ Dictionary NativeCountryRuntime::configure(const Dictionary &catalog,
     _pending_commands.clear();
     _effect_command_results.clear();
     _effect_command_idempotency.clear();
+    _effect_host_request_map.clear();
+    _effect_host_receipt_cursor = 0;
     _next_effect_request_id = 1;
     clear_peer_protocol_state();
     _era_reward_reference = {};
@@ -1108,6 +1110,8 @@ Dictionary NativeCountryRuntime::bootstrap(const Dictionary &packet,
     if (++_session_epoch == 0) _session_epoch = 1;
     _effect_command_results.clear();
     _effect_command_idempotency.clear();
+    _effect_host_request_map.clear();
+    _effect_host_receipt_cursor = 0;
     _next_effect_request_id = 1;
     _economy_asset_transactions_in_flight.clear();
     _economy_asset_reserved_cash.assign(_countries.active.size(), 0);
@@ -1965,7 +1969,12 @@ bool NativeCountryRuntime::submit_effect_commands_pod(
         request_ids.push_back(command.effect_request_id);
         staged.push_back(std::move(command));
     }
-    if (_simulation_host != nullptr && !_sync_store_writes_forbidden &&
+    // Always mirror Effect commands into the Host Country queue when the POD
+    // worker is live. Under worker authority the sync facade must not keep a
+    // local pending copy (should_run is false), so the Host path is the only
+    // way those commands can commit and complete Effect ACK.
+    const bool worker_owns_writes = _sync_store_writes_forbidden;
+    if (_simulation_host != nullptr &&
         _simulation_host->country_pod_configured()) {
         const RuntimeWorkerState host_state = _simulation_host->state();
         const bool host_live = host_state != RuntimeWorkerState::STOPPED &&
@@ -2022,17 +2031,82 @@ bool NativeCountryRuntime::submit_effect_commands_pod(
                 std::memcpy(packet.payload.data(), &mirrored,
                             sizeof(RuntimeCountryCommand));
                 packets.push_back(packet);
+                // Always remember the Host request id. Effect may submit while
+                // the sync facade still owns writes (mask not granted yet) and
+                // Country can flip to worker authority before the local pending
+                // queue is applied — without this map the Host receipt cannot
+                // complete the PREFLIGHTED ACK and hard_ack=effect pins forever.
+                _effect_host_request_map[mirrored.request_id] =
+                    command.effect_request_id;
             }
             if (!packets.empty() &&
                 !_simulation_host->enqueue_batch(std::move(packets))) {
                 error = "country_effect_shadow_mirror_capacity_exceeded";
+                for (const Command &command : staged)
+                    _effect_command_results.erase(command.effect_request_id);
+                _effect_host_request_map.clear();
                 return false;
             }
+        } else if (worker_owns_writes) {
+            error = "country_worker_unavailable_for_effect";
+            return false;
+        }
+    } else if (worker_owns_writes) {
+        error = "country_worker_unavailable_for_effect";
+        return false;
+    }
+    if (!worker_owns_writes) {
+        _pending_commands.insert(_pending_commands.end(),
+            std::make_move_iterator(staged.begin()),
+            std::make_move_iterator(staged.end()));
+    }
+    return true;
+}
+
+void NativeCountryRuntime::drain_effect_host_command_receipts() {
+    // Drain whenever Host-mirrored Effect commands are outstanding. Do not
+    // gate on sync_store_writes_forbidden: submissions made before the Country
+    // grant still need their receipts after the facade is suppressed.
+    //
+    // Look up each mapped Host request_id directly. A cursor poll over all
+    // Country terminals advances past unrelated research/tax commits and then
+    // permanently skips lower-id Effect terminals — hard_ack=effect pins.
+    if (_simulation_host == nullptr || _effect_host_request_map.empty()) {
+        return;
+    }
+    std::vector<uint64_t> host_request_ids;
+    host_request_ids.reserve(_effect_host_request_map.size());
+    for (const auto &entry : _effect_host_request_map) {
+        host_request_ids.push_back(entry.first);
+    }
+    for (const uint64_t host_request_id : host_request_ids) {
+        const auto mapped = _effect_host_request_map.find(host_request_id);
+        if (mapped == _effect_host_request_map.end()) continue;
+        CountryCommandReceipt receipt;
+        if (!_simulation_host->try_country_command_terminal(
+                host_request_id, receipt)) {
+            continue;
+        }
+        // Terminals are COMMITTED / REJECTED only. ACCEPTED lives in the
+        // non-terminal admission map and must keep Effect waiting.
+        const bool committed =
+            receipt.code == CountryCommandReceiptCode::COMMITTED;
+        const bool rejected =
+            receipt.code == CountryCommandReceiptCode::REJECTED_AT_EXECUTION ||
+            receipt.code == CountryCommandReceiptCode::ADMISSION_REJECTED;
+        if (!committed && !rejected) continue;
+        EffectCommandResult &result =
+            _effect_command_results[mapped->second];
+        result.complete = 1;
+        result.ok = committed ? 1 : 0;
+        result.reason = committed ? std::string{} :
+            (receipt.reason.empty()
+                ? "country_effect_host_rejected" : receipt.reason);
+        _effect_host_request_map.erase(mapped);
+        if (host_request_id > _effect_host_receipt_cursor) {
+            _effect_host_receipt_cursor = host_request_id;
         }
     }
-    _pending_commands.insert(_pending_commands.end(),
-        std::make_move_iterator(staged.begin()), std::make_move_iterator(staged.end()));
-    return true;
 }
 
 bool NativeCountryRuntime::effect_command_result_pod(int64_t request_id, bool &complete,
@@ -4504,6 +4578,8 @@ Dictionary NativeCountryRuntime::reset(const String &reason) {
     if (++_session_epoch == 0) _session_epoch = 1;
     _effect_command_results.clear();
     _effect_command_idempotency.clear();
+    _effect_host_request_map.clear();
+    _effect_host_receipt_cursor = 0;
     _next_effect_request_id = 1;
     _era_reward_reference = {};
     _events.clear();
@@ -7637,6 +7713,7 @@ bool NativeCountryRuntime::service_peer_intents_main_thread(
         std::string &error) {
     out = PeerAdapterServiceReport{};
     error.clear();
+    drain_effect_host_command_receipts();
     if (!_configured || !_bootstrapped || _mode == MODE_OFF) {
         error = "country_peer_adapter_runtime_unavailable";
         return false;
@@ -9849,6 +9926,8 @@ bool NativeCountryRuntime::decode_save_in_place(
     clear_peer_protocol_state();
     _effect_command_results.clear();
     _effect_command_idempotency.clear();
+    _effect_host_request_map.clear();
+    _effect_host_receipt_cursor = 0;
     _next_effect_request_id = 1;
     _era_reward_reference = era_reward_reference;
     for (const Command &command : _pending_commands) {

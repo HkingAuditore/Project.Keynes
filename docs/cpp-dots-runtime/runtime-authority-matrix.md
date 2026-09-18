@@ -11,7 +11,7 @@ long-form matrix below: country authority is **PKCN v13**, economy authority is
 **PKEC v52**, configurable cross-domain effects are **PKEF v11**, Trigger state is
 **PKTR v6**, ideology state is **PKID v3**, and the native gameplay journal is
 **journal v4**. Country is production ACTIVE only for the granted
-`CLIMATE|COUNTRY|TRIGGER_INPUT|IDEOLOGY|MODIFIER|EFFECT|ECONOMY|EVENTS|COMMIT = 0xB7E`
+`CLIMATE|COUNTRY|TRIGGER_INPUT|IDEOLOGY|MODIFIER|EFFECT|ECONOMY|EVENTS|COMMIT = 0xFFF`
 mask. Economy production ACTIVE advances via Host `worker_run_compact_slice` on the
 same `NativeEconomyRuntime` SoA; StageOps remain SHADOW hash-parity only. D7 peer
 ops open when Economy is worker-authoritative. The save coordinator restores domain
@@ -46,7 +46,7 @@ paths; historical v47 rows below are not the current schema.
 
 G8 promoted `RuntimeIdeologyPodAuthority` from a worker `SHADOW` mirror to the
 production writer; the Ideology bit is part of
-`implemented_domain_mask() == 0xA7E`. Its `IDP1` section stays independent from
+`implemented_domain_mask() == 0xFFF`. Its `IDP1` section stays independent from
 synchronous `PKID` and legacy composite `PDP3`, and the SHADOW diagnostic stage
 is retained for parity work.
 
@@ -115,7 +115,7 @@ round 也设置 `native_daily_day_barrier`，continuation pulse 先完成 climat
 | `native_daily_sim` | `DCWorldExt::run_native_daily_slice()` 持有 graph continuation、node cursor、round accumulator；GDScript 只保留 SUS shell 与 bundle boundary。 | `SCHEDULE_GRAPH` 节点调用 C++ pass 写 slots。 | Graph report `published_slots`、`visual_dirty_intents`、`authority_report`、`authority_blockers`、`retained_boundaries`；必要时 flush 到 `MapData`。首片被预算跳过时，GDScript 的 transient `native_daily_day_pending` 持有 same-day barrier，continuation 再直接启动 job。 | 普通 ACTIVE 不再回 full-run；`run_native_daily_tick()` 只作 debug/probe，`run_native_sim_tick()` 作 SHADOW/A-B。 | `run_native_daily_slice` 是唯一 ACTIVE hot path；`graph_coverage_state=complete` 只由 simulation authority blockers 决定；`native_daily_legacy_daily_production_retired=true` 才允许 fallback/test-only handoff。 | Climate/weather/ocean/season owner gates 与 legacy fallback 未退休时仍阻塞；Godot/visual boundaries 只进 `retained_boundaries`；pending 标记不进入存档或 hash，reset 时清理。 |
 | `modifier_daily` | Host ACTIVE Modifier POD 为唯一写者；legacy `ModifierRuntime` 经 snapshot 回灌作只读视图。 | 不写领域 base slot；发布只读 effective 聚合。 | `MODIFIER_GRAPH` / `modifier_worker_authoritative` report、MDF2；PKCM/PKGP 与 PKCN/PKEC 内嵌 domain。 | grant 后 SUS/`run_modifier_daily` 无生产写入。 | Host ACTIVE（`0x040`），主线程抑制。 | Effect 已 F8 ACTIVE（`0x020`）。 |
 | `country_daily` | 生产 authority 为 Host `RuntimeCountryPodAuthority`（Country grant `0x004`）；`NativeCountryRuntime` 保留同步 fallback 与共享 CountryCore。 | Host 发布 immutable read-view/稀疏 patch；名称、科技、证据、国库、税表和 CSR 不暴露为主线程可变 worker store。 | 原子 `command_preflight → command_apply → aggregate_publish`；只有 `territory_generation` 改变才同步地块；研究可见性使用独立 `research_generation`；PKCN v13。 | 开关关闭、启动失败或未获 grant 时回退同步 runtime。 | 当前生产为 **ACTIVE（D12）**；旧 SUS `country_daily` 在实际 Country grant 下 no-op，避免同日双 authority。 | D7 跨域事务仍按 operation 分阶段，不等同于 Country core 未完成。 |
-| `economy_daily` | `NativeEconomyRuntime` 持有 Population/Settlement/Market/Family/… stores 与 ECONOMY_GRAPH。Phase 2-6：ACTIVE 下 Host 经 `attach_economy_production_runtime` + `worker_run_compact_slice` 推进同一公式 owner；StageOps 仅 SHADOW 哈希对拍（mutate=false）；sync stage 成功后发布 stage reference（`work_units=cell_count`）。 | 独立 native vectors；due-cell sample 冻结环境/国家/modifier；完成 epoch 后复制 cohort/market committed ledger 到独立 POD owner。 | 生产图公式与审计；D7 Host transport 承载已开放 peer ops；POD opcode∈[1,23] 准入 + `commit_pending_commands` ACK 脚手架；ACTIVE/`commit_epoch` 写 snapshot ring；ECP1 ABI4 保存业务摘要和 committed ledger mirror，恢复原子校验页拓扑与 hash。 | 无大规模 GDScript fallback。 | **ACTIVE（`0x100`，生产 request `0xB7E`）**；未挂接 production runtime 时 fail-open 回 sync。 | 建筑/就业/家族/交易/资源等完整 POD state、13 stage 独立 mutate、完整 opcode/事务恢复及生产 parity/性能门禁仍未完成。 |
+| `economy_daily` | `NativeEconomyRuntime` 持有 Population/Settlement/Market/Family/… stores 与 ECONOMY_GRAPH。Phase 2-6：ACTIVE 下 Host 经 `attach_economy_production_runtime` + `worker_run_compact_slice` 推进同一公式 owner；StageOps 仅 SHADOW 哈希对拍（mutate=false）；sync stage 成功后发布 stage reference（`work_units=cell_count`）。 | 独立 native vectors；due-cell sample 冻结环境/国家/modifier；完成 epoch 后复制 cohort/market committed ledger 到独立 POD owner。 | 生产图公式与审计；D7 Host transport 承载已开放 peer ops；POD opcode∈[1,23] 准入 + `commit_pending_commands` ACK 脚手架；ACTIVE/`commit_epoch` 写 snapshot ring；ECP1 ABI4 保存业务摘要和 committed ledger mirror，恢复原子校验页拓扑与 hash。 | 无大规模 GDScript fallback。 | **ACTIVE（`0x100`，生产 request `0xFFF`）**；未挂接 production runtime 时 fail-open 回 sync。 | 建筑/就业/家族/交易/资源等完整 POD state、13 stage 独立 mutate、完整 opcode/事务恢复及生产 parity/性能门禁仍未完成。 |
 | `weather_refresh` | `WeatherDCSystem` wrapper 内的 `WeatherRefreshJob` 持有 field stage/front state；`WeatherSystem` 持业务 facade。 | `DCWorldExt` weather field/distribute/summary/stage-b pass 与 GDScript fallback 写 weather slots。 | Weather commit flush、front apply、weather LUT upload intent/Godot upload。 | `WeatherRefreshJob` staged path；merged native 受 readiness gate。 | `weather_native_daily_readiness_report()` 证明 visible publish/front/LUT 后为 `native_ready`；`native_weather_transaction_active_owner_enabled=true` 后为 `native_active`，执行后可升 `native_active_verified`。 | WeatherFront Godot objects、front rebuild、ImageTexture/LUT upload、CSV visible fields 是 retained boundaries；publish readiness 未达成才是 blocker。 |
 | Vegetation / cover / landform | `vegetation_dynamics`（stage-b）独占 `cell_vegetation` 演替/streak/vitality。季节 B+ `sync_current_state` 写 snow/landform/cover， knobs `skip_vegetation_rewrite` 禁止全图 `pk_derive_vegetation`。同日 B+ 完成后 stage-b `run_veg_dyn=false`。 | `DCWorldExt::run_stage_b_pass` / `run_vegetation_dynamics_pass`；B+ 不 flush `cell_vegetation`。 | Succession dirty → gameplay event bus / `queue_detail_scatter_changes`。 | GDScript season stages 0–8 生产为 `emergent_noop`。 | ACTIVE climate round。 | 不要平行第二套植被公式；tick-sync memcmp 仅 debug。 |
 | `runtime_hydrology` | Legacy path 由 `WeatherRefreshJob` stage 3 持有；native daily path 由 `SCHEDULE_GRAPH` 的 `runtime_hydrology` node 持有单日执行点。 | `DCWorldExt::run_runtime_hydrology_pass` 后置写 `cell_moisture` 的河道/一环河岸下限，并写 `soil_moisture`、`water_balance_30d`、`river_discharge*`、`river_storage`、`groundwater_storage`、`surface_runoff` slots。 | Pass 内 `_flush_slot_to_map()`；native daily graph report 宣告 hydrology published slots（含 `cell_moisture`）。 | Legacy staged path 保留为 fallback/A-B。 | `runtime_hydrology_enabled=true` 时需要 native bundle 同时包含 `weather_knobs` 与 `runtime_hydrology_knobs`；stage-b 通过 `stage_b_after_hydrology_knobs` 在 hydrology 后运行；publish 成功后 phase 为 `native_active_verified`。 | 缺 `runtime_hydrology_knobs` 才是 blocker；legacy facade 仅作 A/B/test/fallback 入口。 |
@@ -139,7 +139,7 @@ B+ round knobs 带 `skip_vegetation_rewrite=true`，季节日不再全图 `pk_de
 ## Economy Authority
 
 经济域生产 ACTIVE 由 Host 经 `worker_run_compact_slice` 推进同一
-`NativeEconomyRuntime` 公式 owner（mask `0xB7E` 含 ECONOMY）。StageOps 仅
+`NativeEconomyRuntime` 公式 owner（mask `0xFFF` 含 ECONOMY）。StageOps 仅
 SHADOW 哈希对拍（mutate=false）。136-good MarketStore、182 类稀疏
 owner-lot、两组四档升级族、Price V3 稀疏企业信号、自适应工资/奖金、真实金银锚定发行和电力 utility prepass 都在
 ECONOMY_GRAPH/BUILDING_GRAPH 内完成。GDScript 只编译 profile/technology tags、桥接 30 个注册自然
@@ -228,9 +228,9 @@ native transient diagnostics and are not parallel gameplay state.
 
 ## Economy v15 authority override (current)
 
-这里的“authority”指同步 `NativeEconomyRuntime` 的业务状态所有权，
-不表示 Economy 已进入 Host/POD `implemented_domain_mask`；当前正式 mask
-现为 `0xA7E`，Economy 仍不在 ACTIVE grant 中。
+这里的“authority”指同步 `NativeEconomyRuntime` 的业务状态所有权；Host/POD
+`implemented_domain_mask` 现为完整图 `0xFFF`（含 ECONOMY）。Economy 生产 ACTIVE 仍经
+`worker_run_compact_slice` 推进同一公式 owner，并受 M7 evidence gate 约束。
 
 `NativeEconomyRuntime` is stage, tick, state, and publish authority for rolling
 local settlement. GDScript only captures coarse environment/resource inputs,
@@ -388,9 +388,11 @@ ACTIVE authority.
 diagnostic after the Climate trace barrier. It owns isolated shadow stores,
 emits typed intents/ACKs, and reports timing, hashes, and fallback reasons.
 The diagnostic runner itself is not an authority: `capability_mask()` is zero
-and MapData is never written. Production Host authority is independently
-`COMMIT | CLIMATE | COUNTRY | TRIGGER_INPUT | IDEOLOGY | MODIFIER | EFFECT | EVENTS (0xA7E)`; Economy remains outside ACTIVE.
+and MapData is never written. Production Host `implemented_domain_mask` is the full
+twelve-domain graph `0xFFF` (including ECONOMY, INPUT_CAPTURE, GAMEPLAY_EFFECT, and
+VISUAL). Per-session ACTIVE grant still depends on requested mask plus completion/
+evidence gates; partial evidence must never be rewritten as full ACTIVE.
 
 # Modifier POD authority boundary
 
-Modifier E2-E8、Effect F8、Ideology G8 与 Trigger H7/H8 已完成：生产 ACTIVE 唯一写者、snapshot 回灌 legacy runtime、抑制对应 daily。Events I8 只拿到 stage 位与 worker 侧镜像，legacy journal 仍是消费源。当前 Host mask 为 `CLIMATE|COUNTRY|TRIGGER_INPUT|IDEOLOGY|MODIFIER|EFFECT|EVENTS|COMMIT = 0xA7E`。
+Modifier E2-E8、Effect F8、Ideology G8 与 Trigger H7/H8 已完成：生产 ACTIVE 唯一写者、snapshot 回灌 legacy runtime、抑制对应 daily。Events I8 只拿到 stage 位与 worker 侧镜像，legacy journal 仍是消费源。当前 Host `implemented_domain_mask` 为完整图 `0xFFF`。

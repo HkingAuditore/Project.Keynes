@@ -1563,16 +1563,42 @@ Dictionary DCWorldExt::restore_economy_ecp2(const PackedByteArray &bytes) {
         out["reason"] = "economy_runtime_unavailable";
         return out;
     }
+    // Reject bare PKEC / ECP1 payloads at the host boundary.
+    if (bytes.size() >= 4) {
+        const uint32_t marker = static_cast<uint32_t>(bytes[0]) |
+            (static_cast<uint32_t>(bytes[1]) << 8u) |
+            (static_cast<uint32_t>(bytes[2]) << 16u) |
+            (static_cast<uint32_t>(bytes[3]) << 24u);
+        if (marker != RUNTIME_ECONOMY_ECP2_MARKER) {
+            out["ok"] = false;
+            if (marker == 0x31504345u) // "ECP1"
+                out["reason"] = "restore_rejects_ecp1";
+            else if (marker == 0x43454b50u) // "PKEC"
+                out["reason"] = "restore_rejects_pkec";
+            else
+                out["reason"] = "restore_requires_ecp2";
+            out["restore_rejected_reason"] = out["reason"];
+            return out;
+        }
+    } else {
+        out["ok"] = false;
+        out["reason"] = "restore_requires_ecp2";
+        out["restore_rejected_reason"] = out["reason"];
+        return out;
+    }
     RuntimeEconomyEcp2State state;
     std::string error;
     if (!decode_ecp2(bytes.ptr(), static_cast<size_t>(bytes.size()), state, error)) {
         out["ok"] = false;
         out["reason"] = String(error.c_str());
+        out["restore_rejected_reason"] = out["reason"];
         return out;
     }
     if (!runtime_from(_economy_runtime)->apply_ecp2_authority(state, error)) {
         out["ok"] = false;
         out["reason"] = String(error.c_str());
+        out["restore_rejected_reason"] = String(
+            runtime_from(_economy_runtime)->restore_rejected_reason().c_str());
         return out;
     }
     invalidate_economy_input_capture_cache(true);
@@ -1587,6 +1613,7 @@ Dictionary DCWorldExt::restore_economy_ecp2(const PackedByteArray &bytes) {
     out["committed_day"] = state.envelope.last_committed_day;
     out["current_day"] = state.envelope.current_day;
     out["mid_epoch"] = (state.authority_domain_mask & ECP2_DOMAIN_EPOCH_RESUME) != 0;
+    out["restore_rejected_reason"] = "";
     return out;
 }
 
@@ -1594,10 +1621,29 @@ Dictionary DCWorldExt::begin_economy_restore() {
     if (_economy_runtime == nullptr) {
         return unavailable();
     }
+    // Public streaming restore is ECP2-gated: begin_restore no longer clears
+    // live state, and feed rejects until an ECP2/migrate path prepares scratch.
     Dictionary out = runtime_from(_economy_runtime)->begin_restore();
     if (static_cast<bool>(out.get("ok", false)))
         invalidate_economy_input_capture_cache(true);
     return out;
+}
+
+Dictionary DCWorldExt::begin_economy_restore_pkec_migrate() {
+    if (_economy_runtime == nullptr) {
+        return unavailable();
+    }
+    Dictionary out =
+        runtime_from(_economy_runtime)->begin_restore_pkec_migrate();
+    if (static_cast<bool>(out.get("ok", false)))
+        invalidate_economy_input_capture_cache(true);
+    return out;
+}
+
+String DCWorldExt::get_economy_restore_rejected_reason() const {
+    if (_economy_runtime == nullptr) return String();
+    return String(
+        runtime_from(_economy_runtime)->restore_rejected_reason().c_str());
 }
 
 Dictionary DCWorldExt::feed_economy_restore_chunk(const PackedByteArray &chunk) {

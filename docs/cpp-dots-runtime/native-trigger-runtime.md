@@ -17,7 +17,7 @@ Effects are commands applied by domain adapters at their next safe boundary.
 
 H7/H8 promoted the worker Trigger POD store from a SHADOW parity mirror to the
 production writer. When the session grants `TRIGGER_INPUT` (`0x008`, part of
-`implemented_domain_mask() == 0xA7E`), `NativeSimulationHost` runs
+`implemented_domain_mask() == 0xFFF`), `NativeSimulationHost` runs
 `execute_trigger_worker_stage` between Country and Ideology in the fixed stage
 order, and the worker is the **sole Trigger writer**:
 

@@ -626,6 +626,10 @@ bool NativeEconomyRuntime::publish_epoch_slice(
         _epoch_plan_cells.clear();
         trace_commit_epoch(0, 0, 0);
         _epoch_active = false;
+        // Mid-epoch Effect submits land in _pending_commands. Drain them now
+        // so PREFLIGHTED Effect transactions can ACK without waiting for a
+        // calendar day the hard_ack barrier would otherwise refuse to grant.
+        drain_due_effect_pending_commands();
         _stage = _trade_plan.phase == TradePlanStore::IDLE
             ? Stage::AGGREGATE_PUBLISH : Stage::TRADE_PLANNING;
         _publish_phase = PublishPhase::DONE;

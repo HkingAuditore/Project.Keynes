@@ -1042,27 +1042,49 @@ void NativeEconomyRuntime::record_fiscal_peer_terminal(
     FiscalPeerJournalRecord record;
     record.request_id = request.request_id;
     record.transaction_id = request.transaction_id;
+    record.session_epoch = request.session_epoch;
     record.country_handle = request.country_handle;
     record.country_generation = request.country_generation;
     record.peer_generation = request.peer_generation;
     record.committed_peer_generation = std::max(
         request.peer_generation, _committed_generation);
     record.day = request.day;
+    record.effective_day = request.day;
     record.operation_sequence = request.operation_sequence;
+    record.sequence = request.operation_sequence;
     record.continuation_index = request.continuation_index;
+    record.source_domain = request.origin_domain != 0
+        ? request.origin_domain
+        : static_cast<uint32_t>(RuntimeDomainId::COUNTRY);
+    record.target_domain = static_cast<uint32_t>(RuntimeDomainId::ECONOMY);
     record.country_slot = request.country_slot;
     record.operation = request.operation;
     record.result_code = code;
     record.state = state;
+    record.reservation_state =
+        runtime_d7_reservation_state_from_asset(state, code, reason);
+    record.terminal_result =
+        runtime_d7_terminal_result_from_asset(code, state, reason);
     record.accepted = code == RuntimeEconomyAssetResultCode::COMPLETED ? 1 : 0;
     record.requested_quantity = request.requested_quantity;
     record.requested_cash = request.requested_cash;
     record.committed_quantity = committed_quantity;
     record.committed_cash = committed_cash;
+    record.retry_identity = request.request_id ^
+        (static_cast<uint64_t>(request.continuation_index) << 1);
+    record.state_hash_before = _committed_generation;
+    record.state_hash_after = record.committed_peer_generation;
     if (reason != nullptr) {
         const size_t size = std::min(std::strlen(reason), record.reason.size() - 1);
         std::memcpy(record.reason.data(), reason, size);
         record.reason[size] = '\0';
+        if (code == RuntimeEconomyAssetResultCode::REJECTED &&
+            (std::strstr(reason, "late") != nullptr ||
+             std::strstr(reason, "session") != nullptr ||
+             std::strstr(reason, "generation") != nullptr)) {
+            std::memcpy(record.late_ack_rejection_reason.data(), reason, size);
+            record.late_ack_rejection_reason[size] = '\0';
+        }
     }
     _asset_peer_journal[request.request_id] = record;
 }
@@ -7466,6 +7488,13 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                                               role_capacity);
         }
         constexpr int64_t forecast_workforce_capacity_q16 = Q16_ONE;
+        // Suspended recovery must quote the counterfactual full-capacity lot.
+        // Scaling living cost by the emptied workforce collapses both sides of
+        // the margin to zero and permanently blocks restart after SUSPENDED_LOSS
+        // releases owners into unemployment.
+        const int64_t planning_workforce_capacity_q16 =
+            group.operating_state == 1 ? forecast_workforce_capacity_q16
+                                      : actual_workforce_capacity_q16;
         int64_t input_cost = 0;
         int64_t employee_wages = 0;
         const int64_t owner_living_cost_full = saturating_mul(
@@ -7473,7 +7502,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                                       _saturation_count),
             type.owner_slots_per_building, _saturation_count);
         const int64_t owner_living_cost = mul_div_sat(
-            owner_living_cost_full, actual_workforce_capacity_q16, Q16_ONE,
+            owner_living_cost_full, planning_workforce_capacity_q16, Q16_ONE,
             _saturation_count);
         int64_t revenue = 0;
         bool inputs_available = true;
@@ -7625,8 +7654,13 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
             const int64_t filled = filled_index >= 0 && filled_index <
                     static_cast<int32_t>(_building_employee_filled.size())
                 ? std::max<int64_t>(0, _building_employee_filled[filled_index]) : 0;
+            // Recovery quotes the full roster; staffed quotes use current fill.
+            const int64_t wage_heads = group.operating_state == 1
+                ? saturating_mul(group.count, role.slots_per_building,
+                    _saturation_count)
+                : filled;
             employee_wages = saturating_add(employee_wages, saturating_mul(
-                filled, wage, _saturation_count), _saturation_count);
+                wage_heads, wage, _saturation_count), _saturation_count);
         }
         int64_t monetary_group_quota_money = 0;
         int64_t monetary_group_request_money = 0;
@@ -7708,7 +7742,11 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
         int64_t full_capacity_revenue = revenue;
         revenue = mul_div_sat(full_capacity_revenue, forecast_workforce_capacity_q16,
                               Q16_ONE, _saturation_count);
-        if (observed_capacity) {
+        // Active lots forecast from committed cash receipts. Suspended lots keep
+        // the nameplate counterfactual above: in-kind self-employment often has
+        // zero market/bullion receipts, and observing that zero would make every
+        // restart margin fail after owners are shed.
+        if (observed_capacity && group.operating_state != 1) {
             // Installed groups forecast from the previous committed receipt,
             // normalized by the observed workforce-capacity-days. A zero
             // receipt therefore remains zero; it cannot fall back to a stale
@@ -7960,13 +7998,41 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                 (_merchant_credit_runtime_mode != 0 &&
                  group.merchant_debt_delinquent_cycles == 0 &&
                  credit_needed <= cell_credit_remaining);
-            // Owner-operated buildings cannot restart without a live owner
-            // cohort. A zero-cost restart quote must not turn a released-owner
-            // suspension into an automatic reactivation.
-            const bool owner_available = type.owner_slots_per_building <= 0 ||
-                (owner_slot >= 0 && owner_slot < static_cast<int32_t>(
+            // Owner-operated buildings cannot restart without local labour that
+            // can refill the canonical owner signature. SUSPENDED_LOSS sheds
+            // owners into unemployment, so an emptied signature alone must not
+            // block restart when the unemployed pool (or same profession) still
+            // has people. Ledger population commands apply after this plan
+            // stage; early-apply due population adjusts before planning so the
+            // hireable check and tests that drain labour stay coherent.
+            bool owner_cohort_live = owner_slot >= 0 &&
+                owner_slot < static_cast<int32_t>(
                     population_store().population.size()) &&
-                 population_store().population[owner_slot] > 0);
+                population_store().population[owner_slot] > 0;
+            int64_t hireable_owner_labor = 0;
+            if (!owner_cohort_live && type.owner_slots_per_building > 0) {
+                const int32_t owner_profession = type.owner_profession_id >= 0
+                    ? type.owner_profession_id
+                    : (group.owner_signature_id >= 0 &&
+                       group.owner_signature_id < static_cast<int32_t>(
+                           _signatures.size())
+                        ? _signatures[group.owner_signature_id].profession_id
+                        : -1);
+                population_store().for_each_in_cell(group.cell, [&](int32_t slot) {
+                    if (is_merchant_slot(slot)) return;
+                    const uint32_t sig = population_store().signature_id[slot];
+                    if (sig >= _signatures.size()) return;
+                    const int32_t profession = _signatures[sig].profession_id;
+                    if (profession != _unemployed_profession_id &&
+                        profession != owner_profession) return;
+                    hireable_owner_labor = saturating_add(
+                        hireable_owner_labor,
+                        std::max<int64_t>(0, population_store().population[slot]),
+                        _saturation_count);
+                });
+            }
+            const bool owner_available = type.owner_slots_per_building <= 0 ||
+                owner_cohort_live || hireable_owner_labor > 0;
             const bool executable = owner_available && physical_inputs_available &&
                 physical_resources_available && finance_available;
             if (group_index < static_cast<int32_t>(
