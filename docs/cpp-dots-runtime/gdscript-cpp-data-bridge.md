@@ -25,6 +25,14 @@ generation and hash. It remains orthogonal to the complete PKEC business SoA;
 only fully committed epochs are imported and incomplete slices are never
 published through this bridge.
 
+Economy capture also freezes the distinction between real business demand and
+one-hop shadow derived demand. The latter is returned in diagnostics and may
+contribute to price/investment pressure, but it is never copied into stock
+targets, procurement, employment, or the committed business-demand EMA.
+Purchase intent and merchant-credit reservations are published only after the
+quote/reserve/commit boundary; a failed reservation leaves an explicit
+unfunded active state for the next review.
+
 ## Background worker POD boundary (ABI v3)
 
 The main-thread bridge captures Godot values into an immutable

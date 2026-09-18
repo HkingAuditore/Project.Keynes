@@ -385,22 +385,9 @@ int64_t NativeEconomyRuntime::trade_relief_pressure_q16(
                             std::max<int64_t>(1, desired), sat), 0, Q16_ONE));
         }
     }
-    if (signal >= 0 && signal < static_cast<int32_t>(
-            _epoch_derived_business_demand.size())) {
-        const int64_t derived = std::max<int64_t>(
-            0, _epoch_derived_business_demand[signal]);
-        if (derived > 0) {
-            const int64_t weighted = mul_div_sat(derived,
-                std::clamp<int64_t>(_derived_business_demand_weight_q16, 0, Q16_ONE),
-                Q16_ONE, sat);
-            const int64_t household = std::max<int64_t>(
-                GOODS_SCALE, market_store().demand_ema[index]);
-            pressure = std::max<int64_t>(pressure, std::clamp<int64_t>(
-                mul_div_sat(weighted, Q16_ONE,
-                    saturating_add(household, weighted, sat), sat),
-                0, Q16_ONE));
-        }
-    }
+    // Shadow derived demand is intentionally absent from the relief lane.
+    // Otherwise a price-only upstream signal would create an actual import
+    // target and spend merchant cash before a real downstream withdrawal.
     if (signal >= 0 && signal < static_cast<int32_t>(
             _production_input_reserve.size())) {
         const int64_t reserve = merchant_protected_reserve(signal);
@@ -423,14 +410,8 @@ int64_t NativeEconomyRuntime::trade_local_stock_target(
     const int32_t signal = market_signal_index(market, good);
     if (signal >= 0) demand = saturating_add(
         demand, _market_signals.business_demand_ema[signal], sat);
-    if (signal >= 0 && signal < static_cast<int32_t>(
-            _epoch_derived_business_demand.size())) {
-        demand = saturating_add(demand,
-            mul_div_sat(std::max<int64_t>(0,
-                    _epoch_derived_business_demand[signal]),
-                std::clamp<int64_t>(_derived_business_demand_weight_q16, 0, Q16_ONE),
-                Q16_ONE, sat), sat);
-    }
+    // Derived demand is not a stock target.  It may influence price pressure
+    // and investment ordering, but never creates a trade procurement lane.
     const int64_t relief_q16 = trade_relief_pressure_q16(market, good, sat);
     if (relief_q16 > 0) {
         const int64_t relief_base = std::max<int64_t>(demand, GOODS_SCALE);

@@ -432,6 +432,41 @@ bool NativeEconomyRuntime::run_building_production_cell(
     _merchant_procurement_reserved = saturating_add(
         _merchant_procurement_reserved,
         merchant_opening_cash - merchant_procurement_remaining, _saturation_count);
+
+    // Production must see the same merchant-backed operating-credit envelope
+    // that the planning pass used.  The old production path hard-coded this
+    // to zero, so an owner whose cash was exhausted was silently clamped to
+    // zero funded capacity even when local merchants had drawable liquidity.
+    // Keep this budget local to the cell and consume it only after a real draw;
+    // the merchant debit remains the ledger authority for the cash transfer.
+    int64_t outstanding_principal = 0;
+    for (int32_t g = begin; g < end; ++g) {
+        outstanding_principal = saturating_add(
+            outstanding_principal,
+            std::max<int64_t>(0, buildings_store().merchant_debt_principal[g]),
+            _saturation_count);
+    }
+    if (_pending_construction_cell_offsets.size() ==
+            static_cast<size_t>(_cell_count + 1)) {
+        for (int32_t cursor = _pending_construction_cell_offsets[cell];
+             cursor < _pending_construction_cell_offsets[cell + 1]; ++cursor) {
+            const auto &pending = pending_construction()[static_cast<size_t>(
+                _pending_construction_cell_indices[cursor])];
+            outstanding_principal = saturating_add(
+                outstanding_principal,
+                std::max<int64_t>(0, pending.merchant_debt_principal),
+                _saturation_count);
+        }
+    }
+    const int64_t exposure_limit = mul_div_sat(
+        merchant_opening_cash, _merchant_credit_exposure_q16, Q16_ONE,
+        _saturation_count);
+    int64_t cell_credit_remaining = std::max<int64_t>(0, std::min(
+        exposure_limit - std::min(exposure_limit, outstanding_principal),
+        merchant_opening_cash - std::min(merchant_opening_cash,
+            mul_div_sat(merchant_opening_cash,
+                _merchant_procurement_cash_reserve_q16, Q16_ONE,
+                _saturation_count))));
     const bool trace_detail = trace_detail_for_cell(cell);
     thread_local std::vector<int32_t> trace_cell_slots;
     thread_local std::vector<int64_t> trace_cell_funds;
@@ -847,7 +882,13 @@ bool NativeEconomyRuntime::run_building_production_cell(
         for (int32_t c = input.candidate_begin;
              c < input.candidate_begin + input.candidate_count; ++c) {
             const InputCandidate &candidate = _building_input_candidates[c];
-            if (!good_market_available(cell, candidate.good_id, true)) continue;
+            // A stocked catalog input remains executable even when the frozen
+            // country market-availability table is one epoch stale.  Physical
+            // stock plus an authored candidate is the stronger quote-time
+            // evidence; the stock check below still prevents minting.
+            if (!good_market_available(cell, candidate.good_id, true) &&
+                market_store().stock[market_store().index(market, candidate.good_id)] <= 0)
+                continue;
             if (require_stock &&
                 market_store().stock[market_store().index(market, candidate.good_id)] <= 0) continue;
             int64_t capacity_q16 = Q16_ONE;
@@ -1266,7 +1307,40 @@ bool NativeEconomyRuntime::run_building_production_cell(
             const int64_t group_budget = g < static_cast<int32_t>(
                 _building_working_capital_allocated.size())
                 ? _building_working_capital_allocated[g] : 0;
-            const int64_t credit_cap = 0;
+            // `_building_merchant_credit_limit` is populated by the review
+            // pass when it already reserved a restart.  For an ACTIVE group
+            // with no pre-existing reservation, derive a bounded request from
+            // the frozen input quote so a poor owner can still finance normal
+            // operating inputs.  This is deliberately input-only credit;
+            // wages and owner livelihood remain ordinary settled obligations.
+            int64_t requested_credit = g < static_cast<int32_t>(
+                _building_merchant_credit_limit.size())
+                ? std::max<int64_t>(0, _building_merchant_credit_limit[g]) : 0;
+            if (requested_credit <= 0) {
+                // Ordinary zero-cash enterprises must remain unfunded until a
+                // review explicitly reserves a restart.  Survival producers
+                // retain the bounded merchant-backed input lane; this keeps a
+                // hunter ACTIVE without turning a drained industrial owner
+                // into an implicit perpetual borrower.
+                bool survival_output = false;
+                for (int32_t oi = 0; oi < type.output_count; ++oi) {
+                    const int32_t good = _building_outputs[type.output_begin + oi].good_id;
+                    if (good >= 0 && good < static_cast<int32_t>(_survival_food_good_mask.size()) &&
+                        (_survival_food_good_mask[good] != 0 || _survival_clothing_good_mask[good] != 0)) {
+                        survival_output = true;
+                        break;
+                    }
+                }
+                if (survival_output) {
+                    const int64_t quoted_request = group_input_cost_at_scale(
+                        group, type, std::clamp<int64_t>(intent_scale_q16, 0,
+                            Q16_ONE), false);
+                    if (quoted_request != std::numeric_limits<int64_t>::max())
+                        requested_credit = std::max<int64_t>(0, quoted_request);
+                }
+            }
+            const int64_t credit_cap = _merchant_credit_runtime_mode == 2
+                ? std::min<int64_t>(cell_credit_remaining, requested_credit) : 0;
             const int64_t owner_capital_budget = std::max<int64_t>(
                 0, group_budget - std::min(group_budget, credit_cap));
             const int64_t owner_contribution_cap = std::min<int64_t>(
@@ -1294,9 +1368,11 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 }
                 int64_t lo = 0;
                 int64_t hi = std::clamp<int64_t>(output_scale_q16, 0, Q16_ONE);
-                // Keep the allocation conservative. Eight probes leave at most
-                // 1/256 of the requested utilization interval unresolved.
-                for (int iter = 0; iter < 8; ++iter) {
+                // Keep the allocation conservative while still allowing a
+                // financed survival producer to find a sub-probe scale when
+                // only a small merchant-credit remainder is available.
+                // Sixteen probes resolve the Q16 interval to one unit.
+                for (int iter = 0; iter < 16; ++iter) {
                     const int64_t mid = (lo + hi + 1) / 2;
                     if (group_input_cost_at_scale(group, type, mid, require_stock) <= settlement_budget) lo = mid;
                     else hi = mid - 1;
@@ -1527,6 +1603,8 @@ bool NativeEconomyRuntime::run_building_production_cell(
                     _merchant_credit_term_cycles);
                 result.merchant_credit_drawn = saturating_add(
                     result.merchant_credit_drawn, draw, _saturation_count);
+                cell_credit_remaining = std::max<int64_t>(0,
+                    cell_credit_remaining - draw);
             }
             for (int32_t i = 0; i < type.input_count; ++i) {
                 const int32_t selected = quoted_input_candidates[i];
@@ -2975,6 +3053,13 @@ bool NativeEconomyRuntime::run_building_production_cell(
                             Q16_ONE - business_alpha, Q16_ONE, _saturation_count),
                 mul_div_sat(business_daily, business_alpha, Q16_ONE, _saturation_count),
                 _saturation_count);
+            // Preserve a one-unit memory of a previously observed real
+            // business lane. This is hysteresis for production planning only;
+            // it does not create stock, procurement, sales, or owner slots.
+            if (_market_signals.business_demand_ema[signal] <= 0 &&
+                business_daily <= 0 &&
+                _epoch_business_demand_ema[signal] > 0)
+                _market_signals.business_demand_ema[signal] = 1;
             _market_signals.offered_supply_ema[signal] = saturating_add(
                 mul_div_sat(_market_signals.offered_supply_ema[signal],
                             Q16_ONE - supply_alpha, Q16_ONE, _saturation_count),

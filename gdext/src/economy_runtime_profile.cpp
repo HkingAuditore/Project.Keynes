@@ -333,8 +333,11 @@ bool NativeEconomyRuntime::configure_profile(const Dictionary &profile, std::str
     _investment_max_type_owner_share_q16 = std::clamp(dict_num<int32_t>(
         profile, "investment_max_type_owner_share_q16", 32768), 1,
         static_cast<int32_t>(Q16_ONE));
+    // Zero is an explicit switch for disabling ordinary greenfield growth.
+    // Keep that value distinct from the smallest positive share so mobility
+    // and hysteresis fixtures are not polluted by unrelated investments.
     _investment_max_growth_share_q16 = std::clamp(dict_num<int32_t>(
-        profile, "investment_max_growth_share_q16", 16384), 1,
+        profile, "investment_max_growth_share_q16", 16384), 0,
         static_cast<int32_t>(Q16_ONE));
     _investment_new_type_seed_buildings = std::clamp(dict_num<int32_t>(
         profile, "investment_new_type_seed_buildings", 1), 1, 1024);
