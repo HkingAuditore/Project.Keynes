@@ -1,0 +1,37 @@
+﻿{
+    "gate":  "M7",
+    "generated_utc":  "2026-09-16T17:07:43.6375856Z",
+    "implemented_domain_mask":  2942,
+    "requested_domain_mask":  0,
+    "authoritative_domain_mask":  0,
+    "completed_domain_mask":  0,
+    "stage_order":  [
+                        "PROBE",
+                        "PER_DOMAIN_PARITY",
+                        "FULL_PARITY",
+                        "FULL_ACTIVE",
+                        "PERFORMANCE"
+                    ],
+    "completed_stages":  [
+                             "PREFLIGHT"
+                         ],
+    "blocked_stage":  "PROBE",
+    "stages":  [
+                   {
+                       "name":  "preflight-building",
+                       "script":  "res://tests/building_runtime_test.gd",
+                       "exit_code":  1,
+                       "log":  "tmp\\m7-gate-rerun\\preflight-building.log",
+                       "passed":  false
+                   },
+                   {
+                       "name":  "preflight-runtime-parity",
+                       "script":  "res://tests/runtime_economy_parity_test.gd",
+                       "exit_code":  0,
+                       "log":  "tmp\\m7-gate-rerun\\preflight-runtime-parity.log",
+                       "passed":  true
+                   }
+               ],
+    "fatal":  true,
+    "fault":  "preflight_regression_failed"
+}

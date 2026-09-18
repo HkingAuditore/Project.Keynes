@@ -197,6 +197,13 @@ bool RuntimeEconomyLedgerState::valid() const noexcept {
                   static_cast<std::size_t>(market_count))) {
             return false;
         }
+        for (std::size_t i = 0; i < cohorts; ++i) {
+            if (cohort_active[i] != 0 && cohort_generation[i] == 0)
+                return false;
+        }
+        for (const int32_t market : market_cell_to_market) {
+            if (market < -1 || market >= market_count) return false;
+        }
     }
     if (has_diagnostics_columns()) {
         if (!(cohort_reserved.size() == cohorts &&
@@ -206,6 +213,22 @@ bool RuntimeEconomyLedgerState::valid() const noexcept {
               cohort_owner_employed.size() == cohorts &&
               cohort_employee_employed.size() == cohorts)) {
             return false;
+        }
+        for (std::size_t i = 0; i < cohorts; ++i) {
+            if (cohort_active[i] == 0) continue;
+            if (cohort_reserved[i] != 0 &&
+                cohort_reservation_owner[i] == 0) {
+                return false;
+            }
+            if (cohort_owner_employed[i] < 0 ||
+                cohort_employee_employed[i] < 0) {
+                return false;
+            }
+            if (cohort_population[i] >= 0 &&
+                cohort_owner_employed[i] + cohort_employee_employed[i] >
+                    cohort_population[i]) {
+                return false;
+            }
         }
     }
     if (!building.valid() || !trade_escrow.valid() || !family.valid() ||
@@ -218,6 +241,110 @@ bool RuntimeEconomyLedgerState::valid() const noexcept {
     // ABI9 resource + epoch-cursor are paired and require ABI8 family.
     if (resource.captured != epoch_cursor.captured) return false;
     if (resource.captured && !family.captured) return false;
+
+    if (building.captured) {
+        const auto &store = building.store;
+        for (uint32_t g = 0; g < building.group_count; ++g) {
+            const std::size_t gi = static_cast<std::size_t>(g);
+            if (store.merchant_debt_principal[gi] < 0 ||
+                store.merchant_debt_premium[gi] < 0) {
+                return false;
+            }
+            if (store.merchant_debt_principal[gi] == 0 &&
+                (store.merchant_debt_premium[gi] != 0 ||
+                 store.merchant_debt_term_cycles_left[gi] != 0)) {
+                return false;
+            }
+            if (store.employee_fill_begin[gi] < -1) return false;
+            if (store.last_input_selection_begin[gi] < -1) return false;
+            // Role/input spans are allocated as a pair; a half-set index is
+            // never a valid committed shape. role_begin CSR monotonicity is
+            // already enforced by store.shape_valid().
+            if ((store.employee_fill_begin[gi] < 0) !=
+                (store.last_input_selection_begin[gi] < 0)) {
+                return false;
+            }
+            if (store.role_count[gi] < 0) return false;
+        }
+        for (uint32_t p = 0; p < building.pending_count; ++p) {
+            const std::size_t pi = static_cast<std::size_t>(p);
+            if (store.pending_merchant_debt_principal[pi] < 0 ||
+                store.pending_merchant_debt_premium[pi] < 0) {
+                return false;
+            }
+            if (store.pending_merchant_debt_principal[pi] == 0 &&
+                (store.pending_merchant_debt_premium[pi] != 0 ||
+                 store.pending_merchant_debt_term_cycles_left[pi] != 0)) {
+                return false;
+            }
+        }
+        if (building.content_hash != 0 &&
+            building.content_hash != store.wire_content_hash()) {
+            return false;
+        }
+    }
+
+    if (family.captured) {
+        const auto &store = family.store;
+        for (std::size_t i = 0; i < store.person_family_equity_share_q32.size();
+             ++i) {
+            if (store.person_family_equity_share_q32[i] < 0) return false;
+        }
+        for (std::size_t i = 0; i < store.influence_population_share_q16.size();
+             ++i) {
+            if (store.influence_population_share_q16[i] < 0 ||
+                store.influence_cash_share_q16[i] < 0 ||
+                store.influence_building_share_q16[i] < 0) {
+                return false;
+            }
+        }
+        if (family.content_hash != 0 &&
+            family.content_hash != store.wire_content_hash()) {
+            return false;
+        }
+    }
+
+    if (trade_escrow.captured && trade_escrow.content_hash != 0 &&
+        trade_escrow.content_hash != trade_escrow.store.wire_content_hash()) {
+        return false;
+    }
+    if (resource.captured && resource.content_hash != 0 &&
+        resource.content_hash != resource.store.wire_content_hash()) {
+        return false;
+    }
+
+    if (epoch_cursor.captured) {
+        if (epoch_cursor.last_committed_day < 0) return false;
+        if (epoch_cursor.current_day < epoch_cursor.last_committed_day)
+            return false;
+        if (epoch_cursor.sample_day > epoch_cursor.current_day &&
+            epoch_cursor.sample_day >= 0 && epoch_cursor.current_day >= 0) {
+            // sample_day may equal current_day at idle; never run ahead of
+            // current_day past the committed horizon without an active epoch.
+            if (epoch_cursor.epoch_active == 0 &&
+                epoch_cursor.sample_day > epoch_cursor.current_day) {
+                return false;
+            }
+        }
+        if (epoch_cursor.content_hash != 0 &&
+            epoch_cursor.content_hash !=
+                epoch_cursor.store.wire_content_hash()) {
+            return false;
+        }
+    }
+
+    // committed_day on the ledger mirrors the capture stamp; it must not run
+    // ahead of the epoch-cursor current day when both are present.
+    if (epoch_cursor.captured && epoch_cursor.current_day >= 0 &&
+        committed_day > epoch_cursor.current_day) {
+        return false;
+    }
+    if (epoch_cursor.captured && epoch_cursor.last_committed_day >= 0 &&
+        committed_day < epoch_cursor.last_committed_day) {
+        return false;
+    }
+
+    if (ledger_hash != 0 && ledger_hash != computed_hash()) return false;
     return true;
 }
 

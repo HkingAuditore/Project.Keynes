@@ -1,0 +1,510 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+=== native building runtime test ===
+  [PASS] building catalog compiles
+  [PASS] coal mine type exists
+  [PASS] role-rebuild country bootstraps
+  [PASS] role-rebuild runtime configures
+  [PASS] role-rebuild fixture bootstraps
+  [PASS] role-rebuild expansion queues
+  [PASS] same-key construction uses the count-only topology fast path
+  [PASS] construction rebuild preserves incumbent employee fill
+  [PASS] role-rebuild expansion conserves every ledger
+  [PASS] zero-resource country bootstraps
+  [PASS] zero-resource runtime configures
+  [PASS] zero-resource fixture bootstraps
+  [PASS] zero natural resource preserves assets, owner positions, and releases employees
+  [PASS] zero-resource cycle conserves every ledger
+  [PASS] owner-position country bootstraps
+  [PASS] owner-position runtime configures
+  [PASS] owner-position fixture bootstraps
+  [PASS] ACTIVE owner positions stay at physical capacity while output scales
+  [PASS] projected building income uses retained owners and includes retained livelihood
+  [PASS] multi-building owner opportunity quote scales output and in-kind value
+  [PASS] owner-position employment conserves every ledger
+  [PASS] positive self-employment does not oscillate through suspension
+  [PASS] birth-employment country bootstraps
+  [PASS] birth-employment runtime configures
+  [PASS] birth-employment fixture bootstraps
+  [PASS] birth structural commit creates one unemployed cohort member
+  [PASS] newborn does not fill the active owner opening in the same period
+  [PASS] phase-order country bootstraps
+  [PASS] phase-order runtime configures
+  [PASS] phase-order population and plant bootstrap
+  [PASS] phase-order cycle conserves all ledgers
+  [PASS] zero-cash employees spend same-cycle wage income
+  [PASS] same-cycle produced food is sold before household clearing
+  [PASS] cost-floor country bootstraps
+  [PASS] cost-floor runtime configures
+  [PASS] cost-floor plant bootstraps
+  [PASS] scarce output remains below its target inventory
+  [PASS] scarce output price rises to the rate-limited producer cost floor
+  [PASS] retention-cap country bootstraps
+  [PASS] retention-cap runtime configures
+  [PASS] retention-cap settlement bootstraps
+  [PASS] survival retention is positive but capped below production
+  [PASS] consumed retained output offsets livelihood without minting cash
+  [PASS] retention-cap output reconciles sale, retention, and discard
+  [PASS] retention-cap cycle conserves every ledger
+  [PASS] survival-food production keeps the subsistence probe floor
+  [PASS] rounding-tolerance cycle conserves every ledger
+  [PASS] multi-food retention country bootstraps
+  [PASS] multi-food retention runtime configures
+  [PASS] multi-food retention settlement bootstraps
+  [PASS] produce output remains retained beside a staple output
+  [PASS] multi-food retention cycle conserves every ledger
+  [PASS] flow-replacement country bootstraps
+  [PASS] flow-replacement runtime configures
+  [PASS] flow-replacement settlement bootstraps
+  [PASS] flow-replacement stock band is scheduled
+  [PASS] survival producer is paid while opening stock is above target
+  [PASS] flow-replacement procurement conserves every ledger
+  [PASS] open-access CPUE country bootstraps
+  [PASS] open-access CPUE runtime configures
+  [PASS] open-access CPUE fixture bootstraps
+  [PASS] open-access CPUE country bootstraps
+  [PASS] open-access CPUE runtime configures
+  [PASS] open-access CPUE fixture bootstraps
+  [PASS] open-access CPUE falls continuously with renewable stock density
+  [PASS] renewable-budget country bootstraps
+  [PASS] renewable-budget runtime configures
+  [PASS] renewable-budget fixture bootstraps
+  [PASS] renewable extractors share the five-day safe-harvest budget
+  [PASS] hunter-subsistence country bootstraps
+  [PASS] hunter-subsistence runtime configures
+  [PASS] hunter-subsistence settlement bootstraps
+  hunter runtime diag={ "state": [0], "output": [0], "capacity": [0], "funded": [0], "intent": [2730], "working": [0], "selected": [-1], "hunting_id": 359, "tool_good": 17, "good_ids": ["adobe_brick", "advanced_chips", "agricultural_machinery", "aluminum", "automobiles", "autonomous_systems", "bast_fiber", "batteries", "bauxite", "beverages", "bread", "bricks", "brine", "bronze_tools", "canned_fish", "cement", "charcoal", "chipped_stone_tools", "clay", "cloth", "clothing", "coal", "coke", "computers", "concrete", "construction_components", "copper", "copper_ore", "copper_tools", "corn_grain", "cotton_fiber", "crude_oil", "dairy_products", "detergent", "edible_oil", "electric_motor", "electrical_equipment", "electricity", "electronic_components", "engines", "explosives", "fertilizer", "fine_clothing", "fine_furniture", "fish", "flax_fiber", "flint", "footwear", "fur", "furniture", "game_meat", "gathered_plants", "glass", "glassware", "gold", "grain", "horses", "household_appliances", "industrial_chemicals", "industrial_machinery", "insulated_cable", "iron_ore", "jewelry", "latex", "lead", "lead_ore", "leather", "leather_goods", "lime", "limestone", "livestock_products", "logs", "lubricants", "lumber", "machine_parts", "manganese_ore", "manuscripts", "meat", "medicinal_herbs", "metal_housewares", "natural_gas", "natural_rubber", "nuclear_fuel", "oceanic_vessels", "packaging", "paper", "petrochemicals", "pharmaceuticals", "phosphate_rock", "plastics", "potatoes", "pottery", "precision_tools", "prepared_staples", "printed_materials", "processed_food", "radio_equipment", "railway_equipment", "rare_earth_metals", "rare_earth_ore", "raw_hide", "raw_stone", "reactor_components", "reed_bundle", "refined_fuel", "rice_grain", "salt", "saltpeter", "scientific_instruments", "seed_cotton", "semiconductors", "silica_sand", "silver", "soap", "spices", "stainless_steel", "steam_engines", "steel", "sulfur", "synthetic_fiber", "synthetic_rubber", "technology_points", "telecom_equipment", "tin", "tin_ore", "tools", "turf_block", "vegetables", "wheat_grain", "wire", "wool", "wrought_iron", "zinc", "zinc_ore"], "input_goods": [18, 51, 125, 110, 98, 58, 125, 37, 59, 121, 59, 116, 125, 8, 37, 125, 59, 21, 125, 26, 41, 2, 37, 23, 5, 125, 39, 117, 7, 81, 125, 37, 59, 121, 1, 35, 7, 125, 37, 59, 121, 128, 106, 125, 71, 125, 129, 117, 52, 37, 125, 111, 26, 58, 125, 37, 59, 121, 125, 6, 125, 64, 58, 125, 37, 59, 125, 40, 55, 84, 125, 37, 59, 61, 16, 125, 128, 84, 125, 55, 125, 18, 68, 125, 12, 71, 125, 125, 26, 123, 125, 73, 19, 125, 94, 108, 44, 106, 84, 125, 44, 106, 84, 125, 68, 18, 125, 71, 125, 76, 76, 111, 71, 125, 101, 125, 11, 68, 125, 51, 125, 125, 125, 45, 37, 125, 59, 19, 125, 125, 125, 66, 125, 21, 125, 51, 50, 71, 125, 70, 125, 96, 38, 89, 125, 37, 59, 121, 23, 37, 96, 15, 101, 125, 24, 117, 52, 125, 125, 27, 21, 125, 26, 16, 125, 125, 109, 125, 125, 19, 48, 125, 70, 125, 70, 84, 125, 125, 86, 58, 125, 37, 59, 125, 26, 37, 55, 91, 125, 125, 125, 125, 27, 16, 125, 125, 117, 125, 116, 125, 124, 71, 125, 125, 29, 125, 26, 117, 125, 37, 59, 121, 36, 129, 117, 89, 125, 37, 59, 21, 125, 106, 37, 125, 59, 121, 26, 123, 132, 89, 125, 37, 59, 117, 3, 74, 72, 125, 37, 59, 41, 125, 107, 118, 125, 130, 125, 125, 88, 21, 125, 19, 58, 37, 125, 59, 73, 19, 58, 125, 37, 59, 18, 16, 125, 125, 6, 125, 125, 125, 125, 66, 63, 125, 81, 125, 48, 125, 73, 19, 125, 80, 125, 125, 23, 122, 108, 37, 111, 125, 52, 125, 116, 21, 52, 125, 52, 125, 125, 54, 125, 73, 125, 45, 125, 100, 125, 125, 125, 125, 36, 117, 89, 125, 37, 59, 125, 6, 125, 51, 125, 36, 125, 118, 106, 125, 74, 116, 125, 121, 108, 37, 125, 40, 129, 89, 125, 37, 59, 120, 41, 2, 37, 125, 125, 131, 16, 54, 125, 37, 59, 46, 41, 125, 63, 71, 125, 125, 40, 65, 21, 125, 94, 108, 66, 125, 116, 21, 58, 66, 125, 58, 66, 125, 100, 58, 125, 69, 125, 125, 31, 125, 71, 125, 23, 1, 37, 117, 72, 125, 125, 125, 40, 125, 81, 125, 109, 125, 2, 125, 70, 59, 125, 125, 125, 125, 131, 125, 116, 21, 131, 125, 131, 125, 59, 116, 125, 23, 37, 8, 37, 125, 59, 5, 117, 39, 37, 59, 23, 125, 39, 117, 7, 81, 125, 37, 59, 5, 125, 37, 23, 5, 121, 117, 39, 37, 23, 5, 121, 125, 64, 58, 125, 37, 59, 5, 125, 40, 23, 18, 59, 125, 68, 18, 125, 23, 37, 59, 21, 125, 23, 37, 59, 15, 101, 125, 23, 37, 59, 41, 2, 37, 23, 5, 125, 2, 125, 41, 2, 37, 23, 125, 86, 58, 125, 37, 59, 5, 29, 125, 59, 26, 117, 125, 37, 59, 5, 26, 123, 132, 89, 125, 37, 59, 5, 117, 3, 74, 72, 125, 37, 59, 5, 107, 118, 125, 5, 37, 59, 107, 118, 125, 35, 37, 59, 41, 2, 37, 23, 5, 125, 125, 125, 2, 125, 41, 2, 37, 23, 125, 125, 125, 37, 23, 108, 125, 41, 2, 37, 23, 125, 36, 117, 89, 125, 37, 59, 5, 74, 116, 125, 23, 37, 129, 89, 125, 37, 59, 5, 2, 125, 125, 40, 23, 65, 21, 125, 23, 37, 59, 69, 59, 125, 59, 125, 31, 125, 23, 37, 59, 71, 125, 71, 125, 71, 116, 21, 125, 117, 72, 125, 23, 37, 59, 41, 2, 37, 23, 5, 125, 41, 2, 37, 23, 125, 125, 40, 5, 125, 81, 125, 41, 2, 37, 23, 5, 125, 41, 37, 125, 41, 2, 37, 23, 125, 59, 37, 5, 125, 98, 125, 37, 59, 5, 73, 19, 26, 52, 125, 37, 59, 85, 125, 37, 59, 31, 80, 125, 37, 59, 5, 125, 40, 23, 86, 125, 37, 59, 5, 2, 125, 41, 2, 37, 23, 5, 125, 125, 41, 41, 2, 37, 23, 125, 18, 71, 125, 125, 108, 5, 37, 59, 125, 108, 35, 37, 59, 85, 125, 37, 59, 60, 38, 89, 125, 37, 59, 5, 125, 40, 5, 99, 125, 37, 59, 5, 117, 98, 36, 125, 37, 59, 5, 31, 125, 37, 59, 5, 41, 2, 37, 23, 5, 125, 125, 125, 2, 125, 41, 2, 37, 23, 125, 41, 2, 37, 23, 5, 125, 2, 125, 41, 2, 37, 23, 125, 125, 5, 125, 35, 52, 26, 125, 5, 37, 59, 52, 26, 125, 35, 37, 59, 2, 37, 23, 5, 125, 34, 106, 125, 59, 41, 2, 37, 23, 125, 41, 2, 37, 23, 5, 125, 2, 125, 41, 2, 37, 23, 125, 117, 98, 75, 125, 37, 59, 5, 22, 117, 125, 23, 125, 37, 59, 73, 117, 116, 21, 125, 125, 125, 125, 125, 5, 125, 35, 86, 125, 37, 59, 5, 86, 118, 125, 37, 59, 5, 125, 125, 41, 2, 37, 23, 5, 125, 125, 125, 41, 2, 125, 41, 2, 37, 23, 125, 26, 125, 37, 59, 5, 70, 125, 70, 125, 125, 40, 23, 133, 21, 125, 23, 37, 59, 100, 125, 85, 125, 108, 37, 125, 125, 59, 37, 125, 98, 125, 37, 59, 121, 82, 102, 121, 125, 82, 102, 125, 115, 73, 19, 26, 52, 125, 59, 37, 125, 104, 125, 18, 16, 125, 26, 123, 16, 85, 125, 71, 58, 125, 100, 125, 125, 31, 80, 125, 37, 59, 78, 58, 125, 125, 40, 6, 125, 86, 125, 37, 59, 108, 21, 125, 125, 18, 16, 125, 41, 2, 37, 23, 125, 125, 108, 121, 125, 85, 125, 94, 93, 77, 127, 34, 84, 125, 37, 59, 60, 38, 89, 125, 37, 59, 121, 45, 125, 117, 35, 125, 37, 59, 121, 125, 125, 2, 125, 125, 40, 99, 125, 37, 59, 117, 98, 36, 125, 37, 59, 121, 125, 31, 125, 37, 59, 125, 125, 125, 125, 125, 125, 52, 26, 125, 121, 91, 111, 58, 37, 125, 59, 125, 125, 125, 70, 106, 125, 125, 52, 125, 37, 5, 66, 125, 37, 5, 58, 131, 125, 37, 5, 23, 37, 5, 121, 34, 106, 125, 12, 125, 125, 125, 125, 125, 117, 98, 75, 125, 37, 59, 55, 84, 125, 55, 106, 125, 125, 22, 117, 125, 121, 125, 117, 116, 125, 61, 22, 125, 116, 61, 37, 125, 59, 17, 125, 125, 125, 125, 125, 86, 125, 37, 59, 86, 118, 125, 37, 59, 119, 37, 125, 59, 19, 125, 100, 125, 106, 110, 38, 129, 7, 89, 125, 37, 59, 121, 125, 125, 125, 125, 45, 21, 125, 125, 125, 125, 40, 124, 21, 125, 117, 73, 125, 125, 108, 23, 37, 125, 125, 125, 125, 125, 125, 125, 125, 125, 26, 125, 37, 85, 125, 70, 125, 125, 40, 133, 21, 125], "hunting_input": { "type": 359, "rows": [{ "good": 17, "candidates": [17, 17, 17, 17, 17] }] }, "last_input": [0], "input_cost": [0], "owner_funds": 50000 }
+  [FAIL] hunter subsistence remains an active explicitly financed producer
+  [PASS] hunter fixture exercises working-capital protection
+  [PASS] hunter-subsistence cycles conserve every ledger
+  [PASS] household-stock recovery country bootstraps
+  [PASS] household-stock recovery runtime configures
+  [PASS] household-stock recovery settlement bootstraps
+  [PASS] non-survival hearth cannot reserve staple food ahead of households
+  [PASS] household-stock recovery drain queues
+  [PASS] one-unit raw stock does not block shortage recovery
+  [PASS] business-demand recovery country bootstraps
+  [PASS] business-demand recovery runtime configures
+  [PASS] business-demand recovery fixture bootstraps
+  [PASS] business-only tool demand remains visible to production planning
+  [FAIL] business shortage keeps knapping above the industrial probe floor
+  [PASS] business-demand recovery cycles conserve every ledger
+  [PASS] shortage-propagation country bootstraps
+  [PASS] shortage-propagation runtime configures
+  [PASS] shortage-propagation fixture bootstraps
+  [PASS] missing input keeps a bounded purchase intent
+  [PASS] missing input publishes unfunded upstream demand
+  [PASS] upstream demand reaches the business-demand EMA
+  [PASS] flint quarry receives a production opportunity
+  [PASS] flint stock recovers without synthetic goods
+  [PASS] knapping eventually resumes after flint recovery
+  [PASS] shortage-propagation cycles conserve every ledger
+  [PASS] leontief-derived country bootstraps
+  [PASS] leontief-derived runtime configures
+  [PASS] leontief-derived fixture bootstraps
+  [FAIL] vacant knapping remains unstaffed in derived-demand fixture
+  [PASS] tool shortage derives flint shadow demand without knapping sales
+  [FAIL] derived flint demand lifts flint price over cold-start cycles
+  [PASS] leontief-derived cycles conserve every ledger
+  [PASS] derived demand diagnostics are published
+  [PASS] input-reserve country bootstraps
+  [PASS] input-reserve runtime configures
+  [PASS] input-reserve settlement bootstraps
+  [PASS] tool stock protects the complete next-period hunting input
+  [PASS] reserved tools start the next hunting period
+  [PASS] input-reserve cycles conserve every ledger
+  [PASS] soft-input country bootstraps 184
+  [PASS] soft-input runtime configures 184
+  [PASS] soft-input settlement bootstraps 184
+  [PASS] soft-input country bootstraps 185
+  [PASS] soft-input runtime configures 185
+  [PASS] soft-input settlement bootstraps 185
+  [PASS] soft hunting input keeps partial output without tools
+  [PASS] soft hunting input still rewards available tools
+  [PASS] soft-input shortage cycles conserve every ledger
+  [PASS] producer-support country bootstraps
+  [PASS] producer-support runtime configures
+  [PASS] producer-support settlement bootstraps
+  [PASS] producer-support trace target registers
+  [PASS] zero-cash merchant spends nothing on producer output
+  [PASS] bounded support accepts its quota and explicitly reports the remainder
+  [PASS] support issuance uses exactly twenty percent of frozen retail value
+  [PASS] support issuance is a distinct producer cashflow
+  [PASS] support issuance is explicitly audited
+  [PASS] cycle-flow clearing country bootstraps
+  [PASS] cycle-flow clearing runtime configures
+  [PASS] cycle-flow clearing settlement bootstraps
+  [PASS] cycle-flow output receives low-price clearing before discard
+  [PASS] cycle-flow clearing still discards transient stock at boundary
+  [PASS] cycle-flow support cycle conserves every ledger
+  [PASS] construction-shortage country bootstraps
+  [PASS] construction-shortage runtime configures
+  [PASS] construction-shortage settlement bootstraps
+  [PASS] construction-shortage build command queues
+  [PASS] construction shortage rejects the build command
+  [PASS] rejected construction does not pollute business demand EMA
+  [PASS] rejected construction preserves every ledger
+  [PASS] owner-reconcile country bootstraps
+  [PASS] owner-reconcile runtime configures
+  [PASS] owner-reconcile fixture bootstraps
+  [PASS] owner-reconcile artisan handle exists
+  [PASS] owner-reconcile population loss queues
+  [PASS] owner snapshot separates capacity, planned jobs, and openings
+  [PASS] shared owner signature fill reconciles to cohort employment
+  [PASS] released owner target hires from the unemployed pool
+  [PASS] owner reconciliation conserves every ledger
+  [PASS] last-demolition country bootstraps
+  [PASS] last-demolition runtime configures
+  [PASS] last-demolition fixture bootstraps
+  [PASS] last-demolition mine initially employs miners
+  [PASS] last-demolition command queues
+  [PASS] last demolition removes the final building group
+  [PASS] idle professions migrate into the unemployed cohort
+  [PASS] last-demolition reconciliation conserves every ledger
+  [PASS] non-due construction country bootstraps
+  [PASS] non-due construction runtime configures
+  [PASS] non-due construction fixture bootstraps
+  [PASS] non-due construction command queues
+  [PASS] non-due employment metrics atomically add the first cell contribution
+  [PASS] non-due construction conserves every ledger
+  [PASS] owner-job mobility country bootstraps
+  [PASS] owner-job mobility runtime configures
+  [PASS] owner-job mobility fixture bootstraps
+  [PASS] higher owner income attracts the final low-income ACTIVE owner
+  [PASS] cross-profession owner movement transfers population and funds proportionally
+  [PASS] income-driven owner movement restores target production
+  [PASS] owner-job mobility conserves every ledger
+  [PASS] employee-owner mobility country bootstraps
+  [PASS] employee-owner mobility runtime configures
+  [PASS] employee-owner mobility fixture bootstraps
+  employee-owner debug={ "gathering_income": 0, "gathering_filled": 0, "timber_filled": 2, "gathering_sold": 2140, "gathering_output": 14500, "realloc": 1, "profession_changes": 1 }
+  [FAIL] higher food owner income attracts an incumbent mining employee
+  [PASS] employee-owner mobility retains the final merchant and produces food
+  [PASS] employee-owner mobility conserves every ledger
+  [PASS] job-to-job country bootstraps
+  [PASS] job-to-job runtime configures
+  [PASS] job-to-job fixture bootstraps
+  [PASS] zero-unemployment employee moves to higher collectible pay
+  [PASS] unfunded new good cannot advertise its nominal contract
+  [PASS] job-to-job transition conserves every ledger
+  [PASS] merchant mobility country bootstraps
+  [PASS] merchant mobility runtime configures
+  [PASS] merchant mobility fixture bootstraps
+  [PASS] surplus merchant changes profession while final merchant is retained
+  [PASS] same-profession mobility country bootstraps
+  [PASS] same-profession mobility runtime configures
+  [PASS] same-profession mobility fixture bootstraps
+  [PASS] same-profession owner movement only reallocates group fill
+  [PASS] same-profession owner movement conserves every ledger
+  [PASS] owner-job probability country bootstraps
+  [PASS] owner-job probability runtime configures
+  [PASS] owner-job probability fixture bootstraps
+  probability fixture=[47847, 0]/[1, 0]/0/0
+  [PASS] lower-income vacancy does not attract an incumbent owner
+  [PASS] unemployed-first mobility country bootstraps
+  [PASS] unemployed-first mobility runtime configures
+  [PASS] unemployed-first mobility fixture bootstraps
+  [PASS] unemployed owner hiring precedes ACTIVE owner attraction
+  [PASS] unemployed-first owner hiring conserves every ledger
+  [PASS] understaffed-raid country bootstraps
+  [PASS] understaffed-raid runtime configures
+  [PASS] understaffed-raid fixture bootstraps
+  [FAIL] understaffed owner lots do not thrash on a small opportunity gap
+  [PASS] understaffed-raid conserves every ledger
+  [PASS] understaffed-flow country bootstraps
+  [PASS] understaffed-flow runtime configures
+  [PASS] understaffed-flow fixture bootstraps
+  [PASS] understaffed labor concentrates on the higher-opportunity lot
+  [PASS] understaffed-flow conserves every ledger
+  [PASS] unemployment-subsidy country configures
+  [PASS] unemployment-subsidy country bootstraps
+  [PASS] unemployment-subsidy policy commits
+  [PASS] unemployment-subsidy economy configures
+  [PASS] unemployment-subsidy fixture bootstraps
+  [PASS] funded unemployment subsidy is job reservation income
+  [PASS] funded unemployment subsidy remains a fiscal transfer
+  [PASS] owner-investment country bootstraps
+  [PASS] owner-investment runtime configures
+  [PASS] owner-investment settlement bootstraps
+  [PASS] owner-investment diagnostic trace registers
+  [FAIL] employment fills the existing profitable owner opening first
+  [PASS] existing owner-opening employment conserves every ledger
+  [PASS] profitable unlocked-building investment transitions its sponsor and starts construction
+  [PASS] investment v9 publishes one consistent marginal-output driver
+  [PASS] legacy signal thresholds and sales ratios do not veto positive marginal demand
+  [PASS] endogenous construction conserves every ledger
+  [PASS] non-review day prevents repeat expansion
+  [PASS] merit-order country bootstraps
+  [PASS] merit-order runtime configures
+  [PASS] merit-order settlement bootstraps
+  [PASS] low-cost plant captures merchant quota before high-cost leftover
+  [PASS] merit-order offtake conserves every ledger
+  [PASS] displacement country bootstraps
+  [PASS] displacement runtime configures
+  [PASS] displacement settlement bootstraps
+  [PASS] displacement diagnostic trace registers
+  displacement debug={ "steam_row": 353, "reject": 0, "stealable": 0, "pending": false, "starts": 0, "catchup_cells": 1, "cheap_count": 1 }
+  [FAIL] cheaper unlocked type can displace covered high-cost incumbents
+  [PASS] displacement investment conserves every ledger
+  [PASS] first-research fixture catalog contains the required entries
+  [PASS] first-research country configures
+  [PASS] first-research country bootstraps
+  [PASS] first-research queue and automatic procurement commit
+  [PASS] first-research economy configures
+  [PASS] first-research economy fixture bootstraps
+  [PASS] first-research fixture starts without a research building
+  [PASS] automatic investment starts the first research building
+  [PASS] first research building is committed after investment
+  [PASS] research auto-investment preserves every ledger
+  [PASS] employment-catchup country bootstraps
+  [PASS] employment-catchup runtime configures
+  [PASS] employment-catchup fixture injects 35 additional unemployed
+  [FAIL] high unemployment activates catch-up and starts jobs within 30 days
+  [FAIL] employment catch-up lowers unemployment strictly below 25 percent in 365 days
+  [PASS] employment-catchup regression conserves every ledger
+  [PASS] collector-investment country bootstraps
+  [PASS] collector-investment runtime configures
+  [PASS] collector-investment fixture bootstraps
+  [PASS] collector-investment diagnostic trace registers
+  [PASS] logs demand can fund and construct a local timber collector
+  [PASS] collector investment conserves every ledger
+  [PASS] substitute-price country bootstraps
+  [PASS] substitute-price runtime configures
+  [PASS] substitute-price fixture bootstraps
+  [PASS] expensive construction substitute never aborts the economy runtime
+  [PASS] investment batch stays within the funded construction invoice
+  [PASS] substitute-capped investment conserves every ledger
+  [PASS] non-starter producers consume positive explicit construction materials
+  [PASS] maintenance CSR columns exist
+  [PASS] farm and kiln maintenance recipes differ
+  [PASS] ocean fishery has an executable oceanic-vessel replacement sink
+  [PASS] installed-maintenance country bootstraps
+  [PASS] installed-maintenance runtime configures
+  [PASS] installed-maintenance fixture bootstraps
+  [PASS] installed mine keeps construction-material buffer without new starts
+  [PASS] maintenance is a paid operating cost
+  [PASS] storable industrial continuity still conserves ledgers
+  [PASS] existing-market entry country bootstraps
+  [PASS] existing-market entry runtime configures
+  [PASS] existing-market entry fixture bootstraps
+  [PASS] existing-market investment diagnostics register
+  [PASS] collector investment reaches economic gates alongside industrial reviews
+  [PASS] existing-market entry review conserves every ledger
+  [PASS] input-coverage country bootstraps
+  [PASS] input-coverage runtime configures
+  [PASS] input-coverage fixture bootstraps
+  [PASS] missing input coverage blocks further entry
+  [PASS] input-coverage review conserves every ledger
+  [PASS] owner-livelihood country bootstraps
+  [PASS] owner-livelihood runtime configures
+  [PASS] owner-livelihood fixture bootstraps
+  [PASS] shortage cannot approve a workshop that misses owner livelihood
+  [PASS] realized workshop margin includes owner livelihood
+  [PASS] incumbent-gathering country bootstraps
+  [PASS] incumbent-gathering runtime configures
+  [PASS] incumbent-gathering fixture bootstraps
+  [PASS] incumbent-gathering diagnostic trace registers
+  [PASS] incumbent gathering camps settled with positive livelihood
+  [PASS] incumbent gathering expansion is not rejected for owner livelihood
+  [PASS] incumbent gathering livelihood review conserves every ledger
+  [PASS] owner-only loss country bootstraps
+  [PASS] owner-only loss runtime configures
+  [PASS] owner-only loss fixture bootstraps
+  [PASS] installed loom keeps logs construction reserve
+  [PASS] owner livelihood loss counts without input or payroll cost
+  [PASS] third owner-only livelihood loss suspends the workshop
+  [PASS] recovery-pending country bootstraps
+  [PASS] recovery-pending runtime configures
+  [PASS] recovery-pending fixture bootstraps
+  [PASS] recovery-pending fixture reaches suspension with released owner
+  [PASS] recovery-pending owner removal queues
+  [PASS] failed restart remains fully suspended without a probe state
+  [PASS] next due cycle keeps suspension without rehiring
+  [PASS] suspended building has no recovery cooldown or probe capacity
+  [PASS] recovery-pending cycles conserve every ledger
+  [PASS] service lifecycle country bootstraps
+  [PASS] service lifecycle runtime configures
+  [PASS] service lifecycle fixture bootstraps
+  [PASS] merchant post never enters producer loss suspension
+  [PASS] dead-merchant investment country bootstraps
+  [PASS] dead-merchant investment runtime configures
+  [PASS] dead-merchant investment fixture bootstraps
+  [PASS] structural commit repairs merchant before the capital review
+  [PASS] repaired merchant supports the next endogenous construction review
+  [PASS] dead-merchant construction conserves every ledger
+  [PASS] continuation country bootstraps
+  [PASS] continuation runtime configures
+  [PASS] continuation fixture bootstraps
+  [PASS] one-cell building budget enters bounded continuation
+  [PASS] due rolling bucket completes through continuation slices
+  [PASS] completed rolling transaction can save immediately
+  [PASS] sliced building plan commits with exact conservation
+  [PASS] reference continuation country bootstraps
+  [PASS] reference continuation runtime configures
+  [PASS] reference continuation fixture bootstraps
+  [PASS] continuation slice budget preserves authoritative hash
+  [PASS] production scalar country bootstraps
+  [PASS] production worker country bootstraps
+  [PASS] production scalar runtime configures
+  [PASS] production worker runtime configures
+  [PASS] production scalar fixture bootstraps
+  [PASS] production worker fixture bootstraps
+  [PASS] building production dispatches multiple worker tasks
+  [PASS] sub-threshold production uses weighted parallel dispatch
+  [PASS] building plan uses weighted parallel dispatch
+  [PASS] building production worker and scalar hashes match
+  [PASS] building production worker and scalar event hashes match
+  [PASS] building production worker conserves all ledgers
+  [PASS] weighted worker remains scalar-equivalent across rolling phases
+  [PASS] incremental opening audit preserves exact rolling ledgers
+  [PASS] opening audit exercises fast and full verification paths
+  [PASS] INCREMENTAL closing audit exercises fast and full verification paths
+  [PASS] INCREMENTAL closing audit remains enabled and exact
+  [PASS] investment review list executes every scheduled cell exactly once
+  [PASS] ACTIVE investment sparse filter evaluates a strict candidate subset
+  [PASS] ACTIVE investment sparse filter reports no viable-candidate mismatch
+  [PASS] merchant-finance country bootstraps
+  [PASS] merchant-finance runtime configures
+  [PASS] merchant-finance fixture bootstraps
+  [PASS] cashless owner submits merchant-financed construction
+  [PASS] merchant financing draws principal and records five-percent premium
+  [PASS] last local merchant remains a merchant while financing construction
+  [PASS] merchant-financed construction conserves all ledgers
+  [PASS] all-technology test country bootstraps
+  [PASS] building runtime configures
+  [PASS] employment mobility policy is exposed deterministically
+  [PASS] building population bootstraps
+  [PASS] untracked settlement detail is unavailable
+  [PASS] inspector trace target registers
+  [PASS] new inspector trace reports pending until commit
+  [PASS] industrialist owner handle exists
+  [PASS] build command accepted
+  [PASS] construction cycle commits
+  [PASS] new building group triggers one batched topology rebuild
+  [PASS] mine completes at cycle boundary
+  [PASS] production cycle conserves population
+  [PASS] production cycle conserves money
+  [PASS] production cycle conserves market goods
+  [PASS] building snapshot reports five-day production period
+  [PASS] owner job filled
+  [PASS] active utilization remains bounded and keeps jobs
+  [PASS] mine produces output
+  [PASS] merchant buys at least part of output
+  [PASS] installed mine keeps construction-material buffer
+  [PASS] maintenance is a paid operating cost
+  [PASS] merchant procurement freezes a 12.5 percent reserve and stays in budget
+  [PASS] shortage cannot lift merchant producer settlement above configured factor
+  [PASS] merchant liquidity report reconciles assets and operating outflow
+  [PASS] selected market exposes merchant economic assets instead of cohort funds only
+  [PASS] ordinary non-survival coal enters the market instead of owner retention
+  [PASS] building output reconciles sale, owner retention, and discard
+  [PASS] adaptive contract wages respect each role living floor
+  [PASS] building snapshot separates base wage and bonus
+  [PASS] zero filled employee roles cannot carry paid base wages
+  [PASS] owner-lot bonus is exact after fully funded base payroll
+  [PASS] building snapshot reports priced tool input cost
+  [PASS] worker cohort has real employee count
+  [PASS] adaptive wages reach worker and manager cohorts
+  [PASS] owner expense includes base payroll and bonus
+  [PASS] committed settlement cashflow detail is available
+  [PASS] worker cashflow sources reconcile to epoch ledger
+  [PASS] manager cashflow sources reconcile to epoch ledger
+  [PASS] owner cashflow sources reconcile to epoch ledger
+  [PASS] settlement classifies wages and owner operations
+  [PASS] settlement classifies merchant household and procurement flows
+  [PASS] wage report is exact and fully funded
+  [PASS] sold coal enters local stock
+  [PASS] price v3 publishes sparse coal supply and cost anchor
+  [PASS] market publishes realized withdrawals and merchant inventory targets
+  [PASS] building snapshot publishes economic cost diagnostics
+  [PASS] resource extraction publishes negative extra delta
+  [PASS] extractive building reports no generated resource
+  [PASS] building snapshot exposes current and effective resource reserves
+  [PASS] building snapshot stays committed
+  [PASS] merchant cash purchase and bounded support stop at the inventory target
+  [PASS] owner cash drain command accepted
+  [PASS] unfunded active employment keeps its payroll commitment
+  [PASS] unpaid role lowers collectible expected wage below contract
+  [PASS] producer-income inventory floor preserves the next active production plan
+  [PASS] zero owner input funds preserve intent but suppress funded production
+  [PASS] unfunded active contract remains explicitly wage-suspended
+  [PASS] insolvent wage cycle conserves money and goods
+  [PASS] cash-drained cycle preserves the prior profitable settlement once
+  [PASS] treasury transfer is exposed as a settlement source
+  [PASS] first execution-blocked cycle is not classified as a loss
+  [PASS] repeated execution blockage remains active without loss accumulation
+  [PASS] recovery fixture schedules cash drain and merchant input replenishment
+  [PASS] third execution-blocked cycle remains active
+  [PASS] blocked active building retains its owner and restart intent
+  [PASS] blocked producer keeps explicit unfunded upstream demand
+  [PASS] building PKCN save begins
+  [PASS] building PKCN save completes
+  [PASS] building v52 save begins
+  [PASS] building save completes
+  [PASS] building restore country configures first
+  [PASS] building PKCN restore begins
+  [PASS] building PKCN chunk accepted
+  [PASS] building PKCN chunk accepted
+  [PASS] building PKCN chunk accepted
+  [PASS] building PKCN chunk accepted
+  [PASS] building PKCN chunk accepted
+  [PASS] building PKCN chunk accepted
+  [PASS] building PKCN chunk accepted
+  [PASS] building PKCN chunk accepted
+  [PASS] building PKCN chunk accepted
+  [PASS] building PKCN chunk accepted
+  [PASS] building PKCN restore completes
+  [PASS] building restore target configures
+  [PASS] building restore begins
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore completes
+  [PASS] building save hash round-trips
+  [PASS] restored mine preserves active blocked lifecycle classification
+restore divergence hash=6697136364536480085/8161019862364221283 generation=9/9 price_equal=false
+  [FAIL] restored building input spans survive the first production cycle
+  [PASS] restored inputs resume through the active path without a recovery probe
+  [PASS] first recovery cycle conserves all ledgers
+  [PASS] profitable alternative coexists with the active blocked building
+  [PASS] restart cycle conserves all ledgers
+  [PASS] blocked building remains retryable without losing either building group
+  [PASS] resumed production conserves all ledgers
+=== native building runtime FAIL ===
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 276 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

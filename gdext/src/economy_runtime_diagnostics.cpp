@@ -1000,6 +1000,7 @@ Dictionary NativeEconomyRuntime::compact_report() const {
     out["max_state_age_days"] = _settlement_max_age_days;
     out["fatal_reason"] = String(_fatal_reason.c_str());
     out["fatal"] = _fatal;
+    out["restore_rejected_reason"] = String(_restore_rejected_reason.c_str());
     out["commit_over_budget"] = _epoch_active && age_days > _commit_lag_budget_days;
     out["commit_due"] = commit_due;
     out["boundary_continuation_required"] = false;
@@ -1997,6 +1998,8 @@ Dictionary NativeEconomyRuntime::report() const {
     out["derived_business_demand_weight_q16"] = _derived_business_demand_weight_q16;
     out["funded_business_demand"] = _funded_business_demand;
     out["unfunded_business_demand"] = _unfunded_business_demand;
+    out["active_unfunded_building_groups"] = _active_unfunded_building_groups;
+    out["last_merchant_protected_rejects"] = _last_merchant_protected_rejects;
     out["owner_working_capital_allocated"] = _owner_working_capital_allocated;
     out["production_inputs_consumed"] = _production_inputs_consumed;
     out["production_output_stock"] = _production_output_stock;
@@ -2370,6 +2373,7 @@ Dictionary NativeEconomyRuntime::report() const {
     out["saturation_count"] = _saturation_count;
     out["fatal_reason"] = String(_fatal_reason.c_str());
     out["fatal"] = _fatal;
+    out["restore_rejected_reason"] = String(_restore_rejected_reason.c_str());
     out["commit_lag_budget_days"] = _commit_lag_budget_days;
     out["commit_over_budget"] = _epoch_active && age_days > _commit_lag_budget_days;
     out["commit_due"] = commit_due;

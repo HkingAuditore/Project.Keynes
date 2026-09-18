@@ -1316,28 +1316,37 @@ bool NativeEconomyRuntime::run_building_production_cell(
             int64_t requested_credit = g < static_cast<int32_t>(
                 _building_merchant_credit_limit.size())
                 ? std::max<int64_t>(0, _building_merchant_credit_limit[g]) : 0;
-            if (requested_credit <= 0) {
-                // Ordinary zero-cash enterprises must remain unfunded until a
-                // review explicitly reserves a restart.  Survival producers
-                // retain the bounded merchant-backed input lane; this keeps a
-                // hunter ACTIVE without turning a drained industrial owner
-                // into an implicit perpetual borrower.
-                bool survival_output = false;
-                for (int32_t oi = 0; oi < type.output_count; ++oi) {
-                    const int32_t good = _building_outputs[type.output_begin + oi].good_id;
-                    if (good >= 0 && good < static_cast<int32_t>(_survival_food_good_mask.size()) &&
-                        (_survival_food_good_mask[good] != 0 || _survival_clothing_good_mask[good] != 0)) {
-                        survival_output = true;
-                        break;
-                    }
+            bool survival_output = false;
+            bool cycle_flow_output = false;
+            for (int32_t oi = 0; oi < type.output_count; ++oi) {
+                const int32_t good = _building_outputs[type.output_begin + oi].good_id;
+                if (good >= 0 && good < static_cast<int32_t>(_survival_food_good_mask.size()) &&
+                    (_survival_food_good_mask[good] != 0 || _survival_clothing_good_mask[good] != 0)) {
+                    survival_output = true;
                 }
-                if (survival_output) {
-                    const int64_t quoted_request = group_input_cost_at_scale(
-                        group, type, std::clamp<int64_t>(intent_scale_q16, 0,
-                            Q16_ONE), false);
-                    if (quoted_request != std::numeric_limits<int64_t>::max())
-                        requested_credit = std::max<int64_t>(0, quoted_request);
+                if (good >= 0 && good < static_cast<int32_t>(_good_storage_modes.size()) &&
+                    _good_storage_modes[good] == 1) {
+                    cycle_flow_output = true;
                 }
+            }
+            // Probe floors: durable industrial 1/32, cycle-flow 1/6.
+            const int64_t industrial_probe_floor = cycle_flow_output
+                ? std::max<int64_t>(1, Q16_ONE / 6)
+                : std::max<int64_t>(1, Q16_ONE / 32);
+            const int64_t credit_floor_scale = survival_output
+                ? std::clamp<int64_t>(intent_scale_q16, 0, Q16_ONE)
+                : std::clamp<int64_t>(
+                    std::min<int64_t>(intent_scale_q16, industrial_probe_floor),
+                    0, Q16_ONE);
+            if (requested_credit <= 0 && _merchant_credit_runtime_mode == 2 &&
+                credit_floor_scale > 0) {
+                // Hunter/collector livelihood and bounded industrial probe
+                // floors may auto-request merchant-backed input credit.
+                // Shadow derived demand never expands this request.
+                const int64_t quoted_request = group_input_cost_at_scale(
+                    group, type, credit_floor_scale, false);
+                if (quoted_request != std::numeric_limits<int64_t>::max())
+                    requested_credit = std::max<int64_t>(0, quoted_request);
             }
             const int64_t credit_cap = _merchant_credit_runtime_mode == 2
                 ? std::min<int64_t>(cell_credit_remaining, requested_credit) : 0;
@@ -1450,6 +1459,25 @@ bool NativeEconomyRuntime::run_building_production_cell(
             group.purchase_intent_capacity_q16 = intent_scale_q16;
             group.last_capacity_q16 = scale_q16;
             _building_funded_capacity_q16[g] = scale_q16;
+            // ACTIVE_UNFUNDED: retain bounded purchase intent and stay ACTIVE
+            // when finance (not physics) is the binding constraint.
+            if (group.operating_state == 0 && intent_scale_q16 > 0 &&
+                scale_q16 < intent_scale_q16 && settlement_budget <= 0 &&
+                credit_cap <= 0) {
+                group.purchase_intent_capacity_q16 = std::max<int64_t>(
+                    group.purchase_intent_capacity_q16,
+                    industrial_probe_floor);
+                result.active_unfunded_building_groups = saturating_add(
+                    result.active_unfunded_building_groups, 1, _saturation_count);
+            } else if (group.operating_state == 0 && intent_scale_q16 > 0 &&
+                       scale_q16 == 0 && owner_contribution_cap <= 0 &&
+                       drawable_credit <= 0) {
+                group.purchase_intent_capacity_q16 = std::max<int64_t>(
+                    group.purchase_intent_capacity_q16,
+                    industrial_probe_floor);
+                result.active_unfunded_building_groups = saturating_add(
+                    result.active_unfunded_building_groups, 1, _saturation_count);
+            }
             if (group.last_climate_capacity_q16 < Q16_ONE) {
                 for (int32_t i = 0; i < type.output_count; ++i) {
                     const GoodAmount &output = _building_outputs[type.output_begin + i];
@@ -1576,16 +1604,18 @@ bool NativeEconomyRuntime::run_building_production_cell(
                     draw > drawable_credit ||
                     debit_local_merchants(cell, draw, CASHFLOW_MERCHANT_BUSINESS,
                                           &_saturation_count) != draw) {
-                    error = "building_input_credit_preflight_drift:cell=" +
-                        std::to_string(cell) +
-                        ",group=" + std::to_string(g) +
-                        ",type=" + std::to_string(group.type_id) +
-                        ",cost=" + std::to_string(cash_input_outlay) +
-                        ",owner_cap=" + std::to_string(owner_contribution_cap) +
-                        ",draw=" + std::to_string(draw) +
-                        ",credit_cap=" + std::to_string(credit_cap) +
-                        ",drawable=" + std::to_string(drawable_credit);
-                    return false;
+                    // Credit exhaustion must keep the building ACTIVE with
+                    // bounded purchase intent. Fail-closed abort of the whole
+                    // cell would masquerade finance shortfalls as hard errors.
+                    group.last_capacity_q16 = 0;
+                    _building_funded_capacity_q16[g] = 0;
+                    group.purchase_intent_capacity_q16 = std::max<int64_t>(
+                        group.purchase_intent_capacity_q16,
+                        industrial_probe_floor);
+                    result.active_unfunded_building_groups = saturating_add(
+                        result.active_unfunded_building_groups, 1,
+                        _saturation_count);
+                    continue;
                 }
                 touch_accounting_slot(owner_slot);
                 population_store().funds[owner_slot] = saturating_add(
@@ -3285,6 +3315,7 @@ void NativeEconomyRuntime::merge_building_production_result(ProductionResult &re
     merge(_desired_business_demand, result.desired_business_demand);
     merge(_funded_business_demand, result.funded_business_demand);
     merge(_unfunded_business_demand, result.unfunded_business_demand);
+    merge(_active_unfunded_building_groups, result.active_unfunded_building_groups);
     merge(_market_signal_updates, result.market_signal_updates);
     merge(_merchant_credit_committed, result.merchant_credit_committed);
     merge(_merchant_credit_drawn, result.merchant_credit_drawn);

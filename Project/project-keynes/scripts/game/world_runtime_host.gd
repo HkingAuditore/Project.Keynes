@@ -63,6 +63,9 @@ var runtime_parity_forcing: bool = false
 var runtime_events_probe_enabled: bool = false
 ## Forwarded into start_runtime_worker. Default ACTIVE_ONLY (SHADOW StageOps = 0).
 var runtime_economy_execution_mode: String = "ACTIVE_ONLY"
+## Keep auto POD_ACTIVE off for player sessions until Effect ACK under worker
+## ownership no longer pins country/economy day barriers.
+var runtime_economy_auto_pod_active: bool = false
 ## 把 Climate 域交给 worker 当权威（per-domain ACTIVE），其余十一个域留在主线程。
 ## 打开后 dispatch_system_schedule 一次性抑制 14 个 climate 节点，MapData 由
 ## _consume_runtime_commit_if_ready 里的回灌写。
@@ -90,8 +93,10 @@ var runtime_economy_execution_mode: String = "ACTIVE_ONLY"
 ## 这是运行时可回退的开关（见下方 set_runtime_climate_authority_enabled），回退
 ## 不需要重新生成世界。
 var runtime_climate_authority_enabled: bool = true
-## Domains requested for worker authority. M5 production default is the full
-## twelve-domain graph; focused diagnostics and recovery may request a subset.
+## Domains requested for worker authority. Capability default remains the full
+## Production request mask. Default is the full twelve-domain graph (0xFFF).
+## Player sessions use the same mask so Trigger/Effect/Economy leave the main
+## thread; 0x806 remains available for focused Climate|Country|COMMIT soaks.
 @export var runtime_authority_domain_mask: int = 0xFFF
 ## Climate 权威下的回灌游标。worker 自带单调序号，与 commit generation 无关。
 var _runtime_climate_writeback_generation: int = 0
@@ -193,6 +198,9 @@ var _runtime_last_commit: Dictionary = {}
 var _runtime_last_visual_apply_ms: float = 0.0
 var _runtime_last_ui_feedback_ms: float = 0.0
 var _runtime_last_gpu_upload_ms: float = 0.0
+## FAULTED worker parks the WorldClock and retains last-committed diagnostics.
+var _runtime_worker_fault_paused: bool = false
+var _runtime_last_fault_diagnostics: Dictionary = {}
 var _country_worker_transport_last_service: Dictionary = {}
 var _country_worker_transport_capture: Dictionary = {}
 var _modifier_worker_snapshot_generation: int = 0
@@ -263,6 +271,27 @@ func _on_clock_day_changed(day_idx: int) -> void:
 	var whole_graph_authoritative := String(report.get("simulation_thread_mode", "OFF")) == "ACTIVE" \
 		and bool(report.get("authority_ready", false))
 	if whole_graph_authoritative:
+		# Worker owns domain formulas, but the host must still:
+		#   writeback → (optional season) → capture next-day environment → peer pump.
+		# Skipping capture here parks the worker on environment wait while it still
+		# holds the authority-boundary lock; any blocking switch then freezes Godot.
+		if bool(report.get("climate_worker_authoritative", false)):
+			_consume_modifier_worker_snapshot_if_authoritative()
+			_consume_effect_worker_snapshot_if_authoritative()
+			_service_effect_worker_intents_if_authoritative()
+			_consume_trigger_worker_snapshot_if_authoritative()
+			_service_trigger_worker_intents_if_authoritative()
+			_consume_ideology_worker_snapshot_if_authoritative()
+			_service_ideology_worker_intents_if_authoritative()
+		_apply_climate_writeback_if_authoritative(report)
+		if bool(report.get("climate_worker_authoritative", false)):
+			wait_for_climate_consumed(0)
+		if _generator.has_method("capture_runtime_inputs_for_worker"):
+			_generator.capture_runtime_inputs_for_worker(
+				day_idx, _world_clock.season_phase_for_day(day_idx))
+		_service_country_worker_transport()
+		_consume_country_worker_read_view_if_authoritative()
+		_try_promote_economy_pod_active()
 		return
 	# Climate 在 worker 手上时，先把它上一天的结果落进 MapData，再跑这一天的 tick。
 	#
@@ -612,14 +641,15 @@ func _start_production_shadow_worker() -> void:
 	if String(runtime_economy_execution_mode) != "ACTIVE_WITH_PARITY":
 		config["economy_stage_ops_mutate"] = true
 		config["economy_production_writer"] = "stage_ops"
-		# M6: mirror readiness is diagnostic; authority handoff is an explicit
-		# epoch-boundary operation and must not be triggered by the worker.
-		config["economy_auto_pod_active"] = false
+		# Host requests auto POD_ACTIVE. The worker records the flag only;
+		# WorldRuntimeHost performs the actual switch on an idle boundary.
+		config["economy_auto_pod_active"] = runtime_economy_auto_pod_active
 	if climate_authority_active:
 		# graph_coverage_complete 在 per-domain ACTIVE 下的含义是"请求的这些域
 		# 线程安全"，不是整图。
-		# M5 production request is the complete graph (0xFFF). COMMIT is the
-		# barrier domain itself; C++ also adds it for focused subset requests.
+		# Player/default play requests the full graph (0xFFF) so Trigger/Effect/
+		# Economy are worker-owned. Focused Climate|Country|COMMIT (0x806) remains
+		# available by setting runtime_authority_domain_mask for soaks/debug.
 		# Phase 2-6：Economy 与 Climate|Country|Modifier|Effect|Ideology|Trigger|Events
 		# 同开关进入生产 ACTIVE；不得用 handoff / set_country_sync_store_writes_forbidden 冒充本路径。
 		# Events 的授予只表示 worker 侧镜像 + 阶段位；legacy GameplayEventBus journal
@@ -657,6 +687,10 @@ func _start_production_shadow_worker() -> void:
 			push_warning("[runtime-worker] SHADOW start deferred: %s" % String(
 				started.get("code", "unknown")))
 		return
+	if climate_authority_active:
+		print("[runtime-worker] production ACTIVE started mask=",
+			runtime_authority_domain_mask,
+			" auto_pod=", runtime_economy_auto_pod_active)
 	_sync_runtime_worker_clock()
 
 
@@ -799,6 +833,7 @@ func _process(_delta: float) -> void:
 	_service_ideology_worker_intents_if_authoritative()
 	_consume_country_worker_read_view_if_authoritative()
 	_consume_runtime_commit_if_ready()
+	_observe_runtime_worker_fault()
 	var now_msec := Time.get_ticks_msec()
 	if now_msec >= _building_visual_next_poll_msec:
 		_building_visual_next_poll_msec = now_msec + 100
@@ -806,6 +841,44 @@ func _process(_delta: float) -> void:
 	if not _map_overlay_dirty or _map_overlay_request.is_empty():
 		return
 	_refresh_map_overlay(false)
+
+
+## When the native worker enters FAULTED, pause the authoritative clock and keep
+## the last committed generation/hash diagnostics for soak evidence. Do not
+## clear live MapData; the parked snapshot remains the recovery baseline.
+func _observe_runtime_worker_fault(report: Dictionary = {}) -> void:
+	if _runtime_worker_fault_paused:
+		return
+	if report.is_empty():
+		if _generator == null or not _generator.has_method("get_runtime_thread_report"):
+			return
+		report = _generator.get_runtime_thread_report()
+	var state := String(report.get(
+		"simulation_host_state", report.get("state", "")))
+	if state != "FAULTED":
+		return
+	_runtime_worker_fault_paused = true
+	if _world_clock != null:
+		_world_clock.pause(true)
+	_runtime_last_fault_diagnostics = {
+		"fault_code": String(report.get("fault_code", "")),
+		"committed_day": int(report.get("committed_day", -1)),
+		"generation": int(report.get("generation", 0)),
+		"state_hash": int(report.get("state_hash", 0)),
+		"worker_fault_count": int(report.get("worker_fault_count", 0)),
+		"economy_authority_last_committed_generation": int(report.get(
+			"economy_authority_last_committed_generation", 0)),
+		"economy_authority_last_committed_hash": int(report.get(
+			"economy_authority_last_committed_hash", 0)),
+		"economy_authority_fault_paused": bool(report.get(
+			"economy_authority_fault_paused", false)),
+		"last_commit": _runtime_last_commit.duplicate(false),
+	}
+	push_warning("[runtime-worker] FAULTED - world_clock.pause(true); last committed diagnostics retained")
+
+
+func get_runtime_fault_diagnostics() -> Dictionary:
+	return _runtime_last_fault_diagnostics.duplicate(false)
 
 
 ## Host-side Country intent drain. SHADOW replays typed results without
@@ -1123,6 +1196,7 @@ func _consume_runtime_commit_if_ready() -> void:
 			or not _generator.has_method("poll_runtime_commit"):
 		return
 	var report: Dictionary = _generator.get_runtime_thread_report()
+	_observe_runtime_worker_fault(report)
 	if String(report.get("simulation_thread_mode", report.get(
 			"requested_simulation_thread_mode", "OFF"))) != "ACTIVE":
 		return
@@ -1148,6 +1222,7 @@ func _consume_runtime_commit_if_ready() -> void:
 			int(commit.get("from_day", _runtime_commit_day)),
 			_runtime_commit_day,
 			_runtime_commit_generation)
+		_try_promote_economy_pod_active()
 	if _runtime_pending_visual_generation <= 0 \
 			or _runtime_pending_visual_generation != _runtime_commit_generation:
 		return
@@ -1289,6 +1364,36 @@ func wait_for_climate_consumed(after_environment_generation: int) -> Dictionary:
 		slice["waited_ms"] = total_waited_ms
 		return slice
 	return {"ok": false, "code": "climate_wait_unreachable", "waited_ms": total_waited_ms}
+
+
+## Promote Economy to POD_ACTIVE once the committed mirror is ready. Must run on
+## the main thread while the worker is idle between days (M6 boundary rules).
+## Never call this while the worker may hold the day boundary lock without a
+## non-blocking C++ try_lock — a blocking switch deadlocks peer/environment waits.
+func _try_promote_economy_pod_active() -> void:
+	if not runtime_economy_auto_pod_active:
+		return
+	if _generator == null or not _generator.has_method("get_data_core_world_ext"):
+		return
+	var ext = _generator.get_data_core_world_ext()
+	if ext == null or not ext.has_method("switch_economy_authority"):
+		return
+	var report: Dictionary = _generator.get_runtime_thread_report() \
+		if _generator.has_method("get_runtime_thread_report") else {}
+	if String(report.get("simulation_thread_mode", "OFF")) != "ACTIVE":
+		return
+	if not bool(report.get("economy_pod_active_ready", false)):
+		return
+	# Already bound OwnedState means POD_ACTIVE promotion has landed.
+	if String(report.get("economy_formula_backing", "")) == "owned_state":
+		return
+	# Cheap prefilter; C++ still try_locks because this races with the worker.
+	if int(report.get("worker_day_inflight", 0)) != 0 \
+			or int(report.get("economy_inflight_mutations", 0)) != 0:
+		return
+	var switched: Dictionary = ext.switch_economy_authority("POD_ACTIVE")
+	if bool(switched.get("ok", false)):
+		print("[runtime-worker] Economy authority promoted to POD_ACTIVE")
 
 
 ## 运行时开关 Climate|Country 权威。关掉后停掉 ACTIVE worker、改以 SHADOW 重启，

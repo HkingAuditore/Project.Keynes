@@ -1202,11 +1202,23 @@ Dictionary TriggerRuntime::handoff_effects(EffectRuntime *effect_runtime,
             ++handed_off;
             continue;
         }
-        // Modifier and Country actions have native EffectRuntime adapters.
-        // Other domains stay on the TriggerFacade compatibility path until
-        // their own safe-boundary adapter is migrated.
+        // Modifier / Country / Economy actions have native EffectRuntime
+        // adapters. PUBLISH_EVENT (and other notice-side actions) used to
+        // break the contiguous handoff cursor here; under runtime-graph
+        // ACTIVE the GDScript EventBus path never drains that head, so
+        // trigger_should_run + hard_ack=effect pin WorldClock forever
+        // (see economy.social_pressure_notice stalls). Soft-ACK notices so
+        // the queue can drain; EventBus delivery remains a facade concern.
         const bool native_modifier = effect.action >= MODIFIER_APPLY &&
             effect.action <= MODIFIER_SET_STACKS;
+        if (effect.action == PUBLISH_EVENT ||
+            effect.action == GAMEPLAY_COMMAND ||
+            effect.action == CUSTOM_DOMAIN_COMMAND ||
+            effect.action == IDEOLOGY_COMMAND) {
+            last_effect_id = effect.id;
+            ++handed_off;
+            continue;
+        }
         if (!native_modifier && effect.action != COUNTRY_COMMAND &&
             effect.action != ECONOMY_COMMAND) {
             blocked_reason = "trigger_effect_domain_adapter_required";

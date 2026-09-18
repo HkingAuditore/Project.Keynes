@@ -6,7 +6,7 @@ signal load_completed(slot_id: String, result: Dictionary)
 const REQUIRED_SECTIONS := [
 	"new_game_config", "world_clock", "dynamic_world", "environment",
 	"simulation_runtime",
-	"pkcm", "pkcn", "pkec", "pkgp", "pkfg", "journal",
+	"pkcm", "pkcn", "ecp2", "pkgp", "pkfg", "journal",
 	"player_context", "player_view", "preview", "pktr", "pkef", "pkid",
 ]
 const SaveRepositoryScript = preload("res://scripts/game/save_repository.gd")
@@ -142,7 +142,7 @@ func prepare_load(slot_id: String) -> Dictionary:
 		if not decoded["simulation_runtime"] is Dictionary:
 			return _result(false, "save_section_decode_failed", "无法解析存档 section：simulation_runtime")
 	decoded["pkcn"] = bytes_by_id.pkcn
-	decoded["pkec"] = bytes_by_id.pkec
+	decoded["ecp2"] = bytes_by_id.ecp2
 	decoded["pkcm"] = bytes_by_id.pkcm
 	decoded["pkgp"] = bytes_by_id.pkgp
 	decoded["pktr"] = bytes_by_id.pktr
@@ -386,12 +386,14 @@ func _register_providers() -> void:
 			"_restore_simulation_runtime_provider"),
 		_make_provider(&"pkcn", 11, PackedStringArray(["pkcn"]),
 			"_can_country_provider", "_write_country_provider", "_restore_country_provider"),
-		# Effect restores before Economy so PKEC v52 can cross-check every
+		# Effect restores before Economy so ECP2 can cross-check every
 		# SETTLING expedition transaction against authoritative PKEF state.
 		_make_provider(&"pkef", 11, PackedStringArray(["pkef"]),
 			"_can_effect_provider", "_write_effect_provider",
 			"_restore_effect_provider"),
-		_make_provider(&"pkec", 52, PackedStringArray(["pkec"]),
+		# ECP2-only production economy section (ABI2 / schema 53). Bare PKEC
+		# is rejected by the facade/host; use an explicit migrate helper.
+		_make_provider(&"ecp2", 53, PackedStringArray(["ecp2"]),
 			"_can_economy_provider", "_write_economy_provider", "_restore_economy_provider"),
 		_make_provider(&"pkgp", 3, PackedStringArray(["pkgp"]),
 			"_can_modifier_provider", "_write_gameplay_modifier_provider",
@@ -465,10 +467,13 @@ func _manifest_compatible(raw_manifest) -> bool:
 			# exact-version only, so advertising an older schema would defer failure
 			# until after partial session restore.
 			schema_compatible = saved_schema == 11
+		elif provider_id == "ecp2":
+			# ECP2 is exact ABI2/schema53 only. Reject bare PKEC/ECP1 before
+			# any provider mutates live state.
+			schema_compatible = saved_schema == 53
 		elif provider_id == "pkec":
-			# Native PKEC is exact-version only. The manifest must reject an
-			# incompatible payload before any provider mutates live state.
-			schema_compatible = saved_schema == 52
+			# Legacy provider id is no longer loadable through the coordinator.
+			schema_compatible = false
 		elif provider_id == "pktr":
 			schema_compatible = saved_schema == 6
 		elif provider_id == "journal":
@@ -630,9 +635,48 @@ func _can_country_provider(context: Dictionary) -> Dictionary:
 func _can_economy_provider(context: Dictionary) -> Dictionary:
 	var generator = context.get("generator")
 	var facade = generator.get_economy_facade() if generator != null else null
-	return _result(facade != null and facade.is_configured(),
-		"ok" if facade != null and facade.is_configured() else "save_provider_missing",
-		"" if facade != null and facade.is_configured() else "PKEC provider 不可用。")
+	var available: bool = facade != null and facade.is_configured() \
+		and facade.has_method("capture_ecp2") and facade.has_method("restore_ecp2")
+	return _result(available,
+		"ok" if available else "save_provider_missing",
+		"" if available else "ECP2 economy provider 不可用。")
+
+
+func _write_economy_provider(context: Dictionary) -> Dictionary:
+	var facade = context.generator.get_economy_facade()
+	var captured: Dictionary = facade.capture_ecp2(0)
+	if not bool(captured.get("ok", false)):
+		return _result(false, "ecp2_save_failed",
+			String(captured.get("reason", "无法捕获 ECP2 经济权威。")))
+	var bytes: PackedByteArray = captured.get("bytes", PackedByteArray())
+	if bytes.is_empty():
+		return _result(false, "ecp2_save_empty", "ECP2 捕获结果为空。")
+	return {"ok": true, "sections": {"ecp2": bytes}}
+
+
+func _restore_economy_provider(sections: Dictionary, context: Dictionary) -> Dictionary:
+	if not sections.has("ecp2"):
+		return _result(false, "ecp2_missing",
+			"存档缺少 ECP2 经济 section。")
+	var bytes: PackedByteArray = sections.ecp2
+	if bytes.is_empty():
+		return _result(false, "ecp2_missing", "ECP2 section 为空。")
+	var facade = context.generator.get_economy_facade()
+	var result: Dictionary = facade.restore_ecp2(bytes)
+	if not bool(result.get("ok", false)):
+		return _result(false, "ecp2_restore_failed",
+			String(result.get("restore_rejected_reason",
+				result.get("reason", "经济 ECP2 恢复失败。"))))
+	# ECP2 owns the authored building catalog. Bind it before PKFG is restored so
+	# building intel type indices are checked against the authoritative type count.
+	if context.host != null and context.host.has_method(
+			"refresh_building_visual_catalog"):
+		var visual_setup: Dictionary = context.host.refresh_building_visual_catalog()
+		if not bool(visual_setup.get("ok", false)) \
+				and not bool(visual_setup.get("deferred", false)):
+			push_warning("[building-visual] restore bind disabled: %s" % String(
+				visual_setup.get("reason", "catalog audit failed")))
+	return result
 
 
 func _can_modifier_provider(context: Dictionary) -> Dictionary:
@@ -726,12 +770,6 @@ func _write_country_provider(context: Dictionary) -> Dictionary:
 		return {"ok": true, "sections": {"pkcn": shared_pkcn}}
 	var captured := _capture_native(context.generator.get_country_facade(), "country")
 	return {"ok": true, "sections": {"pkcn": captured.bytes}} \
-		if bool(captured.get("ok", false)) else captured
-
-
-func _write_economy_provider(context: Dictionary) -> Dictionary:
-	var captured := _capture_native(context.generator.get_economy_facade(), "economy")
-	return {"ok": true, "sections": {"pkec": captured.bytes}} \
 		if bool(captured.get("ok", false)) else captured
 
 
@@ -901,23 +939,6 @@ func _restore_country_provider(sections: Dictionary, context: Dictionary) -> Dic
 	var result: Dictionary = facade.restore_bytes(sections.pkcn)
 	return result if bool(result.get("ok", false)) else _result(false,
 		"pkcn_restore_failed", String(result.get("reason", "国家恢复失败。")))
-
-
-func _restore_economy_provider(sections: Dictionary, context: Dictionary) -> Dictionary:
-	var result: Dictionary = context.generator.get_economy_facade().restore_bytes(sections.pkec)
-	if not bool(result.get("ok", false)):
-		return _result(false, "pkec_restore_failed",
-			String(result.get("reason", "经济恢复失败。")))
-	# PKEC owns the authored building catalog. Bind it before PKFG is restored so
-	# building intel type indices are checked against the authoritative type count.
-	if context.host != null and context.host.has_method(
-			"refresh_building_visual_catalog"):
-		var visual_setup: Dictionary = context.host.refresh_building_visual_catalog()
-		if not bool(visual_setup.get("ok", false)) \
-				and not bool(visual_setup.get("deferred", false)):
-			push_warning("[building-visual] restore bind disabled: %s" % String(
-				visual_setup.get("reason", "catalog audit failed")))
-	return result
 
 
 func _restore_climate_modifier_provider(sections: Dictionary,

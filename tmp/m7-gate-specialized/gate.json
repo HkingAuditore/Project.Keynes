@@ -1,0 +1,93 @@
+﻿{
+    "gate":  "M7",
+    "generated_utc":  "2026-09-16T17:09:44.2587706Z",
+    "implemented_domain_mask":  2942,
+    "requested_domain_mask":  0,
+    "authoritative_domain_mask":  0,
+    "completed_domain_mask":  0,
+    "stage_order":  [
+                        "PROBE",
+                        "PER_DOMAIN_PARITY",
+                        "FULL_PARITY",
+                        "FULL_ACTIVE",
+                        "PERFORMANCE"
+                    ],
+    "completed_stages":  [
+                             "PREFLIGHT"
+                         ],
+    "blocked_stage":  "PROBE",
+    "stages":  [
+                   {
+                       "name":  "preflight-building",
+                       "script":  "res://tests/building_runtime_test.gd",
+                       "exit_code":  1,
+                       "log":  "tmp\\m7-gate-specialized\\preflight-building.log",
+                       "passed":  false
+                   },
+                   {
+                       "name":  "preflight-runtime-parity",
+                       "script":  "res://tests/runtime_economy_parity_test.gd",
+                       "exit_code":  0,
+                       "log":  "tmp\\m7-gate-specialized\\preflight-runtime-parity.log",
+                       "passed":  true
+                   },
+                   {
+                       "name":  "m1-d7-gate",
+                       "script":  "res://tests/runtime_economy_d7_gate_test.gd",
+                       "exit_code":  0,
+                       "log":  "tmp\\m7-gate-specialized\\m1-d7-gate.log",
+                       "passed":  true
+                   },
+                   {
+                       "name":  "m1-opcode-ack",
+                       "script":  "res://tests/runtime_economy_opcode_ack_test.gd",
+                       "exit_code":  0,
+                       "log":  "tmp\\m7-gate-specialized\\m1-opcode-ack.log",
+                       "passed":  true
+                   },
+                   {
+                       "name":  "m2-economy-soak",
+                       "script":  "res://tests/runtime_economy_authority_soak_test.gd",
+                       "exit_code":  0,
+                       "log":  "tmp\\m7-gate-specialized\\m2-economy-soak.log",
+                       "passed":  true
+                   },
+                   {
+                       "name":  "m2-stage-ops-parity",
+                       "script":  "res://tests/runtime_economy_stage_ops_soak_parity_test.gd",
+                       "exit_code":  0,
+                       "log":  "tmp\\m7-gate-specialized\\m2-stage-ops-parity.log",
+                       "passed":  true
+                   },
+                   {
+                       "name":  "m3-effect-pod",
+                       "script":  "res://tests/runtime_effect_pod_test.gd",
+                       "exit_code":  0,
+                       "log":  "tmp\\m7-gate-specialized\\m3-effect-pod.log",
+                       "passed":  true
+                   },
+                   {
+                       "name":  "m3-events-pod",
+                       "script":  "res://tests/runtime_events_pod_test.gd",
+                       "exit_code":  0,
+                       "log":  "tmp\\m7-gate-specialized\\m3-events-pod.log",
+                       "passed":  true
+                   },
+                   {
+                       "name":  "m3-effect-transaction",
+                       "script":  "res://tests/effect_native_multidomain_transaction_test.gd",
+                       "exit_code":  0,
+                       "log":  "tmp\\m7-gate-specialized\\m3-effect-transaction.log",
+                       "passed":  true
+                   },
+                   {
+                       "name":  "m6-authority-fault-gate",
+                       "script":  "res://tests/runtime_authority_m5_m6_gate_test.gd",
+                       "exit_code":  0,
+                       "log":  "tmp\\m7-gate-specialized\\m6-authority-fault-gate.log",
+                       "passed":  true
+                   }
+               ],
+    "fatal":  true,
+    "fault":  "preflight_or_specialized_regression_failed"
+}

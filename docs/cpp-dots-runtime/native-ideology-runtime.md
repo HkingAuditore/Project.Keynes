@@ -9,7 +9,7 @@ economy state, or a Godot UI mirror.
 ## Production worker authority (G8)
 
 G8 promoted the worker mirror to production. When the session grants
-`IDEOLOGY` (`0x010`, part of `implemented_domain_mask() == 0xA7E`), the Host
+`IDEOLOGY` (`0x010`, part of `implemented_domain_mask() == 0xFFF`), the Host
 stage is the **sole Ideology writer**:
 
 - `submit_ideology_commands` only queues POD commands; it no longer stages the

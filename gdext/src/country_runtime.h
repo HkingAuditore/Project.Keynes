@@ -213,6 +213,10 @@ public:
     bool submit_effect_commands_pod(const EffectCommand *commands, size_t count,
                                     std::vector<int64_t> &request_ids,
                                     std::string &error);
+    // When Country is worker-authoritative, Effect commands are admitted to
+    // the Host queue instead of the sync facade. Drain terminal receipts so
+    // EffectRuntime ACK can leave PREFLIGHTED.
+    void drain_effect_host_command_receipts();
     bool effect_command_result_pod(int64_t request_id, bool &complete,
                                    bool &ok, std::string &reason) const;
     bool has_pending_effect_commands() const;
@@ -1084,6 +1088,9 @@ private:
     std::unordered_map<uint64_t, CountryCommandReceipt> _typed_request_state;
     std::unordered_map<int64_t, EffectCommandResult> _effect_command_results;
     std::unordered_map<uint64_t, int64_t> _effect_command_idempotency;
+    // Host request_id → Effect request_id while Country writes are worker-owned.
+    std::unordered_map<uint64_t, int64_t> _effect_host_request_map;
+    uint64_t _effect_host_receipt_cursor = 0;
     int64_t _next_effect_request_id = 1;
     EraRewardReference _era_reward_reference;
     std::deque<Event> _events;

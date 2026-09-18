@@ -1,0 +1,675 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+=== native building runtime test ===
+  [PASS] building catalog compiles
+  [PASS] coal mine type exists
+  [PASS] role-rebuild country bootstraps
+  [PASS] role-rebuild runtime configures
+  [PASS] role-rebuild fixture bootstraps
+  [PASS] role-rebuild expansion queues
+  [PASS] same-key construction uses the count-only topology fast path
+  [PASS] construction rebuild preserves incumbent employee fill
+  [PASS] role-rebuild expansion conserves every ledger
+  [PASS] zero-resource country bootstraps
+  [PASS] zero-resource runtime configures
+  [PASS] zero-resource fixture bootstraps
+  [PASS] zero natural resource preserves assets, owner positions, and releases employees
+  [PASS] zero-resource cycle conserves every ledger
+  [PASS] owner-position country bootstraps
+  [PASS] owner-position runtime configures
+  [PASS] owner-position fixture bootstraps
+  [PASS] ACTIVE owner positions stay at physical capacity while output scales
+  [PASS] projected building income uses retained owners and includes retained livelihood
+  [PASS] multi-building owner opportunity quote scales output and in-kind value
+  [PASS] owner-position employment conserves every ledger
+  [PASS] positive self-employment does not oscillate through suspension
+  [PASS] birth-employment country bootstraps
+  [PASS] birth-employment runtime configures
+  [PASS] birth-employment fixture bootstraps
+  [PASS] birth structural commit creates one unemployed cohort member
+  [PASS] newborn does not fill the active owner opening in the same period
+  [PASS] phase-order country bootstraps
+  [PASS] phase-order runtime configures
+  [PASS] phase-order population and plant bootstrap
+  [PASS] phase-order cycle conserves all ledgers
+  [PASS] zero-cash employees spend same-cycle wage income
+  [PASS] same-cycle produced food is sold before household clearing
+  [PASS] cost-floor country bootstraps
+  [PASS] cost-floor runtime configures
+  [PASS] cost-floor plant bootstraps
+  [PASS] scarce output remains below its target inventory
+  [PASS] scarce output price rises to the rate-limited producer cost floor
+  [PASS] retention-cap country bootstraps
+  [PASS] retention-cap runtime configures
+  [PASS] retention-cap settlement bootstraps
+  [PASS] survival retention is positive but capped below production
+  [PASS] consumed retained output offsets livelihood without minting cash
+  [PASS] retention-cap output reconciles sale, retention, and discard
+  [PASS] retention-cap cycle conserves every ledger
+  [PASS] survival-food production keeps the subsistence probe floor
+  [PASS] rounding-tolerance cycle conserves every ledger
+  [PASS] multi-food retention country bootstraps
+  [PASS] multi-food retention runtime configures
+  [PASS] multi-food retention settlement bootstraps
+  [PASS] produce output remains retained beside a staple output
+  [PASS] multi-food retention cycle conserves every ledger
+  [PASS] flow-replacement country bootstraps
+  [PASS] flow-replacement runtime configures
+  [PASS] flow-replacement settlement bootstraps
+  [PASS] flow-replacement stock band is scheduled
+  [PASS] survival producer is paid while opening stock is above target
+  [PASS] flow-replacement procurement conserves every ledger
+  [PASS] open-access CPUE country bootstraps
+  [PASS] open-access CPUE runtime configures
+  [PASS] open-access CPUE fixture bootstraps
+  [PASS] open-access CPUE country bootstraps
+  [PASS] open-access CPUE runtime configures
+  [PASS] open-access CPUE fixture bootstraps
+  [PASS] open-access CPUE falls continuously with renewable stock density
+  [PASS] renewable-budget country bootstraps
+  [PASS] renewable-budget runtime configures
+  [PASS] renewable-budget fixture bootstraps
+[RECONDBG] day=0 group=0 filled=24
+  [PASS] renewable extractors share the five-day safe-harvest budget
+  [PASS] hunter-subsistence country bootstraps
+  [PASS] hunter-subsistence runtime configures
+  [PASS] hunter-subsistence settlement bootstraps
+[RECONDBG] day=0 group=0 filled=24
+  hunter day trace=0{ "price": 69187, "owner_funds": 3113687, "filled_owner_count": 24, "unemployed": 25, "last_input": 12000, "last_output": 408960, "last_sold": 309720, "last_retained": 99096, "last_receipt": 3396892, "last_revenue": 3396892, "in_kind": 993984, "filled": 24, "climate": 65536, "observed": 7864320, "target": 2285370, "game_stock": 247435, "game_withdraw": 25393, "epoch_income": 3396892, "epoch_expense": 1233205, "inkind_pop": 993984, "funded": 65536, "working": 50000, "intent": 65536 }
+  hunter day trace=1{ "price": 116062, "owner_funds": 5863873, "filled_owner_count": 24, "unemployed": 25, "last_input": 12000, "last_output": 408960, "last_sold": 309720, "last_retained": 99240, "last_receipt": 3184676, "last_revenue": 3184676, "in_kind": 938954, "filled": 24, "climate": 65536, "observed": 7864320, "target": 2130930, "game_stock": 504281, "game_withdraw": 23510, "epoch_income": 3184676, "epoch_expense": 1264734, "inkind_pop": 938954, "funded": 65536, "working": 830244, "intent": 65536 }
+  hunter day trace=2{ "price": 162937, "owner_funds": 10135707, "filled_owner_count": 24, "unemployed": 24, "last_input": 12000, "last_output": 408960, "last_sold": 309720, "last_retained": 99240, "last_receipt": 5021027, "last_revenue": 5021027, "in_kind": 1562354, "filled": 24, "climate": 65536, "observed": 7864320, "target": 2348910, "game_stock": 763892, "game_withdraw": 22957, "epoch_income": 5021027, "epoch_expense": 2141937, "inkind_pop": 1562354, "funded": 65536, "working": 1392744, "intent": 65536 }
+  hunter day trace=3{ "price": 209812, "owner_funds": 15259962, "filled_owner_count": 24, "unemployed": 23, "last_input": 12000, "last_output": 408960, "last_sold": 292440, "last_retained": 99240, "last_receipt": 6263854, "last_revenue": 6263854, "in_kind": 2178774, "filled": 24, "climate": 65536, "observed": 7864320, "target": 2430630, "game_stock": 1023686, "game_withdraw": 22921, "epoch_income": 6263854, "epoch_expense": 3094843, "inkind_pop": 2178774, "funded": 65536, "working": 1955244, "intent": 65536 }
+  hunter day trace=4{ "price": 256687, "owner_funds": 21376852, "filled_owner_count": 24, "unemployed": 23, "last_input": 12000, "last_output": 408960, "last_sold": 283064, "last_retained": 99240, "last_receipt": 7714644, "last_revenue": 7714644, "in_kind": 2802174, "filled": 24, "climate": 65536, "observed": 7864320, "target": 2461230, "game_stock": 1283518, "game_withdraw": 22913, "epoch_income": 7714644, "epoch_expense": 4115498, "inkind_pop": 2802174, "funded": 65536, "working": 2517744, "intent": 65536 }
+  hunter day trace=5{ "price": 303562, "owner_funds": 28417294, "filled_owner_count": 24, "unemployed": 22, "last_input": 12000, "last_output": 408960, "last_sold": 277870, "last_retained": 99240, "last_receipt": 9102343, "last_revenue": 9102343, "in_kind": 3418191, "filled": 24, "climate": 65536, "observed": 7864320, "target": 2472750, "game_stock": 1543067, "game_withdraw": 22970, "epoch_income": 9102343, "epoch_expense": 5142145, "inkind_pop": 3418191, "funded": 65536, "working": 3080244, "intent": 65536 }
+  hunter day trace=6{ "price": 350437, "owner_funds": 36736879, "filled_owner_count": 24, "unemployed": 22, "last_input": 12000, "last_output": 408960, "last_sold": 277970, "last_retained": 99240, "last_receipt": 10924779, "last_revenue": 10924779, "in_kind": 4096651, "filled": 24, "climate": 65536, "observed": 7864320, "target": 2477070, "game_stock": 1802331, "game_withdraw": 23027, "epoch_income": 10924779, "epoch_expense": 6247938, "inkind_pop": 4096651, "funded": 65536, "working": 3642744, "intent": 65536 }
+  hunter day trace=7{ "price": 397312, "owner_funds": 46665945, "filled_owner_count": 24, "unemployed": 21, "last_input": 12000, "last_output": 408960, "last_sold": 277875, "last_retained": 99240, "last_receipt": 13124443, "last_revenue": 13124443, "in_kind": 4920038, "filled": 24, "climate": 65536, "observed": 7864320, "target": 2478690, "game_stock": 2061356, "game_withdraw": 23075, "epoch_income": 13124443, "epoch_expense": 7400621, "inkind_pop": 4920038, "funded": 65536, "working": 4205244, "intent": 65536 }
+  hunter first zero=25{ "type": 359, "state": 0, "count": 24, "planned": 65536, "funded": 22272, "climate": 65536, "capacity": 0, "owner_funds": 0, "resource_reserve": [1000000, 1000000, 1000000, 1000000, 1000000, 1000000, 1000000, 250000000, 1000000, 1000000, 1000000, 1000000, 1000000, 500000000, 1000000, 1000000, 1000000, 1000000, 1000000, 1000000, 1000000, 1000000, 1000000, 1000000, 1000000, 1000000, 1000000, 10000000000, 1000000, 1000000000000, 1000000], "resource_ids": ["arable_land", "bauxite", "clay", "coal", "copper_ore", "fertile_soil", "flint", "freshwater_fish", "gold_ore", "iron_ore", "lead_ore", "limestone", "manganese_ore", "marine_fish", "natural_gas", "oil", "paddy_land", "pasture", "phosphate_rock", "plantation_land", "rare_earth", "salt", "saltpeter", "silica_sand", "silver_ore", "stone", "sulfur", "timber", "tin_ore", "wild_game", "zinc_ore"], "tool_stock": 704261, "input_reserve": 12000, "working": [0], "intent": [65536], "selected": [-1], "merchant_cash": 100100000, "debt": 20113924, "debt_term": 5 }
+  [FAIL] hunter subsistence remains an active explicitly financed producer
+  [PASS] hunter fixture exercises working-capital protection
+  [PASS] hunter-subsistence cycles conserve every ledger
+  [PASS] household-stock recovery country bootstraps
+  [PASS] household-stock recovery runtime configures
+  [PASS] household-stock recovery settlement bootstraps
+  [PASS] non-survival hearth cannot reserve staple food ahead of households
+  [PASS] household-stock recovery drain queues
+  [PASS] one-unit raw stock does not block shortage recovery
+  [PASS] business-demand recovery country bootstraps
+  [PASS] business-demand recovery runtime configures
+  [PASS] business-demand recovery fixture bootstraps
+  business day trace=0{ "util": 65536, "funded": 65536, "working": 4500, "input": 1125, "output": 1730, "filled": 1, "required": 1, "openings": 0, "projected": 23657, "debt": 0, "selected": [46, -1], "tool_stock": 1730, "logs_stock": 157, "bema": 125 }
+  business day trace=1{ "util": 65536, "funded": 0, "working": 0, "input": 0, "output": 0, "filled": 0, "required": 1, "openings": 1, "projected": 0, "debt": 0, "selected": [-1, -1], "tool_stock": 1730, "logs_stock": 364, "bema": 212 }
+  business day trace=2{ "util": 0, "funded": 0, "working": 0, "input": 0, "output": 0, "filled": 0, "required": 1, "openings": 1, "projected": 0, "debt": 0, "selected": [-1, -1], "tool_stock": 1730, "logs_stock": 571, "bema": 86 }
+  business day trace=3{ "util": 0, "funded": 0, "working": 0, "input": 0, "output": 0, "filled": 0, "required": 1, "openings": 1, "projected": 0, "debt": 0, "selected": [-1, -1], "tool_stock": 1730, "logs_stock": 778, "bema": 198 }
+  business day trace=4{ "util": 0, "funded": 0, "working": 0, "input": 0, "output": 0, "filled": 0, "required": 1, "openings": 1, "projected": 0, "debt": 0, "selected": [-1, -1], "tool_stock": 1730, "logs_stock": 985, "bema": 81 }
+  business day trace=5{ "util": 0, "funded": 0, "working": 0, "input": 0, "output": 0, "filled": 0, "required": 1, "openings": 1, "projected": 0, "debt": 0, "selected": [-1, -1], "tool_stock": 1730, "logs_stock": 1192, "bema": 196 }
+  business day trace=6{ "util": 0, "funded": 0, "working": 0, "input": 0, "output": 0, "filled": 0, "required": 1, "openings": 1, "projected": 0, "debt": 0, "selected": [-1, -1], "tool_stock": 1730, "logs_stock": 1399, "bema": 239 }
+  [PASS] business-only tool demand remains visible to production planning
+  [FAIL] business shortage keeps knapping above the industrial probe floor
+  [PASS] business-demand recovery cycles conserve every ledger
+  [PASS] shortage-propagation country bootstraps
+  [PASS] shortage-propagation runtime configures
+  [PASS] shortage-propagation fixture bootstraps
+  [PASS] missing input keeps a bounded purchase intent
+  [PASS] missing input publishes unfunded upstream demand
+  [PASS] upstream demand reaches the business-demand EMA
+  [PASS] flint quarry receives a production opportunity
+  [PASS] flint stock recovers without synthetic goods
+  [PASS] knapping eventually resumes after flint recovery
+  [PASS] shortage-propagation cycles conserve every ledger
+  [PASS] leontief-derived country bootstraps
+  [PASS] leontief-derived runtime configures
+  [PASS] leontief-derived fixture bootstraps
+  derived pop debug={ "sigs": [13, 26, 43, 3], "pops": [1, 1, 3, 2], "owners": [1, 0, 0, 2], "employees": [0, 0, 0, 0] }
+  derived day trace=0{ "filled": 2, "required": 2, "openings": 0, "util": 65536, "funded": 0, "working": 9000, "projected": 49114, "price": 3688, "derived": 0, "business_flint": 281, "business_tools": 0, "tool_stock": 0 }
+  derived pop debug={ "sigs": [13, 26, 43, 3], "pops": [1, 1, 3, 2], "owners": [1, 0, 0, 2], "employees": [0, 0, 0, 0] }
+  derived day trace=1{ "filled": 2, "required": 3, "openings": 1, "util": 65536, "funded": 65536, "working": 8298, "projected": 47467, "price": 6188, "derived": 2, "business_flint": 386, "business_tools": 0, "tool_stock": 3428 }
+  derived pop debug={ "sigs": [13, 26, 43, 3], "pops": [2, 1, 2, 2], "owners": [2, 0, 0, 2], "employees": [0, 0, 0, 0] }
+  derived day trace=2{ "filled": 2, "required": 3, "openings": 1, "util": 65536, "funded": 65536, "working": 20885, "projected": 35016, "price": 8688, "derived": 16, "business_flint": 565, "business_tools": 0, "tool_stock": 8571 }
+  derived pop debug={ "sigs": [13, 26, 43, 3], "pops": [3, 1, 1, 2], "owners": [3, 0, 0, 2], "employees": [0, 0, 0, 0] }
+  derived day trace=3{ "filled": 2, "required": 3, "openings": 1, "util": 65536, "funded": 43690, "working": 19548, "projected": 52615, "price": 11188, "derived": 19, "business_flint": 491, "business_tools": 0, "tool_stock": 11998 }
+  derived pop debug={ "sigs": [13, 26, 3], "pops": [3, 1, 3], "owners": [3, 0, 3], "employees": [0, 0, 0] }
+  derived day trace=4{ "filled": 3, "required": 3, "openings": 0, "util": 65536, "funded": 65536, "working": 37760, "projected": 39424, "price": 9720, "derived": 0, "business_flint": 605, "business_tools": 0, "tool_stock": 15520 }
+  derived pop debug={ "sigs": [13, 26, 3], "pops": [3, 1, 3], "owners": [3, 0, 3], "employees": [0, 0, 0] }
+  derived day trace=5{ "filled": 3, "required": 3, "openings": 0, "util": 65536, "funded": 65536, "working": 32805, "projected": 40237, "price": 8456, "derived": 0, "business_flint": 647, "business_tools": 0, "tool_stock": 15537 }
+  derived pop debug={ "sigs": [13, 26, 3], "pops": [3, 1, 3], "owners": [3, 0, 3], "employees": [0, 0, 0] }
+  derived day trace=6{ "filled": 3, "required": 3, "openings": 0, "util": 2049, "funded": 2049, "working": 897, "projected": 0, "price": 7369, "derived": 0, "business_flint": 255, "business_tools": 0, "tool_stock": 15530 }
+  derived pop debug={ "sigs": [13, 26, 3], "pops": [3, 1, 3], "owners": [3, 0, 3], "employees": [0, 0, 0] }
+  derived day trace=7{ "filled": 3, "required": 3, "openings": 0, "util": 2049, "funded": 65536, "working": 24871, "projected": 0, "price": 6655, "derived": 0, "business_flint": 516, "business_tools": 0, "tool_stock": 15534 }
+  [FAIL] vacant knapping remains unstaffed in derived-demand fixture
+  [PASS] tool shortage derives flint shadow demand without knapping sales
+  [PASS] derived flint demand lifts flint price over cold-start cycles
+  [PASS] leontief-derived cycles conserve every ledger
+  [PASS] derived demand diagnostics are published
+  [PASS] input-reserve country bootstraps
+  [PASS] input-reserve runtime configures
+  [PASS] input-reserve settlement bootstraps
+[RECONDBG] day=0 group=1 filled=1
+  [PASS] tool stock protects the complete next-period hunting input
+  [PASS] reserved tools start the next hunting period
+  [PASS] input-reserve cycles conserve every ledger
+  [PASS] soft-input country bootstraps 184
+  [PASS] soft-input runtime configures 184
+  [PASS] soft-input settlement bootstraps 184
+[RECONDBG] day=0 group=0 filled=1
+  [PASS] soft-input country bootstraps 185
+  [PASS] soft-input runtime configures 185
+  [PASS] soft-input settlement bootstraps 185
+[RECONDBG] day=0 group=0 filled=1
+  [PASS] soft hunting input keeps partial output without tools
+  [PASS] soft hunting input still rewards available tools
+  [PASS] soft-input shortage cycles conserve every ledger
+  [PASS] producer-support country bootstraps
+  [PASS] producer-support runtime configures
+  [PASS] producer-support settlement bootstraps
+  [PASS] producer-support trace target registers
+[EMPDBG] day=0 owner-source g=0 type=351 filled=1 target=1 income=15102846 under=0
+[EMPDBG] day=0 employee-source g=0 role=0 prof=19 income=0 filled=20
+[EMPDBG] day=0 employee-source g=0 role=1 prof=25 income=0 filled=2
+  [PASS] zero-cash merchant spends nothing on producer output
+  [PASS] bounded support accepts its quota and explicitly reports the remainder
+  [PASS] support issuance uses exactly twenty percent of frozen retail value
+  [PASS] support issuance is a distinct producer cashflow
+  [PASS] support issuance is explicitly audited
+  [PASS] cycle-flow clearing country bootstraps
+  [PASS] cycle-flow clearing runtime configures
+  [PASS] cycle-flow clearing settlement bootstraps
+  [PASS] cycle-flow output receives low-price clearing before discard
+  [PASS] cycle-flow clearing still discards transient stock at boundary
+  [PASS] cycle-flow support cycle conserves every ledger
+  [PASS] construction-shortage country bootstraps
+  [PASS] construction-shortage runtime configures
+  [PASS] construction-shortage settlement bootstraps
+  [PASS] construction-shortage build command queues
+  [PASS] construction shortage rejects the build command
+  [PASS] rejected construction does not pollute business demand EMA
+  [PASS] rejected construction preserves every ledger
+  [PASS] owner-reconcile country bootstraps
+  [PASS] owner-reconcile runtime configures
+  [PASS] owner-reconcile fixture bootstraps
+  owner-reconcile bootstrap groups={ "types": [121, 134, 148], "expected": [121, 134, 148] }
+  owner-reconcile after-day0=[121, 134, 148]
+  [PASS] owner-reconcile artisan handle exists
+  [PASS] owner-reconcile population loss queues
+[EMPDBG] day=5 owner-source g=2 type=148 filled=1 target=1 income=2082 under=0
+[EMPDBG] day=5 owner-source g=1 type=134 filled=1 target=1 income=12001 under=0
+[EMPDBG] day=5 owner-source g=0 type=121 filled=1 target=1 income=16030 under=0
+  owner-reconcile candidates={ "day": 5, "types": [], "rejections": [], "pending": [] }
+  owner-reconcile type205={ "idx": -1, "rej": -1, "profit": 0, "driver": -1, "cap": 0 }
+  owner-reconcile debug={ "types": [121, 134, 148], "owner_sigs": [3, 3, 3], "capacity": [1, 1, 1], "required": [1, 1, 1], "openings": [0, 0, 0], "filled": [1, 1, 1], "pop": [3, 1], "owners": [3, 0], "unemployed": 0 }
+  [PASS] owner snapshot separates capacity, planned jobs, and openings
+  [PASS] shared owner signature fill reconciles to cohort employment
+  [PASS] released owner target hires from the unemployed pool
+  [PASS] owner reconciliation conserves every ledger
+  [PASS] last-demolition country bootstraps
+  [PASS] last-demolition runtime configures
+  [PASS] last-demolition fixture bootstraps
+  [PASS] last-demolition mine initially employs miners
+  [PASS] last-demolition command queues
+  last-demolition debug={ "sigs": [26, 43], "pops": [1, 26], "owners": [0, 0], "employees": [0, 0], "unemp_row": 1, "unemp": 26, "identity": true }
+  [PASS] last demolition removes the final building group
+  [PASS] idle professions migrate into the unemployed cohort
+  [PASS] last-demolition reconciliation conserves every ledger
+  [PASS] non-due construction country bootstraps
+  [PASS] non-due construction runtime configures
+  [PASS] non-due construction fixture bootstraps
+  [PASS] non-due construction command queues
+  [PASS] non-due employment metrics atomically add the first cell contribution
+  [PASS] non-due construction conserves every ledger
+  [PASS] owner-job mobility country bootstraps
+  [PASS] owner-job mobility runtime configures
+  [PASS] owner-job mobility fixture bootstraps
+  [PASS] higher owner income attracts the final low-income ACTIVE owner
+  [PASS] cross-profession owner movement transfers population and funds proportionally
+  [PASS] income-driven owner movement restores target production
+  [PASS] owner-job mobility conserves every ledger
+  employee-owner ids={ 103: "gathering_ground", 361: "subsistence_farm", 364: "surface_silver_working", 379: "timber_collector" }
+  employee-owner sigs={ "merchant": 26, "miner": 28, "forager": 13 }
+  employee-owner sig names={ 13: "forager|default", 26: "merchant|default", 28: "miner|default", 39: "subsistence_farmer|default" }
+  [PASS] employee-owner mobility country bootstraps
+  [PASS] employee-owner mobility runtime configures
+  [PASS] employee-owner mobility fixture bootstraps
+[EMPDBG] day=0 target g=2 type=379 filled=1 need=2 income=1294551
+[EMPDBG] day=0 owner-source g=1 type=364 filled=1 target=1 income=0 under=0
+[EMPDBG] day=0 owner-source g=0 type=103 filled=1 target=1 income=28523 under=0
+[EMPDBG] day=0 owner-source g=2 type=379 filled=1 target=2 income=1294551 under=1
+[EMPDBG] day=0 owner-match target=2 source=0 source_inc=28523 target_inc=1294551 improvement=262144 hurdle=8192 src_prof=13 dst_prof=13
+  employee-owner day0={ "types": [103, 364, 379], "owners": [13, 26, 13], "filled": [0, 1, 2], "required": [1, 1, 2], "openings": [1, 0, 0], "opp": [29516, 0, 1196425], "emp": [0], "pop": [2, 1, 1], "owner_pop": [2, 1, 0], "employee_pop": [0, 0, 0], "unemp": [0, 0, 1] }
+[EMPDBG] day=5 target g=0 type=103 filled=0 need=1 income=29516
+[EMPDBG] day=5 owner-source g=1 type=364 filled=1 target=1 income=0 under=0
+[EMPDBG] day=5 owner-source g=2 type=379 filled=2 target=2 income=1196425 under=0
+[EMPDBG] day=5 employee-source g=1 role=0 prof=28 income=0 filled=1
+[EMPDBG] day=5 employee-owner-match target=0 source_group=1 source_prof=28 target_prof=13 income=0 target_income=29516
+  employee-owner day1={ "types": [103, 364, 379], "owners": [13, 26, 13], "filled": [1, 1, 2], "required": [1, 1, 2], "openings": [0, 0, 0], "opp": [19294, 0, 1293590], "emp": [0], "pop": [3, 1], "owner_pop": [3, 1], "employee_pop": [0, 0], "unemp": [0, 0] }
+[EMPDBG] day=10 owner-source g=1 type=364 filled=1 target=1 income=0 under=0
+[EMPDBG] day=10 owner-source g=0 type=103 filled=1 target=1 income=19294 under=0
+[EMPDBG] day=10 owner-source g=2 type=379 filled=2 target=2 income=1293590 under=0
+  employee-owner groups={ "types": [103, 361, 364, 379], "counts": [1, 1, 1, 1], "owner_sigs": [13, 39, 26, 13], "projected": [34800, 0, 0, 0], "filled": [0, 0, 1, 2], "owner_required": [1, 1, 1, 2], "owner_openings": [1, 1, 0, 0], "opp_income": [17756, -17893, 0, 1289447], "opp_power": [17756, -17893, 0, 1289447], "employee_filled": [0], "employee_roles": <null>, "targets": <null>, "last_output": [14500, 0, 0, 2178], "last_sold": [2140, 0, 0, 0], "last_receipt": [24394, 0, 0, 0] }
+  employee-owner gathering row={ "projected": 34800, "filled": 0, "last_output": 14500, "last_sold": 2140, "last_receipt": 24394 }
+  employee-owner debug={ "gathering_income": 34800, "gathering_filled": 0, "timber_filled": 2, "gathering_sold": 2140, "gathering_output": 14500, "realloc": 1, "profession_changes": 1, "population": { "cell_idx": 0, "committed": true, "busy": false, "snapshot_source": "rolling_committed", "ok": true, "state_day": 10, "age_days": 0, "settlement_generation": 3, "population": 4, "funds": 4000000, "epoch_income": 1312302, "epoch_expense": 1320080, "cohort_count": 3, "satisfaction_q16": 65535, "survival_satisfaction_q16": 65535, "epoch_id": 3, "prosperity_tier": 1, "prosperity_id": "settlement", "prosperity_name": "聚落", "prosperity_generation": 0, "settlement_name_active": false, "settlement_name_forced": false, "settlement_name": "", "name_roll_generation": 0, "settlement_revision": 1, "job_capacity": 5, "jobs_filled": 3, "job_openings": 2, "investment_last_review_day": 10, "investment_last_driver_good_id": 127, "investment_last_driver_pressure_q16": 65536, "investment_last_driver_utilization_q16": 53796, "investment_last_required_capital": 628585, "investment_last_projected_profit_per_day": 33216, "investment_last_block_reason": 0, "investment_last_failed_material_group": -1, "carrying_schema_version": 2, "carrying_survival_food_per_person": 824, "local_food_output_eq_per_day": 2900, "effective_food_supply_eq_per_day": 2900, "food_stock_eq": 16160332, "food_stock_capacity_persons": 653, "local_food_capacity_persons": 3, "effective_food_capacity_persons": 657, "food_access_q16": 65536, "population_load_q16": 399, "carrying_k_geo": 3, "carrying_k_eff": 657, "handles": [4294967296, 4294967297, 8589934595], "signature_ids": [13, 26, 43], "profession_ids": [13, 26, 43], "ethnicity_ids": [0, 0, 0], "populations": [2, 1, 1], "funds_by_cohort": [1214748, 2329932, 455320], "epoch_income_by_cohort": [16263, 1287908, 8131], "epoch_expense_by_cohort": [266515, 747043, 306522], "epoch_in_kind_income_by_cohort": [98880, 0, 49440], "cash_expense_coverage_by_cohort_q16": [3999, 112984, 1738], "livelihood_coverage_by_cohort_q16": [20651, 112984, 10599], "income_ema_by_cohort": [-51688, 71768, -25844], "satisfaction_by_cohort_q16": [65535, 65535, 65535], "survival_satisfaction_by_cohort_q16": [65535, 65535, 65535], "worst_need_ids": [-1, -1, -1], "merchant_flags": [0, 1, 0], "owner_employed_by_cohort": [2, 1, 0], "employee_employed_by_cohort": [0, 0, 0], "unemployed_by_cohort": [0, 0, 1], "demand_preview_included": true, "settlement_detail_available": true, "settlement_detail_pending": false, "settlement_cashflow_source_stable_ids": ["wages", "owner_operations", "merchant_household_sales", "merchant_business_sales", "transfer", "household_consumption", "production_inputs", "owner_wages", "construction", "merchant_procurement", "other", "producer_support_issuance", "income_tax", "consumption_tax", "business_tax", "income_subsidy", "consumption_subsidy", "business_subsidy", "fiscal_escrow"], "settlement_cashflow_offsets": [0, 4, 9, 10], "settlement_cashflow_source_indices": [1, 5, 6, 10, 2, 3, 5, 6, 9, 10], "settlement_cashflow_income": [24394, 0, 0, 7778, 1095815, 192093, 0, 0, 0, 8131], "settlement_cashflow_expense": [0, 387119, 10141, 2512, 0, 7778, 708696, 6175, 24394, 306522], "settlement_income_by_cohort": [32172, 1287908, 8131], "settlement_expense_by_cohort": [399772, 747043, 306522], "settlement_epoch_id": 3, "settlement_sample_day": 10, "settlement_commit_day": 14, "settlement_period_days": 5, "settlement_snapshot_source": "committed_trace", "overall_satisfaction_by_cohort_q16": [54763, 61946, 54763], "living_standard_level_by_cohort": [6, 6, 6], "welfare_detail_available": false, "satisfaction_dimension_count": 8, "satisfaction_dims_by_cohort_q16": [65535, 65535, 65535, 65535, 32768, 19979, 65535, 33236, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 33236, 65535, 65535, 65535, 65535, 32768, 19979, 65535, 33236], "worst_satisfaction_dimension_by_cohort": [5, 7, 5], "worst_need_by_cohort": [-1, -1, -1], "welfare_need_offsets": [0, 12, 31, 31], "welfare_need_ids": [16, 13, 12, 5, 15, 0, 9, 8, 2, 10, 6, 7, 16, 13, 12, 5, 15, 0, 9, 8, 2, 10, 6, 7, 18, 1, 4, 14, 3, 11, 17], "welfare_need_satisfaction_q16": [65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535], "welfare_need_weight_q16": [65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536], "welfare_need_tiers": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], "demand_attribution_good_count": 134, "demand_wealth_delta_per_capita_daily": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -5, 0, 0, 0, -18, -1, -3, 0, 0, 0, 0, -4, 0, 0, -1, 0, 0, 0, 0, -2, 0, 0, -8, -5, -7, 0, 0, -3, 0, 0, 0, 0, 0, 0, -4, 0, 0, -1, -1, -1, -5, -1, 0, -1, 0, -5, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -1, 0, 0, 0, -3, 0, -1, 0, 0, 0, -8, -1, 0, -6, 0, 0, 0, 0, 0, 0, 0, 0, 0, -5, 0, 0, -2, 0, -69, 0, 0, 0, 0, 0, 0, 0, 0, -6, -4, 0, 0, 0, 0, 0, 0, 0, -5, -1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -13, -2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "demand_price_delta_per_capita_daily": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 28, 0, 0, 0, 4, 1, 2, 0, 0, 0, 0, 2, 0, 0, 1, 0, 0, 0, 0, -10, 0, 0, 5, 2, -9, 0, 0, -2, 0, 0, 0, 0, 0, 0, -14, 0, 0, 0, -1, 0, 4, 8, 0, 1, 0, -41, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -46, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 26, 0, 0, -11, 0, 26, 0, 0, 0, 0, 0, 0, 0, 0, 1, -42, -1, 0, 0, 0, 0, 0, 0, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -52, 11, 0, 0, 0, 0, 0, 0, 0, 0, 0, 6, 2, 0, 3, 0, 9, 121, 0, 0, 0, 23, 0, 8, 0, 0, 1, 0, 11, 0, 6, 0, 0, 0, 0, 0, -46, 0, 0, 24, 6, -52, 0, 0, -14, 0, 0, 0, 0, 3, 2, -76, 0, 0, 1, -15, 2, 18, 31, 0, 1, 0, -180, 6, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, -1, 0, 0, 0, 0, 0, -245, 2, 2, 9, 0, 0, 0, 0, -1, 0, 2, 0, 0, 113, 2, 0, -50, 1, 155, 1, 0, 0, 0, 0, 0, 0, 1, 15, -181, -5, 0, 0, 0, 0, 0, 0, 6, 2, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0, 0, -279, 49, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "profession_stable_ids": ["agricultural_worker", "ai_researcher", "apprentice", "artisan", "chemist", "construction_worker", "cooperative_member", "corvee_worker", "data_scientist", "electrician", "engineer", "enslaved_laborer", "fisher", "forager", "forestry_worker", "guild_master", "household_farmer", "hunter", "indentured_laborer", "industrial_worker", "industrialist", "journeyman", "landlord", "lorekeeper", "machinist", "manager", "merchant", "metallurgist", "miner", "natural_philosopher", "pastoralist", "petroleum_worker", "research_scientist", "researcher", "scholar", "scientist", "scribe", "serf", "sharecropper", "subsistence_farmer", "technician", "tenant_farmer", "transport_worker", "unemployed", "worker"], "profession_technology_available": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1], "ethnicity_stable_ids": ["default"], "demand_good_offsets": [0, 40, 100, 116], "demand_good_indices": [0, 10, 11, 14, 16, 19, 20, 21, 25, 29, 32, 33, 34, 37, 44, 47, 48, 49, 50, 51, 53, 55, 67, 71, 77, 78, 79, 80, 87, 90, 91, 93, 95, 104, 105, 106, 113, 126, 127, 128, 0, 4, 5, 7, 9, 10, 11, 14, 15, 16, 19, 20, 21, 23, 24, 25, 29, 32, 33, 34, 37, 42, 43, 44, 47, 48, 49, 50, 51, 53, 55, 56, 57, 62, 67, 71, 76, 77, 78, 79, 80, 85, 87, 90, 91, 93, 94, 95, 96, 101, 103, 104, 105, 106, 113, 114, 122, 126, 127, 128, 10, 14, 29, 32, 34, 44, 50, 51, 55, 77, 90, 93, 95, 105, 127, 128], "demand_per_capita_daily": [1, 86, 1, 61, 12, 2, 1, 20, 2, 18, 61, 12, 16, 4, 13, 2, 1, 2, 61, 49, 1, 32, 2, 18, 24, 2, 1, 17, 2, 80, 1, 19, 244, 16, 32, 1, 12, 1, 57, 33, 2, 15, 8, 6, 21, 131, 1, 113, 1, 23, 3, 4, 36, 16, 1, 3, 28, 113, 23, 27, 8, 6, 7, 25, 4, 8, 7, 114, 75, 2, 48, 11, 7, 10, 8, 32, 3, 45, 4, 2, 31, 2, 6, 122, 3, 29, 3, 452, 5, 1, 1, 43, 48, 2, 22, 1, 5, 1, 106, 52, 84, 57, 18, 57, 15, 12, 57, 48, 32, 23, 78, 18, 228, 31, 53, 32], "demand_good_stable_ids": ["adobe_brick", "advanced_chips", "agricultural_machinery", "aluminum", "automobiles", "autonomous_systems", "bast_fiber", "batteries", "bauxite", "beverages", "bread", "bricks", "brine", "bronze_tools", "canned_fish", "cement", "charcoal", "chipped_stone_tools", "clay", "cloth", "clothing", "coal", "coke", "computers", "concrete", "construction_components", "copper", "copper_ore", "copper_tools", "corn_grain", "cotton_fiber", "crude_oil", "dairy_products", "detergent", "edible_oil", "electric_motor", "electrical_equipment", "electricity", "electronic_components", "engines", "explosives", "fertilizer", "fine_clothing", "fine_furniture", "fish", "flax_fiber", "flint", "footwear", "fur", "furniture", "game_meat", "gathered_plants", "glass", "glassware", "gold", "grain", "horses", "household_appliances", "industrial_chemicals", "industrial_machinery", "insulated_cable", "iron_ore", "jewelry", "latex", "lead", "lead_ore", "leather", "leather_goods", "lime", "limestone", "livestock_products", "logs", "lubricants", "lumber", "machine_parts", "manganese_ore", "manuscripts", "meat", "medicinal_herbs", "metal_housewares", "natural_gas", "natural_rubber", "nuclear_fuel", "oceanic_vessels", "packaging", "paper", "petrochemicals", "pharmaceuticals", "phosphate_rock", "plastics", "potatoes", "pottery", "precision_tools", "prepared_staples", "printed_materials", "processed_food", "radio_equipment", "railway_equipment", "rare_earth_metals", "rare_earth_ore", "raw_hide", "raw_stone", "reactor_components", "reed_bundle", "refined_fuel", "rice_grain", "salt", "saltpeter", "scientific_instruments", "seed_cotton", "semiconductors", "silica_sand", "silver", "soap", "spices", "stainless_steel", "steam_engines", "steel", "sulfur", "synthetic_fiber", "synthetic_rubber", "technology_points", "telecom_equipment", "tin", "tin_ore", "tools", "turf_block", "vegetables", "wheat_grain", "wire", "wool", "wrought_iron", "zinc", "zinc_ore"], "demand_need_stable_ids": ["clothing", "communication", "domestic_wares", "durable_goods", "education_culture", "food_fat", "healthcare", "home_energy", "household_goods", "housing", "hygiene", "luxury", "produce", "protein", "recreation", "seasoning", "staple_food", "status_goods", "transport", "work_equipment"], "demand_need_offsets": [0, 12, 31, 36], "demand_need_indices": [16, 13, 12, 5, 15, 0, 9, 8, 2, 10, 6, 7, 16, 13, 12, 5, 15, 0, 9, 8, 2, 10, 6, 7, 18, 1, 4, 14, 3, 11, 17, 16, 13, 12, 5, 15], "demand_need_variant_offsets": [0, 8, 13, 15, 16, 18, 22, 30, 32, 35, 37, 39, 45, 53, 58, 60, 61, 63, 67, 75, 77, 80, 82, 84, 90, 92, 96, 100, 102, 104, 107, 109, 117, 122, 124, 125, 127], "demand_variant_component_offsets": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 24, 26, 28, 31, 34, 37, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 80, 82, 84, 87, 90, 93, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 115, 116, 117, 119, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152], "demand_component_good_indices": [93, 10, 55, 128, 105, 29, 90, 51, 50, 77, 44, 14, 32, 127, 95, 34, 106, 114, 19, 48, 20, 47, 103, 6, 126, 73, 0, 73, 101, 68, 73, 11, 68, 73, 15, 52, 117, 24, 117, 52, 25, 49, 67, 91, 53, 79, 113, 33, 78, 87, 71, 16, 21, 80, 104, 37, 93, 10, 55, 128, 105, 29, 90, 51, 50, 77, 44, 14, 32, 127, 95, 34, 106, 114, 19, 48, 20, 47, 103, 6, 126, 73, 0, 73, 101, 68, 73, 11, 68, 73, 15, 52, 117, 24, 117, 52, 25, 49, 67, 91, 53, 79, 113, 33, 78, 87, 71, 16, 21, 80, 104, 37, 56, 4, 104, 96, 122, 96, 7, 122, 7, 76, 85, 94, 23, 9, 23, 57, 5, 9, 42, 43, 62, 48, 93, 10, 55, 128, 105, 29, 90, 51, 50, 77, 44, 14, 32, 127, 95, 34, 106, 114], "demand_component_per_capita_daily": [19, 86, 32, 33, 32, 18, 80, 49, 61, 24, 13, 61, 61, 57, 244, 16, 1, 0, 2, 1, 1, 2, 0, 0, 1, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 2, 2, 2, 1, 1, 1, 12, 12, 2, 2, 18, 12, 20, 17, 16, 4, 29, 131, 48, 52, 48, 28, 122, 75, 114, 45, 25, 113, 113, 106, 452, 27, 2, 1, 3, 2, 4, 4, 1, 0, 1, 0, 2, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 3, 7, 8, 3, 2, 2, 22, 23, 4, 6, 32, 23, 36, 31, 28, 8, 11, 15, 15, 2, 2, 3, 3, 3, 3, 3, 2, 3, 4, 14, 12, 7, 8, 7, 6, 7, 10, 6, 18, 84, 32, 32, 31, 18, 78, 48, 57, 23, 12, 57, 57, 53, 228, 15, 0, 0], "demand_preview_basis": "committed_economy_current_environment_daily", "demand_preview_environment_ready": true, "demand_preview_saturation_count": 0 } }
+  [FAIL] higher food owner income attracts an incumbent mining employee
+  [PASS] employee-owner mobility retains the final merchant and produces food
+  [PASS] employee-owner mobility conserves every ledger
+  [PASS] job-to-job country bootstraps
+  [PASS] job-to-job runtime configures
+  [PASS] job-to-job fixture bootstraps
+  [PASS] zero-unemployment employee moves to higher collectible pay
+  [PASS] unfunded new good cannot advertise its nominal contract
+  [PASS] job-to-job transition conserves every ledger
+  [PASS] merchant mobility country bootstraps
+  [PASS] merchant mobility runtime configures
+  [PASS] merchant mobility fixture bootstraps
+[EMPDBG] day=0 target g=0 type=134 filled=0 need=1 income=328687510
+[EMPDBG] day=0 owner-source g=1 type=161 filled=2 target=2 income=0 under=0
+[EMPDBG] day=0 owner-match target=0 source=1 source_inc=0 target_inc=328687510 improvement=262144 hurdle=8192 src_prof=26 dst_prof=3
+  [PASS] surplus merchant changes profession while final merchant is retained
+  [PASS] same-profession mobility country bootstraps
+  [PASS] same-profession mobility runtime configures
+  [PASS] same-profession mobility fixture bootstraps
+[EMPDBG] day=0 target g=1 type=379 filled=0 need=2 income=13224600023
+[EMPDBG] day=0 owner-source g=0 type=94 filled=1 target=1 income=0 under=0
+[EMPDBG] day=0 owner-match target=1 source=0 source_inc=0 target_inc=13224600023 improvement=262144 hurdle=4096 src_prof=13 dst_prof=13
+  [PASS] same-profession owner movement only reallocates group fill
+  [PASS] same-profession owner movement conserves every ledger
+  [PASS] owner-job probability country bootstraps
+  [PASS] owner-job probability runtime configures
+  [PASS] owner-job probability fixture bootstraps
+  probability fixture=[47847, 0]/[1, 0]/0/0
+  [PASS] lower-income vacancy does not attract an incumbent owner
+  [PASS] unemployed-first mobility country bootstraps
+  [PASS] unemployed-first mobility runtime configures
+  [PASS] unemployed-first mobility fixture bootstraps
+  [PASS] unemployed owner hiring precedes ACTIVE owner attraction
+  [PASS] unemployed-first owner hiring conserves every ledger
+  [PASS] understaffed-raid country bootstraps
+  [PASS] understaffed-raid runtime configures
+  [PASS] understaffed-raid fixture bootstraps
+[EMPDBG] day=0 target g=1 type=327 filled=0 need=2 income=197558983
+[EMPDBG] day=0 owner-source g=0 type=94 filled=2 target=2 income=197564732 under=0
+[EMPDBG] day=5 target g=1 type=327 filled=0 need=2 income=182154607
+[EMPDBG] day=5 owner-source g=0 type=94 filled=2 target=2 income=182129746 under=0
+  understaffed day=1{ "realloc": 0, "types": [94, 327], "projected": [197593129, 0], "filled": [2, 0], "output": [130000, 0], "sold": [0, 0] }
+[EMPDBG] day=10 target g=1 type=327 filled=0 need=3 income=258248536
+[EMPDBG] day=10 owner-source g=0 type=94 filled=2 target=2 income=157232942 under=0
+[EMPDBG] day=10 owner-match target=1 source=0 source_inc=157232942 target_inc=258248536 improvement=42104 hurdle=8192 src_prof=13 dst_prof=13
+  understaffed day=2{ "realloc": 1, "types": [94, 327, 360], "projected": [0, 258317652, 0], "filled": [1, 1, 0], "output": [4064, 51999, 0], "sold": [0, 0, 0] }
+[EMPDBG] day=15 target g=1 type=327 filled=1 need=3 income=241668209
+[EMPDBG] day=15 target g=0 type=94 filled=1 need=2 income=135739537
+[EMPDBG] day=15 target g=2 type=360 filled=0 need=2 income=107937990
+[EMPDBG] day=15 owner-source g=0 type=94 filled=1 target=2 income=135739537 under=1
+[EMPDBG] day=15 owner-match target=1 source=0 source_inc=135739537 target_inc=241668209 improvement=51143 hurdle=8192 src_prof=13 dst_prof=13
+  understaffed day=3{ "realloc": 1, "types": [94, 327, 360], "projected": [0, 258308340, 0], "filled": [0, 2, 0], "output": [0, 103998, 0], "sold": [0, 0, 0] }
+  understaffed day=4{ "realloc": 0, "types": [94, 327, 360], "projected": [0, 0, 0], "filled": [0, 2, 0], "output": [0, 4877, 0], "sold": [0, 0, 0] }
+  understaffed day=5{ "realloc": 0, "types": [94, 327, 360], "projected": [0, 0, 0], "filled": [0, 2, 0], "output": [0, 103998, 0], "sold": [0, 0, 0] }
+  [FAIL] understaffed owner lots do not thrash on a small opportunity gap
+  [PASS] understaffed-raid conserves every ledger
+  [PASS] understaffed-flow country bootstraps
+  [PASS] understaffed-flow runtime configures
+  [PASS] understaffed-flow fixture bootstraps
+  [FAIL] understaffed labor concentrates on the higher-opportunity lot
+  [PASS] understaffed-flow conserves every ledger
+  [PASS] unemployment-subsidy country configures
+  [PASS] unemployment-subsidy country bootstraps
+  [PASS] unemployment-subsidy policy commits
+  [PASS] unemployment-subsidy economy configures
+  [PASS] unemployment-subsidy fixture bootstraps
+  [PASS] funded unemployment subsidy is job reservation income
+  [PASS] funded unemployment subsidy remains a fiscal transfer
+  [PASS] owner-investment country bootstraps
+  [PASS] owner-investment runtime configures
+  [PASS] owner-investment settlement bootstraps
+  [PASS] owner-investment diagnostic trace registers
+[EMPDBG] day=0 owner-source g=1 type=359 filled=10 target=10 income=0 under=0
+[EMPDBG] day=0 owner-source g=2 type=379 filled=6 target=6 income=0 under=0
+[EMPDBG] day=0 owner-source g=0 type=134 filled=2 target=2 income=2442373 under=0
+[RECONDBG] day=0 group=1 filled=10
+  [PASS] employment fills the existing profitable owner opening first
+  [PASS] existing owner-opening employment conserves every ledger
+[EMPDBG] day=5 owner-source g=2 type=379 filled=6 target=6 income=11874 under=0
+[EMPDBG] day=5 owner-source g=1 type=359 filled=10 target=10 income=91553 under=0
+[EMPDBG] day=5 owner-source g=0 type=134 filled=2 target=2 income=2251139 under=0
+[EMPDBG] day=10 owner-source g=2 type=379 filled=6 target=6 income=46111 under=0
+[EMPDBG] day=10 owner-source g=1 type=359 filled=10 target=10 income=1174200 under=0
+[EMPDBG] day=10 owner-source g=0 type=134 filled=3 target=3 income=3357088 under=0
+  [FAIL] profitable unlocked-building investment transitions its sponsor and starts construction
+  [PASS] investment v9 publishes one consistent marginal-output driver
+  [FAIL] legacy signal thresholds and sales ratios do not veto positive marginal demand
+  [PASS] endogenous construction conserves every ledger
+[EMPDBG] day=15 owner-source g=2 type=379 filled=6 target=6 income=91005 under=0
+[EMPDBG] day=15 owner-source g=1 type=359 filled=10 target=10 income=367516 under=0
+[EMPDBG] day=15 owner-source g=0 type=134 filled=4 target=4 income=4451579 under=0
+  [PASS] non-review day prevents repeat expansion
+  [PASS] merit-order country bootstraps
+  [PASS] merit-order runtime configures
+  [PASS] merit-order settlement bootstraps
+  [PASS] low-cost plant captures merchant quota before high-cost leftover
+  [PASS] merit-order offtake conserves every ledger
+  [PASS] displacement country bootstraps
+  [PASS] displacement runtime configures
+  [PASS] displacement settlement bootstraps
+  [PASS] displacement diagnostic trace registers
+[EMPDBG] day=0 owner-source g=0 type=42 filled=6 target=6 income=9699892 under=0
+[EMPDBG] day=0 employee-source g=0 role=0 prof=28 income=0 filled=84
+[EMPDBG] day=0 employee-source g=0 role=1 prof=25 income=0 filled=12
+[EMPDBG] day=5 owner-source g=0 type=42 filled=6 target=6 income=9041228 under=0
+[EMPDBG] day=5 employee-source g=0 role=0 prof=28 income=16359 filled=84
+[EMPDBG] day=5 employee-source g=0 role=1 prof=25 income=17136 filled=12
+[EMPDBG] day=10 owner-source g=1 type=353 filled=1 target=1 income=7592668 under=0
+[EMPDBG] day=10 owner-source g=0 type=42 filled=6 target=6 income=7730959 under=0
+[EMPDBG] day=10 employee-source g=0 role=0 prof=28 income=2674 filled=14
+[EMPDBG] day=10 employee-source g=0 role=1 prof=25 income=2674 filled=3
+[EMPDBG] day=10 employee-source g=1 role=0 prof=28 income=5485 filled=12
+[EMPDBG] day=10 employee-source g=1 role=1 prof=25 income=5485 filled=2
+  displacement candidates={ "types": [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, 52, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 88, 89, 90, 91, 92, 93, 94, 95, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 125, 126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138, 139, 140, 141, 142, 143, 144, 145, 146, 147, 148, 149, 150, 151, 152, 153, 154, 155, 156, 157, 158, 159, 160, 161, 162, 163, 164, 165, 166, 167, 168, 169, 170, 171, 172, 173, 174, 175, 176, 177, 178, 179, 180, 181, 182, 183, 184, 185, 186, 187, 188, 189, 190, 191, 192, 193, 194, 195, 196, 197, 198, 199, 200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210, 211, 212, 213, 214, 215, 216, 217, 218, 219, 220, 221, 222, 223, 224, 225, 226, 227, 228, 229, 230, 231, 232, 233, 234, 235, 236, 237, 238, 239, 240, 241, 242, 243, 244, 245, 246, 247, 248, 249, 250, 251, 252, 253, 254, 255, 256, 257, 258, 259, 260, 261, 262, 263, 264, 265, 266, 267, 268, 269, 270, 271, 272, 273, 274, 275, 276, 277, 278, 279, 280, 281, 282, 283, 284, 285, 286, 287, 288, 289, 290, 291, 292, 293, 294, 295, 296, 297, 298, 299, 300, 301, 302, 303, 304, 305, 306, 307, 308, 309, 310, 311, 312, 313, 314, 315, 316, 317, 318, 319, 320, 321, 322, 323, 324, 325, 326, 327, 328, 329, 330, 331, 332, 333, 334, 335, 336, 337, 338, 339, 340, 341, 342, 343, 344, 345, 346, 347, 348, 349, 350, 351, 352, 353, 354, 355, 356, 357, 358, 359, 360, 361, 362, 363, 364, 365, 366, 367, 368, 369, 370, 371, 372, 373, 374, 375, 376, 377, 378, 379, 380, 381, 382, 383, 384, 385, 386, 387, 388, 389, 390, 391, 392, 393, 394, 395, 396, 397, 398, 399], "reject": [11, 15, 15, 15, 15, 11, 11, 11, 11, 11, 15, 15, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 15, 15, 11, 11, 11, 11, 11, 11, 11, 15, 11, 11, 11, 11, 11, 15, 11, 11, 11, 11, 15, 11, 11, 11, 11, 11, 11, 11, 11, 11, 15, 11, 15, 15, 11, 15, 15, 11, 15, 15, 11, 15, 15, 11, 15, 15, 15, 11, 11, 11, 11, 15, 11, 11, 11, 11, 11, 15, 11, 13, 13, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 13, 11, 11, 11, 11, 11, 11, 11, 13, 11, 11, 15, 15, 11, 11, 15, 11, 15, 11, 11, 11, 11, 15, 11, 15, 11, 11, 11, 11, 15, 11, 15, 11, 11, 11, 11, 11, 11, 11, 15, 11, 15, 11, 15, 11, 13, 11, 15, 11, 11, 11, 15, 15, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 15, 15, 15, 11, 11, 11, 11, 11, 11, 11, 15, 11, 11, 13, 11, 15, 15, 11, 11, 15, 11, 15, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 15, 11, 15, 15, 11, 15, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 15, 11, 11, 11, 11, 11, 11, 15, 15, 15, 11, 11, 15, 15, 15, 11, 15, 11, 11, 11, 15, 15, 11, 11, 11, 11, 11, 11, 15, 11, 11, 11, 11, 11, 11, 11, 11, 15, 11, 11, 11, 11, 11, 11, 11, 15, 11, 15, 11, 11, 11, 15, 11, 11, 11, 11, 15, 11, 11, 15, 11, 15, 11, 11, 11, 11, 15, 11, 11, 11, 11, 11, 11, 15, 13, 11, 11, 11, 11, 11, 11, 11, 11, 15, 11, 11, 15, 13, 11, 11, 15, 15, 11, 11, 11, 15, 11, 11, 15, 15, 11, 15, 15, 11, 11, 11, 11, 11, 13, 11, 13, 11, 11, 11, 13, 15, 11, 11, 5, 15, 15, 11, 11, 11, 11, 11, 11, 11, 11, 15, 11, 15, 11, 11, 11, 15, 11, 11, 11, 11, 11, 11, 11, 11, 11, 11, 15, 11, 13, 11, 13, 11, 11, 11, 11, 11, 11, 11, 11, 11, 15, 11, 11, 11, 11], "stealable": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 37519, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "challenger_cost": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 432, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "incumbent_cost": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 7923, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "required": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "profit": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, -321900, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0], "driver": [0, 1, 2, 3, 116, 127, 4, 5, 10, 85, 36, 110, 6, 20, 7, 8, 9, 131, 10, 9, 11, 106, 12, 13, 105, 43, 121, 14, 14, 15, 16, 121, 121, 52, 25, 25, 76, 111, 18, 19, 20, 21, 21, 47, 22, 93, 41, 23, 121, 24, 25, 27, 26, 28, 19, 109, 109, 30, 109, 42, 32, 32, 71, 33, 23, 9, 128, 18, 27, 26, 61, 121, -1, 31, 124, 123, 18, 34, 35, 36, 37, 58, 38, 39, 105, 40, 20, 127, 41, 42, 43, 11, 6, 45, 46, 121, 29, 128, 47, 44, 20, 49, 37, 51, 121, 52, 53, 53, 53, 54, 62, 49, 19, 20, 90, 56, 56, 57, 6, 19, 90, 19, 37, 19, 127, 58, 59, 121, 106, 60, 127, 61, 125, 62, 17, 29, 81, 65, 64, 121, 67, 67, 67, 66, 68, 69, 121, 72, 73, 121, 74, 29, 75, 70, 44, 30, 127, 100, 78, 78, 78, -1, 79, 79, 79, 2, 3, 83, 4, 71, 83, 7, 8, 11, 15, 22, 24, 109, 109, 109, 33, 34, 35, 38, 39, 40, 40, 6, 6, 6, 6, 6, 46, 71, 51, 90, 57, 59, 60, 29, 65, 64, 68, 69, 72, 73, 73, 73, 74, 29, 29, 75, 44, 44, 78, 78, 78, 80, 82, 83, 84, 86, 88, 89, 90, 90, 90, 90, 91, 92, 92, 94, 96, 99, 98, 102, 104, 105, 105, 105, 105, 105, 63, 63, 63, 107, 107, 108, 108, 70, 113, 63, 114, 114, 114, 115, 116, 83, 50, 101, 101, 118, 118, 119, 120, 71, 71, 128, 128, 128, 128, 128, 129, 130, 130, 133, 132, 76, 94, 121, 26, 80, 82, 87, 37, 83, 31, 37, 91, 121, 13, 84, 85, 85, 70, 121, 86, 87, 88, 54, 85, 89, 121, 90, 90, 91, 127, 92, 18, 54, 94, 121, 95, 96, 85, 97, 29, 128, 70, 99, 98, 102, 103, 104, 105, 63, 63, 101, 106, 107, 108, 121, 121, 110, 112, 105, 111, 112, 77, 50, 53, 67, 79, 121, 113, 106, 114, 114, 114, 114, 115, 93, 93, 21, 116, 61, 97, 117, 117, 50, 101, 127, 118, 21, 112, 29, 119, 120, 19, 20, 66, 122, 105, 90, 29, 128, 19, 127, 121, 71, 124, 123, 125, 126, 105, 121, 105, 128, 109, 29, 78, 105, 114, 90, 128, 129, 94, 130, 133, 132], "driver_pressure": [65536, 4096, 4096, 4096, 4096, 65536, 65536, 65536, 65536, 65536, 4096, 4096, 65536, 65536, 65536, 4096, 65536, 4096, 65536, 65536, 65536, 65536, 4096, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 4096, 4096, 65536, 65536, 0, 0, 65536, 4096, 65536, 4096, 65536, 65536, 65536, 65536, 4096, 4096, 4096, 65536, 4096, 4096, 4096, 4096, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 4096, 4096, 4096, 4096, 65536, 0, 4096, 4096, 4096, 4096, 65536, 4096, 4096, 65536, 4096, 4096, 4096, 65536, 4096, 65536, 65536, 4096, 65536, 65536, 65536, 65536, 4096, 4096, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 40266, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 4096, 4096, 65536, 65536, 4096, 65536, 4096, 65536, 65536, 65536, 65536, 4096, 4096, 4096, 65536, 65536, 65536, 65536, 4096, 65536, 4096, 65536, 4096, 65536, 65536, 4096, 65536, 4096, 4096, 65536, 4096, 65536, 4096, 65536, 65536, 65536, 0, 65536, 65536, 65536, 4096, 4096, 4096, 65536, 65536, 4096, 65536, 4096, 65536, 65536, 4096, 65536, 4096, 4096, 4096, 65536, 65536, 4096, 4096, 4096, 4096, 4096, 65536, 65536, 65536, 65536, 65536, 4096, 65536, 65536, 65536, 65536, 4096, 4096, 65536, 4096, 4096, 65536, 4096, 4096, 65536, 65536, 65536, 4096, 65536, 65536, 4096, 65536, 65536, 65536, 65536, 65536, 65536, 4096, 4096, 4096, 4096, 4096, 4096, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 4096, 4096, 4096, 65536, 65536, 65536, 65536, 65536, 65536, 4096, 4096, 4096, 4096, 4096, 4096, 4096, 4096, 65536, 4096, 65536, 65536, 65536, 4096, 4096, 4096, 65536, 65536, 65536, 4096, 4096, 4096, 4096, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 4096, 4096, 4096, 4096, 4096, 65536, 65536, 65536, 4096, 65536, 4096, 65536, 65536, 4096, 4096, 65536, 65536, 65536, 65536, 4096, 65536, 65536, 4096, 65536, 4096, 65536, 4096, 65536, 65536, 4096, 65536, 65536, 65536, 65536, 65536, 65536, 4096, 65536, 65536, 65536, 65536, 65536, 65536, 4096, 65536, 65536, 4096, 4096, 4096, 4096, 65536, 65536, 65536, 4096, 4096, 65536, 65536, 4096, 4096, 65536, 65536, 4096, 65536, 65536, 4096, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 4096, 65536, 65536, 65536, 4096, 4096, 4096, 65536, 65536, 65536, 65536, 65536, 4096, 0, 65536, 65536, 4096, 4096, 65536, 65536, 4096, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 65536, 4096, 4096, 65536, 65536, 65536, 65536, 65536, 65536, 4096, 65536, 65536, 65536, 65536, 65536, 65536, 4096, 65536, 4096, 4096, 4096] }
+  displacement steam row={ "reject": 5, "stealable": 37519, "challenger_cost": 432, "incumbent_cost": 7923, "required": 0, "profit": -321900, "driver": 21 }
+  displacement incumbents={ "types": [42, 353], "counts": <null>, "capacity": <null>, "output": [187591, 5070000], "op_cost": [1486344, 1900769], "state": [0, 0] }
+  [PASS] cheaper unlocked type can displace covered high-cost incumbents
+  [PASS] displacement investment conserves every ledger
+  [PASS] first-research fixture catalog contains the required entries
+  [PASS] first-research country configures
+  [PASS] first-research country bootstraps
+  [PASS] first-research queue and automatic procurement commit
+  [PASS] first-research economy configures
+  [PASS] first-research economy fixture bootstraps
+  [PASS] first-research fixture starts without a research building
+[EMPDBG] day=10 owner-source g=1 type=289 filled=1 target=1 income=230509 under=0
+  [PASS] automatic investment starts the first research building
+  [PASS] first research building is committed after investment
+  [PASS] research auto-investment preserves every ledger
+  [PASS] employment-catchup country bootstraps
+  [PASS] employment-catchup runtime configures
+  [PASS] employment-catchup fixture injects 35 additional unemployed
+[EMPDBG] day=0 owner-source g=0 type=134 filled=2 target=2 income=0 under=0
+[EMPDBG] day=0 owner-source g=1 type=359 filled=10 target=10 income=0 under=0
+[EMPDBG] day=0 owner-source g=2 type=379 filled=6 target=6 income=0 under=0
+[RECONDBG] day=0 group=1 filled=10
+[EMPDBG] day=5 owner-source g=0 type=134 filled=2 target=2 income=49061 under=0
+[EMPDBG] day=5 owner-source g=2 type=379 filled=6 target=6 income=396592 under=0
+[EMPDBG] day=5 owner-source g=1 type=359 filled=10 target=10 income=1824574 under=0
+  [FAIL] high unemployment activates catch-up and starts jobs within 30 days
+  [FAIL] employment catch-up lowers unemployment strictly below 25 percent in 365 days
+  [PASS] employment-catchup regression conserves every ledger
+  [PASS] collector-investment country bootstraps
+  [PASS] collector-investment runtime configures
+  [PASS] collector-investment fixture bootstraps
+  [PASS] collector-investment diagnostic trace registers
+[EMPDBG] day=0 owner-source g=0 type=148 filled=1 target=1 income=0 under=0
+[EMPDBG] day=10 owner-source g=0 type=148 filled=1 target=1 income=0 under=0
+[EMPDBG] day=10 owner-source g=1 type=379 filled=2 target=2 income=6469834 under=0
+  [PASS] logs demand can fund and construct a local timber collector
+  [PASS] collector investment conserves every ledger
+  [PASS] substitute-price country bootstraps
+  [PASS] substitute-price runtime configures
+  [PASS] substitute-price fixture bootstraps
+  [PASS] expensive construction substitute never aborts the economy runtime
+  [FAIL] investment batch stays within the funded construction invoice
+  [PASS] substitute-capped investment conserves every ledger
+  [PASS] non-starter producers consume positive explicit construction materials
+  [PASS] maintenance CSR columns exist
+  [PASS] farm and kiln maintenance recipes differ
+  [PASS] ocean fishery has an executable oceanic-vessel replacement sink
+  [PASS] installed-maintenance country bootstraps
+  [PASS] installed-maintenance runtime configures
+  [PASS] installed-maintenance fixture bootstraps
+  [PASS] installed mine keeps construction-material buffer without new starts
+  [PASS] maintenance is a paid operating cost
+  [PASS] storable industrial continuity still conserves ledgers
+  [PASS] existing-market entry country bootstraps
+  [PASS] existing-market entry runtime configures
+  [PASS] existing-market entry fixture bootstraps
+  [PASS] existing-market investment diagnostics register
+[EMPDBG] day=0 owner-source g=1 type=359 filled=3 target=3 income=0 under=0
+[EMPDBG] day=0 owner-source g=0 type=134 filled=3 target=3 income=3663748 under=0
+[RECONDBG] day=0 group=1 filled=3
+[EMPDBG] day=5 owner-source g=0 type=134 filled=3 target=3 income=3376909 under=0
+[EMPDBG] day=10 owner-source g=2 type=151 filled=1 target=1 income=28843 under=0
+[EMPDBG] day=10 owner-source g=3 type=317 filled=1 target=1 income=28843 under=0
+[EMPDBG] day=10 owner-source g=0 type=99 filled=1 target=1 income=30555 under=0
+[EMPDBG] day=10 owner-source g=4 type=359 filled=3 target=3 income=52088 under=0
+[EMPDBG] day=10 owner-source g=1 type=134 filled=4 target=4 income=3970441 under=0
+  [FAIL] collector investment reaches economic gates alongside industrial reviews
+  [PASS] existing-market entry review conserves every ledger
+  [PASS] input-coverage country bootstraps
+  [PASS] input-coverage runtime configures
+  [PASS] input-coverage fixture bootstraps
+[RECONDBG] day=0 group=1 filled=3
+  [PASS] missing input coverage blocks further entry
+  [PASS] input-coverage review conserves every ledger
+  [PASS] owner-livelihood country bootstraps
+  [PASS] owner-livelihood runtime configures
+  [PASS] owner-livelihood fixture bootstraps
+[RECONDBG] day=0 group=1 filled=10
+  [PASS] shortage cannot approve a workshop that misses owner livelihood
+  [PASS] realized workshop margin includes owner livelihood
+  [PASS] incumbent-gathering country bootstraps
+  [PASS] incumbent-gathering runtime configures
+  [PASS] incumbent-gathering fixture bootstraps
+  [PASS] incumbent-gathering diagnostic trace registers
+[EMPDBG] day=0 owner-source g=0 type=103 filled=8 target=8 income=3528369 under=0
+[EMPDBG] day=5 owner-source g=0 type=103 filled=8 target=8 income=3507353 under=0
+[EMPDBG] day=10 owner-source g=0 type=103 filled=10 target=10 income=4415573 under=0
+[EMPDBG] day=15 owner-source g=0 type=103 filled=13 target=13 income=5785297 under=0
+  [PASS] incumbent gathering camps settled with positive livelihood
+  [PASS] incumbent gathering expansion is not rejected for owner livelihood
+  [PASS] incumbent gathering livelihood review conserves every ledger
+  [PASS] owner-only loss country bootstraps
+  [PASS] owner-only loss runtime configures
+  [PASS] owner-only loss fixture bootstraps
+  [PASS] installed loom keeps logs construction reserve
+  [PASS] owner livelihood loss counts without input or payroll cost
+  [PASS] third owner-only livelihood loss suspends the workshop
+  [PASS] recovery-pending country bootstraps
+  [PASS] recovery-pending runtime configures
+  [PASS] recovery-pending fixture bootstraps
+  [PASS] recovery-pending fixture reaches suspension with released owner
+  [PASS] recovery-pending owner removal queues
+  [PASS] failed restart remains fully suspended without a probe state
+  [PASS] next due cycle keeps suspension without rehiring
+  [PASS] suspended building has no recovery cooldown or probe capacity
+  [PASS] recovery-pending cycles conserve every ledger
+  [PASS] service lifecycle country bootstraps
+  [PASS] service lifecycle runtime configures
+  [PASS] service lifecycle fixture bootstraps
+  [PASS] merchant post never enters producer loss suspension
+  [PASS] dead-merchant investment country bootstraps
+  [PASS] dead-merchant investment runtime configures
+  [PASS] dead-merchant investment fixture bootstraps
+[RECONDBG] day=0 group=1 filled=9
+  [PASS] structural commit repairs merchant before the capital review
+  [PASS] repaired merchant supports the next endogenous construction review
+  [PASS] dead-merchant construction conserves every ledger
+  [PASS] continuation country bootstraps
+  [PASS] continuation runtime configures
+  [PASS] continuation fixture bootstraps
+  [PASS] one-cell building budget enters bounded continuation
+  [PASS] due rolling bucket completes through continuation slices
+  [PASS] completed rolling transaction can save immediately
+  [PASS] sliced building plan commits with exact conservation
+  [PASS] reference continuation country bootstraps
+  [PASS] reference continuation runtime configures
+  [PASS] reference continuation fixture bootstraps
+  [PASS] continuation slice budget preserves authoritative hash
+  [PASS] production scalar country bootstraps
+  [PASS] production worker country bootstraps
+  [PASS] production scalar runtime configures
+  [PASS] production worker runtime configures
+  [PASS] production scalar fixture bootstraps
+  [PASS] production worker fixture bootstraps
+  [PASS] building production dispatches multiple worker tasks
+  [PASS] sub-threshold production uses weighted parallel dispatch
+  [PASS] building plan uses weighted parallel dispatch
+  [PASS] building production worker and scalar hashes match
+  [PASS] building production worker and scalar event hashes match
+  [PASS] building production worker conserves all ledgers
+  [PASS] weighted worker remains scalar-equivalent across rolling phases
+  [PASS] incremental opening audit preserves exact rolling ledgers
+  [PASS] opening audit exercises fast and full verification paths
+  [PASS] INCREMENTAL closing audit exercises fast and full verification paths
+  [PASS] INCREMENTAL closing audit remains enabled and exact
+  [PASS] investment review list executes every scheduled cell exactly once
+  [PASS] ACTIVE investment sparse filter evaluates a strict candidate subset
+  [PASS] ACTIVE investment sparse filter reports no viable-candidate mismatch
+  [PASS] merchant-finance country bootstraps
+  [PASS] merchant-finance runtime configures
+  [PASS] merchant-finance fixture bootstraps
+  [PASS] cashless owner submits merchant-financed construction
+  [PASS] merchant financing draws principal and records five-percent premium
+  [PASS] last local merchant remains a merchant while financing construction
+  [PASS] merchant-financed construction conserves all ledgers
+  [PASS] all-technology test country bootstraps
+  [PASS] building runtime configures
+  [PASS] employment mobility policy is exposed deterministically
+  [PASS] building population bootstraps
+  [PASS] untracked settlement detail is unavailable
+  [PASS] inspector trace target registers
+  [PASS] new inspector trace reports pending until commit
+  [PASS] industrialist owner handle exists
+  [PASS] build command accepted
+  [PASS] construction cycle commits
+  [PASS] new building group triggers one batched topology rebuild
+  [PASS] mine completes at cycle boundary
+[EMPDBG] day=5 owner-source g=0 type=42 filled=1 target=1 income=2014623 under=0
+[EMPDBG] day=5 employee-source g=0 role=0 prof=28 income=16359 filled=14
+[EMPDBG] day=5 employee-source g=0 role=1 prof=25 income=17136 filled=2
+  [PASS] production cycle conserves population
+  [PASS] production cycle conserves money
+  [PASS] production cycle conserves market goods
+  [PASS] building snapshot reports five-day production period
+  all-tech day1 debug={ "types": [42, 154, 205, 352], "counts": [1, 1, 1, 1], "owners": [20, 12, 3, 3], "filled": [1, 0, 0, 0], "required": [1, 2, 1, 1], "openings": [0, 2, 1, 1], "planned": [65536, 65536, 65536, 65536], "funded": [65536, 0, 0, 0], "capacity": [65536, 0, 0, 0], "state": [0, 0, 0, 0], "pop": [1, 11, 1, 2, 110], "owner_pop": [1, 0, 0, 0, 0], "unemp": [0, 0, 1, 0, 110] }
+  [PASS] owner job filled
+  [PASS] active utilization remains bounded and keeps jobs
+  [PASS] mine produces output
+  [PASS] merchant buys at least part of output
+  [PASS] installed mine keeps construction-material buffer
+  [PASS] maintenance is a paid operating cost
+  [PASS] merchant procurement freezes a 12.5 percent reserve and stays in budget
+  [PASS] shortage cannot lift merchant producer settlement above configured factor
+  [PASS] merchant liquidity report reconciles assets and operating outflow
+  [PASS] selected market exposes merchant economic assets instead of cohort funds only
+  [PASS] ordinary non-survival coal enters the market instead of owner retention
+  [PASS] building output reconciles sale, owner retention, and discard
+  [PASS] adaptive contract wages respect each role living floor
+  [FAIL] building snapshot separates base wage and bonus
+  [PASS] zero filled employee roles cannot carry paid base wages
+  [PASS] owner-lot bonus is exact after fully funded base payroll
+  [PASS] building snapshot reports priced tool input cost
+  [PASS] worker cohort has real employee count
+  [PASS] adaptive wages reach worker and manager cohorts
+  [PASS] owner expense includes base payroll and bonus
+  [PASS] committed settlement cashflow detail is available
+  [FAIL] worker cashflow sources reconcile to epoch ledger
+  [PASS] manager cashflow sources reconcile to epoch ledger
+  [PASS] owner cashflow sources reconcile to epoch ledger
+  [PASS] settlement classifies wages and owner operations
+  [PASS] settlement classifies merchant household and procurement flows
+  [PASS] wage report is exact and fully funded
+  [PASS] sold coal enters local stock
+  [PASS] price v3 publishes sparse coal supply and cost anchor
+  [PASS] market publishes realized withdrawals and merchant inventory targets
+  [PASS] building snapshot publishes economic cost diagnostics
+  [PASS] resource extraction publishes negative extra delta
+  [PASS] extractive building reports no generated resource
+  [PASS] building snapshot exposes current and effective resource reserves
+  [PASS] building snapshot stays committed
+  [PASS] merchant cash purchase and bounded support stop at the inventory target
+  [PASS] owner cash drain command accepted
+[EMPDBG] day=10 owner-source g=1 type=154 filled=2 target=2 income=91110 under=0
+[EMPDBG] day=10 owner-source g=3 type=352 filled=1 target=1 income=103964 under=0
+[EMPDBG] day=10 owner-source g=2 type=205 filled=1 target=1 income=548154 under=0
+[EMPDBG] day=10 owner-source g=0 type=42 filled=1 target=1 income=2361200 under=0
+[EMPDBG] day=10 employee-source g=2 role=0 prof=2 income=0 filled=3
+[EMPDBG] day=10 employee-source g=3 role=0 prof=2 income=11936 filled=3
+[EMPDBG] day=10 employee-source g=0 role=0 prof=28 income=16359 filled=14
+[EMPDBG] day=10 employee-source g=0 role=1 prof=25 income=17136 filled=2
+  [PASS] unfunded active employment keeps its payroll commitment
+  [PASS] unpaid role lowers collectible expected wage below contract
+  [PASS] producer-income inventory floor preserves the next active production plan
+  [PASS] zero owner input funds preserve intent but suppress funded production
+  [PASS] unfunded active contract remains explicitly wage-suspended
+  [PASS] insolvent wage cycle conserves money and goods
+  [PASS] cash-drained cycle preserves the prior profitable settlement once
+  [PASS] treasury transfer is exposed as a settlement source
+[EMPDBG] day=15 owner-source g=1 type=154 filled=2 target=2 income=135627 under=0
+[EMPDBG] day=15 owner-source g=3 type=352 filled=1 target=1 income=210013 under=0
+[EMPDBG] day=15 owner-source g=4 type=379 filled=2 target=2 income=253663 under=0
+[EMPDBG] day=15 owner-source g=2 type=205 filled=1 target=1 income=1017588 under=0
+[EMPDBG] day=15 employee-source g=0 role=0 prof=28 income=0 filled=14
+[EMPDBG] day=15 employee-source g=0 role=1 prof=25 income=0 filled=1
+[EMPDBG] day=15 employee-source g=2 role=0 prof=2 income=0 filled=2
+[EMPDBG] day=15 employee-source g=3 role=0 prof=2 income=11936 filled=3
+  [PASS] first execution-blocked cycle is not classified as a loss
+  [PASS] repeated execution blockage remains active without loss accumulation
+  [PASS] recovery fixture schedules cash drain and merchant input replenishment
+  [PASS] third execution-blocked cycle remains active
+  [PASS] blocked active building retains its owner and restart intent
+  [PASS] blocked producer keeps explicit unfunded upstream demand
+  [PASS] building PKCN save begins
+  [PASS] building PKCN save completes
+  [PASS] building v52 save begins
+  [PASS] building save completes
+  [PASS] building restore country configures first
+  [PASS] building PKCN restore begins
+  [PASS] building PKCN chunk accepted
+  [PASS] building PKCN chunk accepted
+  [PASS] building PKCN chunk accepted
+  [PASS] building PKCN chunk accepted
+  [PASS] building PKCN chunk accepted
+  [PASS] building PKCN chunk accepted
+  [PASS] building PKCN chunk accepted
+  [PASS] building PKCN chunk accepted
+  [PASS] building PKCN chunk accepted
+  [PASS] building PKCN chunk accepted
+  [PASS] building PKCN restore completes
+  [PASS] building restore target configures
+  [PASS] building restore begins
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore chunk accepted
+  [PASS] building restore completes
+  [PASS] building save hash round-trips
+  [PASS] restored mine preserves active blocked lifecycle classification
+restore divergence hash=1653441727152985439/3158182290078326639 generation=8/8 price_equal=true
+  [FAIL] restored building input spans survive the first production cycle
+  [PASS] restored inputs resume through the active path without a recovery probe
+  [PASS] first recovery cycle conserves all ledgers
+  [PASS] profitable alternative coexists with the active blocked building
+  [PASS] restart cycle conserves all ledgers
+  [PASS] blocked building remains retryable without losing either building group
+  [PASS] resumed production conserves all ledgers
+=== native building runtime FAIL ===
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 276 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

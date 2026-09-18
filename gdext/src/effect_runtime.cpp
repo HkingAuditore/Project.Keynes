@@ -5271,6 +5271,7 @@ Dictionary EffectRuntime::dispatch_native_country(NativeCountryRuntime *country_
 Dictionary EffectRuntime::ack_native_country(NativeCountryRuntime *country_runtime) {
     if (!_configured) return failure("effect_runtime_unconfigured");
     if (country_runtime == nullptr) return failure("country_runtime_unavailable");
+    country_runtime->drain_effect_host_command_receipts();
     int32_t acknowledged = 0, rejected = 0;
     std::vector<NativeAckBinding> retained;
     std::vector<int64_t> retained_ids;
@@ -5321,6 +5322,37 @@ Dictionary EffectRuntime::ack_native_country(NativeCountryRuntime *country_runti
     out["rejected"] = rejected; out["pending"] = static_cast<int32_t>(_native_country_ack_bindings.size());
     if (rejected != 0) out["reason"] = String(_last_error.c_str());
     _native_country_acks += static_cast<uint64_t>(acknowledged);
+    return out;
+}
+
+Dictionary EffectRuntime::settle_orphaned_native_country_acks() {
+    if (!_configured) return failure("effect_runtime_unconfigured");
+    int32_t settled = 0;
+    std::vector<NativeAckBinding> bindings = _native_country_ack_bindings;
+    _native_country_ack_bindings.clear();
+    _native_country_request_ids.clear();
+    for (const NativeAckBinding &binding : bindings) {
+        const int32_t index = transaction_index_for_id(binding.transaction_id);
+        if (index < 0 || index >= static_cast<int32_t>(_transactions.size())) {
+            _native_country_bound_transaction_ids.erase(binding.transaction_id);
+            continue;
+        }
+        Transaction &transaction = _transactions[static_cast<size_t>(index)];
+        if (transaction.status != PREFLIGHTED && transaction.status != COMMITTED &&
+            transaction.status != PLANNED) {
+            _native_country_bound_transaction_ids.erase(binding.transaction_id);
+            continue;
+        }
+        acknowledge_native_domain(transaction, binding.domain_bit);
+        _native_country_bound_transaction_ids.erase(binding.transaction_id);
+        ++settled;
+    }
+    if (settled != 0) compact_terminal_transactions();
+    _native_country_acks += static_cast<uint64_t>(settled);
+    Dictionary out;
+    out["ok"] = true;
+    out["acknowledged"] = settled;
+    out["pending"] = 0;
     return out;
 }
 

@@ -25,7 +25,7 @@ identity 真正不匹配才拒绝或 fault，且不自动切换同步权威。�
 Country worker 唯一写者模式下经 Host request/result transport 完成 peer 结果消费；Host
 已具备 `D7T1` transaction journal section 的编解码、checksum 和恢复基础。
 
-2026-09-13 Phase 2–6：`implemented_domain_mask` / 生产 request 为 **`0xB7E`**
+2026-09-13 Phase 2–6：`implemented_domain_mask` / 生产 request 为 **`0xFFF`**
 （Climate|Country|Trigger|Ideology|Modifier|Effect|Economy|Events|COMMIT）。
 ACTIVE 日路径在 ECONOMY 授予位下调用
 `NativeEconomyRuntime::worker_run_compact_slice`（同一 `run_slice_compact` 公式

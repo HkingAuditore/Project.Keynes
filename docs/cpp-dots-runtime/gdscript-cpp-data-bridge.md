@@ -2,7 +2,7 @@
 
 ## Economy Phase 2–6 bridge note (2026-09-13)
 
-Production ACTIVE mask is `0xB7E` (includes ECONOMY). Main-thread
+Production ACTIVE mask is `0xFFF` (includes ECONOMY). Main-thread
 `economy_should_run` is suppressed when the worker owns ECONOMY **and**
 `attach_economy_production_runtime` succeeded; otherwise fail-open to sync.
 `economy_execution_mode` (default `ACTIVE_ONLY`) controls whether SHADOW

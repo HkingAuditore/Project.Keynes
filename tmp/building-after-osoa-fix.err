@@ -1,0 +1,11 @@
+SCRIPT ERROR: Invalid access to property or key 'building_counts_by_type' on a base object of type 'Dictionary'.
+   at: _run (res://tests/building_runtime_test.gd:535)
+   GDScript backtrace (most recent call first):
+       [0] _run (res://tests/building_runtime_test.gd:535)
+       [1] _init (res://tests/building_runtime_test.gd:9)
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 276 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

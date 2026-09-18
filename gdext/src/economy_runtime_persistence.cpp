@@ -32,6 +32,9 @@ void owned_put_u64(std::vector<uint8_t> &out, uint64_t value) {
 void owned_put_i64(std::vector<uint8_t> &out, int64_t value) {
     owned_put_u64(out, static_cast<uint64_t>(value));
 }
+void owned_put_i32(std::vector<uint8_t> &out, int32_t value) {
+    owned_put_u32(out, static_cast<uint32_t>(value));
+}
 
 uint64_t owned_fnv1a(const uint8_t *data, size_t size) {
     uint64_t hash = 1469598103934665603ull;
@@ -91,6 +94,22 @@ void encode_owned_state_soa(const RuntimeEconomyLedgerState &ledger,
         owned_put_u64(block, static_cast<uint64_t>(ledger.market_demand_ema[i]));
     }
     append_owned_block(out, 6u, block);
+    // Section 7: epoch-cursor / continuation watermark (typed wire already
+    // exists on the ledger). Journal / market-signal blobs remain in their
+    // ECP2 domain chunks; OSOA only mirrors the idle cursor here.
+    if (ledger.epoch_cursor.captured) {
+        block.clear();
+        owned_put_i64(block, ledger.epoch_cursor.sample_day);
+        owned_put_i64(block, ledger.epoch_cursor.current_day);
+        owned_put_i64(block, ledger.epoch_cursor.last_committed_day);
+        owned_put_i64(block, ledger.epoch_cursor.epoch_id);
+        owned_put_i32(block, ledger.epoch_cursor.epoch_days);
+        block.push_back(ledger.epoch_cursor.epoch_active);
+        owned_put_i32(block, ledger.epoch_cursor.native_stage);
+        owned_put_u32(block, ledger.epoch_cursor.graph_completed_mask);
+        ledger.epoch_cursor.store.append_wire(block);
+        append_owned_block(out, 7u, block);
+    }
     const uint64_t hash = owned_fnv1a(out.data() + hash_at + 8u,
                                      out.size() - hash_at - 8u);
     for (int i = 0; i < 8; ++i)
@@ -122,32 +141,98 @@ bool validate_owned_state_soa(const std::vector<uint8_t> &wire) {
     if (wire.size() < 40u) return false;
     size_t cursor = 0;
     uint32_t magic = 0, version = 0;
-    uint64_t ignored = 0, expected_hash = 0;
+    uint64_t ledger_hash = 0, generation = 0, committed_day_bits = 0;
+    uint64_t expected_hash = 0;
     if (!read_owned_u32(wire.data(), wire.size(), cursor, magic) ||
         !read_owned_u32(wire.data(), wire.size(), cursor, version) ||
-        !read_owned_u64(wire.data(), wire.size(), cursor, ignored) ||
-        !read_owned_u64(wire.data(), wire.size(), cursor, ignored) ||
-        !read_owned_u64(wire.data(), wire.size(), cursor, ignored) ||
+        !read_owned_u64(wire.data(), wire.size(), cursor, ledger_hash) ||
+        !read_owned_u64(wire.data(), wire.size(), cursor, generation) ||
+        !read_owned_u64(wire.data(), wire.size(), cursor, committed_day_bits) ||
         cursor > wire.size() - 8u ||
         !read_owned_u64(wire.data(), wire.size(), cursor, expected_hash) ||
         magic != OWNED_STATE_MAGIC || version != OWNED_STATE_VERSION) {
         return false;
     }
+    if (generation == 0u) return false;
+    const int64_t committed_day =
+        static_cast<int64_t>(committed_day_bits);
+    if (committed_day < 0) return false;
     const size_t hash_at = 32u;
     const uint64_t actual_hash = owned_fnv1a(
         wire.data() + hash_at + 8u, wire.size() - hash_at - 8u);
     if (actual_hash != expected_hash) return false;
     uint32_t seen = 0;
+    // Sections 1..6 are required. Section 7 (epoch-cursor / continuation
+    // watermark) is optional for older captures but validated when present.
+    // Journal / market-signal payloads live in ECP2 domain blobs, not OSOA.
+    // Reject unknown ids fail-closed.
     while (cursor < wire.size()) {
         uint32_t id = 0, payload_size = 0;
         if (!read_owned_u32(wire.data(), wire.size(), cursor, id) ||
             !read_owned_u32(wire.data(), wire.size(), cursor, payload_size) ||
-            id < 1u || id > 6u || (seen & (1u << id)) != 0u ||
+            id < 1u || id > 7u || (seen & (1u << id)) != 0u ||
             payload_size > wire.size() - cursor) return false;
         seen |= 1u << id;
+        // Sections 1..4 may legitimately be empty (e.g. no trade escrow /
+        // family / resource lanes on a sparse fixture). Cohort/market carry
+        // an explicit count prefix and must stay shape-consistent when present.
+        if (id == 5u || id == 6u) {
+            if (payload_size < 4u) return false;
+            uint32_t count = 0;
+            size_t count_cursor = cursor;
+            if (!read_owned_u32(wire.data(), wire.size(), count_cursor, count))
+                return false;
+            if (id == 5u) {
+                // active(u8)+cell(u32)+slot(u32)+sig(u32)+pop(u64)+funds(u64)
+                constexpr size_t kCohortRow = 1u + 4u + 4u + 4u + 8u + 8u;
+                if (static_cast<uint64_t>(count) * kCohortRow !=
+                    payload_size - 4u) {
+                    return false;
+                }
+            } else {
+                // stock(u64)+price(u32)+ema(u64)
+                constexpr size_t kMarketRow = 8u + 4u + 8u;
+                if (static_cast<uint64_t>(count) * kMarketRow !=
+                    payload_size - 4u) {
+                    return false;
+                }
+            }
+        }
+        if (id == 7u) {
+            // Fixed prefix: sample/current/committed/epoch_id (4*i64) +
+            // epoch_days(i32) + active(u8) + native_stage(i32) +
+            // graph_mask(u32). The idle store may append a trailing wire.
+            constexpr size_t kEpochCursorPrefix =
+                8u * 4u + 4u + 1u + 4u + 4u;
+            if (payload_size < kEpochCursorPrefix) return false;
+            size_t day_cursor = cursor;
+            uint64_t sample_bits = 0, current_bits = 0, committed_bits = 0;
+            uint64_t epoch_id_bits = 0;
+            if (!read_owned_u64(wire.data(), wire.size(), day_cursor,
+                                sample_bits) ||
+                !read_owned_u64(wire.data(), wire.size(), day_cursor,
+                                current_bits) ||
+                !read_owned_u64(wire.data(), wire.size(), day_cursor,
+                                committed_bits) ||
+                !read_owned_u64(wire.data(), wire.size(), day_cursor,
+                                epoch_id_bits)) {
+                return false;
+            }
+            const int64_t sample_day = static_cast<int64_t>(sample_bits);
+            const int64_t current_day = static_cast<int64_t>(current_bits);
+            const int64_t committed = static_cast<int64_t>(committed_bits);
+            if (committed < 0 || current_day < committed) return false;
+            if (sample_day >= 0 && current_day >= 0 &&
+                sample_day > current_day) {
+                return false;
+            }
+            (void)epoch_id_bits;
+        }
         cursor += payload_size;
     }
-    return cursor == wire.size() && seen == 0x7Eu;
+    (void)ledger_hash;
+    // Require core sections 1..6; bit7 (section 7) is optional.
+    return cursor == wire.size() && (seen & 0x7Eu) == 0x7Eu;
 }
 } // namespace
 
@@ -384,10 +469,38 @@ Dictionary NativeEconomyRuntime::begin_restore() {
             out["last_collected"] =
                 _fiscal_settlement_continuation.last_collected;
         }
+        set_restore_rejected_reason(
+            String(out["reason"]).utf8().get_data());
         return out;
     }
+    // Production restore is ECP2-only. begin_restore only arms the session
+    // bookkeeping; live committed lanes stay untouched until the ECP2
+    // transaction (or explicit PKEC migrate helper) prepares a candidate
+    // scratch after a rollback backup exists.
     _restore = {};
     _restore.active = true;
+    _restore.scratch_prepared = false;
+    out["ok"] = true;
+    out["schema_version"] = SCHEMA_VERSION;
+    out["scratch_prepared"] = false;
+    out["requires_ecp2"] = true;
+    return out;
+}
+
+Dictionary NativeEconomyRuntime::begin_restore_pkec_migrate() {
+    Dictionary out = begin_restore();
+    if (!static_cast<bool>(out.get("ok", false))) return out;
+    prepare_restore_candidate_scratch();
+    out["scratch_prepared"] = true;
+    out["migrate_path"] = true;
+    out["requires_ecp2"] = false;
+    return out;
+}
+
+void NativeEconomyRuntime::prepare_restore_candidate_scratch() {
+    // Candidate rebuild surface only. Callers must already hold a validated
+    // ECP2 backup (or be on the explicit migrate helper path).
+    _restore.scratch_prepared = true;
     _bootstrapped = false;
     population_store().clear(_cell_count);
     family_expeditions_store().clear();
@@ -503,9 +616,11 @@ Dictionary NativeEconomyRuntime::begin_restore() {
     _tariff_country_requests.clear();
     _tariff_country_budgets.clear();
     _tariff_country_remaining.clear();
-    out["ok"] = true;
-    out["schema_version"] = SCHEMA_VERSION;
-    return out;
+}
+
+void NativeEconomyRuntime::set_restore_rejected_reason(
+        const std::string &reason) {
+    _restore_rejected_reason = reason;
 }
 
 Dictionary NativeEconomyRuntime::feed_restore_chunk(const PackedByteArray &chunk) {
@@ -516,6 +631,14 @@ Dictionary NativeEconomyRuntime::feed_restore_chunk(const PackedByteArray &chunk
                          : (_restore.failed ? String(_restore.error.c_str())
                                             : (_restore.end_seen ? "restore_end_already_seen"
                                                                  : "restore_chunk_empty"));
+        set_restore_rejected_reason(
+            String(out["reason"]).utf8().get_data());
+        return out;
+    }
+    if (!_restore.scratch_prepared) {
+        out["ok"] = false;
+        out["reason"] = "restore_scratch_not_prepared";
+        set_restore_rejected_reason("restore_scratch_not_prepared");
         return out;
     }
     std::vector<uint8_t> bytes(static_cast<size_t>(chunk.size()));
@@ -526,6 +649,7 @@ Dictionary NativeEconomyRuntime::feed_restore_chunk(const PackedByteArray &chunk
         _restore.error = error;
         out["ok"] = false;
         out["reason"] = String(error.c_str());
+        set_restore_rejected_reason(error);
         return out;
     }
     out["ok"] = true;
@@ -552,6 +676,8 @@ Dictionary NativeEconomyRuntime::end_restore() {
         out["reason"] = !_restore.active ? "restore_not_active"
                          : (_restore.failed ? String(_restore.error.c_str())
                          : (!_restore.header_seen ? "restore_header_missing" : "restore_end_missing"));
+        set_restore_rejected_reason(
+            String(out["reason"]).utf8().get_data());
         return out;
     }
     if (_restore.restored_pages != _restore.expected_pages ||
@@ -584,6 +710,10 @@ Dictionary NativeEconomyRuntime::end_restore() {
           _restore.restored_fiscal != _restore.expected_fiscal ||
           !_restore.fiscal_peer_seen ||
           _restore.restored_fiscal_peer != _restore.expected_fiscal_peer)) ||
+        (_restore.schema_version >= 53 &&
+         _restore.expected_d7_peer_ext > 0 &&
+         (!_restore.d7_peer_ext_seen ||
+          _restore.restored_d7_peer_ext != _restore.expected_d7_peer_ext)) ||
         (_restore.schema_version >= 52 && _restore.resource_stock_seen &&
          _restore.restored_resource_rows != _restore.expected_resource_rows) ||
         (_restore.schema_version >= 24 &&
@@ -621,6 +751,8 @@ Dictionary NativeEconomyRuntime::end_restore() {
         out["restored_tariff_history"] = _restore.restored_tariff_history;
         out["expected_fiscal"] = _restore.expected_fiscal;
         out["restored_fiscal"] = _restore.restored_fiscal;
+        set_restore_rejected_reason(
+            String(out["reason"]).utf8().get_data());
         return out;
     }
     if (!_restore.family_expeditions_seen ||
@@ -630,6 +762,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
             _restore.expected_family_expeditions) {
         out["ok"] = false;
         out["reason"] = "restore_family_expedition_section_incomplete";
+        set_restore_rejected_reason("restore_family_expedition_section_incomplete");
         return out;
     }
     const auto trade_key = [](int32_t first, int32_t second) {
@@ -1470,6 +1603,7 @@ bool NativeEconomyRuntime::begin_restore_internal(std::string &error) {
     const Dictionary out = begin_restore();
     if (!static_cast<bool>(out.get("ok", false))) {
         error = String(out.get("reason", "restore_begin_failed")).utf8().get_data();
+        set_restore_rejected_reason(error);
         return false;
     }
     return true;
@@ -1480,6 +1614,116 @@ bool NativeEconomyRuntime::end_restore_internal(std::string &error) {
     const Dictionary out = end_restore();
     if (!static_cast<bool>(out.get("ok", false))) {
         error = String(out.get("reason", "restore_end_failed")).utf8().get_data();
+        set_restore_rejected_reason(error);
+        return false;
+    }
+    return true;
+}
+
+bool NativeEconomyRuntime::validate_ecp2_candidate(
+        const RuntimeEconomyEcp2State &in, std::string &error) const {
+    error.clear();
+    if (in.abi_version != RUNTIME_ECONOMY_ECP2_ABI_VERSION) {
+        error = "ecp2_abi_version_incompatible";
+        return false;
+    }
+    if (in.schema_version != RUNTIME_ECONOMY_ECP2_SCHEMA_VERSION) {
+        error = "ecp2_schema_version_incompatible";
+        return false;
+    }
+    if ((in.authority_domain_mask & ECP2_DOMAIN_ENVELOPE) == 0) {
+        error = "ecp2_envelope_missing";
+        return false;
+    }
+    if (!ecp2_has_required_domains(in.authority_domain_mask,
+                                   ECP2_DOMAIN_CORE_AUTHORITY)) {
+        error = "ecp2_core_domains_missing";
+        return false;
+    }
+    const auto owned_state_it = in.domain_blobs.find(ECP2_DOMAIN_OWNED_STATE);
+    if ((in.authority_domain_mask & ECP2_DOMAIN_OWNED_STATE) == 0 ||
+        owned_state_it == in.domain_blobs.end() ||
+        !validate_owned_state_soa(owned_state_it->second)) {
+        error = "ecp2_owned_state_missing_or_invalid";
+        return false;
+    }
+    if (_bootstrapped && in.envelope.catalog_hash != 0 &&
+        in.envelope.catalog_hash != _catalog_hash) {
+        error = "ecp2_catalog_hash_mismatch";
+        return false;
+    }
+    if (_bootstrapped && in.envelope.cell_count > 0 &&
+        in.envelope.cell_count != _cell_count) {
+        error = "ecp2_cell_count_mismatch";
+        return false;
+    }
+    if (in.envelope.committed_generation == 0) {
+        error = "ecp2_committed_generation_invalid";
+        return false;
+    }
+    if (in.envelope.last_committed_day < 0 ||
+        in.envelope.current_day < in.envelope.last_committed_day) {
+        error = "ecp2_day_order_invalid";
+        return false;
+    }
+    // When optional journal / signal / audit domains claim presence, require
+    // a non-empty domain blob. Full row decode stays on the PKEC section path.
+    const auto require_domain_blob = [&](uint32_t domain,
+                                         const char *missing_reason) {
+        if ((in.authority_domain_mask & domain) == 0) return true;
+        const auto it = in.domain_blobs.find(domain);
+        if (it == in.domain_blobs.end() || it->second.empty()) {
+            error = missing_reason;
+            return false;
+        }
+        return true;
+    };
+    if (!require_domain_blob(ECP2_DOMAIN_COMMANDS,
+                             "ecp2_commands_domain_empty") ||
+        !require_domain_blob(ECP2_DOMAIN_SIGNALS,
+                             "ecp2_signals_domain_empty") ||
+        !require_domain_blob(ECP2_DOMAIN_AUDIT,
+                             "ecp2_audit_domain_empty")) {
+        return false;
+    }
+    return true;
+}
+
+bool NativeEconomyRuntime::validate_restored_committed_snapshot(
+        std::string &error) const {
+    error.clear();
+    if (!_bootstrapped) {
+        error = "restore_snapshot_not_bootstrapped";
+        return false;
+    }
+    if (_fatal) {
+        error = _fatal_reason.empty() ? "restore_snapshot_fatal"
+                                      : _fatal_reason;
+        return false;
+    }
+    if (_last_committed_day < 0 || _current_day < _last_committed_day) {
+        error = "restore_day_order_invalid";
+        return false;
+    }
+    if (_committed_generation == 0) {
+        error = "restore_generation_invalid";
+        return false;
+    }
+    RuntimeEconomyLedgerState ledger;
+    const_cast<NativeEconomyRuntime *>(this)->capture_committed_ledger_state(
+        ledger);
+    if (!ledger.valid()) {
+        error = "restore_ledger_invalid";
+        return false;
+    }
+    if (ledger.generation != 0 &&
+        ledger.generation != _committed_generation) {
+        error = "restore_generation_mismatch";
+        return false;
+    }
+    if (ledger.ledger_hash != 0 &&
+        ledger.ledger_hash != ledger.computed_hash()) {
+        error = "restore_ledger_hash_mismatch";
         return false;
     }
     return true;
@@ -1653,29 +1897,13 @@ bool NativeEconomyRuntime::capture_ecp2_authority(RuntimeEconomyEcp2State &out,
 bool NativeEconomyRuntime::apply_ecp2_authority_internal(
         const RuntimeEconomyEcp2State &in, std::string &error) {
     error.clear();
-    if ((in.authority_domain_mask & ECP2_DOMAIN_ENVELOPE) == 0) {
-        error = "ecp2_envelope_missing";
-        return false;
-    }
-    const auto owned_state_it = in.domain_blobs.find(ECP2_DOMAIN_OWNED_STATE);
-    if ((in.authority_domain_mask & ECP2_DOMAIN_OWNED_STATE) == 0 ||
-        owned_state_it == in.domain_blobs.end() ||
-        !validate_owned_state_soa(owned_state_it->second)) {
-        error = "ecp2_owned_state_missing_or_invalid";
-        return false;
-    }
-    if (_bootstrapped && in.envelope.catalog_hash != 0 &&
-        in.envelope.catalog_hash != _catalog_hash) {
-        error = "ecp2_catalog_hash_mismatch";
-        return false;
-    }
-    if (_bootstrapped && in.envelope.cell_count > 0 &&
-        in.envelope.cell_count != _cell_count) {
-        error = "ecp2_cell_count_mismatch";
-        return false;
-    }
+    if (!validate_ecp2_candidate(in, error)) return false;
 
     if (!begin_restore_internal(error)) return false;
+    // Live was preserved through begin_restore; only now open the candidate
+    // rebuild surface (caller already holds a rollback backup when live was
+    // previously bootstrapped).
+    prepare_restore_candidate_scratch();
 
     std::vector<std::vector<uint8_t>> ordered_chunks;
     for (uint16_t section = SAVE_SECTION_HEADER;
@@ -1753,6 +1981,7 @@ bool NativeEconomyRuntime::apply_ecp2_authority_internal(
                              resource_blob.size() - resource_wire_offset,
                              expected_lanes)) {
             error = "ecp2_resource_wire_invalid";
+            _restore = {};
             return false;
         }
         if (_resource_store_alias != nullptr) {
@@ -1800,6 +2029,10 @@ bool NativeEconomyRuntime::apply_ecp2_authority_internal(
             static_cast<int32_t>(resume.trade_plan_route_cursor);
     }
 
+    if (!validate_restored_committed_snapshot(error)) {
+        _restore = {};
+        return false;
+    }
     return true;
 }
 
@@ -1807,11 +2040,22 @@ bool NativeEconomyRuntime::apply_ecp2_authority(
         const RuntimeEconomyEcp2State &in, std::string &error) {
     error.clear();
 
-    // ECP2 restore is a transaction at the runtime boundary. The streaming
-    // PKEC reader intentionally mutates lanes as chunks arrive, so an error
-    // after the first accepted chunk must be repaired before the caller can
-    // observe the world again. Capture the current authority before touching
-    // it and use the same validated path for rollback.
+    // Fixed restore flow (stage 4):
+    // decode candidate (caller) → semantic validation → backup live →
+    // canonical rebuild into candidate scratch → isolated snapshot validation
+    // → commit (keep candidate) / atomic rollback via re-apply of backup.
+    std::string validate_error;
+    if (!validate_ecp2_candidate(in, validate_error)) {
+        error = validate_error;
+        set_restore_rejected_reason(error);
+        return false;
+    }
+
+    const uint64_t live_generation = _committed_generation;
+    const int64_t live_committed_day = _last_committed_day;
+    const int64_t live_state_hash =
+        _bootstrapped ? state_hash() : 0;
+
     RuntimeEconomyEcp2State backup;
     bool backup_ready = false;
     if (_bootstrapped) {
@@ -1823,24 +2067,38 @@ bool NativeEconomyRuntime::apply_ecp2_authority(
         std::string backup_error;
         if (!capture_ecp2_authority(backup, backup_error, capture_flags)) {
             error = "ecp2_atomic_backup_failed:" + backup_error;
+            set_restore_rejected_reason(error);
             return false;
         }
         backup_ready = true;
     }
 
     std::string apply_error;
-    if (apply_ecp2_authority_internal(in, apply_error)) return true;
+    if (apply_ecp2_authority_internal(in, apply_error)) {
+        _restore_rejected_reason.clear();
+        return true;
+    }
 
+    // Ensure the restore session is idle before rollback rebuild.
+    _restore = {};
     if (backup_ready) {
         std::string rollback_error;
         if (apply_ecp2_authority_internal(backup, rollback_error)) {
             error = apply_error + ";rolled_back";
+            // Live committed identity must match the pre-apply snapshot after
+            // a successful rollback.
+            if (_committed_generation != live_generation ||
+                _last_committed_day != live_committed_day ||
+                (_bootstrapped && state_hash() != live_state_hash)) {
+                error += ";rollback_identity_drift";
+            }
         } else {
             error = apply_error + ";rollback_failed:" + rollback_error;
         }
     } else {
         error = apply_error;
     }
+    set_restore_rejected_reason(error);
     return false;
 }
 

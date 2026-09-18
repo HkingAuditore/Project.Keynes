@@ -53,6 +53,9 @@ inline constexpr uint16_t SAVE_SECTION_RESOURCE_STOCK = 32;
 // next activity-tier workset. Older v52 streams remain readable; new streams
 // preserve deterministic continuation across a committed-boundary restore.
 inline constexpr uint16_t SAVE_SECTION_CADENCE_STATE = 33;
+// Schema 53 optional extension: D7 journal contract fields keyed by request_id.
+// Base SAVE_SECTION_FISCAL_PEER keeps the schema-52 wire shape.
+inline constexpr uint16_t SAVE_SECTION_D7_PEER_EXT = 34;
 inline constexpr uint16_t SAVE_SECTION_END_V33 = 27;
 inline constexpr uint16_t SAVE_SECTION_END_V26 = 18;
 inline constexpr uint16_t SAVE_SECTION_END_V24_TO_V25 = 15;

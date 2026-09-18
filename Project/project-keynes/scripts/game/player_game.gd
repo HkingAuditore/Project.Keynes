@@ -82,6 +82,11 @@ func _refit_after_viewport_resize() -> void:
 
 func _configure_runtime() -> void:
 	_map_overlay.set_alpha(0.58)
+	# 正式玩家会话：整图 worker ACTIVE（0xFFF）。Effect→Country ACK 与 soft-settle
+	# 已修好，不再用 0x806 把 Trigger 等留在主线程拖垮 50x 日历吞吐。
+	_runtime_host.runtime_climate_authority_enabled = true
+	_runtime_host.runtime_economy_auto_pod_active = false
+	_runtime_host.runtime_authority_domain_mask = 0xFFF
 	_runtime_host.configure(_renderer, _camera, _world_clock, _map_overlay)
 	_ui_manager.set_diagnostics_source(_runtime_host)
 	_player_controller.configure(_camera, _highlight, _runtime_host, _world_clock, _ui_manager)
@@ -89,6 +94,8 @@ func _configure_runtime() -> void:
 	var save: Node = _game_save()
 	if save != null:
 		save.bind_runtime(_runtime_host, _world_clock, _player_controller)
+	# 生成前钉死 force_on，避免 AUTO 策略或 GM 残值把会话退回 SHADOW。
+	_runtime_host.set_climate_authority_override("force_on")
 
 
 func _connect_signals() -> void:

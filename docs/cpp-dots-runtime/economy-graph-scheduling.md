@@ -223,7 +223,7 @@ ECONOMY_GRAPH stage、截止日语义和 PKEC 权威布局均不变化。
 `execute_economy_worker_stage` + StageOps（mutate=false）做哈希对拍；sync
 `run_slice_internal` 在各 graph stage 成功完成后发布 stage reference
 （`work_units=cell_count`）。`implemented_domain_mask` / 生产 request 为
-`0xB7E`（含 ECONOMY）。13 个独立 mutate TU 仍为后续抽取项。
+`0xFFF`（含 ECONOMY）。13 个独立 mutate TU 仍为后续抽取项。
 
 ### 建筑计划 continuation（2026-07-20）
 

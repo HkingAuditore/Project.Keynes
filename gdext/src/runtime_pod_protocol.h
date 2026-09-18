@@ -10,6 +10,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <limits>
 #include <string>
@@ -730,6 +731,127 @@ enum class RuntimeEconomyAssetResultCode : uint8_t {
     FAULTED = 7,
 };
 
+// External D7 reservation vocabulary (fix方案 stage 5). Wire storage keeps the
+// finer RuntimeEconomyAssetState values above; reporters and journals project
+// those values onto this public state machine:
+//   ADMITTED → RESERVED → COMMITTED
+//   ADMITTED/RESERVED → RETRY | ROLLED_BACK
+//   terminal duplicate → original terminal
+//   stale generation/session/late ACK → REJECTED
+enum class RuntimeD7ReservationState : uint8_t {
+    ADMITTED = 1,
+    RESERVED = 2,
+    COMMITTED = 3,
+    RETRY = 4,
+    ROLLED_BACK = 5,
+    REJECTED = 6,
+};
+
+enum class RuntimeD7TerminalResult : uint8_t {
+    NONE = 0,
+    COMMITTED = 1,
+    RETRY = 2,
+    ROLLED_BACK = 3,
+    REJECTED = 4,
+};
+
+// Stale generation / old session / late ACK reasons project to REJECTED.
+// Other terminal failures project to ROLLED_BACK (or RETRY when FAULTED).
+inline bool runtime_d7_reason_is_stale_reject(const char *reason) noexcept {
+    if (reason == nullptr || reason[0] == '\0') return false;
+    return std::strstr(reason, "late") != nullptr ||
+        std::strstr(reason, "session") != nullptr ||
+        std::strstr(reason, "generation") != nullptr;
+}
+
+inline RuntimeD7ReservationState runtime_d7_reservation_state_from_asset(
+        RuntimeEconomyAssetState state,
+        RuntimeEconomyAssetResultCode code =
+            RuntimeEconomyAssetResultCode::ACCEPTED,
+        const char *reason = nullptr) noexcept {
+    switch (code) {
+    case RuntimeEconomyAssetResultCode::COMPLETED:
+        return RuntimeD7ReservationState::COMMITTED;
+    case RuntimeEconomyAssetResultCode::FAULTED:
+        return RuntimeD7ReservationState::RETRY;
+    case RuntimeEconomyAssetResultCode::REJECTED:
+        if (state == RuntimeEconomyAssetState::FAULTED)
+            return RuntimeD7ReservationState::RETRY;
+        return runtime_d7_reason_is_stale_reject(reason)
+            ? RuntimeD7ReservationState::REJECTED
+            : RuntimeD7ReservationState::ROLLED_BACK;
+    default:
+        break;
+    }
+    switch (state) {
+    case RuntimeEconomyAssetState::CREATED:
+    case RuntimeEconomyAssetState::COUNTRY_PREPARED:
+        return RuntimeD7ReservationState::ADMITTED;
+    case RuntimeEconomyAssetState::PEER_PREPARED:
+    case RuntimeEconomyAssetState::COMMIT_DECIDED:
+    case RuntimeEconomyAssetState::COUNTRY_APPLIED:
+    case RuntimeEconomyAssetState::AWAITING_PEER_PREPARED:
+    case RuntimeEconomyAssetState::AWAITING_PEER_APPLIED:
+        return RuntimeD7ReservationState::RESERVED;
+    case RuntimeEconomyAssetState::PEER_APPLIED:
+    case RuntimeEconomyAssetState::COMPLETED:
+        return RuntimeD7ReservationState::COMMITTED;
+    case RuntimeEconomyAssetState::FAULTED:
+        return RuntimeD7ReservationState::RETRY;
+    case RuntimeEconomyAssetState::REJECTED:
+        return runtime_d7_reason_is_stale_reject(reason)
+            ? RuntimeD7ReservationState::REJECTED
+            : RuntimeD7ReservationState::ROLLED_BACK;
+    default:
+        return RuntimeD7ReservationState::REJECTED;
+    }
+}
+
+inline RuntimeD7TerminalResult runtime_d7_terminal_result_from_asset(
+        RuntimeEconomyAssetResultCode code,
+        RuntimeEconomyAssetState state,
+        const char *reason = nullptr) noexcept {
+    switch (code) {
+    case RuntimeEconomyAssetResultCode::COMPLETED:
+        return RuntimeD7TerminalResult::COMMITTED;
+    case RuntimeEconomyAssetResultCode::FAULTED:
+        return RuntimeD7TerminalResult::RETRY;
+    case RuntimeEconomyAssetResultCode::REJECTED:
+        if (state == RuntimeEconomyAssetState::FAULTED)
+            return RuntimeD7TerminalResult::RETRY;
+        return runtime_d7_reason_is_stale_reject(reason)
+            ? RuntimeD7TerminalResult::REJECTED
+            : RuntimeD7TerminalResult::ROLLED_BACK;
+    default:
+        return RuntimeD7TerminalResult::NONE;
+    }
+}
+
+inline const char *runtime_d7_reservation_state_name(
+        RuntimeD7ReservationState state) noexcept {
+    switch (state) {
+    case RuntimeD7ReservationState::ADMITTED: return "ADMITTED";
+    case RuntimeD7ReservationState::RESERVED: return "RESERVED";
+    case RuntimeD7ReservationState::COMMITTED: return "COMMITTED";
+    case RuntimeD7ReservationState::RETRY: return "RETRY";
+    case RuntimeD7ReservationState::ROLLED_BACK: return "ROLLED_BACK";
+    case RuntimeD7ReservationState::REJECTED: return "REJECTED";
+    default: return "UNKNOWN";
+    }
+}
+
+inline const char *runtime_d7_terminal_result_name(
+        RuntimeD7TerminalResult result) noexcept {
+    switch (result) {
+    case RuntimeD7TerminalResult::NONE: return "NONE";
+    case RuntimeD7TerminalResult::COMMITTED: return "COMMITTED";
+    case RuntimeD7TerminalResult::RETRY: return "RETRY";
+    case RuntimeD7TerminalResult::ROLLED_BACK: return "ROLLED_BACK";
+    case RuntimeD7TerminalResult::REJECTED: return "REJECTED";
+    default: return "UNKNOWN";
+    }
+}
+
 enum class RuntimeEconomyAssetProtocolError : uint16_t {
     NONE = 0,
     PROTOCOL_MISMATCH = 1,
@@ -1241,6 +1363,9 @@ struct RuntimeThreadReport {
     // promoted domains and leave the rest on the main thread.
     uint32_t requested_authority_mask = 0;
     uint32_t authoritative_domain_mask = 0;
+    // Domains that performed real ACTIVE work this session (sticky OR bits).
+    // Distinct from completed_domain_mask / granted authority.
+    uint32_t active_evidence_mask = 0;
     char graph_coverage_state[32]{};
     char coverage_blocker[64]{};
     bool interactive = false;
@@ -1330,8 +1455,12 @@ struct RuntimeThreadReport {
     uint64_t economy_authority_switch_latency_sample_count = 0;
     uint64_t economy_authority_switch_rejected = 0;
     uint64_t economy_authority_switch_audit_sequence = 0;
+    uint64_t economy_authority_switch_audit_hash = 0;
     uint64_t economy_authority_switch_before_generation = 0;
     uint64_t economy_authority_switch_after_generation = 0;
+    uint64_t fault_injection_trip_count = 0;
+    bool fault_injection_armed = false;
+    char fault_injection_point[64]{};
     uint32_t economy_inflight_mutations = 0;
     uint32_t worker_day_inflight = 0;
     uint32_t economy_pending_command_count = 0;

@@ -3479,7 +3479,7 @@ func _log_stalled_runtime_graph(day: int) -> void:
 	# 事务状态直方图，直接区分是"卡住的事务"还是"到期的 due heap 实例"。
 	if bool(snapshot.get("effect_pending", false)) and _effect_facade != null:
 		var effect_report: Dictionary = _effect_facade.report()
-		print("[sim/graph-barrier/effect] current_day=%s last_completed_day=%s planned=%s preflighted=%s committed=%s acked=%s rejected=%s resync=%s transactions=%s instances=%s"
+		print("[sim/graph-barrier/effect] current_day=%s last_completed_day=%s planned=%s preflighted=%s committed=%s acked=%s rejected=%s resync=%s transactions=%s instances=%s country_ack_pending=%s economy_ack_pending=%s modifier_ack_pending=%s gameplay_ack_pending=%s country_acks=%s economy_acks=%s modifier_acks=%s"
 			% [str(effect_report.get("current_day", -1)),
 				str(effect_report.get("last_completed_day", -1)),
 				str(effect_report.get("planned_transactions", -1)),
@@ -3489,7 +3489,14 @@ func _log_stalled_runtime_graph(day: int) -> void:
 				str(effect_report.get("rejected_transactions", -1)),
 				str(effect_report.get("resync_required_transactions", -1)),
 				str(effect_report.get("transactions", -1)),
-				str(effect_report.get("instances", -1))])
+				str(effect_report.get("instances", -1)),
+				str(effect_report.get("native_country_ack_pending", -1)),
+				str(effect_report.get("native_economy_ack_pending", -1)),
+				str(effect_report.get("native_modifier_ack_pending", -1)),
+				str(effect_report.get("native_gameplay_ack_pending", -1)),
+				str(effect_report.get("native_country_acks", -1)),
+				str(effect_report.get("native_economy_acks", -1)),
+				str(effect_report.get("native_modifier_acks", -1))])
 
 
 func _native_daily_slice_available() -> bool:

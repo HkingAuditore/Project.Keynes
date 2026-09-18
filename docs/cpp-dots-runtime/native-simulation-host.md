@@ -68,7 +68,7 @@ intents; the host exposes those intents and accepts only real Effect ACKs. A
 missing, stale, rejected, or not-yet-returned ACK leaves the transition pending
 and never becomes final ACTIVE ideology state. The synchronous ideology runtime
 remains the production reference in SHADOW, and this stage does not by itself
-grant authority. `implemented_domain_mask() == 0xA7E` since H7/H8/I8.
+grant authority. `implemented_domain_mask() == 0xFFF` since H7/H8/I8.
 
 Climate 边界现在还保留一份独立的 `RuntimeClimatePodSnapshot`：温度、湿度、雪盖、
 30 日 EMA、水分平衡、降水、天气强度、植被活力、anomaly 和 RNG 均为深拷贝 POD。
@@ -182,7 +182,7 @@ long-run conservation evidence.
 
 ## Modifier POD ACTIVE stage (E8)
 
-Modifier stage 位于 EFFECT -> MODIFIER -> ... -> COMMIT，SHADOW 与 ACTIVE 共用 `execute_modifier_worker_stage`。生产 ACTIVE（mask `0xA7E`）在 Country 之后、Climate park 日跳过对齐 Country：独立 Trigger stage → 独立 Ideology stage → 独立 Effect stage → Modifier；成功日写入 TRIGGER_INPUT/IDEOLOGY/EFFECT/MODIFIER 位。失败隔离。
+Modifier stage 位于 EFFECT -> MODIFIER -> ... -> COMMIT，SHADOW 与 ACTIVE 共用 `execute_modifier_worker_stage`。生产 ACTIVE（mask `0xFFF`）在 Country 之后、Climate park 日跳过对齐 Country：独立 Trigger stage → 独立 Ideology stage → 独立 Effect stage → Modifier；成功日写入 TRIGGER_INPUT/IDEOLOGY/EFFECT/MODIFIER 位。失败隔离。
 
 grant 后：Host 为 Modifier/Effect 唯一写者；主线程抑制 modifier/effect daily；非阻塞 snapshot 回灌；非 Modifier Effect intents 主线程 pump+ACK；`main_wait_on_sim_us` 保持 0。
 
