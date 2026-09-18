@@ -43,6 +43,26 @@ authority，所以 `implemented_domain_mask` 与 ACTIVE gate 不变。
 
 ## Modifier pipelines
 
+## Economy quote and settlement lanes
+
+Economy production keeps the quote boundary explicit:
+
+```text
+frozen epoch snapshot
+  -> real business demand / funded demand / unfunded demand
+  -> Q16 input, cash and merchant-credit quote
+  -> reservation and production commit
+  -> settlement / ledger audit / publish
+```
+
+Industrial probe floors and bounded purchase intent preserve a retry signal
+when physical input or cash is unavailable; they do not mint output, wages, or
+owner vacancies. One-hop derived demand is a shadow lane used only by price
+pressure and investment ranking. It is excluded from stock targets,
+procurement, sales, employment, and business-demand EMA. Active producers with
+unfunded work remain `ACTIVE_UNFUNDED`; only repeated realized losses may enter
+`SUSPENDED_LOSS`.
+
 ```text
 WorldClock day
   -> modifier_daily: expiry -> stable command merge -> bucket/snapshot publish

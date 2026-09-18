@@ -3718,9 +3718,14 @@ bool NativeEconomyRuntime::good_production_available(
         const int32_t country = _epoch_cell_country[static_cast<size_t>(cell)];
         const size_t index = static_cast<size_t>(std::max(0, country)) *
             _good_ids.size() + static_cast<size_t>(good_id);
-        return country >= 0 && country < _epoch_country_count &&
+        if (country >= 0 && country < _epoch_country_count &&
             index < _epoch_country_good_available.size() &&
-            _epoch_country_good_available[index] != 0;
+            _epoch_country_good_available[index] != 0)
+            return true;
+        // A country capability snapshot can legitimately lag a catalog or
+        // fixture mutation by one epoch. Preserve the snapshot's positive
+        // authority, but do not turn a locally valid, already unlocked good
+        // into a permanent false solely because its frozen bit is stale.
     }
     return good_id >= 0 && good_id + 1 < static_cast<int32_t>(_good_technology_offsets.size()) &&
         cell_has_requirements(cell, _good_technology_offsets[good_id],
@@ -3736,8 +3741,13 @@ bool NativeEconomyRuntime::good_market_available(
         if (country < 0 || country >= _epoch_country_count) return false;
         const size_t index = static_cast<size_t>(country) * _good_ids.size() +
             static_cast<size_t>(good_id);
-        return index < _epoch_country_market_available.size() &&
-            _epoch_country_market_available[index] != 0;
+        // The frozen country market table is a permission snapshot, but it
+        // must not hide a locally producible/input good. During bootstrap and
+        // catalog-mutating fixtures the market lane can lag the production
+        // capability by one epoch; retain the capability fallback below.
+        if (index < _epoch_country_market_available.size() &&
+            _epoch_country_market_available[index] != 0)
+            return true;
     }
     if (good_production_available(cell, good_id, frozen)) return true;
     return good_id >= 0 && good_id < static_cast<int32_t>(_good_ids.size()) &&
@@ -6148,6 +6158,14 @@ int64_t NativeEconomyRuntime::rebuild_production_input_reserves_for_cell(
             produces_survival_food = produces_survival_food ||
                 _survival_food_good_mask[good] != 0;
         }
+        // Communal hearths are processors: they turn household-priority raw
+        // food into prepared staples and must not reserve those raw inputs
+        // ahead of households. Root harvesters retain the normal survival
+        // reservation/fallback path.
+        if (group.type_id >= 0 && group.type_id < static_cast<int32_t>(
+                _building_type_ids.size()) &&
+            _building_type_ids[group.type_id] == "communal_hearth")
+            produces_survival_food = false;
         selected_signals.assign(type.input_count, -1);
         selected_physical.assign(type.input_count, 0);
         int64_t executable_q16 = Q16_ONE;
@@ -6248,6 +6266,14 @@ int64_t NativeEconomyRuntime::rebuild_production_input_reserves_for_cell(
             executable_q16 = std::min<int64_t>(executable_q16,
                 std::min<int64_t>(Q16_ONE, mul_div_sat(
                     available, Q16_ONE, combined_desired, _saturation_count)));
+        }
+        // Survival producers keep a bounded next-period input reservation even
+        // when local stock is temporarily empty. The reservation is a
+        // protected procurement signal; it does not mint goods or bypass the
+        // production quote/commit path.
+        if (executable_q16 <= 0 && produces_survival_food &&
+            group.filled_owner > 0 && type.input_count > 0) {
+            executable_q16 = Q16_ONE;
         }
         // 家庭生存消费优先于非生存加工；此类加工只能使用家庭结算后的余量，
         // 因而整套互补投入都不提前保护。
@@ -7777,7 +7803,6 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
             // which excludes owner livelihood and is commonly zero for
             // owner-operated workshops.
             const bool settled_production = group.last_output > 0 ||
-                group.last_input > 0 || group.last_resource > 0 ||
                 group.last_resource_generated > 0 ||
                 (type.employee_count == 0 && type.input_count == 0 &&
                  type.resource_count == 0 && group.filled_owner > 0 &&
@@ -8181,6 +8206,27 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                         _building_survival_utilization_floor_q16[group_index],
                         0, Q16_ONE)));
             }
+            // Keep a bounded industrial probe for an occupied group even when
+            // the current quote is temporarily unprofitable or input-funded
+            // production is blocked. This preserves intent and the next
+            // cycle's demand signal without creating a vacant owner or
+            // bypassing physical input checks.
+            if (group.filled_owner > 0 && type.input_count > 0 &&
+                type.output_count > 0) {
+                int32_t probe_floor_q16 = Q16_ONE / 32 + 1;
+                for (int32_t i = 0; i < type.output_count; ++i) {
+                    const int32_t output_good = _building_outputs[
+                        type.output_begin + i].good_id;
+                    if (output_good >= 0 && output_good <
+                            static_cast<int32_t>(_good_storage_modes.size()) &&
+                        _good_storage_modes[output_good] == 1) {
+                        probe_floor_q16 = std::max<int32_t>(
+                            probe_floor_q16, Q16_ONE / 6 + 1);
+                    }
+                }
+                group.planned_utilization_q16 = std::max<int32_t>(
+                    group.planned_utilization_q16, probe_floor_q16);
+            }
         } else {
             group.planned_utilization_q16 = 0;
         }
@@ -8276,14 +8322,35 @@ NativeEconomyRuntime::PricePressure NativeEconomyRuntime::price_pressure(
     out.business_demand = saturating_add(
         out.business_demand,
         epoch_research_demand_daily_for_market(market, good), sat);
-    if (signal_index >= 0 &&
-        signal_index < static_cast<int32_t>(_epoch_derived_business_demand.size())) {
+    // Shadow derived demand is consumed by price formation and investment
+    // ranking only. Keep it out of real business demand so it cannot change
+    // stock targets, procurement, sales, or owner vacancy.
+    int64_t shadow_derived_pressure_q16 = 0;
+    if (signal_index >= 0 && signal_index < static_cast<int32_t>(
+            _epoch_derived_business_demand.size())) {
         const int64_t derived = std::max<int64_t>(
             0, _epoch_derived_business_demand[signal_index]);
-        out.business_demand = saturating_add(out.business_demand,
-            mul_div_sat(derived,
-                std::clamp<int64_t>(_derived_business_demand_weight_q16, 0, Q16_ONE),
-                Q16_ONE, sat), sat);
+        const int64_t real_flow = saturating_add(
+            saturating_add(out.household_demand, out.business_demand, sat),
+            out.supply, sat);
+        shadow_derived_pressure_q16 = mul_div_sat(
+            std::min<int64_t>(derived, std::max<int64_t>(GOODS_SCALE, real_flow)),
+            Q16_ONE, std::max<int64_t>(GOODS_SCALE, real_flow), sat);
+        shadow_derived_pressure_q16 = mul_div_sat(
+            shadow_derived_pressure_q16,
+            std::clamp<int64_t>(_derived_business_demand_weight_q16, 0, Q16_ONE),
+            Q16_ONE, sat);
+        // A cold-start lane with no physical stock otherwise rounds this
+        // one-hop signal down below one price tick. Preserve a bounded,
+        // price-only probe in that case; it does not alter targets,
+        // procurement, sales, or owner hiring.
+        const int32_t stock_index = market_store().index(market, good);
+        if (derived > 0 && stock_index >= 0 && stock_index <
+                static_cast<int32_t>(market_store().stock.size()) &&
+            market_store().stock[stock_index] <= 0) {
+                shadow_derived_pressure_q16 = std::max<int64_t>(
+                shadow_derived_pressure_q16, Q16_ONE);
+        }
     }
     const int64_t demand = saturating_add(out.household_demand, out.business_demand, sat);
     const int64_t flow = saturating_add(demand, out.supply, sat);
@@ -8337,10 +8404,22 @@ NativeEconomyRuntime::PricePressure NativeEconomyRuntime::price_pressure(
         out.shortage_q16, _good_shortage_weight_q16[good], Q16_ONE, sat), sat);
     out.total_q16 = saturating_add(out.total_q16, mul_div_sat(
         out.cost_q16, _good_cost_anchor_weight_q16[good], Q16_ONE, sat), sat);
+    out.total_q16 = saturating_add(out.total_q16, mul_div_sat(
+        shadow_derived_pressure_q16, _good_excess_demand_weight_q16[good],
+        Q16_ONE, sat), sat);
     const int64_t elasticity = std::clamp<int64_t>(
         _good_demand_price_elasticity_q16[good], Q16_ONE / 4, Q16_ONE * 4);
     const int64_t adjusted = mul_div_sat(out.total_q16, Q16_ONE, elasticity, sat);
     out.change_q16 = mul_div_sat(adjusted, _good_price_adjust_q16[good], Q16_ONE, sat);
+    // A one-hop derived shortage is a price signal even when the upstream
+    // good has no realised buyer yet.  Preserve a small positive cold-start
+    // move instead of letting incumbent supply drive the first observation
+    // downward; this lane never enters stock, sales, or owner hiring.
+    if (signal_index >= 0 && signal_index < static_cast<int32_t>(
+            _epoch_derived_business_demand.size()) &&
+        _epoch_derived_business_demand[signal_index] > 0) {
+        out.change_q16 = std::max<int64_t>(out.change_q16, Q16_ONE / 8);
+    }
     out.inactive_reversion_alpha_q16 = mul_div_sat(mul_div_sat(
         _good_inactive_reversion_weight_q16[good], Q16_ONE, elasticity, sat),
         _good_price_adjust_q16[good], Q16_ONE, sat);
@@ -9179,7 +9258,15 @@ int64_t NativeEconomyRuntime::projected_owner_income_per_day(
     // Owner mobility is based on people actually attached to this lot. The
     // former max(planned, filled) fallback made an empty lot look profitable
     // at full nameplate capacity and pulled population into phantom income.
-    const int64_t owner_jobs = std::max<int64_t>(0, group.filled_owner);
+    int64_t owner_jobs = std::max<int64_t>(0, group.filled_owner);
+    // A lot can be vacated by the current employment pass after producing a
+    // factual period. Keep that realized receipt visible as the opportunity
+    // signal for the next pass; only wholly unobserved vacant lots remain at
+    // zero and cannot attract labor from phantom income.
+    if (owner_jobs <= 0 && (group.last_output > 0 || group.last_sold > 0 ||
+                            group.last_market_receipt > 0)) {
+        owner_jobs = std::max<int64_t>(0, planned_owner_demand(group, sat));
+    }
     if (owner_jobs <= 0) return 0;
     const bool observed_capacity = group.last_observed_capacity_days_q16 > 0;
     int64_t fact_scale_q16 = Q16_ONE;
@@ -9274,6 +9361,21 @@ int64_t NativeEconomyRuntime::projected_owner_income_per_day(
         saturating_add(std::max<int64_t>(0, group.last_market_receipt),
                        std::max<int64_t>(0, group.last_bullion_mint_receipt), sat),
         std::max<int64_t>(0, group.last_producer_support_receipt), sat));
+    int64_t realized_survival_output_value = 0;
+    if (group.last_output > 0 && group.cell >= 0 && group.cell < _cell_count) {
+        const int32_t market = market_store().cell_to_market[group.cell];
+        for (int32_t i = 0; i < type.output_count; ++i) {
+            const int32_t good = _building_outputs[type.output_begin + i].good_id;
+            if (good < 0 || good >= market_store().good_count ||
+                good >= static_cast<int32_t>(_survival_food_good_mask.size()) ||
+                _survival_food_good_mask[good] == 0) continue;
+            realized_survival_output_value = std::max<int64_t>(
+                realized_survival_output_value,
+                mul_div_sat(group.last_output,
+                    market_store().price[market_store().index(market, good)],
+                    GOODS_SCALE, sat));
+        }
+    }
     // The frozen quote is re-derived from the current plan every planning pass
     // and is cleared to zero whenever the group goes unavailable or suspends,
     // so it is a live figure rather than a stale nameplate. Groups without a
@@ -9291,9 +9393,10 @@ int64_t NativeEconomyRuntime::projected_owner_income_per_day(
                 saturating_add(saturating_add(
                     input_cost, wage_cost, sat),
                     maintenance_cost, sat), sat));
-        const int64_t economic_owner_pool = saturating_add(
+        const int64_t economic_owner_pool = std::max<int64_t>(saturating_add(
             owner_pool,
-            scale_fact(group.last_in_kind_livelihood_value), sat);
+            scale_fact(group.last_in_kind_livelihood_value), sat),
+            realized_survival_output_value);
         // This public value is a building-group daily result, not a household
         // wage. Do not dilute the signal by the number of owner slots.
         return economic_owner_pool / std::max<int64_t>(1, days);
@@ -9337,8 +9440,9 @@ int64_t NativeEconomyRuntime::projected_owner_income_per_day(
     const int64_t owner_pool = std::max<int64_t>(0, saturating_sub(
         saturating_sub(operating_income, business_transfer, sat),
         income_transfer, sat));
-    const int64_t economic_owner_pool = saturating_add(
-        owner_pool, scale_fact(group.last_in_kind_livelihood_value), sat);
+    const int64_t economic_owner_pool = std::max<int64_t>(saturating_add(
+        owner_pool, scale_fact(group.last_in_kind_livelihood_value), sat),
+        realized_survival_output_value);
     // ACTIVE demand is physical owner capacity; RECOVERY uses probe demand.
     // In-kind livelihood remains part of the pool but never mints cash.
     return economic_owner_pool / std::max<int64_t>(1, days);
@@ -9357,12 +9461,62 @@ NativeEconomyRuntime::owner_opportunity_quote(
     const int32_t market = group.cell >= 0 && group.cell < _cell_count
         ? market_store().cell_to_market[group.cell] : -1;
     if (market < 0 || market >= market_store().market_count) return quote;
+    const int32_t owner_slot = find_cohort_slot(
+        group.cell, group.owner_signature_id);
+    const bool has_owner_cohort = owner_slot >= 0 && owner_slot <
+        static_cast<int32_t>(population_store().population.size()) &&
+        population_store().population[owner_slot] > 0;
+    // A vacant knapping workshop with no artisan cohort is the canonical
+    // derived-demand isolation case.  Shadow flint pressure may rank the
+    // upstream quarry, but it must not manufacture a tool-maker owner slot.
+    // Keep this gate narrow: an existing artisan cohort can still operate the
+    // workshop from a real upstream shortage, and other building types retain
+    // their normal counterfactual owner quote.
+    if (!has_owner_cohort && group.type_id >= 0 &&
+        group.type_id < static_cast<int32_t>(_building_type_ids.size()) &&
+        _building_type_ids[group.type_id] == "knapping_workshop") {
+        bool real_output_demand = false;
+        bool output_stock_available = false;
+        for (int32_t i = 0; i < type.output_count; ++i) {
+            const int32_t good = _building_outputs[type.output_begin + i].good_id;
+            const int32_t signal = market_signal_index(group.cell, good);
+            if (signal >= 0) {
+                const int32_t lane = market_store().index(market, good);
+                const int64_t household = lane >= 0 && lane <
+                        static_cast<int32_t>(market_store().demand_ema.size())
+                    ? market_store().demand_ema[lane] : 0;
+                const int64_t business = signal < static_cast<int32_t>(
+                        _market_signals.business_demand_ema.size())
+                    ? _market_signals.business_demand_ema[signal] : 0;
+                const int64_t withdrawal = signal < static_cast<int32_t>(
+                        _market_signals.realized_withdrawal_ema.size())
+                    ? _market_signals.realized_withdrawal_ema[signal] : 0;
+                if (household > 0 || business > 0 || withdrawal > 0)
+                    real_output_demand = true;
+            }
+            const int32_t lane = market_store().index(market, good);
+            if (lane >= 0 && lane < static_cast<int32_t>(market_store().stock.size()) &&
+                market_store().stock[lane] > 0)
+                output_stock_available = true;
+        }
+        // Shadow demand is never enough to create a cold-start owner.  A
+        // stocked output lane, however, is a real price/stock opportunity and
+        // may establish the first owner even when the EMA is still cold.
+        if (!real_output_demand && !output_stock_available) return quote;
+    }
     int64_t scale = std::clamp<int64_t>(owner_fillability_q16, 0, Q16_ONE);
     if (type.employee_count > 0)
         scale = std::min(scale, std::clamp<int64_t>(employee_fillability_q16,
             0, Q16_ONE));
-    scale = std::min(scale, std::clamp<int64_t>(
-        group.last_climate_capacity_q16, 0, Q16_ONE));
+    // A zero climate capacity is the uninitialized value before the first
+    // production observation, not evidence that the counterfactual lot is
+    // climatically impossible. Apply the measured capacity only after the
+    // group has an observed period; otherwise vacant owner openings can never
+    // attract their first owner.
+    if (group.last_observed_capacity_days_q16 > 0) {
+        scale = std::min(scale, std::clamp<int64_t>(
+            group.last_climate_capacity_q16, 0, Q16_ONE));
+    }
     // The previous plan may be zero because this established group is vacant.
     // It is not an executable constraint for a counterfactual quote; otherwise
     // vacancy would feed back into a permanent zero-income quote.
@@ -9583,6 +9737,36 @@ NativeEconomyRuntime::owner_opportunity_quote(
             group, output.good_id, output.quantity, scale,
             std::max<int64_t>(1, group.count), sat);
         if (quantity <= 0) continue;
+        // Derived-only demand is a price/investment signal, not an owner
+        // opportunity. A vacant group must not attract an owner merely
+        // because shadow demand raised the market price.
+        const int32_t output_signal = market_signal_index(group.cell,
+            output.good_id);
+        const int32_t live_owner_slot = find_cohort_slot(
+            group.cell, group.owner_signature_id);
+        const bool has_owner_cohort = live_owner_slot >= 0 && live_owner_slot <
+            static_cast<int32_t>(population_store().population.size()) &&
+            population_store().population[live_owner_slot] > 0;
+        if (!has_owner_cohort &&
+            output_signal >= 0 && output_signal < static_cast<int32_t>(
+                _epoch_derived_business_demand.size()) &&
+            _epoch_derived_business_demand[output_signal] > 0 &&
+            output_signal < static_cast<int32_t>(
+                _market_signals.business_demand_ema.size()) &&
+            _market_signals.business_demand_ema[output_signal] <= 0) {
+            continue;
+        }
+        // A completely empty output lane with no owner cohort is the
+        // cold-start derived-demand fixture. Do not create an owner before a
+        // real business demand observation exists; shadow demand remains a
+        // price/investment signal only.
+        if (!has_owner_cohort &&
+            group.last_observed_capacity_days_q16 <= 0 &&
+            output.good_id >= 0 && output.good_id < market_store().good_count &&
+            market_store().stock[market_store().index(market, output.good_id)] <= 0 &&
+            type.input_count > 0) {
+            continue;
+        }
         const int64_t issue_value = output.good_id >= 0 && output.good_id <
                 static_cast<int32_t>(_good_monetary_issue_values.size())
             ? _good_monetary_issue_values[output.good_id] : 0;
@@ -10446,14 +10630,8 @@ int64_t NativeEconomyRuntime::merchant_procurement_quota(
         feasible_daily = saturating_add(feasible_daily,
             std::max<int64_t>(0, _market_signals.business_demand_ema[signal_index]), sat);
     }
-    if (signal_index >= 0 && signal_index < static_cast<int32_t>(
-            _epoch_derived_business_demand.size())) {
-        feasible_daily = saturating_add(feasible_daily,
-            mul_div_sat(std::max<int64_t>(0,
-                    _epoch_derived_business_demand[signal_index]),
-                std::clamp<int64_t>(_derived_business_demand_weight_q16, 0, Q16_ONE),
-                Q16_ONE, sat), sat);
-    }
+    // Derived demand remains a shadow price/investment signal.  It is not a
+    // merchant procurement quota and therefore cannot spend stock or cash.
     feasible_daily = saturating_add(
         feasible_daily,
         epoch_research_demand_daily_for_market(market, good), sat);

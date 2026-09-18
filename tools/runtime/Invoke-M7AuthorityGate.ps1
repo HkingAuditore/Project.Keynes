@@ -39,15 +39,29 @@ function Invoke-GodotTest([string]$Name, [string]$Script) {
 }
 
 $stages = [System.Collections.Generic.List[object]]::new()
+$specialized = @(
+    @{ name = 'm1-d7-gate'; script = 'res://tests/runtime_economy_d7_gate_test.gd' },
+    @{ name = 'm1-opcode-ack'; script = 'res://tests/runtime_economy_opcode_ack_test.gd' },
+    @{ name = 'm2-economy-soak'; script = 'res://tests/runtime_economy_authority_soak_test.gd' },
+    @{ name = 'm2-stage-ops-parity'; script = 'res://tests/runtime_economy_stage_ops_soak_parity_test.gd' },
+    @{ name = 'm3-effect-pod'; script = 'res://tests/runtime_effect_pod_test.gd' },
+    @{ name = 'm3-events-pod'; script = 'res://tests/runtime_events_pod_test.gd' },
+    @{ name = 'm3-effect-transaction'; script = 'res://tests/effect_native_multidomain_transaction_test.gd' },
+    @{ name = 'm6-authority-fault-gate'; script = 'res://tests/runtime_authority_m5_m6_gate_test.gd' }
+)
 $preflight = Invoke-GodotTest 'preflight-building' 'res://tests/building_runtime_test.gd'
 $stages.Add($preflight)
 $runtime = Invoke-GodotTest 'preflight-runtime-parity' 'res://tests/runtime_economy_parity_test.gd'
 $stages.Add($runtime)
+foreach ($test in $specialized) {
+    $stage = Invoke-GodotTest $test.name $test.script
+    $stages.Add($stage)
+}
 
 $result = [ordered]@{
     gate = 'M7'
     generated_utc = (Get-Date).ToUniversalTime().ToString('o')
-    implemented_domain_mask = 0xB7E
+    implemented_domain_mask = 0xFFF
     requested_domain_mask = 0
     authoritative_domain_mask = 0
     completed_domain_mask = 0
@@ -58,10 +72,11 @@ $result = [ordered]@{
     fatal = $false
     fault = ''
 }
-if (-not $preflight.passed -or -not $runtime.passed) {
+$specialized_failed = @($stages | Where-Object { -not $_.passed }).Count -gt 0
+if (-not $preflight.passed -or -not $runtime.passed -or $specialized_failed) {
     $result.fatal = $true
     $result.blocked_stage = 'PROBE'
-    $result.fault = 'preflight_regression_failed'
+    $result.fault = 'preflight_or_specialized_regression_failed'
 } else {
     # No probe/parity/ACTIVE evidence producer is wired into this entry point yet.
     $result.blocked_stage = 'PROBE'

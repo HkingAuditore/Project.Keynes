@@ -743,8 +743,44 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
         };
         int64_t sat = 0;
         auto seed_good = [&](int32_t good) {
-            const int64_t deficit = market_flow_deficit_daily(
-                cell, good, false, sat);
+            int64_t household_demand = 0;
+            const int32_t market = market_store().cell_to_market[cell];
+            if (market >= 0 && good >= 0) {
+                thread_local std::vector<int64_t> preview;
+                population_store().for_each_in_cell(cell, [&](int32_t slot) {
+                    if (slot < 0 || slot >= static_cast<int32_t>(
+                            population_store().population.size()) ||
+                        population_store().population[slot] <= 0) return;
+                    preview.clear();
+                    int64_t preview_sat = 0;
+                    compute_cohort_demand_preview(
+                        slot, market, environment_sample_for_cell(cell),
+                        nullptr, population_store().funds[slot], preview,
+                        preview_sat);
+                    if (good < static_cast<int32_t>(preview.size())) {
+                        household_demand = saturating_add(
+                            household_demand,
+                            saturating_mul(
+                                std::max<int64_t>(0, preview[good]),
+                                population_store().population[slot], sat), sat);
+                    }
+                });
+            }
+            const int64_t index = market >= 0
+                ? market_store().index(market, good) : -1;
+            const int64_t stored_demand = index >= 0 && index <
+                    static_cast<int64_t>(market_store().demand_ema.size())
+                ? std::max<int64_t>(0, market_store().demand_ema[index]) : 0;
+            // The opening snapshot may precede the first household clearing
+            // of a cold-start fixture, so demand_ema can still be zero even
+            // though the frozen cohort preview contains a real buyer.  Seed
+            // the shadow propagation from that factual preview; it remains
+            // derived-only and never becomes a stock-flow purchase.
+            const int64_t preview_deficit = household_demand > stored_demand
+                ? household_demand - stored_demand : household_demand;
+            const int64_t deficit = std::max<int64_t>(
+                market_flow_deficit_daily(cell, good, false, sat),
+                preview_deficit);
             if (deficit > 0) enqueue(good, deficit);
         };
         if (_market_signals.cell_offsets.size() ==
@@ -783,6 +819,7 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
             const int32_t type_id = select_startup_producer(cell, entry.good);
             if (type_id < 0) continue;
             const BuildingType &type = _building_types[type_id];
+            const int32_t market = market_store().cell_to_market[cell];
             const int64_t output_qty = startup_producer_output_quantity(
                 cell, type_id, entry.good, sat);
             if (output_qty <= 0) continue;
@@ -794,7 +831,37 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
                 int64_t physical = 0;
                 const int32_t input_good = select_startup_input_candidate(
                     cell, input, physical);
-                if (input_good < 0 || physical <= 0) continue;
+                int32_t derived_input_good = input_good;
+                // Shadow propagation must still expose the authored upstream
+                // requirement when the physical input lane is empty.  The
+                // missing stock is precisely what the derived signal is
+                // meant to price; requiring current stock here made the
+                // one-hop Leontief lane disappear in cold-start fixtures.
+                if (derived_input_good < 0 || physical <= 0) {
+                    int64_t fallback_price = std::numeric_limits<int64_t>::max();
+                    int64_t fallback_physical = 0;
+                    for (int32_t candidate_index = input.candidate_begin;
+                         candidate_index < input.candidate_begin + input.candidate_count;
+                         ++candidate_index) {
+                        const InputCandidate &candidate =
+                            _building_input_candidates[candidate_index];
+                        if (!good_market_available(cell, candidate.good_id, true))
+                            continue;
+                        const int64_t candidate_physical = mul_div_sat(
+                            input.quantity, Q16_ONE,
+                            std::max<int32_t>(1, candidate.efficiency_q16), sat);
+                        const int64_t candidate_price = market_store().price[
+                            market_store().index(market, candidate.good_id)];
+                        if (candidate_price < fallback_price) {
+                            fallback_price = candidate_price;
+                            derived_input_good = candidate.good_id;
+                            fallback_physical = std::max<int64_t>(
+                                1, candidate_physical);
+                        }
+                    }
+                    physical = fallback_physical;
+                }
+                if (derived_input_good < 0 || physical <= 0) continue;
                 int64_t derived = mul_div_sat(
                     entry.needed, physical, output_qty, sat);
                 derived = mul_div_sat(derived,
@@ -802,7 +869,7 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
                     Q16_ONE, sat);
                 if (derived <= 0) continue;
                 const int32_t signal = ensure_market_signal_index(
-                    cell, input_good);
+                    cell, derived_input_good);
                 if (signal < 0) continue;
                 if (signal >= static_cast<int32_t>(
                         _epoch_derived_business_demand.size())) {
@@ -820,8 +887,11 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
                 _derived_business_demand_total = saturating_add(
                     _derived_business_demand_total, derived,
                     _saturation_count);
-                if (_investment_good_stamp[input_good] != visit)
-                    enqueue(input_good, derived);
+                // Derived business demand is deliberately one hop.  It is a
+                // shadow price/investment signal, never a recursive purchase
+                // request.  Enqueuing the input here used to let a purely
+                // derived shortage walk the graph again and create a vacant
+                // upstream producer (notably knapping).
             }
         }
     }
@@ -844,7 +914,10 @@ void NativeEconomyRuntime::propagate_startup_demand_for_cell(int32_t cell) {
     };
     auto actual_deficit = [&](int32_t good) {
         int64_t sat = 0;
-        return market_flow_deficit_daily(cell, good, true, sat);
+        // Startup demand is a real-demand lane.  Shadow derived demand may
+        // rank an investment candidate, but it cannot create a construction,
+        // owner vacancy, input purchase, or startup producer by itself.
+        return market_flow_deficit_daily(cell, good, false, sat);
     };
     const uint64_t key_begin =
         static_cast<uint64_t>(static_cast<uint32_t>(cell)) << 32;
@@ -992,10 +1065,32 @@ void NativeEconomyRuntime::prepare_investment_review_cells() {
     // Review only cells that can contain population/buildings/pending work;
     // scanning the full world here would turn an investment batch into a
     // cell-count operation even when the economy is sparse.
+    // Employment catch-up is a distinct 30-day lane.  It may wake a sparse
+    // cell before its ordinary investment bucket, but never on every daily
+    // market pass.  The phase is anchored at day five, which is the first
+    // committed settlement after bootstrap, and remains deterministic across
+    // continuation slices.
+    auto catchup_due = [&](int32_t cell) {
+        if (day < 5 || ((day - 5) % 30) != 0) return false;
+        int64_t population = 0;
+        int64_t unemployed = 0;
+        population_store().for_each_in_cell(cell, [&](int32_t slot) {
+            const int64_t pop = std::max<int64_t>(0,
+                population_store().population[slot]);
+            const int64_t employed = std::max<int64_t>(0,
+                saturating_add(population_store().owner_employed[slot],
+                    population_store().employee_employed[slot],
+                    _saturation_count));
+            population = saturating_add(population, pop, _saturation_count);
+            unemployed = saturating_add(unemployed,
+                std::max<int64_t>(0, pop - employed), _saturation_count);
+        });
+        return population > 0 && unemployed * 4 > population;
+    };
     for (const int32_t cell : _economy_live_cells) {
         if (cell < 0 || cell >= _cell_count) continue;
-        if (!cell_due_investment_review(cell, day) ||
-            _committed_cells[cell].population <= 0) {
+        const bool due = cell_due_investment_review(cell, day) || catchup_due(cell);
+        if (_committed_cells[cell].population <= 0 || !due) {
             continue;
         }
         _investment_review_cell_indices.push_back(cell);
@@ -1656,7 +1751,12 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     lane.type_id = group.type_id;
                     lane.unit_cost = mul_div_sat(
                         allocated, GOODS_SCALE, qty, _saturation_count);
-                    lane.daily_offered = qty / epoch_days;
+                    // Keep a revealed incumbent visible to displacement even
+                    // when its period output is smaller than the epoch span.
+                    // Flooring to zero erased the lane before unit-cost
+                    // comparison and made every cheaper challenger look like
+                    // a greenfield investment.
+                    lane.daily_offered = (qty + epoch_days - 1) / epoch_days;
                     if (lane.daily_offered <= 0) continue;
                     incumbent_lanes.push_back(lane);
                 }
@@ -1669,6 +1769,41 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                         return a.unit_cost < b.unit_cost;
                     return a.type_id < b.type_id;
                 });
+        }
+        bool queued_owner_loss = false;
+        bool existing_owner_opening = false;
+        const int32_t cell_group_begin = _building_cell_offsets[cell];
+        const int32_t cell_group_end = _building_cell_offsets[cell + 1];
+        for (int32_t existing_index = cell_group_begin;
+             existing_index < cell_group_end; ++existing_index) {
+            const auto existing_group = building_at(static_cast<size_t>(existing_index));
+            if (existing_group.cell != cell || existing_group.count <= 0 ||
+                existing_group.operating_state == 1) continue;
+            const int64_t owner_target = planned_owner_demand(
+                existing_group, _saturation_count);
+            if (owner_target > std::max<int64_t>(0, existing_group.filled_owner)) {
+                existing_owner_opening = true;
+                break;
+            }
+        }
+        for (const Command &queued : _epoch_commands) {
+            if (queued.opcode != COMMAND_ADD_POPULATION || queued.i64_0 >= 0)
+                continue;
+            int32_t slot = -1;
+            if (!population_store().valid_handle(queued.target_handle, slot))
+                continue;
+            const int32_t queued_cell = population_store().page_cell[
+                slot / COHORT_PAGE_SIZE];
+            if (queued_cell != cell) continue;
+            // Any queued population loss that touches an owner cohort can
+            // invalidate the frozen owner signature before structural commit.
+            // Do not let an unrelated greenfield group consume the still-live
+            // owner slot in that same review; the later reconcile pass owns
+            // the vacancy decision.
+            if (queued.i64_0 < 0) {
+                queued_owner_loss = true;
+                break;
+            }
         }
         for (int32_t available_index = available_begin;
              available_index < available_end; ++available_index) {
@@ -1689,6 +1824,19 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
             // type with neither installed nor pending capacity is a legitimate
             // greenfield candidate even when no signal has touched its goods.
             const bool greenfield = existing == nullptr && pending_count <= 0;
+            // A zero growth share is an explicit ordinary-investment off
+            // switch. Catch-up remains a separate lane and may still evaluate
+            // candidates when unemployment policy asks it to do so.
+            if (_investment_max_growth_share_q16 <= 0 && !employment_catchup) {
+                ++_investment_sparse_skipped_types;
+                if (capture_investment_diagnostics) {
+                    _investment_diagnostics.push_back({});
+                    _investment_diagnostics.back().type_id = type_id;
+                    _investment_diagnostics.back().rejection_reason =
+                        INVESTMENT_REJECTION_PROBABILITY;
+                }
+                continue;
+            }
             const bool sparse_selected = !sparse_mask_ready ||
                 (type_id >= 0 && type_id < static_cast<int32_t>(
                     _investment_type_stamp.size()) &&
@@ -1728,6 +1876,11 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 mark_rejection(existing, reason);
                 if (diagnostic != nullptr) diagnostic->rejection_reason = reason;
             };
+            if (greenfield && (queued_owner_loss || existing_owner_opening) &&
+                !employment_catchup) {
+                reject(INVESTMENT_REJECTION_ACTIVE_OWNER_VACANCY);
+                continue;
+            }
             // Every unlocked building type enters the same economic review.
             // Types without a marketable output naturally fail the market-signal
             // gate; collectors continue through resource, material, viability,
@@ -2076,6 +2229,52 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
             int64_t shortage_q16 = driver.pressure_q16;
             int64_t utilization_q16 = driver.utilization_q16;
             int64_t driver_deficit = driver.deficit;
+            // Shadow-derived demand is only a pricing/investment pressure
+            // signal.  It must not by itself justify a normal greenfield or
+            // expansion candidate, even when an incumbent has already left
+            // output stock in the market.  Use only committed buyer evidence
+            // for this gate; catch-up startup remains an explicit exception.
+            bool driver_real_evidence = false;
+            if (driver.good_id >= 0) {
+                const int64_t output_index = market_store().index(
+                    market, driver.good_id);
+                const int32_t signal = market_signal_index(cell, driver.good_id);
+                const int64_t household_demand = output_index >= 0 &&
+                        output_index < static_cast<int64_t>(
+                            market_store().demand_ema.size())
+                    ? std::max<int64_t>(0, market_store().demand_ema[output_index]) : 0;
+                const int64_t business_demand = signal >= 0 && signal <
+                        static_cast<int32_t>(_market_signals.business_demand_ema.size())
+                    ? std::max<int64_t>(0, _market_signals.business_demand_ema[signal]) : 0;
+                const int64_t withdrawal = signal >= 0 && signal <
+                        static_cast<int32_t>(_market_signals.realized_withdrawal_ema.size())
+                    ? std::max<int64_t>(0, _market_signals.realized_withdrawal_ema[signal]) : 0;
+                const int64_t epoch_real = signal >= 0 && signal <
+                        static_cast<int32_t>(_epoch_desired_business_demand.size())
+                    ? std::max<int64_t>(0, _epoch_desired_business_demand[signal]) : 0;
+                const int64_t epoch_funded = signal >= 0 && signal <
+                        static_cast<int32_t>(_epoch_funded_business_demand.size())
+                    ? std::max<int64_t>(0, _epoch_funded_business_demand[signal]) : 0;
+                const int64_t research = epoch_research_demand_daily(
+                    cell, driver.good_id);
+                const int64_t startup = std::max<int64_t>(
+                    startup_demand_for(cell, driver.good_id),
+                    remote_startup_demand_for(cell, driver.good_id));
+                const int32_t flow = trade_flow_index(cell, driver.good_id, false);
+                const int64_t exports = flow >= 0 && flow < static_cast<int32_t>(
+                        _trade_flows.export_ema.size())
+                    ? std::max<int64_t>(0, _trade_flows.export_ema[flow]) : 0;
+                driver_real_evidence = household_demand > 0 || business_demand > 0 ||
+                    withdrawal > 0 || epoch_real > 0 || epoch_funded > 0 ||
+                    research > 0 || startup > 0 || exports > 0;
+            }
+            const int32_t driver_signal = driver.good_id >= 0
+                ? market_signal_index(cell, driver.good_id) : -1;
+            const bool driver_shadow_only =
+                driver_signal >= 0 && driver_signal < static_cast<int32_t>(
+                    _epoch_derived_business_demand.size()) &&
+                  _epoch_derived_business_demand[driver_signal] > 0 &&
+                  !driver_real_evidence;
             int64_t stealable = 0;
             int64_t challenger_unit_cost = 0;
             int64_t incumbent_unit_cost = 0;
@@ -2092,6 +2291,11 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 diagnostic->driver_discard_q16 = driver.discard_q16;
             }
             if (driver.good_id < 0) {
+                ++_investment_market_signal_rejections;
+                reject(INVESTMENT_REJECTION_MARKET_SIGNAL);
+                continue;
+            }
+            if (driver_shadow_only) {
                 ++_investment_market_signal_rejections;
                 reject(INVESTMENT_REJECTION_MARKET_SIGNAL);
                 continue;
@@ -2629,6 +2833,13 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 const int64_t daily_profit = saturating_sub(
                     daily_economic_revenue, daily_operating_cost,
                     _saturation_count);
+                // Preserve the economic quote even when a candidate is
+                // rejected by a downstream livelihood/margin gate. The
+                // inspector uses this to distinguish a real unprofitable
+                // catch-up lane from a missing sponsor/material lane.
+                if (diagnostic != nullptr) {
+                    diagnostic->projected_profit_per_day = daily_profit;
+                }
                 if (daily_economic_revenue < daily_operating_cost) {
                     reject(INVESTMENT_REJECTION_OWNER_LIVELIHOOD);
                     continue;
@@ -2692,7 +2903,10 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                         return_on_capital_q16;
                     diagnostic->cost_advantage_q16 = cost_advantage_q16;
                 }
-                if (payback > _investment_max_payback_days) {
+                const bool displacement_candidate = stealable > 0 &&
+                    cost_advantage_q16 > 0;
+                if (payback > _investment_max_payback_days &&
+                    !displacement_candidate) {
                     reject(INVESTMENT_REJECTION_PAYBACK);
                     continue;
                 }

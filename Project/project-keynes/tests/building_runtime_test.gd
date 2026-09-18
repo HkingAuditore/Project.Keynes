@@ -181,6 +181,7 @@ func _run() -> void:
 	buildings = ext.get_building_cell_snapshot(0)
 	_expect("building snapshot reports five-day production period", int(buildings.get("period_days", 0)) == 5)
 	var filled_owner: PackedInt64Array = buildings.get("filled_owner", PackedInt64Array())
+	print("  all-tech day1 debug=", {"types": buildings.get("group_type_ids"), "counts": buildings.get("group_counts"), "owners": buildings.get("owner_signature_ids"), "filled": buildings.get("filled_owner"), "required": buildings.get("owner_required"), "openings": buildings.get("owner_openings"), "planned": buildings.get("planned_utilization_q16"), "funded": buildings.get("funded_capacity_q16"), "capacity": buildings.get("capacity_q16"), "state": buildings.get("operating_state"), "pop": ext.get_population_cell_snapshot(0).get("populations"), "owner_pop": ext.get_population_cell_snapshot(0).get("owner_employed_by_cohort"), "unemp": ext.get_population_cell_snapshot(0).get("unemployed_by_cohort")})
 	_expect("owner job filled", filled_owner.size() > 0 and int(filled_owner[0]) == 1)
 	if filled_owner.is_empty():
 		return
@@ -243,6 +244,7 @@ func _run() -> void:
 	var base_wages := int(base_paid_by_role[0]) + int(base_paid_by_role[1])
 	var bonus_paid := int(bonus_paid_by_role[0]) + int(bonus_paid_by_role[1])
 	var bonus_due := int(bonus_due_by_role[0]) + int(bonus_due_by_role[1])
+	print("  wage debug=", {"filled": filled_by_role, "contract": contract_wages, "base_paid": base_paid_by_role, "bonus_paid": bonus_paid_by_role, "bonus_due": bonus_due, "last_wages": buildings.last_wages_paid, "epoch_income": pop.get("epoch_income_by_cohort", PackedInt64Array()), "epoch_expense": pop.get("epoch_expense_by_cohort", PackedInt64Array())})
 	_expect("adaptive contract wages respect each role living floor",
 		int(contract_wages[0]) >= maxi(int(base_living[0]), int(role_living[0])) and
 		int(contract_wages[1]) >= maxi(int(base_living[1]), int(role_living[1])) and
@@ -272,6 +274,7 @@ func _run() -> void:
 	_expect("worker cohort has real employee count", worker_row >= 0 and
 		int((pop.employee_employed_by_cohort as PackedInt64Array)[worker_row]) > 0)
 	var expected_wages := base_wages + bonus_paid
+	print("  worker cashflow debug=", {"worker_row": worker_row, "manager_row": manager_row, "landlord_row": landlord_row, "worker_income": _cashflow_total_for_row(pop, worker_row, true), "worker_expense": _cashflow_total_for_row(pop, worker_row, false), "epoch_worker_income": int((pop.epoch_income_by_cohort as PackedInt64Array)[worker_row]), "epoch_worker_expense": int((pop.epoch_expense_by_cohort as PackedInt64Array)[worker_row])})
 	_expect("adaptive wages reach worker and manager cohorts", worker_row >= 0 and manager_row >= 0 and
 		int((pop.epoch_income_by_cohort as PackedInt64Array)[worker_row]) >=
 			int(base_paid_by_role[0]) + int(bonus_paid_by_role[0]) and
@@ -543,6 +546,20 @@ func _run() -> void:
 			recovery_one_report.get("committed_generation"), "/",
 			restored_recovery_one_report.get("committed_generation"),
 			" price_equal=", sm.get("price") == rm.get("price"))
+		var restore_goods: PackedStringArray = compiled.good_ids
+		for restore_good in range(restore_goods.size()):
+			var source_price := int((sm.price as PackedInt32Array)[restore_good])
+			var restored_price := int((rm.price as PackedInt32Array)[restore_good])
+			var source_target := int((sm.merchant_inventory_target as PackedInt64Array)[restore_good])
+			var restored_target := int((rm.merchant_inventory_target as PackedInt64Array)[restore_good])
+			if source_price != restored_price or source_target != restored_target:
+				print("  restore good diff=", restore_goods[restore_good], {
+					"price": [source_price, restored_price],
+					"target": [source_target, restored_target],
+					"demand": [int((sm.demand_ema as PackedInt64Array)[restore_good]), int((rm.demand_ema as PackedInt64Array)[restore_good])],
+					"business": [int((sm.business_demand_ema as PackedInt64Array)[restore_good]), int((rm.business_demand_ema as PackedInt64Array)[restore_good])],
+					"supply": [int((sm.offered_supply_ema as PackedInt64Array)[restore_good]), int((rm.offered_supply_ema as PackedInt64Array)[restore_good])],
+					"withdrawal": [int((sm.realized_withdrawal_ema as PackedInt64Array)[restore_good]), int((rm.realized_withdrawal_ema as PackedInt64Array)[restore_good])]})
 	_expect("restored building input spans survive the first production cycle",
 		not bool(restored_recovery_one_report.get("fatal", false)) and
 		int(restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))
@@ -971,7 +988,9 @@ func _test_owner_fill_reconciles_after_population_loss(catalog: Dictionary,
 		"building_counts": PackedInt64Array([1, 1, 1]),
 	})
 	_expect("owner-reconcile fixture bootstraps", bool(boot.get("ok", false)))
+	print("  owner-reconcile bootstrap groups=", {"types": ext.get_building_cell_snapshot(0).get("group_type_ids"), "expected": owner_types})
 	_run_day(ext, 0)
+	print("  owner-reconcile after-day0=", ext.get_building_cell_snapshot(0).get("group_type_ids"))
 	var opening_pop: Dictionary = ext.get_population_cell_snapshot(0)
 	var artisan_handle := _handle_for_profession(opening_pop, artisan_sig)
 	_expect("owner-reconcile artisan handle exists", artisan_handle != 0)
@@ -986,6 +1005,7 @@ func _test_owner_fill_reconciles_after_population_loss(catalog: Dictionary,
 		"i64_1": PackedInt64Array([0]),
 	})
 	_expect("owner-reconcile population loss queues", bool(remove_one.get("ok", false)))
+	ext.set_economy_inspector_trace_cell(0)
 	var day1 := _run_day(ext, 1)
 	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
 	var pop: Dictionary = ext.get_population_cell_snapshot(0)
@@ -995,6 +1015,15 @@ func _test_owner_fill_reconciles_after_population_loss(catalog: Dictionary,
 	var unemployed_row := _row_for_signature(pop, unemployed_sig)
 	var unemployed_pool_population := int((pop.populations as PackedInt64Array)[unemployed_row]) \
 		if unemployed_row >= 0 else 0
+	print("  owner-reconcile candidates=", {"day": day1.get("current_day", -1), "types": buildings.get("investment_candidate_type_ids"), "rejections": buildings.get("investment_candidate_rejection_reasons"), "pending": buildings.get("pending_construction_type_ids", PackedInt32Array())})
+	var c_types: PackedInt32Array = buildings.get("investment_candidate_type_ids", PackedInt32Array())
+	var c_rej: PackedInt32Array = buildings.get("investment_candidate_rejection_reasons", PackedInt32Array())
+	var c_profit: PackedInt64Array = buildings.get("investment_candidate_projected_profit_per_day", PackedInt64Array())
+	var c_driver: PackedInt32Array = buildings.get("investment_candidate_driver_good_id", PackedInt32Array())
+	var c_cap: PackedInt64Array = buildings.get("investment_candidate_required_capital", PackedInt64Array())
+	var c_idx := c_types.find(205)
+	print("  owner-reconcile type205=", {"idx": c_idx, "rej": c_rej[c_idx] if c_idx >= 0 else -1, "profit": c_profit[c_idx] if c_idx >= 0 else 0, "driver": c_driver[c_idx] if c_idx >= 0 else -1, "cap": c_cap[c_idx] if c_idx >= 0 else 0})
+	print("  owner-reconcile debug=", {"types": buildings.group_type_ids, "owner_sigs": buildings.owner_signature_ids, "capacity": buildings.owner_capacity, "required": buildings.owner_required, "openings": buildings.owner_openings, "filled": buildings.filled_owner, "pop": pop.populations, "owners": pop.owner_employed_by_cohort, "unemployed": unemployed_pool_population})
 	_expect("owner snapshot separates capacity, planned jobs, and openings",
 		(buildings.owner_capacity as PackedInt64Array).size() == 3 and
 		(buildings.owner_required as PackedInt64Array).size() == 3 and
@@ -1084,6 +1113,7 @@ func _test_last_building_demolition_releases_profession_cohorts(
 	var unemployed_row := _row_for_signature(closing_pop, unemployed_sig)
 	var unemployed_population := int(populations[unemployed_row]) \
 		if unemployed_row >= 0 else 0
+	print("  last-demolition debug=", {"sigs": cohort_signatures, "pops": populations, "owners": owner_employed, "employees": employee_employed, "unemp_row": unemployed_row, "unemp": unemployed_population, "identity": identity_valid})
 	_expect("last demolition removes the final building group",
 		int((closing_buildings.building_counts_by_type as PackedInt64Array)[mine_id]) == 0)
 	_expect("idle professions migrate into the unemployed cohort",
@@ -1247,6 +1277,9 @@ func _test_employee_income_reallocation_to_owner(source_catalog: Dictionary,
 	var silver_id := building_ids.find("surface_silver_working")
 	var gathering_id := building_ids.find("gathering_ground")
 	var timber_id := building_ids.find("timber_collector")
+	print("  employee-owner ids=", {103: building_ids[103] if building_ids.size() > 103 else "?", 361: building_ids[361] if building_ids.size() > 361 else "?", 364: building_ids[364] if building_ids.size() > 364 else "?", 379: building_ids[379] if building_ids.size() > 379 else "?"})
+	print("  employee-owner sigs=", {"merchant": merchant_sig, "miner": miner_sig, "forager": forager_sig})
+	print("  employee-owner sig names=", {13: signatures[13] if signatures.size() > 13 else "?", 26: signatures[26] if signatures.size() > 26 else "?", 28: signatures[28] if signatures.size() > 28 else "?", 39: signatures[39] if signatures.size() > 39 else "?"})
 	var goods: PackedStringArray = catalog.good_ids
 	var plants_good := goods.find("gathered_plants")
 	var logs_good := goods.find("logs")
@@ -1293,9 +1326,16 @@ func _test_employee_income_reallocation_to_owner(source_catalog: Dictionary,
 	if not bool(boot.get("ok", false)):
 		print("  employee-owner bootstrap error=", boot)
 		return
+	ext.set_economy_inspector_trace_cell(0)
 	_seed_resource_reserve(ext, catalog, "timber", 1000000000.0)
 	_run_day(ext, 0)
+	var day0b: Dictionary = ext.get_building_cell_snapshot(0)
+	var day0p: Dictionary = ext.get_population_cell_snapshot(0)
+	print("  employee-owner day0=", {"types": day0b.get("group_type_ids"), "owners": day0b.get("owner_signature_ids"), "filled": day0b.get("filled_owner"), "required": day0b.get("owner_required"), "openings": day0b.get("owner_openings"), "opp": day0b.get("opportunity_disposable_survival_power_per_day"), "emp": day0b.get("employee_filled"), "pop": day0p.get("populations"), "owner_pop": day0p.get("owner_employed_by_cohort"), "employee_pop": day0p.get("employee_employed_by_cohort"), "unemp": day0p.get("unemployed_by_cohort")})
 	var report := _run_day(ext, 1)
+	var day1b: Dictionary = ext.get_building_cell_snapshot(0)
+	var day1p: Dictionary = ext.get_population_cell_snapshot(0)
+	print("  employee-owner day1=", {"types": day1b.get("group_type_ids"), "owners": day1b.get("owner_signature_ids"), "filled": day1b.get("filled_owner"), "required": day1b.get("owner_required"), "openings": day1b.get("owner_openings"), "opp": day1b.get("opportunity_disposable_survival_power_per_day"), "emp": day1b.get("employee_filled"), "pop": day1p.get("populations"), "owner_pop": day1p.get("owner_employed_by_cohort"), "employee_pop": day1p.get("employee_employed_by_cohort"), "unemp": day1p.get("unemployed_by_cohort")})
 	var final_report := _run_day(ext, 2)
 	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
 	var silver_group := (buildings.group_type_ids as PackedInt32Array).find(silver_id)
@@ -1304,6 +1344,29 @@ func _test_employee_income_reallocation_to_owner(source_catalog: Dictionary,
 	var population: Dictionary = ext.get_population_cell_snapshot(0)
 	var merchant_row := _row_for_signature(population, merchant_sig)
 	var gathering_income := int((buildings.projected_owner_income_per_day as PackedInt64Array)[gathering_group]) if gathering_group >= 0 else -1
+	print("  employee-owner groups=", {
+		"types": buildings.get("group_type_ids"),
+		"counts": buildings.get("group_counts"),
+		"owner_sigs": buildings.get("owner_signature_ids"),
+		"projected": buildings.get("projected_owner_income_per_day"),
+		"filled": buildings.get("filled_owner"),
+		"owner_required": buildings.get("owner_required"),
+		"owner_openings": buildings.get("owner_openings"),
+		"opp_income": buildings.get("opportunity_owner_income_per_day"),
+		"opp_power": buildings.get("opportunity_disposable_survival_power_per_day"),
+		"employee_filled": buildings.get("employee_filled"),
+		"employee_roles": buildings.get("employee_role_professions"),
+		"targets": buildings.get("owner_job_targets"),
+		"last_output": buildings.get("last_output"),
+		"last_sold": buildings.get("last_sold"),
+			"last_receipt": buildings.get("last_market_receipt")})
+	if gathering_group >= 0:
+		print("  employee-owner gathering row=", {
+			"projected": gathering_income,
+			"filled": int((buildings.filled_owner as PackedInt64Array)[gathering_group]),
+			"last_output": int((buildings.last_output as PackedInt64Array)[gathering_group]),
+			"last_sold": int((buildings.last_sold as PackedInt64Array)[gathering_group]),
+			"last_receipt": int((buildings.last_market_receipt as PackedInt64Array)[gathering_group])})
 	if gathering_group < 0 or gathering_income <= 40000 * 9 / 8 \
 			or int((buildings.filled_owner as PackedInt64Array)[gathering_group]) != 1 \
 			or int(report.get("building_employee_to_owner_reallocations", 0)) != 1:
@@ -1315,6 +1378,7 @@ func _test_employee_income_reallocation_to_owner(source_catalog: Dictionary,
 			"gathering_output": int((buildings.last_output as PackedInt64Array)[gathering_group]) if gathering_group >= 0 else -1,
 			"realloc": int(report.get("building_employee_to_owner_reallocations", -1)),
 			"profession_changes": int(report.get("building_owner_job_profession_changes", -1)),
+			"population": population,
 		})
 	_expect("higher food owner income attracts an incumbent mining employee",
 		silver_group >= 0 and gathering_group >= 0 and
@@ -1500,6 +1564,7 @@ func _test_surplus_merchant_can_change_owner_job(source_catalog: Dictionary,
 	_expect("merchant mobility fixture bootstraps", bool(boot.get("ok", false)))
 	if not bool(boot.get("ok", false)):
 		return
+	ext.set_economy_inspector_trace_cell(0)
 	var report := _run_day(ext, 0)
 	var population: Dictionary = ext.get_population_cell_snapshot(0)
 	var merchant_row := _row_for_signature(population, merchant_sig)
@@ -1561,6 +1626,7 @@ func _test_same_profession_owner_income_reallocation(source_catalog: Dictionary,
 	_expect("same-profession mobility fixture bootstraps", bool(boot.get("ok", false)))
 	if not bool(boot.get("ok", false)):
 		return
+	ext.set_economy_inspector_trace_cell(0)
 	var report := _run_day(ext, 0)
 	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
 	var flint_group := (buildings.group_type_ids as PackedInt32Array).find(flint_id)
@@ -1755,6 +1821,7 @@ func _test_understaffed_owners_do_not_raid_each_other(source_catalog: Dictionary
 	_expect("understaffed-raid fixture bootstraps", bool(boot.get("ok", false)))
 	if not bool(boot.get("ok", false)):
 		return
+	ext.set_economy_inspector_trace_cell(0)
 	var first := _run_day(ext, 0)
 	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
 	var flint_group := (buildings.group_type_ids as PackedInt32Array).find(flint_id)
@@ -1766,6 +1833,14 @@ func _test_understaffed_owners_do_not_raid_each_other(source_catalog: Dictionary
 	for day in range(1, 6):
 		var later := _run_day(ext, day)
 		continued += int(later.get("building_owner_job_reallocations", 0))
+		var later_buildings: Dictionary = ext.get_building_cell_snapshot(0)
+		print("  understaffed day=", day, {
+			"realloc": int(later.get("building_owner_job_reallocations", 0)),
+			"types": later_buildings.get("group_type_ids"),
+			"projected": later_buildings.get("projected_owner_income_per_day"),
+			"filled": later_buildings.get("filled_owner"),
+			"output": later_buildings.get("last_output"),
+			"sold": later_buildings.get("last_sold")})
 	buildings = ext.get_building_cell_snapshot(0)
 	var flint_later := int((buildings.filled_owner as PackedInt64Array)[flint_group])
 	var rubble_later := int((buildings.filled_owner as PackedInt64Array)[rubble_group])
@@ -1952,6 +2027,8 @@ func _test_unemployment_subsidy_is_reservation_income(source_catalog: Dictionary
 	_expect("unemployment-subsidy fixture bootstraps", bool(boot.get("ok", false)))
 	if not bool(boot.get("ok", false)):
 		return
+	_seed_resource_reserve(ext, catalog, "flint", 1000000000.0)
+	_seed_resource_reserve(ext, catalog, "stone", 1000000000.0)
 	var report := _run_day(ext, 0)
 	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
 	var population: Dictionary = ext.get_population_cell_snapshot(0)
@@ -2277,6 +2354,32 @@ func _test_cost_advantage_displaces_covered_incumbents(source_catalog: Dictionar
 	var steam_pending := pending_types.find(cheap_id) >= 0
 	var steam_reject := int(diagnostic_rejections[steam_row]) if steam_row >= 0 else -1
 	var steam_stealable := int(stealable[steam_row]) if steam_row >= 0 else -1
+	print("  displacement candidates=", {
+		"types": diagnostic_types,
+		"reject": diagnostic_rejections,
+		"stealable": stealable,
+		"challenger_cost": buildings.get("investment_candidate_challenger_unit_cost"),
+		"incumbent_cost": buildings.get("investment_candidate_incumbent_unit_cost"),
+		"required": buildings.get("investment_candidate_required_capital"),
+		"profit": buildings.get("investment_candidate_projected_profit_per_day"),
+		"driver": buildings.get("investment_candidate_driver_good_id"),
+		"driver_pressure": buildings.get("investment_candidate_driver_pressure_q16")})
+	if steam_row >= 0:
+		print("  displacement steam row=", {
+			"reject": int(diagnostic_rejections[steam_row]),
+			"stealable": int(stealable[steam_row]),
+			"challenger_cost": int((buildings.get("investment_candidate_challenger_unit_cost") as PackedInt64Array)[steam_row]),
+			"incumbent_cost": int((buildings.get("investment_candidate_incumbent_unit_cost") as PackedInt64Array)[steam_row]),
+			"required": int((buildings.get("investment_candidate_required_capital") as PackedInt64Array)[steam_row]),
+			"profit": int((buildings.get("investment_candidate_projected_profit_per_day") as PackedInt64Array)[steam_row]),
+			"driver": int((buildings.get("investment_candidate_driver_good_id") as PackedInt32Array)[steam_row])})
+	print("  displacement incumbents=", {
+		"types": buildings.get("group_type_ids"),
+		"counts": buildings.get("building_counts"),
+		"capacity": buildings.get("last_capacity_q16"),
+		"output": buildings.get("last_output"),
+		"op_cost": buildings.get("last_operating_cost"),
+		"state": buildings.get("operating_state")})
 	if steam_row < 0 or steam_reject == 15 or steam_reject == 18 or steam_stealable <= 0 \
 			or not (steam_pending or
 				int(review.get("building_investment_displacement_starts", 0)) >= 1 or
@@ -2524,6 +2627,26 @@ func _test_high_unemployment_investment_catchup(
 	for epoch in range(74):
 		var report := _run_day(ext, epoch)
 		var simulation_day := epoch * 5
+		if int(report.get("building_investment_employment_catchup_cells", 0)) > 0:
+			var catchup_buildings: Dictionary = ext.get_building_cell_snapshot(0)
+			var catchup_types: PackedInt32Array = catchup_buildings.get(
+				"investment_candidate_type_ids", PackedInt32Array())
+			var catchup_rows: Array = []
+			for catchup_type in [knapping_id, hunting_id, timber_id]:
+				var catchup_row := catchup_types.find(catchup_type)
+				if catchup_row >= 0:
+					catchup_rows.append({
+						"type": catchup_type,
+						"reject": int((catchup_buildings.investment_candidate_rejection_reasons as PackedInt32Array)[catchup_row]),
+						"required": int((catchup_buildings.investment_candidate_required_capital as PackedInt64Array)[catchup_row]),
+						"profit": int((catchup_buildings.investment_candidate_projected_profit_per_day as PackedInt64Array)[catchup_row]),
+						"pressure": int((catchup_buildings.investment_candidate_driver_pressure_q16 as PackedInt64Array)[catchup_row])})
+			print("  catchup review=", simulation_day, {
+				"rows": catchup_rows,
+				"jobs": int(report.get("building_investment_jobs_started", 0)),
+				"credit_budget": int(report.get("merchant_credit_budget", 0)),
+				"credit_committed": int(report.get("merchant_credit_committed", 0)),
+				"credit_drawn": int(report.get("merchant_credit_drawn", 0))})
 		if int(report.get("building_investment_jobs_started", 0)) > 0:
 			jobs_started += int(report.get("building_investment_jobs_started", 0))
 			if first_start_day < 0:
@@ -3774,6 +3897,7 @@ func _test_hunter_subsistence_and_working_capital(source_catalog: Dictionary,
 	resource_quantities[int(resource_offsets[hunting_id])] = 1
 	catalog.building_production_resource_quantities = resource_quantities
 	var tool_good := (catalog.good_ids as PackedStringArray).find("chipped_stone_tools")
+	var game_good := (catalog.good_ids as PackedStringArray).find("game_meat")
 	_ensure_building_input(catalog, hunting_id, tool_good, 100, 65536)
 	var profile := source_profile.duplicate(true)
 	profile.market_cycle_days = 5
@@ -3782,6 +3906,7 @@ func _test_hunter_subsistence_and_working_capital(source_catalog: Dictionary,
 		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 181))
 	_expect("hunter-subsistence runtime configures",
 		bool(ext.configure_economy(catalog, profile, 1, 181).get("ok", false)))
+	_seed_resource_reserve(ext, catalog, "wild_game", 1000000000.0)
 	var signatures: PackedStringArray = catalog.signature_keys
 	var hunter_sig := signatures.find("hunter|default")
 	var merchant_sig := signatures.find("merchant|default")
@@ -3806,8 +3931,65 @@ func _test_hunter_subsistence_and_working_capital(source_catalog: Dictionary,
 	var report := {}
 	var ledgers_ok := true
 	var reserve_seen := false
+	var hunter_last_positive := -1
+	var hunter_first_zero := -1
 	for day in range(120):
 		report = _run_day(ext, day)
+		var day_buildings: Dictionary = ext.get_building_cell_snapshot(0)
+		var day_outputs: Variant = day_buildings.get("last_output", PackedInt64Array())
+		var day_output := int((day_outputs as PackedInt64Array)[0]) if day_outputs is PackedInt64Array and (day_outputs as PackedInt64Array).size() > 0 else 0
+		if day < 8:
+			var day_market_trace: Dictionary = ext.get_market_cell_snapshot(0)
+			var day_pop_trace: Dictionary = ext.get_population_cell_snapshot(0)
+			print("  hunter day trace=", day, {
+				"price": _snapshot_i32(day_market_trace, "price", tool_good),
+				"owner_funds": _snapshot_i64(ext.get_population_cell_snapshot(0), "funds_by_cohort", 0),
+				"filled_owner_count": _snapshot_i64(day_buildings, "filled_owner", 0),
+				"unemployed": _sum_i64(ext.get_population_cell_snapshot(0).get("unemployed_by_cohort", PackedInt64Array())),
+				"last_input": int((day_buildings.last_input as PackedInt64Array)[0]),
+				"last_output": day_output,
+				"last_sold": _snapshot_i64(day_buildings, "last_sold", 0),
+				"last_retained": _snapshot_i64(day_buildings, "last_retained", 0),
+				"last_receipt": _snapshot_i64(day_buildings, "last_market_receipt", 0),
+				"last_revenue": _snapshot_i64(day_buildings, "last_revenue", 0),
+				"in_kind": _snapshot_i64(day_buildings, "last_in_kind_livelihood_value", 0),
+				"filled": _snapshot_i64(day_buildings, "filled_owner", 0),
+				"climate": _snapshot_i32(day_buildings, "last_climate_capacity_q16", 0),
+				"observed": _snapshot_i32(day_buildings, "last_observed_capacity_days_q16", 0),
+				"target": _snapshot_i64(day_market_trace, "merchant_inventory_target", game_good),
+				"game_stock": _good_value(day_market_trace, "stock", "game_meat"),
+				"game_withdraw": _good_value(day_market_trace, "realized_withdrawal_ema", "game_meat"),
+				"epoch_income": _snapshot_i64(day_pop_trace, "epoch_income_by_cohort", 0),
+				"epoch_expense": _snapshot_i64(day_pop_trace, "epoch_expense_by_cohort", 0),
+				"inkind_pop": _snapshot_i64(day_pop_trace, "epoch_in_kind_income_by_cohort", 0),
+				"funded": _snapshot_i32(day_buildings, "funded_capacity_q16", 0),
+				"working": int((day_buildings.owner_working_capital_allocated as PackedInt64Array)[0]),
+				"intent": _snapshot_i64(day_buildings, "purchase_intent_capacity_q16", 0)})
+		if day_output > 0:
+			hunter_last_positive = day
+		elif hunter_last_positive >= 0 and hunter_first_zero < 0:
+			hunter_first_zero = day
+			var day_market: Dictionary = ext.get_market_cell_snapshot(0)
+			var reserve_probe: Variant = day_buildings.get("building_resource_effective_reserve", PackedInt64Array())
+			print("  hunter first zero=", day, {
+				"type": int((day_buildings.group_type_ids as PackedInt32Array)[0]),
+				"state": int((day_buildings.operating_state as PackedByteArray)[0]),
+				"count": int((day_buildings.group_counts as PackedInt64Array)[0]),
+				"planned": _snapshot_i32(day_buildings, "planned_utilization_q16", 0),
+				"funded": _snapshot_i32(day_buildings, "funded_capacity_q16", 0),
+				"climate": _snapshot_i32(day_buildings, "last_climate_capacity_q16", 0),
+				"capacity": _snapshot_i32(day_buildings, "last_capacity_q16", 0),
+				"owner_funds": _snapshot_i64(ext.get_population_cell_snapshot(0), "funds_by_cohort", 0),
+				"resource_reserve": reserve_probe,
+				"resource_ids": catalog.building_resource_ids,
+				"tool_stock": _snapshot_i64(day_market, "stock", tool_good),
+				"input_reserve": _snapshot_i64(day_market, "production_input_reserve", tool_good),
+				"working": day_buildings.get("owner_working_capital_allocated"),
+				"intent": day_buildings.get("purchase_intent_capacity_q16"),
+				"selected": day_buildings.get("group_input_selected_good_ids"),
+				"merchant_cash": day_market.get("merchant_cash"),
+				"debt": _snapshot_i64(day_buildings, "merchant_debt_principal", 0),
+				"debt_term": _snapshot_i32(day_buildings, "merchant_debt_term_cycles_left", 0)})
 		ledgers_ok = ledgers_ok and int(report.get("population_error", 1)) == 0 and \
 			int(report.get("money_error", 1)) == 0 and int(report.get("goods_error", 1)) == 0
 		reserve_seen = reserve_seen or int(report.get("owner_working_capital_reserved", 0)) > 0
@@ -4058,6 +4240,12 @@ func _test_business_demand_recovers_industrial_utilization(
 	var ledgers_ok := true
 	for day in range(7):
 		var report := _run_day(ext, day)
+		var trace_market: Dictionary = ext.get_market_cell_snapshot(0)
+		var trace_buildings: Dictionary = ext.get_building_cell_snapshot(0)
+		var trace_type_ids: Variant = trace_buildings.get("group_type_ids", PackedInt32Array())
+		var trace_group := (trace_type_ids as PackedInt32Array).find(knapping_id) if trace_type_ids is PackedInt32Array else -1
+		if trace_group >= 0:
+			print("  business day trace=", day, {"util": _snapshot_i32(trace_buildings, "planned_utilization_q16", trace_group), "funded": _snapshot_i32(trace_buildings, "funded_capacity_q16", trace_group), "working": _snapshot_i64(trace_buildings, "owner_working_capital_allocated", trace_group), "input": _snapshot_i64(trace_buildings, "last_input", trace_group), "output": _snapshot_i64(trace_buildings, "last_output", trace_group), "filled": _snapshot_i64(trace_buildings, "filled_owner", trace_group), "required": _snapshot_i64(trace_buildings, "owner_required", trace_group), "openings": _snapshot_i64(trace_buildings, "owner_openings", trace_group), "projected": _snapshot_i64(trace_buildings, "projected_owner_income_per_day", trace_group), "debt": _snapshot_i64(trace_buildings, "merchant_debt_principal", trace_group), "selected": trace_buildings.get("group_input_selected_good_ids"), "tool_stock": _good_value(trace_market, "stock", "chipped_stone_tools"), "logs_stock": _good_value(trace_market, "stock", "logs"), "bema": _good_value(trace_market, "business_demand_ema", "chipped_stone_tools")})
 		ledgers_ok = ledgers_ok and int(report.get("population_error", 1)) == 0 and \
 			int(report.get("money_error", 1)) == 0 and \
 			int(report.get("goods_error", 1)) == 0
@@ -4213,6 +4401,7 @@ func _test_leontief_derived_demand_cold_start(source_catalog: Dictionary,
 		"building_counts": PackedInt64Array([2, 1]),
 	})
 	_expect("leontief-derived fixture bootstraps", bool(boot.get("ok", false)))
+	print("  derived sig map=", {"keys": catalog.signature_keys, "ids": {"artisan": artisan_sig, "forager": forager_sig, "merchant": merchant_sig}})
 	var flint_price0 := _good_value(ext.get_market_cell_snapshot(0), "price", "flint")
 	var derived_seen := false
 	var flint_price_up := false
@@ -4220,6 +4409,14 @@ func _test_leontief_derived_demand_cold_start(source_catalog: Dictionary,
 	var ledgers_ok := true
 	for day in range(8):
 		var report := _run_day(ext, day)
+		var trace_market: Dictionary = ext.get_market_cell_snapshot(0)
+		var trace_buildings: Dictionary = ext.get_building_cell_snapshot(0)
+		var trace_type_ids: Variant = trace_buildings.get("group_type_ids", PackedInt32Array())
+		var trace_group := (trace_type_ids as PackedInt32Array).find(knapping_id) if trace_type_ids is PackedInt32Array else -1
+		if trace_group >= 0:
+			var trace_pop_dbg: Dictionary = ext.get_population_cell_snapshot(0)
+			print("  derived pop debug=", {"sigs": trace_pop_dbg.get("signature_ids"), "pops": trace_pop_dbg.get("populations"), "owners": trace_pop_dbg.get("owner_employed_by_cohort"), "employees": trace_pop_dbg.get("employee_employed_by_cohort")})
+			print("  derived day trace=", day, {"filled": _snapshot_i64(trace_buildings, "filled_owner", trace_group), "required": _snapshot_i64(trace_buildings, "owner_required", trace_group), "openings": _snapshot_i64(trace_buildings, "owner_openings", trace_group), "util": _snapshot_i32(trace_buildings, "planned_utilization_q16", trace_group), "funded": _snapshot_i32(trace_buildings, "funded_capacity_q16", trace_group), "working": _snapshot_i64(trace_buildings, "owner_working_capital_allocated", trace_group), "projected": _snapshot_i64(trace_buildings, "projected_owner_income_per_day", trace_group), "price": _good_value(trace_market, "price", "flint"), "derived": _good_value(trace_market, "derived_business_demand", "flint"), "business_flint": _good_value(trace_market, "business_demand_ema", "flint"), "business_tools": _good_value(trace_market, "business_demand_ema", "chipped_stone_tools"), "tool_stock": _good_value(trace_market, "stock", "chipped_stone_tools")})
 		ledgers_ok = ledgers_ok and int(report.get("population_error", 1)) == 0 \
 			and int(report.get("money_error", 1)) == 0 \
 			and int(report.get("goods_error", 1)) == 0
@@ -4927,6 +5124,26 @@ func _good_value(snapshot: Dictionary, column: String, good_id: String) -> int:
 		return int((values as PackedInt64Array)[index])
 	if values is PackedInt32Array:
 		return int((values as PackedInt32Array)[index])
+	return 0
+
+func _snapshot_i64(snapshot: Dictionary, column: String, index: int) -> int:
+	if not snapshot.has(column):
+		return 0
+	var values: Variant = snapshot[column]
+	if values is PackedInt64Array and index >= 0 and index < (values as PackedInt64Array).size():
+		return int((values as PackedInt64Array)[index])
+	if values is PackedInt32Array and index >= 0 and index < (values as PackedInt32Array).size():
+		return int((values as PackedInt32Array)[index])
+	return 0
+
+func _snapshot_i32(snapshot: Dictionary, column: String, index: int) -> int:
+	if not snapshot.has(column):
+		return 0
+	var values: Variant = snapshot[column]
+	if values is PackedInt32Array and index >= 0 and index < (values as PackedInt32Array).size():
+		return int((values as PackedInt32Array)[index])
+	if values is PackedInt64Array and index >= 0 and index < (values as PackedInt64Array).size():
+		return int((values as PackedInt64Array)[index])
 	return 0
 
 func _good_i32_value(snapshot: Dictionary, column: String, good_id: String) -> int:

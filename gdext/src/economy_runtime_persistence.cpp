@@ -1519,9 +1519,9 @@ bool NativeEconomyRuntime::capture_ecp2_authority(RuntimeEconomyEcp2State &out,
         return false;
     }
 
-    out.schema_version = SCHEMA_VERSION;
+    out.schema_version = RUNTIME_ECONOMY_ECP2_SCHEMA_VERSION;
     out.abi_version = RUNTIME_ECONOMY_ECP2_ABI_VERSION;
-    out.envelope.schema_version = SCHEMA_VERSION;
+    out.envelope.schema_version = RUNTIME_ECONOMY_ECP2_SCHEMA_VERSION;
     out.envelope.abi_version = RUNTIME_ECONOMY_ECP2_ABI_VERSION;
     out.envelope.cell_count = _cell_count;
     out.envelope.market_count = market_store().market_count;
