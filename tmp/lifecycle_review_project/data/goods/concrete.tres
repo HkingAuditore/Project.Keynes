@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"concrete"
+display_name = "混凝土"
+semantic_tags = PackedStringArray()
+category_id = &"concrete"
+substitution_category_ids = PackedStringArray("concrete", "industrial_construction")
+technology_tags = PackedStringArray("industry.construction", "tech.synthetic_materials", "tech.sensor_networks")
+default_price = 22000
+reference_max_price = 1100000
+price_adjust_q16 = 1536
+demand_price_elasticity_q16 = 49152

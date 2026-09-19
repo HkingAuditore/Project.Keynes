@@ -1,0 +1,50 @@
+[gd_resource type="Resource" script_class="ResourceProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/resource_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"gold_ore"
+discovery_technology_tags = PackedStringArray("tech.gold_panning")
+display_name = "金矿"
+reserve_component = &"cell.res_gold_ore_reserve"
+init_reserve_scale = 8.0
+init_min_coverage = 0.06
+init_min_reserve = 100000.0
+init_target_coverage = 0.06
+init_target_reserve_density = 30000.0
+init_richness_exponent = 2.4
+init_micro_coverage = 0.06
+init_micro_reserve_share = 0.10
+init_micro_min_reserve = 10000.0
+land_only = true
+temp_lo = 0.0
+temp_hi = 1.0
+gen_base = 0.0
+gen_temp = 0.0
+gen_moisture = 0.0
+gen_self = 0.0
+decay_base = 0.0
+decay_temp = 0.0
+decay_moisture = 0.0
+decay_self = 0.0
+init_base = -31000.0
+init_temp = 0.0
+init_moisture = 0.0
+init_elevation = 11000.0
+init_river = 6000.0
+init_volcano = 12500.0
+init_noise = 41000.0
+init_noise_scale = 0.1
+init_landform_weights = {
+6: 9000.0,
+7: 21000.0,
+8: 25000.0,
+10: 14000.0,
+12: 22500.0,
+14: 21000.0,
+15: 18000.0
+}
+geology_family_id = &"hydrothermal"
+init_province = 12000.0
+init_belt = 18000.0

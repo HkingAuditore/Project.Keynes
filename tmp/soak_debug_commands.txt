@@ -1,0 +1,3 @@
+.sympath D:\Godot\ProjectKeynes\Project.Keynes\Project\project-keynes\addons\dots_ext\bin\windows
+sxe -c ".ecxr; k; ~* k; q" av
+g

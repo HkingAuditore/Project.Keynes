@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160">
+  <!-- Flat top-down authored tile. No baked shadow: the analytic
+       building_shadow pass owns false shadows. -->
+  <polygon data-role="pit" fill="#45403d" points="16.00,41.60 144.00,41.60 144.00,108.80 16.00,108.80"/>
+  <polygon data-role="foundation" fill="#333030" points="16.00,41.60 144.00,41.60 144.00,49.28 16.00,49.28"/>
+  <polygon data-role="foundation" fill="#333030" points="29.60,56.80 130.40,56.80 130.40,64.48 29.60,64.48"/>
+  <polygon data-role="foundation" fill="#333030" points="43.20,72.00 116.80,72.00 116.80,79.68 43.20,79.68"/>
+  <polygon data-role="foundation" fill="#333030" points="56.80,87.20 103.20,87.20 103.20,94.88 56.80,94.88"/>
+  <polygon data-role="facility" fill="#615c59" points="54.40,108.80 73.60,108.80 99.20,44.80 86.40,44.80"/>
+  <polygon data-role="foundation" fill="#333030" points="141.60,118.40 141.14,121.92 139.78,125.20 137.62,128.02 134.80,130.18 131.52,131.54 128.00,132.00 124.48,131.54 121.20,130.18 118.38,128.02 116.22,125.20 114.86,121.92 114.40,118.40 114.86,114.88 116.22,111.60 118.38,108.78 121.20,106.62 124.48,105.26 128.00,104.80 131.52,105.26 134.80,106.62 137.62,108.78 139.78,111.60 141.14,114.88"/>
+  <polygon data-role="roof_back" fill="#4f4a4c" points="16.00,115.20 54.40,115.20 54.40,126.40 16.00,126.40"/>
+  <polygon data-role="ridge" fill="#878080" points="16.00,124.64 54.40,124.64 54.40,126.40 16.00,126.40"/>
+  <polygon data-role="wall" fill="#8f5947" points="17.92,126.40 52.48,126.40 52.48,139.20 17.92,139.20"/>
+  <polygon data-role="foundation" fill="#333030" points="14.85,139.20 55.55,139.20 55.55,143.68 14.85,143.68"/>
+  <polygon data-role="metal" fill="#69696e" points="124.48,9.60 131.52,9.60 131.52,41.60 124.48,41.60"/>
+  <polygon data-role="metal" fill="#69696e" points="109.70,14.72 146.30,14.72 146.30,17.92 109.70,17.92"/>
+  <polygon data-role="metal" fill="#69696e" points="109.70,41.60 122.37,16.00 127.30,16.00 117.44,41.60"/>
+  <polygon data-role="metal" fill="#69696e" points="146.30,41.60 133.63,16.00 128.70,16.00 138.56,41.60"/>
+</svg>

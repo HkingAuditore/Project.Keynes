@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"glassware"
+display_name = "玻璃器皿"
+semantic_tags = PackedStringArray()
+category_id = &"glassware"
+substitution_category_ids = PackedStringArray("glassware")
+technology_tags = PackedStringArray("tech.early_glassmaking")
+default_price = 30000
+reference_max_price = 1500000
+demand_price_elasticity_q16 = 85197
+household_wealth_elasticity_q16 = 32768

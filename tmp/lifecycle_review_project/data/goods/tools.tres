@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"tools"
+display_name = "金属工具"
+semantic_tags = PackedStringArray()
+category_id = &"tools"
+substitution_category_ids = PackedStringArray("tools")
+technology_tags = PackedStringArray("industry.tools", "tech.iron_smelting", "tech.machine_tools")
+production_quality_level = 3
+default_price = 52000
+reference_max_price = 2600000

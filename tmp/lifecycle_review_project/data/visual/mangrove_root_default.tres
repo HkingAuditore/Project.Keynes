@@ -1,0 +1,38 @@
+[gd_resource type="Resource" script_class="ShrubVisualProfile" format=3 uid="uid://dm4ngr00tr0"]
+
+[ext_resource type="Script" uid="uid://b2v55s0gf3d20" path="res://scripts/data/shrub_visual_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+enabled = true
+detail_kind = 10
+render_z_index = 2
+density_scale = 0.80
+wind_strength = 0.12
+rotation_mode = 0
+desktop_max_instances_quality0 = 300
+desktop_max_instances_quality1 = 1100
+desktop_max_instances_quality2 = 2000
+desktop_max_per_cell_quality0 = 1
+desktop_max_per_cell_quality1 = 2
+desktop_max_per_cell_quality2 = 3
+mobile_max_instances_quality0 = 60
+mobile_max_instances_quality1 = 130
+mobile_max_instances_quality2 = 220
+mobile_max_per_cell_quality0 = 1
+mobile_max_per_cell_quality1 = 1
+mobile_max_per_cell_quality2 = 1
+min_size_factor = 0.18
+max_size_factor = 0.36
+patch_frequency = 0.095
+patch_cutoff = 0.22
+patch_contrast = 1.80
+micro_gap_threshold = 0.07
+world_noise_acceptance = 1.35
+moisture_corridor_boost = 1.20
+vitality_patch_boost = 0.35
+base_color_override_enabled = true
+base_color_override = Color(0.31, 0.22, 0.15, 0.96)
+vegetation_weight_overrides = {"19": 2.20, "20": 0.55, "21": 0.45}
+landform_weight_overrides = {"9": 1.25, "5": 0.72, "4": 0.42}
+cover_weight_overrides = {"5": 0.82}

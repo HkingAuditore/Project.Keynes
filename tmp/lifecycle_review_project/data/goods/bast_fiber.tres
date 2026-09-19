@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"bast_fiber"
+display_name = "亚麻秆/韧皮原料"
+semantic_tags = PackedStringArray()
+category_id = &"spinnable_fiber"
+substitution_category_ids = PackedStringArray("spinnable_fiber", "natural_spinnable_fiber", "guild_textile_fiber", "rag_paper_fiber", "primitive_lashing")
+technology_tags = PackedStringArray("industry.primary", "tech.wild_flax_collection", "tech.motorized_agriculture", "tech.precision_agriculture", "tech.automated_agriculture", "tech.flax_retting", "tech.indentured_contracts", "tech.long_term_leases")
+default_price = 7000
+reference_max_price = 350000

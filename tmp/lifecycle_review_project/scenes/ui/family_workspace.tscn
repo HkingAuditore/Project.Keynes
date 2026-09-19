@@ -1,0 +1,274 @@
+[gd_scene load_steps=6 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/components/family_workspace.gd" id="1_script"]
+[ext_resource type="Theme" path="res://assets/themes/family_workspace_theme.tres" id="2_theme"]
+[ext_resource type="Texture2D" path="res://assets/ui/family_workspace/bitmap/dossier_background_v2.png" id="3_background"]
+[ext_resource type="Texture2D" path="res://assets/ui/family_workspace/bitmap/crest_bitmap.tres" id="4_crest"]
+[ext_resource type="Texture2D" path="res://assets/ui/family_workspace/bitmap/prestige_bitmap.tres" id="5_prestige"]
+
+[node name="FamilyWorkspace" type="Control"]
+visible = false
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+clip_contents = true
+theme = ExtResource("2_theme")
+script = ExtResource("1_script")
+
+[node name="Background" type="TextureRect" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+mouse_filter = 2
+texture = ExtResource("3_background")
+expand_mode = 1
+stretch_mode = 0
+
+[node name="SafeMargin" type="MarginContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 20
+theme_override_constants/margin_top = 20
+theme_override_constants/margin_right = 24
+theme_override_constants/margin_bottom = 22
+
+[node name="Main" type="HBoxContainer" parent="SafeMargin"]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="NavColumn" type="VBoxContainer" parent="SafeMargin/Main"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(126, 0)
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="NavTopSpacer" type="Control" parent="SafeMargin/Main/NavColumn"]
+custom_minimum_size = Vector2(0, 12)
+layout_mode = 2
+
+[node name="NavOverview" type="Button" parent="SafeMargin/Main/NavColumn"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(126, 76)
+layout_mode = 2
+toggle_mode = true
+button_pressed = true
+text = "概览"
+theme_override_constants/icon_max_width = 34
+theme_type_variation = &"FamilyNavButton"
+
+[node name="NavTraits" type="Button" parent="SafeMargin/Main/NavColumn"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(126, 76)
+layout_mode = 2
+toggle_mode = true
+text = "家族特性"
+theme_override_constants/icon_max_width = 34
+theme_type_variation = &"FamilyNavButton"
+
+[node name="NavPreferences" type="Button" parent="SafeMargin/Main/NavColumn"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(126, 76)
+layout_mode = 2
+toggle_mode = true
+text = "行为偏好"
+theme_override_constants/icon_max_width = 34
+theme_type_variation = &"FamilyNavButton"
+
+[node name="NavEffects" type="Button" parent="SafeMargin/Main/NavColumn"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(126, 76)
+layout_mode = 2
+toggle_mode = true
+text = "家族效果"
+theme_override_constants/icon_max_width = 34
+theme_type_variation = &"FamilyNavButton"
+
+[node name="NavPeople" type="Button" parent="SafeMargin/Main/NavColumn"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(126, 76)
+layout_mode = 2
+toggle_mode = true
+text = "主要人物"
+theme_override_constants/icon_max_width = 34
+theme_type_variation = &"FamilyNavButton"
+
+[node name="NavBranches" type="Button" parent="SafeMargin/Main/NavColumn"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(126, 76)
+layout_mode = 2
+toggle_mode = true
+text = "领地与分支"
+theme_override_constants/icon_max_width = 34
+theme_type_variation = &"FamilyNavButton"
+
+[node name="PageArea" type="VBoxContainer" parent="SafeMargin/Main"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+clip_contents = true
+theme_override_constants/separation = 6
+
+[node name="MobileNav" type="ScrollContainer" parent="SafeMargin/Main/PageArea"]
+unique_name_in_owner = true
+visible = false
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 2
+horizontal_scroll_mode = 2
+vertical_scroll_mode = 0
+
+[node name="Buttons" type="HBoxContainer" parent="SafeMargin/Main/PageArea/MobileNav"]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 5
+
+[node name="Header" type="HBoxContainer" parent="SafeMargin/Main/PageArea"]
+custom_minimum_size = Vector2(0, 158)
+layout_mode = 2
+clip_contents = true
+theme_override_constants/separation = 8
+
+[node name="HeaderContent" type="VBoxContainer" parent="SafeMargin/Main/PageArea/Header"]
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 5
+
+[node name="IdentityRow" type="HBoxContainer" parent="SafeMargin/Main/PageArea/Header/HeaderContent"]
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="Crest" type="TextureRect" parent="SafeMargin/Main/PageArea/Header/HeaderContent/IdentityRow"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(68, 68)
+layout_mode = 2
+texture = ExtResource("4_crest")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="Titles" type="VBoxContainer" parent="SafeMargin/Main/PageArea/Header/HeaderContent/IdentityRow"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 4
+theme_override_constants/separation = 1
+
+[node name="Title" type="Label" parent="SafeMargin/Main/PageArea/Header/HeaderContent/IdentityRow/Titles"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "家族档案"
+theme_type_variation = &"FamilyTitle"
+
+[node name="Subtitle" type="Label" parent="SafeMargin/Main/PageArea/Header/HeaderContent/IdentityRow/Titles"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "区域 · 国家"
+theme_type_variation = &"FamilySubtitle"
+
+[node name="HeaderRule" type="HSeparator" parent="SafeMargin/Main/PageArea/Header/HeaderContent"]
+layout_mode = 2
+
+[node name="SummaryBand" type="PanelContainer" parent="SafeMargin/Main/PageArea/Header/HeaderContent"]
+layout_mode = 2
+size_flags_vertical = 3
+theme_type_variation = &"FamilySummaryBand"
+
+[node name="SummaryGrid" type="GridContainer" parent="SafeMargin/Main/PageArea/Header/HeaderContent/SummaryBand"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+columns = 4
+theme_override_constants/h_separation = 4
+theme_override_constants/v_separation = 4
+
+[node name="PrestigePlate" type="TextureRect" parent="SafeMargin/Main/PageArea/Header"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(138, 148)
+layout_mode = 2
+texture = ExtResource("5_prestige")
+expand_mode = 1
+stretch_mode = 5
+
+[node name="PrestigeText" type="VBoxContainer" parent="SafeMargin/Main/PageArea/Header/PrestigePlate"]
+layout_mode = 1
+anchors_preset = 15
+anchor_left = 0.18
+anchor_top = 0.25
+anchor_right = 0.82
+anchor_bottom = 0.84
+grow_horizontal = 2
+grow_vertical = 2
+alignment = 1
+theme_override_constants/separation = 0
+
+[node name="PrestigeValue" type="Label" parent="SafeMargin/Main/PageArea/Header/PrestigePlate/PrestigeText"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "0%"
+horizontal_alignment = 1
+theme_type_variation = &"FamilyPrestigeValue"
+
+[node name="PrestigeCaption" type="Label" parent="SafeMargin/Main/PageArea/Header/PrestigePlate/PrestigeText"]
+unique_name_in_owner = true
+layout_mode = 2
+text = "威望 0"
+horizontal_alignment = 1
+theme_type_variation = &"FamilyPrestigeCaption"
+
+[node name="CloseButton" type="Button" parent="SafeMargin/Main/PageArea/Header"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(38, 38)
+layout_mode = 2
+size_flags_vertical = 0
+text = "×"
+tooltip_text = "关闭家族档案"
+theme_type_variation = &"FamilyActionButton"
+
+[node name="PageHeading" type="HBoxContainer" parent="SafeMargin/Main/PageArea"]
+custom_minimum_size = Vector2(0, 32)
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="PageIcon" type="TextureRect" parent="SafeMargin/Main/PageArea/PageHeading"]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(30, 30)
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 5
+
+[node name="PageTitle" type="Label" parent="SafeMargin/Main/PageArea/PageHeading"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "概览"
+theme_type_variation = &"FamilySectionTitle"
+
+[node name="PageViewport" type="Control" parent="SafeMargin/Main/PageArea"]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+clip_contents = true
+
+[node name="PageScroll" type="ScrollContainer" parent="SafeMargin/Main/PageArea/PageViewport"]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+horizontal_scroll_mode = 0
+
+[node name="PageHost" type="VBoxContainer" parent="SafeMargin/Main/PageArea/PageViewport/PageScroll"]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+clip_contents = true
+theme_override_constants/separation = 8

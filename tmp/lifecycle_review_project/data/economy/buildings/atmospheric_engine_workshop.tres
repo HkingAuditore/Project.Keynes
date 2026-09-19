@@ -1,0 +1,56 @@
+[gd_resource type="Resource" script_class="BuildingProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"atmospheric_engine_workshop"
+display_name = "大气式蒸汽机工坊"
+economic_sector_id = "manufacturing"
+semantic_tags = PackedStringArray()
+technology_tags = PackedStringArray("tech.atmospheric_engine")
+required_technology_tags = PackedStringArray("tech.surface_coal_collection", "tech.coal_outcrop_identification", "tech.ground_stone_tools", "tech.surface_coal_use", "tech.iron_smelting", "tech.natural_copper_working")
+industry_chain_id = &"production.steam_engines"
+progression_step = 1
+maturity_rank = 4
+maturity_display_name = "组织化生产"
+progression_role = "entry"
+predecessor_building_ids = PackedStringArray()
+construction_good_ids = PackedStringArray("lumber", "bricks", "raw_stone", "copper")
+construction_quantities = PackedInt64Array(1993275, 1993275, 1328850, 664425)
+construction_category_ids = PackedStringArray("classical_construction", "classical_construction", "classical_construction", "conductor_metal")
+construction_min_quality_levels = PackedInt32Array(0, 0, 0, 0)
+construction_candidate_offsets = PackedInt32Array()
+construction_candidate_good_ids = PackedStringArray()
+construction_candidate_efficiency_q16 = PackedInt32Array()
+maintenance_good_ids = PackedStringArray()
+maintenance_quantities_per_day = PackedInt64Array()
+owner_profession_id = &"artisan"
+employee_profession_ids = PackedStringArray("industrial_worker", "engineer")
+employee_slots_per_building = PackedInt64Array(12, 3)
+employee_wage_policy_ids = PackedStringArray("adaptive", "adaptive")
+employee_reference_wages_per_day = PackedInt64Array(14500, 16800)
+input_good_ids = PackedStringArray("coal", "tools", "copper")
+input_quantities_per_day = PackedInt64Array(1600, 700, 400)
+input_required_q16 = PackedInt32Array(32768, 32768, 65536)
+input_category_ids = PackedStringArray("solid_fuel", "tools", "")
+input_min_quality_levels = PackedInt32Array(1, 3, 0)
+input_candidate_offsets = PackedInt32Array(0, 0, 0, 0)
+input_candidate_good_ids = PackedStringArray()
+input_candidate_efficiency_q16 = PackedInt32Array()
+output_good_ids = PackedStringArray("steam_engines")
+output_quantities_per_day = PackedInt64Array(15600)
+output_cost_shares_q16 = PackedInt32Array()
+resource_ids = PackedStringArray()
+resource_quantities_per_day = PackedInt64Array()
+resource_interaction_modes = PackedStringArray()
+resource_access_modes = PackedStringArray()
+resource_generation_ids = PackedStringArray()
+resource_generation_quantities_per_day = PackedInt64Array()
+condition_opcodes = PackedInt32Array()
+condition_signals = PackedInt32Array()
+condition_compares = PackedInt32Array()
+condition_reference_ids = PackedStringArray()
+condition_values = PackedInt64Array()
+wage_policy_id = "adaptive"
+wage_per_employee_per_day = 4600

@@ -1,0 +1,704 @@
+extends RefCounted
+class_name DCSystemScheduler
+
+## DataCore — DCSystemScheduler（A3 / dots-migration-roadmap §3）。
+##
+## 把 SlicedUpdateScheduler（tick + budget + policy + starvation）与
+## DCEcsScheduler（reads/writes 拓扑排序 + 环检测）合并为一个调度器。
+##
+## 设计权衡（Phase C.2 初版采用 wrapper 模式，不继承 SusScheduler）：
+##   - 内部持一个 SlicedUpdateScheduler 实例做实际 tick / budget / policy 推进
+##     —— 复用既有的所有 starvation / fast-tick WARN / breakdown 机制；
+##   - 自己负责：(a) 收集 declare_reads/writes 派生 DAG；(b) 按拓扑序注册到
+##     内部 SUS（用 priority 编码拓扑深度，priority lower 先跑）；
+##     (c) tick 入口包裹 _debug_*_pass 校验；(d) 自动 swap_double_buffer。
+##
+## Production 入口恒走本 facade。SusScheduler 只是内部 backend（有
+## SusSchedulerExt 时转发到 C++，否则 GDScript fallback）；旧
+## use_dc_system_scheduler 分支已退役。
+## 与 dots-experiment-report §3.6 一致：
+##   实验已证明拓扑排序在 J=8 真实算子下 +5.08% overhead，远低于 25% 红线。
+##   本类把那个沙盒结论搬进 production；reads/writes 拓扑由 DCEcsScheduler
+##   原算法搬过来（Kahn O(J²) + 环检测）。
+
+const _SusSchedulerScript = preload("res://scripts/simulation/sus/sus_scheduler.gd")
+const _SusPolicyScript = preload("res://scripts/simulation/sus/sus_policy.gd")
+const _DCEcsSchedulerScript = preload("res://scripts/ecs/dc_ecs_scheduler.gd")
+const _DCEcsJobScript = preload("res://scripts/ecs/dc_ecs_job.gd")
+
+# ─── 内部 SUS 实例（实际 tick / budget / policy 推进） ───────────────
+var _sus = _SusSchedulerScript.new()
+
+# DCWorld 引用（用于 reads/writes comp_id 解析 + _debug_*_pass 校验）
+var _world = null
+
+# 注册的 DCSystem 列表（保留原始顺序；topo sort 时基于此构造 DAG）
+var _systems: Array = []  # Array[DCSystem]
+
+# 构造完毕、可以 tick 的标志（必须 build_topology() 后才能 tick）
+var _topology_built: bool = false
+
+# 拓扑顺序（_systems 的索引序列；与 DCEcsScheduler.topo_sort 同算法）
+var _topo_order: PackedInt32Array = PackedInt32Array()
+var _ocean_scheduler_diag_count: int = 0
+
+
+# ─── 配置（与 SusScheduler 同名透传） ────────────────────────────────
+
+## frame_budget_ms：与 SusScheduler.frame_budget_ms 一致；调度器外部直接
+## 写本字段；本类 tick 时同步给 _sus。
+var frame_budget_ms: float = 12.0
+var strict_budget_enabled: bool = false
+var sim_budget_window_size: int = 300
+var sim_budget_warn_ms: float = 1.0
+var log_interval_ticks: int = 30
+
+# dots-flag-prune-pr1 (2026-05-22)：use_gdext_sus_scheduler 已随
+# SusScheduler 一起删除——SusScheduler 现恒走 ext 探测单边分支，
+# 本类不再需要透传字段。
+
+
+# ─── Runtime schedule profile ────────────────────────────────────────
+
+func configure_from_profile(cp) -> void:
+	if cp == null:
+		return
+	if cp.get("sim_frame_budget_ms") != null:
+		if _sus.has_method("set_frame_budget_ms"):
+			_sus.set_frame_budget_ms(float(cp.sim_frame_budget_ms))
+			frame_budget_ms = float(_sus.frame_budget_ms)
+		else:
+			frame_budget_ms = float(cp.sim_frame_budget_ms)
+	if cp.get("sim_strict_budget_enabled") != null:
+		strict_budget_enabled = bool(cp.sim_strict_budget_enabled)
+		if _sus.has_method("set_strict_budget_enabled"):
+			_sus.set_strict_budget_enabled(strict_budget_enabled)
+	if cp.get("sim_budget_warn_ms") != null:
+		if _sus.has_method("set_sim_budget_warn_ms"):
+			_sus.set_sim_budget_warn_ms(float(cp.sim_budget_warn_ms))
+			sim_budget_warn_ms = float(_sus.sim_budget_warn_ms)
+		else:
+			sim_budget_warn_ms = float(cp.sim_budget_warn_ms)
+	elif cp.get("sim_frame_budget_ms") != null:
+		if _sus.has_method("set_sim_budget_warn_ms"):
+			_sus.set_sim_budget_warn_ms(frame_budget_ms)
+			sim_budget_warn_ms = float(_sus.sim_budget_warn_ms)
+		else:
+			sim_budget_warn_ms = frame_budget_ms
+	sim_budget_window_size = 300
+	_sus.sim_budget_window_size = sim_budget_window_size
+	if OS.is_debug_build():
+		var log_slice_ms: float = 0.0
+		if cp.get("sim_slice_budget_ms") != null:
+			log_slice_ms = clampf(float(cp.sim_slice_budget_ms), 0.10, 1.0)
+		var log_upload_slice_ms: float = 0.0
+		if cp.get("sim_upload_slice_budget_ms") != null:
+			log_upload_slice_ms = clampf(float(cp.sim_upload_slice_budget_ms), 0.10, 1.5)
+		print("[SUS] sim budget strict=%s frame=%.2fms warn=%.2fms slice=%.2fms upload=%.2fms scheduler=%s native_sus=auto"
+			% [str(strict_budget_enabled),
+				frame_budget_ms,
+				sim_budget_warn_ms,
+				log_slice_ms,
+				log_upload_slice_ms,
+				"DCSystemScheduler"])
+
+
+func configure_job_from_profile(job, cp, upload_job: bool = false,
+		schedule_group: StringName = &"", base_stride: int = 1) -> void:
+	if job == null or cp == null:
+		return
+	_apply_budget_profile_to_job(job, cp, upload_job)
+	if schedule_group != &"":
+		apply_job_schedule(job, cp, schedule_group, base_stride)
+
+
+func apply_job_schedule(job, cp, schedule_group: StringName, base_stride: int = 1) -> void:
+	if job == null:
+		return
+	var policy = _schedule_policy(schedule_group, cp, base_stride)
+	if schedule_group != &"ocean_currents" and job.has_method("reconfigure"):
+		var stride: int = max(1, base_stride)
+		var phase: int = 0
+		if policy != null and policy.get("stride") != null:
+			stride = int(policy.stride)
+		if policy != null and policy.get("phase") != null:
+			phase = int(policy.phase)
+		job.reconfigure(stride, phase)
+	elif job.get("policy") != null:
+		job.policy = policy
+	_refresh_descriptor_for_job(job)
+
+
+func _apply_budget_profile_to_job(job, cp, upload_job: bool) -> void:
+	var strict_on: bool = bool(cp.sim_strict_budget_enabled) if cp.get("sim_strict_budget_enabled") != null else false
+	var slice_ms: float = 0.55
+	if upload_job and cp.get("sim_upload_slice_budget_ms") != null:
+		slice_ms = float(cp.sim_upload_slice_budget_ms)
+	elif cp.get("sim_slice_budget_ms") != null:
+		slice_ms = float(cp.sim_slice_budget_ms)
+	if upload_job:
+		slice_ms = clampf(slice_ms, 0.10, 1.5)
+	else:
+		slice_ms = clampf(slice_ms, 0.10, 1.0)
+	# Bio sliced mode is a same-day transaction. Its native cursor returns one
+	# fixed cell range per call; WorldClock freezes the semantic day while the
+	# staging round is active, so the scheduler must keep the call cooperative.
+	var configured_job_id: StringName = _job_id(job)
+	if configured_job_id == &"bio_occupancy_daily" and \
+			bool(Engine.get_meta(&"bio_occupancy_slice_enabled", false)):
+		slice_ms = minf(slice_ms, 1.0)
+	if job.get("slice_budget_ms") != null:
+		job.slice_budget_ms = slice_ms
+	if job.get("max_slices_per_tick") != null:
+		var job_id: StringName = _job_id(job)
+		if job_id == &"bio_occupancy_daily":
+			# One fixed range per visit. The day barrier is the transaction
+			# boundary; max_slices must not turn this into an unbounded drain.
+			job.max_slices_per_tick = 1
+		elif upload_job or job_id == &"season_refresh" \
+				or job_id == &"refresh_climate_daily" \
+				or job_id == &"sea_ice_daily" \
+				or job_id == &"ocean_currents" \
+				or job_id == &"economy_daily":
+			job.max_slices_per_tick = 1
+		else:
+			job.max_slices_per_tick = 1 if strict_on else 0
+	if job.get("must_run") != null:
+		var must_job_id: StringName = _job_id(job)
+		job.must_run = strict_on and _job_should_must_run(must_job_id, upload_job)
+	if job.get("starvation_threshold") != null:
+		var starvation_job_id: StringName = _job_id(job)
+		if starvation_job_id == &"dynamic_visual_atlas_upload":
+			# [large-map sea-ice visual freeze fix 2026-06-29] 8 是旧逐像素 atlas 上传
+			# 时代的遗留值。现唯一动态视觉路径是 cell-indirection 的 per-cell LUT 全量重烘
+			# （温度/湿度/雪/植被活力/海冰 全部走 dyn_lut），代价极低（6400 格 ≈0.57ms）。
+			# 大地图上 must_run 的 climate round 每 tick 吃满 2ms frame budget，导致本 job 长期
+			# frame_budget_exhausted、只能靠 starvation 每 8 tick 救活一次 → 海冰等动态视觉滞后
+			# 8 天才刷一次，慢地图上看起来"完全不变"。中小地图 climate 不撑爆预算、本 job 每 tick
+			# 跑得上故正常。把阈值降到 2：廉价 LUT 最多滞后 ~3 tick 追平数值，按设计原则仍不绕过
+			# 预算（保留 must_run=false 不漂移），单 tick 代价可忽略。
+			job.starvation_threshold = 2
+		elif starvation_job_id == &"economy_daily":
+			job.starvation_threshold = 2
+		elif upload_job:
+			job.starvation_threshold = 0
+		elif starvation_job_id == &"refresh_climate_daily" \
+				or starvation_job_id == &"weather_refresh" \
+				or starvation_job_id == &"sea_ice_daily":
+			job.starvation_threshold = 3
+		elif starvation_job_id == &"ocean_currents":
+			job.starvation_threshold = 6
+		else:
+			job.starvation_threshold = 0
+	_refresh_descriptor_for_job(job)
+
+
+func _job_should_must_run(job_id: StringName, upload_job: bool) -> bool:
+	if upload_job:
+		return false
+	return job_id == &"ocean_currents" \
+			or job_id == &"refresh_climate_daily" \
+			or job_id == &"weather_refresh" \
+			or job_id == &"sea_ice_daily"
+
+
+func _job_id(job) -> StringName:
+	if job == null:
+		return &""
+	var raw_id = job.get("id")
+	if raw_id == null:
+		return &""
+	return StringName(str(raw_id))
+
+
+func _stagger_enabled(cp) -> bool:
+	return cp != null and cp.get("sim_stagger_enabled") != null and bool(cp.sim_stagger_enabled)
+
+
+func _stagger_bucket_stride(cp) -> int:
+	if cp != null and cp.get("sim_stagger_bucket_stride") != null:
+		return clampi(int(cp.sim_stagger_bucket_stride), 1, 16)
+	return 8
+
+
+func _stagger_phase(cp, field_name: String, fallback: int, stride: int) -> int:
+	var raw_phase: int = fallback
+	if cp != null and cp.get(field_name) != null:
+		raw_phase = int(cp.get(field_name))
+	return posmod(raw_phase, max(1, stride))
+
+
+func _schedule_policy(schedule_group: StringName, cp, base_stride: int):
+	var stride: int = max(1, base_stride)
+	var phase: int = 0
+	if _stagger_enabled(cp):
+		var bucket_stride: int = _stagger_bucket_stride(cp)
+		match schedule_group:
+			&"economy_daily":
+				# Epoch eligibility is owned by EconomyDailySystem.should_run(); the
+				# outer SUS policy must not bucket-gate an in-flight continuation.
+				return _SusPolicyScript.AlwaysPolicy.new()
+			&"refresh_climate_daily":
+				stride = clampi(
+						int(cp.sim_stagger_climate_stride) if cp.get("sim_stagger_climate_stride") != null else 2,
+						1,
+						bucket_stride)
+				phase = _stagger_phase(cp, "sim_stagger_climate_phase", 1, stride)
+			&"ocean_currents":
+				# OceanCurrentsJob has a two-layer cadence: daily wind/SLP prepass
+				# must enter every day, while slow PSI/ocean slices are gated by
+				# the job-local ContinuousSlicedPolicy. Do not bucket-gate the
+				# outer job or wind/ocean vectors appear frozen in native daily.
+				return _SusPolicyScript.AlwaysPolicy.new()
+			&"native_environment_runtime":
+				stride = bucket_stride
+				phase = _stagger_phase(cp, "sim_stagger_native_environment_phase", 0, stride)
+			&"native_daily_sim":
+				stride = clampi(
+						int(cp.sim_stagger_climate_stride) if cp.get("sim_stagger_climate_stride") != null else 2,
+						1,
+						bucket_stride)
+				phase = _stagger_phase(cp, "sim_stagger_climate_phase", 1, stride)
+			&"dynamic_visual_atlas_upload":
+				stride = bucket_stride
+				phase = _stagger_phase(cp, "sim_stagger_dynamic_visual_phase", 2, stride)
+			&"weather_refresh":
+				stride = bucket_stride
+				phase = _stagger_phase(cp, "sim_stagger_weather_phase", 4, stride)
+			&"enum_atlas_upload":
+				stride = bucket_stride
+				phase = _stagger_phase(cp, "sim_stagger_enum_atlas_phase", 4, stride)
+			&"sea_ice_daily":
+				stride = bucket_stride
+				phase = _stagger_phase(cp, "sim_stagger_sea_ice_phase", 6, stride)
+			_:
+				phase = 0
+	else:
+		if schedule_group == &"ocean_currents" or schedule_group == &"economy_daily":
+			return _SusPolicyScript.AlwaysPolicy.new()
+	return _SusPolicyScript.StridePolicy.new(stride, phase)
+
+
+func _refresh_descriptor_for_job(job) -> void:
+	var job_id: StringName = _job_id(job)
+	if job_id == &"":
+		return
+	refresh_system_descriptor(job_id)
+
+
+# ─── 注入 World ─────────────────────────────────────
+## 由 main.gd / DataCore bootstrap 在 World 初始化完成后调用。会同步注入到
+## 内部 SUS（以兼容现有 SusJob.bind_world 链路）和已注册的 DCSystem。
+func bind_world(w) -> void:
+	_world = w
+	_sus.bind_world(w)
+	for s in _systems:
+		s.bind_world(w)
+	# bind_world 之后调度器知道 world 了，但 declare_reads/writes 解析仍
+	# 需要 build_topology() 显式触发（让 caller 控制时机，避免重复拓扑）。
+
+
+# ─── 注册 DCSystem ──────────────────────────────────────────────────
+
+## 注册一个 DCSystem 实例。会先校验 feature_flag（如声明）；不通过则跳过。
+##  - cp 是 ClimateProfile 实例（让 DCFeatureFlags.is_on 能读 flag 值）；为 null
+##    时跳过 flag 校验，无条件注册。
+##  - 注册顺序作为拓扑排序的稳定打破依据（同优先级保留注册顺序）。
+##  - 可重复注册同 id 的 system 视为编程错误，push_error 并忽略。
+func register_system(system: DCSystem, cp = null) -> void:
+	if system == null:
+		push_error("[DCSystemScheduler] register_system: nil system")
+		return
+	if system.id == &"":
+		push_error("[DCSystemScheduler] register_system: system has empty id")
+		return
+	for existing in _systems:
+		if existing.id == system.id:
+			push_error("[DCSystemScheduler] register_system: duplicate id %s" % str(system.id))
+			return
+	# Feature flag gating
+	var ff: StringName = system.feature_flag()
+	if ff != &"" and cp != null:
+		if not DCFeatureFlags.is_on(ff, cp):
+			if OS.is_debug_build():
+				print("[DCSystemScheduler] system '%s' skipped (feature_flag '%s' is off)"
+					% [String(system.id), String(ff)])
+			return
+	_systems.append(system)
+	# 立即 bind_world（如果已有 world）
+	if _world != null:
+		system.bind_world(_world)
+	# 把 DCSystem 也注册到内部 SUS（让 SUS 兼容路径正常工作）。
+	# DCSystem 字段集合与 SusJob 同形，可直接当 SusJob 注册。
+	_sus.register_job(system)
+	# 拓扑标记 dirty
+	_topology_built = false
+
+
+func refresh_system_descriptor(system_id: StringName) -> void:
+	if _sus == null or not _sus.has_method("refresh_job_descriptor"):
+		return
+	_sus.refresh_job_descriptor(system_id)
+
+
+## 构造 reads/writes 派生 DAG + 拓扑排序。注册结束后必须调一次。
+##
+## 算法与 DCEcsScheduler.topo_sort 一致（Kahn O(J²) + 环检测）；返回 true
+## 表示构造成功，false 表示有环。
+##
+## 拓扑排序后通过把 priority 重新分配（base + topo_index * step）让内部 SUS
+## 按拓扑序出 jobs：SUS 已按 priority 排序，所以一次 priority 重写就让两个
+## 调度模型对齐。
+func build_topology() -> bool:
+	_topo_order = _topo_sort()
+	if _topo_order.is_empty() and not _systems.is_empty():
+		push_error("[DCSystemScheduler] build_topology: cycle detected; refusing to commit")
+		return false
+	# 把 system.priority 按 topo_index 重写，让内部 SUS 自动按拓扑序跑。
+	# 注意：这会覆盖 system 自身的 priority 设置；C.3 改写的 6 个 system 应该
+	# 不再依赖手写 priority（reads/writes 已经表达了所有顺序约束）。
+	# 业务侧仍可用 depends_on（StringName）做硬序约束，与拓扑序叠加。
+	for k in range(_topo_order.size()):
+		var idx: int = _topo_order[k]
+		_systems[idx].priority = 100 + k * 10
+	# The native scheduler owns its own shadow descriptors.  Updating only the
+	# GDScript job priority leaves SusSchedulerExt with the pre-topology order
+	# and stale deadline-critical flags, so every topology rebuild must publish
+	# the complete descriptor before the next tick.
+	for system in _systems:
+		_refresh_descriptor_for_job(system)
+	# 重新触发 SUS 内部排序 (the fallback backend keeps a GDScript copy).
+	_sus._jobs.sort_custom(func(a, b): return a.priority < b.priority)
+	_topology_built = true
+	if OS.is_debug_build():
+		var names: Array[String] = []
+		for k in range(_topo_order.size()):
+			names.append(String(_systems[_topo_order[k]].id))
+		print("[DCSystemScheduler] topology: ", names)
+	return true
+
+
+# ─── tick 入口（透传 + reads/writes 校验包裹） ────────────────────────
+
+## 主 tick。与 SusScheduler.tick 同形（接受 SusTickContext）。
+##   - 调用前会校验拓扑已 build（未 build 时 push_error 并跳过）；
+##   - 内部 SUS tick 期间每个 system 都会被 _debug_pass_begin/end 包裹（debug 构建）；
+##   - tick 完成后自动调 world.swap_double_buffer(declare_writes 并集) —— 当前
+##     版本不强制 swap（业务侧可能仍用手动 swap），留作 future hook。
+func tick(ctx) -> void:
+	if not _topology_built:
+		push_error("[DCSystemScheduler] tick: topology not built; call build_topology() after register_system()")
+		return
+
+	# 同步配置
+	if _sus.has_method("set_frame_budget_ms"):
+		_sus.set_frame_budget_ms(frame_budget_ms)
+	else:
+		_sus.frame_budget_ms = frame_budget_ms
+	if _sus.has_method("set_strict_budget_enabled"):
+		_sus.set_strict_budget_enabled(strict_budget_enabled)
+	else:
+		_sus.strict_budget_enabled = strict_budget_enabled
+	_sus.sim_budget_window_size = sim_budget_window_size
+	if _sus.has_method("set_sim_budget_warn_ms"):
+		_sus.set_sim_budget_warn_ms(sim_budget_warn_ms)
+	else:
+		_sus.sim_budget_warn_ms = sim_budget_warn_ms
+	_sus.log_interval_ticks = log_interval_ticks
+	# dots-flag-prune-pr1 (2026-05-22)： use_gdext_sus_scheduler 透传已删除——
+	# SusScheduler 现恒走 _ensure_ext＋ext-null fallback 单边分支。
+	# debug-only reads/writes 校验：让每个 system 自己 begin/end pass
+	# DCSystem 提供 _scheduler_debug_pass_begin/end；SUS 真正调 run_slice 时
+	# 这两个钩子还没被触发——所以我们目前选择"在 tick 入口 begin、tick 结束 end"
+	# 的粗粒度校验（whole-tick 维度，非 per-system）。per-system 维度需要
+	# 在 SUS 内部加 hook，留作 future iteration。
+	if OS.is_debug_build() and _world != null and _world.has_method("_debug_begin_pass"):
+		var all_writes: Array = []
+		var all_reads: Array = []
+		for s in _systems:
+			for w_name in s.declare_writes():
+				if not all_writes.has(w_name):
+					all_writes.append(w_name)
+			for r_name in s.declare_reads():
+				if not all_reads.has(r_name):
+					all_reads.append(r_name)
+		_world._debug_begin_pass(all_writes, all_reads, &"dc_system_scheduler.tick")
+	_sus.tick(ctx)
+	_log_ocean_scheduler_report(ctx)
+	if OS.is_debug_build() and _world != null and _world.has_method("_debug_end_pass"):
+		_world._debug_end_pass(&"dc_system_scheduler.tick")
+
+
+## Continue one already-started stateful system without emitting another
+## simulation day. Used by the Market V2 day barrier. The scheduler remains
+## the only caller of run_slice and preserves the debug read/write contract;
+## the native slice itself is cooperative and bounded by the job descriptor.
+func continue_system(system_id: StringName, ctx: SusTickContext) -> Dictionary:
+	if not _topology_built:
+		return {"done": true, "fatal": true, "fatal_reason": "topology_not_built"}
+	for system in _systems:
+		if system.id != system_id:
+			continue
+		system._scheduler_debug_pass_begin()
+		var result: Dictionary = system.run_slice(ctx)
+		system._scheduler_debug_pass_end()
+		return result
+	return {"done": true, "fatal": true, "fatal_reason": "continuation_system_missing"}
+
+
+## 透传 SUS reset。
+func reset_all_progress() -> void:
+	_sus.reset_all_progress()
+
+
+# ─── 报告 / 调试 ─────────────────────────────────────────────────────
+
+## 透传 SUS report_last_tick。
+func report_last_tick() -> Dictionary:
+	return _sus.report_last_tick()
+
+
+func report_last_tick_summary() -> Dictionary:
+	return _sus.report_last_tick_summary()
+
+
+func report_sim_budget_window() -> Dictionary:
+	return _sus.report_sim_budget_window()
+
+
+func report_job_stats() -> Dictionary:
+	return _sus.report_job_stats()
+
+
+func report_skipped_summary() -> Dictionary:
+	return _sus.report_skipped_summary()
+
+
+func _log_ocean_scheduler_report(ctx) -> void:
+	# Fix #4 (2026-06-15): mobile 上把 ocean_skip 诊断从 64 降到 8。每行 print +
+	# Android logcat binder 同步 ~0.2ms，60 FPS budget 16.6ms 容不下。
+	var diag_budget: int = 8 if OS.has_feature("mobile") else 64
+	if _ocean_scheduler_diag_count >= diag_budget:
+		return
+	if _sus == null or not _sus.has_method("report_last_tick"):
+		return
+	var report: Dictionary = _sus.report_last_tick()
+	var ocean_report: Dictionary = {}
+	if report.has(&"ocean_currents"):
+		ocean_report = report[&"ocean_currents"]
+	elif report.has("ocean_currents"):
+		ocean_report = report["ocean_currents"]
+	if ocean_report.is_empty():
+		return
+	var skipped: String = str(ocean_report.get("skipped_reason", ""))
+	if skipped == "":
+		return
+	_ocean_scheduler_diag_count += 1
+	var tick_idx: int = -1
+	var source: String = ""
+	if ctx != null:
+		tick_idx = int(ctx.tick_index)
+		source = str(ctx.source)
+	print("[DCSystemScheduler][RT] ocean_skip#%d tick=%d reason=%s slices=%d elapsed=%.3f progress=%.3f source=%s" % [
+		_ocean_scheduler_diag_count,
+		tick_idx,
+		skipped,
+		int(ocean_report.get("slices_run", 0)),
+		float(ocean_report.get("elapsed_ms", 0.0)),
+		float(ocean_report.get("progress_ratio", 0.0)),
+		source,
+	])
+
+
+## 当前注册 system 数。
+func system_count() -> int:
+	return _systems.size()
+
+
+## 取拓扑序的 system id 列表（debug 用）。
+func topology_order_names() -> Array[String]:
+	var out: Array[String] = []
+	for k in range(_topo_order.size()):
+		out.append(String(_systems[_topo_order[k]].id))
+	return out
+
+
+# ─── 内部：reads/writes 拓扑排序（DCEcsScheduler 算法搬过来 + 改读 StringName）─
+
+# 构造 DAG 边："writer system 必须早于 reader system" 与 "writer system 之间
+# 按注册顺序排序（避免 WAW 不确定性）"。返回 { children, in_degree }。
+# StringName 比较直接走 ==；O(J² × max(reads, writes)) 复杂度。
+func _build_dag() -> Dictionary:
+	var n: int = _systems.size()
+	var children: Dictionary = {}
+	var edge_reasons: Dictionary = {}
+	var in_degree: PackedInt32Array = PackedInt32Array()
+	in_degree.resize(n)
+	for k in range(n):
+		children[k] = []
+
+	var id_to_index: Dictionary = {}
+	for i in range(n):
+		id_to_index[_systems[i].id] = i
+
+	for a in range(n):
+		var sa: DCSystem = _systems[a]
+		var sa_writes: Array = sa.declare_writes()
+		if sa_writes.is_empty():
+			continue
+		for b in range(n):
+			if a == b:
+				continue
+			var sb: DCSystem = _systems[b]
+			var read_hits: PackedStringArray = _intersection_names(sa_writes, sb.declare_reads())
+			if not read_hits.is_empty():
+				if _add_dag_edge(children, edge_reasons, a, b,
+						"write/read:%s" % ",".join(read_hits)):
+					in_degree[b] += 1
+			if a < b:
+				var write_hits: PackedStringArray = _intersection_names(sa_writes, sb.declare_writes())
+				if not write_hits.is_empty():
+					if _add_dag_edge(children, edge_reasons, a, b,
+							"write/write:%s" % ",".join(write_hits)):
+						in_degree[b] += 1
+
+	for b in range(n):
+		for dep_id in _systems[b].depends_on:
+			if id_to_index.has(dep_id):
+				var a_dep: int = int(id_to_index[dep_id])
+				if a_dep != b:
+					if _add_dag_edge(children, edge_reasons, a_dep, b,
+							"depends_on:%s" % String(dep_id)):
+						in_degree[b] += 1
+			elif OS.is_debug_build():
+				push_warning("[DCSystemScheduler] system '%s' depends_on missing system '%s'"
+					% [String(_systems[b].id), String(dep_id)])
+
+	return {"children": children, "in_degree": in_degree, "edge_reasons": edge_reasons}
+
+
+# Kahn 拓扑排序，stable by registration order。返回 _systems 的索引序列；
+# 有环时 push_error 并返回空数组。
+func _topo_sort() -> PackedInt32Array:
+	var dag: Dictionary = _build_dag()
+	var children: Dictionary = dag["children"]
+	var in_degree: PackedInt32Array = dag["in_degree"]
+	var edge_reasons: Dictionary = dag.get("edge_reasons", {})
+	var n: int = _systems.size()
+
+	var ready: Array = []
+	for i in range(n):
+		if in_degree[i] == 0:
+			ready.append(i)
+
+	var order: PackedInt32Array = PackedInt32Array()
+	while not ready.is_empty():
+		var pick: int = 0
+		for k in range(1, ready.size()):
+			var idx_k: int = int(ready[k])
+			var idx_pick: int = int(ready[pick])
+			var pri_k: int = int(_systems[idx_k].priority)
+			var pri_pick: int = int(_systems[idx_pick].priority)
+			if pri_k < pri_pick or (pri_k == pri_pick and idx_k < idx_pick):
+				pick = k
+		var idx: int = ready[pick]
+		ready.remove_at(pick)
+		order.append(idx)
+		var kids: Array = children[idx]
+		for c in kids:
+			in_degree[c] -= 1
+			if in_degree[c] == 0:
+				ready.append(c)
+	if order.size() != n:
+		push_error("[DCSystemScheduler] cycle detected — declared %d systems, sorted %d"
+			% [n, order.size()])
+		_log_cycle_details(order, children, in_degree, edge_reasons)
+		return PackedInt32Array()
+	return order
+
+
+# StringName 数组的相交判定（O(|a| × |b|)，业务侧 reads/writes 通常 < 10 项）。
+static func _intersects_string(a: Array, b: Array) -> bool:
+	if a.is_empty() or b.is_empty():
+		return false
+	for x in a:
+		if b.has(x):
+			return true
+	return false
+
+
+static func _intersection_names(a: Array, b: Array, limit: int = 5) -> PackedStringArray:
+	var out: PackedStringArray = PackedStringArray()
+	if a.is_empty() or b.is_empty():
+		return out
+	for x in a:
+		if b.has(x):
+			out.append(String(x))
+			if out.size() >= limit:
+				break
+	return out
+
+
+static func _edge_key(a: int, b: int) -> String:
+	return "%d>%d" % [a, b]
+
+
+static func _add_dag_edge(children: Dictionary, edge_reasons: Dictionary,
+		a: int, b: int, reason: String) -> bool:
+	var arr: Array = children[a]
+	var key: String = _edge_key(a, b)
+	var added: bool = false
+	if not arr.has(b):
+		arr.append(b)
+		children[a] = arr
+		added = true
+	if not edge_reasons.has(key):
+		edge_reasons[key] = []
+	var reasons: Array = edge_reasons[key]
+	if not reasons.has(reason):
+		reasons.append(reason)
+		edge_reasons[key] = reasons
+	return added
+
+
+func _log_cycle_details(order: PackedInt32Array, children: Dictionary,
+		in_degree: PackedInt32Array, edge_reasons: Dictionary) -> void:
+	var sorted: Dictionary = {}
+	for idx in order:
+		sorted[int(idx)] = true
+	var remaining: Array = []
+	for i in range(_systems.size()):
+		if not sorted.has(i):
+			remaining.append(i)
+
+	var node_lines: PackedStringArray = PackedStringArray()
+	for idx in remaining:
+		var s: DCSystem = _systems[idx]
+		node_lines.append("%s(in=%d r=%d w=%d deps=%d)" % [
+			String(s.id), in_degree[idx], s.declare_reads().size(),
+			s.declare_writes().size(), s.depends_on.size(),
+		])
+	push_error("[DCSystemScheduler] cycle residue nodes: %s" % " | ".join(node_lines))
+
+	var edge_lines: PackedStringArray = PackedStringArray()
+	for a in remaining:
+		for b_raw in children[a]:
+			var b: int = int(b_raw)
+			if not remaining.has(b):
+				continue
+			var key: String = _edge_key(a, b)
+			var reasons: Array = edge_reasons.get(key, [])
+			var reason_lines: PackedStringArray = PackedStringArray()
+			for r in reasons:
+				reason_lines.append(str(r))
+			edge_lines.append("%s -> %s via %s" % [
+				String(_systems[a].id), String(_systems[b].id), ";".join(reason_lines),
+			])
+			if edge_lines.size() >= 24:
+				break
+		if edge_lines.size() >= 24:
+			break
+	if edge_lines.is_empty():
+		push_error("[DCSystemScheduler] cycle residue edges: <none logged>")
+	else:
+		push_error("[DCSystemScheduler] cycle residue edges: %s" % " | ".join(edge_lines))

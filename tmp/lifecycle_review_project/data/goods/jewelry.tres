@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"jewelry"
+display_name = "珠宝"
+semantic_tags = PackedStringArray()
+category_id = &"jewelry"
+substitution_category_ids = PackedStringArray("jewelry")
+technology_tags = PackedStringArray("industry.consumer", "tech.ground_stone_tools", "tech.currency")
+default_price = 60000
+reference_max_price = 3000000
+price_adjust_q16 = 2662
+demand_price_elasticity_q16 = 85197
+inventory_target_ratio_q16 = 43691

@@ -1,0 +1,16 @@
+[gd_scene format=3]
+[node name="StateCard" type="PanelContainer"]
+theme_type_variation = &"PKInsetPanel"
+[node name="Box" type="VBoxContainer" parent="."]
+layout_mode = 2
+theme_override_constants/separation = 3
+[node name="Label" type="Label" parent="Box"]
+layout_mode = 2
+theme_type_variation = &"PKSectionTitle"
+[node name="Detail" type="Label" parent="Box"]
+layout_mode = 2
+autowrap_mode = 2
+[node name="Meta" type="Label" parent="Box"]
+layout_mode = 2
+autowrap_mode = 2
+theme_type_variation = &"PKMutedLabel"

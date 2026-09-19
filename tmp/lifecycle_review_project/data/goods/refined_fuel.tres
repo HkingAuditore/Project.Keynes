@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"refined_fuel"
+display_name = "精炼燃料"
+semantic_tags = PackedStringArray()
+category_id = &"refined_fuel"
+substitution_category_ids = PackedStringArray("refined_fuel")
+technology_tags = PackedStringArray("industry.chemicals", "tech.petroleum_refining")
+default_price = 30000
+reference_max_price = 1500000
+price_adjust_q16 = 1638
+demand_price_elasticity_q16 = 52429
+inventory_target_ratio_q16 = 81920

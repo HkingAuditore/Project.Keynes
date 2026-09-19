@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160" viewBox="0 0 160 160">
+  <!-- Flat top-down authored tile. No baked shadow: the analytic
+       building_shadow pass owns false shadows. -->
+  <polygon data-role="yard" fill="#707873" points="25.60,105.60 134.40,105.60 134.40,128.00 25.60,128.00"/>
+  <polygon data-role="roof_back" fill="#616b70" points="30.40,41.60 110.40,41.60 110.40,80.00 30.40,80.00"/>
+  <polygon data-role="ridge" fill="#9ca6ab" points="30.40,78.24 110.40,78.24 110.40,80.00 30.40,80.00"/>
+  <polygon data-role="wall" fill="#b8bdbd" points="32.32,80.00 108.48,80.00 108.48,105.60 32.32,105.60"/>
+  <polygon data-role="foundation" fill="#42474a" points="28.00,105.60 112.80,105.60 112.80,112.00 28.00,112.00"/>
+  <polygon data-role="window" fill="#699eb2" points="50.56,88.00 58.24,88.00 58.24,100.80 50.56,100.80"/>
+  <polygon data-role="window" fill="#699eb2" points="66.56,88.00 74.24,88.00 74.24,100.80 66.56,100.80"/>
+  <polygon data-role="window" fill="#699eb2" points="82.56,88.00 90.24,88.00 90.24,100.80 82.56,100.80"/>
+  <polygon data-role="door" fill="#3d474c" points="61.60,89.60 79.20,89.60 79.20,105.60 61.60,105.60"/>
+  <polygon data-role="roof_back" fill="#616b70" points="107.20,57.60 148.80,57.60 148.80,83.20 107.20,83.20"/>
+  <polygon data-role="ridge" fill="#9ca6ab" points="107.20,81.44 148.80,81.44 148.80,83.20 107.20,83.20"/>
+  <polygon data-role="wall" fill="#b8bdbd" points="109.12,83.20 146.88,83.20 146.88,105.60 109.12,105.60"/>
+  <polygon data-role="foundation" fill="#42474a" points="105.95,105.60 150.05,105.60 150.05,109.76 105.95,109.76"/>
+  <polygon data-role="metal" fill="#9ea3a8" points="136.32,32.00 138.88,32.00 138.88,54.40 136.32,54.40"/>
+  <polygon data-role="metal" fill="#9ea3a8" points="129.28,35.20 145.92,35.20 145.92,36.80 129.28,36.80"/>
+  <polygon data-role="metal" fill="#9ea3a8" points="132.16,40.32 143.04,40.32 143.04,41.92 132.16,41.92"/>
+  <polygon data-role="foundation" fill="#42474a" points="22.40,128.00 137.60,128.00 137.60,136.00 22.40,136.00"/>
+</svg>

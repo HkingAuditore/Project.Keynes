@@ -1,0 +1,13 @@
+[gd_resource type="Resource" script_class="ProfessionProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/profession_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"household_farmer"
+display_name = "家庭小农"
+default_consumption_plan_id = &"agrarian_household"
+profession_class_id = &"farmer"
+semantic_tags = PackedStringArray("agriculture", "household", "owner_operator", "activity.farming")
+technology_tags = PackedStringArray("institution.household_landholding")
+satisfaction_dimension_weights_q16 = PackedInt32Array(65536, 45875, 19661, 6554, 26214, 32768, 26214, 13107)

@@ -1,0 +1,122 @@
+[gd_scene load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/ui/overlay_legend.gd" id="1_script"]
+
+[node name="MapOverlayLegend" type="PanelContainer"]
+visible = false
+custom_minimum_size = Vector2(198, 0)
+anchors_preset = 3
+anchor_left = 1.0
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 0
+grow_vertical = 0
+mouse_filter = 2
+theme_type_variation = &"PKPaperCard"
+script = ExtResource("1_script")
+
+[node name="Margin" type="MarginContainer" parent="."]
+layout_mode = 2
+theme_override_constants/margin_left = 8
+theme_override_constants/margin_top = 6
+theme_override_constants/margin_right = 8
+theme_override_constants/margin_bottom = 6
+
+[node name="Root" type="VBoxContainer" parent="Margin"]
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="TitleRow" type="HBoxContainer" parent="Margin/Root"]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="Icon" type="Label" parent="Margin/Root/TitleRow"]
+layout_mode = 2
+
+[node name="Title" type="Label" parent="Margin/Root/TitleRow"]
+layout_mode = 2
+text = "—"
+theme_type_variation = &"PKSectionTitle"
+
+[node name="Hint" type="Label" parent="Margin/Root"]
+visible = false
+layout_mode = 2
+autowrap_mode = 2
+theme_type_variation = &"PKMutedLabel"
+
+[node name="Continuous" type="VBoxContainer" parent="Margin/Root"]
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="Ramp" type="TextureRect" parent="Margin/Root/Continuous"]
+custom_minimum_size = Vector2(168, 12)
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 0
+
+[node name="Pointer" type="ColorRect" parent="Margin/Root/Continuous/Ramp"]
+visible = false
+offset_right = 3.0
+offset_bottom = 16.0
+color = Color(0.98, 0.98, 0.98, 0.95)
+
+[node name="Range" type="HBoxContainer" parent="Margin/Root/Continuous"]
+layout_mode = 2
+[node name="Low" type="Label" parent="Margin/Root/Continuous/Range"]
+layout_mode = 2
+text = "0.00"
+theme_type_variation = &"PKMutedLabel"
+[node name="Spacer" type="Control" parent="Margin/Root/Continuous/Range"]
+layout_mode = 2
+size_flags_horizontal = 3
+[node name="High" type="Label" parent="Margin/Root/Continuous/Range"]
+layout_mode = 2
+text = "1.00"
+theme_type_variation = &"PKMutedLabel"
+
+[node name="DiscreteScroll" type="ScrollContainer" parent="Margin/Root"]
+visible = false
+layout_mode = 2
+horizontal_scroll_mode = 0
+
+[node name="DiscreteList" type="VBoxContainer" parent="Margin/Root/DiscreteScroll"]
+layout_mode = 2
+theme_override_constants/separation = 2
+
+[node name="Vector" type="VBoxContainer" parent="Margin/Root"]
+visible = false
+layout_mode = 2
+theme_override_constants/separation = 4
+
+[node name="Wheel" type="TextureRect" parent="Margin/Root/Vector"]
+custom_minimum_size = Vector2(72, 72)
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 0
+
+[node name="Arrow" type="ColorRect" parent="Margin/Root/Vector/Wheel"]
+visible = false
+offset_right = 6.0
+offset_bottom = 6.0
+color = Color(1, 1, 1, 0.95)
+
+[node name="IntensityRamp" type="TextureRect" parent="Margin/Root/Vector"]
+custom_minimum_size = Vector2(168, 12)
+layout_mode = 2
+expand_mode = 1
+stretch_mode = 0
+
+[node name="Range" type="HBoxContainer" parent="Margin/Root/Vector"]
+layout_mode = 2
+[node name="Low" type="Label" parent="Margin/Root/Vector/Range"]
+layout_mode = 2
+text = "弱"
+theme_type_variation = &"PKMutedLabel"
+[node name="Spacer" type="Control" parent="Margin/Root/Vector/Range"]
+layout_mode = 2
+size_flags_horizontal = 3
+[node name="High" type="Label" parent="Margin/Root/Vector/Range"]
+layout_mode = 2
+text = "强"
+theme_type_variation = &"PKMutedLabel"

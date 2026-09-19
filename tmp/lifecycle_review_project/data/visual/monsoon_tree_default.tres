@@ -1,0 +1,47 @@
+[gd_resource type="Resource" script_class="ShrubVisualProfile" format=3 uid="uid://dm0ns00ntr0"]
+
+[ext_resource type="Script" uid="uid://b2v55s0gf3d20" path="res://scripts/data/shrub_visual_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+enabled = true
+detail_kind = 1
+render_z_index = 2
+density_scale = 0.50
+wind_strength = 0.62
+rotation_mode = 0
+desktop_max_instances_quality0 = 240
+desktop_max_instances_quality1 = 720
+desktop_max_instances_quality2 = 1300
+desktop_max_per_cell_quality0 = 1
+desktop_max_per_cell_quality1 = 1
+desktop_max_per_cell_quality2 = 2
+mobile_max_instances_quality0 = 45
+mobile_max_instances_quality1 = 95
+mobile_max_instances_quality2 = 160
+mobile_max_per_cell_quality0 = 1
+mobile_max_per_cell_quality1 = 1
+mobile_max_per_cell_quality2 = 1
+biomass_floor = 0.05
+biomass_ceil = 1.55
+biomass_exponent = 1.35
+river_edge_density = 0.75
+river_valley_boost = 1.45
+min_size_factor = 0.30
+max_size_factor = 0.48
+patch_frequency = 0.076
+patch_cutoff = 0.20
+patch_contrast = 1.65
+micro_gap_threshold = 0.05
+world_noise_acceptance = 1.55
+moisture_corridor_boost = 0.85
+vitality_patch_boost = 0.62
+color_saturation_gain = 1.20
+color_value_gain = 1.14
+snow_body_color_retention = 0.22
+snow_alpha_loss_strength = 0.18
+snow_hide_strength = 0.28
+base_color_override_enabled = true
+base_color_override = Color(0.13, 0.36, 0.19, 0.92)
+vegetation_weight_overrides = {"25": 1.90, "15": 1.00, "13": 0.72, "14": 0.55}
+landform_weight_overrides = {"4": 0.95, "5": 1.10, "6": 0.86, "9": 0.72}

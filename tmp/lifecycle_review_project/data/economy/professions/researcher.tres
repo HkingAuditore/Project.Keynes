@@ -1,0 +1,10 @@
+[gd_resource type="Resource" script_class="ProfessionProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/profession_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"researcher"
+satisfaction_dimension_weights_q16 = PackedInt32Array(52429, 45875, 45875, 26214, 19661, 19661, 19661, 45875)
+display_name = "研究员"
+default_consumption_plan_id = &"technical_household"
+profession_class_id = &"technology"
+technology_tags = PackedStringArray()

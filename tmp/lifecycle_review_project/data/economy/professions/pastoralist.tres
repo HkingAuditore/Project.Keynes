@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="ProfessionProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/profession_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"pastoralist"
+display_name = "牧民"
+semantic_tags = PackedStringArray("activity.pastoral")
+default_consumption_plan_id = &"agrarian_household"
+technology_tags = PackedStringArray()

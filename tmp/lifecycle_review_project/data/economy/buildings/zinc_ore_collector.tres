@@ -1,0 +1,58 @@
+[gd_resource type="Resource" script_class="BuildingProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"zinc_ore_collector"
+display_name = "锌矿"
+building_kind = "collector"
+economic_sector_id = "extractive"
+semantic_tags = PackedStringArray("activity.mining", "industry.primary")
+technology_tags = PackedStringArray("tech.mine_ventilation")
+required_technology_tags = PackedStringArray("tech.timber_sawing", "tech.ground_stone_tools", "tech.blast_furnace", "tech.coke_smelting", "tech.surface_iron_collection", "tech.gunpowder_weapons", "tech.industrial_chemistry", "tech.gunpowder_formulation", "tech.natural_observation")
+industry_chain_id = &"production.zinc_ore"
+progression_step = 1
+maturity_rank = 2
+maturity_display_name = "家户试作"
+progression_role = "entry"
+predecessor_building_ids = PackedStringArray()
+construction_good_ids = PackedStringArray("lumber", "bricks", "construction_components", "steel")
+construction_quantities = PackedInt64Array(2592528, 3888793, 3888793, 2592528)
+construction_category_ids = PackedStringArray("classical_construction", "industrial_construction", "industrial_construction", "structural_metal")
+construction_min_quality_levels = PackedInt32Array(0, 0, 0, 0)
+construction_candidate_offsets = PackedInt32Array()
+construction_candidate_good_ids = PackedStringArray()
+construction_candidate_efficiency_q16 = PackedInt32Array()
+maintenance_good_ids = PackedStringArray()
+maintenance_quantities_per_day = PackedInt64Array()
+owner_profession_id = &"industrialist"
+employee_profession_ids = PackedStringArray("miner", "manager")
+employee_slots_per_building = PackedInt64Array(14, 2)
+employee_wage_policy_ids = PackedStringArray("adaptive", "adaptive")
+employee_reference_wages_per_day = PackedInt64Array(16359, 17136)
+input_good_ids = PackedStringArray("tools", "explosives")
+input_quantities_per_day = PackedInt64Array(7023, 5032)
+input_required_q16 = PackedInt32Array(32768, 65536)
+input_category_ids = PackedStringArray("tools", "")
+input_min_quality_levels = PackedInt32Array(3, 0)
+input_candidate_offsets = PackedInt32Array(0, 0, 0)
+input_candidate_good_ids = PackedStringArray()
+input_candidate_efficiency_q16 = PackedInt32Array()
+output_good_ids = PackedStringArray("zinc_ore")
+output_quantities_per_day = PackedInt64Array(287300)
+target_operating_margin_q16 = 6554
+supply_price_elasticity_q16 = 32768
+output_cost_shares_q16 = PackedInt32Array()
+resource_ids = PackedStringArray("zinc_ore")
+resource_quantities_per_day = PackedInt64Array(12061)
+resource_interaction_modes = PackedStringArray("extract")
+resource_access_modes = PackedStringArray("local")
+resource_generation_ids = PackedStringArray()
+resource_generation_quantities_per_day = PackedInt64Array()
+behavior_id = "consume_local_resources"
+condition_opcodes = PackedInt32Array()
+condition_signals = PackedInt32Array()
+condition_compares = PackedInt32Array()
+condition_reference_ids = PackedStringArray()
+condition_values = PackedInt64Array()

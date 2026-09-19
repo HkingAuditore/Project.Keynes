@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"fine_clothing"
+display_name = "华服"
+semantic_tags = PackedStringArray()
+category_id = &"fine_clothing"
+substitution_category_ids = PackedStringArray("fine_clothing")
+technology_tags = PackedStringArray("industry.textile", "tech.guild_apprenticeship", "tech.corporate_management")
+default_price = 24000
+reference_max_price = 1200000
+price_adjust_q16 = 1843
+demand_price_elasticity_q16 = 58982
+inventory_target_ratio_q16 = 43691

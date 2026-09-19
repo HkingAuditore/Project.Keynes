@@ -1,0 +1,8 @@
+scons: Entering directory `D:\Godot\ProjectKeynes\Project.Keynes\gdext\tests'
+scons: Reading SConscript files ...
+scons: done reading SConscript files.
+scons: Building targets ...
+cl /FoD:\Godot\ProjectKeynes\Project.Keynes\tmp\climate_physics_focused\worker_test.obj /c runtime_climate_physics_focused_test.cpp /TP /nologo /std:c++17 /EHsc /O2 /utf-8 /DPK_TEST_CLIMATE_WORKER /ID:\Godot\ProjectKeynes\Project.Keynes\gdext\src
+runtime_climate_physics_focused_test.cpp
+link /nologo /OUT:D:\Godot\ProjectKeynes\Project.Keynes\tmp\climate_physics_focused\worker_focused.exe D:\Godot\ProjectKeynes\Project.Keynes\tmp\climate_physics_focused\runtime_climate_physics.obj D:\Godot\ProjectKeynes\Project.Keynes\tmp\climate_physics_focused\runtime_climate_formulas.obj D:\Godot\ProjectKeynes\Project.Keynes\tmp\climate_physics_focused\runtime_climate_kernel.obj D:\Godot\ProjectKeynes\Project.Keynes\tmp\climate_physics_focused\runtime_climate_passes.obj D:\Godot\ProjectKeynes\Project.Keynes\tmp\climate_physics_focused\runtime_authoritative_domains.obj D:\Godot\ProjectKeynes\Project.Keynes\tmp\climate_physics_focused\runtime_climate_parity.obj D:\Godot\ProjectKeynes\Project.Keynes\tmp\climate_physics_focused\worker_test.obj
+scons: done building targets.

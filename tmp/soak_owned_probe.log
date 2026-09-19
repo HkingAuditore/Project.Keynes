@@ -1,0 +1,1018 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[ui-layout-diag/bind_ui] is_web=false viewport_visible_rect=[P: (0.0, 0.0), S: (51.2, 51.2)] window_size=(64, 64) content_scale_factor=1.250 content_scale_mode=0 device_pixel_ratio=-1.000 top_bar_rect=[P: (0.0, 0.0), S: (543.0, 56.0)] right_panel_rect=[P: (-408.8, 68.0), S: (460.0, 366.0)] country_action_bar_rect=[P: (8.0, -30.8), S: (336.0, 74.0)]
+[stage-c] authority=ACTIVE worker=ACTIVE
+[building-visual] queue_probe ticks=1 queued=0 chunk=-1 camera_rect=[P: (-25.6, -25.6), S: (51.2, 51.2)] prefetch=false zoom=1.000
+[building-visual] queue_probe ticks=2 queued=0 chunk=-1 camera_rect=[P: (-25.6, -25.6), S: (51.2, 51.2)] prefetch=false zoom=1.000
+[native_generation/base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=2400 native_ms=6.092 water=1553 land=847
+[native_generation/post_base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=2400 native_ms=1.264 lakes=4 rivers=105 volcanoes=0
+[native_generation/vegetation] native_ms=0.465 candidates=841 none=1169 score=[0.000,1.236,1.114] plant_water_land=856 river_adjacent_desert=0 coastal_highland_desert=0 terrain_weight=[0.180,1.200]
+[native_generation/qa] single_water=0 tiny<=3=0 small<=5=0 bodies=1 largest=1544 | land_below_sea=0.7% | terr_distinct=21 entropy=3.183bit | river_ratio=4.375%
+MapGenerator v7: per-cell 57ms (2400 cells, path=gdext)
+[building-visual] queue_probe ticks=3 queued=0 chunk=-1 camera_rect=[P: (-25.6, -25.6), S: (51.2, 51.2)] prefetch=false zoom=1.000
+MapBaker v6: hm=(1024, 606) seed=1735228708
+    [fused] terrain=66.5ms erosion=2.1ms(ok=true) river=11.8ms(ok=true) latitude=0.1ms coast_sdf=3.5ms(ok=true)
+  geometry fields (fused C++): 144ms
+  physical circulation hex solve: deferred until DCWorldExt bind (ext=true idx=true soa=false)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+  visual tiles: {"degradation_reason":"","effective_budget_px":1717248,"effective_texels_per_hex":16.0059221751742,"effective_world_units_per_texel":"(1.373983, 1.375)","estimated_peak_bytes":68402880,"estimated_resident_bytes":40340160,"fallback_reason":"","generation_id":1,"grid_size":"(4, 3)","gutter_px":2,"hex_size":22.0,"horizon_path":"neutral_pending","interior_size":"(416, 344)","layer_size":"(420, 348)","layers":[{"bake_ms":46.2303,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-4603098080143260562,"edge_neighbor":4057764273350575789,"height":-9124830669634210576,"map_index":1015450256520461008,"terrain_detail":1415298026641868910,"terrain_normal":4240255112308713771,"water_depth":2330624858830770480},"layer":0,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.062,"wall_ms":46.388},{"bake_ms":58.7476,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":4583573183968817086,"edge_neighbor":6466940111421570636,"height":5790856781181676511,"map_index":5990047724644026299,"terrain_detail":1806575389526097655,"terrain_normal":3908465376956190299,"water_depth":2547432928052609473},"layer":1,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.066,"wall_ms":58.906},{"bake_ms":61.0242,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-2526323355750389439,"edge_neighbor":7015029410290978361,"height":-8150332218754556700,"map_index":329090656303652193,"terrain_detail":-392433696576850044,"terrain_normal":-4965863177888236808,"water_depth":-7217348512352819415},"layer":2,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.063,"wall_ms":61.175},{"bake_ms":92.7583,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-4179826732684646787,"edge_neighbor":-5337848294581530626,"height":-7426228563537643593,"map_index":1239439826928151201,"terrain_detail":-8513326582372265254,"terrain_normal":8092780547537771097,"water_depth":-6092640318278072007},"layer":3,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.061,"wall_ms":92.906},{"bake_ms":54.5541,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":2136869506241081992,"edge_neighbor":-8797880867138963685,"height":-4924567352001132959,"map_index":-4231209514887179977,"terrain_detail":8772909128008927660,"terrain_normal":-6784207502925496102,"water_depth":-7492134226470272506},"layer":4,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.061,"wall_ms":54.703},{"bake_ms":89.7209,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":6673149775916606392,"edge_neighbor":-8413630352766524385,"height":-6889378239635599087,"map_index":-3551392040916973266,"terrain_detail":1687709548716503895,"terrain_normal":3946453442722986154,"water_depth":6600269933117438995},"layer":5,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.114,"wall_ms":89.937},{"bake_ms":61.3248,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":361706081270387103,"edge_neighbor":-8688139845739281855,"height":699499231114171702,"map_index":-2682228531129457940,"terrain_detail":-8811551234231146331,"terrain_normal":-265631937775218288,"water_depth":6856409090380917935},"layer":6,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.079,"wall_ms":61.527},{"bake_ms":69.0368,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-6250500223095183093,"edge_neighbor":5418444607076768559,"height":1419229568066409352,"map_index":4380956599171502337,"terrain_detail":-894743883384344824,"terrain_normal":4459428523621274975,"water_depth":-6366031586637808975},"layer":7,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.067,"wall_ms":69.201},{"bake_ms":67.0281,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":8492285698888321900,"edge_neighbor":3199635046979891388,"height":4828838600007938123,"map_index":-7514139010467297966,"terrain_detail":-8950604297692130837,"terrain_normal":-3593785506946687824,"water_depth":5761060537573716235},"layer":8,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.063,"wall_ms":67.185},{"bake_ms":86.4581,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":9117926548072241235,"edge_neighbor":-7557104988675294500,"height":618468365387938347,"map_index":-5885543932102826664,"terrain_detail":3877245088374033799,"terrain_normal":-6778421208245397131,"water_depth":2200779154463963187},"layer":9,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.055,"wall_ms":86.589},{"bake_ms":41.717,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-3745585455065177449,"edge_neighbor":2404961067888014635,"height":-3115442796632843800,"map_index":-6211809985430628861,"terrain_detail":1161812488860344551,"terrain_normal":6456972146840247766,"water_depth":1987210436922770546},"layer":10,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.059,"wall_ms":41.857},{"bake_ms":42.0862,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-1470570636688572573,"edge_neighbor":-6057560351645416949,"height":-5827593206795043862,"map_index":-2248414732901839783,"terrain_detail":7630543887994105174,"terrain_normal":8582387156502791927,"water_depth":-6103088449435849452},"layer":11,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.061,"wall_ms":42.229}],"logical_size":"(1664, 1032)","mode":"tiled","path":"visual_tiled_static","profile":"desktop_high","renderer":"mobile","requested_budget_px":1716216,"requested_texels_per_hex":16.0,"requested_tile_world_span":"(704.0, 704.0)","requested_world_units_per_texel":1.375,"tile_world_area":270355.817993164,"tile_world_span":"(571.5768, 473.0)","total_ms":775.994,"visual_domain":"[P: (0.0, -44.0), S: (2286.307, 1419.0)]","wrap_period_x":2286.30706599092,"wrap_x":true}
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/organic.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1225)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/dry_sand.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1225)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/rock.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1225)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/snow_wet.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1225)
+  cell LUT encode: deferred until DCWorldExt bind
+  encode: 3053ms
+MapBaker v6: total 3206ms
+MapGenerator v7: bake 3228ms
+MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)
+MapGenerator: skip _compute_terrain_perturbed_wind (physical-hex solver writes per-cell)
+[SUS] sim budget strict=false frame=8.00ms warn=2.00ms slice=0.75ms upload=1.50ms scheduler=DCSystemScheduler native_sus=auto
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+[DataCore] _data_core_world_ext bound=true (climate co-processor; class=DCWorldExt)
+[native_world] configure rc=0 reason=configured cells=2400 wrap_period_x=103.923
+[native_generation] path=gdext n=2400 published=9 native_ms=0.089 compute_ms=0.051 flush_ms=0.038
+[hex_cell] facade ENABLED (2400 cells bound; ext=true)
+[DataCore] _baker climate_profile injected=true (fixes WorldData.config==null sea_ice prepare path)
+[phys_solve][oneshot] OK slp=0.77ms wind=0.34ms psi=0.29ms(ran=true) upwelling=0.03ms total=1.83ms
+PhysicalCirculation solve@phase=1.50 total=2ms (C++ one-shot run_physical_solve_pass)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+[physical_init] deferred native refresh complete: 2ms
+[cell_lut] deferred encode: 2ms path=gdext
+[bio-occupancy] seed landmasses=10 provinces=10 species=20 secondary_hearths=22
+[bio-occupancy]   bio.maize envelope=56 hearth=17 seeded_landmasses=1 primary_landmass=8 primary_envelope=31 occupied=17 occupied/envelope=0.55
+[bio-occupancy]   bio.wheat envelope=225 hearth=58 seeded_landmasses=3 primary_landmass=1 primary_envelope=21 occupied=58 occupied/envelope=2.76
+[bio-occupancy]   bio.rice envelope=71 hearth=19 seeded_landmasses=4 primary_landmass=2 primary_envelope=23 occupied=19 occupied/envelope=0.83
+[bio-occupancy]   bio.potato envelope=163 hearth=55 seeded_landmasses=3 primary_landmass=8 primary_envelope=86 occupied=55 occupied/envelope=0.64
+[bio-occupancy]   bio.horse envelope=242 hearth=48 seeded_landmasses=4 primary_landmass=2 primary_envelope=70 occupied=48 occupied/envelope=0.69
+[bio-occupancy]   bio.cotton envelope=119 hearth=12 seeded_landmasses=1 primary_landmass=7 primary_envelope=22 occupied=12 occupied/envelope=0.55
+[bio-occupancy]   bio.flax envelope=212 hearth=17 seeded_landmasses=2 primary_landmass=1 primary_envelope=21 occupied=17 occupied/envelope=0.81
+[bio-occupancy]   bio.spice envelope=100 hearth=8 seeded_landmasses=2 primary_landmass=2 primary_envelope=26 occupied=8 occupied/envelope=0.31
+[bio-occupancy]   bio.rubber envelope=56 hearth=7 seeded_landmasses=1 primary_landmass=7 primary_envelope=15 occupied=7 occupied/envelope=0.47
+[bio-occupancy]   bio.sheep envelope=34 hearth=8 seeded_landmasses=1 primary_landmass=8 primary_envelope=17 occupied=8 occupied/envelope=0.47
+[bio-occupancy]   bio.goat envelope=405 hearth=98 seeded_landmasses=4 primary_landmass=8 primary_envelope=187 occupied=98 occupied/envelope=0.52
+[bio-occupancy]   bio.cattle envelope=13 hearth=5 seeded_landmasses=1 primary_landmass=8 primary_envelope=11 occupied=5 occupied/envelope=0.45
+[bio-occupancy]   bio.pig envelope=287 hearth=89 seeded_landmasses=5 primary_landmass=8 primary_envelope=129 occupied=89 occupied/envelope=0.69
+[bio-occupancy]   bio.camel envelope=45 hearth=6 seeded_landmasses=1 primary_landmass=6 primary_envelope=13 occupied=6 occupied/envelope=0.46
+[bio-occupancy]   bio.yak envelope=192 hearth=68 seeded_landmasses=3 primary_landmass=2 primary_envelope=83 occupied=68 occupied/envelope=0.82
+[bio-occupancy]   bio.silkworm envelope=144 hearth=23 seeded_landmasses=1 primary_landmass=8 primary_envelope=57 occupied=23 occupied/envelope=0.40
+[bio-occupancy]   bio.reed envelope=148 hearth=31 seeded_landmasses=4 primary_landmass=8 primary_envelope=60 occupied=31 occupied/envelope=0.52
+[bio-occupancy]   bio.bast_fiber envelope=279 hearth=65 seeded_landmasses=1 primary_landmass=8 primary_envelope=136 occupied=65 occupied/envelope=0.48
+[bio-occupancy]   bio.dye_plant envelope=122 hearth=38 seeded_landmasses=2 primary_landmass=8 primary_envelope=53 occupied=38 occupied/envelope=0.72
+[bio-occupancy]   bio.medicinal_herb envelope=371 hearth=151 seeded_landmasses=5 primary_landmass=8 primary_envelope=168 occupied=151 occupied/envelope=0.90
+[bio-occupancy]   landmass 1 classes=cold_grazer, fiber_forest, dry_grazer, highland_food, open_food, open_grazer, fiber_open, forest_grazer foods=potato, wheat
+[bio-occupancy]   landmass 2 classes=cold_grazer, fiber_forest, dry_grazer, open_grazer, fiber_wet, forest_grazer, open_food, highland_food, fiber_open, wetland_food, tropical foods=wheat, potato, rice
+[bio-occupancy]   landmass 3 classes=none foods=none
+[bio-occupancy]   landmass 4 classes=none foods=none
+[bio-occupancy]   landmass 5 classes=none foods=none
+[bio-occupancy]   landmass 6 classes=wetland_food, forest_grazer, fiber_wet, fiber_forest, open_grazer, dry_grazer, fiber_open, tropical foods=rice
+[bio-occupancy]   landmass 7 classes=fiber_open, tropical, dry_grazer, open_food, open_grazer, fiber_forest, wetland_food, forest_grazer, fiber_wet foods=wheat, rice
+[bio-occupancy]   landmass 8 classes=tropical, fiber_open, forest_grazer, dry_grazer, open_food, fiber_forest, wetland_food, open_grazer, highland_food, fiber_wet, cold_grazer foods=maize, rice, potato
+[bio-occupancy]   landmass 9 classes=none foods=none
+[bio-occupancy]   landmass 10 classes=none foods=none
+[weather] gdext acceleration ON (class=DCWorldExt)
+[weather] gdext field commit ON
+[weather] gdext distribute ON
+[weather] gdext summary ON
+[weather] hexcell facade ON (skip AoS double-write in hot loop)
+[weather] gdext resident knobs ON (class=KnobsHandle)
+[economy] ACTIVE native graph cells=2400 goods=134 cohorts=24 epoch_days=1 trade=ACTIVE topology_ready=true topology_generation=1 bootstrap=starter_settlement_bootstrap_v9 founder_families=6 founder_people=6
+[country] ACTIVE native authority countries=6 cells=2400 generation=1
+[weather/knobs] resident KnobsHandle path ACTIVE — first to_*_knobs_dict hit (field_rebuild_count=1 expected ≤1; stable Hz target ≤1 Hz)
+[native_daily] ACTIVE: registered native_daily_sim + natural_resource_daily + bio_occupancy_daily; retained season_refresh + ocean_currents boundary jobs
+[DCSystemScheduler] topology: ["season_refresh", "trigger_runtime", "ideology_runtime", "effect_runtime", "modifier_daily", "gameplay_effect", "natural_resource_daily", "bio_occupancy_daily", "enum_atlas_upload", "ocean_currents", "native_daily_sim", "dynamic_visual_atlas_upload", "country_daily", "economy_daily"]
+WARNING: [runtime-climate-round] no ClimateDailySystem; SHADOW capture carries no shared pass input
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _build_runtime_climate_round_input (res://scripts/geography/map_generator.gd:4627)
+       [1] capture_runtime_inputs_for_worker (res://scripts/geography/map_generator.gd:2351)
+       [2] generate_world (res://scripts/game/world_runtime_host.gd:609)
+       [3] generate (res://scripts/geography/map_generator.gd:1606)
+       [4] _yield_generation_frame (res://scripts/geography/map_generator.gd:19841)
+WARNING: [runtime-worker] Ideology opinion publish deferred: ideology_opinion_snapshot_invalid
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _start_production_shadow_worker (res://scripts/game/world_runtime_host.gd:700)
+       [1] generate_world (res://scripts/game/world_runtime_host.gd:618)
+       [2] generate (res://scripts/geography/map_generator.gd:1606)
+       [3] _yield_generation_frame (res://scripts/geography/map_generator.gd:19841)
+[runtime-day-wait] day=1 env_day=0 missing=0x3ff economy_input=-1
+[runtime-worker] production ACTIVE started mask=4095 auto_pod=false
+[building-visual] intel_refresh requested=32 changed=1 known=1 catalog=400 resident=0 body=0 queued=0 zoom=1.000
+[DCSystemScheduler][RT] ocean_skip#1 tick=1 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[climate][publish] day=0 round_ran=1 prod_stage=0xff scalar_mask=0x7f alb=0 veg=0 fb=0 weather=0 sr=0 ok=1
+[climate/worker][b8] physics_knobs day=1 ready=0 missing=physics_knobs
+[climate-kernel][round] shared=1 ok=1 n_cells=2400 mask=0x1FF ran=0x1FF starved=0x0 knobs_cells=2400
+[DCSystemScheduler][RT] ocean_skip#2 tick=2 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[country][parity] worker_day=1 uncompared reference_range=2..2 depth=1
+[runtime-day-wait] day=1 env_day=1 missing=0x100 economy_input=1
+[economy-mirror-cost] day=1 capture_ms=3.203 import_ms=5.134
+[climate/writeback][b8] day=1 vapor store0=0 map0=0 dirty_fields=42 applied=42
+[runtime-worker] Economy authority promoted to POD_ACTIVE
+[climate/worker][b8] physics_knobs day=2 ready=0 missing=physics_knobs
+[climate/worker][b8] paw day=2 cell=68 moisture=0.717273 wb30=0 soil=0 paw=0.717273 zeros(water=1544 land=5) nonzero=851 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[runtime-day-wait] day=2 env_day=2 missing=0x100 economy_input=2
+[climate/worker][b8] physics_knobs day=3 ready=0 missing=physics_knobs
+[climate/worker][b8] paw day=3 cell=68 moisture=0.713332 wb30=0 soil=0 paw=0.713332 zeros(water=1544 land=7) nonzero=849 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[climate/writeback][b8] day=2 vapor store0=0 map0=0 dirty_fields=42 applied=42
+[country][parity] worker_day=3 uncompared reference_range=2..2 depth=1
+[runtime-day-wait] day=3 env_day=3 missing=0x100 economy_input=3
+[climate/worker][b8] physics_knobs day=4 ready=0 missing=physics_knobs
+[climate/worker][b8] paw day=4 cell=68 moisture=0.715716 wb30=0 soil=0 paw=0.715716 zeros(water=1544 land=7) nonzero=849 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[climate/writeback][b8] day=3 vapor store0=0 map0=0 dirty_fields=42 applied=42
+[climate/worker][b8] cyclone_gate day=4 input_enabled=0 force_env=0 effective=0
+[climate/worker][b8] weather_solve day=4 cells=2400 psi=1 vapor0=0.110977 precip0=0 cloud0=0.0436987 type0=0 field_init0=1
+[country][parity] worker_day=4 uncompared reference_range=2..2 depth=1
+[runtime-day-wait] day=4 env_day=4 missing=0x100 economy_input=4
+[climate/worker][b8] physics_knobs day=5 ready=0 missing=physics_knobs
+[climate/worker][b8] paw day=5 cell=68 moisture=0.712748 wb30=-0.000135608 soil=0 paw=0.71266 zeros(water=1544 land=7) nonzero=849 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[climate/writeback][b8] day=4 vapor store0=0.110977 map0=0.110977 dirty_fields=44 applied=44
+[country][parity] worker_day=5 uncompared reference_range=2..2 depth=1
+[runtime-day-wait] day=5 env_day=5 missing=0x100 economy_input=5
+[climate/worker][b8] physics_knobs day=6 ready=0 missing=physics_knobs
+[climate/worker][b8] paw day=6 cell=68 moisture=0.712748 wb30=-0.000135608 soil=0 paw=0.71266 zeros(water=1544 land=7) nonzero=849 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[country][parity] worker_day=6 uncompared reference_range=2..2 depth=1
+[runtime-day-wait] day=6 env_day=6 missing=0x100 economy_input=6
+[climate/worker][b8] paw day=7 cell=68 moisture=0.714563 wb30=-0.000135608 soil=-0.00032546 paw=0.714475 zeros(water=1544 land=7) nonzero=849 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[country][parity] worker_day=7 uncompared reference_range=2..2 depth=1
+[runtime-day-wait] day=7 env_day=7 missing=0x100 economy_input=7
+[climate/worker][b8] paw day=8 cell=68 moisture=0.714974 wb30=-0.000135608 soil=-0.00032546 paw=0.714886 zeros(water=1544 land=7) nonzero=849 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[country][parity] worker_day=8 uncompared reference_range=2..2 depth=1
+[runtime-day-wait] day=8 env_day=8 missing=0x100 economy_input=8
+[climate/worker][b8] paw day=9 cell=68 moisture=0.714974 wb30=-0.000135608 soil=-0.00032546 paw=0.714886 zeros(water=1544 land=7) nonzero=849 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[country][parity] worker_day=9 uncompared reference_range=2..2 depth=1
+[runtime-day-wait] day=9 env_day=9 missing=0x100 economy_input=9
+[climate/worker][b8] paw day=10 cell=68 moisture=0.714974 wb30=-0.000135608 soil=-0.00032546 paw=0.714886 zeros(water=1544 land=7) nonzero=849 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[runtime-day-wait] day=10 env_day=10 missing=0x100 economy_input=10
+[climate/worker][b8] paw day=11 cell=68 moisture=0.716356 wb30=-0.000135608 soil=-0.00032546 paw=0.716268 zeros(water=1544 land=7) nonzero=849 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[runtime-day-wait] day=11 env_day=11 missing=0x100 economy_input=11
+[climate/worker][b8] paw day=12 cell=68 moisture=0.71667 wb30=-0.000135608 soil=-0.00032546 paw=0.716581 zeros(water=1544 land=7) nonzero=849 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[climate/worker][b8] cyclone_gate day=12 input_enabled=0 force_env=0 effective=0
+[climate/worker][b8] weather_solve day=12 cells=2400 psi=1 vapor0=0.0517589 precip0=0.0368362 cloud0=0.0513718 type0=0 field_init0=1
+[runtime-day-wait] day=12 env_day=12 missing=0x100 economy_input=12
+[climate/worker][b8] paw day=13 cell=68 moisture=0.71667 wb30=-0.000267589 soil=-0.00032546 paw=0.716496 zeros(water=1544 land=7) nonzero=849 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[runtime-day-wait] day=13 env_day=13 missing=0x100 economy_input=13
+[runtime-day-wait] day=14 env_day=14 missing=0x100 economy_input=14
+[runtime-day-wait] day=15 env_day=15 missing=0x100 economy_input=15
+[runtime-day-wait] day=16 env_day=16 missing=0x100 economy_input=16
+[runtime-day-wait] day=17 env_day=17 missing=0x100 economy_input=17
+[runtime-day-wait] day=18 env_day=18 missing=0x100 economy_input=18
+[runtime-day-wait] day=19 env_day=19 missing=0x100 economy_input=19
+[climate/worker][b8] weather_solve day=20 cells=2400 psi=1 vapor0=0.0390531 precip0=0.0506637 cloud0=0.0600347 type0=0 field_init0=1
+[runtime-day-wait] day=20 env_day=20 missing=0x100 economy_input=20
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=7.08d/f cost=1.13ms ran=0 pulse=0.00ms loop=0.00ms full=0.25ms carry=0.60 barrier=
+[runtime-day-wait] day=21 env_day=21 missing=0x100 economy_input=21
+[runtime-day-wait] day=22 env_day=22 missing=0x100 economy_input=22
+[runtime-day-wait] day=23 env_day=23 missing=0x100 economy_input=23
+[runtime-day-wait] day=24 env_day=24 missing=0x100 economy_input=24
+[runtime-day-wait] day=25 env_day=25 missing=0x100 economy_input=25
+[runtime-day-wait] day=26 env_day=26 missing=0x100 economy_input=26
+[runtime-day-wait] day=27 env_day=27 missing=0x100 economy_input=27
+[climate/worker][b8] weather_solve day=28 cells=2400 psi=1 vapor0=0.0342825 precip0=0.0548014 cloud0=0.0806412 type0=3 field_init0=1
+[runtime-day-wait] day=28 env_day=28 missing=0x100 economy_input=28
+[runtime-day-wait] day=29 env_day=29 missing=0x100 economy_input=29
+[runtime-day-wait] day=30 env_day=30 missing=0x100 economy_input=30
+[runtime-day-wait] day=31 env_day=31 missing=0x100 economy_input=31
+[runtime-day-wait] day=32 env_day=32 missing=0x100 economy_input=32
+[runtime-day-wait] day=33 env_day=33 missing=0x100 economy_input=33
+[runtime-day-wait] day=34 env_day=34 missing=0x100 economy_input=34
+[runtime-day-wait] day=35 env_day=35 missing=0x100 economy_input=35
+[runtime-day-wait] day=36 env_day=36 missing=0x100 economy_input=36
+[runtime-day-wait] day=37 env_day=37 missing=0x100 economy_input=37
+[runtime-day-wait] day=38 env_day=38 missing=0x100 economy_input=38
+[runtime-day-wait] day=39 env_day=39 missing=0x100 economy_input=39
+[runtime-day-wait] day=40 env_day=40 missing=0x100 economy_input=40
+[runtime-day-wait] day=41 env_day=41 missing=0x100 economy_input=41
+[runtime-day-wait] day=42 env_day=42 missing=0x100 economy_input=42
+[runtime-day-wait] day=43 env_day=43 missing=0x100 economy_input=43
+[runtime-day-wait] day=44 env_day=44 missing=0x100 economy_input=44
+[runtime-day-wait] day=45 env_day=45 missing=0x100 economy_input=45
+[runtime-day-wait] day=46 env_day=46 missing=0x100 economy_input=46
+[runtime-day-wait] day=47 env_day=47 missing=0x100 economy_input=47
+[runtime-day-wait] day=48 env_day=48 missing=0x100 economy_input=48
+[runtime-day-wait] day=49 env_day=49 missing=0x100 economy_input=49
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=8.00d/f cost=0.52ms ran=0 pulse=0.09ms loop=0.00ms full=0.35ms carry=0.27 barrier=climate_input_capacity_day_barrier
+[runtime-day-wait] day=50 env_day=50 missing=0x100 economy_input=50
+[runtime-day-wait] day=51 env_day=51 missing=0x100 economy_input=51
+[runtime-day-wait] day=52 env_day=52 missing=0x100 economy_input=52
+[runtime-day-wait] day=53 env_day=53 missing=0x100 economy_input=53
+[runtime-day-wait] day=54 env_day=54 missing=0x100 economy_input=54
+[runtime-day-wait] day=55 env_day=55 missing=0x100 economy_input=55
+[runtime-day-wait] day=56 env_day=56 missing=0x100 economy_input=56
+[runtime-day-wait] day=57 env_day=57 missing=0x100 economy_input=57
+[runtime-day-wait] day=58 env_day=58 missing=0x100 economy_input=58
+[runtime-day-wait] day=59 env_day=59 missing=0x100 economy_input=59
+[runtime-day-wait] day=60 env_day=60 missing=0x100 economy_input=60
+[perf-record] start (start_tick=2 mode=CORE detail_period=1)
+[stage-c/client] recording mode=ACTIVE worker=ACTIVE seconds=20.00 output=D:/Godot/ProjectKeynes/Project.Keynes/tmp/soak_owned_probe
+[runtime-day-wait] day=61 env_day=61 missing=0x100 economy_input=61
+[runtime-day-wait] day=62 env_day=62 missing=0x100 economy_input=62
+[runtime-day-wait] day=63 env_day=63 missing=0x100 economy_input=63
+[runtime-day-wait] day=64 env_day=64 missing=0x100 economy_input=64
+[runtime-day-wait] day=65 env_day=65 missing=0x100 economy_input=65
+[runtime-day-wait] day=66 env_day=66 missing=0x100 economy_input=66
+[runtime-day-wait] day=67 env_day=67 missing=0x100 economy_input=67
+[runtime-day-wait] day=68 env_day=68 missing=0x100 economy_input=68
+[runtime-day-wait] day=69 env_day=69 missing=0x100 economy_input=69
+[runtime-day-wait] day=70 env_day=70 missing=0x100 economy_input=70
+[runtime-day-wait] day=71 env_day=71 missing=0x100 economy_input=71
+[runtime-day-wait] day=72 env_day=72 missing=0x100 economy_input=72
+[runtime-day-wait] day=73 env_day=73 missing=0x100 economy_input=73
+[runtime-day-wait] day=74 env_day=74 missing=0x100 economy_input=74
+[runtime-day-wait] day=75 env_day=75 missing=0x100 economy_input=75
+[runtime-day-wait] day=76 env_day=76 missing=0x100 economy_input=76
+[runtime-day-wait] day=77 env_day=77 missing=0x100 economy_input=77
+[runtime-day-wait] day=78 env_day=78 missing=0x100 economy_input=78
+[runtime-day-wait] day=79 env_day=79 missing=0x100 economy_input=79
+[runtime-day-wait] day=80 env_day=80 missing=0x100 economy_input=80
+[runtime-day-wait] day=81 env_day=81 missing=0x100 economy_input=81
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=5.35d/f cost=1.49ms ran=0 pulse=0.00ms loop=0.00ms full=0.44ms carry=0.99 barrier=
+[runtime-day-wait] day=82 env_day=82 missing=0x100 economy_input=82
+[runtime-day-wait] day=83 env_day=83 missing=0x100 economy_input=83
+[runtime-day-wait] day=84 env_day=84 missing=0x100 economy_input=84
+[runtime-day-wait] day=85 env_day=85 missing=0x100 economy_input=85
+[runtime-day-wait] day=86 env_day=86 missing=0x100 economy_input=86
+[runtime-day-wait] day=87 env_day=87 missing=0x100 economy_input=87
+[runtime-day-wait] day=88 env_day=88 missing=0x100 economy_input=88
+[runtime-day-wait] day=89 env_day=89 missing=0x100 economy_input=89
+[runtime-day-wait] day=90 env_day=90 missing=0x100 economy_input=90
+[runtime-day-wait] day=91 env_day=91 missing=0x100 economy_input=91
+[runtime-day-wait] day=92 env_day=92 missing=0x100 economy_input=92
+[runtime-day-wait] day=93 env_day=93 missing=0x100 economy_input=93
+[runtime-day-wait] day=94 env_day=94 missing=0x100 economy_input=94
+[runtime-day-wait] day=95 env_day=95 missing=0x100 economy_input=95
+[runtime-day-wait] day=96 env_day=96 missing=0x100 economy_input=96
+[runtime-day-wait] day=97 env_day=97 missing=0x100 economy_input=97
+[runtime-day-wait] day=98 env_day=98 missing=0x100 economy_input=98
+[runtime-day-wait] day=99 env_day=99 missing=0x100 economy_input=99
+[economy-prelude-cost] day=100 ms=0.030 pending=1
+[runtime-day-cost] day=100 ok=0 ms=3.708
+[runtime-day-wait] day=100 env_day=100 missing=0x100 economy_input=100
+[economy-prelude-cost] day=100 ms=0.007 pending=1
+[runtime-day-cost] day=100 ok=0 ms=0.091
+[economy-prelude-cost] day=100 ms=0.009 pending=1
+[runtime-day-cost] day=100 ok=0 ms=0.098
+[economy-open-finish] day=100 country=0.307 workset=0.020 fiscal=0.028 csr=0.004 recovery=0.001 vectors=0.637 audit=0.394 commands=0.000
+[economy-prelude-cost] day=100 ms=1.601 pending=0
+[economy-boundary-cost] day=100 formulas_ms=6.689 stages_ms=5.081 mirror_ms=5.199
+[runtime-day-cost] day=100 ok=1 ms=11.999
+[runtime-day-wait] day=101 env_day=101 missing=0x100 economy_input=101
+[runtime-day-wait] day=102 env_day=102 missing=0x100 economy_input=102
+[runtime-day-wait] day=103 env_day=103 missing=0x100 economy_input=103
+[runtime-day-wait] day=104 env_day=104 missing=0x100 economy_input=104
+[runtime-day-wait] day=105 env_day=105 missing=0x100 economy_input=105
+[runtime-day-wait] day=106 env_day=106 missing=0x100 economy_input=106
+[runtime-day-wait] day=107 env_day=107 missing=0x100 economy_input=107
+[runtime-day-wait] day=108 env_day=108 missing=0x100 economy_input=108
+[runtime-day-wait] day=109 env_day=109 missing=0x100 economy_input=109
+[runtime-day-wait] day=110 env_day=110 missing=0x100 economy_input=110
+[runtime-day-wait] day=111 env_day=111 missing=0x100 economy_input=111
+[runtime-day-wait] day=112 env_day=112 missing=0x100 economy_input=112
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=8.00d/f cost=0.56ms ran=0 pulse=0.08ms loop=0.00ms full=0.36ms carry=0.02 barrier=climate_input_capacity_day_barrier
+[runtime-day-wait] day=113 env_day=113 missing=0x100 economy_input=113
+[runtime-day-wait] day=114 env_day=114 missing=0x100 economy_input=114
+[runtime-day-wait] day=115 env_day=115 missing=0x100 economy_input=115
+[runtime-day-wait] day=116 env_day=116 missing=0x100 economy_input=116
+[runtime-day-wait] day=117 env_day=117 missing=0x100 economy_input=117
+[runtime-day-wait] day=118 env_day=118 missing=0x100 economy_input=118
+[runtime-day-wait] day=119 env_day=119 missing=0x100 economy_input=119
+[runtime-day-wait] day=120 env_day=120 missing=0x100 economy_input=120
+[runtime-day-wait] day=121 env_day=121 missing=0x100 economy_input=121
+[runtime-day-wait] day=122 env_day=122 missing=0x100 economy_input=122
+[runtime-day-wait] day=123 env_day=123 missing=0x100 economy_input=123
+[runtime-day-wait] day=124 env_day=124 missing=0x100 economy_input=124
+[runtime-day-wait] day=125 env_day=125 missing=0x100 economy_input=125
+[runtime-day-wait] day=126 env_day=126 missing=0x100 economy_input=126
+[runtime-day-wait] day=127 env_day=127 missing=0x100 economy_input=127
+[runtime-day-wait] day=128 env_day=128 missing=0x100 economy_input=128
+[runtime-day-wait] day=129 env_day=129 missing=0x100 economy_input=129
+[runtime-day-wait] day=130 env_day=130 missing=0x100 economy_input=130
+[runtime-day-wait] day=131 env_day=131 missing=0x100 economy_input=131
+[runtime-day-wait] day=132 env_day=132 missing=0x100 economy_input=132
+[runtime-day-wait] day=133 env_day=133 missing=0x100 economy_input=133
+[runtime-day-wait] day=134 env_day=134 missing=0x100 economy_input=134
+[runtime-day-wait] day=135 env_day=135 missing=0x100 economy_input=135
+[runtime-day-wait] day=136 env_day=136 missing=0x100 economy_input=136
+[runtime-day-wait] day=137 env_day=137 missing=0x100 economy_input=137
+[runtime-day-wait] day=138 env_day=138 missing=0x100 economy_input=138
+[runtime-day-wait] day=139 env_day=139 missing=0x100 economy_input=139
+[runtime-day-wait] day=140 env_day=140 missing=0x100 economy_input=140
+[runtime-day-wait] day=141 env_day=141 missing=0x100 economy_input=141
+[runtime-day-wait] day=142 env_day=142 missing=0x100 economy_input=142
+[runtime-day-wait] day=143 env_day=143 missing=0x100 economy_input=143
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=8.00d/f cost=0.41ms ran=0 pulse=0.00ms loop=0.00ms full=0.23ms carry=0.37 barrier=
+[runtime-day-wait] day=144 env_day=144 missing=0x100 economy_input=144
+[runtime-day-wait] day=145 env_day=145 missing=0x100 economy_input=145
+[runtime-day-wait] day=146 env_day=146 missing=0x100 economy_input=146
+[runtime-day-wait] day=147 env_day=147 missing=0x100 economy_input=147
+[runtime-day-wait] day=148 env_day=148 missing=0x100 economy_input=148
+[runtime-day-wait] day=149 env_day=149 missing=0x100 economy_input=149
+[runtime-day-wait] day=150 env_day=150 missing=0x100 economy_input=150
+[runtime-day-wait] day=151 env_day=151 missing=0x100 economy_input=151
+[runtime-day-wait] day=152 env_day=152 missing=0x100 economy_input=152
+[runtime-day-wait] day=153 env_day=153 missing=0x100 economy_input=153
+[runtime-day-wait] day=154 env_day=154 missing=0x100 economy_input=154
+[runtime-day-wait] day=155 env_day=155 missing=0x100 economy_input=155
+[runtime-day-wait] day=156 env_day=156 missing=0x100 economy_input=156
+[runtime-day-wait] day=157 env_day=157 missing=0x100 economy_input=157
+[runtime-day-wait] day=158 env_day=158 missing=0x100 economy_input=158
+[runtime-day-wait] day=159 env_day=159 missing=0x100 economy_input=159
+[runtime-day-wait] day=160 env_day=160 missing=0x100 economy_input=160
+[runtime-day-wait] day=161 env_day=161 missing=0x100 economy_input=161
+[runtime-day-wait] day=162 env_day=162 missing=0x100 economy_input=162
+[runtime-day-wait] day=163 env_day=163 missing=0x100 economy_input=163
+[runtime-day-wait] day=164 env_day=164 missing=0x100 economy_input=164
+[runtime-day-wait] day=165 env_day=165 missing=0x100 economy_input=165
+[runtime-day-wait] day=166 env_day=166 missing=0x100 economy_input=166
+[runtime-day-wait] day=167 env_day=167 missing=0x100 economy_input=167
+[runtime-day-wait] day=168 env_day=168 missing=0x100 economy_input=168
+[runtime-day-wait] day=169 env_day=169 missing=0x100 economy_input=169
+[runtime-day-wait] day=170 env_day=170 missing=0x100 economy_input=170
+[runtime-day-wait] day=171 env_day=171 missing=0x100 economy_input=171
+[runtime-day-wait] day=172 env_day=172 missing=0x100 economy_input=172
+[runtime-day-wait] day=173 env_day=173 missing=0x100 economy_input=173
+[runtime-day-wait] day=174 env_day=174 missing=0x100 economy_input=174
+[runtime-day-wait] day=175 env_day=175 missing=0x100 economy_input=175
+[runtime-day-wait] day=176 env_day=176 missing=0x100 economy_input=176
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=5.70d/f cost=1.40ms ran=0 pulse=0.00ms loop=0.00ms full=0.20ms carry=0.81 barrier=
+[runtime-day-wait] day=177 env_day=177 missing=0x100 economy_input=177
+[runtime-day-wait] day=178 env_day=178 missing=0x100 economy_input=178
+[runtime-day-wait] day=179 env_day=179 missing=0x100 economy_input=179
+[runtime-day-wait] day=180 env_day=180 missing=0x100 economy_input=180
+[runtime-day-wait] day=181 env_day=181 missing=0x100 economy_input=181
+[runtime-day-wait] day=182 env_day=182 missing=0x100 economy_input=182
+[runtime-day-wait] day=183 env_day=183 missing=0x100 economy_input=183
+[runtime-day-wait] day=184 env_day=184 missing=0x100 economy_input=184
+[runtime-day-wait] day=185 env_day=185 missing=0x100 economy_input=185
+[runtime-day-wait] day=186 env_day=186 missing=0x100 economy_input=186
+[runtime-day-wait] day=187 env_day=187 missing=0x100 economy_input=187
+[runtime-day-wait] day=188 env_day=188 missing=0x100 economy_input=188
+[runtime-day-wait] day=189 env_day=189 missing=0x100 economy_input=189
+[runtime-day-wait] day=190 env_day=190 missing=0x100 economy_input=190
+[runtime-day-wait] day=191 env_day=191 missing=0x100 economy_input=191
+[runtime-day-wait] day=192 env_day=192 missing=0x100 economy_input=192
+[runtime-day-wait] day=193 env_day=193 missing=0x100 economy_input=193
+[runtime-day-wait] day=194 env_day=194 missing=0x100 economy_input=194
+[runtime-day-wait] day=195 env_day=195 missing=0x100 economy_input=195
+[runtime-day-wait] day=196 env_day=196 missing=0x100 economy_input=196
+[runtime-day-wait] day=197 env_day=197 missing=0x100 economy_input=197
+[runtime-day-wait] day=198 env_day=198 missing=0x100 economy_input=198
+[runtime-day-wait] day=199 env_day=199 missing=0x100 economy_input=199
+[economy-prelude-cost] day=200 ms=0.039 pending=1
+[runtime-day-cost] day=200 ok=0 ms=2.980
+[runtime-day-wait] day=200 env_day=200 missing=0x100 economy_input=200
+[economy-prelude-cost] day=200 ms=0.007 pending=1
+[runtime-day-cost] day=200 ok=0 ms=0.105
+[economy-open-finish] day=200 country=0.418 workset=0.031 fiscal=0.060 csr=0.005 recovery=0.001 vectors=1.038 audit=0.651 commands=0.001
+[economy-prelude-cost] day=200 ms=2.592 pending=0
+[economy-boundary-cost] day=200 formulas_ms=10.754 stages_ms=8.149 mirror_ms=6.949
+[runtime-day-cost] day=200 ok=1 ms=17.844
+[runtime-day-wait] day=201 env_day=201 missing=0x100 economy_input=201
+[runtime-day-wait] day=202 env_day=202 missing=0x100 economy_input=202
+[runtime-day-wait] day=203 env_day=203 missing=0x100 economy_input=203
+[runtime-day-wait] day=204 env_day=204 missing=0x100 economy_input=204
+[runtime-day-wait] day=205 env_day=205 missing=0x100 economy_input=205
+[runtime-day-wait] day=206 env_day=206 missing=0x100 economy_input=206
+[runtime-day-wait] day=207 env_day=207 missing=0x100 economy_input=207
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=8.00d/f cost=0.98ms ran=0 pulse=0.08ms loop=0.00ms full=0.39ms carry=0.19 barrier=climate_input_capacity_day_barrier
+[runtime-day-wait] day=208 env_day=208 missing=0x100 economy_input=208
+[runtime-day-wait] day=209 env_day=209 missing=0x100 economy_input=209
+[runtime-day-wait] day=210 env_day=210 missing=0x100 economy_input=210
+[runtime-day-wait] day=211 env_day=211 missing=0x100 economy_input=211
+[runtime-day-wait] day=212 env_day=212 missing=0x100 economy_input=212
+[runtime-day-wait] day=213 env_day=213 missing=0x100 economy_input=213
+[runtime-day-wait] day=214 env_day=214 missing=0x100 economy_input=214
+[runtime-day-wait] day=215 env_day=215 missing=0x100 economy_input=215
+[runtime-day-wait] day=216 env_day=216 missing=0x100 economy_input=216
+[runtime-day-wait] day=217 env_day=217 missing=0x100 economy_input=217
+[runtime-day-wait] day=218 env_day=218 missing=0x100 economy_input=218
+[runtime-day-wait] day=219 env_day=219 missing=0x100 economy_input=219
+[runtime-day-wait] day=220 env_day=220 missing=0x100 economy_input=220
+[runtime-day-wait] day=221 env_day=221 missing=0x100 economy_input=221
+[runtime-day-wait] day=222 env_day=222 missing=0x100 economy_input=222
+[runtime-day-wait] day=223 env_day=223 missing=0x100 economy_input=223
+[runtime-day-wait] day=224 env_day=224 missing=0x100 economy_input=224
+[runtime-day-wait] day=225 env_day=225 missing=0x100 economy_input=225
+[runtime-day-wait] day=226 env_day=226 missing=0x100 economy_input=226
+[runtime-day-wait] day=227 env_day=227 missing=0x100 economy_input=227
+[runtime-day-wait] day=228 env_day=228 missing=0x100 economy_input=228
+[runtime-day-wait] day=229 env_day=229 missing=0x100 economy_input=229
+[runtime-day-wait] day=230 env_day=230 missing=0x100 economy_input=230
+[runtime-day-wait] day=231 env_day=231 missing=0x100 economy_input=231
+[runtime-day-wait] day=232 env_day=232 missing=0x100 economy_input=232
+[runtime-day-wait] day=233 env_day=233 missing=0x100 economy_input=233
+[runtime-day-wait] day=234 env_day=234 missing=0x100 economy_input=234
+[runtime-day-wait] day=235 env_day=235 missing=0x100 economy_input=235
+[runtime-day-wait] day=236 env_day=236 missing=0x100 economy_input=236
+[runtime-day-wait] day=237 env_day=237 missing=0x100 economy_input=237
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=8.00d/f cost=0.61ms ran=1 pulse=0.00ms loop=0.37ms full=0.54ms carry=0.19 barrier=climate_input_capacity_day_barrier
+[runtime-day-wait] day=238 env_day=238 missing=0x100 economy_input=238
+[runtime-day-wait] day=239 env_day=239 missing=0x100 economy_input=239
+[runtime-day-wait] day=240 env_day=240 missing=0x100 economy_input=240
+[runtime-day-wait] day=241 env_day=241 missing=0x100 economy_input=241
+[runtime-day-wait] day=242 env_day=242 missing=0x100 economy_input=242
+[runtime-day-wait] day=243 env_day=243 missing=0x100 economy_input=243
+[runtime-day-wait] day=244 env_day=244 missing=0x100 economy_input=244
+[runtime-day-wait] day=245 env_day=245 missing=0x100 economy_input=245
+[runtime-day-wait] day=246 env_day=246 missing=0x100 economy_input=246
+[runtime-day-wait] day=247 env_day=247 missing=0x100 economy_input=247
+[runtime-day-wait] day=248 env_day=248 missing=0x100 economy_input=248
+[runtime-day-wait] day=249 env_day=249 missing=0x100 economy_input=249
+[runtime-day-wait] day=250 env_day=250 missing=0x100 economy_input=250
+[runtime-day-wait] day=251 env_day=251 missing=0x100 economy_input=251
+[runtime-day-wait] day=252 env_day=252 missing=0x100 economy_input=252
+[runtime-day-wait] day=253 env_day=253 missing=0x100 economy_input=253
+[runtime-day-wait] day=254 env_day=254 missing=0x100 economy_input=254
+[runtime-day-wait] day=255 env_day=255 missing=0x100 economy_input=255
+[runtime-day-wait] day=256 env_day=256 missing=0x100 economy_input=256
+[runtime-day-wait] day=257 env_day=257 missing=0x100 economy_input=257
+[runtime-day-wait] day=258 env_day=258 missing=0x100 economy_input=258
+[runtime-day-wait] day=259 env_day=259 missing=0x100 economy_input=259
+[runtime-day-wait] day=260 env_day=260 missing=0x100 economy_input=260
+[runtime-day-wait] day=261 env_day=261 missing=0x100 economy_input=261
+[runtime-day-wait] day=262 env_day=262 missing=0x100 economy_input=262
+[runtime-day-wait] day=263 env_day=263 missing=0x100 economy_input=263
+[runtime-day-wait] day=264 env_day=264 missing=0x100 economy_input=264
+[runtime-day-wait] day=265 env_day=265 missing=0x100 economy_input=265
+[runtime-day-wait] day=266 env_day=266 missing=0x100 economy_input=266
+[runtime-day-wait] day=267 env_day=267 missing=0x100 economy_input=267
+[runtime-day-wait] day=268 env_day=268 missing=0x100 economy_input=268
+[runtime-day-wait] day=269 env_day=269 missing=0x100 economy_input=269
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=5.31d/f cost=1.51ms ran=0 pulse=0.00ms loop=0.00ms full=0.28ms carry=0.91 barrier=
+[runtime-day-wait] day=270 env_day=270 missing=0x100 economy_input=270
+[runtime-day-wait] day=271 env_day=271 missing=0x100 economy_input=271
+[runtime-day-wait] day=272 env_day=272 missing=0x100 economy_input=272
+[runtime-day-wait] day=273 env_day=273 missing=0x100 economy_input=273
+[runtime-day-wait] day=274 env_day=274 missing=0x100 economy_input=274
+[runtime-day-wait] day=275 env_day=275 missing=0x100 economy_input=275
+[runtime-day-wait] day=276 env_day=276 missing=0x100 economy_input=276
+[runtime-day-wait] day=277 env_day=277 missing=0x100 economy_input=277
+[runtime-day-wait] day=278 env_day=278 missing=0x100 economy_input=278
+[runtime-day-wait] day=279 env_day=279 missing=0x100 economy_input=279
+[runtime-day-wait] day=280 env_day=280 missing=0x100 economy_input=280
+[runtime-day-wait] day=281 env_day=281 missing=0x100 economy_input=281
+[runtime-day-wait] day=282 env_day=282 missing=0x100 economy_input=282
+[runtime-day-wait] day=283 env_day=283 missing=0x100 economy_input=283
+[runtime-day-wait] day=284 env_day=284 missing=0x100 economy_input=284
+[runtime-day-wait] day=285 env_day=285 missing=0x100 economy_input=285
+[runtime-day-wait] day=286 env_day=286 missing=0x100 economy_input=286
+[runtime-day-wait] day=287 env_day=287 missing=0x100 economy_input=287
+[runtime-day-wait] day=288 env_day=288 missing=0x100 economy_input=288
+[runtime-day-wait] day=289 env_day=289 missing=0x100 economy_input=289
+[runtime-day-wait] day=290 env_day=290 missing=0x100 economy_input=290
+[runtime-day-wait] day=291 env_day=291 missing=0x100 economy_input=291
+[runtime-day-wait] day=292 env_day=292 missing=0x100 economy_input=292
+[runtime-day-wait] day=293 env_day=293 missing=0x100 economy_input=293
+[runtime-day-wait] day=294 env_day=294 missing=0x100 economy_input=294
+[runtime-day-wait] day=295 env_day=295 missing=0x100 economy_input=295
+[runtime-day-wait] day=296 env_day=296 missing=0x100 economy_input=296
+[runtime-day-wait] day=297 env_day=297 missing=0x100 economy_input=297
+[clock/step] delta=6.9ms speed=50x target=0.35d cap=8.00d/f cost=0.91ms ran=1 pulse=0.00ms loop=0.58ms full=0.95ms carry=0.24 barrier=climate_input_capacity_day_barrier
+[runtime-day-wait] day=298 env_day=298 missing=0x100 economy_input=298
+[runtime-day-wait] day=299 env_day=299 missing=0x100 economy_input=299
+[economy-prelude-cost] day=300 ms=0.050 pending=1
+[runtime-day-cost] day=300 ok=0 ms=5.960
+[runtime-day-wait] day=300 env_day=300 missing=0x100 economy_input=300
+[economy-prelude-cost] day=300 ms=0.012 pending=1
+[runtime-day-cost] day=300 ok=0 ms=0.149
+[economy-prelude-cost] day=300 ms=0.016 pending=1
+[runtime-day-cost] day=300 ok=0 ms=0.139
+[economy-open-finish] day=300 country=0.347 workset=0.023 fiscal=0.034 csr=0.005 recovery=0.001 vectors=1.012 audit=0.875 commands=0.001
+[economy-prelude-cost] day=300 ms=2.649 pending=0
+[economy-boundary-cost] day=300 formulas_ms=10.224 stages_ms=7.559 mirror_ms=6.427
+[runtime-day-cost] day=300 ok=1 ms=16.808
+[runtime-day-wait] day=301 env_day=301 missing=0x100 economy_input=301
+[runtime-day-wait] day=302 env_day=302 missing=0x100 economy_input=302
+[runtime-day-wait] day=303 env_day=303 missing=0x100 economy_input=303
+[runtime-day-wait] day=304 env_day=304 missing=0x100 economy_input=304
+[runtime-day-wait] day=305 env_day=305 missing=0x100 economy_input=305
+[runtime-day-wait] day=306 env_day=306 missing=0x100 economy_input=306
+[runtime-day-wait] day=307 env_day=307 missing=0x100 economy_input=307
+[runtime-day-wait] day=308 env_day=308 missing=0x100 economy_input=308
+[runtime-day-wait] day=309 env_day=309 missing=0x100 economy_input=309
+[runtime-day-wait] day=310 env_day=310 missing=0x100 economy_input=310
+[runtime-day-wait] day=311 env_day=311 missing=0x100 economy_input=311
+[runtime-day-wait] day=312 env_day=312 missing=0x100 economy_input=312
+[runtime-day-wait] day=313 env_day=313 missing=0x100 economy_input=313
+[runtime-day-wait] day=314 env_day=314 missing=0x100 economy_input=314
+[runtime-day-wait] day=315 env_day=315 missing=0x100 economy_input=315
+[runtime-day-wait] day=316 env_day=316 missing=0x100 economy_input=316
+[runtime-day-wait] day=317 env_day=317 missing=0x100 economy_input=317
+[runtime-day-wait] day=318 env_day=318 missing=0x100 economy_input=318
+[runtime-day-wait] day=319 env_day=319 missing=0x100 economy_input=319
+[runtime-day-wait] day=320 env_day=320 missing=0x100 economy_input=320
+[runtime-day-wait] day=321 env_day=321 missing=0x100 economy_input=321
+[runtime-day-wait] day=322 env_day=322 missing=0x100 economy_input=322
+[runtime-day-wait] day=323 env_day=323 missing=0x100 economy_input=323
+[runtime-day-wait] day=324 env_day=324 missing=0x100 economy_input=324
+[runtime-day-wait] day=325 env_day=325 missing=0x100 economy_input=325
+[runtime-day-wait] day=326 env_day=326 missing=0x100 economy_input=326
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=8.00d/f cost=0.64ms ran=0 pulse=0.00ms loop=0.00ms full=0.29ms carry=0.68 barrier=
+[runtime-day-wait] day=327 env_day=327 missing=0x100 economy_input=327
+[runtime-day-wait] day=328 env_day=328 missing=0x100 economy_input=328
+[runtime-day-wait] day=329 env_day=329 missing=0x100 economy_input=329
+[runtime-day-wait] day=330 env_day=330 missing=0x100 economy_input=330
+[runtime-day-wait] day=331 env_day=331 missing=0x100 economy_input=331
+[runtime-day-wait] day=332 env_day=332 missing=0x100 economy_input=332
+[runtime-day-wait] day=333 env_day=333 missing=0x100 economy_input=333
+[runtime-day-wait] day=334 env_day=334 missing=0x100 economy_input=334
+[runtime-day-wait] day=335 env_day=335 missing=0x100 economy_input=335
+[runtime-day-wait] day=336 env_day=336 missing=0x100 economy_input=336
+[runtime-day-wait] day=337 env_day=337 missing=0x100 economy_input=337
+[runtime-day-wait] day=338 env_day=338 missing=0x100 economy_input=338
+[runtime-day-wait] day=339 env_day=339 missing=0x100 economy_input=339
+[runtime-day-wait] day=340 env_day=340 missing=0x100 economy_input=340
+[runtime-day-wait] day=341 env_day=341 missing=0x100 economy_input=341
+[runtime-day-wait] day=342 env_day=342 missing=0x100 economy_input=342
+[runtime-day-wait] day=343 env_day=343 missing=0x100 economy_input=343
+[runtime-day-wait] day=344 env_day=344 missing=0x100 economy_input=344
+[runtime-day-wait] day=345 env_day=345 missing=0x100 economy_input=345
+[runtime-day-wait] day=346 env_day=346 missing=0x100 economy_input=346
+[runtime-day-wait] day=347 env_day=347 missing=0x100 economy_input=347
+[runtime-day-wait] day=348 env_day=348 missing=0x100 economy_input=348
+[runtime-day-wait] day=349 env_day=349 missing=0x100 economy_input=349
+[runtime-day-wait] day=350 env_day=350 missing=0x100 economy_input=350
+[runtime-day-wait] day=351 env_day=351 missing=0x100 economy_input=351
+[runtime-day-wait] day=352 env_day=352 missing=0x100 economy_input=352
+[runtime-day-wait] day=353 env_day=353 missing=0x100 economy_input=353
+[runtime-day-wait] day=354 env_day=354 missing=0x100 economy_input=354
+[runtime-day-wait] day=355 env_day=355 missing=0x100 economy_input=355
+[runtime-day-wait] day=356 env_day=356 missing=0x100 economy_input=356
+[runtime-day-wait] day=357 env_day=357 missing=0x100 economy_input=357
+[runtime-day-wait] day=358 env_day=358 missing=0x100 economy_input=358
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=5.01d/f cost=1.35ms ran=1 pulse=0.00ms loop=0.37ms full=0.54ms carry=0.09 barrier=climate_input_capacity_day_barrier
+[runtime-day-wait] day=359 env_day=359 missing=0x100 economy_input=359
+[runtime-day-wait] day=360 env_day=360 missing=0x100 economy_input=360
+[runtime-day-wait] day=361 env_day=361 missing=0x100 economy_input=361
+[runtime-day-wait] day=362 env_day=362 missing=0x100 economy_input=362
+[runtime-day-wait] day=363 env_day=363 missing=0x100 economy_input=363
+[runtime-day-wait] day=364 env_day=364 missing=0x100 economy_input=364
+[runtime-day-wait] day=365 env_day=365 missing=0x100 economy_input=365
+[runtime-day-wait] day=366 env_day=366 missing=0x100 economy_input=366
+[runtime-day-wait] day=367 env_day=367 missing=0x100 economy_input=367
+[runtime-day-wait] day=368 env_day=368 missing=0x100 economy_input=368
+[runtime-day-wait] day=369 env_day=369 missing=0x100 economy_input=369
+[runtime-day-wait] day=370 env_day=370 missing=0x100 economy_input=370
+[runtime-day-wait] day=371 env_day=371 missing=0x100 economy_input=371
+[runtime-day-wait] day=372 env_day=372 missing=0x100 economy_input=372
+[runtime-day-wait] day=373 env_day=373 missing=0x100 economy_input=373
+[runtime-day-wait] day=374 env_day=374 missing=0x100 economy_input=374
+[runtime-day-wait] day=375 env_day=375 missing=0x100 economy_input=375
+[runtime-day-wait] day=376 env_day=376 missing=0x100 economy_input=376
+[runtime-day-wait] day=377 env_day=377 missing=0x100 economy_input=377
+[runtime-day-wait] day=378 env_day=378 missing=0x100 economy_input=378
+[runtime-day-wait] day=379 env_day=379 missing=0x100 economy_input=379
+[runtime-day-wait] day=380 env_day=380 missing=0x100 economy_input=380
+[runtime-day-wait] day=381 env_day=381 missing=0x100 economy_input=381
+[clock/step] delta=6.9ms speed=50x target=0.35d cap=8.00d/f cost=0.67ms ran=0 pulse=0.00ms loop=0.00ms full=0.32ms carry=0.76 barrier=
+[runtime-day-wait] day=382 env_day=382 missing=0x100 economy_input=382
+[runtime-day-wait] day=383 env_day=383 missing=0x100 economy_input=383
+[runtime-day-wait] day=384 env_day=384 missing=0x100 economy_input=384
+[runtime-day-wait] day=385 env_day=385 missing=0x100 economy_input=385
+[runtime-day-wait] day=386 env_day=386 missing=0x100 economy_input=386
+[runtime-day-wait] day=387 env_day=387 missing=0x100 economy_input=387
+[runtime-day-wait] day=388 env_day=388 missing=0x100 economy_input=388
+[runtime-day-wait] day=389 env_day=389 missing=0x100 economy_input=389
+[runtime-day-wait] day=390 env_day=390 missing=0x100 economy_input=390
+[runtime-day-wait] day=391 env_day=391 missing=0x100 economy_input=391
+[runtime-day-wait] day=392 env_day=392 missing=0x100 economy_input=392
+[runtime-day-wait] day=393 env_day=393 missing=0x100 economy_input=393
+[runtime-day-wait] day=394 env_day=394 missing=0x100 economy_input=394
+[runtime-day-wait] day=395 env_day=395 missing=0x100 economy_input=395
+[runtime-day-wait] day=396 env_day=396 missing=0x100 economy_input=396
+[runtime-day-wait] day=397 env_day=397 missing=0x100 economy_input=397
+[runtime-day-wait] day=398 env_day=398 missing=0x100 economy_input=398
+[runtime-day-wait] day=399 env_day=399 missing=0x100 economy_input=399
+[economy-prelude-cost] day=400 ms=0.033 pending=1
+[runtime-day-cost] day=400 ok=0 ms=2.779
+[runtime-day-wait] day=400 env_day=400 missing=0x100 economy_input=400
+[economy-prelude-cost] day=400 ms=0.007 pending=1
+[runtime-day-cost] day=400 ok=0 ms=0.092
+[economy-prelude-cost] day=400 ms=0.008 pending=1
+[runtime-day-cost] day=400 ok=0 ms=0.180
+[economy-open-finish] day=400 country=0.327 workset=0.020 fiscal=0.029 csr=0.004 recovery=0.001 vectors=0.532 audit=0.485 commands=0.001
+[economy-prelude-cost] day=400 ms=1.647 pending=0
+[economy-boundary-cost] day=400 formulas_ms=7.041 stages_ms=5.386 mirror_ms=5.478
+[runtime-day-cost] day=400 ok=1 ms=12.651
+[runtime-day-wait] day=401 env_day=401 missing=0x100 economy_input=401
+[runtime-day-wait] day=402 env_day=402 missing=0x100 economy_input=402
+[runtime-day-wait] day=403 env_day=403 missing=0x100 economy_input=403
+[runtime-day-wait] day=404 env_day=404 missing=0x100 economy_input=404
+[runtime-day-wait] day=405 env_day=405 missing=0x100 economy_input=405
+[runtime-day-wait] day=406 env_day=406 missing=0x100 economy_input=406
+[runtime-day-wait] day=407 env_day=407 missing=0x100 economy_input=407
+[runtime-day-wait] day=408 env_day=408 missing=0x100 economy_input=408
+[runtime-day-wait] day=409 env_day=409 missing=0x100 economy_input=409
+[runtime-day-wait] day=410 env_day=410 missing=0x100 economy_input=410
+[runtime-day-wait] day=411 env_day=411 missing=0x100 economy_input=411
+[runtime-day-wait] day=412 env_day=412 missing=0x100 economy_input=412
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=5.46d/f cost=1.47ms ran=0 pulse=0.00ms loop=0.00ms full=0.29ms carry=0.79 barrier=
+[runtime-day-wait] day=413 env_day=413 missing=0x100 economy_input=413
+[runtime-day-wait] day=414 env_day=414 missing=0x100 economy_input=414
+[runtime-day-wait] day=415 env_day=415 missing=0x100 economy_input=415
+[runtime-day-wait] day=416 env_day=416 missing=0x100 economy_input=416
+[runtime-day-wait] day=417 env_day=417 missing=0x100 economy_input=417
+[runtime-day-wait] day=418 env_day=418 missing=0x100 economy_input=418
+[runtime-day-wait] day=419 env_day=419 missing=0x100 economy_input=419
+[runtime-day-wait] day=420 env_day=420 missing=0x100 economy_input=420
+[runtime-day-wait] day=421 env_day=421 missing=0x100 economy_input=421
+[runtime-day-wait] day=422 env_day=422 missing=0x100 economy_input=422
+[runtime-day-wait] day=423 env_day=423 missing=0x100 economy_input=423
+[runtime-day-wait] day=424 env_day=424 missing=0x100 economy_input=424
+[runtime-day-wait] day=425 env_day=425 missing=0x100 economy_input=425
+[runtime-day-wait] day=426 env_day=426 missing=0x100 economy_input=426
+[runtime-day-wait] day=427 env_day=427 missing=0x100 economy_input=427
+[runtime-day-wait] day=428 env_day=428 missing=0x100 economy_input=428
+[runtime-day-wait] day=429 env_day=429 missing=0x100 economy_input=429
+[runtime-day-wait] day=430 env_day=430 missing=0x100 economy_input=430
+[runtime-day-wait] day=431 env_day=431 missing=0x100 economy_input=431
+[runtime-day-wait] day=432 env_day=432 missing=0x100 economy_input=432
+[runtime-day-wait] day=433 env_day=433 missing=0x100 economy_input=433
+[runtime-day-wait] day=434 env_day=434 missing=0x100 economy_input=434
+[runtime-day-wait] day=435 env_day=435 missing=0x100 economy_input=435
+[runtime-day-wait] day=436 env_day=436 missing=0x100 economy_input=436
+[runtime-day-wait] day=437 env_day=437 missing=0x100 economy_input=437
+[runtime-day-wait] day=438 env_day=438 missing=0x100 economy_input=438
+[runtime-day-wait] day=439 env_day=439 missing=0x100 economy_input=439
+[runtime-day-wait] day=440 env_day=440 missing=0x100 economy_input=440
+[runtime-day-wait] day=441 env_day=441 missing=0x100 economy_input=441
+[runtime-day-wait] day=442 env_day=442 missing=0x100 economy_input=442
+[runtime-day-wait] day=443 env_day=443 missing=0x100 economy_input=443
+[runtime-day-wait] day=444 env_day=444 missing=0x100 economy_input=444
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=8.00d/f cost=0.74ms ran=1 pulse=0.00ms loop=0.61ms full=0.92ms carry=0.21 barrier=climate_input_capacity_day_barrier
+[runtime-day-wait] day=445 env_day=445 missing=0x100 economy_input=445
+[runtime-day-wait] day=446 env_day=446 missing=0x100 economy_input=446
+[runtime-day-wait] day=447 env_day=447 missing=0x100 economy_input=447
+[runtime-day-wait] day=448 env_day=448 missing=0x100 economy_input=448
+[runtime-day-wait] day=449 env_day=449 missing=0x100 economy_input=449
+[runtime-day-wait] day=450 env_day=450 missing=0x100 economy_input=450
+[runtime-day-wait] day=451 env_day=451 missing=0x100 economy_input=451
+[runtime-day-wait] day=452 env_day=452 missing=0x100 economy_input=452
+[runtime-day-wait] day=453 env_day=453 missing=0x100 economy_input=453
+[runtime-day-wait] day=454 env_day=454 missing=0x100 economy_input=454
+[runtime-day-wait] day=455 env_day=455 missing=0x100 economy_input=455
+[runtime-day-wait] day=456 env_day=456 missing=0x100 economy_input=456
+[runtime-day-wait] day=457 env_day=457 missing=0x100 economy_input=457
+[runtime-day-wait] day=458 env_day=458 missing=0x100 economy_input=458
+[runtime-day-wait] day=459 env_day=459 missing=0x100 economy_input=459
+[runtime-day-wait] day=460 env_day=460 missing=0x100 economy_input=460
+[runtime-day-wait] day=461 env_day=461 missing=0x100 economy_input=461
+[runtime-day-wait] day=462 env_day=462 missing=0x100 economy_input=462
+[runtime-day-wait] day=463 env_day=463 missing=0x100 economy_input=463
+[runtime-day-wait] day=464 env_day=464 missing=0x100 economy_input=464
+[runtime-day-wait] day=465 env_day=465 missing=0x100 economy_input=465
+[runtime-day-wait] day=466 env_day=466 missing=0x100 economy_input=466
+[runtime-day-wait] day=467 env_day=467 missing=0x100 economy_input=467
+[runtime-day-wait] day=468 env_day=468 missing=0x100 economy_input=468
+[runtime-day-wait] day=469 env_day=469 missing=0x100 economy_input=469
+[runtime-day-wait] day=470 env_day=470 missing=0x100 economy_input=470
+[runtime-day-wait] day=471 env_day=471 missing=0x100 economy_input=471
+[runtime-day-wait] day=472 env_day=472 missing=0x100 economy_input=472
+[runtime-day-wait] day=473 env_day=473 missing=0x100 economy_input=473
+[clock/step] delta=6.9ms speed=50x target=0.35d cap=8.00d/f cost=0.46ms ran=1 pulse=0.00ms loop=0.53ms full=0.79ms carry=0.32 barrier=climate_input_capacity_day_barrier
+[runtime-day-wait] day=474 env_day=474 missing=0x100 economy_input=474
+[runtime-day-wait] day=475 env_day=475 missing=0x100 economy_input=475
+[runtime-day-wait] day=476 env_day=476 missing=0x100 economy_input=476
+[runtime-day-wait] day=477 env_day=477 missing=0x100 economy_input=477
+[runtime-day-wait] day=478 env_day=478 missing=0x100 economy_input=478
+[runtime-day-wait] day=479 env_day=479 missing=0x100 economy_input=479
+[runtime-day-wait] day=480 env_day=480 missing=0x100 economy_input=480
+[runtime-day-wait] day=481 env_day=481 missing=0x100 economy_input=481
+[runtime-day-wait] day=482 env_day=482 missing=0x100 economy_input=482
+[runtime-day-wait] day=483 env_day=483 missing=0x100 economy_input=483
+[runtime-day-wait] day=484 env_day=484 missing=0x100 economy_input=484
+[runtime-day-wait] day=485 env_day=485 missing=0x100 economy_input=485
+[runtime-day-wait] day=486 env_day=486 missing=0x100 economy_input=486
+[runtime-day-wait] day=487 env_day=487 missing=0x100 economy_input=487
+[runtime-day-wait] day=488 env_day=488 missing=0x100 economy_input=488
+[runtime-day-wait] day=489 env_day=489 missing=0x100 economy_input=489
+[runtime-day-wait] day=490 env_day=490 missing=0x100 economy_input=490
+[runtime-day-wait] day=491 env_day=491 missing=0x100 economy_input=491
+[runtime-day-wait] day=492 env_day=492 missing=0x100 economy_input=492
+[runtime-day-wait] day=493 env_day=493 missing=0x100 economy_input=493
+[runtime-day-wait] day=494 env_day=494 missing=0x100 economy_input=494
+[runtime-day-wait] day=495 env_day=495 missing=0x100 economy_input=495
+[runtime-day-wait] day=496 env_day=496 missing=0x100 economy_input=496
+[runtime-day-wait] day=497 env_day=497 missing=0x100 economy_input=497
+[runtime-day-wait] day=498 env_day=498 missing=0x100 economy_input=498
+[runtime-day-wait] day=499 env_day=499 missing=0x100 economy_input=499
+[economy-prelude-cost] day=500 ms=0.042 pending=1
+[runtime-day-cost] day=500 ok=0 ms=3.905
+[runtime-day-wait] day=500 env_day=500 missing=0x100 economy_input=500
+[economy-prelude-cost] day=500 ms=0.007 pending=1
+[runtime-day-cost] day=500 ok=0 ms=0.100
+[economy-open-finish] day=500 country=0.600 workset=0.030 fiscal=0.074 csr=0.003 recovery=0.001 vectors=0.993 audit=0.866 commands=0.001
+[economy-prelude-cost] day=500 ms=3.025 pending=0
+[economy-boundary-cost] day=500 formulas_ms=9.091 stages_ms=6.055 mirror_ms=5.910
+[runtime-day-cost] day=500 ok=1 ms=15.170
+[runtime-day-wait] day=501 env_day=501 missing=0x100 economy_input=501
+[runtime-day-wait] day=502 env_day=502 missing=0x100 economy_input=502
+[runtime-day-wait] day=503 env_day=503 missing=0x100 economy_input=503
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=8.00d/f cost=0.43ms ran=0 pulse=0.08ms loop=0.00ms full=0.38ms carry=0.07 barrier=climate_input_capacity_day_barrier
+[runtime-day-wait] day=504 env_day=504 missing=0x100 economy_input=504
+[runtime-day-wait] day=505 env_day=505 missing=0x100 economy_input=505
+[runtime-day-wait] day=506 env_day=506 missing=0x100 economy_input=506
+[runtime-day-wait] day=507 env_day=507 missing=0x100 economy_input=507
+[runtime-day-wait] day=508 env_day=508 missing=0x100 economy_input=508
+[runtime-day-wait] day=509 env_day=509 missing=0x100 economy_input=509
+[runtime-day-wait] day=510 env_day=510 missing=0x100 economy_input=510
+[runtime-day-wait] day=511 env_day=511 missing=0x100 economy_input=511
+[runtime-day-wait] day=512 env_day=512 missing=0x100 economy_input=512
+[runtime-day-wait] day=513 env_day=513 missing=0x100 economy_input=513
+[runtime-day-wait] day=514 env_day=514 missing=0x100 economy_input=514
+[runtime-day-wait] day=515 env_day=515 missing=0x100 economy_input=515
+[runtime-day-wait] day=516 env_day=516 missing=0x100 economy_input=516
+[runtime-day-wait] day=517 env_day=517 missing=0x100 economy_input=517
+[runtime-day-wait] day=518 env_day=518 missing=0x100 economy_input=518
+[runtime-day-wait] day=519 env_day=519 missing=0x100 economy_input=519
+[runtime-day-wait] day=520 env_day=520 missing=0x100 economy_input=520
+[runtime-day-wait] day=521 env_day=521 missing=0x100 economy_input=521
+[runtime-day-wait] day=522 env_day=522 missing=0x100 economy_input=522
+[runtime-day-wait] day=523 env_day=523 missing=0x100 economy_input=523
+[runtime-day-wait] day=524 env_day=524 missing=0x100 economy_input=524
+[runtime-day-wait] day=525 env_day=525 missing=0x100 economy_input=525
+[runtime-day-wait] day=526 env_day=526 missing=0x100 economy_input=526
+[runtime-day-wait] day=527 env_day=527 missing=0x100 economy_input=527
+[runtime-day-wait] day=528 env_day=528 missing=0x100 economy_input=528
+[runtime-day-wait] day=529 env_day=529 missing=0x100 economy_input=529
+[runtime-day-wait] day=530 env_day=530 missing=0x100 economy_input=530
+[runtime-day-wait] day=531 env_day=531 missing=0x100 economy_input=531
+[runtime-day-wait] day=532 env_day=532 missing=0x100 economy_input=532
+[runtime-day-wait] day=533 env_day=533 missing=0x100 economy_input=533
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=8.00d/f cost=1.51ms ran=1 pulse=0.00ms loop=5.89ms full=6.17ms carry=0.06 barrier=climate_input_capacity_day_barrier
+[runtime-day-wait] day=534 env_day=534 missing=0x100 economy_input=534
+[runtime-day-wait] day=535 env_day=535 missing=0x100 economy_input=535
+[runtime-day-wait] day=536 env_day=536 missing=0x100 economy_input=536
+[runtime-day-wait] day=537 env_day=537 missing=0x100 economy_input=537
+[runtime-day-wait] day=538 env_day=538 missing=0x100 economy_input=538
+[runtime-day-wait] day=539 env_day=539 missing=0x100 economy_input=539
+[runtime-day-wait] day=540 env_day=540 missing=0x100 economy_input=540
+[runtime-day-wait] day=541 env_day=541 missing=0x100 economy_input=541
+[runtime-day-wait] day=542 env_day=542 missing=0x100 economy_input=542
+[runtime-day-wait] day=543 env_day=543 missing=0x100 economy_input=543
+[runtime-day-wait] day=544 env_day=544 missing=0x100 economy_input=544
+[runtime-day-wait] day=545 env_day=545 missing=0x100 economy_input=545
+[runtime-day-wait] day=546 env_day=546 missing=0x100 economy_input=546
+[runtime-day-wait] day=547 env_day=547 missing=0x100 economy_input=547
+[runtime-day-wait] day=548 env_day=548 missing=0x100 economy_input=548
+[runtime-day-wait] day=549 env_day=549 missing=0x100 economy_input=549
+[runtime-day-wait] day=550 env_day=550 missing=0x100 economy_input=550
+[runtime-day-wait] day=551 env_day=551 missing=0x100 economy_input=551
+[runtime-day-wait] day=552 env_day=552 missing=0x100 economy_input=552
+[runtime-day-wait] day=553 env_day=553 missing=0x100 economy_input=553
+[runtime-day-wait] day=554 env_day=554 missing=0x100 economy_input=554
+[runtime-day-wait] day=555 env_day=555 missing=0x100 economy_input=555
+[runtime-day-wait] day=556 env_day=556 missing=0x100 economy_input=556
+[runtime-day-wait] day=557 env_day=557 missing=0x100 economy_input=557
+[runtime-day-wait] day=558 env_day=558 missing=0x100 economy_input=558
+[runtime-day-wait] day=559 env_day=559 missing=0x100 economy_input=559
+[runtime-day-wait] day=560 env_day=560 missing=0x100 economy_input=560
+[runtime-day-wait] day=561 env_day=561 missing=0x100 economy_input=561
+[runtime-day-wait] day=562 env_day=562 missing=0x100 economy_input=562
+[runtime-day-wait] day=563 env_day=563 missing=0x100 economy_input=563
+[runtime-day-wait] day=564 env_day=564 missing=0x100 economy_input=564
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=8.00d/f cost=0.75ms ran=0 pulse=0.41ms loop=0.00ms full=0.73ms carry=0.06 barrier=climate_input_capacity_day_barrier
+[runtime-day-wait] day=565 env_day=565 missing=0x100 economy_input=565
+[runtime-day-wait] day=566 env_day=566 missing=0x100 economy_input=566
+[runtime-day-wait] day=567 env_day=567 missing=0x100 economy_input=567
+[runtime-day-wait] day=568 env_day=568 missing=0x100 economy_input=568
+[runtime-day-wait] day=569 env_day=569 missing=0x100 economy_input=569
+[runtime-day-wait] day=570 env_day=570 missing=0x100 economy_input=570
+[runtime-day-wait] day=571 env_day=571 missing=0x100 economy_input=571
+[runtime-day-wait] day=572 env_day=572 missing=0x100 economy_input=572
+[runtime-day-wait] day=573 env_day=573 missing=0x100 economy_input=573
+[runtime-day-wait] day=574 env_day=574 missing=0x100 economy_input=574
+[runtime-day-wait] day=575 env_day=575 missing=0x100 economy_input=575
+[runtime-day-wait] day=576 env_day=576 missing=0x100 economy_input=576
+[runtime-day-wait] day=577 env_day=577 missing=0x100 economy_input=577
+[runtime-day-wait] day=578 env_day=578 missing=0x100 economy_input=578
+[runtime-day-wait] day=579 env_day=579 missing=0x100 economy_input=579
+[runtime-day-wait] day=580 env_day=580 missing=0x100 economy_input=580
+[runtime-day-wait] day=581 env_day=581 missing=0x100 economy_input=581
+[runtime-day-wait] day=582 env_day=582 missing=0x100 economy_input=582
+[runtime-day-wait] day=583 env_day=583 missing=0x100 economy_input=583
+[runtime-day-wait] day=584 env_day=584 missing=0x100 economy_input=584
+[runtime-day-wait] day=585 env_day=585 missing=0x100 economy_input=585
+[runtime-day-wait] day=586 env_day=586 missing=0x100 economy_input=586
+[runtime-day-wait] day=587 env_day=587 missing=0x100 economy_input=587
+[runtime-day-wait] day=588 env_day=588 missing=0x100 economy_input=588
+[runtime-day-wait] day=589 env_day=589 missing=0x100 economy_input=589
+[runtime-day-wait] day=590 env_day=590 missing=0x100 economy_input=590
+[runtime-day-wait] day=591 env_day=591 missing=0x100 economy_input=591
+[runtime-day-wait] day=592 env_day=592 missing=0x100 economy_input=592
+[runtime-day-wait] day=593 env_day=593 missing=0x100 economy_input=593
+[runtime-day-wait] day=594 env_day=594 missing=0x100 economy_input=594
+[runtime-day-wait] day=595 env_day=595 missing=0x100 economy_input=595
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=7.51d/f cost=0.93ms ran=1 pulse=0.00ms loop=0.36ms full=0.53ms carry=0.13 barrier=climate_input_capacity_day_barrier
+[runtime-day-wait] day=596 env_day=596 missing=0x100 economy_input=596
+[runtime-day-wait] day=597 env_day=597 missing=0x100 economy_input=597
+[runtime-day-wait] day=598 env_day=598 missing=0x100 economy_input=598
+[runtime-day-wait] day=599 env_day=599 missing=0x100 economy_input=599
+[economy-prelude-cost] day=600 ms=0.036 pending=1
+[runtime-day-cost] day=600 ok=0 ms=3.307
+[runtime-day-wait] day=600 env_day=600 missing=0x100 economy_input=600
+[economy-prelude-cost] day=600 ms=0.007 pending=1
+[runtime-day-cost] day=600 ok=0 ms=0.099
+[economy-prelude-cost] day=600 ms=0.021 pending=1
+[runtime-day-cost] day=600 ok=0 ms=0.158
+[economy-open-finish] day=600 country=0.333 workset=0.021 fiscal=0.032 csr=0.004 recovery=0.001 vectors=0.469 audit=0.418 commands=0.000
+[economy-prelude-cost] day=600 ms=1.576 pending=0
+[economy-boundary-cost] day=600 formulas_ms=7.620 stages_ms=6.034 mirror_ms=6.241
+[runtime-day-cost] day=600 ok=1 ms=14.053
+[runtime-day-wait] day=601 env_day=601 missing=0x100 economy_input=601
+[runtime-day-wait] day=602 env_day=602 missing=0x100 economy_input=602
+[runtime-day-wait] day=603 env_day=603 missing=0x100 economy_input=603
+[runtime-day-wait] day=604 env_day=604 missing=0x100 economy_input=604
+[runtime-day-wait] day=605 env_day=605 missing=0x100 economy_input=605
+[runtime-day-wait] day=606 env_day=606 missing=0x100 economy_input=606
+[runtime-day-wait] day=607 env_day=607 missing=0x100 economy_input=607
+[runtime-day-wait] day=608 env_day=608 missing=0x100 economy_input=608
+[runtime-day-wait] day=609 env_day=609 missing=0x100 economy_input=609
+[runtime-day-wait] day=610 env_day=610 missing=0x100 economy_input=610
+[runtime-day-wait] day=611 env_day=611 missing=0x100 economy_input=611
+[runtime-day-wait] day=612 env_day=612 missing=0x100 economy_input=612
+[runtime-day-wait] day=613 env_day=613 missing=0x100 economy_input=613
+[runtime-day-wait] day=614 env_day=614 missing=0x100 economy_input=614
+[runtime-day-wait] day=615 env_day=615 missing=0x100 economy_input=615
+[runtime-day-wait] day=616 env_day=616 missing=0x100 economy_input=616
+[runtime-day-wait] day=617 env_day=617 missing=0x100 economy_input=617
+[runtime-day-wait] day=618 env_day=618 missing=0x100 economy_input=618
+[runtime-day-wait] day=619 env_day=619 missing=0x100 economy_input=619
+[runtime-day-wait] day=620 env_day=620 missing=0x100 economy_input=620
+[runtime-day-wait] day=621 env_day=621 missing=0x100 economy_input=621
+[runtime-day-wait] day=622 env_day=622 missing=0x100 economy_input=622
+[runtime-day-wait] day=623 env_day=623 missing=0x100 economy_input=623
+[runtime-day-wait] day=624 env_day=624 missing=0x100 economy_input=624
+[runtime-day-wait] day=625 env_day=625 missing=0x100 economy_input=625
+[runtime-day-wait] day=626 env_day=626 missing=0x100 economy_input=626
+[runtime-day-wait] day=627 env_day=627 missing=0x100 economy_input=627
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=8.00d/f cost=0.83ms ran=0 pulse=0.08ms loop=0.00ms full=0.39ms carry=0.19 barrier=climate_input_capacity_day_barrier
+[runtime-day-wait] day=628 env_day=628 missing=0x100 economy_input=628
+[runtime-day-wait] day=629 env_day=629 missing=0x100 economy_input=629
+[runtime-day-wait] day=630 env_day=630 missing=0x100 economy_input=630
+[runtime-day-wait] day=631 env_day=631 missing=0x100 economy_input=631
+[runtime-day-wait] day=632 env_day=632 missing=0x100 economy_input=632
+[runtime-day-wait] day=633 env_day=633 missing=0x100 economy_input=633
+[runtime-day-wait] day=634 env_day=634 missing=0x100 economy_input=634
+[runtime-day-wait] day=635 env_day=635 missing=0x100 economy_input=635
+[runtime-day-wait] day=636 env_day=636 missing=0x100 economy_input=636
+[runtime-day-wait] day=637 env_day=637 missing=0x100 economy_input=637
+[runtime-day-wait] day=638 env_day=638 missing=0x100 economy_input=638
+[runtime-day-wait] day=639 env_day=639 missing=0x100 economy_input=639
+[runtime-day-wait] day=640 env_day=640 missing=0x100 economy_input=640
+[runtime-day-wait] day=641 env_day=641 missing=0x100 economy_input=641
+[runtime-day-wait] day=642 env_day=642 missing=0x100 economy_input=642
+[runtime-day-wait] day=643 env_day=643 missing=0x100 economy_input=643
+[runtime-day-wait] day=644 env_day=644 missing=0x100 economy_input=644
+[runtime-day-wait] day=645 env_day=645 missing=0x100 economy_input=645
+[runtime-day-wait] day=646 env_day=646 missing=0x100 economy_input=646
+[runtime-day-wait] day=647 env_day=647 missing=0x100 economy_input=647
+[runtime-day-wait] day=648 env_day=648 missing=0x100 economy_input=648
+[runtime-day-wait] day=649 env_day=649 missing=0x100 economy_input=649
+[runtime-day-wait] day=650 env_day=650 missing=0x100 economy_input=650
+[runtime-day-wait] day=651 env_day=651 missing=0x100 economy_input=651
+[runtime-day-wait] day=652 env_day=652 missing=0x100 economy_input=652
+[runtime-day-wait] day=653 env_day=653 missing=0x100 economy_input=653
+[runtime-day-wait] day=654 env_day=654 missing=0x100 economy_input=654
+[runtime-day-wait] day=655 env_day=655 missing=0x100 economy_input=655
+[runtime-day-wait] day=656 env_day=656 missing=0x100 economy_input=656
+[runtime-day-wait] day=657 env_day=657 missing=0x100 economy_input=657
+[runtime-day-wait] day=658 env_day=658 missing=0x100 economy_input=658
+[runtime-day-wait] day=659 env_day=659 missing=0x100 economy_input=659
+[runtime-day-wait] day=660 env_day=660 missing=0x100 economy_input=660
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=6.02d/f cost=1.33ms ran=0 pulse=0.00ms loop=0.00ms full=0.28ms carry=0.61 barrier=
+[runtime-day-wait] day=661 env_day=661 missing=0x100 economy_input=661
+[runtime-day-wait] day=662 env_day=662 missing=0x100 economy_input=662
+[runtime-day-wait] day=663 env_day=663 missing=0x100 economy_input=663
+[runtime-day-wait] day=664 env_day=664 missing=0x100 economy_input=664
+[runtime-day-wait] day=665 env_day=665 missing=0x100 economy_input=665
+[runtime-day-wait] day=666 env_day=666 missing=0x100 economy_input=666
+[runtime-day-wait] day=667 env_day=667 missing=0x100 economy_input=667
+[runtime-day-wait] day=668 env_day=668 missing=0x100 economy_input=668
+[runtime-day-wait] day=669 env_day=669 missing=0x100 economy_input=669
+[runtime-day-wait] day=670 env_day=670 missing=0x100 economy_input=670
+[runtime-day-wait] day=671 env_day=671 missing=0x100 economy_input=671
+[runtime-day-wait] day=672 env_day=672 missing=0x100 economy_input=672
+[runtime-day-wait] day=673 env_day=673 missing=0x100 economy_input=673
+[runtime-day-wait] day=674 env_day=674 missing=0x100 economy_input=674
+[runtime-day-wait] day=675 env_day=675 missing=0x100 economy_input=675
+[runtime-day-wait] day=676 env_day=676 missing=0x100 economy_input=676
+[runtime-day-wait] day=677 env_day=677 missing=0x100 economy_input=677
+[runtime-day-wait] day=678 env_day=678 missing=0x100 economy_input=678
+[runtime-day-wait] day=679 env_day=679 missing=0x100 economy_input=679
+[runtime-day-wait] day=680 env_day=680 missing=0x100 economy_input=680
+[runtime-day-wait] day=681 env_day=681 missing=0x100 economy_input=681
+[runtime-day-wait] day=682 env_day=682 missing=0x100 economy_input=682
+[runtime-day-wait] day=683 env_day=683 missing=0x100 economy_input=683
+[runtime-day-wait] day=684 env_day=684 missing=0x100 economy_input=684
+[runtime-day-wait] day=685 env_day=685 missing=0x100 economy_input=685
+[runtime-day-wait] day=686 env_day=686 missing=0x100 economy_input=686
+[runtime-day-wait] day=687 env_day=687 missing=0x100 economy_input=687
+[runtime-day-wait] day=688 env_day=688 missing=0x100 economy_input=688
+[runtime-day-wait] day=689 env_day=689 missing=0x100 economy_input=689
+[runtime-day-wait] day=690 env_day=690 missing=0x100 economy_input=690
+[runtime-day-wait] day=691 env_day=691 missing=0x100 economy_input=691
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=8.00d/f cost=0.83ms ran=0 pulse=0.40ms loop=0.00ms full=0.80ms carry=0.29 barrier=climate_input_capacity_day_barrier
+[runtime-day-wait] day=692 env_day=692 missing=0x100 economy_input=692
+[runtime-day-wait] day=693 env_day=693 missing=0x100 economy_input=693
+[runtime-day-wait] day=694 env_day=694 missing=0x100 economy_input=694
+[runtime-day-wait] day=695 env_day=695 missing=0x100 economy_input=695
+[runtime-day-wait] day=696 env_day=696 missing=0x100 economy_input=696
+[runtime-day-wait] day=697 env_day=697 missing=0x100 economy_input=697
+[runtime-day-wait] day=698 env_day=698 missing=0x100 economy_input=698
+[runtime-day-wait] day=699 env_day=699 missing=0x100 economy_input=699
+[economy-prelude-cost] day=700 ms=0.103 pending=1
+[runtime-day-cost] day=700 ok=0 ms=4.602
+[runtime-day-wait] day=700 env_day=700 missing=0x100 economy_input=700
+[economy-prelude-cost] day=700 ms=0.016 pending=1
+[runtime-day-cost] day=700 ok=0 ms=0.156
+[economy-prelude-cost] day=700 ms=0.024 pending=1
+[runtime-day-cost] day=700 ok=0 ms=0.166
+[economy-open-finish] day=700 country=0.332 workset=0.028 fiscal=0.032 csr=0.004 recovery=0.001 vectors=0.407 audit=0.444 commands=0.000
+[economy-prelude-cost] day=700 ms=1.537 pending=0
+[economy-boundary-cost] day=700 formulas_ms=6.971 stages_ms=5.426 mirror_ms=5.981
+[runtime-day-cost] day=700 ok=1 ms=13.092
+[runtime-day-wait] day=701 env_day=701 missing=0x100 economy_input=701
+[runtime-day-wait] day=702 env_day=702 missing=0x100 economy_input=702
+[runtime-day-wait] day=703 env_day=703 missing=0x100 economy_input=703
+[runtime-day-wait] day=704 env_day=704 missing=0x100 economy_input=704
+[runtime-day-wait] day=705 env_day=705 missing=0x100 economy_input=705
+[runtime-day-wait] day=706 env_day=706 missing=0x100 economy_input=706
+[runtime-day-wait] day=707 env_day=707 missing=0x100 economy_input=707
+[runtime-day-wait] day=708 env_day=708 missing=0x100 economy_input=708
+[runtime-day-wait] day=709 env_day=709 missing=0x100 economy_input=709
+[runtime-day-wait] day=710 env_day=710 missing=0x100 economy_input=710
+[runtime-day-wait] day=711 env_day=711 missing=0x100 economy_input=711
+[runtime-day-wait] day=712 env_day=712 missing=0x100 economy_input=712
+[runtime-day-wait] day=713 env_day=713 missing=0x100 economy_input=713
+[runtime-day-wait] day=714 env_day=714 missing=0x100 economy_input=714
+[runtime-day-wait] day=715 env_day=715 missing=0x100 economy_input=715
+[runtime-day-wait] day=716 env_day=716 missing=0x100 economy_input=716
+[runtime-day-wait] day=717 env_day=717 missing=0x100 economy_input=717
+[runtime-day-wait] day=718 env_day=718 missing=0x100 economy_input=718
+[runtime-day-wait] day=719 env_day=719 missing=0x100 economy_input=719
+[runtime-day-wait] day=720 env_day=720 missing=0x100 economy_input=720
+[runtime-day-wait] day=721 env_day=721 missing=0x100 economy_input=721
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=8.00d/f cost=0.96ms ran=0 pulse=0.00ms loop=0.00ms full=0.32ms carry=0.98 barrier=
+[runtime-day-wait] day=722 env_day=722 missing=0x100 economy_input=722
+[runtime-day-wait] day=723 env_day=723 missing=0x100 economy_input=723
+[runtime-day-wait] day=724 env_day=724 missing=0x100 economy_input=724
+[runtime-day-wait] day=725 env_day=725 missing=0x100 economy_input=725
+[runtime-day-wait] day=726 env_day=726 missing=0x100 economy_input=726
+[runtime-day-wait] day=727 env_day=727 missing=0x100 economy_input=727
+[runtime-day-wait] day=728 env_day=728 missing=0x100 economy_input=728
+[runtime-day-wait] day=729 env_day=729 missing=0x100 economy_input=729
+[runtime-day-wait] day=730 env_day=730 missing=0x100 economy_input=730
+[runtime-day-wait] day=731 env_day=731 missing=0x100 economy_input=731
+[runtime-day-wait] day=732 env_day=732 missing=0x100 economy_input=732
+[runtime-day-wait] day=733 env_day=733 missing=0x100 economy_input=733
+[runtime-day-wait] day=734 env_day=734 missing=0x100 economy_input=734
+[runtime-day-wait] day=735 env_day=735 missing=0x100 economy_input=735
+[runtime-day-wait] day=736 env_day=736 missing=0x100 economy_input=736
+[runtime-day-wait] day=737 env_day=737 missing=0x100 economy_input=737
+[runtime-day-wait] day=738 env_day=738 missing=0x100 economy_input=738
+[runtime-day-wait] day=739 env_day=739 missing=0x100 economy_input=739
+[runtime-day-wait] day=740 env_day=740 missing=0x100 economy_input=740
+[runtime-day-wait] day=741 env_day=741 missing=0x100 economy_input=741
+[runtime-day-wait] day=742 env_day=742 missing=0x100 economy_input=742
+[runtime-day-wait] day=743 env_day=743 missing=0x100 economy_input=743
+[runtime-day-wait] day=744 env_day=744 missing=0x100 economy_input=744
+[runtime-day-wait] day=745 env_day=745 missing=0x100 economy_input=745
+[runtime-day-wait] day=746 env_day=746 missing=0x100 economy_input=746
+[clock/step] delta=6.9ms speed=50x target=0.35d cap=5.20d/f cost=1.54ms ran=0 pulse=0.00ms loop=0.00ms full=0.28ms carry=0.62 barrier=
+[runtime-day-wait] day=747 env_day=747 missing=0x100 economy_input=747
+[runtime-day-wait] day=748 env_day=748 missing=0x100 economy_input=748
+[runtime-day-wait] day=749 env_day=749 missing=0x100 economy_input=749
+[perf-record] stop: no rows captured, skip export
+[stage-c/client] complete mode=ACTIVE frames=2727 fast_ticks=0 perf=
+[runtime-day-wait] day=750 env_day=750 missing=0x100 economy_input=750
+ERROR: 44 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 16 RID allocations of type 'PN18TextServerAdvanced22ShapedTextDataAdvancedE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 986 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

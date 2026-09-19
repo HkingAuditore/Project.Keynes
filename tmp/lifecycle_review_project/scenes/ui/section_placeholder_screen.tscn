@@ -1,0 +1,32 @@
+[gd_scene load_steps=3 format=3]
+[ext_resource type="Script" path="res://scripts/ui/components/section_placeholder_screen.gd" id="1_script"]
+[ext_resource type="PackedScene" path="res://scenes/ui/icon_badge.tscn" id="2_icon"]
+[node name="SectionPlaceholderScreen" type="Control"]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_script")
+[node name="Column" type="VBoxContainer" parent="."]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+alignment = 1
+theme_override_constants/separation = 12
+[node name="Icon" parent="Column" instance=ExtResource("2_icon")]
+custom_minimum_size = Vector2(56, 56)
+layout_mode = 2
+size_flags_horizontal = 4
+[node name="Title" type="Label" parent="Column"]
+layout_mode = 2
+horizontal_alignment = 1
+theme_type_variation = &"PKTitle"
+[node name="Detail" type="Label" parent="Column"]
+layout_mode = 2
+horizontal_alignment = 1
+theme_type_variation = &"PKMutedLabel"

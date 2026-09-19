@@ -1,0 +1,14 @@
+scons: Entering directory `D:\Godot\ProjectKeynes\Project.Keynes\tmp\publish_wire_test'
+scons: Reading SConscript files ...
+scons: done reading SConscript files.
+scons: Building targets ...
+cl /Foreference_runtime_economy_building_store.cpp.obj /c D:\Godot\ProjectKeynes\Project.Keynes\tmp\publish_optimization_originals\runtime_economy_building_store.cpp /TP /nologo /std:c++17 /EHsc /O2 /utf-8 /DREFERENCE /ID:\Godot\ProjectKeynes\Project.Keynes\tmp\publish_optimization_originals /ID:\Godot\ProjectKeynes\Project.Keynes\gdext\src
+cl /Foreference_runtime_economy_family_store.cpp.obj /c D:\Godot\ProjectKeynes\Project.Keynes\tmp\publish_optimization_originals\runtime_economy_family_store.cpp /TP /nologo /std:c++17 /EHsc /O2 /utf-8 /DREFERENCE /ID:\Godot\ProjectKeynes\Project.Keynes\tmp\publish_optimization_originals /ID:\Godot\ProjectKeynes\Project.Keynes\gdext\src
+cl /Foreference_runtime_economy_trade_escrow_store.cpp.obj /c D:\Godot\ProjectKeynes\Project.Keynes\tmp\publish_optimization_originals\runtime_economy_trade_escrow_store.cpp /TP /nologo /std:c++17 /EHsc /O2 /utf-8 /DREFERENCE /ID:\Godot\ProjectKeynes\Project.Keynes\tmp\publish_optimization_originals /ID:\Godot\ProjectKeynes\Project.Keynes\gdext\src
+cl /Foreference_test.obj /c test.cpp /TP /nologo /std:c++17 /EHsc /O2 /utf-8 /DREFERENCE /ID:\Godot\ProjectKeynes\Project.Keynes\tmp\publish_optimization_originals /ID:\Godot\ProjectKeynes\Project.Keynes\gdext\src
+runtime_economy_building_store.cpp
+runtime_economy_family_store.cpp
+runtime_economy_trade_escrow_store.cpp
+test.cpp
+link /nologo /OUT:reference.exe reference_runtime_economy_building_store.cpp.obj reference_runtime_economy_family_store.cpp.obj reference_runtime_economy_trade_escrow_store.cpp.obj reference_test.obj
+scons: done building targets.

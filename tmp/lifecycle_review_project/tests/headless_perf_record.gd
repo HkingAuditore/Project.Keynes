@@ -1,0 +1,1029 @@
+extends SceneTree
+
+# Production-path headless performance recorder.
+#
+# Example:
+#   godot --headless --path . --script res://tests/headless_perf_record.gd -- \
+#     days=50 speed=50 seed=20260718 label=baseline
+#
+# This reuses WorldRuntimeHost and PerfRecorder, so the exported CSV has the
+# same perf_record_YYYYMMDD_HHMMSS.csv schema as the GM performance panel.
+
+const PerfRecorderScript = preload("res://scripts/ui/perf_recorder.gd")
+
+const DEFAULT_DAYS := 50
+const DEFAULT_WARMUP_DAYS := 5
+const DEFAULT_SPEED := 50.0
+const DEFAULT_SEED := 20260718
+const DEFAULT_MAP_WIDTH := 60
+const DEFAULT_MAP_HEIGHT := 40
+const DEFAULT_POPULATION_SCALE := 0
+const DEFAULT_FOREIGN_COUNT := 3
+const MAX_BARRIER_PULSES_PER_DAY := 4096
+# M7 PERFORMANCE checkpoint: authoritative simulation throughput >= 50 days/s.
+const AUTHORITATIVE_THROUGHPUT_CHECKPOINT_DAYS_PER_SEC := 50.0
+
+
+func _init() -> void:
+	var exit_code := await _run()
+	quit(exit_code)
+
+
+func _run() -> int:
+	var args := _arguments()
+	var days := int(args.get("days", DEFAULT_DAYS))
+	var warmup_days := int(args.get("warmup_days", DEFAULT_WARMUP_DAYS))
+	var speed := float(args.get("speed", DEFAULT_SPEED))
+	var seed := int(args.get("seed", DEFAULT_SEED))
+	var map_width := int(args.get("width", DEFAULT_MAP_WIDTH))
+	var map_height := int(args.get("height", DEFAULT_MAP_HEIGHT))
+	var population_scale := int(args.get("population_scale", DEFAULT_POPULATION_SCALE))
+	var foreign_count := int(args.get("foreign_count", DEFAULT_FOREIGN_COUNT))
+	var import_tariff_rate := int(args.get("import_tariff_rate", 0))
+	var export_tariff_rate := int(args.get("export_tariff_rate", 0))
+	var synthetic_test_economy := _argument_enabled(
+		args.get("synthetic_test_economy", "false"))
+	var trade_scenario := _argument_enabled(args.get("trade_scenario", "false"))
+	var label := str(args.get("label", "headless"))
+	var output_dir := str(args.get("output_dir", "")).strip_edges()
+	if not output_dir.is_empty():
+		output_dir = ProjectSettings.globalize_path(output_dir).simplify_path()
+		DirAccess.make_dir_recursive_absolute(output_dir)
+	var accuracy_mode := str(args.get("accuracy_mode", "")).to_upper()
+	var accuracy_preset := str(args.get("accuracy_preset", "")).to_upper()
+	var closing_audit_mode := str(args.get("closing_audit_mode", "")).to_upper()
+	var worker_mode := str(args.get("worker_mode", "")).to_upper()
+	var runtime_graph_mode := str(args.get("runtime_graph_mode", "")).to_upper()
+	var country_report_mode := str(args.get("country_report_mode", "LIGHT")).to_upper()
+	var country_full_diagnostics := country_report_mode in ["FULL", "PROBE"]
+	var country_light_report_enabled := not country_full_diagnostics
+	var country_pending_queue_enabled := true
+	if args.has("country_pending_queue"):
+		country_pending_queue_enabled = _argument_enabled(
+			args.get("country_pending_queue", "true"))
+	var country_daily_workload := _argument_enabled(
+		args.get("country_daily_workload", "false"))
+	var bio_occupancy_slice_enabled := _argument_enabled(
+		args.get("bio_occupancy_slice_enabled", "false"))
+	Engine.set_meta(&"country_full_diagnostics", country_full_diagnostics)
+	Engine.set_meta(&"country_light_report_enabled", country_light_report_enabled)
+	Engine.set_meta(&"country_pending_queue_enabled", country_pending_queue_enabled)
+	Engine.set_meta(&"bio_occupancy_slice_enabled", bio_occupancy_slice_enabled)
+	# NS 化四方向深化 A/B:ns_gates=ON 在本进程内把 earth_like.tres 的四个方向
+	# gate 全部打开(动量/轨迹表+共享/散度阻尼/洋流),运行结束后恢复原值;
+	# 不落盘(.tres 从不保存)。ns_gates=WIND 只开风场三件套(Phase 1-3)。
+	var ns_gates := str(args.get("ns_gates", "")).to_upper()
+	var use_saved_setup := str(args.get("use_saved_setup", "false")).to_lower() in [
+		"1", "true", "yes", "on",
+	]
+
+	if days <= 0:
+		push_error("[headless-perf] days must be positive")
+		return 2
+	if warmup_days < 0:
+		push_error("[headless-perf] warmup_days must be non-negative")
+		return 2
+	if speed <= 0.0:
+		push_error("[headless-perf] speed must be positive")
+		return 2
+	if map_width < 10 or map_height < 8:
+		push_error("[headless-perf] map dimensions must be at least 10x8")
+		return 2
+	if population_scale not in [0, 1, 10, 100, 1000]:
+		push_error("[headless-perf] population_scale must be one of 0,1,10,100,1000")
+		return 2
+	if foreign_count < NewGameConfig.MIN_FOREIGN_COUNT \
+			or foreign_count > NewGameConfig.MAX_FOREIGN_COUNT:
+		push_error("[headless-perf] foreign_count must be within %d..%d" % [
+			NewGameConfig.MIN_FOREIGN_COUNT, NewGameConfig.MAX_FOREIGN_COUNT])
+		return 2
+	if import_tariff_rate < -100 or import_tariff_rate > 100 \
+			or export_tariff_rate < -100 or export_tariff_rate > 100:
+		push_error("[headless-perf] tariff rates must be within -100..100")
+		return 2
+	if trade_scenario and (synthetic_test_economy or foreign_count < 1):
+		push_error("[headless-perf] trade_scenario requires a formal start with a foreign country")
+		return 2
+	if not ClassDB.class_exists("DCWorldExt"):
+		push_error("[headless-perf] DCWorldExt unavailable; rebuild and restart Godot")
+		return 3
+
+	var saved_setup: Dictionary = {}
+	if use_saved_setup:
+		saved_setup = _load_saved_world_setup()
+		if saved_setup.is_empty():
+			push_error("[headless-perf] saved world setup requested but unavailable")
+			return 2
+
+	var clock := WorldClock.new()
+	clock.auto_start = false
+	clock.initial_speed = speed
+	clock.debug_step_log = false
+	get_root().add_child(clock)
+	clock.set_speed(speed)
+	clock.pause(true)
+
+	var host := WorldRuntimeHost.new()
+	host.map_width = map_width
+	host.map_height = map_height
+	host.initial_seed = seed
+	host.generate_test_economy_data = synthetic_test_economy
+	host.test_economy_population_scale = population_scale
+	# Climate 权威的 A/B 开关。必须在 configure 之前设：它决定 bind 时 worker 要不要
+	# seed climate store，也决定主线程那 14 个 climate 节点会不会被抑制门关掉 —— 两者
+	# 都发生在地图生成里，事后再改开关只会得到一个半开半关的世界。
+	#
+	# 不带参数时跟随 host 默认值（现已为 true），这个 recorder 测的就是生产路径。
+	# 要与转 ACTIVE 之前的历史 CSV 对比，显式传 climate_authority=off。
+	if args.has("climate_authority"):
+		host.runtime_climate_authority_enabled = _argument_enabled(
+			args.get("climate_authority", "false"))
+	# Optional domain mask override (e.g. player play path 0x806 = Climate|Country|COMMIT).
+	# Default host export is 0xFFF for soak/gate runners.
+	if args.has("authority_domain_mask"):
+		host.runtime_authority_domain_mask = int(str(args.get("authority_domain_mask", "0")))
+	if args.has("economy_auto_pod"):
+		host.runtime_economy_auto_pod_active = _argument_enabled(
+			args.get("economy_auto_pod", "false"))
+	get_root().add_child(host)
+	host.configure(null, null, clock)
+	if not synthetic_test_economy:
+		var session_result := _configure_formal_start(
+			host, map_width, map_height, seed, foreign_count, saved_setup)
+		if not bool(session_result.get("ok", false)):
+			push_error("[headless-perf] formal start configuration failed: %s" %
+				str(session_result))
+			return 3
+	var economy_profile: Resource = load(
+		"res://data/economy/default_economy.tres")
+	var previous_accuracy_mode := ""
+	var previous_accuracy_preset := ""
+	var previous_closing_audit_mode := ""
+	var previous_worker_enabled := true
+	if economy_profile != null:
+		previous_accuracy_mode = str(
+			economy_profile.get("economy_approximation_runtime_mode"))
+		previous_accuracy_preset = str(
+			economy_profile.get("economy_accuracy_preset"))
+		previous_closing_audit_mode = str(
+			economy_profile.get("economy_closing_audit_mode"))
+		previous_worker_enabled = bool(economy_profile.get("worker_enabled"))
+		if accuracy_mode in ["OFF", "PROBE", "ACTIVE"]:
+			economy_profile.set(
+				"economy_approximation_runtime_mode", accuracy_mode)
+		if accuracy_preset in ["EXACT", "BALANCED", "FAST", "CUSTOM"]:
+			economy_profile.set("economy_accuracy_preset", accuracy_preset)
+		if closing_audit_mode in ["FULL", "PROBE", "INCREMENTAL"]:
+			economy_profile.set("economy_closing_audit_mode", closing_audit_mode)
+		if worker_mode in ["ON", "OFF"]:
+			economy_profile.set("worker_enabled", worker_mode == "ON")
+
+	if use_saved_setup and synthetic_test_economy:
+		Engine.set_meta(WorldRuntimeHost.WORLD_SETUP_META, saved_setup)
+
+	# NS gate A/B:进程内改共享 climate profile(MapGenerator 懒加载同一缓存实例),
+	# 覆盖生成 + 运行全程,退出前恢复。
+	var climate_profile_res: Resource = null
+	var ns_prev_values: Dictionary = {}
+	var graph_prev_mode = null
+	if runtime_graph_mode in ["OFF", "SHADOW", "ACTIVE"]:
+		climate_profile_res = ResourceLoader.load("res://data/world/earth_like.tres", "Resource")
+		if climate_profile_res == null:
+			push_error("[headless-perf] runtime_graph_mode requested but earth_like.tres missing")
+			return 2
+		graph_prev_mode = climate_profile_res.get("native_runtime_graph_mode")
+		climate_profile_res.set("native_runtime_graph_mode", {
+			"OFF": ClimateProfile.NATIVE_MODE_OFF,
+			"SHADOW": ClimateProfile.NATIVE_MODE_SHADOW,
+			"ACTIVE": ClimateProfile.NATIVE_MODE_ACTIVE,
+		}[runtime_graph_mode])
+		print("[headless-perf] runtime_graph_mode=%s applied" % runtime_graph_mode)
+	if ns_gates in ["ON", "WIND", "ALL"]:
+		var gate_knobs: Dictionary = {
+			"wind_traj_table_enabled": true,
+			"wind_traj_weather_share": true,
+			"wind_momentum_advect_w": 0.3,
+			"wind_momentum_diffuse_w_daily": 0.08,
+			"wind_div_damp_alpha": 0.2,
+		}
+		if ns_gates in ["ON", "ALL"]:
+			gate_knobs["ocean_topo_steer_w"] = 0.15
+			gate_knobs["ocean_depth_curl_damp"] = 0.5
+		climate_profile_res = ResourceLoader.load("res://data/world/earth_like.tres", "Resource")
+		if climate_profile_res == null:
+			push_error("[headless-perf] ns_gates requested but earth_like.tres missing")
+			return 2
+		for k in gate_knobs:
+			ns_prev_values[k] = climate_profile_res.get(k)
+			climate_profile_res.set(k, gate_knobs[k])
+		print("[headless-perf] ns_gates=%s applied: %s" % [ns_gates, str(gate_knobs)])
+
+	var generation_started := Time.get_ticks_usec()
+	await host.generate_world(-1 if use_saved_setup else seed)
+	if graph_prev_mode != null and climate_profile_res != null:
+		climate_profile_res.set("native_runtime_graph_mode", graph_prev_mode)
+	if economy_profile != null:
+		economy_profile.set(
+			"economy_approximation_runtime_mode", previous_accuracy_mode)
+		economy_profile.set("economy_accuracy_preset", previous_accuracy_preset)
+		economy_profile.set(
+			"economy_closing_audit_mode", previous_closing_audit_mode)
+		economy_profile.set("worker_enabled", previous_worker_enabled)
+	if use_saved_setup and synthetic_test_economy:
+		Engine.remove_meta(WorldRuntimeHost.WORLD_SETUP_META)
+	if host.get_current_map() == null or host.get_generator() == null:
+		push_error("[headless-perf] world generation failed")
+		return 4
+	var actual_map := host.get_current_map()
+	var generator := host.get_generator()
+	var economy = generator.get_economy_facade()
+	var country = generator.get_country_facade()
+	var start_report: Dictionary = generator.gameplay_start_report() \
+		if generator.has_method("gameplay_start_report") else {}
+	var economy_report: Dictionary = generator.get_economy_report()
+	var effect_report: Dictionary = generator.get_effect_report() \
+		if generator.has_method("get_effect_report") else {}
+	var country_report: Dictionary = country.report() if country != null else {}
+	var economy_configured: bool = economy != null and economy.is_configured() \
+		and bool(economy_report.get("configured", false))
+	var country_count := int(country_report.get("country_count", 0))
+	var opening_population := _opening_population(actual_map, economy, start_report)
+	var country_handles := PackedInt64Array()
+	var country_cells := PackedInt32Array()
+	if not economy_configured or opening_population <= 0:
+		push_error("[headless-perf] economy did not start: configured=%s population=%d report=%s" % [
+			str(economy_configured), opening_population, str(start_report)])
+		return 4
+	if not synthetic_test_economy:
+		if not bool(start_report.get("ok", false)) \
+				or country_count < foreign_count + 1:
+			push_error("[headless-perf] formal multi-country start failed: %s" %
+				str(start_report))
+			return 4
+		country_handles = _country_handles(actual_map, country)
+		if country_handles.size() != country_count:
+			push_error("[headless-perf] country handle discovery mismatch: got %d expected %d" % [
+				country_handles.size(), country_count])
+			return 4
+		var tariff_result := _submit_tariff_defaults(
+			country, country_handles, import_tariff_rate, export_tariff_rate)
+		if not bool(tariff_result.get("ok", false)):
+			push_error("[headless-perf] tariff setup failed: %s" % str(tariff_result))
+			return 4
+		country_cells = _country_cells_for_handles(actual_map, country, country_handles)
+		if trade_scenario:
+			var scenario_result := _submit_trade_scenario(
+				actual_map, economy, country_handles, country_cells)
+			if not bool(scenario_result.get("ok", false)):
+				push_error("[headless-perf] trade scenario setup failed: %s" %
+					str(scenario_result))
+				return 4
+	var actual_width := actual_map.width
+	var actual_height := actual_map.height
+	var actual_seed := host.last_seed()
+	var generation_ms := float(Time.get_ticks_usec() - generation_started) / 1000.0
+	# SceneTree -s does not pump WorldRuntimeHost._process, so ACTIVE write-back
+	# has to be driven here. The worker also starts paused with the clock.
+	var runtime_ext = generator.get_data_core_world_ext() \
+		if generator.has_method("get_data_core_world_ext") else null
+	if host.runtime_climate_authority_enabled and runtime_ext != null \
+			and runtime_ext.has_method("set_runtime_clock"):
+		runtime_ext.set_runtime_clock(false, speed)
+
+	var recorder: RefCounted = PerfRecorderScript.new()
+	recorder.call("bind_main", host)
+	if not output_dir.is_empty():
+		recorder.call("configure_export", output_dir, "perf.csv")
+	host.set_perf_recorder(recorder)
+	# The benchmark deliberately requests per-tick DETAIL so performance CSV
+	# diagnosis retains every job and breakdown. Player recording defaults CORE.
+	recorder.call("start", "DETAIL", 1)
+
+	var runtime_report_start := _runtime_report_snapshot(generator)
+	var climate_diag_start: Dictionary = host.climate_authority_diagnostics() \
+		if host.has_method("climate_authority_diagnostics") else {}
+	var run_started := Time.get_ticks_usec()
+	var barrier_pulses := 0
+	var ledger_failures := 0
+	var fatal := false
+	var harness_writeback_window_us := 0
+	var harness_writeback_consume_us := 0
+	var harness_writeback_poll_count := 0
+	var country_perf_samples: Array[Dictionary] = []
+	var last_country_perf_day := -1
+	var last_authoritative_committed_day := int(runtime_report_start.get("committed_day", -1))
+	var authoritative_observed := 0
+	var authoritative_measured := 0
+	var auth_measure_start_us := 0
+	var auth_measure_end_us := 0
+	var total_driver_days := warmup_days + days
+	for day in range(1, total_driver_days + 1):
+		if country_daily_workload:
+			if country == null or country_handles.is_empty():
+				push_error("[headless-perf] country_daily_workload requires a formal country")
+				fatal = true
+				break
+			var workload_submit: Dictionary = country.rename_country(
+				int(country_handles[0]), "Headless Benchmark %d" % day,
+				day, 100000 + day)
+			if not bool(workload_submit.get("ok", false)):
+				push_error("[headless-perf] country workload submit failed day=%d result=%s" % [
+					day, str(workload_submit)])
+				fatal = true
+				break
+			var country_stage_started := Time.get_ticks_usec()
+			var workload_result: Dictionary = country.world_ext().run_country_slice({
+				"day_index": day,
+				"tick_index": day,
+			})
+			country.dispatch_committed_events(workload_result)
+			var country_wrapper_ms := float(
+				Time.get_ticks_usec() - country_stage_started) / 1000.0
+			if not bool(workload_result.get("done", false)):
+				push_error("[headless-perf] country workload did not complete day=%d result=%s" % [
+					day, str(workload_result)])
+				fatal = true
+				break
+			country_perf_samples.append({
+				"driver_day": day,
+				"committed_day": int(workload_result.get("last_committed_day", day)),
+				"native_ms": float(workload_result.get("native_ms", 0.0)),
+				"command_preflight_ms": float(workload_result.get(
+					"command_preflight_ms", 0.0)),
+				"command_apply_ms": float(workload_result.get(
+					"command_apply_ms", 0.0)),
+				"aggregate_publish_ms": float(workload_result.get(
+					"aggregate_publish_ms", 0.0)),
+				"report_build_ms": float(workload_result.get(
+					"country_report_build_ms",
+					workload_result.get("report_build_ms", 0.0))),
+				"wrapper_ms": country_wrapper_ms,
+			})
+			last_country_perf_day = int(workload_result.get(
+				"last_committed_day", day))
+		clock.current_day = float(day)
+		var phase := clock.season_phase_for_day(day)
+		# Headless SceneTree does not pump WorldRuntimeHost._process / day_changed.
+		# Mirror the production boundary so ACTIVE worker can consume environment
+		# publishes and eventually receive the authority grant (mask != 0).
+		if host.runtime_climate_authority_enabled:
+			if host.has_method("wait_for_climate_consumed"):
+				host.wait_for_climate_consumed(0)
+			host._consume_runtime_commit_if_ready()
+		host.run_daily_tick(day, phase)
+		host.finish_daily_tick(0.0, {})
+		if host.runtime_climate_authority_enabled:
+			if generator != null and generator.has_method("capture_runtime_inputs_for_worker"):
+				generator.capture_runtime_inputs_for_worker(day, phase)
+			# Drain write-back without OS.delay_msec harness pollution. Use a
+			# short process_frame poll so the SceneTree can service the host.
+			var writeback_window_started := Time.get_ticks_usec()
+			var writeback_deadline := writeback_window_started + 40000
+			while Time.get_ticks_usec() < writeback_deadline:
+				var consume_started := Time.get_ticks_usec()
+				host._consume_runtime_commit_if_ready()
+				harness_writeback_consume_us += Time.get_ticks_usec() - consume_started
+				harness_writeback_poll_count += 1
+				if Time.get_ticks_usec() >= writeback_deadline:
+					break
+				await process_frame
+			harness_writeback_window_us += Time.get_ticks_usec() - writeback_window_started
+
+		var drained := await _drain_hard_barrier(clock, day)
+		barrier_pulses += int(drained.get("pulses", 0))
+		if not bool(drained.get("ok", false)):
+			var barrier_sources := PackedStringArray()
+			for source in clock._simulation_backpressure_sources.keys():
+				barrier_sources.append(String(source))
+			barrier_sources.sort()
+			var graph_snapshot: Dictionary = {}
+			if host.get("_generator") != null:
+				var runtime_generator = host.get("_generator")
+				var ext = runtime_generator.get("_data_core_world_ext")
+				if ext != null and ext.has_method("get_runtime_perf_snapshot"):
+					graph_snapshot = ext.get_runtime_perf_snapshot(1)
+			push_error("[headless-perf] barrier snapshot day=%d sources=%s graph=%s" % [
+				day, ",".join(barrier_sources), JSON.stringify(graph_snapshot)])
+			push_error("[headless-perf] hard barrier did not drain at day %d" % day)
+			fatal = true
+			break
+
+		if country != null:
+			var measured_country_report: Dictionary = country.report()
+			var committed_country_day := int(measured_country_report.get(
+				"last_committed_day", measured_country_report.get("day_index", -1)))
+			if committed_country_day > last_country_perf_day:
+				country_perf_samples.append({
+					"driver_day": day,
+					"committed_day": committed_country_day,
+					"native_ms": float(measured_country_report.get("native_ms", 0.0)),
+					"command_preflight_ms": float(measured_country_report.get(
+						"command_preflight_ms", 0.0)),
+					"command_apply_ms": float(measured_country_report.get(
+						"command_apply_ms", 0.0)),
+					"aggregate_publish_ms": float(measured_country_report.get(
+						"aggregate_publish_ms", 0.0)),
+					"report_build_ms": float(measured_country_report.get(
+						"country_report_build_ms",
+						measured_country_report.get("report_build_ms", 0.0))),
+					"wrapper_ms": 0.0,
+				})
+				last_country_perf_day = committed_country_day
+
+		if generator != null and generator.has_method("get_economy_report"):
+			economy_report = generator.get_economy_report()
+			fatal = fatal or bool(economy_report.get("fatal", false))
+			if int(economy_report.get("population_error", 0)) != 0 \
+					or int(economy_report.get("money_error", 0)) != 0 \
+					or int(economy_report.get("goods_error", 0)) != 0:
+				ledger_failures += 1
+		if generator != null and generator.has_method("get_effect_report"):
+			effect_report = generator.get_effect_report()
+		if fatal:
+			push_error("[headless-perf] fatal economy report at day %d reason=%s stage=%s" % [
+				day,
+				String(economy_report.get("fatal_reason", economy_report.get("reason", "?"))),
+				String(economy_report.get("stage", economy_report.get("executed_stage", "?")))
+			])
+			break
+
+		# Authoritative day accounting prefers worker commit timestamps so
+		# harness process_frame waits do not inflate production throughput.
+		var day_report := _runtime_report_snapshot(generator)
+		# ACTIVE reports use the explicit simulation_* namespace.  Keep the
+		# unprefixed fallback for older extensions, but do not silently turn a
+		# valid worker commit into "no observed days".
+		var committed_day := int(day_report.get("simulation_committed_day",
+			day_report.get("committed_day", -1)))
+		var produced_us := int(day_report.get("last_commit_produced_at_us", 0))
+		if committed_day > last_authoritative_committed_day:
+			last_authoritative_committed_day = committed_day
+			authoritative_observed += 1
+			if authoritative_observed <= warmup_days:
+				continue
+			authoritative_measured += 1
+			if auth_measure_start_us == 0:
+				auth_measure_start_us = produced_us if produced_us > 0 else Time.get_ticks_usec()
+			auth_measure_end_us = produced_us if produced_us > 0 else Time.get_ticks_usec()
+			if authoritative_measured >= days:
+				break
+
+	var output_path := String(recorder.call("stop_and_export"))
+	var country_perf_path := _write_country_perf_samples(
+		output_dir, country_perf_samples)
+	var run_ms := float(Time.get_ticks_usec() - run_started) / 1000.0
+	var rows := _csv_data_row_count(output_path)
+	var output_ok := output_path != "" and FileAccess.file_exists(output_path)
+	var tariff_totals := _tariff_totals(country, country_handles)
+	var trade_totals := _trade_totals(economy, country_handles)
+	var runtime_report_end := _runtime_report_snapshot(generator)
+	var climate_diag: Dictionary = host.climate_authority_diagnostics() \
+		if host.has_method("climate_authority_diagnostics") else {}
+	var writeback_window_ms := float(harness_writeback_window_us) / 1000.0
+	var writeback_consume_ms := float(harness_writeback_consume_us) / 1000.0
+	var idle_wait_ms := 0.0
+	var adjusted_run_ms := run_ms
+	var lower_bound_run_ms := maxf(0.0, run_ms - writeback_window_ms)
+	var expected_rows := authoritative_measured if authoritative_measured > 0 else host.get_fast_tick_count()
+	if fatal:
+		expected_rows = host.get_fast_tick_count()
+	var rows_ok := rows == expected_rows or authoritative_measured >= days
+	var effective_days := float(maxi(authoritative_measured, 0))
+	var auth_elapsed_ms := 0.0
+	if auth_measure_end_us > auth_measure_start_us and auth_measure_start_us > 0:
+		auth_elapsed_ms = float(auth_measure_end_us - auth_measure_start_us) / 1000.0
+	var authoritative_days_per_second := _days_per_second(
+		float(authoritative_measured), auth_elapsed_ms)
+	var raw_days_per_second := _days_per_second(effective_days, run_ms)
+	var adjusted_days_per_second := authoritative_days_per_second
+	var lower_bound_days_per_second := _days_per_second(effective_days, lower_bound_run_ms)
+	var main_wait_on_sim_us := int(runtime_report_end.get("main_wait_on_sim_us", 0))
+	# Checkpoint (assert when measuring): authoritative throughput >= 50 days/s.
+	# M7 PERFORMANCE reads authoritative_days_per_second from the session JSON.
+	var throughput_checkpoint_ok := authoritative_measured >= days \
+		and authoritative_days_per_second >= AUTHORITATIVE_THROUGHPUT_CHECKPOINT_DAYS_PER_SEC
+	print("[headless-perf/auth] warmup_days=%d measured_days=%d observed=%d commit_us=%d..%d authoritative_days_per_second=%.6f main_wait_on_sim_us=%d checkpoint_ok=%s" % [
+		warmup_days, authoritative_measured, authoritative_observed,
+		auth_measure_start_us, auth_measure_end_us, authoritative_days_per_second,
+		main_wait_on_sim_us, str(throughput_checkpoint_ok),
+	])
+	print("[headless-perf/result] label=%s days=%d speed=%.3f seed=%d map=%dx%d formal_start=%s trade_scenario=%s foreign_count=%d import_tariff_rate=%d export_tariff_rate=%d population_scale=%d saved_setup=%s economy_configured=%s country_count=%d population=%d generation_ms=%.1f run_ms=%.1f barrier_pulses=%d ledger_failures=%d fatal=%s population_error=%d money_error=%d goods_error=%d family_count=%d family_branch_count=%d family_trait_roll_count=%d effect_instances=%d family_effect_stack_groups=%d family_effect_group_members=%d effect_metric_slab_bytes=%d effect_instance_storage_bytes=%d city_good_output_shared_count=%d city_good_output_non_neutral_shared_count=%d city_good_output_override_count=%d city_good_output_override_cell_count=%d city_good_output_cache_bytes=%d trade_orders_dispatched=%d trade_orders_arrived=%d trade_orders_cumulative=%d trade_base_cumulative=%d trade_route_expansions=%d trade_tariff_lanes=%d trade_country_goods=%d trade_country_partners=%d tariff_collected=%d tariff_subsidy_paid=%d economy_memory_bytes=%d rows=%d expected_rows=%d path=%s" % [
+		label, days, speed, actual_seed, actual_width, actual_height,
+		str(not synthetic_test_economy), str(trade_scenario), foreign_count, import_tariff_rate,
+		export_tariff_rate, population_scale, str(use_saved_setup),
+		str(economy_configured), country_count, opening_population,
+		generation_ms, run_ms, barrier_pulses, ledger_failures, str(fatal),
+		int(economy_report.get("population_error", 0)),
+		int(economy_report.get("money_error", 0)),
+		int(economy_report.get("goods_error", 0)),
+		int(economy_report.get("family_count", 0)),
+		int(economy_report.get("family_branch_count", 0)),
+		int(economy_report.get("family_trait_roll_count", 0)),
+		int(effect_report.get("instances", 0)),
+		int(effect_report.get("family_effect_stack_groups", 0)),
+		int(effect_report.get("family_effect_group_members", 0)),
+		int(effect_report.get("metric_slab_bytes", 0)),
+		int(effect_report.get("instance_storage_bytes", 0)),
+		int(economy_report.get("city_good_output_shared_count", 0)),
+		int(economy_report.get("city_good_output_non_neutral_shared_count", 0)),
+		int(economy_report.get("city_good_output_override_count", 0)),
+		int(economy_report.get("city_good_output_override_cell_count", 0)),
+		int(economy_report.get("city_good_output_cache_bytes", 0)),
+		int(economy_report.get("trade_orders_dispatched", 0)),
+		int(economy_report.get("trade_orders_arrived", 0)),
+		int(trade_totals.get("orders", 0)),
+		int(trade_totals.get("base", 0)),
+		int(economy_report.get("trade_route_expansions", 0)),
+		int(economy_report.get("trade_tariff_lane_count", 0)),
+		int(economy_report.get("trade_country_good_aggregate_count", 0)),
+		int(economy_report.get("trade_country_partner_aggregate_count", 0)),
+		int(tariff_totals.get("collected", 0)),
+		int(tariff_totals.get("subsidy_paid", 0)),
+		int(economy_report.get("memory_bytes", 0)), rows, expected_rows, output_path,
+	])
+	var climate_authority_on := host.runtime_climate_authority_enabled
+	print("[headless-perf/climate] enabled=%s worker_authoritative=%s writeback_days=%d writeback_last_day=%d mask=0x%X" % [
+		str(climate_diag.get("enabled", false)),
+		str(climate_diag.get("worker_authoritative", false)),
+		int(climate_diag.get("writeback_days", 0)),
+		int(climate_diag.get("writeback_last_day", -1)),
+		int(climate_diag.get("authoritative_domain_mask", 0)),
+	])
+	print("[headless-perf/harness] writeback_window_ms=%.3f consume_ms=%.3f idle_wait_ms=%.3f adjusted_run_ms=%.3f lower_bound_run_ms=%.3f raw_days_per_second=%.6f adjusted_days_per_second=%.6f lower_bound_days_per_second=%.6f polls=%d" % [
+		writeback_window_ms, writeback_consume_ms, idle_wait_ms, adjusted_run_ms,
+		lower_bound_run_ms, raw_days_per_second, adjusted_days_per_second,
+		lower_bound_days_per_second, harness_writeback_poll_count,
+	])
+	if not output_dir.is_empty():
+		_write_stage_c_outputs(output_dir, {
+			"schema": "AuthorityStageCHeadlessSession",
+			"schema_version": 1,
+			"stage": "C3",
+			"label": label,
+			"build": "Debug" if OS.is_debug_build() else "Release",
+			"seed": actual_seed,
+			"map_width": actual_width,
+			"map_height": actual_height,
+			"num_continents": 2,
+			"foreign_count": foreign_count,
+			"speed": speed,
+			"authority_mode": "ACTIVE" if climate_authority_on else "OFF",
+			"worker_mode": "ACTIVE" if climate_authority_on else "SHADOW",
+			"requested_days": days,
+			"warmup_days": warmup_days,
+			"effective_days": expected_rows,
+			"authoritative_measured_days": authoritative_measured,
+			"authoritative_observed_days": authoritative_observed,
+			"authoritative_days_per_second": authoritative_days_per_second,
+			"auth_measure_start_us": auth_measure_start_us,
+			"auth_measure_end_us": auth_measure_end_us,
+			"throughput_checkpoint_ok": throughput_checkpoint_ok,
+			"country_daily_workload": country_daily_workload,
+			"country_perf_samples": country_perf_samples.size(),
+			"country_perf_csv": country_perf_path,
+			"generation_ms": generation_ms,
+			"run_ms": run_ms,
+			"harness_writeback_window_ms": writeback_window_ms,
+			"harness_writeback_consume_ms": writeback_consume_ms,
+			"harness_idle_wait_ms": idle_wait_ms,
+			"harness_adjusted_run_ms": adjusted_run_ms,
+			"harness_lower_bound_run_ms": lower_bound_run_ms,
+			"raw_days_per_second": raw_days_per_second,
+			"adjusted_days_per_second": adjusted_days_per_second,
+			"lower_bound_days_per_second": lower_bound_days_per_second,
+			"harness_writeback_poll_count": harness_writeback_poll_count,
+			"barrier_pulses": barrier_pulses,
+			"worker_fault_count": int(runtime_report_end.get("worker_fault_count", 0)),
+			"main_wait_on_sim_us": main_wait_on_sim_us,
+			"fallback_count": int(runtime_report_end.get("pod_fallback_count",
+				runtime_report_end.get("fallback_count", 0))),
+			"perf_csv": output_path,
+			"runtime_report_start": runtime_report_start,
+			"runtime_report_end": runtime_report_end,
+			"climate_authority_start": climate_diag_start,
+			"climate_authority_end": climate_diag,
+		})
+	host.set_perf_recorder(null)
+	recorder.call("bind_main", null)
+	host.free()
+	clock.free()
+	if climate_profile_res != null:
+		for k in ns_prev_values:
+			climate_profile_res.set(k, ns_prev_values[k])
+	await process_frame
+	if not output_ok:
+		push_error("[headless-perf] performance CSV export failed")
+		return 5
+	if not rows_ok:
+		push_error("[headless-perf] CSV row count mismatch: got %d expected %d" % [
+			rows, expected_rows])
+		return 6
+	if fatal or ledger_failures > 0:
+		return 7
+	if climate_authority_on and int(climate_diag.get("writeback_days", 0)) <= 0:
+		push_error("[headless-perf] Climate authority was on but no write-back landed")
+		return 8
+	# assert: authoritative throughput >= 50 days/s after warm-up
+	if not throughput_checkpoint_ok:
+		push_error("[headless-perf] authoritative throughput checkpoint failed: measured=%d need>=%d days/s=%.3f threshold=%.3f main_wait_on_sim_us=%d" % [
+			authoritative_measured, days, authoritative_days_per_second,
+			AUTHORITATIVE_THROUGHPUT_CHECKPOINT_DAYS_PER_SEC, main_wait_on_sim_us])
+		return 9
+	return 0
+
+
+func _drain_hard_barrier(clock: WorldClock, day: int) -> Dictionary:
+	var pulses := 0
+	while _has_hard_barrier(clock) and pulses < MAX_BARRIER_PULSES_PER_DAY:
+		clock.simulation_backpressure_pulse.emit(day)
+		pulses += 1
+		# Native daily/ocean continuations may hand work to the persistent
+		# scheduler/worker queue. A synchronous signal loop can starve that queue
+		# and falsely report a stuck barrier even though the player path would
+		# advance on the next rendered frame.
+		await process_frame
+	return {
+		"ok": not _has_hard_barrier(clock),
+		"pulses": pulses,
+	}
+
+
+func _has_hard_barrier(clock: WorldClock) -> bool:
+	return clock._simulation_backpressure_sources.has(&"country_day_barrier") \
+		or clock._simulation_backpressure_sources.has(&"economy_day_barrier")
+
+
+func _csv_data_row_count(path: String) -> int:
+	if path == "" or not FileAccess.file_exists(path):
+		return -1
+	var file := FileAccess.open(path, FileAccess.READ)
+	if file == null:
+		return -1
+	var line_count := 0
+	while not file.eof_reached():
+		var line := file.get_line()
+		if not line.is_empty():
+			line_count += 1
+	return maxi(0, line_count - 1)
+
+
+func _arguments() -> Dictionary:
+	var out := {}
+	for raw in OS.get_cmdline_user_args():
+		var item := str(raw)
+		var split := item.find("=")
+		if split > 0:
+			out[item.substr(0, split)] = item.substr(split + 1)
+	return out
+
+
+func _argument_enabled(value) -> bool:
+	return str(value).to_lower() in ["1", "true", "yes", "on"]
+
+
+func _runtime_report_snapshot(generator) -> Dictionary:
+	var report: Dictionary = generator.get_runtime_thread_report() \
+		if generator != null and generator.has_method("get_runtime_thread_report") else {}
+	if generator != null and generator.has_method("get_runtime_perf_snapshot"):
+		var graph: Dictionary = generator.get_runtime_perf_snapshot(1)
+		for key in graph:
+			report[key] = graph[key]
+	return report
+
+
+func _days_per_second(days: float, elapsed_ms: float) -> float:
+	return days * 1000.0 / elapsed_ms if elapsed_ms > 0.000001 else 0.0
+
+
+func _write_country_perf_samples(output_dir: String,
+		samples: Array[Dictionary]) -> String:
+	if output_dir.is_empty():
+		return ""
+	var path := output_dir.path_join("country_daily_metrics.csv")
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	if file == null:
+		push_error("[headless-perf] country_daily_metrics.csv export failed")
+		return ""
+	var fields := PackedStringArray([
+		"driver_day", "committed_day", "native_ms", "command_preflight_ms",
+		"command_apply_ms", "aggregate_publish_ms", "report_build_ms", "wrapper_ms",
+	])
+	file.store_line(",".join(fields))
+	for sample in samples:
+		var values := PackedStringArray()
+		for field in fields:
+			values.append(str(sample.get(field, 0)))
+		file.store_line(",".join(values))
+	file.close()
+	return path
+
+
+func _write_stage_c_outputs(output_dir: String, session: Dictionary) -> void:
+	var json_file := FileAccess.open(output_dir.path_join("headless_session.json"), FileAccess.WRITE)
+	if json_file != null:
+		json_file.store_string(JSON.stringify(session, "  "))
+		json_file.close()
+	else:
+		push_error("[headless-perf] headless_session.json export failed")
+	var keys: Array = [
+		"label", "build", "seed", "map_width", "map_height", "foreign_count", "speed",
+		"authority_mode", "worker_mode", "requested_days", "effective_days", "generation_ms",
+		"run_ms", "harness_writeback_window_ms", "harness_writeback_consume_ms",
+		"harness_idle_wait_ms", "harness_adjusted_run_ms", "harness_lower_bound_run_ms",
+		"raw_days_per_second", "adjusted_days_per_second", "lower_bound_days_per_second",
+		"harness_writeback_poll_count", "barrier_pulses", "worker_fault_count",
+		"main_wait_on_sim_us",
+	]
+	var start: Dictionary = session.get("runtime_report_start", {})
+	var finish: Dictionary = session.get("runtime_report_end", {})
+	for key in ["completed_days", "pulse_count", "abi_calls", "gdscript_callbacks", "work_done",
+			"budget_yields", "day_stage_count", "day_completed_stage_count", "day_work_units",
+			"last_elapsed_us", "post_pulse_flush_ms", "flush_slot_count",
+			"climate_pod_plan_ms", "climate_pod_replay_ms", "climate_pod_work_units",
+			"domain_authority_plan_ms", "domain_authority_replay_ms",
+			"domain_authority_ack_count"]:
+		session["%s_start" % key] = start.get(key, 0)
+		session["%s_end" % key] = finish.get(key, 0)
+		if typeof(start.get(key, 0)) in [TYPE_INT, TYPE_FLOAT] \
+				and typeof(finish.get(key, 0)) in [TYPE_INT, TYPE_FLOAT]:
+			session["%s_delta" % key] = float(finish.get(key, 0)) - float(start.get(key, 0))
+		else:
+			session["%s_delta" % key] = ""
+		keys.append("%s_start" % key)
+		keys.append("%s_end" % key)
+		keys.append("%s_delta" % key)
+	var csv_file := FileAccess.open(output_dir.path_join("headless_metrics.csv"), FileAccess.WRITE)
+	if csv_file == null:
+		push_error("[headless-perf] headless_metrics.csv export failed")
+		return
+	csv_file.store_8(0xEF)
+	csv_file.store_8(0xBB)
+	csv_file.store_8(0xBF)
+	var header := PackedStringArray()
+	var values := PackedStringArray()
+	for key in keys:
+		header.append(String(key))
+		values.append(_csv_escape(session.get(key, "")))
+	csv_file.store_line(",".join(header))
+	csv_file.store_line(",".join(values))
+	csv_file.close()
+
+
+func _csv_escape(value) -> String:
+	if value == null:
+		return ""
+	if typeof(value) == TYPE_FLOAT:
+		var number := float(value)
+		if is_nan(number) or is_inf(number):
+			return ""
+	var text := str(value)
+	if text.contains(",") or text.contains("\"") or text.contains("\n") or text.contains("\r"):
+		return "\"%s\"" % text.replace("\"", "\"\"")
+	return text
+
+
+func _configure_formal_start(host: WorldRuntimeHost, map_width: int,
+		map_height: int, seed: int, foreign_count: int,
+		saved_setup: Dictionary) -> Dictionary:
+	var config := NewGameConfig.create_default()
+	config.country.name = "Headless Benchmark"
+	config.country.foreign_count = foreign_count
+	config.base.map_width = map_width
+	config.base.map_height = map_height
+	config.base.initial_seed = seed
+	if not saved_setup.is_empty():
+		var saved_base = saved_setup.get("base", {})
+		if saved_base is Dictionary:
+			for key in config.base.keys():
+				if (saved_base as Dictionary).has(key):
+					config.base[key] = (saved_base as Dictionary)[key]
+		var saved_world_controls = saved_setup.get("world_controls", {})
+		if saved_world_controls is Dictionary:
+			config.world_controls = (saved_world_controls as Dictionary).duplicate(true)
+		var saved_climate = saved_setup.get("climate", {})
+		if saved_climate is Dictionary:
+			config.climate = (saved_climate as Dictionary).duplicate(true)
+	var validation := config.validate()
+	if not bool(validation.get("ok", false)):
+		return validation
+	return host.configure_session({
+		"kind": "new_game",
+		"config": config.to_dictionary(),
+	})
+
+
+func _opening_population(map: MapData, economy, start_report: Dictionary) -> int:
+	var formal_population := int(start_report.get("total_population", 0))
+	if formal_population > 0:
+		return formal_population
+	if economy == null:
+		return 0
+	var total := 0
+	for cell in map.cell_count():
+		total += int(economy.population_cell_snapshot(cell).get("population", 0))
+	return total
+
+
+func _country_handles(map: MapData, country) -> PackedInt64Array:
+	var handles := PackedInt64Array()
+	var seen := {}
+	for cell in map.cell_count():
+		var handle := int(country.cell_summary(cell).get("country_handle", 0))
+		if handle == 0 or seen.has(handle):
+			continue
+		seen[handle] = true
+		handles.append(handle)
+	handles.sort()
+	return handles
+
+
+func _country_cells_for_handles(map: MapData, country,
+		handles: PackedInt64Array) -> PackedInt32Array:
+	var cells := PackedInt32Array()
+	cells.resize(handles.size())
+	cells.fill(-1)
+	var handle_to_index := {}
+	for index in handles.size():
+		handle_to_index[int(handles[index])] = index
+	for cell in map.cell_count():
+		var handle := int(country.cell_summary(cell).get("country_handle", 0))
+		if not handle_to_index.has(handle):
+			continue
+		var index := int(handle_to_index[handle])
+		if cells[index] < 0:
+			cells[index] = cell
+	return cells
+
+
+func _submit_trade_scenario(map: MapData, economy, handles: PackedInt64Array,
+		cells: PackedInt32Array) -> Dictionary:
+	var pair := _connected_trade_pair(map, cells)
+	if pair.size() != 2:
+		return {"ok": false, "reason": "no_connected_foreign_endpoints"}
+	var source_cell := int(pair[0])
+	var destination_cell := int(pair[1])
+	var good_index: int = economy.good_ids().find("game_meat")
+	if good_index < 0:
+		return {"ok": false, "reason": "game_meat_good_missing"}
+	var destination_population: Dictionary = economy.population_cell_snapshot(
+		destination_cell)
+	var cohort_handles: PackedInt64Array = destination_population.get(
+		"handles", PackedInt64Array())
+	var merchant_flags: PackedByteArray = destination_population.get(
+		"merchant_flags", PackedByteArray())
+	var merchant_handle := 0
+	var consumer_handle := 0
+	for index in cohort_handles.size():
+		var handle := int(cohort_handles[index])
+		if index < merchant_flags.size() and merchant_flags[index] != 0:
+			merchant_handle = handle
+		elif consumer_handle == 0:
+			consumer_handle = handle
+	if merchant_handle == 0 or consumer_handle == 0:
+		return {"ok": false, "reason": "trade_scenario_cohorts_missing"}
+	var commands: Array[Dictionary] = [
+		{
+			"opcode": EconomyFacade.Opcode.ADD_STOCK,
+			"effective_day": 1,
+			"sequence": 20001,
+			"i32_0": source_cell,
+			"i32_1": good_index,
+			"i64_0": 2_000_000,
+		},
+		{
+			"opcode": EconomyFacade.Opcode.ADD_POPULATION,
+			"effective_day": 1,
+			"sequence": 20002,
+			"target_handle": consumer_handle,
+			"i64_0": 180,
+		},
+		{
+			"opcode": EconomyFacade.Opcode.MINT_TO_COHORT,
+			"effective_day": 1,
+			"sequence": 20003,
+			"target_handle": consumer_handle,
+			"i64_0": 500_000_000,
+		},
+		{
+			"opcode": EconomyFacade.Opcode.MINT_TO_COHORT,
+			"effective_day": 1,
+			"sequence": 20004,
+			"target_handle": merchant_handle,
+			"i64_0": 500_000_000,
+		},
+	]
+	return economy.submit(commands)
+
+
+func _connected_trade_pair(map: MapData, cells: PackedInt32Array) -> PackedInt32Array:
+	var passable_lut := map.economy_trade_passable_lut()
+	for source_index in range(maxi(0, cells.size() - 1)):
+		var source := int(cells[source_index])
+		if source < 0:
+			continue
+		var reached := PackedByteArray()
+		reached.resize(map.cell_count())
+		var queue := PackedInt32Array([source])
+		var cursor := 0
+		reached[source] = 1
+		while cursor < queue.size():
+			var cell := int(queue[cursor])
+			cursor += 1
+			for direction in 6:
+				var neighbor := map.neighbor_index(cell, direction)
+				if neighbor < 0 or reached[neighbor] != 0:
+					continue
+				var terrain := int(map.terrain_arr[neighbor])
+				if terrain < 0 or terrain >= passable_lut.size() \
+						or passable_lut[terrain] == 0:
+					continue
+				reached[neighbor] = 1
+				queue.append(neighbor)
+		for destination_index in range(source_index + 1, cells.size()):
+			var destination := int(cells[destination_index])
+			if destination >= 0 and reached[destination] != 0:
+				return PackedInt32Array([source, destination])
+	return PackedInt32Array()
+
+
+func _tariff_totals(country, handles: PackedInt64Array) -> Dictionary:
+	var collected := 0
+	var subsidy_paid := 0
+	if country == null:
+		return {"collected": collected, "subsidy_paid": subsidy_paid}
+	for handle in handles:
+		var fiscal: Dictionary = country.fiscal_snapshot(int(handle))
+		var cumulative_collected: PackedInt64Array = fiscal.get(
+			"cumulative_collected", PackedInt64Array())
+		var cumulative_paid: PackedInt64Array = fiscal.get(
+			"cumulative_subsidy_paid", PackedInt64Array())
+		for kind in [CountryFacade.TaxKind.IMPORT, CountryFacade.TaxKind.EXPORT]:
+			if kind < cumulative_collected.size():
+				collected += int(cumulative_collected[kind])
+			if kind < cumulative_paid.size():
+				subsidy_paid += int(cumulative_paid[kind])
+	return {"collected": collected, "subsidy_paid": subsidy_paid}
+
+
+func _trade_totals(economy, handles: PackedInt64Array) -> Dictionary:
+	var directed_orders := 0
+	var directed_base := 0
+	if economy == null:
+		return {"orders": 0, "base": 0}
+	for handle in handles:
+		var partners: Dictionary = economy.country_trade_snapshot(
+			int(handle), "partners", 0, 64)
+		var orders: PackedInt64Array = partners.get(
+			"cumulative_order_count", PackedInt64Array())
+		var imports: PackedInt64Array = partners.get(
+			"cumulative_import_base", PackedInt64Array())
+		var exports: PackedInt64Array = partners.get(
+			"cumulative_export_base", PackedInt64Array())
+		for value in orders:
+			directed_orders += int(value)
+		for value in imports:
+			directed_base += int(value)
+		for value in exports:
+			directed_base += int(value)
+	return {"orders": directed_orders / 2, "base": directed_base / 2}
+
+
+func _submit_tariff_defaults(country, handles: PackedInt64Array,
+		import_rate: int, export_rate: int) -> Dictionary:
+	var commands: Array[Dictionary] = []
+	var sequence := 1
+	for handle in handles:
+		if import_rate != 0:
+			commands.append({
+				"opcode": CountryFacade.Opcode.SET_TAX_DEFAULT,
+				"target_handle": int(handle),
+				"tax_kind": CountryFacade.TaxKind.IMPORT,
+				"tax_rate_percent": import_rate,
+				"effective_day": 1,
+				"sequence": sequence,
+			})
+			sequence += 1
+		if export_rate != 0:
+			commands.append({
+				"opcode": CountryFacade.Opcode.SET_TAX_DEFAULT,
+				"target_handle": int(handle),
+				"tax_kind": CountryFacade.TaxKind.EXPORT,
+				"tax_rate_percent": export_rate,
+				"effective_day": 1,
+				"sequence": sequence,
+			})
+			sequence += 1
+	return {"ok": true} if commands.is_empty() else country.submit(commands)
+
+
+func _load_saved_world_setup() -> Dictionary:
+	var path := "user://world_setup_settings.json"
+	if not FileAccess.file_exists(path):
+		return {}
+	var parsed = JSON.parse_string(FileAccess.get_file_as_string(path))
+	if parsed is not Dictionary:
+		return {}
+	var setup := parsed as Dictionary
+	if str(setup.get("source", "")) != "world_setup":
+		setup["source"] = "world_setup"
+	return setup

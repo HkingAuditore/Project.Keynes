@@ -1,0 +1,9 @@
+[gd_resource type="Resource" script_class="ProfessionProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/profession_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"apprentice"
+satisfaction_dimension_weights_q16 = PackedInt32Array(62915, 45875, 26214, 13107, 32768, 26214, 19661, 19661)
+display_name = "学徒"
+default_consumption_plan_id = &"survival_household"
+technology_tags = PackedStringArray()

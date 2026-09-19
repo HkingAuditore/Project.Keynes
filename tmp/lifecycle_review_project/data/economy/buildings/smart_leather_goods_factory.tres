@@ -1,0 +1,56 @@
+[gd_resource type="Resource" script_class="BuildingProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"smart_leather_goods_factory"
+display_name = "智能皮革制品工厂"
+economic_sector_id = "manufacturing"
+semantic_tags = PackedStringArray()
+technology_tags = PackedStringArray("tech.hide_tanning")
+required_technology_tags = PackedStringArray("tech.ground_stone_tools", "tech.oceanic_navigation", "tech.steam_power", "tech.robotic_manufacturing")
+upgrade_family_id = &"leather_goods_making"
+upgrade_tier = 4
+industry_chain_id = &"leather_goods_making"
+progression_step = 4
+maturity_rank = 1
+maturity_display_name = "自然获取"
+progression_role = "mainline"
+predecessor_building_ids = PackedStringArray("leather_goods_factory")
+construction_good_ids = PackedStringArray("concrete", "steel", "glass", "electronic_components", "computers")
+construction_quantities = PackedInt64Array(61000, 45750, 30500, 18300, 6100)
+construction_category_ids = PackedStringArray("industrial_construction", "structural_metal", "industrial_construction", "", "")
+construction_min_quality_levels = PackedInt32Array(0, 0, 0, 0, 0)
+construction_candidate_offsets = PackedInt32Array()
+construction_candidate_good_ids = PackedStringArray()
+construction_candidate_efficiency_q16 = PackedInt32Array()
+maintenance_good_ids = PackedStringArray()
+maintenance_quantities_per_day = PackedInt64Array()
+owner_profession_id = &"industrialist"
+employee_profession_ids = PackedStringArray("industrial_worker", "technician", "engineer", "manager")
+employee_slots_per_building = PackedInt64Array(36, 12, 8, 4)
+employee_wage_policy_ids = PackedStringArray("adaptive", "adaptive", "adaptive", "adaptive")
+employee_reference_wages_per_day = PackedInt64Array(13211, 14621, 14621, 14621)
+input_good_ids = PackedStringArray("leather", "tools", "electricity", "autonomous_systems", "industrial_chemicals")
+input_quantities_per_day = PackedInt64Array(3200, 700, 900, 300, 400)
+input_required_q16 = PackedInt32Array(65536, 32768, 32768, 32768, 32768)
+input_category_ids = PackedStringArray("", "tools", "", "", "")
+input_min_quality_levels = PackedInt32Array(0, 4, 0, 0, 0)
+input_candidate_offsets = PackedInt32Array(0, 2, 2, 2, 2, 2)
+input_candidate_good_ids = PackedStringArray("leather", "synthetic_fiber")
+input_candidate_efficiency_q16 = PackedInt32Array(65536, 49152)
+output_good_ids = PackedStringArray("leather_goods")
+output_quantities_per_day = PackedInt64Array(104384)
+output_cost_shares_q16 = PackedInt32Array()
+resource_ids = PackedStringArray()
+resource_quantities_per_day = PackedInt64Array()
+resource_interaction_modes = PackedStringArray()
+resource_access_modes = PackedStringArray()
+resource_generation_ids = PackedStringArray()
+resource_generation_quantities_per_day = PackedInt64Array()
+condition_opcodes = PackedInt32Array()
+condition_signals = PackedInt32Array()
+condition_compares = PackedInt32Array()
+condition_reference_ids = PackedStringArray()
+condition_values = PackedInt64Array()

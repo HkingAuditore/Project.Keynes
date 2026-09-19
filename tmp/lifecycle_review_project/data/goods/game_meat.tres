@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"game_meat"
+display_name = "野味"
+semantic_tags = PackedStringArray("food.protein", "activity.hunting")
+category_id = &"game_meat"
+substitution_category_ids = PackedStringArray("game_meat")
+technology_tags = PackedStringArray("industry.primary", "tech.hunting", "tech.animal_tracking")
+reference_max_price = 500000
+price_adjust_q16 = 922
+demand_price_elasticity_q16 = 29491
+inventory_target_ratio_q16 = 98304

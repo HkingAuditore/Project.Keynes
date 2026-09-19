@@ -1,0 +1,592 @@
+{
+  "codex_soak_60x40_default120": {
+    "native_days_per_second": 43.6599941943019,
+    "native_committed_days": 5250,
+    "max_observed_commit_gap_ms": 769.797,
+    "health_errors": [
+      "native rate 43.660 < 49.000"
+    ],
+    "authority": {
+      "worker_fault_count": 0,
+      "domain_stage_fallback_count": 0,
+      "economy_formula_backing": "owned_state",
+      "economy_production_writer_effective": "stage_ops",
+      "authoritative_domain_mask": 4095,
+      "economy_authority_switch_count": 1
+    },
+    "metrics": {
+      "economy-boundary-cost.formulas_ms": {
+        "n": 52,
+        "avg": 7.302942307692308,
+        "median": 7.147,
+        "p95": 8.828,
+        "p99": 10.068,
+        "max": 10.068
+      },
+      "economy-boundary-cost.stages_ms": {
+        "n": 52,
+        "avg": 5.687807692307692,
+        "median": 5.6625,
+        "p95": 7.227,
+        "p99": 8.119,
+        "max": 8.119
+      },
+      "economy-boundary-cost.mirror_ms": {
+        "n": 52,
+        "avg": 4.234153846153847,
+        "median": 4.144,
+        "p95": 4.955,
+        "p99": 5.092,
+        "max": 5.092
+      },
+      "runtime-day-cost.ms": {
+        "n": 52,
+        "avg": 15.419038461538461,
+        "median": 15.073,
+        "p95": 17.715,
+        "p99": 20.479,
+        "max": 20.479
+      }
+    }
+  },
+  "publish_optimized120": {
+    "native_days_per_second": 44.7915102696433,
+    "native_committed_days": 5375,
+    "max_observed_commit_gap_ms": 768.122,
+    "health_errors": [
+      "native rate 44.792 < 49.000"
+    ],
+    "authority": {
+      "worker_fault_count": 0,
+      "domain_stage_fallback_count": 0,
+      "economy_formula_backing": "owned_state",
+      "economy_production_writer_effective": "stage_ops",
+      "authoritative_domain_mask": 4095,
+      "economy_authority_switch_count": 1
+    },
+    "metrics": {
+      "economy-aggregate-cost.publish_ms": {
+        "n": 54,
+        "avg": 1.7747037037037037,
+        "median": 1.6789999999999998,
+        "p95": 2.404,
+        "p99": 2.781,
+        "max": 2.781
+      },
+      "economy-aggregate-cost.native_hash_ms": {
+        "n": 54,
+        "avg": 1.367037037037037,
+        "median": 1.3039999999999998,
+        "p95": 1.485,
+        "p99": 3.53,
+        "max": 3.53
+      },
+      "economy-ledger-cost.copy_ms": {
+        "n": 54,
+        "avg": 1.1242962962962963,
+        "median": 1.0365,
+        "p95": 1.52,
+        "p99": 2.401,
+        "max": 2.401
+      },
+      "economy-ledger-cost.validate_ms": {
+        "n": 54,
+        "avg": 0.14701851851851852,
+        "median": 0.142,
+        "p95": 0.176,
+        "p99": 0.282,
+        "max": 0.282
+      },
+      "economy-ledger-cost.hash_ms": {
+        "n": 54,
+        "avg": 1.1417592592592594,
+        "median": 1.092,
+        "p95": 1.391,
+        "p99": 2.098,
+        "max": 2.098
+      },
+      "economy-boundary-cost.formulas_ms": {
+        "n": 54,
+        "avg": 7.026925925925926,
+        "median": 6.8035,
+        "p95": 8.406,
+        "p99": 12.07,
+        "max": 12.07
+      },
+      "economy-boundary-cost.stages_ms": {
+        "n": 54,
+        "avg": 5.432407407407408,
+        "median": 5.241,
+        "p95": 6.794,
+        "p99": 10.328,
+        "max": 10.328
+      },
+      "economy-boundary-cost.mirror_ms": {
+        "n": 54,
+        "avg": 3.945851851851852,
+        "median": 3.8285,
+        "p95": 4.621,
+        "p99": 6.616,
+        "max": 6.616
+      },
+      "runtime-day-cost.ms": {
+        "n": 54,
+        "avg": 14.791148148148148,
+        "median": 14.479,
+        "p95": 17.758,
+        "p99": 22.077,
+        "max": 22.077
+      }
+    }
+  },
+  "publish_final60_1": {
+    "native_days_per_second": 44.6220151917422,
+    "native_committed_days": 2683,
+    "max_observed_commit_gap_ms": 763.436,
+    "health_errors": [
+      "native rate 44.622 < 49.000"
+    ],
+    "authority": {
+      "worker_fault_count": 0,
+      "domain_stage_fallback_count": 0,
+      "economy_formula_backing": "owned_state",
+      "economy_production_writer_effective": "stage_ops",
+      "authoritative_domain_mask": 4095,
+      "economy_authority_switch_count": 1
+    },
+    "metrics": {
+      "economy-aggregate-cost.publish_ms": {
+        "n": 27,
+        "avg": 1.8342962962962963,
+        "median": 1.675,
+        "p95": 2.673,
+        "p99": 2.754,
+        "max": 2.754
+      },
+      "economy-aggregate-cost.native_hash_ms": {
+        "n": 27,
+        "avg": 1.352074074074074,
+        "median": 1.312,
+        "p95": 1.6,
+        "p99": 1.603,
+        "max": 1.603
+      },
+      "economy-ledger-cost.copy_ms": {
+        "n": 27,
+        "avg": 0.4938518518518519,
+        "median": 0.418,
+        "p95": 0.842,
+        "p99": 0.852,
+        "max": 0.852
+      },
+      "economy-ledger-cost.validate_ms": {
+        "n": 27,
+        "avg": 0.1501111111111111,
+        "median": 0.15,
+        "p95": 0.163,
+        "p99": 0.177,
+        "max": 0.177
+      },
+      "economy-ledger-cost.hash_ms": {
+        "n": 27,
+        "avg": 1.1837037037037037,
+        "median": 1.122,
+        "p95": 1.565,
+        "p99": 2.023,
+        "max": 2.023
+      },
+      "economy-boundary-cost.formulas_ms": {
+        "n": 27,
+        "avg": 6.859148148148148,
+        "median": 6.698,
+        "p95": 7.679,
+        "p99": 8.461,
+        "max": 8.461
+      },
+      "economy-boundary-cost.stages_ms": {
+        "n": 27,
+        "avg": 5.18262962962963,
+        "median": 4.967,
+        "p95": 6.085,
+        "p99": 6.78,
+        "max": 6.78
+      },
+      "economy-boundary-cost.mirror_ms": {
+        "n": 27,
+        "avg": 3.0055555555555555,
+        "median": 2.898,
+        "p95": 3.516,
+        "p99": 4.229,
+        "max": 4.229
+      },
+      "runtime-day-cost.ms": {
+        "n": 27,
+        "avg": 13.750703703703703,
+        "median": 13.583,
+        "p95": 15.024,
+        "p99": 16.027,
+        "max": 16.027
+      }
+    }
+  },
+  "publish_final60_2": {
+    "native_days_per_second": 44.7265371360155,
+    "native_committed_days": 2684,
+    "max_observed_commit_gap_ms": 712.026,
+    "health_errors": [
+      "native rate 44.727 < 49.000"
+    ],
+    "authority": {
+      "worker_fault_count": 0,
+      "domain_stage_fallback_count": 0,
+      "economy_formula_backing": "owned_state",
+      "economy_production_writer_effective": "stage_ops",
+      "authoritative_domain_mask": 4095,
+      "economy_authority_switch_count": 1
+    },
+    "metrics": {
+      "economy-aggregate-cost.publish_ms": {
+        "n": 27,
+        "avg": 1.7594444444444444,
+        "median": 1.692,
+        "p95": 2.241,
+        "p99": 2.245,
+        "max": 2.245
+      },
+      "economy-aggregate-cost.native_hash_ms": {
+        "n": 27,
+        "avg": 1.3477037037037036,
+        "median": 1.31,
+        "p95": 1.585,
+        "p99": 1.733,
+        "max": 1.733
+      },
+      "economy-ledger-cost.copy_ms": {
+        "n": 27,
+        "avg": 0.4925185185185185,
+        "median": 0.431,
+        "p95": 0.642,
+        "p99": 1.732,
+        "max": 1.732
+      },
+      "economy-ledger-cost.validate_ms": {
+        "n": 27,
+        "avg": 0.14262962962962963,
+        "median": 0.135,
+        "p95": 0.151,
+        "p99": 0.283,
+        "max": 0.283
+      },
+      "economy-ledger-cost.hash_ms": {
+        "n": 27,
+        "avg": 1.1204814814814814,
+        "median": 1.094,
+        "p95": 1.321,
+        "p99": 1.459,
+        "max": 1.459
+      },
+      "economy-boundary-cost.formulas_ms": {
+        "n": 27,
+        "avg": 6.857037037037037,
+        "median": 6.797,
+        "p95": 7.732,
+        "p99": 7.815,
+        "max": 7.815
+      },
+      "economy-boundary-cost.stages_ms": {
+        "n": 27,
+        "avg": 5.14,
+        "median": 5.031,
+        "p95": 5.997,
+        "p99": 6.228,
+        "max": 6.228
+      },
+      "economy-boundary-cost.mirror_ms": {
+        "n": 27,
+        "avg": 2.9585555555555554,
+        "median": 2.86,
+        "p95": 3.346,
+        "p99": 4.978,
+        "max": 4.978
+      },
+      "runtime-day-cost.ms": {
+        "n": 27,
+        "avg": 13.768407407407407,
+        "median": 13.393,
+        "p95": 15.846,
+        "p99": 17.657,
+        "max": 17.657
+      }
+    }
+  },
+  "publish_final60_3": {
+    "native_days_per_second": 43.8266001066703,
+    "native_committed_days": 2630,
+    "max_observed_commit_gap_ms": 796.497,
+    "health_errors": [
+      "native rate 43.827 < 49.000"
+    ],
+    "authority": {
+      "worker_fault_count": 0,
+      "domain_stage_fallback_count": 0,
+      "economy_formula_backing": "owned_state",
+      "economy_production_writer_effective": "stage_ops",
+      "authoritative_domain_mask": 4095,
+      "economy_authority_switch_count": 1
+    },
+    "metrics": {
+      "economy-aggregate-cost.publish_ms": {
+        "n": 26,
+        "avg": 2.238153846153846,
+        "median": 2.1535,
+        "p95": 2.83,
+        "p99": 3.415,
+        "max": 3.415
+      },
+      "economy-aggregate-cost.native_hash_ms": {
+        "n": 26,
+        "avg": 1.4627307692307692,
+        "median": 1.4115,
+        "p95": 1.651,
+        "p99": 2.63,
+        "max": 2.63
+      },
+      "economy-ledger-cost.copy_ms": {
+        "n": 26,
+        "avg": 0.5747692307692308,
+        "median": 0.5365,
+        "p95": 0.883,
+        "p99": 1.219,
+        "max": 1.219
+      },
+      "economy-ledger-cost.validate_ms": {
+        "n": 26,
+        "avg": 0.14696153846153848,
+        "median": 0.1395,
+        "p95": 0.209,
+        "p99": 0.254,
+        "max": 0.254
+      },
+      "economy-ledger-cost.hash_ms": {
+        "n": 26,
+        "avg": 1.2098461538461538,
+        "median": 1.168,
+        "p95": 1.507,
+        "p99": 1.51,
+        "max": 1.51
+      },
+      "economy-boundary-cost.formulas_ms": {
+        "n": 26,
+        "avg": 7.9340769230769235,
+        "median": 7.768000000000001,
+        "p95": 9.656,
+        "p99": 11.559,
+        "max": 11.559
+      },
+      "economy-boundary-cost.stages_ms": {
+        "n": 26,
+        "avg": 6.020192307692308,
+        "median": 5.8375,
+        "p95": 7.864,
+        "p99": 8.596,
+        "max": 8.596
+      },
+      "economy-boundary-cost.mirror_ms": {
+        "n": 26,
+        "avg": 3.1809230769230767,
+        "median": 3.1384999999999996,
+        "p95": 3.994,
+        "p99": 4.744,
+        "max": 4.744
+      },
+      "runtime-day-cost.ms": {
+        "n": 26,
+        "avg": 15.327115384615384,
+        "median": 15.1415,
+        "p95": 16.893,
+        "p99": 21.252,
+        "max": 21.252
+      }
+    }
+  },
+  "publish_final60_4": {
+    "native_days_per_second": 44.381280699101,
+    "native_committed_days": 2663,
+    "max_observed_commit_gap_ms": 777.115,
+    "health_errors": [
+      "native rate 44.381 < 49.000"
+    ],
+    "authority": {
+      "worker_fault_count": 0,
+      "domain_stage_fallback_count": 0,
+      "economy_formula_backing": "owned_state",
+      "economy_production_writer_effective": "stage_ops",
+      "authoritative_domain_mask": 4095,
+      "economy_authority_switch_count": 1
+    },
+    "metrics": {
+      "economy-aggregate-cost.publish_ms": {
+        "n": 26,
+        "avg": 2.1191923076923076,
+        "median": 2.0595,
+        "p95": 3.221,
+        "p99": 3.425,
+        "max": 3.425
+      },
+      "economy-aggregate-cost.native_hash_ms": {
+        "n": 26,
+        "avg": 1.3907307692307693,
+        "median": 1.381,
+        "p95": 1.523,
+        "p99": 1.529,
+        "max": 1.529
+      },
+      "economy-ledger-cost.copy_ms": {
+        "n": 26,
+        "avg": 0.5006923076923077,
+        "median": 0.4925,
+        "p95": 0.77,
+        "p99": 0.779,
+        "max": 0.779
+      },
+      "economy-ledger-cost.validate_ms": {
+        "n": 26,
+        "avg": 0.14257692307692307,
+        "median": 0.142,
+        "p95": 0.155,
+        "p99": 0.167,
+        "max": 0.167
+      },
+      "economy-ledger-cost.hash_ms": {
+        "n": 26,
+        "avg": 1.1876153846153845,
+        "median": 1.1640000000000001,
+        "p95": 1.374,
+        "p99": 1.409,
+        "max": 1.409
+      },
+      "economy-boundary-cost.formulas_ms": {
+        "n": 26,
+        "avg": 7.583538461538462,
+        "median": 7.236000000000001,
+        "p95": 9.277,
+        "p99": 9.861,
+        "max": 9.861
+      },
+      "economy-boundary-cost.stages_ms": {
+        "n": 26,
+        "avg": 5.705884615384615,
+        "median": 5.5705,
+        "p95": 6.974,
+        "p99": 8.129,
+        "max": 8.129
+      },
+      "economy-boundary-cost.mirror_ms": {
+        "n": 26,
+        "avg": 3.0405384615384614,
+        "median": 3.0505,
+        "p95": 3.369,
+        "p99": 3.377,
+        "max": 3.377
+      },
+      "runtime-day-cost.ms": {
+        "n": 26,
+        "avg": 14.788115384615384,
+        "median": 14.5085,
+        "p95": 17.447,
+        "p99": 19.155,
+        "max": 19.155
+      }
+    }
+  },
+  "publish_final60_5": {
+    "native_days_per_second": 44.9290620771652,
+    "native_committed_days": 2696,
+    "max_observed_commit_gap_ms": 719.097,
+    "health_errors": [
+      "native rate 44.929 < 49.000"
+    ],
+    "authority": {
+      "worker_fault_count": 0,
+      "domain_stage_fallback_count": 0,
+      "economy_formula_backing": "owned_state",
+      "economy_production_writer_effective": "stage_ops",
+      "authoritative_domain_mask": 4095,
+      "economy_authority_switch_count": 1
+    },
+    "metrics": {
+      "economy-aggregate-cost.publish_ms": {
+        "n": 27,
+        "avg": 1.6390740740740741,
+        "median": 1.608,
+        "p95": 1.82,
+        "p99": 1.827,
+        "max": 1.827
+      },
+      "economy-aggregate-cost.native_hash_ms": {
+        "n": 27,
+        "avg": 1.3358148148148148,
+        "median": 1.297,
+        "p95": 1.545,
+        "p99": 1.573,
+        "max": 1.573
+      },
+      "economy-ledger-cost.copy_ms": {
+        "n": 27,
+        "avg": 0.42474074074074075,
+        "median": 0.397,
+        "p95": 0.576,
+        "p99": 0.63,
+        "max": 0.63
+      },
+      "economy-ledger-cost.validate_ms": {
+        "n": 27,
+        "avg": 0.14466666666666667,
+        "median": 0.141,
+        "p95": 0.165,
+        "p99": 0.17,
+        "max": 0.17
+      },
+      "economy-ledger-cost.hash_ms": {
+        "n": 27,
+        "avg": 1.1098518518518519,
+        "median": 1.091,
+        "p95": 1.234,
+        "p99": 1.284,
+        "max": 1.284
+      },
+      "economy-boundary-cost.formulas_ms": {
+        "n": 27,
+        "avg": 6.660666666666667,
+        "median": 6.622,
+        "p95": 7.324,
+        "p99": 7.745,
+        "max": 7.745
+      },
+      "economy-boundary-cost.stages_ms": {
+        "n": 27,
+        "avg": 5.0130740740740745,
+        "median": 4.951,
+        "p95": 5.723,
+        "p99": 5.833,
+        "max": 5.833
+      },
+      "economy-boundary-cost.mirror_ms": {
+        "n": 27,
+        "avg": 2.8425555555555557,
+        "median": 2.769,
+        "p95": 3.16,
+        "p99": 3.215,
+        "max": 3.215
+      },
+      "runtime-day-cost.ms": {
+        "n": 27,
+        "avg": 13.351814814814816,
+        "median": 13.278,
+        "p95": 14.393,
+        "p99": 15.044,
+        "max": 15.044
+      }
+    }
+  }
+}

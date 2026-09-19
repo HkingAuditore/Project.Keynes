@@ -1,0 +1,201 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] catalog compiles
+  [PASS] country bootstraps
+  [PASS] configure_economy ok
+  [PASS] bootstrap_economy ok
+  [PASS] country bootstraps
+  [PASS] configure_economy ok
+  [PASS] bootstrap_economy ok
+[economy-open-finish] day=0 country=0.039 workset=0.014 fiscal=0.013 csr=0.000 recovery=0.000 vectors=0.007 audit=0.003 commands=0.000
+  [PASS] compact day 0 done
+[economy-open-finish] day=0 country=0.057 workset=0.006 fiscal=0.005 csr=0.000 recovery=0.000 vectors=0.001 audit=0.003 commands=0.000
+  [PASS] stage_ops day 0 done
+  [PASS] day 0 state_hash matches
+  [PASS] compact day 0 population_error==0
+  [PASS] compact day 0 money_error==0
+  [PASS] compact day 0 goods_error==0
+  [PASS] compact day 1 done
+  [PASS] stage_ops day 1 done
+  [PASS] day 1 state_hash matches
+  [PASS] compact day 1 population_error==0
+  [PASS] compact day 1 money_error==0
+  [PASS] compact day 1 goods_error==0
+  [PASS] compact day 2 done
+  [PASS] stage_ops day 2 done
+  [PASS] day 2 state_hash matches
+  [PASS] compact day 2 population_error==0
+  [PASS] compact day 2 money_error==0
+  [PASS] compact day 2 goods_error==0
+  [PASS] compact day 3 done
+  [PASS] stage_ops day 3 done
+  [PASS] day 3 state_hash matches
+  [PASS] compact day 3 population_error==0
+  [PASS] compact day 3 money_error==0
+  [PASS] compact day 3 goods_error==0
+  [PASS] compact day 4 done
+  [PASS] stage_ops day 4 done
+  [PASS] day 4 state_hash matches
+  [PASS] compact day 4 population_error==0
+  [PASS] compact day 4 money_error==0
+  [PASS] compact day 4 goods_error==0
+  [PASS] compact day 5 done
+  [PASS] stage_ops day 5 done
+  [PASS] day 5 state_hash matches
+  [PASS] compact day 5 population_error==0
+  [PASS] compact day 5 money_error==0
+  [PASS] compact day 5 goods_error==0
+  [PASS] compact day 6 done
+  [PASS] stage_ops day 6 done
+  [PASS] day 6 state_hash matches
+  [PASS] compact day 6 population_error==0
+  [PASS] compact day 6 money_error==0
+  [PASS] compact day 6 goods_error==0
+  [PASS] compact day 7 done
+  [PASS] stage_ops day 7 done
+  [PASS] day 7 state_hash matches
+  [PASS] compact day 7 population_error==0
+  [PASS] compact day 7 money_error==0
+  [PASS] compact day 7 goods_error==0
+  [PASS] compact day 8 done
+  [PASS] stage_ops day 8 done
+  [PASS] day 8 state_hash matches
+  [PASS] compact day 8 population_error==0
+  [PASS] compact day 8 money_error==0
+  [PASS] compact day 8 goods_error==0
+  [PASS] compact day 9 done
+  [PASS] stage_ops day 9 done
+  [PASS] day 9 state_hash matches
+  [PASS] compact day 9 population_error==0
+  [PASS] compact day 9 money_error==0
+  [PASS] compact day 9 goods_error==0
+  [PASS] compact day 10 done
+  [PASS] stage_ops day 10 done
+  [PASS] day 10 state_hash matches
+  [PASS] compact day 10 population_error==0
+  [PASS] compact day 10 money_error==0
+  [PASS] compact day 10 goods_error==0
+  [PASS] compact day 11 done
+  [PASS] stage_ops day 11 done
+  [PASS] day 11 state_hash matches
+  [PASS] compact day 11 population_error==0
+  [PASS] compact day 11 money_error==0
+  [PASS] compact day 11 goods_error==0
+  [PASS] compact day 12 done
+  [PASS] stage_ops day 12 done
+  [PASS] day 12 state_hash matches
+  [PASS] compact day 12 population_error==0
+  [PASS] compact day 12 money_error==0
+  [PASS] compact day 12 goods_error==0
+  [PASS] compact day 13 done
+  [PASS] stage_ops day 13 done
+  [PASS] day 13 state_hash matches
+  [PASS] compact day 13 population_error==0
+  [PASS] compact day 13 money_error==0
+  [PASS] compact day 13 goods_error==0
+  [PASS] compact day 14 done
+  [PASS] stage_ops day 14 done
+  [PASS] day 14 state_hash matches
+  [PASS] compact day 14 population_error==0
+  [PASS] compact day 14 money_error==0
+  [PASS] compact day 14 goods_error==0
+  [PASS] compact day 15 done
+  [PASS] stage_ops day 15 done
+  [PASS] day 15 state_hash matches
+  [PASS] compact day 15 population_error==0
+  [PASS] compact day 15 money_error==0
+  [PASS] compact day 15 goods_error==0
+  [PASS] compact day 16 done
+  [PASS] stage_ops day 16 done
+  [PASS] day 16 state_hash matches
+  [PASS] compact day 16 population_error==0
+  [PASS] compact day 16 money_error==0
+  [PASS] compact day 16 goods_error==0
+  [PASS] compact day 17 done
+  [PASS] stage_ops day 17 done
+  [PASS] day 17 state_hash matches
+  [PASS] compact day 17 population_error==0
+  [PASS] compact day 17 money_error==0
+  [PASS] compact day 17 goods_error==0
+  [PASS] compact day 18 done
+  [PASS] stage_ops day 18 done
+  [PASS] day 18 state_hash matches
+  [PASS] compact day 18 population_error==0
+  [PASS] compact day 18 money_error==0
+  [PASS] compact day 18 goods_error==0
+  [PASS] compact day 19 done
+  [PASS] stage_ops day 19 done
+  [PASS] day 19 state_hash matches
+  [PASS] compact day 19 population_error==0
+  [PASS] compact day 19 money_error==0
+  [PASS] compact day 19 goods_error==0
+  [PASS] compact day 20 done
+  [PASS] stage_ops day 20 done
+  [PASS] day 20 state_hash matches
+  [PASS] compact day 20 population_error==0
+  [PASS] compact day 20 money_error==0
+  [PASS] compact day 20 goods_error==0
+  [PASS] compact day 21 done
+  [PASS] stage_ops day 21 done
+  [PASS] day 21 state_hash matches
+  [PASS] compact day 21 population_error==0
+  [PASS] compact day 21 money_error==0
+  [PASS] compact day 21 goods_error==0
+  [PASS] compact day 22 done
+  [PASS] stage_ops day 22 done
+  [PASS] day 22 state_hash matches
+  [PASS] compact day 22 population_error==0
+  [PASS] compact day 22 money_error==0
+  [PASS] compact day 22 goods_error==0
+  [PASS] compact day 23 done
+  [PASS] stage_ops day 23 done
+  [PASS] day 23 state_hash matches
+  [PASS] compact day 23 population_error==0
+  [PASS] compact day 23 money_error==0
+  [PASS] compact day 23 goods_error==0
+  [PASS] compact day 24 done
+  [PASS] stage_ops day 24 done
+  [PASS] day 24 state_hash matches
+  [PASS] compact day 24 population_error==0
+  [PASS] compact day 24 money_error==0
+  [PASS] compact day 24 goods_error==0
+  [PASS] compact day 25 done
+  [PASS] stage_ops day 25 done
+  [PASS] day 25 state_hash matches
+  [PASS] compact day 25 population_error==0
+  [PASS] compact day 25 money_error==0
+  [PASS] compact day 25 goods_error==0
+  [PASS] compact day 26 done
+  [PASS] stage_ops day 26 done
+  [PASS] day 26 state_hash matches
+  [PASS] compact day 26 population_error==0
+  [PASS] compact day 26 money_error==0
+  [PASS] compact day 26 goods_error==0
+  [PASS] compact day 27 done
+  [PASS] stage_ops day 27 done
+  [PASS] day 27 state_hash matches
+  [PASS] compact day 27 population_error==0
+  [PASS] compact day 27 money_error==0
+  [PASS] compact day 27 goods_error==0
+  [PASS] compact day 28 done
+  [PASS] stage_ops day 28 done
+  [PASS] day 28 state_hash matches
+  [PASS] compact day 28 population_error==0
+  [PASS] compact day 28 money_error==0
+  [PASS] compact day 28 goods_error==0
+  [PASS] compact day 29 done
+  [PASS] stage_ops day 29 done
+  [PASS] day 29 state_hash matches
+  [PASS] compact day 29 population_error==0
+  [PASS] compact day 29 money_error==0
+  [PASS] compact day 29 goods_error==0
+  [PASS] soak_parity_ok latched
+  [PASS] stage_ops worker starts for ingress check
+  [PASS] legacy submit refused under stage_ops writer
+runtime_economy_stage_ops_soak_parity_test checks=190 failures=0
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 276 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

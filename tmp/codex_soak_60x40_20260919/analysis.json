@@ -1,0 +1,275 @@
+{
+  "session": {
+    "state": "complete",
+    "native_days_per_second": 44.9117518239587,
+    "native_committed_days": 2695,
+    "max_observed_commit_gap_ms": 732.72,
+    "health_errors": [],
+    "auto_pod_active": true
+  },
+  "frames": 7891,
+  "perf_rows": 2662,
+  "frame_stats": {
+    "frame_wall_ms": {
+      "n": 7891,
+      "avg": 7.6044,
+      "median": 6.899,
+      "p95": 7.229,
+      "p99": 10.698,
+      "max": 536.758
+    },
+    "last_fast_tick_ms": {
+      "n": 7891,
+      "avg": 2.0437,
+      "median": 2.0,
+      "p95": 2.0,
+      "p99": 3.0,
+      "max": 7.0
+    },
+    "writeback_lag_days": {
+      "n": 7891,
+      "avg": 2.7553,
+      "median": 2.0,
+      "p95": 5.0,
+      "p99": 6.0,
+      "max": 7.0
+    },
+    "climate_pod_plan_ms": {
+      "n": 7891,
+      "avg": 2.0964,
+      "median": 1.8995,
+      "p95": 3.0821,
+      "p99": 3.5139,
+      "max": 4.4718
+    }
+  },
+  "perf_stats": {
+    "fast_ms": {
+      "n": 2662,
+      "avg": 1.4976,
+      "median": 1.444,
+      "p95": 1.696,
+      "p99": 2.446,
+      "max": 5.978
+    },
+    "clock_full_ms": {
+      "n": 2662,
+      "avg": 2.3985,
+      "median": 3.0715,
+      "p95": 4.229,
+      "p99": 12.073,
+      "max": 69.547
+    },
+    "runtime_graph_visual_apply_ms": {
+      "n": 2662,
+      "avg": 0.0294,
+      "median": 0.028,
+      "p95": 0.034,
+      "p99": 0.055,
+      "max": 0.252
+    },
+    "runtime_graph_country_territory_sync_ms": {
+      "n": 2662,
+      "avg": 0.022,
+      "median": 0.022,
+      "p95": 0.022,
+      "p99": 0.022,
+      "max": 0.022
+    },
+    "runtime_graph_event_dispatch_ms": {
+      "n": 2662,
+      "avg": 0.022,
+      "median": 0.022,
+      "p95": 0.022,
+      "p99": 0.022,
+      "max": 0.022
+    }
+  },
+  "long_frames": [
+    {
+      "frame_idx": "410",
+      "timestamp_ms": "29069",
+      "frame_wall_ms": "536.758",
+      "clock_day": "365",
+      "completed_days": "364",
+      "writeback_lag_days": "1"
+    },
+    {
+      "frame_idx": "1492",
+      "timestamp_ms": "37045",
+      "frame_wall_ms": "516.646",
+      "clock_day": "730",
+      "completed_days": "729",
+      "writeback_lag_days": "1"
+    },
+    {
+      "frame_idx": "2569",
+      "timestamp_ms": "45094",
+      "frame_wall_ms": "518.32",
+      "clock_day": "1095",
+      "completed_days": "1094",
+      "writeback_lag_days": "1"
+    },
+    {
+      "frame_idx": "3619",
+      "timestamp_ms": "53388",
+      "frame_wall_ms": "516.123",
+      "clock_day": "1460",
+      "completed_days": "1459",
+      "writeback_lag_days": "1"
+    },
+    {
+      "frame_idx": "4658",
+      "timestamp_ms": "61509",
+      "frame_wall_ms": "516.776",
+      "clock_day": "1825",
+      "completed_days": "1824",
+      "writeback_lag_days": "1"
+    },
+    {
+      "frame_idx": "5728",
+      "timestamp_ms": "69567",
+      "frame_wall_ms": "518.892",
+      "clock_day": "2190",
+      "completed_days": "2189",
+      "writeback_lag_days": "1"
+    },
+    {
+      "frame_idx": "6792",
+      "timestamp_ms": "77637",
+      "frame_wall_ms": "517.812",
+      "clock_day": "2555",
+      "completed_days": "2554",
+      "writeback_lag_days": "1"
+    },
+    {
+      "frame_idx": "7872",
+      "timestamp_ms": "85597",
+      "frame_wall_ms": "518.803",
+      "clock_day": "2920",
+      "completed_days": "2919",
+      "writeback_lag_days": "1"
+    }
+  ],
+  "sampled_costs": {
+    "economy-open-finish.country": {
+      "n": 27,
+      "avg": 0.3035,
+      "median": 0.297,
+      "p95": 0.344,
+      "p99": 0.369,
+      "max": 0.369
+    },
+    "economy-open-finish.workset": {
+      "n": 27,
+      "avg": 0.019,
+      "median": 0.019,
+      "p95": 0.021,
+      "p99": 0.022,
+      "max": 0.022
+    },
+    "economy-open-finish.fiscal": {
+      "n": 27,
+      "avg": 0.0289,
+      "median": 0.029,
+      "p95": 0.03,
+      "p99": 0.03,
+      "max": 0.03
+    },
+    "economy-open-finish.csr": {
+      "n": 27,
+      "avg": 0.004,
+      "median": 0.004,
+      "p95": 0.004,
+      "p99": 0.005,
+      "max": 0.005
+    },
+    "economy-open-finish.recovery": {
+      "n": 27,
+      "avg": 0.0007,
+      "median": 0.001,
+      "p95": 0.001,
+      "p99": 0.001,
+      "max": 0.001
+    },
+    "economy-open-finish.vectors": {
+      "n": 27,
+      "avg": 0.3572,
+      "median": 0.312,
+      "p95": 0.627,
+      "p99": 0.638,
+      "max": 0.638
+    },
+    "economy-open-finish.audit": {
+      "n": 27,
+      "avg": 0.4054,
+      "median": 0.397,
+      "p95": 0.484,
+      "p99": 0.514,
+      "max": 0.514
+    },
+    "economy-open-finish.commands": {
+      "n": 27,
+      "avg": 0.0,
+      "median": 0.0,
+      "p95": 0.0,
+      "p99": 0.001,
+      "max": 0.001
+    },
+    "economy-prelude-cost.ms": {
+      "n": 27,
+      "avg": 1.3716,
+      "median": 1.331,
+      "p95": 1.66,
+      "p99": 1.795,
+      "max": 1.795
+    },
+    "economy-boundary-cost.formulas_ms": {
+      "n": 27,
+      "avg": 6.5463,
+      "median": 6.455,
+      "p95": 7.376,
+      "p99": 7.632,
+      "max": 7.632
+    },
+    "economy-boundary-cost.stages_ms": {
+      "n": 27,
+      "avg": 4.9323,
+      "median": 4.884,
+      "p95": 5.42,
+      "p99": 5.719,
+      "max": 5.719
+    },
+    "economy-boundary-cost.mirror_ms": {
+      "n": 27,
+      "avg": 3.7716,
+      "median": 3.742,
+      "p95": 4.199,
+      "p99": 4.275,
+      "max": 4.275
+    },
+    "runtime-day-cost.ms": {
+      "n": 27,
+      "avg": 14.0597,
+      "median": 13.881,
+      "p95": 15.216,
+      "p99": 16.859,
+      "max": 16.859
+    }
+  },
+  "stage_ms_final_snapshot": [
+    0.1596,
+    0.0005,
+    0.0005,
+    0.1062,
+    0.1597,
+    1.101,
+    0.003,
+    0.0045,
+    0.0006,
+    0.057,
+    0.1109,
+    0.8633,
+    2.1546
+  ]
+}

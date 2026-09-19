@@ -1,0 +1,88 @@
+Opened log file 'tmp/soak_capture_debugger.log'
+
+Microsoft (R) Windows Debugger Version 10.0.22621.755 AMD64
+Copyright (c) Microsoft Corporation. All rights reserved.
+
+CommandLine: D:\Godot\Godot_v4.6.2-stable_win64.exe\Godot_v4.6.2-stable_win64_console.exe --headless --path Project/project-keynes res://tests/authority_stage_c_client_runner.tscn -- mode=ACTIVE seed=1735228708 foreign_count=5 speed=50 warmup_seconds=1 record_seconds=10 output_dir=D:/Godot/ProjectKeynes/Project.Keynes/tmp/soak_capture_debug
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\atlmfc.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\ObjectiveC.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\concurrency.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\cpp_rest.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\stl.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Data.Json.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Geolocation.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Sensors.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Media.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\windows.natvis'
+NatVis script successfully loaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\winrt.natvis'
+
+************* Path validation summary **************
+Response                         Time (ms)     Location
+Deferred                                       srv*
+Symbol search path is: srv*
+Executable search path is: 
+ModLoad: 00007ff6`13b30000 00007ff6`13b65000   image00007ff6`13b30000
+ModLoad: 00007ffa`e1050000 00007ffa`e1268000   ntdll.dll
+ModLoad: 00007ffa`def80000 00007ffa`df044000   C:\Windows\System32\KERNEL32.DLL
+ModLoad: 00007ffa`de190000 00007ffa`de563000   C:\Windows\System32\KERNELBASE.dll
+ModLoad: 00007ffa`ded00000 00007ffa`deda7000   C:\Windows\System32\msvcrt.dll
+ModLoad: 00007ffa`dfaf0000 00007ffa`e038c000   C:\Windows\System32\SHELL32.dll
+ModLoad: 00007ffa`de8a0000 00007ffa`de93a000   C:\Windows\System32\msvcp_win.dll
+ModLoad: 00007ffa`de940000 00007ffa`dea51000   C:\Windows\System32\ucrtbase.dll
+ModLoad: 00007ffa`df930000 00007ffa`dfae2000   C:\Windows\System32\USER32.dll
+ModLoad: 00007ffa`de160000 00007ffa`de186000   C:\Windows\System32\win32u.dll
+ModLoad: 00007ffa`df500000 00007ffa`df529000   C:\Windows\System32\GDI32.dll
+ModLoad: 00007ffa`debd0000 00007ffa`deceb000   C:\Windows\System32\gdi32full.dll
+ModLoad: 00007ffa`de6b0000 00007ffa`de7ef000   C:\Windows\System32\wintypes.dll
+ModLoad: 00007ffa`df590000 00007ffa`df921000   C:\Windows\System32\combase.dll
+ModLoad: 00007ffa`dee60000 00007ffa`def78000   C:\Windows\System32\RPCRT4.dll
+ModLoad: 00007ffa`df400000 00007ffa`df469000   C:\Windows\System32\SHLWAPI.dll
+ModLoad: 00007ffa`d6a20000 00007ffa`d6a2a000   C:\Windows\SYSTEM32\VERSION.dll
+(1c610.18110): Break instruction exception - code 80000003 (first chance)
+ntdll!LdrpDoDebuggerBreak+0x30:
+00007ffa`e112cbc4 cc              int     3
+0:000> .sympath D:\Godot\ProjectKeynes\Project.Keynes\Project\project-keynes\addons\dots_ext\bin\windows
+Symbol search path is: D:\Godot\ProjectKeynes\Project.Keynes\Project\project-keynes\addons\dots_ext\bin\windows
+Expanded Symbol search path is: d:\godot\projectkeynes\project.keynes\project\project-keynes\addons\dots_ext\bin\windows
+
+************* Path validation summary **************
+Response                         Time (ms)     Location
+OK                                             D:\Godot\ProjectKeynes\Project.Keynes\Project\project-keynes\addons\dots_ext\bin\windows
+0:000> sxe -c ".ecxr; k; ~* k; q" av
+0:000> g
+ModLoad: 00007ffa`e0650000 00007ffa`e0681000   C:\Windows\System32\IMM32.DLL
+ModLoad: 00007ff9`bb4a0000 00007ff9`bb571000   C:\Program Files (x86)\iOA\module\DataProtection\TxUmon64.dll
+ModLoad: 00007ffa`e0590000 00007ffa`e0641000   C:\Windows\System32\ADVAPI32.dll
+ModLoad: 00007ffa`dedb0000 00007ffa`dee58000   C:\Windows\System32\sechost.dll
+ModLoad: 00007ffa`de870000 00007ffa`de898000   C:\Windows\System32\bcrypt.dll
+ModLoad: 00007ffa`decf0000 00007ffa`decf8000   C:\Windows\System32\PSAPI.DLL
+ModLoad: 00007ffa`dea60000 00007ffa`debc8000   C:\Windows\System32\CRYPT32.dll
+ModLoad: 00007ffa`d9190000 00007ffa`d919b000   C:\Windows\system32\FltLib.dll
+ModLoad: 00007ffa`d42e0000 00007ffa`d4314000   C:\Windows\system32\Winmm.dll
+ModLoad: 00007ffa`de570000 00007ffa`de5ec000   C:\Windows\System32\WINTRUST.DLL
+ModLoad: 00007ffa`dda50000 00007ffa`dda62000   C:\Windows\SYSTEM32\MSASN1.dll
+ModLoad: 00007ffa`8fcc0000 00007ffa`8fcda000   C:\Windows\system32\Avicap32.dll
+ModLoad: 00007ffa`7ceb0000 00007ffa`7cedb000   C:\Windows\SYSTEM32\MSVFW32.dll
+ModLoad: 00007ffa`c45d0000 00007ffa`c486c000   C:\Windows\WinSxS\amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.22621.6060_none_2712eda17382d24b\COMCTL32.dll
+ModLoad: 00007ffa`e0570000 00007ffa`e058f000   C:\Windows\System32\imagehlp.dll
+ModLoad: 00007ffa`b1d70000 00007ffa`b1d7b000   C:\Windows\system32\KtmW32.dll
+ModLoad: 00007ffa`dda00000 00007ffa`dda1b000   C:\Windows\SYSTEM32\CRYPTSP.dll
+ModLoad: 00007ffa`c4520000 00007ffa`c45c8000   C:\Windows\system32\winspool.drv
+ModLoad: 00007ffa`e0ee0000 00007ffa`e0fe4000   C:\Windows\System32\shcore.dll
+ModLoad: 00007ffa`dd150000 00007ffa`dd187000   C:\Windows\system32\rsaenh.dll
+ModLoad: 00007ffa`dcfd0000 00007ffa`dcfe4000   C:\Windows\system32\wtsapi32.dll
+ModLoad: 00007ffa`dd9e0000 00007ffa`dd9ec000   C:\Windows\SYSTEM32\CRYPTBASE.dll
+ModLoad: 00007ffa`de7f0000 00007ffa`de86b000   C:\Windows\System32\bcryptPrimitives.dll
+ModLoad: 00007ffa`dcc10000 00007ffa`dcc3d000   C:\Windows\system32\Iphlpapi.dll
+ModLoad: 00007ffa`b1610000 00007ffa`b1b0e000   C:\Windows\system32\Wininet.dll
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\atlmfc.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\ObjectiveC.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\concurrency.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\cpp_rest.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\stl.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Data.Json.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Geolocation.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Sensors.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Media.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\windows.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\winrt.natvis'

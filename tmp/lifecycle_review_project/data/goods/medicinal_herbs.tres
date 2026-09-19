@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"medicinal_herbs"
+display_name = "药材"
+semantic_tags = PackedStringArray()
+category_id = &"medicinal_herbs"
+substitution_category_ids = PackedStringArray("medicinal_herbs")
+technology_tags = PackedStringArray("industry.primary", "tech.wild_medicinal_herb_collection", "tech.commercial_estates", "tech.modern_medicine", "tech.crop_domestication", "tech.precision_agriculture", "tech.automated_agriculture")
+reference_max_price = 500000
+price_adjust_q16 = 922
+demand_price_elasticity_q16 = 29491
+inventory_target_ratio_q16 = 81920

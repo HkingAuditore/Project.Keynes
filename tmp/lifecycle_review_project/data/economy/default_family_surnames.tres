@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="FamilySurnamePackProfile" load_steps=2 format=3]
+
+[ext_resource type="Script" path="res://scripts/data/family_surname_pack_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+stable_id = &"default_zh"
+surname_ids = PackedStringArray("bai", "cai", "cao", "chen", "deng", "ding", "du", "fan", "fang", "feng", "fu", "gao", "gu", "guo", "han", "he", "hong", "hu", "huang", "jiang", "jin", "kong", "li", "lin", "liu", "long", "lu", "luo", "ma", "meng", "pan", "peng", "qian", "qin", "ren", "shen", "shi", "song", "su", "sun", "tang", "tao", "tian", "wan", "wang", "wei", "wen", "wu", "xia", "xiao", "xie", "xu", "xue", "yan", "yang", "yao", "ye", "yi", "yin", "yu", "yuan", "zeng", "zhang", "zhao", "zheng", "zhou", "zhu", "zou")
+surname_text = PackedStringArray("白", "蔡", "曹", "陈", "邓", "丁", "杜", "范", "方", "冯", "傅", "高", "顾", "郭", "韩", "何", "洪", "胡", "黄", "蒋", "金", "孔", "李", "林", "刘", "龙", "陆", "罗", "马", "孟", "潘", "彭", "钱", "秦", "任", "沈", "石", "宋", "苏", "孙", "唐", "陶", "田", "万", "王", "魏", "温", "吴", "夏", "萧", "谢", "徐", "薛", "严", "杨", "姚", "叶", "易", "殷", "余", "袁", "曾", "张", "赵", "郑", "周", "朱", "邹")
+weights = PackedInt32Array(12, 15, 18, 70, 18, 10, 14, 12, 10, 12, 12, 25, 10, 30, 22, 24, 8, 28, 55, 18, 12, 6, 80, 22, 75, 7, 15, 38, 45, 10, 16, 14, 8, 10, 11, 12, 10, 20, 12, 30, 18, 9, 10, 8, 95, 16, 8, 62, 10, 8, 20, 26, 8, 9, 70, 9, 8, 8, 7, 24, 12, 11, 88, 58, 16, 48, 18, 12)
+culture_group_ids = PackedStringArray("default")
+culture_group_display_names = PackedStringArray("默认文化")
+culture_group_naming_formats = PackedStringArray("CITY_SURNAME_SUFFIX")
+culture_group_separators = PackedStringArray("-")
+culture_group_suffixes = PackedStringArray("氏")

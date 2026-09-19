@@ -1,0 +1,49 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] catalog compiles
+  [PASS] country bootstraps
+  [PASS] configure_economy ok
+  [PASS] bootstrap_economy ok
+  [PASS] country bootstraps
+  [PASS] configure_economy ok
+  [PASS] bootstrap_economy ok
+  [PASS] compact day 0 done
+  [PASS] stage_ops day 0 done
+  [PASS] day 0 state_hash matches
+  [PASS] compact day 0 population_error==0
+  [PASS] compact day 0 money_error==0
+  [PASS] compact day 0 goods_error==0
+  [PASS] compact day 1 done
+  [PASS] stage_ops day 1 done
+  [PASS] day 1 state_hash matches
+  [PASS] compact day 1 population_error==0
+  [PASS] compact day 1 money_error==0
+  [PASS] compact day 1 goods_error==0
+  [PASS] compact day 2 done
+  [PASS] stage_ops day 2 done
+  [PASS] day 2 state_hash matches
+  [PASS] compact day 2 population_error==0
+  [PASS] compact day 2 money_error==0
+  [PASS] compact day 2 goods_error==0
+  [PASS] compact day 3 done
+  [PASS] stage_ops day 3 done
+  [PASS] day 3 state_hash matches
+  [PASS] compact day 3 population_error==0
+  [PASS] compact day 3 money_error==0
+  [PASS] compact day 3 goods_error==0
+  [PASS] compact day 4 done
+  [PASS] stage_ops day 4 done
+  [PASS] day 4 state_hash matches
+  [PASS] compact day 4 population_error==0
+  [PASS] compact day 4 money_error==0
+  [PASS] compact day 4 goods_error==0
+  [PASS] soak_parity_ok latched
+  [PASS] stage_ops worker starts for ingress check
+  [PASS] legacy submit refused under stage_ops writer
+runtime_economy_stage_ops_soak_parity_test checks=40 failures=0
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 276 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

@@ -1,0 +1,215 @@
+--- before/economy_graph_stage_dispatch.cpp
++++ after/economy_graph_stage_dispatch.cpp
+@@ -4,6 +4,7 @@
+ 
+ #include <algorithm>
+ #include <cstdio>
++#include <chrono>
+ 
+ namespace pk {
+ namespace {
+@@ -243,6 +244,7 @@
+         return true;
+     }
+     case RuntimeEconomyGraphStage::AGGREGATE_PUBLISH: {
++        const auto probe_begin = std::chrono::steady_clock::now();
+         int64_t work = 0;
+         std::string publish_error;
+         if (!runtime->run_aggregate_publish_drain(work, publish_error)) {
+@@ -253,10 +255,15 @@
+                        "aggregate_publish");
+             return false;
+         }
+-        // commit_epoch 随后可能执行依赖投影的 POD command，先刷新一次。
+-        if (runtime->formula_owned_bound() && !input.stage_hashes_enabled)
+-            runtime->flush_formula_owned_domain_mirrors();
+-        finish_ok(result, input, runtime, stage);
++        // ACTIVE 投影在真正执行 POD 命令前或 Host 最终发布时刷新。
++        const auto probe_publish = std::chrono::steady_clock::now();
++        finish_ok(result, input, runtime, stage);
++        if (input.sample_day % 100 == 0 && !input.stage_hashes_enabled) {
++            std::fprintf(stderr, "[economy-aggregate-cost] day=%lld publish_ms=%.3f native_hash_ms=%.3f\n",
++                static_cast<long long>(input.sample_day),
++                std::chrono::duration<double, std::milli>(probe_publish - probe_begin).count(),
++                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - probe_publish).count());
++        }
+         return true;
+     }
+     case RuntimeEconomyGraphStage::COUNT:
+--- before/runtime_economy_pod.cpp
++++ after/runtime_economy_pod.cpp
+@@ -7,6 +7,7 @@
+ #include <algorithm>
+ #include <chrono>
+ #include <cstring>
++#include <cstdio>
+ #include <limits>
+ 
+ namespace pk {
+@@ -442,7 +443,7 @@
+         error = "economy_pod_owned_mirror_state_uninitialized";
+         return false;
+     }
+-    RuntimeEconomyLedgerState ledger;
++    RuntimeEconomyLedgerState &ledger = _export_ledger_scratch;
+     // Stamp identity before the export so `valid()` sees a nonzero generation
+     // and a committed day even on the very first publish.
+     _state.state_generation = std::max(generation, _state.state_generation);
+@@ -453,7 +454,7 @@
+     // only duplicated all population/market vectors before the move below;
+     // export's fallback blocks are used only when a block is genuinely absent.
+     // The complete validated ledger remains the single published copy.
+-    _committed_ledger_state = std::move(ledger);
++    std::swap(_committed_ledger_state, ledger);
+     publish_mirror_features();
+     return true;
+ }
+@@ -462,6 +463,7 @@
+         RuntimeEconomyLedgerState &ledger, std::string &error) const {
+     error.clear();
+     ledger.clear();
++    const auto copy_started = std::chrono::steady_clock::now();
+     ledger.generation = _state.state_generation;
+     ledger.committed_day = _state.committed_day;
+     ledger.market_count = _state.market.market_count;
+@@ -507,13 +509,22 @@
+         ledger.resource = _state.committed.resource;
+     if (!ledger.epoch_cursor.captured && _state.committed.epoch_cursor.captured)
+         ledger.epoch_cursor = _state.committed.epoch_cursor;
++    const auto validation_started = std::chrono::steady_clock::now();
+     const char *validation_reason = nullptr;
+     if (!ledger.valid(&validation_reason)) {
+         error = std::string("economy_pod_ledger_export_invalid:") +
+             (validation_reason != nullptr ? validation_reason : "unknown");
+         return false;
+     }
++    const auto hash_started = std::chrono::steady_clock::now();
+     ledger.recompute_hash();
++    if (ledger.committed_day > 0 && ledger.committed_day % 100 == 0) {
++        std::fprintf(stderr, "[economy-ledger-cost] day=%lld copy_ms=%.3f validate_ms=%.3f hash_ms=%.3f cohorts=%zu markets=%zu\n",
++            static_cast<long long>(ledger.committed_day),
++            std::chrono::duration<double, std::milli>(validation_started - copy_started).count(),
++            std::chrono::duration<double, std::milli>(hash_started - validation_started).count(),
++            elapsed_ms(hash_started), ledger.cohort_active.size(), ledger.market_stock.size());
++    }
+     return true;
+ }
+ 
+@@ -552,6 +563,7 @@
+     _summary_cohorts = 0;
+     _summary_families = 0;
+     _committed_ledger_state.clear();
++    _export_ledger_scratch = RuntimeEconomyLedgerState{};
+     _published_mirror_features.store(0, std::memory_order_release);
+     _ecp2 = RuntimeEconomyEcp2State{};
+     // Keep _stage_ops / _command_executor: Host re-attaches identity separately.
+@@ -1180,6 +1192,14 @@
+         _snapshot_ring.publish(ring_index);
+     }
+ 
++    // ACTIVE 无命令时不构造即将被 Host 再次刷新的投影；有命令仍保留
++    // 执行前投影及执行后最终导出，不能让命令读到上一代 domain 数据。
++    if (!_commands.empty() && !_input.stage_hashes_enabled &&
++        _stage_ops != nullptr && _view.runtime_hook != nullptr) {
++        auto *runtime = static_cast<NativeEconomyRuntime *>(_view.runtime_hook);
++        if (runtime->formula_owned_bound())
++            runtime->flush_formula_owned_domain_mirrors();
++    }
+     // Promote pending receipts that reached the committed boundary.
+     commit_pending_commands();
+ 
+@@ -2443,6 +2463,27 @@
+     authority.state().committed_day = 3;
+     RuntimeEconomyLedgerState fixture_ledger;
+     if (!authority.export_committed_ledger(fixture_ledger, error)) return false;
++    auto wire_hash_matches = [](const auto &store) {
++        std::vector<uint8_t> wire;
++        store.append_wire(wire);
++        uint64_t expected = FNV_OFFSET;
++        uint64_t mixed = (uint64_t{0x123456789abcdef0} ^ wire.size()) * FNV_PRIME;
++        for (uint8_t byte : wire) {
++            expected = (expected ^ byte) * FNV_PRIME;
++            mixed = (mixed ^ byte) * FNV_PRIME;
++        }
++        return expected == store.wire_content_hash() &&
++            mixed == store.mix_wire_hash(0x123456789abcdef0);
++    };
++    if (!wire_hash_matches(authority.state().building.store) ||
++        !wire_hash_matches(authority.state().family.store) ||
++        !wire_hash_matches(authority.state().trade_escrow.store) ||
++        !wire_hash_matches(RuntimeEconomyBuildingStore{}) ||
++        !wire_hash_matches(RuntimeEconomyFamilyStore{}) ||
++        !wire_hash_matches(RuntimeEconomyTradeEscrowStore{})) {
++        error = "economy_streaming_wire_hash_mismatch";
++        return false;
++    }
+     if (!authority.capture_committed_ledger_state(
+             RuntimeEconomyLedgerState(fixture_ledger))) {
+         error = "economy_pod_state_fixture_ledger_failed";
+@@ -2890,6 +2931,27 @@
+         error = "economy_pod_combined_import_mirror_mismatch";
+         return false;
+     }
++    // 反复交换导出缓冲后，失败发布仍必须保留最后一个完整账本。
++    for (int pass = 0; pass < 3; ++pass) {
++        if (!restored.publish_owned_committed_mirror(
++                fixture_ledger.generation, fixture_ledger.committed_day, error) ||
++            !ledgers_equal(restored._committed_ledger_state, fixture_ledger)) {
++            error = "economy_owned_reused_export_mismatch";
++            return false;
++        }
++    }
++    const auto published_hash = restored._committed_ledger_state.ledger_hash;
++    restored.state().building.content_hash ^= 1u;
++    if (restored.publish_owned_committed_mirror(
++            fixture_ledger.generation, fixture_ledger.committed_day, rejected_error) ||
++        restored._committed_ledger_state.ledger_hash != published_hash) {
++        error = "economy_owned_failed_export_changed_published_ledger";
++        return false;
++    }
++    restored.state().building.content_hash ^= 1u;
++    if (!restored.publish_owned_committed_mirror(
++            fixture_ledger.generation, fixture_ledger.committed_day, error) ||
++        !ledgers_equal(restored._committed_ledger_state, fixture_ledger)) return false;
+     return true;
+ }
+ 
+--- before/runtime_economy_state.cpp
++++ after/runtime_economy_state.cpp
+@@ -396,21 +396,13 @@
+     hash = mix(hash, building.group_count);
+     hash = mix(hash, building.pending_count);
+     hash = mix(hash, building.role_lane_count);
+-    {
+-        std::vector<uint8_t> building_wire;
+-        building.store.append_wire(building_wire);
+-        mix_vector(hash, building_wire);
+-    }
++    hash = building.store.mix_wire_hash(hash);
+     hash = mix(hash, trade_escrow.captured ? 1u : 0u);
+     hash = mix(hash, trade_escrow.country_trade_revision);
+     hash = mix(hash, static_cast<uint64_t>(trade_escrow.next_id));
+     hash = mix(hash, trade_escrow.order_count);
+     hash = mix(hash, trade_escrow.content_hash);
+-    {
+-        std::vector<uint8_t> trade_wire;
+-        trade_escrow.store.append_wire(trade_wire);
+-        mix_vector(hash, trade_wire);
+-    }
++    hash = trade_escrow.store.mix_wire_hash(hash);
+     hash = mix(hash, family.captured ? 1u : 0u);
+     hash = mix(hash, family.catalog_hash);
+     hash = mix(hash, family.person_catalog_hash);
+@@ -428,11 +420,7 @@
+     hash = mix(hash, family.expedition_count);
+     hash = mix(hash, static_cast<uint64_t>(family.next_expedition_stable_id));
+     hash = mix(hash, family.content_hash);
+-    {
+-        std::vector<uint8_t> family_wire;
+-        family.store.append_wire(family_wire);
+-        mix_vector(hash, family_wire);
+-    }
++    hash = family.store.mix_wire_hash(hash);
+     hash = mix(hash, resource.captured ? 1u : 0u);
+     hash = mix(hash, resource.catalog_hash);
+     hash = mix(hash, resource.environment_hash);

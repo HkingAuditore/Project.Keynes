@@ -1,0 +1,14 @@
+from pathlib import Path
+r=Path(Dir('.').abspath).parents[1]
+d=r/'tmp/publish_wire_test'
+ref=ARGUMENTS.get('reference','0')=='1'
+source=r/'tmp/publish_optimization_originals' if ref else r/'gdext/src'
+name='reference' if ref else 'optimized'
+SConsignFile(str(d/(name+'.sconsign')))
+env=Environment()
+env.Append(CPPPATH=[str(source),str(r/'gdext/src')],CCFLAGS=['/std:c++17','/EHsc','/O2','/utf-8'])
+if ref:env.Append(CPPDEFINES=['REFERENCE'])
+files=['runtime_economy_building_store.cpp','runtime_economy_family_store.cpp','runtime_economy_trade_escrow_store.cpp']
+objects=[env.Object(str(d/(name+'_'+f+'.obj')),str(source/f)) for f in files]
+objects.append(env.Object(str(d/(name+'_test.obj')),str(d/'test.cpp')))
+Default(env.Program(str(d/name),objects))

@@ -1,0 +1,58 @@
+[gd_resource type="Resource" script_class="BuildingProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"method_stone_age_hunting_camp_r4"
+display_name = "商业狩猎与毛皮站"
+building_kind = "collector"
+economic_sector_id = "agriculture"
+semantic_tags = PackedStringArray()
+technology_tags = PackedStringArray("tech.animal_tracking")
+required_technology_tags = PackedStringArray("tech.crop_rotation", "tech.fur_sewing", "tech.timber_sawing", "tech.ground_stone_tools")
+industry_chain_id = &"production.game_meat"
+progression_step = 1
+maturity_rank = 1
+maturity_display_name = "自然获取"
+progression_role = "entry"
+predecessor_building_ids = PackedStringArray()
+construction_good_ids = PackedStringArray("lumber", "bricks", "construction_components")
+construction_quantities = PackedInt64Array(2489704, 2489704, 1659803)
+construction_category_ids = PackedStringArray("classical_construction", "industrial_construction", "industrial_construction")
+construction_min_quality_levels = PackedInt32Array(0, 0, 0)
+construction_candidate_offsets = PackedInt32Array()
+construction_candidate_good_ids = PackedStringArray()
+construction_candidate_efficiency_q16 = PackedInt32Array()
+maintenance_good_ids = PackedStringArray()
+maintenance_quantities_per_day = PackedInt64Array()
+owner_profession_id = &"hunter"
+employee_profession_ids = PackedStringArray("hunter")
+employee_slots_per_building = PackedInt64Array(8)
+employee_wage_policy_ids = PackedStringArray("fixed")
+employee_reference_wages_per_day = PackedInt64Array(12840)
+input_good_ids = PackedStringArray("tools")
+input_quantities_per_day = PackedInt64Array(900)
+input_required_q16 = PackedInt32Array(32768)
+input_category_ids = PackedStringArray("tools")
+input_min_quality_levels = PackedInt32Array(3)
+input_candidate_offsets = PackedInt32Array(0, 0)
+input_candidate_good_ids = PackedStringArray()
+input_candidate_efficiency_q16 = PackedInt32Array()
+output_good_ids = PackedStringArray("game_meat", "raw_hide", "fur")
+output_quantities_per_day = PackedInt64Array(18814, 15051, 15051)
+target_operating_margin_q16 = 6554
+supply_price_elasticity_q16 = 32768
+output_cost_shares_q16 = PackedInt32Array()
+resource_ids = PackedStringArray("wild_game")
+resource_quantities_per_day = PackedInt64Array(1721)
+resource_interaction_modes = PackedStringArray("extract")
+resource_access_modes = PackedStringArray("local")
+resource_generation_ids = PackedStringArray()
+resource_generation_quantities_per_day = PackedInt64Array()
+behavior_id = "consume_local_resources"
+condition_opcodes = PackedInt32Array()
+condition_signals = PackedInt32Array()
+condition_compares = PackedInt32Array()
+condition_reference_ids = PackedStringArray()
+condition_values = PackedInt64Array()

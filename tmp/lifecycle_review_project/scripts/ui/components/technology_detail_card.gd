@@ -1,0 +1,435 @@
+extends PanelContainer
+class_name TechnologyDetailCard
+
+const RelationRowScene := preload("res://scenes/ui/technology_relation_row.tscn")
+
+signal enqueue_requested(index: int)
+signal remove_requested(index: int)
+
+const STATE_NAMES := ["未知", "已知但未就绪", "可研究", "研究队列中", "待生效", "已掌握"]
+
+var _index := -1
+var _state := 0
+var _submitted := false
+var _accent: Color = UITokens.ACCENT
+var _header_icon: IconBadge
+var _name: Label
+var _state_label: Label
+var _chips: BadgeRow
+var _gauge: RadialGauge
+var _effects: InsightList
+var _body: VBoxContainer
+var _detail_block: VBoxContainer
+var _prerequisite_title: Label
+var _prerequisites: VBoxContainer
+var _hard_successor_title: Label
+var _hard_successors: VBoxContainer
+var _branch_successor_title: Label
+var _branch_successors: VBoxContainer
+var _application_title: Label
+var _applications: VBoxContainer
+var _action: Button
+var _placeholder: Label
+var _scroll: ScrollContainer
+
+
+func _ready() -> void:
+	if _body != null:
+		return
+	_body = get_node_or_null("%Body") as VBoxContainer
+	_header_icon = get_node_or_null("%HeaderIcon") as IconBadge
+	_name = get_node_or_null("%NameLabel") as Label
+	_state_label = get_node_or_null("%StateLabel") as Label
+	_placeholder = get_node_or_null("%Placeholder") as Label
+	_detail_block = get_node_or_null("%DetailBlock") as VBoxContainer
+	_chips = get_node_or_null("%Chips") as BadgeRow
+	_gauge = get_node_or_null("%Gauge") as RadialGauge
+	_effects = get_node_or_null("%Effects") as InsightList
+	_prerequisite_title = get_node_or_null("%PrerequisiteTitle") as Label
+	_prerequisites = get_node_or_null("%Prerequisites") as VBoxContainer
+	_hard_successor_title = get_node_or_null("%HardSuccessorTitle") as Label
+	_hard_successors = get_node_or_null("%HardSuccessors") as VBoxContainer
+	_branch_successor_title = get_node_or_null("%BranchSuccessorTitle") as Label
+	_branch_successors = get_node_or_null("%BranchSuccessors") as VBoxContainer
+	_application_title = get_node_or_null("%ApplicationTitle") as Label
+	_applications = get_node_or_null("%Applications") as VBoxContainer
+	_action = get_node_or_null("%Action") as Button
+	_scroll = get_node_or_null("Column/Scroll") as ScrollContainer
+	if _body == null or _header_icon == null or _name == null \
+			or _state_label == null or _placeholder == null \
+			or _detail_block == null or _chips == null or _gauge == null \
+			or _effects == null or _prerequisite_title == null \
+			or _prerequisites == null or _hard_successor_title == null \
+			or _hard_successors == null or _branch_successor_title == null \
+			or _branch_successors == null or _application_title == null \
+			or _applications == null or _action == null:
+		push_error("TechnologyDetailCard 必须通过 technology_detail_card.tscn 实例化。")
+		return
+	_header_icon.set_semantic(&"country.technology", UITokens.CLIMATE)
+	_action.pressed.connect(_on_action_pressed)
+	show_empty()
+
+
+func show_empty() -> void:
+	if _body == null:
+		_ready()
+	_index = -1
+	_state = 0
+	_submitted = false
+	_header_icon.set_semantic(&"country.technology", UITokens.ARCHIVE_INK_MUTED)
+	_name.text = "科技详情"
+	_state_label.text = ""
+	_placeholder.visible = true
+	_placeholder.text = "在可研究清单或科技树中选择一项科技，查看成本、效果与前置。"
+	_detail_block.visible = false
+
+
+func show_unknown() -> void:
+	if _body == null:
+		_ready()
+	_index = -1
+	_state = 0
+	_submitted = false
+	_header_icon.set_semantic(&"technology.state.unknown", UITokens.ARCHIVE_INK_MUTED)
+	_name.text = "未知科技"
+	_state_label.text = STATE_NAMES[0]
+	_placeholder.visible = true
+	_placeholder.text = "这个节点在可研究之前不会显示名称、成本与效果。"
+	_detail_block.visible = false
+
+
+func show_milestone_locked(era_name: String, completed: int, required: int) -> void:
+	if _body == null:
+		_ready()
+	_index = -1
+	_state = 0
+	_submitted = false
+	_header_icon.set_semantic(&"technology.milestone", UITokens.BRASS_HIGHLIGHT)
+	_name.text = "时代里程碑"
+	_state_label.text = era_name
+	_state_label.add_theme_color_override("font_color", UITokens.BRASS_HIGHLIGHT)
+	_placeholder.visible = true
+	_placeholder.text = "完成本时代 %d / %d 项后可研究此关隘。可研究后显示名称与效果。" \
+		% [completed, maxi(1, required)]
+	_detail_block.visible = false
+
+
+func show_technology(index: int, definition: Dictionary, state: int, fraction: float,
+		accent: Color, era_name: String, domain_name: String,
+		relations: Dictionary) -> void:
+	if _body == null:
+		_ready()
+	var saved_scroll := Vector2i.ZERO
+	if _scroll != null:
+		saved_scroll = Vector2i(_scroll.scroll_horizontal, _scroll.scroll_vertical)
+	_index = index
+	_state = state
+	_accent = accent
+	_placeholder.visible = false
+	_detail_block.visible = true
+	_submitted = false
+	_header_icon.set_semantic(IconCatalog.technology_domain_semantic(
+		String(definition.get("domain_id", ""))), accent)
+	_header_icon.tooltip_text = "%s · %s" % [domain_name, era_name]
+	_name.text = String(definition.get("display_name", ""))
+	var is_application := _is_application(definition)
+	_state_label.text = _application_state_name(state) if is_application \
+		else STATE_NAMES[clampi(state, 0, STATE_NAMES.size() - 1)]
+	_state_label.add_theme_color_override("font_color", _state_colour(state))
+	var chips: Array = [{"text": era_name, "accent": UITokens.BRASS_HIGHLIGHT}]
+	if is_application:
+		chips.append({"text": "静态应用", "accent": UITokens.RESOURCE})
+		var chain_name := String(definition.get(
+			"industry_chain_display_name", ""))
+		if not chain_name.is_empty():
+			chips.append({"text": "产业链 · %s" % chain_name,
+				"accent": UITokens.BRASS_HIGHLIGHT})
+		var step := int(definition.get("progression_step", 0))
+		if step > 0:
+			chips.append({"text": "产业步骤 %d" % step, "accent": UITokens.CLIMATE})
+		for maturity_name in definition.get("maturity_display_names", PackedStringArray()):
+			chips.append({"text": String(maturity_name), "accent": UITokens.WARN})
+		for role in definition.get("progression_roles", PackedStringArray()):
+			chips.append({"text": _progression_role_name(String(role)),
+				"accent": UITokens.RESOURCE})
+	else:
+		chips.append({"text": "成本 %s" % UITokens.format_compact_number_cn(
+			float(definition.get("cost_points", 0)), 1), "accent": UITokens.CLIMATE})
+	if bool(definition.get("is_milestone", false)):
+		chips.append({"text": "时代里程碑", "accent": UITokens.WARN})
+	elif bool(definition.get("is_era_key", false)):
+		chips.append({"text": "时代关键", "accent": UITokens.RESOURCE})
+	var route_tags: PackedStringArray = definition.get("route_tags", PackedStringArray())
+	var route_names: PackedStringArray = definition.get(
+		"route_display_names", PackedStringArray())
+	for route_index in range(route_tags.size()):
+		var route_name := String(route_names[route_index]) \
+			if route_index < route_names.size() else String(route_tags[route_index])
+		chips.append({
+			"text": "条件 · %s" % route_name,
+			"accent": UITokens.RESOURCE,
+		})
+	_chips.set_badges(chips)
+	_gauge.visible = not is_application
+	if not is_application:
+		_gauge.set_data("研究进度", clampf(fraction, 0.0, 1.0),
+			_progress_caption(definition, fraction, state), accent)
+	var insight_items: Array = relations.get("condition_items", [])
+	insight_items.append_array(_effect_items(definition))
+	_effects.set_items(insight_items)
+	var required := int(definition.get("milestone_required_count", 0))
+	var prerequisites: Array = relations.get("prerequisites", [])
+	if is_application:
+		_prerequisite_title.text = "应用所需科技"
+	elif required > 0:
+		_prerequisite_title.text = "里程碑候选（任选 %d 项）" % required
+	else:
+		_prerequisite_title.text = "需要先完成"
+	_prerequisite_title.visible = not prerequisites.is_empty()
+	_fill_relation_rows(_prerequisites, prerequisites)
+	var hard_successors: Array = relations.get("hard_successors", [])
+	_hard_successor_title.text = "完成后可解锁"
+	_hard_successor_title.visible = not hard_successors.is_empty()
+	_fill_relation_rows(_hard_successors, hard_successors)
+	var branch_successors: Array = relations.get("branch_successors", [])
+	_branch_successor_title.visible = not branch_successors.is_empty()
+	_fill_relation_rows(_branch_successors, branch_successors)
+	var applications: Array = relations.get("applications", [])
+	_application_title.visible = not applications.is_empty()
+	_fill_relation_rows(_applications, applications)
+	if is_application:
+		_action.visible = false
+	else:
+		_apply_action(state)
+	_restore_scroll.call_deferred(saved_scroll)
+
+
+# Daily ticks take this path: gauge value, state text and the action button only.
+func update_progress(state: int, fraction: float, definition: Dictionary) -> void:
+	if _index < 0 or _detail_block == null or not _detail_block.visible:
+		return
+	_state = state
+	var is_application := _is_application(definition)
+	_state_label.text = _application_state_name(state) if is_application \
+		else STATE_NAMES[clampi(state, 0, STATE_NAMES.size() - 1)]
+	_state_label.add_theme_color_override("font_color", _state_colour(state))
+	_gauge.visible = not is_application
+	if not is_application:
+		_gauge.set_data("研究进度", clampf(fraction, 0.0, 1.0),
+			_progress_caption(definition, fraction, state), _accent)
+	if not _submitted and not is_application:
+		_apply_action(state)
+	elif is_application:
+		_action.visible = false
+
+
+func _progress_caption(definition: Dictionary, fraction: float, state: int) -> String:
+	if state >= 5:
+		return "已掌握"
+	if state <= 1:
+		return "尚未开始"
+	var cost := float(definition.get("cost_points", 0))
+	var remaining := maxf(0.0, cost * (1.0 - clampf(fraction, 0.0, 1.0)))
+	return "还需 %s" % UITokens.format_compact_number_cn(remaining, 1)
+
+
+func _is_application(definition: Dictionary) -> bool:
+	return bool(definition.get("is_application", false)) \
+		or String(definition.get("anchor_kind", "")) == "application" \
+		or String(definition.get("id", "")).begins_with("app.")
+
+
+func _application_state_name(state: int) -> String:
+	return "应用能力已启用" if state >= 5 else "应用条件未满足"
+
+
+func _progression_role_name(role: String) -> String:
+	match role:
+		"mainline": return "主线产业"
+		"geographic_specialization": return "地理专门化"
+		"institutional_variant": return "制度变体"
+		"terminal": return "产业终点"
+	return role
+
+
+func _effect_items(definition: Dictionary) -> Array:
+	var items: Array = []
+	for effect_value in definition.get("content_effects", []):
+		var effect: Dictionary = effect_value
+		var kind := String(effect.get("kind", ""))
+		var id := String(effect.get("id", ""))
+		var display_name := String(effect.get("display_name", id))
+		var attribute := String(effect.get("attribute", ""))
+		var text := ""
+		match kind:
+			"building": text = "解锁建筑 · %s" % display_name
+			"good":
+				text = ("解锁物资 · %s" if attribute == "production_access" \
+					else "生产配方关联 · %s") % display_name
+			"resource": text = "可利用资源 · %s" % display_name
+			"class": text = "阶层岗位 · %s" % display_name
+			"terrain": text = "地形专长 · %s" % display_name
+			"landform": text = "地貌专长 · %s" % display_name
+			"climate": text = "气候专长 · %s" % display_name
+			"tile": text = "地块条件 · %s" % display_name
+		if not text.is_empty():
+			items.append({
+				"text": text,
+				"icon": &"economy.building" if kind == "building" else &"metric.technology",
+				"accent": UITokens.RESOURCE,
+			})
+	var modifier_texts := {}
+	for term_value in definition.get("modifier_terms", []):
+		var term: Dictionary = term_value
+		var stat := String(term.get("stat", ""))
+		var value := int(round(float(term.get("value", 0.0)) * 100.0))
+		var delta := "%+d%%" % value
+		var text := ""
+		if stat.begins_with("country.output.building."):
+			text = "%s产出 %s" % [String(term.get(
+				"subject_display_name", "指定建筑")), delta]
+		elif stat.begins_with("country.output.family."):
+			text = "%s产出 %s" % [String(term.get(
+				"subject_display_name", "相关生产家族")), delta]
+		elif stat.begins_with("country.input.good."):
+			text = "%s生产投入 %s" % [String(term.get(
+				"subject_display_name", "指定商品")), delta]
+		elif stat.begins_with("country.consumption.good."):
+			text = "%s家庭消费 %s" % [String(term.get(
+				"subject_display_name", "指定商品")), delta]
+		elif stat.begins_with("country.resource."):
+			text = "%s %s" % [String(term.get(
+				"subject_display_name", "指定自然资源")), delta]
+		elif stat.begins_with("country.output.terrain.") \
+				or stat.begins_with("country.output.landform."):
+			text = "%s产出 %s" % [String(term.get(
+				"subject_display_name", "指定地理生产")), delta]
+		elif stat.begins_with("country.output.good."):
+			text = "%s产出 %s" % [String(term.get(
+				"subject_display_name", "指定商品")), delta]
+		elif stat.begins_with("country.climate.profile."):
+			text = "%s %s" % [String(term.get(
+				"subject_display_name", "生产类型气候损失")), delta]
+		else:
+			var subject_names := {
+				"country.economy_output_factor": "全社会经济产出",
+				"country.production.input_factor": "全社会生产投入",
+				"country.household.consumption_factor": "全社会家庭消费",
+				"country.resource.use_factor": "全社会自然资源耗用",
+				"country.climate.cold_stress_factor": "寒冷损失",
+				"country.climate.drought_loss_factor": "旱灾损失",
+				"country.climate.flood_loss_factor": "洪灾损失",
+				"country.climate.heat_stress_factor": "热害损失",
+				"country.construction.cost_factor": "国家建设成本",
+				"country.output.agriculture_factor": "农业部门产出",
+				"country.output.extractive_factor": "采掘部门产出",
+				"country.output.manufacturing_factor": "制造部门产出",
+				"country.output.energy_factor": "能源部门产出",
+				"country.output.knowledge_factor": "知识部门产出",
+				"country.research.engineering_efficiency": "工程领域研究效率",
+				"country.research.science_efficiency": "科学领域研究效率",
+				"country.research.society_efficiency": "社会领域研究效率",
+				"country.trade.speed_factor": "贸易速度",
+			}
+			if subject_names.has(stat):
+				text = "%s %s" % [String(subject_names[stat]), delta]
+		if not text.is_empty() and not modifier_texts.has(text):
+			modifier_texts[text] = true
+			items.append({"text": text, "icon": &"metric.technology", "accent": UITokens.CLIMATE})
+	if not items.is_empty():
+		return items
+	var summary := String(definition.get("effect_summary", ""))
+	for chunk in summary.replace("，", "、").split("、", false):
+		var text := String(chunk).strip_edges()
+		if text.is_empty():
+			continue
+		var unlocks := text.begins_with("解锁") or text.begins_with("开启") \
+			or text.begins_with("完成")
+		items.append({
+			"text": text,
+			"icon": &"economy.building" if unlocks else &"metric.technology",
+			"accent": UITokens.RESOURCE if unlocks else UITokens.CLIMATE,
+		})
+	return items
+
+
+func _fill_relation_rows(host: VBoxContainer, entries: Array) -> void:
+	for child in host.get_children():
+		host.remove_child(child)
+		child.queue_free()
+	for entry in entries:
+		var data: Dictionary = entry
+		var row := RelationRowScene.instantiate() as HBoxContainer
+		var marker := row.get_node("Marker") as Label
+		var state := int(data.get("state", 0))
+		IconButton.apply_to_label(marker, IconCatalog.technology_state_semantic(state), 11)
+		marker.add_theme_color_override("font_color", _state_colour(state))
+		var label := row.get_node("Label") as Label
+		label.text = String(data.get("name", "未知科技"))
+		label.add_theme_color_override("font_color",
+			UITokens.ARCHIVE_INK if TechnologyTreeView.presents_state(state) \
+			else UITokens.ARCHIVE_INK_MUTED)
+		host.add_child(row)
+
+
+func _restore_scroll(saved_scroll: Vector2i) -> void:
+	if _scroll == null:
+		return
+	_scroll.set_deferred("scroll_horizontal", saved_scroll.x)
+	_scroll.set_deferred("scroll_vertical", saved_scroll.y)
+
+
+func _apply_action(state: int) -> void:
+	match state:
+		2:
+			_action.visible = true
+			_action.disabled = false
+			_action.text = "加入研究队列"
+		3:
+			_action.visible = true
+			_action.disabled = false
+			_action.text = "移出研究队列"
+		1:
+			_action.visible = true
+			_action.disabled = true
+			_action.text = "前置尚未完成"
+		_:
+			_action.visible = state < 4
+			_action.disabled = true
+			_action.text = "无可用操作"
+
+
+# Research commands land on the next country day, so the button states the delay
+# instead of pretending the queue already changed.
+func mark_submitted() -> void:
+	if _action == null:
+		return
+	_submitted = true
+	_action.disabled = true
+	_action.text = "已提交 · 次日生效"
+
+
+func _on_action_pressed() -> void:
+	if _index < 0:
+		return
+	if _state == 3:
+		remove_requested.emit(_index)
+		return
+	if _state == 2:
+		enqueue_requested.emit(_index)
+
+
+
+
+func _state_colour(state: int) -> Color:
+	match state:
+		2:
+			return UITokens.BRASS_HIGHLIGHT
+		3:
+			return UITokens.WATER.lerp(UITokens.ARCHIVE_INK, 0.30)
+		4:
+			return UITokens.WARN
+		5:
+			return UITokens.GOOD
+		_:
+			return UITokens.ARCHIVE_INK_MUTED

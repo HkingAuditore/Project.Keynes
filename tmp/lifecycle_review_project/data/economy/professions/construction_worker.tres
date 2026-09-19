@@ -1,0 +1,8 @@
+[gd_resource type="Resource" script_class="ProfessionProfile" load_steps=2 format=3]
+[ext_resource type="Script" path="res://scripts/data/profession_profile.gd" id="1"]
+[resource]
+script = ExtResource("1")
+id = &"construction_worker"
+display_name = "建筑工人"
+default_consumption_plan_id = &"industrial_worker_household"
+technology_tags = PackedStringArray()

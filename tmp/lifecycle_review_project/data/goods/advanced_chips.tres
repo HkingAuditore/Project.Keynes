@@ -1,0 +1,14 @@
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"advanced_chips"
+display_name = "先进芯片"
+semantic_tags = PackedStringArray()
+category_id = &"processor_component"
+substitution_category_ids = PackedStringArray("processor_component")
+technology_tags = PackedStringArray("tech.machine_learning")
+default_price = 110000
+reference_max_price = 5500000

@@ -1,0 +1,22 @@
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"electricity"
+display_name = "电力"
+semantic_tags = PackedStringArray()
+category_id = &"electricity"
+substitution_category_ids = PackedStringArray("electricity")
+technology_tags = PackedStringArray("industry.energy", "tech.electric_generation", "tech.petroleum_drilling", "tech.water_power", "tech.nuclear_energy")
+storage_mode = "cycle_flow"
+default_price = 12000
+reference_max_price = 600000
+price_adjust_q16 = 614
+demand_price_elasticity_q16 = 19661
+inventory_target_ratio_q16 = 0
+shortage_weight_q16 = 0
+excess_demand_weight_q16 = 65536
+business_demand_ema_alpha_q16 = 16384
+supply_ema_alpha_q16 = 16384
