@@ -85,6 +85,7 @@ struct RuntimeEconomyEpochInput {
     int32_t production_cycle_days = 0;
     int32_t investment_cycle_days = 0;
     bool valid = false;
+    bool stage_hashes_enabled = true;
 };
 
 struct EconomyStageCursor {

@@ -35,6 +35,7 @@ var _record_market: bool = true
 var _last_reported_captured_epochs: int = 0
 var _last_polled_state: String = "idle"
 var _local_start_error: bool = false
+var _pending_start_config: Dictionary = {}
 
 
 func bind_main(m) -> void:
@@ -179,7 +180,7 @@ func start() -> void:
 		native_paths[dim] = export_dir.path_join(
 			"economy_record_%s_v25%s_%s.csv" % [ts, scope_tag, dim])
 
-	_status = world.call("start_economy_csv_recording", {
+	_pending_start_config = {
 		"record_summary": _record_summary,
 		"record_cohorts": _record_cohorts,
 		"record_buildings": _record_buildings,
@@ -194,7 +195,12 @@ func start() -> void:
 		"resource_slot_ids": resource_slot_ids,
 		"resource_ids": resource_ids,
 		"paths": native_paths,
-	})
+	}
+	_status = world.call("start_economy_csv_recording", _pending_start_config)
+	if str(_status.get("error_code", "")) == "economy_boundary_busy":
+		_status = {"state": "opening", "recording": true}
+		return
+	_pending_start_config.clear()
 	_paths.clear()
 	for path in _status.get("paths", []):
 		_paths.append(path)
@@ -213,6 +219,7 @@ func start() -> void:
 
 
 func stop_and_export() -> Array:
+	_pending_start_config.clear()
 	var world = _get_world()
 	if world != null and world.has_method("request_stop_economy_csv_recording"):
 		_status = world.call("request_stop_economy_csv_recording")
@@ -243,6 +250,15 @@ func _poll_status() -> void:
 	var world = _get_world()
 	if world == null or not world.has_method("get_economy_csv_recording_status"):
 		return
+	if not _pending_start_config.is_empty():
+		var started: Dictionary = world.call("start_economy_csv_recording", _pending_start_config)
+		if str(started.get("error_code", "")) == "economy_boundary_busy":
+			return
+		_pending_start_config.clear()
+		if not bool(started.get("ok", false)):
+			_set_local_start_error(str(started.get("error_code", "start_failed")),
+				str(started.get("error_message", "start_failed")))
+			return
 	var next_status: Dictionary = world.call("get_economy_csv_recording_status")
 	var next_state: String = str(next_status.get("state", "idle"))
 	if next_state != _last_polled_state:

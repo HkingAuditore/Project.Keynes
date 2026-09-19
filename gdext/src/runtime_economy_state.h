@@ -374,7 +374,7 @@ struct RuntimeEconomyLedgerState {
     }
     uint64_t computed_hash() const noexcept;
     uint64_t recompute_hash() noexcept;
-    bool valid() const noexcept;
+    bool valid(const char **reason = nullptr) const noexcept;
 };
 
 // Mirrors NativeEconomyRuntime::StructuralCommand for OwnedState queues.

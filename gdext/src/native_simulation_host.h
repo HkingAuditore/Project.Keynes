@@ -1,6 +1,7 @@
 #pragma once
 
 #include "runtime_pod_protocol.h"
+#include "runtime_worker_timing.h"
 #include "runtime_snapshot_ring.h"
 #include "runtime_country_pod.h"
 #include "country_core.h"
@@ -262,6 +263,29 @@ public:
                                     std::string &error);
     bool poll_economy_pod_receipt(RuntimeEconomyPodReceipt &out) noexcept;
     void set_economy_sync_writes_forbidden(bool forbidden) noexcept;
+    int64_t economy_input_requested_day() const noexcept {
+        return _economy_input_requested_day.load(std::memory_order_acquire);
+    }
+    bool economy_worker_owns_execution() const noexcept {
+        const auto current = _state.load(std::memory_order_acquire);
+        return current != RuntimeWorkerState::STOPPED &&
+            _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE &&
+            _economy_production_runtime != nullptr &&
+            (_requested_authority_mask.load(std::memory_order_acquire) &
+             runtime_domain_mask(RuntimeDomainId::ECONOMY)) != 0u;
+    }
+    std::unique_lock<std::mutex> try_lock_economy_input_capture() {
+        return std::unique_lock<std::mutex>(
+            _economy_authority_boundary_mutex, std::try_to_lock);
+    }
+    void complete_economy_input_capture() noexcept {
+        {
+            std::lock_guard<std::mutex> control_lock(_control_mutex);
+            _economy_input_requested_day.store(-1, std::memory_order_release);
+            _economy_input_signal.fetch_add(1, std::memory_order_release);
+        }
+        _control_cv.notify_all();
+    }
     bool economy_sync_writes_forbidden() const noexcept {
         return _economy_sync_writes_forbidden.load(std::memory_order_acquire);
     }
@@ -298,6 +322,14 @@ public:
     bool country_economy_asset_protocol_self_test(std::string &error) const;
     bool enqueue_economy_origin_country_asset(
             RuntimeEconomyAssetRequest request, std::string &error);
+    bool prepare_worker_cohort_cash(RuntimeEconomyAssetRequest &request,
+                                   std::string &error);
+    bool finish_worker_cohort_cash(uint64_t request_id,
+                                  RuntimeEconomyAssetResult &result,
+                                  std::string &error);
+    std::shared_ptr<const RuntimeCountryPodSnapshot> country_asset_snapshot() const {
+        return std::atomic_load_explicit(&_country_snapshot, std::memory_order_acquire);
+    }
     enum class CountryAuthorityOwner : uint8_t { SYNC = 0, WORKER = 1 };
     struct CountryAuthorityHandoffStatus {
         CountryAuthorityOwner owner = CountryAuthorityOwner::SYNC;
@@ -501,6 +533,7 @@ public:
                                double gpu_upload_ms);
 
     RuntimeThreadReport report() const;
+    void profile_save_window(bool active) { _worker_timing.save(active); }
     bool stop_requested() const {
         return _stop_requested.load(std::memory_order_acquire);
     }
@@ -951,6 +984,7 @@ private:
 
     std::atomic<uint64_t> _command_queue_capacity_exceeded{0};
     std::atomic<uint64_t> _receipt_queue_capacity_exceeded{0};
+    RuntimeWorkerTiming _worker_timing;
     std::atomic<uint64_t> _worker_fault_count{0};
     std::atomic<uint64_t> _completed_days{0};
     std::atomic<uint32_t> _last_day_stage_count{0};
@@ -1056,6 +1090,8 @@ private:
     // mutex is the actual epoch-boundary gate that prevents a switch from
     // passing an idle check while the worker starts the next day.
     mutable std::mutex _economy_authority_boundary_mutex;
+    std::atomic<int64_t> _economy_input_requested_day{-1};
+    std::atomic<uint64_t> _economy_input_signal{0};
     std::atomic<uint64_t> _economy_pod_command_recapture_count{0};
     std::atomic<uint64_t> _economy_pod_command_verify_count{0};
     // Phase-2.4.4.4 soak experiment flag (observability). Parity latch defaults

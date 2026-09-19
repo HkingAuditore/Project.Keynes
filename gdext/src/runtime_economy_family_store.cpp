@@ -1,6 +1,7 @@
 #include "runtime_economy_family_store.h"
 
 #include <cstring>
+#include "economy_wire_sink.h"
 
 namespace pk {
 namespace {
@@ -8,10 +9,9 @@ namespace {
 constexpr uint64_t kFnvOffset = 1469598103934665603ull;
 constexpr uint64_t kFnvPrime = 1099511628211ull;
 
-template <typename T>
-void append_pod(std::vector<uint8_t> &out, const T &value) {
-    const auto *bytes = reinterpret_cast<const uint8_t *>(&value);
-    out.insert(out.end(), bytes, bytes + sizeof(T));
+template <typename Sink, typename T>
+void append_pod(Sink &out, const T &value) {
+    economy_wire_append(out, value);
 }
 
 template <typename T>
@@ -391,7 +391,8 @@ bool RuntimeEconomyFamilyStore::shape_valid(
     return payload_person_sum == static_cast<uint32_t>(payload_persons);
 }
 
-void RuntimeEconomyFamilyStore::append_wire(std::vector<uint8_t> &out) const {
+template <typename Sink>
+void RuntimeEconomyFamilyStore::visit_wire(Sink &out) const {
     const size_t families = family_slot.size();
     for (size_t i = 0; i < families; ++i) {
         append_pod(out, family_slot[i]);
@@ -1405,15 +1406,22 @@ bool RuntimeEconomyFamilyStore::load_wire(
                        influence_count, trait_command_count, expedition_count);
 }
 
+void RuntimeEconomyFamilyStore::append_wire(std::vector<uint8_t> &out) const {
+    visit_wire(out);
+}
+
 uint64_t RuntimeEconomyFamilyStore::wire_content_hash() const noexcept {
-    std::vector<uint8_t> wire;
-    append_wire(wire);
-    uint64_t hash = kFnvOffset;
-    for (uint8_t byte : wire) {
-        hash ^= byte;
-        hash *= kFnvPrime;
-    }
-    return hash;
+    EconomyWireHashSink sink{kFnvOffset};
+    visit_wire(sink);
+    return sink.hash;
+}
+
+uint64_t RuntimeEconomyFamilyStore::mix_wire_hash(uint64_t hash) const noexcept {
+    EconomyWireSizeSink size;
+    visit_wire(size);
+    EconomyWireHashSink sink{(hash ^ static_cast<uint64_t>(size.size)) * kFnvPrime};
+    visit_wire(sink);
+    return sink.hash;
 }
 
 } // namespace pk

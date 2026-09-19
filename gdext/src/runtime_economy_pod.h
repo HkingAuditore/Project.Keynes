@@ -327,6 +327,8 @@ public:
                 static_cast<size_t>(_state.market.market_count);
     }
     uint64_t state_hash() const noexcept;
+    bool import_and_publish_committed_ledger(RuntimeEconomyLedgerState &&ledger,
+                                            std::string &error);
     bool import_committed_ledger(const RuntimeEconomyLedgerState &ledger,
                                  std::string &error);
     bool export_committed_ledger(RuntimeEconomyLedgerState &ledger,
@@ -448,7 +450,9 @@ public:
         return _committed_ledger_state;
     }
     // Features currently present in the committed ledger / owned mirror.
-    uint32_t mirror_feature_mask() const noexcept;
+    uint32_t mirror_feature_mask() const noexcept {
+        return _published_mirror_features.load(std::memory_order_acquire);
+    }
     // True only when every feature in ECONOMY_POD_MIRROR_REQUIRED_FOR_ACTIVE
     // is present (Phase-2.3.3 completes the committed mirror feature set).
     bool pod_active_ready() const noexcept {
@@ -456,16 +460,15 @@ public:
                ECONOMY_POD_MIRROR_REQUIRED_FOR_ACTIVE;
     }
     uint32_t committed_ledger_abi() const noexcept {
-        if (!_committed_ledger_state.valid()) return 3u;
-        if (_committed_ledger_state.has_resource_columns() &&
-            _committed_ledger_state.has_epoch_cursor_columns())
-            return 9u;
-        if (_committed_ledger_state.has_family_columns()) return 8u;
-        if (_committed_ledger_state.has_building_columns() &&
-            _committed_ledger_state.has_trade_escrow_columns())
-            return 7u;
-        if (_committed_ledger_state.has_diagnostics_columns()) return 6u;
-        return _committed_ledger_state.has_extended_columns() ? 5u : 4u;
+        const uint32_t mask = mirror_feature_mask();
+        if (mask == 0) return 3u;
+        if ((mask & (ECONOMY_POD_MIRROR_RESOURCE | ECONOMY_POD_MIRROR_EPOCH_CURSOR)) ==
+            (ECONOMY_POD_MIRROR_RESOURCE | ECONOMY_POD_MIRROR_EPOCH_CURSOR)) return 9u;
+        if ((mask & ECONOMY_POD_MIRROR_FAMILY) != 0) return 8u;
+        if ((mask & (ECONOMY_POD_MIRROR_BUILDING | ECONOMY_POD_MIRROR_TRADE_ESCROW)) ==
+            (ECONOMY_POD_MIRROR_BUILDING | ECONOMY_POD_MIRROR_TRADE_ESCROW)) return 7u;
+        if ((mask & ECONOMY_POD_MIRROR_RESERVATIONS) != 0) return 6u;
+        return (mask & ECONOMY_POD_MIRROR_COHORT_GENERATION) != 0 ? 5u : 4u;
     }
     bool epoch_active() const noexcept { return _scratch.epoch_active; }
     bool authority_ready() const noexcept { return _authority_ready; }
@@ -509,6 +512,11 @@ private:
     int32_t _summary_cohorts = 0;
     int32_t _summary_families = 0;
     RuntimeEconomyLedgerState _committed_ledger_state;
+    // 私有导出缓冲复用上一代容量；验证失败不得修改已发布账本。
+    RuntimeEconomyLedgerState _export_ledger_scratch;
+    // 读报告只取发布标量，不遍历 worker 正在替换的账本容器。
+    std::atomic<uint32_t> _published_mirror_features{0};
+    void publish_mirror_features() noexcept;
     RuntimeEconomyEcp2State _ecp2{};
 
     bool run_bound_stage(RuntimeEconomyGraphStage stage, std::string &error);

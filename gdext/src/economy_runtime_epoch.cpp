@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <limits>
 #include <vector>
 
@@ -904,6 +905,14 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
     if (!finish_epoch_start_after_fiscal(day_index, error)) return false;
     _prepare_ms = elapsed_ms(prepare_started);
     _epoch_begin_ms = elapsed_ms(epoch_started);
+    if (day_index % 100 == 0) {
+        std::fprintf(stderr, "[economy-open-cost] day=%lld total=%.3f preflight=%.3f reset=%.3f country=%.3f workset=%.3f resource=%.3f fiscal=%.3f csr=%.3f recovery=%.3f vectors=%.3f commands=%.3f\n",
+            static_cast<long long>(day_index), _epoch_begin_ms, _epoch_preflight_ms,
+            _epoch_begin_reset_ms, _epoch_begin_country_ms, _epoch_begin_workset_ms,
+            _epoch_begin_resource_lane_ms, _epoch_begin_fiscal_ms,
+            _epoch_begin_construction_csr_ms, _epoch_begin_recovery_apply_ms,
+            _epoch_begin_vector_init_ms, _epoch_begin_commands_ms);
+    }
     return true;
 }
 
@@ -1223,6 +1232,7 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
         _epoch_commands.swap(remaining);
     }
     _epoch_begin_commands_ms = elapsed_ms(commands_started);
+    if (day_index % 100 == 0) std::fprintf(stderr, "[economy-open-finish] day=%lld country=%.3f workset=%.3f fiscal=%.3f csr=%.3f recovery=%.3f vectors=%.3f audit=%.3f commands=%.3f\n", static_cast<long long>(day_index), _epoch_begin_country_ms, _epoch_begin_workset_ms, _epoch_begin_fiscal_ms, _epoch_begin_construction_csr_ms, _epoch_begin_recovery_apply_ms, _epoch_begin_vector_init_ms, _audit_ms, _epoch_begin_commands_ms);
     _stage = building_count() == 0 ? Stage::TRADE_SETTLE : Stage::BUILDING_PLAN;
     _epoch_begin_post_fiscal_pending = false;
     _epoch_begin_pending_day = -1;

@@ -1,4 +1,6 @@
 #include "economy_graph_kernels.h"
+#include "economy_hash.h"
+#include "runtime_economy_state.h"
 
 #include <cstring>
 
@@ -47,6 +49,21 @@ public:
         (void)cells_override;
         return true;
     }
+};
+
+class StageHashPolicyProbe final : public EconomyGraphStageOps {
+public:
+    mutable uint32_t hash_calls = 0;
+    bool bind_view(EconomySoAView &, std::string &) override { return true; }
+    bool run_stage(RuntimeEconomyGraphStage, EconomyStageCursor &,
+                   const RuntimeEconomyEpochInput &, EconomyStageResult &result,
+                   std::string &) override {
+        result.ok = true;
+        return true;
+    }
+    uint64_t state_hash() const override { ++hash_calls; return 42; }
+    bool capture_probe(std::vector<uint8_t> &, std::string &) const override { return true; }
+    bool restore_probe(const uint8_t *, size_t, std::string &) override { return true; }
 };
 
 constexpr uint64_t FNV_OFFSET = 1469598103934665603ull;
@@ -111,7 +128,8 @@ bool economy_kernel_run_stage(EconomyGraphStageOps &ops,
         result.ok = false;
         return false;
     }
-    if (result.state_hash == 0) {
+    if (result.state_hash == 0 && (input.stage_hashes_enabled ||
+            stage == RuntimeEconomyGraphStage::AGGREGATE_PUBLISH)) {
         result.state_hash = mix(FNV_OFFSET, static_cast<uint64_t>(stage));
         result.state_hash = mix(result.state_hash, input.input_generation);
         result.state_hash = mix(result.state_hash, result.work_units);
@@ -123,6 +141,67 @@ bool economy_kernel_run_stage(EconomyGraphStageOps &ops,
 
 bool economy_graph_kernels_self_test(std::string &error) {
     error.clear();
+    uint64_t reference = FNV_OFFSET;
+    uint64_t optimized = FNV_OFFSET;
+    uint64_t random = 0x123456789abcdefULL;
+    for (uint32_t sample = 0; sample < 4096; ++sample) {
+        random ^= random << 13;
+        random ^= random >> 7;
+        random ^= random << 17;
+        const uint64_t values[] = {0, random, static_cast<uint32_t>(random),
+            UINT64_MAX, uint64_t{1} << (sample % 64)};
+        for (uint64_t value : values) {
+            optimized = economy_hash_u64(optimized, value);
+            for (int byte = 0; byte < 8; ++byte) {
+                reference ^= static_cast<uint8_t>(value >> (byte * 8));
+                reference *= FNV_PRIME;
+            }
+            if (optimized != reference) {
+                error = "economy_hash_byte_abi_mismatch";
+                return false;
+            }
+        }
+    }
+    StageHashPolicyProbe hash_probe;
+    RuntimeEconomyResourceStore resource_probe;
+    resource_probe.resize(2, 4);
+    resource_probe.stock = {0, 1, -1, INT64_MAX, INT64_MIN, 0, 65536, 0};
+    resource_probe.cell_generation = {0, 1, UINT32_MAX, 42};
+    std::vector<uint8_t> resource_wire;
+    resource_probe.append_wire(resource_wire);
+    uint64_t resource_reference = FNV_OFFSET;
+    for (uint8_t byte : resource_wire) {
+        resource_reference = (resource_reference ^ byte) * FNV_PRIME;
+    }
+    if (resource_reference != resource_probe.wire_content_hash()) {
+        error = "economy_resource_wire_hash_mismatch";
+        return false;
+    }
+    RuntimeEconomyEpochInput hash_input;
+    hash_input.valid = true;
+    hash_input.cell_count = 1;
+    hash_input.stage_hashes_enabled = false;
+    EconomyStageCursor hash_cursor;
+    EconomyStageResult hash_result;
+    if (!economy_kernel_run_stage(hash_probe, RuntimeEconomyGraphStage::BUILDING_PLAN,
+            hash_cursor, hash_input, hash_result, error) ||
+        hash_probe.hash_calls != 0 || hash_result.state_hash != 0) {
+        error = "economy_intermediate_hash_should_be_disabled";
+        return false;
+    }
+    if (!economy_kernel_run_stage(hash_probe, RuntimeEconomyGraphStage::AGGREGATE_PUBLISH,
+            hash_cursor, hash_input, hash_result, error) ||
+        hash_probe.hash_calls != 1 || hash_result.state_hash == 0) {
+        error = "economy_final_hash_must_be_retained";
+        return false;
+    }
+    hash_input.stage_hashes_enabled = true;
+    if (!economy_kernel_run_stage(hash_probe, RuntimeEconomyGraphStage::BUILDING_PLAN,
+            hash_cursor, hash_input, hash_result, error) ||
+        hash_probe.hash_calls != 2 || hash_result.state_hash == 0) {
+        error = "economy_parity_hash_must_be_retained";
+        return false;
+    }
     if (RUNTIME_ECONOMY_GRAPH_STAGE_COUNT != 13u ||
         RUNTIME_ECONOMY_GRAPH_ALL_STAGE_MASK != 0x1FFFu) {
         error = "economy_graph_stage_count_mismatch";

@@ -247,6 +247,7 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::poll_runtime_commit, DEFVAL(0));
     ClassDB::bind_method(D_METHOD("consume_runtime_visual_patch", "generation", "family", "cursor", "max_items"),
                          &DCWorldExt::consume_runtime_visual_patch, DEFVAL(0), DEFVAL(0), DEFVAL(0));
+    ClassDB::bind_method(D_METHOD("profile_runtime_save_window", "active"), &DCWorldExt::profile_runtime_save_window);
     ClassDB::bind_method(D_METHOD("request_runtime_save", "request_id"),
                          &DCWorldExt::request_runtime_save);
     ClassDB::bind_method(D_METHOD("poll_runtime_save", "request_id"),

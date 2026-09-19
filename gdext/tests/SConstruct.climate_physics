@@ -15,7 +15,7 @@ if worker:
     env.Append(CPPDEFINES=['PK_TEST_CLIMATE_WORKER'])
     sources += ['runtime_climate_kernel.cpp', 'runtime_climate_passes.cpp',
                 'runtime_authoritative_domains.cpp', 'runtime_climate_parity.cpp',
-                'runtime_pod_protocol.cpp']
+                ]
 objects = [env.Object(str(build / name.replace('.cpp', '')), str(root / 'src' / name))
            for name in sources]
 objects.append(env.Object(str(build / ('worker_test' if worker else 'physics_test')),

@@ -243,6 +243,10 @@ struct RuntimeEconomyFamilyStore {
                    uint32_t trait_count, uint32_t influence_count,
                    uint32_t trait_command_count, uint32_t expedition_count);
     uint64_t wire_content_hash() const noexcept;
+    uint64_t mix_wire_hash(uint64_t hash) const noexcept;
+
+private:
+    template <typename Sink> void visit_wire(Sink &out) const;
 };
 
 } // namespace pk

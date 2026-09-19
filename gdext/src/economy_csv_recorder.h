@@ -53,6 +53,7 @@ public:
     bool capture_committed(NativeEconomyRuntime &runtime,
                            const std::vector<const float *> &resource_arrays,
                            std::string &reason);
+    bool capture_worker_committed(NativeEconomyRuntime &runtime, std::string &reason);
     void request_stop();
     void shutdown();
     godot::Dictionary status() const;

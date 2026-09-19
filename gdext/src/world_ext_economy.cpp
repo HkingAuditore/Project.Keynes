@@ -332,6 +332,32 @@ Dictionary DCWorldExt::run_economy_slice_compact(const Dictionary &ctx) {
 }
 
 Dictionary DCWorldExt::capture_economy_day_inputs(int64_t day_index) {
+    if (_runtime_host != nullptr &&
+        (_runtime_host->domain_is_worker_authoritative(RuntimeDomainId::ECONOMY) ||
+         _runtime_host->economy_input_requested_day() >= 0)) {
+        auto boundary = _runtime_host->try_lock_economy_input_capture();
+        Dictionary pending;
+        pending["ok"] = false;
+        pending["fatal"] = false;
+        pending["captured"] = false;
+        if (!boundary.owns_lock()) return pending;
+        int64_t requested = _runtime_host->economy_input_requested_day();
+        if (requested < 0) {
+            // 主线程发布下一日环境前可预先冻结同一批 slots；只允许严格
+            // 下一日且 worker 无在途日，不能改写一个已开始的 epoch。
+            if (day_index < 0 || _economy_runtime == nullptr) return pending;
+            const auto report = _runtime_host->report();
+            if (report.worker_day_inflight != 0 ||
+                day_index != report.committed_day + 1 ||
+                runtime_from(_economy_runtime)->epoch_active()) return pending;
+            requested = day_index;
+        }
+        Dictionary result = begin_or_reuse_economy_input_epoch(requested, Dictionary());
+        if (bool(result.get("ok", false)))
+            _runtime_host->complete_economy_input_capture();
+        return result;
+    }
+    if (day_index < 0) return Dictionary();
     return begin_or_reuse_economy_input_epoch(day_index, Dictionary());
 }
 
@@ -643,6 +669,20 @@ Dictionary DCWorldExt::begin_or_reuse_economy_input_epoch(
 }
 
 Dictionary DCWorldExt::run_economy_slice_internal(const Dictionary &ctx, bool compact) {
+    std::unique_lock<std::mutex> execution_boundary;
+    if (_runtime_host != nullptr) {
+        execution_boundary = _runtime_host->try_lock_economy_input_capture();
+        if (!execution_boundary.owns_lock() || _runtime_host->economy_worker_owns_execution()) {
+            Dictionary pending;
+            pending["ok"] = true;
+            pending["done"] = false;
+            pending["fatal"] = false;
+            pending["pending_input"] = true;
+            pending["yield_reason"] = "economy_worker_execution_owned";
+            pending["work_done"] = int64_t{0};
+            return pending;
+        }
+    }
     if (_economy_runtime == nullptr) {
         Dictionary out = unavailable();
         out["done"] = true;
@@ -1415,6 +1455,15 @@ Dictionary DCWorldExt::reset_economy(const String &reason) {
 
 Dictionary DCWorldExt::start_economy_csv_recording(const Dictionary &config) {
     Dictionary out;
+    std::unique_lock<std::mutex> boundary;
+    if (_runtime_host) {
+        boundary = _runtime_host->try_lock_economy_input_capture();
+        if (!boundary.owns_lock()) {
+            out["ok"] = false;
+            out["error_code"] = "economy_boundary_busy";
+            return out;
+        }
+    }
     if (_economy_runtime == nullptr) {
         out["ok"] = false;
         out["error_code"] = "economy_unavailable";
@@ -1464,6 +1513,7 @@ Dictionary DCWorldExt::start_economy_csv_recording(const Dictionary &config) {
     EconomyCsvRecorder *recorder =
         static_cast<EconomyCsvRecorder *>(_economy_csv_recorder);
     const bool ok = recorder->start(native, *runtime_from(_economy_runtime), error);
+    if (ok) runtime_from(_economy_runtime)->attach_csv_recorder(recorder);
     out = recorder->status();
     out["ok"] = ok;
     if (!ok && !error.empty()) out["error_message"] = String(error.c_str());

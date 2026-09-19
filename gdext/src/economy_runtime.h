@@ -334,6 +334,7 @@ public:
     ~NativeEconomyRuntime();
     void attach_country_runtime(NativeCountryRuntime *runtime) { _country_runtime = runtime; }
     void attach_simulation_host(NativeSimulationHost *host) { _simulation_host = host; }
+    void attach_csv_recorder(EconomyCsvRecorder *recorder) { _csv_recorder = recorder; }
     void set_sync_writes_forbidden(bool forbidden) {
         _sync_writes_forbidden = forbidden;
     }
@@ -406,7 +407,8 @@ public:
                                        int32_t &summary_families) const;
     // Copies only committed ledger columns. This is a cold publish-boundary
     // handoff for POD parity; it is never used while an epoch is mutable.
-    void capture_committed_ledger_state(RuntimeEconomyLedgerState &out) const;
+    void capture_committed_ledger_state(RuntimeEconomyLedgerState &out,
+                                       uint64_t completed_stage_hash = 0) const;
     // Phase-4 layout unification: AoS→OwnedState SoA mirrors (capture path).
     void flush_formula_owned_domain_mirrors();
     // A+Y N2: refreshes the role/pending projections on the sole live group
@@ -530,6 +532,8 @@ public:
     // Phase-2.4.5: sync StageOps mutate day (prelude + all graph stage drains).
     bool run_stage_ops_day(int64_t day_index, std::string &error);
     bool stage_ops_epoch_open_ready() const noexcept { return _epoch_active; }
+    bool capture_worker_day_input(const RuntimeEconomyDayInput &input,
+                                  std::string &error);
     bool capture_environment(int64_t day_index, const float *temperature,
                              const float *temperature_30d, const float *moisture,
                              const float *plant_available_water,
@@ -545,6 +549,7 @@ public:
     // Committed-day identity used by the day-end Owned mirror publish. This is
     // the same day `capture_committed_ledger_state` stamps on the ledger.
     int64_t current_day() const { return _current_day; }
+    int64_t last_committed_day() const { return _last_committed_day; }
     bool should_run(int64_t day_index) const;
     bool deadline_critical(int64_t day_index) const;
     // Mutable peer-domain watermark.  `_epoch_id` identifies an Economy
@@ -5066,6 +5071,7 @@ private:
     int32_t _technology_words = 0;
     NativeCountryRuntime *_country_runtime = nullptr;
     NativeSimulationHost *_simulation_host = nullptr;
+    EconomyCsvRecorder *_csv_recorder = nullptr; // facade-owned; destroyed after worker joins
     bool _sync_writes_forbidden = false;
     uint32_t _d7_operation_gate_mask = RUNTIME_ECONOMY_D7_FISCAL_GATE_MASK;
     ModifierRuntime *_modifier_runtime = nullptr;

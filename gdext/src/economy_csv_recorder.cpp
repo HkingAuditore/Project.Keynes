@@ -505,6 +505,24 @@ void EconomyCsvRecorder::set_terminal_locked(const std::string &code,
     _first_unrecorded_epoch = first_unrecorded_epoch;
 }
 
+bool EconomyCsvRecorder::capture_worker_committed(
+        NativeEconomyRuntime &runtime, std::string &reason) {
+    // Worker must read its authoritative resource ledger, never Godot slots.
+    std::vector<std::vector<float>> lanes(_resource_runtime_indices.size());
+    std::vector<const float *> arrays(lanes.size(), nullptr);
+    const auto &stock = runtime.resource_stock_lanes();
+    for (size_t r = 0; r < lanes.size(); ++r) {
+        const int32_t source = _resource_runtime_indices[r];
+        if (source < 0 || (static_cast<size_t>(source) + 1) * runtime._cell_count > stock.size()) continue;
+        lanes[r].resize(runtime._cell_count);
+        for (int32_t c = 0; c < runtime._cell_count; ++c)
+            lanes[r][c] = static_cast<float>(stock[static_cast<size_t>(source) * runtime._cell_count + c]) /
+                static_cast<float>(NativeEconomyRuntime::GOODS_SCALE);
+        arrays[r] = lanes[r].data();
+    }
+    return capture_committed(runtime, arrays, reason);
+}
+
 bool EconomyCsvRecorder::capture_committed(
         NativeEconomyRuntime &runtime, const std::vector<const float *> &resource_arrays,
         std::string &reason) {
@@ -1069,7 +1087,8 @@ bool EconomyCsvRecorder::fill_batch(
                     row.viability_operating_cost = runtime.saturating_add(
                         runtime.saturating_add(group.last_input_cost,
                             group.last_base_wages_due, snapshot_sat),
-                        row.owner_livelihood_required, snapshot_sat);
+                        runtime.saturating_add(group.last_maintenance_cost,
+                            row.owner_livelihood_required, snapshot_sat), snapshot_sat);
                     row.viability_income_gap = runtime.saturating_sub(
                         runtime.saturating_add(group.last_revenue,
                             std::max<int64_t>(0,

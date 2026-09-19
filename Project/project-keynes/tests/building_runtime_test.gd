@@ -4129,6 +4129,9 @@ func _test_open_access_cpue_tracks_stock_density(source_catalog: Dictionary,
 	_expect("open-access CPUE falls continuously with renewable stock density",
 		outputs.size() == 2 and outputs[0] > 0 and outputs[1] > 0 and
 		outputs[1] < outputs[0] and outputs[1] * 3 <= outputs[0])
+	# 满生态容量不能因数量单位重复换算而仅产出千分之一。
+	_expect("full-stock open-access hunter produces at least its optional-input floor",
+		outputs.size() == 2 and outputs[0] >= 780)
 
 func _test_shortage_recovery_uses_household_stock(source_catalog: Dictionary,
 		source_profile: Dictionary) -> void:

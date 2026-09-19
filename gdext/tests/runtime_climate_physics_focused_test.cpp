@@ -190,6 +190,16 @@ static bool worker_progress(bool all_land) {
     const auto first = next.physics_state;
     CHECK(kernel.plan_day(0, in, catalog, current, retry, report));
     CHECK(retry.physics_state == first && current.physics_state.empty());
+    // Production capture sends canonical CSR offsets beside the six-wide
+    // table. This must not silently disable the physical prepass.
+    in.neighbor_offsets.resize(n + 1);
+    for (int i = 0; i <= n; ++i) in.neighbor_offsets[i] = i * 6;
+    CHECK(pk::runtime_climate_physics_inputs_ready(in, n, error));
+    CHECK(kernel.plan_day(0, in, catalog, current, retry, report));
+    CHECK(retry.physics_state == first);
+    in.neighbor_offsets[2] = 11;
+    CHECK(!pk::runtime_climate_physics_inputs_ready(in, n, error));
+    in.neighbor_offsets[2] = 12;
     retry.temperature[0] = std::numeric_limits<float>::quiet_NaN();
     CHECK(kernel.plan_day(0, in, catalog, current, retry, report));
     CHECK(retry.physics_state == first);

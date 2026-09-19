@@ -1,6 +1,7 @@
 #include "runtime_economy_trade_escrow_store.h"
 
 #include <cstring>
+#include "economy_wire_sink.h"
 
 namespace pk {
 namespace {
@@ -8,10 +9,9 @@ namespace {
 constexpr uint64_t kFnvOffset = 1469598103934665603ull;
 constexpr uint64_t kFnvPrime = 1099511628211ull;
 
-template <typename T>
-void append_pod(std::vector<uint8_t> &out, const T &value) {
-    const auto *bytes = reinterpret_cast<const uint8_t *>(&value);
-    out.insert(out.end(), bytes, bytes + sizeof(T));
+template <typename Sink, typename T>
+void append_pod(Sink &out, const T &value) {
+    economy_wire_append(out, value);
 }
 
 template <typename T>
@@ -109,8 +109,8 @@ bool RuntimeEconomyTradeEscrowStore::shape_valid(
            seller_sum == static_cast<uint32_t>(sellers);
 }
 
-void RuntimeEconomyTradeEscrowStore::append_wire(
-        std::vector<uint8_t> &out) const {
+template <typename Sink>
+void RuntimeEconomyTradeEscrowStore::visit_wire(Sink &out) const {
     const size_t orders = ids.size();
     for (size_t o = 0; o < orders; ++o) {
         append_pod(out, ids[o]);
@@ -319,15 +319,22 @@ bool RuntimeEconomyTradeEscrowStore::load_wire(const uint8_t *data, size_t size,
     return shape_valid(expected_orders);
 }
 
+void RuntimeEconomyTradeEscrowStore::append_wire(std::vector<uint8_t> &out) const {
+    visit_wire(out);
+}
+
 uint64_t RuntimeEconomyTradeEscrowStore::wire_content_hash() const noexcept {
-    std::vector<uint8_t> wire;
-    append_wire(wire);
-    uint64_t hash = kFnvOffset;
-    for (uint8_t byte : wire) {
-        hash ^= byte;
-        hash *= kFnvPrime;
-    }
-    return hash;
+    EconomyWireHashSink sink{kFnvOffset};
+    visit_wire(sink);
+    return sink.hash;
+}
+
+uint64_t RuntimeEconomyTradeEscrowStore::mix_wire_hash(uint64_t hash) const noexcept {
+    EconomyWireSizeSink size;
+    visit_wire(size);
+    EconomyWireHashSink sink{(hash ^ static_cast<uint64_t>(size.size)) * kFnvPrime};
+    visit_wire(sink);
+    return sink.hash;
 }
 
 } // namespace pk

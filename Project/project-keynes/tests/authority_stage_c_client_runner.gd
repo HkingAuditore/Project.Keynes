@@ -31,6 +31,7 @@ var _player: PlayerGame = null
 var _host: WorldRuntimeHost = null
 var _clock: WorldClock = null
 var _recorder: RefCounted = null
+var _economy_recorder: RefCounted = null
 var _world_ready := false
 var _recording := false
 var _record_started_usec := 0
@@ -48,6 +49,9 @@ var _record_fast_tick_start := 0
 var _record_fast_tick_end := 0
 var _record_clock_day_start := -1
 var _record_clock_day_end := -1
+var _last_completed_days := 0
+var _last_completed_usec := 0
+var _max_commit_gap_ms := 0.0
 
 
 func _ready() -> void:
@@ -75,6 +79,8 @@ func _ready() -> void:
 	# These are Debug-only hooks consumed by PlayerGame before its host is
 	# configured. They are intentionally not project settings or GM toggles.
 	Engine.set_meta(&"stage_c_authority_mode", _mode)
+	if _args.has("auto_pod_active"):
+		Engine.set_meta(&"stage_c_auto_pod_active", _enabled(_args["auto_pod_active"]))
 	Engine.set_meta(&"stage_c_tile_metadata", _tile_metadata())
 	call_deferred("_begin_formal_session")
 
@@ -132,6 +138,19 @@ func _on_world_ready(_map, _world_data, _generator, _view_adapter) -> void:
 	_climate_start = _host.climate_authority_diagnostics()
 	_session["runtime_report_start"] = _runtime_report_start.duplicate(true)
 	_session["climate_authority_start"] = _climate_start.duplicate(true)
+	var initial_resources: Array = []
+	var start_cell := _host._resolve_player_start_cell()
+	var map := _host.get_current_map()
+	var ext = _host.get_generator().get_data_core_world_ext()
+	if start_cell >= 0 and map != null and ext != null:
+		for profile in ResourceProfileRegistry.ordered():
+			var map_values: PackedFloat32Array = map.get(ResourceProfileRegistry.reserve_map_field(profile))
+			var sid: int = ext.component_id(ResourceProfileRegistry.reserve_cpp_name(profile))
+			var native_values: PackedFloat32Array = ext.snapshot_f32(sid) if sid >= 0 else PackedFloat32Array()
+			initial_resources.append({"resource": String(profile.id), "cell": start_cell,
+				"map_reserve": map_values[start_cell],
+				"native_reserve": native_values[start_cell] if start_cell < native_values.size() else -1.0})
+	_session["initial_resource_bridge"] = initial_resources
 	_write_session("world_ready")
 	if _manual:
 		if _auto_tile and _warmup_until_tick >= 0:
@@ -190,6 +209,7 @@ func _run_automated_tile_recording() -> void:
 
 
 func _apply_fixed_client_settings() -> void:
+	_session["auto_pod_active"] = _host.runtime_economy_auto_pod_active
 	DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_WINDOWED)
 	DisplayServer.window_set_flag(DisplayServer.WINDOW_FLAG_BORDERLESS, false)
 	DisplayServer.window_set_size(WINDOW_SIZE)
@@ -229,6 +249,21 @@ func _start_recording() -> void:
 	_recorder.configure_export(_output_dir, "perf.csv")
 	_host.set_perf_recorder(_recorder)
 	_recorder.start("CORE", 1)
+	if _enabled(_args.get("auto_economy", "false")):
+		_economy_recorder = preload("res://scripts/ui/economy_data_recorder.gd").new()
+		_economy_recorder.bind_main(_host)
+		if _host.get_selected_cell() == null:
+			var start_cell := _host._resolve_player_start_cell()
+			if start_cell >= 0:
+				_host.set_selected_cell(_host.get_current_map().cell_at(start_cell))
+		# A selected-cell record stays useful for long soaks without exhausting
+		# the hard row cap on thousands of empty markets.
+		if _host.get_selected_cell() != null:
+			_economy_recorder.set_current_cell_only(true)
+		else:
+			_economy_recorder.set_sampling_config(100)
+		_host.set_economy_data_recorder(_economy_recorder)
+		_economy_recorder.start()
 	_frame_file = FileAccess.open(_output_dir.path_join("frame_samples.csv"), FileAccess.WRITE)
 	if _frame_file == null:
 		_fail("could not create frame_samples.csv")
@@ -241,6 +276,9 @@ func _start_recording() -> void:
 	_last_fast_tick_count = _record_fast_tick_start
 	_last_frame_usec = Time.get_ticks_usec()
 	_record_started_usec = _last_frame_usec
+	_last_completed_days = int(_runtime_report_record_start.get("completed_days", 0))
+	_last_completed_usec = _record_started_usec
+	_max_commit_gap_ms = 0.0
 	_recording = true
 	_write_session("recording")
 	print("[stage-c/client] recording mode=%s worker=%s seconds=%.2f output=%s" % [
@@ -255,6 +293,10 @@ func _process(_delta: float) -> void:
 	_last_frame_usec = now
 	var fast_tick_count := _host.get_fast_tick_count()
 	var report := _runtime_report()
+	_max_commit_gap_ms = maxf(_max_commit_gap_ms, float(now - _last_completed_usec) / 1000.0)
+	if int(report.get("completed_days", 0)) > _last_completed_days:
+		_last_completed_days = int(report.get("completed_days", 0))
+		_last_completed_usec = now
 	var climate := _host.climate_authority_diagnostics()
 	var writeback_day := int(climate.get("writeback_last_day", -1))
 	var clock_day := _clock.day_index() if _clock != null else -1
@@ -295,8 +337,16 @@ func _finish_recording() -> void:
 		_frame_file.close()
 		_frame_file = null
 	var perf_path: String = String(_recorder.stop_and_export()) if _recorder != null else ""
+	# Freeze the measurement endpoint before the asynchronous CSV drain.
 	_runtime_report_end = _runtime_report()
 	_climate_end = _host.climate_authority_diagnostics()
+	if _economy_recorder != null:
+		_economy_recorder.stop_and_export()
+		var deadline := Time.get_ticks_msec() + 30000
+		while _economy_recorder.is_recording() and Time.get_ticks_msec() < deadline:
+			_economy_recorder.sampling_summary()
+			await get_tree().process_frame
+		_session["economy_recording"] = _economy_recorder.sampling_summary()
 	_session["recording_fast_tick_start"] = _record_fast_tick_start
 	_session["recording_fast_tick_end"] = _record_fast_tick_end
 	_session["recording_fast_ticks"] = _record_fast_tick_end - _record_fast_tick_start
@@ -314,13 +364,55 @@ func _finish_recording() -> void:
 	_session["writeback_lag_days"] = int(_clock.day_index()) - int(
 		_climate_end.get("writeback_last_day", -1)) if int(
 		_climate_end.get("writeback_last_day", -1)) >= 0 else -1
-	_write_session("complete")
+	var committed_delta := int(_runtime_report_end.get("completed_days", 0)) - int(
+		_runtime_report_record_start.get("completed_days", 0))
+	var native_rate := float(committed_delta) * 1000.0 / maxf(1.0, record_elapsed_ms)
+	var faults := int(_runtime_report_end.get("worker_fault_count", 0))
+	var health_errors: Array[String] = []
+	for resource in _session.get("initial_resource_bridge", []):
+		if float(resource.map_reserve) != float(resource.native_reserve):
+			health_errors.append("opening resource bridge mismatch: %s" % resource.resource)
+	if _economy_recorder != null:
+		var recording: Dictionary = _session.get("economy_recording", {})
+		if String(recording.get("error_code", "")) != "":
+			health_errors.append("economy recording: %s" % recording.get("error_code"))
+		if String(recording.get("state", "")) != "completed":
+			health_errors.append("economy recording did not finish draining")
+		var captured := int(recording.get("captured_epochs", 0))
+		if captured <= 0 or captured != int(recording.get("written_epochs", -1)):
+			health_errors.append("economy recording has zero or unwritten epochs")
+	if _mode == "ACTIVE":
+		if not bool(_runtime_report_end.get("authority_ready", false)):
+			health_errors.append("requested ACTIVE authority was not granted")
+		if _enabled(_args.get("require_owned_state", "false")) and String(
+				_runtime_report_end.get("economy_formula_backing", "")) != "owned_state":
+			health_errors.append("economy did not bind owned_state")
+		if faults > 0:
+			health_errors.append("worker_fault_count=%d" % faults)
+		if committed_delta <= 0:
+			health_errors.append("no native committed-day progress")
+		var minimum_rate := float(_args.get("min_native_days_per_second", 0.0))
+		if native_rate < minimum_rate:
+			health_errors.append("native rate %.3f < %.3f" % [native_rate, minimum_rate])
+		var maximum_gap := float(_args.get("max_commit_gap_ms", 0.0))
+		if maximum_gap > 0.0 and _max_commit_gap_ms > maximum_gap:
+			health_errors.append("commit gap %.3f > %.3f ms" % [_max_commit_gap_ms, maximum_gap])
+	elif int(_runtime_report_end.get("authoritative_domain_mask", 0)) != 0:
+		health_errors.append("non-ACTIVE comparison acquired worker authority")
+	_session["native_committed_days"] = committed_delta
+	_session["native_days_per_second"] = native_rate
+	_session["max_observed_commit_gap_ms"] = _max_commit_gap_ms
+	_session["health_errors"] = health_errors
+	_session["health_passed"] = health_errors.is_empty()
+	_write_session("complete" if health_errors.is_empty() else "failed")
 	_host.set_perf_recorder(null)
 	Engine.remove_meta(&"stage_c_authority_mode")
 	Engine.remove_meta(&"stage_c_tile_metadata")
 	print("[stage-c/client] complete mode=%s frames=%d fast_ticks=%d perf=%s" % [
 		_mode, _frame_index, _record_fast_tick_end - _record_fast_tick_start, perf_path])
-	get_tree().quit(0)
+	if not health_errors.is_empty():
+		push_error("[stage-c/client] health failed: %s" % "; ".join(health_errors))
+	get_tree().quit(0 if health_errors.is_empty() else 3)
 
 
 func _runtime_report() -> Dictionary:

@@ -2393,6 +2393,9 @@ func capture_runtime_inputs_for_worker(day: int = -1, phase: float = -1.0) -> Di
 		"cell_wind_x": map.wind_x_arr,
 		"cell_wind_y": map.wind_y_arr,
 		"cell_wind_speed": map.wind_speed_arr,
+		"cell_ocean_current_x": map.ocean_current_x_arr,
+		"cell_ocean_current_y": map.ocean_current_y_arr,
+		"cell_ocean_thermal_anomaly": map.ocean_thermal_anomaly_arr,
 		"cell_air_mass_temp_anomaly": map.air_mass_temp_anomaly_arr,
 		"neighbor_indices": map.neighbor_indices_packed(),
 		"neighbor_offsets": neighbor_offsets,
@@ -4518,6 +4521,15 @@ var _runtime_climate_worker_weather_embed_day: int = -1000000
 var _runtime_climate_worker_stage_b_call_index: int = -1
 
 
+func publish_worker_climate_visuals() -> Dictionary:
+	# Reuse the production cell LUT encoders; no simulation or full map rebake.
+	if _baker == null or _sus_map == null or _last_world == null:
+		return {}
+	var report: Dictionary = _baker.refresh_cell_luts_daily(_sus_map, _last_world)
+	_baker.refresh_weather_lut_from_weather(_sus_map, _last_world)
+	return report
+
+
 func _build_runtime_climate_stage_knobs(map: MapData, day: int,
 		authoritative: bool) -> Dictionary:
 	if not authoritative or map == null:
@@ -4525,6 +4537,18 @@ func _build_runtime_climate_stage_knobs(map: MapData, day: int,
 	var cp_now = _c()
 	if cp_now == null:
 		return {}
+	# Physical circulation has its own cadence. Always transport its immutable
+	# profile, including on days when the weather round is not due.
+	var out: Dictionary = {}
+	if _baker != null:
+		var physics: Dictionary = _baker.runtime_physics_knobs()
+		if not physics.is_empty():
+			physics["enabled"] = bool(cp_now.physical_circulation_enabled)
+			physics["daily_split"] = bool(cp_now.daily_wind_split_passes)
+			physics["daily_period_days"] = maxi(1, int(cp_now.ocean_daily_wind_period_ticks))
+			physics["ocean_period_days"] = maxi(1, int(cp_now.ocean_currents_period_ticks))
+			physics["world_seed"] = _last_seed
+			out["physics_knobs"] = physics
 	# weather 轮的外层节拍。stage_b 的三个子 stride 以"第几轮 weather"计数，所以
 	# 这一层不到期就整份不发，与生产"非到期 tick 不嵌入 stage_b_knobs"一致。
 	var stride: int = _native_daily_weather_cadence_stride(cp_now)
@@ -4544,10 +4568,10 @@ func _build_runtime_climate_stage_knobs(map: MapData, day: int,
 		else:
 			due = (day - _runtime_climate_worker_weather_embed_day) >= stride
 	if not due:
-		return {}
+		return out
 	_runtime_climate_worker_weather_embed_day = day
 	_runtime_climate_worker_stage_b_call_index += 1
-	var out: Dictionary = {"weather_round": true}
+	out["weather_round"] = true
 	# 复用生产那份组装：节拍与标量口径必须与生产逐位一致，重写一份就等于在
 	# worker 侧引入第二套 stride 语义。elapsed_days_per_call 取 weather 轮间隔，
 	# 因为这套计数器每 stride 天才推进一次。
@@ -9303,7 +9327,7 @@ func _publish_bootstrapped_natural_resources_to_runtime(map_ref: MapData) -> voi
 				habitat_cid, 0, map_ref.resource_habitat_mask_arr)
 	if _data_core_world_ext != null and _data_core_world_ext.has_method("component_id") \
 			and _data_core_world_ext.has_method("write_u8_range"):
-		var habitat_cid_ext := int(_data_core_world_ext.component_id(habitat_component))
+		var habitat_cid_ext := int(_data_core_world_ext.component_id(&"cell_resource_habitat_mask"))
 		if habitat_cid_ext >= 0:
 			_data_core_world_ext.write_u8_range(
 				habitat_cid_ext, 0, map_ref.resource_habitat_mask_arr)
@@ -9319,7 +9343,9 @@ func _publish_bootstrapped_natural_resources_to_runtime(map_ref: MapData) -> voi
 				_data_core_world.write_f32_range(cid, 0, values)
 		if _data_core_world_ext != null and _data_core_world_ext.has_method("component_id") \
 				and _data_core_world_ext.has_method("write_f32_range"):
-			var cid_ext := int(_data_core_world_ext.component_id(profile.reserve_component))
+			# Native slots use schema cpp_name, not the dotted GDScript name.
+			var cid_ext := int(_data_core_world_ext.component_id(
+				ResourceProfileRegistry.reserve_cpp_name(profile)))
 			if cid_ext >= 0:
 				_data_core_world_ext.write_f32_range(cid_ext, 0, values)
 

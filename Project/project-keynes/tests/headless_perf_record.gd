@@ -450,7 +450,11 @@ func _run() -> int:
 		# Authoritative day accounting prefers worker commit timestamps so
 		# harness process_frame waits do not inflate production throughput.
 		var day_report := _runtime_report_snapshot(generator)
-		var committed_day := int(day_report.get("committed_day", -1))
+		# ACTIVE reports use the explicit simulation_* namespace.  Keep the
+		# unprefixed fallback for older extensions, but do not silently turn a
+		# valid worker commit into "no observed days".
+		var committed_day := int(day_report.get("simulation_committed_day",
+			day_report.get("committed_day", -1)))
 		var produced_us := int(day_report.get("last_commit_produced_at_us", 0))
 		if committed_day > last_authoritative_committed_day:
 			last_authoritative_committed_day = committed_day

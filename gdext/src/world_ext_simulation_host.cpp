@@ -2049,6 +2049,47 @@ Dictionary DCWorldExt::capture_runtime_inputs(const Dictionary &inputs) {
         return out;
     }
     std::string publish_error;
+    if (_runtime_host->economy_worker_owns_execution() && _economy_runtime != nullptr) {
+        auto economy_input = std::make_shared<RuntimeEconomyDayInput>();
+        economy_input->day = snapshot.day;
+        economy_input->cell_count = static_cast<uint32_t>(cells);
+        const char *fields[] = {"cell_temp", "cell_temp_30d", "cell_moisture",
+            "cell_plant_available_water", "cell_weather_precip", "cell_snow_cover",
+            "cell_weather_intensity", "cell_elevation"};
+        auto copy_slot_f32 = [&](const char *name, std::vector<float> &dest) {
+            const int sid = component_id(StringName(name));
+            if (sid >= 0 && sid < _slots.size() && _slots[sid].dtype == SlotDType::F32 &&
+                static_cast<size_t>(_slots[sid].arr_f32.size()) == cells) {
+                const auto &array = _slots[sid].arr_f32;
+                dest.assign(array.ptr(), array.ptr() + array.size());
+            }
+        };
+        for (size_t i = 0; i < economy_input->fields.size(); ++i)
+            copy_slot_f32(fields[i], economy_input->fields[i]);
+        const char *geography[] = {"cell_terrain", "cell_landform", "cell_vegetation",
+            "cell_is_water", "cell_has_river"};
+        for (size_t i = 0; i < 5; ++i) {
+            const int sid = component_id(StringName(geography[i]));
+            if (sid >= 0 && sid < _slots.size() && _slots[sid].dtype == SlotDType::U8 &&
+                static_cast<size_t>(_slots[sid].arr_u8.size()) == cells) {
+                const auto &array = _slots[sid].arr_u8;
+                economy_input->geography[i].assign(array.ptr(), array.ptr() + array.size());
+            }
+        }
+        economy_input->neighbors = snapshot.neighbor_indices;
+        economy_input->fog_solved = snapshot.fog_solved;
+        economy_input->geography[5] = snapshot.visible;
+        const auto *economy = static_cast<NativeEconomyRuntime *>(_economy_runtime);
+        const auto &reserve_slots = economy->building_resource_reserve_slots();
+        const auto &extra_slots = economy->building_resource_extra_slots();
+        economy_input->reserves.resize(reserve_slots.size());
+        economy_input->changes.resize(extra_slots.size());
+        for (size_t r = 0; r < reserve_slots.size(); ++r)
+            copy_slot_f32(reserve_slots[r].c_str(), economy_input->reserves[r]);
+        for (size_t r = 0; r < extra_slots.size(); ++r)
+            copy_slot_f32(extra_slots[r].c_str(), economy_input->changes[r]);
+        snapshot.economy_input = std::move(economy_input);
+    }
     if (!_runtime_host->publish_environment(snapshot, publish_error)) {
         out["ok"] = false;
         out["code"] = String(publish_error.empty()

@@ -293,6 +293,8 @@ int64_t NativeEconomyRuntime::allocated_output_operating_cost(
 
 bool NativeEconomyRuntime::run_building_production_cell(
         int32_t cell, ProductionResult &result, std::string &error) {
+    // 所有调度入口都必须携带地块身份，合并时才能归集食物流量。
+    result.cell = cell;
     ProductionResult *previous_sink = _production_result_sink;
     _production_result_sink = &result;
     int64_t &_saturation_count = result.saturation_count;
@@ -835,8 +837,8 @@ bool NativeEconomyRuntime::run_building_production_cell(
                     static_cast<size_t>(item.resource_id)];
                 if (capacity > 0) {
                     int64_t sat = 0;
-                    const int64_t fixed_capacity = saturating_mul(
-                        capacity, GOODS_SCALE, sat);
+                    // 目录已将生态容量转换为 GOODS_SCALE 单位，不能重复缩放。
+                    const int64_t fixed_capacity = capacity;
                     if (fixed_capacity > 0) {
                         const int64_t remaining = std::max<int64_t>(0,
                             available_resource_amount(item, resource_cell));
