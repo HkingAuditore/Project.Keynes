@@ -1,5 +1,71 @@
 # Scheduling and Job Graph
 
+## Economy projection placement (2026-09-20)
+
+In ACTIVE_ONLY StageOps, AGGREGATE_PUBLISH still drains business publication and
+computes the final native hash. Its formerly unconditional OwnedState projection
+refresh now occurs inside POD `commit_epoch` only when commands are queued,
+immediately before command execution. Host final committed publication always
+refreshes afterward. This removes duplicate work on no-command days while
+preserving pre-command reads and post-command visibility. Parity stage refreshes,
+stage order, authority masks and save/hash schemas are unchanged.
+
+## Climate input capacity backpressure (2026-09-19)
+
+`wait_for_climate_consumed(0)` checks native input-ring capacity with a zero
+timeout; zero is not an absent generation. At the player day boundary a full
+ring retains the semantic day in `WorldRuntimeHost` and arms
+`climate_input_capacity_day_barrier`. This uses WorldClock's hard day barrier,
+not `pause(true)`: input production stops while peer services and the worker
+continue. `_process` retries the retained day once per frame and clears the
+barrier only when capacity returns. This avoids both dropping an input day
+and blocking the main thread waiting for work that needs its peer pump.
+
+`runtime_climate_capacity_backpressure_test.gd` covers full-ring retention and
+one-time execution after capacity returns, preservation of player pause state,
+and the whole-graph takeover input-day convention (`day_idx - 1`, matching
+`MapGenerator.sus_tick_daily`). Using `day_idx` only after takeover skips one
+environment day and permanently parks the worker on a future FIFO head. It is a boundary regression test,
+not proof of full-game worker liveness; the headless performance runner directly
+invokes `run_daily_tick` and does not exercise this player clock callback.
+
+## Economy input continuation (2026-09-19)
+
+The whole-graph player callback bypasses `run_daily_tick`, so it must not rely on
+that tick to capture Economy inputs. On `same_day_environment_not_captured` or
+`same_day_building_context_not_captured`, NativeSimulationHost requests the exact
+pending day. WorldRuntimeHost services `capture_economy_day_inputs(-1)` each
+frame. The bridge uses a nonblocking boundary lock, captures the requested day,
+and wakes the worker through a dedicated input signal. No formula writes occur
+while the main thread owns that lock; the worker releases it while parked.
+The public compact-slice bridge also holds this lock and refuses mutation as
+soon as ACTIVE worker execution is requested with an attached Economy runner.
+The completed-domain grant is evidence of readiness, not a safe permission for
+the main thread to keep mutating while the worker proves its first day.
+Wake cursors are sampled before attempting the day so completion during an
+attempt is not missed.
+
+ACTIVE waits never use SHADOW trace depth as a readiness condition: an old
+unconsumed reference otherwise causes a busy retry loop and starves input
+capture's nonblocking lock. Trigger/Effect/Ideology ACK enqueue also advances the
+peer wake signal. A retained same-day input remains runnable after Climate has
+popped its FIFO slot; save must drain that continuation before serialization.
+The inner continuation wait uses the same save-admission condition as the outer
+loop. A pending save alone cannot wake an unfinished environment day: the annual
+autosave otherwise causes a tight retry loop that starves Economy input capture.
+
+A slice's `done` flag also covers idle work. Committed mirror publication requires
+an inactive epoch and a real native `last_committed_day >= 0`; never manufacture
+ledger dates or generations to pass validation.
+
+Worker-authoritative cohort cash transfers use the Host's existing asset request,
+peer result, terminal journal and CountryCore commit on the same worker thread.
+The prepare/finish entry points reject other threads and an open Country plan.
+This closes the transaction before structural cohort reclamation; it must not
+enqueue an unaddressed transfer and treat pending as fatal. The request includes
+both target slot and handle, and Economy audits read published authoritative
+Country cash while the worker owns Country.
+
 ## Economy ACTIVE scheduling (Phase 2–6, 2026-09-13)
 
 When `authoritative_domain_mask` includes ECONOMY (`0xFFF` production request),
@@ -7,7 +73,10 @@ the Host ACTIVE day loop runs up to 64 `worker_run_compact_slice` calls per day
 on the attached `NativeEconomyRuntime`. Outer model remains **one** Economy POD
 worker + existing inner `parallel_for_range`; Host does not add a second Economy
 parallel layer. Main-thread `economy_daily` / `economy_should_run` no-op under
-that grant (fail-open if production runtime was not attached). D7 peer transport
+that grant (fail-open if production runtime was not attached). The native runtime
+graph also treats ECONOMY as worker-owned: it captures frozen inputs but does not
+call `run_economy_slice_compact()` and does not arm a synchronous economy barrier.
+D7 peer transport
 stays on Host bounded rings; POD outbox slots are diagnostic.
 
 `economy_execution_mode` defaults to `ACTIVE_ONLY` (SHADOW StageOps invocations
@@ -1125,10 +1194,12 @@ the compatibility/fallback scheduler until A/B hash and soak gates pass.
 
 When `native_runtime_graph_mode=ACTIVE`, `economy_daily` remains registered only
 as a compatibility SUS node but its `should_run()` is policy-gated to false.
-The graph invokes the existing `NativeEconomyRuntime` directly, including its
-committed event and construction-receipt publication boundary; the GDScript
-continuation callback only calls `advance_runtime_pulse()` after native-daily
-and bio same-day transactions have released their barriers. `get_economy_perf_report()`
+With an ECONOMY worker grant, the graph invokes only the frozen-input capture
+boundary; `NativeSimulationHost` owns `worker_run_compact_slice()` and its
+commit/publication boundary. The GDScript continuation callback may still call
+`advance_runtime_pulse()` for other main-thread domains, but it must not launch a
+second Economy writer or use `economy_should_run()` to hold the main clock.
+`get_economy_perf_report()`
 reads the graph's last compact result in this mode, so recorder/GM diagnostics do
 not silently report an empty legacy-job snapshot. OFF/SHADOW continue to use the
 legacy `economy_daily` report and continuation path.
@@ -1146,8 +1217,9 @@ replayed.
 ## Native runtime graph barrier arming
 
 `advance_runtime_pulse()` returns `status=3` **only** when a hard domain
-(`country` / `effect` / `modifier` / `gameplay_effect` / `economy`) still reports
-`should_run(day)` after the pulse. Exhausting the wall-clock budget increments
+(`country` / `effect` / `modifier` / `gameplay_effect`, plus synchronous `economy`)
+still reports `should_run(day)` after the pulse. A worker-owned domain is excluded
+from this synchronous pending set. Exhausting the wall-clock budget increments
 `budget_yields` but never arms the barrier on its own: Trigger and Ideology own
 soft cursors that legitimately carry work into tomorrow, so a pulse that spent
 its whole budget on them must still let `WorldClock` commit the day. Arming on

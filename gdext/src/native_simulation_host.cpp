@@ -744,6 +744,8 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     _economy_pod_operation_gate_mask.store(0, std::memory_order_release);
     _economy_pod_parity_ready_mask.store(0, std::memory_order_release);
     _economy_sync_writes_forbidden.store(false, std::memory_order_release);
+    _economy_input_requested_day.store(-1, std::memory_order_release);
+    _economy_input_signal.store(0, std::memory_order_release);
     _economy_shadow_stage_invocations.store(0, std::memory_order_release);
     _economy_shadow_stage_cache_hits.store(0, std::memory_order_release);
     _economy_pod_command_recapture_count.store(0, std::memory_order_release);
@@ -1894,6 +1896,7 @@ bool NativeSimulationHost::worker_run_stage_ops_slice(
 
     switch (_stage_ops_day_phase) {
     case StageOpsDayPhase::Prelude: {
+        const auto prelude_started = std::chrono::steady_clock::now();
         int64_t prelude_work = 0;
         bool pending = false;
         bool idle_done = false;
@@ -1901,6 +1904,7 @@ bool NativeSimulationHost::worker_run_stage_ops_slice(
                 day, prelude_work, error, &pending, &idle_done)) {
             return false;
         }
+        if (day % 100 == 0) std::fprintf(stderr, "[economy-prelude-cost] day=%lld ms=%.3f pending=%d\n", static_cast<long long>(day), std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - prelude_started).count(), pending);
         if (pending) {
             if (pending_input != nullptr) {
                 *pending_input = true;
@@ -1932,6 +1936,7 @@ bool NativeSimulationHost::worker_run_stage_ops_slice(
         _economy_pod_authority.attach_stage_ops(_economy_stage_ops.get());
         RuntimeEconomyEpochInput input;
         input.sample_day = day;
+        input.stage_hashes_enabled = economy_parity_shadow_enabled();
         input.session_epoch = 1;
         input.economy_generation =
             _economy_production_runtime->committed_generation();
@@ -1991,6 +1996,12 @@ bool NativeSimulationHost::worker_run_stage_ops_slice(
         }
         if (!_economy_pod_authority.commit_epoch(error)) {
             return false;
+        }
+        const auto &replay = _economy_pod_authority.replay_report();
+        for (size_t i = 0; i < RUNTIME_ECONOMY_GRAPH_STAGE_COUNT; ++i) {
+            _economy_replay_stage_ms[i].store(replay.stage_ms[i], std::memory_order_release);
+            _economy_replay_stage_work[i].store(replay.stage_work[i], std::memory_order_release);
+            _economy_replay_stage_hash[i].store(replay.stage_hash[i], std::memory_order_release);
         }
         if (try_fault_injection("economy.commit.after")) {
             error = "economy_commit_fault_injected_after";
@@ -2194,6 +2205,7 @@ void NativeSimulationHost::join_for_destruction() {
 }
 
 void NativeSimulationHost::set_clock(bool paused, double speed_days_per_second) {
+    _worker_timing.pause(paused);
     _paused.store(paused, std::memory_order_release);
     _speed_days_per_second.store(std::max(0.0, speed_days_per_second),
                                  std::memory_order_release);
@@ -4086,6 +4098,16 @@ bool NativeSimulationHost::country_economy_asset_protocol_self_test(
     NativeSimulationHost probe;
     probe._country_worker_session_epoch = 41;
 
+    RuntimeEconomyAssetRequest off_thread_cash;
+    off_thread_cash.operation = RuntimeEconomyAssetOperation::CASH_FROM_COHORT;
+    std::string boundary_error;
+    if (probe.prepare_worker_cohort_cash(off_thread_cash, boundary_error) ||
+        boundary_error != "country_worker_cohort_cash_boundary_invalid" ||
+        !probe._country_economy_asset_requests.empty()) {
+        error = "country_worker_cohort_cash_wrong_thread_accepted";
+        return false;
+    }
+
     RuntimeEconomyAssetRequest request;
     request.operation = RuntimeEconomyAssetOperation::TREASURY_SPEND;
     request.state = RuntimeEconomyAssetState::COUNTRY_PREPARED;
@@ -4415,6 +4437,54 @@ bool NativeSimulationHost::enqueue_economy_origin_country_asset(
     _country_economy_asset_protocol.last_request_id = request.request_id;
     _country_economy_asset_protocol.last_transaction_id = request.transaction_id;
     return true;
+}
+
+bool NativeSimulationHost::prepare_worker_cohort_cash(
+        RuntimeEconomyAssetRequest &request, std::string &error) {
+    error.clear();
+    if (std::this_thread::get_id() != _worker.get_id() ||
+        !domain_is_worker_authoritative(RuntimeDomainId::COUNTRY) ||
+        _country_pod_plan_active.load(std::memory_order_acquire) ||
+        (request.operation != RuntimeEconomyAssetOperation::CASH_TO_COHORT &&
+         request.operation != RuntimeEconomyAssetOperation::CASH_FROM_COHORT)) {
+        error = "country_worker_cohort_cash_boundary_invalid";
+        return false;
+    }
+    request.session_epoch = _country_worker_session_epoch;
+    request.request_id = allocate_command_request_id();
+    request.transaction_id = request.request_id;
+    request.operation_sequence = request.request_id;
+    request.origin_domain = static_cast<uint32_t>(RuntimeDomainId::ECONOMY);
+    RuntimeCountryPodSnapshot snapshot;
+    if (!_country_pod_authority.snapshot(snapshot, error) ||
+        !country_core_apply_economy_asset_prepare(
+            snapshot, _country_pod_catalog, request, error)) return false;
+    if (request.operation == RuntimeEconomyAssetOperation::CASH_FROM_COHORT &&
+        snapshot.country_cash[static_cast<size_t>(request.country_slot)] >
+            INT64_MAX - request.requested_cash) {
+        error = "country_worker_cohort_cash_treasury_overflow";
+        return false;
+    }
+    // Both owners execute on this thread. Publish directly to the existing
+    // peer queue; there is no later Country stage to prepare this same day.
+    return publish_country_economy_asset_requests({request}, error);
+}
+
+bool NativeSimulationHost::finish_worker_cohort_cash(
+        uint64_t request_id, RuntimeEconomyAssetResult &result, std::string &error) {
+    error.clear();
+    if (std::this_thread::get_id() != _worker.get_id() ||
+        !country_economy_asset_terminal_result(request_id, result)) {
+        error = "country_worker_cohort_cash_terminal_missing";
+        return false;
+    }
+    if (result.code != RuntimeEconomyAssetResultCode::COMPLETED) {
+        error = result.reason.data();
+        if (error.empty()) error = "country_worker_cohort_cash_rejected";
+        return false;
+    }
+    if (!flush_country_economy_asset_commits(error)) return false;
+    return publish_country_worker_snapshot(RUNTIME_DIRTY_COUNTRY_STATE, error);
 }
 
 bool NativeSimulationHost::country_authority_drain_idle_locked() const {
@@ -4905,6 +4975,11 @@ bool NativeSimulationHost::submit_trigger_pod_ack(const RuntimeDomainAck &ack,
         return false;
     }
     _trigger_acks.push_back(ack);
+    {
+        std::lock_guard<std::mutex> control_lock(_control_mutex);
+        _country_peer_signal.fetch_add(1, std::memory_order_release);
+    }
+    _control_cv.notify_all();
     return true;
 }
 
@@ -5312,6 +5387,11 @@ bool NativeSimulationHost::submit_effect_pod_ack(
         return false;
     }
     _effect_acks.push_back(ack);
+    {
+        std::lock_guard<std::mutex> control_lock(_control_mutex);
+        _country_peer_signal.fetch_add(1, std::memory_order_release);
+    }
+    _control_cv.notify_all();
     return true;
 }
 
@@ -5405,6 +5485,11 @@ bool NativeSimulationHost::submit_ideology_pod_ack(
         return false;
     }
     _ideology_acks.push_back(ack);
+    {
+        std::lock_guard<std::mutex> control_lock(_control_mutex);
+        _country_peer_signal.fetch_add(1, std::memory_order_release);
+    }
+    _control_cv.notify_all();
     return true;
 }
 
@@ -8899,11 +8984,25 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             }
             const EconomyProductionWriter production_writer =
                 economy_production_writer_effective();
+            const auto economy_attempt_started = std::chrono::steady_clock::now();
             std::string economy_error;
             bool economy_day_done = false;
             uint64_t economy_work = 0;
             bool economy_fatal = false;
             bool economy_pending_input = false;
+            if (environment && environment->economy_input &&
+                !_economy_production_runtime->epoch_active() &&
+                (_economy_production_runtime->needs_environment_capture(plan.context.day) ||
+                 _economy_production_runtime->needs_building_context_capture(plan.context.day))) {
+                if (environment->economy_input->day != plan.context.day ||
+                    !_economy_production_runtime->capture_worker_day_input(
+                        *environment->economy_input, economy_error)) {
+                    set_fault(economy_error.empty() ? "economy_worker_input_day_mismatch" : economy_error.c_str());
+                    stage.completed = 0;
+                    commit.preflight_ok = 0;
+                    continue;
+                }
+            }
             if (production_writer == EconomyProductionWriter::STAGE_OPS) {
                 for (int slice = 0; slice < 64; ++slice) {
                     bool slice_done = false;
@@ -8948,6 +9047,9 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                 }
             }
             if (economy_fatal) {
+                std::fprintf(stderr, "[economy-worker-fatal] day=%lld phase=%u stage=%u reason=%s\n",
+                    static_cast<long long>(plan.context.day), static_cast<unsigned>(_stage_ops_day_phase),
+                    _economy_pod_authority.planned_stage_index(), economy_error.c_str());
                 set_fault(economy_error.empty()
                               ? (production_writer ==
                                          EconomyProductionWriter::STAGE_OPS
@@ -8959,9 +9061,19 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                 continue;
             }
             if (economy_pending_input) {
+                if (economy_error == "same_day_environment_not_captured" ||
+                    economy_error == "same_day_building_context_not_captured") {
+                    _economy_input_requested_day.store(plan.context.day,
+                        std::memory_order_release);
+                }
                 stage.completed = 0;
                 continue;
             }
+            // slice done 也可能表示空闲或前置领域尚未就绪，不能伪造 epoch 提交。
+            const auto economy_formulas_finished = std::chrono::steady_clock::now();
+            economy_day_done = economy_day_done &&
+                !_economy_production_runtime->epoch_active() &&
+                _economy_production_runtime->last_committed_day() >= 0;
             // Soft-complete even a partial pulse (epoch still in progress) so
             // the per-domain grant can include ECONOMY; continuation resumes on
             // the next worker day the same way sync pulses resume.
@@ -8983,7 +9095,7 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                                          std::memory_order_release);
             _economy_pod_authority_ready.store(true, std::memory_order_release);
             _economy_pod_committed_day.store(
-                economy_day_done ? plan.context.day
+                economy_day_done ? _economy_production_runtime->last_committed_day()
                                  : _economy_pod_committed_day.load(
                                        std::memory_order_relaxed),
                 std::memory_order_release);
@@ -9015,17 +9127,30 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                             economy_error);
                 } else {
                     RuntimeEconomyLedgerState ledger_state;
+                    const auto capture_started = std::chrono::steady_clock::now();
                     _economy_production_runtime
-                        ->capture_committed_ledger_state(ledger_state);
+                        ->capture_committed_ledger_state(ledger_state,
+                            production_writer == EconomyProductionWriter::STAGE_OPS
+                                ? _economy_replay_stage_hash[RUNTIME_ECONOMY_GRAPH_STAGE_COUNT - 1].load(
+                                      std::memory_order_acquire) : 0);
+                    const auto import_started = std::chrono::steady_clock::now();
                     ledger_published =
-                        ledger_state.valid() &&
-                        _economy_pod_authority.import_committed_ledger(
-                            ledger_state, economy_error) &&
-                        _economy_pod_authority.capture_committed_ledger_state(
-                            std::move(ledger_state));
+                        _economy_pod_authority.import_and_publish_committed_ledger(
+                            std::move(ledger_state), economy_error);
+                    static thread_local unsigned mirror_samples = 0;
+                    if (mirror_samples++ < 8) {
+                        std::fprintf(stderr, "[economy-mirror-cost] day=%lld capture_ms=%.3f import_ms=%.3f\n",
+                            static_cast<long long>(plan.context.day),
+                            std::chrono::duration<double, std::milli>(import_started - capture_started).count(),
+                            std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - import_started).count());
+                    }
                 }
                 if (!ledger_published) {
-                    set_fault("economy_pod_committed_ledger_capture_invalid");
+                    // Reject the boundary visibly. An incomplete stage is not
+                    // a safe ownership handoff and must not hide invalid state.
+                    set_fault(economy_error.empty()
+                        ? "economy_pod_committed_ledger_capture_invalid"
+                        : economy_error.c_str());
                     stage.completed = 0;
                     commit.preflight_ok = 0;
                     continue;
@@ -9037,6 +9162,15 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             }
             if (economy_day_done) {
                 _economy_pod_state_hash.store(_economy_pod_authority.state_hash(), std::memory_order_release);
+            }
+            if (plan.context.day % 100 == 0) {
+                double stages_ms = 0;
+                for (const auto &ms : _economy_replay_stage_ms) stages_ms += ms.load(std::memory_order_relaxed);
+                std::fprintf(stderr, "[economy-boundary-cost] day=%lld formulas_ms=%.3f stages_ms=%.3f mirror_ms=%.3f\n",
+                    static_cast<long long>(plan.context.day),
+                    std::chrono::duration<double, std::milli>(economy_formulas_finished - economy_attempt_started).count(),
+                    stages_ms,
+                    std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - economy_formulas_finished).count());
             }
             // Phase 5: publish production snapshot into the Economy POD ring.
             {
@@ -9051,7 +9185,7 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                     payload.header.generation =
                         _economy_pod_generation.load(std::memory_order_relaxed);
                     payload.header.committed_day =
-                        economy_day_done ? plan.context.day
+                        economy_day_done ? _economy_production_runtime->last_committed_day()
                                          : _economy_pod_committed_day.load(
                                                std::memory_order_relaxed);
                     payload.header.epoch_sample_day = plan.context.day;
@@ -11015,6 +11149,8 @@ void NativeSimulationHost::build_save_bundle(
 }
 
 void NativeSimulationHost::worker_main() {
+    _worker_timing.pause(_paused.load(std::memory_order_acquire));
+    _worker_timing.start();
 #if defined(_WIN32)
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL);
 #endif
@@ -11027,6 +11163,8 @@ void NativeSimulationHost::worker_main() {
     // loop when a UI burst happens to exceed the usual batch size.
     std::vector<RuntimeCommandPacket> pending_commands;
     pending_commands.reserve(RUNTIME_COMMAND_QUEUE_CAPACITY);
+    int64_t logged_pending_day = -1;
+    uint32_t logged_pending_mask = 0;
     size_t pending_begin = 0;
     if (!_worker_initial_pending_commands.empty()) {
         pending_commands = std::move(_worker_initial_pending_commands);
@@ -11091,8 +11229,10 @@ void NativeSimulationHost::worker_main() {
                _state.load(std::memory_order_acquire) != RuntimeWorkerState::FAULTED) {
             if (_stop_requested.load(std::memory_order_acquire)) break;
 
-            // PKSR 不保存 pending environment；即使暂停也必须先排空该日。
-            if (!has_pending_climate_input() &&
+            const bool retained_day_pending = active_environment != nullptr &&
+                active_environment->day == _committed_day.load(std::memory_order_acquire) + 1;
+            // PKSR 不保存 pending environment；已消费 Climate 输入的同日 ACK 也要排空。
+            if (!has_pending_climate_input() && !retained_day_pending &&
                 _save_requested.exchange(false, std::memory_order_acq_rel)) {
                 const uint64_t request_id = _save_request_id.load(std::memory_order_acquire);
                 // Commands in the lock-free ingress queue are already
@@ -11107,7 +11247,9 @@ void NativeSimulationHost::worker_main() {
                 compact_pending_commands(true);
                 publish_pending_count();
                 _state.store(RuntimeWorkerState::SAVE_PENDING, std::memory_order_release);
+                _worker_timing.set(RuntimeWorkerTiming::SAVE_BUILD);
                 build_save_bundle(request_id, pending_commands);
+                _worker_timing.set(RuntimeWorkerTiming::OVERHEAD);
                 _save_request_id.store(0, std::memory_order_release);
                 _state.store(_paused.load(std::memory_order_acquire)
                         ? RuntimeWorkerState::PAUSED : RuntimeWorkerState::RUNNING,
@@ -11116,26 +11258,42 @@ void NativeSimulationHost::worker_main() {
                 continue;
             }
 
+            // 自动迁移在 worker 自己释放上一日边界后尝试，不再依赖主线程
+            // 抢中两天之间的短暂空隙。沿用 M6 全部准入检查和审计。
+            if (_economy_auto_pod_active.load(std::memory_order_acquire) &&
+                _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE &&
+                _economy_production_runtime != nullptr &&
+                !_economy_production_runtime->formula_owned_bound() &&
+                _stage_ops_day_phase == StageOpsDayPhase::Done &&
+                _economy_pod_authority.pod_active_ready() &&
+                !_save_requested.load(std::memory_order_acquire) &&
+                !_stop_requested.load(std::memory_order_acquire)) {
+                std::string switch_error;
+                switch_economy_authority(RuntimeEconomyAuthorityMode::POD_ACTIVE,
+                                         switch_error);
+            }
             const bool paused = _paused.load(std::memory_order_acquire);
             const double speed = _speed_days_per_second.load(std::memory_order_acquire);
             const bool climate_driven =
                 _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE &&
                 (_requested_authority_mask.load(std::memory_order_acquire) &
                  runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u;
-            const bool climate_pending = has_pending_climate_input();
+            const bool climate_pending = has_pending_climate_input() || retained_day_pending;
             if ((climate_driven && !climate_pending) ||
                 (!climate_driven && (paused || speed <= 0.0 || !std::isfinite(speed)))) {
                 if (_stop_requested.load(std::memory_order_acquire)) break;
                 _state.store(RuntimeWorkerState::PAUSED, std::memory_order_release);
                 last = std::chrono::steady_clock::now();
                 std::unique_lock<std::mutex> lock(_control_mutex);
+                _worker_timing.set(RuntimeWorkerTiming::INPUT_WAIT);
                 _control_cv.wait(lock, [&] {
                     return _stop_requested.load(std::memory_order_acquire) ||
                         _save_requested.load(std::memory_order_acquire) ||
-                        (climate_driven ? has_pending_climate_input() :
+                        (climate_driven ? (has_pending_climate_input() || retained_day_pending) :
                             (!_paused.load(std::memory_order_acquire) &&
                              _speed_days_per_second.load(std::memory_order_acquire) > 0.0));
                 });
+                _worker_timing.set(RuntimeWorkerTiming::OVERHEAD);
                 continue;
             }
             if (_stop_requested.load(std::memory_order_acquire)) break;
@@ -11156,9 +11314,11 @@ void NativeSimulationHost::worker_main() {
                 _time_debt_days.store(debt, std::memory_order_release);
                 const double seconds_until_day = std::max(0.001, (1.0 - debt) / speed);
                 std::unique_lock<std::mutex> lock(_control_mutex);
+                _worker_timing.set(RuntimeWorkerTiming::CLOCK_WAIT);
                 _control_cv.wait_until(lock, std::chrono::steady_clock::now() +
                     std::chrono::duration_cast<std::chrono::steady_clock::duration>(
                         std::chrono::duration<double>(seconds_until_day)));
+                _worker_timing.set(RuntimeWorkerTiming::OVERHEAD);
                 continue;
             }
             target_days = std::min<int64_t>(target_days, 8);
@@ -11173,8 +11333,10 @@ void NativeSimulationHost::worker_main() {
                 // release. Counting only execute_day_plan() leaves a small
                 // race where the worker has produced a commit but has not yet
                 // made that commit observable.
+                _worker_timing.set(RuntimeWorkerTiming::BOUNDARY_WAIT);
                 std::unique_lock<std::mutex> boundary_lock(
                     _economy_authority_boundary_mutex);
+                _worker_timing.set(RuntimeWorkerTiming::OVERHEAD);
                 AtomicCounterScope day_scope(_worker_day_inflight);
                 if (try_fault_injection("worker.inflight.before")) {
                     break;
@@ -11266,11 +11428,23 @@ void NativeSimulationHost::worker_main() {
                     _climate_trace_signal.load(std::memory_order_acquire);
                 const uint64_t attempt_peer_signal =
                     _country_peer_signal.load(std::memory_order_acquire);
+                const uint64_t attempt_environment_signal =
+                    _environment_generation.load(std::memory_order_acquire);
+                const uint64_t attempt_economy_signal =
+                    _economy_input_signal.load(std::memory_order_acquire);
                 RuntimeDayPlan day_plan = build_day_plan(
                     day, speed, environment.get());
+                const auto day_attempt_started = std::chrono::steady_clock::now();
+                _worker_timing.set(RuntimeWorkerTiming::EXECUTE);
                 const RuntimeDayCommit day_commit = execute_day_plan(
                     day_plan, environment.get(), day_commands, day_receipts,
                     admitted_submit_order);
+                _worker_timing.set(RuntimeWorkerTiming::OVERHEAD);
+                if (day % 100 == 0) {
+                    std::fprintf(stderr, "[runtime-day-cost] day=%lld ok=%u ms=%.3f\n",
+                        static_cast<long long>(day), static_cast<unsigned>(day_commit.preflight_ok),
+                        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - day_attempt_started).count());
+                }
                 bool country_commands_terminal = !day_commands.empty();
                 if (country_commands_terminal) {
                     std::lock_guard<std::mutex> country_lock(
@@ -11336,6 +11510,17 @@ void NativeSimulationHost::worker_main() {
                     }
                 }
                 if (day_commit.preflight_ok == 0) {
+                    const uint32_t missing = _requested_authority_mask.load(
+                        std::memory_order_acquire) & ~day_commit.completed_domain_mask;
+                    if (logged_pending_day != day || logged_pending_mask != missing) {
+                        logged_pending_day = day;
+                        logged_pending_mask = missing;
+                        std::fprintf(stderr, "[runtime-day-wait] day=%lld env_day=%lld missing=0x%x economy_input=%lld\n",
+                            static_cast<long long>(day),
+                            static_cast<long long>(environment ? environment->day : -1),
+                            missing, static_cast<long long>(economy_input_requested_day()));
+                    }
+
                     if (_state.load(std::memory_order_acquire) ==
                         RuntimeWorkerState::FAULTED) {
                         break;
@@ -11349,31 +11534,48 @@ void NativeSimulationHost::worker_main() {
                             _time_debt_days.load(std::memory_order_relaxed) + 1.0),
                             std::memory_order_release);
                     }
-                    const uint64_t trace_signal =
-                        _climate_trace_signal.load(std::memory_order_acquire);
+                    // 捕获输入时主线程必须可取得边界锁；等待期间没有公式写入。
+                    boundary_lock.unlock();
+                    const auto next_input = _environment_ring.peek_oldest();
+                    const bool stale_input_consumed = environment != nullptr &&
+                        environment->day < day && next_input != nullptr &&
+                        next_input->generation != environment->generation;
+                    const uint64_t trace_signal = attempt_trace_signal;
                     // Under ACTIVE Climate authority there is no trace signal
                     // to wait for: production is suppressed and the only input
                     // that can unblock the day is a fresh environment publish
                     // from the main thread. Waiting on the trace alone would
                     // park the worker forever the first time the environment
                     // is not yet available.
-                    const uint64_t environment_signal =
-                        _environment_generation.load(std::memory_order_acquire);
-                    const uint64_t country_peer_signal =
-                        _country_peer_signal.load(std::memory_order_acquire);
+                    const uint64_t environment_signal = attempt_environment_signal;
+                    const uint64_t country_peer_signal = attempt_peer_signal;
                     std::unique_lock<std::mutex> lock(_control_mutex);
-                    _control_cv.wait(lock, [&] {
+                    _worker_timing.set(RuntimeWorkerTiming::INPUT_WAIT);
+                _control_cv.wait(lock, [&] {
+                        // Match the save admission condition above. A pending
+                        // save cannot consume an unfinished environment day;
+                        // waking on the request alone spins and starves the
+                        // main-thread input capture needed to finish that day.
+                        const bool save_can_run =
+                            _save_requested.load(std::memory_order_acquire) &&
+                            !has_pending_climate_input() &&
+                            !(active_environment && active_environment->day == day);
                         return _stop_requested.load(std::memory_order_acquire) ||
-                            _save_requested.load(std::memory_order_acquire) ||
-                            _paused.load(std::memory_order_acquire) ||
+                            save_can_run ||
+                            (!climate_driven && _paused.load(std::memory_order_acquire)) ||
+                            stale_input_consumed ||
                             _climate_trace_signal.load(std::memory_order_acquire) !=
                                 trace_signal ||
                             _environment_generation.load(
                                 std::memory_order_acquire) != environment_signal ||
                             _country_peer_signal.load(std::memory_order_acquire) !=
                                 country_peer_signal ||
-                            _climate_trace.consumable_depth() != 0;
+                            _economy_input_signal.load(std::memory_order_acquire) !=
+                                attempt_economy_signal ||
+                            (!climate_driven &&
+                             _climate_trace.consumable_depth() != 0);
                     });
+                    _worker_timing.set(RuntimeWorkerTiming::OVERHEAD);
                     break;
                 }
                 if (day_commit.completed_stage_count == day_plan.stage_count &&
@@ -11465,10 +11667,12 @@ void NativeSimulationHost::worker_main() {
     } catch (...) {
         set_fault("unhandled_worker_exception");
     }
+    _worker_timing.stop();
 }
 
 RuntimeThreadReport NativeSimulationHost::report() const {
     RuntimeThreadReport out;
+    out.worker_time_us = _worker_timing.snapshot();
     out.state = _state.load(std::memory_order_acquire);
     out.mode = _mode.load(std::memory_order_acquire);
     out.graph_coverage_complete = _graph_coverage_complete.load(std::memory_order_acquire);

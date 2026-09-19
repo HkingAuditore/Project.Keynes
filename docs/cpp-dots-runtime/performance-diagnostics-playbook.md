@@ -1,5 +1,133 @@
 # Performance Diagnostics Playbook
 
+## Economy publication sub-probes (2026-09-20)
+
+Every 100th sampled day, `[economy-aggregate-cost]` separates `publish_ms`
+(the drained business publish phases) from `native_hash_ms` (final full native
+state hash). `[economy-ledger-cost]` separates `copy_ms`, `validate_ms`, and
+`hash_ms`, with allocated cohort slots and dense market lane counts. These are
+worker boundary samples, not full-population daily percentiles. They do not
+change authoritative state or disable validation.
+
+`economy-boundary-cost.formulas_ms` includes the aggregate stage and prelude;
+`stages_ms` is nested within it. `mirror_ms` includes domain projection refresh,
+ledger export/validation/hash **and** the subsequent POD population/market hash.
+Do not add nested timers or attribute all mirror time to memcpy. ACTIVE_ONLY
+no-command commits now avoid the aggregate-end duplicate mirror; queued POD
+commands still get an up-to-date pre-command projection. Full final publication
+remains mandatory. See `computation-pipelines.md` for scratch reuse and wire ABI.
+
+Validation: Debug PlayerGame headless, 60x40, seed 1735228708, 6 countries,
+speed 50, default automatic POD, five sequential 60-second recordings after a
+5-second warmup: 44.622 / 44.727 / 43.827 / 44.381 / 44.929 committed days/s
+(median 44.622). All runs had zero worker faults and domain fallbacks; observed
+maximum commit gaps were 712–797 ms. Every run failed the explicit 49 days/s
+throughput gate. The initial four final-build runs sampled mirror means of
+2.959–3.181 ms, versus the earlier 120-second reference's 4.234 ms; ledger copy
+means were 0.493–0.575 ms versus 1.124 ms before scratch reuse. These are sparse
+100-day probes and unmatched-duration baseline evidence, not proof of a total
+throughput gain. Annual autosave was retained. Debug POD 8/0, 30-day StageOps
+parity 190/0, stage order 18/0, M5/M6 22/0; independent old/new wire reference
+tests matched empty, zero, nonzero and high-bit fixtures. Artifacts are in
+`tmp/publish_final60_1` through `_5` and `tmp/publish_optimization_acceptance.md`.
+
+## OwnedState player soak follow-up (2026-09-19)
+
+PlayerGame now enables automatic POD_ACTIVE. Worker boundary handoff retains
+M6 gates; immutable Economy day packets avoid the normal main-thread capture
+handshake. Owned publication no longer makes a redundant full ledger copy;
+export shape/content validation and final ledger hashing remain enabled.
+
+60x40, seed 1735228708, 6 countries, speed=50, headless PlayerGame runner:
+
+| Artifact in tmp | Seconds | Committed days/s | Max commit gap ms | Worker faults |
+| --- | ---: | ---: | ---: | ---: |
+| soak_latest30 | 30 | 42.866 | 879.719 | 0 |
+| soak_singlecopy90 | 90 | 44.977 | 802.360 | 0 |
+| soak_default_owned90 | 90 | 36.253 | 1073.629 | 0 |
+
+The last run omits auto_pod_active override and verifies the actual player
+default: owned_state and one authority switch. All fail the strict 49 days/s
+gate; the default run also fails the 1000ms gap gate. Do not claim stable 50x.
+Priority experiment was reverted; Release extension probe was comparable to
+Debug (~42.63 days/s), not evidence of improved performance. These are CPU
+player-path results, not graphical FPS. Shutdown RID warnings remain present.
+
+Focused checks: POD 8/0, 30-day StageOps parity 190/0, M5/M6 22/0,
+stage order 18/0. Save/reload continuation, economic behavior, and graphical
+interaction still require separate validation.
+
+## Epoch-open demand and hash costs (2026-09-19)
+
+`epoch_begin_vector_init_ms` includes `refresh_derived_business_demand`, not
+just vector clearing. In the 2400-cell formal 6-country ACTIVE repro it cost
+14.6 ms because each seeded good recomputed every cohort's full demand vector.
+The frozen cell now computes that vector once per cohort and reuses its per-good
+totals. Cohort accumulation order, integer formulas and propagation order stay
+unchanged. A 30-day before/after fixture matched every full state hash; the
+compact/StageOps comparison passed 190 checks. The measured block fell to
+about 0.8 ms at day 100.
+
+Native and POD state hashing still visits the same fields and produces the same
+little-endian FNV-1a bytes. `economy_hash_u64` folds trailing zero bytes into
+equivalent prime powers modulo 2^64. Its reference test compares 20,480 mixed
+values against the original byte loop. This does not disable validation, change
+the hash ABI, or substitute a partial hash for the committed state hash.
+
+With both changes, `tmp/soak_50x_exacthash/session.json` records 2900 committed
+days in 90 seconds (32.22 days/s), zero worker faults. This remains below 50x.
+These are Debug headless player-path measurements, not graphical FPS.
+
+The Stage C runner now records `native_days_per_second`,
+`max_observed_commit_gap_ms`, `health_passed`, and `health_errors`. ACTIVE runs
+fail on worker faults or zero native progress. Explicit
+`min_native_days_per_second` and `max_commit_gap_ms` arguments enforce throughput
+and stall limits with exit code 3. Without these arguments, completion is not a
+speed acceptance. The gap is a main-frame observation and includes autosave.
+
+## ACTIVE migration soak regressions (2026-09-19)
+
+Annual autosave used to keep the inner worker wait runnable even though save
+admission required the unfinished environment day to drain. A 60-second 50x
+player-path run recorded over 500,000 input-manifest reuses. The wait now gates
+save wakeups on actual save eligibility; input/ACK signals remain independent.
+
+The next failure was a cohort estate transfer at day 656: the synchronous
+structural caller received `country_economy_asset_host_pending`, and its request
+omitted the target cohort. The worker cash bridge now completes the existing
+asset protocol before reclamation and publishes authoritative Country cash for
+audits. A subsequent 90-second Debug headless player-path run advanced day
+25 to 1459 with zero worker faults and 3466 input-manifest reuses, but only
+15.93 native days/second and a maximum observed day gap of 806 ms. This is a
+stability improvement, not a 50x performance pass or graphical FPS evidence.
+
+Ledger import and mirror publication share one complete validation through
+`import_and_publish_committed_ledger`; malformed input changes neither state nor
+mirror. The unbound StageOps capture reuses the completed final-stage source hash
+before any later mutation. Ledger content hashes and shape checks remain active.
+
+## Worker stalls and Economy report reads (2026-09-19)
+
+For 50x player soak, compare native committed-day/generation deltas as well as
+clock days. `fast_ticks=0` is expected after the whole-graph callback bypasses
+SUS; a fault-free RUNNING worker can still be stalled. `[runtime-day-wait]`
+records the attempted day, retained environment day, missing domain mask, and
+requested Economy input day when the attempted day or missing mask changes.
+A future environment day indicates a missing input, not a slow formula kernel.
+
+Economy report feature-mask/readiness/ABI getters read a published atomic mask.
+Full ledger validation stays at capture/restore boundaries. Reading live ledger
+vectors from `get_runtime_thread_report()` both repeats full scans per frame and
+races the worker replacing those vectors; it is not a safe diagnostic path.
+
+StageOps ACTIVE_ONLY sets intermediate stage hashes to zero (not measured),
+while keeping the final AGGREGATE_PUBLISH hash and full committed-ledger
+validation. ACTIVE_WITH_PARITY and standalone StageOps keep all stage hashes.
+`economy_replay_stage_ms` now includes the production StageOps timings; before
+this wiring its zero array did not mean that the production stages were free.
+In the 2400-cell repro, the pre-fix thirteen stages each took about 8–9 ms,
+including idle stages, because every stage scanned the full economy state.
+
 ## Economy ACTIVE / SHADOW metrics (Phase 2–6 + Phase-1 execution mode)
 
 Production default is `economy_execution_mode=ACTIVE_ONLY`: worker compact-slice
@@ -2083,3 +2211,82 @@ tools/runtime/Compare-ClimateB8Soak.ps1 -LeftArtifacts <off> -RightArtifacts <on
 只用于证明"旧口径测不出背压"。`Compare-ClimateB8Soak.ps1` 的 verdict 只有
 `pass / declared_gap / regression` 三种，declared gap 必须在
 `tools/runtime/climate_b8_soak_policy.json` 的 `declared_gaps` 里写明原因与 run-id。
+# 2026-09-19 formal ACTIVE resource bridge regression
+
+`MapGenerator._publish_bootstrapped_natural_resources_to_runtime` must resolve
+native component IDs with `ResourceProfileRegistry.reserve_cpp_name(profile)`.
+The dotted `profile.reserve_component` names belong to DCWorld; DCWorldExt's
+lookup accepts the generated underscore names. A failed lookup previously
+silently skipped the native write after deposit bootstrap and opening top-ups.
+At seed 1735228708, cell 580 had MapData timber 4596567.5 and fertile soil
+350000 while the native slots held zero. The Stage C runner now records
+`initial_resource_bridge` and rejects unequal opening map/native reserves.
+
+The corrected 50x headless formal-player run in `tmp/soak_resource_fixed`
+committed 1362 days in 30 seconds (45.39 days/s), with 1362 captured/written CSV
+epochs and no recording error. This is **not economic acceptance**: the selected
+cell declined from 20 people to 1 by day 600. Its food buildings lost operators
+and/or suspended production despite nonzero reserves. Climate suitability is
+not sufficient evidence for the cause: hunting's climate factor remained 65536.
+The ACTIVE resource delta/regeneration loop and retained climate boundaries
+still require validation. Recorder resource-flow columns are not yet accepted
+as a conservation proof on the worker path.
+
+Stage C also rejects recorder errors, incomplete drains, zero/unwritten epochs,
+ungranted ACTIVE authority and accidental authority in OFF comparisons. Runtime
+measurement endpoints are captured before CSV drain. The earlier OFF runs made
+before the player metadata ordering fix were actually ACTIVE and are invalid
+as reference comparisons. Legacy starter soak currently fails to drain day 2;
+do not interpret that harness failure as a completed economic comparison.
+
+Ledger export failures now optionally carry a validation category, including
+employment exceeding population, debt terms without principal, and stale block
+content hashes. Validation and fault gates remain enforced. A temporary tool
+stock perturbation exposed an export failure at day 17 and was reverted; no
+opening-stock rebalance is part of the fix.
+
+2026-09-19 follow-up: the open-access production density denominator multiplied
+catalog ecology capacity by GOODS_SCALE a second time. Catalog capacity already
+uses runtime quantity units. Removing that extra conversion raised the opening
+deadwood camp capacity from 30 to 30124 Q16 without adding optional tools.
+The CPUE regression now checks an absolute production floor as well as relative
+high/low-stock output; relative ratios alone missed this error.
+
+The 30-second formal ACTIVE 50x run `tmp/soak_density_fix` committed 1355 days
+(45.16 days/s), with no runner health errors. Selected-cell population remained
+20 at days 365 and 600, then fell to 7 at day 1000 and 4 at day 1300: this is
+an improvement, not economic acceptance. The building suite still has failures.
+Maintenance derived from construction materials is an existing intended rule,
+not removed by this fix. Household-finalized realized margin and recorder
+viability cost must include paid maintenance; otherwise CSV can show a profit
+while the lifecycle observes a loss. Worker resource CSV reserves remaining
+unchanged are not proof that extraction/regeneration is correct; validate the
+authoritative resource lanes separately.
+
+ACTIVE production must populate `ProductionResult.cell`. The retained slice path
+set it in its caller, but the StageOps path constructed a default result with
+cell=-1. Production still settled goods and cash, while the merge silently skipped
+per-cell food-flow accounting. `run_building_production_cell` now sets the identity
+for every caller. Before this fix, cell 580 at day 200 had food output flow zero,
+k_eff zero and expected births 5883500 Q32/day. Afterward those values were 19060,
+23 and 47068140. Birth residuals accumulated correctly throughout; do not change
+fertility rates to compensate for a missing production receipt.
+
+`tmp/soak_birth_cell_fix` (formal ACTIVE, seed 1735228708, requested 50x) reached
+729 days in 30 seconds (24.29 days/s), with no runner health errors. Selected-cell
+population grew from 20 to 24 by day 600, then fell to 22 by day 700. Hunting
+suspended around day 641 after falling sales and retained-output valuation;
+this remains an economic acceptance blocker. The measured speed also fell short
+of 50x. Summary births/deaths are global; cohort CSV population is selected-cell.
+
+The subsequent `tmp/soak_legacy_lifecycle_isolated` run restored settled operating
+cost for suspension (inputs + base wage obligations + maintenance), retaining
+owner livelihood in opportunity evaluation. With the same formal seed and 50x
+request, population was 20/22/24/28/31/32 at days 1/365/600/1000/1500/1900.
+Deadwood, gathering and hunting groups remained ACTIVE with zero severe-loss
+counts at days 1000 and 1900. The run committed 1916 days in 45 seconds
+(42.58 days/s), with no runner health errors. This used an isolated
+`dots_ext_lifecycle_review` DLL because another session held the default DLL;
+it does not establish that the user's default running binary contains the fix.
+The full building suite remains failing, including the newer owner-livelihood-only
+suspension assertions which conflict with the restored operating-cost semantics.

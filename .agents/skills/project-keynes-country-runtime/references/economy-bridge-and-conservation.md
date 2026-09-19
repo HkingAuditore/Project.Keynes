@@ -24,6 +24,14 @@ Territory, technology, and tax-policy commits during the cycle apply only to the
 
 ## Transfers
 
+Under Host worker ownership, cohort cash transfers can complete the existing
+asset protocol on that same worker thread after Country's daily stage. Preserve
+target slot and handle, preflight both balances, journal peer application, commit
+through CountryCore, then publish the Country read view before returning to
+structural cohort reclamation. Never dispatch this synchronous worker boundary
+from the main thread or while a Country plan is open. `total_cash()` uses the
+immutable Host snapshot under worker authority so closing audits see the transfer.
+
 General cash transfers move existing value between one country and one cohort. Goods transfers move
 existing stock between one country treasury and the merchant market of a specified cell. Cap by
 available balance/stock. These generic APIs do not infer taxes or ownership changes. Tax settlement

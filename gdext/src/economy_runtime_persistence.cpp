@@ -1975,8 +1975,11 @@ bool NativeEconomyRuntime::apply_ecp2_authority_internal(
         RuntimeEconomyResourceStore store;
         store.resource_count = static_cast<int32_t>(_resource_ids.size());
         store.cell_count = _cell_count;
+        // A freshly configured restore target has no captured resource lanes
+        // yet. Validate the incoming wire against the catalog/world shape,
+        // not the destination's previous (possibly empty) snapshot.
         const uint32_t expected_lanes = static_cast<uint32_t>(
-            resource_stock_lanes().size());
+            static_cast<size_t>(store.resource_count) * store.cell_count);
         if (!store.load_wire(resource_blob.data() + resource_wire_offset,
                              resource_blob.size() - resource_wire_offset,
                              expected_lanes)) {

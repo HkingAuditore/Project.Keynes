@@ -113,6 +113,10 @@ struct RuntimeEconomyBuildingStore {
     bool load_wire(const uint8_t *data, size_t size, uint32_t expected_groups,
                    uint32_t expected_pending, uint32_t expected_roles);
     uint64_t wire_content_hash() const noexcept;
+    uint64_t mix_wire_hash(uint64_t hash) const noexcept;
+
+private:
+    template <typename Sink> void visit_wire(Sink &out) const;
 };
 
 } // namespace pk

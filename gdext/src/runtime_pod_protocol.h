@@ -195,7 +195,20 @@ struct RuntimeDomainSaveSection {
     uint64_t checksum = 0;
 };
 
+struct RuntimeEconomyDayInput {
+    int64_t day = -1;
+    uint32_t cell_count = 0;
+    std::array<std::vector<float>, 8> fields; // temp, temp30, moisture, PAW, precip, snow, weather, elevation
+    std::array<std::vector<uint8_t>, 6> geography; // terrain, landform, vegetation, water, river, visibility
+    std::vector<int32_t> neighbors;
+    std::vector<std::vector<float>> reserves;
+    std::vector<std::vector<float>> changes;
+    bool fog_solved = false;
+};
+
 struct RuntimeEnvironmentSnapshot {
+    // 主线程捕获，发布后不可变；worker 仅在对应 epoch 开始前消费。
+    std::shared_ptr<const RuntimeEconomyDayInput> economy_input;
     // Compiled on the Godot/main-thread capture boundary. A worker accepts a
     // frame only when it targets the same ABI/catalog/map shape it bootstrapped
     // with; source objects and profile strings never cross this boundary.
@@ -1385,6 +1398,7 @@ struct RuntimeThreadReport {
     // Facade calls are intentionally non-blocking.  Keep this explicit in
     // the report so a future bridge cannot silently introduce a wait.
     uint64_t main_wait_on_sim_us = 0;
+    std::array<uint64_t, 8> worker_time_us{};
     uint64_t environment_generation = 0;
     int64_t environment_day = 0;
     uint32_t environment_cell_count = 0;

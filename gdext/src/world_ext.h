@@ -227,6 +227,7 @@ public:
     // the worker is only enabled after the complete POD graph has been proven.
     godot::Dictionary start_runtime_worker(const godot::Dictionary &config);
     godot::Dictionary set_runtime_clock(bool paused, double speed_days_per_second);
+    void profile_runtime_save_window(bool active);
       godot::Dictionary capture_runtime_inputs(const godot::Dictionary &inputs);
     godot::Dictionary publish_runtime_climate_reference(int64_t day,
                                                         int64_t state_hash);

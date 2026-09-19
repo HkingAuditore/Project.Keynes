@@ -6767,6 +6767,20 @@ bool NativeCountryRuntime::valid_handle(int64_t handle) const {
 }
 
 int64_t NativeCountryRuntime::total_cash() const {
+    if (_sync_store_writes_forbidden && _simulation_host != nullptr &&
+        _simulation_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY)) {
+        const auto snapshot = _simulation_host->country_asset_snapshot();
+        if (snapshot != nullptr) {
+            int64_t total = 0;
+            for (size_t i = 0; i < snapshot->country_cash.size(); ++i) {
+                if (snapshot->country_active[i] == 0) continue;
+                const int64_t cash = snapshot->country_cash[i];
+                if (cash > 0 && total > INT64_MAX - cash) return INT64_MAX;
+                total += cash;
+            }
+            return total;
+        }
+    }
     int64_t total = 0;
     for (size_t i = 0; i < _countries.cash.size(); ++i) {
         if (_countries.active[i] == 0) continue;

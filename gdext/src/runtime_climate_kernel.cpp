@@ -116,7 +116,14 @@ bool physics_inputs_ready(const RuntimeEnvironmentSnapshot &in, size_t n) {
         !k.validate(error) || !in.climate_worker_authoritative || !k.ready || !k.enabled ||
         k.water_id_count != 4 || k.daily_period_days < 1 || k.ocean_period_days < 1 ||
         in.terrain.size() != n || in.landform.size() != n ||
-        in.neighbor_indices.size() != n * 6 || !in.neighbor_offsets.empty()) return false;
+        in.neighbor_indices.size() != n * 6) return false;
+    // The capture boundary carries both the fixed six-neighbor table and its
+    // canonical CSR offsets. Accept that representation, not arbitrary CSR.
+    if (!in.neighbor_offsets.empty()) {
+        if (in.neighbor_offsets.size() != n + 1) return false;
+        for (size_t i = 0; i <= n; ++i)
+            if (in.neighbor_offsets[i] != static_cast<int32_t>(i * 6)) return false;
+    }
     for (const auto *v : {&in.cell_pos_x, &in.cell_pos_y, &in.cell_lat_norm,
                          &in.cell_elevation, &in.cell_temperature_transport_anomaly}) {
         if (v->size() != n) return false;

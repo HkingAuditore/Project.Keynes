@@ -742,10 +742,14 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
             queue.push_back({good, needed});
         };
         int64_t sat = 0;
+        // 同一冻结地块的完整需求预览只计算一次，各商品保持原 cohort 汇总顺序。
+        thread_local std::vector<int64_t> household_demand_by_good;
+        household_demand_by_good.assign(market_store().good_count, 0);
+        bool household_preview_ready = false;
         auto seed_good = [&](int32_t good) {
-            int64_t household_demand = 0;
             const int32_t market = market_store().cell_to_market[cell];
-            if (market >= 0 && good >= 0) {
+            if (!household_preview_ready && market >= 0 && good >= 0) {
+                household_preview_ready = true;
                 thread_local std::vector<int64_t> preview;
                 population_store().for_each_in_cell(cell, [&](int32_t slot) {
                     if (slot < 0 || slot >= static_cast<int32_t>(
@@ -757,15 +761,18 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
                         slot, market, environment_sample_for_cell(cell),
                         nullptr, population_store().funds[slot], preview,
                         preview_sat);
-                    if (good < static_cast<int32_t>(preview.size())) {
-                        household_demand = saturating_add(
-                            household_demand,
+                    for (size_t lane = 0; lane < preview.size(); ++lane) {
+                        household_demand_by_good[lane] = saturating_add(
+                            household_demand_by_good[lane],
                             saturating_mul(
-                                std::max<int64_t>(0, preview[good]),
+                                std::max<int64_t>(0, preview[lane]),
                                 population_store().population[slot], sat), sat);
                     }
                 });
             }
+            const int64_t household_demand = good >= 0 &&
+                    good < static_cast<int32_t>(household_demand_by_good.size())
+                ? household_demand_by_good[good] : 0;
             const int64_t index = market >= 0
                 ? market_store().index(market, good) : -1;
             const int64_t stored_demand = index >= 0 && index <

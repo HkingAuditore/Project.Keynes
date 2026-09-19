@@ -4,15 +4,18 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <chrono>
 
 namespace pk {
 namespace {
 
 void finish_ok(EconomyStageResult &result, const RuntimeEconomyEpochInput &input,
-               NativeEconomyRuntime *runtime) {
+               NativeEconomyRuntime *runtime, RuntimeEconomyGraphStage stage) {
     result.work_units = input.cell_count;
-    result.state_hash = static_cast<uint64_t>(
-        std::max<int64_t>(0, runtime->state_hash()));
+    // 中间状态哈希仅服务对拍；最终状态和提交账本仍完整校验。
+    result.state_hash = input.stage_hashes_enabled ||
+        stage == RuntimeEconomyGraphStage::AGGREGATE_PUBLISH
+        ? static_cast<uint64_t>(std::max<int64_t>(0, runtime->state_hash())) : 0;
     result.ok = true;
     result.fatal = false;
 }
@@ -26,8 +29,12 @@ void fail_stage(EconomyStageResult &result, std::string &error,
                   reason_tag != nullptr ? reason_tag : "economy_stage");
 }
 
-void flush_formula_owned_mirrors(NativeEconomyRuntime *runtime) {
+void flush_formula_owned_mirrors(NativeEconomyRuntime *runtime,
+                               const RuntimeEconomyEpochInput &input) {
     if (runtime == nullptr || !runtime->formula_owned_bound()) return;
+    // ACTIVE 阶段读取 live SoA；兼容投影只在最终阶段/提交边界生成。
+    // 对拍保留逐阶段投影，避免改变诊断路径可观察状态。
+    if (!input.stage_hashes_enabled) return;
     runtime->flush_formula_owned_domain_mirrors();
 }
 
@@ -68,7 +75,7 @@ bool economy_dispatch_mutate_stage(EconomySoAView &view,
                        "building_plan");
             return false;
         }
-        finish_ok(result, input, runtime);
+        finish_ok(result, input, runtime, stage);
         return true;
     }
     case RuntimeEconomyGraphStage::TRADE_SETTLE: {
@@ -81,8 +88,8 @@ bool economy_dispatch_mutate_stage(EconomySoAView &view,
                        "trade_settle");
             return false;
         }
-        flush_formula_owned_mirrors(runtime);
-        finish_ok(result, input, runtime);
+        flush_formula_owned_mirrors(runtime, input);
+        finish_ok(result, input, runtime, stage);
         return true;
     }
     case RuntimeEconomyGraphStage::LEDGER_APPLY: {
@@ -105,7 +112,7 @@ bool economy_dispatch_mutate_stage(EconomySoAView &view,
         }
         cursor.command_cursor =
             static_cast<uint32_t>(runtime->_command_cursor);
-        finish_ok(result, input, runtime);
+        finish_ok(result, input, runtime, stage);
         return true;
     }
     case RuntimeEconomyGraphStage::BUILDING_EMPLOYMENT: {
@@ -119,7 +126,7 @@ bool economy_dispatch_mutate_stage(EconomySoAView &view,
                        "building_employment");
             return false;
         }
-        finish_ok(result, input, runtime);
+        finish_ok(result, input, runtime, stage);
         return true;
     }
     case RuntimeEconomyGraphStage::BUILDING_PRODUCTION: {
@@ -133,7 +140,7 @@ bool economy_dispatch_mutate_stage(EconomySoAView &view,
                        "building_production");
             return false;
         }
-        finish_ok(result, input, runtime);
+        finish_ok(result, input, runtime, stage);
         return true;
     }
     case RuntimeEconomyGraphStage::HOUSEHOLD_MARKET: {
@@ -147,7 +154,7 @@ bool economy_dispatch_mutate_stage(EconomySoAView &view,
                        "household_market");
             return false;
         }
-        finish_ok(result, input, runtime);
+        finish_ok(result, input, runtime, stage);
         return true;
     }
     case RuntimeEconomyGraphStage::GOVERNMENT_RESEARCH_PROCUREMENT: {
@@ -161,7 +168,7 @@ bool economy_dispatch_mutate_stage(EconomySoAView &view,
                        "research");
             return false;
         }
-        finish_ok(result, input, runtime);
+        finish_ok(result, input, runtime, stage);
         return true;
     }
     case RuntimeEconomyGraphStage::TRADE_DISPATCH: {
@@ -174,8 +181,8 @@ bool economy_dispatch_mutate_stage(EconomySoAView &view,
                        "trade_dispatch");
             return false;
         }
-        flush_formula_owned_mirrors(runtime);
-        finish_ok(result, input, runtime);
+        flush_formula_owned_mirrors(runtime, input);
+        finish_ok(result, input, runtime, stage);
         return true;
     }
     case RuntimeEconomyGraphStage::STRUCTURAL_COMMIT: {
@@ -189,7 +196,7 @@ bool economy_dispatch_mutate_stage(EconomySoAView &view,
                        "structural_commit");
             return false;
         }
-        finish_ok(result, input, runtime);
+        finish_ok(result, input, runtime, stage);
         return true;
     }
     case RuntimeEconomyGraphStage::BUILDING_COMMIT: {
@@ -203,7 +210,7 @@ bool economy_dispatch_mutate_stage(EconomySoAView &view,
                        "building_commit");
             return false;
         }
-        finish_ok(result, input, runtime);
+        finish_ok(result, input, runtime, stage);
         return true;
     }
     case RuntimeEconomyGraphStage::FAMILY_COMMIT: {
@@ -217,8 +224,8 @@ bool economy_dispatch_mutate_stage(EconomySoAView &view,
                        "family_commit");
             return false;
         }
-        flush_formula_owned_mirrors(runtime);
-        finish_ok(result, input, runtime);
+        flush_formula_owned_mirrors(runtime, input);
+        finish_ok(result, input, runtime, stage);
         return true;
     }
     case RuntimeEconomyGraphStage::PERSON_COMMIT: {
@@ -232,11 +239,12 @@ bool economy_dispatch_mutate_stage(EconomySoAView &view,
                        "person_commit");
             return false;
         }
-        flush_formula_owned_mirrors(runtime);
-        finish_ok(result, input, runtime);
+        flush_formula_owned_mirrors(runtime, input);
+        finish_ok(result, input, runtime, stage);
         return true;
     }
     case RuntimeEconomyGraphStage::AGGREGATE_PUBLISH: {
+        const auto probe_begin = std::chrono::steady_clock::now();
         int64_t work = 0;
         std::string publish_error;
         if (!runtime->run_aggregate_publish_drain(work, publish_error)) {
@@ -247,7 +255,15 @@ bool economy_dispatch_mutate_stage(EconomySoAView &view,
                        "aggregate_publish");
             return false;
         }
-        finish_ok(result, input, runtime);
+        // ACTIVE 投影在真正执行 POD 命令前或 Host 最终发布时刷新。
+        const auto probe_publish = std::chrono::steady_clock::now();
+        finish_ok(result, input, runtime, stage);
+        if (input.sample_day % 100 == 0 && !input.stage_hashes_enabled) {
+            std::fprintf(stderr, "[economy-aggregate-cost] day=%lld publish_ms=%.3f native_hash_ms=%.3f\n",
+                static_cast<long long>(input.sample_day),
+                std::chrono::duration<double, std::milli>(probe_publish - probe_begin).count(),
+                std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - probe_publish).count());
+        }
         return true;
     }
     case RuntimeEconomyGraphStage::COUNT:

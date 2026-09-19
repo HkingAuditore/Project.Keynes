@@ -29,7 +29,6 @@ var _viewport_refit_pending := false
 func _ready() -> void:
 	if OS.has_feature("mobile"):
 		PKLog.enabled = false
-	_apply_stage_c_debug_metadata()
 	_configure_runtime()
 	var flow: Node = _game_flow()
 	var request: Dictionary = flow.consume_request() if flow != null else {}
@@ -85,8 +84,14 @@ func _configure_runtime() -> void:
 	# 正式玩家会话：整图 worker ACTIVE（0xFFF）。Effect→Country ACK 与 soft-settle
 	# 已修好，不再用 0x806 把 Trigger 等留在主线程拖垮 50x 日历吞吐。
 	_runtime_host.runtime_climate_authority_enabled = true
-	_runtime_host.runtime_economy_auto_pod_active = false
+	_runtime_host.runtime_economy_auto_pod_active = true
+	if OS.is_debug_build() and Engine.has_meta(&"stage_c_auto_pod_active"):
+		_runtime_host.runtime_economy_auto_pod_active = bool(Engine.get_meta(&"stage_c_auto_pod_active"))
+		Engine.remove_meta(&"stage_c_auto_pod_active")
 	_runtime_host.runtime_authority_domain_mask = 0xFFF
+	# Apply the explicit A/B request after production defaults; otherwise OFF
+	# is silently overwritten and both arms measure ACTIVE.
+	_apply_stage_c_debug_metadata()
 	_runtime_host.configure(_renderer, _camera, _world_clock, _map_overlay)
 	_ui_manager.set_diagnostics_source(_runtime_host)
 	_player_controller.configure(_camera, _highlight, _runtime_host, _world_clock, _ui_manager)
@@ -95,7 +100,8 @@ func _configure_runtime() -> void:
 	if save != null:
 		save.bind_runtime(_runtime_host, _world_clock, _player_controller)
 	# 生成前钉死 force_on，避免 AUTO 策略或 GM 残值把会话退回 SHADOW。
-	_runtime_host.set_climate_authority_override("force_on")
+	_runtime_host.set_climate_authority_override(
+		"force_on" if _runtime_host.runtime_climate_authority_enabled else "force_off")
 
 
 func _connect_signals() -> void:

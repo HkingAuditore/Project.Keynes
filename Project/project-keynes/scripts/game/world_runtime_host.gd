@@ -151,6 +151,7 @@ var _pending_tick_start_usec: int = 0
 var _pending_tick_sus_ms: float = 0.0
 var _pending_tick_render_ms: float = 0.0
 var _pending_tick_skipped_day: bool = false
+var _climate_capacity_pending_day: int = -1
 var _map_overlay_request: Dictionary = {}
 var _map_overlay_tex: ImageTexture = null
 var _map_overlay_image: Image = null
@@ -183,6 +184,11 @@ var _native_vision_configured_n: int = -1
 var _native_vision_configured_map_id: int = 0
 var _magnetic_navigation_dense_id: int = -2
 var _remote_observation_capability: bool = false
+## Country graph commits can arrive several times during one frame.  Queue a
+## single visual refresh so territory/vision/LUT work is coalesced at the frame
+## boundary instead of running once per native slice.
+var _country_visual_refresh_pending: bool = false
+var _country_visual_refresh_reason: String = "country_territory_committed"
 var _session_request: Dictionary = {}
 var _new_game_config: Dictionary = {}
 var _load_slot_id: String = ""
@@ -261,6 +267,16 @@ func _on_clock_day_changed(day_idx: int) -> void:
 		return
 	var report := _generator.get_runtime_thread_report() \
 		if _generator.has_method("get_runtime_thread_report") else {}
+	# Capacity waits must yield to _process so peer ACKs and writeback keep
+	# running. Retain this semantic day instead of dropping a rejected input.
+	if bool(report.get("climate_worker_authoritative", false)):
+		var capacity := wait_for_climate_consumed(0)
+		if not bool(capacity.get("ok", false)):
+			_climate_capacity_pending_day = day_idx
+			_world_clock.request_simulation_backpressure(&"climate_input_capacity_day_barrier", true)
+			return
+	_climate_capacity_pending_day = -1
+	_world_clock.request_simulation_backpressure(&"climate_input_capacity_day_barrier", false)
 	# Whole-graph only. `authority_ready` stays false until every domain has a
 	# POD handler; a per-domain promotion (Climate) must NOT skip the tick,
 	# because the other eleven domains are still computed right here. Reading
@@ -285,10 +301,15 @@ func _on_clock_day_changed(day_idx: int) -> void:
 			_service_ideology_worker_intents_if_authoritative()
 		_apply_climate_writeback_if_authoritative(report)
 		if bool(report.get("climate_worker_authoritative", false)):
-			wait_for_climate_consumed(0)
+			var capacity_result := wait_for_climate_consumed(0)
+			if not bool(capacity_result.get("ok", false)):
+				_climate_capacity_pending_day = day_idx
+				_world_clock.request_simulation_backpressure(&"climate_input_capacity_day_barrier", true)
+				return
 		if _generator.has_method("capture_runtime_inputs_for_worker"):
+			# 与 sus_tick_daily 的输入日约定一致，接管当天不能跳过一日。
 			_generator.capture_runtime_inputs_for_worker(
-				day_idx, _world_clock.season_phase_for_day(day_idx))
+				maxi(0, day_idx - 1), _world_clock.season_phase_for_day(day_idx))
 		_service_country_worker_transport()
 		_consume_country_worker_read_view_if_authoritative()
 		_try_promote_economy_pod_active()
@@ -325,7 +346,11 @@ func _on_clock_day_changed(day_idx: int) -> void:
 		# B8 P3：等输入 ring 有空位再 capture（after_generation=0）。
 		# 允许最多 SLOT_COUNT-1 天流水线，大地图不再被“等上一份完全消费”串成单槽。
 		# serial_wait soak 仍可显式传具体 generation。
-		wait_for_climate_consumed(0)
+		var capacity_result := wait_for_climate_consumed(0)
+		if not bool(capacity_result.get("ok", false)):
+			_climate_capacity_pending_day = day_idx
+			_world_clock.request_simulation_backpressure(&"climate_input_capacity_day_barrier", true)
+			return
 	run_daily_tick(day_idx, _world_clock.season_phase_for_day(day_idx))
 
 
@@ -471,6 +496,9 @@ func is_day_night_enabled() -> bool:
 
 func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void:
 	_runtime_ready_for_ticks = false
+	_climate_capacity_pending_day = -1
+	if _world_clock != null:
+		_world_clock.request_simulation_backpressure(&"climate_input_capacity_day_barrier", false)
 	_runtime_commit_generation = 0
 	_runtime_commit_day = -1
 	_runtime_commit_family_cursors.clear()
@@ -823,6 +851,11 @@ func map_overlay_diagnostics() -> Dictionary:
 
 
 func _process(_delta: float) -> void:
+	if _runtime_ready_for_ticks and _generator != null:
+		var ext = _generator.get_data_core_world_ext()
+		if ext != null and ext.has_method("capture_economy_day_inputs"):
+			# -1 只服务 worker 请求的同日输入，不推进经济公式。
+			ext.capture_economy_day_inputs(-1)
 	_service_country_worker_transport()
 	_consume_modifier_worker_snapshot_if_authoritative()
 	_consume_effect_worker_snapshot_if_authoritative()
@@ -834,6 +867,11 @@ func _process(_delta: float) -> void:
 	_consume_country_worker_read_view_if_authoritative()
 	_consume_runtime_commit_if_ready()
 	_observe_runtime_worker_fault()
+	if _country_visual_refresh_pending:
+		_country_visual_refresh_pending = false
+		refresh_country_visuals(_country_visual_refresh_reason)
+	if _climate_capacity_pending_day >= 0 and not _runtime_worker_fault_paused:
+		_on_clock_day_changed(_climate_capacity_pending_day)
 	var now_msec := Time.get_ticks_msec()
 	if now_msec >= _building_visual_next_poll_msec:
 		_building_visual_next_poll_msec = now_msec + 100
@@ -862,7 +900,7 @@ func _observe_runtime_worker_fault(report: Dictionary = {}) -> void:
 		_world_clock.pause(true)
 	_runtime_last_fault_diagnostics = {
 		"fault_code": String(report.get("fault_code", "")),
-		"committed_day": int(report.get("committed_day", -1)),
+		"committed_day": int(report.get("simulation_committed_day", report.get("committed_day", -1))),
 		"generation": int(report.get("generation", 0)),
 		"state_hash": int(report.get("state_hash", 0)),
 		"worker_fault_count": int(report.get("worker_fault_count", 0)),
@@ -874,7 +912,11 @@ func _observe_runtime_worker_fault(report: Dictionary = {}) -> void:
 			"economy_authority_fault_paused", false)),
 		"last_commit": _runtime_last_commit.duplicate(false),
 	}
-	push_warning("[runtime-worker] FAULTED - world_clock.pause(true); last committed diagnostics retained")
+	push_warning("[runtime-worker] FAULTED code=%s committed_day=%s generation=%s faults=%s - world_clock.pause(true)" % [
+		str(_runtime_last_fault_diagnostics.get("fault_code", "")),
+		str(_runtime_last_fault_diagnostics.get("committed_day", -1)),
+		str(_runtime_last_fault_diagnostics.get("generation", 0)),
+		str(_runtime_last_fault_diagnostics.get("worker_fault_count", 0))])
 
 
 func get_runtime_fault_diagnostics() -> Dictionary:
@@ -1209,6 +1251,7 @@ func _consume_runtime_commit_if_ready() -> void:
 			and bool(commit.get("available", false)) \
 			and int(commit.get("generation", 0)) > _runtime_commit_generation
 	if received_new_commit:
+		var publish_started_usec := Time.get_ticks_usec()
 		var generation := int(commit.get("generation", 0))
 		_runtime_commit_generation = generation
 		_runtime_commit_day = int(commit.get("committed_day", _runtime_commit_day))
@@ -1217,11 +1260,29 @@ func _consume_runtime_commit_if_ready() -> void:
 		_runtime_commit_family_done.clear()
 		_runtime_pending_visual_generation = generation
 		_runtime_pending_dirty_families = int(commit.get("dirty_families", 0))
+		# Whole-graph ACTIVE bypasses run_daily_tick, including its visual and
+		# recorder tail. Publish those consumers from the committed boundary.
+		var whole_graph := bool(report.get("authority_ready", false))
+		if whole_graph:
+			_fast_tick_count += 1
+			_pending_tick_start_usec = publish_started_usec
+			_pending_tick_sus_ms = 0.0
+			_pending_tick_skipped_day = false
+			_generator.publish_worker_climate_visuals()
+			if _renderer != null:
+				_renderer.set_season_phase(_world_clock.season_phase_for_day(_runtime_commit_day))
+				_renderer.set_climate_anomaly(_world_clock.climate_anomaly)
+				if _renderer.has_method("refresh_terrain_weather_field_tex"):
+					_renderer.refresh_terrain_weather_field_tex()
+			_pending_tick_render_ms = (Time.get_ticks_usec() - publish_started_usec) / 1000.0
+			mark_map_overlay_dirty(&"worker_committed")
 		# 只通知一次最新完整日提交；后续帧仅继续消费尚未应用的视觉 patch。
 		simulation_committed.emit(
 			int(commit.get("from_day", _runtime_commit_day)),
 			_runtime_commit_day,
 			_runtime_commit_generation)
+		if whole_graph:
+			finish_daily_tick(0.0)
 		_try_promote_economy_pod_active()
 	if _runtime_pending_visual_generation <= 0 \
 			or _runtime_pending_visual_generation != _runtime_commit_generation:
@@ -1330,7 +1391,7 @@ func _apply_climate_writeback_if_authoritative(report: Dictionary) -> void:
 ## 终止条件只有三类：worker 故障/停止、Climate 权威被撤销、等待接口缺失。
 ## 它们不是性能超时：出现时按当时的 authority 状态回主线程或结束本 tick。
 func wait_for_climate_consumed(after_environment_generation: int) -> Dictionary:
-	if after_environment_generation <= 0:
+	if after_environment_generation < 0:
 		return {"ok": true, "code": "climate_wait_no_environment_yet",
 			"waited_ms": 0.0}
 	var ext = _generator.get_data_core_world_ext() \
@@ -1339,6 +1400,10 @@ func wait_for_climate_consumed(after_environment_generation: int) -> Dictionary:
 	if ext == null or not ext.has_method("wait_climate_consumed"):
 		# 旧 DLL / 未接线：不阻塞，也不假装等过。调用方（day 边界）继续走原路径。
 		return {"ok": false, "code": "climate_wait_api_missing", "waited_ms": 0.0}
+	if after_environment_generation == 0:
+		# Native zero means ring capacity, not "no environment". Never spin
+		# here: the main thread must remain available to service domain peers.
+		return ext.wait_climate_consumed(0, 0)
 	var total_waited_ms := 0.0
 	while true:
 		# 先服务 peer，再进入下一次等待：Country 的 barrier 可能正是 worker
@@ -3646,7 +3711,8 @@ func _on_country_committed(report: Dictionary) -> void:
 	if _player_country_slot < 0:
 		_player_country_slot = _resolve_player_country_slot()
 	if int(report.get("changed_cells", 0)) > 0:
-		refresh_country_visuals("country_territory_committed")
+		_country_visual_refresh_pending = true
+		_country_visual_refresh_reason = "country_territory_committed"
 		return
 	var capability_now := _has_remote_observation_capability()
 	if capability_now != _remote_observation_capability:

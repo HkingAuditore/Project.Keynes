@@ -17,6 +17,7 @@
 #include <cstring>
 #include <limits>
 #include <tuple>
+#include <unordered_map>
 #include <unordered_set>
 
 namespace pk {
@@ -1016,26 +1017,40 @@ Dictionary TriggerRuntime::run_daily(int64_t day_index) {
     // number consumed without maintaining a second event loop in the facade.
     const int64_t processed = static_cast<int64_t>(pending_before) -
         static_cast<int64_t>(snapshot.pending_events.size());
+    // State snapshots are already keyed by (trigger,target).  Index the
+    // previous snapshot once instead of scanning it twice for every state;
+    // large catalogs otherwise turn trigger_evaluate into an O(n²) main-thread
+    // slice even when only a few events are pending.
+    struct StateKey {
+        int32_t trigger_id;
+        uint64_t target_handle;
+        bool operator==(const StateKey &other) const {
+            return trigger_id == other.trigger_id &&
+                target_handle == other.target_handle;
+        }
+    };
+    struct StateKeyHash {
+        size_t operator()(const StateKey &key) const {
+            const size_t h1 = std::hash<int32_t>{}(key.trigger_id);
+            const size_t h2 = std::hash<uint64_t>{}(key.target_handle);
+            return h1 ^ (h2 + static_cast<size_t>(0x9e3779b9U) +
+                (h1 << 6U) + (h1 >> 2U));
+        }
+    };
+    std::unordered_map<StateKey, uint64_t, StateKeyHash> previous_fire_sequence;
+    previous_fire_sequence.reserve(previous_snapshot.states.size() * 2 + 1);
+    for (const RuntimeTriggerPodSnapshotState &before : previous_snapshot.states)
+        previous_fire_sequence[{before.trigger_id, before.target_handle}] =
+            before.fire_sequence;
     int64_t fired = 0;
     for (const RuntimeTriggerPodSnapshotState &after : snapshot.states) {
-        for (const RuntimeTriggerPodSnapshotState &before : previous_snapshot.states) {
-            if (before.trigger_id == after.trigger_id &&
-                before.target_handle == after.target_handle) {
-                if (after.fire_sequence > before.fire_sequence)
-                    fired += static_cast<int64_t>(after.fire_sequence -
-                                                  before.fire_sequence);
-                break;
-            }
+        const auto it = previous_fire_sequence.find(
+            StateKey{after.trigger_id, after.target_handle});
+        if (it == previous_fire_sequence.end()) {
+            fired += static_cast<int64_t>(after.fire_sequence);
+        } else if (after.fire_sequence > it->second) {
+            fired += static_cast<int64_t>(after.fire_sequence - it->second);
         }
-        bool existed = false;
-        for (const RuntimeTriggerPodSnapshotState &before : previous_snapshot.states) {
-            if (before.trigger_id == after.trigger_id &&
-                before.target_handle == after.target_handle) {
-                existed = true;
-                break;
-            }
-        }
-        if (!existed) fired += static_cast<int64_t>(after.fire_sequence);
     }
 
     // Replace only after the Godot-free kernel succeeds. This keeps the

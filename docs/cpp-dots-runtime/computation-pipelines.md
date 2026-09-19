@@ -1,5 +1,36 @@
 # Simulation Computation Pipelines
 
+## Economy committed publication allocation reduction (2026-09-20)
+
+ACTIVE_ONLY StageOps retains the final NativeEconomyRuntime state hash, but
+does not build an unconditional aggregate-end domain projection. POD
+`commit_epoch` refreshes that projection before executing queued commands when
+bound to OwnedState; Host still refreshes and fully validates the final committed
+ledger afterward. No-command commits therefore avoid the earlier duplicate
+projection. Parity stage projections and final hashes remain enabled.
+
+Building/family/trade stores share one wire field traversal between serialization,
+byte-counting and streaming hashes. Both content FNV and ledger length-prefixed
+wire hashing preserve their previous byte sequence; no hash ABI changes.
+`publish_owned_committed_mirror` exports into private reusable scratch and swaps
+with the published ledger only after validation and hashing succeed. This retains
+one prior ledger's capacity between days, trading bounded retained memory for
+fewer allocations; failed export never replaces the published ledger.
+
+## Validation notes (2026-09-19)
+
+`TriggerRuntime::run_daily()` indexes previous fire sequences by the complete
+`(trigger_id, target_handle)` pair. Diagnostic firing counts use expected linear
+lookup work instead of two full state scans per state; kernel evaluation order
+and authoritative state are unchanged.
+
+ECP2 resource restore validates wire lane count against catalog resource count
+times restored cell count. A newly configured destination has no captured
+resource snapshot, so its current snapshot length is not a valid wire shape.
+The building restore acceptance test now passes, but continuation parity and
+the broader building/cadence tests still fail. These changes do not establish
+whole-graph authority readiness or migration completion.
+
 ## Runtime Domain POD ABI v3
 
 The background simulation protocol reserves twelve fixed daily barriers:

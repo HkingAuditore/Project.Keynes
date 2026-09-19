@@ -1,4 +1,5 @@
 #include "economy_runtime.h"
+#include "economy_hash.h"
 
 #include "economy_graph_kernels.h"
 #include "economy_graph_live_ops.h"
@@ -1393,6 +1394,12 @@ bool NativeEconomyRuntime::apply_peer_asset_side_effects(
             error = "country_economy_cohort_cash_slot_invalid";
             return false;
         }
+        if (request.target_handle != 0 &&
+            population_store().handle_for_slot(slot) != request.target_handle) {
+            error = "country_economy_cohort_cash_handle_stale";
+            return false;
+        }
+        audit_touch_population_lane(slot);
         touch_accounting_slot(slot);
         if (request.operation == RuntimeEconomyAssetOperation::CASH_TO_COHORT) {
             if (population_store().funds[slot] >
@@ -2522,13 +2529,14 @@ PK_RESOURCE_SCRATCH_ACCESSOR(uint32_t, resource_lane_generation_lanes,
 #undef PK_RESOURCE_SCRATCH_ACCESSOR
 
 void NativeEconomyRuntime::capture_committed_ledger_state(
-        RuntimeEconomyLedgerState &out) const {
+        RuntimeEconomyLedgerState &out, uint64_t completed_stage_hash) const {
     out.clear();
     // ECP2 mid-epoch checkpoints need the live SoA shape as a rollback source;
     // the public legacy save gate still rejects mid-epoch writes unless its
     // explicit ECP2 flag is enabled.
     if (_fatal) return;
-    out.source_state_hash = static_cast<uint64_t>(std::max<int64_t>(0, state_hash()));
+    out.source_state_hash = completed_stage_hash != 0 ? completed_stage_hash :
+        static_cast<uint64_t>(std::max<int64_t>(0, state_hash()));
     out.generation = _committed_generation;
     out.committed_day = _current_day;
     out.market_count = market_store().market_count;
@@ -2786,6 +2794,39 @@ bool NativeEconomyRuntime::coordinate_country_cohort_cash(
         return false;
     }
     if (amount == 0) return true;
+    if (_simulation_host != nullptr && _country_runtime != nullptr &&
+        _country_runtime->sync_store_writes_forbidden() &&
+        _simulation_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY) &&
+        (_d7_operation_gate_mask & (1u << static_cast<uint32_t>(operation))) != 0u) {
+        const int64_t funds = population_store().funds[cohort_slot];
+        if ((operation == NativeCountryRuntime::ECONOMY_ASSET_CASH_FROM_COHORT &&
+             (funds < amount || population_store().epoch_expense[cohort_slot] > INT64_MAX - amount)) ||
+            (operation == NativeCountryRuntime::ECONOMY_ASSET_CASH_TO_COHORT &&
+             (funds > INT64_MAX - amount ||
+              population_store().epoch_income[cohort_slot] > INT64_MAX - amount))) {
+            error = "country_cohort_cash_balance_invalid";
+            return false;
+        }
+        RuntimeEconomyAssetRequest request;
+        request.operation = static_cast<RuntimeEconomyAssetOperation>(operation);
+        request.origin_epoch = _epoch_id;
+        request.origin_stage = static_cast<int32_t>(_stage);
+        request.day = _current_day;
+        request.country_handle = static_cast<uint64_t>(country_handle);
+        request.target_slot = cohort_slot;
+        request.target_handle = population_store().handle_for_slot(cohort_slot);
+        request.peer_generation = _committed_generation;
+        request.requested_cash = amount;
+        request.requested_quantity = amount;
+        if (!_simulation_host->prepare_worker_cohort_cash(request, error) ||
+            !service_country_economy_asset_peer(RUNTIME_ECONOMY_ASSET_QUEUE_CAPACITY, error))
+            return false;
+        RuntimeEconomyAssetResult terminal;
+        if (!_simulation_host->finish_worker_cohort_cash(request.request_id, terminal, error))
+            return false;
+        committed = terminal.committed_cash;
+        return true;
+    }
     const CountryWorkerAssetRoute route = block_or_enqueue_country_worker_asset(
             static_cast<uint16_t>(operation), country_handle, amount, amount, -1,
             error);
@@ -3429,6 +3470,57 @@ bool NativeEconomyRuntime::run_government_research_procurement(std::string &erro
     }
     error = "country_research_procurement_phase_invalid";
     return false;
+}
+
+bool NativeEconomyRuntime::capture_worker_day_input(
+        const RuntimeEconomyDayInput &input, std::string &error) {
+    const size_t count = static_cast<size_t>(std::max(0, _cell_count));
+    if (_epoch_active || input.day < 0 || input.cell_count != count ||
+        input.reserves.size() != _resource_ids.size() ||
+        input.changes.size() != input.reserves.size() ||
+        input.neighbors.size() != count * 6) {
+        error = "economy_worker_input_shape_invalid";
+        return false;
+    }
+    for (size_t i = 0; i < input.fields.size(); ++i) {
+        if (input.fields[i].size() != count) {
+            error = "economy_worker_input_field_missing";
+            return false;
+        }
+    }
+    for (size_t i = 0; i < input.geography.size(); ++i) {
+        if (input.geography[i].size() != count &&
+            !(i == 5 && !input.fog_solved && input.geography[i].empty())) {
+            error = "economy_worker_input_geography_missing";
+            return false;
+        }
+    }
+    std::vector<const float *> reserves, changes;
+    for (size_t r = 0; r < input.reserves.size(); ++r) {
+        const auto &stock = input.reserves[r];
+        const auto &change = input.changes[r];
+        if ((!stock.empty() && stock.size() != count) ||
+            (!change.empty() && change.size() != count) ||
+            (!stock.empty() && change.empty())) {
+            error = "economy_worker_input_resource_shape_invalid";
+            return false;
+        }
+        reserves.push_back(stock.empty() ? nullptr : stock.data());
+        changes.push_back(change.empty() ? nullptr : change.data());
+    }
+    if (needs_environment_capture(input.day)) {
+        if (!capture_environment(input.day, input.fields[0].data(), input.fields[1].data(),
+                input.fields[2].data(), input.fields[3].data(), input.fields[4].data(),
+                input.fields[5].data(), input.fields[6].data(), _cell_count, error)) return false;
+        if ((input.fog_solved || !trade_visibility_manual()) &&
+            !capture_trade_visibility(input.geography[5].empty() ? nullptr : input.geography[5].data(),
+                static_cast<int32_t>(input.geography[5].size()), input.fog_solved, true, error)) return false;
+    }
+    return !needs_building_context_capture(input.day) ||
+        capture_building_context(input.day, input.fields[7].data(),
+            input.geography[0].data(), input.geography[1].data(), input.geography[2].data(),
+            input.geography[3].data(), input.geography[4].data(), input.neighbors.data(),
+            reserves, changes, _cell_count, error);
 }
 
 bool NativeEconomyRuntime::capture_environment(int64_t day_index, const float *temperature,
@@ -7835,11 +7927,8 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
         group.last_margin_gap_q16 = static_cast<int32_t>(margin_gap);
         bool suspended_now = false;
         if (type.kind != 2 && group.operating_state == 0) {
-            // realized_profit_margin_q16 already uses the complete viability
-            // denominator: inputs + base wages + owner livelihood - retained
-            // livelihood credit. Do not gate the lifecycle on last_operating_cost,
-            // which excludes owner livelihood and is commonly zero for
-            // owner-operated workshops.
+            // 停业沿用实际经营收支；业主生活成本属于岗位机会评价。
+            // 不可把单座单日生活报价加到整组已结算的成本中。
             const bool settled_production = group.last_output > 0 ||
                 group.last_resource_generated > 0 ||
                 (type.employee_count == 0 && type.input_count == 0 &&
@@ -7850,10 +7939,9 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                 std::max<int64_t>(0, group.last_in_kind_livelihood_value),
                 _saturation_count);
             const int64_t owner_business_cost = saturating_add(
-                saturating_add(saturating_add(group.last_input_cost,
+                saturating_add(group.last_input_cost,
                     group.last_base_wages_due, _saturation_count),
-                    group.last_maintenance_cost, _saturation_count),
-                owner_living_cost, _saturation_count);
+                group.last_maintenance_cost, _saturation_count);
             const int64_t realized_taxable_cost = saturating_add(
                 saturating_add(group.last_input_cost, group.last_base_wages_paid,
                     _saturation_count),
@@ -7899,7 +7987,10 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                     absolute_owner_days, _saturation_count);
             const int64_t realized_after_tax_profit = saturating_sub(
                 saturating_sub(
-                    saturating_sub(group.last_revenue, owner_business_cost,
+                    // Retained output pays owner livelihood in kind. Include
+                    // the same income used by the self-employment gate above;
+                    // cash-only profit falsely suspends subsistence producers.
+                    saturating_sub(owner_business_income, owner_business_cost,
                         _saturation_count), realized_business_transfer,
                     _saturation_count),
                 realized_income_transfer, _saturation_count);
@@ -11766,6 +11857,8 @@ NativeEconomyRuntime::AuditTotals NativeEconomyRuntime::audit_totals() const {
         for (int32_t good = 0; good < market_store().good_count; ++good) {
             const int64_t index = market_store().index(market, good);
             totals.goods_stock += market_store().stock[index];
+            // 零/负库存估值恒为零；库存总量仍逐项纳入守恒审计。
+            if (market_store().stock[index] <= 0) continue;
             const int64_t retail_value = mul_div_sat(
                 std::max<int64_t>(0, market_store().stock[index]),
                 std::max<int64_t>(0, market_store().price[index]),
@@ -11881,6 +11974,9 @@ bool NativeEconomyRuntime::rebuild_market_cell_ranges(std::string &error) {
 
 
 void NativeEconomyRuntime::fail(const std::string &reason) {
+    std::fprintf(stderr, "[economy-fatal] day=%lld stage=%d substage=%s reason=%s\n",
+        static_cast<long long>(_current_day), static_cast<int>(_stage),
+        _executed_substage.c_str(), reason.c_str());
     trace_abort_epoch();
     for (const int32_t cell : _staging_touched_cells) {
         if (cell >= 0 && cell < static_cast<int32_t>(_committed_cells.size()) &&
@@ -11914,8 +12010,9 @@ void NativeEconomyRuntime::finalize_household_building_cell(
                 _building_owner_livelihood_credit[g]) : 0;
         group.last_in_kind_livelihood_value = std::max<int64_t>(0, credit);
         const int64_t realized_cost = saturating_add(saturating_add(
-            group.last_input_cost, group.last_base_wages_due,
-            saturation), livelihood - credit, saturation);
+            saturating_add(group.last_input_cost, group.last_base_wages_due,
+                saturation), group.last_maintenance_cost, saturation),
+            livelihood - credit, saturation);
         const int64_t margin = realized_cost <= 0
             ? (group.last_revenue > 0 ? Q16_ONE : 0)
             : mul_div_sat(saturating_sub(
@@ -18611,9 +18708,13 @@ bool NativeEconomyRuntime::run_building_employment_drain(int64_t &work_done,
         return true;
     }
 
-    const std::vector<int32_t> &cells = !_epoch_building_cells.empty()
-                                            ? _epoch_building_cells
-                                            : _building_active_cells;
+    // Keep the workset selection identical to building_slice_end().  The
+    // worker can cross the epoch boundary while a compact slice is being
+    // resumed; choosing a non-empty stale epoch list while slice_end_over()
+    // has already switched to the live list leaves the cursor unchanged and
+    // eventually trips the guard as building_employment_guard_exhausted.
+    const std::vector<int32_t> &cells = _epoch_active
+        ? _epoch_building_cells : _building_active_cells;
     _building_cell_cursor = 0;
     constexpr int kMaxChunks = 1 << 20;
     for (int guard = 0; guard < kMaxChunks && !_fatal; ++guard) {
@@ -18685,9 +18786,10 @@ bool NativeEconomyRuntime::run_building_production_drain(int64_t &work_done,
         return false;
     }
 
-    const std::vector<int32_t> &cells = !_epoch_building_cells.empty()
-                                            ? _epoch_building_cells
-                                            : _building_active_cells;
+    // Match building_slice_end() across worker epoch transitions; do not
+    // process a stale epoch workset after _epoch_active has been cleared.
+    const std::vector<int32_t> &cells = _epoch_active
+        ? _epoch_building_cells : _building_active_cells;
     _building_cell_cursor = 0;
     _building_funded_capacity_q16.resize(building_count(), 0);
     _building_working_capital_allocated.resize(building_count(), 0);
@@ -19946,10 +20048,7 @@ Dictionary NativeEconomyRuntime::production_climate_math_probe(
 int64_t NativeEconomyRuntime::state_hash() const {
     uint64_t hash = 1469598103934665603ULL;
     auto mix_u64 = [&](uint64_t value) {
-        for (int i = 0; i < 8; ++i) {
-            hash ^= static_cast<uint8_t>((value >> (i * 8)) & 0xffULL);
-            hash *= 1099511628211ULL;
-        }
+        hash = economy_hash_u64(hash, value);
     };
     auto mix_string = [&](const std::string &value) {
         mix_u64(value.size());

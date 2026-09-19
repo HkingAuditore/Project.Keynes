@@ -496,7 +496,13 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
         // starve an overdue economy range forever. Let one native economy
         // slice start after the ordered ACK dispatch; the slice itself owns
         // its cursor and the next loop/pulse will resume from that boundary.
-        if (_economy_runtime != nullptr && economy_should_run(day)) {
+        // Economy ACTIVE is owned by NativeSimulationHost's worker.  The
+        // runtime graph only captures the frozen input lane above; running the
+        // compact mutation slice here would create a second writer on the
+        // same NativeEconomyRuntime and can execute an unpreemptible economy
+        // range on the main thread.
+        if (!economy_worker_authoritative &&
+            _economy_runtime != nullptr && economy_should_run(day)) {
             if (_effect_runtime != nullptr) dispatch_effect_native_economy();
             Dictionary economy_result = run_economy_slice_compact(ctx);
             ++_runtime_graph_economy_slices;
@@ -553,7 +559,8 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
          static_cast<ModifierRuntime *>(_modifier_runtime)->should_run(day)) ||
         (!effect_worker_owns_barrier && _effect_runtime != nullptr &&
          gameplay_effect_should_run(day)) ||
-        (_economy_runtime != nullptr && economy_should_run(day));
+        (!economy_worker_authoritative && _economy_runtime != nullptr &&
+         economy_should_run(day));
     if (pending) status = 3;
     if (country_peer_adapter_fault) status = 3;
     _runtime_graph_dirty_mask |= dirty;
@@ -659,6 +666,9 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
             ? String(host.fault_code)
             : String(host.coverage_blocker);
         out["simulation_committed_day"] = host.committed_day;
+        out["input_capture_count"] = static_cast<int64_t>(host.input_capture_count);
+        out["input_capture_reused"] = static_cast<int64_t>(host.input_capture_reused);
+        out["economy_input_requested_day"] = _runtime_host->economy_input_requested_day();
         out["simulation_generation"] = static_cast<int64_t>(host.generation);
         out["generation"] = static_cast<int64_t>(host.generation);
         out["simulation_state_hash"] = static_cast<int64_t>(host.state_hash);
@@ -1141,6 +1151,8 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
             host.mode == RuntimeSimulationMode::SHADOW ? "SHADOW" : "OFF";
         out["graph_coverage_state"] = String(host.graph_coverage_state);
         out["simulation_host_state"] = static_cast<int>(host.state);
+        out["worker_fault_count"] = static_cast<int64_t>(host.worker_fault_count);
+        out["fault_code"] = String(host.fault_code);
         out["simulation_worker_ready"] =
             host.authority_ready || host.authoritative_domain_mask != 0u;
         out["required_domain_mask"] = static_cast<int64_t>(host.required_domain_mask);
@@ -1158,6 +1170,9 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
              runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u;
         out["coverage_blocker"] = String(host.coverage_blocker);
         out["simulation_committed_day"] = host.committed_day;
+        out["input_capture_count"] = static_cast<int64_t>(host.input_capture_count);
+        out["input_capture_reused"] = static_cast<int64_t>(host.input_capture_reused);
+        out["economy_input_requested_day"] = _runtime_host->economy_input_requested_day();
         out["simulation_generation"] = static_cast<int64_t>(host.generation);
         out["simulation_state_hash"] = static_cast<int64_t>(host.state_hash);
         out["last_commit_produced_at_us"] = static_cast<int64_t>(host.last_commit_produced_at_us);
@@ -1429,6 +1444,8 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
         const bool trigger_worker_owns = trigger_worker_authoritative();
         const bool ideology_worker_owns = _runtime_host != nullptr &&
             _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::IDEOLOGY);
+        const bool economy_worker_owns = _runtime_host != nullptr &&
+            _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::ECONOMY);
         out["country_pending"] = !country_worker_owns && _country_runtime != nullptr &&
             static_cast<NativeCountryRuntime *>(_country_runtime)->should_run(day);
         out["trigger_pending"] = !trigger_worker_owns && _trigger_runtime != nullptr &&
@@ -1441,7 +1458,7 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
             static_cast<ModifierRuntime *>(_modifier_runtime)->should_run(day);
         out["gameplay_effect_pending"] = !effect_worker_owns && _effect_runtime != nullptr &&
             gameplay_effect_should_run(day);
-        out["economy_pending"] = _economy_runtime != nullptr &&
+        out["economy_pending"] = !economy_worker_owns && _economy_runtime != nullptr &&
             economy_should_run(day);
         out["gameplay_event_count"] = static_cast<int64_t>(_gameplay_events.size());
         const int64_t *trigger_ack = _gameplay_consumer_ack.getptr(

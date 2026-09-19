@@ -536,7 +536,8 @@ func request_simulation_backpressure(source: StringName, active: bool) -> void:
 
 
 func _has_hard_day_barrier() -> bool:
-	return _simulation_backpressure_sources.has(&"economy_day_barrier") \
+	return _simulation_backpressure_sources.has(&"climate_input_capacity_day_barrier") \
+		or _simulation_backpressure_sources.has(&"economy_day_barrier") \
 		or _simulation_backpressure_sources.has(&"country_day_barrier") \
 		or _simulation_backpressure_sources.has(&"ideology_day_barrier") \
 		or _simulation_backpressure_sources.has(&"bio_occupancy_day_barrier") \

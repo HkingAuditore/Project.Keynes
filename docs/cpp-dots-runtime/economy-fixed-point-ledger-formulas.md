@@ -323,6 +323,10 @@ expected_births_q32 = population × effective_birth_rate_q32 × epoch_days
 供给使用建筑实际 offer（含托底入库和周期流丢弃、排除业主留用）EMA。每个活跃 `(cell, good)` 只维护一条稀疏信号，
 不存在 `market×good×building` 稠密矩阵。
 
+资源容量单位边界：目录编译阶段的 `building_resource_ecology_capacity` 已经按
+`GOODS_SCALE` 转为运行时整数单位。生产阶段用剩余储量计算开放获取密度时必须直接与该容量相除，
+不得再次乘 `GOODS_SCALE`；重复换算会把满储量产能压低约千倍，并通过投入价格和维护费传播到整个经济。
+
 ```text
 excess = (total_demand - offered_supply) / max(GOODS_SCALE, total_demand + offered_supply)
 inventory = (target_inventory - stock) / max(GOODS_SCALE, target_inventory)

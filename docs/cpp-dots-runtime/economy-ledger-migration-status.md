@@ -1,5 +1,14 @@
 # Economy Ledger Migration Status
 
+> 2026-09-19 correction: the terminal-closeout description below records the
+> intended/previous default. Player config now enables automatic POD_ACTIVE again.
+> Worker boundary switching and immutable Economy day inputs are implemented.
+> A 90-second explicit-enable soak reports `stage_ops`, `owned_state`, one switch,
+> zero worker faults and 44.98 committed days/second (strict 49 gate still fails).
+> Default-config repeat: 36.25 days/second, max gap 1073.629ms, zero faults;
+> throughput is not yet stable and both strict gates fail on that repeat.
+> See [the design audit](authority-design-audit-20260919.md); 50x is not passed.
+
 As of 2026-09-15 (**A+Y Terminal Closeout landed**), production default writer
 is `economy_production_writer=stage_ops` and `economy_auto_pod_active=true`.
 Under `POD_ACTIVE`, opcodes 1–23 mutate `RuntimeEconomyOwnedState` first

@@ -101,6 +101,12 @@ uint64_t RuntimeEconomyResourceStore::wire_content_hash() const noexcept {
         }
     };
     for (int64_t value : stock) {
+        if (value == 0) {
+            constexpr uint64_t prime2 = kPrime * kPrime;
+            constexpr uint64_t prime4 = prime2 * prime2;
+            hash *= prime4 * prime4;
+            continue;
+        }
         const auto *bytes = reinterpret_cast<const uint8_t *>(&value);
         mix_bytes(bytes, sizeof(value));
     }
@@ -174,7 +180,8 @@ bool RuntimeEconomyLedgerState::has_diagnostics_columns() const noexcept {
            !cohort_owner_employed.empty() || !cohort_employee_employed.empty();
 }
 
-bool RuntimeEconomyLedgerState::valid() const noexcept {
+bool RuntimeEconomyLedgerState::valid(const char **reason) const noexcept {
+    if (reason != nullptr) *reason = "ledger_shape_or_value";
     if (generation == 0 || committed_day < 0 || market_count < 0 || good_count < 0)
         return false;
     const std::size_t cohorts = cohort_active.size();
@@ -227,6 +234,7 @@ bool RuntimeEconomyLedgerState::valid() const noexcept {
             if (cohort_population[i] >= 0 &&
                 cohort_owner_employed[i] + cohort_employee_employed[i] >
                     cohort_population[i]) {
+                if (reason != nullptr) *reason = "cohort_employment_exceeds_population";
                 return false;
             }
         }
@@ -253,6 +261,7 @@ bool RuntimeEconomyLedgerState::valid() const noexcept {
             if (store.merchant_debt_principal[gi] == 0 &&
                 (store.merchant_debt_premium[gi] != 0 ||
                  store.merchant_debt_term_cycles_left[gi] != 0)) {
+                if (reason != nullptr) *reason = "building_zero_principal_with_debt_terms";
                 return false;
             }
             if (store.employee_fill_begin[gi] < -1) return false;
@@ -275,11 +284,13 @@ bool RuntimeEconomyLedgerState::valid() const noexcept {
             if (store.pending_merchant_debt_principal[pi] == 0 &&
                 (store.pending_merchant_debt_premium[pi] != 0 ||
                  store.pending_merchant_debt_term_cycles_left[pi] != 0)) {
+                if (reason != nullptr) *reason = "pending_zero_principal_with_debt_terms";
                 return false;
             }
         }
         if (building.content_hash != 0 &&
             building.content_hash != store.wire_content_hash()) {
+            if (reason != nullptr) *reason = "building_content_hash";
             return false;
         }
     }
@@ -300,16 +311,19 @@ bool RuntimeEconomyLedgerState::valid() const noexcept {
         }
         if (family.content_hash != 0 &&
             family.content_hash != store.wire_content_hash()) {
+            if (reason != nullptr) *reason = "family_content_hash";
             return false;
         }
     }
 
     if (trade_escrow.captured && trade_escrow.content_hash != 0 &&
         trade_escrow.content_hash != trade_escrow.store.wire_content_hash()) {
+        if (reason != nullptr) *reason = "trade_content_hash";
         return false;
     }
     if (resource.captured && resource.content_hash != 0 &&
         resource.content_hash != resource.store.wire_content_hash()) {
+        if (reason != nullptr) *reason = "resource_content_hash";
         return false;
     }
 
@@ -329,6 +343,7 @@ bool RuntimeEconomyLedgerState::valid() const noexcept {
         if (epoch_cursor.content_hash != 0 &&
             epoch_cursor.content_hash !=
                 epoch_cursor.store.wire_content_hash()) {
+            if (reason != nullptr) *reason = "epoch_content_hash";
             return false;
         }
     }
@@ -345,6 +360,7 @@ bool RuntimeEconomyLedgerState::valid() const noexcept {
     }
 
     if (ledger_hash != 0 && ledger_hash != computed_hash()) return false;
+    if (reason != nullptr) *reason = nullptr;
     return true;
 }
 
@@ -380,21 +396,13 @@ uint64_t RuntimeEconomyLedgerState::computed_hash() const noexcept {
     hash = mix(hash, building.group_count);
     hash = mix(hash, building.pending_count);
     hash = mix(hash, building.role_lane_count);
-    {
-        std::vector<uint8_t> building_wire;
-        building.store.append_wire(building_wire);
-        mix_vector(hash, building_wire);
-    }
+    hash = building.store.mix_wire_hash(hash);
     hash = mix(hash, trade_escrow.captured ? 1u : 0u);
     hash = mix(hash, trade_escrow.country_trade_revision);
     hash = mix(hash, static_cast<uint64_t>(trade_escrow.next_id));
     hash = mix(hash, trade_escrow.order_count);
     hash = mix(hash, trade_escrow.content_hash);
-    {
-        std::vector<uint8_t> trade_wire;
-        trade_escrow.store.append_wire(trade_wire);
-        mix_vector(hash, trade_wire);
-    }
+    hash = trade_escrow.store.mix_wire_hash(hash);
     hash = mix(hash, family.captured ? 1u : 0u);
     hash = mix(hash, family.catalog_hash);
     hash = mix(hash, family.person_catalog_hash);
@@ -412,11 +420,7 @@ uint64_t RuntimeEconomyLedgerState::computed_hash() const noexcept {
     hash = mix(hash, family.expedition_count);
     hash = mix(hash, static_cast<uint64_t>(family.next_expedition_stable_id));
     hash = mix(hash, family.content_hash);
-    {
-        std::vector<uint8_t> family_wire;
-        family.store.append_wire(family_wire);
-        mix_vector(hash, family_wire);
-    }
+    hash = family.store.mix_wire_hash(hash);
     hash = mix(hash, resource.captured ? 1u : 0u);
     hash = mix(hash, resource.catalog_hash);
     hash = mix(hash, resource.environment_hash);

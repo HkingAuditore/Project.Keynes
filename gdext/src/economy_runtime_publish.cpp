@@ -1,4 +1,6 @@
 #include "economy_runtime.h"
+#include "economy_csv_recorder.h"
+#include "native_simulation_host.h"
 #include "country_runtime.h"
 #include "parallel_dispatcher.h"
 
@@ -657,6 +659,11 @@ bool NativeEconomyRuntime::publish_epoch_slice(
     if (executed_phase == PublishPhase::COMMIT && !_epoch_active && !_fatal) {
         capture_completed_perf_snapshot();
         note_completed_epoch_cadence_ms();
+        if (_csv_recorder && _simulation_host &&
+            _simulation_host->economy_worker_owns_execution() && _csv_recorder->wants_capture()) {
+            std::string reason;
+            _csv_recorder->capture_worker_committed(*this, reason);
+        }
     }
     return true;
 }
