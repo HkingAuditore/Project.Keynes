@@ -679,6 +679,13 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
         out["ui_input_to_feedback_ms"] = host.ui_input_to_feedback_ms;
         out["visual_apply_ms"] = host.visual_apply_ms;
         out["gpu_upload_ms"] = host.gpu_upload_ms;
+        const char *timing_names[] = {"execute", "input_wait", "clock_wait", "save_build", "save_pause", "paused", "overhead", "boundary_wait"};
+        uint64_t timing_total = 0;
+        for (size_t i = 0; i < host.worker_time_us.size(); ++i) {
+            out[String("worker_time_") + timing_names[i] + "_us"] = static_cast<int64_t>(host.worker_time_us[i]);
+            timing_total += host.worker_time_us[i];
+        }
+        out["worker_time_total_us"] = static_cast<int64_t>(timing_total);
         out["main_wait_on_sim_us"] = static_cast<int64_t>(host.main_wait_on_sim_us);
         out["simulation_environment_generation"] = static_cast<int64_t>(host.environment_generation);
         out["simulation_environment_day"] = host.environment_day;
@@ -1181,6 +1188,13 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
         out["ui_input_to_feedback_ms"] = host.ui_input_to_feedback_ms;
         out["visual_apply_ms"] = host.visual_apply_ms;
         out["gpu_upload_ms"] = host.gpu_upload_ms;
+        const char *timing_names[] = {"execute", "input_wait", "clock_wait", "save_build", "save_pause", "paused", "overhead", "boundary_wait"};
+        uint64_t timing_total = 0;
+        for (size_t i = 0; i < host.worker_time_us.size(); ++i) {
+            out[String("worker_time_") + timing_names[i] + "_us"] = static_cast<int64_t>(host.worker_time_us[i]);
+            timing_total += host.worker_time_us[i];
+        }
+        out["worker_time_total_us"] = static_cast<int64_t>(timing_total);
         out["main_wait_on_sim_us"] = static_cast<int64_t>(host.main_wait_on_sim_us);
         out["simulation_environment_generation"] = static_cast<int64_t>(host.environment_generation);
         out["simulation_environment_day"] = host.environment_day;

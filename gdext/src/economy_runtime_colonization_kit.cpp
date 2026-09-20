@@ -380,6 +380,8 @@ void NativeEconomyRuntime::fill_colonization_kit_buffer(
                         std::max<int32_t>(1, candidate.efficiency_q16), Q16_ONE);
                 }
             }
+            // 尚未解锁的软工具投入只降低产量，不能变成永远凑不齐的出发条件。
+            if (candidates.empty() && item.required_q16 < Q16_ONE) continue;
             fill_group(wanted, candidates);
         }
     }

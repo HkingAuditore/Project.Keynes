@@ -1,5 +1,45 @@
 # Performance Diagnostics Playbook
 
+## 调所得税后经济停止（2026-09-20）
+
+先查 `[runtime-worker] FAULTED` 与 `fault_code`。若为
+`country_fiscal_peer_escrow_insufficient`，检查 `commit_fiscal()` 是否在转入国库前
+把 cell 实收税款和未用补贴汇总进国家 escrow；仅有 epoch-open 的补贴预留余额不足以
+代表结算时的现金。2026-09-20 修复补齐了该汇总，不绕过余额或守恒检查。
+若后续出现 `money_conservation_failed`，且差额正好是当轮税款，检查财政 peer 终态
+是否在审计前完成 Country 侧入库与 immutable snapshot 发布；只有 Economy 侧 escrow
+扣减可见会产生暂时的货币缺口。`finish_worker_country_asset()` 是这两侧提交的既有边界。
+worker FAULTED 后 `WorldRuntimeHost._observe_runtime_worker_fault()` 请求暂停时钟；
+日历或界面仍能变化不能证明 Economy 仍在提交，需核对 committed day 和 fault count。
+
+## Opt-in Economy daily cost CSV (2026-09-20)
+
+Set `PK_ECONOMY_COST_CSV` to an absolute writable file path **before launching**
+Godot to record `day,phase,work,ms`. The native probe is disabled by default,
+uses buffered file I/O, and closes at process exit. Use a dedicated diagnostic
+run; leave it unset for throughput acceptance. One process must own each path.
+
+The CSV contains all 13 StageOps mutate calls plus native/ledger/POD hash,
+ledger export/validation, domain projection, epoch vector preparation, opening
+full audit and business publish subphases. Stage `work` is the actual drain's
+reported work where available; trade stages and uninstrumented units remain
+zero/unspecified. Hash work is dense market-good lane count, not market count.
+The existing replay `stage_work` remains its legacy cell-count contract.
+`research_scratch_clear.work` counts scalar scratch writes (2 per touched market).
+
+Timers are nested: aggregate includes native_hash and publish subphases;
+ledger_export includes validation and ledger_hash. Do not sum parent and child
+timers. Publish phase names may repeat within one day; sum those slices per day
+before computing daily percentiles. All timings are wall-clock, not thread CPU.
+The old hundred-day console probes oversample audit/cadence boundaries and
+must not be used as ordinary-day averages.
+
+`authority_stage_c_client_runner` now samples runtime_report_end before
+`PerfRecorder.stop_and_export()`. Export can block the main thread while the
+worker continues; prior session-end rates and timing deltas could include this
+extra work. Compare runs with aligned endpoints, or explicitly use the last
+frame's completed-days count for historical approximate comparisons.
+
 ## Economy publication sub-probes (2026-09-20)
 
 Every 100th sampled day, `[economy-aggregate-cost]` separates `publish_ms`
@@ -8,6 +48,13 @@ state hash). `[economy-ledger-cost]` separates `copy_ms`, `validate_ms`, and
 `hash_ms`, with allocated cohort slots and dense market lane counts. These are
 worker boundary samples, not full-population daily percentiles. They do not
 change authoritative state or disable validation.
+
+With `PK_ECONOMY_COST_CSV`, `ledger_export.population`, `.market`, and `.blocks`
+split the export copy, while `.validate` and `.hash` split the post-copy checks.
+These are nested under `ledger_export`; do not add them to the parent timer.
+On the current 60x40 diagnostic run, market copy is about 0.72 ms, validation
+0.20 ms, and ledger hashing about 1.04 ms. A dirty-block export alone therefore
+cannot remove the dominant hash cost without a separate incremental-hash contract.
 
 `economy-boundary-cost.formulas_ms` includes the aggregate stage and prelude;
 `stages_ms` is nested within it. `mirror_ms` includes domain projection refresh,

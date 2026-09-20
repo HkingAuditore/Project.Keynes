@@ -1,5 +1,32 @@
 # Simulation Computation Pipelines
 
+## Economy exact-hash and scratch follow-up (2026-09-20)
+
+Native market stock/demand/shortage hashes and ledger scalar-vector hashes group
+8 consecutive zero lanes into one constant multiplication. Nonzero lanes keep
+the original order and signed conversion. Native byte-FNV and ledger word-FNV
+remain distinct: this is not a hash ABI migration or a generation cache. The
+ABI9 epoch cursor remains a length-prefixed one-byte idle marker, now hashed
+without constructing a temporary vector.
+
+`export_committed_ledger` retains its existing clear/copy/validate/hash contract.
+The proposed no-clear export was not retained. Domain projections remain
+mandatory and fully validated; no dirty-domain shortcut was introduced.
+
+Research price-ceiling requested/delivered scratch records each first nonzero
+market mutation at both procurement write sites. Epoch reset zeroes only those
+markets; resizing initializes newly added lanes, and runtime reset clears both
+the list and arrays. Market-signal vectors that can be inserted/permuted retain
+their existing full initialization. Person CSR's five temporary vectors and
+construction CSR's cursor vector retain capacity, overwrite all contents on
+reuse, and are counted by `memory_bytes()`. No gameplay or persisted identity is
+cached in these scratch buffers.
+
+Closing audit continues to use its existing incremental/full verification
+policy. Full audit was observed on periodic days rather than every epoch; this
+change does not reduce verification frequency or weaken conservation checks.
+Household ordering and existing parallel plan/merge remain unchanged.
+
 ## Economy committed publication allocation reduction (2026-09-20)
 
 ACTIVE_ONLY StageOps retains the final NativeEconomyRuntime state hash, but
@@ -203,6 +230,8 @@ generation-stamped 首触 shadow delta 计算增量 totals。PROBE 每日全量�
 | Natural resources（自然资源每日生成/衰减） | C++ full-map pass + GDScript orchestration | `run_natural_resource_pass` | knobs 构造（`ResourceProfileRegistry.build_pass_knobs`）、初始储量 bootstrap、`natural_resource_daily` system 调度、GDScript fallback。 |
 | Bio occupancy（物种占领 / 陆块省） | C++ knobs pass + GDScript orchestration | `run_bio_province_pass`, `run_bio_seed_pass`, `run_bio_occupancy_pass` / `bio_occupancy_daily` | 资源 bootstrap 之后播撒；占领 bitset 进 schema/`dynamic_world`；地貌 CSR 不再含 `bio.*`。国家知识仍由探索/`DISCOVER` 记账，灭绝不撤销。 |
 | CountryStore / territory / technology / treasury / tax policy | C++ ACTIVE authority | `country_daily` | 独立国家 SoA、领土 CSR、国家科技、国库与五类税表；仅 `cell.country_slot` 发布到 DataCore，PKCN v5 持久化。 |
+
+ACTIVE Country 的 UI 查询通过 `DCWorldExt` 的 immutable worker snapshot 投影读取队列、科技状态、国库和税率；经济 epoch 冻结同一 snapshot。同步 `NativeCountryRuntime` 仍是命令兼容 facade，但不再作为 worker-owned 日周期的可见读源。
 | Static research signals | C++ generation pass + native country evidence | `run_research_signal_generation_pass` / `country_daily` | Generation writes landform+resource CSR; bio presence is `cell.bio_occupancy_bits`. Vision submits idempotent country discovery for CSR plus current occupancy; occupancy 0→1 on explored cells submits again. Technology conditions consume only dense country evidence. |
 | ModifierStore | C++ ACTIVE authority | `modifier_daily` | 四域隔离 SoA/bucket；不写 base，发布冻结 effective 聚合与 journal。 |
 | PopulationCohort / MarketStore / fiscal escrow | C++ Market V2 ACTIVE | `economy_daily` | 独立 chunk/market vectors、冻结国家税率、N 日 need/bundle 清算、源头扣缴与补贴托管；worker 写独占 cell lane，财政提交统一更新国库并发布 PKEC v30。 |

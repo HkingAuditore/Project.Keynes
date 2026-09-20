@@ -193,6 +193,9 @@ Dictionary enqueue_country_host_command_batch(
 Dictionary DCWorldExt::configure_country(const Dictionary &catalog,
                                          const Dictionary &profile,
                                          int cell_count, int64_t seed) {
+    delete country_runtime_from(_country_query_runtime);
+    _country_query_runtime = nullptr;
+    _country_query_snapshot.reset();
     if (_country_runtime == nullptr) _country_runtime = new NativeCountryRuntime();
     if (_modifier_runtime != nullptr)
         static_cast<ModifierRuntime *>(_modifier_runtime)->attach_country_runtime(
@@ -1719,57 +1722,77 @@ int64_t DCWorldExt::get_country_state_hash() const {
     return _country_runtime == nullptr ? 0 : country_runtime_from(_country_runtime)->state_hash();
 }
 
+NativeCountryRuntime *DCWorldExt::country_query_runtime() const {
+    auto *source = country_runtime_from(_country_runtime);
+    if (source == nullptr || _runtime_host == nullptr ||
+        !_runtime_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY))
+        return source;
+    const auto snapshot = _runtime_host->country_asset_snapshot();
+    if (!snapshot) return source;
+    if (_country_query_runtime == nullptr)
+        _country_query_runtime = new NativeCountryRuntime(*source);
+    auto *view = country_runtime_from(_country_query_runtime);
+    if (_country_query_snapshot != snapshot) {
+        // Only advance the cursor when the replica installs successfully.
+        // A rejected shape must retry on the next read instead of locking the
+        // UI onto the pre-ACTIVE sync copy forever.
+        if (view->apply_committed_read_snapshot(*snapshot))
+            _country_query_snapshot = snapshot;
+    }
+    return view;
+}
+
 Dictionary DCWorldExt::get_country_cell_summary(int cell_idx) const {
     return _country_runtime == nullptr ? country_unavailable()
-        : country_runtime_from(_country_runtime)->cell_summary(cell_idx);
+        : country_query_runtime()->cell_summary(cell_idx);
 }
 
 Dictionary DCWorldExt::get_country_snapshot(int64_t handle) const {
     return _country_runtime == nullptr ? country_unavailable()
-        : country_runtime_from(_country_runtime)->country_snapshot(handle);
+        : country_query_runtime()->country_snapshot(handle);
 }
 
 Dictionary DCWorldExt::get_country_treasury_snapshot(int64_t handle) const {
     return _country_runtime == nullptr ? country_unavailable()
-        : country_runtime_from(_country_runtime)->treasury_snapshot(handle);
+        : country_query_runtime()->treasury_snapshot(handle);
 }
 
 Dictionary DCWorldExt::get_country_research_snapshot(int64_t handle) const {
     return _country_runtime == nullptr ? country_unavailable()
-        : country_runtime_from(_country_runtime)->research_snapshot(handle);
+        : country_query_runtime()->research_snapshot(handle);
 }
 
 Dictionary DCWorldExt::get_country_research_signal_snapshot(int64_t handle) const {
     return _country_runtime == nullptr ? country_unavailable()
-        : country_runtime_from(_country_runtime)->research_signal_snapshot(handle);
+        : country_query_runtime()->research_signal_snapshot(handle);
 }
 
 Dictionary DCWorldExt::consume_country_visual_era_dirty_slots() {
     return _country_runtime == nullptr ? country_unavailable()
-        : country_runtime_from(_country_runtime)->consume_visual_era_dirty_slots();
+        : country_query_runtime()->consume_visual_era_dirty_slots();
 }
 
 bool DCWorldExt::has_completed_country_technology(
         int64_t handle, int32_t technology_id) const {
     return _country_runtime != nullptr &&
-        country_runtime_from(_country_runtime)->has_completed_technology(
+        country_query_runtime()->has_completed_technology(
             handle, technology_id);
 }
 
 Dictionary DCWorldExt::get_country_tax_policy_snapshot(int64_t handle) const {
     return _country_runtime == nullptr ? country_unavailable()
-        : country_runtime_from(_country_runtime)->tax_policy_snapshot(handle);
+        : country_query_runtime()->tax_policy_snapshot(handle);
 }
 
 Dictionary DCWorldExt::get_country_cell_tax_policy_snapshot(int cell_idx) const {
     return _country_runtime == nullptr ? country_unavailable()
-        : country_runtime_from(_country_runtime)->cell_tax_policy_snapshot(cell_idx);
+        : country_query_runtime()->cell_tax_policy_snapshot(cell_idx);
 }
 
 Dictionary DCWorldExt::get_country_ui_snapshot(int64_t handle,
                                                 int section_mask) const {
     if (_country_runtime == nullptr) return country_unavailable();
-    NativeCountryRuntime *runtime = country_runtime_from(_country_runtime);
+    NativeCountryRuntime *runtime = country_query_runtime();
     Dictionary summary = runtime->country_summary(handle);
     if (!static_cast<bool>(summary.get("ok", false))) return summary;
 

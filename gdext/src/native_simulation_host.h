@@ -324,7 +324,7 @@ public:
             RuntimeEconomyAssetRequest request, std::string &error);
     bool prepare_worker_cohort_cash(RuntimeEconomyAssetRequest &request,
                                    std::string &error);
-    bool finish_worker_cohort_cash(uint64_t request_id,
+    bool finish_worker_country_asset(uint64_t request_id,
                                   RuntimeEconomyAssetResult &result,
                                   std::string &error);
     std::shared_ptr<const RuntimeCountryPodSnapshot> country_asset_snapshot() const {
@@ -689,6 +689,12 @@ private:
     void bind_shadow_country_peer_mirrors_locked();
     void record_country_parity_locked(const RuntimeCountryPodSnapshot &worker);
     bool flush_country_economy_asset_commits(std::string &error);
+    // Drain Economy-origin CREATED requests into COUNTRY_PREPARED + pollable
+    // queue. Country stage and Economy same-day retry share this helper so a
+    // fiscal/asset enqueue cannot park the worker until the next day attempt
+    // (which used to fill the Climate input ring and pin WorldClock).
+    // Returns how many origin requests were prepared (0 = queue was empty).
+    uint32_t prepare_economy_origin_country_assets(std::string &error);
     bool country_authority_drain_idle_locked() const;
     bool publish_country_worker_snapshot(uint32_t dirty_families,
                                          std::string &error);

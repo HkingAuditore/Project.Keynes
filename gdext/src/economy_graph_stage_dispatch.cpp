@@ -1,3 +1,4 @@
+#include "economy_cost_probe.h"
 #include "economy_graph_stage_dispatch.h"
 
 #include "economy_runtime.h"
@@ -63,6 +64,8 @@ bool economy_dispatch_mutate_stage(EconomySoAView &view,
         return false;
     }
 
+    static const char *names[] = {"building_plan", "trade_settle", "ledger_apply", "employment", "production", "household", "research", "trade_dispatch", "structural", "building_commit", "family", "person", "aggregate"};
+    EconomyCostProbe probe(static_cast<unsigned>(stage) < 13 ? names[static_cast<unsigned>(stage)] : "unknown", input.sample_day);
     switch (stage) {
     case RuntimeEconomyGraphStage::BUILDING_PLAN: {
         int64_t work = 0;
@@ -76,6 +79,7 @@ bool economy_dispatch_mutate_stage(EconomySoAView &view,
             return false;
         }
         finish_ok(result, input, runtime, stage);
+        probe.set_work(static_cast<uint64_t>(work));
         return true;
     }
     case RuntimeEconomyGraphStage::TRADE_SETTLE: {
@@ -113,6 +117,7 @@ bool economy_dispatch_mutate_stage(EconomySoAView &view,
         cursor.command_cursor =
             static_cast<uint32_t>(runtime->_command_cursor);
         finish_ok(result, input, runtime, stage);
+        probe.set_work(static_cast<uint64_t>(work));
         return true;
     }
     case RuntimeEconomyGraphStage::BUILDING_EMPLOYMENT: {
@@ -127,6 +132,7 @@ bool economy_dispatch_mutate_stage(EconomySoAView &view,
             return false;
         }
         finish_ok(result, input, runtime, stage);
+        probe.set_work(static_cast<uint64_t>(work));
         return true;
     }
     case RuntimeEconomyGraphStage::BUILDING_PRODUCTION: {
@@ -141,6 +147,7 @@ bool economy_dispatch_mutate_stage(EconomySoAView &view,
             return false;
         }
         finish_ok(result, input, runtime, stage);
+        probe.set_work(static_cast<uint64_t>(work));
         return true;
     }
     case RuntimeEconomyGraphStage::HOUSEHOLD_MARKET: {
@@ -154,7 +161,13 @@ bool economy_dispatch_mutate_stage(EconomySoAView &view,
                        "household_market");
             return false;
         }
+        EconomyCostProbe::record("household.prepare", input.sample_day, runtime->_household_market_prepare_ms);
+        EconomyCostProbe::record("household.worker", input.sample_day, runtime->_market_worker_ms);
+        EconomyCostProbe::record("household.merge", input.sample_day, runtime->_market_merge_ms);
+        EconomyCostProbe::record("household.merge_trade", input.sample_day, runtime->_market_merge_trade_ms);
+        EconomyCostProbe::record("household.merge_aggregate", input.sample_day, runtime->_market_merge_aggregate_ms);
         finish_ok(result, input, runtime, stage);
+        probe.set_work(static_cast<uint64_t>(work));
         return true;
     }
     case RuntimeEconomyGraphStage::GOVERNMENT_RESEARCH_PROCUREMENT: {
@@ -169,6 +182,7 @@ bool economy_dispatch_mutate_stage(EconomySoAView &view,
             return false;
         }
         finish_ok(result, input, runtime, stage);
+        probe.set_work(static_cast<uint64_t>(work));
         return true;
     }
     case RuntimeEconomyGraphStage::TRADE_DISPATCH: {
@@ -197,12 +211,22 @@ bool economy_dispatch_mutate_stage(EconomySoAView &view,
             return false;
         }
         finish_ok(result, input, runtime, stage);
+        probe.set_work(static_cast<uint64_t>(work));
         return true;
     }
     case RuntimeEconomyGraphStage::BUILDING_COMMIT: {
         int64_t work = 0;
         std::string building_error;
         if (!runtime->run_building_commit_slice(work, building_error)) {
+            // Peer park must stay retryable: do not stamp stage-result fatal.
+            if (building_error == "fiscal_settlement_peer_pending") {
+                error = building_error;
+                result.ok = false;
+                result.fatal = false;
+                std::snprintf(result.fatal_reason, sizeof(result.fatal_reason),
+                              "%s", "fiscal_settlement_peer_pending");
+                return false;
+            }
             fail_stage(result, error,
                        building_error.empty()
                            ? "economy_dispatch_building_commit_failed"
@@ -211,6 +235,7 @@ bool economy_dispatch_mutate_stage(EconomySoAView &view,
             return false;
         }
         finish_ok(result, input, runtime, stage);
+        probe.set_work(static_cast<uint64_t>(work));
         return true;
     }
     case RuntimeEconomyGraphStage::FAMILY_COMMIT: {
@@ -225,7 +250,14 @@ bool economy_dispatch_mutate_stage(EconomySoAView &view,
             return false;
         }
         flush_formula_owned_mirrors(runtime, input);
+        EconomyCostProbe::record("family.normalize", input.sample_day, runtime->_family_commit_normalize_ms);
+        EconomyCostProbe::record("family.attribution", input.sample_day, runtime->_family_commit_attribution_ms);
+        EconomyCostProbe::record("family.form", input.sample_day, runtime->_family_commit_form_ms);
+        EconomyCostProbe::record("family.index", input.sample_day, runtime->_family_commit_index_ms);
+        EconomyCostProbe::record("family.lifecycle", input.sample_day, runtime->_family_commit_lifecycle_ms);
+        EconomyCostProbe::record("family.influence", input.sample_day, runtime->_family_commit_influence_ms);
         finish_ok(result, input, runtime, stage);
+        probe.set_work(static_cast<uint64_t>(work));
         return true;
     }
     case RuntimeEconomyGraphStage::PERSON_COMMIT: {
@@ -240,7 +272,14 @@ bool economy_dispatch_mutate_stage(EconomySoAView &view,
             return false;
         }
         flush_formula_owned_mirrors(runtime, input);
+        EconomyCostProbe::record("person.retire", input.sample_day, runtime->_person_commit_retire_ms);
+        EconomyCostProbe::record("person.index", input.sample_day, runtime->_person_commit_index_ms);
+        EconomyCostProbe::record("person.bind_jobs", input.sample_day, runtime->_person_commit_bind_jobs_ms);
+        EconomyCostProbe::record("person.claims", input.sample_day, runtime->_person_commit_claims_ms);
+        EconomyCostProbe::record("person.equity", input.sample_day, runtime->_person_commit_equity_ms);
+        EconomyCostProbe::record("person.promote", input.sample_day, runtime->_person_commit_promote_ms);
         finish_ok(result, input, runtime, stage);
+        probe.set_work(static_cast<uint64_t>(work));
         return true;
     }
     case RuntimeEconomyGraphStage::AGGREGATE_PUBLISH: {
@@ -258,6 +297,7 @@ bool economy_dispatch_mutate_stage(EconomySoAView &view,
         // ACTIVE 投影在真正执行 POD 命令前或 Host 最终发布时刷新。
         const auto probe_publish = std::chrono::steady_clock::now();
         finish_ok(result, input, runtime, stage);
+        probe.set_work(static_cast<uint64_t>(work));
         if (input.sample_day % 100 == 0 && !input.stage_hashes_enabled) {
             std::fprintf(stderr, "[economy-aggregate-cost] day=%lld publish_ms=%.3f native_hash_ms=%.3f\n",
                 static_cast<long long>(input.sample_day),

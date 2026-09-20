@@ -303,6 +303,11 @@ public:
     bool restore_core_checkpoint(const CountryCoreCheckpoint &checkpoint,
                                  std::string &error);
 
+    // Main-thread presentation replica only; never installed into the authority.
+    // Returns false when the committed snapshot shape is rejected so callers can
+    // keep retrying instead of locking onto a stale read view.
+    bool apply_committed_read_snapshot(const RuntimeCountryPodSnapshot &snapshot);
+
     godot::Dictionary cell_summary(int32_t cell) const;
     godot::Dictionary country_summary(int64_t handle) const;
     godot::Dictionary country_snapshot(int64_t handle) const;

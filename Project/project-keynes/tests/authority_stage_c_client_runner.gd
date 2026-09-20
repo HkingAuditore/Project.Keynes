@@ -336,9 +336,9 @@ func _finish_recording() -> void:
 	if _frame_file != null:
 		_frame_file.close()
 		_frame_file = null
-	var perf_path: String = String(_recorder.stop_and_export()) if _recorder != null else ""
-	# Freeze the measurement endpoint before the asynchronous CSV drain.
+	# Snapshot before CSV export: export can stall the main thread while the worker runs.
 	_runtime_report_end = _runtime_report()
+	var perf_path: String = String(_recorder.stop_and_export()) if _recorder != null else ""
 	_climate_end = _host.climate_authority_diagnostics()
 	if _economy_recorder != null:
 		_economy_recorder.stop_and_export()

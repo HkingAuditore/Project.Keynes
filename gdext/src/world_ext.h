@@ -48,6 +48,7 @@
 namespace pk {
 
 class NativeSimulationHost;
+class NativeCountryRuntime;
 struct RuntimeClimateStore;
 
 // Adds climate_stage_ms / climate_stage_work / climate_stage_names to a report
@@ -3099,6 +3100,9 @@ private:
     void                                     *_economy_csv_recorder   = nullptr;
     int64_t                                   _economy_last_notified_event_id = 0;
     void                                     *_country_runtime        = nullptr;
+    NativeCountryRuntime *country_query_runtime() const;
+    mutable void *_country_query_runtime = nullptr;
+    mutable std::shared_ptr<const RuntimeCountryPodSnapshot> _country_query_snapshot;
     void                                     *_modifier_runtime       = nullptr;
     void                                     *_trigger_runtime         = nullptr;
     void                                     *_effect_runtime          = nullptr;

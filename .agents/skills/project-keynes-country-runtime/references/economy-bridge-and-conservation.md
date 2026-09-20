@@ -24,6 +24,13 @@ Territory, technology, and tax-policy commits during the cycle apply only to the
 
 ## Transfers
 
+Fiscal RETURN/COLLECT/RESERVE terminal consumption on the Economy worker must
+also call `finish_worker_country_asset()` before audit, so the Country side and
+immutable cash snapshot are current. Route by actual Country worker grant even
+if the compatibility sync-write flag has not caught up; `total_cash()` uses that
+same grant. Completed cell lanes fold unused subsidy plus withheld tax into
+country escrow once at `commit_fiscal()`, before any Country transfer.
+
 Under Host worker ownership, cohort cash transfers can complete the existing
 asset protocol on that same worker thread after Country's daily stage. Preserve
 target slot and handle, preflight both balances, journal peer application, commit

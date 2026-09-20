@@ -5,6 +5,7 @@
 #endif
 #include "native_simulation_host.h"
 #include "country_core_apply.h"
+#include "country_runtime.h"
 #include "economy_runtime.h"
 #include "runtime_economy_ecp2.h"
 #include "native_parallel_executor.h"
@@ -1976,6 +1977,22 @@ bool NativeSimulationHost::worker_run_stage_ops_slice(
             return false;
         }
         if (!_economy_pod_authority.advance_stage(error)) {
+            // Tax settlement parks on Country-peer return/collect. This is
+            // backpressure for Host prepare+retry, not an Economy ledger fatal.
+            // Treating it as fatal left production StageOps stuck mid-epoch the
+            // moment a non-zero national tax created fiscal collect work.
+            if (error == "fiscal_settlement_peer_pending" ||
+                error == "fiscal_reserve_peer_results" ||
+                error == "country_economy_asset_host_pending" ||
+                error == "country_economy_asset_results_pending" ||
+                error == "country_economy_asset_rejection_retry_pending" ||
+                error == "country_economy_asset_completion_retry_pending" ||
+                error == "country_economy_fiscal_terminal_retry_pending") {
+                if (pending_input != nullptr) {
+                    *pending_input = true;
+                }
+                return true;
+            }
             return false;
         }
         if (try_fault_injection("economy.reservation.after")) {
@@ -3551,6 +3568,24 @@ bool NativeSimulationHost::country_shadow_parity_self_test(std::string &error) c
         error = "country_parity_self_test_export_hash_mismatch";
         return false;
     }
+    if (snapshot->research_queue_lengths.size() !=
+            static_cast<size_t>(snapshot->country_count) *
+                RUNTIME_COUNTRY_RESEARCH_DOMAIN_COUNT ||
+        snapshot->research_weights_bp.size() !=
+            static_cast<size_t>(snapshot->country_count) *
+                RUNTIME_COUNTRY_RESEARCH_DOMAIN_COUNT) {
+        error = "country_parity_self_test_research_lane_shape";
+        return false;
+    }
+    {
+        // ACTIVE UI reads through this replica. A shape mismatch here is the
+        // exact failure that leaves research enqueue stuck on "次日生效".
+        NativeCountryRuntime read_replica;
+        if (!read_replica.apply_committed_read_snapshot(*snapshot)) {
+            error = "country_parity_self_test_read_replica_rejected";
+            return false;
+        }
+    }
     int32_t slot = -1;
     for (uint32_t candidate = 0; candidate < snapshot->country_count; ++candidate) {
         if (snapshot->country_active[candidate] != 0) {
@@ -4343,6 +4378,65 @@ bool NativeSimulationHost::country_economy_asset_protocol_self_test(
     return true;
 }
 
+uint32_t NativeSimulationHost::prepare_economy_origin_country_assets(
+        std::string &error) {
+    error.clear();
+    if (!_country_pod_configured.load(std::memory_order_acquire)) return 0u;
+    if (!domain_is_worker_authoritative(RuntimeDomainId::COUNTRY) &&
+        !country_authority_owner_is_worker()) {
+        return 0u;
+    }
+
+    std::vector<uint64_t> origin_ids;
+    {
+        std::lock_guard<std::mutex> lock(_country_transport_mutex);
+        if (_economy_origin_asset_queue.empty()) return 0u;
+        origin_ids.assign(_economy_origin_asset_queue.begin(),
+                          _economy_origin_asset_queue.end());
+        _economy_origin_asset_queue.clear();
+    }
+
+    uint32_t prepared = 0u;
+    for (uint64_t request_id : origin_ids) {
+        RuntimeEconomyAssetRequest request;
+        bool already_prepared = false;
+        {
+            std::lock_guard<std::mutex> lock(_country_transport_mutex);
+            const auto it = _country_economy_asset_requests.find(request_id);
+            if (it == _country_economy_asset_requests.end()) continue;
+            request = it->second;
+            already_prepared =
+                request.state == RuntimeEconomyAssetState::COUNTRY_PREPARED;
+        }
+        if (!already_prepared) {
+            RuntimeCountryPodSnapshot snapshot;
+            std::string snap_error;
+            if (!_country_pod_authority.snapshot(snapshot, snap_error) ||
+                !country_core_apply_economy_asset_prepare(
+                    snapshot, _country_pod_catalog, request, snap_error)) {
+                error = snap_error.empty()
+                    ? "country_worker_economy_prepare_failed" : snap_error;
+                return prepared;
+            }
+            request.state = RuntimeEconomyAssetState::COUNTRY_PREPARED;
+            std::lock_guard<std::mutex> lock(_country_transport_mutex);
+            _country_economy_asset_requests[request_id] = request;
+        }
+        std::string publish_error;
+        if (!publish_country_economy_asset_requests({request}, publish_error)) {
+            error = publish_error.empty()
+                ? "country_worker_economy_request_failed" : publish_error;
+            return prepared;
+        }
+        ++prepared;
+    }
+    if (prepared > 0u) {
+        _country_peer_signal.fetch_add(1, std::memory_order_acq_rel);
+        _control_cv.notify_all();
+    }
+    return prepared;
+}
+
 bool NativeSimulationHost::flush_country_economy_asset_commits(std::string &error) {
     error.clear();
     struct PendingCommit {
@@ -4470,7 +4564,7 @@ bool NativeSimulationHost::prepare_worker_cohort_cash(
     return publish_country_economy_asset_requests({request}, error);
 }
 
-bool NativeSimulationHost::finish_worker_cohort_cash(
+bool NativeSimulationHost::finish_worker_country_asset(
         uint64_t request_id, RuntimeEconomyAssetResult &result, std::string &error) {
     error.clear();
     if (std::this_thread::get_id() != _worker.get_id() ||
@@ -6539,43 +6633,12 @@ bool NativeSimulationHost::execute_country_worker_stage(
         }
     }
 
-    std::vector<uint64_t> origin_ids;
-    {
-        std::lock_guard<std::mutex> lock(_country_transport_mutex);
-        origin_ids.assign(_economy_origin_asset_queue.begin(),
-                          _economy_origin_asset_queue.end());
-        _economy_origin_asset_queue.clear();
-    }
-    for (uint64_t request_id : origin_ids) {
-        RuntimeEconomyAssetRequest request;
-        {
-            std::lock_guard<std::mutex> lock(_country_transport_mutex);
-            const auto it = _country_economy_asset_requests.find(request_id);
-            if (it == _country_economy_asset_requests.end()) continue;
-            request = it->second;
-        }
-        RuntimeCountryPodSnapshot snapshot;
-        std::string snap_error;
-        if (!_country_pod_authority.snapshot(snapshot, snap_error) ||
-            !country_core_apply_economy_asset_prepare(
-                snapshot, _country_pod_catalog, request, snap_error)) {
-            error = snap_error.empty()
-                ? "country_worker_economy_prepare_failed" : snap_error;
-            commit.preflight_ok = 0;
-            return false;
-        }
-        request.state = RuntimeEconomyAssetState::COUNTRY_PREPARED;
-        {
-            std::lock_guard<std::mutex> lock(_country_transport_mutex);
-            _country_economy_asset_requests[request_id] = request;
-        }
-        std::string publish_error;
-        if (!publish_country_economy_asset_requests({request}, publish_error)) {
-            error = publish_error.empty()
-                ? "country_worker_economy_request_failed" : publish_error;
-            commit.preflight_ok = 0;
-            return false;
-        }
+    std::string origin_error;
+    prepare_economy_origin_country_assets(origin_error);
+    if (!origin_error.empty()) {
+        error = origin_error;
+        commit.preflight_ok = 0;
+        return false;
     }
 
     bool economy_asset_waiting = false;
@@ -6583,6 +6646,15 @@ bool NativeSimulationHost::execute_country_worker_stage(
         std::lock_guard<std::mutex> lock(_country_transport_mutex);
         for (const auto &entry : _country_economy_asset_requests) {
             const RuntimeEconomyAssetRequest &request = entry.second;
+            // Economy-origin fiscal/peer assets are prepared here so Country
+            // cash staging is ready, but only the later ECONOMY stage can
+            // service+terminal them. Waiting on those rows before ECONOMY
+            // runs deadlocks the day the first time tax/settlement parks a
+            // continuation (Country preflight forever, Economy never resumes).
+            if (request.origin_domain ==
+                static_cast<uint32_t>(RuntimeDomainId::ECONOMY)) {
+                continue;
+            }
             if (request.day > day ||
                 _country_economy_asset_terminal_results.find(entry.first) !=
                     _country_economy_asset_terminal_results.end()) {
@@ -9003,47 +9075,90 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                     continue;
                 }
             }
-            if (production_writer == EconomyProductionWriter::STAGE_OPS) {
-                for (int slice = 0; slice < 64; ++slice) {
-                    bool slice_done = false;
-                    bool pending_input = false;
-                    if (!worker_run_stage_ops_slice(
-                            plan.context.day, plan.context.input_generation,
-                            economy_error, &slice_done, &pending_input)) {
-                        economy_fatal = true;
-                        break;
+            const auto economy_asset_pending_reason = [](const std::string &reason) {
+                return reason == "country_economy_asset_host_pending" ||
+                    reason == "country_economy_asset_results_pending" ||
+                    reason == "country_economy_asset_rejection_retry_pending" ||
+                    reason == "country_economy_asset_completion_retry_pending" ||
+                    reason == "country_economy_fiscal_terminal_retry_pending" ||
+                    reason == "fiscal_reserve_peer_results" ||
+                    // Mid-epoch fiscal return/collect uses the same origin-asset
+                    // prepare loop as epoch-open reserve. Omitting this reason
+                    // soft-completes ECONOMY without prepare and deadlocks the
+                    // next Country stage waiting for an Economy terminal.
+                    reason == "fiscal_peer_results" ||
+                    reason == "fiscal_settlement_peer_pending" ||
+                    reason == "economy_stage_ops_prelude_pending_input";
+            };
+            // Country prepares Economy-origin assets in its own stage, which
+            // runs earlier in the day plan. An enqueue that lands during this
+            // ECONOMY visit must prepare+service in-place or the worker parks
+            // on CV with a full Climate ring and WorldClock never advances.
+            // Tax settlement can need one peer txn per country × return/collect
+            // (≥12 on a 6-country map); keep preparing until the fiscal peer
+            // barrier clears or we hit a hard safety cap.
+            constexpr int kMaxEconomyAssetRounds = 64;
+            for (int asset_round = 0; asset_round < kMaxEconomyAssetRounds;
+                 ++asset_round) {
+                economy_pending_input = false;
+                economy_fatal = false;
+                economy_day_done = false;
+                if (production_writer == EconomyProductionWriter::STAGE_OPS) {
+                    for (int slice = 0; slice < 64; ++slice) {
+                        bool slice_done = false;
+                        bool pending_input = false;
+                        if (!worker_run_stage_ops_slice(
+                                plan.context.day, plan.context.input_generation,
+                                economy_error, &slice_done, &pending_input)) {
+                            economy_fatal = true;
+                            break;
+                        }
+                        if (pending_input) {
+                            economy_pending_input = true;
+                            break;
+                        }
+                        ++economy_work;
+                        if (slice_done) {
+                            economy_day_done = true;
+                            break;
+                        }
                     }
-                    if (pending_input) {
-                        economy_pending_input = true;
-                        break;
-                    }
-                    ++economy_work;
-                    if (slice_done) {
-                        economy_day_done = true;
-                        break;
+                } else {
+                    for (int slice = 0; slice < 64; ++slice) {
+                        bool slice_done = false;
+                        bool pending_input = false;
+                        if (!_economy_production_runtime->worker_run_compact_slice(
+                                plan.context.day, economy_error, &slice_done,
+                                &pending_input)) {
+                            economy_fatal = true;
+                            break;
+                        }
+                        if (pending_input) {
+                            economy_pending_input = true;
+                            break;
+                        }
+                        ++economy_work;
+                        if (slice_done) {
+                            economy_day_done = true;
+                            break;
+                        }
                     }
                 }
-            } else {
-                for (int slice = 0; slice < 64; ++slice) {
-                    bool slice_done = false;
-                    bool pending_input = false;
-                    if (!_economy_production_runtime->worker_run_compact_slice(
-                            plan.context.day, economy_error, &slice_done,
-                            &pending_input)) {
-                        economy_fatal = true;
-                        break;
-                    }
-                    if (pending_input) {
-                        // Main thread has not captured same-day inputs yet. Park
-                        // ECONOMY without soft-complete or set_fault.
-                        economy_pending_input = true;
-                        break;
-                    }
-                    ++economy_work;
-                    if (slice_done) {
-                        economy_day_done = true;
-                        break;
-                    }
+                if (economy_fatal || !economy_pending_input) break;
+                if (!economy_asset_pending_reason(economy_error)) break;
+                std::string prepare_error;
+                const uint32_t prepared =
+                    prepare_economy_origin_country_assets(prepare_error);
+                if (!prepare_error.empty()) {
+                    economy_error = prepare_error;
+                    economy_fatal = true;
+                    break;
+                }
+                if (prepared == 0u) {
+                    // Request may already be COUNTRY_PREPARED/pollable from an
+                    // earlier prepare. Keep slicing so service can terminal it
+                    // instead of parking the day with an in-flight asset.
+                    continue;
                 }
             }
             if (economy_fatal) {
@@ -9065,9 +9180,27 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                     economy_error == "same_day_building_context_not_captured") {
                     _economy_input_requested_day.store(plan.context.day,
                         std::memory_order_release);
+                } else if (economy_asset_pending_reason(economy_error)) {
+                    // Keep a cooperative continuation visible even when the
+                    // same-day prepare already drained the origin queue; the
+                    // next Country/Economy visit still owns the ACK.
+                    commit.continuation_pending = 1;
                 }
                 stage.completed = 0;
                 continue;
+            }
+            {
+                // Apply any terminals produced by the same-day asset service
+                // before later domains / M5 observe Country cash.
+                std::string flush_error;
+                if (!flush_country_economy_asset_commits(flush_error)) {
+                    set_fault(flush_error.empty()
+                        ? "country_economy_asset_flush_failed"
+                        : flush_error.c_str());
+                    stage.completed = 0;
+                    commit.preflight_ok = 0;
+                    continue;
+                }
             }
             // slice done 也可能表示空闲或前置领域尚未就绪，不能伪造 epoch 提交。
             const auto economy_formulas_finished = std::chrono::steady_clock::now();
@@ -11432,14 +11565,13 @@ void NativeSimulationHost::worker_main() {
                     _environment_generation.load(std::memory_order_acquire);
                 const uint64_t attempt_economy_signal =
                     _economy_input_signal.load(std::memory_order_acquire);
+                _worker_timing.set(RuntimeWorkerTiming::EXECUTE);
                 RuntimeDayPlan day_plan = build_day_plan(
                     day, speed, environment.get());
                 const auto day_attempt_started = std::chrono::steady_clock::now();
-                _worker_timing.set(RuntimeWorkerTiming::EXECUTE);
                 const RuntimeDayCommit day_commit = execute_day_plan(
                     day_plan, environment.get(), day_commands, day_receipts,
                     admitted_submit_order);
-                _worker_timing.set(RuntimeWorkerTiming::OVERHEAD);
                 if (day % 100 == 0) {
                     std::fprintf(stderr, "[runtime-day-cost] day=%lld ok=%u ms=%.3f\n",
                         static_cast<long long>(day), static_cast<unsigned>(day_commit.preflight_ok),
@@ -11534,8 +11666,23 @@ void NativeSimulationHost::worker_main() {
                             _time_debt_days.load(std::memory_order_relaxed) + 1.0),
                             std::memory_order_release);
                     }
+                    // Same-day Economy→Country asset prepare must happen before
+                    // parking. Otherwise Climate ring stays full, main cannot
+                    // publish, and country_peer_signal never fires.
+                    std::string prepare_error;
+                    const uint32_t prepared_before_wait =
+                        prepare_economy_origin_country_assets(prepare_error);
+                    if (!prepare_error.empty()) {
+                        set_fault(prepare_error.c_str());
+                        break;
+                    }
                     // 捕获输入时主线程必须可取得边界锁；等待期间没有公式写入。
                     boundary_lock.unlock();
+                    if (prepared_before_wait > 0u) {
+                        // Origin assets are now pollable; retry this day without
+                        // waiting for an external wake that may never arrive.
+                        break;
+                    }
                     const auto next_input = _environment_ring.peek_oldest();
                     const bool stale_input_consumed = environment != nullptr &&
                         environment->day < day && next_input != nullptr &&
@@ -11650,6 +11797,7 @@ void NativeSimulationHost::worker_main() {
                 _committed_day.store(day, std::memory_order_release);
                 _completed_days.fetch_add(1, std::memory_order_relaxed);
                 publish_day(from_day, day, day_commit, day_receipts);
+                _worker_timing.set(RuntimeWorkerTiming::OVERHEAD);
                 // Control messages are intentionally checked at the day
                 // barrier as well as the outer loop.  A long catch-up batch
                 // must yield promptly to SAVE/PAUSE/STOP instead of spending

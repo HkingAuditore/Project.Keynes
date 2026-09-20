@@ -131,7 +131,8 @@ public:
     // staple, protein, and produce candidates share one aggregate food pool.
     // Revision 5: preparing parties escrow spare stock day by day, so the
     // watch identity covers the reserve as well as the remaining shortfall.
-    static constexpr uint64_t COLONIZATION_PREPARING_STOCK_HASH_REVISION = 5;
+    // Revision 6: unavailable soft tool inputs do not block departure.
+    static constexpr uint64_t COLONIZATION_PREPARING_STOCK_HASH_REVISION = 6;
     static constexpr int32_t ROLLING_PHASE_COUNT = 5;
     static constexpr int32_t MARKET_CYCLE_MIN_DAYS = 1;
     static constexpr int32_t MARKET_CYCLE_MAX_DAYS = 5;
@@ -4476,6 +4477,10 @@ private:
     std::vector<int32_t> _person_family_indices;
     std::vector<int32_t> _person_cohort_offsets;
     std::vector<int32_t> _person_cohort_indices;
+    std::vector<int32_t> _person_index_building_scratch;
+    std::vector<int32_t> _person_index_family_scratch, _person_index_cohort_scratch;
+    std::vector<int32_t> _person_index_cell_scratch, _person_index_building_cursor_scratch;
+    std::vector<int32_t> _pending_construction_cursor_scratch;
     std::vector<int32_t> _person_cell_offsets;
     std::vector<int32_t> _person_cell_indices;
     std::vector<int32_t> _person_building_offsets;
@@ -6164,6 +6169,7 @@ private:
     std::vector<PriceCeilingState> _price_ceiling_merge_scratch;
     std::vector<int64_t> _epoch_ceiling_business_requested, _epoch_ceiling_business_unfilled;
     std::vector<int64_t> _epoch_ceiling_research_requested, _epoch_ceiling_research_delivered;
+    std::vector<int32_t> _epoch_ceiling_research_touched;
 
     int32_t _price_ceiling_confirm_days = 30;
     int32_t _price_ceiling_expand_bp = 50;

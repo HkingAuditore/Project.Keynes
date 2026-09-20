@@ -1,5 +1,13 @@
 # 运行时权威迁移：目标、设计框架、当前状态与任务
 
+2026-09-20 所得税停机修复：`commit_fiscal()` 在 Country 财政转账前补齐
+“未用补贴 + 实收税款”的国家 escrow 汇总，消除正税结算误报
+`country_fiscal_peer_escrow_insufficient`。正式玩家 `PlayerController` 调整全国所得税到
+10% 后，`income_tax_player_regression.tscn` 验证 StageOps 持续提交 50 日、实际入库且
+人口/货币/商品误差为零。定额所得税另测 50 提交日通过；财政终态通过
+`finish_worker_country_asset()` 先提交 Country 并刷新只读余额，再进入 Economy 审计，
+且转账与总现金查询均按实际 Country grant 选路。该项是财政回归证据，不替代下文其他迁移验收条件。
+
 > **2026-09-19 生产路径核对：尚未完成迁移验收。** 当前玩家路径实际为 StageOps writer，
 > 玩家入口已恢复自动 POD_ACTIVE；显式开启的 90 秒 soak 已验证 `owned_state`、切换一次、零 worker fault。
 > 两轮 90 秒严格 50 倍速配置分别测得 44.98、36.25 权威日/秒，均未通过 49 日/秒门槛；
@@ -1135,7 +1143,12 @@ ACTIVE authority；当前剩余缺口集中在 Country–Economy D7 跨域事务
       coordinator 仍是生产路径。Host 已有内存 request/result transport、
       `enqueue_economy_origin_country_asset()`、`D7T1` transaction journal 编解码/恢复、
       identity 校验和 terminal 幂等缓存；Country plan 可发布请求，Economy 也可发布
-      Economy-origin request。当前仅 fiscal 三种 operation 进入 M1 bridge gate，
+      Economy-origin request。**2026-09-20**：补上同日闭环
+      `prepare_economy_origin_country_assets()`——Economy stage 遇到
+      `country_economy_asset_host_pending` / fiscal peer pending 时就地 prepare+retry，
+      日等待前再 drain 一次；修复「Economy enqueue 后等次日 Country stage → Climate
+      输入环满 → `climate_input_capacity_day_barrier` 永久钉日历」的 ACTIVE 死锁。
+      当前仅 fiscal 三种 operation 进入 M1 bridge gate，
       `country_economy_operation_gate_closed` 会明确拒绝其它未迁移 operation，不再伪造
       成功或静默切换第二个同步写者。Economy-owned fiscal peer journal 已完成，并在 PKEC v52
       独立 section 持久化 request identity 与 terminal result；fiscal escrow 与 journal

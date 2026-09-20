@@ -1,3 +1,4 @@
+#include "economy_cost_probe.h"
 #include "economy_runtime.h"
 #include "country_runtime.h"
 #include "effect_runtime.h"
@@ -56,8 +57,15 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _epoch_price_ceiling_observations.clear();
     _epoch_ceiling_business_requested.clear();
     _epoch_ceiling_business_unfilled.clear();
-    _epoch_ceiling_research_requested.clear();
-    _epoch_ceiling_research_delivered.clear();
+    {
+        EconomyCostProbe probe("research_scratch_clear", _current_day,
+            _epoch_ceiling_research_touched.size() * 2);
+        for (int32_t market : _epoch_ceiling_research_touched) {
+            _epoch_ceiling_research_requested[market] = 0;
+            _epoch_ceiling_research_delivered[market] = 0;
+        }
+        _epoch_ceiling_research_touched.clear();
+    }
     _epoch_offered_supply_ema.clear();
     _epoch_producer_sellable_current.clear();
     _epoch_producer_merchant_sold_current.clear();
@@ -960,7 +968,8 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
     }
     _pending_construction_cell_indices.resize(
         static_cast<size_t>(_pending_construction_cell_offsets.back()));
-    std::vector<int32_t> pending_cursors(
+    auto &pending_cursors = _pending_construction_cursor_scratch;
+    pending_cursors.assign(
         _pending_construction_cell_offsets.begin(),
         _pending_construction_cell_offsets.end() - 1);
     for (int32_t pending_index = 0;
@@ -1002,6 +1011,8 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
         }
     }
     _epoch_begin_recovery_apply_ms = elapsed_ms(recovery_apply_started);
+    {
+    EconomyCostProbe probe("epoch_vectors", day_index, _market_signals.good_ids.size());
     const auto vector_init_started = Clock::now();
     _rolling_due_cells = static_cast<int32_t>(_epoch_settlement_cells.size());
     _rolling_processed_cells = 0;
@@ -1022,8 +1033,8 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
     _epoch_price_ceiling_observations.clear();
     _epoch_ceiling_business_requested.assign(_market_signals.good_ids.size(), 0);
     _epoch_ceiling_business_unfilled.assign(_market_signals.good_ids.size(), 0);
-    _epoch_ceiling_research_requested.assign(market_store().market_count, 0);
-    _epoch_ceiling_research_delivered.assign(market_store().market_count, 0);
+    _epoch_ceiling_research_requested.resize(market_store().market_count, 0);
+    _epoch_ceiling_research_delivered.resize(market_store().market_count, 0);
     _epoch_offered_supply_ema = _market_signals.offered_supply_ema;
     _epoch_producer_sellable_current.assign(_market_signals.good_ids.size(), 0);
     _epoch_producer_merchant_sold_current.assign(
@@ -1033,6 +1044,7 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
     _epoch_cost_anchor_price = _market_signals.cost_anchor_price;
     refresh_derived_business_demand();
     _epoch_begin_vector_init_ms = elapsed_ms(vector_init_started);
+    }
     const auto audit_started = Clock::now();
     int64_t live_expedition_population = 0;
     int64_t live_expedition_funds = 0;
@@ -1052,6 +1064,7 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
         expedition_holdings_changed ||
         day_index % _full_audit_verify_interval_days == 0;
     if (full_audit_verify) {
+        EconomyCostProbe probe("opening_audit_full", day_index, market_store().stock.size());
         _opening_totals = audit_totals();
         ++_opening_audit_full_verifications;
     } else {

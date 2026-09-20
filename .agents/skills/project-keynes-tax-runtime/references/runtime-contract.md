@@ -14,6 +14,15 @@
 
 ## 1. Authority and source map
 
+At fiscal commit, fold completed cell lanes into country escrow exactly once:
+`unused subsidy + collected tax` (including tariff lanes), before RETURN/COLLECT
+peer validation. Opening reservations are not the settlement balance. Workers
+must continue writing only their cell lanes; do not bypass escrow validation.
+Under Economy worker authority, consume fiscal terminals through
+`finish_worker_country_asset()` before auditing, to commit Country's side and
+publish the updated immutable treasury snapshot. Actual Country worker grant
+takes precedence over the main-thread compatibility sync-write flag.
+
 Taxation is not a separate runtime.
 
 | Concern | Authority |
