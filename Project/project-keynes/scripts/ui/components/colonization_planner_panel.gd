@@ -58,7 +58,7 @@ func _ready() -> void:
 		{"id": "quotes", "label": "可派遣", "icon": "family.house",
 			"tooltip": "可派往此地的家族", "accent": UITokens.ACCENT},
 		{"id": "expeditions", "label": "在途", "icon": "action.history",
-			"tooltip": "已出发的开拓队", "accent": UITokens.CLIMATE},
+			"tooltip": "筹备中和已出发的开拓队", "accent": UITokens.CLIMATE},
 	], "quotes", true)
 	_tabs.tab_selected.connect(_on_tab_selected)
 	_population.value_changed.connect(func(_value: float) -> void:
@@ -91,6 +91,11 @@ func open_target(target_cell: int, family_filter: int = 0,
 	visible = true
 	if is_inside_tree():
 		UIAnimation.fade_slide_in(self, Vector2(0.0, 18.0))
+	if _controller != null:
+		var page := _filter_expedition_page(_controller.get_family_expeditions(0, 128))
+		if bool(page.get("ok", false)) and int(page.get("total", 0)) > 0:
+			_show_expeditions()
+			return
 	_show_quotes()
 
 
@@ -318,6 +323,7 @@ func _show_expeditions() -> void:
 		_set_busy_status(false)
 		return
 	var page: Dictionary = _controller.get_family_expeditions(0, 128)
+	page = _filter_expedition_page(page)
 	_economy_busy = bool(page.get("busy", false))
 	if not bool(page.get("ok", false)):
 		var code := String(page.get("code", "command_rejected"))
@@ -350,6 +356,41 @@ func _show_expeditions() -> void:
 			_add_note("当前没有活动开拓队。", UITokens.ARCHIVE_INK_MUTED)
 		return
 	_sync_expedition_rows(page)
+
+
+func _filter_expedition_page(page: Dictionary) -> Dictionary:
+	# The native query is country-wide. Keep the planner scoped to the target
+	# currently open, and to the selected family when the panel was opened from
+	# a family dossier.
+	var targets: PackedInt32Array = page.get("target_cells", PackedInt32Array())
+	var families: PackedInt64Array = page.get("family_handles", PackedInt64Array())
+	var handles: PackedInt64Array = page.get("expedition_handles", PackedInt64Array())
+	if targets.is_empty() or (_target_cell < 0 and _family_filter == 0):
+		return page
+	var keep := PackedInt32Array()
+	for index in range(handles.size()):
+		var target_ok := _target_cell < 0 or \
+			(index < targets.size() and int(targets[index]) == _target_cell)
+		var family_ok := _family_filter == 0 or \
+			(index < families.size() and int(families[index]) == _family_filter)
+		if target_ok and family_ok:
+			keep.append(index)
+	var filtered := page.duplicate()
+	for key in [&"expedition_handles", &"family_handles", &"source_cells",
+			&"target_cells", &"populations", &"departure_days", &"due_days",
+			&"route_costs", &"states", &"kit_missing_stock_identities"]:
+		var values: Variant = page.get(key, null)
+		if values == null:
+			continue
+		var rebuilt = values.duplicate()
+		rebuilt.clear()
+		for source_index in keep:
+			if source_index < values.size():
+				rebuilt.append(values[source_index])
+		filtered[key] = rebuilt
+	filtered["total"] = keep.size()
+	filtered["has_more"] = false
+	return filtered
 
 
 func _sync_expedition_rows(page: Dictionary) -> void:

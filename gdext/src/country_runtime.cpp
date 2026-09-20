@@ -4595,6 +4595,139 @@ Dictionary NativeCountryRuntime::reset(const String &reason) {
     return out;
 }
 
+bool NativeCountryRuntime::apply_committed_read_snapshot(
+        const RuntimeCountryPodSnapshot &snapshot) {
+    // A read replica must never partially install a malformed worker commit.
+    // Keep the previous immutable view intact when a producer publishes an
+    // incomplete fixture or an older ABI shape.
+    // research_queue_lengths / research_weights_bp are per domain (×4), matching
+    // export_pod_snapshot, PKCN, and RuntimeCountryPodAuthority validation.
+    const size_t country_count = static_cast<size_t>(snapshot.country_count);
+    const size_t technology_count = static_cast<size_t>(snapshot.technology_count);
+    const size_t cell_count = static_cast<size_t>(snapshot.cell_count);
+    const size_t domain_lanes =
+        country_count * RUNTIME_COUNTRY_RESEARCH_DOMAIN_COUNT;
+    const bool shape_ok =
+        snapshot.country_active.size() == country_count &&
+        snapshot.country_generation.size() == country_count &&
+        snapshot.country_stable_ids.size() == country_count &&
+        snapshot.country_display_names.size() == country_count &&
+        snapshot.territory_count.size() == country_count &&
+        snapshot.country_state_version.size() == country_count &&
+        snapshot.country_cash.size() == country_count &&
+        snapshot.country_goods.size() == country_count *
+            static_cast<size_t>(snapshot.good_count) &&
+        snapshot.country_technologies.size() == country_count *
+            static_cast<size_t>(snapshot.technology_words) &&
+        snapshot.country_discovered.size() == country_count *
+            static_cast<size_t>(snapshot.technology_words) &&
+        snapshot.country_pending_technologies.size() == country_count *
+            static_cast<size_t>(snapshot.technology_words) &&
+        snapshot.research_queues.size() == domain_lanes * 8U &&
+        snapshot.research_queue_lengths.size() == domain_lanes &&
+        snapshot.research_weights_bp.size() == domain_lanes &&
+        snapshot.research_progress.size() == country_count * technology_count &&
+        snapshot.research_signal_cell_offsets.size() == country_count + 1 &&
+        snapshot.research_signal_evidence_offsets.size() == country_count + 1 &&
+        snapshot.cell_country_slot.size() == cell_count &&
+        snapshot.cell_tax_policy_ids.size() == cell_count &&
+        snapshot.territory_offsets.size() == country_count + 1;
+    if (!shape_ok) return false;
+    for (size_t slot = 0; slot < country_count; ++slot) {
+        if (snapshot.research_signal_cell_offsets[slot] < 0 ||
+            snapshot.research_signal_cell_offsets[slot + 1] <
+                snapshot.research_signal_cell_offsets[slot] ||
+            static_cast<size_t>(snapshot.research_signal_cell_offsets[slot + 1]) >
+                snapshot.research_signal_cells.size() ||
+            snapshot.research_signal_evidence_offsets[slot] < 0 ||
+            snapshot.research_signal_evidence_offsets[slot + 1] <
+                snapshot.research_signal_evidence_offsets[slot] ||
+            static_cast<size_t>(snapshot.research_signal_evidence_offsets[slot + 1]) >
+                snapshot.research_signal_evidence.size()) return false;
+    }
+    _simulation_host = nullptr;
+    _sync_store_writes_forbidden = true;
+    _state_hash_cache_valid = false;
+    _generation = snapshot.generation;
+    _last_committed_day = snapshot.committed_day;
+    _last_research_day = snapshot.last_research_day;
+    _session_epoch = snapshot.session_epoch;
+    _countries.active = snapshot.country_active;
+    _countries.generation = snapshot.country_generation;
+    _countries.stable_id = snapshot.country_stable_ids;
+    _countries.display_name = snapshot.country_display_names;
+    _research_active_country_slots = snapshot.research_active_country_slots;
+    _countries.territory_count = snapshot.territory_count;
+    _countries.state_version = snapshot.country_state_version;
+    _countries.cash = snapshot.country_cash;
+    _country_goods = snapshot.country_goods;
+    _cell_country_slot = snapshot.cell_country_slot;
+    _country_cell_offsets = snapshot.territory_offsets;
+    _country_cells = snapshot.territory_cells;
+    _country_technologies = snapshot.country_technologies;
+    _country_discovered = snapshot.country_discovered;
+    _country_pending_technologies = snapshot.country_pending_technologies;
+    _country_research_signals = snapshot.country_research_signals;
+    _country_research_queues = snapshot.research_queues;
+    _country_research_queue_lengths = snapshot.research_queue_lengths;
+    _country_research_weights_bp = snapshot.research_weights_bp;
+    _country_research_daily_budgets = snapshot.research_daily_budgets;
+    _country_research_deferred_points = snapshot.research_deferred_points;
+    _country_research_progress_total = snapshot.research_progress_total;
+    _country_research_completed_total = snapshot.research_completed_total;
+    _country_research_auto_purchase = snapshot.research_auto_purchase;
+    _country_research_purchased_total = snapshot.research_purchased_total;
+    _country_research_consumed_total = snapshot.research_consumed_total;
+    _country_tax_defaults = snapshot.country_tax_defaults;
+    _country_tax_default_modes = snapshot.country_tax_default_modes;
+    _country_income_tax_overrides = snapshot.country_income_tax_overrides;
+    _country_consumption_tax_overrides = snapshot.country_consumption_tax_overrides;
+    _country_business_tax_overrides = snapshot.country_business_tax_overrides;
+    _country_import_tax_overrides = snapshot.country_import_tax_overrides;
+    _country_export_tax_overrides = snapshot.country_export_tax_overrides;
+    _country_income_tax_mode_overrides = snapshot.country_income_tax_mode_overrides;
+    _country_consumption_tax_mode_overrides = snapshot.country_consumption_tax_mode_overrides;
+    _country_business_tax_mode_overrides = snapshot.country_business_tax_mode_overrides;
+    _country_import_tax_mode_overrides = snapshot.country_import_tax_mode_overrides;
+    _country_export_tax_mode_overrides = snapshot.country_export_tax_mode_overrides;
+    _cell_tax_policy_ids = snapshot.cell_tax_policy_ids;
+    _is_water = snapshot.is_water;
+    _tax_policy_version = snapshot.generation;
+    _territory_generation = snapshot.generation;
+    _research_generation = snapshot.generation;
+    _visual_era_generation = snapshot.generation;
+    _country_research_progress.assign(snapshot.country_count, {});
+    _country_research_signal_cells.assign(snapshot.country_count, {});
+    _country_research_signal_evidence.assign(snapshot.country_count, {});
+    for (uint32_t slot = 0; slot < snapshot.country_count; ++slot) {
+        for (uint32_t tech = 0; tech < snapshot.technology_count; ++tech) {
+            const auto value = snapshot.research_progress[slot * snapshot.technology_count + tech];
+            if (value != 0) _country_research_progress[slot].emplace_back(tech, value);
+        }
+        _country_research_signal_cells[slot].assign(
+            snapshot.research_signal_cells.begin() + snapshot.research_signal_cell_offsets[slot],
+            snapshot.research_signal_cells.begin() + snapshot.research_signal_cell_offsets[slot + 1]);
+        for (int32_t i = snapshot.research_signal_evidence_offsets[slot];
+             i < snapshot.research_signal_evidence_offsets[slot + 1]; ++i) {
+            const auto &v = snapshot.research_signal_evidence[i];
+            _country_research_signal_evidence[slot].push_back(
+                {v.signal, v.count, v.first_day, v.last_day, v.first_cell});
+        }
+    }
+    _cell_tax_policies.clear();
+    for (const auto &policy : snapshot.cell_tax_policies) {
+        CellTaxPolicy out;
+        out.defaults = policy.defaults;
+        out.default_modes = policy.modes;
+        for (const auto &v : policy.overrides)
+            out.overrides.push_back({v.kind, v.item, v.rate, v.mode});
+        _cell_tax_policies.push_back(std::move(out));
+    }
+    _report = _report.duplicate();
+    _report["last_committed_day"] = snapshot.committed_day;
+    return true;
+}
+
 Dictionary NativeCountryRuntime::cell_summary(int32_t cell) const {
     if (!_bootstrapped || cell < 0 || cell >= _cell_count) return {};
     Dictionary out;
@@ -5257,6 +5390,15 @@ Dictionary NativeCountryRuntime::research_signal_snapshot(int64_t handle) const 
 bool NativeCountryRuntime::research_procurement_policy(int32_t country_slot, bool &enabled,
                                                        int64_t &cash_budget,
                                                        int64_t &remaining_points) const {
+    const auto worker = _simulation_host != nullptr &&
+        _simulation_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY)
+        ? _simulation_host->country_asset_snapshot() : nullptr;
+    const auto &_country_research_auto_purchase = worker ? worker->research_auto_purchase : this->_country_research_auto_purchase;
+    const auto &_country_research_daily_budgets = worker ? worker->research_daily_budgets : this->_country_research_daily_budgets;
+    const auto &_country_research_queues = worker ? worker->research_queues : this->_country_research_queues;
+    const auto &_country_research_queue_lengths = worker ? worker->research_queue_lengths : this->_country_research_queue_lengths;
+    const auto &_country_research_deferred_points = worker ? worker->research_deferred_points : this->_country_research_deferred_points;
+    const auto &_country_goods = worker ? worker->country_goods : this->_country_goods;
     if (country_slot < 0 || country_slot >= static_cast<int32_t>(_countries.active.size()) ||
         _countries.active[static_cast<size_t>(country_slot)] == 0) return false;
     const size_t slot = static_cast<size_t>(country_slot);
@@ -5269,8 +5411,11 @@ bool NativeCountryRuntime::research_procurement_policy(int32_t country_slot, boo
         for (int32_t position = 0; position < _country_research_queue_lengths[length_index]; ++position) {
             const int32_t tech = _country_research_queues[queue_base + position];
             remaining_points += std::max<int64_t>(
-                0, effective_research_cost(country_slot, tech) -
-                progress_for(country_slot, tech));
+                0, (worker ? country_effective_research_cost(
+                    _technology_costs[tech], worker->research_cost_factor[slot])
+                    : effective_research_cost(country_slot, tech)) -
+                (worker ? worker->research_progress[slot * worker->technology_count + tech]
+                    : progress_for(country_slot, tech)));
         }
     }
     const int64_t stock = _country_goods[
@@ -6767,7 +6912,7 @@ bool NativeCountryRuntime::valid_handle(int64_t handle) const {
 }
 
 int64_t NativeCountryRuntime::total_cash() const {
-    if (_sync_store_writes_forbidden && _simulation_host != nullptr &&
+    if (_simulation_host != nullptr &&
         _simulation_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY)) {
         const auto snapshot = _simulation_host->country_asset_snapshot();
         if (snapshot != nullptr) {
@@ -6792,6 +6937,14 @@ int64_t NativeCountryRuntime::total_cash() const {
 }
 
 int64_t NativeCountryRuntime::cash_for_slot(int32_t country_slot) const {
+    if (_simulation_host != nullptr &&
+        _simulation_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY)) {
+        const auto snapshot = _simulation_host->country_asset_snapshot();
+        if (snapshot) return country_slot >= 0 &&
+            static_cast<size_t>(country_slot) < snapshot->country_cash.size() &&
+            snapshot->country_active[country_slot] != 0
+            ? snapshot->country_cash[country_slot] : 0;
+    }
     return country_slot >= 0 &&
            country_slot < static_cast<int32_t>(_countries.active.size()) &&
            _countries.active[static_cast<size_t>(country_slot)] != 0
@@ -6800,6 +6953,10 @@ int64_t NativeCountryRuntime::cash_for_slot(int32_t country_slot) const {
 
 int64_t NativeCountryRuntime::total_good(int32_t good_id) const {
     if (good_id < 0 || good_id >= static_cast<int32_t>(_good_ids.size())) return 0;
+    const auto worker = _simulation_host != nullptr &&
+        _simulation_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY)
+        ? _simulation_host->country_asset_snapshot() : nullptr;
+    const auto &_country_goods = worker ? worker->country_goods : this->_country_goods;
     int64_t total = 0;
     for (size_t slot = 0; slot < _countries.active.size(); ++slot) {
         if (_countries.active[slot] == 0) continue;
@@ -6811,6 +6968,10 @@ int64_t NativeCountryRuntime::total_good(int32_t good_id) const {
 }
 
 int64_t NativeCountryRuntime::research_consumed_total() const {
+    const auto worker = _simulation_host != nullptr &&
+        _simulation_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY)
+        ? _simulation_host->country_asset_snapshot() : nullptr;
+    const auto &_country_research_consumed_total = worker ? worker->research_consumed_total : this->_country_research_consumed_total;
     int64_t total = 0;
     for (size_t slot = 0; slot < _countries.active.size(); ++slot) {
         if (_countries.active[slot] == 0 ||
@@ -8510,14 +8671,36 @@ int64_t NativeCountryRuntime::transfer_good_from_market(int64_t country_handle, 
 
 bool NativeCountryRuntime::copy_economy_snapshot(EconomySnapshot &out) const {
     if (!economy_available()) return false;
+    // Pin one immutable Country commit for the whole economic freeze. The
+    // legacy store stops advancing as soon as the worker owns Country.
+    const auto worker = _simulation_host != nullptr &&
+        _simulation_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY)
+        ? _simulation_host->country_asset_snapshot() : nullptr;
+    const auto &_cell_country_slot = worker ? worker->cell_country_slot : this->_cell_country_slot;
+    const auto &_country_technologies = worker ? worker->country_technologies : this->_country_technologies;
+    const auto &_country_tax_defaults = worker ? worker->country_tax_defaults : this->_country_tax_defaults;
+    const auto &_country_tax_default_modes = worker ? worker->country_tax_default_modes : this->_country_tax_default_modes;
+    const auto &_cell_tax_policy_ids = worker ? worker->cell_tax_policy_ids : this->_cell_tax_policy_ids;
+    const auto &_country_income_tax_overrides = worker ? worker->country_income_tax_overrides : this->_country_income_tax_overrides;
+    const auto &_country_income_tax_mode_overrides = worker ? worker->country_income_tax_mode_overrides : this->_country_income_tax_mode_overrides;
+    const auto &_country_consumption_tax_overrides = worker ? worker->country_consumption_tax_overrides : this->_country_consumption_tax_overrides;
+    const auto &_country_consumption_tax_mode_overrides = worker ? worker->country_consumption_tax_mode_overrides : this->_country_consumption_tax_mode_overrides;
+    const auto &_country_business_tax_overrides = worker ? worker->country_business_tax_overrides : this->_country_business_tax_overrides;
+    const auto &_country_business_tax_mode_overrides = worker ? worker->country_business_tax_mode_overrides : this->_country_business_tax_mode_overrides;
+    const auto &_country_import_tax_overrides = worker ? worker->country_import_tax_overrides : this->_country_import_tax_overrides;
+    const auto &_country_import_tax_mode_overrides = worker ? worker->country_import_tax_mode_overrides : this->_country_import_tax_mode_overrides;
+    const auto &_country_export_tax_overrides = worker ? worker->country_export_tax_overrides : this->_country_export_tax_overrides;
+    const auto &_country_export_tax_mode_overrides = worker ? worker->country_export_tax_mode_overrides : this->_country_export_tax_mode_overrides;
+
     out.cell_country_slot = _cell_country_slot;
-    out.country_handles.resize(_countries.active.size());
-    for (size_t slot = 0; slot < _countries.active.size(); ++slot) {
-        out.country_handles[slot] = _countries.active[slot] != 0
-            ? make_handle(static_cast<int32_t>(slot)) : 0;
-    }
+    const auto &active = worker ? worker->country_active : _countries.active;
+    const auto &generations = worker ? worker->country_generation : _countries.generation;
+    out.country_handles.resize(active.size());
+    for (size_t slot = 0; slot < active.size(); ++slot)
+        out.country_handles[slot] = active[slot] != 0
+            ? (uint64_t{generations[slot]} << 32u) | static_cast<uint32_t>(slot) : 0;
     out.country_technologies = _country_technologies;
-    out.country_count = static_cast<int32_t>(_countries.active.size());
+    out.country_count = static_cast<int32_t>(active.size());
     out.technology_words = _technology_words;
     out.profession_count = static_cast<int32_t>(_profession_ids.size());
     out.good_count = static_cast<int32_t>(_good_ids.size());
@@ -8560,10 +8743,22 @@ bool NativeCountryRuntime::copy_economy_snapshot(EconomySnapshot &out) const {
                 _country_export_tax_mode_overrides, out.export_tax_rates,
                 out.export_tax_modes);
     out.cell_tax_policy_ids = _cell_tax_policy_ids;
-    out.cell_tax_policies = _cell_tax_policies;
-    out.tax_policy_version = _tax_policy_version;
-    out.generation = _generation;
-    out.state_hash = compute_state_hash();
+    if (worker) {
+        out.cell_tax_policies.clear();
+        for (const auto &policy : worker->cell_tax_policies) {
+            CellTaxPolicy row;
+            row.defaults = policy.defaults;
+            row.default_modes = policy.modes;
+            for (const auto &v : policy.overrides)
+                row.overrides.push_back({v.kind, v.item, v.rate, v.mode});
+            out.cell_tax_policies.push_back(std::move(row));
+        }
+    } else {
+        out.cell_tax_policies = _cell_tax_policies;
+    }
+    out.tax_policy_version = worker ? worker->generation : _tax_policy_version;
+    out.generation = worker ? worker->generation : _generation;
+    out.state_hash = worker ? worker->state_hash : compute_state_hash();
     return true;
 }
 

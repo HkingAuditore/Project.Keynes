@@ -1,3 +1,5 @@
+#include "economy_hash.h"
+#include "economy_cost_probe.h"
 #include "runtime_economy_state.h"
 #include <cstddef>
 #include <cstring>
@@ -129,8 +131,7 @@ uint64_t mix(uint64_t hash, uint64_t value) noexcept {
 template <typename T>
 void mix_vector(uint64_t &hash, const std::vector<T> &values) noexcept {
     hash = mix(hash, values.size());
-    for (const T value : values)
-        hash = mix(hash, static_cast<uint64_t>(value));
+    hash = economy_hash_lanes<false>(hash, values);
 }
 } // namespace
 
@@ -181,6 +182,7 @@ bool RuntimeEconomyLedgerState::has_diagnostics_columns() const noexcept {
 }
 
 bool RuntimeEconomyLedgerState::valid(const char **reason) const noexcept {
+    EconomyCostProbe probe("ledger_validate", committed_day, market_stock.size());
     if (reason != nullptr) *reason = "ledger_shape_or_value";
     if (generation == 0 || committed_day < 0 || market_count < 0 || good_count < 0)
         return false;
@@ -365,6 +367,7 @@ bool RuntimeEconomyLedgerState::valid(const char **reason) const noexcept {
 }
 
 uint64_t RuntimeEconomyLedgerState::computed_hash() const noexcept {
+    EconomyCostProbe probe("ledger_hash", committed_day, market_stock.size());
     uint64_t hash = FNV_OFFSET;
     hash = mix(hash, generation);
     hash = mix(hash, static_cast<uint64_t>(committed_day));
@@ -444,11 +447,8 @@ uint64_t RuntimeEconomyLedgerState::computed_hash() const noexcept {
     hash = mix(hash, static_cast<uint64_t>(epoch_cursor.native_stage));
     hash = mix(hash, epoch_cursor.graph_completed_mask);
     hash = mix(hash, epoch_cursor.content_hash);
-    {
-        std::vector<uint8_t> cursor_wire;
-        epoch_cursor.store.append_wire(cursor_wire);
-        mix_vector(hash, cursor_wire);
-    }
+    hash = mix(hash, 1u);
+    hash = mix(hash, epoch_cursor.store.idle_marker);
     return hash;
 }
 

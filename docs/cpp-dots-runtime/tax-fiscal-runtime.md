@@ -132,6 +132,20 @@ floor(tax_base * abs(rate_basis_points) / 10000)
 
 ## 财政托管
 
+`commit_fiscal()` 在各 cell lane 完成后、Country RETURN/COLLECT 事务开始前，
+将国家托管余额一次性汇总为“未用补贴 + 本轮实收税款”（含关税 lane）。worker 热循环
+仍只写本格 lane，不写共享国家余额。不能直接沿用 epoch-open 的预留余额：正税已从居民
+扣款但尚未入库时，该旧余额可能为零，会错误触发 `country_fiscal_peer_escrow_insufficient`。
+续跑只扣减汇总后的余额，不重新汇总。所得税单独启用的百分比/定额回归见
+`income_tax_settlement_regression_test.gd`；正式玩家 ACTIVE 路径运行中调税并继续 50 个提交日
+见 `income_tax_player_regression.tscn`。
+
+Country 的实际 worker grant 决定跨域转账路由，不能只依赖主线程更新的兼容写禁令。
+Economy worker 消费财政终态后通过 `finish_worker_country_asset()` 提交 Country 侧资产
+并发布国库只读快照，再进入本轮守恒审计；只有 Economy peer 终态而没有 Country 入库
+可见性时，审计会把已扣所得税误报为货币损失。同步路径与 Country-only worker 的
+异步续跑入口保留，存档格式和税额算法不变。
+
 每个五日滚动桶开始时，经济运行时读取同一 `(generation-safe country, tax kind, cell)`
 上一批的补贴申请。交易税和营业税使用上一批申请作为权重；所得税 lane 使用
 `max(previous_request, current_minimum_living_request)`，其中当前最低生活申请可由冻结人口和

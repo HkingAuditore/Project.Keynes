@@ -1,3 +1,4 @@
+#include "economy_cost_probe.h"
 #include "runtime_economy_pod.h"
 #include "economy_hash.h"
 #include "economy_runtime.h"
@@ -389,6 +390,7 @@ RuntimeEconomyPodAuthority::RuntimeEconomyPodAuthority() {
 }
 
 uint64_t RuntimeEconomyPodAuthority::state_hash() const noexcept {
+    EconomyCostProbe probe("pod_hash", _state.committed_day, _state.market.stock.size());
     uint64_t hash = FNV_OFFSET;
     auto mix = [&hash](uint64_t value) {
         hash = economy_hash_u64(hash, value);
@@ -443,6 +445,7 @@ bool RuntimeEconomyPodAuthority::publish_owned_committed_mirror(
         error = "economy_pod_owned_mirror_state_uninitialized";
         return false;
     }
+    EconomyCostProbe probe("ledger_export", committed_day, _state.market.stock.size());
     RuntimeEconomyLedgerState &ledger = _export_ledger_scratch;
     // Stamp identity before the export so `valid()` sees a nonzero generation
     // and a committed day even on the very first publish.
@@ -489,11 +492,13 @@ bool RuntimeEconomyPodAuthority::export_committed_ledger(
         _state.population.composite_satisfaction;
     ledger.cohort_owner_employed = _state.population.owner_employed;
     ledger.cohort_employee_employed = _state.population.employee_employed;
+    const auto population_finished = std::chrono::steady_clock::now();
     ledger.market_stock = _state.market.stock;
     ledger.market_price = _state.market.price;
     ledger.market_demand_ema = _state.market.demand_ema;
     ledger.market_last_shortage_q16 = _state.market.last_shortage_q16;
     ledger.market_cell_to_market = _state.market.cell_to_market;
+    const auto market_finished = std::chrono::steady_clock::now();
     ledger.building = _state.building;
     ledger.trade_escrow = _state.trade_escrow;
     ledger.family = _state.family;
@@ -509,6 +514,7 @@ bool RuntimeEconomyPodAuthority::export_committed_ledger(
         ledger.resource = _state.committed.resource;
     if (!ledger.epoch_cursor.captured && _state.committed.epoch_cursor.captured)
         ledger.epoch_cursor = _state.committed.epoch_cursor;
+    const auto blocks_finished = std::chrono::steady_clock::now();
     const auto validation_started = std::chrono::steady_clock::now();
     const char *validation_reason = nullptr;
     if (!ledger.valid(&validation_reason)) {
@@ -518,6 +524,16 @@ bool RuntimeEconomyPodAuthority::export_committed_ledger(
     }
     const auto hash_started = std::chrono::steady_clock::now();
     ledger.recompute_hash();
+    EconomyCostProbe::record("ledger_export.population", ledger.committed_day,
+        std::chrono::duration<double, std::milli>(population_finished - copy_started).count());
+    EconomyCostProbe::record("ledger_export.market", ledger.committed_day,
+        std::chrono::duration<double, std::milli>(market_finished - population_finished).count());
+    EconomyCostProbe::record("ledger_export.blocks", ledger.committed_day,
+        std::chrono::duration<double, std::milli>(blocks_finished - market_finished).count());
+    EconomyCostProbe::record("ledger_export.validate", ledger.committed_day,
+        std::chrono::duration<double, std::milli>(hash_started - validation_started).count());
+    EconomyCostProbe::record("ledger_export.hash", ledger.committed_day,
+        elapsed_ms(hash_started));
     if (ledger.committed_day > 0 && ledger.committed_day % 100 == 0) {
         std::fprintf(stderr, "[economy-ledger-cost] day=%lld copy_ms=%.3f validate_ms=%.3f hash_ms=%.3f cohorts=%zu markets=%zu\n",
             static_cast<long long>(ledger.committed_day),

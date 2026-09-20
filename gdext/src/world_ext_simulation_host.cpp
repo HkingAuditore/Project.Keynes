@@ -106,6 +106,13 @@ static Dictionary runtime_report_to_dictionary(const RuntimeThreadReport &report
     out["ui_input_to_feedback_ms"] = report.ui_input_to_feedback_ms;
     out["visual_apply_ms"] = report.visual_apply_ms;
     out["gpu_upload_ms"] = report.gpu_upload_ms;
+    const char *timing_names[] = {"execute", "input_wait", "clock_wait", "save_build", "save_pause", "paused", "overhead", "boundary_wait"};
+    uint64_t timing_total = 0;
+    for (size_t i = 0; i < report.worker_time_us.size(); ++i) {
+        out[String("worker_time_") + timing_names[i] + "_us"] = static_cast<int64_t>(report.worker_time_us[i]);
+        timing_total += report.worker_time_us[i];
+    }
+    out["worker_time_total_us"] = static_cast<int64_t>(timing_total);
     out["main_wait_on_sim_us"] = static_cast<int64_t>(report.main_wait_on_sim_us);
     out["environment_generation"] = static_cast<int64_t>(report.environment_generation);
     out["environment_day"] = report.environment_day;
@@ -3667,3 +3674,7 @@ Array DCWorldExt::get_runtime_climate_parity_divergence() const {
 }
 
 } // namespace pk
+
+void pk::DCWorldExt::profile_runtime_save_window(bool active) {
+    if (_runtime_host) _runtime_host->profile_save_window(active);
+}

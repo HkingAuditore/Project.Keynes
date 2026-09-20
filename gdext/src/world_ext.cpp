@@ -98,6 +98,10 @@ DCWorldExt::~DCWorldExt() {
         delete static_cast<NativeEconomyRuntime *>(_economy_runtime);
         _economy_runtime = nullptr;
     }
+    if (_country_query_runtime != nullptr) {
+        delete static_cast<NativeCountryRuntime *>(_country_query_runtime);
+        _country_query_runtime = nullptr;
+    }
     if (_country_runtime != nullptr) {
         delete static_cast<NativeCountryRuntime *>(_country_runtime);
         _country_runtime = nullptr;

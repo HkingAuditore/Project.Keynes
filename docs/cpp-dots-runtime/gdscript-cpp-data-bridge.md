@@ -1,5 +1,15 @@
 # GDScript / C++ Data Bridge
 
+## Fiscal terminal visibility (2026-09-20)
+
+Country's actual worker grant routes Economy-origin asset transactions even
+before the main-thread compatibility write flag catches up. On the Economy
+worker, fiscal terminal consumption calls `finish_worker_country_asset()` to
+apply Country's terminal and publish its immutable treasury snapshot before
+Economy audits the same epoch. `total_cash()` follows the actual Country grant.
+This reuses the cohort-cash terminal boundary; no GDScript authority, save ABI,
+tax formula or cadence changes are introduced.
+
 ## Economy Phase 2–6 bridge note (2026-09-13)
 
 Production ACTIVE mask is `0xFFF` (includes ECONOMY). Main-thread
@@ -1180,6 +1190,17 @@ Price V3 的企业需求 EMA、实际供给 EMA 与成本锚同样只存在 nati
 而由 `NativeEconomyRuntime` 直接持有窄类型 `NativeCountryRuntime*`，在 sample day 复制纯数值冻结
 快照。这样避免 Dictionary/Object/string lookup 和 GDScript 往返，也避免为全国一致科技制造逐格副本。
 ## Economy recorder CSV v11
+
+### ACTIVE Country read projection
+
+When the worker owns `COUNTRY`, UI and command validation queries must use the
+latest immutable `RuntimeCountryPodSnapshot`. `DCWorldExt` keeps a presentation
+replica refreshed at the committed snapshot boundary; it is read-only and never
+feeds commands back into the worker. This covers research queues, technology
+states, treasury/tax policy, and research signals. Economy epoch capture uses
+the same worker snapshot for technology, cash, and frozen tax lanes, so worker
+commands cannot appear committed in the UI while the following economy cycle
+still reads stale synchronous Country state.
 
 CSV v11 keeps C++ as the only economy authority and adds derived diagnostics at
 the committed boundary. Building rows include owner living cost, livelihood requirement, viability

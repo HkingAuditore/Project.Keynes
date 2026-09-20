@@ -1348,6 +1348,12 @@ bool NativeEconomyRuntime::commit_fiscal(std::string &error) {
             static_cast<size_t>(country)] = unused_total;
         _fiscal_settlement_continuation.collected_by_country[
             static_cast<size_t>(country)] = collected_total;
+        // Cell workers only mutate their own tax lanes. Reconcile their
+        // withheld taxes and spent subsidies once, before Country transfers
+        // validate/debit escrow; the opening reservation is no longer its
+        // current balance.
+        _fiscal_escrow_by_country[static_cast<size_t>(country)] =
+            saturating_add(unused_total, collected_total, _saturation_count);
     }
     _fiscal_settlement_continuation.active = true;
     _fiscal_settlement_continuation.phase = 1;
@@ -1484,6 +1490,25 @@ bool NativeEconomyRuntime::run_fiscal_settlement_drain(std::string &error) {
     for (int step = 0; step < kMaxSteps && _stage == Stage::FISCAL_SETTLEMENT &&
                        !_fatal;
          ++step) {
+        // StageOps BUILDING_COMMIT → fiscal drain never enters compact
+        // run_slice_internal, so Country-origin poll must run here or a
+        // prepared fiscal request parks forever without a terminal (calendar
+        // soft-stalls into climate_input_capacity_day_barrier).
+        if (!service_country_economy_asset_peer(64, error)) {
+            const bool asset_pending =
+                error == "country_economy_asset_host_pending" ||
+                error == "country_economy_asset_results_pending" ||
+                error == "country_economy_asset_rejection_retry_pending" ||
+                error == "country_economy_asset_completion_retry_pending" ||
+                error == "country_economy_fiscal_terminal_retry_pending";
+            if (asset_pending) {
+                error = "fiscal_settlement_peer_pending";
+                _executed_substage = "country_asset_peer_pending";
+                return false;
+            }
+            fail(error.empty() ? "country_economy_fiscal_peer_failed" : error);
+            return false;
+        }
         _executed_substage = _fiscal_settlement_continuation.active
                                  ? "country_transactions"
                                  : "finalize";

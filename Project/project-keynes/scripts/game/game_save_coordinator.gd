@@ -214,6 +214,7 @@ func _save(slot_id: String, reason: String) -> Dictionary:
 	_busy = true
 	var was_paused := _world_clock.paused
 	var previous_speed := _world_clock.speed_multiplier
+	_profile_save_window(true)
 	_world_clock.pause(true)
 	var boundary: Dictionary = await _wait_for_safe_boundary()
 	if not bool(boundary.get("ok", false)):
@@ -1066,7 +1067,16 @@ func _capture_native(facade, provider_name: String) -> Dictionary:
 	return {"ok": true, "code": "ok", "message": "", "bytes": bytes}
 
 
+func _profile_save_window(active: bool) -> void:
+	if _runtime_host == null or _runtime_host.generator() == null:
+		return
+	var ext = _runtime_host.generator().get_data_core_world_ext()
+	if ext != null and ext.has_method("profile_runtime_save_window"):
+		ext.profile_runtime_save_window(active)
+
+
 func _restore_clock_mode(was_paused: bool, previous_speed: float) -> void:
+	_profile_save_window(false)
 	_world_clock.speed_multiplier = previous_speed
 	_world_clock.pause(was_paused)
 

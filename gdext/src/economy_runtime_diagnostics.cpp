@@ -131,6 +131,10 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_epoch_price_ceiling_observations);
     cap(_epoch_ceiling_business_requested); cap(_epoch_ceiling_business_unfilled);
     cap(_epoch_ceiling_research_requested); cap(_epoch_ceiling_research_delivered);
+    cap(_epoch_ceiling_research_touched);
+    cap(_person_index_building_scratch); cap(_person_index_family_scratch);
+    cap(_person_index_cohort_scratch); cap(_person_index_cell_scratch);
+    cap(_person_index_building_cursor_scratch); cap(_pending_construction_cursor_scratch);
     cap(population_store().cell_first_page); cap(population_store().page_next); cap(population_store().page_cell);
     cap(population_store().free_pages); cap(population_store().active); cap(population_store().reserved);
     cap(population_store().reservation_owner); cap(population_store().signature_id);

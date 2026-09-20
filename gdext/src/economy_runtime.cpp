@@ -1,3 +1,4 @@
+#include "economy_cost_probe.h"
 #include "economy_runtime.h"
 #include "economy_hash.h"
 
@@ -923,7 +924,9 @@ NativeEconomyRuntime::block_or_enqueue_country_worker_asset(
         const std::vector<int64_t> &good_quantities, std::string &error,
         uint64_t *request_id) {
     if (_country_runtime == nullptr ||
-        !_country_runtime->sync_store_writes_forbidden())
+        (!_country_runtime->sync_store_writes_forbidden() &&
+         !(_simulation_host != nullptr && _simulation_host->domain_is_worker_authoritative(
+             RuntimeDomainId::COUNTRY))))
         return CountryWorkerAssetRoute::NOT_APPLICABLE;
     // Gate is a bit-mask over RuntimeEconomyAssetOperation. Default is fiscal
     // only (M1); open_all_d7_operation_gates() expands to all nine ops.
@@ -2476,6 +2479,7 @@ void NativeEconomyRuntime::fill_ledger_epoch_cursor(
 }
 
 void NativeEconomyRuntime::flush_formula_owned_domain_mirrors() {
+    EconomyCostProbe probe("domain_projection", _current_day);
     if (_formula_owned == nullptr) return;
     sync_owned_building_store(_formula_owned->buildings);
     // N10: the Owned committed blocks are the day-end export source, so every
@@ -2660,12 +2664,21 @@ bool NativeEconomyRuntime::coordinate_country_fiscal_transaction(
         error = "country_fiscal_peer_request_invalid";
         return false;
     }
-    if (_country_runtime->sync_store_writes_forbidden() &&
-        _simulation_host != nullptr && transport_request_id != nullptr &&
+    if (_simulation_host != nullptr &&
+        (_country_runtime->sync_store_writes_forbidden() ||
+         _simulation_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY)) &&
+        transport_request_id != nullptr &&
         *transport_request_id != 0) {
         RuntimeEconomyAssetResult terminal;
         if (_simulation_host->country_economy_asset_terminal_result(
                 *transport_request_id, terminal)) {
+            // Peer completion has debited Economy escrow, but Country's
+            // terminal commit/read snapshot must also be visible to this
+            // worker before the same epoch's conservation audit.
+            if (_simulation_host->domain_is_worker_authoritative(RuntimeDomainId::ECONOMY) &&
+                !_simulation_host->finish_worker_country_asset(
+                    *transport_request_id, terminal, error))
+                return false;
             if (terminal.code != RuntimeEconomyAssetResultCode::COMPLETED ||
                 terminal.operation != static_cast<RuntimeEconomyAssetOperation>(operation)) {
                 error = "country_economy_asset_host_terminal_rejected";
@@ -2822,7 +2835,7 @@ bool NativeEconomyRuntime::coordinate_country_cohort_cash(
             !service_country_economy_asset_peer(RUNTIME_ECONOMY_ASSET_QUEUE_CAPACITY, error))
             return false;
         RuntimeEconomyAssetResult terminal;
-        if (!_simulation_host->finish_worker_cohort_cash(request.request_id, terminal, error))
+        if (!_simulation_host->finish_worker_country_asset(request.request_id, terminal, error))
             return false;
         committed = terminal.committed_cash;
         return true;
@@ -3323,6 +3336,9 @@ bool NativeEconomyRuntime::run_government_research_procurement(std::string &erro
             _government_research_procurement_cash = saturating_add(
                 _government_research_procurement_cash, continuation.cash,
                 _saturation_count);
+            if (_epoch_ceiling_research_requested[continuation.market] == 0 &&
+                _epoch_ceiling_research_delivered[continuation.market] == 0)
+                _epoch_ceiling_research_touched.push_back(continuation.market);
             _epoch_ceiling_research_requested[continuation.market] = saturating_add(
                 _epoch_ceiling_research_requested[continuation.market],
                 continuation.quantity, _saturation_count);
@@ -3452,6 +3468,9 @@ bool NativeEconomyRuntime::run_government_research_procurement(std::string &erro
                     GOODS_SCALE, std::max<int64_t>(1, candidate.price),
                     _saturation_count));
             if (quantity <= 0) continue;
+            if (_epoch_ceiling_research_requested[candidate.market] == 0 &&
+                _epoch_ceiling_research_delivered[candidate.market] == 0)
+                _epoch_ceiling_research_touched.push_back(candidate.market);
             _epoch_ceiling_research_requested[candidate.market] = saturating_add(
                 _epoch_ceiling_research_requested[candidate.market], quantity,
                 _saturation_count);
@@ -12319,8 +12338,23 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                 return out;
             }
             ++work_done;
-            if (_fiscal_reservation_continuation.active)
+            if (_fiscal_reservation_continuation.active) {
+                // One country per compact pulse (continuation contract). When a
+                // peer request is parked, surface pending_input so Host can
+                // same-day prepare the Economy-origin asset.
+                if (_fiscal_reservation_continuation.pending_request_id != 0) {
+                    out = compact ? compact_report() : report();
+                    out["done"] = false;
+                    out["pending_input"] = true;
+                    out["yield_reason"] = "fiscal_reserve_peer_results";
+                    out["fatal"] = false;
+                    out["fatal_reason"] = "";
+                    out["work_done"] = work_done;
+                    out["elapsed_ms"] = elapsed_ms(slice_start);
+                    return out;
+                }
                 yield_reason = "fiscal_reserve_peer_results";
+            }
         }
         if (!_fiscal_reservation_continuation.active &&
             _epoch_begin_post_fiscal_pending) {
@@ -13104,6 +13138,10 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
             }
             ++work_done;
             if (_fiscal_settlement_continuation.active) {
+                // Keep one-country-per-compact-pulse yielding (continuation
+                // contract / save barrier observability). pending_input is
+                // attached below only when a peer request is actually parked;
+                // otherwise Host must not treat this as an asset prepare wait.
                 yield_reason = "fiscal_peer_results";
                 break;
             }
@@ -13194,6 +13232,18 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
         _high_speed_production_dispatches_saved;
     out["yield_reason"] = _fatal ? "fatal" :
         (!_epoch_active ? "epoch_complete" : yield_reason);
+    // Economy→Country origin assets enqueued mid-slice must surface as
+    // pending_input so Host prepare_economy_origin_country_assets can run
+    // in the same day visit (see authority-migration D7 same-day prepare).
+    // Only park when a wire request is outstanding; zero-amount countries
+    // still yield one-per-pulse without forcing a prepare round-trip.
+    if (!_fatal &&
+        ((std::strcmp(yield_reason, "fiscal_peer_results") == 0 &&
+          _fiscal_settlement_continuation.pending_request_id != 0) ||
+         (std::strcmp(yield_reason, "fiscal_reserve_peer_results") == 0 &&
+          _fiscal_reservation_continuation.pending_request_id != 0))) {
+        out["pending_input"] = true;
+    }
     out["budget_overrun_ms"] = std::max(
         0.0, elapsed_ms(slice_start) - slice_budget_ms);
     out["command_range_used"] = command_range_used;
@@ -17273,6 +17323,12 @@ bool NativeEconomyRuntime::run_building_commit_slice(int64_t &work_done,
     if (_stage == Stage::WAIT_COMMIT) {
         _stage = Stage::BUILDING_COMMIT;
     }
+    // StageOps may re-enter after a fiscal peer park with the formula stage
+    // already advanced to FISCAL_SETTLEMENT. Keep draining that barrier here
+    // instead of reporting BUILDING_COMMIT complete and skipping into FAMILY.
+    if (_stage == Stage::FISCAL_SETTLEMENT) {
+        return run_fiscal_settlement_drain(error);
+    }
     if (_stage != Stage::BUILDING_COMMIT) {
         return true;
     }
@@ -18803,17 +18859,23 @@ bool NativeEconomyRuntime::run_building_production_drain(int64_t &work_done,
         const int32_t end = building_slice_end(_building_cell_cursor);
         for (; _building_cell_cursor < end; ++_building_cell_cursor) {
             ProductionResult prod;
+            {
+            EconomyCostProbe probe("production.compute", _current_day, 1);
             if (!run_building_production_cell(
                     cells[static_cast<size_t>(_building_cell_cursor)], prod,
                     error)) {
                 fail(error.empty() ? "building_production_failed" : error);
                 return false;
             }
+            }
+            {
+            EconomyCostProbe probe("production.merge_summary", _current_day, 1);
             merge_building_production_result(prod);
             stage_cell_summary(
                 cells[static_cast<size_t>(_building_cell_cursor)],
                 build_cell_summary(
                     cells[static_cast<size_t>(_building_cell_cursor)]));
+            }
             if (!prod.ok) {
                 fail(prod.error.empty() ? "building_production_failed"
                                         : prod.error);
@@ -18950,7 +19012,8 @@ void NativeEconomyRuntime::rebuild_person_indices() {
     _person_cohort_offsets.assign(population_store().active.size() + 1, 0);
     _person_cell_offsets.assign(static_cast<size_t>(_cell_count) + 1, 0);
     _person_building_offsets.assign(building_count() + 1, 0);
-    std::vector<int32_t> building_index(person_slots, -1);
+    auto &building_index = _person_index_building_scratch;
+    building_index.assign(person_slots, -1);
     for (int32_t i = 0; i < static_cast<int32_t>(person_slots); ++i) {
         if (persons_store().active[i] == 0) continue;
         int32_t family = -1, slot = -1;
@@ -18980,16 +19043,20 @@ void NativeEconomyRuntime::rebuild_person_indices() {
     _person_cohort_indices.assign(persons_store().active_count, -1);
     _person_cell_indices.assign(persons_store().active_count, -1);
     _person_building_indices.assign(persons_store().active_count, -1);
-    std::vector<int32_t> fc(_person_family_offsets.begin(),
+    auto &fc = _person_index_family_scratch;
+    fc.assign(_person_family_offsets.begin(),
         _person_family_offsets.empty() ? _person_family_offsets.end()
             : _person_family_offsets.end() - 1);
-    std::vector<int32_t> cc(_person_cohort_offsets.begin(),
+    auto &cc = _person_index_cohort_scratch;
+    cc.assign(_person_cohort_offsets.begin(),
         _person_cohort_offsets.empty() ? _person_cohort_offsets.end()
             : _person_cohort_offsets.end() - 1);
-    std::vector<int32_t> xc(_person_cell_offsets.begin(),
+    auto &xc = _person_index_cell_scratch;
+    xc.assign(_person_cell_offsets.begin(),
         _person_cell_offsets.empty() ? _person_cell_offsets.end()
             : _person_cell_offsets.end() - 1);
-    std::vector<int32_t> bc(_person_building_offsets.begin(),
+    auto &bc = _person_index_building_cursor_scratch;
+    bc.assign(_person_building_offsets.begin(),
         _person_building_offsets.empty() ? _person_building_offsets.end()
             : _person_building_offsets.end() - 1);
     for (int32_t i = 0; i < static_cast<int32_t>(person_slots); ++i) {
@@ -20046,6 +20113,7 @@ Dictionary NativeEconomyRuntime::production_climate_math_probe(
 }
 
 int64_t NativeEconomyRuntime::state_hash() const {
+    EconomyCostProbe probe("native_hash", _current_day, market_store().stock.size());
     uint64_t hash = 1469598103934665603ULL;
     auto mix_u64 = [&](uint64_t value) {
         hash = economy_hash_u64(hash, value);
@@ -20178,24 +20246,21 @@ int64_t NativeEconomyRuntime::state_hash() const {
         mix_u64(static_cast<uint64_t>(population_store().epoch_subsidy_received[slot]));
     }
     mix_u64(0x534f4350524553ULL); // "SOCPRES"
-    for (const uint8_t level : _cell_social_pressure_level) mix_u64(level);
+    hash = economy_hash_lanes<true>(hash, _cell_social_pressure_level);
     mix_u64(0x4249525448524553ULL); // "BIRTHRES"
-    for (int64_t residual_q32 : _birth_residual_q32)
-        mix_u64(static_cast<uint64_t>(residual_q32));
+    hash = economy_hash_lanes<true>(hash, _birth_residual_q32);
     mix_u64(0x53555050454d41ULL); // "SUPPEMA"
-    for (int32_t ema_q16 : _cell_support_ema_q16)
-        mix_u64(static_cast<uint32_t>(ema_q16));
+    hash = economy_hash_lanes<true>(hash, _cell_support_ema_q16);
     mix_u64(0x464f4f44464c4f57ULL); // "FOODFLOW"
     mix_u64(static_cast<uint32_t>(_food_flow_previous_period_days));
-    for (uint8_t valid : _cell_food_flow_valid) mix_u64(valid);
+    hash = economy_hash_lanes<true>(hash, _cell_food_flow_valid);
     for (const std::vector<int64_t> *lane : {
              &_cell_food_output_eq_previous,
              &_cell_food_input_eq_previous,
              &_cell_food_import_eq_previous,
              &_cell_food_export_eq_previous,
-             &_cell_food_access_eq_previous}) {
-        for (int64_t value : *lane) mix_u64(static_cast<uint64_t>(value));
-    }
+             &_cell_food_access_eq_previous})
+        hash = economy_hash_lanes<true>(hash, *lane);
     for (int32_t i = 0; i < static_cast<int32_t>(families_store().active.size()); ++i) {
         if (families_store().active[i] == 0) continue;
         mix_u64(0x46414d494c59ULL);
@@ -20385,10 +20450,10 @@ int64_t NativeEconomyRuntime::state_hash() const {
         mix_u64(static_cast<uint64_t>(state.attributed_spend));
     }
     for (int32_t mapping : market_store().cell_to_market) mix_u64(static_cast<uint32_t>(mapping));
-    for (int64_t value : market_store().stock) mix_u64(static_cast<uint64_t>(value));
+    hash = economy_hash_lanes<true>(hash, market_store().stock);
     for (int32_t value : market_store().price) mix_u64(static_cast<uint32_t>(value));
-    for (int64_t value : market_store().demand_ema) mix_u64(static_cast<uint64_t>(value));
-    for (uint16_t value : market_store().last_shortage_q16) mix_u64(value);
+    hash = economy_hash_lanes<true>(hash, market_store().demand_ema);
+    hash = economy_hash_lanes<true>(hash, market_store().last_shortage_q16);
     for (const Command &cmd : _pending_commands) {
         mix_u64(static_cast<uint32_t>(cmd.opcode));
         mix_u64(static_cast<uint64_t>(cmd.effective_day));
@@ -20879,6 +20944,13 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _person_stable_ids.clear();
     _family_stable_ids.clear();
     _family_surname_members.clear();
+    _epoch_ceiling_research_touched.clear();
+    _epoch_ceiling_research_requested.clear();
+    _epoch_ceiling_research_delivered.clear();
+    _person_index_building_scratch.clear();
+    _person_index_family_scratch.clear(); _person_index_cohort_scratch.clear();
+    _person_index_cell_scratch.clear(); _person_index_building_cursor_scratch.clear();
+    _pending_construction_cursor_scratch.clear();
     _person_cell_offsets.clear(); _person_cell_indices.clear();
     _person_building_offsets.clear(); _person_building_indices.clear();
     _person_need_offsets.clear(); _person_indices_dirty = true;

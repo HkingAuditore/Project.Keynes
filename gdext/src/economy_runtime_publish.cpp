@@ -1,3 +1,4 @@
+#include "economy_cost_probe.h"
 #include "economy_runtime.h"
 #include "economy_csv_recorder.h"
 #include "native_simulation_host.h"
@@ -46,6 +47,7 @@ bool NativeEconomyRuntime::publish_epoch_slice(
         int64_t &work_done, std::string &error) {
     const auto started = Clock::now();
     const PublishPhase executed_phase = _publish_phase;
+    EconomyCostProbe probe(publish_phase_name(executed_phase), _current_day);
     const int64_t work_before = work_done;
     _executed_substage = publish_phase_name(executed_phase);
     const size_t budget = static_cast<size_t>(PUBLISH_ENTRIES_PER_SLICE);
