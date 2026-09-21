@@ -387,6 +387,105 @@ int32_t NativeEconomyRuntime::select_startup_producer(
     return best_type;
 }
 
+void NativeEconomyRuntime::record_investment_material_demand(
+        int32_t cell, int32_t type_id, int64_t count, int32_t cost_factor_q16) {
+    if (cell < 0 || cell >= _cell_count || type_id < 0 ||
+        type_id >= static_cast<int32_t>(_building_types.size()) || count <= 0)
+        return;
+    const BuildingType &type = _building_types[type_id];
+    for (int32_t edge = 0; edge < type.construction_count; ++edge) {
+        const int32_t bom = type.construction_begin + edge;
+        int64_t physical = 0;
+        const int32_t good = select_startup_construction_candidate(cell, bom, physical);
+        if (!is_storable_nonmonetary_good(good) || physical <= 0) continue;
+        const int64_t required = std::max<int64_t>(1, mul_div_sat(
+            _building_construction_goods[bom].quantity,
+            std::max<int32_t>(1, cost_factor_q16), Q16_ONE, _saturation_count));
+        for (int32_t c = _building_construction_candidate_offsets[bom];
+             c < _building_construction_candidate_offsets[bom + 1]; ++c) {
+            const ConstructionCandidate &candidate = _building_construction_candidates[c];
+            if (candidate.good_id != good) continue;
+            const int32_t efficiency = std::max<int32_t>(1, candidate.efficiency_q16);
+            physical = mul_div_sat(required, Q16_ONE, efficiency, _saturation_count);
+            if (mul_div_sat(physical, efficiency, Q16_ONE, _saturation_count) < required)
+                physical = saturating_add(physical, 1, _saturation_count);
+            break;
+        }
+        const int32_t signal = ensure_market_signal_index(cell, good);
+        if (signal < 0) continue;
+        // 投资在生产 EMA 更新之后执行；只追加新出现的有资金支持的缺口，
+        // 使用 max 保证批量二分/组合重试不会反复制造需求。
+        const int64_t demand = saturating_mul(physical, count, _saturation_count);
+        const int64_t previous = _epoch_desired_business_demand[signal];
+        const int64_t increase = std::max<int64_t>(0, demand - previous);
+        _epoch_desired_business_demand[signal] = std::max(previous, demand);
+        const int64_t daily = increase / std::max(1, _epoch_days);
+        const int64_t alpha = std::min<int64_t>(Q16_ONE,
+            static_cast<int64_t>(_good_business_demand_ema_alpha_q16[good]) *
+                std::max(1, _epoch_days));
+        _market_signals.business_demand_ema[signal] = saturating_add(
+            _market_signals.business_demand_ema[signal],
+            mul_div_sat(daily, alpha, Q16_ONE, _saturation_count), _saturation_count);
+        _desired_business_demand = saturating_add(_desired_business_demand,
+            increase, _saturation_count);
+        _unfunded_business_demand = saturating_add(_unfunded_business_demand,
+            increase, _saturation_count);
+        int64_t &reserve = _construction_material_reserve[signal];
+        _construction_material_reserved = saturating_add(_construction_material_reserved,
+            std::max<int64_t>(0, demand - reserve), _saturation_count);
+        reserve = std::max(reserve, demand);
+    }
+}
+
+void NativeEconomyRuntime::reserve_first_research_construction(int32_t cell) {
+    if (!_epoch_active || epoch_research_demand_daily(
+            cell, _epoch_research_good_id) <= 0) return;
+    // 首座机构的材料必须能跨周期积累；已有科研产能后交回普通投资规则。
+    for (int32_t g = _building_cell_offsets[cell];
+         g < _building_cell_offsets[cell + 1]; ++g) {
+        const auto group = building_at(static_cast<size_t>(g));
+        if (group.count <= 0) continue;
+        const BuildingType &type = _building_types[group.type_id];
+        for (int32_t i = 0; i < type.output_count; ++i)
+            if (_building_outputs[type.output_begin + i].good_id ==
+                    _epoch_research_good_id) return;
+    }
+    const int32_t type_id = select_startup_producer(cell, _epoch_research_good_id);
+    if (type_id < 0) return;
+    const BuildingType &type = _building_types[type_id];
+    const int32_t country = _epoch_cell_country[cell];
+    const int32_t factor = country >= 0 && country < static_cast<int32_t>(
+            _epoch_country_construction_cost_factor_q16.size())
+        ? std::max<int32_t>(1, _epoch_country_construction_cost_factor_q16[country])
+        : Q16_ONE;
+    for (int32_t edge = 0; edge < type.construction_count; ++edge) {
+        const int32_t bom = type.construction_begin + edge;
+        int64_t physical = 0;
+        const int32_t good = select_startup_construction_candidate(cell, bom, physical);
+        if (!is_storable_nonmonetary_good(good)) continue;
+        const int64_t required = std::max<int64_t>(1, mul_div_sat(
+            _building_construction_goods[bom].quantity, factor, Q16_ONE,
+            _saturation_count));
+        for (int32_t c = _building_construction_candidate_offsets[bom];
+             c < _building_construction_candidate_offsets[bom + 1]; ++c) {
+            const ConstructionCandidate &candidate = _building_construction_candidates[c];
+            if (candidate.good_id != good) continue;
+            const int32_t efficiency = std::max<int32_t>(1, candidate.efficiency_q16);
+            physical = mul_div_sat(required, Q16_ONE, efficiency, _saturation_count);
+            if (mul_div_sat(physical, efficiency, Q16_ONE, _saturation_count) < required)
+                physical = saturating_add(physical, 1, _saturation_count);
+            break;
+        }
+        const int32_t signal = ensure_market_signal_index(cell, good);
+        if (signal < 0) continue;
+        int64_t &reserve = _construction_material_reserve[signal];
+        const int64_t increase = std::max<int64_t>(0, physical - reserve);
+        reserve = std::max(reserve, physical);
+        _construction_material_reserved = saturating_add(
+            _construction_material_reserved, increase, _saturation_count);
+    }
+}
+
 void NativeEconomyRuntime::prepare_startup_demand() {
     const auto started = Clock::now();
     begin_startup_demand_generation();
@@ -1987,8 +2086,16 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 mark_rejection(existing, reason);
                 if (diagnostic != nullptr) diagnostic->rejection_reason = reason;
             };
+            const bool government_research_candidate = [&]() {
+                if (epoch_research_demand_daily(cell, _epoch_research_good_id) <= 0)
+                    return false;
+                for (int32_t i = 0; i < type.output_count; ++i)
+                    if (_building_outputs[type.output_begin + i].good_id ==
+                            _epoch_research_good_id) return true;
+                return false;
+            }();
             if (greenfield && (queued_owner_loss || existing_owner_opening) &&
-                !employment_catchup) {
+                !employment_catchup && !government_research_candidate) {
                 reject(INVESTMENT_REJECTION_ACTIVE_OWNER_VACANCY);
                 continue;
             }
@@ -2452,39 +2559,28 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 reject(INVESTMENT_REJECTION_RESOURCE);
                 continue;
             }
-            const bool government_research_candidate = [&]() {
-                if (_epoch_research_good_id < 0 ||
-                    epoch_research_demand_daily(cell, _epoch_research_good_id) <= 0)
-                    return false;
-                for (int32_t output = 0; output < type.output_count; ++output)
-                    if (_building_outputs[type.output_begin + output].good_id ==
-                            _epoch_research_good_id) return true;
-                return false;
-            }();
             const int32_t country_cost_factor = country >= 0 &&
                     country < static_cast<int32_t>(
                         _epoch_country_construction_cost_factor_q16.size())
                 ? _epoch_country_construction_cost_factor_q16[country] : Q16_ONE;
             ConstructionMaterialPlan material_plan;
-            if (!plan_construction_materials(cell, type_id, 1,
-                                             country_cost_factor, material_plan) &&
-                !government_research_candidate) {
-                if (diagnostic != nullptr) {
-                    diagnostic->failed_material_group =
-                        material_plan.failed_group;
+            const bool materials_ready = plan_construction_materials(
+                cell, type_id, 1, country_cost_factor, material_plan);
+            const int32_t failed_material_group = material_plan.failed_group;
+            if (!materials_ready) {
+                // 缺货仍按完整材料账单评估利润/出资人；虚拟库存仅用于报价。
+                std::vector<int64_t> quote_stock(_good_ids.size(),
+                    std::numeric_limits<int64_t>::max() / 4);
+                if (!plan_construction_materials(cell, type_id, 1,
+                        country_cost_factor, material_plan, nullptr, &quote_stock)) {
+                    reject(INVESTMENT_REJECTION_MATERIALS);
+                    continue;
                 }
-                ++_building_investment_blocked_materials;
-                reject(INVESTMENT_REJECTION_MATERIALS);
-                continue;
-            }
-            if (government_research_candidate && material_plan.good_ids.empty()) {
-                material_plan = {};
             }
             if (diagnostic != nullptr) {
-                diagnostic->failed_material_group = -1;
+                diagnostic->failed_material_group = materials_ready ? -1 : failed_material_group;
                 diagnostic->selected_material_good_ids = material_plan.good_ids;
-                diagnostic->selected_material_quantities =
-                    material_plan.quantities;
+                diagnostic->selected_material_quantities = material_plan.quantities;
             }
             const int64_t construction_cost = material_plan.total_cost;
             // Capital-feasibility gate (see precomputation above): without an
@@ -3090,6 +3186,13 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     }
                     continue;
                 }
+                if (!materials_ready) {
+                    ++_building_investment_blocked_materials;
+                    record_investment_material_demand(cell, type_id, 1,
+                        country_cost_factor);
+                    reject(INVESTMENT_REJECTION_MATERIALS);
+                    continue;
+                }
                 Candidate candidate;
                 candidate.type = type_id;
                 candidate.target_signature = target_signature;
@@ -3452,7 +3555,11 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
             }
             if (material_lo < cap) {
                 if (cost_envelope_limited) ++_building_investment_capital_limited;
-                else ++_building_investment_material_limited;
+                else {
+                    ++_building_investment_material_limited;
+                    record_investment_material_demand(cell, candidate.type,
+                        1, investment_cost_factor);
+                }
             }
             cap = std::min(cap, material_lo);
             if (_resource_safe_harvest_q16 > 0) {

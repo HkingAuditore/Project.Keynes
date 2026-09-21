@@ -208,6 +208,7 @@ func show_technology(index: int, definition: Dictionary, state: int, fraction: f
 func update_progress(state: int, fraction: float, definition: Dictionary) -> void:
 	if _index < 0 or _detail_block == null or not _detail_block.visible:
 		return
+	var previous_state := _state
 	_state = state
 	var is_application := _is_application(definition)
 	_state_label.text = _application_state_name(state) if is_application \
@@ -217,6 +218,9 @@ func update_progress(state: int, fraction: float, definition: Dictionary) -> voi
 	if not is_application:
 		_gauge.set_data("研究进度", clampf(fraction, 0.0, 1.0),
 			_progress_caption(definition, fraction, state), _accent)
+	# Clear optimistic "次日生效" once the authoritative state actually moves.
+	if _submitted and state != previous_state:
+		_submitted = false
 	if not _submitted and not is_application:
 		_apply_action(state)
 	elif is_application:

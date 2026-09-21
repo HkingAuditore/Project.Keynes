@@ -8,6 +8,11 @@
 `finish_worker_country_asset()` 先提交 Country 并刷新只读余额，再进入 Economy 审计，
 且转账与总现金查询均按实际 Country grant 选路。该项是财政回归证据，不替代下文其他迁移验收条件。
 
+2026-09-21 财政 continuation 修复：`FiscalSettlementContinuation` 持久保留当前国家的
+RETURN 完成状态。若 RETURN 已收到终态而 COLLECT 在下一 pulse 才完成，续跑直接进入
+COLLECT，不会复用旧 request id 重放 RETURN；混合消费补贴与所得税 ACTIVE 场景已连续
+提交 50 日并保持 `fatal=false`、三项守恒误差为零。
+
 > **2026-09-19 生产路径核对：尚未完成迁移验收。** 当前玩家路径实际为 StageOps writer，
 > 玩家入口已恢复自动 POD_ACTIVE；显式开启的 90 秒 soak 已验证 `owned_state`、切换一次、零 worker fault。
 > 两轮 90 秒严格 50 倍速配置分别测得 44.98、36.25 权威日/秒，均未通过 49 日/秒门槛；

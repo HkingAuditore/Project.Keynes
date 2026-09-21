@@ -221,6 +221,9 @@ func _apply_model(now_msec: int) -> void:
 	var collected := _sum_i64(fiscal.get("collected", PackedInt64Array()))
 	var subsidy := _sum_i64(fiscal.get("subsidy_paid", PackedInt64Array()))
 	var requested := _sum_i64(fiscal.get("subsidy_requested", PackedInt64Array()))
+	var reserved := _sum_i64(fiscal.get("subsidy_reserved", PackedInt64Array()))
+	var cumulative_subsidy := _sum_i64(fiscal.get(
+		"cumulative_subsidy_paid", PackedInt64Array()))
 	var fulfillment := 1.0 if requested <= 0 else float(subsidy) / float(requested)
 	_cash_card.set_data("国库现金",
 		String(treasury.get("cash_text", "—")) if available else "—",
@@ -229,10 +232,11 @@ func _apply_model(now_msec: int) -> void:
 		UITokens.BRASS_HIGHLIGHT, "", "tax.section")
 	var subsidy_gap := maxi(0, requested - subsidy)
 	_subsidy_card.set_data("补贴缺口", _money(subsidy_gap),
-		"实付 %s" % _money(subsidy),
+		"本批实付 %s · 累计实付 %s" % [_money(subsidy), _money(cumulative_subsidy)],
 		UITokens.CLIMATE if subsidy_gap <= 0 else UITokens.RISK, "", "tax.income")
 	_fulfillment_card.set_data("补贴兑现率", "%.1f%%" % (fulfillment * 100.0),
-		"首次启用时预算建立中" if requested > 0 and subsidy == 0 else "昨日申请",
+		("本批未预留，等待国库预算" if requested > 0 and subsidy == 0 and reserved == 0
+		 else "昨日申请 · 预留 %s" % _money(reserved)),
 		UITokens.ACCENT, "", "tax.default")
 	_country_label.text = String(_model.get("country_name", ""))
 	var day := int(_model.get("current_day", -1))
@@ -684,6 +688,9 @@ func _apply_default_summary_cards() -> void:
 	var collected := _sum_i64(fiscal.get("collected", PackedInt64Array()))
 	var subsidy := _sum_i64(fiscal.get("subsidy_paid", PackedInt64Array()))
 	var requested := _sum_i64(fiscal.get("subsidy_requested", PackedInt64Array()))
+	var reserved := _sum_i64(fiscal.get("subsidy_reserved", PackedInt64Array()))
+	var cumulative_subsidy := _sum_i64(fiscal.get(
+		"cumulative_subsidy_paid", PackedInt64Array()))
 	var fulfillment := 1.0 if requested <= 0 else float(subsidy) / float(requested)
 	_cash_card.set_data("国库现金",
 		String(treasury.get("cash_text", "—")) if available else "—",
@@ -692,10 +699,11 @@ func _apply_default_summary_cards() -> void:
 		UITokens.BRASS_HIGHLIGHT, "", "tax.section")
 	var subsidy_gap := maxi(0, requested - subsidy)
 	_subsidy_card.set_data("补贴缺口", _money(subsidy_gap),
-		"实付 %s" % _money(subsidy),
+		"本批实付 %s · 累计实付 %s" % [_money(subsidy), _money(cumulative_subsidy)],
 		UITokens.CLIMATE if subsidy_gap <= 0 else UITokens.RISK, "", "tax.income")
 	_fulfillment_card.set_data("补贴兑现率", "%.1f%%" % (fulfillment * 100.0),
-		"首次启用时预算建立中" if requested > 0 and subsidy == 0 else "昨日申请",
+		("本批未预留，等待国库预算" if requested > 0 and subsidy == 0 and reserved == 0
+		 else "昨日申请 · 预留 %s" % _money(reserved)),
 		UITokens.ACCENT, "", "tax.default")
 
 
@@ -1000,6 +1008,7 @@ func _refresh_treasury_insights() -> void:
 	var trade_summary: Dictionary = _model.get("trade_summary", {})
 	var subsidy := _sum_i64(fiscal.get("subsidy_paid", PackedInt64Array()))
 	var requested := _sum_i64(fiscal.get("subsidy_requested", PackedInt64Array()))
+	var reserved := _sum_i64(fiscal.get("subsidy_reserved", PackedInt64Array()))
 	var gap := maxi(0, requested - subsidy)
 	var imports := int(trade_summary.get("previous_import_base", 0))
 	var exports := int(trade_summary.get("previous_export_base", 0))
@@ -1008,7 +1017,8 @@ func _refresh_treasury_insights() -> void:
 	if gap > 0:
 		items.append({
 			"id": "subsidy_gap",
-			"text": "补贴缺口 %s，国库现金可能不够兑现。" % _money(gap),
+			"text": ("补贴申请已记账 %s；本批未预留，后续按国库可用预算兑现。" % _money(gap)
+				if reserved <= 0 else "补贴缺口 %s，当前预留不足。" % _money(gap)),
 			"accent": UITokens.RISK,
 			"icon": "tax.income",
 		})

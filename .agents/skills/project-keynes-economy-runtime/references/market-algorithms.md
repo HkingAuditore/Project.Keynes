@@ -218,3 +218,37 @@ new owner's projected income must cover 110% of living cost and exceed source in
 Per-capita source funds must cover local-price construction goods plus 30 living-cost days. Move one
 person with proportional funds, then use the ordinary BUILD transfer and construction-goods sink.
 Do not apply this price-driven path to collectors or services.
+
+## 普通投资建材需求（2026-09-21）
+
+普通自动投资缺料时，先以虚拟库存计算完整建材报价，仅用于利润、生计、回本期与
+出资人可行性检查，不扣库存或创建建筑。通过这些检查后才发布一座建筑的建材需求；
+批量分配因材料不足收窄时同样只发布一座的有界补货目标，不把批量试算次数作为需求。
+材料使用已解锁候选、国家建设成本系数和转换效率。每个 cell/good 的候选报价采用
+max 包络，与当轮既有需求合并，只对增量更新 desired/unfunded 汇总、建材保留量。
+
+投资位于 BUILDING_COMMIT，晚于生产端商业 EMA 更新，因此增量按实际 epoch 天数
+转成日需求，按既有商业 EMA alpha 追加到持久商业需求。下一周期价格、采购目标及
+贸易读取该信号；未成交不计入 funded demand，也不创造现金或商品。报价只是有资金
+来源的购买意愿，不等于已成交订单。多个替代投资候选不逐项相加，当前采用保守包络。
+
+回归：`building_runtime_test.gd -- --materials-only`，普通打制石器工坊缺原石：
+desired demand、business EMA、merchant target、价格响应、试算需求上界及守恒；
+无法负担的建设不应在既有维护需求之外增加投资需求。科研专项仍用 `--research-only`。
+
+## Employment wage bids and owner-to-employee mobility
+
+Adaptive wages use the reference/local wage anchor plus a vacancy bid. The bid
+uses vacancy share and the larger of realized margin or a potential margin
+computed from demand-backed/monetary daily revenue minus inputs and reference
+wages. Monetary output keeps a cold-start opportunity signal alive when a role
+has no employees yet. The wage target remains bounded by sustainable revenue
+and the configured daily rise/fall damping.
+
+When a role is both severely understaffed and materially profitable, its
+cross-profession hurdle is reduced. If the unemployed pool is empty, an owner
+cohort can move into the employee vacancy of a higher-opportunity building;
+the source and target groups are used at most once per employment period and
+the last merchant remains protected. The transfer always calls
+`move_cohort_population()` and updates role/cohort counters so population,
+money, and goods audits remain zero.

@@ -2125,6 +2125,8 @@ Dictionary NativeEconomyRuntime::report() const {
         _fiscal_settlement_continuation.active;
     out["fiscal_settlement_continuation_phase"] =
         _fiscal_settlement_continuation.phase;
+    out["fiscal_settlement_return_completed"] =
+        _fiscal_settlement_continuation.return_completed;
     out["fiscal_settlement_country_cursor"] =
         _fiscal_settlement_continuation.country_cursor;
     out["fiscal_settlement_country_count"] =

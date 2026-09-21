@@ -337,6 +337,7 @@ public:
     godot::Dictionary poll_runtime_receipts(int max_items = 128);
     godot::Dictionary set_runtime_qos_threaded(bool interactive);
     godot::Dictionary poll_runtime_commit(int64_t after_generation);
+    godot::Dictionary flush_runtime_economy_resource_writeback();
     godot::Dictionary consume_runtime_visual_patch(int64_t generation, int family,
                                                     int cursor, int max_items);
     godot::Dictionary request_runtime_save(int64_t request_id);

@@ -240,3 +240,13 @@ Current versions:
 
 Restore PKCN before PKEC. Reject old PKCN/PKEF/PKTR schemas and any related catalog identity change
 with `catalog_hash_mismatch`. Do not silently migrate IDs or populate defaults during restore.
+
+## First research construction reserve
+
+A cash-backed frozen research demand reserves one selected unlocked institution's construction
+bundle in the existing construction-material lane until local research capacity exists. Rebuild
+from current epoch policy; disabled/empty procurement releases the extra reserve. Research
+investment must report material rejection (12) rather than bypassing the material plan and quoting
+zero construction cost. Unrelated owner vacancies do not veto this research greenfield review;
+normal sponsor, livelihood, population and batch constraints still apply. Regression:
+`building_runtime_test.gd -- --research-only`.

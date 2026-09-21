@@ -509,14 +509,27 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
             // the inventory target is intentional: a new recipe must not create
             // its own merchant demand merely by advertising nameplate output.
             int64_t affordable_ceiling = 0;
+            // Keep a positive opportunity signal for a cold-start vacancy.  A
+            // producer can have no realized margin yet simply because its
+            // employee lane is empty; for monetary outputs the issue value is
+            // already a committed daily receipt and is therefore a valid
+            // counterfactual profit signal.
+            int64_t profit_signal_q16 = std::clamp<int64_t>(
+                group.realized_profit_margin_q16, 0, Q16_ONE);
             if (_wage_income_cap_ratio_q16 > 0) {
                 int64_t group_employee_slots = 0;
+                int64_t reference_wage_pool = 0;
                 for (int32_t rr = 0; rr < type.employee_count; ++rr) {
                     const JobRole &rrole =
                         _building_employee_roles[type.employee_begin + rr];
+                    const int64_t role_slots = saturating_mul(
+                        group.count, rrole.slots_per_building, _saturation_count);
                     group_employee_slots = saturating_add(group_employee_slots,
-                        saturating_mul(group.count, rrole.slots_per_building,
-                                       _saturation_count), _saturation_count);
+                        role_slots, _saturation_count);
+                    reference_wage_pool = saturating_add(reference_wage_pool,
+                        saturating_mul(role_slots,
+                            std::max<int64_t>(0, rrole.reference_wage_per_day),
+                            _saturation_count), _saturation_count);
                 }
                 int64_t daily_market_revenue_per_building = 0;
                 int64_t daily_issue_revenue_per_building = 0;
@@ -616,6 +629,15 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
                     const int64_t daily_wage_pool = std::max<int64_t>(
                         0, saturating_sub(operating_budget, daily_inputs,
                                           _saturation_count));
+                    const int64_t potential_profit = std::max<int64_t>(0,
+                        saturating_sub(daily_revenue,
+                            saturating_add(daily_inputs, reference_wage_pool,
+                                _saturation_count), _saturation_count));
+                    const int64_t potential_margin_q16 = mul_div_sat(
+                        potential_profit, Q16_ONE, daily_revenue,
+                        _saturation_count);
+                    profit_signal_q16 = std::max(profit_signal_q16,
+                        std::clamp<int64_t>(potential_margin_q16, 0, Q16_ONE));
                     const int64_t sustainable_per_employee =
                         daily_wage_pool / group_employee_slots;
                     affordable_ceiling = mul_div_sat(sustainable_per_employee,
@@ -627,6 +649,25 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
                 if (role.profession_id != profession) continue;
                 const int32_t index = group.employee_fill_begin + r;
                 int64_t floor = std::max(general_cost, role_cost);
+                bool monetary_output = false;
+                for (int32_t output_index = 0;
+                     output_index < type.output_count; ++output_index) {
+                    const int32_t good_id = _building_outputs[
+                        type.output_begin + output_index].good_id;
+                    if (good_id >= 0 && good_id < static_cast<int32_t>(
+                            _good_monetary_issue_values.size()) &&
+                        _good_monetary_issue_values[good_id] > 0) {
+                        monetary_output = true;
+                        break;
+                    }
+                }
+                // A bullion receipt is a committed cash flow.  Its wage bid
+                // must clear the worker's reservation wage; otherwise the
+                // mine can retain owners while every miner vacancy remains
+                // unattractive and minting stops after the first cycle.
+                if (monetary_output && affordable_ceiling > 0)
+                    affordable_ceiling = std::max(affordable_ceiling,
+                        saturating_mul(floor, 2, _saturation_count));
                 // Clamp the living-cost floor to the employer's ability to pay,
                 // but never below the configured reference wage (so a viable
                 // building still offers at least its nominal wage).
@@ -640,6 +681,35 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
                 int64_t next = role.reference_wage_per_day;
                 if (role.wage_policy == 2) {
                     int64_t desired = std::max(floor, local_average);
+                    // A vacancy is a market signal in its own right.  The old
+                    // target followed only the profession-wide wage EMA, so a
+                    // newly profitable but understaffed mine could keep posting
+                    // its cold-start wage forever.  Bid part of the affordable
+                    // wage pool up in proportion to the unfilled share and the
+                    // realized margin; this remains bounded by the employer's
+                    // sustainable ceiling below.
+                    const int64_t role_slots = std::max<int64_t>(1,
+                        saturating_mul(group.count, role.slots_per_building,
+                                       _saturation_count));
+                    const int64_t role_filled = index >= 0 &&
+                            index < static_cast<int32_t>(_building_employee_filled.size())
+                        ? std::clamp<int64_t>(_building_employee_filled[index], 0,
+                            role_slots) : 0;
+                    const int64_t vacancy_q16 = mul_div_sat(
+                        role_slots - role_filled, Q16_ONE, role_slots,
+                        _saturation_count);
+                    const int64_t profit_q16 = profit_signal_q16;
+                    if (affordable_ceiling > 0 && vacancy_q16 > 0 && profit_q16 > 0) {
+                        const int64_t shortage_bid = mul_div_sat(
+                            affordable_ceiling, vacancy_q16, Q16_ONE,
+                            _saturation_count);
+                        const int64_t profit_bid = mul_div_sat(
+                            shortage_bid, profit_q16, Q16_ONE,
+                            _saturation_count);
+                        desired = std::max(desired,
+                            saturating_add(role.reference_wage_per_day,
+                                profit_bid / 2, _saturation_count));
+                    }
                     // Damping also caps the target the wage chases toward, so an
                     // inflated local-average signal cannot drag wages past the
                     // employer's affordability either.
@@ -791,7 +861,11 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         // A new or currently empty role has no role-specific observation. Use
         // its funded absorption forecast directly; do not assume the contract
         // is collectible and do not inherit another employer's arrears.
-        if (due <= 0) return forecast_expected;
+        // An empty role has no realized payroll ratio yet.  Use the posted
+        // contract for every mobility lane (including owner -> employee),
+        // otherwise a zero forecast pay ratio makes a profitable vacancy look
+        // like a zero-income job and prevents cross-profession entry.
+        if (due <= 0) return std::max(forecast_expected, contract);
         const int64_t fulfillment_q16 = due > 0
             ? std::clamp<int64_t>(mul_div_sat(
                 paid, Q16_ONE, due, _saturation_count), 0, Q16_ONE)
@@ -921,7 +995,19 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 group.last_sold > 0 || group.last_market_receipt > 0 ||
                 group.last_in_kind_livelihood_value > 0 ||
                 group.last_input_cost > 0 || group.last_base_wages_paid > 0;
-            if (!has_settled) return 0;
+            if (!has_settled) {
+                const BuildingType &type = _building_types[group.type_id];
+                bool has_monetary_output = false;
+                for (int32_t output_index = 0; output_index < type.output_count; ++output_index) {
+                    const int32_t good_id = _building_outputs[type.output_begin + output_index].good_id;
+                    if (good_id >= 0 && good_id < static_cast<int32_t>(_good_monetary_issue_values.size()) &&
+                        _good_monetary_issue_values[good_id] > 0) {
+                        has_monetary_output = true;
+                        break;
+                    }
+                }
+                if (!has_monetary_output || group.last_expected_revenue <= 0) return 0;
+            }
             return projected_owner_income_per_day(group, sat);
         };
 
@@ -983,6 +1069,113 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                     _investment_merchant_transition_min_improvement_q16);
             }
             return hurdle;
+        };
+        auto vacancy_profit_signal_q16 = [&](BuildingGroupConstRef group)
+                -> int64_t {
+            int64_t signal = std::clamp<int64_t>(
+                group.realized_profit_margin_q16, 0, Q16_ONE);
+            if (group.type_id < 0 || group.type_id >= static_cast<int32_t>(
+                    _building_types.size()) || group.count <= 0)
+                return signal;
+            const BuildingType &type = _building_types[group.type_id];
+            int64_t potential_revenue = 0;
+            for (int32_t output_index = 0;
+                 output_index < type.output_count; ++output_index) {
+                const GoodAmount &output = _building_outputs[
+                    type.output_begin + output_index];
+                if (output.good_id < 0 || output.good_id >= static_cast<int32_t>(
+                        _good_monetary_issue_values.size())) continue;
+                const int64_t issue_value =
+                    _good_monetary_issue_values[output.good_id];
+                if (issue_value <= 0) continue;
+                const int64_t quantity = effective_building_output_quantity(
+                    group, output.good_id, output.quantity,
+                    std::clamp<int64_t>(group.planned_utilization_q16,
+                        0, Q16_ONE), 1, _saturation_count);
+                int64_t executable_quantity = quantity;
+                if (executable_quantity <= 0 && issue_value > 0) {
+                    // A collector with no employee has zero realized capacity,
+                    // but its bullion receipt is still a valid counterfactual
+                    // bid for the vacant owner/employee lane.
+                    executable_quantity = mul_div_sat(
+                        std::max<int64_t>(0, output.quantity),
+                        std::clamp<int64_t>(group.planned_utilization_q16,
+                            0, Q16_ONE), Q16_ONE, _saturation_count);
+                }
+                executable_quantity = saturating_mul(
+                    executable_quantity, std::max<int64_t>(1, group.count),
+                    _saturation_count);
+                potential_revenue = saturating_add(potential_revenue,
+                    mul_div_sat(executable_quantity, issue_value, GOODS_SCALE,
+                        _saturation_count), _saturation_count);
+            }
+            if (potential_revenue <= 0) return signal;
+            int64_t reference_wage_pool = 0;
+            for (int32_t role_offset = 0;
+                 role_offset < type.employee_count; ++role_offset) {
+                const JobRole &role = _building_employee_roles[
+                    type.employee_begin + role_offset];
+                const int64_t slots = saturating_mul(
+                    group.count, role.slots_per_building, _saturation_count);
+                reference_wage_pool = saturating_add(reference_wage_pool,
+                    saturating_mul(slots,
+                        std::max<int64_t>(0, role.reference_wage_per_day),
+                        _saturation_count), _saturation_count);
+            }
+            const int64_t input_cost = saturating_mul(
+                std::max<int64_t>(0, group.sample_unit_input_cost),
+                group.count, _saturation_count);
+            const int64_t potential_profit = std::max<int64_t>(0,
+                saturating_sub(potential_revenue,
+                    saturating_add(input_cost, reference_wage_pool,
+                        _saturation_count), _saturation_count));
+            const int64_t potential_margin = mul_div_sat(
+                potential_profit, Q16_ONE, potential_revenue,
+                _saturation_count);
+            return std::max(signal, std::clamp<int64_t>(
+                potential_margin, 0, Q16_ONE));
+        };
+        auto vacancy_adjusted_hurdle_q16 = [&](int64_t base_hurdle,
+                                               int32_t group_index,
+                                               int32_t fill_index) -> int64_t {
+            if (group_index < 0 || group_index >= static_cast<int32_t>(
+                    buildings_store().group_units.size()))
+                return base_hurdle;
+            const auto group = building_at(static_cast<size_t>(group_index));
+            const BuildingType &type = _building_types[group.type_id];
+            int64_t slots = 0;
+            int64_t filled = 0;
+            if (fill_index < 0) {
+                slots = saturating_mul(group.count, type.owner_slots_per_building,
+                    _saturation_count);
+                filled = group.filled_owner;
+            } else {
+                if (fill_index < group.employee_fill_begin ||
+                        fill_index >= group.employee_fill_begin + type.employee_count ||
+                        fill_index >= static_cast<int32_t>(
+                            _building_employee_filled.size()))
+                    return base_hurdle;
+                const JobRole &role = _building_employee_roles[
+                    type.employee_begin + (fill_index - group.employee_fill_begin)];
+                slots = saturating_mul(group.count, role.slots_per_building,
+                    _saturation_count);
+                filled = _building_employee_filled[fill_index];
+            }
+            slots = std::max<int64_t>(1, slots);
+            filled = std::clamp<int64_t>(filled, 0, slots);
+            const int64_t vacancy_q16 = mul_div_sat(
+                slots - filled, Q16_ONE, slots, _saturation_count);
+            const int64_t profit_q16 = vacancy_profit_signal_q16(group);
+            // High-margin, deeply understaffed jobs are allowed to poach
+            // earlier.  The relief is capped so a bad job cannot attract labor
+            // merely by advertising a large vacancy.
+            const int64_t relief_q16 = mul_div_sat(
+                vacancy_q16, profit_q16, Q16_ONE, _saturation_count);
+            const int64_t relief_cap = Q16_ONE / 2;
+            const int64_t effective_relief = std::min(relief_cap, relief_q16);
+            return std::max<int64_t>(1, mul_div_sat(
+                base_hurdle, Q16_ONE - effective_relief, Q16_ONE,
+                _saturation_count));
         };
         auto improvement_q16 = [&](int64_t current_disposable,
                                    int64_t target_disposable) -> int64_t {
@@ -2245,9 +2438,10 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                             _saturation_count) : target_cost;
                     int64_t &budget = unemployed_budget_by_eth[
                         static_cast<size_t>(eth)];
+                    const int64_t hiring_hurdle = vacancy_adjusted_hurdle_q16(
+                        transition_hurdle_q16(source_profession, p), g, fi);
                     const bool eligible = expected_wage >= survival_floor &&
-                        improvement >= transition_hurdle_q16(
-                            source_profession, p);
+                        improvement >= hiring_hurdle;
                     const int64_t proportional = eligible
                         ? candidate_allocation(eth, g, r, target_sig) : 0;
                     const int64_t take = std::min({need, avail, proportional,
@@ -2374,8 +2568,10 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                         continue;
                     const int64_t improvement = improvement_q16(
                         source.disposable_income, target.disposable_income);
-                    if (improvement < transition_hurdle_q16(
-                            source.profession, target.profession)) {
+                    if (improvement < vacancy_adjusted_hurdle_q16(
+                            transition_hurdle_q16(source.profession,
+                                target.profession), target.group,
+                            target.fill_index)) {
                         ++_building_employee_job_hurdle_rejections;
                         continue;
                     }
@@ -2629,6 +2825,189 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             if (a.group != b.group) return a.group < b.group;
                              return a.role < b.role;
                          });
+
+        // A cell can have no unemployed people while still having a profitable
+        // employee vacancy.  Let one incumbent owner from a lower-opportunity
+        // lot cross that boundary.  This is deliberately a separate lane from
+        // owner↔owner reallocation: it preserves one owner on each source lot,
+        // moves at most one person per source/target group in this period, and
+        // uses the same audited cohort transfer as every other profession move.
+        if (mobility_period_q16 > 0 && !employee_targets.empty() &&
+            !owner_job_sources.empty()) {
+            for (const EmployeeRoleOpportunity &target : employee_targets) {
+                const int32_t target_group_index = target.group;
+                if (target_group_index < first || target_group_index >= last ||
+                    owner_job_group_used[target_group_index - first] != 0)
+                    continue;
+                auto target_group = building_at(static_cast<size_t>(
+                    target_group_index));
+                if (target_group.cell != cell || target_group.count <= 0 ||
+                    target_group.operating_state == 1 ||
+                    !building_available(cell, target_group.type_id, true))
+                    continue;
+                const BuildingType &target_type = _building_types[
+                    target_group.type_id];
+                const int32_t target_role_offset = target.fill_index -
+                    target_group.employee_fill_begin;
+                if (target_role_offset < 0 || target_role_offset >=
+                        target_type.employee_count)
+                    continue;
+                const JobRole &target_role = _building_employee_roles[
+                    target_type.employee_begin + target_role_offset];
+                const int64_t target_need = planned_role_demand(
+                    target_group, target_role, target.fill_index);
+                if (_building_employee_filled[target.fill_index] >= target_need)
+                    continue;
+                const int64_t target_slots = std::max<int64_t>(1,
+                    saturating_mul(target_group.count,
+                        target_role.slots_per_building, _saturation_count));
+                const int64_t target_filled = std::clamp<int64_t>(
+                    _building_employee_filled[target.fill_index], 0,
+                    target_slots);
+                const int64_t target_vacancy_q16 = mul_div_sat(
+                    target_slots - target_filled, Q16_ONE, target_slots,
+                    _saturation_count);
+                // This lane is reserved for a real labor shortage with a
+                // material opportunity. Ordinary vacancies continue through
+                // unemployed hiring and employee↔employee mobility.
+                if (target_vacancy_q16 < Q16_ONE / 2 ||
+                    vacancy_profit_signal_q16(target_group) < Q16_ONE / 4)
+                    continue;
+
+                int32_t source_group_index = -1;
+                int32_t source_slot = -1;
+                int32_t source_target_signature = -1;
+                for (size_t source_i = 0; source_i < owner_job_sources.size();
+                     ++source_i) {
+                    const int32_t candidate = owner_job_sources[source_i];
+                    if (candidate == target_group_index ||
+                        owner_job_group_used[candidate - first] != 0)
+                        continue;
+                    const auto source_group = building_at(static_cast<size_t>(
+                        candidate));
+                    const int32_t source_profession =
+                        _signatures[source_group.owner_signature_id].profession_id;
+                    const int64_t source_income =
+                        projected_owner_income[candidate - first];
+                    int32_t candidate_target_signature = -1;
+                    int32_t candidate_source_slot = -1;
+                    for (int32_t source_eth = 0; source_eth < n_eth;
+                         ++source_eth) {
+                        const int32_t source_signature =
+                            signature_for_profession_ethnicity(
+                                source_profession, source_eth);
+                        if (source_signature < 0) continue;
+                        const int32_t slot = population_store().find_signature(
+                            cell, static_cast<uint32_t>(source_signature));
+                        if (slot < 0 || population_store().owner_employed[slot] <= 0)
+                            continue;
+                        const int32_t target_signature =
+                            signature_for_profession_ethnicity(
+                                target.profession, source_eth);
+                        if (target_signature < 0) continue;
+                        candidate_source_slot = slot;
+                        candidate_target_signature = target_signature;
+                        break;
+                    }
+                    if (candidate_source_slot < 0 ||
+                        candidate_target_signature < 0)
+                        continue;
+                    const int64_t improvement = improvement_q16(
+                        source_income, target.disposable_income);
+                    const int64_t hurdle = vacancy_adjusted_hurdle_q16(
+                        transition_hurdle_q16(source_profession,
+                            target.profession), target_group_index,
+                        target.fill_index);
+                    bool monetary_target = false;
+                    const BuildingType &target_type_for_bid = _building_types[
+                        target_group.type_id];
+                    for (int32_t output_index = 0;
+                         output_index < target_type_for_bid.output_count;
+                         ++output_index) {
+                        const int32_t good_id = _building_outputs[
+                            target_type_for_bid.output_begin + output_index].good_id;
+                        if (good_id >= 0 && good_id < static_cast<int32_t>(
+                                _good_monetary_issue_values.size()) &&
+                            _good_monetary_issue_values[good_id] > 0) {
+                            monetary_target = true;
+                            break;
+                        }
+                    }
+                    const bool severe_monetary_vacancy = monetary_target &&
+                        target_vacancy_q16 >= Q16_ONE / 2 &&
+                        vacancy_profit_signal_q16(target_group) >= Q16_ONE / 4;
+                    if (!severe_monetary_vacancy && improvement < hurdle) continue;
+                    if (source_profession == _merchant_profession_id &&
+                        local_merchant_population <= 1) {
+                        ++_last_merchant_protected_rejects;
+                        continue;
+                    }
+                    source_group_index = candidate;
+                    source_slot = candidate_source_slot;
+                    source_target_signature = candidate_target_signature;
+                    break;
+                }
+                if (source_group_index < 0) continue;
+
+                auto source_group = building_at(static_cast<size_t>(
+                    source_group_index));
+                const bool source_is_knowledge = is_knowledge_group(source_group);
+                const int32_t source_profession =
+                    _signatures[source_group.owner_signature_id].profession_id;
+                const bool profession_change = source_profession !=
+                    target.profession;
+                if (profession_change) {
+                    bool source_drained = false;
+                    const uint64_t preferred_family =
+                        preferred_family_for_cohort(source_slot, 1, 0,
+                            target.profession);
+                    if (!move_cohort_population(source_slot, cell,
+                            source_target_signature, 1, error, &source_drained,
+                            preferred_family))
+                        return false;
+                    if (!source_drained) {
+                        population_store().owner_employed[source_slot] =
+                            std::max<int64_t>(0,
+                                population_store().owner_employed[source_slot] - 1);
+                    }
+                    const int32_t destination = population_store().find_signature(
+                        cell, static_cast<uint32_t>(source_target_signature));
+                    if (destination < 0) {
+                        error = "owner_employee_reallocation_destination_missing";
+                        return false;
+                    }
+                    population_store().employee_employed[destination] =
+                        saturating_add(
+                            population_store().employee_employed[destination],
+                            1, _saturation_count);
+                    ++_building_employee_job_profession_changes;
+                } else {
+                    // Same-profession owner→employee conversion stays in the
+                    // existing cohort and therefore needs no population move.
+                    population_store().owner_employed[source_slot] =
+                        std::max<int64_t>(0,
+                            population_store().owner_employed[source_slot] - 1);
+                    population_store().employee_employed[source_slot] =
+                        saturating_add(
+                            population_store().employee_employed[source_slot],
+                            1, _saturation_count);
+                }
+                source_group.filled_owner = std::max<int64_t>(0,
+                    source_group.filled_owner - 1);
+                _building_employee_filled[target.fill_index] =
+                    saturating_add(
+                        _building_employee_filled[target.fill_index], 1,
+                        _saturation_count);
+                if (source_is_knowledge != is_knowledge_group(target_group)) {
+                    local_knowledge_employment = std::max<int64_t>(0,
+                        local_knowledge_employment +
+                        (is_knowledge_group(target_group) ? 1 : -1));
+                }
+                owner_job_group_used[source_group_index - first] = 1;
+                owner_job_group_used[target_group_index - first] = 1;
+                ++_building_employee_job_reallocations;
+            }
+        }
         for (int32_t target_group_index : owner_job_targets) {
             if (owner_job_group_used[target_group_index - first] != 0) continue;
             auto target_group = building_at(static_cast<size_t>(target_group_index));
@@ -2697,6 +3076,8 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                         continue;
                     }
                 }
+                effective_hurdle = vacancy_adjusted_hurdle_q16(
+                    effective_hurdle, target_group_index, -1);
                 if (improvement < effective_hurdle) continue;
                 if (source_signature.profession_id == _merchant_profession_id &&
                     local_merchant_population <= 1) {
@@ -2811,8 +3192,12 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                             recent_expense_per_day(candidate_employee_slot));
                     const int64_t candidate_improvement = improvement_q16(
                         candidate_current_disposable, target_income);
-                    if (candidate_improvement < transition_hurdle_q16(
-                            candidate.profession, target_owner_profession)) continue;
+                    const int64_t owner_hurdle =
+                        vacancy_adjusted_hurdle_q16(
+                            transition_hurdle_q16(candidate.profession,
+                                target_owner_profession),
+                            target_group_index, -1);
+                    if (candidate_improvement < owner_hurdle) continue;
                     source_signature_id = candidate_source_signature;
                     employee_slot = candidate_employee_slot;
                     selected_employee_target_signature = candidate_target_signature;
