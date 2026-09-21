@@ -277,6 +277,8 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
     PackedInt64Array funds;
     PackedInt64Array incomes;
     PackedInt64Array expenses;
+    PackedInt64Array tax_paid;
+    PackedInt64Array subsidy_received;
     PackedInt64Array in_kind_income;
     PackedInt64Array cash_expense_coverage_q16;
     PackedInt64Array livelihood_coverage_q16;
@@ -299,6 +301,8 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
         funds.push_back(population_store().funds[slot]);
         incomes.push_back(population_store().epoch_income[slot]);
         expenses.push_back(population_store().epoch_expense[slot]);
+        tax_paid.push_back(population_store().epoch_tax_paid[slot]);
+        subsidy_received.push_back(population_store().epoch_subsidy_received[slot]);
         const int64_t in_kind = population_store().epoch_in_kind_income[slot];
         in_kind_income.push_back(in_kind);
         int64_t diagnostic_sat = 0;
@@ -330,6 +334,8 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
     out["funds_by_cohort"] = funds;
     out["epoch_income_by_cohort"] = incomes;
     out["epoch_expense_by_cohort"] = expenses;
+    out["epoch_tax_paid_by_cohort"] = tax_paid;
+    out["epoch_subsidy_received_by_cohort"] = subsidy_received;
     out["epoch_in_kind_income_by_cohort"] = in_kind_income;
     out["cash_expense_coverage_by_cohort_q16"] = cash_expense_coverage_q16;
     out["livelihood_coverage_by_cohort_q16"] = livelihood_coverage_q16;

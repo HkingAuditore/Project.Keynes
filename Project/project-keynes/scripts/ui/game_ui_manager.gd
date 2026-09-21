@@ -419,8 +419,9 @@ func _on_country_committed(report: Dictionary) -> void:
 	# 税务提交与日常经济提交都只更新当前页的稳定节点。领土变更会改 fog_state，
 	# 必须重建当前选中格的 Inspector，否则邻格仍停在「未探索」占位卡上，
 	# 而地图迷雾柔边已经把地形透出来了。
-	refresh_selected_daily_lines(true)
-	if int(report.get("changed_cells", 0)) > 0 and _selected_cell != null:
+	var territory_changed := int(report.get("changed_cells", 0)) > 0
+	refresh_selected_daily_lines(territory_changed)
+	if territory_changed and _selected_cell != null:
 		refresh_selected_panel()
 	_mark_country_panel_dirty(COUNTRY_DIRTY_ALL, "country_committed")
 	_refresh_player_discovery_context()

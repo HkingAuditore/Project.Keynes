@@ -2717,6 +2717,13 @@ func poll_runtime_commit(after_generation: int = 0) -> Dictionary:
 	return _data_core_world_ext.poll_runtime_commit(after_generation)
 
 
+func flush_runtime_economy_resource_writeback() -> Dictionary:
+	if _data_core_world_ext == null or not _data_core_world_ext.has_method(
+			"flush_runtime_economy_resource_writeback"):
+		return {"ok": false, "code": "runtime_worker_api_missing"}
+	return _data_core_world_ext.flush_runtime_economy_resource_writeback()
+
+
 func consume_runtime_visual_patch(generation: int, family: int, cursor: int,
 		max_items: int) -> Dictionary:
 	if _data_core_world_ext == null or not _data_core_world_ext.has_method("consume_runtime_visual_patch"):
@@ -9439,6 +9446,16 @@ func economy_live_cells() -> PackedInt32Array:
 	if _data_core_world_ext != null and _data_core_world_ext.has_method("get_economy_live_cells"):
 		return _data_core_world_ext.get_economy_live_cells()
 	return PackedInt32Array()
+
+
+## Worker ACTIVE 的 Economy 提交不会经过 SUS，因此它也不会触发
+## NaturalResourceDailySystem.tick。把这个显式入口留在 MapGenerator，统一复用
+## 与同步路径相同的 cadence、live-cell 索引和 C++/GDScript fallback。
+func run_natural_resource_pass_for_runtime_commit(day: int) -> Dictionary:
+	if _sus_map == null:
+		return {"done": true, "path": "skip", "published_to_slot": false}
+	var live_cells := economy_live_cells()
+	return run_natural_resource_pass_scheduled(_sus_map, maxi(0, day), live_cells)
 
 
 func _reset_natural_resource_cadence(n_cells: int, last_day: int) -> void:

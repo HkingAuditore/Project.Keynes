@@ -56,6 +56,20 @@ func _run() -> void:
 	profile.economy_cadence_force_investment_days = 10
 	# Keep focused lifecycle/investment fixtures fast; production default is 30 days.
 	profile.investment_review_days = 10
+	if OS.get_cmdline_user_args().has("--materials-only"):
+		_test_endogenous_owner_investment(catalog, profile, true)
+		_test_endogenous_owner_investment(catalog, profile, true, true)
+		print("material demand failures=%d" % failures)
+		return
+	if OS.get_cmdline_user_args().has("--employment-only"):
+		_test_high_margin_employee_vacancy_attracts_owner(catalog, profile)
+		print("employment failures=%d" % failures)
+		return
+	if OS.get_cmdline_user_args().has("--research-only"):
+		_test_first_research_building_auto_investment(catalog, profile)
+		_test_first_research_building_auto_investment(catalog, profile, true)
+		print("research startup failures=%d" % failures)
+		return
 	_test_construction_rebuild_preserves_employee_fill(compiled, profile)
 	_test_zero_resource_releases_building_labor(compiled, profile)
 	_test_owner_positions_are_independent_of_utilization(compiled, profile)
@@ -90,9 +104,12 @@ func _run() -> void:
 	_test_understaffed_labor_flows_to_higher_opportunity(catalog, profile)
 	_test_unemployment_subsidy_is_reservation_income(catalog, profile)
 	_test_endogenous_owner_investment(catalog, profile)
+	_test_endogenous_owner_investment(catalog, profile, true)
+	_test_endogenous_owner_investment(catalog, profile, true, true)
 	_test_merit_order_offtake_prefers_low_unit_cost(catalog, profile)
 	_test_cost_advantage_displaces_covered_incumbents(catalog, profile)
 	_test_first_research_building_auto_investment(catalog, profile)
+	_test_first_research_building_auto_investment(catalog, profile, true)
 	_test_high_unemployment_investment_catchup(catalog, profile)
 	_test_collector_endogenous_investment(catalog, profile)
 	_test_construction_substitute_price_caps_investment_batch(catalog, profile)
@@ -1128,6 +1145,99 @@ func _test_last_building_demolition_releases_profession_cohorts(
 		int(closing_report.get("goods_error", 1)) == 0)
 
 
+func _test_high_margin_employee_vacancy_attracts_owner(
+		source_catalog: Dictionary, source_profile: Dictionary) -> void:
+	var catalog := source_catalog.duplicate(true)
+	var profile := source_profile.duplicate(true)
+	profile.starvation_death_rate_q32 = 0
+	profile.resource_safe_harvest_q16 = 0
+	profile.employment_mobility_daily_q16 = 65536
+	var signatures: PackedStringArray = catalog.signature_keys
+	var merchant_sig := signatures.find("merchant|default")
+	var forager_sig := signatures.find("forager|default")
+	var miner_sig := signatures.find("miner|default")
+	var unemployed_sig := signatures.find("unemployed|default")
+	var building_ids: PackedStringArray = catalog.building_type_ids
+	var gold_id := building_ids.find("placer_gold_working")
+	var gathering_id := building_ids.find("gathering_ground")
+	var goods: PackedStringArray = catalog.good_ids
+	var stock := PackedInt64Array()
+	stock.resize(goods.size())
+	stock.fill(100000000)
+	var ext := _new_ext(catalog)
+	_expect("owner-to-employee mobility country bootstraps",
+		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 9441))
+	_expect("owner-to-employee mobility runtime configures",
+		bool(ext.configure_economy(catalog, profile, 1, 9441).get("ok", false)))
+	_seed_resource_reserve(ext, catalog, "gold_ore", 1000000000.0)
+	_seed_resource_reserve(ext, catalog, "fertile_soil", 1000000000.0)
+	var boot: Dictionary = ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0]),
+		"signature_ids": PackedInt32Array([merchant_sig, forager_sig]),
+		"population": PackedInt64Array([1, 1]),
+		"funds": PackedInt64Array([1000000000, 1000000000]),
+	}, {
+		"stock": stock,
+		"building_cells": PackedInt32Array([0, 0]),
+		"building_type_ids": PackedInt32Array([gold_id, gathering_id]),
+		"building_owner_signature_ids": PackedInt32Array([
+			merchant_sig, forager_sig]),
+		"building_counts": PackedInt64Array([1, 1]),
+	})
+	_expect("owner-to-employee mobility fixture bootstraps", bool(boot.get("ok", false)))
+	if not bool(boot.get("ok", false)):
+		return
+	var report := _run_day(ext, 0)
+	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
+	var population: Dictionary = ext.get_population_cell_snapshot(0)
+	var gold_group := (buildings.group_type_ids as PackedInt32Array).find(gold_id)
+	var gathering_group := (buildings.group_type_ids as PackedInt32Array).find(gathering_id)
+	var miner_row := _row_for_signature(population, miner_sig)
+	var forager_row := _row_for_signature(population, forager_sig)
+	var unemployed_row := _row_for_signature(population, unemployed_sig)
+	var contract_wages: PackedInt64Array = buildings.employee_contract_wages_per_day
+	var employee_filled: PackedInt64Array = buildings.employee_filled
+	var gold_role := int(buildings.employee_profession_ids.find(miner_sig))
+	var wage := int(contract_wages[gold_role]) if gold_role >= 0 and gold_role < contract_wages.size() else 0
+	var gold_filled := int(employee_filled[gold_role]) if gold_role >= 0 and gold_role < employee_filled.size() else 0
+	var forager_population := int((population.populations as PackedInt64Array)[forager_row]) \
+		if forager_row >= 0 else 0
+	var miner_employed := int((population.employee_employed_by_cohort as PackedInt64Array)[miner_row]) \
+		if miner_row >= 0 else 0
+	var unemployed_population := int((population.populations as PackedInt64Array)[unemployed_row]) \
+		if unemployed_row >= 0 else 0
+	print("  owner-to-employee debug=", {
+		"groups": buildings.group_type_ids,
+		"filled_owner": buildings.filled_owner,
+		"employee_filled": buildings.employee_filled,
+		"employee_roles": buildings.employee_profession_ids,
+		"employee_wages": contract_wages,
+		"populations": population.populations,
+		"owner_employed": population.owner_employed_by_cohort,
+		"employee_employed": population.employee_employed_by_cohort,
+		"unemployed": population.unemployed_by_cohort,
+		"gold_group": gold_group,
+		"gathering_group": gathering_group,
+		"report_reallocations": report.get("building_employee_job_reallocations", 0),
+		"report_profession_changes": report.get("building_employee_job_profession_changes", 0),
+		"gold_money_issued": report.get("gold_money_issued", 0),
+	})
+	_expect("high-margin employee vacancy is filled by an owner",
+		gold_group >= 0 and gold_filled == 1 and miner_row >= 0 and
+		miner_employed == 1 and forager_population == 0 and
+		unemployed_population == 0)
+	_expect("vacancy bid raises the cold-start miner wage",
+		wage > 40000)
+	_expect("filled gold mine issues money",
+		gold_group >= 0 and
+		int((buildings.last_output as PackedInt64Array)[gold_group]) > 0 and
+		int(report.get("gold_money_issued", 0)) > 0)
+	_expect("owner-to-employee mobility conserves every ledger",
+		int(report.get("population_error", 1)) == 0 and
+		int(report.get("money_error", 1)) == 0 and
+		int(report.get("goods_error", 1)) == 0)
+
+
 func _test_non_due_construction_employment_metrics(
 		catalog: Dictionary, source_profile: Dictionary) -> void:
 	var profile := source_profile.duplicate(true)
@@ -2055,7 +2165,7 @@ func _test_unemployment_subsidy_is_reservation_income(source_catalog: Dictionary
 
 
 func _test_endogenous_owner_investment(source_catalog: Dictionary,
-		source_profile: Dictionary) -> void:
+		source_profile: Dictionary, scarce_materials: bool = false, unaffordable: bool = false) -> void:
 	var catalog := source_catalog.duplicate(true)
 	var profile := source_profile.duplicate(true)
 	profile.merchant_market_making_days_q16 = 1966080
@@ -2082,6 +2192,17 @@ func _test_endogenous_owner_investment(source_catalog: Dictionary,
 	# tool sink so knapping sees a positive, unsaturated gap.
 	_ensure_building_input(catalog, hunting_id, tool_good, 100, 65536)
 	_pin_building_input_candidates(catalog, timber_id, tool_good)
+	var material_good := goods.find("raw_stone")
+	if scarce_materials:
+		var offsets: PackedInt32Array = catalog.building_construction_offsets
+		var construction_goods: PackedInt32Array = catalog.building_construction_good_ids
+		var quantities: PackedInt64Array = catalog.building_construction_quantities
+		for edge in range(offsets[knapping_id], offsets[knapping_id + 1]):
+			construction_goods[edge] = material_good
+			quantities[edge] = 1000000000000 if unaffordable else 49500
+		catalog.building_construction_good_ids = construction_goods
+		catalog.building_construction_quantities = quantities
+		_sync_construction_candidates(catalog)
 	var ext := _new_ext(catalog)
 	_expect("owner-investment country bootstraps",
 		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 285))
@@ -2101,6 +2222,8 @@ func _test_endogenous_owner_investment(source_catalog: Dictionary,
 	# buffer far below combined hunting+timber demand so knapping still sees
 	# a positive, unsaturated gap.
 	stock[tool_good] = 250
+	if scarce_materials:
+		stock[material_good] = 0
 	var prices: PackedInt32Array = catalog.good_default_price.duplicate()
 	prices[tool_good] = int((catalog.good_reference_max_price as PackedInt32Array)[tool_good])
 	var boot: Dictionary = ext.bootstrap_economy({
@@ -2122,6 +2245,37 @@ func _test_endogenous_owner_investment(source_catalog: Dictionary,
 	_expect("owner-investment settlement bootstraps", bool(boot.get("ok", false)))
 	_expect("owner-investment diagnostic trace registers", bool(
 		ext.set_economy_inspector_trace_cell(0).get("ok", false)))
+	if scarce_materials:
+		var demand_seen := false
+		var ema_seen := false
+		var target_seen := false
+		var ledgers_ok := true
+		var bounded := true
+		var maintenance_baseline := 0
+		var price_responded := false
+		var opening_price := _good_value(ext.get_market_cell_snapshot(0), "price", "raw_stone")
+		for day in range(8):
+			var report := _run_day(ext, day)
+			var market: Dictionary = ext.get_market_cell_snapshot(0)
+			var material_demand := _good_value(market, "desired_business_demand", "raw_stone")
+			if day == 0: maintenance_baseline = material_demand
+			bounded = bounded and material_demand <= (maintenance_baseline if unaffordable else 49500)
+			price_responded = price_responded or _good_value(market, "price", "raw_stone") > opening_price
+			demand_seen = demand_seen or _good_value(market, "desired_business_demand", "raw_stone") > 0
+			ema_seen = ema_seen or _good_value(market, "business_demand_ema", "raw_stone") > 0
+			target_seen = target_seen or _good_value(market, "merchant_inventory_target", "raw_stone") >= 49500
+			ledgers_ok = ledgers_ok and int(report.get("population_error", 1)) == 0 and int(report.get("money_error", 1)) == 0 and int(report.get("goods_error", 1)) == 0
+		if unaffordable:
+			_expect("unaffordable construction adds no demand above existing maintenance", bounded)
+			_expect("unaffordable construction conserves ledgers", ledgers_ok)
+			return
+		_expect("ordinary workshop material shortage reaches desired demand", demand_seen)
+		_expect("ordinary workshop material demand reaches business EMA", ema_seen)
+		_expect("ordinary workshop material demand reaches merchant target", target_seen)
+		_expect("ordinary material price responds to demand", price_responded)
+		_expect("material quote retries do not multiply one-building demand", bounded)
+		_expect("ordinary workshop material demand conserves ledgers", ledgers_ok)
+		return
 	var day0 := _run_day(ext, 0)
 	var pop0: Dictionary = ext.get_population_cell_snapshot(0)
 	var artisan_row0 := _row_for_signature(pop0, artisan_sig)
@@ -2412,7 +2566,7 @@ func _test_cost_advantage_displaces_covered_incumbents(source_catalog: Dictionar
 
 
 func _test_first_research_building_auto_investment(source_catalog: Dictionary,
-		source_profile: Dictionary) -> void:
+		source_profile: Dictionary, scarce_materials: bool = false) -> void:
 	var catalog := source_catalog.duplicate(true)
 	var profile := source_profile.duplicate(true)
 	profile.market_cycle_days = 5
@@ -2430,7 +2584,7 @@ func _test_first_research_building_auto_investment(source_catalog: Dictionary,
 	var technology_ids: PackedStringArray = catalog.technology_ids
 	var signatures: PackedStringArray = catalog.signature_keys
 	var goods: PackedStringArray = catalog.good_ids
-	var oral_memory_id := building_ids.find("oral_memory_circle")
+	var oral_memory_id := building_ids.find("early_knowledge_institution" if scarce_materials else "oral_memory_circle")
 	var gathering_id := building_ids.find("gathering_ground")
 	var oral_memory_technology := technology_ids.find("tech.oral_memory_practice")
 	var early_knowledge_technology := technology_ids.find("tech.early_knowledge_institution")
@@ -2457,6 +2611,12 @@ func _test_first_research_building_auto_investment(source_catalog: Dictionary,
 	_block_construction_except(catalog, PackedInt32Array([oral_memory_id]),
 		_luxury_blocking_good(catalog))
 
+	var logs_good := goods.find("logs")
+	if scarce_materials:
+		var quantities: PackedInt64Array = catalog.building_construction_quantities
+		var offsets: PackedInt32Array = catalog.building_construction_offsets
+		quantities[offsets[oral_memory_id]] = 49500
+		catalog.building_construction_quantities = quantities
 	var ext := _new_ext(catalog)
 	var country_catalog := catalog.duplicate(false)
 	country_catalog.erase("ok")
@@ -2518,6 +2678,8 @@ func _test_first_research_building_auto_investment(source_catalog: Dictionary,
 	stock.resize(goods.size())
 	stock.fill(1000000000)
 	stock[research_good] = 0
+	if scarce_materials:
+		stock[logs_good] = 10000
 	var boot: Dictionary = ext.bootstrap_economy({
 		"cell_indices": PackedInt32Array([0, 0, 0]),
 		"signature_ids": PackedInt32Array([
@@ -2542,8 +2704,50 @@ func _test_first_research_building_auto_investment(source_catalog: Dictionary,
 	var first_research_start := -1
 	var first_research_report := {}
 	var ledgers_ok := true
-	for day in range(5):
+	var material_shortage_seen := false
+	var research_output_seen := false
+	for day in range(16 if scarce_materials else 5):
+		if scarce_materials and day in [1, 2]:
+			var toggle := {}
+			for key in research_commands:
+				toggle[key] = research_commands[key].slice(1, 2)
+			toggle.effective_days = PackedInt64Array([day * 5])
+			toggle.sequences = PackedInt64Array([1000 + day])
+			toggle.aux_i32 = PackedInt32Array([0 if day == 1 else 1])
+			_expect("research procurement toggle queues", bool(ext.submit_country_commands(toggle).get("ok", false)))
+			_expect("research procurement toggle commits", bool(ext.run_country_slice({"day_index": day * 5}).get("ok", false)))
+		if scarce_materials and day > 2 and day < 9:
+			_expect("research materials arrive incrementally", bool(ext.submit_economy_commands({
+				"opcodes": PackedInt32Array([4]),
+				"effective_days": PackedInt64Array([day * 5]),
+				"sequences": PackedInt64Array([100 + day]),
+				"target_handles": PackedInt64Array([0]),
+				"i32_0": PackedInt32Array([0]), "i32_1": PackedInt32Array([logs_good]),
+				"i64_0": PackedInt64Array([10000]), "i64_1": PackedInt64Array([0]),
+			}).get("ok", false)))
 		var report := _run_day(ext, day)
+		var day_buildings: Dictionary = ext.get_building_cell_snapshot(0)
+		var day_types: PackedInt32Array = day_buildings.get("group_type_ids", PackedInt32Array())
+		for group in day_types.size():
+			if day_types[group] == oral_memory_id:
+				research_output_seen = research_output_seen or int(day_buildings.last_output[group]) > 0
+		if scarce_materials:
+			var candidate_types: PackedInt32Array = day_buildings.investment_candidate_type_ids
+			var candidate_row := candidate_types.find(oral_memory_id)
+			material_shortage_seen = material_shortage_seen or (candidate_row >= 0 and
+				int(day_buildings.investment_candidate_rejection_reasons[candidate_row]) == 12)
+		if scarce_materials and day == 1:
+			_expect("disabled procurement releases first-research reserve",
+				_good_value(ext.get_market_cell_snapshot(0), "construction_material_reserve", "logs") < 49500)
+		if scarce_materials and day == 0:
+			var market: Dictionary = ext.get_market_cell_snapshot(0)
+			var diagnostic: Dictionary = ext.get_building_cell_snapshot(0)
+			_expect("first research reserves a full construction bundle",
+				_good_value(market, "construction_material_reserve", "logs") >= 49500)
+			_expect("research reserve reaches merchant procurement target",
+				_good_value(market, "merchant_inventory_target", "logs") >= 49500)
+			_expect("research does not build without materials",
+				int(diagnostic.building_counts_by_type[oral_memory_id]) == 0)
 		ledgers_ok = ledgers_ok and int(report.get("population_error", 1)) == 0 and \
 			int(report.get("money_error", 1)) == 0 and \
 			int(report.get("goods_error", 1)) == 0
@@ -2562,6 +2766,9 @@ func _test_first_research_building_auto_investment(source_catalog: Dictionary,
 		int((final_buildings.building_counts_by_type as PackedInt64Array)[
 			oral_memory_id]) >= 1)
 	_expect("research auto-investment preserves every ledger", ledgers_ok)
+	if scarce_materials:
+		_expect("unbuilt research reports material shortage instead of success", material_shortage_seen)
+		_expect("new research institution employs owners and produces", research_output_seen)
 
 
 func _test_high_unemployment_investment_catchup(

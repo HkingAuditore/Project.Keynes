@@ -331,6 +331,71 @@ Dictionary DCWorldExt::run_economy_slice_compact(const Dictionary &ctx) {
     return run_economy_slice_internal(ctx, true);
 }
 
+Dictionary DCWorldExt::flush_runtime_economy_resource_writeback() {
+    Dictionary out;
+    out["ok"] = true;
+    out["applied"] = false;
+    out["changed_cells"] = int64_t{0};
+    if (_economy_runtime == nullptr) {
+        out["ok"] = false;
+        out["code"] = "economy_runtime_unavailable";
+        return out;
+    }
+    // The worker holds this boundary mutex for the complete semantic day.
+    // Never drain its resource lanes while it is still producing the commit.
+    std::unique_lock<std::mutex> boundary;
+    if (_runtime_host != nullptr) {
+        boundary = _runtime_host->try_lock_economy_input_capture();
+        if (!boundary.owns_lock()) {
+            out["pending"] = true;
+            out["code"] = "economy_worker_day_inflight";
+            return out;
+        }
+    }
+    NativeEconomyRuntime *runtime = runtime_from(_economy_runtime);
+    std::vector<size_t> lanes;
+    std::vector<int64_t> deltas;
+    if (!runtime->drain_building_resource_deltas(lanes, deltas)) return out;
+    const int32_t count = runtime->cell_count();
+    const auto &extra_slots = runtime->building_resource_extra_slots();
+    std::vector<int32_t> slot_ids(extra_slots.size(), -1);
+    std::vector<uint8_t> extra_slot_published(extra_slots.size(), 0);
+    PackedStringArray published_extra_slots;
+    published_extra_slots.resize(0);
+    for (size_t r = 0; r < extra_slots.size(); ++r)
+        slot_ids[r] = component_id(StringName(extra_slots[r].c_str()));
+    if (_economy_resource_slot_resident.size() < _slots.size())
+        _economy_resource_slot_resident.resize(_slots.size(), 0);
+    int64_t changed = 0;
+    for (size_t cursor = 0; cursor < lanes.size(); ++cursor) {
+        const size_t flat = lanes[cursor];
+        const size_t r = count > 0 ? flat / static_cast<size_t>(count) : 0;
+        if (count <= 0 || r >= extra_slots.size()) continue;
+        const int sid = slot_ids[r];
+        if (sid < 0 || sid >= _slots.size() || _slots[sid].dtype != SlotDType::F32 ||
+            _slots[sid].arr_f32.size() != count) continue;
+        Slot &slot = _slots.write[sid];
+        slot.arr_f32.ptrw()[flat % static_cast<size_t>(count)] +=
+            static_cast<float>(deltas[cursor]) /
+            static_cast<float>(NativeEconomyRuntime::GOODS_SCALE);
+        _economy_resource_slot_resident[static_cast<size_t>(sid)] = 1;
+        // The next natural-resource pass refreshes its input from MapData.
+        // Publish the pending lane now, otherwise that refresh would replace
+        // the worker delta with the old MapData value and silently lose it.
+        if (extra_slot_published[r] == 0) {
+            extra_slot_published[r] = 1;
+            published_extra_slots.append(String(extra_slots[r].c_str()));
+        }
+        ++changed;
+    }
+    if (!published_extra_slots.is_empty())
+        flush_slots_to_map_keys(published_extra_slots);
+    out["changed_cells"] = changed;
+    out["applied"] = changed > 0;
+    out["building_resource_mirror_committed"] = true;
+    return out;
+}
+
 Dictionary DCWorldExt::capture_economy_day_inputs(int64_t day_index) {
     if (_runtime_host != nullptr &&
         (_runtime_host->domain_is_worker_authoritative(RuntimeDomainId::ECONOMY) ||

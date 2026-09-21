@@ -18,6 +18,8 @@ const MOBILE_NATIVE_DAILY_COMMIT_BUDGET_DAYS: int = 20
 const MOBILE_NATURAL_RESOURCE_STRIDE_DAYS: int = 10
 const MOBILE_DYNAMIC_VISUAL_ATLAS_STRIDE: int = 8
 const MOBILE_WEATHER_FIELD_ADVECT_STEPS: int = 2
+const RUNTIME_ECONOMY_DOMAIN_MASK: int = 1 << 8
+const RUNTIME_NATURAL_RESOURCE_CATCHUP_DAYS_PER_FRAME: int = 8
 const MAP_OVERLAY_REFRESH_INTERVAL_MSEC: int = 100
 # overlay 重烘焙是主线程 UI 工作，但「脏」标记由每个模拟日打出，高速下等于永久脏，
 # 于是固定 100ms 节流会让它按实测成本无上限地吃墙钟（观测到单模拟日 102ms，是当日
@@ -201,6 +203,12 @@ var _runtime_commit_family_done: Dictionary = {}
 var _runtime_pending_visual_generation: int = 0
 var _runtime_pending_dirty_families: int = 0
 var _runtime_last_commit: Dictionary = {}
+## Whole-graph ACTIVE bypasses SUS, so natural resources need a separate
+## committed-day cursor.  The target remains queued while the Economy boundary
+## lock is held by the worker and is drained on a later render frame.
+var _runtime_natural_resource_last_commit_day: int = 0
+var _runtime_natural_resource_pending_target_day: int = -1
+var _runtime_natural_resource_last_result: Dictionary = {}
 var _runtime_last_visual_apply_ms: float = 0.0
 var _runtime_last_ui_feedback_ms: float = 0.0
 var _runtime_last_gpu_upload_ms: float = 0.0
@@ -506,6 +514,9 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 	_runtime_pending_visual_generation = 0
 	_runtime_pending_dirty_families = 0
 	_runtime_last_commit.clear()
+	_runtime_natural_resource_last_commit_day = 0
+	_runtime_natural_resource_pending_target_day = -1
+	_runtime_natural_resource_last_result.clear()
 	_country_worker_read_generation = 0
 	_country_worker_read_last_day = -1
 	_country_worker_read_last_result.clear()
@@ -1250,12 +1261,17 @@ func _consume_runtime_commit_if_ready() -> void:
 	var received_new_commit := bool(commit.get("ok", false)) \
 			and bool(commit.get("available", false)) \
 			and int(commit.get("generation", 0)) > _runtime_commit_generation
+	var economy_worker_authoritative := (
+			int(report.get("authoritative_domain_mask", 0)) &
+			RUNTIME_ECONOMY_DOMAIN_MASK) != 0
 	if received_new_commit:
 		var publish_started_usec := Time.get_ticks_usec()
 		var generation := int(commit.get("generation", 0))
 		_runtime_commit_generation = generation
 		_runtime_commit_day = int(commit.get("committed_day", _runtime_commit_day))
 		_runtime_last_commit = commit.duplicate(false)
+		if economy_worker_authoritative:
+			_queue_runtime_natural_resource_commit(_runtime_commit_day)
 		_runtime_commit_family_cursors.clear()
 		_runtime_commit_family_done.clear()
 		_runtime_pending_visual_generation = generation
@@ -1284,6 +1300,17 @@ func _consume_runtime_commit_if_ready() -> void:
 		if whole_graph:
 			finish_daily_tick(0.0)
 		_try_promote_economy_pod_active()
+	# Economy ACTIVE mutates resource deltas on the worker-owned runtime. Drain
+	# them only after a committed boundary is visible, then run the same natural
+	# resource pass that SUS would have run on the synchronous path. If the worker
+	# still owns the boundary lock, keep the day queued and retry next frame.
+	if economy_worker_authoritative and _runtime_natural_resource_pending_target_day >= 0 \
+			and _generator.has_method("flush_runtime_economy_resource_writeback"):
+		var resource_writeback: Dictionary = \
+			_generator.flush_runtime_economy_resource_writeback()
+		if bool(resource_writeback.get("ok", false)) \
+				and not bool(resource_writeback.get("pending", false)):
+			_drain_runtime_natural_resource_commits()
 	if _runtime_pending_visual_generation <= 0 \
 			or _runtime_pending_visual_generation != _runtime_commit_generation:
 		return
@@ -1332,6 +1359,34 @@ func _consume_runtime_commit_if_ready() -> void:
 			break
 	if all_done:
 		_runtime_pending_visual_generation = 0
+
+
+func _queue_runtime_natural_resource_commit(day: int) -> void:
+	if day <= _runtime_natural_resource_last_commit_day:
+		return
+	_runtime_natural_resource_pending_target_day = maxi(
+			_runtime_natural_resource_pending_target_day, day)
+
+
+func _drain_runtime_natural_resource_commits() -> void:
+	if _generator == null or not _generator.has_method(
+			"run_natural_resource_pass_for_runtime_commit"):
+		return
+	var target_day := _runtime_natural_resource_pending_target_day
+	if target_day < 0:
+		return
+	var processed := 0
+	while _runtime_natural_resource_last_commit_day < target_day \
+			and processed < RUNTIME_NATURAL_RESOURCE_CATCHUP_DAYS_PER_FRAME:
+		var day := _runtime_natural_resource_last_commit_day + 1
+		var result: Dictionary = _generator.run_natural_resource_pass_for_runtime_commit(day)
+		_runtime_natural_resource_last_result = result.duplicate(true)
+		if not bool(result.get("done", false)):
+			return
+		_runtime_natural_resource_last_commit_day = day
+		processed += 1
+	if _runtime_natural_resource_last_commit_day >= target_day:
+		_runtime_natural_resource_pending_target_day = -1
 
 
 ## Climate 权威在 worker 时，把它提交的那一天刷进 MapData。

@@ -371,12 +371,17 @@ bool NativeEconomyRuntime::prepare_fiscal_budgets(int64_t day_index,
         _income_taxable_base_by_slot.resize(population_store().active.size(), 0);
     if (_income_subsidy_floor_by_slot.size() < population_store().active.size())
         _income_subsidy_floor_by_slot.resize(population_store().active.size(), 0);
-    for (const int32_t cell : _epoch_settlement_cells) {
-        if (cell < 0 || cell >= _cell_count) continue;
-        population_store().for_each_in_cell(cell, [&](int32_t slot) {
-            _income_taxable_base_by_slot[slot] = 0;
-            _income_subsidy_floor_by_slot[slot] = 0;
-        });
+    const bool income_subsidy_active =
+        (_epoch_negative_tax_mask & static_cast<uint8_t>(
+            1U << NativeCountryRuntime::TAX_INCOME)) != 0;
+    if (income_subsidy_active) {
+        for (const int32_t cell : _epoch_settlement_cells) {
+            if (cell < 0 || cell >= _cell_count) continue;
+            population_store().for_each_in_cell(cell, [&](int32_t slot) {
+                _income_taxable_base_by_slot[slot] = 0;
+                _income_subsidy_floor_by_slot[slot] = 0;
+            });
+        }
     }
     const bool domestic_fiscal_active =
         (_epoch_active_tax_mask & static_cast<uint8_t>(
@@ -448,7 +453,10 @@ bool NativeEconomyRuntime::prepare_fiscal_budgets(int64_t day_index,
                 _fiscal_previous_requests[lane] = 0;
             int64_t reservation_request = history_matches
                 ? std::max<int64_t>(0, _fiscal_previous_requests[lane]) : 0;
-            if (kind == NativeCountryRuntime::TAX_INCOME) {
+            const uint8_t kind_bit = static_cast<uint8_t>(1U << kind);
+            if (kind == NativeCountryRuntime::TAX_INCOME &&
+                (_epoch_cell_negative_tax_mask[static_cast<size_t>(cell)] &
+                 kind_bit) != 0) {
                 int64_t baseline_request = 0;
                 // Reserve a bounded floor for occupations that can be entered
                 // during this epoch even when their cohort is currently empty.
@@ -599,6 +607,8 @@ bool NativeEconomyRuntime::prepare_fiscal_budgets(int64_t day_index,
                 reservation_request = std::max(
                     reservation_request, baseline_request);
             } else if (kind == NativeCountryRuntime::TAX_BUSINESS &&
+                       (_epoch_cell_negative_tax_mask[static_cast<size_t>(cell)] &
+                        kind_bit) != 0 &&
                        cell_due_investment_review(cell, day_index)) {
                 // Without this the business lane can only ever budget what a
                 // previous epoch actually requested, so a cell with no
@@ -767,8 +777,11 @@ bool NativeEconomyRuntime::advance_fiscal_reservation(std::string &error) {
 void NativeEconomyRuntime::settle_income_subsidies_for_cell(
         int32_t cell, int64_t &saturation_count) {
     if (cell < 0 || cell >= _cell_count ||
-        (_epoch_active_tax_mask & static_cast<uint8_t>(
+        (_epoch_negative_tax_mask & static_cast<uint8_t>(
             1U << NativeCountryRuntime::TAX_INCOME)) == 0)
+        return;
+    if ((_epoch_cell_negative_tax_mask[static_cast<size_t>(cell)] &
+         static_cast<uint8_t>(1U << NativeCountryRuntime::TAX_INCOME)) == 0)
         return;
     const size_t lane = static_cast<size_t>(cell) *
         ACTIVE_TAX_KIND_COUNT + NativeCountryRuntime::TAX_INCOME;
@@ -847,10 +860,13 @@ void NativeEconomyRuntime::settle_income_subsidies_for_cell(
 
 void NativeEconomyRuntime::settle_absolute_daily_taxes_for_cell(
         int32_t cell, int64_t &saturation_count) {
-    if (cell < 0 || cell >= _cell_count) return;
+    if (cell < 0 || cell >= _cell_count ||
+        _epoch_absolute_tax_mask == 0) return;
+    const uint8_t absolute_mask =
+        _epoch_cell_absolute_tax_mask[static_cast<size_t>(cell)];
     const int64_t days = std::max(1, _epoch_days);
 
-    if ((_epoch_active_tax_mask & static_cast<uint8_t>(
+    if ((absolute_mask & static_cast<uint8_t>(
             1U << NativeCountryRuntime::TAX_INCOME)) != 0) {
         population_store().for_each_in_cell(cell, [&](int32_t slot) {
             if (slot < 0 ||
@@ -922,7 +938,7 @@ void NativeEconomyRuntime::settle_absolute_daily_taxes_for_cell(
         });
     }
 
-    if ((_epoch_active_tax_mask & static_cast<uint8_t>(
+    if ((absolute_mask & static_cast<uint8_t>(
             1U << NativeCountryRuntime::TAX_BUSINESS)) == 0)
         return;
     if (cell + 1 >= static_cast<int32_t>(_building_cell_offsets.size()))
@@ -1382,7 +1398,7 @@ bool NativeEconomyRuntime::advance_fiscal_settlement(std::string &error) {
             static_cast<size_t>(country)];
         const int64_t collected_total = continuation.collected_by_country[
             static_cast<size_t>(country)];
-        if (unused > 0) {
+        if (!continuation.return_completed && unused > 0) {
             int64_t returned = 0;
             std::string transaction_error;
             if (!coordinate_country_fiscal_transaction(
@@ -1408,6 +1424,7 @@ bool NativeEconomyRuntime::advance_fiscal_settlement(std::string &error) {
                 return false;
             }
         }
+        continuation.return_completed = true;
         if (collected_total > 0) {
             int64_t collected = 0;
             std::string transaction_error;
@@ -1443,6 +1460,7 @@ bool NativeEconomyRuntime::advance_fiscal_settlement(std::string &error) {
         }
         continuation.last_unused = unused;
         continuation.last_collected = collected_total;
+        continuation.return_completed = false;
         ++continuation.country_cursor;
         return true;
     }

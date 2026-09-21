@@ -381,3 +381,16 @@ coordination and aggregate `COMMIT` ordering.
 - No change to market topology, tax semantics, cadence defaults or save schema
   as part of a file split.
 - No deletion of fallback/probe paths until A/B or soak evidence closes them.
+
+### 2026-09-20 bounded research-startup fix exception
+
+`economy_runtime_building_investment.cpp` gains the cohesive
+`reserve_first_research_construction` helper (~50 lines) next to its reused startup producer and
+material selectors. The existing oversized translation unit is retained for this bounded fix;
+`economy_runtime.cpp` gains only the reserve-phase call and `.h` one private declaration.
+No additional runtime owner or persistent store is introduced. Contract and tests are documented
+in `technology-tree-runtime.md`.
+
+2026-09-21: the bounded exception also covers `record_investment_material_demand`
+and its quote/commit call sites in the same investment translation unit; no new
+store/save schema. This keeps material feedback beside candidate feasibility.

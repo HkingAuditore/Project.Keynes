@@ -2006,6 +2006,10 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 	var ethnicity_names: PackedStringArray = snapshot.get("ethnicity_display_names", PackedStringArray())
 	var populations: PackedInt64Array = snapshot.get("populations", PackedInt64Array())
 	var funds: PackedInt64Array = snapshot.get("funds_by_cohort", PackedInt64Array())
+	var epoch_tax_paid: PackedInt64Array = snapshot.get(
+		"epoch_tax_paid_by_cohort", PackedInt64Array())
+	var epoch_subsidy_received: PackedInt64Array = snapshot.get(
+		"epoch_subsidy_received_by_cohort", PackedInt64Array())
 	var satisfaction: PackedInt32Array = snapshot.get(
 		"survival_satisfaction_by_cohort_q16",
 		snapshot.get("satisfaction_by_cohort_q16", PackedInt32Array()))
@@ -2183,8 +2187,30 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 					income_rows.append({"id": "income_%s" % source_id, "name": _cashflow_source_name(source_id, true), "value": "+%s/人" % _money_text(income_value / maxi(population, 1)), "visible": true})
 				if expense_value > 0:
 					expense_rows.append({"id": "expense_%s" % source_id, "name": _cashflow_source_name(source_id, false), "value": "−%s/人" % _money_text(expense_value / maxi(population, 1)), "visible": true})
-		var income_pc := int(settlement_income_by_cohort[i]) / maxi(population, 1) if settlement_available and i < settlement_income_by_cohort.size() else 0
-		var expense_pc := int(settlement_expense_by_cohort[i]) / maxi(population, 1) if settlement_available and i < settlement_expense_by_cohort.size() else 0
+		# Fiscal attribution is authoritative even when the detailed cashflow trace
+		# has expired or was intentionally omitted from this snapshot.
+		var tax_paid_pc := int(epoch_tax_paid[i]) / maxi(population, 1) \
+			if i < epoch_tax_paid.size() else 0
+		var subsidy_received_pc := int(epoch_subsidy_received[i]) / maxi(population, 1) \
+			if i < epoch_subsidy_received.size() else 0
+		var has_tax_detail := _has_cashflow_row(expense_rows, "income_tax") \
+			or _has_cashflow_row(expense_rows, "consumption_tax") \
+			or _has_cashflow_row(expense_rows, "business_tax")
+		var has_subsidy_detail := _has_cashflow_row(income_rows, "income_subsidy") \
+			or _has_cashflow_row(income_rows, "consumption_subsidy") \
+			or _has_cashflow_row(income_rows, "business_subsidy")
+		if tax_paid_pc > 0 and not has_tax_detail:
+			expense_rows.append({"id": "expense_fiscal_tax", "name": "税费（本批）", "value": "−%s/人" % _money_text(tax_paid_pc), "visible": true})
+		if subsidy_received_pc > 0 and not has_subsidy_detail:
+			income_rows.append({"id": "income_fiscal_subsidy", "name": "财政补贴（本批）", "value": "+%s/人" % _money_text(subsidy_received_pc), "visible": true})
+		var income_pc := int(settlement_income_by_cohort[i]) / maxi(population, 1) \
+			if settlement_available and i < settlement_income_by_cohort.size() else 0
+		var expense_pc := int(settlement_expense_by_cohort[i]) / maxi(population, 1) \
+			if settlement_available and i < settlement_expense_by_cohort.size() else 0
+		if not has_subsidy_detail:
+			income_pc += subsidy_received_pc
+		if not has_tax_detail:
+			expense_pc += tax_paid_pc
 		var net_pc := income_pc - expense_pc
 		var demand_count := visible_demand_count
 		var demand_group_count := demand_groups.size()
@@ -2197,9 +2223,9 @@ func _population_category(snapshot: Dictionary, market_snapshot: Dictionary = {}
 			"cohort_handle": int(handles[i]) if i < handles.size() else -1,
 			"population": "%s 人" % UITokens.format_compact_number_cn(float(population), 1),
 			"wealth": _money_text(wealth_pc),
-			"income": "+%s" % _money_text(income_pc) if settlement_available else "+—",
-			"expense": "−%s" % _money_text(expense_pc) if settlement_available else "−—",
-			"net": "%s%s" % ["+" if net_pc > 0 else ("−" if net_pc < 0 else ""), _money_text(absi(net_pc))] if settlement_available else "—",
+			"income": "+%s" % _money_text(income_pc) if settlement_available or subsidy_received_pc > 0 else "+—",
+			"expense": "−%s" % _money_text(expense_pc) if settlement_available or tax_paid_pc > 0 else "−—",
+			"net": "%s%s" % ["+" if net_pc > 0 else ("−" if net_pc < 0 else ""), _money_text(absi(net_pc))] if settlement_available or subsidy_received_pc > 0 or tax_paid_pc > 0 else "—",
 			"net_positive": net_pc >= 0,
 			"status": "%s%s · 满意度 %.1f%% · 就业 %s · 结算 %d日" % [
 				"商人 · " if i < merchant_flags.size() and merchant_flags[i] != 0 else "",
@@ -3388,6 +3414,14 @@ func _cashflow_source_name(source_id: String, income: bool) -> String:
 		"business_subsidy": return "经营补贴"
 		"fiscal_escrow": return "财政托管"
 		_: return "其他收入" if income else "其他支出"
+
+
+func _has_cashflow_row(rows: Array, source_id: String) -> bool:
+	for row_value in rows:
+		if row_value is Dictionary and String((row_value as Dictionary).get("id", "")) == \
+			("income_" + source_id if String((row_value as Dictionary).get("id", "")).begins_with("income_") else "expense_" + source_id):
+			return true
+	return false
 
 
 func _weather_field(cell: HexCell, idx: int) -> Dictionary:

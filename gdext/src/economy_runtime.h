@@ -954,6 +954,8 @@ private:
     // without rebuilding the already aggregated fiscal rows.
     struct FiscalSettlementContinuation {
         bool active = false;
+        // 退款终态已确认后，收税续跑不得重新进入退款步骤。
+        bool return_completed = false;
         // 0=idle, 1=settling countries, 2=completed, 3=faulted.
         int32_t phase = 0;
         int32_t country_cursor = 0;
@@ -5141,6 +5143,8 @@ private:
         std::array<int32_t, CELL_TAX_KIND_COUNT>
             override_end{};
         uint8_t active_mask = 0;
+        uint8_t negative_mask = 0;
+        uint8_t absolute_mask = 0;
     };
     struct CompiledCellTaxDefaultRow {
         int32_t kind = -1;
@@ -5152,6 +5156,13 @@ private:
     };
     std::vector<uint32_t> _epoch_cell_compiled_tax_policy;
     std::vector<uint8_t> _epoch_cell_active_tax_mask;
+    // Per-cell tax mode masks keep fiscal post-processing data-oriented.  The
+    // active mask answers whether a lane has any non-zero rate; these masks
+    // answer whether the lane can actually enter the negative-tax or absolute
+    // settlement paths, so ordinary positive percentage tax does not trigger
+    // a full cohort/building scan.
+    std::vector<uint8_t> _epoch_cell_negative_tax_mask;
+    std::vector<uint8_t> _epoch_cell_absolute_tax_mask;
     std::vector<CompiledCellTaxPolicy> _epoch_compiled_cell_tax_policies;
     std::vector<CompiledCellTaxOverride> _epoch_compiled_cell_tax_overrides;
     std::vector<CompiledCellTaxDefaultRow> _epoch_compiled_cell_tax_default_rows;
@@ -5162,6 +5173,8 @@ private:
     bool _epoch_has_cell_tax_policies = false;
     uint64_t _epoch_tax_policy_version = 0;
     uint8_t _epoch_active_tax_mask = 0;
+    uint8_t _epoch_negative_tax_mask = 0;
+    uint8_t _epoch_absolute_tax_mask = 0;
     static constexpr int32_t ACTIVE_TAX_KIND_COUNT = 3;
     std::vector<int64_t> _fiscal_previous_requests;
     std::vector<uint64_t> _fiscal_previous_country_handles;
@@ -5976,6 +5989,9 @@ private:
     int64_t investment_merchant_cash(int32_t cell) const;
     int64_t investment_outstanding_credit(int32_t cell) const;
     int64_t investment_resource_committed(size_t index) const;
+    void record_investment_material_demand(int32_t cell, int32_t type_id,
+        int64_t count, int32_t cost_factor_q16);
+    void reserve_first_research_construction(int32_t cell);
     void prepare_startup_demand();
     void propagate_startup_demand_for_cell(int32_t cell);
     void begin_startup_demand_generation();

@@ -59,6 +59,10 @@ country.tax.export.<good>.rate_bp
 建筑生产、招聘价值、投资价值和财政提交均走原有零税快路，不建立逐交易税务草案；因此默认
 `0%` / `0` 定额政策不应为 worker 热路径引入字符串、分配或无意义的逐项税额计算。
 
+冻结税表另生成逐 cell 和 epoch 的 negative/absolute mask，包含全国与地块覆盖后的有效率。
+正百分比所得税不进入负所得税 cohort 扫描或定额税 cohort/building 扫描；
+最低生活补贴预算仅在该 cell 存在负所得税时计算。这些 mask 是可重建缓存，不改变存档、税额或周期。
+
 所得税/营业税绝对值在 `settle_absolute_daily_taxes_for_cell` 按人口/栋数×天总评；正税从 cohort/业主现金饱和征收（assessed 可大于 collected），补贴走既有 escrow。交易税/关税绝对值在成交点按数量计税。
 
 PKCN **v13** 保存 mode 稠密数组与地块稀疏 mode，以及 pending 命令的 `tax_assessment_mode`；
@@ -136,6 +140,10 @@ floor(tax_base * abs(rate_basis_points) / 10000)
 将国家托管余额一次性汇总为“未用补贴 + 本轮实收税款”（含关税 lane）。worker 热循环
 仍只写本格 lane，不写共享国家余额。不能直接沿用 epoch-open 的预留余额：正税已从居民
 扣款但尚未入库时，该旧余额可能为零，会错误触发 `country_fiscal_peer_escrow_insufficient`。
+财政 settlement continuation 还记录 RETURN 是否已经收到终态；RETURN 完成后即使
+COLLECT 需要异步续跑，也不会用 COLLECT 请求 ID 重试 RETURN。这样混合“未用补贴 +
+实收所得税”的批次不会因跨 slice 的 operation identity 错配而进入
+`country_economy_asset_host_terminal_rejected`。
 续跑只扣减汇总后的余额，不重新汇总。所得税单独启用的百分比/定额回归见
 `income_tax_settlement_regression_test.gd`；正式玩家 ACTIVE 路径运行中调税并继续 50 个提交日
 见 `income_tax_player_regression.tscn`。
@@ -161,6 +169,9 @@ market 完成后，`household_market/income_subsidy` 子阶段按 cohort 汇总�
 
 `fiscal_snapshot()` 按五类税种返回上批税基、应征、实收、补贴申请、预留、实付、未满足额、
 兑现率及累计值。进口/出口项当前固定为零。
+
+经济 UI 同时显示本批实付、累计实付与预留；零预留只表示等待预算，不承诺下一批必定到账。
+消费/营业补贴首批无历史申请的延迟与国库不足都可能导致零实付，需要结合预留及累计值判断。
 
 ## 存档与迁移
 

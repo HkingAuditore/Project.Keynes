@@ -266,6 +266,8 @@ public:
         int64_t funds = 0;
         int64_t epoch_income = 0;
         int64_t epoch_expense = 0;
+        int64_t epoch_tax_paid = 0;
+        int64_t epoch_subsidy_received = 0;
         int64_t epoch_in_kind_income = 0;
         int64_t cash_expense_coverage_q16 = 0;
         int64_t livelihood_coverage_q16 = 0;
