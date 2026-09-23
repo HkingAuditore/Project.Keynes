@@ -95,6 +95,53 @@ CountryResearchAllocation country_allocate_research_points(
     return result;
 }
 
+void country_redirect_idle_research_shares(
+        CountryResearchAllocation &allocation,
+        const std::array<int32_t, COUNTRY_RESEARCH_DOMAIN_COUNT> &weights,
+        const std::array<int32_t, COUNTRY_RESEARCH_DOMAIN_COUNT> &queue_lengths) noexcept {
+    int64_t idle = 0;
+    int64_t active_weight = 0;
+    for (uint32_t domain = 0; domain < COUNTRY_RESEARCH_DOMAIN_COUNT; ++domain) {
+        if (queue_lengths[domain] <= 0) {
+            idle += allocation.shares[domain];
+            allocation.shares[domain] = 0;
+            continue;
+        }
+        if (weights[domain] > 0)
+            active_weight += weights[domain];
+    }
+    if (idle <= 0 || active_weight <= 0) return;
+    std::array<int64_t, COUNTRY_RESEARCH_DOMAIN_COUNT> extra{{0, 0, 0, 0}};
+    std::array<int64_t, COUNTRY_RESEARCH_DOMAIN_COUNT> remainder{{0, 0, 0, 0}};
+    const int64_t whole = idle / active_weight;
+    const int64_t fraction = idle % active_weight;
+    int64_t distributed = 0;
+    for (uint32_t domain = 0; domain < COUNTRY_RESEARCH_DOMAIN_COUNT; ++domain) {
+        if (queue_lengths[domain] <= 0 || weights[domain] <= 0) continue;
+        const int64_t weight = weights[domain];
+        extra[domain] = whole * weight + (fraction * weight) / active_weight;
+        remainder[domain] = (fraction * weight) % active_weight;
+        distributed += extra[domain];
+    }
+    std::array<uint32_t, COUNTRY_RESEARCH_DOMAIN_COUNT> order{{0, 1, 2, 3}};
+    std::stable_sort(order.begin(), order.end(),
+        [&](uint32_t lhs, uint32_t rhs) {
+            if (remainder[lhs] != remainder[rhs])
+                return remainder[lhs] > remainder[rhs];
+            return lhs < rhs;
+        });
+    int64_t leftover = idle - distributed;
+    for (uint32_t index = 0; leftover > 0 &&
+            index < COUNTRY_RESEARCH_DOMAIN_COUNT; ++index) {
+        const uint32_t domain = order[index];
+        if (queue_lengths[domain] <= 0 || weights[domain] <= 0) continue;
+        ++extra[domain];
+        --leftover;
+    }
+    for (uint32_t domain = 0; domain < COUNTRY_RESEARCH_DOMAIN_COUNT; ++domain)
+        allocation.shares[domain] += extra[domain];
+}
+
 int64_t country_effective_research_cost(
         int64_t base_cost, double cost_factor) noexcept {
     if (base_cost < 1) base_cost = 1;

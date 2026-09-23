@@ -94,7 +94,25 @@ CLAIM 路径在 Country priority 255 ACK 之后，空闲经济周期可在 `EPOC
 前立即落地；本国迁徙没有 Country 前置，Economy 可在同一切片消费 SETTLE。
 空闲入口必须先 `process_due` 把到达队伍 enqueue，再 `dispatch_native_economy`：
 到达当日的 SETTLE 在第一次 dispatch 时还不存在，若只在 `process_due` 之前派发，
-本国迁徙会停在 `SETTLING`（面板「落地结算中」）直到下一次空闲周期。若冻结周期
+本国迁徙会停在 `SETTLING`（面板「落地结算中」）直到下一次空闲周期。生产 ACTIVE
+下 Effect POD 评估可归 worker，但开拓 CLAIM+SETTLE 仍挂在主线程 `EffectRuntime`；
+runtime graph / Economy idle 边界必须始终 `dispatch_native_country` +
+`dispatch_native_economy`（不得因 EFFECT worker 权威 skip），否则 CLAIM 永不提交、
+开拓队永久停在 `SETTLING`。
+
+COUNTRY worker 权威下 CLAIM 在 worker 自己的边界提交，`country_asset_snapshot()`
+要到 worker 发布后才带上新归属。因此 `apply_settle_family_expedition` 看到目标仍为
+无主（`owner == 0`）且本事务确实含 CLAIM 时，必须按 backpressure 让出：返回
+`country_economy_asset_territory_claim_pending`（`runtime_country_asset_pending_reason()`
+成员），命令原样重排、Effect 请求保持未完成，等快照带上 CLAIM 后重放。把这个时序窗口
+当成 `TARGET_LOST_RETURNING` 会让领土归玩家、移民却被遣返，玩家看到的就是
+「国家变成我的、人口是 0」。只有 `owner` 是**别的国家**才是真正的目标易主。
+与此对应，`settle_orphaned_native_country_acks()` 不得为同时含 Country 与 Economy
+命令的事务伪造 ACK——那正是 `dispatch_native_economy` 的排序前置；只有不跨这两域的
+事务才继续 soft-settle，以保留它防止 Country 卡死时钟的原意。
+`country_economy_asset_protocol_self_test()` 守护这条原因分类不被合并回 fatal。
+
+若冻结周期
 已开始且阶段仍在 `BUILDING_PLAN` / `TRADE_SETTLE` / `LEDGER_APPLY`，SETTLE
 追加进本轮 `_epoch_commands`，由本轮 `LEDGER_APPLY` 消费；更晚的阶段才进入
 pending，等下一轮 epoch。`EPOCH_BEGIN` 预检不得把 expedition 句柄当成 cohort

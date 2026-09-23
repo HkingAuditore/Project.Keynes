@@ -446,6 +446,8 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _epoch_begin_workset_ms = 0.0;
     _epoch_begin_resource_lane_ms = 0.0;
     _epoch_begin_fiscal_ms = 0.0;
+    _fiscal_settlement_ms = 0.0;
+    _income_subsidy_epoch_ms = 0.0;
     _epoch_begin_construction_csr_ms = 0.0;
     _epoch_begin_recovery_apply_ms = 0.0;
     _epoch_begin_vector_init_ms = 0.0;
@@ -1063,6 +1065,10 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
     const bool full_audit_verify = _opening_audit_force_full ||
         expedition_holdings_changed ||
         day_index % _full_audit_verify_interval_days == 0;
+    // The new epoch invalidates last epoch's close until AGGREGATE_PUBLISH
+    // recomputes it. A fatal before that point must report the conservation
+    // errors as unknown, not as the stale delta against this opening snapshot.
+    _closing_totals_valid = false;
     if (full_audit_verify) {
         EconomyCostProbe probe("opening_audit_full", day_index, market_store().stock.size());
         _opening_totals = audit_totals();
@@ -1277,11 +1283,7 @@ bool NativeEconomyRuntime::run_epoch_open_prelude_drain(
         error = reason;
     };
     const auto is_asset_pending = [](const std::string &reason) {
-        return reason == "country_economy_asset_host_pending" ||
-               reason == "country_economy_asset_results_pending" ||
-               reason == "country_economy_asset_rejection_retry_pending" ||
-               reason == "country_economy_asset_completion_retry_pending" ||
-               reason == "country_economy_fiscal_terminal_retry_pending";
+        return runtime_country_asset_pending_reason(reason);
     };
 
     constexpr int kMaxSteps = 1 << 16;

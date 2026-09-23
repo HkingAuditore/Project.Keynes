@@ -1,5 +1,49 @@
 # Performance Diagnostics Playbook
 
+## 模拟停机与卡死：先看哪份文件（2026-09-22）
+
+停机（economy fatal）和卡死（权威日不推进）现在都会自动落取证 JSON，**不需要开 GM 面板，
+也不需要玩家复现第二次**。先读文件，再读代码。
+
+| 现象 | 产物 | 写入者 |
+| --- | --- | --- |
+| 任意 economy fatal | `tmp/runtime_forensics_economy_fatal.json` | `WorldRuntimeHost._observe_economy_fatal`（每种 reason 一次） |
+| 权威日卡住 >15s | `tmp/runtime_forensics_stall.json`（之后每 30s 复抓） | `WorldRuntimeHost._poll_simulation_stall_watchdog` |
+| 存档回放失败 | `tmp/runtime_forensics_save_replay_{fatal,stall,restore_failed}.json` | `tests/headless_save_replay.gd` |
+
+逐次留存在 `user://diagnostics/<tag>_<时间戳>.json`；`tmp/` 那份是固定文件名的最新一次。
+
+### 读 economy fatal 的顺序
+
+1. **`fatal_context`**，不是守恒三项。里面有 `stage` / `executed_substage` /
+   `command_cursor` / `command_opcode` / `target_handle` / `d7_operation_gate_mask` /
+   `country_worker_authoritative`。边界类停机的答案基本都在这里。
+2. **`audit_incomplete`**。为真表示 epoch 在 `AGGREGATE_PUBLISH` 之前就中止了，
+   `population_error / money_error / goods_error` 一律报 0 且**不代表任何守恒结论**。
+   2026-09-22 之前这三项在半开 epoch 下会给出等于本 epoch mint 的假差值 —— 如果你在看
+   更早的 dump（例如 `tmp/economy_money_conservation_fatal.json`），那里的 `money_error`
+   很可能就是这个假象，别去追。
+3. `runtime_thread.authoritative_domain_mask`。跨域 fast path 走不走由它决定，
+   `country_worker_cohort_cash_*` 这类 reason 必须结合它才能判断拒绝是否合理。
+
+### 卡死的取证只观察不干预
+
+watchdog 不暂停时钟、不改权威，只打印 `[runtime-stall]` 警告并落盘，避免它本身变成新的
+行为变量。阈值是 `WorldRuntimeHost.stall_watchdog_threshold_msec`（默认 15000，置 0 关闭）。
+dump 里带 `stalled_ms`、`fast_tick_count`、`last_tick_timing`、`sus_last_tick`，可以直接
+判断是某个 job 长时间独占，还是整个 worker 停在 barrier 上。
+
+### 复现
+
+```powershell
+tools\runtime\Invoke-SaveReplay.ps1 -Slot autosave -Days 60
+tools\runtime\Invoke-SaveReplay.ps1 -SavePath <玩家给的.pksv> -Days 20 -Speed 10
+```
+
+细节见 `authority-migration.md` 的「存档复现入口」。注意：该 harness 会同时断言权威真的
+在推进（country/economy 已 bootstrapped、host 不在 STOPPED/FAULTED、`newest_state_day`
+有增长）。只判"跑满 N 天"会给出假绿 —— PKSR 恢复失败时时钟照样能空转到目标天数。
+
 ## 调所得税后经济停止（2026-09-20）
 
 先查 `[runtime-worker] FAULTED` 与 `fault_code`。若为
@@ -11,6 +55,61 @@
 扣减可见会产生暂时的货币缺口。`finish_worker_country_asset()` 是这两侧提交的既有边界。
 worker FAULTED 后 `WorldRuntimeHost._observe_runtime_worker_fault()` 请求暂停时钟；
 日历或界面仍能变化不能证明 Economy 仍在提交，需核对 committed day 和 fault count。
+
+## 补贴与日调度分段（2026-09-22）
+
+玩家性能 CSV 在整图 ACTIVE 下原先看不到财政阶段：SUS 经济 job 被 policy gate 掉，
+`household_market_*` 留空。现在同一份 `perf_record_*.csv` 直接带三段探针。
+`economy_*` 列要重新编译 GDExtension 后才有数；`sched_*` 与 `clock_*` 只靠脚本。
+
+主线程日回调（最近一次 `WorldRuntimeHost._on_clock_day_changed`，与 `clock_loop_ms`
+同一帧或上一帧，先看 `sched_day_total_ms` 是否贴住 `clock_full_ms`）：
+
+- `sched_day_report_ms`：`get_runtime_thread_report`
+- `sched_day_snapshots_ms`：Modifier/Effect/Trigger/Ideology 快照与 intent
+- `sched_day_climate_writeback_ms` / `sched_day_climate_wait_ms`
+- `sched_day_capture_ms`：`capture_runtime_inputs_for_worker`
+- `sched_day_country_peer_ms`：国家 peer，财政 reserve/return/collect 走这里
+- `sched_day_country_read_ms`：ACTIVE 日回调不再消费 read-view（恒为 0）；真实成本见
+  `sched_proc_country_read_ms` / `sched_proc_country_visual_ms`
+- `sched_day_promote_ms`
+
+`sched_proc_*` 是上一条性能行以来宿主 `_process` 的累计。`sched_proc_frames` 是这段里的
+宿主帧数。`sched_proc_last_total_ms` 只是最后一帧。`clock_day_cost_ema_ms` 与
+`clock_throughput_cap` 是时钟用来夹 50 倍速的单日成本和平滑上限——日回调不再含
+country 视觉扇出后，EMA 应贴近 capture≈3ms 而不是 60ms+ hitch。
+
+Country read-view / 视觉探针：
+
+- `country_read_full_snapshot_applied`：上一笔消费是否走了 `full_cell_owners`
+- `country_read_applied_cells` / `country_read_territory_changed_cells`：真实领土 diff
+  格数（full snapshot 时对 MapData 逐格比较，**不是** `cell_count`）
+- `country_read_full_snapshot_count` / `country_read_patch_count` / `country_read_rejected_count`
+- `sched_proc_country_visual_ms` / `country_visual_last_refresh_ms`：预算内视野+国界刷新
+- `country_visual_refresh_deferred_frames` / `country_visual_refresh_defer_count`：
+  超预算 defer；满 30 帧强制执行一次
+
+Worker 侧税收（epoch 累加，epoch 清空后回到 0，不要把一行的值当成单日增量）：
+
+- `runtime_graph_economy_negative_tax_mask` bit 0 为 1 表示所得税补贴开着
+- `runtime_graph_economy_active_tax_mask` 为有非零税率的国内税种
+- `runtime_graph_economy_epoch_fiscal_ms`：epoch 开头的补贴预留
+- `runtime_graph_economy_fiscal_settlement_ms`：结算时的退回/入库
+- `runtime_graph_economy_income_subsidy_ms`：`household_market/income_subsidy`
+- `runtime_graph_economy_stage_name` / `economy_substage_name` / `economy_yield_reason`
+  停在 `fiscal_reserve_peer_results` 或 `fiscal_peer_results` 就是在等国家 peer
+- `runtime_graph_economy_attempt_slices`：这一次 Economy 访问跑了多少 compact slice
+
+`runtime_graph_worker_time_*_us` 与 `input_capture_count` 是进程累计，比较两行必须取差。
+`country_worker_waiting_for_peer` 与 `country_worker_last_reason` 说明国家阶段有没有被
+peer 挡住。这些列不改变权威状态。
+
+2026-09-22 修复：国库（税收/补贴）每天推进 read-view 代次，但领土补丁的 base 对不上消费者游标时，
+旧逻辑把整图 `full_cell_owners` 复制进主线程，并让 `country_committed` 看起来像 2400 格都变了。
+`full_snapshot_required` 现在只在消费者漏掉过一次真正的领土变更时成立。现金、税率、科研代次
+继续走空补丁。漏掉领土的旧契约不变：`runtime_country_pod_test` 的 skipped generation 仍要整图快照。
+同日后续修复：ACTIVE `day_changed` 只做 capture+peer；read-view 改到 `_process`；
+full snapshot 广播真实 diff；`refresh_country_visuals` 有帧预算，不再打进 `day_cost_ema`。
 
 ## Opt-in Economy daily cost CSV (2026-09-20)
 

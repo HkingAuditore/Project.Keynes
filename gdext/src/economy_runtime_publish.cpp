@@ -93,6 +93,7 @@ bool NativeEconomyRuntime::publish_epoch_slice(
                 _closing_audit_runtime_disabled ||
                 _closing_audit_force_full || periodic_full;
             _closing_audit_incremental_this_epoch = !full_required;
+            _closing_totals_valid = false;
             if (full_required) {
                 ++_closing_audit_full_verifications;
                 _closing_totals = {};
@@ -325,6 +326,9 @@ bool NativeEconomyRuntime::publish_epoch_slice(
         if (_publish_cursor >= static_cast<size_t>(market_store().good_count))
             _publish_phase = PublishPhase::VERIFY;
     } else if (_publish_phase == PublishPhase::VERIFY) {
+        // Every closing total has now been recomputed for this epoch, so the
+        // three conservation errors describe real balances from here on.
+        _closing_totals_valid = true;
         refresh_country_research_goods_consumed();
         const int64_t population_expected = _opening_totals.population +
             _births - _deaths + _external_population_delta;

@@ -213,7 +213,8 @@ SurfaceParams apply_climate_vegetation_tint(SurfaceParams surface, LandModInputs
 	float climate_jitter = (i.pixel_noise.r * 0.70 + i.pixel_noise.a * 0.30 - 0.5) * 0.10;
 	float climate_temp = clamp(i.current_temp + climate_jitter, 0.0, 1.0);
 	float climate_moist = clamp(i.moist + climate_jitter * 0.55, 0.0, 1.0);
-	float climate_wet = smoothstep(0.30, 0.68, climate_moist);
+	// 陆地湿度多数落在 0.65–0.95。旧曲线在 0.68 就饱和，日常漂移看不出深浅。
+	float climate_wet = smoothstep(0.42, 0.98, climate_moist);
 	float climate_dry = 1.0 - smoothstep(0.20, 0.52, climate_moist);
 	float growth_warmth = smoothstep(0.30, 0.56, climate_temp)
 			* (1.0 - smoothstep(0.82, 0.97, climate_temp));
@@ -310,7 +311,7 @@ SurfaceParams apply_environment_color_grade(SurfaceParams surface, LandModInputs
 	float hot_w = hot_n * temperature_visual_strength;
 	float dry_n = 1.0 - smoothstep(0.22, 0.52, i.moist);
 	float dry_w = dry_n * moisture_visual_strength;
-	float wet_n = smoothstep(0.55, 0.82, i.moist);
+	float wet_n = smoothstep(0.55, 0.98, i.moist);
 	float wet_w = wet_n * moisture_visual_strength;
 
 	float healthy_w = 0.0;

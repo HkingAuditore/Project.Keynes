@@ -636,6 +636,9 @@ eligible = owned_by_player
 `country_committed` 仍是唯一广播，但 `changed_cells > 0` 才重算视野和国界。
 纯证据、税务或国库提交不触发这两个 O(n) 工作；capability 跃迁只重算视野，
 不重建国界。vision pass 返回 fog dirty indices，地图 LUT 只刷新这些格。
+Worker read-view 在 `full_snapshot_required` 时仍会整图修复 `country_slot_arr`，
+但广播的 `changed_cells` 是真实 diff；主线程用帧预算执行
+`refresh_country_visuals`，避免一次 CLAIM 把 `day_changed` / 50× 时钟拖死。
 
 生产路径默认 `native_runtime_graph_mode=ACTIVE` 时，国家提交发生在
 `advance_runtime_pulse()` 内，不经过 `CountryDailySystem`。此时必须由
@@ -646,6 +649,14 @@ watermark 补发同一条 `country_committed`，否则 Inspector 已显示归属
 MapData CoW 镜像之间存在窗口，视野若读到旧 `country_slot_arr`，新领土
 不会进源集，邻格只被迷雾柔边照亮却保持 `explored=0`。
 `refresh_country_visuals` 入口再次 sync，作为第二道闸。
+
+这道闸的取数必须与查询路径同源。COUNTRY worker 权威下同步 Country store 被冻结在
+交接前的内容，`cell_country_snapshot()` 若直接拷贝它，既丢掉 worker 此后提交的每一次
+CLAIM，又会把 Host read-view 刚打进 `country_slot_arr` 的正确平面整片覆盖回去。所以
+它和 `country_slot_for_cell()` 一样 pin `country_asset_snapshot()`。否则 Inspector
+（读 `country_query_runtime()` 的 committed 副本）显示新归属，而国界 ribbon 与视野源集
+永远停在开局领土——开局之后新增的每一格都画不出边界。
+`country_worker_territory_mirror_test.gd` 覆盖这个回归。
 一次 pulse 可能跨过多个 country slice，所以最后一份 report 的
 `changed_cells` 可能已被后续纯研究/税表提交覆盖为 0。
 MapGenerator 在 generation 变化时不得用该字段提前拦截；`CountryFacade`

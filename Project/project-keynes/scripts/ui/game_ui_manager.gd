@@ -25,6 +25,14 @@ const OVERLAY_LEGEND_WIDTH := 198.0
 const GM_PANEL_TARGET_WIDTH := 560.0
 const GM_PANEL_MIN_WIDTH := 300.0
 const INSPECTOR_FULL_PATCH_INTERVAL_MSEC := 750
+# Country economy/treasury snapshots include the native trade summary and can
+# be materially more expensive than applying the already-built panel model.
+# Economy commits may arrive several times per rendered frame at high speed;
+# coalesce those notifications and refresh the open panel at a bounded cadence.
+# This only affects presentation freshness. The native country/economy state is
+# still committed on every simulation boundary and command feedback remains
+# event-driven (at most one refresh delay).
+const COUNTRY_UI_REFRESH_INTERVAL_MSEC := 250
 var _top_bar: PlayerTopBar
 var _right_panel: InspectorPanel
 var _loading_overlay: WorldLoadingOverlay
@@ -64,6 +72,8 @@ var _country_runtime_facade = null
 var _economy_runtime_facade = null
 var _ideology_runtime_facade = null
 var _country_refresh_queued := false
+var _country_refresh_timer_active := false
+var _country_next_refresh_ms := 0
 var _country_open_generation := 0
 var _country_dirty_domains := 0
 var _country_refresh_reason := ""
@@ -180,6 +190,8 @@ func _bind_country_runtime_events(generator) -> void:
 			_ideology_runtime_facade.command_settled.connect(ideology)
 	_country_dirty_domains = COUNTRY_DIRTY_ALL
 	_country_refresh_queued = false
+	_country_refresh_timer_active = false
+	_country_next_refresh_ms = 0
 
 
 func _on_country_research_signal_discovered(_event: Dictionary) -> void:
@@ -222,15 +234,33 @@ func _mark_country_panel_dirty(domains: int, reason: String) -> void:
 
 
 func _flush_country_panel_refresh() -> void:
-	_country_refresh_queued = false
 	if _country_panel == null or not _country_panel.is_panel_open():
+		_country_refresh_queued = false
+		_country_refresh_timer_active = false
 		return
 	var section_mask := _country_section_mask(_country_panel.current_section())
 	if (_country_dirty_domains & section_mask) == 0:
+		_country_refresh_queued = false
+		_country_refresh_timer_active = false
 		return
+	# High-speed economy commits can arrive more often than a player can read
+	# the panel. Keep the first refresh immediate, then coalesce later commits
+	# behind a short wall-clock window. Leave the queued bit armed while waiting
+	# so additional events do not create one timer per commit.
+	var now_ms := Time.get_ticks_msec()
+	var wait_ms := _country_next_refresh_ms - now_ms
+	if wait_ms > 0:
+		if not _country_refresh_timer_active:
+			_country_refresh_timer_active = true
+			get_tree().create_timer(float(wait_ms) / 1000.0).timeout.connect(
+				_flush_country_panel_refresh, CONNECT_ONE_SHOT)
+		return
+	_country_refresh_queued = false
+	_country_refresh_timer_active = false
 	refresh_country_summary()
 	_country_dirty_domains &= ~section_mask
 	_country_refresh_reason = ""
+	_country_next_refresh_ms = now_ms + COUNTRY_UI_REFRESH_INTERVAL_MSEC
 
 
 func set_diagnostics_source(source: Node) -> void:
@@ -431,6 +461,11 @@ func _on_country_committed(report: Dictionary) -> void:
 func open_country_section(section_id: String) -> void:
 	if _country_panel == null or _country_view_model == null:
 		return
+	# Opening a section is an explicit player action and should never inherit a
+	# throttle window left by a previously visible section.
+	_country_refresh_queued = false
+	_country_next_refresh_ms = 0
+	_country_refresh_timer_active = false
 	_hide_inspector_for_country()
 	_country_action_bar.set_active(section_id)
 	_country_open_generation += 1
@@ -469,10 +504,14 @@ func _load_country_section_deferred(section_id: String, generation: int) -> void
 		(Time.get_ticks_usec() - started_usec) / 1000.0,
 		_country_section_mask(section_id))
 	_country_dirty_domains &= ~_country_section_mask(section_id)
+	_country_next_refresh_ms = Time.get_ticks_msec() + COUNTRY_UI_REFRESH_INTERVAL_MSEC
 
 
 func close_country_panel() -> void:
 	_country_open_generation += 1
+	_country_refresh_queued = false
+	_country_refresh_timer_active = false
+	_country_next_refresh_ms = 0
 	if _country_panel != null and _country_panel.is_panel_open():
 		_country_panel.close_panel()
 	# A closed panel never needs a fresh Native query. Drop only dynamic section
@@ -1143,7 +1182,7 @@ func _poll_research_completion_toasts() -> void:
 	for index in range(limit):
 		var next_state := int(states[index])
 		var prev_state := int(previous[index]) if index < previous.size() else 0
-		if prev_state >= 4 or next_state < 4:
+		if prev_state >= 5 or next_state < 5:
 			continue
 		var definition: Dictionary = definitions[index]
 		if bool(definition.get("is_application", false)) \

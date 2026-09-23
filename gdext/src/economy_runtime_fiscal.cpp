@@ -1378,6 +1378,16 @@ bool NativeEconomyRuntime::commit_fiscal(std::string &error) {
 
 bool NativeEconomyRuntime::advance_fiscal_settlement(std::string &error) {
     error.clear();
+    const auto settlement_started = std::chrono::steady_clock::now();
+    struct SettlementTimer {
+        double *slot = nullptr;
+        std::chrono::steady_clock::time_point started;
+        ~SettlementTimer() {
+            if (slot == nullptr) return;
+            *slot += std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - started).count();
+        }
+    } settlement_timer{&_fiscal_settlement_ms, settlement_started};
     FiscalSettlementContinuation &continuation =
         _fiscal_settlement_continuation;
     if (!continuation.active) return true;
@@ -1512,14 +1522,12 @@ bool NativeEconomyRuntime::run_fiscal_settlement_drain(std::string &error) {
         // run_slice_internal, so Country-origin poll must run here or a
         // prepared fiscal request parks forever without a terminal (calendar
         // soft-stalls into climate_input_capacity_day_barrier).
-        if (!service_country_economy_asset_peer(64, error)) {
-            const bool asset_pending =
-                error == "country_economy_asset_host_pending" ||
-                error == "country_economy_asset_results_pending" ||
-                error == "country_economy_asset_rejection_retry_pending" ||
-                error == "country_economy_asset_completion_retry_pending" ||
-                error == "country_economy_fiscal_terminal_retry_pending";
-            if (asset_pending) {
+        const auto peer_started = std::chrono::steady_clock::now();
+        const bool peer_ok = service_country_economy_asset_peer(64, error);
+        _fiscal_settlement_ms += std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - peer_started).count();
+        if (!peer_ok) {
+            if (runtime_country_asset_pending_reason(error)) {
                 error = "fiscal_settlement_peer_pending";
                 _executed_substage = "country_asset_peer_pending";
                 return false;

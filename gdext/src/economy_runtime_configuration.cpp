@@ -1575,11 +1575,18 @@ bool NativeEconomyRuntime::submit_effect_commands_pod(
             std::string commit_error;
             const bool applied = apply_settle_family_expedition(
                 command, commit_error);
-            result.complete = 1;
-            result.ok = applied ? 1 : 0;
-            result.reason = applied ? std::string{} :
-                (commit_error.empty()
-                    ? "effect_economy_commit_failed" : commit_error);
+            if (!applied && runtime_country_asset_pending_reason(commit_error)) {
+                // Backpressure, not failure: no store was mutated. Re-queue the
+                // command intact and leave the Effect request incomplete, so the
+                // transaction is not ACKed against a claim that has not landed.
+                queue_family_settlement_command(command);
+            } else {
+                result.complete = 1;
+                result.ok = applied ? 1 : 0;
+                result.reason = applied ? std::string{} :
+                    (commit_error.empty()
+                        ? "effect_economy_commit_failed" : commit_error);
+            }
         } else if (command.opcode == COMMAND_SETTLE_FAMILY_EXPEDITION) {
             queue_family_settlement_command(command);
         } else if (command.effective_day <= due_day) {

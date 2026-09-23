@@ -429,27 +429,48 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             ? (_building_catalog_compat_hash_v13 != 0 &&
                building_catalog_hash == _building_catalog_compat_hash_v13)
             : building_catalog_hash == _building_catalog_hash;
-        if (saved_cells != _cell_count || markets <= 0 || markets > _cell_count ||
-            goods != static_cast<int32_t>(_good_ids.size()) || pages < 0 || active_count < 0 ||
-            active_count > static_cast<int64_t>(pages) * COHORT_PAGE_SIZE ||
-            pending_count < 0 || pending_count > 1000000 ||
-            audit_count < 0 || audit_count > 3650 || signal_count < 0 ||
-            signal_count > 10000000 || labor_signal_count < 0 ||
-            labor_signal_count > 10000000 || next_event_id <= 0 ||
-            trade_order_count < 0 || trade_order_count > _trade_max_orders ||
-            trade_flow_count < 0 || trade_flow_count > _trade_max_signals ||
-            tariff_history_count < 0 || tariff_history_count > 1000000 ||
-            country_good_count < 0 || country_good_count > 10000000 ||
-            country_partner_count < 0 || country_partner_count > 10000000 ||
-            next_trade_order_id <= 0 ||
-            person_count < 0 || person_count > _person_max_total ||
-            person_need_count < 0 || person_need_count >
-                _person_max_total * MAX_NEEDS_PER_PLAN ||
-            !market_hash_ok || money_scale != MONEY_SCALE ||
-            goods_scale != GOODS_SCALE || ratio_scale != Q16_ONE || rate_scale != Q32_ONE ||
-            professions != _profession_ids || ethnicities != _ethnicity_ids ||
-            good_ids != _good_ids || plan_ids != _plan_ids) {
-            error = "save_catalog_scale_or_capacity_mismatch";
+        // One reason per rule. A single combined reason gave a player whose
+        // save would not load nothing to act on: a changed catalog, a changed
+        // map size, and a capacity knob all read the same.
+        const char *header_mismatch = nullptr;
+        if (saved_cells != _cell_count) header_mismatch = "cell_count";
+        else if (markets <= 0 || markets > _cell_count) header_mismatch = "market_count";
+        else if (goods != static_cast<int32_t>(_good_ids.size())) header_mismatch = "good_count";
+        else if (pages < 0 || active_count < 0 ||
+                 active_count > static_cast<int64_t>(pages) * COHORT_PAGE_SIZE)
+            header_mismatch = "cohort_pages";
+        else if (pending_count < 0 || pending_count > 1000000) header_mismatch = "pending_count";
+        else if (audit_count < 0 || audit_count > 3650) header_mismatch = "audit_count";
+        else if (signal_count < 0 || signal_count > 10000000 ||
+                 labor_signal_count < 0 || labor_signal_count > 10000000)
+            header_mismatch = "signal_count";
+        else if (next_event_id <= 0) header_mismatch = "next_event_id";
+        else if (trade_order_count < 0 || trade_order_count > _trade_max_orders)
+            header_mismatch = "trade_order_capacity";
+        else if (trade_flow_count < 0 || trade_flow_count > _trade_max_signals)
+            header_mismatch = "trade_flow_capacity";
+        else if (tariff_history_count < 0 || tariff_history_count > 1000000)
+            header_mismatch = "tariff_history_count";
+        else if (country_good_count < 0 || country_good_count > 10000000 ||
+                 country_partner_count < 0 || country_partner_count > 10000000)
+            header_mismatch = "country_trade_count";
+        else if (next_trade_order_id <= 0) header_mismatch = "next_trade_order_id";
+        else if (person_count < 0 || person_count > _person_max_total)
+            header_mismatch = "person_capacity";
+        else if (person_need_count < 0 ||
+                 person_need_count > _person_max_total * MAX_NEEDS_PER_PLAN)
+            header_mismatch = "person_need_capacity";
+        else if (!market_hash_ok) header_mismatch = "catalog_hash";
+        else if (money_scale != MONEY_SCALE || goods_scale != GOODS_SCALE ||
+                 ratio_scale != Q16_ONE || rate_scale != Q32_ONE)
+            header_mismatch = "fixed_point_scale";
+        else if (professions != _profession_ids) header_mismatch = "profession_ids";
+        else if (ethnicities != _ethnicity_ids) header_mismatch = "ethnicity_ids";
+        else if (good_ids != _good_ids) header_mismatch = "good_ids";
+        else if (plan_ids != _plan_ids) header_mismatch = "plan_ids";
+        if (header_mismatch != nullptr) {
+            error = std::string("save_catalog_scale_or_capacity_mismatch:") +
+                header_mismatch;
             return false;
         }
         if (schema >= 11 && (saved_trade_mode != _trade_runtime_mode ||
@@ -2589,31 +2610,54 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 runtime_d7_reason_is_stale_reject(record.reason.data())) {
                 record.late_ack_rejection_reason = record.reason;
             }
-            if (record.request_id == 0 || record.transaction_id == 0 ||
-                record.country_handle == 0 ||
-                record.country_slot < -1 ||
-                record.country_slot >= _epoch_country_count ||
-                record.committed_peer_generation < record.peer_generation ||
-                record.day < -1 ||
-                record.operation < RuntimeEconomyAssetOperation::RESEARCH_PURCHASE ||
-                record.operation > RuntimeEconomyAssetOperation::TREASURY_SPEND ||
-                record.result_code != RuntimeEconomyAssetResultCode::COMPLETED &&
-                    record.result_code != RuntimeEconomyAssetResultCode::REJECTED ||
-                record.state != RuntimeEconomyAssetState::COMPLETED &&
-                    record.state != RuntimeEconomyAssetState::REJECTED ||
-                record.accepted > 1 || record.requested_quantity < 0 ||
-                record.requested_cash < 0 || record.committed_quantity < 0 ||
-                record.committed_cash < 0 || record.committed_quantity > record.requested_quantity ||
-                record.committed_cash > record.requested_cash || reserved0 != 0 || reserved1 != 0) {
-                error = "save_fiscal_peer_record_invalid";
+            const char *record_defect = nullptr;
+            if (record.request_id == 0 || record.transaction_id == 0)
+                record_defect = "identity";
+            else if (record.country_handle == 0) record_defect = "country_handle";
+            // Only the lower bound is checkable here. The Country epoch the
+            // upper bound refers to is captured in end_restore, after every
+            // section is read; at this point the restore target has just been
+            // reset to zero countries, so an upper-bound check rejected every
+            // save that carried a completed fiscal transaction (any save made
+            // with a non-zero tax). end_restore validates the upper bound.
+            else if (record.country_slot < -1)
+                record_defect = "country_slot";
+            else if (record.committed_peer_generation < record.peer_generation)
+                record_defect = "peer_generation";
+            else if (record.day < -1) record_defect = "day";
+            else if (record.operation < RuntimeEconomyAssetOperation::RESEARCH_PURCHASE ||
+                     record.operation > RuntimeEconomyAssetOperation::TREASURY_SPEND)
+                record_defect = "operation";
+            else if ((record.result_code != RuntimeEconomyAssetResultCode::COMPLETED &&
+                      record.result_code != RuntimeEconomyAssetResultCode::REJECTED) ||
+                     (record.state != RuntimeEconomyAssetState::COMPLETED &&
+                      record.state != RuntimeEconomyAssetState::REJECTED))
+                record_defect = "not_terminal";
+            else if (record.accepted > 1 || record.requested_quantity < 0 ||
+                     record.requested_cash < 0 || record.committed_quantity < 0 ||
+                     record.committed_cash < 0 ||
+                     record.committed_quantity > record.requested_quantity ||
+                     record.committed_cash > record.requested_cash)
+                record_defect = "amounts";
+            else if (reserved0 != 0 || reserved1 != 0) record_defect = "reserved";
+            if (record_defect != nullptr) {
+                error = std::string("save_fiscal_peer_record_invalid:") + record_defect;
                 return false;
             }
-            if (record.result_code == RuntimeEconomyAssetResultCode::COMPLETED &&
-                (record.accepted == 0 || record.country_slot < 0 ||
-                 record.country_generation == 0 || record.peer_generation == 0 ||
-                 record.committed_quantity <= 0 || record.committed_cash <= 0)) {
-                error = "save_fiscal_peer_completed_record_invalid";
-                return false;
+            if (record.result_code == RuntimeEconomyAssetResultCode::COMPLETED) {
+                const char *completed_defect =
+                    record.accepted == 0 ? "not_accepted" :
+                    record.country_slot < 0 ? "country_slot" :
+                    record.country_generation == 0 ? "country_generation" :
+                    record.peer_generation == 0 ? "peer_generation" :
+                    record.committed_quantity <= 0 ? "committed_quantity" :
+                    record.committed_cash <= 0 ? "committed_cash" : nullptr;
+                if (completed_defect != nullptr) {
+                    error = std::string("save_fiscal_peer_completed_record_invalid:") +
+                        completed_defect + ":op" +
+                        std::to_string(static_cast<int>(record.operation));
+                    return false;
+                }
             }
             if (!_asset_peer_journal.emplace(record.request_id, record).second) {
                 error = "save_fiscal_peer_duplicate";

@@ -1,5 +1,39 @@
 # 运行时权威迁移：目标、设计框架、当前状态与任务
 
+2026-09-22 cohort cash 边界停机修复 + 事故取证与复现入口。三件事一起落地，它们是
+同一个缺口的三面：
+
+1. **止血**。`prepare_worker_cohort_cash()` 过去把四个拒绝条件合成一个
+   `country_worker_cohort_cash_boundary_invalid`，其中 `_country_pod_plan_active`
+   只是"Country 当天的 plan 窗口还开着"这一时序状态。窗口开着是 continuation 的正常
+   形态（`execute_country_worker_stage` 在 `country_economy_asset_results_pending`
+   等出口保留 plan 不 discard，下个 pulse 继续），但 Economy 侧的 fast path 拿到拒绝
+   后直接 `return false` → `fail()` → 整个经济运行时进 FATAL。玩家表现为扩张领地或
+   研究科技时模拟停摆。现在按类拆开：线程/授权/操作非法仍是
+   `country_worker_cohort_cash_boundary_invalid`（契约违反，必须 fatal）；plan 窗口
+   返回 `country_economy_asset_country_plan_pending`，归入既有的 asset backpressure
+   集合。`LEDGER_APPLY` 与 `STRUCTURAL_COMMIT` 两条游标 drain（StageOps 与 compact
+   各一份）遇到该原因时不推进游标、不调用 `fail()`，而是 park 并让同一条命令在下个
+   pulse 重放；park 前顺带 `service_country_economy_asset_peer(64)`，保证 Country 的
+   终态继续落地，plan 窗口能够关闭。
+2. **取证**。`fail()` 现在捕获 `FatalContext`（stage / executed_substage / 命令游标 /
+   opcode / target·subject handle / amount / `_d7_operation_gate_mask` /
+   Country 权威位），经 `report()` 与 `compact_report()` 以 `fatal_context` 暴露。
+   同时新增 `audit_incomplete`：`fail()` 会把 `_epoch_active` 置 false，而
+   `population_error/money_error/goods_error` 此前只按 `!_epoch_active` 计算，于是
+   半开 epoch 里"已记 mint、未刷 closing"的差值被当成真实守恒失衡上报——day 2744 那次
+   `money_error=-639200` 恰好等于当天金银铸币额，就是这么来的。现在只有
+   `PublishPhase::VERIFY` 真正重算过 closing 才报这三项，否则一律 0 并给出
+   `audit_incomplete_reason`。
+3. **复现**。新增 `tests/headless_save_replay.gd` + `tools/runtime/Invoke-SaveReplay.ps1`：
+   给一个槽位或任意 `.pksv`，走生产 `GameFlow.begin_load_game` 恢复路径无头续跑 N 天，
+   fatal / 单日卡死 / 恢复失败三种结果都落 forensics JSON。`WorldRuntimeHost` 另加
+   stall watchdog（权威日停在同一天超过 `stall_watchdog_threshold_msec` 即取证）与
+   通用 fatal 落盘（此前只有 `money_conservation_failed` 会落盘，且字段集是钱专用的）。
+
+同日发现的存档/读档阻塞项已于 2026-09-23 修复，见 4.4「存档链路」与
+`game-flow-start-save.md`「Save/load under worker authority」。
+
 2026-09-20 所得税停机修复：`commit_fiscal()` 在 Country 财政转账前补齐
 “未用补贴 + 实收税款”的国家 escrow 汇总，消除正税结算误报
 `country_fiscal_peer_escrow_insufficient`。正式玩家 `PlayerController` 调整全国所得税到
@@ -459,6 +493,12 @@ BUILDING_PLAN → TRADE_SETTLE → LEDGER_APPLY
 → BUILDING_COMMIT → FAMILY_COMMIT → PERSON_COMMIT → AGGREGATE_PUBLISH
 ```
 
+2026-09-22：StageOps 的 `GOVERNMENT_RESEARCH_PROCUREMENT` drain 已修正为在返回
+stage result 前完成已封存的 research-purchase continuation。compact-slice 可以在事务阶段
+之间让出，但 StageOps 不能把这个正常 continuation 误报为
+`government_research_peer_pending` fatal；否则会在下一 sample day 前把 Economy epoch
+永久停在 `fatal`。
+
 **它自己的 worker 不是 POD worker**：`economy_profile.worker_enabled`（默认 true）开启的是
 `NativeParallelExecutor` + `parallel_for_range` 的按 cell 分 task 并行
 （`parallel_dispatcher.h:64+`），与 `NativeSimulationHost` 的 POD worker 是两个东西。这一点
@@ -520,9 +560,12 @@ receipt cursor 和 request-id 水位；pending Country packet 必须对应 Accep
 worker 仍只表达部分 opcode，因此不能作为完整
 20 opcode 或生产 ACTIVE 的完成证明。
 
-**与 Economy 的边界**：国库/科技/领土由同步 Country 权威，Economy 通过
-`capture_country_epoch` 冻结快照消费；税率在 epoch begin 从 country + modifier 快照冻结；
-研究采购在 Economy 的 `GOVERNMENT_RESEARCH_PROCUREMENT` stage 消费冻结的 country 政策。
+**与 Economy 的边界**：国库/科技/领土在 Country worker ACTIVE 后由 worker 提交；同步
+facade 停写。Economy 通过 `capture_country_epoch`（`copy_economy_snapshot`）冻结快照消费，
+且 live 路径的 `has_technology` / `country_slot_for_cell` 同样钉 worker
+`country_asset_snapshot`，避免出现「科技面板已掌握、建筑检视仍技术停用」。税率在 epoch
+begin 从 country + modifier 快照冻结；研究采购在 Economy 的
+`GOVERNMENT_RESEARCH_PROCUREMENT` stage 消费冻结的 country 政策。
 科研采购、财政 escrow、Country↔cohort 现金、Country↔market 商品以及建筑/运河 treasury 支出
 都已具备统一 typed asset bridge；`research_purchase`、财政三类操作、cohort cash、market goods
 以及 construction/canal 的生产调用方已升级为 Economy-owned coordinator，其中
@@ -559,6 +602,18 @@ snapshot 对照，但尚未取得 ACTIVE authority；其它域的 POD 状态见 
 **并且这份清单被证明不充分**：它全是 headless 指标，而 Climate 放行后在真实客户端又暴露了
 四个 headless 没抓到的缺陷。**后续域放行必须补第八条：真实客户端会话下的字段录制对照。**
 
+**第九条（2026-09-22 追加）：fail-closed 出口清单。** 一个域转 ACTIVE 之前，必须列出它在
+生产路径上引入的**所有** fail-closed 点，逐个回答两个问题：
+
+1. 这个拒绝是契约违反还是时序窗口？两类混用同一个 reason 字符串的，先拆开。
+2. 时序窗口类的拒绝，调用方有没有回退（异步 enqueue / park 重放 / 软跳过）？没有回退
+   的，要么补上，要么证明该窗口在生产路径上不可达。
+
+D7 的 cohort cash sync fast path 就是没过这一关的反例：它把 Country plan 窗口当成契约
+违反，且失败后够不到紧邻其下的软回退，于是每次撞上 continuation 都把整个经济运行时打进
+FATAL（day 2744 停机）。这一条不是事后补的形式主义 —— 它是迄今唯一一类在 headless 全绿、
+soak 全绿之后仍然在玩家侧稳定复现的停机。
+
 推荐的放行流程（Climate 走通的那条）：
 
 ```text
@@ -566,8 +621,9 @@ snapshot 对照，但尚未取得 ACTIVE authority；其它域的 POD 状态见 
 2. 分叉矩阵归因 → 每条分叉写明原因，不允许"暂时未知"
 3. ACTIVE soak  → 对着 PK_SOAK_AUTHORITY=0 的同 seed 基准读逐场 nz/mean/max
 4. 回归全绿
-5. 真实客户端录制对照  ← Climate 是在这一步之后才发现四个缺陷的
-6. 翻默认开关
+5. fail-closed 出口清单（第九条）← D7 cohort cash 漏的就是这一步
+6. 真实客户端录制对照  ← Climate 是在这一步之后才发现四个缺陷的
+7. 翻默认开关
 ```
 
 ---
@@ -1153,6 +1209,9 @@ ACTIVE authority；当前剩余缺口集中在 Country–Economy D7 跨域事务
       `country_economy_asset_host_pending` / fiscal peer pending 时就地 prepare+retry，
       日等待前再 drain 一次；修复「Economy enqueue 后等次日 Country stage → Climate
       输入环满 → `climate_input_capacity_day_barrier` 永久钉日历」的 ACTIVE 死锁。
+      **2026-09-22**：prepare 改为逐条出队；资源不足等失败发 `REJECTED` 终态而非
+      清空队列留下 `CREATED` 孤儿；仍 pending 时 soft-complete ECONOMY，避免 research
+      peer 把日历钉在 climate barrier 上。
       当前仅 fiscal 三种 operation 进入 M1 bridge gate，
       `country_economy_operation_gate_closed` 会明确拒绝其它未迁移 operation，不再伪造
       成功或静默切换第二个同步写者。Economy-owned fiscal peer journal 已完成，并在 PKEC v52
@@ -1685,7 +1744,7 @@ Economy 正式 ACTIVE 接管：
 ### 怎么跑
 
 ```powershell
-# 统一 runner：24 个 runtime_* + dots_completion_gate（共 25；长期验收看 failures=0）
+# 统一 runner：25 个 runtime_* + dots_completion_gate（共 26；长期验收看 failures=0）
 tools\runtime\Invoke-RuntimeTests.ps1
 
 # 单个测试
@@ -1696,7 +1755,59 @@ tools\runtime\run_climate_parity.ps1
 
 # 性能录制（CLI 参数在 -- 之后，不是环境变量）
 godot --headless --path Project/project-keynes --script res://tests/headless_perf_record.gd -- days=50 speed=50
+
+# 玩家存档复现：加载存档 → 无头续跑 N 天（见下节"存档复现入口"）
+tools\runtime\Invoke-SaveReplay.ps1 -Slot autosave -Days 60
+tools\runtime\Invoke-SaveReplay.ps1 -SavePath C:\tmp\day2740.pksv -Days 20 -Speed 10
 ```
+
+### 存档复现入口（2026-09-22 新增）
+
+在此之前无头能力是断的：`headless_perf_record.gd` 只能从新开局跑，
+`game_save_roundtrip_test.gd` 只能用固定槽位续跑 6 天，**没有任何入口能回放玩家崩溃
+现场**。这是"玩家报障后无法交给 AI 复现"的根因，不是工具缺失的小事。
+
+`tests/headless_save_replay.gd`（由 `GameFlowService` 按 `PK_SAVE_REPLAY=1` 注入）走
+生产 `GameFlow.begin_load_game` → `player_game.tscn` → `GameSaveCoordinator` 恢复路径，
+不另写一套 restore，所以复现行为与玩家一致。
+
+| 环境变量 | 默认 | 说明 |
+| --- | --- | --- |
+| `PK_SAVE_REPLAY` | — | `=1` 注入 runner |
+| `PK_SAVE_REPLAY_SLOT` | `autosave` | `manual_1\|manual_2\|manual_3\|autosave` |
+| `PK_SAVE_REPLAY_DAYS` | 30 | 续跑天数 |
+| `PK_SAVE_REPLAY_SPEED` | 20 | 时钟倍速 |
+| `PK_SAVE_REPLAY_DAY_TIMEOUT_MSEC` | 60000 | 单日墙钟上限，超过判为卡死 |
+| `PK_SAVE_DIR` | — | 存档目录重定向，**仅调试构建生效**；包装脚本用它把任意 `.pksv` 暂存到临时目录，避免覆盖玩家槽位 |
+
+失败判据是三条，缺一不可（只判"跑满 N 天"会出假绿）：
+
+- 恢复没成功：country / economy 未 bootstrapped，或请求了后台权威却停在 STOPPED/FAULTED。
+- 经济 fatal。
+- 单日墙钟超时（卡死）。
+- 跑完但 `newest_state_day` 没推进 —— 时钟走了而模拟没走，等于什么也没验证。
+
+三种失败都写 forensics JSON（见下节），并打印唯一一行机器可读结果
+`[save-replay/result] {...}`；包装脚本按这个前缀解析，不要改前缀。
+
+### 事故取证产物（2026-09-22 新增）
+
+`scripts/game/runtime_forensics.gd` 是 fatal 与 watchdog 共用的取证模块。落盘两份
+相同内容：`user://diagnostics/<tag>_<时间戳>.json` 逐次留存，
+`tmp/runtime_forensics_<tag>.json` 固定文件名供 agent 直接读。
+
+| tag | 触发 |
+| --- | --- |
+| `economy_fatal` | `WorldRuntimeHost._observe_economy_fatal`，**任何**经济 fatal reason，每种 reason 一次 |
+| `stall` | 权威日停在同一天超过 `stall_watchdog_threshold_msec`（默认 15s），之后每 30s 复抓 |
+| `save_replay_fatal` / `save_replay_stall` / `save_replay_restore_failed` / `save_replay_ok` | 存档回放的四种终局 |
+
+内容包含 economy 现场键（含 `fatal_context`、`audit_incomplete`）、守恒分桶、country
+报告、runtime thread 报告（`authoritative_domain_mask` / host state / fault code）与时钟。
+**权威 mask 必须在里面**：跨域 fast path 走不走由它决定，没有它就无法判断一次边界拒绝
+是否合理。
+
+watchdog 只观察不干预 —— 不暂停时钟、不改权威，避免看门狗本身成为新的行为变量。
 
 Godot 可执行文件由 `GODOT_BIN` 或 `tools/runtime/Resolve-GodotBin.ps1` 定位。
 
@@ -1740,6 +1851,11 @@ Godot 可执行文件由 `GODOT_BIN` 或 `tools/runtime/Resolve-GodotBin.ps1` �
 > 总数。所以"某测试应该有 N 个断言"这种判断不成立，只能看 failures 是否为 0。含循环的 harness
 > （peer bridge、fiscal continuation）更不要把某次运行的 checks 写进总纲当契约。
 
+2026-09-22 复核：**26/26 passed**（25 个 `runtime_*` + `dots_completion_gate`，
+`artifacts/runtime/cohort-cash-fix/test-summary.json`）。条目数会随新增测试漂移，
+以 `tools/runtime/Invoke-RuntimeTests.ps1` 的 `$tests` 数组为准，不要把本文的数字
+当契约。
+
 2026-09-11 完整 runner 复核：**24/24 passed, failures=0**（23 个 `runtime_*` +
 `dots_completion_gate`）。checks 数由运行时 assertion 数决定，长期验收只固定 `failures=0`。
 `dots_completion_gate` 的 2026-05 monolith 行数与 `map_generator` bake-time 直写指标已明确降为
@@ -1780,6 +1896,51 @@ Trigger 与 Events 已随 H8/I8 进入 `implemented_domain_mask`；Economy 专�
 - **帧延迟收益无法测量**：headless 的 `frame_wall_ms` 恒 0，而这正是 worker 化的主要卖点。
 - **`run_ms` 在 ACTIVE 下不可直接比**：harness 每天 40ms 忙等轮询（`SceneTree -s` 下
   `_process` 不跑，回灌只能手动驱动）会淹没真实差异。
+
+### 存档链路（2026-09-23 已修复）
+
+下面这段是 2026-09-22 发现时的记录，保留作为归因过程。实际根因比当时的推断深得多：
+"存档超时"不是 ring 与暂停互等，而是 `build_save_bundle` 在 worker 里失败、故障又被
+状态覆盖藏起来；而读档一路下去还有十来处环环相扣的缺陷，其中最严重的是 **worker 权威下
+存档捕获的是开局时的国家**——worker 上的领地、科技、国库变化在存盘时全部丢失。完整
+清单、每一环的修法与回归覆盖见 `game-flow-start-save.md` 的
+「Save/load under worker authority」。当前状态：`game_save_roundtrip_test.gd`
+（开税、推进 20 天、存读档、逐字段比对、读档后完整结算）0 failures；带税存档读档后
+回放 120 天 19.9 日/秒、守恒 0/0/0、worker 全程持有 `0xFFF`。
+
+以下为 2026-09-22 的原始记录：
+
+两个缺陷叠在一起，效果是"玩家既存不下来、已有的存档也读不回去"，因而无法把现场交给
+任何人复现。两者都在当前工作树复现，与同日的 cohort cash 修复无关。
+
+- **手动存档超时 `runtime_save_timeout`。** `game_save_roundtrip_test.gd` 稳定 4 项失败，
+  代码来自 `GameSaveCoordinator._capture_native_runtime_bundle()` 轮询 1800 帧仍未
+  ready。worker 的 save 准入条件是
+  `!has_pending_climate_input() && !retained_day_pending`
+  （`native_simulation_host.cpp` 主循环），而 `_save()` 一开始就 `pause(true)`。
+  Climate 输入 ring 只有推进日期才会排空 —— 存档等 ring 排空，ring 等时钟推进，时钟
+  为了存档被暂停。这是 5.3"跨边界接线"的又一例：两个互相等待的边界条件。
+- **读档 `runtime_bundle_ideology_catalog_missing`。** 玩家 autosave（day 2930）无法
+  载入。`DCWorldExt::configure_ideologies()` 要先
+  `NativeCountryRuntime::export_pod_snapshot()` 成功才会调
+  `configure_ideology_pod()`；读档时 country 处于
+  `[save/restore] country configured without bootstrap; awaiting PKCN`，导出失败 →
+  `_ideology_pod_configured=false` → 之后 PKSR 恢复撞上 IDP1 section 就拒绝
+  （`native_simulation_host.cpp:10911`）。**这是恢复次序契约的缺陷**：PKSR 里带
+  ideology POD section，但它的 catalog 要等 PKCN 之后才配得出来。修法需要定次序
+  （PKCN → 配 ideology catalog → 恢复 PKSR ideology section，或让
+  `restore_runtime_bundle` 暂存该 section 延后恢复），属于 `game-flow-start-save.md`
+  的保存/恢复顺序契约，不要就地打补丁。
+
+复现命令：
+
+```powershell
+# 存档失败
+$env:PK_GAME_SAVE_ROUNDTRIP_TEST = "1"
+godot --headless --path Project/project-keynes
+# 读档失败（forensics 落在 tmp/runtime_forensics_save_replay_restore_failed.json）
+tools\runtime\Invoke-SaveReplay.ps1 -Slot autosave -Days 5
+```
 
 ### 危险默认值
 
@@ -1843,6 +2004,27 @@ max 恒等于当日增量上限）；缺 knob 落到结构默认值（默认值�
 **十、scalars 要整套传，不要逐个补。** 只补 `season_phase` 治不了病：`insol_amp` 取结构默认
 0.20 而 profile 是 0.32，季节振幅还剩 62.5%。正确做法是复用生产那个构建函数，整份过边界。
 
+**十一之一、一个拒绝条件里不能混两个类别。** `prepare_worker_cohort_cash()` 把"线程错了 /
+域没授权 / 操作非法"（契约违反，重试一万次也不会对）和"Country plan 窗口开着"（时序，
+下个 pulse 就好了）合成同一个 `country_worker_cohort_cash_boundary_invalid`。调用方只
+拿得到这一个字符串，只能一视同仁地 fail，于是一次正常的 continuation 变成了整个经济
+运行时停机。**跨边界的拒绝必须按"能不能重试"分类返回**，而不是按"检查写在一起"合并。
+
+**十一之二、fail-closed 的快路径必须有回退，否则它就是停机开关。** `coordinate_country_cohort_cash`
+的 sync fast path 失败直接 `return false`，够不到紧邻其下的
+`block_or_enqueue_country_worker_asset` 软回退（那条路径有
+`GATE_SOFT_UNAVAILABLE → committed=0, return true`）。同一个文件里
+`service_country_economy_asset_peer` 的调用点早就把 `*_pending` 归为 backpressure 并注释
+了"Treating it as fatal leaves the epoch half-open"，只是这套处理没有用到 fast path 上。
+**新增快路径时，先列出它所有的失败出口，逐个回答"这条出口有回退吗"。**
+
+**十一之三、游标驱动的 stage 天然可以 park，不要浪费这个性质。** `LEDGER_APPLY` 与
+`STRUCTURAL_COMMIT` 都是 `_command_cursor` / `_structural_cursor` 驱动，失败时游标停在
+出错的那条命令上。这意味着"不推进游标 + 返回 pending"就等于让同一条命令下个 pulse 重放，
+不需要任何新的 continuation 状态。park 时要顺手把对端队列 drain 一次
+（`service_country_economy_asset_peer`），否则会出现"Economy 等 Country 关窗口、
+Country 等 Economy 落终态"的互等。
+
 **十一、门控标志的名字要说它门控什么。** `climate_own_paw` 后来同时门控了 scalars 补齐，名字
 就开始误导，改成了 `climate_worker_authoritative`。它和 `own_snow_state` / `own_field_state`
 是并列但不同的区分：后两者问"跨天状态谁持有"，它问"生产被抑制后，那些由生产 pass 顺带记录的
@@ -1861,6 +2043,37 @@ max 恒等于当日增量上限）；缺 knob 落到结构默认值（默认值�
 
 **十四、单独盯过的场才算验过。** ACTIVE soak 覆盖的是"跑过的天数里碰到的情况"。暴雨、干旱、
 降雪、跨年、topology revision 这些场景如果没有单独构造，就只是"可能碰到过"。
+
+**十五、诊断字段在异常态下的取值必须单独定义，否则它会主动误导。** `population_error /
+money_error / goods_error` 原先只按 `!_epoch_active` 计算，而 `fail()` 恰好会把
+`_epoch_active` 置 false —— 于是每次 fatal 都附带一组"用本 epoch 的 mint 减去上个 epoch
+的 closing"的假差值。day 2744 那次 `money_error=-639200` 精确等于当天金银铸币额，所有人
+都去追一个不存在的守恒 bug。**一个指标只在某些状态下有意义时，其他状态要显式报"未知"
+（`audit_incomplete` + reason），不能让它退化成上一次的残值。**
+
+**十六、停机现场要带 stage 与命令，只有 reason 字符串等于没有。** 事故落盘过去只覆盖
+`money_conservation_failed` 且字段集是钱专用的，于是边界类停机拿到的是一份钱的报表：
+没有 stage、没有触发命令的 opcode 与 handle、没有 `_d7_operation_gate_mask`、没有
+`authoritative_domain_mask`。现在 `fail()` 捕获 `FatalContext`，
+`WorldRuntimeHost` 对任何 fatal reason 落盘一次。**新增任何 fail-closed 点时，问一句
+"只看这份 dump，能不能定位到行"。**
+
+**十八、主线程副本在 worker 权威下是陈旧的，任何"从主线程取状态"的路径都要重审。**
+存档从主线程 `NativeCountryRuntime` 捕获 Country，而 worker 拥有 Country 期间它从开局起就
+没被写过——结果存盘的是开局国家。往返测试只跑 3 天、国家没变化，hash 碰巧一致，于是这个
+数据丢失一直是绿的。**迁移一个域之后，要把"谁还在读旧 owner"列出来**，并且往返测试必须
+先让状态在新 owner 上真正变化（开税、推进若干天）再存档。
+
+**十九、授予前窗口是一个真实的运行态。** worker 在 ACTIVE 下按请求的 mask 执行 stage，
+但跨域路由看已授予的 mask，而授予要等第一天完整提交。新开局第一天没有跨域资产流量，窗口
+无害；读档后开着税，第一天就结算，于是 worker 线程直接改了主线程的 Country（崩溃）。
+恢复启动现在立即授予；新增跨域路由时要确认它在授予前窗口里选的是哪条路。
+
+**十七、"跑满 N 天且不报错"不是通过条件。** 新写的存档回放 harness 第一版就给出假绿：
+PKSR 恢复失败、worker 停在 STOPPED，时钟照样以 19.6 日/秒空转到目标天数，结果判定 PASS。
+这是 5.4 第十三条（headless 全绿 ≠ 玩家看到的是对的）的同一形态。**任何"推进 N 天"的
+harness 都要同时断言权威真的在动**：country/economy 已 bootstrapped、host 不在
+STOPPED/FAULTED、`newest_state_day` 有推进。
 
 ---
 

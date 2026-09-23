@@ -10,6 +10,7 @@ const TAX_RATE_MIN_BP := -100000
 const TAX_RATE_MAX_BP := 10000
 const TAX_MODE_PERCENT_BP := 0
 const TAX_MODE_ABSOLUTE := 1
+const MONEY_SUBUNITS_PER_CURRENCY := 10000
 const TAX_ABSOLUTE_MIN := -1000000000
 const TAX_ABSOLUTE_MAX := 1000000000
 
@@ -40,7 +41,7 @@ func _ready() -> void:
 	if _mode_button != null:
 		_mode_button.clear()
 		_mode_button.add_item("%", TAX_MODE_PERCENT_BP)
-		_mode_button.add_item("定额", TAX_MODE_ABSOLUTE)
+		_mode_button.add_item("定额（货币）", TAX_MODE_ABSOLUTE)
 		_mode_button.item_selected.connect(_on_mode_selected)
 	_spin.get_line_edit().alignment = HORIZONTAL_ALIGNMENT_RIGHT
 	_spin.get_line_edit().text_changed.connect(_on_text_changed)
@@ -196,15 +197,19 @@ func _configure_spin_for_mode(mode: int) -> void:
 	if _spin == null:
 		return
 	if mode == TAX_MODE_ABSOLUTE:
-		_spin.min_value = float(TAX_ABSOLUTE_MIN)
-		_spin.max_value = float(TAX_ABSOLUTE_MAX)
-		_spin.step = 1.0
-		_spin.suffix = ""
+		# The runtime stores money in subunits, but players edit ordinary
+		# currency. Keep the conversion at this UI boundary only.
+		_spin.min_value = absolute_amount_to_currency(TAX_ABSOLUTE_MIN)
+		_spin.max_value = absolute_amount_to_currency(TAX_ABSOLUTE_MAX)
+		_spin.step = 0.01
+		_spin.suffix = "货币"
+		_spin.tooltip_text = "定额税按货币计，单位：货币/人/天"
 		return
 	_spin.min_value = -1000.0
 	_spin.max_value = 100.0
 	_spin.step = 0.01
 	_spin.suffix = "%"
+	_spin.tooltip_text = "按百分比计"
 
 
 func _set_spin_value(rate: int, mode: int) -> void:
@@ -213,13 +218,16 @@ func _set_spin_value(rate: int, mode: int) -> void:
 	_applying = true
 	_configure_spin_for_mode(mode)
 	if mode == TAX_MODE_ABSOLUTE:
-		_spin.set_value_no_signal(float(rate))
+		_spin.set_value_no_signal(absolute_amount_to_currency(rate))
 	else:
 		_spin.set_value_no_signal(basis_points_to_percent(rate))
 	var line := _spin.get_line_edit()
 	if line != null:
 		var shown := _format_value(rate, mode, false)
-		if not line.has_focus() and mode == TAX_MODE_PERCENT_BP \
+		# Keep the suffix out of the editable text. SpinBox renders it through
+		# its suffix property; including it here makes narrow fields horizontally
+		# scroll and can hide the leading minus sign and digits.
+		if not line.has_focus() and mode != TAX_MODE_ABSOLUTE \
 				and not String(_spin.suffix).is_empty():
 			shown = "%s %s" % [shown, _spin.suffix]
 		if line.text != shown:
@@ -291,9 +299,14 @@ func _on_text_changed(text: String) -> void:
 		return
 	_applying = true
 	if mode == TAX_MODE_ABSOLUTE:
-		_spin.set_value_no_signal(float(rate))
+		_spin.set_value_no_signal(absolute_amount_to_currency(rate))
 	else:
 		_spin.set_value_no_signal(basis_points_to_percent(rate))
+	var line := _spin.get_line_edit()
+	if line != null:
+		# Godot formats a 0.01-step SpinBox as "-800.0" after text input.
+		# Restore the player-facing canonical form while the edit is active.
+		line.text = _format_value(rate, mode, false)
 	_applying = false
 	_on_value_changed(_spin.value)
 
@@ -313,15 +326,14 @@ static func parse_rate_text(text: String, fallback: int) -> int:
 
 
 static func parse_value_text(text: String, fallback: int, mode: int) -> int:
-	var cleaned := text.strip_edges().replace("%", "").replace("+", "").strip_edges()
+	var cleaned := text.strip_edges().replace("%", "").replace("货币", "") \
+		.replace("+", "").strip_edges()
 	cleaned = cleaned.replace(",", ".")
 	if cleaned.is_empty():
 		return fallback
 	if mode == TAX_MODE_ABSOLUTE:
-		if cleaned.is_valid_int():
-			return clampi(cleaned.to_int(), TAX_ABSOLUTE_MIN, TAX_ABSOLUTE_MAX)
-		if cleaned.is_valid_float():
-			return clampi(int(round(cleaned.to_float())), TAX_ABSOLUTE_MIN, TAX_ABSOLUTE_MAX)
+		if cleaned.is_valid_int() or cleaned.is_valid_float():
+			return currency_to_absolute_amount(cleaned.to_float())
 		return fallback
 	if cleaned.is_valid_int():
 		return clampi(cleaned.to_int() * 100, TAX_RATE_MIN_BP, TAX_RATE_MAX_BP)
@@ -339,13 +351,31 @@ static func percent_to_basis_points(rate_percent: float) -> int:
 		TAX_RATE_MAX_BP)
 
 
+static func absolute_amount_to_currency(amount: int) -> float:
+	return float(amount) / float(MONEY_SUBUNITS_PER_CURRENCY)
+
+
+static func currency_to_absolute_amount(currency: float) -> int:
+	return clampi(int(round(currency * float(MONEY_SUBUNITS_PER_CURRENCY))),
+		TAX_ABSOLUTE_MIN, TAX_ABSOLUTE_MAX)
+
+
+static func _format_currency(amount: int) -> String:
+	if amount % MONEY_SUBUNITS_PER_CURRENCY == 0:
+		return str(amount / MONEY_SUBUNITS_PER_CURRENCY)
+	if amount % 100 == 0:
+		return "%.2f" % absolute_amount_to_currency(amount)
+	return "%.4f" % absolute_amount_to_currency(amount)
+
+
 static func _format_rate(rate_basis_points: int, include_suffix: bool = true) -> String:
 	return _format_value(rate_basis_points, TAX_MODE_PERCENT_BP, include_suffix)
 
 
 static func _format_value(value: int, mode: int, include_suffix: bool = true) -> String:
 	if mode == TAX_MODE_ABSOLUTE:
-		return str(value)
+		var shown_currency := _format_currency(value)
+		return "%s 货币" % shown_currency if include_suffix else shown_currency
 	var percent := basis_points_to_percent(value)
 	var shown := "%d" % int(round(percent)) \
 		if is_equal_approx(percent, round(percent)) else "%.2f" % percent
@@ -363,7 +393,7 @@ func _current_value() -> int:
 	if _spin == null:
 		return int(_data.get("base", 0))
 	if _current_mode() == TAX_MODE_ABSOLUTE:
-		return clampi(int(round(_spin.value)), TAX_ABSOLUTE_MIN, TAX_ABSOLUTE_MAX)
+		return currency_to_absolute_amount(float(_spin.value))
 	return percent_to_basis_points(float(_spin.value))
 
 

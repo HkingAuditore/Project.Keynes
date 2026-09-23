@@ -129,6 +129,9 @@ The important boundary is:
    morning, incomplete continuation drain, or wedged Effect slice cannot leave the node
    pending forever. Pending nodes also re-queue unacked Effect instances each country day.
 8. Only after successful application expose the completed tag and economic unlocks.
+   Economy live `building_available` / `has_technology` queries must pin the same
+   Country worker `country_asset_snapshot` as `copy_economy_snapshot` once Country is
+   worker-authoritative; the frozen sync facade must not keep driving unlock gates.
 
 This keeps market settlement one day ahead of research and makes effects/unlocks visible atomically.
 GM reveal changes discovery only. GM grant must use the same pending/activation path.

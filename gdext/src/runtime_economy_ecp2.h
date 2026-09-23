@@ -49,6 +49,9 @@ constexpr uint32_t ECP2_DOMAIN_FULL_AUTHORITY =
 
 constexpr uint32_t ECP2_CAPTURE_ALLOW_MID_EPOCH = 1u;
 constexpr uint32_t ECP2_CAPTURE_INCLUDE_RESUME = 2u;
+// In-memory rollback snapshot taken by apply_ecp2_authority. Never persisted,
+// so it skips the "Country must be idle" gate that protects real saves.
+constexpr uint32_t ECP2_CAPTURE_ROLLBACK_BACKUP = 4u;
 
 struct RuntimeEconomyEcp2Envelope {
     int32_t schema_version = RUNTIME_ECONOMY_ECP2_SCHEMA_VERSION;

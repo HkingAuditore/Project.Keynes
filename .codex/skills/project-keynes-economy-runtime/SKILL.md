@@ -91,6 +91,43 @@ treasury cap. Do not invent a family wallet or a second market-price exception a
   building graph and PKEC v11 domestic trade graph are explicit staged exceptions. Keep tax,
   cross-country trade/tariffs, politics, and natural demography outside this runtime until designed.
 
+## Never turn Country-peer backpressure into a fatal
+
+This is the single failure mode that has reached players as a mid-game stop
+(day 2744, `country_worker_cohort_cash_boundary_invalid`). Treat it as a hard rule.
+
+- `runtime_country_asset_pending_reason()` in `gdext/src/runtime_pod_protocol.h` is the
+  **one** definition of Country/Economy asset backpressure reasons. Never re-inline the
+  string list at a call site; add new reasons there so every consumer picks them up.
+- Every reason in that set means no store was mutated. The caller must yield the slice
+  and retry on a later pulse. Calling `fail()` on one leaves a half-open epoch, and the
+  next report shows staged mints without their committed owner funds.
+- Classify a cross-boundary rejection by **whether a retry can succeed**, not by where the
+  check happens to be written. Contract violations (wrong thread, domain not authoritative,
+  illegal operation) stay fatal. Timing windows (`_country_pod_plan_active`, drain-idle)
+  are backpressure.
+- A cursor-driven stage (`LEDGER_APPLY`, `STRUCTURAL_COMMIT`) parks by simply not advancing
+  its cursor; the same command replays next pulse with no new continuation state. Call
+  `park_on_country_asset_pending()` so the peer queue still drains — otherwise Economy waits
+  for Country to close its plan window while Country waits for Economy to land a terminal.
+- When adding a sync fast path, list every failure exit and answer "does this exit have a
+  fallback?" for each one. `coordinate_country_cohort_cash`'s fast path could not reach the
+  `block_or_enqueue_country_worker_asset` fallback sitting directly below it.
+
+Details: `docs/cpp-dots-runtime/native-economy-runtime.md`, section
+「2026-09-22 Country asset backpressure 与 fatal 取证」.
+
+## Keep fatal diagnostics honest
+
+- `fail()` must capture `FatalContext` (stage, substage, command cursor/opcode/handles, D7
+  gate mask, Country authority bits). A bare reason string is not a diagnosis.
+- `population_error / money_error / goods_error` are only meaningful once
+  `PublishPhase::VERIFY` recomputed the closing totals. `fail()` sets `_epoch_active = false`,
+  so gating on that alone reports the previous epoch's snapshot as a live imbalance. Gate on
+  `_closing_totals_valid` and surface `audit_incomplete` + `audit_incomplete_reason` instead.
+- Generally: when a metric is only valid in some states, make the other states report
+  "unknown" explicitly. Do not let it decay into a stale value that reads like a real defect.
+
 ## Preserve the building graph contract
 
 - Compile sorted building IDs, owner/employee roles, construction/input/output goods, natural
@@ -99,11 +136,9 @@ treasury cap. Do not invent a family wallet or a second market-price exception a
 - Run `building_employment` and `building_production` before `household_market`, then hold completed
   internal state in `wait_commit` until the frozen deadline; run `building_commit` immediately before
   publish. Empty building worlds must skip the first two stages without changing results.
-- Buy construction and production inputs from local merchant cohorts. Sort producer offers by
-  `(good, unit_cost, group)`, fill merchant quota from lowest unit cost (equal-cost
-  offers at the marginal tier share leftover quota), apply the configured
-  merchant buy factor, and cap normal purchases by merchant cash. Cost anchors weight by
-  `merchant_sold`. Put remaining storable output into merchant inventory through the audited
+- Buy construction and production inputs from local merchant cohorts. Sort producer offers by local
+  retail price descending, apply the configured merchant buy factor, and cap normal purchases by
+  merchant cash. Put remaining storable output into merchant inventory through the audited
   one-fifth-retail producer-support issuance path; only non-storable remainder is discarded.
 - Buy inputs and produce/sell output before wage transfer. Then cap wage transfer by post-sale owner
   cash and pay only committed local employees. Report paid and unpaid wages separately without

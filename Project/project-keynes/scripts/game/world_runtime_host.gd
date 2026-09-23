@@ -11,6 +11,7 @@ signal generation_progress(stage: String, fraction: float)
 signal gm_toggle_changed(toggle_id: String, enabled: bool)
 signal gm_action_completed(action_id: String, result: Dictionary)
 
+const RuntimeForensics = preload("res://scripts/game/runtime_forensics.gd")
 const WORLD_SETUP_META := &"world_setup_config"
 const DEFAULT_CLIMATE_PROFILE_PATH := "res://data/world/earth_like.tres"
 const MOBILE_NATIVE_DAILY_STRIDE_DAYS: int = 20
@@ -148,7 +149,16 @@ var _last_ui_perf_summary: Dictionary = {}
 var _perf_recorder: RefCounted = null
 var _tile_data_recorder: RefCounted = null
 var _economy_data_recorder: RefCounted = null
-var _money_conservation_fatal_dumped := false
+## 每种 fatal reason 只落盘一次；换了原因要重新抓，否则第二个缺陷会被第一个遮住。
+var _economy_fatal_dumped_reason := ""
+## 卡死看门狗：权威日停在同一天超过阈值就抓现场。0 表示关闭。
+@export var stall_watchdog_threshold_msec: int = 15000
+const STALL_WATCHDOG_REPEAT_MSEC := 30000
+var _stall_watchdog_day: int = -1
+var _stall_watchdog_day_started_msec: int = 0
+var _stall_watchdog_next_report_msec: int = 0
+const _RUNTIME_HEALTH_POLL_MSEC := 500
+var _runtime_health_next_poll_msec: int = 0
 var _pending_tick_start_usec: int = 0
 var _pending_tick_sus_ms: float = 0.0
 var _pending_tick_render_ms: float = 0.0
@@ -212,6 +222,41 @@ var _runtime_natural_resource_last_result: Dictionary = {}
 var _runtime_last_visual_apply_ms: float = 0.0
 var _runtime_last_ui_feedback_ms: float = 0.0
 var _runtime_last_gpu_upload_ms: float = 0.0
+## Day-callback and host-_process segments for the perf CSV. Day fields are the
+## most recent `_on_clock_day_changed`. Process fields accumulate until the next
+## perf row, then reset, so a row is the pump cost since the previous row.
+var _sched_day_total_ms: float = 0.0
+var _sched_day_report_ms: float = 0.0
+var _sched_day_snapshots_ms: float = 0.0
+var _sched_day_climate_writeback_ms: float = 0.0
+var _sched_day_climate_wait_ms: float = 0.0
+var _sched_day_capture_ms: float = 0.0
+var _sched_day_country_peer_ms: float = 0.0
+var _sched_day_country_read_ms: float = 0.0
+var _sched_day_promote_ms: float = 0.0
+var _sched_proc_frames: int = 0
+var _sched_proc_economy_input_ms: float = 0.0
+var _sched_proc_peer_ms: float = 0.0
+var _sched_proc_snapshots_ms: float = 0.0
+var _sched_proc_country_read_ms: float = 0.0
+var _sched_proc_country_visual_ms: float = 0.0
+var _sched_proc_commit_ms: float = 0.0
+var _sched_proc_resource_ms: float = 0.0
+var _sched_proc_visual_ms: float = 0.0
+var _sched_proc_building_ms: float = 0.0
+var _sched_proc_overlay_ms: float = 0.0
+var _sched_proc_last_total_ms: float = 0.0
+## Country vision/border refresh is off the day-boundary critical path. It runs
+## under a per-frame wall budget so a full Dijkstra cannot inflate day_cost_ema.
+const COUNTRY_VISUAL_REFRESH_BUDGET_MS: float = 3.0
+const COUNTRY_VISUAL_REFRESH_MAX_DEFER_FRAMES: int = 30
+var _country_visual_last_refresh_ms: float = 0.0
+var _country_visual_refresh_deferred_frames: int = 0
+var _country_visual_refresh_run_count: int = 0
+var _country_visual_refresh_defer_count: int = 0
+var _country_read_last_full_snapshot: bool = false
+var _country_read_last_applied_cells: int = 0
+var _country_read_last_territory_changed_cells: int = 0
 ## FAULTED worker parks the WorldClock and retains last-committed diagnostics.
 var _runtime_worker_fault_paused: bool = false
 var _runtime_last_fault_diagnostics: Dictionary = {}
@@ -267,21 +312,40 @@ func configure(
 	_init_tod_profile()
 
 
+func _sched_elapsed_ms(started_usec: int) -> float:
+	return float(Time.get_ticks_usec() - started_usec) / 1000.0
+
+
 func _on_clock_day_changed(day_idx: int) -> void:
 	# OFF/SHADOW keep the synchronous reference authority in this host. The
 	# PlayerController only consumes the resulting state for UI; it must not be
 	# another simulation entry point.
+	var day_started_usec := Time.get_ticks_usec()
+	_sched_day_report_ms = 0.0
+	_sched_day_snapshots_ms = 0.0
+	_sched_day_climate_writeback_ms = 0.0
+	_sched_day_climate_wait_ms = 0.0
+	_sched_day_capture_ms = 0.0
+	_sched_day_country_peer_ms = 0.0
+	_sched_day_country_read_ms = 0.0
+	_sched_day_promote_ms = 0.0
 	if not _runtime_ready_for_ticks or _generator == null or _world_clock == null:
+		_sched_day_total_ms = _sched_elapsed_ms(day_started_usec)
 		return
+	var segment_usec := Time.get_ticks_usec()
 	var report := _generator.get_runtime_thread_report() \
 		if _generator.has_method("get_runtime_thread_report") else {}
+	_sched_day_report_ms = _sched_elapsed_ms(segment_usec)
 	# Capacity waits must yield to _process so peer ACKs and writeback keep
 	# running. Retain this semantic day instead of dropping a rejected input.
 	if bool(report.get("climate_worker_authoritative", false)):
+		segment_usec = Time.get_ticks_usec()
 		var capacity := wait_for_climate_consumed(0)
+		_sched_day_climate_wait_ms += _sched_elapsed_ms(segment_usec)
 		if not bool(capacity.get("ok", false)):
 			_climate_capacity_pending_day = day_idx
 			_world_clock.request_simulation_backpressure(&"climate_input_capacity_day_barrier", true)
+			_sched_day_total_ms = _sched_elapsed_ms(day_started_usec)
 			return
 	_climate_capacity_pending_day = -1
 	_world_clock.request_simulation_backpressure(&"climate_input_capacity_day_barrier", false)
@@ -300,6 +364,7 @@ func _on_clock_day_changed(day_idx: int) -> void:
 		# Skipping capture here parks the worker on environment wait while it still
 		# holds the authority-boundary lock; any blocking switch then freezes Godot.
 		if bool(report.get("climate_worker_authoritative", false)):
+			segment_usec = Time.get_ticks_usec()
 			_consume_modifier_worker_snapshot_if_authoritative()
 			_consume_effect_worker_snapshot_if_authoritative()
 			_service_effect_worker_intents_if_authoritative()
@@ -307,20 +372,36 @@ func _on_clock_day_changed(day_idx: int) -> void:
 			_service_trigger_worker_intents_if_authoritative()
 			_consume_ideology_worker_snapshot_if_authoritative()
 			_service_ideology_worker_intents_if_authoritative()
+			_sched_day_snapshots_ms += _sched_elapsed_ms(segment_usec)
+		segment_usec = Time.get_ticks_usec()
 		_apply_climate_writeback_if_authoritative(report)
+		_sched_day_climate_writeback_ms += _sched_elapsed_ms(segment_usec)
 		if bool(report.get("climate_worker_authoritative", false)):
+			segment_usec = Time.get_ticks_usec()
 			var capacity_result := wait_for_climate_consumed(0)
+			_sched_day_climate_wait_ms += _sched_elapsed_ms(segment_usec)
 			if not bool(capacity_result.get("ok", false)):
 				_climate_capacity_pending_day = day_idx
 				_world_clock.request_simulation_backpressure(&"climate_input_capacity_day_barrier", true)
+				_sched_day_total_ms = _sched_elapsed_ms(day_started_usec)
 				return
 		if _generator.has_method("capture_runtime_inputs_for_worker"):
 			# 与 sus_tick_daily 的输入日约定一致，接管当天不能跳过一日。
+			segment_usec = Time.get_ticks_usec()
 			_generator.capture_runtime_inputs_for_worker(
 				maxi(0, day_idx - 1), _world_clock.season_phase_for_day(day_idx))
+			_sched_day_capture_ms += _sched_elapsed_ms(segment_usec)
+		segment_usec = Time.get_ticks_usec()
 		_service_country_worker_transport()
-		_consume_country_worker_read_view_if_authoritative()
+		_sched_day_country_peer_ms += _sched_elapsed_ms(segment_usec)
+		# Country read-view + vision stay on _process (budgeted). Putting them on
+		# day_changed inflated day_cost_ema and collapsed 50x throughput while the
+		# worker sat in input_wait. Peer pump above is enough for the day barrier.
+		_sched_day_country_read_ms = 0.0
+		segment_usec = Time.get_ticks_usec()
 		_try_promote_economy_pod_active()
+		_sched_day_promote_ms += _sched_elapsed_ms(segment_usec)
+		_sched_day_total_ms = _sched_elapsed_ms(day_started_usec)
 		return
 	# Climate 在 worker 手上时，先把它上一天的结果落进 MapData，再跑这一天的 tick。
 	#
@@ -354,12 +435,17 @@ func _on_clock_day_changed(day_idx: int) -> void:
 		# B8 P3：等输入 ring 有空位再 capture（after_generation=0）。
 		# 允许最多 SLOT_COUNT-1 天流水线，大地图不再被“等上一份完全消费”串成单槽。
 		# serial_wait soak 仍可显式传具体 generation。
+		segment_usec = Time.get_ticks_usec()
 		var capacity_result := wait_for_climate_consumed(0)
+		_sched_day_climate_wait_ms += _sched_elapsed_ms(segment_usec)
 		if not bool(capacity_result.get("ok", false)):
 			_climate_capacity_pending_day = day_idx
 			_world_clock.request_simulation_backpressure(&"climate_input_capacity_day_barrier", true)
+			_sched_day_total_ms = _sched_elapsed_ms(day_started_usec)
 			return
+	segment_usec = Time.get_ticks_usec()
 	run_daily_tick(day_idx, _world_clock.season_phase_for_day(day_idx))
+	_sched_day_total_ms = _sched_elapsed_ms(day_started_usec)
 
 
 func _on_camera_zoom_changed(value: float) -> void:
@@ -523,6 +609,15 @@ func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void
 	_country_worker_read_patch_count = 0
 	_country_worker_read_full_snapshot_count = 0
 	_country_worker_read_rejected_count = 0
+	_country_read_last_full_snapshot = false
+	_country_read_last_applied_cells = 0
+	_country_read_last_territory_changed_cells = 0
+	_country_visual_refresh_pending = false
+	_country_visual_refresh_deferred_frames = 0
+	_country_visual_refresh_run_count = 0
+	_country_visual_refresh_defer_count = 0
+	_country_visual_last_refresh_ms = 0.0
+	_sched_proc_country_visual_ms = 0.0
 	# A new map must never race the previous simulation host.  The stop request
 	# is non-blocking. Wait for the lifecycle acknowledgement one render frame
 	# at a time before replacing the generator, so the old DCWorldExt destructor
@@ -862,12 +957,19 @@ func map_overlay_diagnostics() -> Dictionary:
 
 
 func _process(_delta: float) -> void:
+	var frame_usec := Time.get_ticks_usec()
+	_sched_proc_frames += 1
+	var segment_usec := frame_usec
 	if _runtime_ready_for_ticks and _generator != null:
 		var ext = _generator.get_data_core_world_ext()
 		if ext != null and ext.has_method("capture_economy_day_inputs"):
 			# -1 只服务 worker 请求的同日输入，不推进经济公式。
 			ext.capture_economy_day_inputs(-1)
+	_sched_proc_economy_input_ms += _sched_elapsed_ms(segment_usec)
+	segment_usec = Time.get_ticks_usec()
 	_service_country_worker_transport()
+	_sched_proc_peer_ms += _sched_elapsed_ms(segment_usec)
+	segment_usec = Time.get_ticks_usec()
 	_consume_modifier_worker_snapshot_if_authoritative()
 	_consume_effect_worker_snapshot_if_authoritative()
 	_service_effect_worker_intents_if_authoritative()
@@ -875,21 +977,31 @@ func _process(_delta: float) -> void:
 	_service_trigger_worker_intents_if_authoritative()
 	_consume_ideology_worker_snapshot_if_authoritative()
 	_service_ideology_worker_intents_if_authoritative()
+	_sched_proc_snapshots_ms += _sched_elapsed_ms(segment_usec)
+	segment_usec = Time.get_ticks_usec()
 	_consume_country_worker_read_view_if_authoritative()
+	_sched_proc_country_read_ms += _sched_elapsed_ms(segment_usec)
 	_consume_runtime_commit_if_ready()
 	_observe_runtime_worker_fault()
-	if _country_visual_refresh_pending:
-		_country_visual_refresh_pending = false
-		refresh_country_visuals(_country_visual_refresh_reason)
+	_poll_runtime_health()
+	segment_usec = Time.get_ticks_usec()
+	_service_country_visual_refresh_budgeted(frame_usec)
+	_sched_proc_country_visual_ms += _sched_elapsed_ms(segment_usec)
 	if _climate_capacity_pending_day >= 0 and not _runtime_worker_fault_paused:
 		_on_clock_day_changed(_climate_capacity_pending_day)
+	segment_usec = Time.get_ticks_usec()
 	var now_msec := Time.get_ticks_msec()
 	if now_msec >= _building_visual_next_poll_msec:
 		_building_visual_next_poll_msec = now_msec + 100
 		_refresh_building_visual_intel({})
+	_sched_proc_building_ms += _sched_elapsed_ms(segment_usec)
 	if not _map_overlay_dirty or _map_overlay_request.is_empty():
+		_sched_proc_last_total_ms = _sched_elapsed_ms(frame_usec)
 		return
+	segment_usec = Time.get_ticks_usec()
 	_refresh_map_overlay(false)
+	_sched_proc_overlay_ms += _sched_elapsed_ms(segment_usec)
+	_sched_proc_last_total_ms = _sched_elapsed_ms(frame_usec)
 
 
 ## When the native worker enters FAULTED, pause the authoritative clock and keep
@@ -1189,7 +1301,7 @@ func _consume_country_worker_read_view_if_authoritative() -> void:
 	var changed_owners: PackedInt32Array = view.get(
 		"changed_owners", PackedInt32Array())
 	var full_required := bool(view.get("full_snapshot_required", false))
-	var applied_cells := PackedInt32Array()
+	var territory_changed_count := 0
 	if full_required:
 		var full_owners: PackedInt32Array = view.get(
 			"full_cell_owners", PackedInt32Array())
@@ -1197,10 +1309,17 @@ func _consume_country_worker_read_view_if_authoritative() -> void:
 			_country_worker_read_rejected_count += 1
 			push_warning("[country-authority] full read view rejected: cell shape mismatch")
 			return
-		_current_map.country_slot_arr = full_owners.duplicate()
-		applied_cells.resize(cell_count)
-		for cell in cell_count:
-			applied_cells[cell] = cell
+		# Repair MapData with the full owner plane, but never advertise
+		# cell_count as "changed": that forced O(n) vision/border on every
+		# missed-generation catch-up even when only a few cells differed.
+		var previous_owners: PackedInt32Array = _current_map.country_slot_arr
+		if previous_owners.size() == cell_count:
+			for cell in range(cell_count):
+				if int(previous_owners[cell]) != int(full_owners[cell]):
+					territory_changed_count += 1
+		else:
+			territory_changed_count = cell_count
+		_current_map.country_slot_arr = full_owners
 		_country_worker_read_full_snapshot_count += 1
 	else:
 		if changed_cells.size() != changed_owners.size():
@@ -1218,17 +1337,26 @@ func _consume_country_worker_read_view_if_authoritative() -> void:
 				push_warning("[country-authority] sparse read view rejected: cell out of range")
 				return
 			_current_map.country_slot_arr[cell] = int(changed_owners[i])
-			applied_cells.append(cell)
+		territory_changed_count = changed_cells.size()
 		_country_worker_read_patch_count += 1
 
 	_country_worker_read_generation = generation
 	_country_worker_read_last_day = int(view.get("committed_day", -1))
+	_country_read_last_full_snapshot = full_required
+	_country_read_last_applied_cells = territory_changed_count
+	_country_read_last_territory_changed_cells = territory_changed_count
+	view.erase("full_cell_owners")
+	view.erase("changed_cells")
+	view.erase("changed_owners")
 	_country_worker_read_last_result = view.duplicate(true)
-	_country_worker_read_last_result["applied_cells"] = applied_cells.size()
+	_country_worker_read_last_result["applied_cells"] = territory_changed_count
+	_country_worker_read_last_result["territory_changed_cells"] = territory_changed_count
 	_country_worker_read_last_result["full_snapshot_applied"] = full_required
-	var worker_report := view.duplicate(true)
-	worker_report["changed_cells"] = applied_cells
-	worker_report["changed_cell_count"] = applied_cells.size()
+	var worker_report := _country_worker_read_last_result.duplicate(false)
+	# Vision/border consumers key off changed_cells. Use the real territory
+	# delta, never the repaired plane width.
+	worker_report["changed_cells"] = territory_changed_count
+	worker_report["changed_cell_count"] = territory_changed_count
 	worker_report["full_snapshot_applied"] = full_required
 	worker_report["country_generation"] = generation
 	# CountryFacade is the existing notification path.  It emits the same
@@ -1239,10 +1367,34 @@ func _consume_country_worker_read_view_if_authoritative() -> void:
 		facade.dispatch_worker_committed_view(worker_report)
 
 
+## Budgeted country vision/border refresh. Pending work survives frames that
+## already spent their sim budget so day capture and peer pumps stay responsive.
+func _service_country_visual_refresh_budgeted(frame_started_usec: int) -> void:
+	if not _country_visual_refresh_pending:
+		return
+	var frame_elapsed_ms := _sched_elapsed_ms(frame_started_usec)
+	var budget_ms := COUNTRY_VISUAL_REFRESH_BUDGET_MS
+	if _world_clock != null:
+		budget_ms = minf(budget_ms, float(_world_clock.sim_frame_budget_ms))
+	var force := _country_visual_refresh_deferred_frames >= \
+		COUNTRY_VISUAL_REFRESH_MAX_DEFER_FRAMES
+	if not force and frame_elapsed_ms >= budget_ms:
+		_country_visual_refresh_deferred_frames += 1
+		_country_visual_refresh_defer_count += 1
+		return
+	_country_visual_refresh_pending = false
+	_country_visual_refresh_deferred_frames = 0
+	var started_usec := Time.get_ticks_usec()
+	refresh_country_visuals(_country_visual_refresh_reason)
+	_country_visual_last_refresh_ms = _sched_elapsed_ms(started_usec)
+	_country_visual_refresh_run_count += 1
+
+
 ## ACTIVE worker 的唯一主线程消费点。poll_runtime_commit() 只返回不可变提交
 ## 元数据；视觉 intent 采用有界预算分片消费。这里绝不调用 run_daily_tick、
 ## 不读取 runtime store，也不等待 worker。
 func _consume_runtime_commit_if_ready() -> void:
+	var commit_usec := Time.get_ticks_usec()
 	if not _runtime_ready_for_ticks or _generator == null:
 		return
 	if not _generator.has_method("get_runtime_thread_report") \
@@ -1298,12 +1450,20 @@ func _consume_runtime_commit_if_ready() -> void:
 			_runtime_commit_day,
 			_runtime_commit_generation)
 		if whole_graph:
+			_sched_proc_commit_ms += _sched_elapsed_ms(commit_usec)
 			finish_daily_tick(0.0)
+			commit_usec = Time.get_ticks_usec()
+		else:
+			_sched_proc_commit_ms += _sched_elapsed_ms(commit_usec)
 		_try_promote_economy_pod_active()
+	else:
+		_sched_proc_commit_ms += _sched_elapsed_ms(commit_usec)
+		commit_usec = Time.get_ticks_usec()
 	# Economy ACTIVE mutates resource deltas on the worker-owned runtime. Drain
 	# them only after a committed boundary is visible, then run the same natural
 	# resource pass that SUS would have run on the synchronous path. If the worker
 	# still owns the boundary lock, keep the day queued and retry next frame.
+	var resource_usec := Time.get_ticks_usec()
 	if economy_worker_authoritative and _runtime_natural_resource_pending_target_day >= 0 \
 			and _generator.has_method("flush_runtime_economy_resource_writeback"):
 		var resource_writeback: Dictionary = \
@@ -1311,6 +1471,7 @@ func _consume_runtime_commit_if_ready() -> void:
 		if bool(resource_writeback.get("ok", false)) \
 				and not bool(resource_writeback.get("pending", false)):
 			_drain_runtime_natural_resource_commits()
+	_sched_proc_resource_ms += _sched_elapsed_ms(resource_usec)
 	if _runtime_pending_visual_generation <= 0 \
 			or _runtime_pending_visual_generation != _runtime_commit_generation:
 		return
@@ -1345,6 +1506,7 @@ func _consume_runtime_commit_if_ready() -> void:
 		_runtime_commit_family_done[family_bit] = bool(patch.get("done", false))
 		_apply_runtime_visual_patch(family_bit, patch)
 	_runtime_last_visual_apply_ms = float(Time.get_ticks_usec() - apply_started_us) / 1000.0
+	_sched_proc_visual_ms += _runtime_last_visual_apply_ms
 	if _generator.has_method("record_runtime_visual_timings"):
 		_generator.record_runtime_visual_timings(
 			_runtime_last_ui_feedback_ms,
@@ -1463,8 +1625,9 @@ func wait_for_climate_consumed(after_environment_generation: int) -> Dictionary:
 	while true:
 		# 先服务 peer，再进入下一次等待：Country 的 barrier 可能正是 worker
 		# 还没消费这份环境的原因。
+		# Peer pump only: country read-view is owned by _process so a full
+		# snapshot / vision refresh cannot inflate climate-wait or day_cost_ema.
 		_service_country_worker_transport()
-		_consume_country_worker_read_view_if_authoritative()
 		var slice: Dictionary = ext.wait_climate_consumed(
 			after_environment_generation, RUNTIME_CLIMATE_WAIT_SLICE_MS)
 		total_waited_ms += float(slice.get("waited_ms", 0.0))
@@ -2454,9 +2617,7 @@ func _gm_overview_snapshot() -> Dictionary:
 	var calendar := _world_clock.calendar_date() if _world_clock != null else {}
 	var country_report := _generator.get_country_report() if _generator != null and _generator.has_method("get_country_report") else {}
 	var economy_report := _generator.get_economy_report() if _generator != null and _generator.has_method("get_economy_report") else {}
-	if bool(economy_report.get("fatal", false)) \
-			and String(economy_report.get("fatal_reason", "")) == "money_conservation_failed":
-		_dump_money_conservation_fatal_report(economy_report)
+	_observe_economy_fatal(economy_report)
 	return {
 		"world": {"ready": _current_map != null, "seed": _last_seed,
 			"width": _current_map.width if _current_map != null else 0,
@@ -2474,43 +2635,74 @@ func _gm_overview_snapshot() -> Dictionary:
 	}
 
 
-func _dump_money_conservation_fatal_report(report: Dictionary) -> void:
-	if _money_conservation_fatal_dumped:
+## 任何一种经济 fatal 都要留下能定位的现场，不只是守恒失败。
+## 历史行为是只在 money_conservation_failed 时落盘，而且字段集是钱专用的；
+## 于是 country_worker_cohort_cash_boundary_invalid 这类边界停机，玩家拿到的
+## 也是一份钱的报表，里面既没有 stage 也没有触发的命令。
+## 每帧调一次的运行时健康巡检。卡死检测很便宜，逐帧跑；fatal 需要拉整份经济
+## 报告，按 _RUNTIME_HEALTH_POLL_MSEC 限频。
+func _poll_runtime_health() -> void:
+	_poll_simulation_stall_watchdog()
+	if _generator == null or not _runtime_ready_for_ticks:
 		return
-	_money_conservation_fatal_dumped = true
-	var keys := [
-		"fatal", "fatal_reason", "stage", "epoch_active", "epoch_id",
-		"current_day", "last_completed_sample_day", "sample_day",
-		"population_error", "money_error", "goods_error",
-		"money_open", "money_close", "money_expected",
-		"explicit_money_mint", "explicit_money_burn",
-		"opening_cohort_funds", "closing_cohort_funds",
-		"opening_country_cash", "closing_country_cash",
-		"opening_escrow_cash", "closing_escrow_cash",
-		"opening_expedition_funds", "closing_expedition_funds",
-		"producer_support_money_issued", "bullion_money_issued",
-		"closing_audit_mode", "closing_audit_incremental_this_epoch",
-		"opening_audit_fast_paths", "opening_audit_full_verifications",
-	]
-	var payload := {}
-	for key in keys:
-		if report.has(key):
-			payload[key] = report[key]
-	payload["dumped_at"] = Time.get_datetime_string_from_system()
-	var text := JSON.stringify(payload)
-	print("[host/economy-fatal-conservation] %s" % text)
-	var user_file := FileAccess.open(
-		"user://economy_money_conservation_fatal.json", FileAccess.WRITE)
-	if user_file != null:
-		user_file.store_string(text)
-		user_file.close()
-	var abs_path := ProjectSettings.globalize_path("res://").path_join(
-		"..\\..\\tmp\\economy_money_conservation_fatal.json").simplify_path()
-	var abs_file := FileAccess.open(abs_path, FileAccess.WRITE)
-	if abs_file != null:
-		abs_file.store_string(text)
-		abs_file.close()
-		print("[host/economy-fatal-dump] wrote %s" % abs_path)
+	var now_msec := Time.get_ticks_msec()
+	if now_msec < _runtime_health_next_poll_msec:
+		return
+	_runtime_health_next_poll_msec = now_msec + _RUNTIME_HEALTH_POLL_MSEC
+	if not _generator.has_method("get_economy_report"):
+		return
+	_observe_economy_fatal(_generator.get_economy_report())
+
+
+func _observe_economy_fatal(report: Dictionary) -> void:
+	if not bool(report.get("fatal", false)):
+		return
+	var reason := String(report.get("fatal_reason", "unknown"))
+	if _economy_fatal_dumped_reason == reason:
+		return
+	_economy_fatal_dumped_reason = reason
+	RuntimeForensics.capture_and_dump(reason, _generator, _world_clock,
+		"economy_fatal", {"source": "world_runtime_host"})
+
+
+## 卡死看门狗。
+##
+## 权威日停在原地而时钟还在跑，这在玩家侧的表现就是"游戏卡住了"，但进程既没崩
+## 也没报错，除了等没有任何产物。这里把它变成一次取证：超过阈值就抓现场，之后
+## 按固定间隔复抓，让"卡了多久、卡在哪个 stage"可比对。
+## 只观察不干预 —— 不暂停时钟、不改权威，避免看门狗本身成为新的行为变量。
+func _poll_simulation_stall_watchdog() -> void:
+	if _world_clock == null or not _runtime_ready_for_ticks:
+		return
+	if _world_clock.paused or _world_clock.speed_multiplier <= 0.0 \
+			or _runtime_worker_fault_paused:
+		_stall_watchdog_day = -1
+		return
+	var day := _world_clock.day_index()
+	var now_msec := Time.get_ticks_msec()
+	if day != _stall_watchdog_day:
+		_stall_watchdog_day = day
+		_stall_watchdog_day_started_msec = now_msec
+		_stall_watchdog_next_report_msec = 0
+		return
+	var stalled_ms := now_msec - _stall_watchdog_day_started_msec
+	if stall_watchdog_threshold_msec <= 0 \
+			or stalled_ms < stall_watchdog_threshold_msec:
+		return
+	if now_msec < _stall_watchdog_next_report_msec:
+		return
+	_stall_watchdog_next_report_msec = now_msec + STALL_WATCHDOG_REPEAT_MSEC
+	push_warning("[runtime-stall] day=%d stalled for %d ms at speed=%.1f" % [
+		day, stalled_ms, _world_clock.speed_multiplier])
+	RuntimeForensics.capture_and_dump("simulation_day_stalled", _generator,
+		_world_clock, "stall", {
+			"stalled_day": day,
+			"stalled_ms": stalled_ms,
+			"fast_tick_count": _fast_tick_count,
+			"last_fast_tick_ms": _last_fast_tick_ms,
+			"last_tick_timing": _last_tick_timing.duplicate(false),
+			"sus_last_tick": get_sus_last_tick_summary(),
+		})
 
 
 func _gm_selected_snapshot(cell_idx: int) -> Dictionary:
@@ -3460,6 +3652,41 @@ func _publish_fast_tick_perf_sample(
 		"clock_pulse_ms": _world_clock.get_last_pulse_ms() if _world_clock != null else 0.0,
 		"clock_loop_ms": _world_clock.get_last_loop_ms() if _world_clock != null else 0.0,
 		"clock_full_ms": _world_clock.get_last_full_proc_ms() if _world_clock != null else 0.0,
+		"clock_day_cost_ema_ms": _world_clock.get_day_cost_ms_ema() if _world_clock != null else 0.0,
+		"clock_throughput_cap": _world_clock.get_throughput_cap_days_per_frame() if _world_clock != null else 0.0,
+		"clock_last_advanced_days": _world_clock.get_last_advanced_days() if _world_clock != null else 0,
+		"sched_day_total_ms": _sched_day_total_ms,
+		"sched_day_report_ms": _sched_day_report_ms,
+		"sched_day_snapshots_ms": _sched_day_snapshots_ms,
+		"sched_day_climate_writeback_ms": _sched_day_climate_writeback_ms,
+		"sched_day_climate_wait_ms": _sched_day_climate_wait_ms,
+		"sched_day_capture_ms": _sched_day_capture_ms,
+		"sched_day_country_peer_ms": _sched_day_country_peer_ms,
+		"sched_day_country_read_ms": _sched_day_country_read_ms,
+		"sched_day_promote_ms": _sched_day_promote_ms,
+		"sched_proc_frames": _sched_proc_frames,
+		"sched_proc_economy_input_ms": _sched_proc_economy_input_ms,
+		"sched_proc_peer_ms": _sched_proc_peer_ms,
+		"sched_proc_snapshots_ms": _sched_proc_snapshots_ms,
+		"sched_proc_country_read_ms": _sched_proc_country_read_ms,
+		"sched_proc_country_visual_ms": _sched_proc_country_visual_ms,
+		"sched_proc_commit_ms": _sched_proc_commit_ms,
+		"sched_proc_resource_ms": _sched_proc_resource_ms,
+		"sched_proc_visual_ms": _sched_proc_visual_ms,
+		"sched_proc_building_ms": _sched_proc_building_ms,
+		"sched_proc_overlay_ms": _sched_proc_overlay_ms,
+		"sched_proc_last_total_ms": _sched_proc_last_total_ms,
+		"country_read_full_snapshot_applied": _country_read_last_full_snapshot,
+		"country_read_applied_cells": _country_read_last_applied_cells,
+		"country_read_territory_changed_cells": _country_read_last_territory_changed_cells,
+		"country_read_full_snapshot_count": _country_worker_read_full_snapshot_count,
+		"country_read_patch_count": _country_worker_read_patch_count,
+		"country_read_rejected_count": _country_worker_read_rejected_count,
+		"country_visual_last_refresh_ms": _country_visual_last_refresh_ms,
+		"country_visual_refresh_pending": _country_visual_refresh_pending,
+		"country_visual_refresh_deferred_frames": _country_visual_refresh_deferred_frames,
+		"country_visual_refresh_run_count": _country_visual_refresh_run_count,
+		"country_visual_refresh_defer_count": _country_visual_refresh_defer_count,
 		# 帧尾探针：标签重建 / 植被 succession drain 读到的是上一帧的值（这些工作
 		# 由 tick 触发、在帧尾 _process 执行，天然滞后本行一帧）；overlay 烘焙是
 		# 自上一行以来的累计值，发布后清零。
@@ -3503,8 +3730,20 @@ func _publish_fast_tick_perf_sample(
 				if _renderer != null and _renderer.has_method("get_last_detail_drain_ms") else 0.0)
 			- (_settlement_label_layer.get_last_rebuild_ms() \
 				if _settlement_label_layer != null else 0.0)
-			- _map_overlay_last_bake_ms),
+			- _map_overlay_last_bake_ms
+			- _sched_proc_country_visual_ms),
 	}
+	_sched_proc_frames = 0
+	_sched_proc_economy_input_ms = 0.0
+	_sched_proc_peer_ms = 0.0
+	_sched_proc_snapshots_ms = 0.0
+	_sched_proc_country_read_ms = 0.0
+	_sched_proc_country_visual_ms = 0.0
+	_sched_proc_commit_ms = 0.0
+	_sched_proc_resource_ms = 0.0
+	_sched_proc_visual_ms = 0.0
+	_sched_proc_building_ms = 0.0
+	_sched_proc_overlay_ms = 0.0
 	_overlay_bake_ms_accum = 0.0
 	if _generator != null and _generator.has_method("sus_climate_breakdown"):
 		var climate_diag: Dictionary = _generator.sus_climate_breakdown()
@@ -3725,8 +3964,9 @@ func _bind_settlement_labels() -> void:
 
 
 # ─── 国界线与视野迷雾 ─────────────────────────────────────────────────
-# 两者共用同一个触发源：领土是国界的定义，也是视野的源头。CountryFacade 的
-# country_committed 极少触发（领土变更），所以全量重算即可，不做增量。
+# 两者共用同一个触发源：领土是国界的定义，也是视野的源头。
+# country_committed 仅在真实领土 diff > 0 时挂起刷新；刷新本身走
+# `_service_country_visual_refresh_budgeted`，不阻塞 ACTIVE day_changed。
 
 ## 世界就绪后一次性绑定。此刻 country bootstrap 已完成，country_slot_arr 已由
 ## NativeCountryRuntime 发布到 MapData，可以直接首解算。
@@ -3926,6 +4166,13 @@ func finalize_save_restore_visuals() -> Dictionary:
 	# 这种状态解算出来的视野是全黑的，继续跑还会被下一次自动存档写死，
 	# 所以直接让读档失败，而不是交出一张「全部未探索」的地图。
 	if _fog_of_war_enabled and _player_country_slot < 0:
+		var start_cell := _resolve_player_start_cell()
+		push_warning("[save/restore] player country unbound start_cell=%d mirror_slot=%d native=%s" % [
+			start_cell,
+			int(_current_map.country_slot_arr[start_cell]) if _current_map != null \
+				and start_cell >= 0 and start_cell < _current_map.country_slot_arr.size() else -2,
+			JSON.stringify(_generator.get_country_facade().cell_summary(start_cell)) \
+				if _generator != null and start_cell >= 0 else "{}"])
 		return {"reason": "save_restore_finalized", "border": {}, "lut": {},
 			"vision": {"ok": false, "reason": "读档后无法绑定玩家国家，视野不可解算。"}}
 	return refresh_country_visuals("save_restore_finalized")

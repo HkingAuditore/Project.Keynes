@@ -34,6 +34,7 @@ using persistence_codec::SAVE_SECTION_FAMILY_TRAITS;
 using persistence_codec::SAVE_SECTION_FAMILY_TRAIT_COMMANDS;
 using persistence_codec::SAVE_SECTION_FISCAL;
 using persistence_codec::SAVE_SECTION_FISCAL_PEER;
+using persistence_codec::SAVE_SECTION_D7_PEER_EXT;
 using persistence_codec::SAVE_SECTION_RESOURCE_STOCK;
 using persistence_codec::SAVE_SECTION_HEADER;
 using persistence_codec::SAVE_SECTION_LABOR_SIGNALS;
@@ -346,6 +347,11 @@ uint32_t ecp2_domain_for_pkec_section(uint16_t section) noexcept {
         return ECP2_DOMAIN_TRADE_FLOWS;
     case SAVE_SECTION_FISCAL:
     case SAVE_SECTION_FISCAL_PEER:
+    // Schema-53 extension of the fiscal peer journal. Unmapped sections are
+    // silently dropped by the ECP2 capture while the PKEC header still counts
+    // their rows, so every save with a D7 continuation record failed restore
+    // with restore_section_incomplete first=d7_peer_ext.
+    case SAVE_SECTION_D7_PEER_EXT:
         return ECP2_DOMAIN_FISCAL;
     case SAVE_SECTION_RESOURCE_STOCK:
         return ECP2_DOMAIN_RESOURCE;

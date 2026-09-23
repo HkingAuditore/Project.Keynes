@@ -1817,8 +1817,23 @@ bool NativeEconomyRuntime::apply_settle_family_expedition(
     const int64_t owner = _country_runtime == nullptr ? 0 :
         _country_runtime->country_handle_for_cell(
             family_expeditions_store().target_cell[expedition]);
+    bool claimed = cmd.i64_0 != 0;
+    if (!claimed && _effect_runtime != nullptr)
+        claimed = _effect_runtime->family_colonization_includes_claim(
+            family_expeditions_store().effect_transaction_id[expedition]);
     if (owner != static_cast<int64_t>(
             family_expeditions_store().country_handle[expedition])) {
+        // Under Country worker authority the paired CLAIM commits on the
+        // worker's own boundary, so an unowned target here means the claim is
+        // not visible yet — not that someone else took the cell. Yield the
+        // slice with backpressure instead of condemning the expedition; the
+        // command replays intact once the committed snapshot carries the claim.
+        // Treating this window as TARGET_LOST left the cell claimed by the
+        // player while the settlers were sent home, so the cell kept 0 people.
+        if (owner == 0 && claimed) {
+            error = "country_economy_asset_territory_claim_pending";
+            return false;
+        }
         family_expeditions_store().state[expedition] = EXPEDITION_RETURNING;
         release_family_expedition_reservations(expedition);
         note_family_expedition_audit_invalidation();
@@ -1840,10 +1855,6 @@ bool NativeEconomyRuntime::apply_settle_family_expedition(
     if (cmd.i32_1 > 0)
         apply_family_colonization_population_reward(destination,
             family_expeditions_store().family_handle[expedition], cmd.i32_1);
-    bool claimed = cmd.i64_0 != 0;
-    if (!claimed && _effect_runtime != nullptr)
-        claimed = _effect_runtime->family_colonization_includes_claim(
-            family_expeditions_store().effect_transaction_id[expedition]);
     append_colonization_receipt(expedition, cmd.sequence, cmd.effective_day,
         _current_day, claimed ? 4 : 6, claimed ? "CLAIMED" : "RELOCATED");
     _family_expedition_target_index.erase(family_expedition_target_key(

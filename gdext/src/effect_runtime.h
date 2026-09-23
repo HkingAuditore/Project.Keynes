@@ -325,9 +325,11 @@ public:
     godot::Dictionary ack_native_modifier(ModifierRuntime *modifier_runtime);
     godot::Dictionary dispatch_native_country(NativeCountryRuntime *country_runtime);
     godot::Dictionary ack_native_country(NativeCountryRuntime *country_runtime);
-    // When EFFECT is worker-authoritative, main-thread PREFLIGHTED native
-    // Country bindings created before the grant are orphans. Settle them so
-    // hard_ack=effect cannot pin WorldClock on a facade that no longer runs.
+    // Soft-settle leftover PREFLIGHTED Country bindings after a real Host
+    // receipt drain under COUNTRY worker authority. Colonization CLAIM/SETTLE
+    // still goes through dispatch_native_country + ack_native_country even when
+    // EFFECT POD evaluation is worker-owned; do not use this as a substitute
+    // for never dispatching those adapters.
     godot::Dictionary settle_orphaned_native_country_acks();
     godot::Dictionary dispatch_native_economy(NativeEconomyRuntime *economy_runtime);
     godot::Dictionary ack_native_economy(NativeEconomyRuntime *economy_runtime);

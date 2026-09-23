@@ -52,6 +52,30 @@ Godot's dummy renderer may print RID/resource cleanup warnings after a successfu
 Treat the verified marker, process exit code, CSV checks, and economy validation as authoritative;
 do not report those shutdown-only warnings as a benchmark failure.
 
+## Replaying a player save (different tool, different question)
+
+`headless_perf_record.gd` always starts a **new** game. When the question is "reproduce
+what the player hit", use the save replay harness instead:
+
+```powershell
+& .\tools\runtime\Invoke-SaveReplay.ps1 -Slot autosave -Days 60
+& .\tools\runtime\Invoke-SaveReplay.ps1 -SavePath C:\tmp\day2740.pksv -Days 20 -Speed 10
+```
+
+It loads through the production `GameFlow.begin_load_game` path and fails on an economy
+fatal, a stalled day, or a failed restore, writing a forensics JSON under `tmp/` for each.
+`-SavePath` stages the file in a scratch directory via `PK_SAVE_DIR`, so it never
+overwrites the player's slots. Parse the single `[save-replay/result] {...}` line; the
+wrapper already does and trusts it over the exit code.
+
+Do not read `use_saved_setup` as "load the player's save": it only reads
+`user://world_setup_settings.json` (map size, seed, climate knobs), not PKSV progress.
+
+A run that advances N days is **not** a pass by itself. The harness also asserts that
+country/economy are bootstrapped, the host is not STOPPED/FAULTED, and
+`newest_state_day` advanced — a failed PKSR restore lets the clock free-run to the target
+day with nothing simulating. Keep those assertions if you extend the harness.
+
 ## Build boundary
 
 If C++ changed since the loaded DLLs were built, close any running Godot instance and run

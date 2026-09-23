@@ -24,6 +24,15 @@ namespace pk_async_climate {
 
 // ─── Pure kernels（worker 线程跑，零 Godot API） ─────────────────────────
 
+// Latitude weight for the seasonal moisture envelope: 0 at the equator, 1 near the poles.
+static float pk_moisture_lat_weight(float ny) {
+    const float abs_lat = std::fabs(ny * 2.0f - 1.0f);
+    float t = (abs_lat - 0.18f) / 0.64f;
+    if (t < 0.0f) t = 0.0f;
+    else if (t > 1.0f) t = 1.0f;
+    return t * t * (3.0f - 2.0f * t);
+}
+
 // pass_a pure kernel — 移植自 DCWorldExt::run_climate_pass_a（world_ext.cpp:2096）。
 // 算法逐行 1:1 镜像 sync 路径 line 2293-2417 的 run_range lambda body：
 //   - 每 cell 独立（无邻居 gather，无跨 cell 写）
@@ -206,22 +215,38 @@ bool _async_pass_a_kernel_pure(const ClimateInputBuf &in,
         const float day_length = dc_day_length_norm(ny_clamped, season_phase, axial_tilt_deg);
         const float heat_input = dc_clamp01f(insol_now * solar_gain);
 
-        // (b) moisture: no direct insolation/season multiplier.
+        // (b) moisture. Geographic base stays the annual mean. Insolation
+        // deviation is zero-mean over the year, so it supplies the seasonal
+        // envelope that a flat precip field cannot: land dries in the warm
+        // season (evaporative demand), ocean specific humidity rises with it.
+        // Weather is an anomaly around a light rain-rate reference, capped so
+        // a wet spell moves wetness by tenths without pinning the cell at 1.
         float moisture_now;
-        if (is_water) {
-            moisture_now = PBM[i];
-        } else {
-            float bm = PBM[i];
-            if (bm > 1.0f) bm = 1.0f;
-            else if (bm < 0.0f) bm = 0.0f;
-            float moisture_target = bm;
-            if (PWEATHERV != nullptr) {
-                const float vapor = dc_clampf(PWEATHERV[i], 0.0f, 1.0f);
-                moisture_target += (vapor - bm * 0.15f) * moisture_vapor_w;
-            }
-            if (PPRECIP != nullptr) {
-                moisture_target += dc_clampf(PPRECIP[i], 0.0f, 1.0f) * moisture_precip_w;
-            }
+        float bm = PBM[i];
+        if (bm > 1.0f) bm = 1.0f;
+        else if (bm < 0.0f) bm = 0.0f;
+        const float lat_w = pk_moisture_lat_weight(ny_clamped);
+        float season_amp = is_water ? (0.08f + 0.50f * lat_w) : (0.12f + 0.36f * lat_w);
+        if (!is_water && PMAR != nullptr && maritime_damp > 0.0f) {
+            float coast = 1.0f - maritime_damp * PMAR[i];
+            if (coast < 0.25f) coast = 0.25f;
+            season_amp *= coast;
+        }
+        const float season_term = (is_water ? season_amp : -season_amp) * dev_today;
+        float synoptic = 0.0f;
+        if (PWEATHERV != nullptr && moisture_vapor_w > 0.0f) {
+            const float vapor = dc_clampf(PWEATHERV[i], 0.0f, 1.0f);
+            synoptic += (vapor - bm * 0.15f) * moisture_vapor_w;
+        }
+        if (PPRECIP != nullptr && moisture_precip_w > 0.0f) {
+            const float precip = dc_clampf(PPRECIP[i], 0.0f, 1.0f);
+            synoptic += (precip - 0.04f) * moisture_precip_w * 3.5f;
+        }
+        const float synoptic_cap = is_water ? 0.12f : 0.28f;
+        if (synoptic > synoptic_cap) synoptic = synoptic_cap;
+        else if (synoptic < -synoptic_cap) synoptic = -synoptic_cap;
+        float moisture_target = bm + season_term + synoptic;
+        if (!is_water) {
             if (PSOIL != nullptr) {
                 const float soil = dc_clampf(PSOIL[i], -0.5f, 0.5f);
                 moisture_target += pk_signed_hydrology_contribution(
@@ -232,19 +257,16 @@ bool _async_pass_a_kernel_pure(const ClimateInputBuf &in,
                 moisture_target += pk_signed_hydrology_contribution(
                     wb, moisture_wb_w, moisture_wb_dry_w);
             }
-            moisture_target = dc_clampf(moisture_target, 0.0f, 1.0f);
-            // sync run_climate_pass_a 的 prev 守卫：非有限或越界的历史 moisture 视为
-            // 尚未初始化，直接落到 target（而不是把 NaN 传播进松弛式）。缺 moisture
-            // 输入列时同样退化为 target。
-            float previous = moisture_target;
-            if ((int)in.moisture.size() == n) {
-                const float raw = in.moisture[size_t(i)];
-                if (std::isfinite(raw) && raw >= 0.0f && raw <= 1.0f) previous = raw;
-            }
-            moisture_now = previous + (moisture_target - previous) * moisture_relax_eff;
-            if (moisture_now > 1.0f) moisture_now = 1.0f;
-            else if (moisture_now < 0.0f) moisture_now = 0.0f;
         }
+        moisture_target = dc_clampf(moisture_target, 0.0f, 1.0f);
+        float previous = moisture_target;
+        if ((int)in.moisture.size() == n) {
+            const float raw = in.moisture[size_t(i)];
+            if (std::isfinite(raw) && raw >= 0.0f && raw <= 1.0f) previous = raw;
+        }
+        moisture_now = previous + (moisture_target - previous) * moisture_relax_eff;
+        if (moisture_now > 1.0f) moisture_now = 1.0f;
+        else if (moisture_now < 0.0f) moisture_now = 0.0f;
 
         // (c) temperature
         float temp_year = temp_year_lat - float(pk_alt_penalty(double(elevation), double(sea_level)));
@@ -1326,7 +1348,9 @@ void sea_ice_pure(const SeaIceKnobs &knobs,
             const float tta_residual = sea_ice_positive_tta_residual(TTA[i], OANOM[i]);
             if (tta_residual > 0.0f) t_eff += knobs.ice_delay * tta_residual;
             const float upw = UPW[i];
-            if (upw > 0.3f) t_eff -= 0.5f * upw;
+            // 旧式 upw>0.3 时一次减 0.5*upw，会把暖水也压到冰点、冰缘快速堆满；
+            // 上升流退掉的那天又按真实温度猛融，再被邻居混合拉回，形成隔日闪烁。
+            if (upw > 0.0f) t_eff -= 0.15f * upw;
         }
         if (t_eff < 0.0f) t_eff = 0.0f;
         else if (t_eff > 1.0f) t_eff = 1.0f;
@@ -1386,7 +1410,21 @@ void sea_ice_pure(const SeaIceKnobs &knobs,
                 const float contrast = std::abs(avg_nb_frac - new_frac);
                 if (contrast > 0.05f && (prev_frac > 0.001f || avg_nb_frac > 0.001f)) {
                     const float mix = std::min(0.12f, edge_mix_rate * std::max(1.0f, dt_days));
+                    const float thermo_frac = new_frac;
                     new_frac += (avg_nb_frac - new_frac) * mix;
+                    // Neighbor smoothing may continue today's freeze or melt, but
+                    // must not oppose it. A pullback of even 25% is enough to
+                    // reverse the visible edge every other day once the pack exists.
+                    if (thermo_frac > prev_frac) {
+                        if (new_frac < thermo_frac) new_frac = thermo_frac;
+                    } else if (thermo_frac < prev_frac) {
+                        if (new_frac > thermo_frac) new_frac = thermo_frac;
+                    } else {
+                        const float lo = prev_frac - 0.02f;
+                        const float hi = prev_frac + 0.02f;
+                        if (new_frac < lo) new_frac = lo;
+                        else if (new_frac > hi) new_frac = hi;
+                    }
                     if (new_frac < 0.0f) new_frac = 0.0f;
                     else if (new_frac > 1.0f) new_frac = 1.0f;
                 }

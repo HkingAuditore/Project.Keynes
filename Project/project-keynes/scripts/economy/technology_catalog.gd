@@ -955,6 +955,12 @@ static func public_definitions(compiled_catalog: Dictionary = {}) -> Array[Dicti
 			"era_id": compiled.technology_era_ids[i],
 			"domain_id": DOMAIN_IDS[compiled.technology_domain_indices[i]],
 			"cost_points": int(compiled.technology_costs[i]) / 1000,
+			# Raw scaled units with the same floor the runtime applies in
+			# country_effective_research_cost. cost_points above is an integer
+			# division and collapses to 0 for anything cheaper than one point,
+			# which made such nodes render as 「0% / 还需 0」 while the runtime
+			# was still waiting to be paid.
+			"cost_points_scaled": maxi(1, int(compiled.technology_costs[i])),
 			"prerequisite_ids": prerequisites_out,
 			"hard_prerequisite_ids": prerequisites_out,
 			"prerequisite_rationales": PackedStringArray(

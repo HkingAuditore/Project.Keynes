@@ -108,14 +108,14 @@ SHADOW 对拍 / CLM2 字节测试必须在 generate 前关掉该开关。运行�
 
 | 子系统 | 现状 | 主要风险/剩余边界 |
 | --- | --- | --- |
-| Pass-A | C++ scalar/thread，native graph使用thread；annual-insolation cache | 内部timing历史可能低报；knob镜像与dt |
+| Pass-A | 湿度 = 地理基底 + 零均值日照季节（陆地暖季变干、海洋暖季变湿）+ 封顶天气偏差 | 季节振幅是公式常量，不在 ClimateProfile 里 |
 | Pass-B | C++ scalar/SIMD/thread，native graph使用thread | 海冰尾循环/knob漏镜像历史风险；顺序不可回退 |
 | Ocean heat | C++ water/land，支持node-range/thread配置 | PackedArray JIT patch、半发布、fallback旧语义 |
 | Wind heat | C++ air/surface；surface唯一写最终temp | 单位方向/速度混用、旧DLL temp packing |
-| Sea ice | C++ graph与独立fallback；dt-aware、迟滞、edge mix | terrain flip/visual sync、cadence台阶 |
+| Sea ice | C++ graph与独立fallback；dt-aware、迟滞、edge mix 不得反向抵消当日冻结/融化 | terrain flip/visual sync、cadence台阶 |
 | Transpiration | C++与async pure kernel | compute通常低，边界sync/dirty可能主导 |
 | Albedo/vegetation/feedback | C++ stage-b子pass | succession object/visual apply仍在GDScript |
-| Weather | native field/commit/distribute/summary/split交易可ACTIVE | Front object、LUT/upload、repair/readiness |
+| Weather | ACTIVE worker 每个气候日跑 field+distribute；stage_b 仍按 stagger 轮 | Front object、LUT/upload、repair/readiness；主线程 weather_refresh 在权威下仍抑制 |
 | Hydrology | native graph节点，生产profile开启 | weather有效降水顺序、parent拓扑、flush成本 |
 | Physical ocean | C++ SLP/wind/PSI/current/upwelling | visual raster/commit仍Godot；PSI不可随意range |
 | Native daily | slice continuation、owner/report/finalizer | bundle/JIT/round-trip、commit lag、finalizer |

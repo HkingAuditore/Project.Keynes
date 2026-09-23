@@ -907,8 +907,11 @@ func _refresh_detail(refresh_relations: bool = true) -> void:
 		return
 	var progress: PackedInt64Array = _research.get(
 		"technology_progress", PackedInt64Array())
-	var cost := maxf(1.0, float(definition.get("cost_points", 1)))
-	var earned := float(progress[index]) / POINT_SCALE if index < progress.size() else 0.0
+	# Compare in the runtime's scaled units. cost_points is an integer point
+	# count and rounds to 0 for cheap nodes, which pinned their gauge at 0%.
+	var cost := maxf(1.0, float(definition.get("cost_points_scaled",
+		int(definition.get("cost_points", 1)) * POINT_SCALE)))
+	var earned := float(progress[index]) if index < progress.size() else 0.0
 	if not refresh_relations and not _detail_signature.is_empty():
 		_detail.update_progress(state, earned / cost, definition)
 		return

@@ -54,6 +54,23 @@ reservation, tax policy snapshots, Modifier-effective rates, subsidy history, or
   economy owns taxable events and fiscal escrow. Do not add research growth, diplomacy, war,
   country AI, deletion, or technology revocation as incidental behavior.
 
+## The Country POD plan window is not a leak
+
+`_country_pod_plan_active` stays true across pulses on purpose. `execute_country_worker_stage()`
+returns early at `country_economy_asset_results_pending` and the peer publish/prepare exits
+**without** discarding the plan, and re-entry checks `if (!_country_pod_plan_active)` before
+planning again. Clearing it on those exits — for example with an RAII guard — would replan the
+same day. Only `commit_day`, `discard_plan`, restore, and catalog publish close the window.
+
+The consequence for peers: any Economy-side operation that needs a mid-plan Country POD
+snapshot must treat an open window as **backpressure**, not as an error.
+`prepare_worker_cohort_cash()` returns `country_economy_asset_country_plan_pending` for it
+(a member of `runtime_country_asset_pending_reason()`), while wrong thread / domain not
+authoritative / illegal operation stay `country_worker_cohort_cash_boundary_invalid` and remain
+fatal. Merging the two classes back into one reason is what produced the day-2744 economy stop;
+`country_economy_asset_protocol_self_test()` now guards the split. See
+`docs/cpp-dots-runtime/country-economy-bridge.md`.
+
 ## Research-signal evidence
 
 Country discovery evidence is native authority. `DISCOVER_COUNTRY_SIGNAL` accepts an already-dense

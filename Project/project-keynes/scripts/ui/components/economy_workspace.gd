@@ -782,10 +782,11 @@ func _set_spin_basis_points(spin: SpinBox, rate_basis_points: int,
 		return
 	_configure_spin_for_mode(spin, mode)
 	if mode == TAX_MODE_ABSOLUTE:
-		spin.set_value_no_signal(float(rate_basis_points))
+		spin.set_value_no_signal(
+			TaxLaneEditor.absolute_amount_to_currency(rate_basis_points))
 		var line := spin.get_line_edit()
 		if line != null and not line.has_focus():
-			line.text = str(rate_basis_points)
+			line.text = TaxLaneEditor._format_value(rate_basis_points, mode, false)
 		return
 	spin.set_value_no_signal(TaxLaneEditor.basis_points_to_percent(rate_basis_points))
 	var line := spin.get_line_edit()
@@ -804,15 +805,17 @@ func _configure_spin_for_mode(spin: SpinBox, mode: int) -> void:
 	if spin == null:
 		return
 	if mode == TAX_MODE_ABSOLUTE:
-		spin.min_value = float(TAX_ABSOLUTE_MIN)
-		spin.max_value = float(TAX_ABSOLUTE_MAX)
-		spin.step = 1.0
-		spin.suffix = ""
+		spin.min_value = TaxLaneEditor.absolute_amount_to_currency(TAX_ABSOLUTE_MIN)
+		spin.max_value = TaxLaneEditor.absolute_amount_to_currency(TAX_ABSOLUTE_MAX)
+		spin.step = 0.01
+		spin.suffix = "货币"
+		spin.tooltip_text = "定额税按货币计，单位：货币/人/天"
 	else:
 		spin.min_value = -1000.0
 		spin.max_value = 100.0
 		spin.step = 0.01
 		spin.suffix = "%"
+		spin.tooltip_text = "按百分比计"
 
 
 func _card_mode(card: Dictionary, kind: String, fallback: int = TAX_MODE_PERCENT_BP) -> int:
@@ -868,13 +871,15 @@ func _ensure_card(page: String, item_id: String, label: String,
 		if mode_button != null:
 			mode_button.clear()
 			mode_button.add_item("%", TAX_MODE_PERCENT_BP)
-			mode_button.add_item("定额", TAX_MODE_ABSOLUTE)
+			mode_button.add_item("定额（货币）", TAX_MODE_ABSOLUTE)
 			mode_button.select(0)
 			mode_button.item_selected.connect(
 				_on_mode_selected.bind(key, kind))
 			modes[kind] = mode_button
 		var spin := kind_row.get_node("Spin") as SpinBox
 		spin.get_line_edit().alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		spin.get_line_edit().text_changed.connect(
+			_on_rate_text_changed.bind(key, kind))
 		spin.get_line_edit().text_submitted.connect(
 			_on_rate_confirmed.bind(key, kind))
 		spin.get_line_edit().focus_entered.connect(
@@ -1069,12 +1074,36 @@ func _on_rate_confirmed(text: String, key: String, kind: String) -> void:
 	var card: Dictionary = _rows.get(key, {})
 	if not card.is_empty() and (card.spins as Dictionary).has(kind):
 		var spin := (card.spins as Dictionary)[kind] as SpinBox
-		var fallback := int((card.rates as Dictionary).get(kind,
-			TaxLaneEditor.percent_to_basis_points(float(spin.value))))
-		var rate := TaxLaneEditor.parse_rate_text(text, fallback)
+		var mode := _card_mode(card, kind)
+		var fallback_value := TaxLaneEditor.currency_to_absolute_amount(float(spin.value)) \
+			if mode == TAX_MODE_ABSOLUTE else TaxLaneEditor.percent_to_basis_points(float(spin.value))
+		var fallback := int((card.rates as Dictionary).get(kind, fallback_value))
+		var rate := TaxLaneEditor.parse_value_text(text, fallback, mode)
 		if rate != fallback:
-			_set_spin_basis_points(spin, rate)
+			_set_spin_basis_points(spin, rate, mode)
 	_confirm_spin(key, kind)
+
+
+func _on_rate_text_changed(text: String, key: String, kind: String) -> void:
+	var card: Dictionary = _rows.get(key, {})
+	if card.is_empty() or not (card.spins as Dictionary).has(kind):
+		return
+	var mode := _card_mode(card, kind)
+	if mode != TAX_MODE_ABSOLUTE or text.strip_edges().is_empty():
+		return
+	var spin := (card.spins as Dictionary)[kind] as SpinBox
+	var fallback := int((card.rates as Dictionary).get(kind,
+		TaxLaneEditor.currency_to_absolute_amount(float(spin.value))))
+	var rate := TaxLaneEditor.parse_value_text(text, fallback, mode)
+	if rate == fallback:
+		return
+	var line := spin.get_line_edit()
+	var shown := TaxLaneEditor._format_value(rate, mode, false)
+	if line.text == shown:
+		return
+	line.set_block_signals(true)
+	line.text = shown
+	line.set_block_signals(false)
 
 
 func _on_rate_focus_entered(key: String, kind: String) -> void:
@@ -1090,7 +1119,9 @@ func _on_rate_preview(value: float, key: String, kind: String) -> void:
 	var card: Dictionary = _rows.get(key, {})
 	if card.is_empty():
 		return
-	var rate := TaxLaneEditor.percent_to_basis_points(value)
+	var mode := _card_mode(card, kind)
+	var rate := TaxLaneEditor.currency_to_absolute_amount(value) \
+		if mode == TAX_MODE_ABSOLUTE else TaxLaneEditor.percent_to_basis_points(value)
 	if bool(card.is_default):
 		var authoritative := int((card.rates as Dictionary).get(kind, 0))
 		if rate == authoritative and not _has_pending_default(kind):
@@ -1159,11 +1190,8 @@ func _confirm_spin(key: String, kind: String) -> void:
 	var fallback := int((card.rates as Dictionary).get(kind, 0))
 	var rate := fallback
 	if mode == TAX_MODE_ABSOLUTE:
-		var text := spin.get_line_edit().text.strip_edges()
-		if text.is_valid_int():
-			rate = clampi(text.to_int(), TAX_ABSOLUTE_MIN, TAX_ABSOLUTE_MAX)
-		else:
-			rate = clampi(int(round(spin.value)), TAX_ABSOLUTE_MIN, TAX_ABSOLUTE_MAX)
+		rate = TaxLaneEditor.parse_value_text(
+			spin.get_line_edit().text, fallback, mode)
 	else:
 		rate = TaxLaneEditor.parse_rate_text(spin.get_line_edit().text, fallback)
 	if rate != fallback:

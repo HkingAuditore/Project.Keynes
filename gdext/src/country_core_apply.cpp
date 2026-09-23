@@ -872,19 +872,35 @@ bool country_core_apply_economy_asset_prepare(
             error = "country_economy_asset_cash_insufficient";
             return false;
         }
-        for (uint32_t i = 0; i < request.good_count &&
-             i < RUNTIME_ECONOMY_ASSET_GOOD_CAPACITY; ++i) {
-            const int32_t good = request.good_ids[i];
-            const int64_t qty = request.good_quantities[i];
-            if (good < 0 || good >= static_cast<int32_t>(state.good_count) ||
-                qty < 0) {
-                error = "country_economy_asset_good_invalid";
-                return false;
+        // RESEARCH_PURCHASE credits technology_points into the treasury; the
+        // good payload is the purchase quantity, not a debit from stock.
+        if (request.operation != RuntimeEconomyAssetOperation::RESEARCH_PURCHASE) {
+            for (uint32_t i = 0; i < request.good_count &&
+                 i < RUNTIME_ECONOMY_ASSET_GOOD_CAPACITY; ++i) {
+                const int32_t good = request.good_ids[i];
+                const int64_t qty = request.good_quantities[i];
+                if (good < 0 || good >= static_cast<int32_t>(state.good_count) ||
+                    qty < 0) {
+                    error = "country_economy_asset_good_invalid";
+                    return false;
+                }
+                const int64_t stock = state.country_goods[
+                    country * state.good_count + static_cast<size_t>(good)];
+                if (stock < qty) {
+                    error = "country_economy_asset_goods_insufficient";
+                    return false;
+                }
             }
+        } else if (catalog.technology_points_good_id >= 0 &&
+                   catalog.technology_points_good_id <
+                       static_cast<int32_t>(state.good_count)) {
+            const int64_t qty = request.requested_quantity > 0
+                ? request.requested_quantity : request.requested_cash;
             const int64_t stock = state.country_goods[
-                country * state.good_count + static_cast<size_t>(good)];
-            if (stock < qty) {
-                error = "country_economy_asset_goods_insufficient";
+                country * state.good_count +
+                static_cast<size_t>(catalog.technology_points_good_id)];
+            if (qty < 0 || stock > std::numeric_limits<int64_t>::max() - qty) {
+                error = "country_economy_asset_research_points_overflow";
                 return false;
             }
         }

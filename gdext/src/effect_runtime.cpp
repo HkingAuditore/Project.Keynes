@@ -5329,8 +5329,25 @@ Dictionary EffectRuntime::settle_orphaned_native_country_acks() {
     if (!_configured) return failure("effect_runtime_unconfigured");
     int32_t settled = 0;
     std::vector<NativeAckBinding> bindings = _native_country_ack_bindings;
+    std::vector<int64_t> request_ids = _native_country_request_ids;
+    std::vector<NativeAckBinding> retained;
+    std::vector<int64_t> retained_ids;
+    retained.reserve(bindings.size());
+    retained_ids.reserve(request_ids.size());
     _native_country_ack_bindings.clear();
     _native_country_request_ids.clear();
+    auto keep = [&](const NativeAckBinding &binding) {
+        NativeAckBinding kept{binding.transaction_id,
+            static_cast<uint32_t>(retained_ids.size()), binding.request_count,
+            binding.domain_bit};
+        for (uint32_t i = 0; i < binding.request_count; ++i) {
+            const size_t index =
+                static_cast<size_t>(binding.request_begin) + i;
+            if (index < request_ids.size())
+                retained_ids.push_back(request_ids[index]);
+        }
+        retained.push_back(kept);
+    };
     for (const NativeAckBinding &binding : bindings) {
         const int32_t index = transaction_index_for_id(binding.transaction_id);
         if (index < 0 || index >= static_cast<int32_t>(_transactions.size())) {
@@ -5343,16 +5360,40 @@ Dictionary EffectRuntime::settle_orphaned_native_country_acks() {
             _native_country_bound_transaction_ids.erase(binding.transaction_id);
             continue;
         }
+        // Soft-settling exists to stop a stalled Country domain from pinning the
+        // clock, but it must not forge an ACK that another domain is ordered
+        // behind. dispatch_native_economy holds an Economy command until the
+        // Country commands in the same transaction are ACKed, so releasing this
+        // binding early let colonization SETTLE run against a claim that had not
+        // committed: Economy read the target as unowned and sent the settlers
+        // home while the claim still landed. Only transactions that actually
+        // pair Country and Economy work are held back; everything else still
+        // soft-settles, which is what keeps a stalled Country off the clock.
+        bool has_country_command = false;
+        bool has_economy_command = false;
+        for (uint32_t ordinal = 0; ordinal < transaction.command_count;
+                ++ordinal) {
+            const Command *command = command_at(transaction, ordinal);
+            if (command == nullptr) continue;
+            if (command->action == COUNTRY_COMMAND) has_country_command = true;
+            else if (command->action == ECONOMY_COMMAND) has_economy_command = true;
+        }
+        if (has_country_command && has_economy_command) {
+            keep(binding);
+            continue;
+        }
         acknowledge_native_domain(transaction, binding.domain_bit);
         _native_country_bound_transaction_ids.erase(binding.transaction_id);
         ++settled;
     }
+    _native_country_ack_bindings.swap(retained);
+    _native_country_request_ids.swap(retained_ids);
     if (settled != 0) compact_terminal_transactions();
     _native_country_acks += static_cast<uint64_t>(settled);
     Dictionary out;
     out["ok"] = true;
     out["acknowledged"] = settled;
-    out["pending"] = 0;
+    out["pending"] = static_cast<int32_t>(_native_country_ack_bindings.size());
     return out;
 }
 

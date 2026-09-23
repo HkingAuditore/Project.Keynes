@@ -570,6 +570,29 @@ func _test_technology_gating(compiled: Dictionary, native_catalog: Dictionary) -
 	_expect("granted technology unlocks tagged building",
 		(unlocked_buildings.building_technology_available as PackedByteArray)[advanced_type] == 1)
 
+	# early_knowledge_institution is the production unlock that previously showed
+	# 「技术停用」when Country worker AUTH left the sync technology bitset stale.
+	# Live building_technology_available must follow has_technology(), which pins
+	# country_asset_snapshot under worker authority (same as copy_economy_snapshot).
+	var knowledge_type := types.find("early_knowledge_institution")
+	_expect("early knowledge institution is catalogued", knowledge_type >= 0)
+	_expect("early knowledge starts locked without the institution tech",
+		knowledge_type >= 0 and
+		(buildings.building_technology_available as PackedByteArray)[knowledge_type] == 0)
+	_grant_technology(ext, compiled, "tech.early_knowledge_institution", 2, 2)
+	_expect("economy observes the knowledge-institution epoch",
+		bool(_run_day(ext, 2).get("done", false)))
+	var knowledge_buildings: Dictionary = ext.get_building_cell_snapshot(0)
+	var knowledge_country: Dictionary = ext.get_country_snapshot(
+		country_summary.country_handle)
+	_expect("early knowledge technology becomes committed",
+		(knowledge_country.technology_ids as PackedStringArray).has(
+			"tech.early_knowledge_institution"))
+	_expect("early knowledge technology unlocks the institution building",
+		knowledge_type >= 0 and
+		(knowledge_buildings.building_technology_available as PackedByteArray)[
+			knowledge_type] == 1)
+
 
 func _test_upgrade_gating(compiled: Dictionary, native_catalog: Dictionary) -> void:
 	var ext := _new_ext(compiled)

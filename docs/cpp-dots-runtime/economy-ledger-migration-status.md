@@ -236,8 +236,13 @@ the epoch harvest scratch live on `owned.resources` (N5 / N9); and bound
 
 - `run_ledger_apply_drain` / `run_government_research_drain` /
   `run_structural_commit_drain`: StageOps mutate completes these stages in one
-  Host `advance_stage` pulse (cursor + slice caps; research peer pending is
-  fail-closed).
+  Host `advance_stage` pulse (cursor + slice caps).
+- **2026-09-22 correction:** `run_government_research_drain` now drains the
+  already-sealed research purchase continuation through its durable phases
+  before returning the StageOps stage result. The compact path may still yield
+  between phases, but StageOps must not convert that normal continuation into
+  `government_research_peer_pending`/`fatal`; the prior behavior left the
+  production epoch frozen at the next day boundary.
 - Config / report: `economy_stage_ops_soak_experiment`,
   `economy_stage_ops_soak_parity_ok` (default false).
 - `economy_production_writer=stage_ops` is allowed only when soak experiment or

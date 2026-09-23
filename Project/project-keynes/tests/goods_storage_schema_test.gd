@@ -448,7 +448,8 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	var mismatch_result: Dictionary = mismatch_target.feed_economy_restore_chunk(chunks[0])
 	_expect("old catalog hash save is rejected precisely",
 		not bool(mismatch_result.get("ok", true)) and
-		String(mismatch_result.get("reason", "")) == "save_catalog_scale_or_capacity_mismatch")
+		String(mismatch_result.get("reason", "")).begins_with(
+			"save_catalog_scale_or_capacity_mismatch:"))
 	var restored: Object = _new_ext(1, 0.1)
 	_expect("restore target configures", bool(restored.configure_economy(catalog, profile, 1, 42).get("ok", false)))
 	_expect("PKCN restore begins before PKEC", bool(restored.begin_country_restore().get("ok", false)))
@@ -457,7 +458,10 @@ func _test_merchant_trade_and_save(compiled: Dictionary) -> void:
 	_expect("matching PKCN restores first", bool(restored.end_country_restore().get("ok", false)))
 	_expect("restore begins", bool(restored.begin_economy_restore().get("ok", false)))
 	for chunk in chunks:
-		_expect("restore chunk accepted", bool(restored.feed_economy_restore_chunk(chunk).get("ok", false)))
+		var fed: Dictionary = restored.feed_economy_restore_chunk(chunk)
+		if not bool(fed.get("ok", false)):
+			print("  restore chunk rejected: %s" % JSON.stringify(fed))
+		_expect("restore chunk accepted", bool(fed.get("ok", false)))
 	_expect("restore completes", bool(restored.end_economy_restore().get("ok", false)))
 	var source_hash: int = ext.get_economy_state_hash()
 	var restored_hash: int = restored.get_economy_state_hash()

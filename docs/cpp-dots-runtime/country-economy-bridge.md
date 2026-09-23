@@ -41,6 +41,26 @@ state hash；冻结报告公开 `country_schema_version`、`country_generation` 
 国家 `OFF`、目录数量不一致或快照 shape 不一致时返回 `country_runtime_required` /
 `country_snapshot_shape_invalid`，经济不会恢复旧的全局国库或逐地块科技路径。
 
+### cohort cash 的两条路由与拒绝分类（2026-09-22）
+
+`coordinate_country_cohort_cash()` 有两条路由：
+
+1. **sync fast path** —— Country 与 Economy 同为 worker 权威且 D7 该 operation gate 打开时，
+   直接在 worker 线程上 `prepare_worker_cohort_cash` → `service_country_economy_asset_peer`
+   → `finish_worker_country_asset`，当天完成。
+2. **异步 enqueue** —— 其余情况走 `block_or_enqueue_country_worker_asset`，
+   `GATE_SOFT_UNAVAILABLE` 时软跳过（`committed=0` 且返回 true），
+   `ENQUEUED_PENDING` 时由 Country 下一个 stage 准备、Economy 再消费终态。
+
+fast path 的失败**不会**回落到路由 2（请求 id 与 cohort slot 不共享，回落会重复下单），
+因此它自己必须把"可重试"和"契约违反"分开：
+
+- 契约违反 → `country_worker_cohort_cash_boundary_invalid` → fatal。
+- Country plan 窗口开着 → `country_economy_asset_country_plan_pending` → 调用方 park，
+  同一条 ledger/structural 命令在下个 pulse 原样重放（游标未推进）。
+
+详见 `native-economy-runtime.md` 的「2026-09-22 Country asset backpressure 与 fatal 取证」。
+
 ## 地块税务 epoch 缓存
 
 地块税务不经 GDScript：Country snapshot 直接复制 cell→policy 映射与规范政策行。

@@ -26,8 +26,11 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
         append_le<int64_t>(payload, _last_committed_day);
         append_le<int64_t>(payload, _epoch_id);
         append_le<int32_t>(payload, NativeCountryRuntime::SCHEMA_VERSION);
-        append_le<uint64_t>(payload, _country_runtime->generation());
-        append_le<uint64_t>(payload, static_cast<uint64_t>(_country_runtime->state_hash()));
+        append_le<uint64_t>(payload, _save_country_identity_override
+            ? _save_country_generation : _country_runtime->generation());
+        append_le<uint64_t>(payload, _save_country_identity_override
+            ? _save_country_state_hash
+            : static_cast<uint64_t>(_country_runtime->state_hash()));
         append_le<int64_t>(payload, _seed);
         append_le<int64_t>(payload, _catalog_hash);
         append_le<int64_t>(payload, _building_catalog_hash);

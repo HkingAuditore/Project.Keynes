@@ -81,7 +81,7 @@ on opening food buildings (`gathering_ground` and `stone_age_hunting_camp`) so t
 food plan runs; do not prefill knowledge, trade, or mine operators. Opening lots must remain operable from granted production/output/resource technologies. Formal starts always top up timber and grant/prebuild exactly one `deadwood_gathering_camp`; leftover construction-material techs (bast, reed, turf) gate later construction, not standing food camps. Allow employee roles only on `placer_gold_working` (1 miner)
 and `surface_silver_working` (2 miners); do not prefill those slots. Other
 Stone-Age starter buildings must remain owner-only. Require gathering and hunting
-camps when local reserves exist, the matching precious-metal work site,
+camps when local reserves exist, one deadwood camp, the matching precious-metal work site,
 `early_merchant_post`, and hide scraping only on cold highland. Do not prebuild any
 knowledge shed; reveal one geographically operable knowledge-practice technology,
 seed its construction materials, and deposit 3000 authored technology points in
@@ -121,6 +121,44 @@ bounded to days 0..30, requires filled matching owner posts, and must be idempot
   its cell count. Current visibility and `fog_k` are derived and must be
   recomputed through `WorldRuntimeHost.refresh_country_visuals()` on restore,
   never saved. Reject a cell-count mismatch or truncation rather than padding.
+
+## Headless Save Replay and Known Save/Restore Blockers (2026-09-22)
+
+Reproduce a player-reported stop with
+`tools\runtime\Invoke-SaveReplay.ps1 -Slot autosave -Days 60` (or `-SavePath <file.pksv>`).
+It drives `tests/headless_save_replay.gd` through the production
+`GameFlow.begin_load_game` restore path and writes a forensics JSON on fatal, stall, or
+failed restore. `SaveRepository` honours `PK_SAVE_DIR` in debug builds, so an arbitrary
+`.pksv` can be staged into a scratch directory without overwriting the player's slots.
+
+A replay that reaches the target day is not a pass on its own: also assert country/economy
+are bootstrapped, the host is not STOPPED/FAULTED, and `newest_state_day` advanced. A failed
+PKSR restore lets the clock free-run with nothing simulating.
+
+Save/load under worker authority was repaired end to end on 2026-09-23; the full chain
+is in `docs/cpp-dots-runtime/game-flow-start-save.md` ("Save/load under worker
+authority"). The rules that fell out of it:
+
+- Under worker Country authority the main-thread `NativeCountryRuntime` is stale (never
+  written after bootstrap). Anything that persists or reports Country state must read
+  `country_query_runtime()`; saves use `capture_worker_committed_checkpoint()`, and Economy
+  save headers are stamped with that checkpoint's identity (`set_save_country_identity`).
+- A restore start is granted its requested domain mask immediately, and
+  `sync_runtime_domain_ownership()` mirrors the grant to the main-thread peers. Do not
+  reintroduce a path where a loaded game's first day runs before the grant.
+- Every restore path must end in `publish_restored_country_territory()`; restore must size
+  every per-country lane (including Economy asset reservations) to the restored count.
+- Validate cross-section references (e.g. fiscal peer `country_slot`) in `end_restore`,
+  after the epoch they refer to is captured, not while parsing the section.
+- New PKEC sections need an ECP2 domain mapping **and** must fall inside the restore section
+  loop, or they are dropped silently while the header still counts them.
+- `build_save_bundle` failures must publish a save failure (`_save_failed_request_id`,
+  `_save_failure_reason`) and must not be overwritten back to PAUSED/RUNNING.
+
+Test it with `PK_SAVE_DIR=<scratch> PK_GAME_SAVE_ROUNDTRIP_TEST=1` (the test refuses to run
+against `user://saves` because it writes `manual_1..3`). It enables a tax and advances 20
+days before saving so the Country state really changes on the worker; keep that property if
+you edit it, otherwise a stale-state save passes by coincidence.
 
 ## Validate Proportionally
 

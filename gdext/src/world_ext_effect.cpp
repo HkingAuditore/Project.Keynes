@@ -752,56 +752,32 @@ Dictionary DCWorldExt::ack_effect_native_modifier() {
 }
 
 Dictionary DCWorldExt::dispatch_effect_native_country() {
-    if (_runtime_host != nullptr &&
-        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::EFFECT)) {
-        Dictionary out;
-        out["ok"] = true;
-        out["suppressed"] = true;
-        out["path"] = "EFFECT_WORKER";
-        return out;
-    }
+    // Do not suppress under EFFECT worker authority. Catalog Effect evaluation
+    // may be worker-owned, but family colonization CLAIM+SETTLE transactions are
+    // enqueued onto the main EffectRuntime from Economy. Skipping this adapter
+    // leaves expeditions stuck in SETTLING forever.
     if (_effect_runtime == nullptr || _country_runtime == nullptr) return unavailable();
     return runtime_from(_effect_runtime)->dispatch_native_country(
         static_cast<NativeCountryRuntime *>(_country_runtime));
 }
 
 Dictionary DCWorldExt::ack_effect_native_country() {
-    if (_runtime_host != nullptr &&
-        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::EFFECT)) {
-        Dictionary out;
-        out["ok"] = true;
-        out["suppressed"] = true;
-        out["path"] = "EFFECT_WORKER";
-        return out;
-    }
+    // Mirror dispatch_effect_native_country: Host receipt drain must keep
+    // running for externally enqueued Country commands under EFFECT ACTIVE.
     if (_effect_runtime == nullptr || _country_runtime == nullptr) return unavailable();
     return runtime_from(_effect_runtime)->ack_native_country(
         static_cast<NativeCountryRuntime *>(_country_runtime));
 }
 
 Dictionary DCWorldExt::dispatch_effect_native_economy() {
-    if (_runtime_host != nullptr &&
-        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::EFFECT)) {
-        Dictionary out;
-        out["ok"] = true;
-        out["suppressed"] = true;
-        out["path"] = "EFFECT_WORKER";
-        return out;
-    }
+    // Same exception as Country: colonization SETTLE waits on this adapter and
+    // is not covered by the EFFECT POD worker plan stage.
     if (_effect_runtime == nullptr || _economy_runtime == nullptr) return unavailable();
     return runtime_from(_effect_runtime)->dispatch_native_economy(
         static_cast<NativeEconomyRuntime *>(_economy_runtime));
 }
 
 Dictionary DCWorldExt::ack_effect_native_economy() {
-    if (_runtime_host != nullptr &&
-        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::EFFECT)) {
-        Dictionary out;
-        out["ok"] = true;
-        out["suppressed"] = true;
-        out["path"] = "EFFECT_WORKER";
-        return out;
-    }
     if (_effect_runtime == nullptr || _economy_runtime == nullptr) return unavailable();
     return runtime_from(_effect_runtime)->ack_native_economy(
         static_cast<NativeEconomyRuntime *>(_economy_runtime));

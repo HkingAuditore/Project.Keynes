@@ -719,6 +719,24 @@ enum class RuntimeEconomyAssetOperation : uint16_t {
     TREASURY_SPEND = 9,
 };
 
+// Country/Economy asset backpressure. Every reason here means the request was
+// never allocated, or was re-queued intact: no store was mutated, so the caller
+// must yield the slice and retry on a later pulse. Treating one of them as an
+// economy fatal leaves the epoch half-open, and the next report then shows
+// staged mints without their committed owner funds — the misleading
+// money_error/goods_error the GM panel used to display instead of the real
+// reason. Keep this the single definition; the reason set is consumed by the
+// Economy stage drains, the epoch prelude, and the Host worker pulse.
+inline bool runtime_country_asset_pending_reason(const std::string &reason) {
+    return reason == "country_economy_asset_host_pending" ||
+           reason == "country_economy_asset_results_pending" ||
+           reason == "country_economy_asset_rejection_retry_pending" ||
+           reason == "country_economy_asset_completion_retry_pending" ||
+           reason == "country_economy_fiscal_terminal_retry_pending" ||
+           reason == "country_economy_asset_country_plan_pending" ||
+           reason == "country_economy_asset_territory_claim_pending";
+}
+
 enum class RuntimeEconomyAssetState : uint8_t {
     CREATED = 1,
     COUNTRY_PREPARED = 2,
@@ -1172,9 +1190,10 @@ struct RuntimeCountryPodSnapshot {
 // generation: a rejected peer boundary may commit Country-side state without
 // advancing the business generation, and must still be visible to readers.
 // The snapshot remains immutable and owned by the host; the patch is the only
-// territory payload copied for the normal publish path. `full_snapshot_required` is
-// set when a consumer has missed the immediately preceding generation and
-// therefore cannot safely apply the retained sparse patch by itself.
+// territory payload copied for the normal publish path. `full_snapshot_required`
+// is set when the consumer missed a generation that changed territory and
+// therefore cannot reconstruct owners from the retained sparse patch. A gap
+// that only advanced cash, tax, or research stays sparse.
 struct RuntimeCountryReadView {
     bool available = false;
     bool full_snapshot_required = false;
@@ -1524,6 +1543,17 @@ struct RuntimeThreadReport {
     bool economy_replay_committed = false;
     bool economy_replay_parity_ready = false;
     char economy_replay_fallback_reason[64]{};
+    // Worker-published tax/subsidy schedule probe. Epoch millisecond counters
+    // reset when the economy epoch metrics clear. Mask bit 0 is income.
+    char economy_yield_reason[48]{};
+    char economy_stage_name[32]{};
+    char economy_substage_name[40]{};
+    double economy_epoch_fiscal_ms = 0.0;
+    double economy_fiscal_settlement_ms = 0.0;
+    double economy_income_subsidy_ms = 0.0;
+    uint32_t economy_negative_tax_mask = 0;
+    uint32_t economy_active_tax_mask = 0;
+    uint32_t economy_attempt_slices = 0;
     // Consolidated SHADOW domain-authority runner metrics. These are
     // diagnostic only; implemented_domain_mask remains the promotion gate.
     uint32_t domain_authority_planned_mask = 0;

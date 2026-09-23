@@ -322,11 +322,27 @@ public:
     bool country_economy_asset_protocol_self_test(std::string &error) const;
     bool enqueue_economy_origin_country_asset(
             RuntimeEconomyAssetRequest request, std::string &error);
+    // True only on the simulation worker thread. Callers that can run on
+    // either thread must check this before taking a worker-only in-thread
+    // path; the main thread has to use the Host peer queue instead.
+    bool on_worker_thread() const noexcept {
+        return std::this_thread::get_id() == _worker.get_id();
+    }
     bool prepare_worker_cohort_cash(RuntimeEconomyAssetRequest &request,
                                    std::string &error);
     bool finish_worker_country_asset(uint64_t request_id,
                                   RuntimeEconomyAssetResult &result,
                                   std::string &error);
+    // Commit Country treasury for Economy-origin terminals when Economy is
+    // still sync (Country unique-writer). Worker-thread finish_worker_* is
+    // preferred when Economy is also authoritative.
+    // COMPLETED RESEARCH_PURCHASE is deferred until Economy settles market /
+    // merchant credits in the same advance: pass settle_request_id to include
+    // that one wire id. Rejected/faulted research still retires immediately.
+    bool flush_country_economy_asset_commits(std::string &error,
+                                            uint64_t settle_request_id = 0);
+    bool publish_country_worker_snapshot(uint32_t dirty_families,
+                                         std::string &error);
     std::shared_ptr<const RuntimeCountryPodSnapshot> country_asset_snapshot() const {
         return std::atomic_load_explicit(&_country_snapshot, std::memory_order_acquire);
     }
@@ -382,6 +398,10 @@ public:
     CountryWorkerProtocolStatus country_worker_protocol_status() const;
     bool publish_country_checkpoint(const CountryCoreCheckpoint &checkpoint,
                                     std::string &error);
+    // Identity of the Country checkpoint a save is being built from. Economy
+    // save headers must carry this under worker Country authority.
+    bool country_checkpoint_identity(uint64_t &generation,
+                                     uint64_t &business_state_hash) const;
     bool pending_country_checkpoint(CountryCoreCheckpoint &out,
                                     std::string &error) const;
     RuntimeCountryPodDiagnostics country_pod_diagnostics() const;
@@ -475,6 +495,20 @@ public:
     bool poll_effect_pod_intent(RuntimeDomainIntent &intent);
     bool submit_effect_pod_ack(const RuntimeDomainAck &ack, std::string &error);
     int32_t effect_pod_program_id_for_key(const char *key) const;
+    // Country ACTIVE peer adapter: technology.<id> instances live on the Effect
+    // POD unique-writer. Sync EffectRuntime is writeback-only under F8.
+    bool ensure_effect_pod_technology_instance(
+            int64_t instance_id, uint32_t generation, int32_t program_id,
+            uint64_t target_handle, uint32_t target_generation, int64_t day,
+            std::string &error);
+    bool effect_pod_instance_fire_acked(int64_t instance_id,
+                                        uint32_t generation) const;
+    // Rate-limited stderr dump of why a technology Effect instance has not
+    // fire-ACKed yet. Diagnostic only; no state is mutated.
+    void debug_log_effect_pod_technology_state(int64_t instance_id,
+                                               uint32_t generation,
+                                               int32_t program_id,
+                                               int32_t technology) const;
     bool configure_ideology_pod(const RuntimeIdeologyPodCatalog &catalog,
                                 std::string &error);
     bool publish_ideology_opinion_snapshot(
@@ -523,6 +557,11 @@ public:
             uint64_t request_id, const char *reason) noexcept;
     bool request_save(uint64_t request_id);
     std::shared_ptr<const RuntimeSaveBundle> poll_save(uint64_t request_id) const;
+    bool save_failed(uint64_t request_id) const {
+        return request_id != 0 &&
+            _save_failed_request_id.load(std::memory_order_acquire) == request_id;
+    }
+    std::string save_failure_reason() const;
     bool restore_bundle(const uint8_t *bytes, size_t size, std::string &error);
 
     // Main-thread visual instrumentation is an atomic write-only feedback
@@ -688,7 +727,6 @@ private:
             uint64_t admitted_submit_order);
     void bind_shadow_country_peer_mirrors_locked();
     void record_country_parity_locked(const RuntimeCountryPodSnapshot &worker);
-    bool flush_country_economy_asset_commits(std::string &error);
     // Drain Economy-origin CREATED requests into COUNTRY_PREPARED + pollable
     // queue. Country stage and Economy same-day retry share this helper so a
     // fiscal/asset enqueue cannot park the worker until the next day attempt
@@ -696,8 +734,6 @@ private:
     // Returns how many origin requests were prepared (0 = queue was empty).
     uint32_t prepare_economy_origin_country_assets(std::string &error);
     bool country_authority_drain_idle_locked() const;
-    bool publish_country_worker_snapshot(uint32_t dirty_families,
-                                         std::string &error);
     bool execute_ideology_worker_stage(int64_t day,
                                        RuntimeDayCommit &commit,
                                        std::string &error);
@@ -745,6 +781,9 @@ private:
                      const RuntimeDayCommit &day_commit,
                      const std::vector<RuntimeCommandReceipt> &day_receipts);
     void set_fault(const char *code);
+    void record_save_failure(const char *reason);
+    void publish_economy_tax_diag(const std::string &yield_reason,
+                                  uint32_t slices);
     // Returns true when an armed one-shot injection matched `point` and
     // transitioned the worker into FAULTED. Call sites must abort the current
     // boundary immediately after a true return.
@@ -968,6 +1007,10 @@ private:
     CountryBoundarySeal _country_worker_seal{};
     uint64_t _country_read_view_generation = 0;
     uint64_t _country_read_view_patch_base_generation = 0;
+    // View generation of the newest publish whose territory patch was non-empty.
+    // A consumer behind the patch base still does not need a full owner copy
+    // when this generation is already at or behind the consumer cursor.
+    uint64_t _country_read_view_territory_generation = 0;
     uint32_t _country_read_view_dirty_families = 0;
     std::vector<int32_t> _country_read_view_changed_cells;
     std::vector<int32_t> _country_read_view_changed_owners;
@@ -979,6 +1022,11 @@ private:
     // acknowledgement separate from _save_request_id prevents a completed
     // request from being returned forever by repeated UI polling.
     mutable std::atomic<uint64_t> _save_consumed_request_id{0};
+    std::atomic<uint64_t> _save_failed_request_id{0};
+    // Why the last save request produced no bundle. Separate from _fault_code
+    // because some rejections (a save before the first economy commit) leave
+    // the runtime healthy and must not fault the worker.
+    std::array<std::atomic<char>, 64> _save_failure_reason{};
     std::shared_ptr<const RuntimeSaveBundle> _save_bundle;
     RuntimeSaveBundle _pending_restore_bundle;
     bool _has_pending_restore = false;
@@ -1196,6 +1244,15 @@ private:
     std::atomic<int32_t> _climate_cyclone_touched{0};
     std::atomic<double> _time_debt_days{0.0};
     std::array<std::atomic<char>, 64> _fault_code{};
+    std::array<std::atomic<char>, 48> _economy_yield_reason{};
+    std::array<std::atomic<char>, 32> _economy_stage_name{};
+    std::array<std::atomic<char>, 40> _economy_substage_name{};
+    std::atomic<double> _economy_epoch_fiscal_ms{0.0};
+    std::atomic<double> _economy_fiscal_settlement_ms{0.0};
+    std::atomic<double> _economy_income_subsidy_ms{0.0};
+    std::atomic<uint32_t> _economy_negative_tax_mask{0};
+    std::atomic<uint32_t> _economy_active_tax_mask{0};
+    std::atomic<uint32_t> _economy_attempt_slices{0};
     // Controllable one-shot fault injection. Empty / disarmed by default so
     // production paths never trip. Point names are stable ASCII tokens such as
     // "economy.plan.before" or "authority.switch.after".

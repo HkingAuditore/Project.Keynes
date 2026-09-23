@@ -4382,6 +4382,26 @@ Dictionary NativeCountryRuntime::capture_reference_checkpoint() const {
     return out;
 }
 
+bool NativeCountryRuntime::capture_worker_committed_checkpoint(
+        CountryCoreCheckpoint &out, std::string &error) const {
+    // Called on the read replica that apply_committed_read_snapshot keeps in
+    // step with the worker. Its business state is the worker's committed day,
+    // but the command queue, batch/seal flags, peer intents, and the attached
+    // Effect/Modifier peers are leftovers of the main-thread copy it was built
+    // from: under worker authority they never advance, so encode_save would
+    // read them as due work and refuse. The host owns all of that state and
+    // merges its own pending commands and receipts into the bundle.
+    NativeCountryRuntime committed(*this);
+    committed._pending_commands.clear();
+    committed._command_batch = {};
+    committed._boundary_seal_active = false;
+    committed._peer_pending_intents.clear();
+    committed._effect_runtime = nullptr;
+    committed._modifier_runtime = nullptr;
+    committed._economy_runtime = nullptr;
+    return committed.capture_core_checkpoint(out, error);
+}
+
 bool NativeCountryRuntime::capture_core_checkpoint(
         CountryCoreCheckpoint &out, std::string &error) const {
     CountryCoreCheckpoint checkpoint;
@@ -6494,6 +6514,25 @@ bool NativeCountryRuntime::purchase_research_points(int32_t country_slot,
 }
 
 PackedInt32Array NativeCountryRuntime::cell_country_snapshot() const {
+    // This plane is what MapData, vision and country borders read. Under worker
+    // authority the sync store is frozen at its pre-handoff contents, so copying
+    // it would publish a territory map missing every claim the worker has
+    // committed since — and worse, overwrite the correct plane that the Host
+    // read-view already patched into MapData. Pin the same committed snapshot
+    // country_slot_for_cell() uses so every territory reader agrees.
+    if (_simulation_host != nullptr &&
+        _simulation_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY)) {
+        const auto snapshot = _simulation_host->country_asset_snapshot();
+        if (snapshot != nullptr &&
+            snapshot->cell_country_slot.size() == _cell_country_slot.size()) {
+            PackedInt32Array out;
+            out.resize(static_cast<int64_t>(snapshot->cell_country_slot.size()));
+            if (!snapshot->cell_country_slot.empty())
+                std::memcpy(out.ptrw(), snapshot->cell_country_slot.data(),
+                            snapshot->cell_country_slot.size() * sizeof(int32_t));
+            return out;
+        }
+    }
     PackedInt32Array out;
     out.resize(static_cast<int64_t>(_cell_country_slot.size()));
     if (!_cell_country_slot.empty()) std::memcpy(out.ptrw(), _cell_country_slot.data(), _cell_country_slot.size() * sizeof(int32_t));
@@ -6501,9 +6540,30 @@ PackedInt32Array NativeCountryRuntime::cell_country_snapshot() const {
 }
 
 bool NativeCountryRuntime::has_technology(int32_t country_slot, int32_t technology_id) const {
-    if (country_slot < 0 || country_slot >= static_cast<int32_t>(_countries.active.size()) ||
-        technology_id < 0 || technology_id >= static_cast<int32_t>(_technology_ids.size())) return false;
-    return (_country_technologies[static_cast<size_t>(country_slot) * _technology_words + technology_id / 64] &
+    if (technology_id < 0 ||
+        technology_id >= static_cast<int32_t>(_technology_ids.size())) return false;
+    // Country ACTIVE freezes the sync store. Economy live gates
+    // (building_available / cell_has_technology) and UI query paths must pin
+    // the same immutable worker commit that copy_economy_snapshot already uses;
+    // otherwise buildings unlock on the research panel while production still
+    // reads a pre-handoff technology bitset.
+    if (_simulation_host != nullptr &&
+        _simulation_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY)) {
+        const auto snapshot = _simulation_host->country_asset_snapshot();
+        if (snapshot != nullptr) {
+            const uint32_t words = snapshot->technology_words;
+            if (country_slot < 0 || words == 0) return false;
+            const size_t index = static_cast<size_t>(country_slot) * words +
+                static_cast<size_t>(technology_id / 64);
+            return index < snapshot->country_technologies.size() &&
+                (snapshot->country_technologies[index] &
+                 (uint64_t{1} << (technology_id % 64))) != 0;
+        }
+    }
+    if (country_slot < 0 ||
+        country_slot >= static_cast<int32_t>(_countries.active.size())) return false;
+    return (_country_technologies[static_cast<size_t>(country_slot) *
+                _technology_words + technology_id / 64] &
             (1ULL << (technology_id % 64))) != 0;
 }
 
@@ -6898,7 +6958,18 @@ bool NativeCountryRuntime::finalize_research_head_if_complete(
 }
 
 int32_t NativeCountryRuntime::country_slot_for_cell(int32_t cell) const {
-    return cell >= 0 && cell < _cell_count ? _cell_country_slot[static_cast<size_t>(cell)] : NEUTRAL_SLOT;
+    if (_simulation_host != nullptr &&
+        _simulation_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY)) {
+        const auto snapshot = _simulation_host->country_asset_snapshot();
+        if (snapshot != nullptr) {
+            if (cell < 0 ||
+                static_cast<size_t>(cell) >= snapshot->cell_country_slot.size())
+                return NEUTRAL_SLOT;
+            return snapshot->cell_country_slot[static_cast<size_t>(cell)];
+        }
+    }
+    return cell >= 0 && cell < _cell_count
+        ? _cell_country_slot[static_cast<size_t>(cell)] : NEUTRAL_SLOT;
 }
 
 int64_t NativeCountryRuntime::country_handle_for_cell(int32_t cell) const {
@@ -7803,6 +7874,82 @@ CountryPeerResult NativeCountryRuntime::execute_peer_intent_main_thread(
 
     if (intent.opcode == CountryPeerIntentCode::ENSURE_TECHNOLOGY_EFFECT ||
         intent.opcode == CountryPeerIntentCode::NUDGE_TECHNOLOGY_EFFECT) {
+        const bool effect_worker_authoritative = _simulation_host != nullptr &&
+            _simulation_host->domain_is_worker_authoritative(
+                RuntimeDomainId::EFFECT);
+        {
+            // Unconditional entry probe: tells us the adapter actually ran and
+            // which branch it picked. Rate limited.
+            static int s_entry_left = 30;
+            if (s_entry_left-- > 0) {
+                std::fprintf(stderr,
+                    "[tech-ack-diag/entry] tech=%d instance=%llu eff_gen=%u "
+                    "host=%d effect_worker_auth=%d effect_enabled=%d "
+                    "effect_runtime=%d branch=%s\n",
+                    intent.technology,
+                    static_cast<unsigned long long>(intent.effect_instance_id),
+                    intent.effect_generation,
+                    _simulation_host != nullptr ? 1 : 0,
+                    effect_worker_authoritative ? 1 : 0,
+                    _effect_runtime_enabled ? 1 : 0,
+                    _effect_runtime != nullptr ? 1 : 0,
+                    effect_worker_authoritative ? "pod" : "sync");
+                std::fflush(stderr);
+            }
+        }
+        // F8 ACTIVE: sync EffectRuntime is writeback-only. Route technology
+        // registration onto the Effect POD unique-writer and gate READY on
+        // the published POD fire ACK — never mutate the sync facade here.
+        if (effect_worker_authoritative) {
+            if (intent.effect_generation == 0 ||
+                intent.effect_generation != static_cast<uint32_t>(
+                    intent.target_handle >> 32U) ||
+                intent.effect_instance_id == 0)
+                return reject("country_peer_effect_generation_invalid");
+            const std::string program_key =
+                std::string("technology.") +
+                _technology_ids[static_cast<size_t>(intent.technology)];
+            const int32_t program_id =
+                _simulation_host->effect_pod_program_id_for_key(
+                    program_key.c_str());
+            if (program_id < 0) {
+                // Catalog has no Effect program for this technology. Treat as
+                // fire-acked so activation is not pinned forever.
+                technology_flags |= COUNTRY_PEER_EFFECT_EXISTS |
+                    COUNTRY_PEER_EFFECT_FIRE_ACKED;
+                result.code = CountryPeerResultCode::READY;
+                result.technology_flags = technology_flags;
+                result.committed_peer_generation = intent.peer_generation;
+                ++_peer_results_consumed;
+                return result;
+            }
+            std::string peer_error;
+            if (!_simulation_host->ensure_effect_pod_technology_instance(
+                    static_cast<int64_t>(intent.effect_instance_id),
+                    intent.effect_generation, program_id,
+                    intent.target_handle, intent.effect_generation,
+                    intent.day, peer_error)) {
+                return reject(peer_error.empty()
+                    ? "country_peer_effect_pod_queue_rejected"
+                    : peer_error.c_str());
+            }
+            technology_flags |= COUNTRY_PEER_EFFECT_EXISTS;
+            if (_simulation_host->effect_pod_instance_fire_acked(
+                    static_cast<int64_t>(intent.effect_instance_id),
+                    intent.effect_generation)) {
+                technology_flags |= COUNTRY_PEER_EFFECT_FIRE_ACKED;
+                result.code = CountryPeerResultCode::READY;
+            } else {
+                _simulation_host->debug_log_effect_pod_technology_state(
+                    static_cast<int64_t>(intent.effect_instance_id),
+                    intent.effect_generation, program_id, intent.technology);
+                result.code = CountryPeerResultCode::PENDING;
+            }
+            result.technology_flags = technology_flags;
+            result.committed_peer_generation = intent.peer_generation;
+            ++_peer_results_consumed;
+            return result;
+        }
         if (!_effect_runtime_enabled || _effect_runtime == nullptr)
             return reject("country_peer_effect_runtime_unavailable");
         if (_effect_runtime->committed_generation() < intent.peer_generation)
@@ -7846,6 +7993,20 @@ CountryPeerResult NativeCountryRuntime::execute_peer_intent_main_thread(
             technology_flags |= COUNTRY_PEER_EFFECT_FIRE_ACKED;
             result.code = CountryPeerResultCode::READY;
         } else {
+            static int s_sync_left = 30;
+            if (s_sync_left-- > 0) {
+                std::fprintf(stderr,
+                    "[tech-ack-diag/sync] tech=%d instance=%llu gen=%u "
+                    "existed=%d should_run_day=%lld committed_gen=%llu "
+                    "pending_after_nudge=1\n",
+                    intent.technology,
+                    static_cast<unsigned long long>(intent.effect_instance_id),
+                    intent.effect_generation, exists ? 1 : 0,
+                    static_cast<long long>(intent.day),
+                    static_cast<unsigned long long>(
+                        _effect_runtime->committed_generation()));
+                std::fflush(stderr);
+            }
             result.code = CountryPeerResultCode::PENDING;
         }
         result.technology_flags = technology_flags;
@@ -8226,9 +8387,15 @@ int32_t NativeCountryRuntime::run_research_day(
             weights[static_cast<size_t>(domain)] = _country_research_weights_bp[
                 static_cast<size_t>(slot) * 4U + static_cast<size_t>(domain)];
         uint64_t remainder_iterations = 0;
-        const CountryResearchAllocation allocation =
+        CountryResearchAllocation allocation =
             country_allocate_research_points(available, weights,
                                               &remainder_iterations);
+        std::array<int32_t, COUNTRY_RESEARCH_DOMAIN_COUNT> queue_lengths{{0, 0, 0, 0}};
+        for (int32_t domain = 0; domain < 4; ++domain)
+            queue_lengths[static_cast<size_t>(domain)] =
+                _country_research_queue_lengths[
+                    static_cast<size_t>(slot) * 4U + static_cast<size_t>(domain)];
+        country_redirect_idle_research_shares(allocation, weights, queue_lengths);
         _research_remainder_iterations += remainder_iterations;
 
         int64_t consumed = 0;
@@ -8297,12 +8464,9 @@ int32_t NativeCountryRuntime::run_research_day(
                     break;
                 }
             }
-            // Empty domains leave unused shares in the treasury so later days
-            // can still fund queued domains at the current weights. Parking
-            // those shares as deferred stock made available=0 after one day,
-            // which froze progress unless the player maxed a domain weight.
-            // A domain that actually had queue work (blocked head or leftover
-            // after completion) still parks its remainder.
+            // Empty-domain shares were already moved onto queued domains.
+            // A domain that had queue work but could not finish it (blocked
+            // head or leftover after completion) still parks its remainder.
             if (initial_length > 0)
                 newly_deferred += domain_points;
         }
@@ -10172,6 +10336,18 @@ bool NativeCountryRuntime::decode_save_in_place(
     _visual_era_dirty_slots.clear();
     _research_modifier_cache.clear();
     _research_modifier_cache.resize(_countries.active.size());
+    // PKCN is written at a committed boundary with no Economy asset
+    // transaction in flight, so every reservation is zero on restore. The
+    // lanes still have to match the restored country count: restore used to
+    // leave them at the empty size reset() gave them, and the first fiscal
+    // commit after a load wrote through a null vector base (0xC0000005 in
+    // commit_economy_asset_transaction).
+    _economy_asset_transactions_in_flight.clear();
+    _economy_asset_reserved_cash.assign(_countries.active.size(), 0);
+    _economy_asset_reserved_goods.assign(
+        _countries.active.size() * _good_ids.size(), 0);
+    _economy_asset_reserved_research_points.assign(
+        _countries.active.size(), 0);
     rebuild_research_active_index();
     _state_hash_cache_valid = false;
     rebuild_cell_csr();

@@ -731,6 +731,9 @@ Dictionary DCWorldExt::start_runtime_worker(const Dictionary &config) {
     _runtime_commit_cache = RuntimeCommit{};
     _runtime_commit_cache_generation = 0;
     _runtime_commit_cache_valid = false;
+    // A restore start is granted immediately; make the main-thread peers see
+    // that grant now rather than on a runtime-graph pulse that may not run.
+    sync_runtime_domain_ownership();
     out["ok"] = true;
     out["pending"] = mode != RuntimeSimulationMode::OFF;
     out["code"] = "ok";
@@ -2427,8 +2430,22 @@ Dictionary DCWorldExt::request_runtime_save(int64_t request_id) {
     if (_country_runtime != nullptr) {
         CountryCoreCheckpoint checkpoint;
         std::string country_error;
-        if (!static_cast<NativeCountryRuntime *>(_country_runtime)
-                 ->capture_core_checkpoint(checkpoint, country_error) ||
+        // Under worker Country authority the main-thread NativeCountryRuntime
+        // is never written after bootstrap (the read view only repairs
+        // MapData territory), so capturing it saved the day-0 country: every
+        // territory, research, and treasury change made on the worker was
+        // lost on save, and the restored POD (committed_day=-1) could not
+        // continue from the host's committed day. The query replica tracks the
+        // worker's latest committed snapshot and is what the UI already reads.
+        NativeCountryRuntime *country_source = country_query_runtime();
+        const bool worker_owns_country =
+            country_source != static_cast<NativeCountryRuntime *>(_country_runtime);
+        if (country_source == nullptr ||
+            !(worker_owns_country
+                ? country_source->capture_worker_committed_checkpoint(
+                      checkpoint, country_error)
+                : country_source->capture_core_checkpoint(
+                      checkpoint, country_error)) ||
             !_runtime_host->publish_country_checkpoint(checkpoint,
                                                        country_error)) {
             out["ok"] = false;
@@ -2478,6 +2495,15 @@ Dictionary DCWorldExt::poll_runtime_save(int64_t request_id) {
     }
     const auto bundle = _runtime_host->poll_save(
         static_cast<uint64_t>(std::max<int64_t>(0, request_id)));
+    if (bundle == nullptr &&
+        _runtime_host->save_failed(
+            static_cast<uint64_t>(std::max<int64_t>(0, request_id)))) {
+        out["ok"] = false;
+        out["pending"] = false;
+        out["code"] = "runtime_save_failed";
+        out["reason"] = String(_runtime_host->save_failure_reason().c_str());
+        return out;
+    }
     if (bundle == nullptr) {
         out["ok"] = true;
         out["pending"] = true;
@@ -3194,6 +3220,12 @@ Dictionary DCWorldExt::apply_runtime_climate_writeback(
                 return out;
             }
         }
+    }
+    // ACTIVE 下主线程气候回合不再调用 soa_begin_climate_transaction，
+    // *_arr_prev 与天气分类湿度会停在世界生成时的值。回灌覆盖 current 之前
+    // 先把上一份已提交场记进 prev，录制、分类和任何读 prev 的消费者才看得到日变化。
+    if (_map_data->has_method(StringName("soa_begin_climate_transaction"))) {
+        _map_data->call(StringName("soa_begin_climate_transaction"));
     }
     PackedStringArray touched_slots;
     PackedStringArray skipped;
