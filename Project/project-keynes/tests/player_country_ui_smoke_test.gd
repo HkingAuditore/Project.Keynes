@@ -108,6 +108,15 @@ func _run() -> void:
 	ui.open_country_section("economy")
 	await process_frame
 	var model: Dictionary = panel.get("_model")
+	var fixed_currency_raw := TaxLaneEditor.parse_value_text("900", 0, 1)
+	_expect("fixed tax UI converts player currency to native subunits",
+		fixed_currency_raw == 9000000)
+	_expect("fixed tax UI formats native subunits as player currency",
+		TaxLaneEditor._format_value(fixed_currency_raw, 1, false) == "900")
+	var fixed_negative_raw := TaxLaneEditor.parse_value_text("-800", 0, 1)
+	_expect("fixed tax UI preserves negative currency text",
+		fixed_negative_raw == -8000000 and
+		TaxLaneEditor._format_value(fixed_negative_raw, 1, false) == "-800")
 	_expect("country summary is available", bool(model.get("available", false)))
 	_expect("country summary has a name", not String(model.get("country_name", "")).is_empty())
 	_expect("country summary has territory", int(model.get("territory_count", 0)) > 0)
@@ -707,7 +716,14 @@ func _run() -> void:
 	escape.keycode = KEY_ESCAPE
 	escape.pressed = true
 	game._unhandled_key_input(escape)
-	await create_timer(UITokens.ANIM_FAST + 0.05).timeout
+	# The close is tween-driven, so a single wall-clock wait races the frame
+	# rate: a busier simulation fits fewer frames into the same window and the
+	# panel is still mid-animation when the timer fires. Poll the state instead
+	# and keep the assertion itself unchanged.
+	for _attempt in range(60):
+		if not panel.is_panel_open():
+			break
+		await create_timer(UITokens.ANIM_FAST + 0.05).timeout
 	_expect("Escape closes country panel", not panel.is_panel_open())
 	_expect("Escape close preserves pause state", clock.paused == paused_before)
 	_finish()

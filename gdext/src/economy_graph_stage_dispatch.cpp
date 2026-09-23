@@ -174,6 +174,20 @@ bool economy_dispatch_mutate_stage(EconomySoAView &view,
         int64_t work = 0;
         std::string research_error;
         if (!runtime->run_government_research_drain(work, research_error)) {
+            // Host research purchase parks until Country prepares the
+            // Economy-origin asset. That is same-day backpressure, not a
+            // ledger fatal: stamping fatal here makes commit_epoch return
+            // economy_pod_fatal, the worker drops Country authority, and the
+            // UI falls back to the pre-handoff sync store (completed techs
+            // appear to revert).
+            if (research_error == "country_research_peer_results") {
+                error = research_error;
+                result.ok = false;
+                result.fatal = false;
+                std::snprintf(result.fatal_reason, sizeof(result.fatal_reason),
+                              "%s", research_error.c_str());
+                return false;
+            }
             fail_stage(result, error,
                        research_error.empty()
                            ? "economy_dispatch_research_failed"

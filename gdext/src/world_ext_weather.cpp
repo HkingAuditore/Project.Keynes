@@ -3297,18 +3297,27 @@ Dictionary DCWorldExt::capture_climate_modes_state() const {
     out["schema"] = String("PKClimateModes");
     out["version"] = 1;
     out["next_cyclone_id"] = int64_t(_cyclone_next_stable_id);
-    Array basins;
-    for (const EnsoBasinState &s : _enso_states) {
-        Dictionary d;
-        d["signature"] = int64_t(s.signature);
-        d["temp_index"] = s.temp_index;
-        d["recharge_index"] = s.recharge_index;
-        d["wind_ema"] = s.wind_ema;
-        d["wind_anomaly"] = s.wind_anomaly;
-        d["last_update_tick"] = s.last_update_tick;
-        basins.append(d);
+    // ENSO basin state restores lazily, on the next basin-cache rebuild. Until
+    // then the pending copy is the authoritative state; exporting the live
+    // (still empty) basins would let a save made right after a load overwrite
+    // the restored ENSO phase with a fresh one.
+    if (_climate_modes_pending_restore.has("enso_basins")) {
+        out["enso_basins"] = Array(
+            _climate_modes_pending_restore["enso_basins"]).duplicate(true);
+    } else {
+        Array basins;
+        for (const EnsoBasinState &s : _enso_states) {
+            Dictionary d;
+            d["signature"] = int64_t(s.signature);
+            d["temp_index"] = s.temp_index;
+            d["recharge_index"] = s.recharge_index;
+            d["wind_ema"] = s.wind_ema;
+            d["wind_anomaly"] = s.wind_anomaly;
+            d["last_update_tick"] = s.last_update_tick;
+            basins.append(d);
+        }
+        out["enso_basins"] = basins;
     }
-    out["enso_basins"] = basins;
     Array cyclones;
     for (const CycloneWakeEntry &e : _cyclone_perturbations) {
         Dictionary d;

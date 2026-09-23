@@ -126,12 +126,18 @@ Dictionary enqueue_country_host_command_batch(
             out["opcode"] = static_cast<int64_t>(opcode);
             return out;
         }
-        if (effective_days[index] < 0 || sequences[index] < 0 ||
-            (enforce_committed_day && effective_days[index] < first_allowed_day)) {
+        if (effective_days[index] < 0 || sequences[index] < 0) {
             out["ok"] = false;
             out["code"] = "country_worker_command_day_invalid";
             return out;
         }
+        // A player stamps effective_day from the UI clock, which trails the
+        // worker clock at high speed. Schedule the intent on the earliest day
+        // the worker can still honour instead of dropping it; requested_day
+        // below keeps the original intent for audit.
+        const int64_t scheduled_day = enforce_committed_day
+            ? std::max(effective_days[index], first_allowed_day)
+            : effective_days[index];
         RuntimeCountryCommand command;
         command.request_id = host.allocate_command_request_id();
         request_ids[index] = static_cast<int64_t>(command.request_id);
@@ -141,7 +147,7 @@ Dictionary enqueue_country_host_command_batch(
             : host.allocate_producer_sequence(0);
         command.observed_generation = 0;
         command.requested_day = effective_days[index];
-        command.effective_day = effective_days[index];
+        command.effective_day = scheduled_day;
         command.opcode = opcode;
         command.target_handle = static_cast<uint64_t>(target_handles[index]);
         command.cell = cells[index];
@@ -1090,10 +1096,14 @@ Dictionary DCWorldExt::get_country_worker_read_view(
     out["changed_cells"] = changed_cells;
     out["changed_owners"] = changed_owners;
     if (view.snapshot != nullptr && view.full_snapshot_required) {
+        const int64_t owner_count = static_cast<int64_t>(
+            view.snapshot->cell_country_slot.size());
         PackedInt32Array owners;
-        owners.resize(static_cast<int64_t>(view.snapshot->cell_country_slot.size()));
-        for (int64_t i = 0; i < owners.size(); ++i)
-            owners.set(i, view.snapshot->cell_country_slot[static_cast<size_t>(i)]);
+        owners.resize(owner_count);
+        if (owner_count > 0) {
+            std::memcpy(owners.ptrw(), view.snapshot->cell_country_slot.data(),
+                static_cast<size_t>(owner_count) * sizeof(int32_t));
+        }
         out["full_cell_owners"] = owners;
     } else {
         out["full_cell_owners"] = PackedInt32Array();
@@ -1562,6 +1572,7 @@ Dictionary DCWorldExt::restore_country_runtime_checkpoint(
     }
     out["ok"] = true;
     out["code"] = "ok";
+    publish_restored_country_territory(out);
     out["generation"] = static_cast<int64_t>(checkpoint.generation);
     out["committed_day"] = checkpoint.committed_day;
     out["business_state_hash"] =
@@ -1902,25 +1913,32 @@ Dictionary DCWorldExt::feed_country_restore_chunk(const PackedByteArray &chunk) 
 Dictionary DCWorldExt::end_country_restore() {
     if (_country_runtime == nullptr) return country_unavailable();
     Dictionary out = country_runtime_from(_country_runtime)->end_restore();
-    if (static_cast<bool>(out.get("ok", false))) {
-        NativeCountryRuntime *runtime = country_runtime_from(_country_runtime);
-        const auto publish_start = std::chrono::steady_clock::now();
-        const int slot = component_id(StringName("cell_country_slot"));
-        if (slot >= 0) {
-            write_i32_range(slot, 0, runtime->cell_country_snapshot());
-            _flush_slot_to_map(slot);
-            const double publish_ms = std::chrono::duration<double, std::milli>(
-                std::chrono::steady_clock::now() - publish_start).count();
-            runtime->mark_slot_publication(true, publish_ms);
-            out["published_to_slot"] = true;
-            out["slot_publish_ms"] = publish_ms;
-        } else {
-            runtime->mark_slot_publication(false, 0.0, "country_slot_unavailable");
-            out["published_to_slot"] = false;
-            out["publish_reason"] = "country_slot_unavailable";
-        }
-    }
+    if (static_cast<bool>(out.get("ok", false)))
+        publish_restored_country_territory(out);
     return out;
+}
+
+// Every restore path must end here. PKCN restores native territory only; the
+// cell_country_slot mirror is what MapData, vision, borders, and the player
+// identity binding read. The CPD2 checkpoint path used to skip this, so a load
+// through PKSR left every cell at -1 and failed the player-country binding.
+void DCWorldExt::publish_restored_country_territory(Dictionary &out) {
+    NativeCountryRuntime *runtime = country_runtime_from(_country_runtime);
+    const auto publish_start = std::chrono::steady_clock::now();
+    const int slot = component_id(StringName("cell_country_slot"));
+    if (slot >= 0) {
+        write_i32_range(slot, 0, runtime->cell_country_snapshot());
+        _flush_slot_to_map(slot);
+        const double publish_ms = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - publish_start).count();
+        runtime->mark_slot_publication(true, publish_ms);
+        out["published_to_slot"] = true;
+        out["slot_publish_ms"] = publish_ms;
+    } else {
+        runtime->mark_slot_publication(false, 0.0, "country_slot_unavailable");
+        out["published_to_slot"] = false;
+        out["publish_reason"] = "country_slot_unavailable";
+    }
 }
 
 } // namespace pk

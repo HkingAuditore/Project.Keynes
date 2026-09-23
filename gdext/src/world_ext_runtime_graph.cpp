@@ -99,12 +99,54 @@ int DCWorldExt::configure_runtime_graph(const Dictionary &boot_config) {
     return 0;
 }
 
+// Mirror the Host's current grant into the main-thread Country/Economy peers:
+// the unique-writer flags, the Host attachment, and Economy's D7 operation
+// gates. Economy routes every cross-domain asset by these, and
+// service_country_economy_asset_peer is a no-op while Country's flag is off,
+// so a grant the peers never observe parks every fiscal/research transaction
+// in the Host queue forever. Called from every pulse and right after a worker
+// start, because a restore start is granted before its first pulse.
+void DCWorldExt::sync_runtime_domain_ownership() {
+    const bool country_worker_authoritative = _runtime_host != nullptr &&
+        (_runtime_host->domain_is_worker_authoritative(
+            RuntimeDomainId::COUNTRY) ||
+         _runtime_host->country_authority_owner_is_worker());
+    const bool economy_worker_authoritative = _runtime_host != nullptr &&
+        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::ECONOMY);
+    if (_country_runtime != nullptr) {
+        static_cast<NativeCountryRuntime *>(_country_runtime)
+            ->set_sync_store_writes_forbidden(country_worker_authoritative);
+        if (_runtime_host != nullptr) {
+            static_cast<NativeCountryRuntime *>(_country_runtime)
+                ->attach_simulation_host(_runtime_host.get());
+        }
+    }
+    if (_economy_runtime != nullptr) {
+        auto *economy =
+            static_cast<NativeEconomyRuntime *>(_economy_runtime);
+        economy->set_sync_writes_forbidden(economy_worker_authoritative);
+        if (_runtime_host != nullptr) {
+            economy->attach_simulation_host(_runtime_host.get());
+            _runtime_host->set_economy_sync_writes_forbidden(
+                economy_worker_authoritative);
+            // Country ACTIVE + Economy sync still needs RESEARCH_PURCHASE so
+            // government procurement can debit treasury via Host peer. Full
+            // Economy ACTIVE opens every D7 op as before.
+            if (economy_worker_authoritative)
+                economy->open_all_d7_operation_gates();
+            else if (country_worker_authoritative)
+                economy->open_research_purchase_d7_gate();
+        }
+    }
+}
+
 int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
                                           double speed_scale, int budget_us,
                                           int flags) {
     const auto started = Clock::now();
     ++_runtime_graph_abi_calls;
     if (!_runtime_graph_configured || !_runtime_graph_enabled) {
+        sync_runtime_domain_ownership();
         _runtime_graph_last_status = 0;
         _runtime_graph_last_elapsed_us = elapsed_us(started);
         return make_token(day, 0, _runtime_graph_dirty_mask,
@@ -258,26 +300,7 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
          _runtime_host->country_authority_owner_is_worker());
     const bool economy_worker_authoritative = _runtime_host != nullptr &&
         _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::ECONOMY);
-    if (_country_runtime != nullptr) {
-        static_cast<NativeCountryRuntime *>(_country_runtime)
-            ->set_sync_store_writes_forbidden(country_worker_authoritative);
-        if (_runtime_host != nullptr) {
-            static_cast<NativeCountryRuntime *>(_country_runtime)
-                ->attach_simulation_host(_runtime_host.get());
-        }
-    }
-    if (_economy_runtime != nullptr) {
-        auto *economy =
-            static_cast<NativeEconomyRuntime *>(_economy_runtime);
-        economy->set_sync_writes_forbidden(economy_worker_authoritative);
-        if (_runtime_host != nullptr) {
-            economy->attach_simulation_host(_runtime_host.get());
-            _runtime_host->set_economy_sync_writes_forbidden(
-                economy_worker_authoritative);
-            if (economy_worker_authoritative)
-                economy->open_all_d7_operation_gates();
-        }
-    }
+    sync_runtime_domain_ownership();
     // Worker ACTIVE owns economy mutation via compact slices, but MapData /
     // DataCore environment + building context still live on the main thread.
     // Capture frozen input lanes here; do not run mutation stages.
@@ -426,12 +449,6 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
             if (!effect_worker_authoritative &&
                 static_cast<EffectRuntime *>(_effect_runtime)->should_run(day)) {
                 ran(run_effect_daily(day), DIRTY_EVENTS);
-                // A native effect transaction can be waiting for an ACK even when
-                // the peer runtime has no independent daily work.  ACK every
-                // adapter after effect evaluation so the transaction can reach a
-                // terminal state instead of keeping effect_should_run() hot.
-                dispatch_effect_native_country();
-                dispatch_effect_native_economy();
                 if (!(_runtime_host != nullptr &&
                       _runtime_host->domain_is_worker_authoritative(
                           RuntimeDomainId::MODIFIER))) {
@@ -440,32 +457,33 @@ int64_t DCWorldExt::advance_runtime_pulse(int64_t day, double season_phase,
                 dispatch_effect_native_gameplay();
                 progressed = true;
             }
-            // Always drain ACKs. Under EFFECT worker authority the daily eval
-            // is suppressed, but pre-grant PREFLIGHTED bindings still need Host
-            // receipt completion or hard_ack=effect pins the main clock.
-            //
-            // Under COUNTRY worker authority Effect stays on main and waits on
-            // Host terminals. Climate park + hard_ack can deadlock that path
-            // (clock stops publishing env, worker never terminals Effect
-            // commands). After a real drain, soft-settle any leftovers so play
-            // cannot freeze on founder PREFLIGHTED forever.
-            if (effect_worker_authoritative) {
+            // Always dispatch/ACK Country+Economy native adapters. Family
+            // colonization enqueues CLAIM+SETTLE onto main EffectRuntime from
+            // Economy; EFFECT POD worker evaluation does not cover those
+            // program_id=-1 transactions. Skipping dispatch under EFFECT
+            // worker authority left expeditions stuck in SETTLING.
+            dispatch_effect_native_country();
+            dispatch_effect_native_economy();
+            // Drain Host Country receipts first. Under COUNTRY worker authority
+            // Climate park + hard_ack can otherwise deadlock; after a real drain
+            // soft-settle leftovers so founder PREFLIGHTED cannot pin the clock.
+            ack_effect_native_country();
+            if (country_worker_authoritative) {
                 static_cast<EffectRuntime *>(_effect_runtime)
                     ->settle_orphaned_native_country_acks();
-            } else {
-                ack_effect_native_country();
-                if (country_worker_authoritative) {
-                    static_cast<EffectRuntime *>(_effect_runtime)
-                        ->settle_orphaned_native_country_acks();
-                }
             }
+            // Second Economy pass: SETTLE may only proceed after Country CLAIM
+            // ACK from the drain/soft-settle above.
+            dispatch_effect_native_economy();
             ack_effect_native_economy();
-            if (!(_runtime_host != nullptr &&
-                  _runtime_host->domain_is_worker_authoritative(
-                      RuntimeDomainId::MODIFIER))) {
-                ack_effect_native_modifier();
+            if (!effect_worker_authoritative) {
+                if (!(_runtime_host != nullptr &&
+                      _runtime_host->domain_is_worker_authoritative(
+                          RuntimeDomainId::MODIFIER))) {
+                    ack_effect_native_modifier();
+                }
+                ack_effect_native_gameplay();
             }
-            ack_effect_native_gameplay();
         }
         if (over_budget()) break;
         const bool modifier_worker_authoritative = _runtime_host != nullptr &&
@@ -686,6 +704,15 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
             timing_total += host.worker_time_us[i];
         }
         out["worker_time_total_us"] = static_cast<int64_t>(timing_total);
+        out["economy_yield_reason"] = String(host.economy_yield_reason);
+        out["economy_stage_name"] = String(host.economy_stage_name);
+        out["economy_substage_name"] = String(host.economy_substage_name);
+        out["economy_epoch_fiscal_ms"] = host.economy_epoch_fiscal_ms;
+        out["economy_fiscal_settlement_ms"] = host.economy_fiscal_settlement_ms;
+        out["economy_income_subsidy_ms"] = host.economy_income_subsidy_ms;
+        out["economy_negative_tax_mask"] = static_cast<int>(host.economy_negative_tax_mask);
+        out["economy_active_tax_mask"] = static_cast<int>(host.economy_active_tax_mask);
+        out["economy_attempt_slices"] = static_cast<int>(host.economy_attempt_slices);
         out["main_wait_on_sim_us"] = static_cast<int64_t>(host.main_wait_on_sim_us);
         out["simulation_environment_generation"] = static_cast<int64_t>(host.environment_generation);
         out["simulation_environment_day"] = host.environment_day;
@@ -1195,6 +1222,15 @@ Dictionary DCWorldExt::get_runtime_perf_snapshot(int detail_level) const {
             timing_total += host.worker_time_us[i];
         }
         out["worker_time_total_us"] = static_cast<int64_t>(timing_total);
+        out["economy_yield_reason"] = String(host.economy_yield_reason);
+        out["economy_stage_name"] = String(host.economy_stage_name);
+        out["economy_substage_name"] = String(host.economy_substage_name);
+        out["economy_epoch_fiscal_ms"] = host.economy_epoch_fiscal_ms;
+        out["economy_fiscal_settlement_ms"] = host.economy_fiscal_settlement_ms;
+        out["economy_income_subsidy_ms"] = host.economy_income_subsidy_ms;
+        out["economy_negative_tax_mask"] = static_cast<int>(host.economy_negative_tax_mask);
+        out["economy_active_tax_mask"] = static_cast<int>(host.economy_active_tax_mask);
+        out["economy_attempt_slices"] = static_cast<int>(host.economy_attempt_slices);
         out["main_wait_on_sim_us"] = static_cast<int64_t>(host.main_wait_on_sim_us);
         out["simulation_environment_generation"] = static_cast<int64_t>(host.environment_generation);
         out["simulation_environment_day"] = host.environment_day;

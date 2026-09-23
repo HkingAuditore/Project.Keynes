@@ -1638,8 +1638,22 @@ Dictionary DCWorldExt::capture_economy_ecp2(int flags) const {
     }
     RuntimeEconomyEcp2State state;
     std::string error;
-    if (!runtime_from(_economy_runtime)->capture_ecp2_authority(
-            state, error, static_cast<uint32_t>(std::max(0, flags)))) {
+    // The PKSV ecp2 section is written here, after request_runtime_save has
+    // published the Country checkpoint for the same save. Under worker
+    // Country authority that checkpoint (not the stale attached runtime) is
+    // the Country restored on load, so the Economy header must name it.
+    NativeEconomyRuntime *economy = runtime_from(_economy_runtime);
+    uint64_t country_generation = 0;
+    uint64_t country_hash = 0;
+    const bool stamp_worker_country = _runtime_host != nullptr &&
+        _runtime_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY) &&
+        _runtime_host->country_checkpoint_identity(country_generation, country_hash);
+    if (stamp_worker_country)
+        economy->set_save_country_identity(country_generation, country_hash);
+    const bool captured = economy->capture_ecp2_authority(
+        state, error, static_cast<uint32_t>(std::max(0, flags)));
+    if (stamp_worker_country) economy->clear_save_country_identity();
+    if (!captured) {
         out["ok"] = false;
         out["reason"] = String(error.c_str());
         return out;

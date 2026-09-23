@@ -905,6 +905,51 @@ bool RuntimeCountryPodAuthority::run_research_day(
         plan.intents.push_back(intent);
     };
 
+    // Completion is a state transition, not a technology-points purchase.
+    // A queue head can already cover its cost — a starter-eligible technology
+    // compiles to cost 0, and an ordinary one can have spent its last unit on
+    // an earlier day. country_advance_research_progress reports such a head as
+    // completed with spend == 0, and the allocation loop below breaks on
+    // spend <= 0 before it ever looks at `completed`. Without this pass the
+    // head parks in the queue forever at 「还需 0」 and never enters pending.
+    // Mirrors NativeCountryRuntime::finalize_research_head_if_complete.
+    const auto finalize_complete_head = [&](int32_t slot, uint32_t domain) {
+        const size_t lane = static_cast<size_t>(slot) *
+            RUNTIME_COUNTRY_RESEARCH_DOMAIN_COUNT + domain;
+        uint8_t &length = state.research_queue_lengths[lane];
+        if (length == 0) return false;
+        const size_t queue_base = lane * COUNTRY_QUEUE_SLOTS;
+        const int32_t technology = state.research_queues[queue_base];
+        if (technology < 0 ||
+            technology >= static_cast<int32_t>(state.technology_count))
+            return false;
+        const auto [word, bit] = pending_bit(slot, technology);
+        if ((state.country_technologies[word] & bit) != 0 ||
+            (state.country_pending_technologies[word] & bit) != 0)
+            return false;
+        if (!technology_prerequisites_met(state, slot, technology)) return false;
+        const int64_t effective_cost = country_effective_research_cost(
+            _catalog.technology_costs[static_cast<size_t>(technology)],
+            state.research_cost_factor[static_cast<size_t>(slot)]);
+        const int64_t progress = state.research_progress[
+            static_cast<size_t>(slot) * state.technology_count +
+            static_cast<size_t>(technology)];
+        if (progress < effective_cost) return false;
+
+        state.country_pending_technologies[word] |= bit;
+        ++state.research_completed_total[static_cast<size_t>(slot)];
+        ++state.country_state_version[static_cast<size_t>(slot)];
+        for (int32_t index = 1; index < length; ++index)
+            state.research_queues[queue_base + static_cast<size_t>(index - 1)] =
+                state.research_queues[queue_base + static_cast<size_t>(index)];
+        state.research_queues[queue_base + static_cast<size_t>(--length)] = -1;
+        if (_catalog.technology_effect_required[
+                static_cast<size_t>(technology)] != 0)
+            add_effect_intent(slot, technology);
+        plan.header.dirty_families |= RUNTIME_DIRTY_COUNTRY_STATE;
+        return true;
+    };
+
     const auto visit_slot = [&](int32_t slot) -> bool {
         if (slot < 0 || slot >= static_cast<int32_t>(state.country_count) ||
             state.country_active[static_cast<size_t>(slot)] == 0)
@@ -932,6 +977,10 @@ bool RuntimeCountryPodAuthority::run_research_day(
                 add_effect_intent(slot, static_cast<int32_t>(technology));
             }
         }
+        // Runs before the points gate: a zero-cost head must finalize even on
+        // a day with an empty treasury or no research due.
+        for (uint32_t domain = 0; domain < COUNTRY_RESEARCH_DOMAIN_COUNT; ++domain)
+            while (finalize_complete_head(slot, domain)) {}
         if (!research_due) return true;
 
         int64_t &stock = state.country_goods[static_cast<size_t>(slot) *
@@ -944,8 +993,12 @@ bool RuntimeCountryPodAuthority::run_research_day(
         for (uint32_t domain = 0; domain < COUNTRY_RESEARCH_DOMAIN_COUNT; ++domain)
             weights[domain] = state.research_weights_bp[country_base + domain];
         uint64_t remainder_iterations = 0;
-        const CountryResearchAllocation allocation = country_allocate_research_points(
+        CountryResearchAllocation allocation = country_allocate_research_points(
             available, weights, &remainder_iterations);
+        std::array<int32_t, COUNTRY_RESEARCH_DOMAIN_COUNT> queue_lengths{{0, 0, 0, 0}};
+        for (uint32_t domain = 0; domain < COUNTRY_RESEARCH_DOMAIN_COUNT; ++domain)
+            queue_lengths[domain] = state.research_queue_lengths[country_base + domain];
+        country_redirect_idle_research_shares(allocation, weights, queue_lengths);
         plan.header.work_units += remainder_iterations;
         int64_t consumed = 0;
         int64_t newly_deferred = 0;
@@ -996,6 +1049,11 @@ bool RuntimeCountryPodAuthority::run_research_day(
             }
             if (initial_length > 0) newly_deferred += domain_points;
         }
+        // A head whose last unit was spent above reports completed only on the
+        // next advance, which would break on spend == 0. Settle it here so the
+        // queue never stalls on an already-paid technology.
+        for (uint32_t domain = 0; domain < COUNTRY_RESEARCH_DOMAIN_COUNT; ++domain)
+            while (finalize_complete_head(slot, domain)) {}
         if (consumed > 0) {
             stock -= consumed;
             state.research_consumed_total[static_cast<size_t>(slot)] += consumed;
@@ -1197,6 +1255,20 @@ bool RuntimeCountryPodAuthority::apply_economy_asset_result(
     return true;
 }
 
+bool RuntimeCountryPodAuthority::apply_economy_asset_commit_to_authority_state(
+        const RuntimeEconomyAssetRequest &request,
+        const RuntimeEconomyAssetResult &result, std::string &error) {
+    error.clear();
+    if (!_bootstrapped) {
+        error = "country_economy_asset_apply_invalid";
+        return false;
+    }
+    // Keep generation stable while a plan is open so commit_day's
+    // base_generation check still passes. state_hash is refreshed on commit.
+    return country_core_apply_economy_asset_commit(
+        _state, _catalog, request, result, error);
+}
+
 bool RuntimeCountryPodAuthority::commit_day(
         RuntimeCountryPodPlan &plan, const std::vector<RuntimeDomainAck> &acks,
         std::string &error) {
@@ -1290,7 +1362,8 @@ bool RuntimeCountryPodAuthority::commit_day(
 }
 
 bool RuntimeCountryPodAuthority::commit_rejected_day(
-        RuntimeCountryPodPlan &plan, std::string &error) {
+        RuntimeCountryPodPlan &plan, std::string &error,
+        bool advance_generation) {
     error.clear();
     if (!_bootstrapped || !_plan_active || plan.preflight_ok == 0 ||
         plan.header.domain != static_cast<uint16_t>(RuntimeDomainId::COUNTRY) ||
@@ -1307,6 +1380,10 @@ bool RuntimeCountryPodAuthority::commit_rejected_day(
     // remains blocked until a later-day retry gets a new request identity.
     RuntimeCountryPodSnapshot next = plan.next_state;
     next.committed_day = plan.header.day;
+    if (advance_generation &&
+        (plan.header.dirty_families != 0 || !plan.commands.empty())) {
+        next.generation = _next_generation++;
+    }
     next.state_hash = hash_business_state(next);
     _state = std::move(next);
     for (const RuntimeCountryCommand &command : plan.commands) {

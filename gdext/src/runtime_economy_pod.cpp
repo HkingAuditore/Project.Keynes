@@ -1100,7 +1100,19 @@ bool RuntimeEconomyPodAuthority::run_bound_stage(RuntimeEconomyGraphStage stage,
     if (_stage_ops != nullptr) {
         if (!economy_kernel_run_stage(*_stage_ops, stage, _stage_cursor, _input,
                                       result, error)) {
-            if (result.fatal) {
+            // Peer parks must not poison the epoch. commit_epoch treats any
+            // replay fatal as economy_pod_fatal even if the slice later retries.
+            const bool peer_park =
+                error == "country_research_peer_results" ||
+                error == "fiscal_settlement_peer_pending" ||
+                error == "fiscal_reserve_peer_results" ||
+                error == "fiscal_peer_results" ||
+                error == "country_economy_asset_host_pending" ||
+                error == "country_economy_asset_results_pending" ||
+                error == "country_economy_asset_rejection_retry_pending" ||
+                error == "country_economy_asset_completion_retry_pending" ||
+                error == "country_economy_fiscal_terminal_retry_pending";
+            if (result.fatal && !peer_park) {
                 _replay.fatal = 1;
                 copy_reason(_replay.fatal_reason, sizeof(_replay.fatal_reason),
                             result.fatal_reason[0] != '\0' ? result.fatal_reason

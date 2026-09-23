@@ -94,11 +94,17 @@ native runtime graph 的 Country 业务 stage 和 `run_country_slice()` facade �
 bit 抑制同步 Country 写入。Country、Effect、Modifier、Ideology、Trigger、Economy 必须在同一
 day barrier 内按稳定顺序推进，GDScript 不得因 `day_changed` 再补跑同一天。
 
-Country worker 的 read-view 消费不属于新的调度 job，也不推进模拟日。WorldRuntimeHost._process()
-在 Country transport service 后执行一次非阻塞 get_country_worker_read_view(cursor)：连续
-generation 应用 sparse cell/owner patch，跳过 generation 时只接受 full snapshot。消费完成后
-复用 CountryFacade.country_committed，因此 vision、border、UI 仍由原事件路径驱动。Country 未获
-granted bit 时该消费边界完全不运行。正式生产 request 为 `0xFFF`（含 ECONOMY）；
+Country worker 的 read-view 消费不属于新的调度 job，也不推进模拟日。WorldRuntimeHost
+在 Country transport service 后于 `_process` 执行非阻塞
+`get_country_worker_read_view(cursor)`（**不再**挂在 `day_changed` 回调上，以免
+full-snapshot / 视野扇出写进 `day_cost_ema` 并把 50× 吞吐压垮）。连续 generation
+应用稀疏 cell/owner patch；跳过 generation 且中间发生过领土变更时接受
+`full_cell_owners` 整图修复 MapData，但 `country_committed.changed_cells` 必须是
+相对当前 `MapData.country_slot_arr` 的真实 diff 计数，禁止再用 `cell_count`
+冒充变更格数。视野 / 国界刷新经 `_service_country_visual_refresh_budgeted`
+按帧预算（默认 3ms，且不超过 `WorldClock.sim_frame_budget_ms`）执行，超预算则
+保留 pending，最多 defer 30 帧后强制跑一次。Country 未获 granted bit 时该消费
+边界完全不运行。正式生产 request 为 `0xFFF`（含 ECONOMY）；
 Country grant 仍抑制同步 Country 写者。read-view 代码是 ACTIVE 准入后的发布适配器。
 Economy D7 peer 在 worker 权威时开放 operation gate（Host 有界 ring 为权威队列）。
 

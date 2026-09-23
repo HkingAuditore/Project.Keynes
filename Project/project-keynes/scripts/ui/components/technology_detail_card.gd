@@ -232,8 +232,16 @@ func _progress_caption(definition: Dictionary, fraction: float, state: int) -> S
 		return "已掌握"
 	if state <= 1:
 		return "尚未开始"
-	var cost := float(definition.get("cost_points", 0))
-	var remaining := maxf(0.0, cost * (1.0 - clampf(fraction, 0.0, 1.0)))
+	# Derive from the scaled cost: cost_points is an integer point count and
+	# reads 0 for anything cheaper than one point, so a node that still owed
+	# research points advertised 「还需 0」.
+	var cost_scaled := maxf(1.0, float(definition.get("cost_points_scaled",
+		float(definition.get("cost_points", 0)) * 1000.0)))
+	var remaining_scaled := maxf(
+		0.0, cost_scaled * (1.0 - clampf(fraction, 0.0, 1.0)))
+	var remaining := remaining_scaled / 1000.0
+	if remaining > 0.0 and remaining < 0.1:
+		return "还需 <0.1"
 	return "还需 %s" % UITokens.format_compact_number_cn(remaining, 1)
 
 

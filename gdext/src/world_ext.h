@@ -216,6 +216,7 @@ public:
     int configure_runtime_graph(const godot::Dictionary &boot_config);
     int64_t advance_runtime_pulse(int64_t day, double season_phase,
                                   double speed_scale, int budget_us, int flags = 0);
+    void sync_runtime_domain_ownership();
     void flush_runtime_visuals(uint32_t dirty_mask = 0);
     void set_runtime_qos(bool interactive);
     godot::Dictionary get_runtime_thread_report() const;
@@ -470,6 +471,7 @@ public:
     godot::Dictionary begin_country_restore();
     godot::Dictionary feed_country_restore_chunk(const godot::PackedByteArray &chunk);
     godot::Dictionary end_country_restore();
+    void publish_restored_country_territory(godot::Dictionary &out);
 
     // Shared data-oriented Modifier runtime. Four domain stores are isolated;
     // this facade is the only GDScript mutation boundary.

@@ -684,7 +684,7 @@ bool NativeEconomyRuntime::advance_country_research_procurement(
         return false;
     };
     const auto reject_prepare = [&](const char *reason) {
-        if (continuation.transaction_id != 0) {
+        if (!continuation.host_peer && continuation.transaction_id != 0) {
             _country_runtime->acknowledge_economy_asset_peer_prepared(
                 continuation.transaction_id, continuation.session_epoch,
                 continuation.country_generation, continuation.peer_generation,
@@ -693,6 +693,60 @@ bool NativeEconomyRuntime::advance_country_research_procurement(
         continuation.phase = 6;
         continuation.last_error = reason;
         continuation.active = false;
+        continuation.pending_request_id = 0;
+        return true;
+    };
+    const auto preflight_market_merchants = [&](const char *&reject_reason) -> bool {
+        reject_reason = nullptr;
+        const size_t market_index = market_store().index(
+            continuation.market, continuation.good);
+        if (market_index >= market_store().stock.size() ||
+            market_store().stock[market_index] < continuation.quantity) {
+            reject_reason = "country_research_peer_market_stock_changed";
+            return false;
+        }
+        if (continuation.living_merchants.empty()) {
+            reject_reason = "country_research_peer_merchant_missing";
+            return false;
+        }
+        continuation.merchant_population = 0;
+        for (const int32_t merchant : continuation.living_merchants) {
+            if (!is_merchant_slot(merchant) || merchant < 0 ||
+                merchant >= static_cast<int32_t>(population_store().population.size()) ||
+                population_store().population[merchant] <= 0) {
+                reject_reason = "country_research_peer_merchant_changed";
+                return false;
+            }
+            continuation.merchant_population = saturating_add(
+                continuation.merchant_population,
+                population_store().population[merchant], _saturation_count);
+        }
+        if (continuation.merchant_population <= 0) {
+            reject_reason = "country_research_peer_merchant_empty";
+            return false;
+        }
+        int64_t prefix = 0;
+        int64_t distributed = 0;
+        for (const int32_t merchant : continuation.living_merchants) {
+            prefix = saturating_add(prefix, population_store().population[merchant],
+                                    _saturation_count);
+            const int64_t next = mul_div_sat(
+                continuation.cash, prefix, continuation.merchant_population,
+                _saturation_count);
+            const int64_t share = std::max<int64_t>(0, next - distributed);
+            distributed = next;
+            if (population_store().funds[merchant] >
+                    std::numeric_limits<int64_t>::max() - share ||
+                population_store().epoch_income[merchant] >
+                    std::numeric_limits<int64_t>::max() - share) {
+                reject_reason = "country_research_peer_credit_overflow";
+                return false;
+            }
+        }
+        if (distributed != continuation.cash) {
+            reject_reason = "country_research_peer_credit_distribution_drift";
+            return false;
+        }
         return true;
     };
 
@@ -708,26 +762,111 @@ bool NativeEconomyRuntime::advance_country_research_procurement(
             return fail_fault("country_research_procurement_continuation_invalid");
         const int64_t research_handle = static_cast<int64_t>(
             _epoch_country_handles[static_cast<size_t>(continuation.country)]);
-        const CountryWorkerAssetRoute route =
-            block_or_enqueue_country_worker_asset(
-                static_cast<uint16_t>(
-                    NativeCountryRuntime::ECONOMY_ASSET_RESEARCH_PURCHASE),
-                research_handle, continuation.cash, continuation.quantity,
-                continuation.good, error);
-        if (route == CountryWorkerAssetRoute::GATE_SOFT_UNAVAILABLE) {
-            // M4 research peer is not open yet under Country unique-writer.
-            // Soft-reject this candidate; do not fatal the economy epoch.
-            return reject_prepare("country_economy_operation_gate_closed");
+
+        // Country unique-writer: Host peer path (same shape as fiscal reserve).
+        if (_simulation_host != nullptr &&
+            (_country_runtime->sync_store_writes_forbidden() ||
+             _simulation_host->domain_is_worker_authoritative(
+                 RuntimeDomainId::COUNTRY))) {
+            if (continuation.pending_request_id != 0) {
+                RuntimeEconomyAssetResult terminal;
+                if (_simulation_host->country_economy_asset_terminal_result(
+                        continuation.pending_request_id, terminal)) {
+                    if (terminal.code != RuntimeEconomyAssetResultCode::COMPLETED ||
+                        terminal.operation !=
+                            RuntimeEconomyAssetOperation::RESEARCH_PURCHASE) {
+                        // Drop the parked wire id; Country flush will retire
+                        // the rejected terminal without debiting treasury.
+                        continuation.pending_request_id = 0;
+                        return reject_prepare(
+                            terminal.reason[0] != '\0'
+                                ? terminal.reason.data()
+                                : "country_economy_asset_host_terminal_rejected");
+                    }
+                    if (_simulation_host->domain_is_worker_authoritative(
+                            RuntimeDomainId::ECONOMY)) {
+                        if (!_simulation_host->finish_worker_country_asset(
+                                continuation.pending_request_id, terminal,
+                                error))
+                            return fail_fault(error.empty()
+                                ? "country_research_host_finish_failed"
+                                : error.c_str());
+                    } else if (!_simulation_host->flush_country_economy_asset_commits(
+                                   error,
+                                   continuation.pending_request_id) ||
+                               !_simulation_host->publish_country_worker_snapshot(
+                                   RUNTIME_DIRTY_COUNTRY_STATE, error)) {
+                        // Country ACTIVE + Economy sync: settle this wire id
+                        // only (generic flush skips COMPLETED research) so
+                        // treasury debit and merchant credit share one advance.
+                        return fail_fault(error.empty()
+                            ? "country_research_host_flush_failed"
+                            : error.c_str());
+                    }
+                    const int64_t committed_qty = terminal.committed_quantity > 0
+                        ? terminal.committed_quantity : continuation.quantity;
+                    const int64_t committed_cash = terminal.committed_cash > 0
+                        ? terminal.committed_cash : continuation.cash;
+                    if (committed_qty != continuation.quantity ||
+                        committed_cash != continuation.cash)
+                        return fail_fault(
+                            "country_research_host_commit_quantity_drift");
+                    continuation.host_peer = true;
+                    continuation.transaction_id = continuation.pending_request_id;
+                    continuation.session_epoch = terminal.session_epoch;
+                    continuation.country_generation = terminal.country_generation;
+                    continuation.peer_generation = _committed_generation;
+                    continuation.pending_request_id = 0;
+                    continuation.merchant_cursor = 0;
+                    continuation.merchant_population_prefix = 0;
+                    continuation.merchant_distributed = 0;
+                    continuation.market_applied = false;
+                    // Country already committed. Apply market/merchant in this
+                    // same advance so money conservation never observes a
+                    // treasury debit without the matching merchant credit.
+                    continuation.phase = 4;
+                } else {
+                    error = "country_economy_asset_host_pending";
+                    return true;
+                }
+            }
+
+            if (continuation.phase == 1) {
+            const char *preflight_reason = nullptr;
+            if (!preflight_market_merchants(preflight_reason))
+                return reject_prepare(preflight_reason != nullptr
+                    ? preflight_reason
+                    : "country_research_peer_market_stock_changed");
+            if (_country_runtime->cash_for_slot(continuation.country) <
+                continuation.cash)
+                return reject_prepare(
+                    "country_research_purchase_async_resources_insufficient");
+
+            const CountryWorkerAssetRoute route =
+                block_or_enqueue_country_worker_asset(
+                    static_cast<uint16_t>(
+                        NativeCountryRuntime::ECONOMY_ASSET_RESEARCH_PURCHASE),
+                    research_handle, continuation.cash, continuation.quantity,
+                    continuation.good, error, &continuation.pending_request_id);
+            if (route == CountryWorkerAssetRoute::GATE_SOFT_UNAVAILABLE)
+                return reject_prepare("country_economy_operation_gate_closed");
+            if (route == CountryWorkerAssetRoute::ENQUEUED_PENDING) {
+                continuation.host_peer = true;
+                error = "country_economy_asset_host_pending";
+                return true;
+            }
+            if (route != CountryWorkerAssetRoute::NOT_APPLICABLE) {
+                continuation.phase = 7;
+                continuation.last_error = error.empty()
+                    ? "country_research_worker_route_unexpected" : error;
+                continuation.active = false;
+                return false;
+            }
+            // Fall through to sync begin when Country is not unique-writer.
+            }
         }
-        if (route != CountryWorkerAssetRoute::NOT_APPLICABLE) {
-            // Unexpected enqueue/terminal under research: keep hard fault —
-            // research must not look completed when the peer never ran.
-            continuation.phase = 7;
-            continuation.last_error = error.empty()
-                ? "country_research_worker_route_unexpected" : error;
-            continuation.active = false;
-            return false;
-        }
+
+        if (continuation.phase == 1) {
         const godot::Dictionary begun =
             _country_runtime->begin_economy_research_purchase(
                 research_handle,
@@ -754,46 +893,17 @@ bool NativeEconomyRuntime::advance_country_research_procurement(
             return fail_fault("country_research_procurement_identity_invalid");
         continuation.phase = 2;
         return true;
+        }
     }
 
     if (continuation.phase == 2) {
-        const size_t market_index = market_store().index(
-            continuation.market, continuation.good);
-        if (market_index >= market_store().stock.size() ||
-            market_store().stock[market_index] < continuation.quantity)
-            return reject_prepare("country_research_peer_market_stock_changed");
-        if (continuation.living_merchants.empty())
-            return reject_prepare("country_research_peer_merchant_missing");
-        continuation.merchant_population = 0;
-        for (const int32_t merchant : continuation.living_merchants) {
-            if (!is_merchant_slot(merchant) || merchant < 0 ||
-                merchant >= static_cast<int32_t>(population_store().population.size()) ||
-                population_store().population[merchant] <= 0)
-                return reject_prepare("country_research_peer_merchant_changed");
-            continuation.merchant_population = saturating_add(
-                continuation.merchant_population, population_store().population[merchant],
-                _saturation_count);
-        }
-        if (continuation.merchant_population <= 0)
-            return reject_prepare("country_research_peer_merchant_empty");
-        int64_t prefix = 0;
-        int64_t distributed = 0;
-        for (const int32_t merchant : continuation.living_merchants) {
-            prefix = saturating_add(prefix, population_store().population[merchant],
-                                    _saturation_count);
-            const int64_t next = mul_div_sat(
-                continuation.cash, prefix, continuation.merchant_population,
-                _saturation_count);
-            const int64_t share = std::max<int64_t>(0, next - distributed);
-            distributed = next;
-            if (population_store().funds[merchant] >
-                    std::numeric_limits<int64_t>::max() - share ||
-                population_store().epoch_income[merchant] >
-                    std::numeric_limits<int64_t>::max() - share)
-                return reject_prepare("country_research_peer_credit_overflow");
-        }
-        if (distributed != continuation.cash)
-            return reject_prepare("country_research_peer_credit_distribution_drift");
+        if (continuation.host_peer)
+            return fail_fault("country_research_host_peer_phase_invalid");
+        const char *preflight_reason = nullptr;
+        if (!preflight_market_merchants(preflight_reason))
+            return reject_prepare(preflight_reason != nullptr
+                ? preflight_reason
+                : "country_research_peer_market_stock_changed");
         const godot::Dictionary prepared =
             _country_runtime->acknowledge_economy_asset_peer_prepared(
                 continuation.transaction_id, continuation.session_epoch,
@@ -806,6 +916,8 @@ bool NativeEconomyRuntime::advance_country_research_procurement(
     }
 
     if (continuation.phase == 3) {
+        if (continuation.host_peer)
+            return fail_fault("country_research_host_peer_phase_invalid");
         const godot::Dictionary committed =
             _country_runtime->commit_economy_asset_transaction(
                 continuation.transaction_id);
@@ -858,7 +970,7 @@ bool NativeEconomyRuntime::advance_country_research_procurement(
             }
             continuation.market_applied = true;
         }
-        if (continuation.merchant_cursor <
+        while (continuation.merchant_cursor <
                 continuation.living_merchants.size()) {
             const int32_t merchant = continuation.living_merchants[
                 continuation.merchant_cursor++];
@@ -877,23 +989,30 @@ bool NativeEconomyRuntime::advance_country_research_procurement(
                 population_store().funds[merchant], share, _saturation_count);
             population_store().epoch_income[merchant] = saturating_add(
                 population_store().epoch_income[merchant], share, _saturation_count);
-            return true;
+            // Sync peer yields one merchant per slice; Host peer must finish
+            // the whole credit in the same advance as Country commit.
+            if (!continuation.host_peer)
+                return true;
         }
         if (continuation.merchant_distributed != continuation.cash)
             return fail_fault("country_research_peer_apply_distribution_drift");
         continuation.phase = 5;
-        return true;
+        if (!continuation.host_peer)
+            return true;
+        // Host peer: fall through to phase 5 completion below.
     }
 
     if (continuation.phase == 5) {
-        const godot::Dictionary applied =
-            _country_runtime->acknowledge_economy_asset_peer_applied(
-                continuation.transaction_id, continuation.session_epoch,
-                continuation.country_generation, continuation.peer_generation,
-                true, String());
-        if (!static_cast<bool>(applied.get("ok", false)) ||
-            String(applied.get("status_name", "")) != "completed")
-            return fail_fault("country_research_peer_apply_ack_failed");
+        if (!continuation.host_peer) {
+            const godot::Dictionary applied =
+                _country_runtime->acknowledge_economy_asset_peer_applied(
+                    continuation.transaction_id, continuation.session_epoch,
+                    continuation.country_generation, continuation.peer_generation,
+                    true, String());
+            if (!static_cast<bool>(applied.get("ok", false)) ||
+                String(applied.get("status_name", "")) != "completed")
+                return fail_fault("country_research_peer_apply_ack_failed");
+        }
         continuation.active = false;
         continuation.last_error.clear();
         return true;
@@ -969,6 +1088,13 @@ NativeEconomyRuntime::block_or_enqueue_country_worker_asset(
     request.transaction_id = wire_request_id;
     request.request_id = wire_request_id;
     request.operation_sequence = wire_request_id;
+    // Same identity the sync cohort-cash path stamps. Leaving it 0 made every
+    // worker-routed fiscal/research terminal record fail PKEC restore
+    // (save_fiscal_peer_completed_record_invalid:peer_generation), so any save
+    // made with an active tax could be written but never loaded. The value is
+    // stable across a continuation: _committed_generation only advances at
+    // aggregate publish, after every same-epoch peer request has terminated.
+    request.peer_generation = _committed_generation;
     request.country_handle = static_cast<uint64_t>(country_handle);
     request.requested_cash = cash;
     request.requested_quantity = quantity;
@@ -2807,7 +2933,14 @@ bool NativeEconomyRuntime::coordinate_country_cohort_cash(
         return false;
     }
     if (amount == 0) return true;
+    // The in-thread prepare below is worker-only: it reads the Country POD
+    // authority directly. Economy still runs on the main thread until its own
+    // ACTIVE grant lands, and taking this branch from there raised
+    // country_worker_cohort_cash_boundary_invalid as a fatal — the cohort was
+    // credited while the treasury debit never happened (money_error).
+    // Main-thread Economy must use the Host peer queue further down instead.
     if (_simulation_host != nullptr && _country_runtime != nullptr &&
+        _simulation_host->on_worker_thread() &&
         _country_runtime->sync_store_writes_forbidden() &&
         _simulation_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY) &&
         (_d7_operation_gate_mask & (1u << static_cast<uint32_t>(operation))) != 0u) {
@@ -3236,14 +3369,6 @@ bool NativeEconomyRuntime::coordinate_country_treasury_spend(
 
 bool NativeEconomyRuntime::run_government_research_procurement(std::string &error) {
     if (_country_runtime == nullptr || !_country_runtime->economy_available()) return true;
-    // Country unique-writer: M4 research peer is closed. Skip the whole stage
-    // rather than sealing candidates that can only soft-reject.
-    if (_country_runtime->sync_store_writes_forbidden()) {
-        _country_research_procurement_done = true;
-        _country_research_procurement_continuation =
-            CountryResearchProcurementContinuation{};
-        return true;
-    }
     const int32_t good = _country_runtime->technology_points_good_id();
     if (good < 0 || good >= market_store().good_count) {
         error = "government_research_good_invalid";
@@ -12055,10 +12180,63 @@ bool NativeEconomyRuntime::rebuild_market_cell_ranges(std::string &error) {
 }
 
 
+// Country/Economy asset backpressure surfaced from inside a cursor-driven
+// stage drain. The cursor has not advanced past the failing command, so the
+// same command replays on the next pulse. Drain the peer queue on the way out
+// so Country-origin terminals keep landing while this stage is parked;
+// otherwise the Country plan window that caused the park can never close.
+void NativeEconomyRuntime::park_on_country_asset_pending(const char *substage) {
+    std::string service_error;
+    service_country_economy_asset_peer(64, service_error);
+    _executed_substage = substage;
+}
+
+void NativeEconomyRuntime::capture_fatal_context(const std::string &reason) {
+    _fatal_context = FatalContext{};
+    _fatal_context.valid = true;
+    _fatal_context.reason = reason;
+    _fatal_context.stage = static_cast<int32_t>(_stage);
+    _fatal_context.executed_stage = static_cast<int32_t>(_executed_stage);
+    _fatal_context.executed_substage = _executed_substage;
+    _fatal_context.day = _current_day;
+    _fatal_context.epoch_id = _epoch_id;
+    _fatal_context.command_cursor = _command_cursor;
+    _fatal_context.structural_cursor = _structural_cursor;
+    _fatal_context.d7_operation_gate_mask = _d7_operation_gate_mask;
+    _fatal_context.country_sync_writes_forbidden =
+        _country_runtime != nullptr &&
+        _country_runtime->sync_store_writes_forbidden();
+    _fatal_context.country_worker_authoritative =
+        _simulation_host != nullptr &&
+        _simulation_host->domain_is_worker_authoritative(
+            RuntimeDomainId::COUNTRY);
+    // The cursor still points at the command that failed, so the opcode and
+    // subject handles are recoverable without a breadcrumb in every caller.
+    if (_stage == Stage::LEDGER_APPLY && _command_cursor >= 0 &&
+        _command_cursor < static_cast<int32_t>(_epoch_commands.size())) {
+        const Command &command =
+            _epoch_commands[static_cast<size_t>(_command_cursor)];
+        _fatal_context.command_opcode = command.opcode;
+        _fatal_context.target_handle = static_cast<int64_t>(command.target_handle);
+        _fatal_context.subject_handle = command.i64_1;
+        _fatal_context.amount = command.i64_0;
+    } else if (_stage == Stage::STRUCTURAL_COMMIT && _structural_cursor >= 0 &&
+               _structural_cursor <
+                   static_cast<int32_t>(_structural_commands.size())) {
+        const StructuralCommand &command =
+            _structural_commands[static_cast<size_t>(_structural_cursor)];
+        _fatal_context.command_opcode = command.opcode;
+        _fatal_context.target_handle = command.source_slot;
+        _fatal_context.subject_handle = command.cell;
+        _fatal_context.amount = command.funds;
+    }
+}
+
 void NativeEconomyRuntime::fail(const std::string &reason) {
     std::fprintf(stderr, "[economy-fatal] day=%lld stage=%d substage=%s reason=%s\n",
         static_cast<long long>(_current_day), static_cast<int>(_stage),
         _executed_substage.c_str(), reason.c_str());
+    capture_fatal_context(reason);
     trace_abort_epoch();
     for (const int32_t cell : _staging_touched_cells) {
         if (cell >= 0 && cell < static_cast<int32_t>(_committed_cells.size()) &&
@@ -12314,6 +12492,10 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
     int32_t chunks_completed = 0;
     int32_t phase_fusions = 0;
     const char *yield_reason = "stage_boundary";
+    // Set when a cursor-driven stage parked on the Country plan window. The
+    // cursor did not advance, so the stage must yield the whole slice instead
+    // of re-entering and replaying the same command until the budget runs out.
+    bool country_asset_window_pending = false;
     const auto slice_budget_exhausted = [&]() {
         return elapsed_ms(slice_start) >= slice_budget_ms;
     };
@@ -12352,12 +12534,7 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
         // fatal leaves the epoch half-open and the next audit observes staged
         // mints without their committed owner funds (the misleading
         // money_error seen in the UI).
-        const bool asset_pending =
-            error == "country_economy_asset_host_pending" ||
-            error == "country_economy_asset_results_pending" ||
-            error == "country_economy_asset_rejection_retry_pending" ||
-            error == "country_economy_asset_completion_retry_pending" ||
-            error == "country_economy_fiscal_terminal_retry_pending";
+        const bool asset_pending = runtime_country_asset_pending_reason(error);
         if (asset_pending) {
             _executed_stage = Stage::EPOCH_BEGIN;
             _executed_substage = "country_asset_peer_pending";
@@ -12445,6 +12622,8 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
         // day. process_due itself is what enqueues a newly arrived party, so
         // dispatch again afterwards: SETTLE-only relocate has no Country
         // prerequisite and must not sit in SETTLING until the next freeze.
+        // Country CLAIM dispatch stays on the main runtime-graph / Effect
+        // adapter path so sync tests and Host receipt ordering stay intact.
         auto pull_due_family_settlements = [this]() {
             if (_effect_runtime != nullptr)
                 _effect_runtime->dispatch_native_economy(this);
@@ -12737,6 +12916,13 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
             for (; _command_cursor < end; ++_command_cursor) {
                 const Command &command = _epoch_commands[_command_cursor];
                 if (!apply_command(command, error)) {
+                    if (runtime_country_asset_pending_reason(error)) {
+                        park_on_country_asset_pending(
+                            "ledger_country_asset_pending");
+                        country_asset_window_pending = true;
+                        yield_reason = "country_asset_plan_pending";
+                        break;
+                    }
                     if (command.effect_request_id != 0) {
                         EffectCommandResult &result = _effect_command_results[
                             command.effect_request_id];
@@ -12761,6 +12947,7 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
             cursor_end = _command_cursor;
             _ledger_ms += elapsed_ms(start);
             command_range_used = true;
+            if (country_asset_window_pending) break;
             if (_fatal) break;
             const bool command_range_incomplete =
                 _command_cursor < static_cast<int32_t>(_epoch_commands.size());
@@ -13122,6 +13309,13 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                                                   _structural_cursor + _commands_per_slice);
             for (; _structural_cursor < end; ++_structural_cursor) {
                 if (!commit_structural(_structural_commands[_structural_cursor], error)) {
+                    if (runtime_country_asset_pending_reason(error)) {
+                        park_on_country_asset_pending(
+                            "structural_country_asset_pending");
+                        country_asset_window_pending = true;
+                        yield_reason = "country_asset_plan_pending";
+                        break;
+                    }
                     fail(error);
                     break;
                 }
@@ -13130,6 +13324,7 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
             cursor_end = _structural_cursor;
             _structure_ms += elapsed_ms(start);
             structural_range_used = true;
+            if (country_asset_window_pending) break;
             if (_fatal) break;
             const bool structural_range_incomplete =
                 _structural_cursor < static_cast<int32_t>(
@@ -13304,8 +13499,17 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
         ((std::strcmp(yield_reason, "fiscal_peer_results") == 0 &&
           _fiscal_settlement_continuation.pending_request_id != 0) ||
          (std::strcmp(yield_reason, "fiscal_reserve_peer_results") == 0 &&
-          _fiscal_reservation_continuation.pending_request_id != 0))) {
+          _fiscal_reservation_continuation.pending_request_id != 0) ||
+         (std::strcmp(yield_reason, "country_research_peer_results") == 0 &&
+          _country_research_procurement_continuation.pending_request_id != 0))) {
         out["pending_input"] = true;
+    }
+    // A ledger/structural command parked on the Country plan window. Nothing is
+    // enqueued and no cursor advanced, so Host must park the day and replay the
+    // same command after the next Country commit_day.
+    if (country_asset_window_pending) {
+        out["pending_input"] = true;
+        out["yield_reason"] = "country_economy_asset_country_plan_pending";
     }
     out["budget_overrun_ms"] = std::max(
         0.0, elapsed_ms(slice_start) - slice_budget_ms);
@@ -17625,8 +17829,11 @@ NativeEconomyRuntime::advance_household_market_chunk(
             _household_post_cursor = 0;
             _household_market_phase = 4;
         }
-        _household_slice_phase_ms[HOUSEHOLD_INCOME_SUBSIDY] +=
-            elapsed_ms(phase_started);
+        {
+            const double subsidy_ms = elapsed_ms(phase_started);
+            _household_slice_phase_ms[HOUSEHOLD_INCOME_SUBSIDY] += subsidy_ms;
+            _income_subsidy_epoch_ms += subsidy_ms;
+        }
         _household_slice_phase_work[HOUSEHOLD_INCOME_SUBSIDY] +=
             end - begin;
         if (finish_chunk_and_should_yield()) {
@@ -18624,6 +18831,11 @@ bool NativeEconomyRuntime::run_ledger_apply_drain(int64_t &work_done,
             const Command &command =
                 _epoch_commands[static_cast<size_t>(_command_cursor)];
             if (!apply_command(command, error)) {
+                if (runtime_country_asset_pending_reason(error)) {
+                    // Cursor stays on this command; it replays next pulse.
+                    park_on_country_asset_pending("ledger_country_asset_pending");
+                    return false;
+                }
                 if (command.effect_request_id != 0) {
                     EffectCommandResult &result =
                         _effect_command_results[command.effect_request_id];
@@ -18689,6 +18901,16 @@ bool NativeEconomyRuntime::run_government_research_drain(int64_t &work_done,
         if (_country_research_procurement_done) {
             break;
         }
+        // Host peer terminals land through the same poll path as fiscal.
+        if (!service_country_economy_asset_peer(64, error)) {
+            if (runtime_country_asset_pending_reason(error)) {
+                error = "country_research_peer_results";
+                _executed_substage = "country_asset_peer_pending";
+                return false;
+            }
+            fail(error.empty() ? "country_economy_research_peer_failed" : error);
+            return false;
+        }
         if (!run_government_research_procurement(error)) {
             fail(error.empty() ? "government_research_procurement_failed"
                                : error);
@@ -18696,10 +18918,17 @@ bool NativeEconomyRuntime::run_government_research_drain(int64_t &work_done,
         }
         ++work_done;
         if (_country_research_procurement_continuation.active) {
-            // Compact yields on peer barrier; StageOps cannot park mid-stage.
-            error = "government_research_peer_pending";
-            fail(error);
-            return false;
+            // Park on an outstanding Host wire request so prepare can run;
+            // do not spin the drain guard waiting for a terminal that never
+            // arrives without pending_input.
+            if (_country_research_procurement_continuation.pending_request_id !=
+                    0 ||
+                error == "country_economy_asset_host_pending") {
+                error = "country_research_peer_results";
+                return false;
+            }
+            // Sync peer phases advance one durable step per iteration.
+            continue;
         }
     }
     if (_fatal) {
@@ -18753,6 +18982,12 @@ bool NativeEconomyRuntime::run_structural_commit_drain(int64_t &work_done,
                     _structural_commands[static_cast<size_t>(
                         _structural_cursor)],
                     error)) {
+                if (runtime_country_asset_pending_reason(error)) {
+                    // Cursor stays on this command; it replays next pulse.
+                    park_on_country_asset_pending(
+                        "structural_country_asset_pending");
+                    return false;
+                }
                 fail(error.empty() ? "structural_commit_failed" : error);
                 return false;
             }
@@ -20895,6 +21130,8 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _trace_uncommitted_discarded = 0;
     _opening_totals = {};
     _closing_totals = {};
+    _closing_totals_valid = false;
+    _fatal_context = FatalContext{};
     _incremental_closing_totals = {};
     _opening_audit_force_full = false;
     _audit_shadow_population.clear();

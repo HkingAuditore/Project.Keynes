@@ -72,11 +72,17 @@ public:
                     const std::vector<RuntimeDomainAck> &acks,
                     std::string &error);
     // Commit the Country-side semantic work of a boundary whose peer intent
-    // was rejected. Research consumption, pending activation and already
-    // ordered Country commands remain durable; generation does not advance
-    // and the pending technology stays blocked until a later-day retry.
+    // did not produce an OK ACK. Research consumption, pending activation and
+    // already ordered Country commands remain durable; the pending technology
+    // stays blocked until a later-day retry.
+    //
+    // A rejection keeps the generation frozen so the retry keeps its identity.
+    // A still-PENDING peer must instead pass advance_generation=true: the day's
+    // commands and research progress are real state, and read-view consumers
+    // (country_committed, the UI section cache) only observe a new generation.
     bool commit_rejected_day(RuntimeCountryPodPlan &plan,
-                             std::string &error);
+                             std::string &error,
+                             bool advance_generation = false);
     // Abandon a prepared plan after a rejected ACK or a scheduler fault. The
     // committed state and pending command queue remain untouched, allowing a
     // deterministic retry or an explicit fault transition.
@@ -84,6 +90,13 @@ public:
     bool apply_economy_asset_result(const RuntimeEconomyAssetRequest &request,
                                     const RuntimeEconomyAssetResult &result,
                                     std::string &error);
+    // Apply a treasury mutation onto the committed authority state even while a
+    // plan is open. Does not bump generation (commit_day still keys on
+    // base_generation). Callers that also mutate plan.next_state must apply the
+    // same delta there so the eventual commit stays consistent.
+    bool apply_economy_asset_commit_to_authority_state(
+            const RuntimeEconomyAssetRequest &request,
+            const RuntimeEconomyAssetResult &result, std::string &error);
     bool snapshot(RuntimeCountryPodSnapshot &out, std::string &error) const;
     bool encode_save(RuntimeCountryPodSaveSection &out, std::string &error) const;
     bool restore_save(const RuntimeCountryPodSaveSection &section,

@@ -183,9 +183,18 @@ bool RuntimeEconomyLedgerState::has_diagnostics_columns() const noexcept {
 
 bool RuntimeEconomyLedgerState::valid(const char **reason) const noexcept {
     EconomyCostProbe probe("ledger_validate", committed_day, market_stock.size());
-    if (reason != nullptr) *reason = "ledger_shape_or_value";
-    if (generation == 0 || committed_day < 0 || market_count < 0 || good_count < 0)
+    // Every rejection names its check. A save that fails here faults the
+    // worker, and a single generic reason left no way to tell which of ~30
+    // shape rules the committed ledger violated.
+    const auto reject = [reason](const char *why) noexcept {
+        if (reason != nullptr) *reason = why;
         return false;
+    };
+    if (reason != nullptr) *reason = "ledger_shape_or_value";
+    if (generation == 0) return reject("ledger_generation_zero");
+    if (committed_day < 0) return reject("ledger_committed_day_negative");
+    if (market_count < 0 || good_count < 0)
+        return reject("ledger_market_shape_negative");
     const std::size_t cohorts = cohort_active.size();
     const std::size_t market_lanes = static_cast<std::size_t>(market_count) *
         static_cast<std::size_t>(good_count);
@@ -197,21 +206,21 @@ bool RuntimeEconomyLedgerState::valid(const char **reason) const noexcept {
           cohort_epoch_expense.size() == cohorts &&
           market_stock.size() == market_lanes && market_price.size() == market_lanes &&
           market_demand_ema.size() == market_lanes)) {
-        return false;
+        return reject("ledger_core_column_shape");
     }
     if (has_extended_columns()) {
         if (!(cohort_generation.size() == cohorts &&
               market_last_shortage_q16.size() == market_lanes &&
               market_cell_to_market.size() ==
                   static_cast<std::size_t>(market_count))) {
-            return false;
+            return reject("ledger_extended_column_shape");
         }
         for (std::size_t i = 0; i < cohorts; ++i) {
             if (cohort_active[i] != 0 && cohort_generation[i] == 0)
-                return false;
+                return reject("cohort_active_without_generation");
         }
         for (const int32_t market : market_cell_to_market) {
-            if (market < -1 || market >= market_count) return false;
+            if (market < -1 || market >= market_count) return reject("market_cell_mapping_out_of_range");
         }
     }
     if (has_diagnostics_columns()) {
@@ -221,17 +230,17 @@ bool RuntimeEconomyLedgerState::valid(const char **reason) const noexcept {
               cohort_composite_satisfaction.size() == cohorts &&
               cohort_owner_employed.size() == cohorts &&
               cohort_employee_employed.size() == cohorts)) {
-            return false;
+            return reject("ledger_diagnostics_column_shape");
         }
         for (std::size_t i = 0; i < cohorts; ++i) {
             if (cohort_active[i] == 0) continue;
             if (cohort_reserved[i] != 0 &&
                 cohort_reservation_owner[i] == 0) {
-                return false;
+                return reject("cohort_reserved_without_owner");
             }
             if (cohort_owner_employed[i] < 0 ||
                 cohort_employee_employed[i] < 0) {
-                return false;
+                return reject("cohort_employment_negative");
             }
             if (cohort_population[i] >= 0 &&
                 cohort_owner_employed[i] + cohort_employee_employed[i] >
@@ -243,14 +252,14 @@ bool RuntimeEconomyLedgerState::valid(const char **reason) const noexcept {
     }
     if (!building.valid() || !trade_escrow.valid() || !family.valid() ||
         !resource.valid() || !epoch_cursor.valid())
-        return false;
+        return reject("ledger_block_shape");
     // ABI7 requires both building and trade blocks together (all-or-nothing).
-    if (building.captured != trade_escrow.captured) return false;
+    if (building.captured != trade_escrow.captured) return reject("building_trade_block_pairing");
     // ABI8 family requires the ABI7 building/trade pair.
-    if (family.captured && !building.captured) return false;
+    if (family.captured && !building.captured) return reject("family_block_without_building");
     // ABI9 resource + epoch-cursor are paired and require ABI8 family.
-    if (resource.captured != epoch_cursor.captured) return false;
-    if (resource.captured && !family.captured) return false;
+    if (resource.captured != epoch_cursor.captured) return reject("resource_epoch_block_pairing");
+    if (resource.captured && !family.captured) return reject("resource_block_without_family");
 
     if (building.captured) {
         const auto &store = building.store;
@@ -258,7 +267,7 @@ bool RuntimeEconomyLedgerState::valid(const char **reason) const noexcept {
             const std::size_t gi = static_cast<std::size_t>(g);
             if (store.merchant_debt_principal[gi] < 0 ||
                 store.merchant_debt_premium[gi] < 0) {
-                return false;
+                return reject("building_merchant_debt_negative");
             }
             if (store.merchant_debt_principal[gi] == 0 &&
                 (store.merchant_debt_premium[gi] != 0 ||
@@ -266,22 +275,22 @@ bool RuntimeEconomyLedgerState::valid(const char **reason) const noexcept {
                 if (reason != nullptr) *reason = "building_zero_principal_with_debt_terms";
                 return false;
             }
-            if (store.employee_fill_begin[gi] < -1) return false;
-            if (store.last_input_selection_begin[gi] < -1) return false;
+            if (store.employee_fill_begin[gi] < -1) return reject("building_employee_fill_begin_invalid");
+            if (store.last_input_selection_begin[gi] < -1) return reject("building_input_selection_begin_invalid");
             // Role/input spans are allocated as a pair; a half-set index is
             // never a valid committed shape. role_begin CSR monotonicity is
             // already enforced by store.shape_valid().
             if ((store.employee_fill_begin[gi] < 0) !=
                 (store.last_input_selection_begin[gi] < 0)) {
-                return false;
+                return reject("building_role_input_span_half_set");
             }
-            if (store.role_count[gi] < 0) return false;
+            if (store.role_count[gi] < 0) return reject("building_role_count_negative");
         }
         for (uint32_t p = 0; p < building.pending_count; ++p) {
             const std::size_t pi = static_cast<std::size_t>(p);
             if (store.pending_merchant_debt_principal[pi] < 0 ||
                 store.pending_merchant_debt_premium[pi] < 0) {
-                return false;
+                return reject("pending_merchant_debt_negative");
             }
             if (store.pending_merchant_debt_principal[pi] == 0 &&
                 (store.pending_merchant_debt_premium[pi] != 0 ||
@@ -301,14 +310,14 @@ bool RuntimeEconomyLedgerState::valid(const char **reason) const noexcept {
         const auto &store = family.store;
         for (std::size_t i = 0; i < store.person_family_equity_share_q32.size();
              ++i) {
-            if (store.person_family_equity_share_q32[i] < 0) return false;
+            if (store.person_family_equity_share_q32[i] < 0) return reject("family_equity_share_negative");
         }
         for (std::size_t i = 0; i < store.influence_population_share_q16.size();
              ++i) {
             if (store.influence_population_share_q16[i] < 0 ||
                 store.influence_cash_share_q16[i] < 0 ||
                 store.influence_building_share_q16[i] < 0) {
-                return false;
+                return reject("family_influence_share_negative");
             }
         }
         if (family.content_hash != 0 &&
@@ -330,16 +339,16 @@ bool RuntimeEconomyLedgerState::valid(const char **reason) const noexcept {
     }
 
     if (epoch_cursor.captured) {
-        if (epoch_cursor.last_committed_day < 0) return false;
+        if (epoch_cursor.last_committed_day < 0) return reject("epoch_cursor_never_committed");
         if (epoch_cursor.current_day < epoch_cursor.last_committed_day)
-            return false;
+            return reject("epoch_cursor_current_before_committed");
         if (epoch_cursor.sample_day > epoch_cursor.current_day &&
             epoch_cursor.sample_day >= 0 && epoch_cursor.current_day >= 0) {
             // sample_day may equal current_day at idle; never run ahead of
             // current_day past the committed horizon without an active epoch.
             if (epoch_cursor.epoch_active == 0 &&
                 epoch_cursor.sample_day > epoch_cursor.current_day) {
-                return false;
+                return reject("epoch_cursor_sample_ahead_of_current");
             }
         }
         if (epoch_cursor.content_hash != 0 &&
@@ -354,14 +363,14 @@ bool RuntimeEconomyLedgerState::valid(const char **reason) const noexcept {
     // ahead of the epoch-cursor current day when both are present.
     if (epoch_cursor.captured && epoch_cursor.current_day >= 0 &&
         committed_day > epoch_cursor.current_day) {
-        return false;
+        return reject("ledger_day_ahead_of_epoch_cursor");
     }
     if (epoch_cursor.captured && epoch_cursor.last_committed_day >= 0 &&
         committed_day < epoch_cursor.last_committed_day) {
-        return false;
+        return reject("ledger_day_before_epoch_cursor_commit");
     }
 
-    if (ledger_hash != 0 && ledger_hash != computed_hash()) return false;
+    if (ledger_hash != 0 && ledger_hash != computed_hash()) return reject("ledger_hash_mismatch");
     if (reason != nullptr) *reason = nullptr;
     return true;
 }

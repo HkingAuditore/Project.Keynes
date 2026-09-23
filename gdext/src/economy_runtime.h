@@ -351,6 +351,14 @@ public:
     void open_all_d7_operation_gates() {
         _d7_operation_gate_mask = RUNTIME_ECONOMY_D7_ALL_GATE_MASK;
     }
+    // Country unique-writer still needs treasury technology-point purchase even
+    // when Economy remains sync (fiscal-only default mask). Research is the
+    // minimum non-fiscal op required for government procurement to resume.
+    void open_research_purchase_d7_gate() {
+        _d7_operation_gate_mask |=
+            (1u << static_cast<uint32_t>(
+                RuntimeEconomyAssetOperation::RESEARCH_PURCHASE));
+    }
     bool bind_soa_view(EconomySoAView &view, std::string &error);
     // Phase-5 A+Y: formula hot path mutates OwnedState population/market in
     // place. While bound, population_store()/market_store() alias OwnedState.
@@ -524,6 +532,17 @@ public:
     bool worker_run_compact_slice(int64_t day_index, std::string &error,
                                   bool *done = nullptr,
                                   bool *pending_input = nullptr);
+    // Published by the worker into the perf snapshot. Epoch counters reset in
+    // clear_epoch_metrics; masks are the frozen epoch tax masks.
+    struct TaxSchedDiag {
+        double epoch_fiscal_ms = 0.0;
+        double fiscal_settlement_ms = 0.0;
+        double income_subsidy_ms = 0.0;
+        uint8_t negative_tax_mask = 0;
+        uint8_t active_tax_mask = 0;
+    };
+    void copy_tax_sched_diag(TaxSchedDiag &out, char *stage, size_t stage_cap,
+                             char *substage, size_t substage_cap) const;
     // Phase-2.4.4.1: StageOps epoch-open prelude (peer/fiscal/trade/start_epoch).
     // Mirrors compact idle-open semantics without entering graph stages.
     bool run_epoch_open_prelude_drain(int64_t day_index, int64_t &work_done,
@@ -674,6 +693,16 @@ public:
     // ECP2 full-authority capture/apply (PKEC section remapping + resource wire).
     bool capture_ecp2_authority(RuntimeEconomyEcp2State &out, std::string &error,
                                   uint32_t flags = 0) const;
+    // The save header binds Economy to the Country it was saved with. When the
+    // Country section of a bundle comes from the worker's committed checkpoint
+    // rather than the attached runtime, the Host stamps that identity here for
+    // the duration of the capture.
+    void set_save_country_identity(uint64_t generation, uint64_t state_hash) {
+        _save_country_identity_override = true;
+        _save_country_generation = generation;
+        _save_country_state_hash = state_hash;
+    }
+    void clear_save_country_identity() { _save_country_identity_override = false; }
     bool apply_ecp2_authority(const RuntimeEconomyEcp2State &in,
                               std::string &error);
     const std::string &restore_rejected_reason() const noexcept {
@@ -943,6 +972,12 @@ private:
         uint64_t session_epoch = 0;
         uint64_t country_generation = 0;
         uint64_t peer_generation = 0;
+        // Host wire identity while Country is the unique writer. Reused across
+        // prepare/service pulses exactly like fiscal pending_request_id.
+        uint64_t pending_request_id = 0;
+        // True when Country cash/TP commit travels via Host terminal instead of
+        // the sync begin/commit/ack state machine.
+        bool host_peer = false;
         size_t merchant_cursor = 0;
         bool market_applied = false;
         std::vector<int32_t> living_merchants;
@@ -3529,6 +3564,34 @@ private:
     bool _epoch_active = false;
     bool _fatal = false;
     std::string _fatal_reason;
+    // Forensics captured at the instant fail() runs. Without it a fatal only
+    // reports a reason string, and the conservation numbers next to it describe
+    // a half-open epoch rather than the failure — which is how a cohort-cash
+    // boundary stop used to read as a money-conservation bug in the GM panel.
+    struct FatalContext {
+        bool valid = false;
+        std::string reason;
+        std::string executed_substage;
+        int32_t stage = 0;
+        int32_t executed_stage = 0;
+        int64_t day = 0;
+        int64_t epoch_id = 0;
+        int32_t command_cursor = -1;
+        int32_t structural_cursor = -1;
+        int32_t command_opcode = 0;
+        int64_t target_handle = 0;
+        int64_t subject_handle = 0;
+        int64_t amount = 0;
+        uint32_t d7_operation_gate_mask = 0;
+        bool country_sync_writes_forbidden = false;
+        bool country_worker_authoritative = false;
+    };
+    FatalContext _fatal_context;
+    // Closing audit totals are only meaningful once PublishPhase::VERIFY has
+    // recomputed them. A mid-epoch fatal leaves the previous epoch's snapshot
+    // in place, so the three conservation errors must be reported as unknown
+    // rather than as a real imbalance.
+    bool _closing_totals_valid = false;
     Stage _stage = Stage::IDLE;
     bool _epoch_begin_post_fiscal_pending = false;
     int64_t _epoch_begin_pending_day = -1;
@@ -4326,6 +4389,8 @@ private:
     double _epoch_begin_workset_ms = 0.0;
     double _epoch_begin_resource_lane_ms = 0.0;
     double _epoch_begin_fiscal_ms = 0.0;
+    double _fiscal_settlement_ms = 0.0;
+    double _income_subsidy_epoch_ms = 0.0;
     double _epoch_begin_construction_csr_ms = 0.0;
     double _epoch_begin_recovery_apply_ms = 0.0;
     double _epoch_begin_vector_init_ms = 0.0;
@@ -6210,6 +6275,8 @@ private:
                                      int64_t due, int64_t payment_cap,
                                      int64_t *saturation_override = nullptr);
     void fail(const std::string &reason);
+    void capture_fatal_context(const std::string &reason);
+    void park_on_country_asset_pending(const char *substage);
     void clear_epoch_metrics();
     void capture_completed_perf_snapshot();
     void rebuild_committed_summaries();
@@ -6538,6 +6605,7 @@ private:
     int32_t choose_epoch_days(int64_t cohort_count);
     void write_cadence_report(godot::Dictionary &out) const;
     void write_fiscal_continuation_report(godot::Dictionary &out) const;
+    godot::Dictionary fatal_context_report() const;
     int32_t locked_market_cycle_days() const;
     int32_t locked_slow_cycle_days() const;
     int32_t locked_plan_cycle_days() const;
@@ -6711,6 +6779,13 @@ private:
 
     // ECP2 mid-epoch export bypasses the committed-boundary gate in begin_save.
     mutable bool _ecp2_allow_mid_epoch_export = false;
+    // Set only for the begin_save call inside an ECP2 rollback-backup capture.
+    mutable bool _ecp2_rollback_backup_export = false;
+    // Country identity written into the save header while the Host builds a
+    // bundle under worker Country authority (see set_save_country_identity).
+    bool _save_country_identity_override = false;
+    uint64_t _save_country_generation = 0;
+    uint64_t _save_country_state_hash = 0;
     // Stable reject code for the last failed restore/ECP2 apply (diagnostics).
     std::string _restore_rejected_reason;
 

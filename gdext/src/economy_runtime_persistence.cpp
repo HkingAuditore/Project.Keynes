@@ -283,8 +283,14 @@ Dictionary NativeEconomyRuntime::begin_save(int32_t chunk_bytes) {
                          : (_fatal ? "economy_fatal" : "save_restore_already_active"));
         return out;
     }
+    // A persisted save must not freeze Economy next to Country commands that
+    // are still due. An in-memory rollback backup is different: ECP2 apply
+    // never touches Country, so the idle gate only blocked restoring a save
+    // whose Country state legitimately carries due commands (worker start
+    // after load then fell back to the synchronous path).
     if (_country_runtime == nullptr || !_country_runtime->economy_available() ||
-        _country_runtime->should_run(_last_committed_day)) {
+        (!_ecp2_rollback_backup_export &&
+         _country_runtime->should_run(_last_committed_day))) {
         out["ok"] = false;
         out["reason"] = "save_requires_idle_country_runtime";
         return out;
@@ -680,6 +686,53 @@ Dictionary NativeEconomyRuntime::end_restore() {
             String(out["reason"]).utf8().get_data());
         return out;
     }
+    // The message below used to print only four counters, so a mismatch in any
+    // of the other ~40 sections read as "everything complete, still rejected".
+    const auto s = _restore.schema_version;
+    const char *first_incomplete =
+        _restore.restored_pages != _restore.expected_pages ? "pages" :
+        _restore.restored_markets != market_store().market_count ? "markets" :
+        _restore.restored_cells != _cell_count ? "cells" :
+        _restore.restored_commands != _restore.expected_commands ? "commands" :
+        _restore.restored_buildings != _restore.expected_buildings ? "buildings" :
+        _restore.restored_construction != _restore.expected_construction ? "construction" :
+        _restore.restored_audits != _restore.expected_audits ? "audits" :
+        _restore.restored_signals != _restore.expected_signals ? "signals" :
+        _restore.restored_labor_signals != _restore.expected_labor_signals ? "labor_signals" :
+        _restore.restored_trade_orders != _restore.expected_trade_orders ? "trade_orders" :
+        _restore.restored_trade_flows != _restore.expected_trade_flows ? "trade_flows" :
+        (s >= 33 && (!_restore.tariff_history_seen ||
+            _restore.restored_tariff_history != _restore.expected_tariff_history)) ? "tariff_history" :
+        (s >= 33 && (!_restore.country_good_seen ||
+            _restore.restored_country_good != _restore.expected_country_good)) ? "country_good" :
+        (s >= 33 && (!_restore.country_partner_seen ||
+            _restore.restored_country_partner != _restore.expected_country_partner)) ? "country_partner" :
+        (s >= 34 && (!_restore.canal_quotes_seen ||
+            _restore.restored_canal_quotes != _restore.expected_canal_quotes)) ? "canal_quotes" :
+        (s >= 34 && (!_restore.canal_projects_seen ||
+            _restore.restored_canal_projects != _restore.expected_canal_projects)) ? "canal_projects" :
+        (s >= 20 && !_restore.modifier_seen) ? "modifier" :
+        (s >= 23 && !_restore.fiscal_seen) ? "fiscal" :
+        (s >= 52 && (_restore.expected_fiscal < 0 ||
+            _restore.restored_fiscal != _restore.expected_fiscal)) ? "fiscal_rows" :
+        (s >= 52 && (!_restore.fiscal_peer_seen ||
+            _restore.restored_fiscal_peer != _restore.expected_fiscal_peer)) ? "fiscal_peer" :
+        (s >= 53 && _restore.expected_d7_peer_ext > 0 && (!_restore.d7_peer_ext_seen ||
+            _restore.restored_d7_peer_ext != _restore.expected_d7_peer_ext)) ? "d7_peer_ext" :
+        (s >= 52 && _restore.resource_stock_seen &&
+            _restore.restored_resource_rows != _restore.expected_resource_rows) ? "resource_rows" :
+        (s >= 24 && !_restore.settlement_names_seen) ? "settlement_names" :
+        (s >= 26 && (!_restore.family_records_seen || !_restore.family_membership_seen ||
+            !_restore.family_ownership_seen)) ? "family" :
+        (s >= 27 && (!_restore.person_records_seen || !_restore.person_needs_seen ||
+            _restore.restored_persons != _restore.expected_persons ||
+            _restore.restored_person_needs != _restore.expected_person_needs)) ? "persons" :
+        (s >= 29 && (!_restore.family_traits_seen || !_restore.family_influences_seen ||
+            !_restore.family_trait_commands_seen ||
+            _restore.restored_family_traits != _restore.expected_family_traits ||
+            _restore.restored_family_influences != _restore.expected_family_influences ||
+            _restore.restored_family_trait_commands !=
+                _restore.expected_family_trait_commands)) ? "family_traits" : nullptr;
     if (_restore.restored_pages != _restore.expected_pages ||
         _restore.restored_markets != market_store().market_count ||
         _restore.restored_cells != _cell_count ||
@@ -736,7 +789,10 @@ Dictionary NativeEconomyRuntime::end_restore() {
           _restore.restored_family_trait_commands !=
               _restore.expected_family_trait_commands))) {
         out["ok"] = false;
-        out["reason"] = String("restore_section_incomplete pages=") + String::num_int64(_restore.restored_pages) + String("/") + String::num_int64(_restore.expected_pages) + String(" buildings=") + String::num_int64(_restore.restored_buildings) + String("/") + String::num_int64(_restore.expected_buildings) + String(" construction=") + String::num_int64(_restore.restored_construction) + String("/") + String::num_int64(_restore.expected_construction) + String(" trade_orders=") + String::num_int64(_restore.restored_trade_orders) + String("/") + String::num_int64(_restore.expected_trade_orders);
+        out["first_incomplete"] = String(first_incomplete != nullptr ? first_incomplete : "unknown");
+        out["reason"] = String("restore_section_incomplete first=") +
+            String(first_incomplete != nullptr ? first_incomplete : "unknown") +
+            String(" pages=") + String::num_int64(_restore.restored_pages) + String("/") + String::num_int64(_restore.expected_pages) + String(" buildings=") + String::num_int64(_restore.restored_buildings) + String("/") + String::num_int64(_restore.expected_buildings) + String(" construction=") + String::num_int64(_restore.restored_construction) + String("/") + String::num_int64(_restore.expected_construction) + String(" trade_orders=") + String::num_int64(_restore.restored_trade_orders) + String("/") + String::num_int64(_restore.expected_trade_orders);
         out["expected_pages"] = _restore.expected_pages;
         out["restored_pages"] = _restore.restored_pages;
         out["expected_buildings"] = _restore.expected_buildings;
@@ -1152,6 +1208,13 @@ Dictionary NativeEconomyRuntime::end_restore() {
         if (country < 0 || country >= _epoch_country_count) {
             out["ok"] = false;
             out["reason"] = "restore_tariff_history_country_invalid";
+            return out;
+        }
+    }
+    for (const auto &entry : _asset_peer_journal) {
+        if (entry.second.country_slot >= _epoch_country_count) {
+            out["ok"] = false;
+            out["reason"] = "restore_fiscal_peer_country_invalid";
             return out;
         }
     }
@@ -1746,15 +1809,20 @@ bool NativeEconomyRuntime::capture_ecp2_authority(RuntimeEconomyEcp2State &out,
     NativeEconomyRuntime *self = const_cast<NativeEconomyRuntime *>(this);
     RuntimeEconomyLedgerState pre_owned_ledger;
     self->capture_committed_ledger_state(pre_owned_ledger);
-    if (!pre_owned_ledger.valid()) {
-        error = "ecp2_owned_state_capture_invalid";
+    const char *ledger_reason = nullptr;
+    if (!pre_owned_ledger.valid(&ledger_reason)) {
+        error = std::string("ecp2_owned_state_capture_invalid:") +
+            (ledger_reason != nullptr ? ledger_reason : "unknown");
         return false;
     }
     const bool saved_allow = self->_ecp2_allow_mid_epoch_export;
     if ((flags & ECP2_CAPTURE_ALLOW_MID_EPOCH) != 0)
         self->_ecp2_allow_mid_epoch_export = true;
 
+    self->_ecp2_rollback_backup_export =
+        (flags & ECP2_CAPTURE_ROLLBACK_BACKUP) != 0;
     Dictionary begin = self->begin_save(4 * 1024 * 1024);
+    self->_ecp2_rollback_backup_export = false;
     if (!static_cast<bool>(begin.get("ok", false))) {
         self->_ecp2_allow_mid_epoch_export = saved_allow;
         error = String(begin.get("reason", "ecp2_begin_save_failed"))
@@ -1906,8 +1974,11 @@ bool NativeEconomyRuntime::apply_ecp2_authority_internal(
     prepare_restore_candidate_scratch();
 
     std::vector<std::vector<uint8_t>> ordered_chunks;
+    // Every optional extension section must be inside this range; END (31)
+    // maps to no ECP2 domain, so visiting it here collects nothing and the
+    // terminator is appended below.
     for (uint16_t section = SAVE_SECTION_HEADER;
-         section <= SAVE_SECTION_CADENCE_STATE; ++section) {
+         section <= SAVE_SECTION_D7_PEER_EXT; ++section) {
         ecp2_collect_pkec_chunks_for_section(in.domain_blobs, section,
                                              ordered_chunks);
     }
@@ -2062,7 +2133,7 @@ bool NativeEconomyRuntime::apply_ecp2_authority(
     RuntimeEconomyEcp2State backup;
     bool backup_ready = false;
     if (_bootstrapped) {
-        uint32_t capture_flags = 0;
+        uint32_t capture_flags = ECP2_CAPTURE_ROLLBACK_BACKUP;
         if (_epoch_active) {
             capture_flags |= ECP2_CAPTURE_ALLOW_MID_EPOCH |
                              ECP2_CAPTURE_INCLUDE_RESUME;

@@ -893,6 +893,7 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     _save_requested.store(false, std::memory_order_release);
     _save_request_id.store(0, std::memory_order_release);
     _save_consumed_request_id.store(0, std::memory_order_release);
+    _save_failed_request_id.store(0, std::memory_order_release);
     std::atomic_store_explicit(&_save_bundle,
         std::shared_ptr<const RuntimeSaveBundle>(), std::memory_order_release);
     _snapshots.reset();
@@ -1068,6 +1069,8 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     }
     if (restore_pending && !_pending_restore_bundle.ideology_bytes.empty()) {
         std::string ideology_restore_error;
+        if (!ideology_candidate_ready)
+            ideology_restore_error = "ideology_pod_catalog_missing_at_worker_start";
         if (!ideology_candidate_ready || !ideology_candidate.restore(
                 _pending_restore_bundle.ideology_bytes.data(),
                 _pending_restore_bundle.ideology_bytes.size(),
@@ -1422,6 +1425,21 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
     }
     _pod_visual_intents.clear();
     _pod_receipts.clear();
+    // A fresh ACTIVE start earns its grant from the first fully committed day.
+    // A restore start must not wait for that: every domain's POD state was just
+    // installed from the bundle, and until the grant exists Economy's routing
+    // (which reads the grant) falls back to the synchronous Country peer — on
+    // the worker thread, against the main-thread NativeCountryRuntime. A new
+    // game has no cross-domain asset traffic on its first day so the window is
+    // harmless there; a loaded game with an active tax settles on that first
+    // day, which crashed in commit_economy_asset_transaction and otherwise left
+    // the fiscal continuation parked against a Country the worker never saw.
+    if (restore_pending && mode == RuntimeSimulationMode::ACTIVE && wanted != 0u &&
+        ((wanted & runtime_domain_mask(RuntimeDomainId::COUNTRY)) == 0u ||
+         country_candidate_ready)) {
+        _authoritative_domain_mask.store(wanted & implemented_domain_mask(),
+                                         std::memory_order_release);
+    }
     _has_pending_restore = false;
     _pending_restore_bundle = RuntimeSaveBundle{};
     for (auto &character : _fault_code) character.store('\0', std::memory_order_relaxed);
@@ -1886,13 +1904,25 @@ bool NativeSimulationHost::worker_run_stage_ops_slice(
         return false;
     }
 
-    // New calendar day resets the StageOps Host continuation machine.
+    // New calendar day resets the StageOps Host continuation machine — unless
+    // the previous day's epoch is still open. The ECONOMY stage deliberately
+    // soft-completes a day on Country-asset backpressure so Climate keeps
+    // draining its input ring, which means a fiscal/research continuation can
+    // legitimately cross a day boundary. Resetting to Prelude then sent the
+    // next pulse into PlanEpoch against that still-open epoch and faulted the
+    // worker with economy_pod_epoch_busy. Keep advancing the open epoch.
     if (_stage_ops_day_index != day ||
         _stage_ops_day_input_generation != input_generation) {
+        const bool epoch_still_open =
+            _economy_pod_authority.planned_epoch_active() &&
+            (_stage_ops_day_phase == StageOpsDayPhase::AdvanceStages ||
+             _stage_ops_day_phase == StageOpsDayPhase::CommitEpoch);
         _stage_ops_day_index = day;
         _stage_ops_day_input_generation = input_generation;
-        _stage_ops_day_phase = StageOpsDayPhase::Prelude;
-        _stage_ops_day_phase_atomic.store(static_cast<uint8_t>(StageOpsDayPhase::Prelude), std::memory_order_release);
+        if (!epoch_still_open) {
+            _stage_ops_day_phase = StageOpsDayPhase::Prelude;
+            _stage_ops_day_phase_atomic.store(static_cast<uint8_t>(StageOpsDayPhase::Prelude), std::memory_order_release);
+        }
     }
 
     switch (_stage_ops_day_phase) {
@@ -1983,11 +2013,8 @@ bool NativeSimulationHost::worker_run_stage_ops_slice(
             // moment a non-zero national tax created fiscal collect work.
             if (error == "fiscal_settlement_peer_pending" ||
                 error == "fiscal_reserve_peer_results" ||
-                error == "country_economy_asset_host_pending" ||
-                error == "country_economy_asset_results_pending" ||
-                error == "country_economy_asset_rejection_retry_pending" ||
-                error == "country_economy_asset_completion_retry_pending" ||
-                error == "country_economy_fiscal_terminal_retry_pending") {
+                error == "country_research_peer_results" ||
+                runtime_country_asset_pending_reason(error)) {
                 if (pending_input != nullptr) {
                     *pending_input = true;
                 }
@@ -2626,6 +2653,8 @@ bool NativeSimulationHost::publish_country_snapshot(
             _country_read_view_changed_cells.push_back(static_cast<int32_t>(cell));
             _country_read_view_changed_owners.push_back(snapshot.cell_country_slot[cell]);
         }
+        if (!_country_read_view_changed_cells.empty())
+            _country_read_view_territory_generation = _country_read_view_generation;
         if (territory_changed) {
             _country_read_view_dirty_families |= RUNTIME_DIRTY_COUNTRY_TERRITORY;
         }
@@ -2665,6 +2694,8 @@ bool NativeSimulationHost::publish_country_worker_snapshot(
         _country_read_view_changed_owners.push_back(
             snapshot.cell_country_slot[cell]);
     }
+    if (!_country_read_view_changed_cells.empty())
+        _country_read_view_territory_generation = _country_read_view_generation;
     auto committed_copy = std::make_shared<RuntimeCountryPodSnapshot>(
         std::move(snapshot));
     _country_committed_snapshot = committed_copy;
@@ -4142,6 +4173,27 @@ bool NativeSimulationHost::country_economy_asset_protocol_self_test(
         error = "country_worker_cohort_cash_wrong_thread_accepted";
         return false;
     }
+    // The two rejection classes must stay separated. A contract violation is a
+    // caller bug and has to stay fatal; an open Country plan window is
+    // backpressure and has to stay retryable. Collapsing them back into one
+    // reason is what turned a normal continuation into an economy stop.
+    if (runtime_country_asset_pending_reason(
+            "country_worker_cohort_cash_boundary_invalid") ||
+        !runtime_country_asset_pending_reason(
+            "country_economy_asset_country_plan_pending")) {
+        error = "country_worker_cohort_cash_reason_class_collapsed";
+        return false;
+    }
+    // Same split for colonization. Under Country worker authority the paired
+    // CLAIM commits on the worker's own boundary, so Economy SETTLE can observe
+    // the target as still unowned. That is backpressure: classifying it as a
+    // lost target sent the settlers home while the claim still landed, leaving
+    // the player a cell they owned with nobody living on it.
+    if (!runtime_country_asset_pending_reason(
+            "country_economy_asset_territory_claim_pending")) {
+        error = "country_economy_territory_claim_reason_class_collapsed";
+        return false;
+    }
 
     RuntimeEconomyAssetRequest request;
     request.operation = RuntimeEconomyAssetOperation::TREASURY_SPEND;
@@ -4387,21 +4439,59 @@ uint32_t NativeSimulationHost::prepare_economy_origin_country_assets(
         return 0u;
     }
 
-    std::vector<uint64_t> origin_ids;
+    const auto sort_origin_queue_locked = [this]() {
+        std::sort(_economy_origin_asset_queue.begin(),
+                  _economy_origin_asset_queue.end(),
+                  [this](uint64_t lhs, uint64_t rhs) {
+            const auto &a = _country_economy_asset_requests.at(lhs);
+            const auto &b = _country_economy_asset_requests.at(rhs);
+            if (a.day != b.day) return a.day < b.day;
+            if (a.operation_sequence != b.operation_sequence)
+                return a.operation_sequence < b.operation_sequence;
+            if (a.continuation_index != b.continuation_index)
+                return a.continuation_index < b.continuation_index;
+            return lhs < rhs;
+        });
+    };
+
+    // Recover CREATED orphans left after older prepare cleared the origin
+    // queue then failed: without this, Economy parks forever, Climate stops
+    // consuming, and WorldClock nails climate_input_capacity_day_barrier.
     {
         std::lock_guard<std::mutex> lock(_country_transport_mutex);
-        if (_economy_origin_asset_queue.empty()) return 0u;
-        origin_ids.assign(_economy_origin_asset_queue.begin(),
-                          _economy_origin_asset_queue.end());
-        _economy_origin_asset_queue.clear();
+        bool recovered = false;
+        for (const auto &entry : _country_economy_asset_requests) {
+            if (entry.second.origin_domain !=
+                    static_cast<uint32_t>(RuntimeDomainId::ECONOMY)) {
+                continue;
+            }
+            if (entry.second.state != RuntimeEconomyAssetState::CREATED)
+                continue;
+            if (_country_economy_asset_terminal_results.find(entry.first) !=
+                    _country_economy_asset_terminal_results.end()) {
+                continue;
+            }
+            if (std::find(_economy_origin_asset_queue.begin(),
+                          _economy_origin_asset_queue.end(),
+                          entry.first) != _economy_origin_asset_queue.end()) {
+                continue;
+            }
+            _economy_origin_asset_queue.push_back(entry.first);
+            recovered = true;
+        }
+        if (recovered) sort_origin_queue_locked();
     }
 
     uint32_t prepared = 0u;
-    for (uint64_t request_id : origin_ids) {
+    while (true) {
+        uint64_t request_id = 0;
         RuntimeEconomyAssetRequest request;
         bool already_prepared = false;
         {
             std::lock_guard<std::mutex> lock(_country_transport_mutex);
+            if (_economy_origin_asset_queue.empty()) break;
+            request_id = _economy_origin_asset_queue.front();
+            _economy_origin_asset_queue.pop_front();
             const auto it = _country_economy_asset_requests.find(request_id);
             if (it == _country_economy_asset_requests.end()) continue;
             request = it->second;
@@ -4414,9 +4504,39 @@ uint32_t NativeSimulationHost::prepare_economy_origin_country_assets(
             if (!_country_pod_authority.snapshot(snapshot, snap_error) ||
                 !country_core_apply_economy_asset_prepare(
                     snapshot, _country_pod_catalog, request, snap_error)) {
-                error = snap_error.empty()
+                // Soft-reject this wire id so research/fiscal continuations
+                // observe a terminal instead of a CREATED orphan.
+                RuntimeEconomyAssetResult rejected;
+                rejected.code = RuntimeEconomyAssetResultCode::REJECTED;
+                rejected.state = RuntimeEconomyAssetState::REJECTED;
+                rejected.accepted = 0;
+                rejected.session_epoch = request.session_epoch;
+                rejected.transaction_id = request.transaction_id;
+                rejected.request_id = request.request_id;
+                rejected.operation = request.operation;
+                rejected.continuation_index = request.continuation_index;
+                rejected.day = request.day;
+                rejected.country_generation = request.country_generation;
+                rejected.peer_generation = request.peer_generation;
+                rejected.committed_peer_generation = request.peer_generation;
+                rejected.country_slot = request.country_slot;
+                rejected.target_slot = request.target_slot;
+                const std::string reason = snap_error.empty()
                     ? "country_worker_economy_prepare_failed" : snap_error;
-                return prepared;
+                const size_t n = std::min(reason.size(),
+                                          rejected.reason.size() - 1u);
+                std::memcpy(rejected.reason.data(), reason.data(), n);
+                rejected.reason[n] = '\0';
+                std::string submit_error;
+                if (!submit_country_economy_asset_result(rejected,
+                                                        submit_error)) {
+                    std::lock_guard<std::mutex> lock(_country_transport_mutex);
+                    _economy_origin_asset_queue.push_front(request_id);
+                    sort_origin_queue_locked();
+                    error = submit_error.empty() ? reason : submit_error;
+                    return prepared;
+                }
+                continue;
             }
             request.state = RuntimeEconomyAssetState::COUNTRY_PREPARED;
             std::lock_guard<std::mutex> lock(_country_transport_mutex);
@@ -4424,6 +4544,9 @@ uint32_t NativeSimulationHost::prepare_economy_origin_country_assets(
         }
         std::string publish_error;
         if (!publish_country_economy_asset_requests({request}, publish_error)) {
+            std::lock_guard<std::mutex> lock(_country_transport_mutex);
+            _economy_origin_asset_queue.push_front(request_id);
+            sort_origin_queue_locked();
             error = publish_error.empty()
                 ? "country_worker_economy_request_failed" : publish_error;
             return prepared;
@@ -4437,7 +4560,8 @@ uint32_t NativeSimulationHost::prepare_economy_origin_country_assets(
     return prepared;
 }
 
-bool NativeSimulationHost::flush_country_economy_asset_commits(std::string &error) {
+bool NativeSimulationHost::flush_country_economy_asset_commits(
+        std::string &error, uint64_t settle_request_id) {
     error.clear();
     struct PendingCommit {
         uint64_t request_id = 0;
@@ -4455,6 +4579,18 @@ bool NativeSimulationHost::flush_country_economy_asset_commits(std::string &erro
             }
             const auto request = _country_economy_asset_requests.find(entry.first);
             if (request == _country_economy_asset_requests.end()) continue;
+            // Country day-start / Economy stage-end flush must not debit
+            // treasury for COMPLETED RESEARCH_PURCHASE before Economy phase 4
+            // credits merchants in the same conservation window. Early flush
+            // left opening cash already reduced while merchant credit landed
+            // next epoch → money_conservation_failed / goods_error.
+            if (request->second.operation ==
+                    RuntimeEconomyAssetOperation::RESEARCH_PURCHASE &&
+                entry.second.code ==
+                    RuntimeEconomyAssetResultCode::COMPLETED &&
+                settle_request_id != entry.first) {
+                continue;
+            }
             pending.push_back(PendingCommit{
                 entry.first, request->second, entry.second});
         }
@@ -4462,8 +4598,17 @@ bool NativeSimulationHost::flush_country_economy_asset_commits(std::string &erro
     const bool plan_active = _country_pod_plan_active.load(std::memory_order_acquire);
     for (const PendingCommit &item : pending) {
         if (plan_active) {
+            // Plan next_state must see the debit so commit_day stays consistent.
             if (!country_core_apply_economy_asset_commit(
                     _country_pod_plan.next_state, _country_pod_catalog,
+                    item.request, item.result, error)) {
+                return false;
+            }
+            // Also persist onto authority without bumping generation. Otherwise
+            // publish_country_worker_snapshot still serves the pre-debit base,
+            // Economy credits merchants against a flat treasury view, and a later
+            // discard_plan would resurrect cash after the peer side-effect.
+            if (!_country_pod_authority.apply_economy_asset_commit_to_authority_state(
                     item.request, item.result, error)) {
                 return false;
             }
@@ -4530,18 +4675,33 @@ bool NativeSimulationHost::enqueue_economy_origin_country_asset(
     ++_country_economy_asset_protocol.pending_requests;
     _country_economy_asset_protocol.last_request_id = request.request_id;
     _country_economy_asset_protocol.last_transaction_id = request.transaction_id;
+    // Wake the Country worker so same-day prepare can drain the origin queue
+    // without waiting for the next unrelated peer signal.
+    _country_peer_signal.fetch_add(1, std::memory_order_acq_rel);
+    _control_cv.notify_all();
     return true;
 }
 
 bool NativeSimulationHost::prepare_worker_cohort_cash(
         RuntimeEconomyAssetRequest &request, std::string &error) {
     error.clear();
+    // Contract violations. Wrong thread, Country not worker-authoritative, or
+    // an operation outside the M2 cohort-cash pair are caller bugs: no retry
+    // can make them valid.
     if (std::this_thread::get_id() != _worker.get_id() ||
         !domain_is_worker_authoritative(RuntimeDomainId::COUNTRY) ||
-        _country_pod_plan_active.load(std::memory_order_acquire) ||
         (request.operation != RuntimeEconomyAssetOperation::CASH_TO_COHORT &&
          request.operation != RuntimeEconomyAssetOperation::CASH_FROM_COHORT)) {
         error = "country_worker_cohort_cash_boundary_invalid";
+        return false;
+    }
+    // Timing window, not a contract violation. Country's plan for this day is
+    // still open (its stage parked on a peer/asset terminal), so the POD
+    // snapshot this prepare would read is mid-plan. Nothing has been allocated
+    // or published yet, so the caller can safely retry on a later pulse once
+    // commit_day closes the window.
+    if (_country_pod_plan_active.load(std::memory_order_acquire)) {
+        error = "country_economy_asset_country_plan_pending";
         return false;
     }
     request.session_epoch = _country_worker_session_epoch;
@@ -4577,7 +4737,7 @@ bool NativeSimulationHost::finish_worker_country_asset(
         if (error.empty()) error = "country_worker_cohort_cash_rejected";
         return false;
     }
-    if (!flush_country_economy_asset_commits(error)) return false;
+    if (!flush_country_economy_asset_commits(error, request_id)) return false;
     return publish_country_worker_snapshot(RUNTIME_DIRTY_COUNTRY_STATE, error);
 }
 
@@ -4607,6 +4767,16 @@ bool NativeSimulationHost::country_authority_drain_idle_locked() const {
             _country_economy_asset_terminal_results.find(entry.first);
         if (terminal != _country_economy_asset_terminal_results.end() &&
             economy_asset_result_terminal(terminal->second)) {
+            // COMPLETED research still awaits Economy settlement flush; do not
+            // treat the bare terminal as idle handoff-ready.
+            if (entry.second.operation ==
+                    RuntimeEconomyAssetOperation::RESEARCH_PURCHASE &&
+                terminal->second.code ==
+                    RuntimeEconomyAssetResultCode::COMPLETED &&
+                _country_economy_asset_committed.find(entry.first) ==
+                    _country_economy_asset_committed.end()) {
+                return false;
+            }
             continue;
         }
         return false;
@@ -4901,6 +5071,12 @@ bool NativeSimulationHost::submit_country_worker_result(
     if (result.code != CountryPeerResultCode::PENDING) {
         _country_worker_terminal_results[result.request_id] = result;
     }
+    // A PENDING result is deliberately not re-queued. poll_country_worker_intent
+    // already removed the id, and pushing it back let the caller's own drain
+    // loop re-execute the same Effect probe up to 64 times per pump while
+    // holding this mutex — that is what stalled the main thread. The Country
+    // stage instead closes the day with the technology still pending and emits
+    // a fresh intent next day, so each probe runs at most once per day.
     if (result.code == CountryPeerResultCode::REJECTED) {
         ++_country_worker_protocol.rejected_intents;
         country_peer_copy_reason(_country_worker_protocol.rejection_reason,
@@ -4974,10 +5150,26 @@ RuntimeCountryReadView NativeSimulationHost::country_worker_read_view(
     }
     out.available = out.snapshot != nullptr &&
         out.generation > after_generation;
+    // A missed patch base only forces a full owner copy when territory changed
+    // after the consumer's cursor. Cash, tax, and research publishes advance
+    // the view generation without changing cell owners.
+    // Host consumers must still advertise the real MapData owner diff on
+    // country_committed — never cell_count — so vision/border stay O(changed).
     out.full_snapshot_required = out.available &&
         after_generation != 0 &&
-        after_generation != out.patch_base_generation;
+        after_generation != out.patch_base_generation &&
+        after_generation < _country_read_view_territory_generation;
     return out;
+}
+
+bool NativeSimulationHost::country_checkpoint_identity(
+        uint64_t &generation, uint64_t &business_state_hash) const {
+    const auto checkpoint = std::atomic_load_explicit(
+        &_country_checkpoint, std::memory_order_acquire);
+    if (checkpoint == nullptr) return false;
+    generation = checkpoint->generation;
+    business_state_hash = checkpoint->business_state_hash;
+    return true;
 }
 
 bool NativeSimulationHost::publish_country_checkpoint(
@@ -5498,6 +5690,123 @@ int32_t NativeSimulationHost::effect_pod_program_id_for_key(
             return static_cast<int32_t>(i);
     }
     return -1;
+}
+
+bool NativeSimulationHost::ensure_effect_pod_technology_instance(
+        int64_t instance_id, uint32_t generation, int32_t program_id,
+        uint64_t target_handle, uint32_t target_generation, int64_t day,
+        std::string &error) {
+    error.clear();
+    if (!_effect_pod_configured) {
+        error = "effect_pod_not_configured";
+        return false;
+    }
+    if (instance_id == 0 || generation == 0 || program_id < 0) {
+        error = "effect_pod_technology_instance_invalid";
+        return false;
+    }
+    // Already present in the committed POD snapshot — do not re-queue.
+    {
+        const auto &snapshot = _effect_pod_authority.snapshot();
+        for (const auto &instance : snapshot.instances) {
+            if (instance.instance_id == instance_id &&
+                instance.generation == generation &&
+                instance.active != 0) {
+                return true;
+            }
+        }
+    }
+    RuntimeEffectPodInstanceInput input;
+    input.instance_id = instance_id;
+    input.generation = generation;
+    input.program_id = program_id;
+    input.source_type = 0x54454348; // 'TECH'
+    input.source_id = instance_id;
+    input.source_handle = target_handle;
+    input.target_handle = target_handle;
+    input.target_generation = target_generation;
+    input.level = 0;
+    input.next_due_day = day;
+    input.active = true;
+    return queue_effect_pod_instance(input, error);
+}
+
+void NativeSimulationHost::debug_log_effect_pod_technology_state(
+        int64_t instance_id, uint32_t generation, int32_t program_id,
+        int32_t technology) const {
+    static std::atomic<int> s_left{40};
+    if (s_left.fetch_sub(1, std::memory_order_relaxed) <= 0) return;
+    if (!_effect_pod_configured) {
+        std::fprintf(stderr, "[tech-ack-diag] effect_pod_not_configured\n");
+        std::fflush(stderr);
+        return;
+    }
+    const auto &snapshot = _effect_pod_authority.snapshot();
+    const RuntimeEffectPodInstance *found = nullptr;
+    for (const auto &instance : snapshot.instances) {
+        if (instance.instance_id == instance_id) { found = &instance; break; }
+    }
+    int transactions = 0;
+    int last_status = -1;
+    for (const auto &transaction : snapshot.transactions) {
+        if (transaction.source_instance_id != instance_id) continue;
+        ++transactions;
+        last_status = static_cast<int>(transaction.status);
+    }
+    std::fprintf(stderr,
+        "[tech-ack-diag] tech=%d program_id=%d instance=%lld gen=%u "
+        "present=%d inst_gen=%u active=%d fire_seq=%llu acked_seq=%llu "
+        "next_due=%lld tx=%d last_tx_status=%d pod_gen=%llu pod_day=%lld "
+        "instances=%zu queued=%zu\n",
+        technology, program_id, static_cast<long long>(instance_id), generation,
+        found != nullptr ? 1 : 0,
+        found != nullptr ? found->generation : 0u,
+        found != nullptr ? static_cast<int>(found->active) : -1,
+        static_cast<unsigned long long>(found != nullptr ? found->fire_sequence : 0),
+        static_cast<unsigned long long>(
+            found != nullptr ? found->last_acked_fire_sequence : 0),
+        static_cast<long long>(found != nullptr ? found->next_due_day : -1),
+        transactions, last_status,
+        static_cast<unsigned long long>(snapshot.generation),
+        static_cast<long long>(snapshot.committed_day),
+        snapshot.instances.size(), _effect_instance_queue.size());
+    std::fflush(stderr);
+}
+
+bool NativeSimulationHost::effect_pod_instance_fire_acked(
+        int64_t instance_id, uint32_t generation) const {
+    if (!_effect_pod_configured || instance_id == 0 || generation == 0)
+        return false;
+    const auto &snapshot = _effect_pod_authority.snapshot();
+    const RuntimeEffectPodInstance *found = nullptr;
+    for (const auto &instance : snapshot.instances) {
+        if (instance.instance_id == instance_id &&
+            instance.generation == generation) {
+            found = &instance;
+            break;
+        }
+    }
+    if (found == nullptr || found->fire_sequence == 0) return false;
+    if (found->last_acked_fire_sequence >= found->fire_sequence) return true;
+    bool saw_acked = false;
+    bool saw_rejected = false;
+    for (const auto &transaction : snapshot.transactions) {
+        if (transaction.source_instance_id != instance_id ||
+            transaction.source_generation != generation) {
+            continue;
+        }
+        if (transaction.status != RuntimeEffectPodTransactionStatus::ACKED &&
+            transaction.status != RuntimeEffectPodTransactionStatus::REJECTED) {
+            return false;
+        }
+        if (transaction.status == RuntimeEffectPodTransactionStatus::ACKED)
+            saw_acked = true;
+        else
+            saw_rejected = true;
+    }
+    if (saw_acked) return true;
+    if (saw_rejected) return false;
+    return true;
 }
 
 bool NativeSimulationHost::configure_ideology_pod(
@@ -6503,8 +6812,14 @@ bool NativeSimulationHost::execute_country_worker_stage(
                 continue;
             RuntimeCountryCommand command;
             std::string command_error;
-            if (!RuntimeCountryPodAdapter::decode_command(
-                    packet, command, command_error) ||
+            const bool decoded = RuntimeCountryPodAdapter::decode_command(
+                packet, command, command_error);
+            // The submitter's clock trails this worker's. Reschedule a late
+            // intent onto the day being planned instead of refusing it;
+            // requested_day still records what the player asked for.
+            if (decoded && command.effective_day < day)
+                command.effective_day = day;
+            if (!decoded ||
                 !_country_pod_authority.queue_command(command, command_error)) {
                 error = command_error.empty()
                     ? "country_worker_command_rejected" : command_error;
@@ -6566,8 +6881,17 @@ bool NativeSimulationHost::execute_country_worker_stage(
                 peer.technology = intent.payload[0] >= 0
                     ? static_cast<int32_t>(intent.payload[0]) : -1;
                 peer.target_handle = intent.target_handle;
-                peer.effect_instance_id = peer.request_id;
-                peer.effect_generation = intent.target_generation;
+                // Stable per (country handle, technology), mirroring the sync
+                // NativeCountryRuntime::make_peer_intent. Deriving it from the
+                // per-day request id minted a brand-new Effect instance every
+                // worker day, so the fire ACK could never be observed across
+                // days and the technology stayed pending forever.
+                peer.effect_instance_id = peer.technology >= 0
+                    ? (((peer.target_handle & 0x00007fffffffffffULL) << 16U) |
+                       static_cast<uint64_t>(peer.technology + 1))
+                    : peer.request_id;
+                peer.effect_generation =
+                    static_cast<uint32_t>(peer.target_handle >> 32U);
                 peer.idempotency_key = intent.idempotency_key != 0
                     ? intent.idempotency_key : peer.request_id;
                 if (peer.request_id == 0) {
@@ -6727,10 +7051,87 @@ bool NativeSimulationHost::execute_country_worker_stage(
                              std::numeric_limits<uint32_t>::max()));
     }
     if (waiting) {
-        error = "country_worker_peer_results_pending";
-        commit.preflight_ok = 0;
-        commit.continuation_pending = 1;
-        return false;
+        // Soft-commit only after the main-thread adapter has inspected every
+        // published intent at least once. PENDING results requeue themselves,
+        // so an empty queue is the wrong signal — look for missing results.
+        bool all_intents_inspected = true;
+        {
+            std::lock_guard<std::mutex> lock(_country_transport_mutex);
+            for (const RuntimeDomainIntent &intent : _country_pod_plan.intents) {
+                const uint64_t request_id = intent.request_id != 0
+                    ? intent.request_id : intent.source_id;
+                if (_country_worker_results.find(request_id) ==
+                    _country_worker_results.end()) {
+                    all_intents_inspected = false;
+                    break;
+                }
+            }
+        }
+        if (!all_intents_inspected) {
+            error = "country_worker_peer_results_pending";
+            commit.preflight_ok = 0;
+            commit.continuation_pending = 1;
+            return false;
+        }
+        // Every intent has a non-terminal PENDING (typically Effect fire still
+        // in flight under F8). Soft-commit like peer rejection: keep research
+        // spend + pending activation, close the calendar day so Climate can
+        // drain the input ring, and retry activation on the next day. Unlike a
+        // rejection this advances the generation — the day's commands and
+        // research progress are real, and country_committed / the UI section
+        // cache only refresh when the read-view generation moves.
+        if (!_country_pod_authority.commit_rejected_day(
+                _country_pod_plan, error, /*advance_generation=*/true)) {
+            _country_pod_authority.discard_plan();
+            _country_pod_plan_active.store(false, std::memory_order_release);
+            set_fault(error.empty()
+                          ? "country_worker_pending_peer_commit_failed"
+                          : error.c_str());
+            if (error.empty())
+                error = "country_worker_pending_peer_commit_failed";
+            commit.preflight_ok = 0;
+            return false;
+        }
+        publish_country_command_terminals(
+            _country_pod_plan.commands, CountryCommandReceiptCode::COMMITTED,
+            _country_pod_authority.generation(), nullptr);
+        _country_pod_plan_active.store(false, std::memory_order_release);
+        {
+            std::lock_guard<std::mutex> lock(_country_transport_mutex);
+            for (const RuntimeDomainIntent &intent : _country_pod_plan.intents) {
+                const uint64_t request_id = intent.request_id != 0
+                    ? intent.request_id : intent.source_id;
+                _country_worker_intents.erase(request_id);
+                _country_worker_results.erase(request_id);
+                _country_worker_terminal_results.erase(request_id);
+            }
+            _country_worker_intent_queue.erase(
+                std::remove_if(_country_worker_intent_queue.begin(),
+                               _country_worker_intent_queue.end(),
+                    [&](uint64_t request_id) {
+                        return _country_worker_intents.find(request_id) ==
+                            _country_worker_intents.end();
+                    }), _country_worker_intent_queue.end());
+            _country_worker_protocol.pending_intents = 0;
+            _country_worker_protocol.queued_intents = static_cast<uint32_t>(
+                std::min<size_t>(_country_worker_intent_queue.size(),
+                                 std::numeric_limits<uint32_t>::max()));
+        }
+        std::string snapshot_error;
+        if (!publish_country_worker_snapshot(
+                _country_pod_plan.header.dirty_families, snapshot_error)) {
+            error = snapshot_error.empty() ? "country_worker_snapshot_failed" :
+                snapshot_error;
+            commit.preflight_ok = 0;
+            return false;
+        }
+        commit.completed_domain_mask |= runtime_domain_mask(
+            RuntimeDomainId::COUNTRY);
+        commit.dirty_families |= _country_pod_plan.header.dirty_families;
+        commit.work_units += _country_pod_plan.header.work_units;
+        ++commit.completed_stage_count;
+        error.clear();
+        return true;
     }
     if (rejected) {
         // A peer rejection closes the Country semantic boundary. Country-side
@@ -6848,6 +7249,8 @@ bool NativeSimulationHost::execute_country_worker_stage(
             _country_read_view_changed_owners.push_back(
                 committed_snapshot.cell_country_slot[cell]);
         }
+        if (!_country_read_view_changed_cells.empty())
+            _country_read_view_territory_generation = _country_read_view_generation;
         auto committed_copy = std::make_shared<RuntimeCountryPodSnapshot>(
             std::move(committed_snapshot));
         _country_committed_snapshot = committed_copy;
@@ -8581,52 +8984,14 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             if (_country_pod_configured) {
                 const int64_t country_committed =
                     _country_pod_authority.committed_day();
-                // Always drain Country packets whose effective_day is already
-                // behind the POD committed day. queue_command refuses them, and
-                // Climate park / M5 retry must not leave Effect PREFLIGHTED
-                // without a Host terminal forever.
-                {
-                    std::vector<RuntimeCountryCommand> stale_commands;
-                    stale_commands.reserve(day_commands.size());
-                    for (const RuntimeCommandPacket &packet : day_commands) {
-                        if (packet.envelope.domain !=
-                                static_cast<uint16_t>(RuntimeDomainId::COUNTRY) ||
-                            packet.envelope.request_id == 0) {
-                            continue;
-                        }
-                        {
-                            std::lock_guard<std::mutex> country_lock(
-                                _country_transport_mutex);
-                            if (_country_command_terminals.find(
-                                    packet.envelope.request_id) !=
-                                _country_command_terminals.end()) {
-                                continue;
-                            }
-                        }
-                        RuntimeCountryCommand command;
-                        std::string command_error;
-                        if (!RuntimeCountryPodAdapter::decode_command(
-                                packet, command, command_error)) {
-                            command.request_id = packet.envelope.request_id;
-                            command.producer_id = packet.envelope.producer_id;
-                            command.sequence = packet.envelope.sequence;
-                            command.requested_day = packet.envelope.requested_day;
-                            command.effective_day = packet.envelope.effective_day;
-                            command.opcode = packet.envelope.opcode;
-                            command.submit_order = packet.submit_order;
-                        }
-                        if (command.effective_day <= country_committed) {
-                            stale_commands.push_back(command);
-                        }
-                    }
-                    if (!stale_commands.empty()) {
-                        publish_country_command_terminals(
-                            stale_commands,
-                            CountryCommandReceiptCode::REJECTED_AT_EXECUTION,
-                            _country_pod_authority.generation(),
-                            "country_command_day_already_committed");
-                    }
-                }
+                // Country packets behind the POD committed day are no longer
+                // rejected here: execute_country_worker_stage reschedules them
+                // onto the day it is planning. A player stamps effective_day
+                // from the UI clock, which trails the worker clock at high
+                // speed, so dropping them silently discarded research/tax
+                // intents. Only malformed packets can still be terminal-ed,
+                // and that happens inside the stage.
+                (void)country_committed;
                 // Country POD advances its committed_day as soon as the stage
                 // succeeds (including commit_rejected_day). A later domain can
                 // still fail the whole day and force a Host retry of the same
@@ -9076,11 +9441,7 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                 }
             }
             const auto economy_asset_pending_reason = [](const std::string &reason) {
-                return reason == "country_economy_asset_host_pending" ||
-                    reason == "country_economy_asset_results_pending" ||
-                    reason == "country_economy_asset_rejection_retry_pending" ||
-                    reason == "country_economy_asset_completion_retry_pending" ||
-                    reason == "country_economy_fiscal_terminal_retry_pending" ||
+                return runtime_country_asset_pending_reason(reason) ||
                     reason == "fiscal_reserve_peer_results" ||
                     // Mid-epoch fiscal return/collect uses the same origin-asset
                     // prepare loop as epoch-open reserve. Omitting this reason
@@ -9088,6 +9449,7 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                     // next Country stage waiting for an Economy terminal.
                     reason == "fiscal_peer_results" ||
                     reason == "fiscal_settlement_peer_pending" ||
+                    reason == "country_research_peer_results" ||
                     reason == "economy_stage_ops_prelude_pending_input";
             };
             // Country prepares Economy-origin assets in its own stage, which
@@ -9146,6 +9508,12 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                 }
                 if (economy_fatal || !economy_pending_input) break;
                 if (!economy_asset_pending_reason(economy_error)) break;
+                // The Country plan window can only close in the next Country
+                // stage. Nothing was enqueued, so re-running prepare here just
+                // burns the round budget; soft-complete and let the next pulse
+                // retry the parked Economy stage.
+                if (economy_error == "country_economy_asset_country_plan_pending")
+                    break;
                 std::string prepare_error;
                 const uint32_t prepared =
                     prepare_economy_origin_country_assets(prepare_error);
@@ -9161,6 +9529,8 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                     continue;
                 }
             }
+            publish_economy_tax_diag(
+                economy_error, static_cast<uint32_t>(economy_work));
             if (economy_fatal) {
                 std::fprintf(stderr, "[economy-worker-fatal] day=%lld phase=%u stage=%u reason=%s\n",
                     static_cast<long long>(plan.context.day), static_cast<unsigned>(_stage_ops_day_phase),
@@ -9180,11 +9550,24 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                     economy_error == "same_day_building_context_not_captured") {
                     _economy_input_requested_day.store(plan.context.day,
                         std::memory_order_release);
-                } else if (economy_asset_pending_reason(economy_error)) {
-                    // Keep a cooperative continuation visible even when the
-                    // same-day prepare already drained the origin queue; the
-                    // next Country/Economy visit still owns the ACK.
+                    stage.completed = 0;
+                    continue;
+                }
+                if (economy_asset_pending_reason(economy_error)) {
+                    // Soft-complete after same-day prepare rounds so Climate can
+                    // keep draining the input ring. Hard-parking ECONOMY here
+                    // filled the ring and permanently armed
+                    // climate_input_capacity_day_barrier while research waited.
                     commit.continuation_pending = 1;
+                    stage.dirty_families = RUNTIME_DIRTY_ECONOMY_UI;
+                    stage.work_units = economy_work;
+                    stage.completed = 1;
+                    commit.dirty_families |= stage.dirty_families;
+                    commit.work_units += stage.work_units;
+                    commit.completed_domain_mask |=
+                        runtime_domain_mask(RuntimeDomainId::ECONOMY);
+                    ++commit.completed_stage_count;
+                    continue;
                 }
                 stage.completed = 0;
                 continue;
@@ -9854,6 +10237,55 @@ void NativeSimulationHost::publish_day(
     try_fault_injection("day.commit.after");
 }
 
+void NativeSimulationHost::publish_economy_tax_diag(
+        const std::string &yield_reason, uint32_t slices) {
+    const auto store_text = [](auto &dst, const char *text) {
+        const char *value = text != nullptr ? text : "";
+        size_t i = 0;
+        for (; i + 1 < dst.size() && value[i] != '\0'; ++i)
+            dst[i].store(value[i], std::memory_order_relaxed);
+        for (; i < dst.size(); ++i)
+            dst[i].store('\0', std::memory_order_relaxed);
+    };
+    NativeEconomyRuntime::TaxSchedDiag diag;
+    char stage[32] = {};
+    char substage[40] = {};
+    if (_economy_production_runtime != nullptr) {
+        _economy_production_runtime->copy_tax_sched_diag(
+            diag, stage, sizeof(stage), substage, sizeof(substage));
+    }
+    store_text(_economy_yield_reason, yield_reason.c_str());
+    store_text(_economy_stage_name, stage);
+    store_text(_economy_substage_name, substage);
+    _economy_epoch_fiscal_ms.store(diag.epoch_fiscal_ms, std::memory_order_relaxed);
+    _economy_fiscal_settlement_ms.store(
+        diag.fiscal_settlement_ms, std::memory_order_relaxed);
+    _economy_income_subsidy_ms.store(
+        diag.income_subsidy_ms, std::memory_order_relaxed);
+    _economy_negative_tax_mask.store(diag.negative_tax_mask, std::memory_order_relaxed);
+    _economy_active_tax_mask.store(diag.active_tax_mask, std::memory_order_relaxed);
+    _economy_attempt_slices.store(slices, std::memory_order_relaxed);
+}
+
+void NativeSimulationHost::record_save_failure(const char *reason) {
+    const char *value = reason ? reason : "unknown";
+    size_t i = 0;
+    for (; i + 1 < _save_failure_reason.size() && value[i] != '\0'; ++i)
+        _save_failure_reason[i].store(value[i], std::memory_order_relaxed);
+    for (; i < _save_failure_reason.size(); ++i)
+        _save_failure_reason[i].store('\0', std::memory_order_relaxed);
+}
+
+std::string NativeSimulationHost::save_failure_reason() const {
+    std::string out;
+    for (const auto &c : _save_failure_reason) {
+        const char value = c.load(std::memory_order_relaxed);
+        if (value == '\0') break;
+        out.push_back(value);
+    }
+    return out;
+}
+
 void NativeSimulationHost::set_fault(const char *code) {
     _worker_fault_count.fetch_add(1, std::memory_order_relaxed);
     // A faulted worker owns nothing. Same reason as request_stop: the schedule
@@ -9936,6 +10368,8 @@ bool NativeSimulationHost::request_save(uint64_t request_id) {
         return false;
     }
     _save_consumed_request_id.store(0, std::memory_order_release);
+    _save_failed_request_id.store(0, std::memory_order_release);
+    record_save_failure("");
     std::atomic_store_explicit(&_save_bundle,
         std::shared_ptr<const RuntimeSaveBundle>(), std::memory_order_release);
     // Publish the flag only after the ID.  The worker's acquire exchange then
@@ -10598,24 +11032,29 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
         }
         cursor += 8u;
         if (parsed.ideology_bytes.size() < 4u ||
-            std::memcmp(parsed.ideology_bytes.data(), "IDP1", 4u) != 0 ||
-            !_ideology_pod_configured) {
-            error = !_ideology_pod_configured
-                ? "runtime_bundle_ideology_catalog_missing"
-                : "runtime_bundle_ideology_section_marker_invalid";
+            std::memcmp(parsed.ideology_bytes.data(), "IDP1", 4u) != 0) {
+            error = "runtime_bundle_ideology_section_marker_invalid";
             return false;
         }
-        RuntimeIdeologyPodAuthority candidate;
-        std::string ideology_restore_error;
-        if (!candidate.configure(_ideology_pod_catalog,
-                                 ideology_restore_error) ||
-            !candidate.restore(parsed.ideology_bytes.data(),
-                               parsed.ideology_bytes.size(),
-                               ideology_restore_error)) {
-            error = ideology_restore_error.empty()
-                ? "runtime_bundle_ideology_restore_invalid"
-                : ideology_restore_error;
-            return false;
+        // The ideology POD catalog is derived from the Country POD snapshot,
+        // so it can only be configured after PKCN restores — and PKSR restores
+        // before PKCN. When the catalog is not configured yet, the checksum and
+        // marker above still reject corrupt bytes; the catalog-dependent dry
+        // run is deferred to worker start, which restores IDP1 against the
+        // then-configured catalog and faults before any day runs if it fails.
+        if (_ideology_pod_configured) {
+            RuntimeIdeologyPodAuthority candidate;
+            std::string ideology_restore_error;
+            if (!candidate.configure(_ideology_pod_catalog,
+                                     ideology_restore_error) ||
+                !candidate.restore(parsed.ideology_bytes.data(),
+                                   parsed.ideology_bytes.size(),
+                                   ideology_restore_error)) {
+                error = ideology_restore_error.empty()
+                    ? "runtime_bundle_ideology_restore_invalid"
+                    : ideology_restore_error;
+                return false;
+            }
         }
     }
     if ((parsed.section_mask & RUNTIME_SAVE_SECTION_ECONOMY_POD) != 0) {
@@ -10731,6 +11170,17 @@ bool NativeSimulationHost::restore_bundle(const uint8_t *bytes, size_t size,
         return false;
     }
     _has_pending_restore = true;
+    // The main thread numbers the next environment input from the reported
+    // environment generation, and it captures the first post-load input
+    // before the worker starts. Publishing the saved generation only at worker
+    // start let that first input restart at 1, below the restored Climate
+    // authority's last input, which faulted with
+    // climate_input_generation_not_monotonic on the first day after a load.
+    if (_pending_restore_bundle.environment_generation >
+            _environment_generation.load(std::memory_order_acquire)) {
+        _environment_generation.store(_pending_restore_bundle.environment_generation,
+                                      std::memory_order_release);
+    }
     // GPU/Object state is intentionally outside the runtime bundle. The next
     // committed visual batch must therefore be a reconstructible full refresh
     // after any successful restore, even when the visual ring had no drop.
@@ -10788,6 +11238,16 @@ void NativeSimulationHost::build_save_bundle(
     }
     const auto country_checkpoint = std::atomic_load_explicit(
         &_country_checkpoint, std::memory_order_acquire);
+    // Under worker Country authority the checkpoint must describe the same
+    // committed day as this bundle. A mismatch restores a Country POD that can
+    // never plan the next host day (country_day_not_contiguous forever), so
+    // reject the save explicitly instead of writing an inconsistent bundle.
+    if (country_checkpoint != nullptr &&
+        domain_is_worker_authoritative(RuntimeDomainId::COUNTRY) &&
+        country_checkpoint->committed_day != bundle->committed_day) {
+        record_save_failure("save_country_checkpoint_day_mismatch");
+        return;
+    }
     if (country_checkpoint != nullptr) {
         // The synchronous checkpoint carries the canonical PKCN business
         // payload. Host protocol state is merged here at the same save
@@ -10964,14 +11424,39 @@ void NativeSimulationHost::build_save_bundle(
     }
     if (_economy_ecp2_dual_write.load(std::memory_order_acquire) &&
         _economy_production_runtime != nullptr) {
+        // The committed-ledger contract (capture and restore alike) needs at
+        // least one economy commit. Before that there is nothing restorable
+        // to write; reject the request and keep the runtime running instead
+        // of faulting a healthy worker over a premature save.
+        if (_economy_production_runtime->last_committed_day() < 0) {
+            record_save_failure("save_requires_first_settlement");
+            return;
+        }
         uint32_t capture_flags = 0;
         if (_economy_ecp2_mid_epoch_save.load(std::memory_order_acquire))
             capture_flags |= ECP2_CAPTURE_ALLOW_MID_EPOCH |
                              ECP2_CAPTURE_INCLUDE_RESUME;
         RuntimeEconomyEcp2State ecp2_state;
         std::string ecp2_capture_error;
-        if (_economy_production_runtime->capture_ecp2_authority(
-                ecp2_state, ecp2_capture_error, capture_flags)) {
+        // ECP2 records the Country identity it is bound to, and restore
+        // requires it to match the Country restored from this same bundle.
+        // Under worker Country authority that is the committed checkpoint
+        // above, not the main-thread runtime the economy points at (which
+        // stays at its bootstrap state and would never match on load).
+        const bool stamp_worker_country =
+            country_checkpoint != nullptr &&
+            domain_is_worker_authoritative(RuntimeDomainId::COUNTRY);
+        if (stamp_worker_country) {
+            _economy_production_runtime->set_save_country_identity(
+                country_checkpoint->generation,
+                country_checkpoint->business_state_hash);
+        }
+        const bool ecp2_captured =
+            _economy_production_runtime->capture_ecp2_authority(
+                ecp2_state, ecp2_capture_error, capture_flags);
+        if (stamp_worker_country)
+            _economy_production_runtime->clear_save_country_identity();
+        if (ecp2_captured) {
             std::string ecp2_encode_error;
             if (encode_ecp2(ecp2_state, bundle->economy_ecp2_bytes,
                             ecp2_encode_error) &&
@@ -11383,7 +11868,31 @@ void NativeSimulationHost::worker_main() {
                 _worker_timing.set(RuntimeWorkerTiming::SAVE_BUILD);
                 build_save_bundle(request_id, pending_commands);
                 _worker_timing.set(RuntimeWorkerTiming::OVERHEAD);
+                const auto built = std::atomic_load_explicit(
+                    &_save_bundle, std::memory_order_acquire);
+                if (built == nullptr || built->request_id != request_id) {
+                    // Every build_save_bundle failure exit returns without a
+                    // bundle. Publish the failure so poll_save callers stop
+                    // waiting instead of timing out with no reason.
+                    if (save_failure_reason().empty()) {
+                        char fault[64]{};
+                        for (size_t i = 0; i + 1 < sizeof(fault) &&
+                                           i < _fault_code.size(); ++i)
+                            fault[i] = _fault_code[i].load(std::memory_order_relaxed);
+                        record_save_failure(fault[0] != '\0'
+                            ? fault : "save_bundle_not_published");
+                    }
+                    _save_failed_request_id.store(request_id,
+                                                  std::memory_order_release);
+                }
                 _save_request_id.store(0, std::memory_order_release);
+                // build_save_bundle reports its failures through set_fault(),
+                // which already moved the worker to FAULTED and released every
+                // domain. Overwriting that with PAUSED/RUNNING hid the fault: the
+                // worker looked alive while owning nothing.
+                if (_state.load(std::memory_order_acquire) ==
+                        RuntimeWorkerState::FAULTED)
+                    break;
                 _state.store(_paused.load(std::memory_order_acquire)
                         ? RuntimeWorkerState::PAUSED : RuntimeWorkerState::RUNNING,
                         std::memory_order_release);
@@ -12379,6 +12888,26 @@ RuntimeThreadReport NativeSimulationHost::report() const {
     for (size_t i = 0; i < sizeof(out.fault_code); ++i) {
         out.fault_code[i] = _fault_code[i].load(std::memory_order_relaxed);
     }
+    for (size_t i = 0; i < sizeof(out.economy_yield_reason); ++i)
+        out.economy_yield_reason[i] = _economy_yield_reason[i].load(std::memory_order_relaxed);
+    out.economy_yield_reason[sizeof(out.economy_yield_reason) - 1] = '\0';
+    for (size_t i = 0; i < sizeof(out.economy_stage_name); ++i)
+        out.economy_stage_name[i] = _economy_stage_name[i].load(std::memory_order_relaxed);
+    out.economy_stage_name[sizeof(out.economy_stage_name) - 1] = '\0';
+    for (size_t i = 0; i < sizeof(out.economy_substage_name); ++i)
+        out.economy_substage_name[i] = _economy_substage_name[i].load(std::memory_order_relaxed);
+    out.economy_substage_name[sizeof(out.economy_substage_name) - 1] = '\0';
+    out.economy_epoch_fiscal_ms = _economy_epoch_fiscal_ms.load(std::memory_order_relaxed);
+    out.economy_fiscal_settlement_ms =
+        _economy_fiscal_settlement_ms.load(std::memory_order_relaxed);
+    out.economy_income_subsidy_ms =
+        _economy_income_subsidy_ms.load(std::memory_order_relaxed);
+    out.economy_negative_tax_mask =
+        _economy_negative_tax_mask.load(std::memory_order_relaxed);
+    out.economy_active_tax_mask =
+        _economy_active_tax_mask.load(std::memory_order_relaxed);
+    out.economy_attempt_slices =
+        _economy_attempt_slices.load(std::memory_order_relaxed);
     out.fault_injection_armed = _fault_injection_armed.load(std::memory_order_acquire);
     out.fault_injection_trip_count =
         _fault_injection_trip_count.load(std::memory_order_acquire);

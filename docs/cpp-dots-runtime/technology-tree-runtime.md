@@ -284,9 +284,10 @@ PKCN v12 为每个国家保存：
 
 研究日使用整数最大余数法分配科技值。10 点在 70%/30% 下严格产生 7/3；领域内完成后的
 溢出进入同领域下一项目。阻塞队列（队列头无法推进）的剩余份额进入
-`deferred_unallocated_points`，不会泄漏到其他领域。空队列的份额留在国库，后续研究日
-按当时权重再分配——否则默认 25/25/25/25 会在第一天后把剩余库存全部锁死，必须把某
-一方向拉满才能继续累积。调整权重或入队后会释放已暂缓库存。移出队列不删除已投入进度。
+`deferred_unallocated_points`，不会泄漏到其他领域。空队列拿不到份额：它的分配会按
+仍有队列的领域权重并回去，因此只排一项时，默认 25/25/25/25 也会把当天国库存量全部
+投进这一项。否则空领域会按最大余数拿走最后几个点且永不消耗，进度停在成本之下、
+存量显示为 0。调整权重或入队后会释放已暂缓库存。移出队列不删除已投入进度。
 
 完成节点先进入 pending，并在同一研究日登记稳定 Effect instance。生产调度里
 `effect_runtime`（priority 85）早于 `country_daily`（255），若等到下一个国家激活循环
@@ -302,6 +303,34 @@ Modifier 已经落地；若 instance 仍未 ACK，则在该国家日直接套用
 `run_research_day`，只处理已经 ACK 的 `pending` 激活，不重复消耗科技值或推进研究进度。
 因此单项队列在达到成本后不会因为没有下一项或没有新的入队命令而停留在“研发中”。
 已登记但未 ACK 的 instance 每个国家日会被重新排入 Effect 队列。GM “揭示全部未来科技”只写 discovered bit。
+
+Country ACTIVE（worker 唯一写者）下这条链走 Host peer：`run_research_day` 每个国家日发一条
+`ENSURE_TECHNOLOGY_EFFECT` intent，主线程 peer 适配器把 `technology.<id>` instance 登记到
+**Effect POD**（F8 下同步 `EffectRuntime` 只是回灌目标，往它 upsert 不会让 worker 看到），
+并按 POD 快照里的 fire/ACK 判定 READY。适配器答 PENDING 时该 intent **不再重新入队**：
+`poll_country_worker_intent` 已经把它取走，塞回去会让同一次 pump 的抽干循环把同一个探测
+重复执行到上限，并在持有 `_country_transport_mutex` 的情况下把主线程读快照拖到每帧数十毫秒。
+与之相邻的一个坑（开拓落地结算踩过）：`DCWorldExt::effect_should_run` 在 EFFECT 归 worker 时
+恒为 false，于是 `effect_runtime` 这个 SUS job 整体不跑。但 `dispatch_effect_native_country` /
+`dispatch_effect_native_economy` 是**特意不抑制**的——家族开拓的 CLAIM+SETTLE 事务由 Economy
+挂在同步 `EffectRuntime` 上，不在 worker 的 Effect POD 计划里。适配器留着却没有调用方，等于没修：
+CLAIM 永远送不到 Country、拿不到 ACK，而 `dispatch_native_economy` 又显式跳过尚未拿到 Country
+ACK 的开拓事务，远征就永远停在 `EXPEDITION_SETTLING`。因此 EFFECT 归 worker 时该 job 仍需跑一遍
+**精简通道**：只调这两个适配器加 `ack_effect_native_country`，不跑 `run_effect_daily`、不碰
+Modifier 适配器、不走 `dispatch_transactions` 兜底路径。
+
+Host 侧构造 `CountryPeerIntent` 时，`effect_instance_id` 必须与同步
+`NativeCountryRuntime::make_peer_intent` 用同一条派生式，即
+`((target_handle & 0x00007fffffffffff) << 16) | (technology + 1)`，`effect_generation`
+取 `target_handle >> 32`。若改用每日变化的 `request_id`，每个 worker 日都会新建一个 Effect
+实例，fire ACK 永远无法跨日被观察到：科技一直停在 pending，每天新增一批 intent 反过来拖慢
+worker 与依赖国家日的其它结算（例如开拓落地）。
+
+正确节奏是每个国家日一次探测——当天 Country 以「保留 pending」方式收尾日历（与 peer 拒绝
+共用 `commit_rejected_day`，不重复消耗科技值），次日发新 intent 重试。但这条软提交必须传
+`advance_generation=true`：peer 拒绝冻结 generation 是为了让重试保留身份，而 pending 软提交
+当天的命令与研究进度是真实状态，`country_committed` 与 UI section cache 只在读视图 generation
+变化时才刷新——冻结它会让研究队列面板一直停在命令提交前的画面。
 
 ## 科技值经济
 
@@ -324,6 +353,10 @@ Modifier 已经落地；若 instance 仍未 ACK，则在该国家日直接套用
    `STRUCTURAL_REMOVE_EMPTY` 与商人修复要等到结构提交之后才发生，因此过期 CSR
    巷不是做市商：该市场本周期跳过采购，不扣国库、不把整张经济图打成 FATAL。
 4. 国家现金减少、市场库存减少、当地活商人按人口获得同额现金、国家商品国库增加；
+   Country ACTIVE（unique-writer）时上述国库侧经 Host `RESEARCH_PURCHASE` peer 落地，
+   且 `COMPLETED` 终态只在 Economy 政府采购 continuation 结算时 flush（通用
+   Country/Economy stage flush 跳过）；若 Country plan 仍打开，flush 同时写入
+   `next_state` 与 authority，保证审计/UI 立刻看见扣款与科技值入账；
 5. 剩余库存再进入国内贸易。
 
 采购受每日预算、国库现金、市场库存与队列剩余成本限制，并计入需求 EMA、价格形成及现金/
@@ -443,6 +476,11 @@ section tab；section 切换只由底栏 `CountryActionBar` 驱动。经济 sect
 - `technology_research_runtime_test.gd`
 - `technology_breakthrough_trigger_test.gd`
 - `technology_procurement_runtime_test.gd`
+- `technology_procurement_country_worker_test.gd`
+- `country_late_command_reschedule_test.gd`（UI 时钟落后于 ACTIVE worker 时，研究命令必须顺延执行而不是按 `country_command_day_already_committed` 丢弃）
+- `technology_cheap_node_cost_display_test.gd`（`country_effective_research_cost` 对 `base_cost < 1`
+  取下限 1 缩放单位，因此 `cost_points` 为 0 的节点仍需付费；UI 必须用
+  `cost_points_scaled` 而不是整数除法得到的 `cost_points`，否则会显示成「0% · 还需 0」）
 - `technology_modifier_activation_test.gd`
 - `technology_workspace_smoke_test.gd`
 - `country_runtime_test.gd`

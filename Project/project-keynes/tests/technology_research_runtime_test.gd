@@ -258,19 +258,19 @@ func _expect_equal_weight_progress_accumulates(compiled: Dictionary, profile: Re
 		{"day_index": 1}).get("done", false)))
 	var seasonal := ids.find("tech.maize_garden_horticulture")
 	var day1: Dictionary = facade.research_snapshot(handle)
-	_expect("equal weights consume one quarter without parking empty-domain stock",
-		int(day1.technology_progress[seasonal]) == 2500
-		and int(day1.technology_points_stock) == 7500
+	_expect("equal weights give the only queued domain the whole treasury",
+		int(day1.technology_progress[seasonal]) == 10000
+		and int(day1.technology_points_stock) == 0
 		and int(day1.deferred_unallocated_points) == 0
-		and int(day1.consumed_total) == 2500)
+		and int(day1.consumed_total) == 10000)
 	_expect("equal-weight day 2 commits", bool(ext.run_country_slice(
 		{"day_index": 2}).get("done", false)))
 	var day2: Dictionary = facade.research_snapshot(handle)
-	_expect("queued domain keeps accumulating from remaining treasury",
-		int(day2.technology_progress[seasonal]) == 4375
-		and int(day2.technology_points_stock) == 5625
+	_expect("empty treasury does not add further progress",
+		int(day2.technology_progress[seasonal]) == 10000
+		and int(day2.technology_points_stock) == 0
 		and int(day2.deferred_unallocated_points) == 0
-		and int(day2.consumed_total) == 4375)
+		and int(day2.consumed_total) == 10000)
 
 
 func _expect_elevated_cost_progress_roundtrip(compiled: Dictionary, profile: Resource,

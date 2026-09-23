@@ -179,6 +179,16 @@ CountryResearchAllocation country_allocate_research_points(
     const std::array<int32_t, COUNTRY_RESEARCH_DOMAIN_COUNT> &weights,
     uint64_t *remainder_iterations = nullptr) noexcept;
 
+// Empty queues cannot spend. Move their shares onto domains that have a
+// queue, in proportion to those domains' weights, so a single queued
+// technology receives the whole treasury instead of leaving it stranded on
+// idle domains. A non-empty queue that later cannot advance still keeps its
+// own share for the deferred-stock path.
+void country_redirect_idle_research_shares(
+    CountryResearchAllocation &allocation,
+    const std::array<int32_t, COUNTRY_RESEARCH_DOMAIN_COUNT> &weights,
+    const std::array<int32_t, COUNTRY_RESEARCH_DOMAIN_COUNT> &queue_lengths) noexcept;
+
 struct CountryResearchProgress {
     bool valid = false;
     int64_t effective_cost = 0;

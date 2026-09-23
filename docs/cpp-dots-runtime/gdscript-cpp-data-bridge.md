@@ -83,17 +83,22 @@ worker store 的 vector 引用交给 GDScript。C++ host 保存 immutable Countr
 ```text
 after_generation == 0              -> bootstrap view，changed_cells/owners 为初始化 patch
 after_generation == patch_base     -> 连续代次，返回稀疏 owner patch
-after_generation != patch_base     -> full_snapshot_required=true，返回 full_cell_owners
+after_generation != patch_base
+  && after < territory_generation  -> full_snapshot_required=true，返回 full_cell_owners
+                                     （仅当消费者漏掉过真正的领土代次）
 after_generation == generation     -> available=false，重复游标不重放
 ```
 
 MapGenerator.get_country_worker_read_view 只做 facade 转发。WorldRuntimeHost 仅在实际 granted
-Country bit（authoritative_domain_mask & 0x004）存在时消费：连续代次直接写
-MapData.country_slot_arr 的变更 cell；跳代只接受形状等于当前地图 cell 数的 full snapshot。
-非法 cell、patch 长度不等或 full snapshot 形状错误会拒绝本次发布并保留原 MapData。
-消费后调用 CountryFacade.dispatch_worker_committed_view，沿用既有 country_committed 信号
-驱动视野、国界和 UI，不新增第二套通知。首次 bootstrap/restore 允许全量，稳态研究、rename
-和税务变化即使 generation 增加也不会制造 territory cell patch。
+Country bit（authoritative_domain_mask & 0x004）存在时于 `_process` 消费（ACTIVE 日回调
+只做 capture + peer，避免把发布扇出计入 `day_cost_ema`）：连续代次直接写
+MapData.country_slot_arr 的变更 cell；跳代只接受形状等于当前地图 cell 数的 full snapshot
+以修复 MapData。广播 `country_committed` 时 `changed_cells` 必须是相对消费前
+`country_slot_arr` 的真实 diff 计数——full snapshot 也如此，禁止用 `cell_count`
+触发整图视野/国界。非法 cell、patch 长度不等或 full snapshot 形状错误会拒绝本次发布
+并保留原 MapData。消费后调用 CountryFacade.dispatch_worker_committed_view，沿用既有
+country_committed 信号驱动视野、国界和 UI，不新增第二套通知。首次 bootstrap/restore
+允许全量，稳态研究、rename 和税务变化即使 generation 增加也不会制造 territory cell patch。
 
 ### Country worker command receipt（2026-09-09）
 

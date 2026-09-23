@@ -1,5 +1,82 @@
 # 原生阶层与本地市场运行时（Market V2 / Price V6）
 
+## 2026-09-22 Country asset backpressure 与 fatal 取证
+
+### 唯一的 pending reason 集合
+
+`runtime_country_asset_pending_reason()`（`runtime_pod_protocol.h`）是 Country/Economy
+资产 backpressure 原因的**单一定义**。此前同一份字符串列表在五处各抄一遍
+（`economy_runtime.cpp` ×2、`economy_runtime_epoch.cpp`、`native_simulation_host.cpp` ×2），
+新增一个原因就要改五处，漏一处就变成生产停机。
+
+集合成员：
+
+```text
+country_economy_asset_host_pending
+country_economy_asset_results_pending
+country_economy_asset_rejection_retry_pending
+country_economy_asset_completion_retry_pending
+country_economy_fiscal_terminal_retry_pending
+country_economy_asset_country_plan_pending   ← 2026-09-22 新增
+```
+
+共同语义：**请求要么还没分配、要么已被原样重新入队，没有任何 store 被改动**，调用方必须
+yield 并在后续 pulse 重试。把其中任何一个当成 fatal，都会留下半开 epoch。
+
+注意 `country_economy_fiscal_rejection_retry_pending` /
+`country_economy_fiscal_completion_retry_pending` 目前**不在**集合里（历史如此，未验证过
+改动影响）。它们看上去是同一类 backpressure，纳入前需要单独回归。
+
+### cohort cash 的 plan 窗口
+
+`prepare_worker_cohort_cash()` 的拒绝按类分开：
+
+| 条件 | reason | 语义 |
+| --- | --- | --- |
+| 非 worker 线程 / COUNTRY 未 worker 权威 / operation 不是 CASH_TO·FROM_COHORT | `country_worker_cohort_cash_boundary_invalid` | 契约违反，fatal |
+| `_country_pod_plan_active` | `country_economy_asset_country_plan_pending` | 时序窗口，park 重试 |
+
+`_country_pod_plan_active` 为真是 Country continuation 的**正常**形态：
+`execute_country_worker_stage()` 在 `country_economy_asset_results_pending` 等出口保留
+plan 不 discard，下个 pulse 从 pending 检查继续。它不是 flag 泄漏，不要加 RAII guard 去
+"修"它 —— 那会导致重复 plan_day。
+
+### 游标 drain 的 park 语义
+
+`LEDGER_APPLY` 与 `STRUCTURAL_COMMIT` 在 StageOps 与 compact 两条路径上都是游标驱动
+（`_command_cursor` / `_structural_cursor`）。命中 pending reason 时：
+
+- 不推进游标 → 同一条命令下个 pulse 原样重放，不需要新的 continuation 状态。
+- 不调用 `fail()`，不把 `EffectCommandResult` 标记为失败。
+- 调 `park_on_country_asset_pending()`：它先 `service_country_economy_asset_peer(64)`
+  让 Country 的终态继续落地（否则 Economy 等 Country 关窗口、Country 等 Economy 落终态，
+  互等），再写 `_executed_substage`。
+- compact 路径额外置 `country_asset_window_pending`，让外层 stage 循环整片 break 并在
+  `out` 里给出 `pending_input=true` + `yield_reason=country_economy_asset_country_plan_pending`；
+  否则 `command_range_incomplete → continue` 会在同一个 slice 里反复重放到预算耗尽。
+
+### fatal 现场与 audit_incomplete
+
+`fail()` 现在先 `capture_fatal_context()`，`report()` / `compact_report()` 以
+`fatal_context` 字典暴露：`stage`、`executed_stage`、`executed_substage`、
+`command_cursor`、`structural_cursor`、`command_opcode`、`target_handle`、
+`subject_handle`、`amount`、`d7_operation_gate_mask`、
+`country_sync_writes_forbidden`、`country_worker_authoritative`。
+命令 opcode 与 handle 直接从停在出错位置的游标反查，不需要在每个调用方埋面包屑。
+
+守恒三项改为只在**审计真的跑过**时才报：
+
+- 新增 `_closing_totals_valid`：epoch 打开时置 false，`PublishPhase::VERIFY` 置 true。
+- `report()` 计算 `audit_incomplete = !_epoch_active && !_closing_totals_valid`，
+  并给出 `audit_incomplete_reason`（`epoch_aborted_before_closing_audit` /
+  `closing_audit_not_run_this_epoch`）。
+- `audit_incomplete` 为真时 `population_error / money_error / goods_error` 一律报 0。
+
+原因：`fail()` 会把 `_epoch_active` 置 false，而这三项原先只按 `!_epoch_active` 计算。
+半开 epoch 里 mint 已入账、closing 还是上个 epoch 的快照，差值恰好等于本 epoch 的 mint。
+day 2744 那次 `money_error=-639200` 精确等于当天 `bullion_money_issued`，于是排查方向被
+带到一个不存在的守恒缺陷上。
+
 ## Fiscal reserve 跨 slice continuation（K2-B 部分完成）
 
 财政 reserve 现在由两个明确阶段组成：`prepare_fiscal_budgets()` 一次性构造并冻结
@@ -105,8 +182,9 @@ research purchase 已接入统一 typed transaction state machine。政府采购
 prepare/commit、市场扣货、商人入账、withdrawal EMA 和 Country applied ACK；不再调用
 `economy_purchase_research_points()` 合成兼容入口。`GOVERNMENT_RESEARCH_PROCUREMENT`
 阶段的候选列表、预算、剩余需求和 cursor 保存于 epoch continuation，窗口未完成时不会
-推进到 `TRADE_DISPATCH`。专项证据为 `technology_procurement_runtime_test.gd`：**PASS**，
-以及 `runtime_country_economy_transaction_test.gd`：**43 checks, 0 failures**。
+推进到 `TRADE_DISPATCH`。专项证据为 `technology_procurement_runtime_test.gd` 与
+`technology_procurement_country_worker_test.gd`，以及
+`runtime_country_economy_transaction_test.gd`：**43 checks, 0 failures**。
 财政 reserve/return/collect 已由 `coordinate_country_fiscal_transaction()` 驱动；
 construction/canal treasury material/cash 已由 `coordinate_country_treasury_spend()` 统一
 完成 Country 多商品扣款、market 扣货、merchant 分账与 peer ACK，调用方不再重复应用
@@ -114,10 +192,25 @@ market/merchant 副作用。上述 coordinator 仍是同步 Economy stage 内的
 transport 已有内存协议和 D7T1 journal，M1 fiscal 的 Economy-owned peer reservation/apply
 journal 与 PKEC v52 restore 已完成；cohort/market/research/treasury 的跨帧 continuation、
 restore 后 reservation reconciliation 和正式 per-operation gate 尚未完成。
-当前 M1 只开放 `fiscal_reserve`、`fiscal_return`、`fiscal_collect`；research/cohort/
-market/treasury 在 Country worker 唯一写者模式下返回明确的
-`country_economy_operation_gate_closed`，不会静默标记成功或切换第二个 Country writer。
-Country `0x806` ACTIVE 已经放行，但 Economy 不在 ACTIVE mask。
+当前 M1 财政三件套（`fiscal_reserve` / `fiscal_return` / `fiscal_collect`）与
+`research_purchase` 在 Country worker 唯一写者模式下经 Host peer 完成：财政走既有
+reservation/settlement continuation；政府采购在 `government_research_procurement`
+内用 `pending_request_id` 跨 pulse 入队/准备/终态。`COMPLETED` 的 `RESEARCH_PURCHASE`
+不得由 Country day-start / Economy stage-end 的通用 `flush_country_economy_asset_commits`
+提前扣国库；否则开盘快照已含扣款、商人入账落到下一 epoch，会打出
+`money_conservation_failed`（正 money_error）与负 `goods_error`。终态后由政府采购
+continuation 在同一 advance 内：`finish_worker_country_asset(request_id)` 或
+`flush_country_economy_asset_commits(error, settle_request_id)` +
+`publish_country_worker_snapshot` 落地国库扣款/科技值，再完成市场扣货与商人入账。
+若当时 Country `plan_active`，flush 必须同时写入 `plan.next_state` 与 authority
+（不 bump generation），否则 publish 仍读到未扣款基线、UI 科技值停在开局库存、
+商人入账后守恒失败。拒绝/故障终态仍由通用 flush 立即退役。Country ACTIVE 时主线程图会打开
+`RESEARCH_PURCHASE` 门（Economy ACTIVE 仍
+`open_all_d7_operation_gates`）。Enqueue 会唤醒 Country peer，便于同日 prepare。StageOps 把
+`country_research_peer_results` 当作同日回压，不写入 epoch fatal；否则
+`commit_epoch` 会以 `economy_pod_fatal` 停钟，并把国家读视图退回交接前的同步存档。
+cohort/market/treasury 的跨帧 continuation 与 operation gate 验收仍未完成；未开放的
+operation 继续显式返回 `country_economy_operation_gate_closed`。
 
 ## 2026-09-03 Incumbent 扩容使用揭示单位经济
 
@@ -597,6 +690,10 @@ hash 索引；既有排序前缀仍二分查找，新组不再被每一条待建
 冻结国家快照同时烘焙 country-major 建筑可用位与升序 building-type CSR。`building_available()`
 只要求建筑的 direct/required 科技以及投入/产出/资源依赖组；施工材料组（kind 1）不进入开工门。
 新建造仍通过 `good_market_available()` 与 `plan_construction_materials()` 选择已解锁材料。
+Country worker ACTIVE 时，epoch 外的 live `building_available(..., false)`（建筑检视
+`building_technology_available`）经 `NativeCountryRuntime::has_technology` 钉住同一份
+`country_asset_snapshot`，与 `capture_country_epoch` 一致，避免同步 facade 停更后把已掌握
+科技误判为技术停用。
 在 ACTIVE epoch 内走 O(1) 稠密位查询，投资目录直接遍历该国 CSR；两者均为 transient cache，
 不改变 catalog 顺序、PKEC v19 或 state hash。`building_commit.investment` 与普通建筑图分开使用
 默认 96-cell batch，report 公开 `investment_cells_per_slice`；profile 为 0 时自动采用 96，正值

@@ -1275,19 +1275,33 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
             float base_moisture = read_or(input.cell_base_moisture, i,
                                           read_or(input.cell_moisture, i, 0.0f));
             base_moisture = climate_formula::clamp01(base_moisture);
-            float moisture_target = base_moisture;
+            const float abs_lat = std::fabs(ny * 2.0f - 1.0f);
+            float lat_t = (abs_lat - 0.18f) / 0.64f;
+            if (lat_t < 0.0f) lat_t = 0.0f;
+            else if (lat_t > 1.0f) lat_t = 1.0f;
+            const float lat_w = lat_t * lat_t * (3.0f - 2.0f * lat_t);
+            const float season_amp = is_water ? (0.08f + 0.50f * lat_w)
+                                              : (0.12f + 0.36f * lat_w);
+            const float season_term = (is_water ? season_amp : -season_amp) * deviation;
+            float synoptic = 0.0f;
+            if (input.cell_weather_vapor.size() == cells &&
+                catalog.runtime_moisture_weather_vapor_weight > 0.0f) {
+                const float vapor = climate_formula::clamp(
+                    input.cell_weather_vapor[i], 0.0f, 1.0f);
+                synoptic += (vapor - base_moisture * 0.15f) *
+                    catalog.runtime_moisture_weather_vapor_weight;
+            }
+            if (input.cell_weather_precip.size() == cells &&
+                catalog.runtime_moisture_precip_weight > 0.0f) {
+                const float precip = climate_formula::clamp(
+                    input.cell_weather_precip[i], 0.0f, 1.0f);
+                synoptic += (precip - 0.04f) *
+                    catalog.runtime_moisture_precip_weight * 3.5f;
+            }
+            const float synoptic_cap = is_water ? 0.12f : 0.28f;
+            synoptic = climate_formula::clamp(synoptic, -synoptic_cap, synoptic_cap);
+            float moisture_target = base_moisture + season_term + synoptic;
             if (!is_water) {
-                if (input.cell_weather_vapor.size() == cells) {
-                    const float vapor = climate_formula::clamp(
-                        input.cell_weather_vapor[i], 0.0f, 1.0f);
-                    moisture_target += (vapor - base_moisture * 0.15f) *
-                        catalog.runtime_moisture_weather_vapor_weight;
-                }
-                if (input.cell_weather_precip.size() == cells) {
-                    moisture_target += climate_formula::clamp(
-                        input.cell_weather_precip[i], 0.0f, 1.0f) *
-                        catalog.runtime_moisture_precip_weight;
-                }
                 if (input.cell_soil_moisture.size() == cells) {
                     moisture_target += climate_formula::signed_hydrology_contribution(
                         climate_formula::clamp(input.cell_soil_moisture[i], -0.5f, 0.5f),
@@ -1300,8 +1314,8 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
                         catalog.runtime_moisture_water_balance_weight,
                         catalog.runtime_moisture_water_balance_dry_weight);
                 }
-                moisture_target = climate_formula::clamp01(moisture_target);
             }
+            moisture_target = climate_formula::clamp01(moisture_target);
             float previous_moisture = read_or(input.cell_moisture, i,
                                               current.moisture[i]);
             if (!std::isfinite(previous_moisture) || previous_moisture < 0.0f ||
@@ -1310,10 +1324,8 @@ bool RuntimeClimateKernel::plan_day(int64_t day, const RuntimeEnvironmentSnapsho
             }
             const float moisture_alpha = climate_formula::thermal_alpha_eff(
                 catalog.runtime_moisture_base_relax_rate, dt);
-            const float moisture_now = is_water ? moisture_target :
-                climate_formula::clamp01(previous_moisture +
-                    (moisture_target - previous_moisture) *
-                    moisture_alpha);
+            const float moisture_now = climate_formula::clamp01(previous_moisture +
+                (moisture_target - previous_moisture) * moisture_alpha);
 
             float temp_year = read_or(input.cell_temp_baseline_year, i,
                                       0.0f) - static_cast<float>(

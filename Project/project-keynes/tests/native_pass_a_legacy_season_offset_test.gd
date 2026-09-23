@@ -41,28 +41,29 @@ func _run() -> void:
 func _test_runtime_moisture_units() -> void:
 	var base_target: float = _run_moisture_case(0.0, 0.0, 0.0, 0.0)
 	var opposite_season_target: float = _run_moisture_case(0.0, 0.0, 0.0, 0.0, false, 0.0)
-	var equilibrium_vapor: float = _run_moisture_case(base_target * 0.15, 0.0, 0.12, 0.15)
-	var equilibrium_vapor_threaded: float = _run_moisture_case(base_target * 0.15, 0.0, 0.12, 0.15, true)
-	var equilibrium_vapor_async: float = _run_async_moisture_case(base_target * 0.15)
-	var wet_soil: float = _run_moisture_case(base_target * 0.15, 0.20, 0.12, 0.15)
-	var dry_soil: float = _run_moisture_case(base_target * 0.15, -0.20, 0.12, 0.15)
-	var calibrated_wet_soil: float = _run_moisture_case(base_target * 0.15, 0.20, 0.12, 1.20)
+	# Vapor reference is 0.15 * geographic base (0.60), not the seasonally shifted output.
+	var equilibrium_vapor: float = _run_moisture_case(0.09, 0.0, 0.12, 0.15)
+	var equilibrium_vapor_threaded: float = _run_moisture_case(0.09, 0.0, 0.12, 0.15, true)
+	var equilibrium_vapor_async: float = _run_async_moisture_case(0.09)
+	var wet_soil: float = _run_moisture_case(0.09, 0.20, 0.12, 0.15)
+	var dry_soil: float = _run_moisture_case(0.09, -0.20, 0.12, 0.15)
+	var calibrated_wet_soil: float = _run_moisture_case(0.09, 0.20, 0.12, 1.20)
 	var calibrated_wet_soil_threaded: float = _run_moisture_case(
-		base_target * 0.15, 0.20, 0.12, 1.20, true)
+		0.09, 0.20, 0.12, 1.20, true)
 	var calibrated_wet_soil_async: float = _run_async_moisture_case(
-		base_target * 0.15, 0.20, 1.20)
+		0.09, 0.20, 1.20)
 	var asymmetric_wet_hydrology: float = _run_moisture_case(
-		base_target * 0.15, 0.10, 0.12, 1.82, false, 2.0, 2.21, 0.05, 1.04, 1.30)
+		0.09, 0.10, 0.12, 1.82, false, 2.0, 2.21, 0.05, 1.04, 1.30)
 	var asymmetric_dry_hydrology: float = _run_moisture_case(
-		base_target * 0.15, -0.10, 0.12, 1.82, false, 2.0, 2.21, -0.05, 1.04, 1.30)
+		0.09, -0.10, 0.12, 1.82, false, 2.0, 2.21, -0.05, 1.04, 1.30)
 	var asymmetric_dry_hydrology_threaded: float = _run_moisture_case(
-		base_target * 0.15, -0.10, 0.12, 1.82, true, 2.0, 2.21, -0.05, 1.04, 1.30)
+		0.09, -0.10, 0.12, 1.82, true, 2.0, 2.21, -0.05, 1.04, 1.30)
 	var asymmetric_dry_hydrology_async: float = _run_async_moisture_case(
-		base_target * 0.15, -0.10, 1.82, 2.21, -0.05, 1.04, 1.30)
+		0.09, -0.10, 1.82, 2.21, -0.05, 1.04, 1.30)
 	_expect("equilibrium atmospheric vapor does not dry terrain moisture",
 			absf(equilibrium_vapor - base_target) < 0.000001)
-	_expect("insolation season does not directly force terrain moisture",
-			absf(opposite_season_target - base_target) < 0.000001)
+	_expect("subpolar insolation season moves landscape moisture",
+			absf(opposite_season_target - base_target) > 0.05)
 	_expect("threaded pass-A uses the same vapor/soil units",
 			absf(equilibrium_vapor_threaded - equilibrium_vapor) < 0.000001)
 	_expect("async pass-A uses the same vapor/soil units",

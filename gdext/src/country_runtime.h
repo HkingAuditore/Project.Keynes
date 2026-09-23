@@ -300,6 +300,10 @@ public:
     godot::Dictionary capture_reference_checkpoint() const;
     bool capture_core_checkpoint(CountryCoreCheckpoint &out,
                                  std::string &error) const;
+    // Checkpoint of the worker-committed read replica, without the stale
+    // main-thread command/peer state the replica was copied from.
+    bool capture_worker_committed_checkpoint(CountryCoreCheckpoint &out,
+                                             std::string &error) const;
     bool restore_core_checkpoint(const CountryCoreCheckpoint &checkpoint,
                                  std::string &error);
 
@@ -340,12 +344,17 @@ public:
     // resolve strings. Frozen cycles use copy_economy_snapshot(); direct
     // transfers validate generation-bearing handles.
     bool copy_economy_snapshot(EconomySnapshot &out) const;
+    // When Country is worker-authoritative, pins country_asset_snapshot() the
+    // same way copy_economy_snapshot / cash_for_slot do. Sync-store bits stop
+    // advancing after handoff and must not drive Economy live technology gates.
     bool has_technology(int32_t country_slot, int32_t technology_id) const;
     // Native peer runtimes may read this compact fact bitset at their own
     // scheduled boundary.  Research evidence remains Country authority.
     bool has_research_signal(int32_t country_slot, int32_t signal_id) const;
     int32_t research_signal_evidence_count(int32_t country_slot,
                                            int32_t signal_id) const;
+    // Worker-authoritative reads pin cell_country_slot from the committed
+    // Country asset snapshot; otherwise territory ownership drifts from UI.
     int32_t country_slot_for_cell(int32_t cell) const;
     int32_t starting_country_slot() const { return _starting_country_slot; }
     int64_t country_handle_for_cell(int32_t cell) const;

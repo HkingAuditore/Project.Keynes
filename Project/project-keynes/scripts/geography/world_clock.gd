@@ -115,6 +115,7 @@ var _last_full_proc_ms: float = 0.0
 # 上限，使有效吞吐随成本连续下降，而不是在"超预算"处跳到固定倍速。
 var _day_cost_ms_ema: float = 0.0
 var _last_throughput_cap: float = 0.0
+var _last_advanced_days: int = 0
 var _rng: RandomNumberGenerator
 var _simulation_backpressure_sources: Dictionary = {}
 const _DAY_COST_EMA_ALPHA: float = 0.2
@@ -242,6 +243,7 @@ func _process(delta: float) -> void:
 	# 日循环花了多久。和 render-profile 的 sus_frame_avg(~45ms) 对比即可定位：
 	#   loop_ms ≈ proc_ms ≪ 45ms  → 35ms 在 _process 之外（渲染/present GPU 同步）。
 	#   loop_ms ≈ 45ms            → 日循环本身超预算（budget 失效或单日 >预算）。
+	_last_advanced_days = ran
 	_last_loop_ms = float(Time.get_ticks_usec() - t0_us) / 1000.0
 	# 单日成本 EMA 的样本 = 本帧模拟总墙钟（含 continuation pulse）/ 实际推进天数。
 	# 只在真正推进过日子的帧采样；纯 barrier 帧没有可归属的天数。
@@ -576,3 +578,7 @@ func get_day_cost_ms_ema() -> float:
 
 func get_throughput_cap_days_per_frame() -> float:
 	return _last_throughput_cap
+
+
+func get_last_advanced_days() -> int:
+	return _last_advanced_days

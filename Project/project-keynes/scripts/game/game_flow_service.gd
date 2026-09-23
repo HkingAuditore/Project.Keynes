@@ -10,11 +10,22 @@ var _session: Dictionary = {}
 
 
 func _ready() -> void:
-	if OS.get_environment("PK_GAME_SAVE_ROUNDTRIP_TEST") == "1":
-		var runner_script = load("res://tests/game_save_roundtrip_test.gd")
-		if runner_script != null:
-			var runner: Node = runner_script.new() as Node
-			get_tree().root.call_deferred("add_child", runner)
+	_attach_headless_runner("PK_GAME_SAVE_ROUNDTRIP_TEST",
+		"res://tests/game_save_roundtrip_test.gd")
+	# 存档回放复现入口。见 tests/headless_save_replay.gd 与
+	# tools/runtime/Invoke-SaveReplay.ps1。
+	_attach_headless_runner("PK_SAVE_REPLAY",
+		"res://tests/headless_save_replay.gd")
+
+
+func _attach_headless_runner(env_name: String, script_path: String) -> void:
+	if OS.get_environment(env_name) != "1":
+		return
+	var runner_script = load(script_path)
+	if runner_script == null:
+		push_error("[game-flow] headless runner missing: %s" % script_path)
+		return
+	get_tree().root.call_deferred("add_child", runner_script.new() as Node)
 
 
 func begin_new_game(config: NewGameConfig) -> Dictionary:

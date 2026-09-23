@@ -269,6 +269,113 @@ structured success contract as the other providers (`ok=true`,
 `fallback=false`) so the coordinator can distinguish a restored journal from
 an unavailable fallback.
 
+## Headless save replay and the save-dir override (2026-09-22)
+
+`tests/headless_save_replay.gd` loads a slot through the production
+`GameFlow.begin_load_game` path and advances the authoritative clock for N days
+headlessly. It is the reproduction entry point for player-reported stops: hand
+over a save, get a forensics JSON. Drive it with
+`tools/runtime/Invoke-SaveReplay.ps1`; see the "存档复现入口" section of
+`authority-migration.md` for the environment variables.
+
+`SaveRepository._init()` honours `PK_SAVE_DIR` **in debug builds only**. The
+wrapper uses it to stage an arbitrary `.pksv` under a scratch directory as one of
+the four known slot ids, so replaying a save never overwrites the player's own
+slots. Exported release builds always use `user://saves`.
+
+## Save/load under worker authority (fixed 2026-09-23)
+
+Saving and loading a game whose domains are owned by the background worker was
+broken end to end. The chain below was fixed in one pass; each link was hidden
+by the previous one, so a fix that stops early simply exposes the next.
+`game_save_roundtrip_test.gd` now covers the whole chain: it saves before the
+first settlement (must be rejected cleanly), enables a 10% income tax, advances
+20 days so Country state really changes on the worker, saves, loads, compares
+the capital's country summary and tax policy, and runs a full settlement cycle
+after the load.
+
+**Save side**
+
+- A save before the first Economy commit has no restorable committed ledger.
+  It used to fault the worker inside `build_save_bundle`; now `_can_save()`
+  returns `save_requires_first_settlement` and the host records the same reason
+  without faulting.
+- `build_save_bundle` failures used to be invisible: `set_fault()` moved the
+  worker to FAULTED, then the save admission block overwrote that with
+  PAUSED/RUNNING, so the worker looked alive while owning nothing and the
+  coordinator polled 1800 frames into `runtime_save_timeout`. The admission block
+  now keeps FAULTED, publishes `_save_failed_request_id` plus a dedicated
+  `_save_failure_reason`, and `poll_runtime_save` returns
+  `{ok:false, code:runtime_save_failed, reason}` immediately.
+- **The saved Country was the day-0 Country.** Under worker authority the
+  main-thread `NativeCountryRuntime` is never written after bootstrap (the read
+  view only repairs MapData territory), and `request_runtime_save` captured the
+  checkpoint from it. Every territory, research, and treasury change made on the
+  worker was lost on save. The checkpoint now comes from
+  `country_query_runtime()` via `capture_worker_committed_checkpoint()`, which
+  drops the stale command/peer state the replica was copied from.
+  `build_save_bundle` rejects the save with `save_country_checkpoint_day_mismatch`
+  if the checkpoint day ever disagrees with the bundle day.
+- Both ECP2 captures (the PKSR bundle and the PKSV `ecp2` provider section) now
+  stamp the Economy header with that checkpoint's generation and business hash
+  (`set_save_country_identity`), so restore's Country binding check matches.
+- Worker-routed fiscal/research requests never set `peer_generation`, so every
+  completed fiscal record failed PKEC restore. `block_or_enqueue_country_worker_asset`
+  now stamps `_committed_generation`, as the sync cohort-cash path always did.
+- `SAVE_SECTION_D7_PEER_EXT` (schema 53) had no ECP2 domain mapping and fell
+  outside the restore section loop, so it was dropped on capture while the header
+  still counted its rows. It now maps to the FISCAL domain and the loop runs to it.
+- ENSO basin state restores lazily; `capture_climate_modes_state` now exports the
+  pending copy until it is applied, so a save made right after a load keeps it.
+
+**Load side**
+
+- PKSR's IDP1 ideology section was dry-run against a catalog that only exists
+  after PKCN. `restore_bundle` still checks checksum and marker, and defers the
+  catalog-dependent check to worker start (which faults before any day on
+  failure, with `ideology_pod_catalog_missing_at_worker_start`).
+- The CPD2 checkpoint restore path never published `cell_country_slot`, so the
+  player-country binding failed. Both restore paths now end in
+  `publish_restored_country_territory()`.
+- PKCN restore left the per-country Economy asset reservation lanes at the empty
+  size `reset()` gave them; the first fiscal commit after a load wrote through a
+  null base (0xC0000005 in `commit_economy_asset_transaction`).
+  `decode_save_in_place` now sizes them.
+- The fiscal peer record upper-bound check ran before the Country epoch it
+  refers to was captured, rejecting every save with a completed tax transaction;
+  it moved to `end_restore`.
+- The ECP2 rollback backup reused the player-save gate "Country must be idle",
+  which a restored Country with due commands fails; `ECP2_CAPTURE_ROLLBACK_BACKUP`
+  skips only that gate.
+- The first environment input after a load restarted at generation 1 below the
+  restored Climate authority (`climate_input_generation_not_monotonic`): the host
+  now publishes the saved environment generation in `restore_bundle`, and
+  `map_generator.gd` reads the key the thread report actually exports
+  (`simulation_environment_generation`; the old key never existed).
+- A restore start is granted its requested mask immediately. Waiting for the
+  first committed day left Economy routing (which reads the grant) on the sync
+  Country peer — on the worker thread — for that day. `sync_runtime_domain_ownership()`
+  mirrors the grant into the main-thread peers right after start and on every
+  pulse, including when the runtime graph is not configured.
+- The StageOps day machine reset to `Prelude` on every new day, which sent a
+  fiscal continuation that had soft-completed across a day into `PlanEpoch`
+  against its still-open epoch (`economy_pod_epoch_busy`). An open epoch now keeps
+  advancing.
+
+Several restore checks that combined many conditions under one reason now name
+the failing rule (`save_catalog_scale_or_capacity_mismatch:<field>`,
+`save_fiscal_peer_record_invalid:<field>`,
+`save_fiscal_peer_completed_record_invalid:<field>`,
+`restore_section_incomplete first=<section>`,
+`ecp2_owned_state_capture_invalid:<rule>`).
+
+Saves written before the 2026-09-20 content change are rejected with
+`save_catalog_scale_or_capacity_mismatch:catalog_hash`; that is a genuine catalog
+incompatibility, not a restore defect.
+
+`game_save_roundtrip_test.gd` writes `manual_1..3`, so it refuses to run against
+`user://saves`: run it with `PK_SAVE_DIR` pointing at a scratch directory.
+
 ## Validation
 
 Minimum gates are configuration and repository tests; deterministic multi-start

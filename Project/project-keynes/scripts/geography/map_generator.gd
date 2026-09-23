@@ -2318,9 +2318,14 @@ func capture_runtime_inputs_for_worker(day: int = -1, phase: float = -1.0) -> Di
 	if _data_core_world_ext != null and _data_core_world_ext.has_method(
 			"get_runtime_thread_report"):
 		thread_report = get_runtime_thread_report()
+		# The thread report names this key simulation_environment_generation.
+		# Reading the bare name always returned 0, so the counter never synced
+		# with the host; after a load it restarted at 1 below the restored
+		# Climate authority's last input generation.
 		_runtime_input_generation = maxi(
 			_runtime_input_generation,
-			int(thread_report.get("environment_generation", 0)))
+			int(thread_report.get("simulation_environment_generation",
+				thread_report.get("environment_generation", 0))))
 	var next_generation := maxi(1, _runtime_input_generation + 1)
 	var catalog_hash := _runtime_climate_catalog_hash_for_map(map)
 	var topology_generation := _runtime_climate_topology_generation_for_map(map)
@@ -4556,10 +4561,14 @@ func _build_runtime_climate_stage_knobs(map: MapData, day: int,
 			physics["ocean_period_days"] = maxi(1, int(cp_now.ocean_currents_period_ticks))
 			physics["world_seed"] = _last_seed
 			out["physics_knobs"] = physics
-	# weather 轮的外层节拍。stage_b 的三个子 stride 以"第几轮 weather"计数，所以
-	# 这一层不到期就整份不发，与生产"非到期 tick 不嵌入 stage_b_knobs"一致。
+	# stage_b（反照率 / 植被 / 反馈）仍按主线程 stagger 的 weather 轮计数，
+	# 避免改成每日嵌入后把 10/20 日的子 stride 放大成每个气候日。
+	# 水汽场和 distribute 不再跟着这道门：ACTIVE 下主线程 weather_refresh 已被
+	# 抑制，worker 是 vapor/precip/湿度目标的唯一写者。按 stagger（默认 8 日）
+	# 抽稀会让 pass A 连续多日对着一份冻住的降水目标松弛，陆地湿度日变化掉到
+	# 动态 LUT 一档以下。
 	var stride: int = _native_daily_weather_cadence_stride(cp_now)
-	var due: bool = true
+	var stage_b_due: bool = true
 	if stride > 1:
 		if _runtime_climate_worker_weather_embed_day <= -1000000:
 			# 冷启动首跑日与 legacy weather bucket 对齐（StridePolicy 在
@@ -4571,21 +4580,20 @@ func _build_runtime_climate_stage_knobs(map: MapData, day: int,
 						if cp_now.get("sim_stagger_weather_phase") != null else 4
 				phase = posmod(raw, stride)
 			var first_due_day: int = (stride - phase) if phase > 0 else stride
-			due = day >= first_due_day
+			stage_b_due = day >= first_due_day
 		else:
-			due = (day - _runtime_climate_worker_weather_embed_day) >= stride
-	if not due:
-		return out
-	_runtime_climate_worker_weather_embed_day = day
-	_runtime_climate_worker_stage_b_call_index += 1
-	out["weather_round"] = true
-	# 复用生产那份组装：节拍与标量口径必须与生产逐位一致，重写一份就等于在
-	# worker 侧引入第二套 stride 语义。elapsed_days_per_call 取 weather 轮间隔，
-	# 因为这套计数器每 stride 天才推进一次。
-	var stage_b: Dictionary = _build_native_daily_stage_b_knobs(
-		map, cp_now, _runtime_climate_worker_stage_b_call_index, float(stride))
-	if not stage_b.is_empty():
-		out["stage_b"] = stage_b
+			stage_b_due = (day - _runtime_climate_worker_weather_embed_day) >= stride
+	if stage_b_due:
+		_runtime_climate_worker_weather_embed_day = day
+		_runtime_climate_worker_stage_b_call_index += 1
+		out["weather_round"] = true
+		# 复用生产那份组装：节拍与标量口径必须与生产逐位一致，重写一份就等于在
+		# worker 侧引入第二套 stride 语义。elapsed_days_per_call 取 weather 轮间隔，
+		# 因为这套计数器每 stride 天才推进一次。
+		var stage_b: Dictionary = _build_native_daily_stage_b_knobs(
+			map, cp_now, _runtime_climate_worker_stage_b_call_index, float(stride))
+		if not stage_b.is_empty():
+			out["stage_b"] = stage_b
 	# distribute 是 stage 11 的后半段，也是 snow_cover / snowpack /
 	# water_balance_30d 的权威写者 —— 权威下它不跑，那三条就恒为 0（sea_ice 与
 	# albedo 都读 snow_cover，所以缺口会往下游传）。
@@ -13053,6 +13061,29 @@ func _consume_feedback_buffers(map: MapData, decay: float) -> void:
 		cell.soil_moisture *= decay
 		cell.vegetation_growth_pressure *= decay
 
+func _moisture_lat_weight(ny: float) -> float:
+	var abs_lat := absf(ny * 2.0 - 1.0)
+	var t := clampf((abs_lat - 0.18) / 0.64, 0.0, 1.0)
+	return t * t * (3.0 - 2.0 * t)
+
+
+## 与 runtime_climate_passes.cpp pass A 同一条湿度目标。
+## 陆地：暖季蒸发变干。海洋：暖季比湿升高。降水按相对 0.04 的偏差进入，并封顶。
+func _seasonal_moisture_target(ny: float, is_water: bool, base_moisture: float, dev_today: float, vapor: float, has_vapor: bool, precip: float, has_precip: bool, vapor_w: float, precip_w: float) -> float:
+	var bm := clampf(base_moisture, 0.0, 1.0)
+	var lat_w := _moisture_lat_weight(ny)
+	var season_amp := (0.08 + 0.50 * lat_w) if is_water else (0.12 + 0.36 * lat_w)
+	var season_term := (season_amp if is_water else -season_amp) * dev_today
+	var synoptic := 0.0
+	if has_vapor and vapor_w > 0.0:
+		synoptic += (clampf(vapor, 0.0, 1.0) - bm * 0.15) * vapor_w
+	if has_precip and precip_w > 0.0:
+		synoptic += (clampf(precip, 0.0, 1.0) - 0.04) * precip_w * 3.5
+	var synoptic_cap := 0.12 if is_water else 0.28
+	synoptic = clampf(synoptic, -synoptic_cap, synoptic_cap)
+	return clampf(bm + season_term + synoptic, 0.0, 1.0)
+
+
 # ─── 逐日连续气候刷新（Orbital Daily Climate）─────────────────────
 # 由 main.gd 的 _on_day_changed 触发，**每日**用连续 season_phase ∈ [0, 4)
 # 推进太阳直射点、日照、昼长、热惯性、风与水汽链条，让玩家在面板上
@@ -13449,28 +13480,22 @@ func _climate_pass_a_legacy(map: MapData, season_phase: float) -> void:
 		if cell_idx >= 0 and cell_idx < map.heat_input_arr.size():
 			map.heat_input_arr[cell_idx] = heat_input
 
-		# —— 2) 当日湿度：只由静态地理基线与水循环状态共同决定 ——
-		var moisture_now: float
-		if _is_water(cell.terrain):
-			moisture_now = cell.base_moisture
-		else:
-			var moisture_target: float = clampf(cell.base_moisture, 0.0, 1.0)
-			if cell_idx >= 0 and cell_idx < map.weather_vapor_arr.size():
-				var vapor: float = clampf(map.weather_vapor_arr[cell_idx], 0.0, 1.0)
-				# weather_vapor is atmospheric water mass (~0.15 * terrain moisture at
-				# equilibrium), not an absolute [0,1] terrain-moisture target.
-				var vapor_reference: float = clampf(cell.base_moisture, 0.0, 1.0) * 0.15
-				moisture_target += (vapor - vapor_reference) * runtime_moisture_vapor_w
-			if cell_idx >= 0 and cell_idx < map.weather_precip_arr.size():
-				moisture_target += clampf(map.weather_precip_arr[cell_idx], 0.0, 1.0) * runtime_moisture_precip_w
+		# —— 2) 当日湿度：地理基底 + 日照季节 + 有封顶的天气偏差 ——
+		var has_vapor := cell_idx >= 0 and cell_idx < map.weather_vapor_arr.size()
+		var has_precip := cell_idx >= 0 and cell_idx < map.weather_precip_arr.size()
+		var vapor_now := map.weather_vapor_arr[cell_idx] if has_vapor else 0.0
+		var precip_now := map.weather_precip_arr[cell_idx] if has_precip else 0.0
+		var cell_is_water := _is_water(cell.terrain)
+		var moisture_target := _seasonal_moisture_target(ny, cell_is_water, cell.base_moisture, dev_today, vapor_now, has_vapor, precip_now, has_precip, runtime_moisture_vapor_w, runtime_moisture_precip_w)
+		if not cell_is_water:
 			if cell_idx >= 0 and cell_idx < map.soil_moisture_arr.size():
-				# soil_moisture is a signed hydrology anomaly in [-0.5, 0.5].
 				var soil_anomaly: float = clampf(map.soil_moisture_arr[cell_idx], -0.5, 0.5)
 				moisture_target += soil_anomaly * (runtime_moisture_soil_dry_w if soil_anomaly < 0.0 else runtime_moisture_soil_w)
 			if cell_idx >= 0 and cell_idx < map.water_balance_30d_arr.size():
 				var wb_anomaly: float = clampf(map.water_balance_30d_arr[cell_idx], -1.0, 1.0)
 				moisture_target += wb_anomaly * (runtime_moisture_wb_dry_w if wb_anomaly < 0.0 else runtime_moisture_wb_w)
-			moisture_now = lerpf(clampf(cell.moisture, 0.0, 1.0), clampf(moisture_target, 0.0, 1.0), runtime_moisture_relax)
+			moisture_target = clampf(moisture_target, 0.0, 1.0)
+		var moisture_now := lerpf(clampf(cell.moisture, 0.0, 1.0), moisture_target, runtime_moisture_relax)
 
 		# —— 3) 当日温度：日照异常生成辐射目标，后续路径再施加热惯性 ——
 		# 物理化（2026-06-16）：季节项按吸收短波因子缩放（持久冰封→低吸收），与 SoA/C++ 同源。
@@ -15033,8 +15058,8 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 		var t_eff: float = temp_now
 		if _last_cfg.enable_ocean_heat_transport:
 			t_eff += ice_delay * maxf(0.0, cell.temperature_transport_anomaly)
-			if cell.upwelling_strength > 0.3:
-				t_eff -= 0.5 * cell.upwelling_strength
+			if cell.upwelling_strength > 0.0:
+				t_eff -= 0.15 * cell.upwelling_strength
 		t_eff = clampf(t_eff, 0.0, 1.0)
 
 		# 邻居传染：若 1 环存在已结冰邻居 → k_freeze ×（1 + contagion）
@@ -15081,6 +15106,7 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 			elif new_frac >= 1.0:
 				new_frac = 1.0
 				if rate > 0.0: break
+		var thermo_frac: float = new_frac
 		if edge_mix_rate > 0.0:
 			var sum_nb_frac: float = 0.0
 			var nb_water_count: int = 0
@@ -15109,6 +15135,15 @@ func _apply_sea_ice_daily_pass(map: MapData, season_phase: float) -> void:
 				if contrast > 0.05 and (prev_frac > 0.001 or avg_nb_frac > 0.001):
 					var mix: float = minf(0.12, edge_mix_rate * maxf(1.0, dt_days))
 					new_frac = clampf(lerpf(new_frac, avg_nb_frac, mix), 0.0, 1.0)
+					# 与 runtime_climate_passes.cpp 同一条：邻居混合只能顺着当天的
+					# 冻结或融化，不能反向拉。否则冰缘形成之后会隔日来回闪。
+					if thermo_frac > prev_frac:
+						new_frac = maxf(new_frac, thermo_frac)
+					elif thermo_frac < prev_frac:
+						new_frac = minf(new_frac, thermo_frac)
+					else:
+						new_frac = clampf(new_frac, prev_frac - 0.02, prev_frac + 0.02)
+					new_frac = clampf(new_frac, 0.0, 1.0)
 		# [perf 2026-05-20] 不再单点 setter，末尾批量 write_f32_indexed
 		_si_indices[i] = i
 		_si_frac[i] = new_frac
@@ -15642,26 +15677,20 @@ func _climate_pass_a_soa(map: MapData, season_phase: float, cp: ClimateProfile) 
 			heat_input_a[i] = heat_input
 
 		var elevation: float = elev_a[i]
-		# 1) 当日湿度
-		var moisture_now: float
-		if is_water_a[i] != 0:
-			moisture_now = base_moist_a[i]
-		else:
-			# 日照不直接缩放湿度；它只通过温度、蒸发、风场、洋流和降水闭环传导。
-			var bm: float = base_moist_a[i]
-			var moisture_target: float = clampf(bm, 0.0, 1.0)
-			if weather_vapor_a.size() == n:
-				var vapor_reference: float = clampf(bm, 0.0, 1.0) * 0.15
-				moisture_target += (clampf(weather_vapor_a[i], 0.0, 1.0) - vapor_reference) * runtime_moisture_vapor_w
-			if weather_precip_a.size() == n:
-				moisture_target += clampf(weather_precip_a[i], 0.0, 1.0) * runtime_moisture_precip_w
+		# 1) 当日湿度：与 _seasonal_moisture_target / C++ pass A 同源。
+		var cell_is_water := is_water_a[i] != 0
+		var has_vapor := weather_vapor_a.size() == n
+		var has_precip := weather_precip_a.size() == n
+		var moisture_target := _seasonal_moisture_target(ny, cell_is_water, base_moist_a[i], dev_today, weather_vapor_a[i] if has_vapor else 0.0, has_vapor, weather_precip_a[i] if has_precip else 0.0, has_precip, runtime_moisture_vapor_w, runtime_moisture_precip_w)
+		if not cell_is_water:
 			if soil_moisture_a.size() == n:
 				var soil_anomaly: float = clampf(soil_moisture_a[i], -0.5, 0.5)
 				moisture_target += soil_anomaly * (runtime_moisture_soil_dry_w if soil_anomaly < 0.0 else runtime_moisture_soil_w)
 			if water_balance_a.size() == n:
 				var wb_anomaly: float = clampf(water_balance_a[i], -1.0, 1.0)
 				moisture_target += wb_anomaly * (runtime_moisture_wb_dry_w if wb_anomaly < 0.0 else runtime_moisture_wb_w)
-			moisture_now = lerpf(clampf(moist_a[i], 0.0, 1.0), clampf(moisture_target, 0.0, 1.0), runtime_moisture_relax_eff)
+			moisture_target = clampf(moisture_target, 0.0, 1.0)
+		var moisture_now := lerpf(clampf(moist_a[i], 0.0, 1.0), moisture_target, runtime_moisture_relax_eff)
 
 		# 2) 当日温度（B1-A：temp_year = temp_baseline_year - alt_penalty(temp_height)，clamp）
 		# alt_penalty 内联双段式，常量走 ALT_PEN_*（同 _alt_penalty / pk_alt_penalty）：

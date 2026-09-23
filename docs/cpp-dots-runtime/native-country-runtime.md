@@ -72,10 +72,11 @@ Host 有 Economy-origin 入队、unique-writer 门禁和 ACTIVE↔SYNC handoff
 Country/Economy 资产事务另有 Host `D7T1` journal：它保存 request/result、队列标记、
 dispatch/commit 幂等标记、terminal result、协议计数和恢复后的新 session rebinding。
 Economy-owned fiscal peer journal 已在 PKEC v52 持久化 terminal result 与 escrow；当前它仍
-不等于 Economy 已完成正式持久 owner。M1 只覆盖 fiscal reserve/return/collect；其它
-operation 的 peer journal、跨帧 continuation 和 operation gate 验收仍未完成。
-未迁移 operation 在
-Country worker 唯一写者模式下必须显式返回 gate-closed，而不是成功完成。
+不等于 Economy 已完成正式持久 owner。M1 覆盖 fiscal reserve/return/collect，以及
+Country ACTIVE 下的 `research_purchase` Host peer（政府采购用 `pending_request_id`
+续跑，终态后 Economy 扣市场/付商人）。cohort/market/treasury 的跨帧 continuation 与
+operation gate 验收仍未完成。未开放的 operation 在 Country worker 唯一写者模式下必须
+显式返回 gate-closed，而不是成功完成。
 
 > v7 adds the authoritative `CellTaxPolicyStore`: `cell_policy_id[cell]` uses
 > `0` for full national inheritance, while identical non-empty policies are
@@ -116,6 +117,10 @@ signal ingress and technology activation both call the shared CountryCore discov
 - 外部句柄为 `(generation << 32) | slot`；存档身份使用 stable ID。
 - `cell_country_slot:int32` 保存单一地块所有者，`-1` 为无主；国家到地块使用 CSR。
 - 科技为 `country × technology` bitset；无主地没有科技。
+- Country worker 权威（ACTIVE grant）之后，同步 facade 的 store 停更。面向 Economy 的
+  live 读口 `has_technology()` / `country_slot_for_cell()` 与 `copy_economy_snapshot()`、
+  `cash_for_slot()` 一样优先钉住 `country_asset_snapshot()`；不得再用停更的同步 bitset
+  判建筑开工/生产门。UI 的 `country_query_runtime()` 仍是独立只读副本路径。
 - 国库物资为 `country × good` 稠密 `i64` 矩阵。现金使用 `MONEY_SCALE=10000`，物资使用
   `GOODS_SCALE=1000`。
 - 税务政策为每国五个默认整数百分比及职业/物资/建筑 dense 覆盖矩阵，`127` 表示继承。

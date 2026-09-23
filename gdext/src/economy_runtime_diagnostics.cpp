@@ -15,6 +15,37 @@ namespace pk {
 using namespace godot;
 using namespace variant_helpers;
 
+// The scene of the failure, captured by fail() before the epoch unwinds.
+// Everything here answers a question the bare reason string cannot: which
+// stage and command were running, which boundary conditions were open, and
+// whether the Country peer was worker-authoritative at that instant.
+Dictionary NativeEconomyRuntime::fatal_context_report() const {
+    Dictionary out;
+    out["valid"] = _fatal_context.valid;
+    if (!_fatal_context.valid) return out;
+    out["reason"] = String::utf8(_fatal_context.reason.c_str());
+    out["stage"] = stage_name(static_cast<Stage>(_fatal_context.stage));
+    out["executed_stage"] =
+        stage_name(static_cast<Stage>(_fatal_context.executed_stage));
+    out["executed_substage"] =
+        String::utf8(_fatal_context.executed_substage.c_str());
+    out["day"] = _fatal_context.day;
+    out["epoch_id"] = _fatal_context.epoch_id;
+    out["command_cursor"] = _fatal_context.command_cursor;
+    out["structural_cursor"] = _fatal_context.structural_cursor;
+    out["command_opcode"] = _fatal_context.command_opcode;
+    out["target_handle"] = _fatal_context.target_handle;
+    out["subject_handle"] = _fatal_context.subject_handle;
+    out["amount"] = _fatal_context.amount;
+    out["d7_operation_gate_mask"] =
+        static_cast<int64_t>(_fatal_context.d7_operation_gate_mask);
+    out["country_sync_writes_forbidden"] =
+        _fatal_context.country_sync_writes_forbidden;
+    out["country_worker_authoritative"] =
+        _fatal_context.country_worker_authoritative;
+    return out;
+}
+
 void NativeEconomyRuntime::write_fiscal_continuation_report(
         Dictionary &out) const {
     out["fiscal_reservation_continuation_active"] =
@@ -564,6 +595,25 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     return bytes;
 }
 
+void NativeEconomyRuntime::copy_tax_sched_diag(
+        TaxSchedDiag &out, char *stage, size_t stage_cap,
+        char *substage, size_t substage_cap) const {
+    out.epoch_fiscal_ms = _epoch_begin_fiscal_ms;
+    out.fiscal_settlement_ms = _fiscal_settlement_ms;
+    out.income_subsidy_ms = _income_subsidy_epoch_ms;
+    out.negative_tax_mask = _epoch_negative_tax_mask;
+    out.active_tax_mask = _epoch_active_tax_mask;
+    const auto copy_text = [](char *dest, size_t cap, const char *text) {
+        if (dest == nullptr || cap == 0) return;
+        if (text == nullptr) text = "";
+        size_t i = 0;
+        for (; i + 1 < cap && text[i] != '\0'; ++i) dest[i] = text[i];
+        for (; i < cap; ++i) dest[i] = '\0';
+    };
+    copy_text(stage, stage_cap, stage_name());
+    copy_text(substage, substage_cap, _executed_substage.c_str());
+}
+
 Dictionary NativeEconomyRuntime::household_slice_breakdown_ms() const {
     static constexpr const char *PHASE_NAMES[HOUSEHOLD_SLICE_PHASE_COUNT] = {
         "settle.prepare",
@@ -627,6 +677,7 @@ Dictionary NativeEconomyRuntime::compact_report() const {
     out["sample_day"] = _sample_day;
     out["current_day"] = _current_day;
     out["commit_day"] = _commit_day;
+    out["last_committed_day"] = _last_committed_day;
     out["age_days"] = age_days;
     out["stage"] = stage_name();
     out["next_stage"] = stage_name();
@@ -998,12 +1049,32 @@ Dictionary NativeEconomyRuntime::compact_report() const {
     out["settlement_phase"] = _rolling_phase;
     out["due_cells"] = _rolling_due_cells;
     out["processed_due_cells"] = _rolling_processed_cells;
+    // Host/graph pulses store compact reports; expose procurement so Country
+    // ACTIVE repurchase regressions can observe durable counters without a
+    // full diagnostic copy every cursor slice.
+    out["government_research_procured_points"] =
+        _government_research_procured_points;
+    out["government_research_procurement_cash"] =
+        _government_research_procurement_cash;
+    out["government_research_procurement_orders"] =
+        _government_research_procurement_orders;
+    out["country_research_procurement_rejections"] =
+        _country_research_procurement_rejections;
+    out["country_research_procurement_transactions"] =
+        _country_research_procurement_transactions;
+    out["country_research_procurement_continuation_active"] =
+        _country_research_procurement_continuation.active;
+    out["country_research_procurement_continuation_phase"] =
+        _country_research_procurement_continuation.phase;
+    out["country_research_procurement_last_error"] =
+        String::utf8(_country_research_procurement_continuation.last_error.c_str());
     out["deferred_cells"] = _rolling_deferred_cells;
     out["settlement_watermark"] = _settlement_watermark;
     out["newest_state_day"] = _settlement_newest_day;
     out["max_state_age_days"] = _settlement_max_age_days;
     out["fatal_reason"] = String(_fatal_reason.c_str());
     out["fatal"] = _fatal;
+    out["fatal_context"] = fatal_context_report();
     out["restore_rejected_reason"] = String(_restore_rejected_reason.c_str());
     out["commit_over_budget"] = _epoch_active && age_days > _commit_lag_budget_days;
     out["commit_due"] = commit_due;
@@ -1049,6 +1120,7 @@ Dictionary NativeEconomyRuntime::report() const {
     out["sample_day"] = _sample_day;
     out["current_day"] = _current_day;
     out["commit_day"] = _commit_day;
+    out["last_committed_day"] = _last_committed_day;
     out["age_days"] = age_days;
     out["stage"] = stage_name();
     out["next_stage"] = stage_name();
@@ -2343,13 +2415,27 @@ Dictionary NativeEconomyRuntime::report() const {
     out["building_resource_capacity_limited_groups"] =
         _building_resource_capacity_limited_groups;
     out["last_building_rejection_reason"] = String(_last_building_rejection_reason.c_str());
-    out["population_error"] = _epoch_active ? 0 : _closing_totals.population - population_expected;
+    // A fatal aborts the epoch before AGGREGATE_PUBLISH recomputes the closing
+    // totals, so the three deltas below would compare this epoch's staged mints
+    // and stock against last epoch's close. Report them as zero and say why:
+    // reading them as a real imbalance sent every previous investigation after
+    // a conservation bug that did not exist.
+    const bool audit_incomplete = !_epoch_active && !_closing_totals_valid;
+    out["audit_incomplete"] = audit_incomplete;
+    out["audit_incomplete_reason"] = audit_incomplete
+        ? String(_fatal ? "epoch_aborted_before_closing_audit"
+                        : "closing_audit_not_run_this_epoch")
+        : String("");
+    const bool conservation_reportable = !_epoch_active && !audit_incomplete;
+    out["population_error"] = conservation_reportable
+        ? _closing_totals.population - population_expected : 0;
     out["opening_population"] = _opening_totals.population;
     out["closing_population"] = _closing_totals.population;
     out["population_expected"] = population_expected;
     out["external_population_delta"] = _external_population_delta;
-    out["money_error"] = _epoch_active ? 0
-        : money_close - (money_open + _explicit_money_mint - _explicit_money_burn);
+    out["money_error"] = conservation_reportable
+        ? money_close - (money_open + _explicit_money_mint - _explicit_money_burn)
+        : 0;
     out["money_open"] = money_open;
     out["money_close"] = money_close;
     out["money_expected"] = money_open + _explicit_money_mint - _explicit_money_burn;
@@ -2372,13 +2458,14 @@ Dictionary NativeEconomyRuntime::report() const {
     out["opening_country_goods"] = _opening_totals.country_goods;
     out["closing_country_goods"] = _closing_totals.country_goods;
     out["goods_expected"] = goods_expected;
-    out["goods_error"] = _epoch_active ? 0
-        : _closing_totals.goods_stock - goods_expected;
+    out["goods_error"] = conservation_reportable
+        ? _closing_totals.goods_stock - goods_expected : 0;
     out["country_research_goods_consumed"] =
         _country_research_goods_consumed;
     out["saturation_count"] = _saturation_count;
     out["fatal_reason"] = String(_fatal_reason.c_str());
     out["fatal"] = _fatal;
+    out["fatal_context"] = fatal_context_report();
     out["restore_rejected_reason"] = String(_restore_rejected_reason.c_str());
     out["commit_lag_budget_days"] = _commit_lag_budget_days;
     out["commit_over_budget"] = _epoch_active && age_days > _commit_lag_budget_days;

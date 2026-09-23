@@ -20,12 +20,16 @@ func _on_world_ready(_map, _world_data, _generator, _view_adapter) -> void:
 	var day := int(_runtime_report().get("simulation_committed_day", -1))
 	var assessment_mode := int(_args.get("assessment_mode", 0))
 	var income_rate := int(_args.get("income_rate", 1000 if assessment_mode == 0 else 1))
+	var consumption_mode := int(_args.get("consumption_mode", 0))
+	var consumption_rate := int(_args.get("consumption_rate", -10000))
+	var subsidy_kind := int(_args.get("subsidy_kind", 1))
 	var measurement_started := Time.get_ticks_usec()
 	var controller = _player.get_node("PlayerController")
 	var mixed_fiscal := _enabled(_args.get("mixed_fiscal", "false"))
+	var subsidy_index := subsidy_kind
 	if mixed_fiscal:
 		var subsidy: Dictionary = controller.request_command(controller.COMMAND_COUNTRY_TAX_SET_DEFAULT,
-			{"kind": 1, "rate_basis_points": -10000, "assessment_mode": 0})
+			{"kind": subsidy_kind, "rate_basis_points": consumption_rate, "assessment_mode": consumption_mode})
 		if not bool(subsidy.get("ok", false)):
 			_fail("consumption subsidy rejected: %s" % subsidy)
 			return
@@ -52,7 +56,7 @@ func _on_world_ready(_map, _world_data, _generator, _view_adapter) -> void:
 			var paid: PackedInt64Array = snapshot.get("subsidy_paid", PackedInt64Array())
 			var taxes: PackedInt64Array = snapshot.get("collected", PackedInt64Array())
 			if reserved.size() == 5 and paid.size() == 5 and taxes.size() == 5 \
-					and reserved[1] > paid[1] and taxes[0] > 0:
+					and reserved[subsidy_index] > paid[subsidy_index] and taxes[0] > 0:
 				mixed_seen = true
 		await get_tree().process_frame
 	if mixed_fiscal and not mixed_seen:
@@ -89,7 +93,7 @@ func _on_world_ready(_map, _world_data, _generator, _view_adapter) -> void:
 		if cohort_subsidy_total <= 0:
 			_fail("income subsidy was not credited to a cohort account: %s" % population)
 			return
-	if mixed_fiscal and (subsidy_paid.size() != 5 or subsidy_paid[1] <= 0):
+	if mixed_fiscal and (subsidy_paid.size() != 5 or subsidy_paid[subsidy_index] <= 0):
 		_fail("consumption subsidy was not paid: %s" % fiscal)
 		return
 	if bool(economy.get("fatal", false)) or int(economy.get("money_error", -1)) != 0 or int(economy.get("goods_error", -1)) != 0 or int(economy.get("population_error", -1)) != 0 or collected.is_empty() or (income_rate > 0 and collected[0] <= 0):
