@@ -2297,6 +2297,85 @@ size_t NativeSimulationHost::environment_ring_pending() const {
     return _environment_ring.size();
 }
 
+uint32_t NativeSimulationHost::day_stall_reason_mask() const {
+    uint32_t mask = _day_stall_reason_mask.load(std::memory_order_acquire);
+    if (!_environment_ring.has_capacity()) {
+        mask |= RUNTIME_DAY_STALL_CLIMATE_CAPACITY;
+    }
+    if (_economy_input_requested_day.load(std::memory_order_acquire) >= 0) {
+        mask |= RUNTIME_DAY_STALL_ECONOMY_INPUT;
+    }
+    if (_country_worker_protocol.pending_intents != 0) {
+        mask |= RUNTIME_DAY_STALL_COUNTRY_PEER;
+    }
+    return mask;
+}
+
+void NativeSimulationHost::note_day_stall(uint32_t bits, int64_t day) {
+    if (bits == 0u) return;
+    _day_stall_reason_mask.fetch_or(bits, std::memory_order_acq_rel);
+    _day_stall_day.store(day, std::memory_order_release);
+    const bool peer_bits =
+        (bits & (RUNTIME_DAY_STALL_COUNTRY_PEER | RUNTIME_DAY_STALL_EFFECT_ACK |
+                 RUNTIME_DAY_STALL_IDEOLOGY_ACK |
+                 RUNTIME_DAY_STALL_FISCAL_PEER)) != 0u;
+    if (!peer_bits) return;
+    uint64_t expected = 0;
+    const uint64_t started = now_us();
+    _day_stall_peer_since_us.compare_exchange_strong(
+        expected, started, std::memory_order_acq_rel, std::memory_order_acquire);
+}
+
+void NativeSimulationHost::clear_day_stall_peer_bits() {
+    constexpr uint32_t kPeerBits =
+        RUNTIME_DAY_STALL_COUNTRY_PEER | RUNTIME_DAY_STALL_EFFECT_ACK |
+        RUNTIME_DAY_STALL_IDEOLOGY_ACK | RUNTIME_DAY_STALL_FISCAL_PEER |
+        RUNTIME_DAY_STALL_ECONOMY_INPUT;
+    uint32_t current = _day_stall_reason_mask.load(std::memory_order_acquire);
+    while ((current & kPeerBits) != 0u) {
+        if (_day_stall_reason_mask.compare_exchange_weak(
+                current, current & ~kPeerBits, std::memory_order_acq_rel,
+                std::memory_order_acquire)) {
+            break;
+        }
+    }
+    _day_stall_peer_since_us.store(0, std::memory_order_release);
+    if ((_day_stall_reason_mask.load(std::memory_order_acquire) &
+         ~RUNTIME_DAY_STALL_CLIMATE_CAPACITY) == 0u) {
+        _day_stall_day.store(-1, std::memory_order_release);
+    }
+}
+
+bool NativeSimulationHost::fault_if_peer_stall_timed_out(
+        int64_t day, const char *fault_code) {
+    // Derived-only stalls (pending_intents without note_day_stall) never armed
+    // the timer — capacity forensics then showed peer_ms=0 forever. Arm here.
+    if (_day_stall_peer_since_us.load(std::memory_order_acquire) == 0u &&
+        (_country_worker_protocol.pending_intents != 0 ||
+         (_day_stall_reason_mask.load(std::memory_order_acquire) &
+          (RUNTIME_DAY_STALL_COUNTRY_PEER | RUNTIME_DAY_STALL_EFFECT_ACK |
+           RUNTIME_DAY_STALL_FISCAL_PEER)) != 0u)) {
+        note_day_stall(RUNTIME_DAY_STALL_COUNTRY_PEER |
+                           RUNTIME_DAY_STALL_EFFECT_ACK,
+                       day);
+    }
+    const uint64_t since =
+        _day_stall_peer_since_us.load(std::memory_order_acquire);
+    if (since == 0u) return false;
+    const uint64_t elapsed_ms = (now_us() - since) / 1000u;
+    if (elapsed_ms < RUNTIME_DAY_STALL_PEER_FAULT_TIMEOUT_MS) return false;
+    const uint32_t mask = day_stall_reason_mask();
+    godot::UtilityFunctions::printerr(godot::vformat(
+        "[day-stall-fault] day=%d stall=0x%x peer_ms=%d code=%s ring=%d",
+        day, static_cast<int64_t>(mask), static_cast<int64_t>(elapsed_ms),
+        godot::String(fault_code != nullptr ? fault_code : "peer_stall_timeout"),
+        static_cast<int64_t>(_environment_ring.size())));
+    set_fault(fault_code != nullptr && fault_code[0] != '\0'
+                  ? fault_code
+                  : "peer_stall_timeout");
+    return true;
+}
+
 bool NativeSimulationHost::publish_environment(
         const RuntimeEnvironmentSnapshot &snapshot, std::string &error) {
     error.clear();
@@ -2716,6 +2795,35 @@ bool NativeSimulationHost::publish_country_worker_snapshot(
     // follows this helper instead of the ordinary commit path, but must cross
     // the same parity boundary or rejected days silently erase D11 evidence.
     record_country_parity_locked(*committed_copy);
+    return true;
+}
+
+bool NativeSimulationHost::publish_country_plan_preview_snapshot(
+        std::string &error) {
+    error.clear();
+    if (!_country_pod_plan_active.load(std::memory_order_acquire) ||
+        _country_pod_plan.preflight_ok == 0) {
+        error = "country_plan_preview_inactive";
+        return false;
+    }
+    std::lock_guard<std::mutex> lock(_country_transport_mutex);
+    const uint64_t previous_view_generation = _country_read_view_generation;
+    uint64_t next_view_generation = previous_view_generation + 1u;
+    if (next_view_generation == 0) next_view_generation = 1;
+    if (next_view_generation < _country_pod_plan.next_state.generation)
+        next_view_generation = _country_pod_plan.next_state.generation;
+    _country_read_view_generation = next_view_generation;
+    _country_read_view_patch_base_generation = previous_view_generation;
+    _country_read_view_dirty_families = RUNTIME_DIRTY_COUNTRY_STATE |
+        (_country_pod_plan.header.dirty_families &
+         (RUNTIME_DIRTY_COUNTRY_STATE | RUNTIME_DIRTY_COUNTRY_VISUAL_ERA));
+    _country_read_view_changed_cells.clear();
+    _country_read_view_changed_owners.clear();
+    auto preview_copy = std::make_shared<const RuntimeCountryPodSnapshot>(
+        _country_pod_plan.next_state);
+    _country_committed_snapshot = preview_copy;
+    std::atomic_store_explicit(&_country_snapshot, preview_copy,
+                               std::memory_order_release);
     return true;
 }
 
@@ -5984,6 +6092,52 @@ bool NativeSimulationHost::effect_pod_instance_fire_acked(
     return true;
 }
 
+uint32_t NativeSimulationHost::resolve_pending_country_effect_peers() {
+    if (!_effect_pod_configured) return 0;
+    uint32_t promoted = 0;
+    {
+        std::lock_guard<std::mutex> lock(_country_transport_mutex);
+        for (auto &entry : _country_worker_results) {
+            CountryPeerResult &result = entry.second;
+            if (result.code != CountryPeerResultCode::PENDING) continue;
+            if (result.opcode != CountryPeerIntentCode::ENSURE_TECHNOLOGY_EFFECT &&
+                result.opcode != CountryPeerIntentCode::NUDGE_TECHNOLOGY_EFFECT) {
+                continue;
+            }
+            const auto intent_it = _country_worker_intents.find(entry.first);
+            if (intent_it == _country_worker_intents.end()) continue;
+            const CountryPeerIntent &intent = intent_it->second;
+            if (intent.effect_instance_id == 0 || intent.effect_generation == 0)
+                continue;
+            if (!effect_pod_instance_fire_acked(
+                    static_cast<int64_t>(intent.effect_instance_id),
+                    intent.effect_generation)) {
+                continue;
+            }
+            result.code = CountryPeerResultCode::READY;
+            result.technology_flags = static_cast<uint8_t>(
+                result.technology_flags | COUNTRY_PEER_EFFECT_EXISTS |
+                COUNTRY_PEER_EFFECT_FIRE_ACKED);
+            _country_worker_terminal_results[entry.first] = result;
+            ++promoted;
+        }
+        if (promoted > 0u) {
+            _country_peer_signal.fetch_add(1, std::memory_order_acq_rel);
+        }
+    }
+    if (promoted > 0u) {
+        _control_cv.notify_all();
+        static int s_promote_left = 16;
+        if (s_promote_left-- > 0) {
+            godot::UtilityFunctions::print(godot::vformat(
+                "[tech-ack-diag/promote] pending→READY count=%d stall=0x%x",
+                static_cast<int64_t>(promoted),
+                static_cast<int64_t>(day_stall_reason_mask())));
+        }
+    }
+    return promoted;
+}
+
 bool NativeSimulationHost::configure_ideology_pod(
         const RuntimeIdeologyPodCatalog &catalog, std::string &error) {
     const RuntimeWorkerState worker_state = state();
@@ -6283,6 +6437,15 @@ NativeSimulationHost::environment_snapshot() const {
 std::shared_ptr<const RuntimeEnvironmentSnapshot>
 NativeSimulationHost::environment_input_for_plan() const {
     if (auto oldest = _environment_ring.peek_oldest()) return oldest;
+    // Under ACTIVE Climate authority the day plan must stay on the FIFO head.
+    // Falling back to latest() after a drain left the ring empty hands the
+    // worker a future Host day, which then mismatches forever and nails the
+    // main thread on climate_input_capacity_day_barrier.
+    const bool climate_active =
+        _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE &&
+        (_requested_authority_mask.load(std::memory_order_acquire) &
+         runtime_domain_mask(RuntimeDomainId::CLIMATE)) != 0u;
+    if (climate_active) return nullptr;
     return environment_snapshot();
 }
 
@@ -6975,16 +7138,24 @@ bool NativeSimulationHost::execute_country_worker_stage(
         }
         sealed_country_commands.push_back(command);
     }
-    std::vector<uint64_t> sealed_request_ids;
-    sealed_request_ids.reserve(sealed_country_commands.size());
-    for (const RuntimeCountryCommand &command : sealed_country_commands) {
-        if (command.request_id != 0) sealed_request_ids.push_back(command.request_id);
-    }
+    (void)sealed_country_commands;
 
     if (!_country_pod_plan_active) {
+        // Only unwind commands this attempt newly pushed. Packets already in
+        // _pending (mid-plan late admit / prior retain) must survive a
+        // sibling decode failure or plan_day reject.
+        std::vector<uint64_t> newly_queued_ids;
+        std::vector<RuntimeCountryCommand> newly_queued_commands;
+        newly_queued_ids.reserve(sealed_country_commands.size());
+        newly_queued_commands.reserve(sealed_country_commands.size());
         for (const RuntimeCommandPacket &packet : day_commands) {
             if (packet.envelope.domain != static_cast<uint16_t>(RuntimeDomainId::COUNTRY))
                 continue;
+            if (packet.envelope.request_id != 0 &&
+                _country_pod_authority.has_pending_request(
+                    packet.envelope.request_id)) {
+                continue;
+            }
             RuntimeCountryCommand command;
             std::string command_error;
             const bool decoded = RuntimeCountryPodAdapter::decode_command(
@@ -6998,25 +7169,30 @@ bool NativeSimulationHost::execute_country_worker_stage(
                 !_country_pod_authority.queue_command(command, command_error)) {
                 error = command_error.empty()
                     ? "country_worker_command_rejected" : command_error;
-                _country_pod_authority.remove_pending_commands(sealed_request_ids);
+                _country_pod_authority.remove_pending_commands(newly_queued_ids);
+                newly_queued_commands.push_back(command);
                 publish_country_command_terminals(
-                    sealed_country_commands,
+                    newly_queued_commands,
                     CountryCommandReceiptCode::REJECTED_AT_EXECUTION,
                     _country_pod_authority.generation(), error.c_str());
                 return false;
             }
+            if (command.request_id != 0)
+                newly_queued_ids.push_back(command.request_id);
+            newly_queued_commands.push_back(command);
         }
         if (!_country_pod_authority.plan_day(
                 day, input_generation, _country_pod_plan, error)) {
             if (error.empty()) error = "country_worker_plan_failed";
-            _country_pod_authority.remove_pending_commands(sealed_request_ids);
+            _country_pod_authority.remove_pending_commands(newly_queued_ids);
             publish_country_command_terminals(
-                sealed_country_commands,
+                newly_queued_commands,
                 CountryCommandReceiptCode::REJECTED_AT_EXECUTION,
                 _country_pod_authority.generation(), error.c_str());
             return false;
         }
         _country_pod_plan_active = true;
+        _country_peer_wait_preview_published = false;
         {
             std::lock_guard<std::mutex> lock(_country_transport_mutex);
             ++_country_worker_seal.boundary_id;
@@ -7100,13 +7276,105 @@ bool NativeSimulationHost::execute_country_worker_stage(
         }
         if (!error.empty()) {
             _country_pod_authority.discard_plan();
-            _country_pod_authority.remove_pending_commands(sealed_request_ids);
+            std::vector<uint64_t> plan_request_ids;
+            plan_request_ids.reserve(_country_pod_plan.commands.size());
+            for (const RuntimeCountryCommand &command : _country_pod_plan.commands) {
+                if (command.request_id != 0)
+                    plan_request_ids.push_back(command.request_id);
+            }
+            _country_pod_authority.remove_pending_commands(plan_request_ids);
             _country_pod_plan_active.store(false, std::memory_order_release);
+            _country_peer_wait_preview_published = false;
             publish_country_command_terminals(
                 _country_pod_plan.commands,
                 CountryCommandReceiptCode::REJECTED_AT_EXECUTION,
                 _country_pod_authority.generation(), error.c_str());
             return false;
+        }
+    } else {
+        // An open plan is parked on peers. Fold newly arrived Country packets
+        // into plan.next_state so research enqueue is visible via preview
+        // publish and lands in the eventual commit — not stranded until day+1.
+        for (const RuntimeCommandPacket &packet : day_commands) {
+            if (packet.envelope.domain !=
+                    static_cast<uint16_t>(RuntimeDomainId::COUNTRY)) {
+                continue;
+            }
+            if (packet.envelope.request_id == 0) continue;
+            bool in_open_plan = false;
+            for (const RuntimeCountryCommand &planned :
+                    _country_pod_plan.commands) {
+                if (planned.request_id == packet.envelope.request_id) {
+                    in_open_plan = true;
+                    break;
+                }
+            }
+            if (in_open_plan) continue;
+            if (_country_pod_authority.has_pending_request(
+                    packet.envelope.request_id)) {
+                continue;
+            }
+            RuntimeCountryCommand command;
+            std::string command_error;
+            if (!RuntimeCountryPodAdapter::decode_command(
+                    packet, command, command_error)) {
+                continue;
+            }
+            command.effective_day = day;
+            if (!country_core_apply_command(
+                    _country_pod_plan.next_state, _country_pod_catalog, command,
+                    _country_pod_plan, command_error)) {
+                publish_country_command_terminals(
+                    {command}, CountryCommandReceiptCode::REJECTED_AT_EXECUTION,
+                    _country_pod_authority.generation(), command_error.c_str());
+                static std::atomic<int> s_late_fold_left{8};
+                if (s_late_fold_left.fetch_sub(
+                        1, std::memory_order_relaxed) > 0) {
+                    godot::UtilityFunctions::print(godot::vformat(
+                        "[country][active] late-fold rejected day=%d "
+                        "request=%d reason=%s",
+                        day,
+                        static_cast<int64_t>(packet.envelope.request_id),
+                        command_error.c_str()));
+                }
+                continue;
+            }
+            _country_pod_plan.commands.push_back(command);
+            _country_pod_plan.header.dirty_families |= RUNTIME_DIRTY_COUNTRY_STATE;
+            _country_pod_plan.header.work_units =
+                static_cast<uint64_t>(_country_pod_plan.commands.size());
+            // Enqueue / move landed after plan_day already spent today's
+            // research allocation. Catch up so the new queue head can spend
+            // before peer-wait preview / commit — otherwise starter stock
+            // (== first knowledge cost) sits idle until day+1 while the UI
+            // already shows 研究中.
+            if (command.opcode == 6 || command.opcode == 8) {
+                std::string research_error;
+                if (!_country_pod_authority.catch_up_research_day(
+                        _country_pod_plan.next_state, day, _country_pod_plan,
+                        research_error)) {
+                    static std::atomic<int> s_late_research_left{8};
+                    if (s_late_research_left.fetch_sub(
+                            1, std::memory_order_relaxed) > 0) {
+                        godot::UtilityFunctions::print(godot::vformat(
+                            "[country][active] late-fold research catch-up "
+                            "failed day=%d reason=%s",
+                            day, research_error.c_str()));
+                    }
+                }
+            }
+            // Force a fresh preview publish on the next peer-wait pass.
+            _country_peer_wait_preview_published = false;
+            static std::atomic<int> s_late_fold_ok_left{8};
+            if (s_late_fold_ok_left.fetch_sub(
+                    1, std::memory_order_relaxed) > 0) {
+                godot::UtilityFunctions::print(godot::vformat(
+                    "[country][active] late-fold ok day=%d request=%d "
+                    "opcode=%d",
+                    day,
+                    static_cast<int64_t>(packet.envelope.request_id),
+                    static_cast<int64_t>(command.opcode)));
+            }
         }
     }
 
@@ -7164,38 +7432,22 @@ bool NativeSimulationHost::execute_country_worker_stage(
         }
     }
     if (economy_asset_waiting) {
-        // Always soft-commit when Country-origin economy assets are still
-        // outstanding. Hard-parking here leaves future Climate envs stuck in a
-        // full FIFO while Economy never resumes → permanent
-        // climate_input_capacity_day_barrier. Soft-commit the Country day and
-        // let the next visit / Economy stage retire the asset rows.
-        std::string soft_error;
-        if (!_country_pod_authority.commit_rejected_day(
-                _country_pod_plan, soft_error, /*advance_generation=*/true)) {
-            error = soft_error.empty()
-                ? "country_economy_asset_soft_commit_failed" : soft_error;
+        // Do not soft-commit Country to escape this wait. Host liveness must
+        // pump peers; soft-commit here previously raced with Climate capacity
+        // and stranded research ACKs. Park with a stall bit; timeout → fault.
+        note_day_stall(RUNTIME_DAY_STALL_COUNTRY_PEER |
+                           RUNTIME_DAY_STALL_FISCAL_PEER,
+                       day);
+        if (fault_if_peer_stall_timed_out(
+                day, "country_economy_asset_peer_stall_timeout")) {
+            error = "country_economy_asset_peer_stall_timeout";
             commit.preflight_ok = 0;
             return false;
         }
-        publish_country_command_terminals(
-            _country_pod_plan.commands, CountryCommandReceiptCode::COMMITTED,
-            _country_pod_authority.generation(), nullptr);
-        _country_pod_plan_active.store(false, std::memory_order_release);
-        std::string snapshot_error;
-        if (!publish_country_worker_snapshot(
-                _country_pod_plan.header.dirty_families, snapshot_error)) {
-            error = snapshot_error.empty()
-                ? "country_worker_snapshot_failed" : snapshot_error;
-            commit.preflight_ok = 0;
-            return false;
-        }
-        commit.completed_domain_mask |= runtime_domain_mask(
-            RuntimeDomainId::COUNTRY);
-        commit.dirty_families |= _country_pod_plan.header.dirty_families;
-        commit.work_units += _country_pod_plan.header.work_units;
-        ++commit.completed_stage_count;
-        error.clear();
-        return true;
+        error = "country_economy_asset_results_pending";
+        commit.preflight_ok = 0;
+        commit.continuation_pending = 1;
+        return false;
     }
 
     std::vector<RuntimeDomainAck> acks;
@@ -7254,104 +7506,108 @@ bool NativeSimulationHost::execute_country_worker_stage(
                              std::numeric_limits<uint32_t>::max()));
     }
     if (waiting) {
-        // Soft-commit after Host inspected (PENDING) or under Climate ring
-        // pressure. Never soft-commit+erase before inspect: Effect runs before
-        // Country in the day graph, so ENSURE only reaches the Effect queue via
-        // the main-thread peer pump. Wiping uninspected intents drops that
-        // registration and parks technologies in 待生效 forever while the
-        // calendar still advances.
-        bool all_intents_inspected = true;
-        {
-            std::lock_guard<std::mutex> lock(_country_transport_mutex);
-            for (const RuntimeDomainIntent &intent : _country_pod_plan.intents) {
-                const uint64_t request_id = intent.request_id != 0
-                    ? intent.request_id : intent.source_id;
-                if (_country_worker_results.find(request_id) ==
-                    _country_worker_results.end()) {
-                    all_intents_inspected = false;
-                    break;
+        // Effect may have catchup-fired after the Host pump left PENDING
+        // (PENDING is not re-queued). Promote same-day before parking.
+        if (resolve_pending_country_effect_peers() > 0u) {
+            waiting = false;
+            rejected = false;
+            acks.clear();
+            {
+                std::lock_guard<std::mutex> lock(_country_transport_mutex);
+                bind_shadow_country_peer_mirrors_locked();
+                for (const RuntimeDomainIntent &intent : _country_pod_plan.intents) {
+                    const uint64_t request_id = intent.request_id != 0
+                        ? intent.request_id : intent.source_id;
+                    const auto result_it = _country_worker_results.find(request_id);
+                    if (result_it == _country_worker_results.end() ||
+                        result_it->second.code == CountryPeerResultCode::PENDING) {
+                        waiting = true;
+                        continue;
+                    }
+                    const CountryPeerResult &result = result_it->second;
+                    RuntimeDomainAck ack;
+                    ack.request_id = request_id;
+                    ack.transaction_id = request_id;
+                    ack.target_handle = intent.target_handle;
+                    ack.target_generation = intent.target_generation;
+                    ack.domain = intent.target_domain;
+                    ack.effective_day = intent.effective_day;
+                    ack.producer_id = intent.producer_id;
+                    ack.sequence = intent.sequence;
+                    ack.technology_flags = result.technology_flags;
+                    if (result.code == CountryPeerResultCode::READY ||
+                        result.code == CountryPeerResultCode::APPLIED) {
+                        ack.code = RuntimeDomainAckCode::OK;
+                    } else {
+                        ack.code = result.code == CountryPeerResultCode::STALE
+                            ? RuntimeDomainAckCode::STALE_GENERATION
+                            : RuntimeDomainAckCode::REJECTED;
+                        rejected = true;
+                        rejection_reason = result.reason.data();
+                        if (rejected_request_id == 0) {
+                            rejected_request_id = request_id;
+                            rejected_opcode = static_cast<CountryPeerIntentCode>(
+                                intent.opcode);
+                        }
+                    }
+                    acks.push_back(ack);
                 }
             }
         }
-        // Soft-commit once half the FIFO is occupied. Waiting until the ring is
-        // completely full lets Host arm climate_input_capacity_day_barrier first
-        // (common after tax/subsidy fiscal peers under 50x), then both sides
-        // park: Host on capacity, Country on peer inspect.
-        const size_t ring_size = _environment_ring.size();
-        const bool ring_pressure =
-            !_environment_ring.has_capacity() ||
-            ring_size + 1u >= RuntimeEnvironmentInputRing::SLOT_COUNT ||
-            ring_size >= (RuntimeEnvironmentInputRing::SLOT_COUNT + 1u) / 2u;
-        if (!all_intents_inspected && !ring_pressure) {
-            error = "country_worker_peer_results_pending";
-            commit.preflight_ok = 0;
-            commit.continuation_pending = 1;
-            return false;
-        }
-        // Inspected PENDING (Effect fire still in flight) or ring pressure
-        // with Host lagging: soft-commit like peer rejection — keep research
-        // spend + pending activation, close the calendar day, retry tomorrow.
-        if (!_country_pod_authority.commit_rejected_day(
-                _country_pod_plan, error, /*advance_generation=*/true)) {
-            _country_pod_authority.discard_plan();
-            _country_pod_plan_active.store(false, std::memory_order_release);
-            set_fault(error.empty()
-                          ? "country_worker_pending_peer_commit_failed"
-                          : error.c_str());
-            if (error.empty())
-                error = "country_worker_pending_peer_commit_failed";
-            commit.preflight_ok = 0;
-            return false;
-        }
-        publish_country_command_terminals(
-            _country_pod_plan.commands, CountryCommandReceiptCode::COMMITTED,
-            _country_pod_authority.generation(), nullptr);
-        _country_pod_plan_active.store(false, std::memory_order_release);
-        {
-            std::lock_guard<std::mutex> lock(_country_transport_mutex);
-            for (const RuntimeDomainIntent &intent : _country_pod_plan.intents) {
-                const uint64_t request_id = intent.request_id != 0
-                    ? intent.request_id : intent.source_id;
-                // Keep uninspected intents queued so Host can still ENSURE the
-                // Effect instance after this soft-commit. Erasing them here is
-                // what stranded 燧石辨识-class techs at 100%/待生效.
-                if (_country_worker_results.find(request_id) ==
-                    _country_worker_results.end()) {
-                    continue;
+    }
+    if (waiting) {
+        // Soft-commit must not be used to escape peer waits (ring pressure or
+        // inspected-PENDING). Uninspected ENSURE needs Host peer pump; wiping
+        // or closing the day early parks techs at 待生效. Keep rejected-only
+        // soft-commit below; here we park + stall-bit + timeout fault.
+        note_day_stall(RUNTIME_DAY_STALL_COUNTRY_PEER |
+                           RUNTIME_DAY_STALL_EFFECT_ACK,
+                       day);
+        // Research enqueue / weight changes already sit in plan.next_state.
+        // Preview-publish them so the UI left queue updates while Effect peers
+        // are still PENDING — without closing the Country calendar boundary.
+        if (!_country_peer_wait_preview_published &&
+            ((_country_pod_plan.header.dirty_families &
+              RUNTIME_DIRTY_COUNTRY_STATE) != 0u ||
+             !_country_pod_plan.commands.empty())) {
+            std::string preview_error;
+            if (publish_country_plan_preview_snapshot(preview_error)) {
+                _country_peer_wait_preview_published = true;
+                static std::atomic<int> s_preview_left{8};
+                if (s_preview_left.fetch_sub(1, std::memory_order_relaxed) > 0) {
+                    std::fprintf(stderr,
+                                 "[country][active] peer-wait preview day=%lld "
+                                 "commands=%llu dirty=0x%x\n",
+                                 static_cast<long long>(day),
+                                 static_cast<unsigned long long>(
+                                     _country_pod_plan.commands.size()),
+                                 _country_pod_plan.header.dirty_families);
+                    std::fflush(stderr);
+                    godot::UtilityFunctions::print(godot::vformat(
+                        "[country][active] peer-wait preview day=%d "
+                        "commands=%d",
+                        day,
+                        static_cast<int64_t>(_country_pod_plan.commands.size())));
                 }
-                _country_worker_intents.erase(request_id);
-                _country_worker_results.erase(request_id);
-                _country_worker_terminal_results.erase(request_id);
             }
-            _country_worker_intent_queue.erase(
-                std::remove_if(_country_worker_intent_queue.begin(),
-                               _country_worker_intent_queue.end(),
-                    [&](uint64_t request_id) {
-                        return _country_worker_intents.find(request_id) ==
-                            _country_worker_intents.end();
-                    }), _country_worker_intent_queue.end());
-            _country_worker_protocol.pending_intents = static_cast<uint32_t>(
-                std::min<size_t>(_country_worker_intents.size(),
-                                 std::numeric_limits<uint32_t>::max()));
-            _country_worker_protocol.queued_intents = static_cast<uint32_t>(
-                std::min<size_t>(_country_worker_intent_queue.size(),
-                                 std::numeric_limits<uint32_t>::max()));
         }
-        std::string snapshot_error;
-        if (!publish_country_worker_snapshot(
-                _country_pod_plan.header.dirty_families, snapshot_error)) {
-            error = snapshot_error.empty() ? "country_worker_snapshot_failed" :
-                snapshot_error;
+        // Drain only envs for this worker day (and earlier). Popping through
+        // climate_committed when Climate is ahead erases futures Host already
+        // queued for catch-up and leaves the FIFO empty/mismatched.
+        if (_environment_ring.pop_while_day_at_most(day) > 0u) {
+            _climate_wait_cv.notify_all();
+            _control_cv.notify_all();
+        }
+        if (fault_if_peer_stall_timed_out(
+                day, "country_worker_peer_stall_timeout")) {
+            error = "country_worker_peer_stall_timeout";
             commit.preflight_ok = 0;
             return false;
         }
-        commit.completed_domain_mask |= runtime_domain_mask(
-            RuntimeDomainId::COUNTRY);
-        commit.dirty_families |= _country_pod_plan.header.dirty_families;
-        commit.work_units += _country_pod_plan.header.work_units;
-        ++commit.completed_stage_count;
-        error.clear();
-        return true;
+        error = "country_worker_peer_results_pending";
+        commit.preflight_ok = 0;
+        commit.continuation_pending = 1;
+        return false;
     }
     if (rejected) {
         // A peer rejection closes the Country semantic boundary. Country-side
@@ -7363,6 +7619,7 @@ bool NativeSimulationHost::execute_country_worker_stage(
                 _country_pod_plan, error)) {
             _country_pod_authority.discard_plan();
             _country_pod_plan_active.store(false, std::memory_order_release);
+            _country_peer_wait_preview_published = false;
             set_fault(error.empty() ? "country_worker_rejection_commit_failed" :
                       error.c_str());
             if (error.empty()) error = "country_worker_rejection_commit_failed";
@@ -7373,6 +7630,7 @@ bool NativeSimulationHost::execute_country_worker_stage(
             _country_pod_plan.commands, CountryCommandReceiptCode::COMMITTED,
             _country_pod_authority.generation(), nullptr);
         _country_pod_plan_active.store(false, std::memory_order_release);
+        _country_peer_wait_preview_published = false;
         {
             std::lock_guard<std::mutex> lock(_country_transport_mutex);
             _country_worker_protocol.has_unreported_rejection = 1;
@@ -7401,6 +7659,7 @@ bool NativeSimulationHost::execute_country_worker_stage(
                 std::min<size_t>(_country_worker_intent_queue.size(),
                                  std::numeric_limits<uint32_t>::max()));
         }
+        clear_day_stall_peer_bits();
         std::string snapshot_error;
         if (!publish_country_worker_snapshot(
                 _country_pod_plan.header.dirty_families, snapshot_error)) {
@@ -7424,6 +7683,7 @@ bool NativeSimulationHost::execute_country_worker_stage(
     if (!_country_pod_authority.commit_day(_country_pod_plan, acks, error)) {
         _country_pod_authority.discard_plan();
         _country_pod_plan_active.store(false, std::memory_order_release);
+        _country_peer_wait_preview_published = false;
         set_fault(error.empty() ? "country_worker_commit_failed" : error.c_str());
         if (error.empty()) error = "country_worker_commit_failed";
         publish_country_command_terminals(
@@ -7437,6 +7697,8 @@ bool NativeSimulationHost::execute_country_worker_stage(
         _country_pod_plan.commands, CountryCommandReceiptCode::COMMITTED,
         _country_pod_authority.generation(), nullptr);
     _country_pod_plan_active.store(false, std::memory_order_release);
+    _country_peer_wait_preview_published = false;
+    clear_day_stall_peer_bits();
     RuntimeCountryPodSnapshot committed_snapshot;
     std::string snapshot_error;
     if (!_country_pod_authority.snapshot(committed_snapshot, snapshot_error)) {
@@ -9128,12 +9390,15 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             // Reuse without requiring the original env generation — Country
             // has the same shape via committed_day skip.
             active_climate_ok = true;
-            // Drop every env Climate has already absorbed. A full ring of
-            // day<=committed leftovers (or a single stale head under newer
-            // publishes) otherwise nails WorldClock on
-            // climate_input_capacity_day_barrier while this day retries peers.
+            // Only drop envs at or behind the worker day. Popping through
+            // climate_committed when it is ahead of plan.day erases futures
+            // Host already published for the catch-up days and desyncs the
+            // FIFO (worker then sees latest-or-empty and parks forever).
+            const int64_t drain_through =
+                climate_committed < plan.context.day ? climate_committed
+                                                     : plan.context.day;
             const size_t drained =
-                _environment_ring.pop_while_day_at_most(climate_committed);
+                _environment_ring.pop_while_day_at_most(drain_through);
             if (drained > 0u) {
                 environment_holder = _environment_ring.peek_oldest();
                 environment = environment_holder.get();
@@ -9294,12 +9559,26 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             // M4/M5: INPUT_CAPTURE owns the immutable manifest for the whole
             // sealed day.  A missing, stale, or malformed frame parks the
             // day before any downstream domain can publish a partial result.
+            // When Climate already committed this worker day (idempotent M5
+            // retry / force-advance catch-up), allow the stage to complete
+            // without a matching FIFO frame — Climate will not re-read it.
+            const int64_t climate_committed_for_input =
+                _climate_authority.store().committed_day;
             std::string input_error;
             const bool input_ok = environment != nullptr &&
                 environment->generation == plan.context.input_generation &&
                 environment->day == plan.context.day &&
                 validate_runtime_environment_snapshot(*environment, input_error);
             if (!input_ok) {
+                if (climate_authority_requested &&
+                    climate_committed_for_input >= plan.context.day) {
+                    stage.work_units = 0;
+                    stage.completed = 1;
+                    commit.completed_domain_mask |=
+                        runtime_domain_mask(RuntimeDomainId::INPUT_CAPTURE);
+                    ++commit.completed_stage_count;
+                    continue;
+                }
                 stage.completed = 0;
                 commit.preflight_ok = 0;
                 commit.continuation_pending = 1;
@@ -9350,6 +9629,30 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                 // idempotent success so the retry is not stuck forever on
                 // country_day_not_contiguous.
                 if (plan.context.day <= country_committed) {
+                    // Still admit late Country packets onto committed+1 so an
+                    // idempotent Country skip cannot strand research enqueue
+                    // that arrived while a later domain forced a same-day retry.
+                    for (const RuntimeCommandPacket &packet : day_commands) {
+                        if (packet.envelope.domain !=
+                                static_cast<uint16_t>(
+                                    RuntimeDomainId::COUNTRY) ||
+                            packet.envelope.request_id == 0) {
+                            continue;
+                        }
+                        if (_country_pod_authority.has_pending_request(
+                                packet.envelope.request_id)) {
+                            continue;
+                        }
+                        RuntimeCountryCommand command;
+                        std::string command_error;
+                        if (!RuntimeCountryPodAdapter::decode_command(
+                                packet, command, command_error)) {
+                            continue;
+                        }
+                        command.effective_day = country_committed + 1;
+                        (void)_country_pod_authority.queue_command(
+                            command, command_error);
+                    }
                     stage.completed = 1;
                     commit.completed_domain_mask |=
                         runtime_domain_mask(RuntimeDomainId::COUNTRY);
@@ -9660,6 +9963,18 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                     }
                 }
                 ack_effect_events_intents_in_worker(_effect_day_intents);
+                const uint32_t promoted = resolve_pending_country_effect_peers();
+                if (catchup_fired > 0 && promoted == 0u) {
+                    static int s_no_promote_left = 8;
+                    if (s_no_promote_left-- > 0) {
+                        godot::UtilityFunctions::print(godot::vformat(
+                            "[tech-ack-diag/soft-skip-no-promote] day=%d "
+                            "catchup=%d promoted=0 (Modifier ACK may still be "
+                            "pending; Country stage runs before Effect)",
+                            plan.context.day,
+                            static_cast<int64_t>(catchup_fired)));
+                    }
+                }
                 _effect_day_stage_ok = true;
                 stage.completed = 1;
                 commit.completed_domain_mask |=
@@ -9698,6 +10013,7 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                 // Production ACTIVE Effect→Events: typed intents become
                 // APPEND_BATCH commands for the subsequent EVENTS stage.
                 // Events failure clears EVENTS completion and blocks COMMIT.
+                resolve_pending_country_effect_peers();
                 for (const RuntimeDomainIntent &intent : _effect_day_intents) {
                     gameplay_event_commands.push_back(
                         make_effect_intent_events_packet(
@@ -9802,6 +10118,8 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                 commit.work_units += stage.work_units;
                 commit.completed_domain_mask |=
                     runtime_domain_mask(RuntimeDomainId::MODIFIER);
+                // Modifier ACK of Effect catchup fires unlocks Country tech peers.
+                resolve_pending_country_effect_peers();
                 ++commit.completed_stage_count;
             } else {
                 stage.completed = 0;
@@ -9958,18 +10276,18 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                     economy_error == "same_day_building_context_not_captured") {
                     _economy_input_requested_day.store(plan.context.day,
                         std::memory_order_release);
+                    note_day_stall(RUNTIME_DAY_STALL_ECONOMY_INPUT,
+                                   plan.context.day);
                     stage.completed = 0;
                     continue;
                 }
                 if (economy_asset_pending_reason(economy_error)) {
-                    // Soft-complete after same-day prepare rounds so Climate can
-                    // keep draining the input ring. Hard-parking ECONOMY here
-                    // filled the ring and permanently armed
-                    // climate_input_capacity_day_barrier while research waited.
-                    // Tax/subsidy fiscal peers commonly park here under 50x —
-                    // drop every env Climate already absorbed so Host capacity
-                    // recovers immediately instead of waiting for the next
-                    // calendar day to start.
+                    // Park ECONOMY with a stall bit. Do not soft-complete the
+                    // domain as done — that was a deadlock escape that hid
+                    // fiscal peers. Drain Climate-absorbed env slots so Host
+                    // capacity recovers while liveness pumps peers.
+                    note_day_stall(RUNTIME_DAY_STALL_FISCAL_PEER,
+                                   plan.context.day);
                     const int64_t climate_committed =
                         _climate_authority.store().committed_day;
                     if (climate_committed >= 0 &&
@@ -9978,14 +10296,22 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                         _climate_wait_cv.notify_all();
                         _control_cv.notify_all();
                     }
+                    if (fault_if_peer_stall_timed_out(
+                            plan.context.day,
+                            "economy_fiscal_peer_stall_timeout")) {
+                        stage.completed = 0;
+                        commit.preflight_ok = 0;
+                        continue;
+                    }
                     {
-                        static int s_fiscal_soft_left = 12;
-                        if (s_fiscal_soft_left-- > 0) {
+                        static int s_fiscal_stall_left = 12;
+                        if (s_fiscal_stall_left-- > 0) {
                             godot::UtilityFunctions::print(godot::vformat(
-                                "[economy-fiscal-soft] day=%d reason=%s "
-                                "work=%d ring=%d climate_committed=%d",
+                                "[economy-fiscal-stall] day=%d reason=%s "
+                                "stall=0x%x work=%d ring=%d climate_committed=%d",
                                 plan.context.day,
                                 godot::String(economy_error.c_str()),
+                                static_cast<int64_t>(day_stall_reason_mask()),
                                 static_cast<int64_t>(economy_work),
                                 static_cast<int64_t>(_environment_ring.size()),
                                 climate_committed));
@@ -9994,12 +10320,7 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                     commit.continuation_pending = 1;
                     stage.dirty_families = RUNTIME_DIRTY_ECONOMY_UI;
                     stage.work_units = economy_work;
-                    stage.completed = 1;
-                    commit.dirty_families |= stage.dirty_families;
-                    commit.work_units += stage.work_units;
-                    commit.completed_domain_mask |=
-                        runtime_domain_mask(RuntimeDomainId::ECONOMY);
-                    ++commit.completed_stage_count;
+                    stage.completed = 0;
                     continue;
                 }
                 stage.completed = 0;
@@ -10042,6 +10363,10 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             _economy_pod_ready.store(true, std::memory_order_release);
             _economy_pod_committed.store(economy_day_done,
                                          std::memory_order_release);
+            if (economy_day_done &&
+                _country_worker_protocol.pending_intents == 0) {
+                clear_day_stall_peer_bits();
+            }
             _economy_pod_authority_ready.store(true, std::memory_order_release);
             _economy_pod_committed_day.store(
                 economy_day_done ? _economy_production_runtime->last_committed_day()
@@ -10097,9 +10422,16 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                 if (!ledger_published) {
                     // Reject the boundary visibly. An incomplete stage is not
                     // a safe ownership handoff and must not hide invalid state.
+                    // Clear ECONOMY from the completed mask — leaving it set
+                    // produces missing=0x0 + preflight_ok=0, which force-advances
+                    // over a failed ledger and desyncs the climate FIFO.
                     set_fault(economy_error.empty()
                         ? "economy_pod_committed_ledger_capture_invalid"
                         : economy_error.c_str());
+                    commit.completed_domain_mask &=
+                        ~runtime_domain_mask(RuntimeDomainId::ECONOMY);
+                    if (commit.completed_stage_count > 0u)
+                        --commit.completed_stage_count;
                     stage.completed = 0;
                     commit.preflight_ok = 0;
                     continue;
@@ -10197,6 +10529,10 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                         _economy_production_runtime->current_day(),
                         economy_error)) {
                     set_fault("economy_pod_command_recapture_failed");
+                    commit.completed_domain_mask &=
+                        ~runtime_domain_mask(RuntimeDomainId::ECONOMY);
+                    if (commit.completed_stage_count > 0u)
+                        --commit.completed_stage_count;
                     stage.completed = 0;
                     commit.preflight_ok = 0;
                     continue;
@@ -10213,6 +10549,10 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                     ledger_state);
                 if (!ledger_state.valid()) {
                     set_fault("economy_pod_command_recapture_failed");
+                    commit.completed_domain_mask &=
+                        ~runtime_domain_mask(RuntimeDomainId::ECONOMY);
+                    if (commit.completed_stage_count > 0u)
+                        --commit.completed_stage_count;
                     stage.completed = 0;
                     commit.preflight_ok = 0;
                     continue;
@@ -10244,6 +10584,10 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                         !_economy_pod_authority.capture_committed_ledger_state(
                             std::move(ledger_state))) {
                         set_fault("economy_pod_command_recapture_failed");
+                        commit.completed_domain_mask &=
+                            ~runtime_domain_mask(RuntimeDomainId::ECONOMY);
+                        if (commit.completed_stage_count > 0u)
+                            --commit.completed_stage_count;
                         stage.completed = 0;
                         commit.preflight_ok = 0;
                         continue;
@@ -12593,43 +12937,65 @@ void NativeSimulationHost::worker_main() {
                         _requested_authority_mask.load(std::memory_order_acquire) !=
                             0u) {
                         static std::atomic<int> s_full_mask_preflight_left{8};
+                        const int64_t climate_committed =
+                            _climate_authority.store().committed_day;
                         if (s_full_mask_preflight_left.fetch_sub(
                                 1, std::memory_order_relaxed) > 0) {
                             godot::UtilityFunctions::print(godot::vformat(
                                 "[runtime-day-wait] day=%d missing=0x0 "
-                                "forcing advance (spurious preflight_ok=0) ring=%d",
+                                "forcing advance (spurious preflight_ok=0) "
+                                "ring=%d climate_committed=%d continuation=%d "
+                                "stall=0x%x",
                                 day,
-                                static_cast<int64_t>(_environment_ring.size())));
+                                static_cast<int64_t>(_environment_ring.size()),
+                                climate_committed,
+                                static_cast<int64_t>(day_commit.continuation_pending),
+                                static_cast<int64_t>(day_stall_reason_mask())));
                         }
-                        // Drop every env Climate already absorbed for this day
-                        // (or earlier). Leaving a full ring of futures after a
-                        // forced advance parks Host on capacity forever — the
-                        // same kill shot as the peer soft-commit path.
-                        const int64_t climate_committed =
-                            _climate_authority.store().committed_day;
-                        const int64_t drain_through =
-                            climate_committed >= day ? climate_committed : day;
-                        if (_environment_ring.pop_while_day_at_most(
-                                drain_through) > 0u) {
+                        // Only drop envs for this worker day (and earlier).
+                        // Never drain through climate_committed when it is
+                        // ahead — that erases futures Host already queued for
+                        // catch-up days and leaves the FIFO empty/mismatched,
+                        // after which Host sticks on capacity forever.
+                        if (_environment_ring.pop_while_day_at_most(day) > 0u) {
                             _climate_wait_cv.notify_all();
                             _control_cv.notify_all();
                         }
+                        clear_day_stall_peer_bits();
+                        // Force the next iteration to re-peek FIFO instead of
+                        // retaining a drained shared_ptr as active_environment.
+                        active_environment.reset();
                         // Fall through to the success path below.
                     } else {
                     if (logged_pending_day != day || logged_pending_mask != missing) {
                         logged_pending_day = day;
                         logged_pending_mask = missing;
-                        std::fprintf(stderr, "[runtime-day-wait] day=%lld env_day=%lld missing=0x%x economy_input=%lld\n",
+                        std::fprintf(stderr, "[runtime-day-wait] day=%lld env_day=%lld missing=0x%x stall=0x%x economy_input=%lld\n",
                             static_cast<long long>(day),
                             static_cast<long long>(environment ? environment->day : -1),
-                            missing, static_cast<long long>(economy_input_requested_day()));
+                            missing,
+                            day_stall_reason_mask(),
+                            static_cast<long long>(economy_input_requested_day()));
+                        char country_fallback[64];
+                        size_t fb = 0;
+                        for (; fb + 1 < sizeof(country_fallback) &&
+                               fb < _country_pod_fallback_reason.size(); ++fb) {
+                            country_fallback[fb] =
+                                _country_pod_fallback_reason[fb].load(
+                                    std::memory_order_acquire);
+                            if (country_fallback[fb] == '\0') break;
+                        }
+                        country_fallback[fb] = '\0';
                         godot::UtilityFunctions::print(godot::vformat(
-                            "[runtime-day-wait] day=%d env_day=%d missing=0x%x economy_input=%d ring=%d",
+                            "[runtime-day-wait] day=%d env_day=%d missing=0x%x "
+                            "stall=0x%x economy_input=%d ring=%d country=%s",
                             day,
                             environment ? environment->day : -1,
                             static_cast<int64_t>(missing),
+                            static_cast<int64_t>(day_stall_reason_mask()),
                             economy_input_requested_day(),
-                            static_cast<int64_t>(_environment_ring.size())));
+                            static_cast<int64_t>(_environment_ring.size()),
+                            country_fallback));
                     }
 
                     if (_state.load(std::memory_order_acquire) ==
@@ -13136,6 +13502,14 @@ RuntimeThreadReport NativeSimulationHost::report() const {
         _environment_dropped_days.load(std::memory_order_relaxed);
     out.environment_ring_pending =
         static_cast<uint64_t>(_environment_ring.size());
+    out.day_stall_reason_mask = day_stall_reason_mask();
+    out.day_stall_day = _day_stall_day.load(std::memory_order_acquire);
+    {
+        const uint64_t since =
+            _day_stall_peer_since_us.load(std::memory_order_acquire);
+        out.day_stall_peer_ms =
+            since == 0u ? 0u : (now_us() - since) / 1000u;
+    }
     out.climate_wait_total_ms =
         _climate_wait_total_ms.load(std::memory_order_relaxed);
     out.climate_wait_last_ms =

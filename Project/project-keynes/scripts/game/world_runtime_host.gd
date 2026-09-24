@@ -964,9 +964,39 @@ func map_overlay_diagnostics() -> Dictionary:
 	}
 
 
+## Host frame split (liveness vs progress):
+## - liveness: peer pumps, snapshot ACKs, same-day economy capture, capacity
+##   retry. MUST run every frame even when the climate input ring is full.
+## - progress: country read-view, building visual, map overlay. May be skipped
+##   under climate_input_capacity_day_barrier so peer ACKs get the frame budget.
 func _process(_delta: float) -> void:
 	var frame_usec := Time.get_ticks_usec()
 	_sched_proc_frames += 1
+	var capacity_pending := (
+		_climate_capacity_pending_day >= 0 and not _runtime_worker_fault_paused)
+	_service_runtime_liveness(frame_usec, capacity_pending)
+	if capacity_pending:
+		_note_climate_capacity_pending_stall()
+		# Worker may have force-advanced past the day that armed capacity.
+		# Retrying the stale arm republishes an old env into a full FIFO and
+		# keeps the calendar nailed. Advance the pending publish to the
+		# worker's next needed day when the committed watermark moved on.
+		if _generator != null and _generator.has_method("get_runtime_thread_report"):
+			var cap_report: Dictionary = _generator.get_runtime_thread_report()
+			var worker_committed := int(cap_report.get(
+				"simulation_committed_day", cap_report.get("committed_day", -1)))
+			if worker_committed >= _climate_capacity_pending_day:
+				_climate_capacity_pending_day = worker_committed + 1
+		_on_clock_day_changed(_climate_capacity_pending_day)
+		_observe_runtime_worker_fault()
+		_poll_runtime_health()
+		_sched_proc_last_total_ms = _sched_elapsed_ms(frame_usec)
+		return
+	_service_runtime_progress(frame_usec)
+	_sched_proc_last_total_ms = _sched_elapsed_ms(frame_usec)
+
+
+func _service_runtime_liveness(frame_usec: int, _capacity_pending: bool) -> void:
 	var segment_usec := frame_usec
 	if _runtime_ready_for_ticks and _generator != null:
 		var ext = _generator.get_data_core_world_ext()
@@ -977,26 +1007,6 @@ func _process(_delta: float) -> void:
 	segment_usec = Time.get_ticks_usec()
 	_service_country_worker_transport()
 	_sched_proc_peer_ms += _sched_elapsed_ms(segment_usec)
-	# Capacity recovery must run before country read/visual. A full environment
-	# ring parks the calendar; spending 50–200ms on read-view/UI first means the
-	# worker never gets peer ACKs fast enough to drain the ring (feels like a
-	# hard freeze at 50x while weather lut keep ticking every 2s).
-	if _climate_capacity_pending_day >= 0 and not _runtime_worker_fault_paused:
-		segment_usec = Time.get_ticks_usec()
-		_consume_modifier_worker_snapshot_if_authoritative()
-		_consume_effect_worker_snapshot_if_authoritative()
-		_service_effect_worker_intents_if_authoritative()
-		_consume_trigger_worker_snapshot_if_authoritative()
-		_service_trigger_worker_intents_if_authoritative()
-		_consume_ideology_worker_snapshot_if_authoritative()
-		_service_ideology_worker_intents_if_authoritative()
-		_sched_proc_snapshots_ms += _sched_elapsed_ms(segment_usec)
-		_note_climate_capacity_pending_stall()
-		_on_clock_day_changed(_climate_capacity_pending_day)
-		_observe_runtime_worker_fault()
-		_poll_runtime_health()
-		_sched_proc_last_total_ms = _sched_elapsed_ms(frame_usec)
-		return
 	segment_usec = Time.get_ticks_usec()
 	_consume_modifier_worker_snapshot_if_authoritative()
 	_consume_effect_worker_snapshot_if_authoritative()
@@ -1006,7 +1016,10 @@ func _process(_delta: float) -> void:
 	_consume_ideology_worker_snapshot_if_authoritative()
 	_service_ideology_worker_intents_if_authoritative()
 	_sched_proc_snapshots_ms += _sched_elapsed_ms(segment_usec)
-	segment_usec = Time.get_ticks_usec()
+
+
+func _service_runtime_progress(frame_usec: int) -> void:
+	var segment_usec := Time.get_ticks_usec()
 	_consume_country_worker_read_view_if_authoritative()
 	_sched_proc_country_read_ms += _sched_elapsed_ms(segment_usec)
 	_consume_runtime_commit_if_ready()
@@ -1022,12 +1035,10 @@ func _process(_delta: float) -> void:
 		_refresh_building_visual_intel({})
 	_sched_proc_building_ms += _sched_elapsed_ms(segment_usec)
 	if not _map_overlay_dirty or _map_overlay_request.is_empty():
-		_sched_proc_last_total_ms = _sched_elapsed_ms(frame_usec)
 		return
 	segment_usec = Time.get_ticks_usec()
 	_refresh_map_overlay(false)
 	_sched_proc_overlay_ms += _sched_elapsed_ms(segment_usec)
-	_sched_proc_last_total_ms = _sched_elapsed_ms(frame_usec)
 
 
 func _arm_climate_capacity_pending(day_idx: int) -> void:
@@ -1059,8 +1070,9 @@ func _note_climate_capacity_pending_stall() -> void:
 	_climate_capacity_stall_next_diag_msec = now_msec + _CLIMATE_CAPACITY_STALL_DIAG_MSEC
 	var report := _generator.get_runtime_thread_report() \
 		if _generator != null and _generator.has_method("get_runtime_thread_report") else {}
-	push_warning("[climate-capacity-stall] day=%d pending_ms=%d ring=%s worker=%s committed=%s economy_input=%s country_peer=%s"
+	push_warning("[climate-capacity-stall] day=%d pending_ms=%d stall=0x%x ring=%s worker=%s committed=%s economy_input=%s country_peer=%s"
 		% [_climate_capacity_pending_day, stalled_ms,
+			int(report.get("day_stall_reason_mask", 0)),
 			str(report.get("environment_ring_pending", -1)),
 			str(report.get("simulation_host_state", report.get("state", "?"))),
 			str(report.get("simulation_committed_day", report.get("committed_day", -1))),
@@ -1070,6 +1082,7 @@ func _note_climate_capacity_pending_stall() -> void:
 		_world_clock, "stall", {
 			"stalled_day": _climate_capacity_pending_day,
 			"stalled_ms": stalled_ms,
+			"day_stall_reason_mask": report.get("day_stall_reason_mask", 0),
 			"environment_ring_pending": report.get("environment_ring_pending", -1),
 			"economy_input_requested_day": report.get("economy_input_requested_day", -1),
 			"country_worker_waiting_for_peer": report.get(

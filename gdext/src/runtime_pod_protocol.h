@@ -38,6 +38,20 @@ inline void runtime_copy_text(char (&destination)[N], const char *source) noexce
 constexpr uint32_t RUNTIME_COMMAND_QUEUE_CAPACITY = 4096u;
 constexpr uint32_t RUNTIME_RECEIPT_QUEUE_CAPACITY = 8192u;
 constexpr uint32_t RUNTIME_MAX_COMMAND_PAYLOAD = 1024u;
+
+// Unified "why this day has not committed" bits. Host / clock / forensics read
+// one mask instead of guessing from capacity barriers vs peer soft-stalls.
+// climate_capacity = environment input FIFO full (progress may pause; liveness
+// must continue). Peer bits require main-thread pumps, never soft-erase.
+constexpr uint32_t RUNTIME_DAY_STALL_CLIMATE_CAPACITY = 1u << 0;
+constexpr uint32_t RUNTIME_DAY_STALL_COUNTRY_PEER = 1u << 1;
+constexpr uint32_t RUNTIME_DAY_STALL_EFFECT_ACK = 1u << 2;
+constexpr uint32_t RUNTIME_DAY_STALL_IDEOLOGY_ACK = 1u << 3;
+constexpr uint32_t RUNTIME_DAY_STALL_FISCAL_PEER = 1u << 4;
+constexpr uint32_t RUNTIME_DAY_STALL_ECONOMY_INPUT = 1u << 5;
+// Soft-commit-as-deadlock-escape is forbidden; peer stalls past this wall-time
+// become an observable FAULTED stop instead of silent calendar advance.
+constexpr uint64_t RUNTIME_DAY_STALL_PEER_FAULT_TIMEOUT_MS = 5000u;
 constexpr uint32_t RUNTIME_SNAPSHOT_RING_SIZE = 3u;
 constexpr uint32_t RUNTIME_DIRTY_FAMILY_COUNT = 9u;
 constexpr uint32_t RUNTIME_DOMAIN_INTENT_CAPACITY = 8192u;
@@ -1624,6 +1638,11 @@ struct RuntimeThreadReport {
     uint64_t environment_superseded_days = 0;
     uint64_t environment_dropped_days = 0;
     uint64_t environment_ring_pending = 0;
+    // Composite stall reason for the day under worker evaluation (see
+    // RUNTIME_DAY_STALL_*). Derived + sticky peer bits; 0 when the day is free.
+    uint32_t day_stall_reason_mask = 0;
+    int64_t day_stall_day = -1;
+    uint64_t day_stall_peer_ms = 0;
     uint64_t climate_wait_total_ms = 0;
     uint64_t climate_wait_last_ms = 0;
     uint64_t climate_wait_max_ms = 0;

@@ -11,7 +11,8 @@ preserving pre-command reads and post-command visibility. Parity stage refreshes
 stage order, authority masks and save/hash schemas are unchanged.
 
 ## Climate input capacity backpressure (2026-09-19; pulse fix 2026-09-24;
-## capacity-priority + ring drain 2026-09-24)
+## capacity-priority + ring drain 2026-09-24; Host liveness/progress split +
+## day_stall_reason_mask 2026-09-24)
 
 `wait_for_climate_consumed(0)` checks native input-ring capacity with a zero
 timeout; zero is not an absent generation. At the player day boundary a full
@@ -21,6 +22,33 @@ not `pause(true)`: input production stops while peer services and the worker
 continue. `_process` retries the retained day once per frame and clears the
 barrier only when capacity returns. This avoids both dropping an input day
 and blocking the main thread waiting for work that needs its peer pump.
+
+**Host frame split (liveness vs progress).** `_process` always runs
+`_service_runtime_liveness()` (economy same-day capture, Country peer pump,
+Effect/Trigger/Ideology snapshot+intent ACK). Under capacity pending it skips
+`_service_runtime_progress()` (country read-view, building visual, map overlay)
+so peer ACKs keep the frame budget. Early-returns must never skip liveness.
+
+**Unified day stall mask.** `RuntimeThreadReport.day_stall_reason_mask` ORs
+`RUNTIME_DAY_STALL_*` bits (`climate_capacity`, `country_peer`, `effect_ack`,
+`ideology_ack`, `fiscal_peer`, `economy_input`). `[runtime-day-wait]` and
+`[climate-capacity-stall]` print `stall=0x…`. Peer stalls past
+`RUNTIME_DAY_STALL_PEER_FAULT_TIMEOUT_MS` (5s) call `set_fault` instead of
+soft-committing the day.
+
+**Soft-commit is not a deadlock escape.** Country/Economy must not
+`commit_rejected_day` / fake-complete ECONOMY because the climate ring is half
+full. Waiting peers park with a stall bit + absorbed-env drain; only inspected
+peer *rejection* still uses `commit_rejected_day`. Logs:
+`[economy-fiscal-stall]`, `[day-stall-fault]`.
+
+**Country tech PENDING promote.** Host peer pump leaves ENSURE as `PENDING`
+and deliberately does not re-queue (re-queue spun the main thread). The old
+Country soft-commit closed the day and re-issued next day. Without that escape,
+Effect soft-skip/catchup/Modifier ACK must call
+`resolve_pending_country_effect_peers()` to promote PENDING→READY same day.
+`[tech-ack-diag/promote]` logs promotions. Host
+`service_country_worker_peer_adapter` also resolves after each drain.
 
 **Do not emit `simulation_backpressure_pulse` for climate capacity alone.** That
 pulse drives `MapGenerator._continue_economy_inflight` → `advance_runtime_pulse`,

@@ -5497,9 +5497,12 @@ Dictionary NativeCountryRuntime::research_snapshot(int64_t handle) const {
             }
             UtilityFunctions::print(vformat(
                 "[tech-ui-diag/research] handle=%d gen=%d day=%d "
-                "owned=%d pending=%d queued=%d progress_nonzero=%d stock=%d",
+                "owned=%d pending=%d queued=%d progress_nonzero=%d stock=%d "
+                "deferred=%d consumed=%d",
                 handle, static_cast<int64_t>(_generation), _last_research_day,
-                owned, pending, queued, nonzero_progress, stock));
+                owned, pending, queued, nonzero_progress, stock,
+                _country_research_deferred_points[static_cast<size_t>(slot)],
+                _country_research_consumed_total[static_cast<size_t>(slot)]));
         }
     }
     return out;

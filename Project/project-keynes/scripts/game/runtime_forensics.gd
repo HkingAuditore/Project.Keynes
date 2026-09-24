@@ -71,6 +71,7 @@ const RUNTIME_THREAD_KEYS := [
 	"missing_domain_mask", "economy_pod_active_ready", "economy_stage_ops_prelude_ready",
 	"economy_yield_reason", "economy_stage_name", "economy_substage_name",
 	"economy_input_requested_day", "environment_ring_pending",
+	"day_stall_reason_mask", "day_stall_day", "day_stall_peer_ms",
 	"country_worker_plan_active", "country_worker_waiting_for_peer",
 ]
 

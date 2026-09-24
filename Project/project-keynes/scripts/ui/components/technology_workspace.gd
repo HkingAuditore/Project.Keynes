@@ -87,6 +87,15 @@ var _pending_refresh_model: Dictionary = {}
 var _refresh_dirty := false
 var _last_render_msec := 0
 var _has_rendered_model := false
+# Host-accepted enqueue that the worker snapshot has not reflected yet. Keeps
+# the left-hand queue honest while Country peers / next-day commit catch up.
+# Values are {domain, request_id, technology_id}; request_id ties receipts.
+var _optimistic_queue: Dictionary = {}
+var _receipt_cursor := 0
+var _optimistic_country_handle := 0
+var _optimistic_baseline_stock := -1
+var _optimistic_baseline_consumed := -1
+var _optimistic_reconcile_fail_logged := false
 
 
 func _ready() -> void:
@@ -276,8 +285,12 @@ func refresh_research(model: Dictionary) -> void:
 
 
 func _process(_delta: float) -> void:
+	_poll_optimistic_receipts()
+	if not _optimistic_queue.is_empty():
+		_reconcile_optimistic_from_live_snapshot()
 	if not _refresh_dirty:
-		set_process(false)
+		if _optimistic_queue.is_empty():
+			set_process(false)
 		return
 	var now := Time.get_ticks_msec()
 	if now - _last_render_msec < LIVE_REFRESH_INTERVAL_MSEC:
@@ -300,7 +313,7 @@ func _apply_refresh_model(model: Dictionary, now_msec: int) -> void:
 	_apply_research()
 	_last_render_msec = now_msec
 	_has_rendered_model = true
-	set_process(false)
+	set_process(_refresh_dirty or not _optimistic_queue.is_empty())
 
 
 func _research_from_model(model: Dictionary) -> Dictionary:
@@ -317,6 +330,16 @@ func _research_from_model(model: Dictionary) -> Dictionary:
 	if states.is_empty() or (_research_definition_count > 0 \
 			and states.size() != _research_definition_count):
 		return {}
+	# Compact / section snapshots sometimes omit the handle. Keep a stable
+	# copy so optimistic reconcile can always talk to the same country.
+	if int(candidate.get("country_handle", 0)) == 0:
+		var handle := int(model.get("country_handle", 0))
+		if handle == 0 and _player_controller != null \
+				and _player_controller.has_method("get_player_country_handle"):
+			handle = int(_player_controller.get_player_country_handle())
+		if handle != 0:
+			candidate = candidate.duplicate(false)
+			candidate["country_handle"] = handle
 	return candidate
 
 
@@ -669,9 +692,16 @@ func _configure_queues() -> void:
 
 func _apply_research() -> void:
 	var research_states: PackedInt32Array = _research.get(
-		"technology_states", PackedInt32Array())
+		"technology_states", PackedInt32Array()).duplicate()
 	var research_progress: PackedInt64Array = _research.get(
 		"technology_progress", PackedInt64Array())
+	var offsets: PackedInt32Array = _research.get(
+		"queue_offsets", PackedInt32Array()).duplicate()
+	var technologies: PackedInt32Array = _research.get(
+		"queue_technology_indices", PackedInt32Array()).duplicate()
+	# Optimistic overlay is presentation-only. Never bake it into `_research`
+	# or a COMMIT receipt that clears the queue leaves a fake 「研究中」 forever.
+	_overlay_optimistic_into(research_states, offsets, technologies)
 	var states := _presentation_states(research_states)
 	var progress := _presentation_progress(research_progress)
 	var relations_changed := states != _last_states
@@ -686,12 +716,229 @@ func _apply_research() -> void:
 	_budget.set_state(bool(_research.get("auto_purchase_enabled", false)),
 		int(_research.get("daily_procurement_budget", 0)),
 		int(_research.get("country_cash", 0)))
-	_patch_queues(research_states, research_progress, weights)
+	_patch_queues(research_states, research_progress, weights,
+		offsets, technologies)
 	_patch_development()
 	_update_status(research_states)
 	if _initial_focus_pending:
 		_apply_default_focus()
 	_refresh_detail(relations_changed)
+	if not _optimistic_queue.is_empty():
+		set_process(true)
+
+
+func _optimistic_domain(entry) -> int:
+	if entry is Dictionary:
+		return int((entry as Dictionary).get("domain", -1))
+	return int(entry)
+
+
+func _optimistic_request_id(entry) -> int:
+	if entry is Dictionary:
+		return int((entry as Dictionary).get("request_id", 0))
+	return 0
+
+
+func _overlay_optimistic_into(states: PackedInt32Array, offsets: PackedInt32Array,
+		technologies: PackedInt32Array, erase_confirmed: bool = true) -> void:
+	if _optimistic_queue.is_empty():
+		return
+	if offsets.size() < DOMAIN_COUNT + 1:
+		offsets.resize(DOMAIN_COUNT + 1)
+		offsets[0] = 0
+		for domain_cursor in range(1, DOMAIN_COUNT + 1):
+			offsets[domain_cursor] = technologies.size()
+	var confirmed: Array[int] = []
+	for tech_index_value in _optimistic_queue.keys():
+		var tech_index := int(tech_index_value)
+		if tech_index < 0 or tech_index >= states.size():
+			confirmed.append(tech_index)
+			continue
+		# Authoritative queued / pending / owned means the optimistic row is done.
+		if int(states[tech_index]) >= 3:
+			confirmed.append(tech_index)
+			continue
+		var domain := _optimistic_domain(_optimistic_queue[tech_index_value])
+		if domain < 0 or domain >= DOMAIN_COUNT:
+			confirmed.append(tech_index)
+			continue
+		var already := false
+		for queued_index in technologies:
+			if int(queued_index) == tech_index:
+				already = true
+				break
+		if already:
+			confirmed.append(tech_index)
+			continue
+		states[tech_index] = 3
+		var insert_at := int(offsets[domain + 1])
+		technologies.insert(insert_at, tech_index)
+		for domain_cursor in range(domain + 1, DOMAIN_COUNT + 1):
+			offsets[domain_cursor] = int(offsets[domain_cursor]) + 1
+	if erase_confirmed:
+		for tech_index in confirmed:
+			_optimistic_queue.erase(tech_index)
+
+
+func _resolve_research_handle() -> int:
+	var handle := _optimistic_country_handle
+	if handle == 0:
+		handle = int(_research.get("country_handle", 0))
+	if handle == 0 and _player_controller != null \
+			and _player_controller.has_method("get_player_country_handle"):
+		handle = int(_player_controller.get_player_country_handle())
+	return handle
+
+
+func _force_apply_live_research() -> bool:
+	if _player_controller == null:
+		return false
+	var facade = null
+	if _player_controller.has_method("get_country_facade"):
+		facade = _player_controller.get_country_facade()
+	if facade == null or not facade.has_method("research_snapshot"):
+		return false
+	var handle := _resolve_research_handle()
+	if handle == 0:
+		if not _optimistic_reconcile_fail_logged:
+			_optimistic_reconcile_fail_logged = true
+			print("[tech-ui] live research apply skipped: country_handle=0")
+		return false
+	var live: Dictionary = facade.research_snapshot(handle)
+	if live.is_empty() or (live.has("ok") and not bool(live.get("ok", false))):
+		return false
+	var live_states = live.get("technology_states", null)
+	if not live_states is PackedInt32Array:
+		return false
+	live["country_cash"] = _research.get("country_cash", live.get("country_cash", 0))
+	_research = live
+	_has_valid_research = true
+	_apply_research()
+	return true
+
+
+func _reconcile_optimistic_from_live_snapshot() -> void:
+	if _optimistic_queue.is_empty() or _player_controller == null:
+		return
+	var facade = null
+	if _player_controller.has_method("get_country_facade"):
+		facade = _player_controller.get_country_facade()
+	if facade == null or not facade.has_method("research_snapshot"):
+		return
+	var handle := _resolve_research_handle()
+	if handle == 0:
+		if not _optimistic_reconcile_fail_logged:
+			_optimistic_reconcile_fail_logged = true
+			print("[tech-ui] optimistic reconcile skipped: country_handle=0")
+		return
+	var live: Dictionary = facade.research_snapshot(handle)
+	if live.is_empty() or (live.has("ok") and not bool(live.get("ok", false))):
+		return
+	var live_states = live.get("technology_states", null)
+	if not live_states is PackedInt32Array:
+		return
+	var states: PackedInt32Array = live_states
+	var live_stock := int(live.get("technology_points_stock", -1))
+	var live_consumed := int(live.get("consumed_total", -1))
+	# Starter knowledge costs the entire treasury grant. When stock/consumed move
+	# after an optimistic enqueue, the worker already finished the node even if
+	# our local definition index and the states array briefly disagree.
+	var authority_moved := (
+		(_optimistic_baseline_stock >= 0 and live_stock >= 0
+			and live_stock != _optimistic_baseline_stock)
+		or (_optimistic_baseline_consumed >= 0 and live_consumed >= 0
+			and live_consumed != _optimistic_baseline_consumed)
+		or int(live.get("generation", -1)) != int(_research.get("generation", -1))
+	)
+	var cleared := false
+	var remaining: Array = _optimistic_queue.keys()
+	for tech_index_value in remaining:
+		var tech_index := int(tech_index_value)
+		var entry = _optimistic_queue[tech_index_value]
+		var technology_id := ""
+		if entry is Dictionary:
+			technology_id = String((entry as Dictionary).get("technology_id", ""))
+		var resolved := tech_index
+		if not technology_id.is_empty() and _technology_indices.has(technology_id):
+			resolved = int(_technology_indices[technology_id])
+		var authoritative_state := -1
+		if resolved >= 0 and resolved < states.size():
+			authoritative_state = int(states[resolved])
+		elif tech_index >= 0 and tech_index < states.size():
+			authoritative_state = int(states[tech_index])
+		if authoritative_state >= 3 or authority_moved:
+			_optimistic_queue.erase(tech_index)
+			cleared = true
+	if cleared or authority_moved:
+		live["country_cash"] = _research.get("country_cash", live.get("country_cash", 0))
+		_research = live
+		_has_valid_research = true
+		if _optimistic_queue.is_empty():
+			_optimistic_baseline_stock = -1
+			_optimistic_baseline_consumed = -1
+			_optimistic_reconcile_fail_logged = false
+		_apply_research()
+		print("[tech-ui] optimistic reconciled gen=%d stock=%d consumed=%d queued_left=%d" % [
+			int(live.get("generation", -1)), live_stock, live_consumed,
+			_optimistic_queue.size()])
+
+
+func _poll_optimistic_receipts() -> void:
+	if _optimistic_queue.is_empty() or _player_controller == null:
+		return
+	var facade = null
+	if _player_controller.has_method("get_country_facade"):
+		facade = _player_controller.get_country_facade()
+	if facade == null or not facade.has_method("poll_worker_command_receipts"):
+		return
+	var batch: Dictionary = facade.poll_worker_command_receipts(
+		_receipt_cursor, 64)
+	var receipts: Array = batch.get("receipts", [])
+	if receipts.is_empty():
+		return
+	var need_live_apply := false
+	for row_value in receipts:
+		var row: Dictionary = row_value
+		var request_id := int(row.get("request_id", 0))
+		_receipt_cursor = maxi(_receipt_cursor, request_id)
+		var status := String(row.get("status", row.get("code", "")))
+		var reason := String(row.get("reason", "")).strip_edges()
+		if status.findn("REJECT") >= 0:
+			_optimistic_queue.clear()
+			var message := _research_command_message(reason)
+			if message == "当前无法加入研究队列。" and not reason.is_empty():
+				message = reason
+			_detail.mark_rejected(message if not message.is_empty() else "提交失败")
+			_force_apply_live_research()
+			return
+		# Only Committed terminals mean the worker applied the queue mutation.
+		# Accepted is admission-only and arrives before the snapshot moves.
+		if status.findn("COMMIT") < 0:
+			continue
+		var matched: Array[int] = []
+		for tech_index_value in _optimistic_queue.keys():
+			var tech_index := int(tech_index_value)
+			var entry_request := _optimistic_request_id(
+				_optimistic_queue[tech_index_value])
+			# Prefer exact request_id match. Rows without an id fall through to
+			# live snapshot reconcile (state >= 3) instead of clearing on every
+			# unrelated Country commit.
+			if entry_request != 0 and entry_request == request_id:
+				matched.append(tech_index)
+		for tech_index in matched:
+			_optimistic_queue.erase(tech_index)
+			need_live_apply = true
+	if need_live_apply:
+		# COMMIT may clear the optimistic map before the next panel refresh.
+		# Always re-read the worker replica — do not keep a presentation overlay.
+		if not _force_apply_live_research():
+			_apply_research()
+		elif not _optimistic_queue.is_empty():
+			_reconcile_optimistic_from_live_snapshot()
+	elif not _optimistic_queue.is_empty():
+		_reconcile_optimistic_from_live_snapshot()
+		if not _optimistic_queue.is_empty():
+			_apply_research()
 
 
 func _update_status(states: PackedInt32Array) -> void:
@@ -821,11 +1068,14 @@ func _current_era_label(states: PackedInt32Array) -> String:
 
 
 func _patch_queues(states: PackedInt32Array, progress: PackedInt64Array,
-		weights: PackedInt32Array) -> void:
-	var offsets: PackedInt32Array = _research.get(
-		"queue_offsets", PackedInt32Array([0, 0, 0, 0, 0]))
-	var technologies: PackedInt32Array = _research.get(
-		"queue_technology_indices", PackedInt32Array())
+		weights: PackedInt32Array, offsets: PackedInt32Array = PackedInt32Array(),
+		technologies: PackedInt32Array = PackedInt32Array()) -> void:
+	if offsets.is_empty():
+		offsets = _research.get(
+			"queue_offsets", PackedInt32Array([0, 0, 0, 0, 0]))
+	if technologies.is_empty():
+		technologies = _research.get(
+			"queue_technology_indices", PackedInt32Array())
 	if offsets.size() < DOMAIN_COUNT + 1:
 		return
 	# Include per-tech state so pending/owned heads force a rebuild even when
@@ -915,7 +1165,13 @@ func _refresh_detail(refresh_relations: bool = true) -> void:
 		return
 	_selected_technology = index
 	var research_states: PackedInt32Array = _research.get(
-		"technology_states", PackedInt32Array())
+		"technology_states", PackedInt32Array()).duplicate()
+	if not _optimistic_queue.is_empty():
+		var offsets: PackedInt32Array = _research.get(
+			"queue_offsets", PackedInt32Array()).duplicate()
+		var technologies: PackedInt32Array = _research.get(
+			"queue_technology_indices", PackedInt32Array()).duplicate()
+		_overlay_optimistic_into(research_states, offsets, technologies, false)
 	var states := _presentation_states(research_states)
 	var state := int(states[index]) if index < states.size() else 0
 	var definition: Dictionary = _definitions[index]
@@ -1294,7 +1550,7 @@ func _on_tree_activated(index: int) -> void:
 		return
 	var states: PackedInt32Array = _research.get("technology_states", PackedInt32Array())
 	var state := int(states[index]) if index < states.size() else 0
-	if state == 3:
+	if state == 3 or _optimistic_queue.has(index):
 		_remove_from_queue(index)
 		return
 	if state == 2:
@@ -1338,19 +1594,50 @@ func _enqueue(index: int) -> void:
 	var definition: Dictionary = _definitions[index]
 	if _is_application_definition(definition):
 		return
+	var domain := _domain_index_of(definition)
 	var result: Dictionary = _player_controller.request_command(
 		PlayerControllerScript.COMMAND_RESEARCH_ENQUEUE,
 		{"technology_id": StringName(definition.get("id", "")),
-		"domain": _domain_index_of(definition)})
+		"domain": domain})
 	if bool(result.get("ok", false)):
+		var request_ids = result.get("request_ids", PackedInt64Array())
+		var request_id := 0
+		if request_ids is PackedInt64Array and request_ids.size() > 0:
+			request_id = int(request_ids[0])
+		elif request_ids is Array and not request_ids.is_empty():
+			request_id = int(request_ids[0])
+		_optimistic_country_handle = int(_research.get("country_handle", 0))
+		if _optimistic_country_handle == 0 \
+				and _player_controller.has_method("get_player_country_handle"):
+			_optimistic_country_handle = int(
+				_player_controller.get_player_country_handle())
+		_optimistic_baseline_stock = int(_research.get(
+			"technology_points_stock", -1))
+		_optimistic_baseline_consumed = int(_research.get("consumed_total", -1))
+		_optimistic_reconcile_fail_logged = false
+		_optimistic_queue[index] = {
+			"domain": domain,
+			"request_id": request_id,
+			"technology_id": String(definition.get("id", "")),
+		}
+		set_process(true)
 		_detail.mark_submitted()
+		_apply_research()
 		policy_submitted.emit()
+		print("[tech-ui] enqueue accepted id=%s domain=%d request=%d handle=%d stock=%d" % [
+			String(definition.get("id", "")), domain, request_id,
+			_optimistic_country_handle, _optimistic_baseline_stock])
+		# Immediate reconcile: at 50x the worker may finish the node before the
+		# next panel refresh, and optimistic rows must not outlive that.
+		_reconcile_optimistic_from_live_snapshot()
 		return
 	var reason := String(result.get("code", result.get("reason", "")))
 	var message := String(result.get("message", "")).strip_edges()
 	if message.is_empty():
 		message = _research_command_message(reason)
 	_detail.mark_rejected(message)
+	print("[tech-ui] enqueue rejected id=%s reason=%s" % [
+		String(definition.get("id", "")), reason])
 
 
 func _remove_from_queue(index: int) -> void:
@@ -1358,14 +1645,22 @@ func _remove_from_queue(index: int) -> void:
 		return
 	if _is_application_definition(_definitions[index]):
 		return
+	_optimistic_queue.erase(index)
 	var result: Dictionary = _player_controller.request_command(
 		PlayerControllerScript.COMMAND_RESEARCH_REMOVE,
 		{"technology_id": StringName((_definitions[index] as Dictionary).get("id", ""))})
 	if bool(result.get("ok", false)):
 		_detail.mark_submitted()
+		if not _force_apply_live_research():
+			_apply_research()
 		policy_submitted.emit()
 		return
 	var reason := String(result.get("code", result.get("reason", "")))
+	# Optimistic-only rows are not on the worker yet; treat as local cancel.
+	if reason == "country_research_not_queued":
+		if not _force_apply_live_research():
+			_apply_research()
+		return
 	var message := String(result.get("message", "")).strip_edges()
 	if message.is_empty():
 		message = _research_command_message(reason)

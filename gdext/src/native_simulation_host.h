@@ -79,6 +79,14 @@ public:
     // 主线程 publish：ring 已满，需 wait 腾空位。
     bool environment_ring_full() const;
     size_t environment_ring_pending() const;
+    // Compose RUNTIME_DAY_STALL_* from live ring/peer/input state.
+    uint32_t day_stall_reason_mask() const;
+    // Worker parks: OR sticky peer bits and arm the peer-stall timeout clock.
+    void note_day_stall(uint32_t bits, int64_t day);
+    void clear_day_stall_peer_bits();
+    // Returns true if peer stall exceeded RUNTIME_DAY_STALL_PEER_FAULT_TIMEOUT_MS
+    // and set_fault was called.
+    bool fault_if_peer_stall_timed_out(int64_t day, const char *fault_code);
     // publish 描述这一天生产 Climate 各段的真实执行情况（跑没跑、用的什么输入），
     // 全部字段可选；见 RuntimeClimateReferencePublish。
     bool publish_climate_reference(
@@ -343,6 +351,10 @@ public:
                                             uint64_t settle_request_id = 0);
     bool publish_country_worker_snapshot(uint32_t dirty_families,
                                          std::string &error);
+    // Publish plan.next_state for UI while the open plan is still peer-waiting.
+    // Does not close the plan or mutate authority committed_day; commit_day /
+    // commit_rejected_day remain the only authority closes.
+    bool publish_country_plan_preview_snapshot(std::string &error);
     std::shared_ptr<const RuntimeCountryPodSnapshot> country_asset_snapshot() const {
         return std::atomic_load_explicit(&_country_snapshot, std::memory_order_acquire);
     }
@@ -507,6 +519,10 @@ public:
             std::string &error);
     bool effect_pod_instance_fire_acked(int64_t instance_id,
                                         uint32_t generation) const;
+    // After Effect soft-skip/catchup/ACK, PENDING Country ENSURE/NUDGE peers
+    // must become READY without re-queue (re-queue spun the main-thread pump).
+    // Removing Country soft-commit made this same-day promote mandatory.
+    uint32_t resolve_pending_country_effect_peers();
     // Describes why a technology Effect instance has not fire-ACKed yet. The
     // caller prints it through Godot so the text reaches the editor Output
     // panel; this translation unit stays free of Godot headers.
@@ -966,6 +982,9 @@ private:
     RuntimeCountryPodCatalog _country_pod_catalog;
     std::atomic<bool> _country_pod_configured{false};
     std::atomic<bool> _country_pod_plan_active{false};
+    // One preview publish per open peer-wait so research enqueue appears in the
+    // left queue without soft-committing the Country calendar boundary.
+    bool _country_peer_wait_preview_published = false;
     std::map<int64_t, RuntimeCountryPodSnapshot> _country_references;
     std::deque<CountryPeerResult> _country_shadow_peer_mirrors;
     std::atomic<uint8_t> _country_parity_compared{0};
@@ -1164,6 +1183,10 @@ private:
     // passing an idle check while the worker starts the next day.
     mutable std::mutex _economy_authority_boundary_mutex;
     std::atomic<int64_t> _economy_input_requested_day{-1};
+    // Sticky peer/fiscal stall bits (OR). Climate-capacity is derived live.
+    std::atomic<uint32_t> _day_stall_reason_mask{0};
+    std::atomic<int64_t> _day_stall_day{-1};
+    std::atomic<uint64_t> _day_stall_peer_since_us{0};
     std::atomic<uint64_t> _economy_input_signal{0};
     std::atomic<uint64_t> _economy_pod_command_recapture_count{0};
     std::atomic<uint64_t> _economy_pod_command_verify_count{0};

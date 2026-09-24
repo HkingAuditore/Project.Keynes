@@ -477,7 +477,7 @@ section tab；section 切换只由底栏 `CountryActionBar` 驱动。经济 sect
 - `technology_breakthrough_trigger_test.gd`
 - `technology_procurement_runtime_test.gd`
 - `technology_procurement_country_worker_test.gd`
-- `country_late_command_reschedule_test.gd`（UI 时钟落后于 ACTIVE worker 时，研究命令必须顺延执行而不是按 `country_command_day_already_committed` 丢弃）
+- `country_late_command_reschedule_test.gd`（UI 时钟落后或超前于 ACTIVE worker 时，研究命令都必须排到 `simulation_committed_day+1` 执行，而不是按 `country_command_day_already_committed` 丢弃，也不得排到未来 UI 日导致左侧队列长期为空）
 - `technology_cheap_node_cost_display_test.gd`（`country_effective_research_cost` 对 `base_cost < 1`
   取下限 1 缩放单位，因此 `cost_points` 为 0 的节点仍需付费；UI 必须用
   `cost_points_scaled` 而不是整数除法得到的 `cost_points`，否则会显示成「0% · 还需 0」）

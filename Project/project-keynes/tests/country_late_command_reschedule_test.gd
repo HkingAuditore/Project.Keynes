@@ -174,6 +174,68 @@ func _run() -> void:
 			rejected_late = true
 	_expect("no command is dropped as already-committed", not rejected_late)
 
+	# UI clock can also lead the worker (capacity stall / peer wait). Stamping a
+	# far-future effective_day must still land on committed+1, not wait until
+	# the worker catches the UI day — that left the left-hand queue empty while
+	# the detail card already said "submitted".
+	var worker_before_early := int(ext.get_runtime_thread_report().get(
+		"simulation_committed_day", 0))
+	var early_stamp := worker_before_early + 64
+	var snap_before_early: Dictionary = country.research_snapshot(handle)
+	var queue_before_early: PackedInt32Array = snap_before_early.get(
+		"queue_technology_indices", PackedInt32Array())
+	var states_before_early: PackedInt32Array = snap_before_early.get(
+		"technology_states", PackedInt32Array())
+	var tech_domains: PackedInt32Array = compiled.get(
+		"technology_domains", PackedInt32Array())
+	var early_tech_index := -1
+	for tech_index in range(states_before_early.size()):
+		if int(states_before_early[tech_index]) != 2:
+			continue
+		var already_queued := false
+		for queued_index in queue_before_early:
+			if int(queued_index) == tech_index:
+				already_queued = true
+				break
+		if already_queued:
+			continue
+		early_tech_index = tech_index
+		break
+	_expect("an available technology exists for the early-stamp case",
+		early_tech_index >= 0)
+	var early_queued := false
+	if early_tech_index >= 0:
+		var early_id := StringName(tech_ids[early_tech_index])
+		var early_domain := 0
+		if early_tech_index < tech_domains.size():
+			early_domain = int(tech_domains[early_tech_index])
+		var early_submitted: Dictionary = country.enqueue_research(
+			handle, early_id, early_domain, -1, early_stamp, 31)
+		_expect("early research command is admitted",
+			bool(early_submitted.get("ok", false)))
+		for _step in range(240):
+			input_generation += 1
+			_publish_day_input(ext, input_generation)
+			ext.advance_runtime_pulse(0, 0.0, 1.0, 4000)
+			ext.set_runtime_clock(false, 1000.0)
+			OS.delay_msec(3)
+			ext.set_runtime_clock(true, 1000.0)
+			var snap_queue: PackedInt32Array = country.research_snapshot(handle).get(
+				"queue_technology_indices", PackedInt32Array())
+			for tech_index in snap_queue:
+				if int(tech_index) == early_tech_index:
+					early_queued = true
+					break
+			if early_queued:
+				break
+			var worker_now := int(ext.get_runtime_thread_report().get(
+				"simulation_committed_day", 0))
+			# Must not need to reach the far UI stamp.
+			if worker_now >= early_stamp:
+				break
+	_expect("early research command reaches the worker queue before UI day",
+		early_queued)
+
 	# The UI only refreshes when the worker read view reports a newer
 	# generation: country_committed is emitted from that transition. A day that
 	# commits the enqueue must therefore advance it, including when the day is

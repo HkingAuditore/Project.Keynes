@@ -554,6 +554,14 @@ func _on_tile_tapped(world_pos: Vector2) -> void:
 		select_cell(cell)
 
 
+func get_country_facade():
+	return _country_facade
+
+
+func get_player_country_handle() -> int:
+	return _player_country_handle
+
+
 func _on_country_committed(report: Dictionary) -> void:
 	country_committed.emit(report)
 	_sync_era_reward_offer()
