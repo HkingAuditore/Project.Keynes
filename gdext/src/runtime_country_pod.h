@@ -110,6 +110,23 @@ public:
     uint32_t pending_command_count() const noexcept {
         return static_cast<uint32_t>(_pending.size());
     }
+    bool has_pending_request(uint64_t request_id) const noexcept {
+        if (request_id == 0) return false;
+        for (const RuntimeCountryCommand &command : _pending) {
+            if (command.request_id == request_id) return true;
+        }
+        return false;
+    }
+    // Re-open the research allocation window on an already-planned next_state
+    // after a late-fold enqueue / move. Used by the ACTIVE Host while peers
+    // are still pending so the new queue head can spend the same calendar day.
+    bool catch_up_research_day(RuntimeCountryPodSnapshot &state, int64_t day,
+                               RuntimeCountryPodPlan &plan,
+                               std::string &error) const {
+        if (state.last_research_day >= day)
+            state.last_research_day = day - 1;
+        return run_research_day(state, day, plan, error);
+    }
     static bool self_test(std::string &error);
 
 private:

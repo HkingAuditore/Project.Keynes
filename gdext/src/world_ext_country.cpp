@@ -131,12 +131,16 @@ Dictionary enqueue_country_host_command_batch(
             out["code"] = "country_worker_command_day_invalid";
             return out;
         }
-        // A player stamps effective_day from the UI clock, which trails the
-        // worker clock at high speed. Schedule the intent on the earliest day
-        // the worker can still honour instead of dropping it; requested_day
-        // below keeps the original intent for audit.
+        // A player stamps effective_day from the UI clock. At high speed that
+        // stamp can trail *or* lead the worker: capacity stalls let WorldClock
+        // run ahead while Country is still finishing peers. Always schedule on
+        // the earliest day the worker can still honour (committed+1). Using
+        // max(ui, first_allowed) previously parked ahead-of-worker research
+        // enqueue on a future day, so the UI said "submitted" while the left
+        // queue stayed empty until the worker caught up — if ever.
+        // requested_day below keeps the original UI stamp for audit.
         const int64_t scheduled_day = enforce_committed_day
-            ? std::max(effective_days[index], first_allowed_day)
+            ? first_allowed_day
             : effective_days[index];
         RuntimeCountryCommand command;
         command.request_id = host.allocate_command_request_id();
@@ -1533,6 +1537,11 @@ Dictionary DCWorldExt::service_country_worker_peer_adapter(
         ++inspected;
         if (result.code != CountryPeerResultCode::REJECTED) ++replayed;
     }
+    // Effect may catchup-fire after ENSURE left PENDING (not re-queued). Promote
+    // any fire-acked tech peers so Country can leave country_worker_peer_results_pending.
+    const uint32_t promoted =
+        _runtime_host->resolve_pending_country_effect_peers();
+    out["promoted_pending"] = static_cast<int64_t>(promoted);
 
     const NativeSimulationHost::CountryWorkerProtocolStatus status =
         _runtime_host->country_worker_protocol_status();

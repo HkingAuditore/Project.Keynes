@@ -939,6 +939,11 @@ Dictionary DCWorldExt::get_runtime_thread_report() const {
             static_cast<int64_t>(host.environment_dropped_days);
         out["environment_ring_pending"] =
             static_cast<int64_t>(host.environment_ring_pending);
+        out["day_stall_reason_mask"] =
+            static_cast<int64_t>(host.day_stall_reason_mask);
+        out["day_stall_day"] = host.day_stall_day;
+        out["day_stall_peer_ms"] =
+            static_cast<int64_t>(host.day_stall_peer_ms);
         out["climate_wait_total_ms"] =
             static_cast<int64_t>(host.climate_wait_total_ms);
         out["climate_wait_last_ms"] =

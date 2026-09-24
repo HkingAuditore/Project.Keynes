@@ -562,8 +562,12 @@ bool RuntimeCountryPodAdapter::decode_command(
 bool RuntimeCountryPodAdapter::validate_command(
         const RuntimeCountryCommand &command, std::string &error) {
     error.clear();
+    // effective_day may be earlier than requested_day when Host clamps an
+    // ahead-of-worker UI stamp onto simulation_committed+1. The opposite
+    // (effective later than requested) is the trailing-UI reschedule path.
+    // Both are intentional; only identity / negative days are hard rejects.
     if (command.request_id == 0 || command.sequence == 0 ||
-        command.effective_day < command.requested_day) {
+        command.effective_day < 0 || command.requested_day < 0) {
         error = "invalid_country_command_value";
         return false;
     }
