@@ -225,8 +225,9 @@ func _update_row_dynamic(index: int) -> void:
 	if row.is_empty():
 		return
 	var definition: Dictionary = _definitions[index]
-	var cost := maxf(1.0, float(definition.get("cost_points", 1)))
-	var earned := float(_progress[index]) / POINT_SCALE if index < _progress.size() else 0.0
+	var cost := maxf(1.0, float(definition.get("cost_points_scaled",
+		int(definition.get("cost_points", 1)) * POINT_SCALE)))
+	var earned := float(_progress[index]) if index < _progress.size() else 0.0
 	var fraction := clampf(earned / cost, 0.0, 1.0)
 	(row.progress as ProgressBar).value = fraction * 100.0
 	var era := String(_era_names.get(String(definition.get("era_id", "")), ""))
@@ -234,12 +235,14 @@ func _update_row_dynamic(index: int) -> void:
 		era = String(definition.get("era_id", ""))
 	var routes: PackedStringArray = definition.get("route_display_names", PackedStringArray())
 	var route := String(routes[0]) if not routes.is_empty() else ""
+	var cost_display := maxf(0.0, float(definition.get("cost_points", cost / POINT_SCALE)))
 	var meta := row.meta as Label
 	if route.is_empty():
-		meta.text = "成本 %s · %s" % [UITokens.format_compact_number_cn(cost, 0), era]
+		meta.text = "成本 %s · %s" % [
+			UITokens.format_compact_number_cn(cost_display, 0), era]
 	else:
 		meta.text = "成本 %s · %s · %s" % [
-			UITokens.format_compact_number_cn(cost, 0), era, route]
+			UITokens.format_compact_number_cn(cost_display, 0), era, route]
 
 
 func _domain_index(definition: Dictionary) -> int:

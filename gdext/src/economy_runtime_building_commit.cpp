@@ -90,6 +90,7 @@ bool NativeEconomyRuntime::commit_ready_construction(
         const int32_t existing = find_for_commit(
             pending.cell, pending.type_id, pending.owner_signature_id);
         const int64_t before_count = existing >= 0 ? buildings_store().group_units[existing] : 0;
+        int32_t group_index = existing;
         if (existing >= 0) {
             ++_building_structure_count_only_updates;
             buildings_store().group_units[existing] = saturating_add(buildings_store().group_units[existing],
@@ -117,12 +118,35 @@ bool NativeEconomyRuntime::commit_ready_construction(
             group.merchant_debt_term_cycles_left =
                 pending.merchant_debt_term_cycles_left;
             append_building_group(group);
+            group_index = static_cast<int32_t>(building_count()) - 1;
             appended_group_indices.emplace(
                 AppendedGroupKey{pending.cell, pending.type_id,
                     pending.owner_signature_id},
-                static_cast<int32_t>(building_count()) - 1);
+                group_index);
             topology_changed = true;
             ++_building_structure_new_groups;
+        }
+        // Investment without seating is meaningless. Seat exactly the owner
+        // lots this pending batch created (count × slots) — the same headcount
+        // investment already moved onto the owner signature — not the entire
+        // cohort or every prior empty opening on the group.
+        if (group_index >= 0 &&
+            pending.type_id >= 0 &&
+            pending.type_id < static_cast<int32_t>(_building_types.size())) {
+            const BuildingType &type = _building_types[pending.type_id];
+            const int64_t add_owners = saturating_mul(
+                std::max<int64_t>(0, pending.count),
+                std::max<int64_t>(1, type.owner_slots_per_building),
+                _saturation_count);
+            const int64_t owner_required = saturating_mul(
+                std::max<int64_t>(0, buildings_store().group_units[group_index]),
+                std::max<int64_t>(1, type.owner_slots_per_building),
+                _saturation_count);
+            int64_t seated = saturating_add(
+                std::max<int64_t>(0, buildings_store().filled_owner[group_index]),
+                add_owners, _saturation_count);
+            seated = std::min(seated, owner_required);
+            buildings_store().filled_owner[group_index] = seated;
         }
         const int64_t after_count = existing >= 0 ? buildings_store().group_units[existing]
                                                    : buildings_store().group_units.back();

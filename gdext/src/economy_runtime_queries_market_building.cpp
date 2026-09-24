@@ -144,6 +144,18 @@ Dictionary NativeEconomyRuntime::market_cell_snapshot(int32_t cell_idx) const {
         derived_business_demand.push_back(signal >= 0 && signal < static_cast<int32_t>(
                 _epoch_derived_business_demand.size())
             ? _epoch_derived_business_demand[signal] : 0);
+        const int64_t substitute_business = signal >= 0 && signal < static_cast<int32_t>(
+                _epoch_substitute_business_demand.size())
+            ? _epoch_substitute_business_demand[signal] : 0;
+        // Expose substitute pressure through the derived snapshot field so
+        // inspectors/tests that already read derived_business_demand also see
+        // same-edge co-candidate demand without a schema bump.
+        if (substitute_business > 0) {
+            derived_business_demand[derived_business_demand.size() - 1] =
+                saturating_add(
+                    derived_business_demand[derived_business_demand.size() - 1],
+                    substitute_business, snapshot_saturation);
+        }
         const int64_t desired_business = signal >= 0 && signal < static_cast<int32_t>(
                 _epoch_desired_business_demand.size())
             ? _epoch_desired_business_demand[signal] : 0;

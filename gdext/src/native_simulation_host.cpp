@@ -11,6 +11,8 @@
 #include "native_parallel_executor.h"
 #include "runtime_climate_parity.h"
 
+#include <godot_cpp/variant/utility_functions.hpp>
+
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
@@ -2683,19 +2685,24 @@ bool NativeSimulationHost::publish_country_worker_snapshot(
     _country_read_view_dirty_families = dirty_families;
     _country_read_view_changed_cells.clear();
     _country_read_view_changed_owners.clear();
-    const bool same_cell_shape = previous != nullptr &&
-        previous->cell_country_slot.size() == snapshot.cell_country_slot.size();
-    for (size_t cell = 0; cell < snapshot.cell_country_slot.size(); ++cell) {
-        if (same_cell_shape && previous->cell_country_slot[cell] ==
-                snapshot.cell_country_slot[cell]) {
-            continue;
+    // Soft STATE/VISUAL publishes (treasury, tax, research) must not scan the
+    // whole owner plane under the transport mutex. Callers that mutate
+    // territory are required to include RUNTIME_DIRTY_COUNTRY_TERRITORY.
+    if ((dirty_families & RUNTIME_DIRTY_COUNTRY_TERRITORY) != 0) {
+        const bool same_cell_shape = previous != nullptr &&
+            previous->cell_country_slot.size() == snapshot.cell_country_slot.size();
+        for (size_t cell = 0; cell < snapshot.cell_country_slot.size(); ++cell) {
+            if (same_cell_shape && previous->cell_country_slot[cell] ==
+                    snapshot.cell_country_slot[cell]) {
+                continue;
+            }
+            _country_read_view_changed_cells.push_back(static_cast<int32_t>(cell));
+            _country_read_view_changed_owners.push_back(
+                snapshot.cell_country_slot[cell]);
         }
-        _country_read_view_changed_cells.push_back(static_cast<int32_t>(cell));
-        _country_read_view_changed_owners.push_back(
-            snapshot.cell_country_slot[cell]);
+        if (!_country_read_view_changed_cells.empty())
+            _country_read_view_territory_generation = _country_read_view_generation;
     }
-    if (!_country_read_view_changed_cells.empty())
-        _country_read_view_territory_generation = _country_read_view_generation;
     auto committed_copy = std::make_shared<RuntimeCountryPodSnapshot>(
         std::move(snapshot));
     _country_committed_snapshot = committed_copy;
@@ -5347,7 +5354,164 @@ bool NativeSimulationHost::configure_modifier_pod(
     _modifier_pod_catalog = catalog;
     _modifier_pod_catalog.catalog_hash = _modifier_pod_authority.catalog_hash();
     _modifier_pod_configured = true;
+    // Key→id binding is installed by the caller after configure; drop any
+    // previous catalog's hashes so a half-init cannot resolve to stale ids.
+    _modifier_definition_id_by_key_hash.clear();
     return true;
+}
+
+void NativeSimulationHost::set_modifier_definition_key_hashes(
+        const std::vector<std::pair<uint64_t, int32_t>> &entries) {
+    _modifier_definition_id_by_key_hash.clear();
+    _modifier_definition_id_by_key_hash.reserve(entries.size());
+    for (const auto &entry : entries) {
+        if (entry.first == 0 || entry.second < 0) continue;
+        _modifier_definition_id_by_key_hash.emplace(entry.first, entry.second);
+    }
+}
+
+int32_t NativeSimulationHost::resolve_modifier_definition_id_for_effect_intent(
+        const RuntimeDomainIntent &intent) const {
+    // Preferred: Effect command definition_key_hash → Modifier catalog id.
+    if (_effect_pod_configured && intent.request_id != 0) {
+        const auto &snapshot = _effect_pod_authority.snapshot();
+        for (const auto &transaction : snapshot.transactions) {
+            if (static_cast<uint64_t>(transaction.transaction_id) !=
+                intent.request_id) {
+                continue;
+            }
+            const uint32_t ordinal =
+                static_cast<uint32_t>(intent.sequence & 15u);
+            if (ordinal >= transaction.command_count) break;
+            const size_t command_index =
+                static_cast<size_t>(transaction.command_begin) + ordinal;
+            if (command_index >= snapshot.command_arena.size()) break;
+            const auto &command = snapshot.command_arena[command_index];
+            if (command.action != RuntimeEffectPodAction::MODIFIER_COMMAND)
+                break;
+            if (command.definition_key_hash != 0) {
+                const auto found = _modifier_definition_id_by_key_hash.find(
+                    command.definition_key_hash);
+                if (found != _modifier_definition_id_by_key_hash.end())
+                    return found->second;
+            }
+            break;
+        }
+    }
+    // Legacy: payload[0] already carries a dense Modifier definition_id.
+    if (intent.payload[0] > 0 &&
+        intent.payload[0] <= static_cast<int64_t>(
+            std::numeric_limits<int32_t>::max())) {
+        return static_cast<int32_t>(intent.payload[0]);
+    }
+    return -1;
+}
+
+void NativeSimulationHost::reemit_effect_committed_pending_intents(int64_t day) {
+    if (!_effect_pod_configured) return;
+    const auto &snapshot = _effect_pod_authority.snapshot();
+    for (const auto &transaction : snapshot.transactions) {
+        if (transaction.status !=
+            RuntimeEffectPodTransactionStatus::COMMITTED) {
+            continue;
+        }
+        for (uint32_t ordinal = 0; ordinal < transaction.command_count;
+             ++ordinal) {
+            const size_t command_index =
+                static_cast<size_t>(transaction.command_begin) + ordinal;
+            if (command_index >= snapshot.command_arena.size()) break;
+            const auto &command = snapshot.command_arena[command_index];
+            const uint32_t bit =
+                RuntimeEffectPodAuthority::adapter_ack_bit(command.action);
+            if (bit != 0u &&
+                (transaction.received_ack_mask & bit) == bit) {
+                continue;
+            }
+            RuntimeDomainIntent intent;
+            intent.source_domain =
+                static_cast<uint16_t>(RuntimeDomainId::EFFECT);
+            intent.target_domain =
+                RuntimeEffectPodAuthority::adapter_domain(command.action);
+            intent.opcode = static_cast<uint16_t>(command.opcode);
+            intent.effect_action = static_cast<uint16_t>(command.action);
+            intent.source_id =
+                static_cast<uint64_t>(command.source_instance_id);
+            intent.target_handle = command.target_handle;
+            intent.target_generation = command.target_generation;
+            intent.value = command.value;
+            intent.effective_day = command.effective_day >= 0
+                ? command.effective_day : day;
+            intent.payload = command.payload;
+            intent.request_id =
+                static_cast<uint64_t>(transaction.transaction_id);
+            intent.producer_id =
+                static_cast<uint32_t>(RuntimeDomainId::EFFECT);
+            intent.sequence =
+                transaction.fire_sequence * 16u + ordinal;
+            intent.idempotency_key = command.idempotency_key;
+            intent.duration_days = command.duration_days;
+            intent.stacks = command.stacks;
+            intent.magnitude_q16 = command.value != 0
+                ? static_cast<int32_t>(command.value) : 65536;
+            if (command.action == RuntimeEffectPodAction::MODIFIER_COMMAND &&
+                intent.payload[1] == 0 && command.domain >= 0 &&
+                command.domain < 4) {
+                intent.payload[1] = command.domain;
+            }
+            if (command.action == RuntimeEffectPodAction::MODIFIER_COMMAND &&
+                intent.payload[0] <= 0 &&
+                command.definition_key_hash != 0) {
+                const auto found = _modifier_definition_id_by_key_hash.find(
+                    command.definition_key_hash);
+                if (found != _modifier_definition_id_by_key_hash.end())
+                    intent.payload[0] = found->second;
+            }
+            _effect_day_intents.push_back(intent);
+            if (intent.target_domain ==
+                static_cast<uint16_t>(RuntimeDomainId::MODIFIER)) {
+                _effect_day_modifier_intents.push_back(intent);
+            }
+        }
+    }
+}
+
+uint32_t NativeSimulationHost::ack_effect_events_intents_in_worker(
+        const std::vector<RuntimeDomainIntent> &intents) {
+    if (!_effect_pod_configured || intents.empty()) return 0;
+    std::vector<RuntimeDomainAck> acks;
+    acks.reserve(intents.size());
+    for (const RuntimeDomainIntent &intent : intents) {
+        if (intent.target_domain !=
+            static_cast<uint16_t>(RuntimeDomainId::EVENTS)) {
+            continue;
+        }
+        RuntimeDomainAck ack;
+        ack.request_id =
+            intent.request_id != 0 ? intent.request_id : intent.source_id;
+        ack.transaction_id = ack.request_id;
+        ack.target_handle = intent.target_handle;
+        ack.target_generation = intent.target_generation;
+        ack.domain = static_cast<uint16_t>(RuntimeDomainId::EVENTS);
+        ack.code = RuntimeDomainAckCode::OK;
+        ack.effective_day = intent.effective_day;
+        ack.producer_id = intent.producer_id;
+        ack.sequence = intent.sequence;
+        acks.push_back(ack);
+    }
+    if (acks.empty()) return 0;
+    std::string error;
+    if (!_effect_pod_authority.apply_acks(acks, error)) {
+        // Soft: leave Events bit for the main-thread pump / next retry.
+        return 0;
+    }
+    _effect_pod_ack_count.store(
+        _effect_pod_ack_count.load(std::memory_order_relaxed) +
+            static_cast<uint32_t>(acks.size()),
+        std::memory_order_release);
+    _effect_pod_state_hash.store(
+        _effect_pod_authority.snapshot().deterministic_state_hash,
+        std::memory_order_release);
+    return static_cast<uint32_t>(acks.size());
 }
 
 bool NativeSimulationHost::configure_effect_pod(
@@ -5605,6 +5769,12 @@ bool NativeSimulationHost::queue_effect_pod_instance(
         return false;
     }
     std::lock_guard<std::mutex> lock(_effect_transport_mutex);
+    for (const RuntimeEffectPodInstanceInput &queued : _effect_instance_queue) {
+        if (queued.instance_id == input.instance_id &&
+            queued.generation == input.generation) {
+            return true; // already waiting for the Effect stage
+        }
+    }
     if (_effect_instance_queue.size() >= RUNTIME_COMMAND_QUEUE_CAPACITY) {
         error = "effect_instance_capacity_exceeded";
         return false;
@@ -5726,21 +5896,26 @@ bool NativeSimulationHost::ensure_effect_pod_technology_instance(
     input.target_handle = target_handle;
     input.target_generation = target_generation;
     input.level = 0;
-    input.next_due_day = day;
+    // Effect often soft-skips the same calendar day Country seals. Schedule
+    // the first fire for the next sequential Effect day (committed+1), never
+    // the already-closed committed day — otherwise plan_day cannot see the
+    // instance until a never-fired cadence retry (technology cadence is 3650).
+    const int64_t effect_day = _effect_pod_authority.snapshot().committed_day;
+    input.next_due_day = effect_day >= 0 ? effect_day + 1 : day;
     input.active = true;
-    return queue_effect_pod_instance(input, error);
+    // Queue only. The main-thread Country peer adapter must never mutate the
+    // Effect POD authority: worker plan_day/commit/ack run concurrently and a
+    // same-turn upsert races them (instances stuck fire_seq=0 / never fire).
+    // Effect stage drain_effect_transport_queues installs before plan/soft-skip.
+    if (!queue_effect_pod_instance(input, error)) return false;
+    return true;
 }
 
-void NativeSimulationHost::debug_log_effect_pod_technology_state(
+std::string NativeSimulationHost::describe_effect_pod_technology_state(
         int64_t instance_id, uint32_t generation, int32_t program_id,
         int32_t technology) const {
-    static std::atomic<int> s_left{40};
-    if (s_left.fetch_sub(1, std::memory_order_relaxed) <= 0) return;
-    if (!_effect_pod_configured) {
-        std::fprintf(stderr, "[tech-ack-diag] effect_pod_not_configured\n");
-        std::fflush(stderr);
-        return;
-    }
+    char text[512]{};
+    if (!_effect_pod_configured) return "effect_pod_not_configured";
     const auto &snapshot = _effect_pod_authority.snapshot();
     const RuntimeEffectPodInstance *found = nullptr;
     for (const auto &instance : snapshot.instances) {
@@ -5753,11 +5928,11 @@ void NativeSimulationHost::debug_log_effect_pod_technology_state(
         ++transactions;
         last_status = static_cast<int>(transaction.status);
     }
-    std::fprintf(stderr,
-        "[tech-ack-diag] tech=%d program_id=%d instance=%lld gen=%u "
+    std::snprintf(text, sizeof(text),
+        "tech=%d program_id=%d instance=%lld gen=%u "
         "present=%d inst_gen=%u active=%d fire_seq=%llu acked_seq=%llu "
         "next_due=%lld tx=%d last_tx_status=%d pod_gen=%llu pod_day=%lld "
-        "instances=%zu queued=%zu\n",
+        "instances=%zu queued=%zu",
         technology, program_id, static_cast<long long>(instance_id), generation,
         found != nullptr ? 1 : 0,
         found != nullptr ? found->generation : 0u,
@@ -5770,7 +5945,7 @@ void NativeSimulationHost::debug_log_effect_pod_technology_state(
         static_cast<unsigned long long>(snapshot.generation),
         static_cast<long long>(snapshot.committed_day),
         snapshot.instances.size(), _effect_instance_queue.size());
-    std::fflush(stderr);
+    return text;
 }
 
 bool NativeSimulationHost::effect_pod_instance_fire_acked(
@@ -6989,10 +7164,38 @@ bool NativeSimulationHost::execute_country_worker_stage(
         }
     }
     if (economy_asset_waiting) {
-        error = "country_economy_asset_results_pending";
-        commit.preflight_ok = 0;
-        commit.continuation_pending = 1;
-        return false;
+        // Always soft-commit when Country-origin economy assets are still
+        // outstanding. Hard-parking here leaves future Climate envs stuck in a
+        // full FIFO while Economy never resumes → permanent
+        // climate_input_capacity_day_barrier. Soft-commit the Country day and
+        // let the next visit / Economy stage retire the asset rows.
+        std::string soft_error;
+        if (!_country_pod_authority.commit_rejected_day(
+                _country_pod_plan, soft_error, /*advance_generation=*/true)) {
+            error = soft_error.empty()
+                ? "country_economy_asset_soft_commit_failed" : soft_error;
+            commit.preflight_ok = 0;
+            return false;
+        }
+        publish_country_command_terminals(
+            _country_pod_plan.commands, CountryCommandReceiptCode::COMMITTED,
+            _country_pod_authority.generation(), nullptr);
+        _country_pod_plan_active.store(false, std::memory_order_release);
+        std::string snapshot_error;
+        if (!publish_country_worker_snapshot(
+                _country_pod_plan.header.dirty_families, snapshot_error)) {
+            error = snapshot_error.empty()
+                ? "country_worker_snapshot_failed" : snapshot_error;
+            commit.preflight_ok = 0;
+            return false;
+        }
+        commit.completed_domain_mask |= runtime_domain_mask(
+            RuntimeDomainId::COUNTRY);
+        commit.dirty_families |= _country_pod_plan.header.dirty_families;
+        commit.work_units += _country_pod_plan.header.work_units;
+        ++commit.completed_stage_count;
+        error.clear();
+        return true;
     }
 
     std::vector<RuntimeDomainAck> acks;
@@ -7051,9 +7254,12 @@ bool NativeSimulationHost::execute_country_worker_stage(
                              std::numeric_limits<uint32_t>::max()));
     }
     if (waiting) {
-        // Soft-commit only after the main-thread adapter has inspected every
-        // published intent at least once. PENDING results requeue themselves,
-        // so an empty queue is the wrong signal — look for missing results.
+        // Soft-commit after Host inspected (PENDING) or under Climate ring
+        // pressure. Never soft-commit+erase before inspect: Effect runs before
+        // Country in the day graph, so ENSURE only reaches the Effect queue via
+        // the main-thread peer pump. Wiping uninspected intents drops that
+        // registration and parks technologies in 待生效 forever while the
+        // calendar still advances.
         bool all_intents_inspected = true;
         {
             std::lock_guard<std::mutex> lock(_country_transport_mutex);
@@ -7067,19 +7273,24 @@ bool NativeSimulationHost::execute_country_worker_stage(
                 }
             }
         }
-        if (!all_intents_inspected) {
+        // Soft-commit once half the FIFO is occupied. Waiting until the ring is
+        // completely full lets Host arm climate_input_capacity_day_barrier first
+        // (common after tax/subsidy fiscal peers under 50x), then both sides
+        // park: Host on capacity, Country on peer inspect.
+        const size_t ring_size = _environment_ring.size();
+        const bool ring_pressure =
+            !_environment_ring.has_capacity() ||
+            ring_size + 1u >= RuntimeEnvironmentInputRing::SLOT_COUNT ||
+            ring_size >= (RuntimeEnvironmentInputRing::SLOT_COUNT + 1u) / 2u;
+        if (!all_intents_inspected && !ring_pressure) {
             error = "country_worker_peer_results_pending";
             commit.preflight_ok = 0;
             commit.continuation_pending = 1;
             return false;
         }
-        // Every intent has a non-terminal PENDING (typically Effect fire still
-        // in flight under F8). Soft-commit like peer rejection: keep research
-        // spend + pending activation, close the calendar day so Climate can
-        // drain the input ring, and retry activation on the next day. Unlike a
-        // rejection this advances the generation — the day's commands and
-        // research progress are real, and country_committed / the UI section
-        // cache only refresh when the read-view generation moves.
+        // Inspected PENDING (Effect fire still in flight) or ring pressure
+        // with Host lagging: soft-commit like peer rejection — keep research
+        // spend + pending activation, close the calendar day, retry tomorrow.
         if (!_country_pod_authority.commit_rejected_day(
                 _country_pod_plan, error, /*advance_generation=*/true)) {
             _country_pod_authority.discard_plan();
@@ -7101,6 +7312,13 @@ bool NativeSimulationHost::execute_country_worker_stage(
             for (const RuntimeDomainIntent &intent : _country_pod_plan.intents) {
                 const uint64_t request_id = intent.request_id != 0
                     ? intent.request_id : intent.source_id;
+                // Keep uninspected intents queued so Host can still ENSURE the
+                // Effect instance after this soft-commit. Erasing them here is
+                // what stranded 燧石辨识-class techs at 100%/待生效.
+                if (_country_worker_results.find(request_id) ==
+                    _country_worker_results.end()) {
+                    continue;
+                }
                 _country_worker_intents.erase(request_id);
                 _country_worker_results.erase(request_id);
                 _country_worker_terminal_results.erase(request_id);
@@ -7112,7 +7330,9 @@ bool NativeSimulationHost::execute_country_worker_stage(
                         return _country_worker_intents.find(request_id) ==
                             _country_worker_intents.end();
                     }), _country_worker_intent_queue.end());
-            _country_worker_protocol.pending_intents = 0;
+            _country_worker_protocol.pending_intents = static_cast<uint32_t>(
+                std::min<size_t>(_country_worker_intents.size(),
+                                 std::numeric_limits<uint32_t>::max()));
             _country_worker_protocol.queued_intents = static_cast<uint32_t>(
                 std::min<size_t>(_country_worker_intent_queue.size(),
                                  std::numeric_limits<uint32_t>::max()));
@@ -7554,20 +7774,60 @@ bool NativeSimulationHost::execute_modifier_worker_stage(
         command.opcode = intent.opcode;
         command.domain = intent.payload[1] >= 0 && intent.payload[1] < 4
             ? static_cast<uint16_t>(intent.payload[1]) : 0;
-        command.definition_id = intent.payload[0] >= 0
-            ? static_cast<int32_t>(intent.payload[0]) : 0;
-        command.scope = intent.payload[2] >= 0 && intent.payload[2] <= 2
-            ? static_cast<int32_t>(intent.payload[2]) : 2;
+        // Effect catalogs store the Modifier definition_key, not a dense id, in
+        // command metadata. Resolve via key hash (with legacy payload[0] fallback).
+        command.definition_id =
+            resolve_modifier_definition_id_for_effect_intent(intent);
         command.entity_handle = intent.target_handle;
         command.target_generation = intent.target_generation;
         command.group_handle = intent.group_handle;
         command.modifier_handle = intent.modifier_handle;
         command.duration_days = intent.duration_days;
-        command.stacks = intent.stacks;
-        command.magnitude_q16 = intent.magnitude_q16;
-        command.source_type = static_cast<uint64_t>(RuntimeDomainId::EFFECT);
-        command.source_id = intent.source_id;
+        command.stacks = intent.stacks > 0 ? intent.stacks : 1;
+        command.magnitude_q16 = intent.magnitude_q16 > 0
+            ? intent.magnitude_q16 : 65536;
         command.input_generation = input_generation;
+        // Match EffectRuntime native adapter semantics (technology/family/person).
+        // payload[2]==0 means "unset", not GLOBAL — defaulting to GLOBAL made
+        // has_technology_effect miss ENTITY+TECH unique keys after a successful
+        // apply, and wrong source_type blocked UNIQUE_SOURCE identity.
+        if (command.domain == 1) {
+            command.scope = 2; // ENTITY
+            command.source_type = 0x54454348ULL; // TECH
+            command.source_id = intent.source_id & 0xffffULL;
+            command.magnitude_q16 = 65536;
+        } else if (command.domain == 2) {
+            command.scope = 1; // GROUP
+            command.group_handle = intent.target_generation;
+            command.source_type = 0x46414d494c59ULL; // FAMILY
+            command.source_id = intent.target_handle;
+        } else if (command.domain == 3) {
+            command.scope = 2; // ENTITY
+            command.source_type = 0x504552534f4eULL; // PERSON
+            command.source_id = intent.source_id;
+        } else if (intent.payload[2] >= 1 && intent.payload[2] <= 2) {
+            command.scope = static_cast<int32_t>(intent.payload[2]);
+            command.source_type = static_cast<uint64_t>(RuntimeDomainId::EFFECT);
+            command.source_id = intent.source_id;
+        } else {
+            command.scope = 2;
+            command.source_type = static_cast<uint64_t>(RuntimeDomainId::EFFECT);
+            command.source_id = intent.source_id;
+        }
+        if (command.definition_id < 0) {
+            static int s_def_left = 12;
+            if (s_def_left-- > 0) {
+                godot::UtilityFunctions::print(godot::vformat(
+                    "[tech-ack-diag/modifier] definition_id unresolved "
+                    "request=%d seq=%d domain=%d payload0=%d hashes=%d",
+                    static_cast<int64_t>(command.request_id),
+                    static_cast<int64_t>(command.sequence),
+                    static_cast<int64_t>(command.domain),
+                    static_cast<int64_t>(intent.payload[0]),
+                    static_cast<int64_t>(
+                        _modifier_definition_id_by_key_hash.size())));
+            }
+        }
         modifier_intents.push_back(command);
     }
 
@@ -7620,6 +7880,17 @@ bool NativeSimulationHost::execute_modifier_worker_stage(
     modifier_plan_ms = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - plan_started).count();
     if (!modifier_ok) {
+        static int s_mod_fail_left = 12;
+        if (s_mod_fail_left-- > 0 && !modifier_intents.empty()) {
+            godot::UtilityFunctions::print(godot::vformat(
+                "[tech-ack-diag/modifier] plan_day FAILED day=%d intents=%d "
+                "reason=%s def0=%d scope0=%d src_type0=%d",
+                day, static_cast<int64_t>(modifier_intents.size()),
+                godot::String(modifier_error.c_str()),
+                static_cast<int64_t>(modifier_intents.front().definition_id),
+                static_cast<int64_t>(modifier_intents.front().scope),
+                static_cast<int64_t>(modifier_intents.front().source_type)));
+        }
         _modifier_pod_authority.discard_plan();
     }
 
@@ -7770,19 +8041,12 @@ RuntimeCommandPacket make_effect_intent_events_packet(
     return event_packet;
 }
 
-bool NativeSimulationHost::execute_effect_worker_stage(
-        int64_t day, uint64_t input_generation, RuntimeDayCommit &commit,
-        std::string &error) {
-    (void)commit;
+bool NativeSimulationHost::drain_effect_transport_queues(std::string &error) {
     error.clear();
-    _effect_day_modifier_intents.clear();
-    _effect_day_intents.clear();
-    _effect_day_stage_ok = false;
     if (!_effect_pod_configured) {
         error = "effect_pod_not_configured";
         return false;
     }
-
     std::deque<RuntimeEffectPodInstanceInput> instances;
     std::deque<EffectPodMetricQueueItem> metrics;
     std::deque<EffectPodRemoveQueueItem> removes;
@@ -7796,18 +8060,50 @@ bool NativeSimulationHost::execute_effect_worker_stage(
         _effect_acks.clear();
     }
 
+    auto restore_remaining =
+        [this](std::deque<RuntimeEffectPodInstanceInput> &left,
+               std::deque<EffectPodMetricQueueItem> &metrics_left,
+               std::deque<EffectPodRemoveQueueItem> &removes_left) {
+            std::lock_guard<std::mutex> lock(_effect_transport_mutex);
+            while (!left.empty()) {
+                _effect_instance_queue.push_front(left.back());
+                left.pop_back();
+            }
+            while (!metrics_left.empty()) {
+                _effect_metric_queue.push_front(metrics_left.back());
+                metrics_left.pop_back();
+            }
+            while (!removes_left.empty()) {
+                _effect_remove_queue.push_front(removes_left.back());
+                removes_left.pop_back();
+            }
+        };
+
     while (!removes.empty()) {
         const EffectPodRemoveQueueItem item = removes.front();
         removes.pop_front();
         if (!_effect_pod_authority.remove_instance(item.instance_id,
                                                    item.generation, error)) {
+            removes.push_front(item);
+            restore_remaining(instances, metrics, removes);
             return false;
         }
     }
     while (!instances.empty()) {
-        const RuntimeEffectPodInstanceInput input = instances.front();
+        RuntimeEffectPodInstanceInput input = instances.front();
         instances.pop_front();
-        if (!_effect_pod_authority.upsert_instance(input, error)) return false;
+        // Queue may have waited across Effect soft-skips / climate parks.
+        // Never-fired technology installs must land on the next plan day.
+        const int64_t committed = _effect_pod_authority.snapshot().committed_day;
+        if (committed >= 0 && input.next_due_day >= 0 &&
+            input.next_due_day <= committed) {
+            input.next_due_day = committed + 1;
+        }
+        if (!_effect_pod_authority.upsert_instance(input, error)) {
+            instances.push_front(input);
+            restore_remaining(instances, metrics, removes);
+            return false;
+        }
     }
     while (!metrics.empty()) {
         const EffectPodMetricQueueItem item = metrics.front();
@@ -7815,6 +8111,8 @@ bool NativeSimulationHost::execute_effect_worker_stage(
         if (!_effect_pod_authority.set_metric(
                 item.instance_id, item.generation, item.metric_id,
                 item.revision, item.value, error)) {
+            metrics.push_front(item);
+            restore_remaining(instances, metrics, removes);
             return false;
         }
     }
@@ -7822,6 +8120,23 @@ bool NativeSimulationHost::execute_effect_worker_stage(
         !_effect_pod_authority.apply_acks(acks, error)) {
         return false;
     }
+    return true;
+}
+
+bool NativeSimulationHost::execute_effect_worker_stage(
+        int64_t day, uint64_t input_generation, RuntimeDayCommit &commit,
+        std::string &error) {
+    (void)commit;
+    error.clear();
+    _effect_day_modifier_intents.clear();
+    _effect_day_intents.clear();
+    _effect_day_stage_ok = false;
+    if (!_effect_pod_configured) {
+        error = "effect_pod_not_configured";
+        return false;
+    }
+
+    if (!drain_effect_transport_queues(error)) return false;
 
     const auto plan_started = std::chrono::steady_clock::now();
     RuntimeEffectPodPlan plan;
@@ -7857,6 +8172,29 @@ bool NativeSimulationHost::execute_effect_worker_stage(
         _effect_pod_authority.discard_plan();
         return false;
     }
+    // After commit the transaction arena is published; resolve Modifier
+    // definition ids so the same-day Modifier stage (and soft-skip reemit)
+    // see a dense payload[0] even when the Effect catalog left it unset.
+    for (RuntimeDomainIntent &intent : _effect_day_modifier_intents) {
+        if (intent.payload[0] > 0) continue;
+        const int32_t definition_id =
+            resolve_modifier_definition_id_for_effect_intent(intent);
+        if (definition_id >= 0) intent.payload[0] = definition_id;
+    }
+    for (RuntimeDomainIntent &intent : _effect_day_intents) {
+        if (intent.target_domain !=
+                static_cast<uint16_t>(RuntimeDomainId::MODIFIER) ||
+            intent.payload[0] > 0) {
+            continue;
+        }
+        const int32_t definition_id =
+            resolve_modifier_definition_id_for_effect_intent(intent);
+        if (definition_id >= 0) intent.payload[0] = definition_id;
+    }
+    // PUBLISH_EVENT (technology.adopted) is published by the Events stage but
+    // never ACKed there. Settle the Events bit in-worker so technology fire
+    // does not wait on the main-thread Effect pump.
+    ack_effect_events_intents_in_worker(_effect_day_intents);
     const double replay_ms = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - replay_started).count();
     const RuntimeEffectPodSnapshot &snapshot = _effect_pod_authority.snapshot();
@@ -7870,8 +8208,8 @@ bool NativeSimulationHost::execute_effect_worker_stage(
     _effect_pod_snapshot_generation.store(snapshot.generation,
                                           std::memory_order_release);
     _effect_pod_intent_count.store(emitted, std::memory_order_release);
-    _effect_pod_ack_count.store(static_cast<uint32_t>(acks.size()),
-                                std::memory_order_release);
+    // ACKs are applied at the top of this stage via drain_effect_transport_queues.
+    _effect_pod_ack_count.store(0u, std::memory_order_release);
     // F8: publish immutable snapshot for main-thread EffectRuntime write-back.
     uint32_t effect_slot = 0;
     if (_effect_snapshots.try_begin_write(effect_slot)) {
@@ -8782,13 +9120,26 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
         // after Climate already committed) permanently desyncs 0xFFF grants:
         // the original env is gone and every newer publish mismatches forever.
         bool consume_environment = false;
+        // Holds a refreshed ring head after drain so `environment` never dangles.
+        std::shared_ptr<const RuntimeEnvironmentSnapshot> environment_holder;
         if (plan.context.day <= climate_committed) {
             // Idempotent retry: Climate already advanced this worker day (or
             // past it) before a later domain failed the atomic COMMIT gate.
             // Reuse without requiring the original env generation — Country
             // has the same shape via committed_day skip.
             active_climate_ok = true;
-            if (environment != nullptr && climate_day <= plan.context.day) {
+            // Drop every env Climate has already absorbed. A full ring of
+            // day<=committed leftovers (or a single stale head under newer
+            // publishes) otherwise nails WorldClock on
+            // climate_input_capacity_day_barrier while this day retries peers.
+            const size_t drained =
+                _environment_ring.pop_while_day_at_most(climate_committed);
+            if (drained > 0u) {
+                environment_holder = _environment_ring.peek_oldest();
+                environment = environment_holder.get();
+                _climate_wait_cv.notify_all();
+            }
+            if (environment != nullptr && environment->day <= plan.context.day) {
                 consume_environment = true;
             }
         } else if (environment == nullptr) {
@@ -9231,6 +9582,10 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             // F8 ACTIVE independent Effect stage (Ideology order already passed
             // in the stage list). Park with Climate like Country/Modifier.
             if (climate_authority_requested && !active_climate_ok) {
+                // Still absorb ENSURE registrations so technology instances are
+                // present when Climate unblocks the Effect plan lane.
+                std::string drain_error;
+                drain_effect_transport_queues(drain_error);
                 stage.completed = 0;
                 continue;
             }
@@ -9252,6 +9607,59 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             if (plan.context.day <= effect_committed) {
                 _effect_day_modifier_intents.clear();
                 _effect_day_intents.clear();
+                // Soft-skip must still drain ENSURE queues and re-emit
+                // COMMITTED→ACK handoffs. Otherwise technology instances stay
+                // present=0 / queued>0 across advancing pod days.
+                size_t queued_before = 0;
+                {
+                    std::lock_guard<std::mutex> lock(_effect_transport_mutex);
+                    queued_before = _effect_instance_queue.size();
+                }
+                std::string drain_error;
+                drain_effect_transport_queues(drain_error);
+                const uint32_t nudged =
+                    _effect_pod_authority.reschedule_unfired_due_instances(
+                        effect_committed);
+                reemit_effect_committed_pending_intents(plan.context.day);
+                std::string catchup_error;
+                const uint32_t catchup_fired =
+                    _effect_pod_authority.catchup_fire_never_fired_instances(
+                        effect_committed + 1, _effect_day_intents,
+                        catchup_error);
+                _effect_day_modifier_intents.clear();
+                for (const RuntimeDomainIntent &intent : _effect_day_intents) {
+                    if (intent.target_domain ==
+                        static_cast<uint16_t>(RuntimeDomainId::MODIFIER)) {
+                        _effect_day_modifier_intents.push_back(intent);
+                    }
+                }
+                {
+                    const auto &snap = _effect_pod_authority.snapshot();
+                    static int s_drain_left = 12;
+                    int unfired_due = 0;
+                    for (const auto &inst : snap.instances) {
+                        if (inst.active != 0 && inst.fire_sequence == 0 &&
+                            inst.next_due_day >= 0 &&
+                            inst.next_due_day <= effect_committed + 1)
+                            ++unfired_due;
+                    }
+                    if ((queued_before > 0 || unfired_due > 0 || nudged > 0 ||
+                         catchup_fired > 0) &&
+                        s_drain_left-- > 0) {
+                        godot::UtilityFunctions::print(godot::vformat(
+                            "[tech-ack-diag/soft-skip] day=%d committed=%d "
+                            "queued_before=%d instances=%d unfired_due=%d "
+                            "nudged=%d catchup=%d drain_err=%s catchup_err=%s",
+                            plan.context.day, effect_committed,
+                            static_cast<int64_t>(queued_before),
+                            static_cast<int64_t>(snap.instances.size()),
+                            unfired_due, static_cast<int64_t>(nudged),
+                            static_cast<int64_t>(catchup_fired),
+                            godot::String(drain_error.c_str()),
+                            godot::String(catchup_error.c_str())));
+                    }
+                }
+                ack_effect_events_intents_in_worker(_effect_day_intents);
                 _effect_day_stage_ok = true;
                 stage.completed = 1;
                 commit.completed_domain_mask |=
@@ -9558,6 +9966,31 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                     // keep draining the input ring. Hard-parking ECONOMY here
                     // filled the ring and permanently armed
                     // climate_input_capacity_day_barrier while research waited.
+                    // Tax/subsidy fiscal peers commonly park here under 50x —
+                    // drop every env Climate already absorbed so Host capacity
+                    // recovers immediately instead of waiting for the next
+                    // calendar day to start.
+                    const int64_t climate_committed =
+                        _climate_authority.store().committed_day;
+                    if (climate_committed >= 0 &&
+                        _environment_ring.pop_while_day_at_most(
+                            climate_committed) > 0u) {
+                        _climate_wait_cv.notify_all();
+                        _control_cv.notify_all();
+                    }
+                    {
+                        static int s_fiscal_soft_left = 12;
+                        if (s_fiscal_soft_left-- > 0) {
+                            godot::UtilityFunctions::print(godot::vformat(
+                                "[economy-fiscal-soft] day=%d reason=%s "
+                                "work=%d ring=%d climate_committed=%d",
+                                plan.context.day,
+                                godot::String(economy_error.c_str()),
+                                static_cast<int64_t>(economy_work),
+                                static_cast<int64_t>(_environment_ring.size()),
+                                climate_committed));
+                        }
+                    }
                     commit.continuation_pending = 1;
                     stage.dirty_families = RUNTIME_DIRTY_ECONOMY_UI;
                     stage.work_units = economy_work;
@@ -12153,6 +12586,36 @@ void NativeSimulationHost::worker_main() {
                 if (day_commit.preflight_ok == 0) {
                     const uint32_t missing = _requested_authority_mask.load(
                         std::memory_order_acquire) & ~day_commit.completed_domain_mask;
+                    // Full domain coverage with preflight_ok=0 is a spurious
+                    // barrier: parking here leaves future Climate envs stuck in
+                    // a full ring and nails WorldClock on capacity forever.
+                    if (missing == 0u &&
+                        _requested_authority_mask.load(std::memory_order_acquire) !=
+                            0u) {
+                        static std::atomic<int> s_full_mask_preflight_left{8};
+                        if (s_full_mask_preflight_left.fetch_sub(
+                                1, std::memory_order_relaxed) > 0) {
+                            godot::UtilityFunctions::print(godot::vformat(
+                                "[runtime-day-wait] day=%d missing=0x0 "
+                                "forcing advance (spurious preflight_ok=0) ring=%d",
+                                day,
+                                static_cast<int64_t>(_environment_ring.size())));
+                        }
+                        // Drop every env Climate already absorbed for this day
+                        // (or earlier). Leaving a full ring of futures after a
+                        // forced advance parks Host on capacity forever — the
+                        // same kill shot as the peer soft-commit path.
+                        const int64_t climate_committed =
+                            _climate_authority.store().committed_day;
+                        const int64_t drain_through =
+                            climate_committed >= day ? climate_committed : day;
+                        if (_environment_ring.pop_while_day_at_most(
+                                drain_through) > 0u) {
+                            _climate_wait_cv.notify_all();
+                            _control_cv.notify_all();
+                        }
+                        // Fall through to the success path below.
+                    } else {
                     if (logged_pending_day != day || logged_pending_mask != missing) {
                         logged_pending_day = day;
                         logged_pending_mask = missing;
@@ -12160,6 +12623,13 @@ void NativeSimulationHost::worker_main() {
                             static_cast<long long>(day),
                             static_cast<long long>(environment ? environment->day : -1),
                             missing, static_cast<long long>(economy_input_requested_day()));
+                        godot::UtilityFunctions::print(godot::vformat(
+                            "[runtime-day-wait] day=%d env_day=%d missing=0x%x economy_input=%d ring=%d",
+                            day,
+                            environment ? environment->day : -1,
+                            static_cast<int64_t>(missing),
+                            economy_input_requested_day(),
+                            static_cast<int64_t>(_environment_ring.size())));
                     }
 
                     if (_state.load(std::memory_order_acquire) ==
@@ -12233,6 +12703,7 @@ void NativeSimulationHost::worker_main() {
                     });
                     _worker_timing.set(RuntimeWorkerTiming::OVERHEAD);
                     break;
+                    } // missing != 0
                 }
                 if (day_commit.completed_stage_count == day_plan.stage_count &&
                     day_plan.stage_count == RUNTIME_DOMAIN_STAGE_COUNT &&

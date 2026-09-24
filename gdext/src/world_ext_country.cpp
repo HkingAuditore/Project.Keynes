@@ -1447,6 +1447,21 @@ Dictionary DCWorldExt::service_country_worker_peer_adapter(
         out["code"] = "country_worker_real_peer_adapter_country_missing";
         return out;
     }
+    {
+        // Distinguishes "pump never reaches the drain loop" from "pump runs but
+        // Country published no intents". Rate limited; diagnostic only.
+        static int s_pump_left = 20;
+        const NativeSimulationHost::CountryWorkerProtocolStatus pump_status =
+            _runtime_host->country_worker_protocol_status();
+        if (pump_status.queued_intents > 0 && s_pump_left-- > 0) {
+            UtilityFunctions::print(vformat(
+                "[tech-ack-diag/pump] entering drain shadow_replay=%d "
+                "queued=%d pending=%d",
+                shadow_replay ? 1 : 0,
+                static_cast<int64_t>(pump_status.queued_intents),
+                static_cast<int64_t>(pump_status.pending_intents)));
+        }
+    }
 
     int inspected = 0;
     int replayed = 0;
@@ -1725,8 +1740,10 @@ bool DCWorldExt::country_should_run(int64_t day_index) const {
 }
 
 Dictionary DCWorldExt::get_country_report() const {
+    // ACTIVE Country UI revision clocks must track the worker-committed
+    // replica, not the frozen sync store.
     return _country_runtime == nullptr ? country_unavailable()
-        : country_runtime_from(_country_runtime)->report();
+        : country_query_runtime()->report();
 }
 
 int64_t DCWorldExt::get_country_state_hash() const {
@@ -1747,8 +1764,36 @@ NativeCountryRuntime *DCWorldExt::country_query_runtime() const {
         // Only advance the cursor when the replica installs successfully.
         // A rejected shape must retry on the next read instead of locking the
         // UI onto the pre-ACTIVE sync copy forever.
-        if (view->apply_committed_read_snapshot(*snapshot))
+        if (view->apply_committed_read_snapshot(*snapshot)) {
             _country_query_snapshot = snapshot;
+            static int s_apply_ok_left = 8;
+            if (s_apply_ok_left-- > 0) {
+                UtilityFunctions::print(vformat(
+                    "[tech-ui-diag/query] apply ok gen=%d day=%d "
+                    "view_gen=%d progress_total=%d pending_words=%d",
+                    static_cast<int64_t>(snapshot->generation),
+                    snapshot->committed_day,
+                    static_cast<int64_t>(view->report().get("generation", 0)),
+                    snapshot->research_progress_total.empty()
+                        ? 0
+                        : static_cast<int64_t>(
+                              snapshot->research_progress_total[0]),
+                    static_cast<int64_t>(
+                        snapshot->country_pending_technologies.size())));
+            }
+        } else {
+            static int s_apply_fail_left = 12;
+            if (s_apply_fail_left-- > 0) {
+                UtilityFunctions::print(vformat(
+                    "[tech-ui-diag/query] apply FAILED gen=%d day=%d "
+                    "countries=%d cells=%d techs=%d — UI stays on sync copy",
+                    static_cast<int64_t>(snapshot->generation),
+                    snapshot->committed_day,
+                    static_cast<int64_t>(snapshot->country_count),
+                    static_cast<int64_t>(snapshot->cell_count),
+                    static_cast<int64_t>(snapshot->technology_count)));
+            }
+        }
     }
     return view;
 }
@@ -1823,8 +1868,15 @@ Dictionary DCWorldExt::get_country_ui_snapshot(int64_t handle,
     revisions["country_generation"] = static_cast<int64_t>(runtime->generation());
 
     if ((section_mask & 1) != 0) {
-        out["research"] = runtime->research_snapshot(handle);
+        Dictionary research = runtime->research_snapshot(handle);
+        out["research"] = research;
         out["research_signals"] = runtime->research_signal_snapshot(handle);
+        // Progress-only days must bust the GDScript section cache even when
+        // the player reopens the panel without a territory dirty bit.
+        revisions["research_progress_total"] = research.get("progress_total", 0);
+        revisions["research_consumed_total"] = research.get("consumed_total", 0);
+        revisions["research_completed_total"] = research.get(
+            "completed_total", 0);
     }
     if ((section_mask & 2) != 0) {
         Dictionary country = summary.duplicate(false);

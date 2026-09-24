@@ -696,8 +696,10 @@ func _draw_progress(index: int, rect: Rect2, accent: Color, dim: bool) -> void:
 	var state := _state_of(index)
 	if state < 2 or state >= 5:
 		return
-	var cost := maxf(1.0, float((_definitions[index] as Dictionary).get("cost_points", 1)))
-	var earned := float(_progress[index]) / 1000.0 if index < _progress.size() else 0.0
+	var cost := maxf(1.0, float((_definitions[index] as Dictionary).get(
+		"cost_points_scaled",
+		int((_definitions[index] as Dictionary).get("cost_points", 1)) * 1000)))
+	var earned := float(_progress[index]) if index < _progress.size() else 0.0
 	var fraction := clampf(earned / cost, 0.0, 1.0)
 	var track := Rect2(rect.position + Vector2(12.0, rect.size.y - 9.0),
 		Vector2(rect.size.x - 24.0, 3.0))

@@ -279,7 +279,7 @@ int64_t NativeEconomyRuntime::prospective_business_subsidy_request(
                  ++candidate_index) {
                 const InputCandidate &candidate =
                     _building_input_candidates[candidate_index];
-                if (!good_market_available(cell, candidate.good_id, true))
+                if (!good_input_candidate_available(cell, candidate.good_id, true))
                     continue;
                 const int64_t physical = std::max<int64_t>(1, mul_div_sat(
                     input.quantity, Q16_ONE,

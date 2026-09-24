@@ -2,6 +2,7 @@
 
 #include "country_runtime.h"
 #include "economy_runtime.h"
+#include "runtime_effect_pod.h"
 
 #include <algorithm>
 #include <chrono>
@@ -373,6 +374,19 @@ bool ModifierRuntime::export_pod_catalog(RuntimeModifierPodCatalog &out,
     // identity is independent from the legacy string-bearing catalog hash.
     out.catalog_hash = 0;
     return true;
+}
+
+void ModifierRuntime::export_definition_key_hashes(
+        std::vector<std::pair<uint64_t, int32_t>> &out) const {
+    out.clear();
+    out.reserve(_definitions.size());
+    for (size_t i = 0; i < _definitions.size(); ++i) {
+        const std::string &key = _definitions[i].key;
+        if (key.empty()) continue;
+        out.emplace_back(
+            RuntimeEffectPodAuthority::hash_text(key.c_str()),
+            static_cast<int32_t>(i));
+    }
 }
 
 

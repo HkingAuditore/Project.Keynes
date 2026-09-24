@@ -880,19 +880,18 @@ bool NativeEconomyRuntime::run_building_production_cell(
                                       int64_t effective_required) -> int32_t {
         int32_t best = -1;
         int64_t best_capacity_q16 = -1;
+        int64_t best_cold_cover = -1;
         int64_t best_effective_price = std::numeric_limits<int64_t>::max();
         for (int32_t c = input.candidate_begin;
              c < input.candidate_begin + input.candidate_count; ++c) {
             const InputCandidate &candidate = _building_input_candidates[c];
-            // A stocked catalog input remains executable even when the frozen
-            // country market-availability table is one epoch stale.  Physical
-            // stock plus an authored candidate is the stronger quote-time
-            // evidence; the stock check below still prevents minting.
-            if (!good_market_available(cell, candidate.good_id, true) &&
-                market_store().stock[market_store().index(market, candidate.good_id)] <= 0)
+            // Empty-shelf discovery must not admit trade-only locked SKUs
+            // (metal tools while iron is locked). Stocked goods remain usable.
+            if (!good_input_candidate_available(cell, candidate.good_id, true))
                 continue;
-            if (require_stock &&
-                market_store().stock[market_store().index(market, candidate.good_id)] <= 0) continue;
+            const int64_t stock = market_store().stock[
+                market_store().index(market, candidate.good_id)];
+            if (require_stock && stock <= 0) continue;
             int64_t capacity_q16 = Q16_ONE;
             if (require_stock && effective_required > 0) {
                 const int64_t physical_required = effective_production_input_quantity(
@@ -901,22 +900,32 @@ bool NativeEconomyRuntime::run_building_production_cell(
                     _saturation_count);
                 capacity_q16 = physical_required > 0 ? std::min<int64_t>(
                     Q16_ONE, mul_div_sat(
-                        market_store().stock[market_store().index(market, candidate.good_id)],
-                        Q16_ONE, physical_required, _saturation_count)) : Q16_ONE;
+                        stock, Q16_ONE, physical_required, _saturation_count)) : Q16_ONE;
             }
             const int64_t unit_physical = effective_production_input_quantity(
                 cell, candidate.good_id,
                 physical_input_quantity(GOODS_SCALE, candidate),
                 _saturation_count);
             const int64_t effective_price = goods_cost(market_store().price[market_store().index(market, candidate.good_id)], unit_physical, _saturation_count);
+            // Empty-shelf substitutes must not rank by ghost ceiling prices
+            // alone. Prefer the good whose preferred producer can already
+            // cover hard inputs locally (knapping when flint is stocked).
+            const int64_t cold_cover = (!require_stock && stock <= 0)
+                ? startup_producer_hard_input_cover_q16(
+                    cell, candidate.good_id, _saturation_count)
+                : Q16_ONE;
             if (capacity_q16 > best_capacity_q16 ||
                 (capacity_q16 == best_capacity_q16 &&
+                 cold_cover > best_cold_cover) ||
+                (capacity_q16 == best_capacity_q16 &&
+                 cold_cover == best_cold_cover &&
                  (effective_price < best_effective_price ||
                   (effective_price == best_effective_price &&
                    (best < 0 || candidate.good_id <
                     _building_input_candidates[best].good_id))))) {
                 best = c;
                 best_capacity_q16 = capacity_q16;
+                best_cold_cover = cold_cover;
                 best_effective_price = effective_price;
             }
         }
@@ -2901,7 +2910,15 @@ bool NativeEconomyRuntime::run_building_production_cell(
         const BuildingType &type = _building_types[group.type_id];
         const int64_t building_days = saturating_mul(
             group.count, std::max(1, _epoch_days), _saturation_count);
-        if (group.operating_state == 1) continue;
+        // Suspended groups do not purchase, but they still publish nameplate
+        // desired input demand (and business EMA observations) so upstream
+        // producers can discover the latent restart buyer. Funded demand
+        // stays active-only — suspended buildings must not claim cash-backed
+        // procurement.
+        const bool suspended = group.operating_state == 1;
+        const int64_t intent_q16 = suspended
+            ? Q16_ONE
+            : group.purchase_intent_capacity_q16;
         for (int32_t i = 0; i < type.input_count; ++i) {
             const ProductionInput &item = _building_inputs[type.input_begin + i];
             const int32_t selected = select_input_candidate(item, false, 0);
@@ -2909,7 +2926,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
             const InputCandidate &candidate = _building_input_candidates[selected];
             const int64_t effective = mul_div_sat(saturating_mul(
                 building_days, item.quantity, _saturation_count),
-                group.purchase_intent_capacity_q16, Q16_ONE, _saturation_count);
+                intent_q16, Q16_ONE, _saturation_count);
             const int64_t planned = effective_production_input_quantity(
                 cell, candidate.good_id,
                 physical_input_quantity(effective, candidate),
@@ -2920,10 +2937,11 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 business_observed[local_signal] = saturating_add(
                     business_observed[local_signal], planned, _saturation_count);
             }
-            const int64_t funded_effective = mul_div_sat(saturating_mul(
-                building_days, item.quantity, _saturation_count),
+            credit_input_substitute_demand(cell, item, selected, planned);
+            const int64_t funded_effective = suspended ? 0 : mul_div_sat(
+                saturating_mul(building_days, item.quantity, _saturation_count),
                 group.last_capacity_q16, Q16_ONE, _saturation_count);
-            const int64_t funded = effective_production_input_quantity(
+            const int64_t funded = suspended ? 0 : effective_production_input_quantity(
                 cell, candidate.good_id,
                 physical_input_quantity(funded_effective, candidate),
                 _saturation_count);
@@ -2932,18 +2950,24 @@ bool NativeEconomyRuntime::run_building_production_cell(
                     _epoch_desired_business_demand[signal] = saturating_add(
                         _epoch_desired_business_demand[signal], planned, _saturation_count);
                 }
-                if (signal < static_cast<int32_t>(_epoch_funded_business_demand.size())) {
+                if (!suspended &&
+                    signal < static_cast<int32_t>(_epoch_funded_business_demand.size())) {
                     _epoch_funded_business_demand[signal] = saturating_add(
                         _epoch_funded_business_demand[signal], funded, _saturation_count);
                 }
             }
             _desired_business_demand = saturating_add(
                 _desired_business_demand, planned, _saturation_count);
-            _funded_business_demand = saturating_add(
-                _funded_business_demand, funded, _saturation_count);
-            _unfunded_business_demand = saturating_add(
-                _unfunded_business_demand, std::max<int64_t>(0, planned - funded),
-                _saturation_count);
+            if (!suspended) {
+                _funded_business_demand = saturating_add(
+                    _funded_business_demand, funded, _saturation_count);
+                _unfunded_business_demand = saturating_add(
+                    _unfunded_business_demand, std::max<int64_t>(0, planned - funded),
+                    _saturation_count);
+            } else {
+                _unfunded_business_demand = saturating_add(
+                    _unfunded_business_demand, planned, _saturation_count);
+            }
         }
     }
     for (const Offer &sale : accepted_anchor_sales) {

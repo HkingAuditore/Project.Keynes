@@ -981,6 +981,32 @@ bool RuntimeCountryPodAuthority::run_research_day(
         // a day with an empty treasury or no research due.
         for (uint32_t domain = 0; domain < COUNTRY_RESEARCH_DOMAIN_COUNT; ++domain)
             while (finalize_complete_head(slot, domain)) {}
+        // Drop owned / pending heads even when no TP will be spent today so
+        // a settled tech cannot keep blocking later queue entries across days.
+        for (uint32_t domain = 0; domain < COUNTRY_RESEARCH_DOMAIN_COUNT; ++domain) {
+            const size_t lane = country_base + domain;
+            while (true) {
+                uint8_t &length = state.research_queue_lengths[lane];
+                if (length == 0) break;
+                const size_t queue_base = lane * COUNTRY_QUEUE_SLOTS;
+                const int32_t technology = state.research_queues[queue_base];
+                if (technology < 0 ||
+                    technology >= static_cast<int32_t>(state.technology_count))
+                    break;
+                const auto [word, bit] = pending_bit(slot, technology);
+                if ((state.country_technologies[word] & bit) == 0 &&
+                    (state.country_pending_technologies[word] & bit) == 0)
+                    break;
+                for (int32_t index = 1; index < length; ++index)
+                    state.research_queues[queue_base +
+                        static_cast<size_t>(index - 1)] =
+                        state.research_queues[queue_base +
+                            static_cast<size_t>(index)];
+                state.research_queues[queue_base +
+                    static_cast<size_t>(--length)] = -1;
+                plan.header.dirty_families |= RUNTIME_DIRTY_COUNTRY_STATE;
+            }
+        }
         if (!research_due) return true;
 
         int64_t &stock = state.country_goods[static_cast<size_t>(slot) *
@@ -1014,6 +1040,27 @@ bool RuntimeCountryPodAuthority::run_research_day(
                 if (technology < 0 || technology >= static_cast<int32_t>(state.technology_count)) {
                     error = "country_research_queue_technology_invalid";
                     return false;
+                }
+                // Mirror NativeCountryRuntime: owned / pending heads are inert.
+                // Without this pop, advance sees remaining==0 → spend==0 and
+                // breaks, parking every later queued tech at 0% forever while
+                // the settled head still occupies the UI queue.
+                {
+                    const auto [owned_word, owned_bit] =
+                        pending_bit(slot, technology);
+                    if ((state.country_technologies[owned_word] & owned_bit) != 0 ||
+                        (state.country_pending_technologies[owned_word] &
+                         owned_bit) != 0) {
+                        for (int32_t index = 1; index < length; ++index)
+                            state.research_queues[queue_base +
+                                static_cast<size_t>(index - 1)] =
+                                state.research_queues[queue_base +
+                                    static_cast<size_t>(index)];
+                        state.research_queues[queue_base +
+                            static_cast<size_t>(--length)] = -1;
+                        plan.header.dirty_families |= RUNTIME_DIRTY_COUNTRY_STATE;
+                        continue;
+                    }
                 }
                 if (!technology_prerequisites_met(state, slot, technology)) break;
                 const int64_t progress = state.research_progress[

@@ -983,9 +983,14 @@ bool NativeEconomyRuntime::run_building_employment_cell(
     {
         const int32_t n_eth = static_cast<int32_t>(_ethnicity_ids.size());
 
-        // Owner mobility reads only the previous committed cycle's settled
-        // cashflow projection. Speculative opportunity quotes and shadow
-        // derived demand must not drive owner↔owner or employee→owner moves.
+        // Owner mobility prefers the previous committed cycle's settled
+        // cashflow. Speculative shadow demand must not invent industrial
+        // owner moves. Never-operated vacancies are different: with no
+        // settled period, mobility income was permanently 0, so UI
+        // opportunity quotes looked huge while nobody would transfer into
+        // empty wild_tuber_patch / wild_wheat_stand shells. Use the
+        // counterfactual opportunity (already gated for knapping shadow)
+        // as a per-owner discovery signal until the first settled period.
         auto owner_mobility_income = [&](BuildingGroupConstRef group,
                                          int64_t &sat) -> int64_t {
             if (group.type_id < 0 || group.type_id >= static_cast<int32_t>(
@@ -996,17 +1001,19 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 group.last_in_kind_livelihood_value > 0 ||
                 group.last_input_cost > 0 || group.last_base_wages_paid > 0;
             if (!has_settled) {
+                int64_t quote_sat = 0;
+                const OwnerOpportunityQuote quote = owner_opportunity_quote(
+                    group, Q16_ONE, Q16_ONE, quote_sat);
+                sat = saturating_add(sat, quote_sat, sat);
+                if (!quote.feasible || quote.executable_capacity_q16 <= 0)
+                    return 0;
                 const BuildingType &type = _building_types[group.type_id];
-                bool has_monetary_output = false;
-                for (int32_t output_index = 0; output_index < type.output_count; ++output_index) {
-                    const int32_t good_id = _building_outputs[type.output_begin + output_index].good_id;
-                    if (good_id >= 0 && good_id < static_cast<int32_t>(_good_monetary_issue_values.size()) &&
-                        _good_monetary_issue_values[good_id] > 0) {
-                        has_monetary_output = true;
-                        break;
-                    }
-                }
-                if (!has_monetary_output || group.last_expected_revenue <= 0) return 0;
+                const int64_t owner_slots = std::max<int64_t>(1,
+                    saturating_mul(group.count,
+                        std::max<int64_t>(1, type.owner_slots_per_building),
+                        sat));
+                return std::max<int64_t>(0,
+                    quote.disposable_survival_power_per_day / owner_slots);
             }
             return projected_owner_income_per_day(group, sat);
         };
@@ -2709,18 +2716,54 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             // understaffed positive-income lots cannot thrash on noise, while
             // leaving non-positive opportunity lots stays on the base hurdle.
             // The final local merchant remains protected below.
+            //
+            // Settled production alone must not pin owners forever: reuse the
+            // mobility income already computed above plus settled margin /
+            // employee fill. Distressed incumbents stay eligible as sources.
             const bool protected_restart_source =
                 group.purchase_intent_capacity_q16 > 0 &&
                 group.last_output <= 0 && group.last_sold <= 0 &&
                 group.last_observed_capacity_days_q16 > 0;
+            const bool has_settled_ops =
+                group.last_output > 0 || group.last_revenue > 0;
+            // Only walk employee fills when income/margin alone would keep the
+            // owner pinned; otherwise distress is already decided.
+            bool severe_employee_understaff = false;
+            if (has_settled_ops && income > 0 &&
+                group.realized_profit_margin_q16 >= 0 &&
+                type.employee_count > 0) {
+                int64_t emp_slots = 0;
+                int64_t emp_fill = 0;
+                for (int32_t r = 0; r < type.employee_count; ++r) {
+                    const JobRole &role = _building_employee_roles[
+                        type.employee_begin + r];
+                    emp_slots = saturating_add(emp_slots,
+                        saturating_mul(group.count, role.slots_per_building,
+                            _saturation_count), _saturation_count);
+                    const int32_t fill_index = group.employee_fill_begin + r;
+                    if (fill_index >= 0 && fill_index < static_cast<int32_t>(
+                            _building_employee_filled.size())) {
+                        emp_fill = saturating_add(emp_fill,
+                            std::max<int64_t>(0,
+                                _building_employee_filled[fill_index]),
+                            _saturation_count);
+                    }
+                }
+                severe_employee_understaff =
+                    emp_slots > 0 && emp_fill * 2 < emp_slots;
+            }
+            const bool distressed_owner = income <= 0 ||
+                group.realized_profit_margin_q16 < 0 ||
+                severe_employee_understaff;
             if (group.filled_owner > 0 && owner_target > 0) {
                 // An ACTIVE lot with a bounded restart intent is still an
                 // operating business, even when the last quote could not
                 // execute any physical input. Keep its incumbent owner
                 // attached so employment mobility cannot erase the retry
                 // reservation before the next funding/stock review.
-                if (protected_restart_source || group.last_output > 0 ||
-                    group.last_revenue > 0) {
+                // Healthy settled producers stay pinned; distressed ones do not.
+                if (protected_restart_source ||
+                    (has_settled_ops && !distressed_owner)) {
                     // Preserve the owner, but still collect employee sources
                     // below; only the owner mobility lane is protected.
                 } else {
@@ -2728,44 +2771,47 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                         _signatures[group.owner_signature_id].profession_id);
                     if (source_slot >= 0 && population_store().owner_employed[
                             source_slot] > 0) {
-                        bool real_business_lane = group.last_output > 0 ||
-                            group.last_revenue > 0;
-                        for (int32_t oi = 0; oi < type.output_count; ++oi) {
-                            const int32_t good = _building_outputs[
-                                type.output_begin + oi].good_id;
-                            const int32_t signal = market_signal_index(cell, good);
-                            if (signal < 0) continue;
-                            const int64_t business = signal < static_cast<int32_t>(
-                                    _market_signals.business_demand_ema.size())
-                                ? std::max<int64_t>(0,
-                                    _market_signals.business_demand_ema[signal]) : 0;
-                            const int64_t withdrawal = signal < static_cast<int32_t>(
-                                    _market_signals.realized_withdrawal_ema.size())
-                                ? std::max<int64_t>(0,
-                                    _market_signals.realized_withdrawal_ema[signal]) : 0;
-                            const int64_t epoch_real = signal < static_cast<int32_t>(
-                                    _epoch_desired_business_demand.size())
-                                ? std::max<int64_t>(0,
-                                    _epoch_desired_business_demand[signal]) : 0;
-                            const int64_t prior_business = signal < static_cast<int32_t>(
-                                    _epoch_business_demand_ema.size())
-                                ? std::max<int64_t>(0,
-                                    _epoch_business_demand_ema[signal]) : 0;
-                            real_business_lane = business > 0 || withdrawal > 0 ||
-                                epoch_real > 0 || prior_business > 0;
-                            if (real_business_lane) break;
+                        bool real_business_lane = has_settled_ops;
+                        if (!real_business_lane) {
+                            for (int32_t oi = 0; oi < type.output_count; ++oi) {
+                                const int32_t good = _building_outputs[
+                                    type.output_begin + oi].good_id;
+                                const int32_t signal = market_signal_index(cell, good);
+                                if (signal < 0) continue;
+                                const int64_t business = signal < static_cast<int32_t>(
+                                        _market_signals.business_demand_ema.size())
+                                    ? std::max<int64_t>(0,
+                                        _market_signals.business_demand_ema[signal]) : 0;
+                                const int64_t withdrawal = signal < static_cast<int32_t>(
+                                        _market_signals.realized_withdrawal_ema.size())
+                                    ? std::max<int64_t>(0,
+                                        _market_signals.realized_withdrawal_ema[signal]) : 0;
+                                const int64_t epoch_real = signal < static_cast<int32_t>(
+                                        _epoch_desired_business_demand.size())
+                                    ? std::max<int64_t>(0,
+                                        _epoch_desired_business_demand[signal]) : 0;
+                                const int64_t prior_business = signal < static_cast<int32_t>(
+                                        _epoch_business_demand_ema.size())
+                                    ? std::max<int64_t>(0,
+                                        _epoch_business_demand_ema[signal]) : 0;
+                                real_business_lane = business > 0 || withdrawal > 0 ||
+                                    epoch_real > 0 || prior_business > 0;
+                                if (real_business_lane) break;
+                            }
                         }
                         const bool source_understaffed = group.filled_owner < owner_target;
                         // Do not drain an understaffed producer that has a
                         // committed business buyer.  Its owner vacancy is the
                         // employment demand signal that must be filled before
                         // discretionary owner mobility can move on.
-                        const bool established_producer = group.last_output > 0 ||
-                            group.last_revenue > 0 ||
+                        // Distressed owners bypass this hold so micro-loss /
+                        // understaffed lots can exit into better seats.
+                        const bool established_producer = has_settled_ops ||
                             (group.type_id >= 0 && group.type_id <
                                 static_cast<int32_t>(_building_type_ids.size()) &&
                              _building_type_ids[group.type_id] == "knapping_workshop");
-                        if (!(source_understaffed &&
+                        if (distressed_owner ||
+                            !(source_understaffed &&
                               (real_business_lane || established_producer))) {
                             owner_job_sources.push_back(g);
                             owner_job_source_understaffed.push_back(

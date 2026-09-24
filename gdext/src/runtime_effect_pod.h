@@ -390,6 +390,17 @@ public:
                          std::string &error);
     bool set_metric(int64_t instance_id, uint32_t generation, int32_t metric_id,
                     int64_t revision, int64_t value, std::string &error);
+    // Soft-skip / late ENSURE recovery: never-fired instances (fire_sequence==0)
+    // are forced onto committed_day+1 whether they still sit on the closed day
+    // or were parked far ahead by a cadence-days failure backoff.
+    uint32_t reschedule_unfired_due_instances(int64_t committed_day);
+    // Soft-skip catch-up: after drain installs a never-fired technology instance
+    // onto committed+1, fire it into intents WITHOUT advancing committed_day so
+    // the same-day Modifier stage can ACK before the next Effect plan lane.
+    // Returns how many instances emitted at least one intent (or empty-fire ACK).
+    uint32_t catchup_fire_never_fired_instances(
+            int64_t fire_day, std::vector<RuntimeDomainIntent> &out_intents,
+            std::string &error);
 
     bool plan_day(int64_t day, uint64_t input_generation,
                   RuntimeEffectPodPlan &plan, std::string &error);

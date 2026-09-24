@@ -199,7 +199,13 @@ func _process(delta: float) -> void:
 	var simulation_budget_start_us: int = Time.get_ticks_usec()
 	var hard_day_barrier := _has_hard_day_barrier()
 	var pulse_start_us: int = Time.get_ticks_usec()
-	if hard_day_barrier:
+	# climate_input_capacity_day_barrier parks day advance only. Capacity is
+	# freed by the worker draining the environment ring while WorldRuntimeHost
+	# pumps peers and retries the retained day — NOT by MapGenerator's economy
+	# graph pulse. Emitting pulse here re-ran capture_economy_day_inputs every
+	# frame (often 20–30ms) and starved the capacity retry, permanently nailing
+	# the calendar at 50x with a full ring.
+	if hard_day_barrier and needs_continuation_pulse():
 		simulation_backpressure_pulse.emit(_last_day)
 		hard_day_barrier = _has_hard_day_barrier()
 	_last_pulse_ms = float(Time.get_ticks_usec() - pulse_start_us) / 1000.0
@@ -539,7 +545,13 @@ func request_simulation_backpressure(source: StringName, active: bool) -> void:
 
 func _has_hard_day_barrier() -> bool:
 	return _simulation_backpressure_sources.has(&"climate_input_capacity_day_barrier") \
-		or _simulation_backpressure_sources.has(&"economy_day_barrier") \
+		or needs_continuation_pulse()
+
+
+## Barriers that need same-day MapGenerator / SUS continuation catchup.
+## climate_input_capacity is intentionally excluded: Host capacity retry owns it.
+func needs_continuation_pulse() -> bool:
+	return _simulation_backpressure_sources.has(&"economy_day_barrier") \
 		or _simulation_backpressure_sources.has(&"country_day_barrier") \
 		or _simulation_backpressure_sources.has(&"ideology_day_barrier") \
 		or _simulation_backpressure_sources.has(&"bio_occupancy_day_barrier") \
