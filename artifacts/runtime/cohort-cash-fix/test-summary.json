@@ -1,0 +1,321 @@
+﻿{
+    "generated_utc":  "2026-09-22T15:34:27.4507360Z",
+    "godot":  "D:\\Godot\\Godot_v4.6.2-stable_win64.exe\\Godot_v4.6.2-stable_win64_console.exe",
+    "total":  26,
+    "passed":  26,
+    "failed":  0,
+    "results":  [
+                    {
+                        "name":  "runtime_protocol_guard_test",
+                        "script":  "tests/runtime_protocol_guard_test.gd",
+                        "exit_code":  0,
+                        "elapsed_seconds":  4.69,
+                        "log":  "tests/runtime_protocol_guard_test.log",
+                        "log_bytes":  1012,
+                        "failure_markers":  [
+
+                                            ],
+                        "passed":  true
+                    },
+                    {
+                        "name":  "runtime_domain_pod_test",
+                        "script":  "tests/runtime_domain_pod_test.gd",
+                        "exit_code":  0,
+                        "elapsed_seconds":  4.69,
+                        "log":  "tests/runtime_domain_pod_test.log",
+                        "log_bytes":  1394,
+                        "failure_markers":  [
+
+                                            ],
+                        "passed":  true
+                    },
+                    {
+                        "name":  "runtime_modifier_pod_test",
+                        "script":  "tests/runtime_modifier_pod_test.gd",
+                        "exit_code":  0,
+                        "elapsed_seconds":  5.99,
+                        "log":  "tests/runtime_modifier_pod_test.log",
+                        "log_bytes":  979,
+                        "failure_markers":  [
+
+                                            ],
+                        "passed":  true
+                    },
+                    {
+                        "name":  "runtime_events_pod_test",
+                        "script":  "tests/runtime_events_pod_test.gd",
+                        "exit_code":  0,
+                        "elapsed_seconds":  3.84,
+                        "log":  "tests/runtime_events_pod_test.log",
+                        "log_bytes":  977,
+                        "failure_markers":  [
+
+                                            ],
+                        "passed":  true
+                    },
+                    {
+                        "name":  "runtime_climate_authority_test",
+                        "script":  "tests/runtime_climate_authority_test.gd",
+                        "exit_code":  0,
+                        "elapsed_seconds":  3.92,
+                        "log":  "tests/runtime_climate_authority_test.log",
+                        "log_bytes":  1311,
+                        "failure_markers":  [
+
+                                            ],
+                        "passed":  true
+                    },
+                    {
+                        "name":  "runtime_climate_parity_test",
+                        "script":  "tests/runtime_climate_parity_test.gd",
+                        "exit_code":  0,
+                        "elapsed_seconds":  3.92,
+                        "log":  "tests/runtime_climate_parity_test.log",
+                        "log_bytes":  1331,
+                        "failure_markers":  [
+
+                                            ],
+                        "passed":  true
+                    },
+                    {
+                        "name":  "runtime_climate_stage_order_contract_test",
+                        "script":  "tests/runtime_climate_stage_order_contract_test.gd",
+                        "exit_code":  0,
+                        "elapsed_seconds":  3.83,
+                        "log":  "tests/runtime_climate_stage_order_contract_test.log",
+                        "log_bytes":  1333,
+                        "failure_markers":  [
+
+                                            ],
+                        "passed":  true
+                    },
+                    {
+                        "name":  "runtime_climate_save_roundtrip_test",
+                        "script":  "tests/runtime_climate_save_roundtrip_test.gd",
+                        "exit_code":  0,
+                        "elapsed_seconds":  50.52,
+                        "log":  "tests/runtime_climate_save_roundtrip_test.log",
+                        "log_bytes":  18161,
+                        "failure_markers":  [
+
+                                            ],
+                        "passed":  true
+                    },
+                    {
+                        "name":  "runtime_country_pod_test",
+                        "script":  "tests/runtime_country_pod_test.gd",
+                        "exit_code":  0,
+                        "elapsed_seconds":  6.06,
+                        "log":  "tests/runtime_country_pod_test.log",
+                        "log_bytes":  970,
+                        "failure_markers":  [
+
+                                            ],
+                        "passed":  true
+                    },
+                    {
+                        "name":  "runtime_country_peer_bridge_test",
+                        "script":  "tests/runtime_country_peer_bridge_test.gd",
+                        "exit_code":  0,
+                        "elapsed_seconds":  28.04,
+                        "log":  "tests/runtime_country_peer_bridge_test.log",
+                        "log_bytes":  6315,
+                        "failure_markers":  [
+
+                                            ],
+                        "passed":  true
+                    },
+                    {
+                        "name":  "runtime_country_economy_transaction_test",
+                        "script":  "tests/runtime_country_economy_transaction_test.gd",
+                        "exit_code":  0,
+                        "elapsed_seconds":  5.87,
+                        "log":  "tests/runtime_country_economy_transaction_test.log",
+                        "log_bytes":  986,
+                        "failure_markers":  [
+
+                                            ],
+                        "passed":  true
+                    },
+                    {
+                        "name":  "runtime_country_host_protocol_test",
+                        "script":  "tests/runtime_country_host_protocol_test.gd",
+                        "exit_code":  0,
+                        "elapsed_seconds":  7.2,
+                        "log":  "tests/runtime_country_host_protocol_test.log",
+                        "log_bytes":  1192,
+                        "failure_markers":  [
+
+                                            ],
+                        "passed":  true
+                    },
+                    {
+                        "name":  "runtime_country_parity_test",
+                        "script":  "tests/runtime_country_parity_test.gd",
+                        "exit_code":  0,
+                        "elapsed_seconds":  100.75,
+                        "log":  "tests/runtime_country_parity_test.log",
+                        "log_bytes":  32702,
+                        "failure_markers":  [
+
+                                            ],
+                        "passed":  true
+                    },
+                    {
+                        "name":  "runtime_country_save_roundtrip_test",
+                        "script":  "tests/runtime_country_save_roundtrip_test.gd",
+                        "exit_code":  0,
+                        "elapsed_seconds":  6.39,
+                        "log":  "tests/runtime_country_save_roundtrip_test.log",
+                        "log_bytes":  2573,
+                        "failure_markers":  [
+
+                                            ],
+                        "passed":  true
+                    },
+                    {
+                        "name":  "runtime_snapshot_ring_test",
+                        "script":  "tests/runtime_snapshot_ring_test.gd",
+                        "exit_code":  0,
+                        "elapsed_seconds":  3.76,
+                        "log":  "tests/runtime_snapshot_ring_test.log",
+                        "log_bytes":  955,
+                        "failure_markers":  [
+
+                                            ],
+                        "passed":  true
+                    },
+                    {
+                        "name":  "runtime_save_domain_section_test",
+                        "script":  "tests/runtime_save_domain_section_test.gd",
+                        "exit_code":  0,
+                        "elapsed_seconds":  3.75,
+                        "log":  "tests/runtime_save_domain_section_test.log",
+                        "log_bytes":  985,
+                        "failure_markers":  [
+
+                                            ],
+                        "passed":  true
+                    },
+                    {
+                        "name":  "runtime_worker_source_scan_test",
+                        "script":  "tests/runtime_worker_source_scan_test.gd",
+                        "exit_code":  0,
+                        "elapsed_seconds":  3.75,
+                        "log":  "tests/runtime_worker_source_scan_test.log",
+                        "log_bytes":  960,
+                        "failure_markers":  [
+
+                                            ],
+                        "passed":  true
+                    },
+                    {
+                        "name":  "runtime_thread_isolation_test",
+                        "script":  "tests/runtime_thread_isolation_test.gd",
+                        "exit_code":  0,
+                        "elapsed_seconds":  4.22,
+                        "log":  "tests/runtime_thread_isolation_test.log",
+                        "log_bytes":  1879,
+                        "failure_markers":  [
+
+                                            ],
+                        "passed":  true
+                    },
+                    {
+                        "name":  "runtime_graph_country_committed_test",
+                        "script":  "tests/runtime_graph_country_committed_test.gd",
+                        "exit_code":  0,
+                        "elapsed_seconds":  4.22,
+                        "log":  "tests/runtime_graph_country_committed_test.log",
+                        "log_bytes":  1559,
+                        "failure_markers":  [
+
+                                            ],
+                        "passed":  true
+                    },
+                    {
+                        "name":  "runtime_generation_tick_gate_test",
+                        "script":  "tests/runtime_generation_tick_gate_test.gd",
+                        "exit_code":  0,
+                        "elapsed_seconds":  10.52,
+                        "log":  "tests/runtime_generation_tick_gate_test.log",
+                        "log_bytes":  1664,
+                        "failure_markers":  [
+
+                                            ],
+                        "passed":  true
+                    },
+                    {
+                        "name":  "runtime_trigger_pod_test",
+                        "script":  "tests/runtime_trigger_pod_test.gd",
+                        "exit_code":  0,
+                        "elapsed_seconds":  4.15,
+                        "log":  "tests/runtime_trigger_pod_test.log",
+                        "log_bytes":  953,
+                        "failure_markers":  [
+
+                                            ],
+                        "passed":  true
+                    },
+                    {
+                        "name":  "runtime_trigger_parity_test",
+                        "script":  "tests/runtime_trigger_parity_test.gd",
+                        "exit_code":  0,
+                        "elapsed_seconds":  3.75,
+                        "log":  "tests/runtime_trigger_parity_test.log",
+                        "log_bytes":  926,
+                        "failure_markers":  [
+
+                                            ],
+                        "passed":  true
+                    },
+                    {
+                        "name":  "runtime_trigger_save_roundtrip_test",
+                        "script":  "tests/runtime_trigger_save_roundtrip_test.gd",
+                        "exit_code":  0,
+                        "elapsed_seconds":  3.69,
+                        "log":  "tests/runtime_trigger_save_roundtrip_test.log",
+                        "log_bytes":  926,
+                        "failure_markers":  [
+
+                                            ],
+                        "passed":  true
+                    },
+                    {
+                        "name":  "runtime_effect_pod_test",
+                        "script":  "tests/runtime_effect_pod_test.gd",
+                        "exit_code":  0,
+                        "elapsed_seconds":  9.02,
+                        "log":  "tests/runtime_effect_pod_test.log",
+                        "log_bytes":  977,
+                        "failure_markers":  [
+
+                                            ],
+                        "passed":  true
+                    },
+                    {
+                        "name":  "runtime_authority_m5_m6_gate_test",
+                        "script":  "tests/runtime_authority_m5_m6_gate_test.gd",
+                        "exit_code":  0,
+                        "elapsed_seconds":  3.94,
+                        "log":  "tests/runtime_authority_m5_m6_gate_test.log",
+                        "log_bytes":  982,
+                        "failure_markers":  [
+
+                                            ],
+                        "passed":  true
+                    },
+                    {
+                        "name":  "dots_completion_gate",
+                        "script":  "tests/dots_completion/dots_completion_gate.gd",
+                        "exit_code":  0,
+                        "elapsed_seconds":  3.73,
+                        "log":  "tests/dots_completion_gate.log",
+                        "log_bytes":  2840,
+                        "failure_markers":  [
+
+                                            ],
+                        "passed":  true
+                    }
+                ]
+}

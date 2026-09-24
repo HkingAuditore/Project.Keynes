@@ -1,0 +1,50 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] country configures
+  [PASS] economy configures
+  [PASS] ten local markets bootstrap
+PROBE before handles=[4294967296] funds=[1000000]
+  [PASS] day 0 uses bounded multi-chunk continuation
+  [PASS] compact slice keeps scheduler fields without full diagnostics
+  [PASS] day 0 exposes bounded investment continuation
+  [PASS] day 0 exposes sliced household finalization
+  [PASS] day 0 exposes household slice timing breakdown
+  [PASS] day 0 exposes baked building review phases
+  [PASS] day 0 exposes isolated investment prepare timing
+  [PASS] day 0 slices building finalize reconciliation
+  [PASS] day 0 commits one rolling phase
+  [PASS] day 0 preserves completed-epoch performance diagnostics
+  [PASS] day 0 conserves all ledgers
+  [PASS] day 0 cell 0 state date
+  [PASS] day 0 cell 1 state date
+  [PASS] day 0 cell 2 state date
+  [PASS] day 0 cell 3 state date
+  [PASS] day 0 cell 4 state date
+  [PASS] day 0 cell 5 state date
+  [PASS] day 0 cell 6 state date
+  [PASS] day 0 cell 7 state date
+  [PASS] day 0 cell 8 state date
+  [PASS] day 0 cell 9 state date
+  [PASS] day 1 uses bounded multi-chunk continuation
+  [PASS] day 1 exposes bounded investment continuation
+  [PASS] day 1 exposes sliced household finalization
+  [PASS] day 1 exposes household slice timing breakdown
+  [PASS] day 1 exposes baked building review phases
+  [PASS] day 1 exposes isolated investment prepare timing
+  [PASS] day 1 slices building finalize reconciliation
+  [PASS] day 1 commits one rolling phase
+  [PASS] day 1 preserves completed-epoch performance diagnostics
+  [PASS] day 1 conserves all ledgers
+  [PASS] day 1 cell 0 state date
+  [PASS] day 1 cell 1 state date
+  [PASS] day 1 cell 2 state date
+  [PASS] day 1 cell 3 state date
+  [PASS] day 1 cell 4 state date
+  [PASS] day 1 cell 5 state date
+  [PASS] day 1 cell 6 state date
+  [PASS] day 1 cell 7 state date
+  [PASS] day 1 cell 8 state date
+  [PASS] day 1 cell 9 state date
+PROBE after funds=[500000] settlement_income=[0] source_ids=["wages", "owner_operations", "merchant_household_sales", "merchant_business_sales", "transfer", "household_consumption", "production_inputs", "owner_wages", "construction", "merchant_procurement", "other", "producer_support_issuance", "income_tax", "consumption_tax", "business_tax", "income_subsidy", "consumption_subsidy", "business_subsidy", "fiscal_escrow"] src_idx=15 src_rows=0 src_total=0
+PROBE fiscal={ "ok": true, "country_handle": 4294967296, "sample_day": 1, "tax_policy_version": 1, "tax_kinds": ["income", "consumption", "business", "import", "export"], "tax_base": [1044000, 0, 0, 0, 0], "assessed": [0, 0, 0, 0, 0], "collected": [0, 0, 0, 0, 0], "subsidy_requested": [2088, 0, 0, 0, 0], "subsidy_reserved": [2088, 0, 0, 0, 0], "subsidy_paid": [2088, 0, 0, 0, 0], "subsidy_unmet": [0, 0, 0, 0, 0], "fulfillment_q16": [65536, 0, 0, 0, 0], "cumulative_tax_base": [1044000, 0, 0, 0, 0], "cumulative_collected": [0, 0, 0, 0, 0], "cumulative_subsidy_requested": [2088, 0, 0, 0, 0], "cumulative_subsidy_paid": [2088, 0, 0, 0, 0], "tariff_event_counts": [0, 0, 0, 0, 0], "tariff_events": 0, "tariffs_active": false }
+PROBE_RESULT ok=false paid0=2088 cumulative0=2088 src_total=0 money=0 goods=0 population=0

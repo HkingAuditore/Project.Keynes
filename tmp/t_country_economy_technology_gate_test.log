@@ -1,0 +1,30 @@
+﻿Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] catalog compiles
+  [PASS] country configures
+  [PASS] country bootstraps
+  [PASS] economy configures
+  [PASS] economy bootstraps
+  [PASS] early knowledge institution is catalogued
+  [PASS] institution starts technology-locked
+  [PASS] cell has a country
+  [PASS] grant queues
+  [PASS] grant pending day commits
+  [PASS] grant activates next day
+  [PASS] economy observes activation day
+  [PASS] country lists early knowledge as completed
+  [PASS] live building gate unlocks early knowledge institution
+country economy technology gate: 14 checks, 0 failures
+Godot_v4.6.2-stable_win64_console.exe : ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyText
+ureE' were leaked at exit.
+所在位置 C:\Users\hkinghuang\AppData\Local\Temp\ps-script-c25c57ad-5c9b-4064-8f1a-3ae0e04ce28c.ps1:98 字符: 3
++   & $godot --headless --path Project\project-keynes --script "res://t ...
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (ERROR: 11 RID a...leaked at exit.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 276 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

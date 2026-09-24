@@ -52,6 +52,7 @@ func _init() -> void:
 	assert(host._climate_capacity_pending_day == 10)
 	assert(clock.has_simulation_backpressure())
 	assert(clock._has_hard_day_barrier())
+	assert(not clock.needs_continuation_pulse())
 	assert(not clock.paused)
 	generator.probe.ready = true
 	host._on_clock_day_changed(host._climate_capacity_pending_day)

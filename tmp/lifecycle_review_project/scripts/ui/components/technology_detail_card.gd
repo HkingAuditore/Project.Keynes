@@ -218,8 +218,9 @@ func update_progress(state: int, fraction: float, definition: Dictionary) -> voi
 	if not is_application:
 		_gauge.set_data("研究进度", clampf(fraction, 0.0, 1.0),
 			_progress_caption(definition, fraction, state), _accent)
-	# Clear optimistic "次日生效" once the authoritative state actually moves.
-	if _submitted and state != previous_state:
+	# Clear optimistic "次日生效" once the authoritative state actually moves,
+	# or once the node is observably queued (state 3) / finished (state >= 4).
+	if _submitted and (state != previous_state or state == 3 or state >= 4):
 		_submitted = false
 	if not _submitted and not is_application:
 		_apply_action(state)
@@ -232,8 +233,16 @@ func _progress_caption(definition: Dictionary, fraction: float, state: int) -> S
 		return "已掌握"
 	if state <= 1:
 		return "尚未开始"
-	var cost := float(definition.get("cost_points", 0))
-	var remaining := maxf(0.0, cost * (1.0 - clampf(fraction, 0.0, 1.0)))
+	# Derive from the scaled cost: cost_points is an integer point count and
+	# reads 0 for anything cheaper than one point, so a node that still owed
+	# research points advertised 「还需 0」.
+	var cost_scaled := maxf(1.0, float(definition.get("cost_points_scaled",
+		float(definition.get("cost_points", 0)) * 1000.0)))
+	var remaining_scaled := maxf(
+		0.0, cost_scaled * (1.0 - clampf(fraction, 0.0, 1.0)))
+	var remaining := remaining_scaled / 1000.0
+	if remaining > 0.0 and remaining < 0.1:
+		return "还需 <0.1"
 	return "还需 %s" % UITokens.format_compact_number_cn(remaining, 1)
 
 
@@ -411,6 +420,17 @@ func mark_submitted() -> void:
 	_submitted = true
 	_action.disabled = true
 	_action.text = "已提交 · 次日生效"
+
+
+func mark_rejected(message: String) -> void:
+	if _action == null:
+		return
+	_submitted = false
+	_action.disabled = _state != 2 and _state != 3
+	_action.visible = true
+	var trimmed := message.strip_edges()
+	_action.text = trimmed if not trimmed.is_empty() else "提交失败"
+	_action.tooltip_text = trimmed
 
 
 func _on_action_pressed() -> void:

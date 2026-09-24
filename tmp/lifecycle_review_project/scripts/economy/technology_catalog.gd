@@ -9,6 +9,11 @@ const EraRewardCatalogScript = preload("res://scripts/effect/era_reward_catalog.
 const NETWORK_DATA_PATH := "res://data/technology/technology_network.json"
 
 static var _network_payload_cache: Dictionary = {}
+# Cold authoring data: compile once per process. country_committed soft-publishes
+# (treasury/tax) used to rebuild this every simulated day via research toasts.
+static var _native_catalog_cache: Dictionary = {}
+static var _public_definitions_cache: Array[Dictionary] = []
+static var _public_definitions_ready := false
 
 const DOMAIN_IDS := ["agriculture", "engineering", "science", "society"]
 const DOMAIN_NAMES := ["农业", "工程", "科学", "社会"]
@@ -156,6 +161,8 @@ static func validate_application_intersections(network: Dictionary,
 
 
 static func compile_native_catalog() -> Dictionary:
+	if bool(_native_catalog_cache.get("ok", false)):
+		return _native_catalog_cache
 	var signal_catalog := ResearchSignalCatalogScript.compile_native_catalog()
 	if not bool(signal_catalog.get("ok", false)):
 		return signal_catalog
@@ -461,6 +468,7 @@ static func compile_native_catalog() -> Dictionary:
 	for key in modifier_ir:
 		if key != "ok":
 			out[key] = modifier_ir[key]
+	_native_catalog_cache = out
 	return out
 
 
@@ -916,6 +924,10 @@ static func _modifier_definition_keys(ids: PackedStringArray,
 
 
 static func public_definitions(compiled_catalog: Dictionary = {}) -> Array[Dictionary]:
+	# Default path is process-lifetime cached: soft country commits used to rebuild
+	# ~369 definition dictionaries every simulated day through research toasts.
+	if compiled_catalog.is_empty() and _public_definitions_ready:
+		return _public_definitions_cache
 	var compiled := compiled_catalog if not compiled_catalog.is_empty() \
 		else compile_native_catalog()
 	if not bool(compiled.get("ok", false)):
@@ -955,6 +967,12 @@ static func public_definitions(compiled_catalog: Dictionary = {}) -> Array[Dicti
 			"era_id": compiled.technology_era_ids[i],
 			"domain_id": DOMAIN_IDS[compiled.technology_domain_indices[i]],
 			"cost_points": int(compiled.technology_costs[i]) / 1000,
+			# Raw scaled units with the same floor the runtime applies in
+			# country_effective_research_cost. cost_points above is an integer
+			# division and collapses to 0 for anything cheaper than one point,
+			# which made such nodes render as 「0% / 还需 0」 while the runtime
+			# was still waiting to be paid.
+			"cost_points_scaled": maxi(1, int(compiled.technology_costs[i])),
 			"prerequisite_ids": prerequisites_out,
 			"hard_prerequisite_ids": prerequisites_out,
 			"prerequisite_rationales": PackedStringArray(
@@ -999,6 +1017,9 @@ static func public_definitions(compiled_catalog: Dictionary = {}) -> Array[Dicti
 				source.get("application_target_rationales", [])),
 			"terminal_reason": String(source.get("terminal_reason", "")),
 		})
+	if compiled_catalog.is_empty():
+		_public_definitions_cache = out
+		_public_definitions_ready = true
 	return out
 
 

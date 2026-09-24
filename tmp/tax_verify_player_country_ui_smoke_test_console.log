@@ -1,0 +1,260 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[ui-layout-diag/bind_ui] is_web=false viewport_visible_rect=[P: (0.0, 0.0), S: (1024.0, 576.0)] window_size=(1280, 720) content_scale_factor=1.250 content_scale_mode=0 device_pixel_ratio=-1.000 top_bar_rect=[P: (0.0, 0.0), S: (1024.0, 56.0)] right_panel_rect=[P: (564.0, 68.0), S: (460.0, 496.0)] country_action_bar_rect=[P: (346.0, 494.0), S: (400.0, 74.0)]
+[building-visual] queue_probe ticks=1 queued=0 chunk=-1 camera_rect=[P: (-512.0, -288.0), S: (1024.0, 576.0)] prefetch=false zoom=1.000
+[clock/step] delta=150.0ms speed=1x target=0.15d cap=8.00d/f cost=0.00ms ran=0 pulse=0.00ms loop=0.00ms full=0.24ms carry=0.15 barrier=
+[building-visual] queue_probe ticks=2 queued=0 chunk=-1 camera_rect=[P: (-512.0, -288.0), S: (1024.0, 576.0)] prefetch=false zoom=1.000
+[native_generation/base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=2400 native_ms=6.163 water=1681 land=719
+[native_generation/post_base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=2400 native_ms=1.228 lakes=0 rivers=82 volcanoes=0
+[native_generation/vegetation] native_ms=0.422 candidates=714 none=1312 score=[0.000,1.274,1.146] plant_water_land=719 river_adjacent_desert=0 coastal_highland_desert=0 terrain_weight=[0.180,1.200]
+[native_generation/qa] single_water=0 tiny<=3=0 small<=5=0 bodies=1 largest=1681 | land_below_sea=0.0% | terr_distinct=21 entropy=2.963bit | river_ratio=3.417%
+MapGenerator v7: per-cell 62ms (2400 cells, path=gdext)
+[building-visual] queue_probe ticks=3 queued=0 chunk=-1 camera_rect=[P: (-512.0, -288.0), S: (1024.0, 576.0)] prefetch=false zoom=1.000
+MapBaker v6: hm=(1024, 606) seed=407492944
+    [fused] terrain=65.3ms erosion=2.5ms(ok=true) river=11.7ms(ok=true) latitude=0.1ms coast_sdf=3.8ms(ok=true)
+  geometry fields (fused C++): 146ms
+  physical circulation hex solve: deferred until DCWorldExt bind (ext=true idx=true soa=false)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+  visual tiles: {"degradation_reason":"","effective_budget_px":1717248,"effective_texels_per_hex":16.0059221751742,"effective_world_units_per_texel":"(1.373983, 1.375)","estimated_peak_bytes":68402880,"estimated_resident_bytes":40340160,"fallback_reason":"","generation_id":1,"grid_size":"(4, 3)","gutter_px":2,"hex_size":22.0,"horizon_path":"neutral_pending","interior_size":"(416, 344)","layer_size":"(420, 348)","layers":[{"bake_ms":36.731,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":5683053994439522373,"edge_neighbor":7897528714144788602,"height":6693706559340717391,"map_index":8365467111406913320,"terrain_detail":167746537308457817,"terrain_normal":8737861948640407743,"water_depth":-2191453680959820937},"layer":0,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.067,"wall_ms":36.894},{"bake_ms":74.1635,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-2061950860034004634,"edge_neighbor":3446478808410913862,"height":-6125564221933495713,"map_index":1207106655194174113,"terrain_detail":-3148890242635687212,"terrain_normal":-7020453400693690626,"water_depth":8703981239581097655},"layer":1,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.064,"wall_ms":74.323},{"bake_ms":70.8803,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":2139215413715034817,"edge_neighbor":-4868037997445330098,"height":7476391236418253270,"map_index":-7437394873775743445,"terrain_detail":-5640804311553732106,"terrain_normal":-3952940940326622141,"water_depth":7291293982293556569},"layer":2,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.063,"wall_ms":71.03},{"bake_ms":54.8459,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-9151989659226349007,"edge_neighbor":7655730738637244120,"height":1532893529410130105,"map_index":-2233452023282927689,"terrain_detail":6590092552044112919,"terrain_normal":3475640462509718734,"water_depth":-6364557361849712035},"layer":3,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.061,"wall_ms":54.997},{"bake_ms":60.9616,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-6611886673533979856,"edge_neighbor":8963500551769710259,"height":7028018348023158743,"map_index":2831144200468439633,"terrain_detail":813040307755582811,"terrain_normal":-7262728818559499236,"water_depth":1825246470120411665},"layer":4,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.063,"wall_ms":61.114},{"bake_ms":95.4035,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":3560489013055059020,"edge_neighbor":-7713456554389971206,"height":5027540415561120187,"map_index":2855684338653042450,"terrain_detail":-3306102581369903817,"terrain_normal":4329330771701429755,"water_depth":-8920034690862278878},"layer":5,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.069,"wall_ms":95.568},{"bake_ms":45.2444,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":2392185388928782682,"edge_neighbor":6426439890206552336,"height":-5804401358357045822,"map_index":-4438904556679087761,"terrain_detail":-2674067836921437883,"terrain_normal":-3508474744328826996,"water_depth":2151807369889282},"layer":6,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.058,"wall_ms":45.384},{"bake_ms":55.6254,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-5477783792009902380,"edge_neighbor":1104145653877101660,"height":-1121439772158233992,"map_index":464373022575478391,"terrain_detail":6629093087757418337,"terrain_normal":-6460391390722211928,"water_depth":-425568342592449653},"layer":7,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.064,"wall_ms":55.775},{"bake_ms":52.7333,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-9085544273816217093,"edge_neighbor":2360325479059980517,"height":5254997689877403251,"map_index":5175104748168818202,"terrain_detail":-3040260949425348086,"terrain_normal":7232814716948295184,"water_depth":5262653109433452243},"layer":8,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.075,"wall_ms":52.893},{"bake_ms":74.7693,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-2093547598342782627,"edge_neighbor":5734509290589514328,"height":8639444265544069799,"map_index":-2003049795219502766,"terrain_detail":2486012078197127698,"terrain_normal":-8241660143199282679,"water_depth":3609475804667016898},"layer":9,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.059,"wall_ms":74.908},{"bake_ms":31.501,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-8185832773583096592,"edge_neighbor":5939731387363835340,"height":837169809484057431,"map_index":1843627814237911282,"terrain_detail":5742670999071954251,"terrain_normal":6154207482147053575,"water_depth":-7314775771006189745},"layer":10,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.062,"wall_ms":31.65},{"bake_ms":57.9646,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-484709608564191924,"edge_neighbor":2370909056322724832,"height":-5981037845243131198,"map_index":5553109193109779870,"terrain_detail":-1669098743265716779,"terrain_normal":8736392487677197987,"water_depth":-8744427673195456481},"layer":11,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.06,"wall_ms":58.117}],"logical_size":"(1664, 1032)","mode":"tiled","path":"visual_tiled_static","profile":"desktop_high","renderer":"mobile","requested_budget_px":1716216,"requested_texels_per_hex":16.0,"requested_tile_world_span":"(704.0, 704.0)","requested_world_units_per_texel":1.375,"tile_world_area":270355.817993164,"tile_world_span":"(571.5768, 473.0)","total_ms":715.76,"visual_domain":"[P: (0.0, -44.0), S: (2286.307, 1419.0)]","wrap_period_x":2286.30706599092,"wrap_x":true}
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/organic.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1225)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/dry_sand.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1225)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/rock.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1225)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/snow_wet.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1225)
+  cell LUT encode: deferred until DCWorldExt bind
+  encode: 2957ms
+MapBaker v6: total 3111ms
+MapGenerator v7: bake 3135ms
+MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)
+MapGenerator: skip _compute_terrain_perturbed_wind (physical-hex solver writes per-cell)
+[SUS] sim budget strict=false frame=8.00ms warn=2.00ms slice=0.75ms upload=1.50ms scheduler=DCSystemScheduler native_sus=auto
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+[DataCore] _data_core_world_ext bound=true (climate co-processor; class=DCWorldExt)
+[native_world] configure rc=0 reason=configured cells=2400 wrap_period_x=103.923
+[native_generation] path=gdext n=2400 published=9 native_ms=0.089 compute_ms=0.052 flush_ms=0.036
+[hex_cell] facade ENABLED (2400 cells bound; ext=true)
+[DataCore] _baker climate_profile injected=true (fixes WorldData.config==null sea_ice prepare path)
+[phys_solve][oneshot] OK slp=0.80ms wind=0.57ms psi=0.33ms(ran=true) upwelling=0.03ms total=2.17ms
+PhysicalCirculation solve@phase=1.50 total=2ms (C++ one-shot run_physical_solve_pass)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+[physical_init] deferred native refresh complete: 2ms
+[cell_lut] deferred encode: 2ms path=gdext
+[bio-occupancy] seed landmasses=12 provinces=12 species=20 secondary_hearths=9
+[bio-occupancy]   bio.maize envelope=75 hearth=36 seeded_landmasses=1 primary_landmass=8 primary_envelope=64 occupied=36 occupied/envelope=0.56
+[bio-occupancy]   bio.wheat envelope=171 hearth=28 seeded_landmasses=2 primary_landmass=6 primary_envelope=8 occupied=28 occupied/envelope=3.50
+[bio-occupancy]   bio.rice envelope=100 hearth=26 seeded_landmasses=3 primary_landmass=3 primary_envelope=40 occupied=26 occupied/envelope=0.65
+[bio-occupancy]   bio.potato envelope=122 hearth=41 seeded_landmasses=2 primary_landmass=8 primary_envelope=53 occupied=41 occupied/envelope=0.77
+[bio-occupancy]   bio.horse envelope=191 hearth=51 seeded_landmasses=2 primary_landmass=3 primary_envelope=91 occupied=51 occupied/envelope=0.56
+[bio-occupancy]   bio.cotton envelope=113 hearth=14 seeded_landmasses=1 primary_landmass=6 primary_envelope=25 occupied=14 occupied/envelope=0.56
+[bio-occupancy]   bio.flax envelope=157 hearth=40 seeded_landmasses=1 primary_landmass=3 primary_envelope=73 occupied=40 occupied/envelope=0.55
+[bio-occupancy]   bio.spice envelope=83 hearth=8 seeded_landmasses=1 primary_landmass=3 primary_envelope=30 occupied=8 occupied/envelope=0.27
+[bio-occupancy]   bio.rubber envelope=51 hearth=2 seeded_landmasses=1 primary_landmass=6 primary_envelope=15 occupied=2 occupied/envelope=0.13
+[bio-occupancy]   bio.sheep envelope=44 hearth=3 seeded_landmasses=1 primary_landmass=3 primary_envelope=25 occupied=3 occupied/envelope=0.12
+[bio-occupancy]   bio.goat envelope=350 hearth=74 seeded_landmasses=2 primary_landmass=8 primary_envelope=156 occupied=74 occupied/envelope=0.47
+[bio-occupancy]   bio.cattle envelope=33 hearth=17 seeded_landmasses=1 primary_landmass=8 primary_envelope=33 occupied=17 occupied/envelope=0.52
+[bio-occupancy]   bio.pig envelope=228 hearth=47 seeded_landmasses=3 primary_landmass=3 primary_envelope=97 occupied=47 occupied/envelope=0.48
+[bio-occupancy]   bio.camel envelope=56 hearth=11 seeded_landmasses=1 primary_landmass=3 primary_envelope=26 occupied=11 occupied/envelope=0.42
+[bio-occupancy]   bio.yak envelope=112 hearth=35 seeded_landmasses=2 primary_landmass=8 primary_envelope=39 occupied=35 occupied/envelope=0.90
+[bio-occupancy]   bio.silkworm envelope=119 hearth=25 seeded_landmasses=1 primary_landmass=8 primary_envelope=56 occupied=25 occupied/envelope=0.45
+[bio-occupancy]   bio.reed envelope=145 hearth=18 seeded_landmasses=3 primary_landmass=8 primary_envelope=65 occupied=18 occupied/envelope=0.28
+[bio-occupancy]   bio.bast_fiber envelope=210 hearth=34 seeded_landmasses=1 primary_landmass=3 primary_envelope=99 occupied=34 occupied/envelope=0.34
+[bio-occupancy]   bio.dye_plant envelope=116 hearth=36 seeded_landmasses=1 primary_landmass=8 primary_envelope=71 occupied=36 occupied/envelope=0.51
+[bio-occupancy]   bio.medicinal_herb envelope=297 hearth=121 seeded_landmasses=3 primary_landmass=3 primary_envelope=125 occupied=121 occupied/envelope=0.97
+[bio-occupancy]   landmass 1 classes=none foods=none
+[bio-occupancy]   landmass 2 classes=none foods=none
+[bio-occupancy]   landmass 3 classes=cold_grazer, fiber_wet, fiber_forest, fiber_open, highland_food, open_grazer, forest_grazer, open_food, dry_grazer, tropical, wetland_food foods=potato, wheat, rice
+[bio-occupancy]   landmass 4 classes=none foods=none
+[bio-occupancy]   landmass 5 classes=none foods=none
+[bio-occupancy]   landmass 6 classes=fiber_wet, fiber_forest, dry_grazer, open_food, open_grazer, forest_grazer, wetland_food, tropical, fiber_open foods=wheat, rice
+[bio-occupancy]   landmass 7 classes=none foods=none
+[bio-occupancy]   landmass 8 classes=tropical, fiber_open, fiber_wet, open_food, dry_grazer, wetland_food, forest_grazer, open_grazer, fiber_forest, highland_food, cold_grazer foods=maize, rice, potato
+[bio-occupancy]   landmass 9 classes=none foods=none
+[bio-occupancy]   landmass 10 classes=none foods=none
+[bio-occupancy]   landmass 11 classes=none foods=none
+[bio-occupancy]   landmass 12 classes=none foods=none
+[weather] gdext acceleration ON (class=DCWorldExt)
+[weather] gdext field commit ON
+[weather] gdext distribute ON
+[weather] gdext summary ON
+[weather] hexcell facade ON (skip AoS double-write in hot loop)
+[weather] gdext resident knobs ON (class=KnobsHandle)
+[economy] ACTIVE native graph cells=2400 goods=134 cohorts=24 epoch_days=1 trade=ACTIVE topology_ready=true topology_generation=1 bootstrap=starter_settlement_bootstrap_v9 founder_families=6 founder_people=6
+[country] ACTIVE native authority countries=6 cells=2400 generation=1
+[weather/knobs] resident KnobsHandle path ACTIVE — first to_*_knobs_dict hit (field_rebuild_count=1 expected ≤1; stable Hz target ≤1 Hz)
+[native_daily] ACTIVE: registered native_daily_sim + natural_resource_daily + bio_occupancy_daily; retained season_refresh + ocean_currents boundary jobs
+[DCSystemScheduler] topology: ["season_refresh", "trigger_runtime", "ideology_runtime", "effect_runtime", "modifier_daily", "gameplay_effect", "natural_resource_daily", "bio_occupancy_daily", "enum_atlas_upload", "ocean_currents", "native_daily_sim", "dynamic_visual_atlas_upload", "country_daily", "economy_daily"]
+WARNING: [runtime-climate-round] no ClimateDailySystem; SHADOW capture carries no shared pass input
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _build_runtime_climate_round_input (res://scripts/geography/map_generator.gd:4651)
+       [1] capture_runtime_inputs_for_worker (res://scripts/geography/map_generator.gd:2351)
+       [2] generate_world (res://scripts/game/world_runtime_host.gd:609)
+       [3] generate (res://scripts/geography/map_generator.gd:1606)
+       [4] _yield_generation_frame (res://scripts/geography/map_generator.gd:19867)
+WARNING: [runtime-worker] Ideology opinion publish deferred: ideology_opinion_snapshot_invalid
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _start_production_shadow_worker (res://scripts/game/world_runtime_host.gd:700)
+       [1] generate_world (res://scripts/game/world_runtime_host.gd:618)
+       [2] generate (res://scripts/geography/map_generator.gd:1606)
+       [3] _yield_generation_frame (res://scripts/geography/map_generator.gd:19867)
+[runtime-day-wait] day=1 env_day=0 missing=0x3ff economy_input=-1
+[runtime-worker] production ACTIVE started mask=4095 auto_pod=true
+[building-visual] intel_refresh requested=52 changed=1 known=1 catalog=400 resident=0 body=0 queued=0 zoom=1.000
+  [PASS] country action bar exists
+  [PASS] country panel exists
+  [PASS] country panel starts closed
+  [PASS] country action bar has five sections
+  [PASS] economy replaces taxation in country actions
+  [PASS] ideology replaces politics in country actions
+  [PASS] country action uses icon plus caption
+  [PASS] country action icon is compact
+  [PASS] country action has no nested badge
+  [PASS] country action uses icon plus caption
+  [PASS] country action icon is compact
+  [PASS] country action has no nested badge
+  [PASS] country action uses icon plus caption
+  [PASS] country action icon is compact
+  [PASS] country action has no nested badge
+  [PASS] country action uses icon plus caption
+  [PASS] country action icon is compact
+  [PASS] country action has no nested badge
+  [PASS] country action uses icon plus caption
+  [PASS] country action icon is compact
+  [PASS] country action has no nested badge
+  [PASS] country action bar is compact
+  [PASS] technology action exists
+  [PASS] technology action enabled
+  [PASS] technology panel opens
+  [PASS] ideology action exists
+  [PASS] ideology action enabled
+  [PASS] ideology panel opens
+  [PASS] economy action exists
+  [PASS] economy action enabled
+  [PASS] economy panel opens
+  [PASS] military action exists
+  [PASS] military action is disabled
+  [PASS] diplomacy action exists
+  [PASS] diplomacy action is disabled
+  [PASS] country dossier has one complete chapter navigation system
+  [PASS] wide country dossier uses the archival bookmark rail
+  [PASS] country dossier chapter navigation switches the live workspace
+  [PASS] opening country affairs does not pause
+  [PASS] ideology workspace opens for the ideology action
+  [PASS] ideology section snapshot is available
+  [PASS] ideology empty collection still shows catalog slot capacity
+  [PASS] ideology empty state explains the first draw
+  [PASS] ideology draw action is enabled with starting points
+  [PASS] country summary is available
+  [PASS] country summary has a name
+  [PASS] country summary has territory
+  [PASS] economy summary exposes the native treasury
+  [PASS] economy workspace opens for the economy action
+  [PASS] economy workspace shows current treasury cash
+  [PASS] economy workspace renders every nonzero treasury good
+  [PASS] income tax page renders default and unlocked profession rows
+  [PASS] income tax rows use localized profession names
+  [PASS] default tax edits preview immediately on inherited rows
+  [PASS] authoritative refresh does not snap back an active tax preview
+  [PASS] reopening tax workspace clears unconfirmed previews
+  [PASS] confirmed default tax keeps its optimistic next-day presentation
+[DCSystemScheduler][RT] ocean_skip#1 tick=1 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+  [PASS] stale policy snapshots preserve the confirmed default tax
+  [PASS] profession override draft stays on the edited row
+[clock/step] delta=6.9ms speed=1x target=0.01d cap=0.57d/f cost=14.04ms ran=0 pulse=0.00ms loop=0.00ms full=0.26ms carry=0.30 barrier=
+  [PASS] live refresh does not snap a profession override draft
+  [PASS] reopening tax workspace clears unconfirmed item drafts
+  [PASS] locked professions stay hidden from the income page
+  [PASS] tariff page exposes editable tradeable goods
+  [PASS] daily tax refresh reuses cached row nodes
+  [PASS] treasury presentation localizes goods
+  [PASS] treasury presentation applies fixed-point scales
+  [PASS] daily economy refresh preserves workspace and treasury rows
+  [PASS] daily economy refresh patches visible values
+  [PASS] economy summary paints immediately when opened
+  [PASS] rapid economy ticks retain the stable rendered summary
+  [PASS] coalesced economy summary applies the newest fiscal snapshot
+  [PASS] daily research refresh preserves the tree view
+  [PASS] technology tree draws itself instead of spawning nodes
+  [PASS] country dialog stays in viewport
+  [PASS] country dialog clears top bar
+  [PASS] country dialog fills available viewport width
+  [PASS] country dialog fills available viewport height
+  [PASS] compact country dialog stays in viewport
+  [PASS] compact country dialog fills available viewport width
+  [PASS] compact country dialog fills available viewport height
+  [PASS] compact country dossier folds chapters into a horizontal navigator
+  [PASS] compact economy treasury uses a bounded vertical scroll
+  [PASS] compact technology layout preserves the atlas with side drawers
+  [PASS] Lucide country icon is registered
+  [PASS] economy country icon reuses the treasury asset
+  [PASS] Tabler summary icon is registered
+  [PASS] Inspector removes the standalone tax tab
+  [PASS] owned population page exposes an editable income default
+  [PASS] daily tax refresh preserves the merged page scroll
+  [PASS] object detail workspace is wired into the Inspector
+  [PASS] player start cell stays selected for object details
+[climate][publish] day=0 round_ran=1 prod_stage=0xff scalar_mask=0x7f alb=0 veg=0 fb=0 weather=0 sr=0 ok=1
+[climate/worker][b8] physics_knobs day=1 ready=0 missing=physics_knobs
+[climate-kernel][round] shared=1 ok=1 n_cells=2400 mask=0x1FF ran=0x1FF starved=0x0 knobs_cells=2400
+[DCSystemScheduler][RT] ocean_skip#2 tick=2 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[country][parity] worker_day=1 uncompared reference_range=2..2 depth=1
+[economy-mirror-cost] day=1 capture_ms=2.482 import_ms=4.615
+[climate/writeback][b8] day=1 vapor store0=0 map0=0 dirty_fields=42 applied=42
+[phys/knobs] projection ready: slp=31 wind=33 psi=26 up=10
+[climate/worker][b8] physics_knobs day=2 ready=1 missing=
+[climate/worker][b8] paw day=2 cell=60 moisture=0.917538 wb30=0 soil=0 paw=0.917538 zeros(water=1681 land=2) nonzero=717 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[economy-fatal] day=2 stage=9 substage=verify reason=money_conservation_failed
+[economy-worker-fatal] day=2 phase=2 stage=12 reason=money_conservation_failed
+[runtime-day-wait] day=2 env_day=2 missing=0x100 economy_input=-1
+WARNING: [runtime-worker] FAULTED code=money_conservation_failed committed_day=1 generation=1 faults=1 - world_clock.pause(true)
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _observe_runtime_worker_fault (res://scripts/game/world_runtime_host.gd:915)
+       [1] _consume_runtime_commit_if_ready (res://scripts/game/world_runtime_host.gd:1241)
+       [2] _process (res://scripts/game/world_runtime_host.gd:868)
+ERROR:   [FAIL] 50x soak advances at least 30 simulation days
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/player_country_ui_smoke_test.gd:736)
+       [1] _run (res://tests/player_country_ui_smoke_test.gd:659)
+  [PASS] 50x soak preserves Inspector and scroll node identities
+  [PASS] 50x soak preserves Inspector tab and scroll position
+  [PASS] 50x soak preserves economy workspace and scroll identity
+  [PASS] 50x soak reuses stable economy tax rows
+  [PASS] 50x soak preserves the technology tree node
+  [PASS] 50x soak leaves core country actions clickable
+  [PASS] missing country context returns recoverable unavailable state
+  [PASS] Escape closes country panel
+  [PASS] Escape close preserves pause state
+=== player country UI smoke: 1 failures ===
+ERROR: 46 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 39 RID allocations of type 'PN18TextServerAdvanced22ShapedTextDataAdvancedE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 987 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

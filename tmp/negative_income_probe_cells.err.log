@@ -1,0 +1,4 @@
+SCRIPT ERROR: Parse Error: Unexpected "for" in class body.
+   at: GDScript::reload (res://tmp/negative_income_probe.gd:38)
+ERROR: Failed to load script "res://tmp/negative_income_probe.gd" with error "Parse error".
+   at: load (modules/gdscript/gdscript.cpp:2907)

@@ -301,6 +301,11 @@ func _can_save() -> Dictionary:
 		if bool(adapters.get("gameplay_pending", false)):
 			return _result(false, "save_requires_idle_effect_gameplay",
 				"等待理念/Effect Gameplay 事件写入 journal")
+	# 已提交账本契约（写档和读档都一样）要求经济至少结算过一次；开局到首次结算
+	# 之间没有可恢复的状态。这里不进重试列表：时钟为存档暂停，等下去也不会到。
+	if int(economy_report.get("last_committed_day", 0)) < 0:
+		return _result(false, "save_requires_first_settlement",
+			"经济尚未完成第一次结算，暂时无法存档。请让游戏运行几天后再保存。")
 	if bool(economy_report.get("busy", economy_report.get("epoch_active", false))) \
 			or not bool(economy_report.get("committed", true)):
 		return _result(false, "save_requires_committed_boundary", "经济尚未到达联合提交边界。")
@@ -602,6 +607,12 @@ func _capture_native_runtime_bundle() -> Dictionary:
 	const MAX_POLL_FRAMES := 1800
 	for _frame in MAX_POLL_FRAMES:
 		var polled: Dictionary = generator.poll_runtime_save(request_id)
+		if not bool(polled.get("ok", true)) and not bool(polled.get("pending", false)):
+			var failed := _result(false, String(polled.get("code", "runtime_save_failed")),
+				"后台 runtime 保存失败：%s" % String(polled.get("reason", "")))
+			failed["reason"] = String(polled.get("reason", ""))
+			push_warning("[save] runtime bundle failed: %s" % JSON.stringify(polled))
+			return failed
 		if bool(polled.get("ready", false)):
 			var bytes: PackedByteArray = polled.get("bytes", PackedByteArray())
 			if not _valid_native_runtime_bundle(bytes, polled):
@@ -614,7 +625,13 @@ func _capture_native_runtime_bundle() -> Dictionary:
 		if state == "FAULTED":
 			return _result(false, "worker_faulted", "后台模拟线程发生故障，无法保存。")
 		await get_tree().process_frame
-	return _result(false, "runtime_save_timeout", "等待后台 runtime 保存超时。")
+	# 超时时 worker 停在哪一步只有 thread report 知道；不带上它，这条失败在日志里
+	# 只剩一行 code，无法区分"准入条件不满足"和"worker 卡在某个 stage"。
+	var timeout := _result(false, "runtime_save_timeout", "等待后台 runtime 保存超时。")
+	timeout["runtime_thread"] = generator.get_runtime_thread_report()
+	push_warning("[save] runtime_save_timeout thread=%s" % JSON.stringify(
+		timeout["runtime_thread"]))
+	return timeout
 
 
 func _valid_native_runtime_bundle(bytes: PackedByteArray,

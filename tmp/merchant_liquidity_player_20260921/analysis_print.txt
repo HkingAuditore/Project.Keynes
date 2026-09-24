@@ -1,0 +1,863 @@
+{
+  "prefix": "tmp\\economy_record_20260921_094552_v25",
+  "days": 1000,
+  "audits": {
+    "population_error": 0,
+    "money_error": 0,
+    "goods_error": 0
+  },
+  "cells": {
+    "539": {
+      "first": 2717993,
+      "last": 81021,
+      "change_pct": -97.01908724562573,
+      "minimum": 47391,
+      "minimum_day": 983,
+      "zero_days": 0,
+      "events": {
+        "0.5": {
+          "first_day": 143,
+          "days": 823,
+          "longest_run": 547
+        },
+        "0.1": {
+          "first_day": 163,
+          "days": 384,
+          "longest_run": 156
+        },
+        "0.05": {
+          "first_day": 184,
+          "days": 202,
+          "longest_run": 48
+        }
+      },
+      "snapshots": {
+        "1": {
+          "merchant_cash": 2717993,
+          "merchant_inventory_liquidation_value": 3573270,
+          "merchant_economic_assets": 6291263,
+          "merchant_operating_outflow": 102038,
+          "merchant_liquidity_coverage_q16": 1745686,
+          "other_population": 18,
+          "other_funds": 21613207,
+          "other_epoch_income": 241838,
+          "other_epoch_expense": 228631,
+          "population": 20,
+          "merchant_population": 2,
+          "merchant_funds": 2717993,
+          "merchant_epoch_income": 673938,
+          "merchant_epoch_expense": 355945
+        },
+        "30": {
+          "merchant_cash": 12517459,
+          "merchant_inventory_liquidation_value": 1247509,
+          "merchant_economic_assets": 13764968,
+          "merchant_operating_outflow": 124151,
+          "merchant_liquidity_coverage_q16": 6607632,
+          "other_population": 15,
+          "other_funds": 21912141,
+          "other_epoch_income": 333451,
+          "other_epoch_expense": 54474,
+          "population": 20,
+          "merchant_population": 5,
+          "merchant_funds": 12517459,
+          "merchant_epoch_income": 616455,
+          "merchant_epoch_expense": 403446
+        },
+        "100": {
+          "merchant_cash": 23922958,
+          "merchant_inventory_liquidation_value": 1404546,
+          "merchant_economic_assets": 25327504,
+          "merchant_operating_outflow": 399262,
+          "merchant_liquidity_coverage_q16": 3926782,
+          "other_population": 13,
+          "other_funds": 29341842,
+          "other_epoch_income": 435372,
+          "other_epoch_expense": 284534,
+          "population": 20,
+          "merchant_population": 7,
+          "merchant_funds": 23922958,
+          "merchant_epoch_income": 303333,
+          "merchant_epoch_expense": 627854
+        },
+        "200": {
+          "merchant_cash": 197762,
+          "merchant_inventory_liquidation_value": 6623524,
+          "merchant_economic_assets": 6821286,
+          "merchant_operating_outflow": 175907,
+          "merchant_liquidity_coverage_q16": 73678,
+          "other_population": 20,
+          "other_funds": 54600389,
+          "other_epoch_income": 199313,
+          "other_epoch_expense": 172567,
+          "population": 21,
+          "merchant_population": 1,
+          "merchant_funds": 197762,
+          "merchant_epoch_income": 181085,
+          "merchant_epoch_expense": 184425
+        },
+        "500": {
+          "merchant_cash": 640324,
+          "merchant_inventory_liquidation_value": 403842,
+          "merchant_economic_assets": 1044166,
+          "merchant_operating_outflow": 127352,
+          "merchant_liquidity_coverage_q16": 329514,
+          "other_population": 24,
+          "other_funds": 55377212,
+          "other_epoch_income": 127352,
+          "other_epoch_expense": 107253,
+          "population": 25,
+          "merchant_population": 1,
+          "merchant_funds": 640324,
+          "merchant_epoch_income": 116589,
+          "merchant_epoch_expense": 136688
+        },
+        "1000": {
+          "merchant_cash": 81021,
+          "merchant_inventory_liquidation_value": 16473,
+          "merchant_economic_assets": 97494,
+          "merchant_operating_outflow": 61344,
+          "merchant_liquidity_coverage_q16": 86557,
+          "other_population": 24,
+          "other_funds": 57507667,
+          "other_epoch_income": 61344,
+          "other_epoch_expense": 46067,
+          "population": 32,
+          "merchant_population": 8,
+          "merchant_funds": 81021,
+          "merchant_epoch_income": 59684,
+          "merchant_epoch_expense": 74961
+        }
+      },
+      "top_inventory": {
+        "1": [
+          [
+            "logs",
+            1453727.696
+          ],
+          [
+            "clothing",
+            1395060.0
+          ],
+          [
+            "gathered_plants",
+            516040.323
+          ],
+          [
+            "game_meat",
+            379633.718
+          ],
+          [
+            "raw_hide",
+            16891.92
+          ]
+        ],
+        "200": [
+          [
+            "gathered_plants",
+            4014406.256
+          ],
+          [
+            "logs",
+            2705943.353
+          ],
+          [
+            "fur",
+            181605.24
+          ],
+          [
+            "clothing",
+            62940.0
+          ],
+          [
+            "raw_hide",
+            4336.2
+          ]
+        ],
+        "1000": [
+          [
+            "game_meat",
+            12462.255
+          ],
+          [
+            "logs",
+            3961.86
+          ],
+          [
+            "gathered_plants",
+            854.103
+          ],
+          [
+            "clothing",
+            60.0
+          ],
+          [
+            "raw_hide",
+            7.56
+          ]
+        ]
+      }
+    },
+    "691": {
+      "first": 2709029,
+      "last": 1599466,
+      "change_pct": -40.95795947551687,
+      "minimum": 44223,
+      "minimum_day": 980,
+      "zero_days": 0,
+      "events": {
+        "0.5": {
+          "first_day": 339,
+          "days": 657,
+          "longest_run": 655
+        },
+        "0.1": {
+          "first_day": 480,
+          "days": 262,
+          "longest_run": 232
+        },
+        "0.05": {
+          "first_day": 775,
+          "days": 162,
+          "longest_run": 49
+        }
+      },
+      "snapshots": {
+        "1": {
+          "merchant_cash": 2709029,
+          "merchant_inventory_liquidation_value": 3547606,
+          "merchant_economic_assets": 6256635,
+          "merchant_operating_outflow": 102745,
+          "merchant_liquidity_coverage_q16": 1727956,
+          "other_population": 18,
+          "other_funds": 21610971,
+          "other_epoch_income": 239745,
+          "other_epoch_expense": 228774,
+          "population": 20,
+          "merchant_population": 2,
+          "merchant_funds": 2709029,
+          "merchant_epoch_income": 690500,
+          "merchant_epoch_expense": 381471
+        },
+        "30": {
+          "merchant_cash": 12427227,
+          "merchant_inventory_liquidation_value": 1091488,
+          "merchant_economic_assets": 13518715,
+          "merchant_operating_outflow": 113274,
+          "merchant_liquidity_coverage_q16": 7189917,
+          "other_population": 16,
+          "other_funds": 24531173,
+          "other_epoch_income": 318774,
+          "other_epoch_expense": 57244,
+          "population": 20,
+          "merchant_population": 4,
+          "merchant_funds": 12427227,
+          "merchant_epoch_income": 598246,
+          "merchant_epoch_expense": 379776
+        },
+        "100": {
+          "merchant_cash": 19560022,
+          "merchant_inventory_liquidation_value": 1743050,
+          "merchant_economic_assets": 21303072,
+          "merchant_operating_outflow": 410164,
+          "merchant_liquidity_coverage_q16": 3125300,
+          "other_population": 15,
+          "other_funds": 30807978,
+          "other_epoch_income": 410164,
+          "other_epoch_expense": 113366,
+          "population": 20,
+          "merchant_population": 5,
+          "merchant_funds": 19560022,
+          "merchant_epoch_income": 315938,
+          "merchant_epoch_expense": 612736
+        },
+        "200": {
+          "merchant_cash": 4044305,
+          "merchant_inventory_liquidation_value": 3185686,
+          "merchant_economic_assets": 7229991,
+          "merchant_operating_outflow": 158841,
+          "merchant_liquidity_coverage_q16": 1668634,
+          "other_population": 20,
+          "other_funds": 46323695,
+          "other_epoch_income": 158841,
+          "other_epoch_expense": 116120,
+          "population": 21,
+          "merchant_population": 1,
+          "merchant_funds": 4044305,
+          "merchant_epoch_income": 143617,
+          "merchant_epoch_expense": 186338
+        },
+        "500": {
+          "merchant_cash": 278383,
+          "merchant_inventory_liquidation_value": 209877,
+          "merchant_economic_assets": 488260,
+          "merchant_operating_outflow": 102652,
+          "merchant_liquidity_coverage_q16": 177727,
+          "other_population": 24,
+          "other_funds": 50248817,
+          "other_epoch_income": 102652,
+          "other_epoch_expense": 90383,
+          "population": 25,
+          "merchant_population": 1,
+          "merchant_funds": 278383,
+          "merchant_epoch_income": 94273,
+          "merchant_epoch_expense": 106542
+        },
+        "1000": {
+          "merchant_cash": 1599466,
+          "merchant_inventory_liquidation_value": 41220,
+          "merchant_economic_assets": 1640686,
+          "merchant_operating_outflow": 61624,
+          "merchant_liquidity_coverage_q16": 1701002,
+          "other_population": 24,
+          "other_funds": 52470015,
+          "other_epoch_income": 130124,
+          "other_epoch_expense": 36167,
+          "population": 32,
+          "merchant_population": 8,
+          "merchant_funds": 1599466,
+          "merchant_epoch_income": 219588,
+          "merchant_epoch_expense": 153545
+        }
+      },
+      "top_inventory": {
+        "1": [
+          [
+            "logs",
+            1425337.934
+          ],
+          [
+            "clothing",
+            1395060.0
+          ],
+          [
+            "gathered_plants",
+            516113.568
+          ],
+          [
+            "game_meat",
+            379750.91
+          ],
+          [
+            "raw_hide",
+            16891.92
+          ]
+        ],
+        "200": [
+          [
+            "gathered_plants",
+            2962274.835
+          ],
+          [
+            "fur",
+            167696.235
+          ],
+          [
+            "logs",
+            123951.724
+          ],
+          [
+            "clothing",
+            62940.0
+          ],
+          [
+            "game_meat",
+            30867.56
+          ]
+        ],
+        "1000": [
+          [
+            "game_meat",
+            21799.629
+          ],
+          [
+            "logs",
+            16284.064
+          ],
+          [
+            "fur",
+            3002.903
+          ],
+          [
+            "gathered_plants",
+            2243.415
+          ],
+          [
+            "clothing",
+            60.0
+          ]
+        ]
+      }
+    },
+    "837": {
+      "first": 1331585,
+      "last": 38202562,
+      "change_pct": 2768.954066019068,
+      "minimum": 1331585,
+      "minimum_day": 1,
+      "zero_days": 0,
+      "events": {
+        "0.5": {
+          "first_day": null,
+          "days": 0,
+          "longest_run": 0
+        },
+        "0.1": {
+          "first_day": null,
+          "days": 0,
+          "longest_run": 0
+        },
+        "0.05": {
+          "first_day": null,
+          "days": 0,
+          "longest_run": 0
+        }
+      },
+      "snapshots": {
+        "1": {
+          "merchant_cash": 1331585,
+          "merchant_inventory_liquidation_value": 8873100,
+          "merchant_economic_assets": 10204685,
+          "merchant_operating_outflow": 174745,
+          "merchant_liquidity_coverage_q16": 499394,
+          "other_population": 19,
+          "other_funds": 22668415,
+          "other_epoch_income": 182745,
+          "other_epoch_expense": 386330,
+          "population": 20,
+          "merchant_population": 1,
+          "merchant_funds": 1331585,
+          "merchant_epoch_income": 438283,
+          "merchant_epoch_expense": 306698
+        },
+        "30": {
+          "merchant_cash": 5811466,
+          "merchant_inventory_liquidation_value": 5661640,
+          "merchant_economic_assets": 11473106,
+          "merchant_operating_outflow": 68265,
+          "merchant_liquidity_coverage_q16": 5579143,
+          "other_population": 17,
+          "other_funds": 22988534,
+          "other_epoch_income": 205265,
+          "other_epoch_expense": 60665,
+          "population": 20,
+          "merchant_population": 3,
+          "merchant_funds": 5811466,
+          "merchant_epoch_income": 434604,
+          "merchant_epoch_expense": 259204
+        },
+        "100": {
+          "merchant_cash": 27308486,
+          "merchant_inventory_liquidation_value": 6030357,
+          "merchant_economic_assets": 33338843,
+          "merchant_operating_outflow": 113501,
+          "merchant_liquidity_coverage_q16": 15768045,
+          "other_population": 11,
+          "other_funds": 25941114,
+          "other_epoch_income": 250301,
+          "other_epoch_expense": 20384,
+          "population": 20,
+          "merchant_population": 9,
+          "merchant_funds": 27308486,
+          "merchant_epoch_income": 418883,
+          "merchant_epoch_expense": 329600
+        },
+        "200": {
+          "merchant_cash": 36514452,
+          "merchant_inventory_liquidation_value": 10445354,
+          "merchant_economic_assets": 46959806,
+          "merchant_operating_outflow": 143923,
+          "merchant_liquidity_coverage_q16": 16627023,
+          "other_population": 11,
+          "other_funds": 48655148,
+          "other_epoch_income": 280723,
+          "other_epoch_expense": 51612,
+          "population": 20,
+          "merchant_population": 9,
+          "merchant_funds": 36514452,
+          "merchant_epoch_income": 472067,
+          "merchant_epoch_expense": 381978
+        },
+        "500": {
+          "merchant_cash": 57662365,
+          "merchant_inventory_liquidation_value": 20626124,
+          "merchant_economic_assets": 78288489,
+          "merchant_operating_outflow": 233992,
+          "merchant_liquidity_coverage_q16": 16149957,
+          "other_population": 11,
+          "other_funds": 123267235,
+          "other_epoch_income": 370792,
+          "other_epoch_expense": 99223,
+          "population": 20,
+          "merchant_population": 9,
+          "merchant_funds": 57662365,
+          "merchant_epoch_income": 561263,
+          "merchant_epoch_expense": 513632
+        },
+        "1000": {
+          "merchant_cash": 38202562,
+          "merchant_inventory_liquidation_value": 15672069,
+          "merchant_economic_assets": 53874631,
+          "merchant_operating_outflow": 26336,
+          "merchant_liquidity_coverage_q16": 95065427,
+          "other_population": 13,
+          "other_funds": 150863038,
+          "other_epoch_income": 26336,
+          "other_epoch_expense": 21597,
+          "population": 14,
+          "merchant_population": 1,
+          "merchant_funds": 38202562,
+          "merchant_epoch_income": 27686,
+          "merchant_epoch_expense": 32425
+        }
+      },
+      "top_inventory": {
+        "1": [
+          [
+            "clothing",
+            6972758.568
+          ],
+          [
+            "logs",
+            1454616.402
+          ],
+          [
+            "gathered_plants",
+            500165.69
+          ],
+          [
+            "game_meat",
+            382192.41
+          ],
+          [
+            "raw_hide",
+            21600.0
+          ]
+        ],
+        "200": [
+          [
+            "raw_hide",
+            5395962.0
+          ],
+          [
+            "logs",
+            5276224.217
+          ],
+          [
+            "clothing",
+            256593.831
+          ],
+          [
+            "game_meat",
+            54033.32
+          ],
+          [
+            "fur",
+            12335.548
+          ]
+        ],
+        "1000": [
+          [
+            "raw_hide",
+            15845393.018
+          ],
+          [
+            "logs",
+            651576.824
+          ],
+          [
+            "adobe_brick",
+            0.0
+          ],
+          [
+            "advanced_chips",
+            0.0
+          ],
+          [
+            "agricultural_machinery",
+            0.0
+          ]
+        ]
+      }
+    },
+    "1902": {
+      "first": 2711103,
+      "last": 156890,
+      "change_pct": -94.21305645709513,
+      "minimum": 83876,
+      "minimum_day": 691,
+      "zero_days": 0,
+      "events": {
+        "0.5": {
+          "first_day": 373,
+          "days": 628,
+          "longest_run": 628
+        },
+        "0.1": {
+          "first_day": 415,
+          "days": 515,
+          "longest_run": 198
+        },
+        "0.05": {
+          "first_day": 520,
+          "days": 86,
+          "longest_run": 48
+        }
+      },
+      "snapshots": {
+        "1": {
+          "merchant_cash": 2711103,
+          "merchant_inventory_liquidation_value": 3573483,
+          "merchant_economic_assets": 6284586,
+          "merchant_operating_outflow": 102015,
+          "merchant_liquidity_coverage_q16": 1741654,
+          "other_population": 18,
+          "other_funds": 21608897,
+          "other_epoch_income": 239015,
+          "other_epoch_expense": 230118,
+          "population": 20,
+          "merchant_population": 2,
+          "merchant_funds": 2711103,
+          "merchant_epoch_income": 662484,
+          "merchant_epoch_expense": 351381
+        },
+        "30": {
+          "merchant_cash": 15215261,
+          "merchant_inventory_liquidation_value": 1133273,
+          "merchant_economic_assets": 16348534,
+          "merchant_operating_outflow": 160054,
+          "merchant_liquidity_coverage_q16": 6230068,
+          "other_population": 15,
+          "other_funds": 21903939,
+          "other_epoch_income": 434054,
+          "other_epoch_expense": 75486,
+          "population": 20,
+          "merchant_population": 5,
+          "merchant_funds": 15215261,
+          "merchant_epoch_income": 808476,
+          "merchant_epoch_expense": 527044
+        },
+        "100": {
+          "merchant_cash": 19421322,
+          "merchant_inventory_liquidation_value": 1366880,
+          "merchant_economic_assets": 20788202,
+          "merchant_operating_outflow": 308525,
+          "merchant_liquidity_coverage_q16": 4125421,
+          "other_population": 15,
+          "other_funds": 33025078,
+          "other_epoch_income": 308525,
+          "other_epoch_expense": 102540,
+          "population": 20,
+          "merchant_population": 5,
+          "merchant_funds": 19421322,
+          "merchant_epoch_income": 272308,
+          "merchant_epoch_expense": 478293
+        },
+        "200": {
+          "merchant_cash": 5621620,
+          "merchant_inventory_liquidation_value": 2360245,
+          "merchant_economic_assets": 7981865,
+          "merchant_operating_outflow": 161493,
+          "merchant_liquidity_coverage_q16": 2281327,
+          "other_population": 21,
+          "other_funds": 46983980,
+          "other_epoch_income": 161493,
+          "other_epoch_expense": 131835,
+          "population": 22,
+          "merchant_population": 1,
+          "merchant_funds": 5621620,
+          "merchant_epoch_income": 158237,
+          "merchant_epoch_expense": 187895
+        },
+        "500": {
+          "merchant_cash": 152550,
+          "merchant_inventory_liquidation_value": 462118,
+          "merchant_economic_assets": 614668,
+          "merchant_operating_outflow": 138098,
+          "merchant_liquidity_coverage_q16": 72394,
+          "other_population": 24,
+          "other_funds": 52614290,
+          "other_epoch_income": 138098,
+          "other_epoch_expense": 124959,
+          "population": 25,
+          "merchant_population": 1,
+          "merchant_funds": 152550,
+          "merchant_epoch_income": 127732,
+          "merchant_epoch_expense": 140871
+        },
+        "1000": {
+          "merchant_cash": 156890,
+          "merchant_inventory_liquidation_value": 123696,
+          "merchant_economic_assets": 280586,
+          "merchant_operating_outflow": 51431,
+          "merchant_liquidity_coverage_q16": 199917,
+          "other_population": 31,
+          "other_funds": 53343691,
+          "other_epoch_income": 51431,
+          "other_epoch_expense": 45352,
+          "population": 32,
+          "merchant_population": 1,
+          "merchant_funds": 156890,
+          "merchant_epoch_income": 47025,
+          "merchant_epoch_expense": 53104
+        }
+      },
+      "top_inventory": {
+        "1": [
+          [
+            "logs",
+            1453776.526
+          ],
+          [
+            "clothing",
+            1395060.0
+          ],
+          [
+            "gathered_plants",
+            516108.685
+          ],
+          [
+            "game_meat",
+            379741.144
+          ],
+          [
+            "raw_hide",
+            16891.92
+          ]
+        ],
+        "200": [
+          [
+            "gathered_plants",
+            2237281.027
+          ],
+          [
+            "logs",
+            146128.048
+          ],
+          [
+            "clothing",
+            62940.0
+          ],
+          [
+            "game_meat",
+            32414.624
+          ],
+          [
+            "raw_hide",
+            5715.36
+          ]
+        ],
+        "1000": [
+          [
+            "logs",
+            71121.769
+          ],
+          [
+            "gathered_plants",
+            56048.643
+          ],
+          [
+            "fur",
+            2497.04
+          ],
+          [
+            "game_meat",
+            466.707
+          ],
+          [
+            "clothing",
+            60.0
+          ]
+        ]
+      }
+    }
+  },
+  "global": {
+    "merchant_cash": {
+      "first": 9469710,
+      "last": 40039939,
+      "min": 9469710,
+      "max": 107753569,
+      "sum_flow_only": 48906841384
+    },
+    "merchant_economic_assets": {
+      "first": 29037169,
+      "last": 55893397,
+      "min": 29037169,
+      "max": 130403480,
+      "sum_flow_only": 68865699808
+    },
+    "merchant_inventory_liquidation_value": {
+      "first": 19567459,
+      "last": 15853458,
+      "min": 8255565,
+      "max": 68823064,
+      "sum_flow_only": 19958858424
+    },
+    "merchant_procurement_spent": {
+      "first": 409543,
+      "last": 200735,
+      "min": 115387,
+      "max": 5729792,
+      "sum_flow_only": 533680161
+    },
+    "producer_support_money_issued": {
+      "first": 0,
+      "last": 0,
+      "min": 0,
+      "max": 64737,
+      "sum_flow_only": 2318750
+    },
+    "bullion_money_issued": {
+      "first": 971200,
+      "last": 160000,
+      "min": 0,
+      "max": 2100800,
+      "sum_flow_only": 255905600
+    },
+    "merchant_credit_drawn": {
+      "first": 72000,
+      "last": 0,
+      "min": 0,
+      "max": 72000,
+      "sum_flow_only": 156648
+    },
+    "merchant_credit_repaid": {
+      "first": 12601,
+      "last": 0,
+      "min": 0,
+      "max": 14809,
+      "sum_flow_only": 96325
+    },
+    "merchant_trade_purchase_cash": {
+      "first": 0,
+      "last": 0,
+      "min": 0,
+      "max": 0,
+      "sum_flow_only": 0
+    },
+    "merchant_trade_sale_cash": {
+      "first": 0,
+      "last": 0,
+      "min": 0,
+      "max": 0,
+      "sum_flow_only": 0
+    },
+    "construction_goods_consumed": {
+      "first": 2912,
+      "last": 0,
+      "min": 0,
+      "max": 48548,
+      "sum_flow_only": 969716
+    }
+  },
+  "local_cash_matches_global": true,
+  "global_population": {
+    "1": 80,
+    "30": 80,
+    "100": 80,
+    "200": 84,
+    "500": 95,
+    "1000": 110
+  }
+}

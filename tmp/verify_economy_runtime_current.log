@@ -1,0 +1,169 @@
+warning: in the working copy of 'tmp/lifecycle_review_project/scripts/ui/game_ui_manager.gd', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tmp/perf_csv_analysis/node_modules/.modules.yaml', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tmp/perf_csv_analysis/node_modules/.pnpm-workspace-state-v1.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tmp/perf_csv_analysis/node_modules/@oai/artifact-tool/node_modules/.pnpm-workspace-state-v1.json', LF will be replaced by CRLF the next time Git touches it
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+=== native market v2 runtime test ===
+  [PASS] default profile raises building goods output without changing recipe costs
+  [PASS] catalog compiles
+  [PASS] modern goods catalog is sorted and retains legacy stable ids
+  [PASS] merchant profession compiles
+  [PASS] modern household needs compile
+  [PASS] carrying catalog compiles twenty-one need and producer families
+  [PASS] living cost weights classify essential consumer and luxury needs
+  [PASS] inventory ratios prioritize essentials over ordinary and luxury goods
+  [PASS] stone food keeps explicit merchant inventory horizons
+  [PASS] need catalog compiles total quantity price response
+  [PASS] old fur slot removed
+  [PASS] profession defaults compile calibrated natural demography
+  [PASS] default profile configures as ACTIVE
+  [PASS] empty ACTIVE bootstrap succeeds
+  [PASS] default domestic trade mode is ACTIVE
+  [PASS] small empty world locks daily market cadence
+  [PASS] profile market cycle is the 1–5 cap, not a forced five-day lock
+  [PASS] scaled auto profile configures
+  [PASS] empty large maps still lock daily because only populated work counts
+  [PASS] default merchant inventory baseline is sixty days
+  [PASS] ACTIVE enters production scheduler
+  [PASS] all-technology market test country bootstraps
+  [PASS] configure market v2
+  [PASS] bootstrap inserts merchant
+  [PASS] population conserved while merchant created
+  [PASS] merchant and worker cohorts exist
+  [PASS] exactly one merchant cohort
+  [PASS] explicit stock mint command accepted
+[economy-open-finish] day=0 country=0.038 workset=0.004 fiscal=0.004 csr=0.001 recovery=0.000 vectors=0.003 audit=0.001 commands=0.002
+  [PASS] daily market commits
+  [household-workload] needs=12 variants=54 components=47
+  [PASS] worker and merchant process the bounded catalog shape
+  [PASS] market population conservation exact
+  [PASS] market money conservation exact
+  [PASS] market goods conservation exact
+  [PASS] buyers transfer money without mint
+  [PASS] merchant receives sales income
+  [PASS] grain stock consumed
+  [PASS] demand ema published
+  [PASS] next-day price differs
+  [PASS] market has no anonymous cash
+  [PASS] cohort cash transfers into its country treasury
+  [PASS] country cash transfer is capped and conservative
+  [PASS] market goods transfer into country treasury conserves goods
+  [PASS] country goods transfer back to market conserves goods
+  [PASS] Country asset bridge records cash and goods transfers
+  [PASS] normal capped transfers do not report ledger failures
+  [PASS] matching PKCN save begins
+  [PASS] matching PKCN save completes
+  [FAIL] v52 save begins at committed boundary
+  [PASS] v52 save emits chunks
+  [PASS] v52 save completes
+  [FAIL] PKEC v29 is rejected precisely
+  [PASS] changed consumption catalog configures as a distinct catalog
+  [FAIL] old catalog hash save is rejected precisely
+  [PASS] restore target configures
+  [PASS] PKCN restore begins before PKEC
+  [PASS] PKCN restore chunk accepted
+  [PASS] PKCN restore chunk accepted
+  [PASS] PKCN restore chunk accepted
+  [PASS] PKCN restore chunk accepted
+  [PASS] PKCN restore chunk accepted
+  [PASS] PKCN restore chunk accepted
+  [PASS] PKCN restore chunk accepted
+  [PASS] PKCN restore chunk accepted
+  [PASS] PKCN restore chunk accepted
+  [PASS] PKCN restore chunk accepted
+  [PASS] matching PKCN restores first
+  [PASS] restore begins
+  [FAIL] restore chunk accepted
+  [FAIL] restore chunk accepted
+  [FAIL] restore chunk accepted
+  [FAIL] restore chunk accepted
+  [FAIL] restore chunk accepted
+  [FAIL] restore chunk accepted
+  [FAIL] restore chunk accepted
+  [FAIL] restore chunk accepted
+  [FAIL] restore chunk accepted
+  [FAIL] restore chunk accepted
+  [FAIL] restore chunk accepted
+  [FAIL] restore chunk accepted
+  [FAIL] restore chunk accepted
+  [FAIL] restore chunk accepted
+  [FAIL] restore chunk accepted
+  [FAIL] restore chunk accepted
+  [FAIL] restore chunk accepted
+  [FAIL] restore chunk accepted
+  [FAIL] restore chunk accepted
+  [FAIL] restore chunk accepted
+  [FAIL] restore chunk accepted
+  [FAIL] restore chunk accepted
+  [FAIL] restore chunk accepted
+  [FAIL] restore chunk accepted
+  [FAIL] restore chunk accepted
+  [FAIL] restore chunk accepted
+  [FAIL] restore chunk accepted
+  [FAIL] restore chunk accepted
+  [FAIL] restore chunk accepted
+  [FAIL] restore chunk accepted
+  [FAIL] restore chunk accepted
+  [FAIL] restore chunk accepted
+  [FAIL] restore chunk accepted
+  [FAIL] restore chunk accepted
+  [FAIL] restore chunk accepted
+  [FAIL] restore completes
+
+================================================================
+CrashHandlerException: Program crashed with signal 11
+Engine version: Godot Engine v4.6.2.stable.official (71f334935c000924d403448e698df4441130df18)
+Dumping the backtrace. Please include this when reporting the bug on: https://github.com/godotengine/godot/issues
+[1] error(-1): no debug info in PE/COFF executable
+[2] error(-1): no debug info in PE/COFF executable
+[3] error(-1): no debug info in PE/COFF executable
+[4] error(-1): no debug info in PE/COFF executable
+[5] error(-1): no debug info in PE/COFF executable
+[6] error(-1): no debug info in PE/COFF executable
+[7] error(-1): no debug info in PE/COFF executable
+[8] error(-1): no debug info in PE/COFF executable
+[9] error(-1): no debug info in PE/COFF executable
+[10] error(-1): no debug info in PE/COFF executable
+[11] error(-1): no debug info in PE/COFF executable
+[12] error(-1): no debug info in PE/COFF executable
+[13] error(-1): no debug info in PE/COFF executable
+[14] error(-1): no debug info in PE/COFF executable
+[15] error(-1): no debug info in PE/COFF executable
+[16] error(-1): no debug info in PE/COFF executable
+[17] error(-1): no debug info in PE/COFF executable
+[18] error(-1): no debug info in PE/COFF executable
+[19] error(-1): no debug info in PE/COFF executable
+[20] error(-1): no debug info in PE/COFF executable
+[21] error(-1): no debug info in PE/COFF executable
+[22] error(-1): no debug info in PE/COFF executable
+[23] error(-1): no debug info in PE/COFF executable
+[24] error(-1): no debug info in PE/COFF executable
+[25] error(-1): no debug info in PE/COFF executable
+[26] error(-1): no debug info in PE/COFF executable
+[27] error(-1): no debug info in PE/COFF executable
+[28] error(-1): no debug info in PE/COFF executable
+[29] error(-1): no debug info in PE/COFF executable
+[30] error(-1): no debug info in PE/COFF executable
+[31] error(-1): no debug info in PE/COFF executable
+-- END OF C++ BACKTRACE --
+================================================================
+GDScript backtrace (most recent call first):
+    [0] _test_merchant_trade_and_save (res://tests/goods_storage_schema_test.gd:463)
+    [1] _run (res://tests/goods_storage_schema_test.gd:84)
+    [2] _init (res://tests/goods_storage_schema_test.gd:12)
+-- END OF GDSCRIPT BACKTRACE --
+================================================================
+Focused economy test failed
+At D:\Godot\ProjectKeynes\Project.Keynes\.codex\skills\project-keynes-economy-r
+untime\scripts\verify_economy_runtime.ps1:67 char:32
++     if ($LASTEXITCODE -ne 0) { throw 'Focused economy test failed' }
++                                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : OperationStopped: (Focused economy test failed:S 
+   tring) [], RuntimeException
+    + FullyQualifiedErrorId : Focused economy test failed
+ 

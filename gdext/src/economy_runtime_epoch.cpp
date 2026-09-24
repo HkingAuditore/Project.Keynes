@@ -52,6 +52,7 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     }
     _epoch_business_demand_ema.clear();
     _epoch_derived_business_demand.clear();
+    _epoch_substitute_business_demand.clear();
     _epoch_desired_business_demand.clear();
     _epoch_funded_business_demand.clear();
     _epoch_price_ceiling_observations.clear();
@@ -1030,6 +1031,12 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
     _construction_material_reserve.assign(_market_signals.good_ids.size(), 0);
     _epoch_business_demand_ema = _market_signals.business_demand_ema;
     _epoch_derived_business_demand.assign(_market_signals.good_ids.size(), 0);
+    // Keep last epoch's substitute demand through Leontief refresh so one-hop
+    // intermediates still see category co-candidate pressure, then clear for
+    // this epoch's production to republish.
+    if (_epoch_substitute_business_demand.size() != _market_signals.good_ids.size()) {
+        _epoch_substitute_business_demand.assign(_market_signals.good_ids.size(), 0);
+    }
     _epoch_desired_business_demand.assign(_market_signals.good_ids.size(), 0);
     _epoch_funded_business_demand.assign(_market_signals.good_ids.size(), 0);
     _epoch_price_ceiling_observations.clear();
@@ -1045,6 +1052,7 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
     _epoch_nonhousehold_withdrawals.assign(_market_signals.good_ids.size(), 0);
     _epoch_cost_anchor_price = _market_signals.cost_anchor_price;
     refresh_derived_business_demand();
+    _epoch_substitute_business_demand.assign(_market_signals.good_ids.size(), 0);
     _epoch_begin_vector_init_ms = elapsed_ms(vector_init_started);
     }
     const auto audit_started = Clock::now();

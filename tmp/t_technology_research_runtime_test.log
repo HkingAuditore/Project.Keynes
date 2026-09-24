@@ -1,0 +1,67 @@
+﻿Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] catalog compiles
+  [PASS] country research configures
+  [PASS] era-scaled milestone candidate contract
+  [PASS] magnetic navigation compiles remote observation capability
+  [PASS] country research bootstraps
+  [PASS] dense completed-technology query is O(1) and handle-safe
+  [PASS] discovery inspiration queues
+  [PASS] discovery inspiration commits
+  [PASS] inspiration reveals but cannot bypass a hard prerequisite
+  [PASS] weights queue atomically
+  [PASS] invalid research weights fail before command enqueue
+  [PASS] research day commits
+  [PASS] research-only day never publishes territory
+  [PASS] research remainder distribution has a fixed four-domain bound
+  [PASS] research hot-loop diagnostics are present
+  [PASS] 10 points at 70/30 are exactly 7/3
+  [PASS] completed core prerequisites permit research
+  [PASS] queue removal preserves progress
+  [PASS] sparse progress survives dequeue
+  [PASS] PKCN preserves sparse progress queues policy and hash
+  [PASS] content binding changes reject PKCN with catalog_hash_mismatch
+  [PASS] Trigger definition changes reject PKCN with catalog_hash_mismatch
+  [PASS] strict flax country configures
+  [PASS] strict flax country bootstraps
+  [PASS] unrelated bast fiber queues
+  [PASS] unrelated bast fiber commits
+  [PASS] bast fiber does not reveal flax identification
+  [PASS] flax contact queues
+  [PASS] flax contact commits
+  [PASS] flax contact reveals the identification node
+  [PASS] equal-weight country configures
+  [PASS] equal-weight country bootstraps
+  [PASS] equal-weight discovery queues
+  [PASS] equal-weight discovery commits
+  [PASS] equal-weight enqueue keeps default 25/25/25/25
+  [PASS] equal-weight day 1 commits
+  [PASS] equal weights give the only queued domain the whole treasury
+  [PASS] equal-weight day 2 commits
+  [PASS] empty treasury does not add further progress
+  [PASS] elevated-cost modifiers configure
+  [PASS] elevated-cost country configures
+  [PASS] elevated-cost country bootstraps
+  [PASS] elevated-cost era penalty queues
+  [PASS] elevated-cost era penalty commits
+  [PASS] industry era penalty raises research cost_factor
+  [PASS] elevated-cost discovery queues
+  [PASS] elevated-cost discovery commits
+  [PASS] elevated-cost enqueue
+  [PASS] elevated-cost research day commits
+  [PASS] elevated cost_factor allows progress above catalog base cost
+  [PASS] elevated-cost PKCN round-trip accepts progress above base cost
+technology research runtime: PASS
+Godot_v4.6.2-stable_win64_console.exe : ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyText
+ureE' were leaked at exit.
+所在位置 C:\Users\hkinghuang\AppData\Local\Temp\ps-script-c25c57ad-5c9b-4064-8f1a-3ae0e04ce28c.ps1:98 字符: 3
++   & $godot --headless --path Project\project-keynes --script "res://t ...
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (ERROR: 11 RID a...leaked at exit.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 284 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

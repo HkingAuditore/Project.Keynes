@@ -152,6 +152,9 @@ public:
     std::shared_ptr<const RuntimeEnvironmentSnapshot> latest() const;
     // 消费成功后弹出与 generation 匹配的最旧槽；不匹配则 false。
     bool pop_generation(uint64_t generation);
+    // Climate 已提交过的日不再需要 ring 槽。Idempotent 重试时若不排空，
+    // 未来日会占满 FIFO，主线程永久钉在 climate_input_capacity_day_barrier。
+    size_t pop_while_day_at_most(int64_t day);
     void reset();
     static bool self_test(std::string &error);
 

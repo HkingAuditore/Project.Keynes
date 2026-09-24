@@ -1,0 +1,189 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[ui-layout-diag/bind_ui] is_web=false viewport_visible_rect=[P: (0.0, 0.0), S: (51.2, 51.2)] window_size=(64, 64) content_scale_factor=1.250 content_scale_mode=0 device_pixel_ratio=-1.000 top_bar_rect=[P: (0.0, 0.0), S: (543.0, 56.0)] right_panel_rect=[P: (-408.8, 68.0), S: (460.0, 366.0)] country_action_bar_rect=[P: (8.0, -30.8), S: (336.0, 74.0)]
+[stage-c] authority=ACTIVE worker=ACTIVE
+[building-visual] queue_probe ticks=1 queued=0 chunk=-1 camera_rect=[P: (-25.6, -25.6), S: (51.2, 51.2)] prefetch=false zoom=1.000
+[building-visual] queue_probe ticks=2 queued=0 chunk=-1 camera_rect=[P: (-25.6, -25.6), S: (51.2, 51.2)] prefetch=false zoom=1.000
+[native_generation/base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=320 native_ms=0.810 water=269 land=51
+[native_generation/post_base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=320 native_ms=0.230 lakes=0 rivers=2 volcanoes=0
+[native_generation/vegetation] native_ms=0.050 candidates=51 none=176 score=[0.000,2.352,1.070] plant_water_land=51 river_adjacent_desert=0 coastal_highland_desert=0 terrain_weight=[0.180,1.200]
+[native_generation/qa] single_water=0 tiny<=3=0 small<=5=0 bodies=1 largest=269 | land_below_sea=0.0% | terr_distinct=17 entropy=2.548bit | river_ratio=0.625%
+MapGenerator v7: per-cell 26ms (320 cells, path=gdext)
+[building-visual] queue_probe ticks=3 queued=0 chunk=-1 camera_rect=[P: (-25.6, -25.6), S: (51.2, 51.2)] prefetch=false zoom=1.000
+MapBaker v6: hm=(1024, 738) seed=20260718
+    [fused] terrain=83.6ms erosion=3.0ms(ok=true) river=12.8ms(ok=true) latitude=0.1ms coast_sdf=4.1ms(ok=true)
+  geometry fields (fused C++): 177ms
+  physical circulation hex solve: deferred until DCWorldExt bind (ext=true idx=true soa=false)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+  visual tiles: {"degradation_reason":"","effective_budget_px":255360,"effective_texels_per_hex":16.0826901849157,"effective_world_units_per_texel":"(1.360897, 1.375)","estimated_peak_bytes":10189920,"estimated_resident_bytes":6009440,"fallback_reason":"","generation_id":1,"grid_size":"(2, 1)","gutter_px":2,"hex_size":22.0,"horizon_path":"neutral_pending","interior_size":"(280, 456)","layer_size":"(284, 460)","layers":[{"bake_ms":37.8909,"coast_sdf_max_dist_px":4.96626868823088,"distance_scale":0.62078358602886,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":4117019335631200031,"edge_neighbor":919021057428289162,"height":-8800743714212646449,"map_index":-2194409292266785029,"terrain_detail":-9075344650900555935,"terrain_normal":-6939716920289599007,"water_depth":-1976974195221576943},"layer":0,"normal_radius_px":"(22, 22)","raster_scale":"(0.623695, 0.617886)","river_sdf_max_dist_px":2.17274255110101,"shore_carve_band_px":4,"upload_ms":0.064,"wall_ms":38.114},{"bake_ms":52.3456,"coast_sdf_max_dist_px":4.96626868823088,"distance_scale":0.62078358602886,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":5582210515394553007,"edge_neighbor":1062449716310298789,"height":-2651321620170856454,"map_index":7774650290978600816,"terrain_detail":-8540588005700088722,"terrain_normal":19747473872498606,"water_depth":-7701759240399189842},"layer":1,"normal_radius_px":"(22, 22)","raster_scale":"(0.623695, 0.617886)","river_sdf_max_dist_px":2.17274255110101,"shore_carve_band_px":4,"upload_ms":0.15,"wall_ms":52.629}],"logical_size":"(560, 456)","mode":"tiled","path":"visual_tiled_static","profile":"desktop_high","renderer":"mobile","requested_budget_px":253080,"requested_texels_per_hex":16.0,"requested_tile_world_span":"(704.0, 704.0)","requested_world_units_per_texel":1.375,"tile_world_area":238919.088592529,"tile_world_span":"(381.0512, 627.0)","total_ms":91.431,"visual_domain":"[P: (0.0, -44.0), S: (762.1024, 627.0)]","wrap_period_x":762.102355330306,"wrap_x":true}
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/organic.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1225)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/dry_sand.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1225)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/rock.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1225)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/snow_wet.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1225)
+  cell LUT encode: deferred until DCWorldExt bind
+  encode: 3312ms
+MapBaker v6: total 3499ms
+MapGenerator v7: bake 3503ms
+MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)
+MapGenerator: skip _compute_terrain_perturbed_wind (physical-hex solver writes per-cell)
+[SUS] sim budget strict=false frame=8.00ms warn=2.00ms slice=0.75ms upload=1.50ms scheduler=DCSystemScheduler native_sus=auto
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+[DataCore] _data_core_world_ext bound=true (climate co-processor; class=DCWorldExt)
+[native_world] configure rc=0 reason=configured cells=320 wrap_period_x=34.641
+[native_generation] path=gdext n=320 published=9 native_ms=0.079 compute_ms=0.017 flush_ms=0.062
+[hex_cell] facade ENABLED (320 cells bound; ext=true)
+[DataCore] _baker climate_profile injected=true (fixes WorldData.config==null sea_ice prepare path)
+[phys_solve][oneshot] OK slp=0.62ms wind=0.10ms psi=0.06ms(ran=true) upwelling=0.01ms total=0.98ms
+PhysicalCirculation solve@phase=1.50 total=1ms (C++ one-shot run_physical_solve_pass)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+[physical_init] deferred native refresh complete: 1ms
+[cell_lut] deferred encode: 0ms path=gdext
+[bio-occupancy] seed landmasses=7 provinces=7 species=20 secondary_hearths=0
+[bio-occupancy]   bio.maize envelope=4 hearth=2 seeded_landmasses=1 primary_landmass=1 primary_envelope=4 occupied=2 occupied/envelope=0.50
+[bio-occupancy]   bio.wheat envelope=7 hearth=3 seeded_landmasses=1 primary_landmass=1 primary_envelope=5 occupied=3 occupied/envelope=0.60
+[bio-occupancy]   bio.rice envelope=10 hearth=1 seeded_landmasses=1 primary_landmass=1 primary_envelope=4 occupied=1 occupied/envelope=0.25
+[bio-occupancy]   bio.potato envelope=4 hearth=1 seeded_landmasses=1 primary_landmass=5 primary_envelope=2 occupied=1 occupied/envelope=0.50
+[bio-occupancy]   bio.horse envelope=9 hearth=3 seeded_landmasses=1 primary_landmass=1 primary_envelope=7 occupied=3 occupied/envelope=0.43
+[bio-occupancy]   bio.cotton envelope=8 hearth=4 seeded_landmasses=1 primary_landmass=1 primary_envelope=8 occupied=4 occupied/envelope=0.50
+[bio-occupancy]   bio.flax envelope=7 hearth=3 seeded_landmasses=1 primary_landmass=1 primary_envelope=5 occupied=3 occupied/envelope=0.60
+[bio-occupancy]   bio.spice envelope=6 hearth=1 seeded_landmasses=1 primary_landmass=1 primary_envelope=5 occupied=1 occupied/envelope=0.20
+[bio-occupancy]   bio.rubber envelope=4 hearth=2 seeded_landmasses=1 primary_landmass=1 primary_envelope=4 occupied=2 occupied/envelope=0.50
+[bio-occupancy]   bio.sheep envelope=2 hearth=1 seeded_landmasses=1 primary_landmass=1 primary_envelope=2 occupied=1 occupied/envelope=0.50
+[bio-occupancy]   bio.goat envelope=23 hearth=1 seeded_landmasses=1 primary_landmass=1 primary_envelope=13 occupied=1 occupied/envelope=0.08
+[bio-occupancy]   bio.cattle envelope=0 hearth=0 seeded_landmasses=0 primary_landmass=0 primary_envelope=0 occupied=0 occupied/envelope=0.00
+[bio-occupancy]   bio.pig envelope=13 hearth=1 seeded_landmasses=1 primary_landmass=1 primary_envelope=9 occupied=1 occupied/envelope=0.11
+[bio-occupancy]   bio.camel envelope=3 hearth=1 seeded_landmasses=1 primary_landmass=1 primary_envelope=3 occupied=1 occupied/envelope=0.33
+[bio-occupancy]   bio.yak envelope=5 hearth=2 seeded_landmasses=1 primary_landmass=7 primary_envelope=3 occupied=2 occupied/envelope=0.67
+[bio-occupancy]   bio.silkworm envelope=6 hearth=1 seeded_landmasses=1 primary_landmass=1 primary_envelope=4 occupied=1 occupied/envelope=0.25
+[bio-occupancy]   bio.reed envelope=8 hearth=1 seeded_landmasses=1 primary_landmass=1 primary_envelope=2 occupied=1 occupied/envelope=0.50
+[bio-occupancy]   bio.bast_fiber envelope=10 hearth=2 seeded_landmasses=1 primary_landmass=1 primary_envelope=7 occupied=2 occupied/envelope=0.29
+[bio-occupancy]   bio.dye_plant envelope=8 hearth=2 seeded_landmasses=1 primary_landmass=1 primary_envelope=8 occupied=2 occupied/envelope=0.25
+[bio-occupancy]   bio.medicinal_herb envelope=20 hearth=1 seeded_landmasses=1 primary_landmass=1 primary_envelope=9 occupied=1 occupied/envelope=0.11
+[bio-occupancy]   landmass 1 classes=open_food, open_grazer, fiber_open, fiber_wet, forest_grazer, fiber_forest, dry_grazer, wetland_food, tropical foods=wheat, maize, rice
+[bio-occupancy]   landmass 2 classes=none foods=none
+[bio-occupancy]   landmass 3 classes=none foods=none
+[bio-occupancy]   landmass 4 classes=none foods=none
+[bio-occupancy]   landmass 5 classes=highland_food foods=potato
+[bio-occupancy]   landmass 6 classes=none foods=none
+[bio-occupancy]   landmass 7 classes=cold_grazer foods=none
+[weather] gdext acceleration ON (class=DCWorldExt)
+[weather] gdext field commit ON
+[weather] gdext distribute ON
+[weather] gdext summary ON
+[weather] hexcell facade ON (skip AoS double-write in hot loop)
+[weather] gdext resident knobs ON (class=KnobsHandle)
+[economy] ACTIVE native graph cells=320 goods=134 cohorts=4 epoch_days=1 trade=ACTIVE topology_ready=true topology_generation=1 bootstrap=starter_settlement_bootstrap_v9 founder_families=1 founder_people=1
+[country] ACTIVE native authority countries=1 cells=320 generation=1
+[weather/knobs] resident KnobsHandle path ACTIVE — first to_*_knobs_dict hit (field_rebuild_count=1 expected ≤1; stable Hz target ≤1 Hz)
+[native_daily] ACTIVE: registered native_daily_sim + natural_resource_daily + bio_occupancy_daily; retained season_refresh + ocean_currents boundary jobs
+[DCSystemScheduler] topology: ["season_refresh", "trigger_runtime", "ideology_runtime", "effect_runtime", "modifier_daily", "gameplay_effect", "natural_resource_daily", "bio_occupancy_daily", "enum_atlas_upload", "ocean_currents", "native_daily_sim", "dynamic_visual_atlas_upload", "country_daily", "economy_daily"]
+WARNING: [runtime-climate-round] no ClimateDailySystem; SHADOW capture carries no shared pass input
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _build_runtime_climate_round_input (res://scripts/geography/map_generator.gd:4651)
+       [1] capture_runtime_inputs_for_worker (res://scripts/geography/map_generator.gd:2351)
+       [2] generate_world (res://scripts/game/world_runtime_host.gd:609)
+       [3] generate (res://scripts/geography/map_generator.gd:1606)
+       [4] _yield_generation_frame (res://scripts/geography/map_generator.gd:19867)
+WARNING: [runtime-worker] Ideology opinion publish deferred: ideology_opinion_snapshot_invalid
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _start_production_shadow_worker (res://scripts/game/world_runtime_host.gd:700)
+       [1] generate_world (res://scripts/game/world_runtime_host.gd:618)
+       [2] generate (res://scripts/geography/map_generator.gd:1606)
+       [3] _yield_generation_frame (res://scripts/geography/map_generator.gd:19867)
+[runtime-worker] production ACTIVE started mask=4095 auto_pod=true
+[runtime-day-wait] day=1 env_day=0 missing=0x3ff economy_input=-1
+[building-visual] intel_refresh requested=58 changed=1 known=1 catalog=400 resident=0 body=0 queued=0 zoom=1.000
+[DCSystemScheduler][RT] ocean_skip#1 tick=1 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[climate][publish] day=0 round_ran=1 prod_stage=0xff scalar_mask=0x7f alb=0 veg=0 fb=0 weather=0 sr=0 ok=1
+[climate/worker][b8] physics_knobs day=1 ready=0 missing=physics_knobs
+[climate-kernel][round] shared=1 ok=1 n_cells=320 mask=0x1FF ran=0x1FF starved=0x0 knobs_cells=320
+[country][parity] worker_day=1 uncompared reference_range=-1..-1 depth=0
+[DCSystemScheduler][RT] ocean_skip#2 tick=2 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[climate/writeback][b8] day=1 vapor store0=0 map0=0 dirty_fields=42 applied=42
+[phys/knobs] projection ready: slp=31 wind=33 psi=26 up=10
+[climate/worker][b8] physics_knobs day=2 ready=1 missing=
+[climate/worker][b8] paw day=2 cell=71 moisture=0.703517 wb30=0 soil=0 paw=0.703517 zeros(water=269 land=0) nonzero=51 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[country][parity] worker_day=2 uncompared reference_range=-1..-1 depth=0
+[economy-mirror-cost] day=2 capture_ms=0.445 import_ms=0.685
+[climate/writeback][b8] day=2 vapor store0=0 map0=0 dirty_fields=52 applied=52
+[climate/worker][b8] physics_knobs day=3 ready=1 missing=
+[climate/worker][b8] paw day=3 cell=71 moisture=0.701184 wb30=0 soil=0 paw=0.701184 zeros(water=269 land=0) nonzero=51 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[country][parity] worker_day=3 uncompared reference_range=-1..-1 depth=0
+[climate/writeback][b8] day=3 vapor store0=0 map0=0 dirty_fields=52 applied=52
+[climate/worker][b8] physics_knobs day=4 ready=1 missing=
+[climate/worker][b8] paw day=4 cell=71 moisture=0.700733 wb30=0 soil=0 paw=0.700733 zeros(water=269 land=0) nonzero=51 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[climate/worker][b8] cyclone_gate day=4 input_enabled=0 force_env=0 effective=0
+[climate/worker][b8] weather_solve day=4 cells=320 psi=1 vapor0=0.109289 precip0=0 cloud0=0.0407557 type0=0 field_init0=1
+[country][parity] worker_day=4 uncompared reference_range=-1..-1 depth=0
+[climate/writeback][b8] day=4 vapor store0=0.109289 map0=0.109289 dirty_fields=54 applied=54
+[climate/worker][b8] physics_knobs day=5 ready=1 missing=
+[climate/worker][b8] paw day=5 cell=71 moisture=0.699773 wb30=-0.000232895 soil=-0.000558947 paw=0.699622 zeros(water=269 land=0) nonzero=51 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[country][parity] worker_day=5 uncompared reference_range=-1..-1 depth=0
+[climate/worker][b8] physics_knobs day=6 ready=1 missing=
+[climate/worker][b8] paw day=6 cell=71 moisture=0.703174 wb30=-0.000232895 soil=-0.000558947 paw=0.703023 zeros(water=269 land=0) nonzero=51 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[country][parity] worker_day=6 uncompared reference_range=-1..-1 depth=0
+[climate/worker][b8] paw day=7 cell=71 moisture=0.705579 wb30=-0.000232895 soil=-0.000558947 paw=0.705428 zeros(water=269 land=0) nonzero=51 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[country][parity] worker_day=7 uncompared reference_range=-1..-1 depth=0
+[climate/worker][b8] paw day=8 cell=71 moisture=0.707372 wb30=-0.000232895 soil=-0.000558947 paw=0.707221 zeros(water=269 land=0) nonzero=51 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[country][parity] worker_day=8 uncompared reference_range=-1..-1 depth=0
+[climate/worker][b8] paw day=9 cell=71 moisture=0.708693 wb30=-0.000232895 soil=-0.000558947 paw=0.708542 zeros(water=269 land=0) nonzero=51 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[climate/worker][b8] paw day=10 cell=71 moisture=0.709677 wb30=-0.000232895 soil=-0.000558947 paw=0.709526 zeros(water=269 land=0) nonzero=51 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[climate/worker][b8] paw day=11 cell=71 moisture=0.710451 wb30=-0.000232895 soil=-0.000558947 paw=0.7103 zeros(water=269 land=0) nonzero=51 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[climate/worker][b8] paw day=12 cell=71 moisture=0.710988 wb30=-0.000232895 soil=-0.000558947 paw=0.710837 zeros(water=269 land=0) nonzero=51 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[climate/worker][b8] cyclone_gate day=12 input_enabled=0 force_env=0 effective=0
+[climate/worker][b8] weather_solve day=12 cells=320 psi=1 vapor0=0.0338023 precip0=0.0415658 cloud0=0.0480519 type0=0 field_init0=1
+[climate/worker][b8] paw day=13 cell=71 moisture=0.711389 wb30=-0.000461019 soil=-0.00110831 paw=0.711089 zeros(water=269 land=0) nonzero=51 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[climate/worker][b8] weather_solve day=20 cells=320 psi=1 vapor0=0.0646193 precip0=0 cloud0=0.036519 type0=0 field_init0=1
+[climate/worker][b8] weather_solve day=28 cells=320 psi=1 vapor0=0.0603892 precip0=0 cloud0=0.0389619 type0=0 field_init0=1
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=3.07d/f cost=2.61ms ran=0 pulse=0.00ms loop=0.00ms full=0.24ms carry=0.49 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.35d cap=1.78d/f cost=4.50ms ran=0 pulse=0.00ms loop=0.00ms full=0.31ms carry=1.00 barrier=
+[regression] before_queue=[]
+[regression] enqueue={ "ok": true, "code": "accepted", "status": "Accepted", "receipt_code": 1, "submitted": 1, "accepted": 1, "pending": 1, "request_ids": [1], "message": "", "effective_day": 89, "sequence": 1 } technology=tech.early_knowledge_institution
+[regression] runtime={ "runtime_domain_abi_version": 1, "pod_domain_abi_version": 3, "simulation_host_state": "PAUSED", "authority_ready": true, "graph_coverage_complete": true, "simulation_thread_mode": "ACTIVE", "requested_simulation_thread_mode": "ACTIVE", "simulation_worker_ready": true, "state": "PAUSED", "state_id": 3, "domain_abi_version": 1, "graph_coverage_state": "complete", "required_domain_mask": 4095, "implemented_domain_mask": 4095, "missing_domain_mask": 0, "completion_gate_missing_domain_mask": 0, "active_gate_blocked": false, "requested_authority_mask": 4095, "authoritative_domain_mask": 4095, "active_evidence_mask": 1281, "climate_worker_authoritative": true, "simulation_worker_blocker": "", "simulation_committed_day": 87, "input_capture_count": 87, "input_capture_reused": 0, "economy_input_requested_day": -1, "simulation_generation": 87, "generation": 87, "simulation_state_hash": -728044784456281775, "state_hash": -728044784456281775, "last_commit_produced_at_us": 834833902695, "last_visual_publish_at_us": 834833902695, "snapshot_staleness_ms": 1398.765, "ui_input_to_feedback_ms": 0.0, "visual_apply_ms": 0.05, "gpu_upload_ms": 0.0, "worker_time_execute_us": 364271, "worker_time_input_wait_us": 3839069, "worker_time_clock_wait_us": 0, "worker_time_save_build_us": 0, "worker_time_save_pause_us": 0, "worker_time_paused_us": 757, "worker_time_overhead_us": 2754, "worker_time_boundary_wait_us": 0, "worker_time_total_us": 4206851, "main_wait_on_sim_us": 0, "simulation_environment_generation": 88, "simulation_environment_day": 87, "simulation_environment_cell_count": 320, "simulation_environment_topology_validated": true, "simulation_invalid_environment_rejected": 0, "stale_environment_rejected": 0, "simulation_time_debt_days": 0.0, "time_debt_days": 0.0, "snapshot_publish_drop_count": 0, "snapshot_publish_throttled_count": 0, "command_queue_capacity_exceeded": 0, "receipt_queue_capacity_exceeded": 0, "worker_fault_count": 0, "day_stage_count": 12, "day_completed_stage_count": 12, "day_work_units": 2584, "completed_days": 87, "pod_completed_domain_mask": 0, "pod_completed_stage_count": 0, "pod_work_units": 0, "pod_intent_count": 0, "pod_fallback_count": 0, "economy_pod_ready": true, "economy_pod_committed": true, "economy_pod_authority_ready": true, "economy_pod_committed_day": 87, "economy_pod_epoch_sample_day": 87, "economy_pod_generation": 0, "economy_pod_state_hash": -8565530860111444887, "economy_pod_input_generation": 0, "economy_pod_country_generation": 0, "economy_pod_completed_stage_mask": 0, "economy_pod_pending_outbox": 0, "economy_pod_pending_inbox": 0, "economy_pod_operation_gate_mask": 1022, "economy_pod_parity_ready_mask": 0, "economy_pod_mirror_feature_mask": 2047, "economy_pod_committed_ledger_abi": 9, "economy_pod_active_ready": true, "economy_authority_switch_count": 1, "economy_authority_switch_before_hash": 7689768998806900330, "economy_authority_switch_after_hash": 7689768998806900330, "economy_authority_switch_latency_us": 262, "economy_authority_switch_latency_p95_us": 262, "economy_authority_switch_latency_max_us": 262, "economy_authority_switch_command_latency_us": 0, "economy_authority_switch_command_latency_p95_us": 0, "economy_authority_switch_command_latency_max_us": 0, "economy_authority_switch_latency_sample_count": 1, "economy_authority_switch_rejected": 0, "economy_authority_switch_audit_sequence": 1, "economy_authority_switch_audit_hash": 6268308298926922973, "economy_authority_switch_before_generation": 3, "economy_authority_switch_after_generation": 3, "economy_authority_fault_paused": false, "economy_authority_last_committed_generation": 3, "economy_authority_last_committed_hash": 7689768998806900330, "economy_inflight_mutations": 0, "worker_day_inflight": 0, "economy_pending_command_count": 0, "economy_authority_switch_reason": "epoch_boundary_authority_switch", "economy_authority_switch_blocker": "", "economy_authority_switch_audit_before": "mode=0 generation=3 hash=7689768998806900330", "economy_authority_switch_audit_after": "mode=2 generation=3 hash=7689768998806900330", "economy_execution_mode": 0, "economy_execution_mode_name": "ACTIVE_ONLY", "economy_shadow_probe_enabled": false, "economy_shadow_stage_invocations": 0, "economy_shadow_stage_cache_hits": 0, "economy_stage_ops_mutate": true, "economy_auto_pod_active": true, "economy_pod_command_recapture_count": 0, "economy_pod_command_verify_count": 0, "economy_formula_backing": "owned_state", "economy_production_writer": "stage_ops", "economy_production_writer_requested": "stage_ops", "economy_production_writer_effective": "stage_ops", "economy_stage_ops_readiness_mask": 15, "economy_stage_ops_prelude_ready": false, "economy_stage_ops_soak_experiment": false, "economy_stage_ops_soak_parity_ok": true, "economy_replay_completed_stage_mask": 0, "economy_replay_stage_cursor": 0, "economy_replay_input_hash": 0, "economy_replay_base_hash": 0, "economy_replay_next_hash": 0, "economy_replay_input_captured": false, "economy_replay_committed": false, "economy_replay_parity_ready": false, "economy_replay_fallback_reason": "", "economy_replay_stage_hash": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1171097471910255663], "economy_replay_stage_work": [320, 320, 320, 320, 320, 320, 320, 320, 320, 320, 320, 320, 320], "economy_replay_stage_ms": [0.0039, 0.0004, 0.0005, 0.052, 0.0763, 0.2409, 0.0008, 0.0033, 0.0004, 0.0102, 0.0127, 0.0133, 0.2166], "domain_authority_planned_mask": 0, "domain_authority_committed_mask": 0, "domain_authority_ack_count": 0, "domain_authority_input_hash": 0, "domain_authority_state_hash": 0, "domain_authority_plan_ms": 0.0, "domain_authority_replay_ms": 0.0, "domain_authority_fallback_reason": "", "domain_stage_fallback_count": 0, "domain_stage_fallback_reason": "", "climate_pod_ready": true, "climate_pod_plan_ms": 0.3705, "climate_pod_replay_ms": 0.001, "climate_pod_work_units": 2560, "climate_pod_changed_cells": 280, "climate_stage_ms": [0.023, 0.007, 0.018, 0.003, 0.018, 0.015, 0.01, 0.002, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0], "climate_stage_work": [320, 320, 320, 320, 320, 320, 320, 320, 0, 0, 0, 0, 0, 0], "climate_stage_names": ["PASS_A", "PASS_B", "OCEAN_WATER", "OCEAN_LAND", "WIND_AIR", "WIND_SURFACE", "SEA_ICE", "TRANSPIRATION", "ALBEDO", "VEGETATION_DYNAMICS", "CLIMATE_FEEDBACK", "WEATHER", "RUNTIME_HYDROLOGY", "STAGE_B_AFTER_HYDROLOGY"], "climate_pod_state_hash": 0, "climate_pod_reference_hash": 0, "climate_pod_parity_compared": false, "climate_pod_parity_matched": false, "climate_pod_parity_mismatch_count": 0, "climate_pod_parity_reason": "", "climate_pod_fallback_reason": "", "climate_parity_day": -1, "climate_parity_stage": 0, "climate_parity_cell": 0, "climate_parity_input_generation": 0, "climate_parity_base_generation": 0, "climate_parity_trace_hash": 0, "climate_parity_field": "", "climate_parity_reference_bits": "", "climate_parity_worker_bits": "", "climate_production_stage_mask": 0, "climate_worker_stage_mask": 255, "climate_cyclone_alive": 0, "climate_cyclone_injected": 0, "climate_cyclone_replaced": 0, "climate_cyclone_decayed": 0, "climate_cyclone_touched": 0, "climate_committed_day": 87, "climate_consumed_generation": 88, "environment_published_days": 88, "environment_consumed_days": 88, "environment_superseded_days": 0, "environment_dropped_days": 0, "environment_ring_pending": 0, "climate_wait_total_ms": 0, "climate_wait_last_ms": 0, "climate_wait_max_ms": 0, "climate_trace_depth": 1, "climate_trace_front_day": 0, "climate_trace_lag_days": 87, "climate_trace_latest_hash": 0, "climate_trace_consumed": 0, "climate_trace_missing": 0, "climate_trace_captured": 0, "climate_trace_reference_ready": 0, "climate_trace_consumable": 1, "climate_trace_reference_rejected": 0, "climate_trace_reference_pending": 0, "climate_trace_capacity_exceeded": 0, "coverage_blocker": "", "fault_code": "", "country_pod_snapshot_generation": 0, "country_pod_state_hash": 0, "country_pod_work_units": 0, "country_pod_active_country_count": 0, "country_pod_active_index_count": 0, "country_pod_pending_checks": 0, "country_pod_ack_pending": false, "country_pod_blocker": "", "country_worker_configured": true, "country_worker_plan_active": false, "country_worker_waiting_for_peer": false, "country_worker_pending_intents": 0, "country_worker_queued_intents": 0, "country_worker_result_count": 0, "country_worker_rejected_results": 0, "country_worker_session_epoch": 2, "country_worker_country_generation": 1, "country_worker_day": 87, "country_worker_continuation_index": 0, "country_worker_boundary_id": 87, "country_worker_last_admitted_submit_order": 0, "country_worker_expected_base_generation": 0, "country_worker_catalog_hash": 0, "country_worker_last_reason": "", "country_worker_authoritative": true, "modifier_worker_authoritative": true, "effect_worker_authoritative": true, "ideology_worker_authoritative": true, "trigger_worker_authoritative": true, "events_worker_authoritative": true, "country_parity_compared": false, "country_parity_matched": false, "country_parity_compared_count": 0, "country_parity_matched_count": 0, "country_parity_status": "uncompared", "country_parity_first_mismatch_day": -1, "country_parity_reference_hash": 0, "country_parity_worker_hash": -1161371484412020510, "country_parity_field": "", "country_parity_index": -1, "trigger_parity_day": 87, "trigger_reference_day": 2, "trigger_input_hash": 88, "trigger_reference_input_hash": 3, "trigger_reference_state_hash": -5990585120741876090, "trigger_worker_state_hash": -8514465361024629146, "trigger_reference_effect_hash": 5187598658539770339, "trigger_worker_effect_hash": 5187598658539770339, "trigger_required_ack_count": 0, "trigger_received_ack_count": 0, "trigger_pending_ack_count": 0, "trigger_generation": 87, "trigger_committed_day": 87, "trigger_acked_effect_id": 0, "trigger_pending_command_count": 0, "trigger_parity_compared": false, "trigger_parity_matched": false, "trigger_first_divergence_index": -1, "trigger_first_divergence_kind": "", "trigger_blocker": "trigger_reference_pending", "trigger_pod_ready": true, "trigger_pod_plan_ms": 0.0137, "trigger_pod_replay_ms": 0.0038, "trigger_pod_state_hash": -8721420918223303047, "trigger_pod_snapshot_generation": 87, "trigger_pod_intent_count": 0, "trigger_pod_ack_count": 0, "trigger_pod_fallback_reason": "", "modifier_pod_ready": true, "modifier_pod_plan_ms": 0.0037, "modifier_pod_replay_ms": 0.0003, "modifier_pod_work_units": 0, "modifier_pod_state_hash": 6664427543140309987, "modifier_pod_snapshot_generation": 87, "modifier_pod_ack_count": 0, "modifier_pod_fallback_reason": "", "effect_pod_ready": true, "effect_pod_plan_ms": 0.0039, "effect_pod_replay_ms": 0.0004, "effect_pod_state_hash": -3158692871328537501, "effect_pod_snapshot_generation": 87, "effect_pod_ack_count": 0, "effect_pod_intent_count": 0, "effect_pod_fallback_reason": "", "ideology_pod_ready": false, "ideology_pod_plan_ms": 0.0, "ideology_pod_replay_ms": 0.0, "ideology_pod_state_hash": 0, "ideology_pod_snapshot_generation": 0, "ideology_pod_pending_transition_count": 0, "ideology_pod_intent_count": 0, "ideology_pod_fallback_reason": "ideology_opinion_snapshot_missing", "events_probe_enabled": true, "events_pod_ready": true, "events_pod_plan_ms": 0.0012, "events_pod_replay_ms": 0.0002, "events_pod_state_hash": -2780208949498925363, "events_pod_snapshot_generation": 87, "events_pod_event_count": 0, "events_pod_ack_count": 0, "events_pod_drop_count": 0, "events_pod_fallback_reason": "", "command_queue_depth": 1, "receipt_queue_depth": 0, "executor_backend": "native_fixed_pool", "hardware_threads": 32, "worker_threads": 16, "active_worker_limit": 16, "interactive": false, "dispatch_count": 10, "serial_dispatch_count": 0, "task_count": 104, "fault_count": 0, "thread_priority": "below_normal_windows" }
+[perf-record] start (start_tick=89 mode=CORE detail_period=1)
+[economy-record] native v5 start cells=320 sampled=1 resources=31 stride=1 max_rows=5000000 dims=summary,cohorts,buildings,resources,market
+[stage-c/client] recording mode=ACTIVE worker=ACTIVE seconds=2.00 output=D:/Godot/ProjectKeynes/Project.Keynes/tmp/player_regression3
+[regression] after_queue=[20]
+[regression] receipts={ "ok": true, "available": true, "receipts": [{ "request_id": 1, "producer_id": 0, "sequence": 1, "effective_day": 89, "generation": 2, "code": 2, "status": "Committed", "reason": "" }], "count": 1, "last_request_id": 1 }
+[economy-open-finish] day=100 country=0.057 workset=0.006 fiscal=0.005 csr=0.001 recovery=0.000 vectors=0.105 audit=0.058 commands=0.001
+[economy-prelude-cost] day=100 ms=0.315 pending=0
+[economy-aggregate-cost] day=100 publish_ms=0.406 native_hash_ms=0.128
+[economy-ledger-cost] day=100 copy_ms=0.072 validate_ms=0.029 hash_ms=0.092 cohorts=64 markets=42880
+[economy-boundary-cost] day=100 formulas_ms=1.347 stages_ms=0.985 mirror_ms=0.401
+[runtime-day-cost] day=100 ok=1 ms=2.470
+[perf-record] exported rows=16 cols=234 → D:/Godot/ProjectKeynes/Project.Keynes/tmp/player_regression3/perf.csv
+[economy-record] background export completed -> ["D:/Godot/ProjectKeynes/Project.Keynes/tmp/economy_record_20260920_144525_v25_cell131_q8_r6_summary.csv", "D:/Godot/ProjectKeynes/Project.Keynes/tmp/economy_record_20260920_144525_v25_cell131_q8_r6_cohorts.csv", "D:/Godot/ProjectKeynes/Project.Keynes/tmp/economy_record_20260920_144525_v25_cell131_q8_r6_buildings.csv", "D:/Godot/ProjectKeynes/Project.Keynes/tmp/economy_record_20260920_144525_v25_cell131_q8_r6_resources.csv", "D:/Godot/ProjectKeynes/Project.Keynes/tmp/economy_record_20260920_144525_v25_cell131_q8_r6_market.csv"]
+[stage-c/client] complete mode=ACTIVE frames=22 fast_ticks=16 perf=D:/Godot/ProjectKeynes/Project.Keynes/tmp/player_regression3/perf.csv
+ERROR: 44 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 16 RID allocations of type 'PN18TextServerAdvanced22ShapedTextDataAdvancedE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 986 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

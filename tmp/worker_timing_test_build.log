@@ -1,0 +1,8 @@
+scons: Entering directory `D:\Godot\ProjectKeynes\Project.Keynes\tmp'
+scons: Reading SConscript files ...
+scons: done reading SConscript files.
+scons: Building targets ...
+cl /Foworker_timing_test.obj /c D:\Godot\ProjectKeynes\Project.Keynes\gdext\tests\runtime_worker_timing_test.cpp /TP /nologo /std:c++17 /EHsc /O2 /utf-8 /ID:\Godot\ProjectKeynes\Project.Keynes\gdext\src
+runtime_worker_timing_test.cpp
+link /nologo /OUT:worker_timing_test.exe worker_timing_test.obj
+scons: done building targets.

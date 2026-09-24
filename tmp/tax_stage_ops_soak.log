@@ -1,0 +1,23 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] catalog compiles
+  [PASS] country configures
+  [PASS] country bootstrap
+  [PASS] positive tax commits
+  [PASS] economy configures
+  [PASS] economy bootstrap
+  [PASS] country capture
+  [PASS] runtime inputs
+  [PASS] stage_ops worker starts
+[country][parity] worker_day=1 uncompared reference_range=-1..-1 depth=0
+[runtime-day-wait] day=1 env_day=0 missing=0x100 economy_input=1
+  [FAIL] calendar advanced under positive tax
+  [PASS] fiscal_settlement does not stick >40 pulses
+  advanced_days=0 max_stuck_fiscal=0
+=== tax stage_ops soak FAIL (11 checks, 1 failures) ===
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 276 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

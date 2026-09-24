@@ -18,6 +18,7 @@
 #include <unordered_set>
 
 #include <godot_cpp/variant/char_string.hpp>
+#include <godot_cpp/variant/utility_functions.hpp>
 #include <godot_cpp/variant/array.hpp>
 #include <godot_cpp/variant/packed_int64_array.hpp>
 #include <godot_cpp/variant/packed_string_array.hpp>
@@ -4622,120 +4623,228 @@ bool NativeCountryRuntime::apply_committed_read_snapshot(
     // incomplete fixture or an older ABI shape.
     // research_queue_lengths / research_weights_bp are per domain (×4), matching
     // export_pod_snapshot, PKCN, and RuntimeCountryPodAuthority validation.
-    const size_t country_count = static_cast<size_t>(snapshot.country_count);
-    const size_t technology_count = static_cast<size_t>(snapshot.technology_count);
-    const size_t cell_count = static_cast<size_t>(snapshot.cell_count);
+    //
+    // Optional CSR / tax planes that POD validation does not require can arrive
+    // undersized after soft-commit. Repair those here so ACTIVE UI research
+    // progress cannot freeze on the pre-handoff sync store forever.
+    RuntimeCountryPodSnapshot repaired = snapshot;
+    const size_t country_count = static_cast<size_t>(repaired.country_count);
+    const size_t technology_count = static_cast<size_t>(repaired.technology_count);
+    const size_t cell_count = static_cast<size_t>(repaired.cell_count);
+    const size_t technology_words =
+        static_cast<size_t>(repaired.technology_words);
     const size_t domain_lanes =
         country_count * RUNTIME_COUNTRY_RESEARCH_DOMAIN_COUNT;
+    if (repaired.cell_tax_policy_ids.size() != cell_count)
+        repaired.cell_tax_policy_ids.assign(cell_count, 0u);
+    if (repaired.country_discovered.size() != country_count * technology_words)
+        repaired.country_discovered.assign(country_count * technology_words, 0u);
+    if (repaired.research_daily_budgets.size() != country_count)
+        repaired.research_daily_budgets.assign(country_count, 0);
+    if (repaired.research_deferred_points.size() != country_count)
+        repaired.research_deferred_points.assign(country_count, 0);
+    if (repaired.research_progress_total.size() != country_count)
+        repaired.research_progress_total.assign(country_count, 0);
+    if (repaired.research_completed_total.size() != country_count)
+        repaired.research_completed_total.assign(country_count, 0);
+    if (repaired.research_auto_purchase.size() != country_count)
+        repaired.research_auto_purchase.assign(country_count, 0);
+    if (repaired.research_purchased_total.size() != country_count)
+        repaired.research_purchased_total.assign(country_count, 0);
+    if (repaired.research_consumed_total.size() != country_count)
+        repaired.research_consumed_total.assign(country_count, 0);
+    const auto repair_signal_csr = [&](std::vector<int32_t> &offsets,
+                                       size_t payload_size) {
+        if (offsets.size() == country_count + 1u &&
+            !offsets.empty() && offsets.front() == 0 &&
+            static_cast<size_t>(offsets.back()) == payload_size) {
+            bool mono = true;
+            for (size_t i = 1; i < offsets.size(); ++i) {
+                if (offsets[i] < offsets[i - 1u]) {
+                    mono = false;
+                    break;
+                }
+            }
+            if (mono) return;
+        }
+        offsets.assign(country_count + 1u, 0);
+    };
+    repair_signal_csr(repaired.research_signal_cell_offsets,
+                      repaired.research_signal_cells.size());
+    if (repaired.research_signal_cell_offsets.back() == 0)
+        repaired.research_signal_cells.clear();
+    repair_signal_csr(repaired.research_signal_evidence_offsets,
+                      repaired.research_signal_evidence.size());
+    if (repaired.research_signal_evidence_offsets.back() == 0)
+        repaired.research_signal_evidence.clear();
     const bool shape_ok =
-        snapshot.country_active.size() == country_count &&
-        snapshot.country_generation.size() == country_count &&
-        snapshot.country_stable_ids.size() == country_count &&
-        snapshot.country_display_names.size() == country_count &&
-        snapshot.territory_count.size() == country_count &&
-        snapshot.country_state_version.size() == country_count &&
-        snapshot.country_cash.size() == country_count &&
-        snapshot.country_goods.size() == country_count *
-            static_cast<size_t>(snapshot.good_count) &&
-        snapshot.country_technologies.size() == country_count *
-            static_cast<size_t>(snapshot.technology_words) &&
-        snapshot.country_discovered.size() == country_count *
-            static_cast<size_t>(snapshot.technology_words) &&
-        snapshot.country_pending_technologies.size() == country_count *
-            static_cast<size_t>(snapshot.technology_words) &&
-        snapshot.research_queues.size() == domain_lanes * 8U &&
-        snapshot.research_queue_lengths.size() == domain_lanes &&
-        snapshot.research_weights_bp.size() == domain_lanes &&
-        snapshot.research_progress.size() == country_count * technology_count &&
-        snapshot.research_signal_cell_offsets.size() == country_count + 1 &&
-        snapshot.research_signal_evidence_offsets.size() == country_count + 1 &&
-        snapshot.cell_country_slot.size() == cell_count &&
-        snapshot.cell_tax_policy_ids.size() == cell_count &&
-        snapshot.territory_offsets.size() == country_count + 1;
-    if (!shape_ok) return false;
+        repaired.country_active.size() == country_count &&
+        repaired.country_generation.size() == country_count &&
+        repaired.country_stable_ids.size() == country_count &&
+        repaired.country_display_names.size() == country_count &&
+        repaired.territory_count.size() == country_count &&
+        repaired.country_state_version.size() == country_count &&
+        repaired.country_cash.size() == country_count &&
+        repaired.country_goods.size() == country_count *
+            static_cast<size_t>(repaired.good_count) &&
+        repaired.country_technologies.size() == country_count * technology_words &&
+        repaired.country_discovered.size() == country_count * technology_words &&
+        repaired.country_pending_technologies.size() ==
+            country_count * technology_words &&
+        repaired.research_queues.size() == domain_lanes * 8U &&
+        repaired.research_queue_lengths.size() == domain_lanes &&
+        repaired.research_weights_bp.size() == domain_lanes &&
+        repaired.research_progress.size() == country_count * technology_count &&
+        repaired.research_signal_cell_offsets.size() == country_count + 1 &&
+        repaired.research_signal_evidence_offsets.size() == country_count + 1 &&
+        repaired.cell_country_slot.size() == cell_count &&
+        repaired.cell_tax_policy_ids.size() == cell_count &&
+        repaired.territory_offsets.size() == country_count + 1;
+    if (!shape_ok) {
+        static int s_shape_left = 12;
+        if (s_shape_left-- > 0) {
+            UtilityFunctions::print(vformat(
+                "[tech-ui-diag/apply] reject gen=%d day=%d countries=%d cells=%d "
+                "techs=%d words=%d goods=%d "
+                "active=%d genv=%d ids=%d names=%d terr=%d ver=%d cash=%d "
+                "goods_v=%d tech=%d disc=%d pend=%d "
+                "rq=%d rql=%d rqw=%d prog=%d "
+                "sig_off=%d sig_cells=%d ev_off=%d ev=%d "
+                "owners=%d tax=%d terr_off=%d",
+                static_cast<int64_t>(repaired.generation),
+                repaired.committed_day,
+                static_cast<int64_t>(country_count),
+                static_cast<int64_t>(cell_count),
+                static_cast<int64_t>(technology_count),
+                static_cast<int64_t>(technology_words),
+                static_cast<int64_t>(repaired.good_count),
+                static_cast<int64_t>(repaired.country_active.size()),
+                static_cast<int64_t>(repaired.country_generation.size()),
+                static_cast<int64_t>(repaired.country_stable_ids.size()),
+                static_cast<int64_t>(repaired.country_display_names.size()),
+                static_cast<int64_t>(repaired.territory_count.size()),
+                static_cast<int64_t>(repaired.country_state_version.size()),
+                static_cast<int64_t>(repaired.country_cash.size()),
+                static_cast<int64_t>(repaired.country_goods.size()),
+                static_cast<int64_t>(repaired.country_technologies.size()),
+                static_cast<int64_t>(repaired.country_discovered.size()),
+                static_cast<int64_t>(repaired.country_pending_technologies.size()),
+                static_cast<int64_t>(repaired.research_queues.size()),
+                static_cast<int64_t>(repaired.research_queue_lengths.size()),
+                static_cast<int64_t>(repaired.research_weights_bp.size()),
+                static_cast<int64_t>(repaired.research_progress.size()),
+                static_cast<int64_t>(repaired.research_signal_cell_offsets.size()),
+                static_cast<int64_t>(repaired.research_signal_cells.size()),
+                static_cast<int64_t>(
+                    repaired.research_signal_evidence_offsets.size()),
+                static_cast<int64_t>(repaired.research_signal_evidence.size()),
+                static_cast<int64_t>(repaired.cell_country_slot.size()),
+                static_cast<int64_t>(repaired.cell_tax_policy_ids.size()),
+                static_cast<int64_t>(repaired.territory_offsets.size())));
+        }
+        return false;
+    }
     for (size_t slot = 0; slot < country_count; ++slot) {
-        if (snapshot.research_signal_cell_offsets[slot] < 0 ||
-            snapshot.research_signal_cell_offsets[slot + 1] <
-                snapshot.research_signal_cell_offsets[slot] ||
-            static_cast<size_t>(snapshot.research_signal_cell_offsets[slot + 1]) >
-                snapshot.research_signal_cells.size() ||
-            snapshot.research_signal_evidence_offsets[slot] < 0 ||
-            snapshot.research_signal_evidence_offsets[slot + 1] <
-                snapshot.research_signal_evidence_offsets[slot] ||
-            static_cast<size_t>(snapshot.research_signal_evidence_offsets[slot + 1]) >
-                snapshot.research_signal_evidence.size()) return false;
+        if (repaired.research_signal_cell_offsets[slot] < 0 ||
+            repaired.research_signal_cell_offsets[slot + 1] <
+                repaired.research_signal_cell_offsets[slot] ||
+            static_cast<size_t>(repaired.research_signal_cell_offsets[slot + 1]) >
+                repaired.research_signal_cells.size() ||
+            repaired.research_signal_evidence_offsets[slot] < 0 ||
+            repaired.research_signal_evidence_offsets[slot + 1] <
+                repaired.research_signal_evidence_offsets[slot] ||
+            static_cast<size_t>(
+                repaired.research_signal_evidence_offsets[slot + 1]) >
+                repaired.research_signal_evidence.size()) {
+            static int s_csr_left = 8;
+            if (s_csr_left-- > 0) {
+                UtilityFunctions::print(vformat(
+                    "[tech-ui-diag/apply] csr reject slot=%d gen=%d "
+                    "cell_off=%d/%d cells=%d ev_off=%d/%d ev=%d",
+                    static_cast<int64_t>(slot),
+                    static_cast<int64_t>(repaired.generation),
+                    repaired.research_signal_cell_offsets[slot],
+                    repaired.research_signal_cell_offsets[slot + 1],
+                    static_cast<int64_t>(repaired.research_signal_cells.size()),
+                    repaired.research_signal_evidence_offsets[slot],
+                    repaired.research_signal_evidence_offsets[slot + 1],
+                    static_cast<int64_t>(
+                        repaired.research_signal_evidence.size())));
+            }
+            return false;
+        }
     }
     _simulation_host = nullptr;
     _sync_store_writes_forbidden = true;
     _state_hash_cache_valid = false;
-    _generation = snapshot.generation;
-    _last_committed_day = snapshot.committed_day;
-    _last_research_day = snapshot.last_research_day;
-    _session_epoch = snapshot.session_epoch;
-    _countries.active = snapshot.country_active;
-    _countries.generation = snapshot.country_generation;
-    _countries.stable_id = snapshot.country_stable_ids;
-    _countries.display_name = snapshot.country_display_names;
-    _research_active_country_slots = snapshot.research_active_country_slots;
-    _countries.territory_count = snapshot.territory_count;
-    _countries.state_version = snapshot.country_state_version;
-    _countries.cash = snapshot.country_cash;
-    _country_goods = snapshot.country_goods;
-    _cell_country_slot = snapshot.cell_country_slot;
-    _country_cell_offsets = snapshot.territory_offsets;
-    _country_cells = snapshot.territory_cells;
-    _country_technologies = snapshot.country_technologies;
-    _country_discovered = snapshot.country_discovered;
-    _country_pending_technologies = snapshot.country_pending_technologies;
-    _country_research_signals = snapshot.country_research_signals;
-    _country_research_queues = snapshot.research_queues;
-    _country_research_queue_lengths = snapshot.research_queue_lengths;
-    _country_research_weights_bp = snapshot.research_weights_bp;
-    _country_research_daily_budgets = snapshot.research_daily_budgets;
-    _country_research_deferred_points = snapshot.research_deferred_points;
-    _country_research_progress_total = snapshot.research_progress_total;
-    _country_research_completed_total = snapshot.research_completed_total;
-    _country_research_auto_purchase = snapshot.research_auto_purchase;
-    _country_research_purchased_total = snapshot.research_purchased_total;
-    _country_research_consumed_total = snapshot.research_consumed_total;
-    _country_tax_defaults = snapshot.country_tax_defaults;
-    _country_tax_default_modes = snapshot.country_tax_default_modes;
-    _country_income_tax_overrides = snapshot.country_income_tax_overrides;
-    _country_consumption_tax_overrides = snapshot.country_consumption_tax_overrides;
-    _country_business_tax_overrides = snapshot.country_business_tax_overrides;
-    _country_import_tax_overrides = snapshot.country_import_tax_overrides;
-    _country_export_tax_overrides = snapshot.country_export_tax_overrides;
-    _country_income_tax_mode_overrides = snapshot.country_income_tax_mode_overrides;
-    _country_consumption_tax_mode_overrides = snapshot.country_consumption_tax_mode_overrides;
-    _country_business_tax_mode_overrides = snapshot.country_business_tax_mode_overrides;
-    _country_import_tax_mode_overrides = snapshot.country_import_tax_mode_overrides;
-    _country_export_tax_mode_overrides = snapshot.country_export_tax_mode_overrides;
-    _cell_tax_policy_ids = snapshot.cell_tax_policy_ids;
-    _is_water = snapshot.is_water;
-    _tax_policy_version = snapshot.generation;
-    _territory_generation = snapshot.generation;
-    _research_generation = snapshot.generation;
-    _visual_era_generation = snapshot.generation;
-    _country_research_progress.assign(snapshot.country_count, {});
-    _country_research_signal_cells.assign(snapshot.country_count, {});
-    _country_research_signal_evidence.assign(snapshot.country_count, {});
-    for (uint32_t slot = 0; slot < snapshot.country_count; ++slot) {
-        for (uint32_t tech = 0; tech < snapshot.technology_count; ++tech) {
-            const auto value = snapshot.research_progress[slot * snapshot.technology_count + tech];
+    _generation = repaired.generation;
+    _last_committed_day = repaired.committed_day;
+    _last_research_day = repaired.last_research_day;
+    _session_epoch = repaired.session_epoch;
+    _countries.active = repaired.country_active;
+    _countries.generation = repaired.country_generation;
+    _countries.stable_id = repaired.country_stable_ids;
+    _countries.display_name = repaired.country_display_names;
+    _research_active_country_slots = repaired.research_active_country_slots;
+    _countries.territory_count = repaired.territory_count;
+    _countries.state_version = repaired.country_state_version;
+    _countries.cash = repaired.country_cash;
+    _country_goods = repaired.country_goods;
+    _cell_country_slot = repaired.cell_country_slot;
+    _country_cell_offsets = repaired.territory_offsets;
+    _country_cells = repaired.territory_cells;
+    _country_technologies = repaired.country_technologies;
+    _country_discovered = repaired.country_discovered;
+    _country_pending_technologies = repaired.country_pending_technologies;
+    _country_research_signals = repaired.country_research_signals;
+    _country_research_queues = repaired.research_queues;
+    _country_research_queue_lengths = repaired.research_queue_lengths;
+    _country_research_weights_bp = repaired.research_weights_bp;
+    _country_research_daily_budgets = repaired.research_daily_budgets;
+    _country_research_deferred_points = repaired.research_deferred_points;
+    _country_research_progress_total = repaired.research_progress_total;
+    _country_research_completed_total = repaired.research_completed_total;
+    _country_research_auto_purchase = repaired.research_auto_purchase;
+    _country_research_purchased_total = repaired.research_purchased_total;
+    _country_research_consumed_total = repaired.research_consumed_total;
+    _country_tax_defaults = repaired.country_tax_defaults;
+    _country_tax_default_modes = repaired.country_tax_default_modes;
+    _country_income_tax_overrides = repaired.country_income_tax_overrides;
+    _country_consumption_tax_overrides = repaired.country_consumption_tax_overrides;
+    _country_business_tax_overrides = repaired.country_business_tax_overrides;
+    _country_import_tax_overrides = repaired.country_import_tax_overrides;
+    _country_export_tax_overrides = repaired.country_export_tax_overrides;
+    _country_income_tax_mode_overrides = repaired.country_income_tax_mode_overrides;
+    _country_consumption_tax_mode_overrides = repaired.country_consumption_tax_mode_overrides;
+    _country_business_tax_mode_overrides = repaired.country_business_tax_mode_overrides;
+    _country_import_tax_mode_overrides = repaired.country_import_tax_mode_overrides;
+    _country_export_tax_mode_overrides = repaired.country_export_tax_mode_overrides;
+    _cell_tax_policy_ids = repaired.cell_tax_policy_ids;
+    _is_water = repaired.is_water;
+    _tax_policy_version = repaired.generation;
+    _territory_generation = repaired.generation;
+    _research_generation = repaired.generation;
+    _visual_era_generation = repaired.generation;
+    _country_research_progress.assign(repaired.country_count, {});
+    _country_research_signal_cells.assign(repaired.country_count, {});
+    _country_research_signal_evidence.assign(repaired.country_count, {});
+    for (uint32_t slot = 0; slot < repaired.country_count; ++slot) {
+        for (uint32_t tech = 0; tech < repaired.technology_count; ++tech) {
+            const auto value = repaired.research_progress[slot * repaired.technology_count + tech];
             if (value != 0) _country_research_progress[slot].emplace_back(tech, value);
         }
         _country_research_signal_cells[slot].assign(
-            snapshot.research_signal_cells.begin() + snapshot.research_signal_cell_offsets[slot],
-            snapshot.research_signal_cells.begin() + snapshot.research_signal_cell_offsets[slot + 1]);
-        for (int32_t i = snapshot.research_signal_evidence_offsets[slot];
-             i < snapshot.research_signal_evidence_offsets[slot + 1]; ++i) {
-            const auto &v = snapshot.research_signal_evidence[i];
+            repaired.research_signal_cells.begin() + repaired.research_signal_cell_offsets[slot],
+            repaired.research_signal_cells.begin() + repaired.research_signal_cell_offsets[slot + 1]);
+        for (int32_t i = repaired.research_signal_evidence_offsets[slot];
+             i < repaired.research_signal_evidence_offsets[slot + 1]; ++i) {
+            const auto &v = repaired.research_signal_evidence[i];
             _country_research_signal_evidence[slot].push_back(
                 {v.signal, v.count, v.first_day, v.last_day, v.first_cell});
         }
     }
     _cell_tax_policies.clear();
-    for (const auto &policy : snapshot.cell_tax_policies) {
+    for (const auto &policy : repaired.cell_tax_policies) {
         CellTaxPolicy out;
         out.defaults = policy.defaults;
         out.default_modes = policy.modes;
@@ -4744,7 +4853,9 @@ bool NativeCountryRuntime::apply_committed_read_snapshot(
         _cell_tax_policies.push_back(std::move(out));
     }
     _report = _report.duplicate();
-    _report["last_committed_day"] = snapshot.committed_day;
+    _report["last_committed_day"] = repaired.committed_day;
+    _report["generation"] = static_cast<int64_t>(repaired.generation);
+    _report["ok"] = true;
     return true;
 }
 
@@ -5368,6 +5479,29 @@ Dictionary NativeCountryRuntime::research_snapshot(int64_t handle) const {
     out["completed_total"] = _country_research_completed_total[static_cast<size_t>(slot)];
     out["last_research_day"] = _last_research_day;
     out["generation"] = static_cast<int64_t>(_generation);
+    {
+        // One-shot probe: proves the UI research path is reading the worker
+        // replica (generation moves) rather than the frozen sync store.
+        static int s_ui_left = 16;
+        if (s_ui_left-- > 0) {
+            int32_t owned = 0;
+            int32_t pending = 0;
+            int32_t queued = 0;
+            int64_t nonzero_progress = 0;
+            for (int32_t tech = 0; tech < states.size(); ++tech) {
+                const int32_t state = states[tech];
+                if (state >= 5) ++owned;
+                else if (state == 4) ++pending;
+                else if (state == 3) ++queued;
+                if (progress[tech] != 0) ++nonzero_progress;
+            }
+            UtilityFunctions::print(vformat(
+                "[tech-ui-diag/research] handle=%d gen=%d day=%d "
+                "owned=%d pending=%d queued=%d progress_nonzero=%d stock=%d",
+                handle, static_cast<int64_t>(_generation), _last_research_day,
+                owned, pending, queued, nonzero_progress, stock));
+        }
+    }
     return out;
 }
 
@@ -7882,19 +8016,18 @@ CountryPeerResult NativeCountryRuntime::execute_peer_intent_main_thread(
             // which branch it picked. Rate limited.
             static int s_entry_left = 30;
             if (s_entry_left-- > 0) {
-                std::fprintf(stderr,
-                    "[tech-ack-diag/entry] tech=%d instance=%llu eff_gen=%u "
+                UtilityFunctions::print(vformat(
+                    "[tech-ack-diag/entry] tech=%d instance=%d eff_gen=%d "
                     "host=%d effect_worker_auth=%d effect_enabled=%d "
-                    "effect_runtime=%d branch=%s\n",
+                    "effect_runtime=%d branch=%s",
                     intent.technology,
-                    static_cast<unsigned long long>(intent.effect_instance_id),
-                    intent.effect_generation,
+                    static_cast<int64_t>(intent.effect_instance_id),
+                    static_cast<int64_t>(intent.effect_generation),
                     _simulation_host != nullptr ? 1 : 0,
                     effect_worker_authoritative ? 1 : 0,
                     _effect_runtime_enabled ? 1 : 0,
                     _effect_runtime != nullptr ? 1 : 0,
-                    effect_worker_authoritative ? "pod" : "sync");
-                std::fflush(stderr);
+                    effect_worker_authoritative ? "pod" : "sync"));
             }
         }
         // F8 ACTIVE: sync EffectRuntime is writeback-only. Route technology
@@ -7940,9 +8073,15 @@ CountryPeerResult NativeCountryRuntime::execute_peer_intent_main_thread(
                 technology_flags |= COUNTRY_PEER_EFFECT_FIRE_ACKED;
                 result.code = CountryPeerResultCode::READY;
             } else {
-                _simulation_host->debug_log_effect_pod_technology_state(
-                    static_cast<int64_t>(intent.effect_instance_id),
-                    intent.effect_generation, program_id, intent.technology);
+                static int s_pod_left = 30;
+                if (s_pod_left-- > 0) {
+                    UtilityFunctions::print(vformat("[tech-ack-diag/pod] %s",
+                        String(_simulation_host
+                            ->describe_effect_pod_technology_state(
+                                static_cast<int64_t>(intent.effect_instance_id),
+                                intent.effect_generation, program_id,
+                                intent.technology).c_str())));
+                }
                 result.code = CountryPeerResultCode::PENDING;
             }
             result.technology_flags = technology_flags;
@@ -7995,17 +8134,15 @@ CountryPeerResult NativeCountryRuntime::execute_peer_intent_main_thread(
         } else {
             static int s_sync_left = 30;
             if (s_sync_left-- > 0) {
-                std::fprintf(stderr,
-                    "[tech-ack-diag/sync] tech=%d instance=%llu gen=%u "
-                    "existed=%d should_run_day=%lld committed_gen=%llu "
-                    "pending_after_nudge=1\n",
+                UtilityFunctions::print(vformat(
+                    "[tech-ack-diag/sync] tech=%d instance=%d gen=%d "
+                    "existed=%d day=%d committed_gen=%d",
                     intent.technology,
-                    static_cast<unsigned long long>(intent.effect_instance_id),
-                    intent.effect_generation, exists ? 1 : 0,
-                    static_cast<long long>(intent.day),
-                    static_cast<unsigned long long>(
-                        _effect_runtime->committed_generation()));
-                std::fflush(stderr);
+                    static_cast<int64_t>(intent.effect_instance_id),
+                    static_cast<int64_t>(intent.effect_generation),
+                    exists ? 1 : 0, intent.day,
+                    static_cast<int64_t>(
+                        _effect_runtime->committed_generation())));
             }
             result.code = CountryPeerResultCode::PENDING;
         }
@@ -8412,7 +8549,12 @@ int32_t NativeCountryRuntime::run_research_day(
                 const size_t queue_base = (static_cast<size_t>(slot) * 4U +
                     static_cast<size_t>(domain)) * 8U;
                 const int32_t technology = _country_research_queues[queue_base];
-                if (technology < 0 || has_technology(slot, technology)) {
+                const size_t tech_word = word_base + static_cast<size_t>(technology / 64);
+                const uint64_t tech_bit = 1ULL << (technology % 64);
+                const bool settled = technology < 0 ||
+                    has_technology(slot, technology) ||
+                    (_country_pending_technologies[tech_word] & tech_bit) != 0;
+                if (settled) {
                     for (int32_t i = 1; i < length; ++i)
                         _country_research_queues[queue_base + static_cast<size_t>(i - 1)] =
                             _country_research_queues[queue_base + static_cast<size_t>(i)];

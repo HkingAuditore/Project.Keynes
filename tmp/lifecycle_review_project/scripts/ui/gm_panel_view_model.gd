@@ -15,10 +15,13 @@ const ECONOMY_PINNED_REPORT_KEYS := [
 	"current_day", "last_completed_sample_day", "newest_state_day",
 	"population_error", "money_error", "goods_error",
 ]
-# money_conservation_failed 时必须钉住分桶；否则 MAX_REPORT_ROWS 会先填满
-# accuracy_* 等无关键，GM 面板看不到 open/close/mint/burn。
+# fatal 时必须钉住分桶；否则 MAX_REPORT_ROWS 会先填满 accuracy_* 等无关键，
+# GM 面板看不到真正的现场。fatal_context / audit_incomplete 排在守恒三项之前：
+# 边界类停机的答案在 context 里，而守恒三项在 epoch 半开时是无效的。
 const ECONOMY_FATAL_MONEY_PINNED_KEYS := [
-	"fatal", "fatal_reason", "stage", "epoch_active", "epoch_id",
+	"fatal", "fatal_reason", "stage", "executed_stage", "executed_substage",
+	"fatal_context", "audit_incomplete", "audit_incomplete_reason",
+	"epoch_active", "epoch_id",
 	"current_day", "last_completed_sample_day", "sample_day",
 	"population_error", "money_error", "goods_error",
 	"money_open", "money_close", "money_expected",
@@ -323,41 +326,11 @@ static func _append_scalar_report(sections: Array, title: String, report,
 			report.get("fatal_reason", "unknown"))})
 		pin_keys = ECONOMY_FATAL_MONEY_PINNED_KEYS
 		row_limit = MAX_FATAL_MONEY_REPORT_ROWS
-		_dump_economy_money_conservation_fatal(report)
+		# 落盘由 WorldRuntimeHost._observe_economy_fatal 统一负责：它不依赖
+		# GM 面板是否打开，且写的是完整现场而不是钱的分桶。
 	_append_scalar_rows(rows, report, row_limit, pin_keys)
 	if not rows.is_empty():
 		sections.append({"title": title, "rows": rows})
-
-
-static var _money_conservation_dump_done := false
-
-
-static func _dump_economy_money_conservation_fatal(report: Dictionary) -> void:
-	if _money_conservation_dump_done:
-		return
-	_money_conservation_dump_done = true
-	var payload := {}
-	for key in ECONOMY_FATAL_MONEY_PINNED_KEYS:
-		if report.has(key):
-			payload[key] = report[key]
-	payload["dumped_at"] = Time.get_datetime_string_from_system()
-	var text := JSON.stringify(payload)
-	var user_path := "user://economy_money_conservation_fatal.json"
-	var user_file := FileAccess.open(user_path, FileAccess.WRITE)
-	if user_file != null:
-		user_file.store_string(text)
-		user_file.close()
-	# 同步写到工程 tmp，方便 agent 直接读取（不依赖 userdata 路径）。
-	var project_res := ProjectSettings.globalize_path("res://")
-	var abs_path := project_res.path_join(
-		"..\\..\\tmp\\economy_money_conservation_fatal.json").simplify_path()
-	var abs_file := FileAccess.open(abs_path, FileAccess.WRITE)
-	if abs_file != null:
-		abs_file.store_string(text)
-		abs_file.close()
-	print("[gm/economy-fatal-dump] %s keys=%d user=%s abs=%s" % [
-		String(report.get("fatal_reason", "?")), payload.size(),
-		ProjectSettings.globalize_path(user_path), abs_path])
 
 
 static func _append_scalar_rows(rows: Array, data: Dictionary, limit: int,

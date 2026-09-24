@@ -25,6 +25,19 @@ const OVERLAY_LEGEND_WIDTH := 198.0
 const GM_PANEL_TARGET_WIDTH := 560.0
 const GM_PANEL_MIN_WIDTH := 300.0
 const INSPECTOR_FULL_PATCH_INTERVAL_MSEC := 750
+# Country economy/treasury snapshots include the native trade summary and can
+# be materially more expensive than applying the already-built panel model.
+# Economy commits may arrive several times per rendered frame at high speed;
+# coalesce those notifications and refresh the open panel at a bounded cadence.
+# Technology section uses a tighter window so research/queue/owned stay close to
+# the worker replica at 50x. Native state is still committed every sim day.
+const COUNTRY_UI_REFRESH_INTERVAL_MSEC := 250
+const COUNTRY_UI_TECH_REFRESH_INTERVAL_MSEC := 50
+# Soft country commits arrive every simulated day; research toast only needs
+# wall-clock sampling so 50x does not snapshot the tech plane each day.
+const RESEARCH_TOAST_POLL_INTERVAL_MSEC := 100
+# Open technology archive progress bars; keep this slower than a double-click.
+const RESEARCH_PANEL_PROGRESS_INTERVAL_MSEC := 750
 var _top_bar: PlayerTopBar
 var _right_panel: InspectorPanel
 var _loading_overlay: WorldLoadingOverlay
@@ -64,6 +77,8 @@ var _country_runtime_facade = null
 var _economy_runtime_facade = null
 var _ideology_runtime_facade = null
 var _country_refresh_queued := false
+var _country_refresh_timer_active := false
+var _country_next_refresh_ms := 0
 var _country_open_generation := 0
 var _country_dirty_domains := 0
 var _country_refresh_reason := ""
@@ -74,6 +89,10 @@ const COUNTRY_DIRTY_TECHNOLOGY := 1
 const COUNTRY_DIRTY_ECONOMY := 2
 const COUNTRY_DIRTY_IDEOLOGY := 4
 const COUNTRY_DIRTY_ALL := COUNTRY_DIRTY_TECHNOLOGY | COUNTRY_DIRTY_ECONOMY | COUNTRY_DIRTY_IDEOLOGY
+# Native RUNTIME_DIRTY_COUNTRY_* bits from runtime_pod_protocol.h.
+const NATIVE_DIRTY_COUNTRY_STATE := 1 << 1
+const NATIVE_DIRTY_COUNTRY_TERRITORY := 1 << 2
+const NATIVE_DIRTY_COUNTRY_VISUAL_ERA := 1 << 3
 
 const ResearchToastScript = preload("res://scripts/ui/components/research_toast.gd")
 const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalog.gd")
@@ -81,6 +100,10 @@ const TechnologyCatalogScript = preload("res://scripts/economy/technology_catalo
 var _research_toast: ResearchToast
 var _last_research_toast_states := PackedInt32Array()
 var _research_toast_bootstrapped := false
+var _next_research_toast_poll_ms := 0
+var _next_tech_panel_progress_ms := 0
+var _last_discovery_tech_ids := PackedStringArray()
+var _discovery_tech_ids_ready := false
 
 
 func _ready() -> void:
@@ -180,6 +203,8 @@ func _bind_country_runtime_events(generator) -> void:
 			_ideology_runtime_facade.command_settled.connect(ideology)
 	_country_dirty_domains = COUNTRY_DIRTY_ALL
 	_country_refresh_queued = false
+	_country_refresh_timer_active = false
+	_country_next_refresh_ms = 0
 
 
 func _on_country_research_signal_discovered(_event: Dictionary) -> void:
@@ -222,15 +247,36 @@ func _mark_country_panel_dirty(domains: int, reason: String) -> void:
 
 
 func _flush_country_panel_refresh() -> void:
-	_country_refresh_queued = false
 	if _country_panel == null or not _country_panel.is_panel_open():
+		_country_refresh_queued = false
+		_country_refresh_timer_active = false
 		return
 	var section_mask := _country_section_mask(_country_panel.current_section())
 	if (_country_dirty_domains & section_mask) == 0:
+		_country_refresh_queued = false
+		_country_refresh_timer_active = false
 		return
+	# High-speed economy commits can arrive more often than a player can read
+	# the panel. Keep the first refresh immediate, then coalesce later commits
+	# behind a short wall-clock window. Leave the queued bit armed while waiting
+	# so additional events do not create one timer per commit.
+	var now_ms := Time.get_ticks_msec()
+	var wait_ms := _country_next_refresh_ms - now_ms
+	if wait_ms > 0:
+		if not _country_refresh_timer_active:
+			_country_refresh_timer_active = true
+			get_tree().create_timer(float(wait_ms) / 1000.0).timeout.connect(
+				_flush_country_panel_refresh, CONNECT_ONE_SHOT)
+		return
+	_country_refresh_queued = false
+	_country_refresh_timer_active = false
 	refresh_country_summary()
 	_country_dirty_domains &= ~section_mask
 	_country_refresh_reason = ""
+	var interval := COUNTRY_UI_TECH_REFRESH_INTERVAL_MSEC \
+		if section_mask == COUNTRY_DIRTY_TECHNOLOGY \
+		else COUNTRY_UI_REFRESH_INTERVAL_MSEC
+	_country_next_refresh_ms = now_ms + interval
 
 
 func set_diagnostics_source(source: Node) -> void:
@@ -416,21 +462,56 @@ func _revision_selection_context(revision: Dictionary) -> String:
 
 
 func _on_country_committed(report: Dictionary) -> void:
-	# 税务提交与日常经济提交都只更新当前页的稳定节点。领土变更会改 fog_state，
-	# 必须重建当前选中格的 Inspector，否则邻格仍停在「未探索」占位卡上，
-	# 而地图迷雾柔边已经把地形透出来了。
+	# 税务/国库 soft-commit 每天都会推 generation，但通常 0 格领土变更。
+	# 以前这里无条件 COUNTRY_DIRTY_ALL + 全量科技定义重建，把 50x 主线程打到 ~90ms。
 	var territory_changed := int(report.get("changed_cells", 0)) > 0
+	var dirty_families := int(report.get("dirty_families", 0))
+	var state_dirty := (dirty_families & NATIVE_DIRTY_COUNTRY_STATE) != 0 \
+		or int(report.get("research_watermark", 0)) > 0 \
+		or int(report.get("tax_watermark", 0)) > 0
+	# 领土变更会改 fog_state，必须强制重建 Inspector；软提交走既有墙钟节流。
 	refresh_selected_daily_lines(territory_changed)
 	if territory_changed and _selected_cell != null:
 		refresh_selected_panel()
-	_mark_country_panel_dirty(COUNTRY_DIRTY_ALL, "country_committed")
-	_refresh_player_discovery_context()
-	_poll_research_completion_toasts()
+	var domains := 0
+	if territory_changed or state_dirty \
+			or (dirty_families & NATIVE_DIRTY_COUNTRY_TERRITORY) != 0:
+		domains |= COUNTRY_DIRTY_ECONOMY
+	var research_poll := {"states_changed": false, "completed": false}
+	if state_dirty:
+		var now_ms := Time.get_ticks_msec()
+		if now_ms >= _next_research_toast_poll_ms:
+			_next_research_toast_poll_ms = now_ms + RESEARCH_TOAST_POLL_INTERVAL_MSEC
+			research_poll = _poll_research_completion_toasts()
+	if bool(research_poll.get("states_changed", false)):
+		domains |= COUNTRY_DIRTY_TECHNOLOGY
+	elif state_dirty and _country_panel != null and _country_panel.is_panel_open() \
+			and String(_country_panel.current_section()) == "technology" \
+			and not Input.is_mouse_button_pressed(MOUSE_BUTTON_LEFT):
+		# Progress-only refresh while the archive is open. Never rebuild during
+		# an active click — 50x soft-commits were eating double-click enqueue.
+		var progress_now_ms := Time.get_ticks_msec()
+		if progress_now_ms >= _next_tech_panel_progress_ms:
+			_next_tech_panel_progress_ms = progress_now_ms + \
+				RESEARCH_PANEL_PROGRESS_INTERVAL_MSEC
+			domains |= COUNTRY_DIRTY_TECHNOLOGY
+	if (dirty_families & NATIVE_DIRTY_COUNTRY_VISUAL_ERA) != 0:
+		domains |= COUNTRY_DIRTY_IDEOLOGY
+	if domains == 0:
+		domains = COUNTRY_DIRTY_ECONOMY
+	_mark_country_panel_dirty(domains, "country_committed")
+	if bool(research_poll.get("completed", false)):
+		_refresh_player_discovery_context()
 
 
 func open_country_section(section_id: String) -> void:
 	if _country_panel == null or _country_view_model == null:
 		return
+	# Opening a section is an explicit player action and should never inherit a
+	# throttle window left by a previously visible section.
+	_country_refresh_queued = false
+	_country_next_refresh_ms = 0
+	_country_refresh_timer_active = false
 	_hide_inspector_for_country()
 	_country_action_bar.set_active(section_id)
 	_country_open_generation += 1
@@ -469,10 +550,18 @@ func _load_country_section_deferred(section_id: String, generation: int) -> void
 		(Time.get_ticks_usec() - started_usec) / 1000.0,
 		_country_section_mask(section_id))
 	_country_dirty_domains &= ~_country_section_mask(section_id)
+	var open_mask := _country_section_mask(section_id)
+	var open_interval := COUNTRY_UI_TECH_REFRESH_INTERVAL_MSEC \
+		if open_mask == COUNTRY_DIRTY_TECHNOLOGY \
+		else COUNTRY_UI_REFRESH_INTERVAL_MSEC
+	_country_next_refresh_ms = Time.get_ticks_msec() + open_interval
 
 
 func close_country_panel() -> void:
 	_country_open_generation += 1
+	_country_refresh_queued = false
+	_country_refresh_timer_active = false
+	_country_next_refresh_ms = 0
 	if _country_panel != null and _country_panel.is_panel_open():
 		_country_panel.close_panel()
 	# A closed panel never needs a fresh Native query. Drop only dynamic section
@@ -843,6 +932,10 @@ func _refresh_player_discovery_context() -> void:
 		_country_view_model.player_completed_technology_ids()
 	if technology_ids.is_empty():
 		return
+	if _discovery_tech_ids_ready and technology_ids == _last_discovery_tech_ids:
+		return
+	_last_discovery_tech_ids = technology_ids.duplicate()
+	_discovery_tech_ids_ready = true
 	set_resource_discovery_context(technology_ids, true)
 
 
@@ -1124,25 +1217,31 @@ func _layout_research_toast() -> void:
 	_research_toast.z_index = 40
 
 
-func _poll_research_completion_toasts() -> void:
+func _poll_research_completion_toasts() -> Dictionary:
+	var result := {"states_changed": false, "completed": false}
 	if _country_view_model == null:
-		return
+		return result
 	_ensure_research_toast()
 	if _research_toast == null:
-		return
+		return result
 	var states: PackedInt32Array = _country_view_model.player_research_states()
 	if states.is_empty():
-		return
+		return result
 	if not _research_toast_bootstrapped:
 		_last_research_toast_states = states.duplicate()
 		_research_toast_bootstrapped = true
-		return
+		return result
+	var previous := _last_research_toast_states
+	if previous == states:
+		return result
+	result["states_changed"] = true
 	var definitions: Array = TechnologyCatalogScript.public_definitions()
 	var limit := mini(states.size(), definitions.size())
-	var previous := _last_research_toast_states
 	for index in range(limit):
 		var next_state := int(states[index])
 		var prev_state := int(previous[index]) if index < previous.size() else 0
+		# State 4 = research complete, pending Effect activation ("明日生效").
+		# State 5 = already owned. Toast on the pending edge so the copy matches.
 		if prev_state >= 4 or next_state < 4:
 			continue
 		var definition: Dictionary = definitions[index]
@@ -1151,7 +1250,9 @@ func _poll_research_completion_toasts() -> void:
 			continue
 		_research_toast.show_research_completed(String(definition.get(
 			"display_name", definition.get("id", ""))))
+		result["completed"] = true
 	_last_research_toast_states = states.duplicate()
+	return result
 
 
 func _layout_gm_panel() -> void:

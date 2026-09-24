@@ -1,0 +1,76 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] catalog compiles
+  [PASS] three-country Country runtime configures
+  [PASS] three countries bootstrap
+  [PASS] three distinct Country handles are live
+  [PASS] negative income policy commits
+  [PASS] economy configures
+  [PASS] three population lanes bootstrap
+  [PASS] first reserve slice exposes a three-country continuation
+  [PASS] save rejects while fiscal reserve is pending
+  [PASS] restore rejects while fiscal reserve is pending
+  [PASS] later pulse day continues the admitted fiscal reservation
+  [PASS] fiscal reserve cursor is monotonic and advances by at most one
+  [PASS] pending reserve remains outside active Economy epoch
+  [PASS] fiscal reserve cursor is monotonic and advances by at most one
+  [PASS] pending reserve remains outside active Economy epoch
+[economy-open-finish] day=0 country=0.054 workset=0.004 fiscal=0.133 csr=0.000 recovery=0.000 vectors=0.004 audit=0.002 commands=0.001
+  [PASS] fiscal reserve cursor is monotonic and advances by at most one
+  [PASS] fiscal reserve cursor is monotonic and advances by at most one
+  [PASS] fiscal reserve cursor is monotonic and advances by at most one
+  [PASS] fiscal settlement cursor is monotonic and advances by at most one
+  [PASS] fiscal reserve cursor is monotonic and advances by at most one
+  [PASS] fiscal settlement cursor is monotonic and advances by at most one
+  [PASS] fiscal reserve cursor is monotonic and advances by at most one
+  [PASS] fiscal reserve cursor is monotonic and advances by at most one
+  [PASS] fiscal reserve cursor is monotonic and advances by at most one
+  [PASS] fiscal reserve cursor is monotonic and advances by at most one
+  [PASS] fiscal reserve cursor is monotonic and advances by at most one
+  [PASS] fiscal reserve cursor is monotonic and advances by at most one
+  [PASS] fiscal reserve cursor is monotonic and advances by at most one
+  [PASS] fiscal reserve cursor is monotonic and advances by at most one
+  [PASS] fiscal reserve cursor is monotonic and advances by at most one
+  [PASS] one reserve transaction is executed per Country
+  [PASS] continuation reports pending intermediate slices
+  [PASS] fiscal continuation reaches a committed boundary
+  [PASS] country treasury remains nonnegative after reserve
+  [PASS] at least one fiscal reserve consumes Country cash
+  [PASS] final Economy ledger is conserved
+  [PASS] fiscal settlement exposes a per-country continuation when due
+  [PASS] fiscal settlement cursor advances monotonically
+  [PASS] save is rejected during fiscal settlement continuation
+  [PASS] restore is rejected during fiscal settlement continuation
+  [PASS] later pulse day continues the admitted fiscal settlement
+  [PASS] bridge Country runtime configures
+  [PASS] bridge Country bootstraps
+  [PASS] bridge Country handle is live
+  [PASS] bridge income policy commits
+  [PASS] bridge Economy configures
+  [PASS] bridge Economy bootstraps
+  [PASS] bridge captures Country POD inputs
+  [PASS] bridge publishes immutable Country worker input
+  [PASS] Country-only ACTIVE worker starts
+[country][parity] worker_day=1 uncompared reference_range=-1..-1 depth=0
+[country][parity] worker_day=2 uncompared reference_range=-1..-1 depth=0
+[country][parity] worker_day=3 uncompared reference_range=-1..-1 depth=0
+  [PASS] Country worker grant is observed before fiscal admission
+  [PASS] Country worker read-view exposes immutable treasury state
+[country][parity] worker_day=4 uncompared reference_range=-1..-1 depth=0
+[country][parity] worker_day=5 uncompared reference_range=-1..-1 depth=0
+[country][parity] worker_day=6 uncompared reference_range=-1..-1 depth=0
+[country][parity] worker_day=7 uncompared reference_range=-1..-1 depth=0
+[country][parity] worker_day=8 uncompared reference_range=-1..-1 depth=0
+[economy-open-finish] day=0 country=0.020 workset=0.004 fiscal=0.007 csr=0.001 recovery=0.000 vectors=0.002 audit=0.005 commands=0.000
+  [PASS] fiscal bridge publishes pending work instead of a sync Country write
+  [PASS] Economy fiscal peer completes a Country-authorized request
+  [PASS] Country worker applies fiscal debit into its immutable read-view
+  [PASS] repeated pulses do not apply the fiscal debit twice
+  [PASS] bridge worker stops
+=== economy fiscal reservation continuation PASS (57 checks, 0 failures) ===
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 276 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

@@ -1,0 +1,30 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+=== native building runtime test ===
+  [PASS] building catalog compiles
+  [PASS] coal mine type exists
+  [PASS] owner-investment country bootstraps
+  [PASS] owner-investment runtime configures
+  [PASS] owner-investment settlement bootstraps
+  [PASS] owner-investment diagnostic trace registers
+[economy-open-finish] day=0 country=0.037 workset=0.004 fiscal=0.005 csr=0.000 recovery=0.000 vectors=0.213 audit=0.002 commands=0.000
+  [PASS] ordinary workshop material shortage reaches desired demand
+  [PASS] ordinary workshop material demand reaches business EMA
+  [PASS] ordinary workshop material demand reaches merchant target
+  [PASS] ordinary material price responds to demand
+  [PASS] material quote retries do not multiply one-building demand
+  [PASS] ordinary workshop material demand conserves ledgers
+  [PASS] owner-investment country bootstraps
+  [PASS] owner-investment runtime configures
+  [PASS] owner-investment settlement bootstraps
+  [PASS] owner-investment diagnostic trace registers
+[economy-open-finish] day=0 country=0.038 workset=0.003 fiscal=0.003 csr=0.000 recovery=0.000 vectors=0.200 audit=0.002 commands=0.000
+  [PASS] unaffordable construction adds no demand above existing maintenance
+  [PASS] unaffordable construction conserves ledgers
+material demand failures=0
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 276 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

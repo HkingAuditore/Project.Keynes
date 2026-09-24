@@ -1,0 +1,9 @@
+scons: Entering directory `D:\Godot\ProjectKeynes\Project.Keynes\gdext'
+scons: Reading SConscript files ...
+Building for architecture x86_64 on platform windows
+scons: done reading SConscript files.
+scons: Building targets ...
+scons: `godot-cpp\bin\libgodot-cpp.windows.template_release.x86_64.lib' is up to date.
+Compiling shared src\economy_runtime_building_employment.cpp ...
+scons: *** [D:\Godot\ProjectKeynes\Project.Keynes\Project\project-keynes\addons\dots_ext\bin\windows\dots_ext.windows.template_release.x86_64.dll] D:\Godot\ProjectKeynes\Project.Keynes\Project\project-keynes\addons\dots_ext\bin\windows\dots_ext.windows.template_release.x86_64.dll: ��һ����������ʹ�ô��ļ��������޷����ʡ�
+scons: building terminated because of errors.

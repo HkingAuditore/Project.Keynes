@@ -1,0 +1,50 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+=== native building runtime test ===
+  [PASS] building catalog compiles
+  [PASS] coal mine type exists
+  [PASS] first-research fixture catalog contains the required entries
+  [PASS] first-research country configures
+  [PASS] first-research country bootstraps
+  [PASS] first-research queue and automatic procurement commit
+  [PASS] first-research economy configures
+  [PASS] first-research economy fixture bootstraps
+  [PASS] first-research fixture starts without a research building
+[economy-open-finish] day=0 country=0.033 workset=0.003 fiscal=0.005 csr=0.000 recovery=0.000 vectors=0.077 audit=0.002 commands=0.001
+  [PASS] automatic investment starts the first research building
+  [PASS] first research building is committed after investment
+  [PASS] research auto-investment preserves every ledger
+  [PASS] first-research fixture catalog contains the required entries
+  [PASS] first-research country configures
+  [PASS] first-research country bootstraps
+  [PASS] first-research queue and automatic procurement commit
+  [PASS] first-research economy configures
+  [PASS] first-research economy fixture bootstraps
+  [PASS] first-research fixture starts without a research building
+[economy-open-finish] day=0 country=0.030 workset=0.004 fiscal=0.002 csr=0.000 recovery=0.000 vectors=0.079 audit=0.003 commands=0.001
+  [PASS] first research reserves a full construction bundle
+  [PASS] research reserve reaches merchant procurement target
+  [PASS] research does not build without materials
+  [PASS] research procurement toggle queues
+  [PASS] research procurement toggle commits
+  [PASS] disabled procurement releases first-research reserve
+  [PASS] research procurement toggle queues
+  [PASS] research procurement toggle commits
+  [PASS] research materials arrive incrementally
+  [PASS] research materials arrive incrementally
+  [PASS] research materials arrive incrementally
+  [PASS] research materials arrive incrementally
+  [PASS] research materials arrive incrementally
+  [PASS] research materials arrive incrementally
+  [PASS] automatic investment starts the first research building
+  [PASS] first research building is committed after investment
+  [PASS] research auto-investment preserves every ledger
+  [PASS] unbuilt research reports material shortage instead of success
+  [PASS] new research institution employs owners and produces
+research startup failures=0
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 276 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

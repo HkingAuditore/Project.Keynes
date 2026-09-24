@@ -4591,6 +4591,11 @@ private:
     // Leontief shadow derived demand from unmet final/business deficits through
     // preferred producer BOMs. Recomputed each sample; excluded from PKEC/hash.
     std::vector<int64_t> _epoch_derived_business_demand;
+    // Same-input-edge substitutes that were not selected for procurement still
+    // receive this shadow demand so producers of eligible SKUs (e.g. chipped
+    // stone when bronze was chosen) can see category-level unmet need. Price,
+    // investment, and Leontief seeding read it; merchant targets do not.
+    std::vector<int64_t> _epoch_substitute_business_demand;
     std::vector<int64_t> _epoch_desired_business_demand;
     std::vector<int64_t> _epoch_funded_business_demand;
     // Confidence weight for folding derived demand into price pressure.
@@ -5915,6 +5920,12 @@ private:
                                    bool frozen = true) const;
     bool good_market_available(int32_t cell, int32_t good_id,
                                bool frozen = true) const;
+    // Soft/production input discovery: physical stock is always usable;
+    // empty shelves only admit locally producible (tech-unlocked) SKUs or
+    // goods with positive offered supply. Trade-enabled-but-locked goods
+    // must not absorb category demand via ghost ceiling prices.
+    bool good_input_candidate_available(int32_t cell, int32_t good_id,
+                                        bool frozen = true) const;
     // Compatibility name for callers that are explicitly asking for the
     // technology gate (UI/building unlock queries).
     bool good_available(int32_t cell, int32_t good_id, bool frozen = true) const;
@@ -6069,6 +6080,11 @@ private:
     // Sparse Leontief explosion of unmet deficits into intermediate-good
     // shadow demand for pricing and investment. Sample-boundary only.
     void refresh_derived_business_demand();
+    // Credit non-selected co-candidates on the same input edge with shadow
+    // substitute demand equal to the selected planned quantity.
+    void credit_input_substitute_demand(int32_t cell, const ProductionInput &input,
+                                        int32_t selected_candidate_index,
+                                        int64_t planned);
     int64_t market_flow_deficit_daily(int32_t cell, int32_t good_id,
                                       bool include_derived,
                                       int64_t &sat) const;
@@ -6076,6 +6092,14 @@ private:
                                              int32_t good_id,
                                              int64_t &sat) const;
     int32_t select_startup_producer(int32_t cell, int32_t good_id) const;
+    // Cold-start ranking aid: how well the preferred producer of `good_id`
+    // can cover its hard inputs from current local stock. Used when every
+    // soft-input substitute is out of stock so ghost market prices alone
+    // do not steer demand onto an unbuildable higher-tier good. Soft-only /
+    // input-free recipes return 0 (not Q16_ONE) so they cannot beat a
+    // hard-input cold-start lane that is merely empty this epoch.
+    int64_t startup_producer_hard_input_cover_q16(int32_t cell, int32_t good_id,
+                                                 int64_t &sat) const;
     int32_t select_startup_input_candidate(int32_t cell,
                                            const ProductionInput &input,
                                            int64_t &physical_daily) const;

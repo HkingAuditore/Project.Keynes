@@ -1,0 +1,47 @@
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/organic.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1225)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/dry_sand.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1225)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/rock.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1225)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/snow_wet.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1225)
+WARNING: [runtime-climate-round] no ClimateDailySystem; SHADOW capture carries no shared pass input
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _build_runtime_climate_round_input (res://scripts/geography/map_generator.gd:4666)
+       [1] capture_runtime_inputs_for_worker (res://scripts/geography/map_generator.gd:2356)
+       [2] generate_world (res://scripts/game/world_runtime_host.gd:715)
+       [3] generate (res://scripts/geography/map_generator.gd:1606)
+       [4] _yield_generation_frame (res://scripts/geography/map_generator.gd:19913)
+WARNING: [runtime-worker] Ideology opinion publish deferred: ideology_opinion_snapshot_invalid
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _start_production_shadow_worker (res://scripts/game/world_runtime_host.gd:806)
+       [1] generate_world (res://scripts/game/world_runtime_host.gd:724)
+       [2] generate (res://scripts/geography/map_generator.gd:1606)
+       [3] _yield_generation_frame (res://scripts/geography/map_generator.gd:19913)
+[climate/worker][b8] physics_knobs day=23 ready=0 missing=physics_knobs
+[climate-kernel][round] shared=1 ok=1 n_cells=1120 mask=0x1FF ran=0x1FF starved=0x0 knobs_cells=1120
+[country][parity] worker_day=23 uncompared reference_range=-1..-1 depth=0
+[runtime-day-wait] day=23 env_day=23 missing=0x100 economy_input=23

@@ -1,0 +1,73 @@
+ERROR: Condition "hr != ((HRESULT)0x00000000)" is true. Returning: ERR_CANT_OPEN
+   at: audio_device_init (drivers/wasapi/audio_driver_wasapi.cpp:275)
+ERROR: WASAPI: init_output_device error.
+   at: init (drivers/wasapi/audio_driver_wasapi.cpp:600)
+WARNING: All audio drivers failed, falling back to the dummy driver.
+   at: initialize (servers/audio/audio_server.cpp:247)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/organic.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1225)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/dry_sand.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1225)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/rock.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1225)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/snow_wet.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1225)
+WARNING: [runtime-climate-round] no ClimateDailySystem; SHADOW capture carries no shared pass input
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _build_runtime_climate_round_input (res://scripts/geography/map_generator.gd:4666)
+       [1] capture_runtime_inputs_for_worker (res://scripts/geography/map_generator.gd:2356)
+       [2] generate_world (res://scripts/game/world_runtime_host.gd:715)
+       [3] generate (res://scripts/geography/map_generator.gd:1606)
+       [4] _yield_generation_frame (res://scripts/geography/map_generator.gd:19913)
+[runtime-day-wait] day=1 env_day=0 missing=0x0 economy_input=-1
+[climate][boundary] cold-start env_day=0 plan_day=1 ok=0 ref_hash=1857967513823347482 adopted_parity=1857967513823347482 round_ran=1
+[climate/worker][b8] physics_knobs day=1 ready=0 missing=physics_knobs
+[climate-kernel][round] shared=1 ok=1 n_cells=2400 mask=0x1FF ran=0x1FF starved=0x0 knobs_cells=2400
+[climate][boundary] day=1 planned=1 compared=1 matched=1 worker_parity=17004144669084022637 ref=17004144669084022637 stage_ran=0xFF prod_stage=0xFF round_ran=1 alb=0 veg=0 fb=0 err=
+[country][parity] worker_day=1 uncompared reference_range=2..2 depth=1
+[climate/worker][b8] physics_knobs day=2 ready=0 missing=physics_knobs
+[climate][boundary] day=2 planned=1 compared=1 matched=1 worker_parity=17004144669084022637 ref=17004144669084022637 stage_ran=0x0 prod_stage=0x0 round_ran=0 alb=0 veg=0 fb=0 err=
+[runtime-day-wait] day=3 env_day=0 missing=0x0 economy_input=-1
+[climate/worker][b8] physics_knobs day=3 ready=0 missing=physics_knobs
+[climate/worker][b8] cyclone_gate day=3 input_enabled=0 force_env=0 effective=0
+[climate/worker][b8] weather_solve day=3 cells=2400 psi=1 vapor0=0.115857 precip0=0 cloud0=0.0810155 type0=0 field_init0=1
+[climate][boundary] day=3 planned=1 compared=1 matched=0 worker_parity=13709915642099098108 ref=16824835989967531896 stage_ran=0x1FFF prod_stage=0x1FFF round_ran=1 alb=1 veg=1 fb=1 err=
+[climate][boundary] day=3 first_diff=weather_precipitation[215] ref=0.0327281244 worker=0
+[economy-open-finish] day=100 country=0.244 workset=0.014 fiscal=0.029 csr=0.004 recovery=0.001 vectors=0.500 audit=0.454 commands=0.001
+[economy-open-finish] day=200 country=0.255 workset=0.015 fiscal=0.028 csr=0.005 recovery=0.001 vectors=0.427 audit=0.413 commands=0.000
+[economy-open-finish] day=300 country=0.244 workset=0.014 fiscal=0.028 csr=0.004 recovery=0.001 vectors=0.433 audit=0.426 commands=0.000
+ERROR: [stage-c/client] income test worker did not start
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _fail (res://tests/authority_stage_c_client_runner.gd:501)
+       [1] _on_world_ready (res://tests/income_tax_player_regression.gd:17)
+ERROR: 44 RID allocations of type 'N10RendererRD14TextureStorage7TextureE' were leaked at exit.
+WARNING: 73 RIDs of type "Texture" were leaked.
+   at: finalize (servers/rendering/rendering_device.cpp:7505)
+ERROR: 16 RID allocations of type 'PN18TextServerAdvanced22ShapedTextDataAdvancedE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 986 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

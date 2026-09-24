@@ -12,7 +12,20 @@ const SLOT_IDS := ["manual_1", "manual_2", "manual_3", "autosave"]
 var _save_dir: String
 
 
-func _init(save_dir: String = SAVE_DIR) -> void:
+## 诊断用存档目录重定向。给定一份玩家 .pksv 后，复现工具把它拷进一个临时目录再
+## 指向这里，这样"加载玩家存档续跑"不需要覆盖玩家自己的槽位。仅调试构建生效，
+## 导出的正式版本永远用 SAVE_DIR。
+const SAVE_DIR_OVERRIDE_ENV := "PK_SAVE_DIR"
+
+
+func _init(save_dir: String = "") -> void:
+	if save_dir.is_empty():
+		save_dir = SAVE_DIR
+		if OS.is_debug_build():
+			var override := OS.get_environment(SAVE_DIR_OVERRIDE_ENV).strip_edges()
+			if not override.is_empty():
+				save_dir = override
+				print("[save-repository] slot directory overridden to %s" % override)
 	_save_dir = save_dir
 
 

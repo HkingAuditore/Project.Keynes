@@ -1,0 +1,428 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[ui-layout-diag/bind_ui] is_web=false viewport_visible_rect=[P: (0.0, 0.0), S: (51.2, 51.2)] window_size=(64, 64) content_scale_factor=1.250 content_scale_mode=0 device_pixel_ratio=-1.000 top_bar_rect=[P: (0.0, 0.0), S: (543.0, 56.0)] right_panel_rect=[P: (-408.8, 68.0), S: (460.0, 366.0)] country_action_bar_rect=[P: (8.0, -30.8), S: (336.0, 74.0)]
+[stage-c] authority=ACTIVE worker=ACTIVE
+[building-visual] queue_probe ticks=1 queued=0 chunk=-1 camera_rect=[P: (-25.6, -25.6), S: (51.2, 51.2)] prefetch=false zoom=1.000
+[building-visual] queue_probe ticks=2 queued=0 chunk=-1 camera_rect=[P: (-25.6, -25.6), S: (51.2, 51.2)] prefetch=false zoom=1.000
+[native_generation/base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=2400 native_ms=10.361 water=1553 land=847
+[native_generation/post_base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=2400 native_ms=1.383 lakes=4 rivers=105 volcanoes=0
+[native_generation/vegetation] native_ms=0.489 candidates=841 none=1169 score=[0.000,1.236,1.114] plant_water_land=856 river_adjacent_desert=0 coastal_highland_desert=0 terrain_weight=[0.180,1.200]
+[native_generation/qa] single_water=0 tiny<=3=0 small<=5=0 bodies=1 largest=1544 | land_below_sea=0.7% | terr_distinct=21 entropy=3.183bit | river_ratio=4.375%
+MapGenerator v7: per-cell 71ms (2400 cells, path=gdext)
+[building-visual] queue_probe ticks=3 queued=0 chunk=-1 camera_rect=[P: (-25.6, -25.6), S: (51.2, 51.2)] prefetch=false zoom=1.000
+MapBaker v6: hm=(1024, 606) seed=1735228708
+    [fused] terrain=73.2ms erosion=2.7ms(ok=true) river=12.2ms(ok=true) latitude=0.1ms coast_sdf=3.9ms(ok=true)
+  geometry fields (fused C++): 153ms
+  physical circulation hex solve: deferred until DCWorldExt bind (ext=true idx=true soa=false)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+  visual tiles: {"degradation_reason":"","effective_budget_px":1717248,"effective_texels_per_hex":16.0059221751742,"effective_world_units_per_texel":"(1.373983, 1.375)","estimated_peak_bytes":68402880,"estimated_resident_bytes":40340160,"fallback_reason":"","generation_id":1,"grid_size":"(4, 3)","gutter_px":2,"hex_size":22.0,"horizon_path":"neutral_pending","interior_size":"(416, 344)","layer_size":"(420, 348)","layers":[{"bake_ms":49.3271,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-4603098080143260562,"edge_neighbor":4057764273350575789,"height":-9124830669634210576,"map_index":1015450256520461008,"terrain_detail":1415298026641868910,"terrain_normal":4240255112308713771,"water_depth":2330624858830770480},"layer":0,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.061,"wall_ms":49.493},{"bake_ms":60.0935,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":4583573183968817086,"edge_neighbor":6466940111421570636,"height":5790856781181676511,"map_index":5990047724644026299,"terrain_detail":1806575389526097655,"terrain_normal":3908465376956190299,"water_depth":2547432928052609473},"layer":1,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.058,"wall_ms":60.232},{"bake_ms":74.7343,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-2526323355750389439,"edge_neighbor":7015029410290978361,"height":-8150332218754556700,"map_index":329090656303652193,"terrain_detail":-392433696576850044,"terrain_normal":-4965863177888236808,"water_depth":-7217348512352819415},"layer":2,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.058,"wall_ms":74.872},{"bake_ms":90.1378,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-4179826732684646787,"edge_neighbor":-5337848294581530626,"height":-7426228563537643593,"map_index":1239439826928151201,"terrain_detail":-8513326582372265254,"terrain_normal":8092780547537771097,"water_depth":-6092640318278072007},"layer":3,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.06,"wall_ms":90.286},{"bake_ms":57.8735,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":2136869506241081992,"edge_neighbor":-8797880867138963685,"height":-4924567352001132959,"map_index":-4231209514887179977,"terrain_detail":8772909128008927660,"terrain_normal":-6784207502925496102,"water_depth":-7492134226470272506},"layer":4,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.063,"wall_ms":58.031},{"bake_ms":91.4544,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":6673149775916606392,"edge_neighbor":-8413630352766524385,"height":-6889378239635599087,"map_index":-3551392040916973266,"terrain_detail":1687709548716503895,"terrain_normal":3946453442722986154,"water_depth":6600269933117438995},"layer":5,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.056,"wall_ms":91.599},{"bake_ms":63.8983,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":361706081270387103,"edge_neighbor":-8688139845739281855,"height":699499231114171702,"map_index":-2682228531129457940,"terrain_detail":-8811551234231146331,"terrain_normal":-265631937775218288,"water_depth":6856409090380917935},"layer":6,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.065,"wall_ms":64.063},{"bake_ms":69.3684,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-6250500223095183093,"edge_neighbor":5418444607076768559,"height":1419229568066409352,"map_index":4380956599171502337,"terrain_detail":-894743883384344824,"terrain_normal":4459428523621274975,"water_depth":-6366031586637808975},"layer":7,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.06,"wall_ms":69.519},{"bake_ms":65.3364,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":8492285698888321900,"edge_neighbor":3199635046979891388,"height":4828838600007938123,"map_index":-7514139010467297966,"terrain_detail":-8950604297692130837,"terrain_normal":-3593785506946687824,"water_depth":5761060537573716235},"layer":8,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.101,"wall_ms":65.579},{"bake_ms":87.7068,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":9117926548072241235,"edge_neighbor":-7557104988675294500,"height":618468365387938347,"map_index":-5885543932102826664,"terrain_detail":3877245088374033799,"terrain_normal":-6778421208245397131,"water_depth":2200779154463963187},"layer":9,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.059,"wall_ms":87.865},{"bake_ms":42.2175,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-3745585455065177449,"edge_neighbor":2404961067888014635,"height":-3115442796632843800,"map_index":-6211809985430628861,"terrain_detail":1161812488860344551,"terrain_normal":6456972146840247766,"water_depth":1987210436922770546},"layer":10,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.06,"wall_ms":42.366},{"bake_ms":40.6437,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-1470570636688572573,"edge_neighbor":-6057560351645416949,"height":-5827593206795043862,"map_index":-2248414732901839783,"terrain_detail":7630543887994105174,"terrain_normal":8582387156502791927,"water_depth":-6103088449435849452},"layer":11,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.058,"wall_ms":40.795}],"logical_size":"(1664, 1032)","mode":"tiled","path":"visual_tiled_static","profile":"desktop_high","renderer":"mobile","requested_budget_px":1716216,"requested_texels_per_hex":16.0,"requested_tile_world_span":"(704.0, 704.0)","requested_world_units_per_texel":1.375,"tile_world_area":270355.817993164,"tile_world_span":"(571.5768, 473.0)","total_ms":798.11,"visual_domain":"[P: (0.0, -44.0), S: (2286.307, 1419.0)]","wrap_period_x":2286.30706599092,"wrap_x":true}
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/organic.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1225)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/dry_sand.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1225)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/rock.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1225)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/snow_wet.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1225)
+  cell LUT encode: deferred until DCWorldExt bind
+  encode: 3059ms
+MapBaker v6: total 3220ms
+MapGenerator v7: bake 3246ms
+MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)
+MapGenerator: skip _compute_terrain_perturbed_wind (physical-hex solver writes per-cell)
+[SUS] sim budget strict=false frame=8.00ms warn=2.00ms slice=0.75ms upload=1.50ms scheduler=DCSystemScheduler native_sus=auto
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+[DataCore] _data_core_world_ext bound=true (climate co-processor; class=DCWorldExt)
+[native_world] configure rc=0 reason=configured cells=2400 wrap_period_x=103.923
+[native_generation] path=gdext n=2400 published=9 native_ms=0.090 compute_ms=0.053 flush_ms=0.038
+[hex_cell] facade ENABLED (2400 cells bound; ext=true)
+[DataCore] _baker climate_profile injected=true (fixes WorldData.config==null sea_ice prepare path)
+[phys_solve][oneshot] OK slp=0.75ms wind=0.31ms psi=0.28ms(ran=true) upwelling=0.06ms total=1.79ms
+PhysicalCirculation solve@phase=1.50 total=2ms (C++ one-shot run_physical_solve_pass)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+[physical_init] deferred native refresh complete: 2ms
+[cell_lut] deferred encode: 1ms path=gdext
+[bio-occupancy] seed landmasses=10 provinces=10 species=20 secondary_hearths=22
+[bio-occupancy]   bio.maize envelope=56 hearth=17 seeded_landmasses=1 primary_landmass=8 primary_envelope=31 occupied=17 occupied/envelope=0.55
+[bio-occupancy]   bio.wheat envelope=225 hearth=58 seeded_landmasses=3 primary_landmass=1 primary_envelope=21 occupied=58 occupied/envelope=2.76
+[bio-occupancy]   bio.rice envelope=71 hearth=19 seeded_landmasses=4 primary_landmass=2 primary_envelope=23 occupied=19 occupied/envelope=0.83
+[bio-occupancy]   bio.potato envelope=163 hearth=55 seeded_landmasses=3 primary_landmass=8 primary_envelope=86 occupied=55 occupied/envelope=0.64
+[bio-occupancy]   bio.horse envelope=242 hearth=48 seeded_landmasses=4 primary_landmass=2 primary_envelope=70 occupied=48 occupied/envelope=0.69
+[bio-occupancy]   bio.cotton envelope=119 hearth=12 seeded_landmasses=1 primary_landmass=7 primary_envelope=22 occupied=12 occupied/envelope=0.55
+[bio-occupancy]   bio.flax envelope=212 hearth=17 seeded_landmasses=2 primary_landmass=1 primary_envelope=21 occupied=17 occupied/envelope=0.81
+[bio-occupancy]   bio.spice envelope=100 hearth=8 seeded_landmasses=2 primary_landmass=2 primary_envelope=26 occupied=8 occupied/envelope=0.31
+[bio-occupancy]   bio.rubber envelope=56 hearth=7 seeded_landmasses=1 primary_landmass=7 primary_envelope=15 occupied=7 occupied/envelope=0.47
+[bio-occupancy]   bio.sheep envelope=34 hearth=8 seeded_landmasses=1 primary_landmass=8 primary_envelope=17 occupied=8 occupied/envelope=0.47
+[bio-occupancy]   bio.goat envelope=405 hearth=98 seeded_landmasses=4 primary_landmass=8 primary_envelope=187 occupied=98 occupied/envelope=0.52
+[bio-occupancy]   bio.cattle envelope=13 hearth=5 seeded_landmasses=1 primary_landmass=8 primary_envelope=11 occupied=5 occupied/envelope=0.45
+[bio-occupancy]   bio.pig envelope=287 hearth=89 seeded_landmasses=5 primary_landmass=8 primary_envelope=129 occupied=89 occupied/envelope=0.69
+[bio-occupancy]   bio.camel envelope=45 hearth=6 seeded_landmasses=1 primary_landmass=6 primary_envelope=13 occupied=6 occupied/envelope=0.46
+[bio-occupancy]   bio.yak envelope=192 hearth=68 seeded_landmasses=3 primary_landmass=2 primary_envelope=83 occupied=68 occupied/envelope=0.82
+[bio-occupancy]   bio.silkworm envelope=144 hearth=23 seeded_landmasses=1 primary_landmass=8 primary_envelope=57 occupied=23 occupied/envelope=0.40
+[bio-occupancy]   bio.reed envelope=148 hearth=31 seeded_landmasses=4 primary_landmass=8 primary_envelope=60 occupied=31 occupied/envelope=0.52
+[bio-occupancy]   bio.bast_fiber envelope=279 hearth=65 seeded_landmasses=1 primary_landmass=8 primary_envelope=136 occupied=65 occupied/envelope=0.48
+[bio-occupancy]   bio.dye_plant envelope=122 hearth=38 seeded_landmasses=2 primary_landmass=8 primary_envelope=53 occupied=38 occupied/envelope=0.72
+[bio-occupancy]   bio.medicinal_herb envelope=371 hearth=151 seeded_landmasses=5 primary_landmass=8 primary_envelope=168 occupied=151 occupied/envelope=0.90
+[bio-occupancy]   landmass 1 classes=cold_grazer, fiber_forest, dry_grazer, highland_food, open_food, open_grazer, fiber_open, forest_grazer foods=potato, wheat
+[bio-occupancy]   landmass 2 classes=cold_grazer, fiber_forest, dry_grazer, open_grazer, fiber_wet, forest_grazer, open_food, highland_food, fiber_open, wetland_food, tropical foods=wheat, potato, rice
+[bio-occupancy]   landmass 3 classes=none foods=none
+[bio-occupancy]   landmass 4 classes=none foods=none
+[bio-occupancy]   landmass 5 classes=none foods=none
+[bio-occupancy]   landmass 6 classes=wetland_food, forest_grazer, fiber_wet, fiber_forest, open_grazer, dry_grazer, fiber_open, tropical foods=rice
+[bio-occupancy]   landmass 7 classes=fiber_open, tropical, dry_grazer, open_food, open_grazer, fiber_forest, wetland_food, forest_grazer, fiber_wet foods=wheat, rice
+[bio-occupancy]   landmass 8 classes=tropical, fiber_open, forest_grazer, dry_grazer, open_food, fiber_forest, wetland_food, open_grazer, highland_food, fiber_wet, cold_grazer foods=maize, rice, potato
+[bio-occupancy]   landmass 9 classes=none foods=none
+[bio-occupancy]   landmass 10 classes=none foods=none
+[weather] gdext acceleration ON (class=DCWorldExt)
+[weather] gdext field commit ON
+[weather] gdext distribute ON
+[weather] gdext summary ON
+[weather] hexcell facade ON (skip AoS double-write in hot loop)
+[weather] gdext resident knobs ON (class=KnobsHandle)
+[economy] ACTIVE native graph cells=2400 goods=134 cohorts=24 epoch_days=1 trade=ACTIVE topology_ready=true topology_generation=1 bootstrap=starter_settlement_bootstrap_v9 founder_families=6 founder_people=6
+[country] ACTIVE native authority countries=6 cells=2400 generation=1
+[weather/knobs] resident KnobsHandle path ACTIVE — first to_*_knobs_dict hit (field_rebuild_count=1 expected ≤1; stable Hz target ≤1 Hz)
+[native_daily] ACTIVE: registered native_daily_sim + natural_resource_daily + bio_occupancy_daily; retained season_refresh + ocean_currents boundary jobs
+[DCSystemScheduler] topology: ["season_refresh", "trigger_runtime", "ideology_runtime", "effect_runtime", "modifier_daily", "gameplay_effect", "natural_resource_daily", "bio_occupancy_daily", "enum_atlas_upload", "ocean_currents", "native_daily_sim", "dynamic_visual_atlas_upload", "country_daily", "economy_daily"]
+WARNING: [runtime-climate-round] no ClimateDailySystem; SHADOW capture carries no shared pass input
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _build_runtime_climate_round_input (res://scripts/geography/map_generator.gd:4651)
+       [1] capture_runtime_inputs_for_worker (res://scripts/geography/map_generator.gd:2351)
+       [2] generate_world (res://scripts/game/world_runtime_host.gd:609)
+       [3] generate (res://scripts/geography/map_generator.gd:1606)
+       [4] _yield_generation_frame (res://scripts/geography/map_generator.gd:19867)
+WARNING: [runtime-worker] Ideology opinion publish deferred: ideology_opinion_snapshot_invalid
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _start_production_shadow_worker (res://scripts/game/world_runtime_host.gd:700)
+       [1] generate_world (res://scripts/game/world_runtime_host.gd:618)
+       [2] generate (res://scripts/geography/map_generator.gd:1606)
+       [3] _yield_generation_frame (res://scripts/geography/map_generator.gd:19867)
+[runtime-worker] production ACTIVE started mask=4095 auto_pod=true
+[runtime-day-wait] day=1 env_day=0 missing=0x3ff economy_input=-1
+[building-visual] intel_refresh requested=32 changed=1 known=1 catalog=400 resident=0 body=0 queued=0 zoom=1.000
+[DCSystemScheduler][RT] ocean_skip#1 tick=1 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[climate][publish] day=0 round_ran=1 prod_stage=0xff scalar_mask=0x7f alb=0 veg=0 fb=0 weather=0 sr=0 ok=1
+[climate/worker][b8] physics_knobs day=1 ready=0 missing=physics_knobs
+[climate-kernel][round] shared=1 ok=1 n_cells=2400 mask=0x1FF ran=0x1FF starved=0x0 knobs_cells=2400
+[DCSystemScheduler][RT] ocean_skip#2 tick=2 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[country][parity] worker_day=1 uncompared reference_range=-1..-1 depth=0
+[economy-mirror-cost] day=1 capture_ms=2.401 import_ms=4.376
+[climate/writeback][b8] day=1 vapor store0=0 map0=0 dirty_fields=42 applied=42
+[phys/knobs] projection ready: slp=31 wind=33 psi=26 up=10
+[climate/worker][b8] physics_knobs day=2 ready=1 missing=
+[climate/worker][b8] paw day=2 cell=68 moisture=0.717273 wb30=0 soil=0 paw=0.717273 zeros(water=1544 land=5) nonzero=851 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[climate/worker][b8] physics_knobs day=3 ready=1 missing=
+[climate/writeback][b8] day=2 vapor store0=0 map0=0 dirty_fields=52 applied=52
+[climate/worker][b8] paw day=3 cell=68 moisture=0.713445 wb30=0 soil=0 paw=0.713445 zeros(water=1544 land=7) nonzero=849 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[country][parity] worker_day=3 uncompared reference_range=2..2 depth=1
+[climate/worker][b8] physics_knobs day=4 ready=1 missing=
+[climate/worker][b8] paw day=4 cell=68 moisture=0.715537 wb30=0 soil=0 paw=0.715537 zeros(water=1544 land=7) nonzero=849 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[climate/writeback][b8] day=3 vapor store0=0 map0=0 dirty_fields=52 applied=52
+[climate/worker][b8] cyclone_gate day=4 input_enabled=0 force_env=0 effective=0
+[climate/worker][b8] weather_solve day=4 cells=2400 psi=1 vapor0=0.111992 precip0=0 cloud0=0.0423645 type0=0 field_init0=1
+[country][parity] worker_day=4 uncompared reference_range=2..2 depth=1
+[climate/worker][b8] physics_knobs day=5 ready=1 missing=
+[climate/worker][b8] paw day=5 cell=68 moisture=0.712839 wb30=-0.000135629 soil=0 paw=0.712751 zeros(water=1544 land=7) nonzero=849 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[climate/writeback][b8] day=4 vapor store0=0.111992 map0=0.111992 dirty_fields=54 applied=54
+[country][parity] worker_day=5 uncompared reference_range=2..2 depth=1
+[climate/worker][b8] physics_knobs day=6 ready=1 missing=
+[climate/worker][b8] paw day=6 cell=68 moisture=0.714411 wb30=-0.000135629 soil=-0.00032551 paw=0.714323 zeros(water=1544 land=7) nonzero=849 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[country][parity] worker_day=6 uncompared reference_range=2..2 depth=1
+[climate/worker][b8] paw day=7 cell=68 moisture=0.715066 wb30=-0.000135629 soil=-0.00032551 paw=0.714978 zeros(water=1544 land=7) nonzero=849 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[country][parity] worker_day=7 uncompared reference_range=2..2 depth=1
+[climate/worker][b8] paw day=8 cell=68 moisture=0.716287 wb30=-0.000135629 soil=-0.00032551 paw=0.716198 zeros(water=1544 land=7) nonzero=849 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[country][parity] worker_day=8 uncompared reference_range=2..2 depth=1
+[climate/worker][b8] paw day=9 cell=68 moisture=0.716762 wb30=-0.000135629 soil=-0.00032551 paw=0.716674 zeros(water=1544 land=7) nonzero=849 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[country][parity] worker_day=9 uncompared reference_range=2..2 depth=1
+[climate/worker][b8] paw day=10 cell=68 moisture=0.717692 wb30=-0.000135629 soil=-0.00032551 paw=0.717603 zeros(water=1544 land=7) nonzero=849 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[climate/worker][b8] paw day=11 cell=68 moisture=0.718054 wb30=-0.000135629 soil=-0.00032551 paw=0.717966 zeros(water=1544 land=7) nonzero=849 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[climate/worker][b8] paw day=12 cell=68 moisture=0.718762 wb30=-0.000135629 soil=-0.00032551 paw=0.718674 zeros(water=1544 land=7) nonzero=849 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[climate/worker][b8] cyclone_gate day=12 input_enabled=0 force_env=0 effective=0
+[climate/worker][b8] weather_solve day=12 cells=2400 psi=1 vapor0=0.102337 precip0=0 cloud0=0.0525773 type0=0 field_init0=1
+[climate/worker][b8] paw day=13 cell=68 moisture=0.719038 wb30=-0.000268148 soil=-0.00032551 paw=0.718864 zeros(water=1544 land=7) nonzero=849 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=0 hydrology=0
+[climate/worker][b8] weather_solve day=20 cells=2400 psi=1 vapor0=0.075403 precip0=0 cloud0=0.0379945 type0=0 field_init0=1
+[climate/worker][b8] weather_solve day=28 cells=2400 psi=1 vapor0=0.076304 precip0=0 cloud0=0.0583765 type0=0 field_init0=1
+[clock/step] delta=8.3ms speed=50x target=0.42d cap=1.08d/f cost=6.69ms ran=1 pulse=0.00ms loop=3.89ms full=4.18ms carry=0.34 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=2.33d/f cost=3.44ms ran=0 pulse=0.00ms loop=0.04ms full=0.35ms carry=0.73 barrier=
+[economy-open-finish] day=100 country=0.324 workset=0.021 fiscal=0.034 csr=0.005 recovery=0.001 vectors=0.680 audit=0.419 commands=0.000
+[economy-prelude-cost] day=100 ms=1.778 pending=0
+[economy-aggregate-cost] day=100 publish_ms=2.001 native_hash_ms=1.029
+[economy-ledger-cost] day=100 copy_ms=0.476 validate_ms=0.144 hash_ms=0.707 cohorts=384 markets=321600
+[economy-boundary-cost] day=100 formulas_ms=7.223 stages_ms=5.185 mirror_ms=2.787
+[runtime-day-cost] day=100 ok=1 ms=14.233
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=2.88d/f cost=2.78ms ran=0 pulse=0.00ms loop=0.00ms full=0.47ms carry=0.77 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=3.53d/f cost=2.27ms ran=0 pulse=0.00ms loop=0.00ms full=0.34ms carry=0.79 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.35d cap=1.96d/f cost=4.08ms ran=0 pulse=0.00ms loop=0.00ms full=0.32ms carry=0.80 barrier=
+[economy-open-finish] day=200 country=0.648 workset=0.033 fiscal=0.069 csr=0.004 recovery=0.001 vectors=1.240 audit=0.943 commands=0.001
+[economy-prelude-cost] day=200 ms=3.447 pending=0
+[economy-aggregate-cost] day=200 publish_ms=3.322 native_hash_ms=1.215
+[economy-ledger-cost] day=200 copy_ms=1.383 validate_ms=0.304 hash_ms=1.470 cohorts=384 markets=321600
+[economy-boundary-cost] day=200 formulas_ms=11.820 stages_ms=7.818 mirror_ms=5.650
+[runtime-day-cost] day=200 ok=1 ms=23.242
+[perf-record] start (start_tick=224 mode=CORE detail_period=1)
+[stage-c/client] recording mode=ACTIVE worker=ACTIVE seconds=60.00 output=D:/Godot/ProjectKeynes/Project.Keynes/tmp/economy_opt/soak_final_5
+[clock/step] delta=6.9ms speed=50x target=0.35d cap=2.36d/f cost=3.39ms ran=0 pulse=0.00ms loop=0.00ms full=0.23ms carry=0.79 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=1.70d/f cost=4.43ms ran=1 pulse=0.00ms loop=3.36ms full=3.54ms carry=0.19 barrier=
+[economy-open-finish] day=300 country=0.478 workset=0.028 fiscal=0.036 csr=0.005 recovery=0.001 vectors=0.799 audit=0.447 commands=0.000
+[economy-prelude-cost] day=300 ms=2.094 pending=0
+[economy-aggregate-cost] day=300 publish_ms=2.289 native_hash_ms=1.053
+[economy-ledger-cost] day=300 copy_ms=0.444 validate_ms=0.163 hash_ms=0.702 cohorts=384 markets=321600
+[economy-boundary-cost] day=300 formulas_ms=8.082 stages_ms=5.642 mirror_ms=2.612
+[runtime-day-cost] day=300 ok=1 ms=17.014
+[clock/step] delta=6.9ms speed=50x target=0.35d cap=6.73d/f cost=1.19ms ran=0 pulse=0.00ms loop=0.00ms full=0.34ms carry=0.92 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=4.07d/f cost=1.97ms ran=0 pulse=0.00ms loop=0.00ms full=0.30ms carry=0.43 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.35d cap=2.13d/f cost=3.75ms ran=0 pulse=0.00ms loop=0.00ms full=0.39ms carry=0.98 barrier=
+[economy-open-finish] day=400 country=0.359 workset=0.024 fiscal=0.035 csr=0.005 recovery=0.001 vectors=0.607 audit=0.469 commands=0.000
+[economy-prelude-cost] day=400 ms=1.845 pending=0
+[economy-aggregate-cost] day=400 publish_ms=2.162 native_hash_ms=1.205
+[economy-ledger-cost] day=400 copy_ms=0.790 validate_ms=0.177 hash_ms=1.017 cohorts=384 markets=321600
+[economy-boundary-cost] day=400 formulas_ms=7.928 stages_ms=5.796 mirror_ms=3.401
+[runtime-day-cost] day=400 ok=1 ms=15.065
+[clock/step] delta=6.9ms speed=50x target=0.35d cap=3.70d/f cost=2.16ms ran=0 pulse=0.00ms loop=0.00ms full=0.31ms carry=0.52 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=2.44d/f cost=3.28ms ran=0 pulse=0.00ms loop=0.00ms full=0.17ms carry=0.43 barrier=
+[economy-open-finish] day=500 country=0.303 workset=0.021 fiscal=0.030 csr=0.005 recovery=0.001 vectors=0.533 audit=0.403 commands=0.000
+[economy-prelude-cost] day=500 ms=1.564 pending=0
+[economy-aggregate-cost] day=500 publish_ms=1.932 native_hash_ms=0.915
+[economy-ledger-cost] day=500 copy_ms=0.399 validate_ms=0.141 hash_ms=0.881 cohorts=384 markets=321600
+[economy-boundary-cost] day=500 formulas_ms=6.864 stages_ms=5.053 mirror_ms=2.593
+[runtime-day-cost] day=500 ok=1 ms=13.341
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=2.04d/f cost=3.92ms ran=0 pulse=0.00ms loop=0.00ms full=0.30ms carry=0.80 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.35d cap=4.13d/f cost=1.94ms ran=0 pulse=0.00ms loop=0.00ms full=0.23ms carry=0.82 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.35d cap=2.66d/f cost=3.01ms ran=0 pulse=0.00ms loop=0.00ms full=0.19ms carry=0.65 barrier=
+[economy-open-finish] day=600 country=0.469 workset=0.019 fiscal=0.031 csr=0.004 recovery=0.001 vectors=0.517 audit=0.401 commands=0.000
+[economy-prelude-cost] day=600 ms=1.763 pending=0
+[economy-aggregate-cost] day=600 publish_ms=2.629 native_hash_ms=0.990
+[economy-ledger-cost] day=600 copy_ms=0.464 validate_ms=0.139 hash_ms=0.671 cohorts=384 markets=321600
+[economy-boundary-cost] day=600 formulas_ms=7.751 stages_ms=5.681 mirror_ms=2.437
+[runtime-day-cost] day=600 ok=1 ms=14.489
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=2.04d/f cost=3.94ms ran=1 pulse=0.00ms loop=4.02ms full=4.22ms carry=0.26 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=2.77d/f cost=3.08ms ran=1 pulse=0.00ms loop=3.82ms full=4.03ms carry=0.19 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=3.23d/f cost=2.48ms ran=0 pulse=0.00ms loop=0.00ms full=0.28ms carry=0.77 barrier=
+[economy-open-finish] day=700 country=0.315 workset=0.021 fiscal=0.032 csr=0.004 recovery=0.001 vectors=0.549 audit=0.436 commands=0.000
+[economy-prelude-cost] day=700 ms=1.631 pending=0
+[economy-aggregate-cost] day=700 publish_ms=2.851 native_hash_ms=1.040
+[economy-ledger-cost] day=700 copy_ms=0.488 validate_ms=0.152 hash_ms=0.698 cohorts=384 markets=321600
+[economy-boundary-cost] day=700 formulas_ms=8.338 stages_ms=6.446 mirror_ms=2.683
+[runtime-day-cost] day=700 ok=1 ms=15.035
+[clock/step] delta=6.9ms speed=50x target=0.35d cap=2.37d/f cost=3.38ms ran=0 pulse=0.00ms loop=0.00ms full=0.36ms carry=0.90 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=2.24d/f cost=3.57ms ran=0 pulse=0.00ms loop=0.00ms full=0.17ms carry=0.52 barrier=
+[economy-open-finish] day=800 country=0.302 workset=0.019 fiscal=0.030 csr=0.004 recovery=0.001 vectors=0.526 audit=0.405 commands=0.000
+[economy-prelude-cost] day=800 ms=1.534 pending=0
+[economy-aggregate-cost] day=800 publish_ms=1.991 native_hash_ms=0.979
+[economy-ledger-cost] day=800 copy_ms=0.458 validate_ms=0.138 hash_ms=0.689 cohorts=384 markets=321600
+[economy-boundary-cost] day=800 formulas_ms=7.056 stages_ms=5.276 mirror_ms=2.466
+[runtime-day-cost] day=800 ok=1 ms=12.746
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=1.79d/f cost=4.46ms ran=0 pulse=0.00ms loop=0.00ms full=0.19ms carry=0.90 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=4.65d/f cost=1.72ms ran=0 pulse=0.00ms loop=0.00ms full=0.28ms carry=0.86 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=7.96d/f cost=1.00ms ran=0 pulse=0.00ms loop=0.00ms full=0.25ms carry=0.41 barrier=
+[economy-open-finish] day=900 country=0.424 workset=0.028 fiscal=0.038 csr=0.005 recovery=0.001 vectors=0.748 audit=0.431 commands=0.001
+[economy-prelude-cost] day=900 ms=1.980 pending=0
+[economy-aggregate-cost] day=900 publish_ms=2.169 native_hash_ms=1.024
+[economy-ledger-cost] day=900 copy_ms=0.539 validate_ms=0.147 hash_ms=0.710 cohorts=384 markets=321600
+[economy-boundary-cost] day=900 formulas_ms=8.622 stages_ms=6.280 mirror_ms=2.648
+[runtime-day-cost] day=900 ok=1 ms=17.270
+[clock/step] delta=6.9ms speed=50x target=0.35d cap=8.00d/f cost=1.00ms ran=0 pulse=0.00ms loop=0.00ms full=0.30ms carry=0.95 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=6.62d/f cost=1.21ms ran=0 pulse=0.00ms loop=0.00ms full=0.21ms carry=0.63 barrier=
+[economy-open-finish] day=1000 country=0.342 workset=0.023 fiscal=0.033 csr=0.004 recovery=0.001 vectors=0.618 audit=0.435 commands=0.000
+[economy-prelude-cost] day=1000 ms=1.735 pending=0
+[economy-aggregate-cost] day=1000 publish_ms=2.673 native_hash_ms=1.039
+[economy-ledger-cost] day=1000 copy_ms=0.410 validate_ms=0.169 hash_ms=0.682 cohorts=384 markets=321600
+[economy-boundary-cost] day=1000 formulas_ms=8.757 stages_ms=6.752 mirror_ms=2.529
+[runtime-day-cost] day=1000 ok=1 ms=14.780
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=3.90d/f cost=1.72ms ran=1 pulse=0.00ms loop=0.40ms full=0.78ms carry=0.25 barrier=climate_input_capacity_day_barrier
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=2.20d/f cost=3.64ms ran=0 pulse=0.00ms loop=0.00ms full=0.20ms carry=0.94 barrier=
+[clock/step] delta=7.1ms speed=50x target=0.36d cap=1.52d/f cost=5.26ms ran=0 pulse=0.00ms loop=0.00ms full=0.20ms carry=0.85 barrier=
+[economy-open-finish] day=1100 country=0.567 workset=0.025 fiscal=0.033 csr=0.005 recovery=0.001 vectors=0.704 audit=0.496 commands=0.000
+[economy-prelude-cost] day=1100 ms=2.238 pending=0
+[economy-aggregate-cost] day=1100 publish_ms=2.821 native_hash_ms=1.065
+[economy-ledger-cost] day=1100 copy_ms=0.523 validate_ms=0.151 hash_ms=0.734 cohorts=384 markets=321600
+[economy-boundary-cost] day=1100 formulas_ms=9.062 stages_ms=6.556 mirror_ms=2.685
+[runtime-day-cost] day=1100 ok=1 ms=15.981
+[clock/step] delta=6.9ms speed=50x target=0.35d cap=5.96d/f cost=1.34ms ran=0 pulse=0.00ms loop=0.00ms full=0.30ms carry=0.93 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=2.75d/f cost=3.16ms ran=1 pulse=0.00ms loop=4.17ms full=4.46ms carry=0.07 barrier=
+[economy-open-finish] day=1200 country=0.340 workset=0.022 fiscal=0.032 csr=0.004 recovery=0.001 vectors=0.622 audit=0.440 commands=0.001
+[economy-prelude-cost] day=1200 ms=1.754 pending=0
+[economy-aggregate-cost] day=1200 publish_ms=3.360 native_hash_ms=1.040
+[economy-ledger-cost] day=1200 copy_ms=0.668 validate_ms=0.150 hash_ms=0.687 cohorts=384 markets=321600
+[economy-boundary-cost] day=1200 formulas_ms=9.218 stages_ms=7.201 mirror_ms=2.847
+[runtime-day-cost] day=1200 ok=1 ms=16.323
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=3.89d/f cost=2.40ms ran=1 pulse=0.00ms loop=3.75ms full=3.94ms carry=0.24 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.35d cap=3.25d/f cost=2.46ms ran=0 pulse=0.00ms loop=0.00ms full=0.23ms carry=0.65 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=2.16d/f cost=3.83ms ran=1 pulse=0.00ms loop=4.32ms full=4.72ms carry=0.23 barrier=
+[economy-open-finish] day=1300 country=0.478 workset=0.030 fiscal=0.015 csr=0.005 recovery=0.001 vectors=1.305 audit=1.121 commands=0.001
+[economy-prelude-cost] day=1300 ms=3.533 pending=0
+[economy-aggregate-cost] day=1300 publish_ms=2.358 native_hash_ms=1.856
+[economy-ledger-cost] day=1300 copy_ms=1.979 validate_ms=0.307 hash_ms=2.446 cohorts=384 markets=321600
+[economy-boundary-cost] day=1300 formulas_ms=12.095 stages_ms=8.281 mirror_ms=7.434
+[runtime-day-cost] day=1300 ok=1 ms=23.907
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=4.01d/f cost=1.99ms ran=0 pulse=0.00ms loop=0.00ms full=0.24ms carry=0.43 barrier=
+[clock/step] delta=6.7ms speed=50x target=0.33d cap=3.59d/f cost=2.84ms ran=1 pulse=0.00ms loop=5.27ms full=5.54ms carry=0.32 barrier=
+[economy-open-finish] day=1400 country=0.324 workset=0.023 fiscal=0.033 csr=0.005 recovery=0.001 vectors=0.885 audit=0.872 commands=0.001
+[economy-prelude-cost] day=1400 ms=2.552 pending=0
+[economy-aggregate-cost] day=1400 publish_ms=2.184 native_hash_ms=1.422
+[economy-ledger-cost] day=1400 copy_ms=0.829 validate_ms=0.300 hash_ms=1.288 cohorts=384 markets=321600
+[economy-boundary-cost] day=1400 formulas_ms=9.382 stages_ms=6.562 mirror_ms=3.875
+[runtime-day-cost] day=1400 ok=1 ms=16.866
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=1.66d/f cost=4.82ms ran=0 pulse=0.00ms loop=0.00ms full=0.23ms carry=0.37 barrier=
+[clock/step] delta=6.7ms speed=50x target=0.33d cap=3.73d/f cost=2.15ms ran=0 pulse=0.00ms loop=0.00ms full=0.30ms carry=0.83 barrier=
+[clock/step] delta=6.7ms speed=50x target=0.33d cap=6.00d/f cost=1.82ms ran=1 pulse=0.00ms loop=3.77ms full=3.98ms carry=0.13 barrier=
+[economy-open-finish] day=1500 country=0.321 workset=0.022 fiscal=0.033 csr=0.004 recovery=0.001 vectors=0.625 audit=0.429 commands=0.000
+[economy-prelude-cost] day=1500 ms=1.764 pending=0
+[economy-aggregate-cost] day=1500 publish_ms=2.350 native_hash_ms=1.137
+[economy-ledger-cost] day=1500 copy_ms=1.045 validate_ms=0.153 hash_ms=0.874 cohorts=384 markets=321600
+[economy-boundary-cost] day=1500 formulas_ms=8.208 stages_ms=6.183 mirror_ms=3.357
+[runtime-day-cost] day=1500 ok=1 ms=17.154
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=4.43d/f cost=1.80ms ran=0 pulse=0.00ms loop=0.00ms full=0.46ms carry=0.35 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=4.69d/f cost=1.70ms ran=0 pulse=0.00ms loop=0.00ms full=0.40ms carry=0.91 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=3.15d/f cost=2.82ms ran=1 pulse=0.00ms loop=3.92ms full=4.21ms carry=0.08 barrier=
+[economy-open-finish] day=1600 country=0.414 workset=0.025 fiscal=0.036 csr=0.005 recovery=0.001 vectors=0.828 audit=0.424 commands=0.001
+[economy-prelude-cost] day=1600 ms=2.043 pending=0
+[economy-aggregate-cost] day=1600 publish_ms=2.312 native_hash_ms=1.154
+[economy-ledger-cost] day=1600 copy_ms=0.571 validate_ms=0.151 hash_ms=0.760 cohorts=384 markets=321600
+[economy-boundary-cost] day=1600 formulas_ms=8.231 stages_ms=5.919 mirror_ms=2.712
+[runtime-day-cost] day=1600 ok=1 ms=14.769
+[clock/step] delta=6.7ms speed=50x target=0.33d cap=1.97d/f cost=4.05ms ran=0 pulse=0.00ms loop=0.00ms full=0.26ms carry=0.56 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=8.00d/f cost=0.67ms ran=1 pulse=0.00ms loop=0.45ms full=1.06ms carry=0.15 barrier=climate_input_capacity_day_barrier
+[economy-open-finish] day=1700 country=0.321 workset=0.022 fiscal=0.031 csr=0.005 recovery=0.001 vectors=0.646 audit=0.426 commands=0.000
+[economy-prelude-cost] day=1700 ms=1.737 pending=0
+[economy-aggregate-cost] day=1700 publish_ms=2.354 native_hash_ms=1.055
+[economy-ledger-cost] day=1700 copy_ms=0.504 validate_ms=0.146 hash_ms=0.720 cohorts=384 markets=321600
+[economy-boundary-cost] day=1700 formulas_ms=8.422 stages_ms=6.421 mirror_ms=2.645
+[runtime-day-cost] day=1700 ok=1 ms=15.123
+[clock/step] delta=6.9ms speed=50x target=0.35d cap=3.19d/f cost=2.51ms ran=0 pulse=0.00ms loop=0.00ms full=0.34ms carry=0.40 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=2.20d/f cost=3.64ms ran=0 pulse=0.00ms loop=0.00ms full=0.36ms carry=0.86 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.35d cap=2.17d/f cost=3.69ms ran=0 pulse=0.00ms loop=0.00ms full=0.18ms carry=0.41 barrier=
+[economy-open-finish] day=1800 country=0.350 workset=0.025 fiscal=0.034 csr=0.005 recovery=0.001 vectors=0.925 audit=0.500 commands=0.000
+[economy-prelude-cost] day=1800 ms=2.146 pending=0
+[economy-aggregate-cost] day=1800 publish_ms=2.906 native_hash_ms=1.008
+[economy-ledger-cost] day=1800 copy_ms=0.505 validate_ms=0.146 hash_ms=0.700 cohorts=384 markets=321600
+[economy-boundary-cost] day=1800 formulas_ms=9.312 stages_ms=6.912 mirror_ms=2.545
+[runtime-day-cost] day=1800 ok=1 ms=16.433
+[clock/step] delta=6.9ms speed=50x target=0.35d cap=1.78d/f cost=4.46ms ran=1 pulse=0.00ms loop=4.31ms full=4.53ms carry=0.02 barrier=
+[clock/step] delta=7.1ms speed=50x target=0.36d cap=7.61d/f cost=1.05ms ran=0 pulse=0.00ms loop=0.00ms full=0.24ms carry=0.87 barrier=
+[economy-open-finish] day=1900 country=0.318 workset=0.022 fiscal=0.032 csr=0.005 recovery=0.001 vectors=0.623 audit=0.427 commands=0.001
+[economy-prelude-cost] day=1900 ms=1.719 pending=0
+[economy-aggregate-cost] day=1900 publish_ms=2.561 native_hash_ms=1.300
+[economy-ledger-cost] day=1900 copy_ms=0.517 validate_ms=0.142 hash_ms=0.741 cohorts=384 markets=321600
+[economy-boundary-cost] day=1900 formulas_ms=8.700 stages_ms=6.717 mirror_ms=2.712
+[runtime-day-cost] day=1900 ok=1 ms=16.538
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=2.29d/f cost=3.49ms ran=0 pulse=0.00ms loop=0.00ms full=0.24ms carry=0.47 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=2.53d/f cost=3.25ms ran=1 pulse=0.00ms loop=3.55ms full=3.75ms carry=0.33 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=2.72d/f cost=2.94ms ran=0 pulse=0.00ms loop=0.00ms full=0.26ms carry=0.92 barrier=
+[economy-open-finish] day=2000 country=0.316 workset=0.021 fiscal=0.032 csr=0.005 recovery=0.001 vectors=0.700 audit=0.422 commands=0.000
+[economy-prelude-cost] day=2000 ms=1.835 pending=0
+[economy-aggregate-cost] day=2000 publish_ms=2.101 native_hash_ms=1.043
+[economy-ledger-cost] day=2000 copy_ms=0.465 validate_ms=0.214 hash_ms=0.919 cohorts=384 markets=321600
+[economy-boundary-cost] day=2000 formulas_ms=8.540 stages_ms=6.431 mirror_ms=2.894
+[runtime-day-cost] day=2000 ok=1 ms=14.952
+[clock/step] delta=6.9ms speed=50x target=0.35d cap=1.15d/f cost=6.56ms ran=1 pulse=0.00ms loop=5.04ms full=5.39ms carry=0.08 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.35d cap=4.04d/f cost=1.67ms ran=1 pulse=0.00ms loop=0.46ms full=0.65ms carry=0.06 barrier=climate_input_capacity_day_barrier
+[clock/step] delta=6.9ms speed=50x target=0.35d cap=2.67d/f cost=3.15ms ran=1 pulse=0.00ms loop=3.77ms full=4.15ms carry=0.14 barrier=
+[economy-open-finish] day=2100 country=0.311 workset=0.022 fiscal=0.032 csr=0.005 recovery=0.001 vectors=0.590 audit=0.429 commands=0.001
+[economy-prelude-cost] day=2100 ms=1.716 pending=0
+[economy-aggregate-cost] day=2100 publish_ms=2.205 native_hash_ms=1.675
+[economy-ledger-cost] day=2100 copy_ms=1.118 validate_ms=0.142 hash_ms=0.830 cohorts=384 markets=321600
+[economy-boundary-cost] day=2100 formulas_ms=8.753 stages_ms=6.780 mirror_ms=4.028
+[runtime-day-cost] day=2100 ok=1 ms=18.186
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=3.49d/f cost=2.29ms ran=0 pulse=0.00ms loop=0.00ms full=0.28ms carry=0.69 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.35d cap=8.00d/f cost=1.30ms ran=1 pulse=0.00ms loop=3.76ms full=3.96ms carry=0.21 barrier=
+[economy-open-finish] day=2200 country=0.338 workset=0.022 fiscal=0.032 csr=0.005 recovery=0.001 vectors=0.758 audit=0.449 commands=0.000
+[economy-prelude-cost] day=2200 ms=1.948 pending=0
+[economy-aggregate-cost] day=2200 publish_ms=3.379 native_hash_ms=1.110
+[economy-ledger-cost] day=2200 copy_ms=0.556 validate_ms=0.154 hash_ms=0.829 cohorts=384 markets=321600
+[economy-boundary-cost] day=2200 formulas_ms=10.256 stages_ms=8.018 mirror_ms=2.848
+[runtime-day-cost] day=2200 ok=1 ms=16.981
+[clock/step] delta=6.9ms speed=50x target=0.35d cap=5.39d/f cost=1.48ms ran=0 pulse=0.07ms loop=0.00ms full=0.36ms carry=0.03 barrier=climate_input_capacity_day_barrier
+[clock/step] delta=6.9ms speed=50x target=0.35d cap=3.90d/f cost=1.76ms ran=1 pulse=0.00ms loop=0.57ms full=0.85ms carry=0.08 barrier=climate_input_capacity_day_barrier
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=5.95d/f cost=1.34ms ran=0 pulse=0.00ms loop=0.00ms full=0.21ms carry=0.38 barrier=
+[economy-open-finish] day=2300 country=0.345 workset=0.023 fiscal=0.034 csr=0.005 recovery=0.001 vectors=0.606 audit=0.445 commands=0.000
+[economy-prelude-cost] day=2300 ms=1.763 pending=0
+[economy-aggregate-cost] day=2300 publish_ms=2.385 native_hash_ms=1.103
+[economy-ledger-cost] day=2300 copy_ms=0.822 validate_ms=0.163 hash_ms=0.843 cohorts=384 markets=321600
+[economy-boundary-cost] day=2300 formulas_ms=8.673 stages_ms=6.636 mirror_ms=3.153
+[runtime-day-cost] day=2300 ok=1 ms=16.368
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=8.00d/f cost=0.78ms ran=1 pulse=0.00ms loop=0.51ms full=0.76ms carry=0.27 barrier=climate_input_capacity_day_barrier
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=6.23d/f cost=1.91ms ran=1 pulse=0.00ms loop=4.42ms full=4.68ms carry=0.24 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.35d cap=3.35d/f cost=2.39ms ran=0 pulse=0.00ms loop=0.00ms full=0.30ms carry=0.96 barrier=
+[economy-open-finish] day=2400 country=0.353 workset=0.028 fiscal=0.032 csr=0.005 recovery=0.001 vectors=0.600 audit=0.472 commands=0.000
+[economy-prelude-cost] day=2400 ms=1.853 pending=0
+[economy-aggregate-cost] day=2400 publish_ms=3.357 native_hash_ms=1.197
+[economy-ledger-cost] day=2400 copy_ms=0.670 validate_ms=0.149 hash_ms=0.783 cohorts=384 markets=321600
+[economy-boundary-cost] day=2400 formulas_ms=10.260 stages_ms=8.120 mirror_ms=2.896
+[runtime-day-cost] day=2400 ok=1 ms=17.995
+[clock/step] delta=7.1ms speed=50x target=0.36d cap=3.81d/f cost=2.10ms ran=0 pulse=0.00ms loop=0.00ms full=0.29ms carry=0.87 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.35d cap=5.13d/f cost=1.56ms ran=0 pulse=0.00ms loop=0.00ms full=0.30ms carry=0.52 barrier=
+[economy-open-finish] day=2500 country=0.504 workset=0.029 fiscal=0.035 csr=0.005 recovery=0.001 vectors=1.007 audit=0.820 commands=0.001
+[economy-prelude-cost] day=2500 ms=2.755 pending=0
+[economy-aggregate-cost] day=2500 publish_ms=2.620 native_hash_ms=1.110
+[economy-ledger-cost] day=2500 copy_ms=1.380 validate_ms=0.216 hash_ms=0.830 cohorts=384 markets=321600
+[economy-boundary-cost] day=2500 formulas_ms=9.984 stages_ms=6.943 mirror_ms=3.701
+[runtime-day-cost] day=2500 ok=1 ms=17.831
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=8.00d/f cost=0.47ms ran=0 pulse=0.00ms loop=0.00ms full=0.33ms carry=0.51 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=2.47d/f cost=3.23ms ran=0 pulse=0.00ms loop=0.00ms full=0.24ms carry=0.74 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.35d cap=2.89d/f cost=2.77ms ran=0 pulse=0.00ms loop=0.00ms full=0.45ms carry=0.36 barrier=
+[economy-open-finish] day=2600 country=0.335 workset=0.022 fiscal=0.034 csr=0.005 recovery=0.001 vectors=0.654 audit=0.446 commands=0.001
+[economy-prelude-cost] day=2600 ms=1.827 pending=0
+[economy-aggregate-cost] day=2600 publish_ms=2.674 native_hash_ms=1.488
+[economy-ledger-cost] day=2600 copy_ms=0.471 validate_ms=0.155 hash_ms=0.757 cohorts=384 markets=321600
+[economy-boundary-cost] day=2600 formulas_ms=9.877 stages_ms=7.726 mirror_ms=2.721
+[runtime-day-cost] day=2600 ok=1 ms=16.413
+[clock/step] delta=6.7ms speed=50x target=0.33d cap=7.14d/f cost=1.12ms ran=0 pulse=0.00ms loop=0.00ms full=0.33ms carry=0.84 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=2.53d/f cost=3.16ms ran=0 pulse=0.00ms loop=0.00ms full=0.24ms carry=0.65 barrier=
+[economy-open-finish] day=2700 country=0.321 workset=0.024 fiscal=0.036 csr=0.005 recovery=0.001 vectors=0.599 audit=0.429 commands=0.001
+[economy-prelude-cost] day=2700 ms=1.752 pending=0
+[economy-aggregate-cost] day=2700 publish_ms=2.131 native_hash_ms=1.040
+[economy-ledger-cost] day=2700 copy_ms=0.816 validate_ms=0.151 hash_ms=1.005 cohorts=384 markets=321600
+[economy-boundary-cost] day=2700 formulas_ms=9.036 stages_ms=7.017 mirror_ms=3.795
+[runtime-day-cost] day=2700 ok=1 ms=18.156
+[clock/step] delta=6.9ms speed=50x target=0.35d cap=5.07d/f cost=1.58ms ran=0 pulse=0.00ms loop=0.00ms full=0.32ms carry=0.50 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.35d cap=6.95d/f cost=1.01ms ran=1 pulse=0.00ms loop=0.45ms full=0.65ms carry=0.31 barrier=climate_input_capacity_day_barrier
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=2.51d/f cost=3.19ms ran=0 pulse=0.00ms loop=0.00ms full=0.22ms carry=0.40 barrier=
+[economy-open-finish] day=2800 country=0.309 workset=0.024 fiscal=0.035 csr=0.005 recovery=0.001 vectors=0.558 audit=0.417 commands=0.000
+[economy-prelude-cost] day=2800 ms=1.697 pending=0
+[economy-aggregate-cost] day=2800 publish_ms=2.969 native_hash_ms=0.974
+[economy-ledger-cost] day=2800 copy_ms=0.501 validate_ms=0.138 hash_ms=0.761 cohorts=384 markets=321600
+[economy-boundary-cost] day=2800 formulas_ms=8.554 stages_ms=6.585 mirror_ms=2.570
+[runtime-day-cost] day=2800 ok=1 ms=14.502
+[clock/step] delta=6.7ms speed=50x target=0.33d cap=1.55d/f cost=5.35ms ran=1 pulse=0.00ms loop=6.09ms full=6.40ms carry=0.01 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.35d cap=8.00d/f cost=0.68ms ran=0 pulse=0.00ms loop=0.00ms full=0.31ms carry=0.45 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=2.49d/f cost=3.22ms ran=0 pulse=0.00ms loop=0.00ms full=0.23ms carry=0.51 barrier=
+[economy-open-finish] day=2900 country=0.316 workset=0.026 fiscal=0.035 csr=0.005 recovery=0.001 vectors=0.575 audit=0.418 commands=0.000
+[economy-prelude-cost] day=2900 ms=1.731 pending=0
+[economy-aggregate-cost] day=2900 publish_ms=2.368 native_hash_ms=1.068
+[economy-ledger-cost] day=2900 copy_ms=0.879 validate_ms=0.161 hash_ms=0.881 cohorts=384 markets=321600
+[economy-boundary-cost] day=2900 formulas_ms=8.530 stages_ms=6.547 mirror_ms=3.127
+[runtime-day-cost] day=2900 ok=1 ms=15.846
+[clock/step] delta=6.9ms speed=50x target=0.35d cap=8.00d/f cost=0.97ms ran=0 pulse=0.00ms loop=0.00ms full=0.25ms carry=0.90 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=6.44d/f cost=1.24ms ran=0 pulse=0.08ms loop=0.00ms full=0.49ms carry=0.25 barrier=climate_input_capacity_day_barrier
+[perf-record] exported rows=2738 cols=234 → D:/Godot/ProjectKeynes/Project.Keynes/tmp/economy_opt/soak_final_5/perf.csv
+[stage-c/client] complete mode=ACTIVE frames=8576 fast_ticks=2738 perf=D:/Godot/ProjectKeynes/Project.Keynes/tmp/economy_opt/soak_final_5/perf.csv
+ERROR: 44 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 16 RID allocations of type 'PN18TextServerAdvanced22ShapedTextDataAdvancedE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 986 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

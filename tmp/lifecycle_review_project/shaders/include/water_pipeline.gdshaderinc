@@ -1145,7 +1145,7 @@ vec3 apply_water_specials(vec3 col, SurfaceParams surface, int biome, int second
 //   land/water 共用同一份 evaluate_brdf；spec_max/min legacy 仅在
 //   USE_PBR_BRDF=0 时被使用。water 不再自己写 Blinn-Phong/Fresnel/spec 系数。
 // ─────────────────────────────────────────────────────────────────────
-vec3 shade_water_surface(SurfaceParams surface, int biome, int secondary_biome, float edge_mix, vec2 wp, int quality, vec2 uv, float lat_signed) {
+vec3 shade_water_surface(SurfaceParams surface, int biome, int secondary_biome, float edge_mix, vec2 wp, int quality, vec2 uv, float lat_signed, float w_ice) {
 	// [cylindrical-earth-daylight] 逐像素经纬度日照：水体夜染/specials 同样改吃太阳高度角。
 	float pixel_night = day_night_enabled ? (1.0 - solar_day_factor(compute_solar_elevation(uv, lat_signed))) : 0.0;
 	// [tod-latitude-sun 2026-06-25] 波光 / 高光跟随太阳方向；
@@ -1155,10 +1155,12 @@ vec3 shade_water_surface(SurfaceParams surface, int biome, int secondary_biome, 
 			: compute_global_parallel_sun_dir();
 	LightingContext lc = make_lighting_context(AMBIENT_FLOOR_WATER, uv, lat_signed);
 	// 当前 terrain_horizon_tex 以底部 height_buffer 烘焙。开放水面保留这种“海底投影”美术效果；
-	// 海冰应表现为海平面/冰面接收光，不显示海底起伏阴影，因此在海冰 biome 上关闭底部 horizon。
-	if (water_static_type_mix(biome, secondary_biome, edge_mix, B_SEA_ICE) > 0.5) {
-		lc.direct_shadow = 1.0;
-	}
+	// 海冰应表现为海平面/冰面接收光，不显示海底起伏阴影。颜色已经按连续 ice fraction
+	// 混合；光照若只在 terrain==SEA_ICE 的 0.68 门槛上硬切，冰缘会在发白和海底阴影之间闪。
+	float ice_cover = max(
+		water_static_type_mix(biome, secondary_biome, edge_mix, B_SEA_ICE),
+		clamp(w_ice, 0.0, 1.0));
+	lc.direct_shadow = mix(lc.direct_shadow, 1.0, smoothstep(0.22, 0.72, ice_cover));
 	if (terrain_horizon_debug_view == 1) {
 		return vec3(clamp((1.0 - lc.direct_shadow) * lc.local_day, 0.0, 1.0));
 	}
@@ -1224,7 +1226,7 @@ vec3 render_water_pipeline_raw(
 	surface = apply_water_overlay_surface(
 		surface, biome, secondary_biome, edge_mix, elev, wp, uv, wind_v);
 	return shade_water_surface(
-		surface, biome, secondary_biome, edge_mix, wp, visual_quality, uv, lat_signed);
+		surface, biome, secondary_biome, edge_mix, wp, visual_quality, uv, lat_signed, dyn_ice_frac);
 }
 
 vec3 render_water_pipeline(

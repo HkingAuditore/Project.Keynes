@@ -434,6 +434,10 @@ public:
                                   std::string &error);
     bool configure_modifier_pod(const RuntimeModifierPodCatalog &catalog,
                                 std::string &error);
+    // Bind Modifier definition_key hashes (Effect FNV) → dense definition_id.
+    // Required for Effect MODIFIER intents whose catalog payload_i0 is unset.
+    void set_modifier_definition_key_hashes(
+            const std::vector<std::pair<uint64_t, int32_t>> &entries);
     bool encode_modifier_pod_save(std::vector<uint8_t> &bytes,
                                   std::string &error) const;
     bool restore_modifier_pod_save(const uint8_t *bytes, size_t size,
@@ -503,12 +507,13 @@ public:
             std::string &error);
     bool effect_pod_instance_fire_acked(int64_t instance_id,
                                         uint32_t generation) const;
-    // Rate-limited stderr dump of why a technology Effect instance has not
-    // fire-ACKed yet. Diagnostic only; no state is mutated.
-    void debug_log_effect_pod_technology_state(int64_t instance_id,
-                                               uint32_t generation,
-                                               int32_t program_id,
-                                               int32_t technology) const;
+    // Describes why a technology Effect instance has not fire-ACKed yet. The
+    // caller prints it through Godot so the text reaches the editor Output
+    // panel; this translation unit stays free of Godot headers.
+    std::string describe_effect_pod_technology_state(int64_t instance_id,
+                                                     uint32_t generation,
+                                                     int32_t program_id,
+                                                     int32_t technology) const;
     bool configure_ideology_pod(const RuntimeIdeologyPodCatalog &catalog,
                                 std::string &error);
     bool publish_ideology_opinion_snapshot(
@@ -759,6 +764,10 @@ private:
     bool execute_effect_worker_stage(int64_t day, uint64_t input_generation,
                                      RuntimeDayCommit &commit,
                                      std::string &error);
+    // Apply queued instance/metric/remove/ACK transport without planning a day.
+    // Soft-skip and climate-park paths must call this so main-thread ENSURE
+    // registrations are not stranded in `_effect_instance_queue`.
+    bool drain_effect_transport_queues(std::string &error);
     // E8: shared Modifier POD stage for SHADOW diagnostics and ACTIVE
     // production. authority_plan is non-null only on SHADOW (fixture ACK /
     // domain-runner commit). ACTIVE passes nullptr. Failure isolates
@@ -771,6 +780,16 @@ private:
             RuntimeDomainAuthorityPlan *authority_plan,
             std::string &authority_error,
             std::string &error);
+    // Resolve Effect MODIFIER intent → Modifier definition_id via key hash.
+    int32_t resolve_modifier_definition_id_for_effect_intent(
+            const RuntimeDomainIntent &intent) const;
+    // Rebuild day-local Effect intents for COMMITTED transactions still missing
+    // ACKs (day-lane retry soft-skip must not drop the Modifier handoff).
+    void reemit_effect_committed_pending_intents(int64_t day);
+    // PUBLISH_EVENT intents do not go through Modifier; ACK them in-worker so
+    // technology activation is not pinned on the main-thread Effect pump.
+    uint32_t ack_effect_events_intents_in_worker(
+            const std::vector<RuntimeDomainIntent> &intents);
     void publish_country_command_terminals(
             const std::vector<RuntimeCountryCommand> &commands,
             CountryCommandReceiptCode code, uint64_t generation,
@@ -1268,6 +1287,8 @@ private:
     RuntimeModifierPodAuthority _modifier_pod_authority;
     RuntimeModifierPodCatalog _modifier_pod_catalog;
     bool _modifier_pod_configured = false;
+    // Effect command definition_key_hash → Modifier POD definition_id.
+    std::unordered_map<uint64_t, int32_t> _modifier_definition_id_by_key_hash;
     RuntimeModifierSnapshotRing _modifier_snapshots;
     std::atomic<bool> _modifier_pod_ready{false};
     std::atomic<double> _modifier_pod_plan_ms{0.0};

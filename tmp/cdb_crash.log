@@ -1,0 +1,1163 @@
+﻿
+Microsoft (R) Windows Debugger Version 10.0.22621.755 AMD64
+Copyright (c) Microsoft Corporation. All rights reserved.
+
+CommandLine: D:\Godot\Godot_v4.6.2-stable_win64.exe\Godot_v4.6.2-stable_win64_console.exe --headless --path Project\project-keynes
+
+************* Path validation summary **************
+Response                         Time (ms)     Location
+Deferred                                       srv*
+OK                                             D:\Godot\ProjectKeynes\Project.Keynes\Project\project-keynes\addons\dots_ext\bin\windows
+Symbol search path is: srv*;D:\Godot\ProjectKeynes\Project.Keynes\Project\project-keynes\addons\dots_ext\bin\windows
+Executable search path is: 
+ModLoad: 00007ff6`ad7a0000 00007ff6`ad7d5000   image00007ff6`ad7a0000
+ModLoad: 00007ffa`e1050000 00007ffa`e1268000   ntdll.dll
+ModLoad: 00007ffa`def80000 00007ffa`df044000   C:\Windows\System32\KERNEL32.DLL
+ModLoad: 00007ffa`de190000 00007ffa`de563000   C:\Windows\System32\KERNELBASE.dll
+ModLoad: 00007ffa`ded00000 00007ffa`deda7000   C:\Windows\System32\msvcrt.dll
+ModLoad: 00007ffa`dfaf0000 00007ffa`e038c000   C:\Windows\System32\SHELL32.dll
+ModLoad: 00007ffa`de8a0000 00007ffa`de93a000   C:\Windows\System32\msvcp_win.dll
+ModLoad: 00007ffa`de940000 00007ffa`dea51000   C:\Windows\System32\ucrtbase.dll
+ModLoad: 00007ffa`df930000 00007ffa`dfae2000   C:\Windows\System32\USER32.dll
+ModLoad: 00007ffa`de160000 00007ffa`de186000   C:\Windows\System32\win32u.dll
+ModLoad: 00007ffa`df500000 00007ffa`df529000   C:\Windows\System32\GDI32.dll
+ModLoad: 00007ffa`debd0000 00007ffa`deceb000   C:\Windows\System32\gdi32full.dll
+ModLoad: 00007ffa`de6b0000 00007ffa`de7ef000   C:\Windows\System32\wintypes.dll
+ModLoad: 00007ffa`df590000 00007ffa`df921000   C:\Windows\System32\combase.dll
+ModLoad: 00007ffa`dee60000 00007ffa`def78000   C:\Windows\System32\RPCRT4.dll
+ModLoad: 00007ffa`df400000 00007ffa`df469000   C:\Windows\System32\SHLWAPI.dll
+ModLoad: 00007ffa`d6a20000 00007ffa`d6a2a000   C:\Windows\SYSTEM32\VERSION.dll
+ModLoad: 00007ffa`e0650000 00007ffa`e0681000   C:\Windows\System32\IMM32.DLL
+ModLoad: 00007ffa`dedb0000 00007ffa`dee58000   C:\Windows\System32\sechost.dll
+ModLoad: 00007ffa`de870000 00007ffa`de898000   C:\Windows\System32\bcrypt.dll
+ModLoad: 00007ff9`bb4a0000 00007ff9`bb571000   C:\Program Files (x86)\iOA\module\DataProtection\TxUmon64.dll
+ModLoad: 00007ffa`e0590000 00007ffa`e0641000   C:\Windows\System32\ADVAPI32.dll
+ModLoad: 00007ffa`decf0000 00007ffa`decf8000   C:\Windows\System32\PSAPI.DLL
+ModLoad: 00007ffa`dea60000 00007ffa`debc8000   C:\Windows\System32\CRYPT32.dll
+ModLoad: 00007ffa`d9190000 00007ffa`d919b000   C:\Windows\system32\FltLib.dll
+ModLoad: 00007ffa`de570000 00007ffa`de5ec000   C:\Windows\System32\WINTRUST.DLL
+ModLoad: 00007ffa`dda50000 00007ffa`dda62000   C:\Windows\SYSTEM32\MSASN1.dll
+ModLoad: 00007ffa`d42e0000 00007ffa`d4314000   C:\Windows\system32\Winmm.dll
+
+************* Path validation summary **************
+Response                         Time (ms)     Location
+Deferred                                       srv*
+OK                                             D:\Godot\ProjectKeynes\Project.Keynes\Project\project-keynes\addons\dots_ext\bin\windows
+Symbol search path is: srv*;D:\Godot\ProjectKeynes\Project.Keynes\Project\project-keynes\addons\dots_ext\bin\windows
+Executable search path is: 
+ModLoad: 00007ff6`1fd20000 00007ff6`2a343000   godot.windows.editor.x86_64.exe
+ModLoad: 00007ffa`8fcc0000 00007ffa`8fcda000   C:\Windows\system32\Avicap32.dll
+ModLoad: 00007ffa`e1050000 00007ffa`e1268000   ntdll.dll
+ModLoad: 00007ffa`7ceb0000 00007ffa`7cedb000   C:\Windows\SYSTEM32\MSVFW32.dll
+ModLoad: 00007ffa`def80000 00007ffa`df044000   C:\Windows\System32\KERNEL32.DLL
+ModLoad: 00007ffa`c45d0000 00007ffa`c486c000   C:\Windows\WinSxS\amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.22621.6060_none_2712eda17382d24b\COMCTL32.dll
+ModLoad: 00007ffa`de190000 00007ffa`de563000   C:\Windows\System32\KERNELBASE.dll
+ModLoad: 00007ffa`df590000 00007ffa`df921000   C:\Windows\System32\combase.dll
+ModLoad: 00007ffa`e0570000 00007ffa`e058f000   C:\Windows\System32\imagehlp.dll
+ModLoad: 00007ffa`de940000 00007ffa`dea51000   C:\Windows\System32\ucrtbase.dll
+ModLoad: 00007ffa`b1d70000 00007ffa`b1d7b000   C:\Windows\system32\KtmW32.dll
+ModLoad: 00007ffa`dee60000 00007ffa`def78000   C:\Windows\System32\RPCRT4.dll
+ModLoad: 00007ffa`dda00000 00007ffa`dda1b000   C:\Windows\SYSTEM32\CRYPTSP.dll
+ModLoad: 00007ffa`c4520000 00007ffa`c45c8000   C:\Windows\system32\winspool.drv
+ModLoad: 00007ffa`e0ee0000 00007ffa`e0fe4000   C:\Windows\System32\shcore.dll
+ModLoad: 00007ffa`dd150000 00007ffa`dd187000   C:\Windows\system32\rsaenh.dll
+ModLoad: 00007ffa`dcfd0000 00007ffa`dcfe4000   C:\Windows\system32\wtsapi32.dll
+ModLoad: 00007ffa`dd9e0000 00007ffa`dd9ec000   C:\Windows\SYSTEM32\CRYPTBASE.dll
+ModLoad: 00007ffa`dcc10000 00007ffa`dcc3d000   C:\Windows\system32\Iphlpapi.dll
+ModLoad: 00007ffa`de7f0000 00007ffa`de86b000   C:\Windows\System32\bcryptPrimitives.dll
+ModLoad: 00007ffa`df050000 00007ffa`df128000   C:\Windows\System32\oleaut32.dll
+ModLoad: 00007ffa`de8a0000 00007ffa`de93a000   C:\Windows\System32\msvcp_win.dll
+ModLoad: 00007ffa`b1610000 00007ffa`b1b0e000   C:\Windows\system32\Wininet.dll
+ModLoad: 00007ffa`df930000 00007ffa`dfae2000   C:\Windows\System32\user32.dll
+ModLoad: 00007ffa`9f0b0000 00007ffa`9f4fa000   C:\Windows\SYSTEM32\uiautomationcore.dll
+ModLoad: 00007ffa`de160000 00007ffa`de186000   C:\Windows\System32\win32u.dll
+ModLoad: 00007ffa`df500000 00007ffa`df529000   C:\Windows\System32\GDI32.dll
+ModLoad: 00007ffa`debd0000 00007ffa`deceb000   C:\Windows\System32\gdi32full.dll
+ModLoad: 00007ffa`e0590000 00007ffa`e0641000   C:\Windows\System32\ADVAPI32.dll
+ModLoad: 00007ffa`ded00000 00007ffa`deda7000   C:\Windows\System32\msvcrt.dll
+ModLoad: 00007ffa`dedb0000 00007ffa`dee58000   C:\Windows\System32\sechost.dll
+ModLoad: 00007ffa`de870000 00007ffa`de898000   C:\Windows\System32\bcrypt.dll
+ModLoad: 00007ffa`dea60000 00007ffa`debc8000   C:\Windows\System32\CRYPT32.dll
+ModLoad: 00007ffa`d6d50000 00007ffa`d6d5b000   C:\Windows\SYSTEM32\AVRT.dll
+ModLoad: 00007ffa`e0650000 00007ffa`e0681000   C:\Windows\System32\IMM32.dll
+ModLoad: 00007ffa`dbc20000 00007ffa`dbe53000   C:\Windows\SYSTEM32\dbghelp.dll
+ModLoad: 00007ffa`e0d30000 00007ffa`e0ed1000   C:\Windows\System32\ole32.dll
+ModLoad: 00007ffa`d7d90000 00007ffa`d8008000   C:\Windows\SYSTEM32\DWrite.dll
+ModLoad: 00007ffa`e0ee0000 00007ffa`e0fe4000   C:\Windows\System32\SHCORE.dll
+ModLoad: 00007ffa`dacd0000 00007ffa`dadc7000   C:\Windows\SYSTEM32\dxgi.dll
+ModLoad: 00007ffa`dfaf0000 00007ffa`e038c000   C:\Windows\System32\SHELL32.dll
+ModLoad: 00007ffa`dadf0000 00007ffa`dae1b000   C:\Windows\SYSTEM32\dwmapi.dll
+ModLoad: 00007ffa`dc940000 00007ffa`dc94e000   C:\Windows\SYSTEM32\HID.DLL
+ModLoad: 00007ffa`dcc10000 00007ffa`dcc3d000   C:\Windows\SYSTEM32\IPHLPAPI.DLL
+ModLoad: 00007ffa`de6b0000 00007ffa`de7ef000   C:\Windows\System32\wintypes.dll
+ModLoad: 00007ffa`df400000 00007ffa`df469000   C:\Windows\System32\SHLWAPI.dll
+ModLoad: 00007ffa`e0390000 00007ffa`e0401000   C:\Windows\System32\WS2_32.dll
+ModLoad: 00007ffa`d42e0000 00007ffa`d4314000   C:\Windows\SYSTEM32\WINMM.dll
+ModLoad: 00007ffa`bec60000 00007ffa`bec69000   C:\Windows\SYSTEM32\WSOCK32.dll
+ModLoad: 00007ffa`de7f0000 00007ffa`de86b000   C:\Windows\System32\bcryptPrimitives.dll
+ModLoad: 00007ff9`bb4a0000 00007ff9`bb571000   C:\Program Files (x86)\iOA\module\DataProtection\TxUmon64.dll
+ModLoad: 00007ffa`decf0000 00007ffa`decf8000   C:\Windows\System32\PSAPI.DLL
+ModLoad: 00007ffa`d6a20000 00007ffa`d6a2a000   C:\Windows\SYSTEM32\VERSION.dll
+ModLoad: 00007ffa`854f0000 00007ffa`85536000   C:\Windows\SYSTEM32\dinput8.dll
+ModLoad: 00007ffa`d9190000 00007ffa`d919b000   C:\Windows\system32\FltLib.dll
+ModLoad: 00007ffa`de570000 00007ffa`de5ec000   C:\Windows\System32\WINTRUST.DLL
+ModLoad: 00007ffa`dda50000 00007ffa`dda62000   C:\Windows\SYSTEM32\MSASN1.dll
+ModLoad: 00007ffa`dd1f0000 00007ffa`dd208000   C:\Windows\SYSTEM32\kernel.appcore.dll
+ModLoad: 00007ffa`8fcc0000 00007ffa`8fcda000   C:\Windows\system32\Avicap32.dll
+ModLoad: 00007ffa`7ceb0000 00007ffa`7cedb000   C:\Windows\SYSTEM32\MSVFW32.dll
+ModLoad: 00007ffa`c45d0000 00007ffa`c486c000   C:\Windows\WinSxS\amd64_microsoft.windows.common-controls_6595b64144ccf1df_6.0.22621.6060_none_2712eda17382d24b\COMCTL32.dll
+ModLoad: 00007ffa`daba0000 00007ffa`dac53000   C:\Windows\system32\uxtheme.dll
+ModLoad: 00007ffa`e0570000 00007ffa`e058f000   C:\Windows\System32\imagehlp.dll
+ModLoad: 00007ffa`b1d70000 00007ffa`b1d7b000   C:\Windows\system32\KtmW32.dll
+ModLoad: 00007ffa`dda00000 00007ffa`dda1b000   C:\Windows\SYSTEM32\CRYPTSP.dll
+ModLoad: 00007ffa`c4520000 00007ffa`c45c8000   C:\Windows\system32\winspool.drv
+ModLoad: 00007ffa`dd150000 00007ffa`dd187000   C:\Windows\system32\rsaenh.dll
+ModLoad: 00007ffa`dcfd0000 00007ffa`dcfe4000   C:\Windows\system32\wtsapi32.dll
+ModLoad: 00007ffa`dd9e0000 00007ffa`dd9ec000   C:\Windows\SYSTEM32\CRYPTBASE.dll
+ModLoad: 00007ffa`b1610000 00007ffa`b1b0e000   C:\Windows\system32\Wininet.dll
+ModLoad: 00007ffa`b6560000 00007ffa`b6775000   C:\Windows\SYSTEM32\inputhost.dll
+ModLoad: 00007ffa`d95e0000 00007ffa`d9713000   C:\Windows\SYSTEM32\CoreMessaging.dll
+Invalid parameter passed to C runtime function.
+ModLoad: 00007ffa`32c20000 00007ffa`336da000   D:\Godot\ProjectKeynes\Project.Keynes\Project\project-keynes\addons\dots_ext\bin\windows\dots_ext.windows.template_debug.x86_64.dll
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[save-repository] slot directory overridden to C:\Users\HKINGH~1\AppData\Local\Temp\pk-replay-direct
+[save-replay] slot=manual_3 days=20 speed=5.0 day_timeout=60000ms
+[ui-layout-diag/bind_ui] is_web=false viewport_visible_rect=[P: (0.0, 0.0), S: (51.2, 51.2)] window_size=(64, 64) content_scale_factor=1.250 content_scale_mode=0 device_pixel_ratio=-1.000 top_bar_rect=[P: (0.0, 0.0), S: (543.0, 56.0)] right_panel_rect=[P: (-408.8, 68.0), S: (460.0, 366.0)] country_action_bar_rect=[P: (8.0, -30.8), S: (336.0, 74.0)]
+[building-visual] queue_probe ticks=1 queued=0 chunk=-1 camera_rect=[P: (-25.6, -25.6), S: (51.2, 51.2)] prefetch=false zoom=1.000
+[building-visual] queue_probe ticks=2 queued=0 chunk=-1 camera_rect=[P: (-25.6, -25.6), S: (51.2, 51.2)] prefetch=false zoom=1.000
+[native_generation/base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=1120 native_ms=5.214 water=504 land=616
+[native_generation/post_base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=1120 native_ms=2.005 lakes=9 rivers=103 volcanoes=0
+[native_generation/vegetation] native_ms=0.891 candidates=608 none=357 score=[0.272,1.023,1.090] plant_water_land=615 river_adjacent_desert=0 coastal_highland_desert=2 terrain_weight=[0.180,1.200]
+[native_generation/qa] single_water=0 tiny<=3=0 small<=5=0 bodies=3 largest=389 | land_below_sea=0.0% | terr_distinct=24 entropy=3.584bit | river_ratio=9.196%
+MapGenerator v7: per-cell 167ms (1120 cells, path=gdext)
+[building-visual] queue_probe ticks=3 queued=0 chunk=-1 camera_rect=[P: (-25.6, -25.6), S: (51.2, 51.2)] prefetch=false zoom=1.000
+MapBaker v6: hm=(1024, 642) seed=20260727
+    [fused] terrain=139.4ms erosion=3.8ms(ok=true) river=16.9ms(ok=true) latitude=0.1ms coast_sdf=7.8ms(ok=true)
+  geometry fields (fused C++): 258ms
+  physical circulation hex solve: deferred until DCWorldExt bind (ext=true idx=true soa=false)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+  visual tiles: {"degradation_reason":"","effective_budget_px":848256,"effective_texels_per_hex":16.2265688080802,"effective_world_units_per_texel":"(1.351245, 1.360372)","estimated_peak_bytes":33789600,"estimated_resident_bytes":19927200,"fallback_reason":"","generation_id":1,"grid_size":"(3, 2)","gutter_px":2,"hex_size":22.0,"horizon_path":"neutral_pending","interior_size":"(376, 376)","layer_size":"(380, 380)","layers":[{"bake_ms":75.3232,"coast_sdf_max_dist_px":9.40103277785189,"distance_scale":1.17512909723149,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":1331980989861818153,"edge_neighbor":-3517305477631569988,"height":-7734456765340829180,"map_index":2471150391189411876,"terrain_detail":-7896135271980547499,"terrain_normal":-7630767749991322152,"water_depth":2076619412556309755},"layer":0,"normal_radius_px":"(22, 22)","raster_scale":"(1.178931, 1.17134)","river_sdf_max_dist_px":4.1129518403102,"shore_carve_band_px":7,"upload_ms":0.067,"wall_ms":78.449},{"bake_ms":105.9657,"coast_sdf_max_dist_px":9.40103277785189,"distance_scale":1.17512909723149,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-4404186102207389821,"edge_neighbor":8031397941280547614,"height":-5112742647955150763,"map_index":-162998467747474203,"terrain_detail":-91899755108792190,"terrain_normal":-2429532485970796889,"water_depth":2746268769570086758},"layer":1,"normal_radius_px":"(22, 22)","raster_scale":"(1.178931, 1.17134)","river_sdf_max_dist_px":4.1129518403102,"shore_carve_band_px":7,"upload_ms":0.077,"wall_ms":109.754},{"bake_ms":85.6785,"coast_sdf_max_dist_px":9.40103277785189,"distance_scale":1.17512909723149,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":7048720510494367534,"edge_neighbor":-1582934492763185784,"height":-4698155937780020362,"map_index":3963826210735776191,"terrain_detail":-1744931525476400408,"terrain_normal":-6832414917448938308,"water_depth":-4425523581872067304},"layer":2,"normal_radius_px":"(22, 22)","raster_scale":"(1.178931, 1.17134)","river_sdf_max_dist_px":4.1129518403102,"shore_carve_band_px":7,"upload_ms":0.076,"wall_ms":89.303},{"bake_ms":99.2675,"coast_sdf_max_dist_px":9.40103277785189,"distance_scale":1.17512909723149,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-6571001341703980542,"edge_neighbor":72796547103075503,"height":73997928745604571,"map_index":8369754197168460167,"terrain_detail":5867828221263733156,"terrain_normal":-3874874967494667562,"water_depth":4946403991976629452},"layer":3,"normal_radius_px":"(22, 22)","raster_scale":"(1.178931, 1.17134)","river_sdf_max_dist_px":4.1129518403102,"shore_carve_band_px":7,"upload_ms":0.069,"wall_ms":103.199},{"bake_ms":110.6269,"coast_sdf_max_dist_px":9.40103277785189,"distance_scale":1.17512909723149,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-3778547524298188173,"edge_neighbor":8179792630409943932,"height":7330316109307143672,"map_index":7674762573241441093,"terrain_detail":-3970662104026916362,"terrain_normal":-3249071958028052071,"water_depth":-1419113809059234939},"layer":4,"normal_radius_px":"(22, 22)","raster_scale":"(1.178931, 1.17134)","river_sdf_max_dist_px":4.1129518403102,"shore_carve_band_px":7,"upload_ms":0.069,"wall_ms":114.789},{"bake_ms":88.4086,"coast_sdf_max_dist_px":9.40103277785189,"distance_scale":1.17512909723149,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-7229601916608515461,"edge_neighbor":245592255026156022,"height":-4977902427230268184,"map_index":7662757603411044879,"terrain_detail":963001483344456992,"terrain_normal":-7187680349342004486,"water_depth":-642644595805670792},"layer":5,"normal_radius_px":"(22, 22)","raster_scale":"(1.178931, 1.17134)","river_sdf_max_dist_px":4.1129518403102,"shore_carve_band_px":7,"upload_ms":0.066,"wall_ms":92.959}],"logical_size":"(1128, 752)","mode":"tiled","path":"visual_tiled_static","profile":"desktop_high","renderer":"mobile","requested_budget_px":825096,"requested_texels_per_hex":16.0,"requested_tile_world_span":"(704.0, 704.0)","requested_world_units_per_texel":1.375,"tile_world_area":259876.903381348,"tile_world_span":"(508.0682, 511.5)","total_ms":592.751,"visual_domain":"[P: (0.0, -44.0), S: (1524.205, 1023.0)]","wrap_period_x":1524.20471066061,"wrap_x":true}
+cdb.exe : WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_material
+s/organic.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+所在位置 C:\Users\hkinghuang\AppData\Local\Temp\ps-script-c3fec6e3-6973-4bb5-a9d1-8aff21999903.ps1:96 字符: 1
++ & $cdb -g -G -o -y $sym -c "sxe av; g; .ecxr; kn 40; ~*kc 12; q" 'D:\ ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (WARNING: Loaded... as a resource.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1225)
+core/io/image.cpp:2756 - Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/organic.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/dry_sand
+.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1225)
+core/io/image.cpp:2756 - Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/dry_sand.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/rock.png
+'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1225)
+core/io/image.cpp:2756 - Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/rock.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/snow_wet
+.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1225)
+core/io/image.cpp:2756 - Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/snow_wet.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+  cell LUT encode: deferred until DCWorldExt bind
+  encode: 3251ms
+MapBaker v6: total 3520ms
+MapGenerator v7: bake 3553ms
+MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)
+MapGenerator: skip _compute_terrain_perturbed_wind (physical-hex solver writes per-cell)
+[SUS] sim budget strict=false frame=8.00ms warn=2.00ms slice=0.75ms upload=1.50ms scheduler=DCSystemScheduler native_sus=auto
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter 脗搂11)
+[DataCore] _data_core_world_ext bound=true (climate co-processor; class=DCWorldExt)
+[native_world] configure rc=0 reason=configured cells=1120 wrap_period_x=69.282
+[native_generation] path=gdext n=1120 published=9 native_ms=0.093 compute_ms=0.027 flush_ms=0.066
+[hex_cell] facade ENABLED (1120 cells bound; ext=true)
+[DataCore] _baker climate_profile injected=true (fixes WorldData.config==null sea_ice prepare path)
+[phys_solve][oneshot] OK slp=1.36ms wind=0.95ms psi=1.02ms(ran=true) upwelling=0.05ms total=4.68ms
+PhysicalCirculation solve@phase=1.50 total=5ms (C++ one-shot run_physical_solve_pass)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+[physical_init] deferred native refresh complete: 5ms
+[cell_lut] deferred encode: 1ms path=gdext
+[bio-occupancy] seed landmasses=5 provinces=5 species=20 secondary_hearths=0
+[bio-occupancy]   bio.maize envelope=131 hearth=71 seeded_landmasses=1 primary_landmass=1 primary_envelope=130 occupied=71 occupied/envelope=0.55
+[bio-occupancy]   bio.wheat envelope=147 hearth=15 seeded_landmasses=1 primary_landmass=1 primary_envelope=134 occupied=15 occupied/envelope=0.11
+[bio-occupancy]   bio.rice envelope=40 hearth=3 seeded_landmasses=1 primary_landmass=1 primary_envelope=37 occupied=3 occupied/envelope=0.08
+[bio-occupancy]   bio.potato envelope=119 hearth=55 seeded_landmasses=1 primary_landmass=1 primary_envelope=106 occupied=55 occupied/envelope=0.52
+[bio-occupancy]   bio.horse envelope=169 hearth=73 seeded_landmasses=1 primary_landmass=1 primary_envelope=155 occupied=73 occupied/envelope=0.47
+[bio-occupancy]   bio.cotton envelope=157 hearth=86 seeded_landmasses=1 primary_landmass=1 primary_envelope=157 occupied=86 occupied/envelope=0.55
+[bio-occupancy]   bio.flax envelope=143 hearth=64 seeded_landmasses=1 primary_landmass=1 primary_envelope=130 occupied=64 occupied/envelope=0.49
+[bio-occupancy]   bio.spice envelope=68 hearth=3 seeded_landmasses=1 primary_landmass=1 primary_envelope=68 occupied=3 occupied/envelope=0.04
+[bio-occupancy]   bio.rubber envelope=42 hearth=19 seeded_landmasses=1 primary_landmass=1 primary_envelope=42 occupied=19 occupied/envelope=0.45
+[bio-occupancy]   bio.sheep envelope=69 hearth=4 seeded_landmasses=1 primary_landmass=1 primary_envelope=63 occupied=4 occupied/envelope=0.06
+[bio-occupancy]   bio.goat envelope=313 hearth=54 seeded_landmasses=1 primary_landmass=1 primary_envelope=289 occupied=54 occupied/envelope=0.19
+[bio-occupancy]   bio.cattle envelope=48 hearth=25 seeded_landmasses=1 primary_landmass=1 primary_envelope=48 occupied=25 occupied/envelope=0.52
+[bio-occupancy]   bio.pig envelope=126 hearth=12 seeded_landmasses=1 primary_landmass=1 primary_envelope=119 occupied=12 occupied/envelope=0.10
+[bio-occupancy]   bio.camel envelope=68 hearth=15 seeded_landmasses=1 primary_landmass=1 primary_envelope=68 occupied=15 occupied/envelope=0.22
+[bio-occupancy]   bio.yak envelope=100 hearth=44 seeded_landmasses=1 primary_landmass=1 primary_envelope=87 occupied=44 occupied/envelope=0.51
+[bio-occupancy]   bio.silkworm envelope=74 hearth=15 seeded_landmasses=1 primary_landmass=1 primary_envelope=74 occupied=15 occupied/envelope=0.20
+[bio-occupancy]   bio.reed envelope=103 hearth=9 seeded_landmasses=1 primary_landmass=1 primary_envelope=98 occupied=9 occupied/envelope=0.09
+[bio-occupancy]   bio.bast_fiber envelope=132 hearth=11 seeded_landmasses=1 primary_landmass=1 primary_envelope=119 occupied=11 occupied/envelope=0.09
+[bio-occupancy]   bio.dye_plant envelope=163 hearth=28 seeded_landmasses=1 primary_landmass=1 primary_envelope=163 occupied=28 occupied/envelope=0.17
+[bio-occupancy]   bio.medicinal_herb envelope=164 hearth=34 seeded_landmasses=1 primary_landmass=1 primary_envelope=149 occupied=34 occupied/envelope=0.23
+[bio-occupancy]   landmass 1 classes=cold_grazer, fiber_forest, fiber_wet, dry_grazer, highland_food, open_grazer, fiber_open, open_food, wetland_food, tropical, forest_grazer foods=potato, wheat, rice, maize
+[bio-occupancy]   landmass 2 classes=none foods=none
+[bio-occupancy]   landmass 3 classes=none foods=none
+[bio-occupancy]   landmass 4 classes=none foods=none
+[bio-occupancy]   landmass 5 classes=none foods=none
+[weather] gdext acceleration ON (class=DCWorldExt)
+[weather] gdext field commit ON
+[weather] gdext distribute ON
+[weather] gdext summary ON
+[weather] hexcell facade ON (skip AoS double-write in hot loop)
+[weather] gdext resident knobs ON (class=KnobsHandle)
+[save/restore] country configured without bootstrap; awaiting PKCN
+[weather/knobs] resident KnobsHandle path ACTIVE 鈥?first to_*_knobs_dict hit (field_rebuild_count=1 expected 鈮?; stable Hz target 鈮? Hz)
+[native_daily] ACTIVE: registered native_daily_sim + natural_resource_daily + bio_occupancy_daily; retained season_refresh + ocean_currents boundary jobs
+[DCSystemScheduler] topology: ["season_refresh", "effect_runtime", "gameplay_effect", "natural_resource_daily", "bio_occupancy_daily", "enum_atlas_upload", "ocean_currents", "native_daily_sim", "dynamic_visual_atlas_upload"]
+[save/restore] country checkpoint committed_day=22 generation=21
+[save/restore] PKCN restored; economy configured and awaiting PKEC
+[DCSystemScheduler] topology: ["trigger_runtime", "ideology_runtime", "modifier_daily", "season_refresh", "effect_runtime", "gameplay_effect", "natural_resource_daily", "bio_occupancy_daily", "enum_atlas_upload", "ocean_currents", "native_daily_sim", "dynamic_visual_atlas_upload", "country_daily", "economy_daily"]
+[save/restore] PKCN and PKEC restored; country/economy systems registered
+[building-visual] intel_refresh requested=61 changed=0 known=1 catalog=400 resident=0 body=0 queued=0 zoom=1.000
+WARNING: [runtime-climate-round] no ClimateDailySystem; SHADOW capture carries no shared pass input
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _build_runtime_climate_round_input (res://scripts/geography/map_generator.gd:4666)
+       [1] capture_runtime_inputs_for_worker (res://scripts/geography/map_generator.gd:2356)
+       [2] generate_world (res://scripts/game/world_runtime_host.gd:715)
+       [3] generate (res://scripts/geography/map_generator.gd:1606)
+       [4] _yield_generation_frame (res://scripts/geography/map_generator.gd:19913)
+core/variant/variant_utility.cpp:1034 - [runtime-climate-round] no ClimateDailySystem; SHADOW capture carries no shared pass input
+WARNING: [runtime-worker] Ideology opinion publish deferred: ideology_opinion_snapshot_invalid
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _start_production_shadow_worker (res://scripts/game/world_runtime_host.gd:806)
+       [1] generate_world (res://scripts/game/world_runtime_host.gd:724)
+       [2] generate (res://scripts/geography/map_generator.gd:1606)
+       [3] _yield_generation_frame (res://scripts/geography/map_generator.gd:19913)
+core/variant/variant_utility.cpp:1034 - [runtime-worker] Ideology opinion publish deferred: ideology_opinion_snapshot_invalid
+[climate/worker][b8] physics_knobs day=23 ready=0 missing=physics_knobs
+[runtime-worker] production ACTIVE started mask=4095 auto_pod=true
+[climate-kernel][round] shared=1 ok=1 n_cells=1120 mask=0x1FF ran=0x1FF starved=0x0 knobs_cells=1120
+[country][parity] worker_day=23 uncompared reference_range=-1..-1 depth=0
+[runtime-day-wait] day=23 env_day=23 missing=0x100 economy_input=23
+(a30.17df4): Access violation - code c0000005 (first chance)
+First chance exceptions are reported before any exception handling.
+This exception may be expected and handled.
+*** WARNING: Unable to verify checksum for D:\Godot\ProjectKeynes\Project.Keynes\Project\project-keynes\addons\dots_ext\bin\windows\dots_ext.windows.template_debug.x86_64.dll
+dots_ext_windows_template_debug_x86_64!pk::NativeCountryRuntime::commit_economy_asset_transaction+0x360:
+00007ffa`32c71d00 4929040f        sub     qword ptr [r15+rcx],rax ds:00000000`00000000=????????????????
+1:062> cdb: Reading initial command 'sxe av; g; .ecxr; kn 40; ~*kc 12; q'
+(a30.17df4): Access violation - code c0000005 (!!! second chance !!!)
+Unable to get exception context, HRESULT 0x8000FFFF
+ # Child-SP          RetAddr               Call Site
+00 00000034`4b3f5b80 00007ffa`32d32e24     dots_ext_windows_template_debug_x86_64!pk::NativeCountryRuntime::commit_economy_asset_transaction+0x360
+01 00000034`4b3f5c40 00007ffa`32e722e5     dots_ext_windows_template_debug_x86_64!pk::NativeEconomyRuntime::coordinate_country_fiscal_transaction+0x934
+02 00000034`4b3f5e80 00007ffa`32e75982     dots_ext_windows_template_debug_x86_64!pk::NativeEconomyRuntime::advance_fiscal_settlement+0x625
+03 00000034`4b3f5f90 00007ffa`32d6cbf5     dots_ext_windows_template_debug_x86_64!pk::NativeEconomyRuntime::run_fiscal_settlement_drain+0x132
+04 00000034`4b3f6060 00007ffa`32cca175     dots_ext_windows_template_debug_x86_64!pk::NativeEconomyRuntime::run_building_commit_slice+0x2d5
+05 00000034`4b3f6170 00007ffa`32cc51b7     dots_ext_windows_template_debug_x86_64!pk::economy_dispatch_mutate_stage+0x13a5
+06 00000034`4b3f6560 00007ffa`32cc89af     dots_ext_windows_template_debug_x86_64!pk::economy_kernel_building_commit+0x137
+07 00000034`4b3f6690 00007ffa`32cc7932     dots_ext_windows_template_debug_x86_64!pk::NativeEconomyGraphStageOps::run_stage+0x30f
+08 00000034`4b3f6800 00007ffa`330bb12f     dots_ext_windows_template_debug_x86_64!pk::economy_kernel_run_stage+0xd2
+09 00000034`4b3f6870 00007ffa`330b1992     dots_ext_windows_template_debug_x86_64!pk::RuntimeEconomyPodAuthority::run_bound_stage+0xcf
+0a 00000034`4b3f69e0 00007ffa`3301d530     dots_ext_windows_template_debug_x86_64!pk::RuntimeEconomyPodAuthority::advance_stage+0x82
+0b 00000034`4b3f6a10 00007ffa`32ffbe91     dots_ext_windows_template_debug_x86_64!pk::NativeSimulationHost::worker_run_stage_ops_slice+0x1f0
+0c 00000034`4b3f6b00 00007ffa`3301b8db     dots_ext_windows_template_debug_x86_64!pk::NativeSimulationHost::execute_day_plan+0x35e1
+0d 00000034`4b3fe1e0 00007ffa`32fba5ff     dots_ext_windows_template_debug_x86_64!pk::NativeSimulationHost::worker_main+0x175b
+0e (Inline Function) --------`--------     dots_ext_windows_template_debug_x86_64!std::invoke+0x6
+0f 00000034`4b3ff740 00007ffa`333df12b     dots_ext_windows_template_debug_x86_64!std::thread::_Invoke<std::tuple<void (__cdecl pk::NativeSimulationHost::*)(void),pk::NativeSimulationHost *>,0,1>+0xf
+10 00000034`4b3ff770 00007ffa`def9259d     dots_ext_windows_template_debug_x86_64!thread_start<unsigned int (__cdecl*)(void *),1>+0x4f
+11 00000034`4b3ff7a0 00007ffa`e10aaf78     KERNEL32!BaseThreadInitThunk+0x1d
+12 00000034`4b3ff7d0 00000000`00000000     ntdll!RtlUserThreadStart+0x28
+
+   1  Id: a30.4e98 Suspend: 1 Teb: 00000034`2d3ad000 Unfrozen
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+dots_ext_windows_template_debug_x86_64!_Primitive_wait_for
+dots_ext_windows_template_debug_x86_64!_Primitive_wait
+dots_ext_windows_template_debug_x86_64!_Cnd_wait
+dots_ext_windows_template_debug_x86_64!std::condition_variable::wait
+dots_ext_windows_template_debug_x86_64!std::condition_variable::wait
+dots_ext_windows_template_debug_x86_64!pk::NativeParallelExecutor::worker_loop
+dots_ext_windows_template_debug_x86_64!pk::NativeParallelExecutor::{ctor}::__l3::<lambda_07601476f7ce11550070f7758300fd36>::operator()
+dots_ext_windows_template_debug_x86_64!std::invoke
+dots_ext_windows_template_debug_x86_64!std::thread::_Invoke<std::tuple<<lambda_07601476f7ce11550070f7758300fd36> >,0>
+dots_ext_windows_template_debug_x86_64!thread_start<unsigned int (__cdecl*)(void *),1>
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+   2  Id: a30.c58c Suspend: 1 Teb: 00000034`2d3af000 Unfrozen
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+dots_ext_windows_template_debug_x86_64!_Primitive_wait_for
+dots_ext_windows_template_debug_x86_64!_Primitive_wait
+dots_ext_windows_template_debug_x86_64!_Cnd_wait
+dots_ext_windows_template_debug_x86_64!std::condition_variable::wait
+dots_ext_windows_template_debug_x86_64!std::condition_variable::wait
+dots_ext_windows_template_debug_x86_64!pk::NativeParallelExecutor::worker_loop
+dots_ext_windows_template_debug_x86_64!pk::NativeParallelExecutor::{ctor}::__l3::<lambda_07601476f7ce11550070f7758300fd36>::operator()
+dots_ext_windows_template_debug_x86_64!std::invoke
+dots_ext_windows_template_debug_x86_64!std::thread::_Invoke<std::tuple<<lambda_07601476f7ce11550070f7758300fd36> >,0>
+dots_ext_windows_template_debug_x86_64!thread_start<unsigned int (__cdecl*)(void *),1>
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+   3  Id: a30.1dd90 Suspend: 1 Teb: 00000034`2d3b1000 Unfrozen
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+dots_ext_windows_template_debug_x86_64!_Primitive_wait_for
+dots_ext_windows_template_debug_x86_64!_Primitive_wait
+dots_ext_windows_template_debug_x86_64!_Cnd_wait
+dots_ext_windows_template_debug_x86_64!std::condition_variable::wait
+dots_ext_windows_template_debug_x86_64!std::condition_variable::wait
+dots_ext_windows_template_debug_x86_64!pk::NativeParallelExecutor::worker_loop
+dots_ext_windows_template_debug_x86_64!pk::NativeParallelExecutor::{ctor}::__l3::<lambda_07601476f7ce11550070f7758300fd36>::operator()
+dots_ext_windows_template_debug_x86_64!std::invoke
+dots_ext_windows_template_debug_x86_64!std::thread::_Invoke<std::tuple<<lambda_07601476f7ce11550070f7758300fd36> >,0>
+dots_ext_windows_template_debug_x86_64!thread_start<unsigned int (__cdecl*)(void *),1>
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+   4  Id: a30.1eb1c Suspend: 1 Teb: 00000034`2d3a7000 Unfrozen
+Call Site
+ntdll!NtWaitForWorkViaWorkerFactory
+ntdll!TppWorkerThread
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+   6  Id: a30.48f4 Suspend: 1 Teb: 00000034`2d3a9000 Unfrozen
+Call Site
+ntdll!NtWaitForWorkViaWorkerFactory
+ntdll!TppWorkerThread
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+   7  Id: a30.1f6b0 Suspend: 1 Teb: 00000034`2d353000 Unfrozen
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableCS
+KERNELBASE!SleepConditionVariableCS
+TxUmon64!GetInstance
+TxUmon64!GetInstance
+TxUmon64!GetInstance
+TxUmon64!GetInstance
+TxUmon64!GetInstance
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+   8  Id: a30.1cc40 Suspend: 1 Teb: 00000034`2d349000 Unfrozen
+Call Site
+ntdll!RtlpHeapFindListLookupEntry
+ntdll!RtlpFindEntry
+ntdll!RtlpInsertFreeBlock
+ntdll!RtlpDeCommitFreeBlock
+ntdll!RtlpFreeHeap
+ntdll!RtlpFreeHeapInternal
+ntdll!RtlFreeHeap
+ntdll!RtlDebugFreeHeap
+ntdll!RtlpFreeHeap
+ntdll!RtlpFreeHeapInternal
+ntdll!RtlFreeHeap
+msvcrt!free
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+
+   9  Id: a30.15e84 Suspend: 1 Teb: 00000034`2d3b3000 Unfrozen
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+dots_ext_windows_template_debug_x86_64!_Primitive_wait_for
+dots_ext_windows_template_debug_x86_64!_Primitive_wait
+dots_ext_windows_template_debug_x86_64!_Cnd_wait
+dots_ext_windows_template_debug_x86_64!std::condition_variable::wait
+dots_ext_windows_template_debug_x86_64!std::condition_variable::wait
+dots_ext_windows_template_debug_x86_64!pk::NativeParallelExecutor::worker_loop
+dots_ext_windows_template_debug_x86_64!pk::NativeParallelExecutor::{ctor}::__l3::<lambda_07601476f7ce11550070f7758300fd36>::operator()
+dots_ext_windows_template_debug_x86_64!std::invoke
+dots_ext_windows_template_debug_x86_64!std::thread::_Invoke<std::tuple<<lambda_07601476f7ce11550070f7758300fd36> >,0>
+dots_ext_windows_template_debug_x86_64!thread_start<unsigned int (__cdecl*)(void *),1>
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  10  Id: a30.1a244 Suspend: 1 Teb: 00000034`2d3b5000 Unfrozen
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+dots_ext_windows_template_debug_x86_64!_Primitive_wait_for
+dots_ext_windows_template_debug_x86_64!_Primitive_wait
+dots_ext_windows_template_debug_x86_64!_Cnd_wait
+dots_ext_windows_template_debug_x86_64!std::condition_variable::wait
+dots_ext_windows_template_debug_x86_64!std::condition_variable::wait
+dots_ext_windows_template_debug_x86_64!pk::NativeParallelExecutor::worker_loop
+dots_ext_windows_template_debug_x86_64!pk::NativeParallelExecutor::{ctor}::__l3::<lambda_07601476f7ce11550070f7758300fd36>::operator()
+dots_ext_windows_template_debug_x86_64!std::invoke
+dots_ext_windows_template_debug_x86_64!std::thread::_Invoke<std::tuple<<lambda_07601476f7ce11550070f7758300fd36> >,0>
+dots_ext_windows_template_debug_x86_64!thread_start<unsigned int (__cdecl*)(void *),1>
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  11  Id: a30.1c750 Suspend: 1 Teb: 00000034`2d3b9000 Unfrozen
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+dots_ext_windows_template_debug_x86_64!_Primitive_wait_for
+dots_ext_windows_template_debug_x86_64!_Primitive_wait
+dots_ext_windows_template_debug_x86_64!_Cnd_wait
+dots_ext_windows_template_debug_x86_64!std::condition_variable::wait
+dots_ext_windows_template_debug_x86_64!std::condition_variable::wait
+dots_ext_windows_template_debug_x86_64!pk::NativeParallelExecutor::worker_loop
+dots_ext_windows_template_debug_x86_64!pk::NativeParallelExecutor::{ctor}::__l3::<lambda_07601476f7ce11550070f7758300fd36>::operator()
+dots_ext_windows_template_debug_x86_64!std::invoke
+dots_ext_windows_template_debug_x86_64!std::thread::_Invoke<std::tuple<<lambda_07601476f7ce11550070f7758300fd36> >,0>
+dots_ext_windows_template_debug_x86_64!thread_start<unsigned int (__cdecl*)(void *),1>
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  13  Id: a30.1cb18 Suspend: 1 Teb: 00000034`2d361000 Unfrozen
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+msvcrt!_callthreadstartex
+msvcrt!_threadstartex
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  14  Id: a30.2a5c Suspend: 1 Teb: 00000034`2d363000 Unfrozen "WorkerThread 0"
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+msvcrt!_callthreadstartex
+msvcrt!_threadstartex
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  15  Id: a30.22888 Suspend: 1 Teb: 00000034`2d359000 Unfrozen
+Call Site
+ntdll!NtWaitForWorkViaWorkerFactory
+ntdll!TppWorkerThread
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  16  Id: a30.1dd78 Suspend: 1 Teb: 00000034`2d35d000 Unfrozen
+Call Site
+ntdll!NtDelayExecution
+ntdll!RtlDelayExecution
+KERNELBASE!SleepEx
+TxUmon64
+TxUmon64!GetInstance
+TxUmon64!GetInstance
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  17  Id: a30.dc94 Suspend: 1 Teb: 00000034`2d35f000 Unfrozen
+Call Site
+ntdll!NtWaitForMultipleObjects
+KERNELBASE!WaitForMultipleObjectsEx
+CoreMessaging!Microsoft::CoreUI::Dispatch::WaitController::Callback_WaitAny
+CoreMessaging!Microsoft::CoreUI::Dispatch::Win32EventLoopBridge::Callback_DoWait
+CoreMessaging!Microsoft::CoreUI::Dispatch::Win32EventLoopBridge::Callback_Wait
+CoreMessaging!Microsoft::CoreUI::Dispatch::WaitCollection::Callback_DoGeneralWait
+CoreMessaging!Microsoft::CoreUI::Dispatch::WaitController::Callback_OnDispatch
+CoreMessaging!Microsoft::CoreUI::Dispatch::EventLoop::Callback_RunCoreLoop
+CoreMessaging!Microsoft::CoreUI::Dispatch::Win32EventLoopBridge::Callback_Run
+CoreMessaging!Microsoft::CoreUI::Dispatch::EventLoop::Callback_Run
+CoreMessaging!Microsoft::CoreUI::Messaging::MessageSession::InterfaceImplementation$::_Microsoft_CoreUI_IExportMessageSession::Dispatcher::Run
+CoreMessaging!Microsoft::CoreUI::IExportMessageSession::ExportAdapter$::Run
+inputhost!MessagingThread::ThreadProc
+inputhost!<lambda_376318154f061e76a4fa5387c7eed0ca>::<lambda_invoker_cdecl>
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  18  Id: a30.9f94 Suspend: 1 Teb: 00000034`2d365000 Unfrozen "WorkerThread 1"
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+msvcrt!_callthreadstartex
+msvcrt!_threadstartex
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  19  Id: a30.1f4d4 Suspend: 1 Teb: 00000034`2d367000 Unfrozen "WorkerThread 2"
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+msvcrt!_callthreadstartex
+msvcrt!_threadstartex
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  20  Id: a30.14554 Suspend: 1 Teb: 00000034`2d36b000 Unfrozen "WorkerThread 4"
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+msvcrt!_callthreadstartex
+msvcrt!_threadstartex
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  21  Id: a30.1ee94 Suspend: 1 Teb: 00000034`2d369000 Unfrozen "WorkerThread 3"
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+msvcrt!_callthreadstartex
+msvcrt!_threadstartex
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  22  Id: a30.22be8 Suspend: 1 Teb: 00000034`2d36d000 Unfrozen "WorkerThread 5"
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+msvcrt!_callthreadstartex
+msvcrt!_threadstartex
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  23  Id: a30.21fa0 Suspend: 1 Teb: 00000034`2d36f000 Unfrozen "WorkerThread 6"
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+msvcrt!_callthreadstartex
+msvcrt!_threadstartex
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  24  Id: a30.1b480 Suspend: 1 Teb: 00000034`2d371000 Unfrozen "WorkerThread 7"
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+msvcrt!_callthreadstartex
+msvcrt!_threadstartex
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  25  Id: a30.1c264 Suspend: 1 Teb: 00000034`2d373000 Unfrozen "WorkerThread 8"
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+msvcrt!_callthreadstartex
+msvcrt!_threadstartex
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  26  Id: a30.20770 Suspend: 1 Teb: 00000034`2d375000 Unfrozen "WorkerThread 9"
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+msvcrt!_callthreadstartex
+msvcrt!_threadstartex
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  27  Id: a30.a048 Suspend: 1 Teb: 00000034`2d377000 Unfrozen "WorkerThread 10"
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+msvcrt!_callthreadstartex
+msvcrt!_threadstartex
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  28  Id: a30.1e6b0 Suspend: 1 Teb: 00000034`2d37b000 Unfrozen "WorkerThread 12"
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+msvcrt!_callthreadstartex
+msvcrt!_threadstartex
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  29  Id: a30.1c1fc Suspend: 1 Teb: 00000034`2d379000 Unfrozen "WorkerThread 11"
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+msvcrt!_callthreadstartex
+msvcrt!_threadstartex
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  30  Id: a30.1e454 Suspend: 1 Teb: 00000034`2d37d000 Unfrozen "WorkerThread 13"
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+msvcrt!_callthreadstartex
+msvcrt!_threadstartex
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  31  Id: a30.10880 Suspend: 1 Teb: 00000034`2d37f000 Unfrozen "WorkerThread 14"
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+msvcrt!_callthreadstartex
+msvcrt!_threadstartex
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  32  Id: a30.12ef0 Suspend: 1 Teb: 00000034`2d381000 Unfrozen "WorkerThread 15"
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+msvcrt!_callthreadstartex
+msvcrt!_threadstartex
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  33  Id: a30.1efb0 Suspend: 1 Teb: 00000034`2d383000 Unfrozen "WorkerThread 16"
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+msvcrt!_callthreadstartex
+msvcrt!_threadstartex
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  34  Id: a30.1e074 Suspend: 1 Teb: 00000034`2d387000 Unfrozen "WorkerThread 18"
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+msvcrt!_callthreadstartex
+msvcrt!_threadstartex
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  35  Id: a30.22ba8 Suspend: 1 Teb: 00000034`2d385000 Unfrozen "WorkerThread 17"
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+msvcrt!_callthreadstartex
+msvcrt!_threadstartex
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  36  Id: a30.12adc Suspend: 1 Teb: 00000034`2d389000 Unfrozen "WorkerThread 19"
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+msvcrt!_callthreadstartex
+msvcrt!_threadstartex
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  37  Id: a30.d208 Suspend: 1 Teb: 00000034`2d38d000 Unfrozen "WorkerThread 21"
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+msvcrt!_callthreadstartex
+msvcrt!_threadstartex
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  38  Id: a30.3a74 Suspend: 1 Teb: 00000034`2d38b000 Unfrozen "WorkerThread 20"
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+msvcrt!_callthreadstartex
+msvcrt!_threadstartex
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  39  Id: a30.1cbc0 Suspend: 1 Teb: 00000034`2d38f000 Unfrozen "WorkerThread 22"
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+msvcrt!_callthreadstartex
+msvcrt!_threadstartex
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  40  Id: a30.ee80 Suspend: 1 Teb: 00000034`2d393000 Unfrozen "WorkerThread 24"
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+msvcrt!_callthreadstartex
+msvcrt!_threadstartex
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  41  Id: a30.1e888 Suspend: 1 Teb: 00000034`2d391000 Unfrozen "WorkerThread 23"
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+msvcrt!_callthreadstartex
+msvcrt!_threadstartex
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  42  Id: a30.ccc Suspend: 1 Teb: 00000034`2d397000 Unfrozen "WorkerThread 26"
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+msvcrt!_callthreadstartex
+msvcrt!_threadstartex
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  43  Id: a30.dc44 Suspend: 1 Teb: 00000034`2d395000 Unfrozen "WorkerThread 25"
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+msvcrt!_callthreadstartex
+msvcrt!_threadstartex
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  44  Id: a30.205ec Suspend: 1 Teb: 00000034`2d399000 Unfrozen "WorkerThread 27"
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+msvcrt!_callthreadstartex
+msvcrt!_threadstartex
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  45  Id: a30.155b4 Suspend: 1 Teb: 00000034`2d39d000 Unfrozen "WorkerThread 29"
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+msvcrt!_callthreadstartex
+msvcrt!_threadstartex
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  46  Id: a30.18678 Suspend: 1 Teb: 00000034`2d39b000 Unfrozen "WorkerThread 28"
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+msvcrt!_callthreadstartex
+msvcrt!_threadstartex
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  47  Id: a30.1f200 Suspend: 1 Teb: 00000034`2d39f000 Unfrozen "WorkerThread 30"
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+msvcrt!_callthreadstartex
+msvcrt!_threadstartex
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  48  Id: a30.6e38 Suspend: 1 Teb: 00000034`2d3a1000 Unfrozen "WorkerThread 31"
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+msvcrt!_callthreadstartex
+msvcrt!_threadstartex
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  49  Id: a30.20550 Suspend: 1 Teb: 00000034`2d3a3000 Unfrozen
+Call Site
+ntdll!NtDelayExecution
+ntdll!RtlDelayExecution
+KERNELBASE!SleepEx
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+msvcrt!_callthreadstartex
+msvcrt!_threadstartex
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  50  Id: a30.1d918 Suspend: 1 Teb: 00000034`2d3a5000 Unfrozen
+Call Site
+ntdll!NtWaitForMultipleObjects
+KERNELBASE!WaitForMultipleObjectsEx
+KERNELBASE!WaitForMultipleObjects
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+godot_windows_editor_x86_64!NoHotPatch
+msvcrt!_callthreadstartex
+msvcrt!_threadstartex
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  51  Id: a30.5838 Suspend: 1 Teb: 00000034`2d3ab000 Unfrozen
+Call Site
+ntdll!NtWaitForWorkViaWorkerFactory
+ntdll!TppWorkerThread
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  52  Id: a30.198ec Suspend: 1 Teb: 00000034`2d3bb000 Unfrozen
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+dots_ext_windows_template_debug_x86_64!_Primitive_wait_for
+dots_ext_windows_template_debug_x86_64!_Primitive_wait
+dots_ext_windows_template_debug_x86_64!_Cnd_wait
+dots_ext_windows_template_debug_x86_64!std::condition_variable::wait
+dots_ext_windows_template_debug_x86_64!std::condition_variable::wait
+dots_ext_windows_template_debug_x86_64!pk::NativeParallelExecutor::worker_loop
+dots_ext_windows_template_debug_x86_64!pk::NativeParallelExecutor::{ctor}::__l3::<lambda_07601476f7ce11550070f7758300fd36>::operator()
+dots_ext_windows_template_debug_x86_64!std::invoke
+dots_ext_windows_template_debug_x86_64!std::thread::_Invoke<std::tuple<<lambda_07601476f7ce11550070f7758300fd36> >,0>
+dots_ext_windows_template_debug_x86_64!thread_start<unsigned int (__cdecl*)(void *),1>
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  53  Id: a30.21eac Suspend: 1 Teb: 00000034`2d3b7000 Unfrozen
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+dots_ext_windows_template_debug_x86_64!_Primitive_wait_for
+dots_ext_windows_template_debug_x86_64!_Primitive_wait
+dots_ext_windows_template_debug_x86_64!_Cnd_wait
+dots_ext_windows_template_debug_x86_64!std::condition_variable::wait
+dots_ext_windows_template_debug_x86_64!std::condition_variable::wait
+dots_ext_windows_template_debug_x86_64!pk::NativeParallelExecutor::worker_loop
+dots_ext_windows_template_debug_x86_64!pk::NativeParallelExecutor::{ctor}::__l3::<lambda_07601476f7ce11550070f7758300fd36>::operator()
+dots_ext_windows_template_debug_x86_64!std::invoke
+dots_ext_windows_template_debug_x86_64!std::thread::_Invoke<std::tuple<<lambda_07601476f7ce11550070f7758300fd36> >,0>
+dots_ext_windows_template_debug_x86_64!thread_start<unsigned int (__cdecl*)(void *),1>
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  54  Id: a30.1d498 Suspend: 1 Teb: 00000034`2d3bd000 Unfrozen
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+dots_ext_windows_template_debug_x86_64!_Primitive_wait_for
+dots_ext_windows_template_debug_x86_64!_Primitive_wait
+dots_ext_windows_template_debug_x86_64!_Cnd_wait
+dots_ext_windows_template_debug_x86_64!std::condition_variable::wait
+dots_ext_windows_template_debug_x86_64!std::condition_variable::wait
+dots_ext_windows_template_debug_x86_64!pk::NativeParallelExecutor::worker_loop
+dots_ext_windows_template_debug_x86_64!pk::NativeParallelExecutor::{ctor}::__l3::<lambda_07601476f7ce11550070f7758300fd36>::operator()
+dots_ext_windows_template_debug_x86_64!std::invoke
+dots_ext_windows_template_debug_x86_64!std::thread::_Invoke<std::tuple<<lambda_07601476f7ce11550070f7758300fd36> >,0>
+dots_ext_windows_template_debug_x86_64!thread_start<unsigned int (__cdecl*)(void *),1>
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  55  Id: a30.1c414 Suspend: 1 Teb: 00000034`2d3bf000 Unfrozen
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+dots_ext_windows_template_debug_x86_64!_Primitive_wait_for
+dots_ext_windows_template_debug_x86_64!_Primitive_wait
+dots_ext_windows_template_debug_x86_64!_Cnd_wait
+dots_ext_windows_template_debug_x86_64!std::condition_variable::wait
+dots_ext_windows_template_debug_x86_64!std::condition_variable::wait
+dots_ext_windows_template_debug_x86_64!pk::NativeParallelExecutor::worker_loop
+dots_ext_windows_template_debug_x86_64!pk::NativeParallelExecutor::{ctor}::__l3::<lambda_07601476f7ce11550070f7758300fd36>::operator()
+dots_ext_windows_template_debug_x86_64!std::invoke
+dots_ext_windows_template_debug_x86_64!std::thread::_Invoke<std::tuple<<lambda_07601476f7ce11550070f7758300fd36> >,0>
+dots_ext_windows_template_debug_x86_64!thread_start<unsigned int (__cdecl*)(void *),1>
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  56  Id: a30.1dfc0 Suspend: 1 Teb: 00000034`2d3c1000 Unfrozen
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+dots_ext_windows_template_debug_x86_64!_Primitive_wait_for
+dots_ext_windows_template_debug_x86_64!_Primitive_wait
+dots_ext_windows_template_debug_x86_64!_Cnd_wait
+dots_ext_windows_template_debug_x86_64!std::condition_variable::wait
+dots_ext_windows_template_debug_x86_64!std::condition_variable::wait
+dots_ext_windows_template_debug_x86_64!pk::NativeParallelExecutor::worker_loop
+dots_ext_windows_template_debug_x86_64!pk::NativeParallelExecutor::{ctor}::__l3::<lambda_07601476f7ce11550070f7758300fd36>::operator()
+dots_ext_windows_template_debug_x86_64!std::invoke
+dots_ext_windows_template_debug_x86_64!std::thread::_Invoke<std::tuple<<lambda_07601476f7ce11550070f7758300fd36> >,0>
+dots_ext_windows_template_debug_x86_64!thread_start<unsigned int (__cdecl*)(void *),1>
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  57  Id: a30.1bd3c Suspend: 1 Teb: 00000034`2d3c3000 Unfrozen
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+dots_ext_windows_template_debug_x86_64!_Primitive_wait_for
+dots_ext_windows_template_debug_x86_64!_Primitive_wait
+dots_ext_windows_template_debug_x86_64!_Cnd_wait
+dots_ext_windows_template_debug_x86_64!std::condition_variable::wait
+dots_ext_windows_template_debug_x86_64!std::condition_variable::wait
+dots_ext_windows_template_debug_x86_64!pk::NativeParallelExecutor::worker_loop
+dots_ext_windows_template_debug_x86_64!pk::NativeParallelExecutor::{ctor}::__l3::<lambda_07601476f7ce11550070f7758300fd36>::operator()
+dots_ext_windows_template_debug_x86_64!std::invoke
+dots_ext_windows_template_debug_x86_64!std::thread::_Invoke<std::tuple<<lambda_07601476f7ce11550070f7758300fd36> >,0>
+dots_ext_windows_template_debug_x86_64!thread_start<unsigned int (__cdecl*)(void *),1>
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  58  Id: a30.20018 Suspend: 1 Teb: 00000034`2d3c5000 Unfrozen
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+dots_ext_windows_template_debug_x86_64!_Primitive_wait_for
+dots_ext_windows_template_debug_x86_64!_Primitive_wait
+dots_ext_windows_template_debug_x86_64!_Cnd_wait
+dots_ext_windows_template_debug_x86_64!std::condition_variable::wait
+dots_ext_windows_template_debug_x86_64!std::condition_variable::wait
+dots_ext_windows_template_debug_x86_64!pk::NativeParallelExecutor::worker_loop
+dots_ext_windows_template_debug_x86_64!pk::NativeParallelExecutor::{ctor}::__l3::<lambda_07601476f7ce11550070f7758300fd36>::operator()
+dots_ext_windows_template_debug_x86_64!std::invoke
+dots_ext_windows_template_debug_x86_64!std::thread::_Invoke<std::tuple<<lambda_07601476f7ce11550070f7758300fd36> >,0>
+dots_ext_windows_template_debug_x86_64!thread_start<unsigned int (__cdecl*)(void *),1>
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  59  Id: a30.f808 Suspend: 1 Teb: 00000034`2d3c7000 Unfrozen
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+dots_ext_windows_template_debug_x86_64!_Primitive_wait_for
+dots_ext_windows_template_debug_x86_64!_Primitive_wait
+dots_ext_windows_template_debug_x86_64!_Cnd_wait
+dots_ext_windows_template_debug_x86_64!std::condition_variable::wait
+dots_ext_windows_template_debug_x86_64!std::condition_variable::wait
+dots_ext_windows_template_debug_x86_64!pk::NativeParallelExecutor::worker_loop
+dots_ext_windows_template_debug_x86_64!pk::NativeParallelExecutor::{ctor}::__l3::<lambda_07601476f7ce11550070f7758300fd36>::operator()
+dots_ext_windows_template_debug_x86_64!std::invoke
+dots_ext_windows_template_debug_x86_64!std::thread::_Invoke<std::tuple<<lambda_07601476f7ce11550070f7758300fd36> >,0>
+dots_ext_windows_template_debug_x86_64!thread_start<unsigned int (__cdecl*)(void *),1>
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  60  Id: a30.1ab88 Suspend: 1 Teb: 00000034`2d3c9000 Unfrozen
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+dots_ext_windows_template_debug_x86_64!_Primitive_wait_for
+dots_ext_windows_template_debug_x86_64!_Primitive_wait
+dots_ext_windows_template_debug_x86_64!_Cnd_wait
+dots_ext_windows_template_debug_x86_64!std::condition_variable::wait
+dots_ext_windows_template_debug_x86_64!std::condition_variable::wait
+dots_ext_windows_template_debug_x86_64!pk::NativeParallelExecutor::worker_loop
+dots_ext_windows_template_debug_x86_64!pk::NativeParallelExecutor::{ctor}::__l3::<lambda_07601476f7ce11550070f7758300fd36>::operator()
+dots_ext_windows_template_debug_x86_64!std::invoke
+dots_ext_windows_template_debug_x86_64!std::thread::_Invoke<std::tuple<<lambda_07601476f7ce11550070f7758300fd36> >,0>
+dots_ext_windows_template_debug_x86_64!thread_start<unsigned int (__cdecl*)(void *),1>
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+  61  Id: a30.212f4 Suspend: 1 Teb: 00000034`2d3cb000 Unfrozen
+Call Site
+ntdll!NtWaitForAlertByThreadId
+ntdll!RtlSleepConditionVariableSRW
+KERNELBASE!SleepConditionVariableSRW
+dots_ext_windows_template_debug_x86_64!_Primitive_wait_for
+dots_ext_windows_template_debug_x86_64!_Primitive_wait
+dots_ext_windows_template_debug_x86_64!_Cnd_wait
+dots_ext_windows_template_debug_x86_64!std::condition_variable::wait
+dots_ext_windows_template_debug_x86_64!std::condition_variable::wait
+dots_ext_windows_template_debug_x86_64!pk::NativeParallelExecutor::worker_loop
+dots_ext_windows_template_debug_x86_64!pk::NativeParallelExecutor::{ctor}::__l3::<lambda_07601476f7ce11550070f7758300fd36>::operator()
+dots_ext_windows_template_debug_x86_64!std::invoke
+dots_ext_windows_template_debug_x86_64!std::thread::_Invoke<std::tuple<<lambda_07601476f7ce11550070f7758300fd36> >,0>
+dots_ext_windows_template_debug_x86_64!thread_start<unsigned int (__cdecl*)(void *),1>
+KERNEL32!BaseThreadInitThunk
+ntdll!RtlUserThreadStart
+
+# 62  Id: a30.17df4 Suspend: 1 Teb: 00000034`2d3cd000 Unfrozen
+Call Site
+dots_ext_windows_template_debug_x86_64!pk::NativeCountryRuntime::commit_economy_asset_transaction
+dots_ext_windows_template_debug_x86_64!pk::NativeEconomyRuntime::coordinate_country_fiscal_transaction
+dots_ext_windows_template_debug_x86_64!pk::NativeEconomyRuntime::advance_fiscal_settlement
+dots_ext_windows_template_debug_x86_64!pk::NativeEconomyRuntime::run_fiscal_settlement_drain
+dots_ext_windows_template_debug_x86_64!pk::NativeEconomyRuntime::run_building_commit_slice
+dots_ext_windows_template_debug_x86_64!pk::economy_dispatch_mutate_stage
+dots_ext_windows_template_debug_x86_64!pk::economy_kernel_building_commit
+dots_ext_windows_template_debug_x86_64!pk::NativeEconomyGraphStageOps::run_stage
+dots_ext_windows_template_debug_x86_64!pk::economy_kernel_run_stage
+dots_ext_windows_template_debug_x86_64!pk::RuntimeEconomyPodAuthority::run_bound_stage
+dots_ext_windows_template_debug_x86_64!pk::RuntimeEconomyPodAuthority::advance_stage
+dots_ext_windows_template_debug_x86_64!pk::NativeSimulationHost::worker_run_stage_ops_slice
+dots_ext_windows_template_debug_x86_64!pk::NativeSimulationHost::execute_day_plan
+dots_ext_windows_template_debug_x86_64!pk::NativeSimulationHost::worker_main
+dots_ext_windows_template_debug_x86_64!std::invoke
+dots_ext_windows_template_debug_x86_64!std::thread::_Invoke<std::tuple<void (__cdecl pk::NativeSimulationHost::*)(void),pk::NativeSimulationHost *>,0,1>
+dots_ext_windows_template_debug_x86_64!thread_start<unsigned int (__cdecl*)(void *),1>
+KERNEL32!BaseThreadInitThunk
+quit:
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\atlmfc.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\ObjectiveC.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\concurrency.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\cpp_rest.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\stl.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Data.Json.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Geolocation.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Devices.Sensors.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\Windows.Media.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\windows.natvis'
+NatVis script unloaded from 'C:\Program Files (x86)\Windows Kits\10\Debuggers\x64\Visualizers\winrt.natvis'

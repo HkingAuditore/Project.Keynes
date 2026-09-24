@@ -1,0 +1,39 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] catalog compiles
+  [PASS] country configures
+  [PASS] country bootstraps
+  [PASS] research evidence queues
+  [PASS] research evidence commits
+  [PASS] research demand and budget queue
+  [PASS] policy commits before market settlement
+  [PASS] economy configures
+  [PASS] merchant market with technology stock bootstraps
+[economy-open-finish] day=0 country=0.018 workset=0.004 fiscal=0.011 csr=0.001 recovery=0.000 vectors=0.009 audit=0.001 commands=0.001
+  [PASS] research procurement persists its phase across Economy slices
+  [PASS] research procurement keeps one transaction identity while yielding
+  [PASS] Country assets remain reserved until commit phase
+  [PASS] government buys remaining market technology points
+  [PASS] purchased stock enters research on the next country day
+  [PASS] empty-domain shares remain available on later research days
+  [PASS] research consumption is accepted during the frozen epoch
+  [PASS] in-epoch research goods stay conserved
+  [PASS] dead-merchant country configures
+  [PASS] dead-merchant country bootstraps
+  [PASS] dead-merchant research evidence queues
+  [PASS] dead-merchant research evidence commits
+  [PASS] dead-merchant research demand and budget queue
+  [PASS] dead-merchant policy commits
+  [PASS] dead-merchant economy configures
+  [PASS] dead-merchant market bootstraps
+[economy-open-finish] day=0 country=0.018 workset=0.002 fiscal=0.002 csr=0.000 recovery=0.000 vectors=0.004 audit=0.002 commands=0.000
+  [PASS] dead merchant does not fatal government research procurement
+  [PASS] structural repair restores a living merchant after skipped procurement
+  [PASS] repeated merchant death still conserves after skipped procurement
+technology procurement runtime: PASS
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 279 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

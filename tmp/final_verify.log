@@ -1,0 +1,14 @@
+warning: in the working copy of '.agents/skills/project-keynes-economy-runtime/references/market-algorithms.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'Project/project-keynes/tests/building_runtime_test.gd', CRLF will be replaced by LF the next time Git touches it
+warning: in the working copy of 'docs/cpp-dots-runtime/native-economy-runtime.md', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'gdext/src/economy_runtime.cpp', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'gdext/src/economy_runtime.h', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'gdext/src/economy_runtime_building_employment.cpp', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tmp/lifecycle_review_project/data/economy/buildings/gathering_ground.tres', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tmp/lifecycle_review_project/scripts/ui/components/colonization_planner_panel.gd', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tmp/lifecycle_review_project/scripts/ui/components/technology_detail_card.gd', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tmp/lifecycle_review_project/tests/building_runtime_test.gd', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tmp/perf_csv_analysis/node_modules/.modules.yaml', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tmp/perf_csv_analysis/node_modules/.pnpm-workspace-state-v1.json', LF will be replaced by CRLF the next time Git touches it
+warning: in the working copy of 'tmp/perf_csv_analysis/node_modules/@oai/artifact-tool/node_modules/.pnpm-workspace-state-v1.json', LF will be replaced by CRLF the next time Git touches it
+Project.Keynes economy runtime verification passed.

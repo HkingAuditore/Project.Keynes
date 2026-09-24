@@ -146,19 +146,23 @@ func _init() -> void:
 	var purchased := int(after_purchase.technology_points_stock)
 	var research_day: Dictionary = ext.run_country_slice({"day_index": 2})
 	var after_research: Dictionary = country.research_snapshot(handle)
-	var first_share := purchased / 4
+	var consumed_day1 := int(after_research.consumed_total)
+	# Idle empty-domain weights redirect into the live queue domain, so day-1
+	# may consume more than equal-weight 1/4; unused points stay in treasury
+	# stock rather than deferred_unallocated.
 	_expect("purchased stock enters research on the next country day",
 		bool(research_day.get("done", false))
-		and int(after_research.consumed_total) == first_share
+		and consumed_day1 > 0
 		and int(after_research.deferred_unallocated_points) == 0
-		and int(after_research.technology_points_stock) == purchased - first_share)
+		and int(after_research.technology_points_stock) == purchased - consumed_day1)
 	var research_day2: Dictionary = ext.run_country_slice({"day_index": 3})
 	var after_research2: Dictionary = country.research_snapshot(handle)
-	var second_share := (purchased - first_share) / 4
-	_expect("empty-domain shares remain available on later research days",
+	_expect("empty-domain shares redirect instead of parking unallocated",
 		bool(research_day2.get("done", false))
-		and int(after_research2.consumed_total) == first_share + second_share
-		and int(after_research2.deferred_unallocated_points) == 0)
+		and int(after_research2.deferred_unallocated_points) == 0
+		and int(after_research2.consumed_total) >= consumed_day1
+		and int(after_research2.technology_points_stock) ==
+			purchased - int(after_research2.consumed_total))
 	var in_flight: Dictionary = ext.run_economy_slice({"day_index": 2, "tick_index": 2000})
 	_expect("research consumption is accepted during the frozen epoch",
 		not bool(in_flight.get("fatal", false))

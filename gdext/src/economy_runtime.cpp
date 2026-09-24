@@ -4014,6 +4014,26 @@ bool NativeEconomyRuntime::good_market_available(
         _good_trade_enabled[good_id] != 0 && _good_storage_modes[good_id] == 0;
 }
 
+bool NativeEconomyRuntime::good_input_candidate_available(
+        int32_t cell, int32_t good_id, bool frozen) const {
+    if (cell < 0 || cell >= _cell_count || good_id < 0 ||
+        good_id >= static_cast<int32_t>(_good_ids.size())) return false;
+    const int32_t market = market_store().cell_to_market[cell];
+    if (market < 0 || market >= market_store().market_count) return false;
+    const int64_t stock = std::max<int64_t>(0,
+        market_store().stock[market_store().index(market, good_id)]);
+    if (stock > 0) return true;
+    const int32_t signal = market_signal_index(cell, good_id);
+    const int64_t offered = signal >= 0 &&
+            signal < static_cast<int32_t>(_market_signals.offered_supply_ema.size())
+        ? std::max<int64_t>(0, _market_signals.offered_supply_ema[signal]) : 0;
+    if (offered > 0) return good_market_available(cell, good_id, frozen);
+    // Empty shelf, no offer: only tech-unlocked producers. Otherwise stone-age
+    // soft tools demand books onto metal `tools` solely because trade_enabled
+    // makes every stock good "market available".
+    return good_production_available(cell, good_id, frozen);
+}
+
 bool NativeEconomyRuntime::good_available(
         int32_t cell, int32_t good_id, bool frozen) const {
     return good_production_available(cell, good_id, frozen);
@@ -6150,6 +6170,7 @@ int32_t NativeEconomyRuntime::ensure_market_signal_index(int32_t cell, int32_t g
         };
         append_i64_if_aligned(_epoch_business_demand_ema);
         append_i64_if_aligned(_epoch_derived_business_demand);
+        append_i64_if_aligned(_epoch_substitute_business_demand);
         append_i64_if_aligned(_epoch_desired_business_demand);
         append_i64_if_aligned(_epoch_funded_business_demand);
     append_i64_if_aligned(_epoch_ceiling_business_requested);
@@ -6199,6 +6220,7 @@ int32_t NativeEconomyRuntime::ensure_market_signal_index(int32_t cell, int32_t g
     };
     insert_i64_if_aligned(_epoch_business_demand_ema);
     insert_i64_if_aligned(_epoch_derived_business_demand);
+    insert_i64_if_aligned(_epoch_substitute_business_demand);
     insert_i64_if_aligned(_epoch_desired_business_demand);
     insert_i64_if_aligned(_epoch_funded_business_demand);
     insert_i64_if_aligned(_epoch_ceiling_business_requested);
@@ -6291,6 +6313,7 @@ bool NativeEconomyRuntime::flush_market_signal_overflow(std::string &error) {
     reorder(_market_signals.cost_anchor_price);
     reorder(_epoch_business_demand_ema);
     reorder(_epoch_derived_business_demand);
+    reorder(_epoch_substitute_business_demand);
     reorder(_epoch_desired_business_demand);
     reorder(_epoch_funded_business_demand);
     reorder(_epoch_ceiling_business_requested);
@@ -6510,7 +6533,7 @@ int64_t NativeEconomyRuntime::rebuild_production_input_reserves_for_cell(
                  c < input.candidate_begin + input.candidate_count; ++c) {
                 const InputCandidate &candidate = _building_input_candidates[c];
                 if (_good_storage_modes[candidate.good_id] != 0 ||
-                !good_market_available(group.cell, candidate.good_id, frozen)) continue;
+                !good_input_candidate_available(group.cell, candidate.good_id, frozen)) continue;
                 const int32_t signal = market_signal_index(group.cell, candidate.good_id);
                 if (signal < 0 || signal >= static_cast<int32_t>(
                         _production_input_reserve.size())) continue;
@@ -7812,7 +7835,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
             for (int32_t c = item.candidate_begin;
                  c < item.candidate_begin + item.candidate_count; ++c) {
                 const InputCandidate &candidate = _building_input_candidates[c];
-                if (!good_market_available(group.cell, candidate.good_id, true)) continue;
+                if (!good_input_candidate_available(group.cell, candidate.good_id, true)) continue;
                 const int64_t physical_numerator = saturating_add(
                     saturating_mul(item.quantity, Q16_ONE, _saturation_count),
                     candidate.efficiency_q16 - 1, _saturation_count);
@@ -8249,7 +8272,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                 for (int32_t c = item.candidate_begin;
                      c < item.candidate_begin + item.candidate_count; ++c) {
                     const InputCandidate &candidate = _building_input_candidates[c];
-                    if (!good_market_available(group.cell, candidate.good_id, true)) continue;
+                    if (!good_input_candidate_available(group.cell, candidate.good_id, true)) continue;
                     int64_t physical = mul_div_sat(effective, Q16_ONE,
                         std::max<int32_t>(1, candidate.efficiency_q16),
                         _saturation_count);
@@ -8396,7 +8419,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                 for (int32_t c = item.candidate_begin;
                      c < item.candidate_begin + item.candidate_count; ++c) {
                     const InputCandidate &candidate = _building_input_candidates[c];
-                if (!good_market_available(group.cell, candidate.good_id, true)) continue;
+                if (!good_input_candidate_available(group.cell, candidate.good_id, true)) continue;
                     int64_t physical = mul_div_sat(
                         effective, Q16_ONE, candidate.efficiency_q16,
                         _saturation_count);
@@ -8690,10 +8713,25 @@ NativeEconomyRuntime::PricePressure NativeEconomyRuntime::price_pressure(
     // ranking only. Keep it out of real business demand so it cannot change
     // stock targets, procurement, sales, or owner vacancy.
     int64_t shadow_derived_pressure_q16 = 0;
-    if (signal_index >= 0 && signal_index < static_cast<int32_t>(
-            _epoch_derived_business_demand.size())) {
-        const int64_t derived = std::max<int64_t>(
-            0, _epoch_derived_business_demand[signal_index]);
+    int64_t shadow_derived_quantity = 0;
+    if (signal_index >= 0) {
+        if (signal_index < static_cast<int32_t>(
+                _epoch_derived_business_demand.size())) {
+            shadow_derived_quantity = saturating_add(
+                shadow_derived_quantity,
+                std::max<int64_t>(0, _epoch_derived_business_demand[signal_index]),
+                sat);
+        }
+        if (signal_index < static_cast<int32_t>(
+                _epoch_substitute_business_demand.size())) {
+            shadow_derived_quantity = saturating_add(
+                shadow_derived_quantity,
+                std::max<int64_t>(0, _epoch_substitute_business_demand[signal_index]),
+                sat);
+        }
+    }
+    if (shadow_derived_quantity > 0) {
+        const int64_t derived = shadow_derived_quantity;
         const int64_t real_flow = saturating_add(
             saturating_add(out.household_demand, out.business_demand, sat),
             out.supply, sat);
@@ -8753,7 +8791,12 @@ NativeEconomyRuntime::PricePressure NativeEconomyRuntime::price_pressure(
             out.cost_q16, out.inventory_q16, sat);
         out.glut_cost_damped = true;
     }
-    if (demand == 0 && out.supply == 0 && stock == 0) {
+    // Idle reversion is for truly quiet lanes. A one-hop Leontief shadow from
+    // a scarce downstream good is still a price signal: suppressing idle here
+    // lets intermediate prices rise without folding derived into procurement
+    // targets or owner opportunity (those stay on real business demand only).
+    if (demand == 0 && out.supply == 0 && stock == 0 &&
+        shadow_derived_quantity <= 0) {
         out.idle_q16 = std::clamp<int64_t>(mul_div_sat(
             static_cast<int64_t>(_good_default_price[good]) - price, Q16_ONE,
             std::max<int64_t>(1, std::max<int64_t>(_good_default_price[good], price)), sat),
@@ -8779,9 +8822,7 @@ NativeEconomyRuntime::PricePressure NativeEconomyRuntime::price_pressure(
     // good has no realised buyer yet.  Preserve a small positive cold-start
     // move instead of letting incumbent supply drive the first observation
     // downward; this lane never enters stock, sales, or owner hiring.
-    if (signal_index >= 0 && signal_index < static_cast<int32_t>(
-            _epoch_derived_business_demand.size()) &&
-        _epoch_derived_business_demand[signal_index] > 0) {
+    if (shadow_derived_quantity > 0) {
         out.change_q16 = std::max<int64_t>(out.change_q16, Q16_ONE / 8);
     }
     out.inactive_reversion_alpha_q16 = mul_div_sat(mul_div_sat(
@@ -10000,7 +10041,7 @@ NativeEconomyRuntime::owner_opportunity_quote(
         for (int32_t c = input.candidate_begin;
              c < input.candidate_begin + input.candidate_count; ++c) {
             const InputCandidate &candidate = _building_input_candidates[c];
-            if (!good_market_available(group.cell, candidate.good_id, true)) continue;
+            if (!good_input_candidate_available(group.cell, candidate.good_id, true)) continue;
             const int64_t raw = saturating_mul(group.count, input.quantity, sat);
             const int64_t physical_numerator = saturating_add(
                 saturating_mul(raw, Q16_ONE, sat),

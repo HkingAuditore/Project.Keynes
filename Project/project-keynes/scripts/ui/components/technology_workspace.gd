@@ -23,7 +23,7 @@ const COMPACT_POLICY_WIDTH := 300.0
 const COMPACT_DETAIL_WIDTH := 320.0
 const COMPACT_RAIL_WIDTH := 42.0
 const INTERNAL_COMPACT_WIDTH := 1120.0
-const LIVE_REFRESH_INTERVAL_MSEC := 120
+const LIVE_REFRESH_INTERVAL_MSEC := 33
 const DOMAIN_COUNT := 4
 const MODE_AVAILABLE := 0
 const MODE_FOCUS := 1
@@ -828,7 +828,15 @@ func _patch_queues(states: PackedInt32Array, progress: PackedInt64Array,
 		"queue_technology_indices", PackedInt32Array())
 	if offsets.size() < DOMAIN_COUNT + 1:
 		return
-	var signature := "%s|%s" % [offsets, technologies]
+	# Include per-tech state so pending/owned heads force a rebuild even when
+	# the raw queue indices have not changed yet.
+	var signature_parts := PackedStringArray()
+	signature_parts.append("%s|%s" % [offsets, technologies])
+	for technology in technologies:
+		var tech := int(technology)
+		var state := int(states[tech]) if tech >= 0 and tech < states.size() else 0
+		signature_parts.append("%d:%d" % [tech, state])
+	var signature := "|".join(signature_parts)
 	if signature != _queue_signature:
 		_queue_signature = signature
 		_rebuild_queue_rows(offsets, technologies)
@@ -844,39 +852,55 @@ func _patch_queues(states: PackedInt32Array, progress: PackedInt64Array,
 		for row in _queue_rows[domain]:
 			var index := int(row.technology_index)
 			var state := int(states[index]) if index < states.size() else 0
-			var cost := maxf(1.0, float((_definitions[index] as Dictionary).get(
-				"cost_points", 1)))
-			var earned := float(progress[index]) / POINT_SCALE \
-				if index < progress.size() else 0.0
+			# Settled nodes belong out of the live queue; keep the row quiet
+			# until the next signature rebuild drops them.
+			if state >= 4:
+				row.visible = false
+				continue
+			row.visible = true
+			var definition: Dictionary = _definitions[index]
+			var cost := maxf(1.0, float(definition.get("cost_points_scaled",
+				int(definition.get("cost_points", 1)) * POINT_SCALE)))
+			var earned := float(progress[index]) if index < progress.size() else 0.0
 			row.update_dynamic(state, earned / cost)
 
 
 func _rebuild_queue_rows(offsets: PackedInt32Array,
 		technologies: PackedInt32Array) -> void:
+	var research_states: PackedInt32Array = _research.get(
+		"technology_states", PackedInt32Array())
 	for domain in range(DOMAIN_COUNT):
 		var zone = _queue_zones[domain]
 		zone.clear_rows()
 		_queue_rows[domain] = []
-		zone.append_position = offsets[domain + 1] - offsets[domain]
+		var visible_count := 0
 		if offsets[domain + 1] <= offsets[domain]:
+			zone.append_position = 0
 			zone.set_empty_hint(true)
 			continue
-		zone.set_empty_hint(false)
 		for position in range(offsets[domain], offsets[domain + 1]):
 			if position < 0 or position >= technologies.size():
 				continue
 			var technology := int(technologies[position])
 			if technology < 0 or technology >= _definitions.size():
 				continue
+			var state := int(research_states[technology]) \
+				if technology < research_states.size() else 0
+			# State 4 = pending adoption, 5 = owned. Neither is "in research".
+			if state >= 4:
+				continue
 			var row = TechnologyQueueRowScene.instantiate()
 			zone.add_child(row)
-			row.setup(technology, domain, position - offsets[domain],
+			row.setup(technology, domain, visible_count,
 				String((_definitions[technology] as Dictionary).get("display_name", "")),
 				_domain_accent(domain))
 			row.move_requested.connect(_move_in_queue)
 			row.remove_requested.connect(_remove_from_queue)
 			row.selected_requested.connect(_focus_technology)
 			_queue_rows[domain].append(row)
+			visible_count += 1
+		zone.append_position = visible_count
+		zone.set_empty_hint(visible_count == 0)
 
 
 func _refresh_detail(refresh_relations: bool = true) -> void:
@@ -1321,6 +1345,12 @@ func _enqueue(index: int) -> void:
 	if bool(result.get("ok", false)):
 		_detail.mark_submitted()
 		policy_submitted.emit()
+		return
+	var reason := String(result.get("code", result.get("reason", "")))
+	var message := String(result.get("message", "")).strip_edges()
+	if message.is_empty():
+		message = _research_command_message(reason)
+	_detail.mark_rejected(message)
 
 
 func _remove_from_queue(index: int) -> void:
@@ -1334,6 +1364,25 @@ func _remove_from_queue(index: int) -> void:
 	if bool(result.get("ok", false)):
 		_detail.mark_submitted()
 		policy_submitted.emit()
+		return
+	var reason := String(result.get("code", result.get("reason", "")))
+	var message := String(result.get("message", "")).strip_edges()
+	if message.is_empty():
+		message = _research_command_message(reason)
+	_detail.mark_rejected(message)
+
+
+func _research_command_message(code: String) -> String:
+	return {
+		"country_research_already_queued": "该科技已在研究队列中（或已提交、次日生效）。",
+		"country_research_technology_unavailable": "该科技当前不可研究。",
+		"country_research_requirements_incomplete": "前置条件尚未完成。",
+		"country_research_domain_mismatch": "科技领域与队列不匹配。",
+		"country_research_queue_full": "该领域研究队列已满。",
+		"country_research_not_queued": "该科技不在研究队列中。",
+		"country_research_queue_argument_invalid": "研究队列参数无效。",
+		"era_reward_choice_required": "必须先完成时代奖励选择。",
+	}.get(code, "当前无法加入研究队列。")
 
 
 func _move_in_queue(technology: int, domain: int, position: int) -> void:

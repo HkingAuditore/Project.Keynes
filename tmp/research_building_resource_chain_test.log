@@ -1,0 +1,38 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+=== building resource chain test ===
+  [PASS] catalog compiles
+  [PASS] all modern resources enter sorted building catalog
+  [PASS] extractors use multiple content-level conversion efficiencies
+  [FAIL] mining efficiency improves across historical building tiers
+  [PASS] farm uses capacity behavior without generated crop resource
+  [PASS] mine extracts resources while textile is goods-only industrial
+  [PASS] farm capacity recipe is arable land plus fertile soil
+  [PASS] textile mill consumes direct fiber, power, maintenance tools, and no natural resource
+  [PASS] all-technology test country bootstraps
+  [PASS] runtime configures
+  [PASS] resource chain world bootstraps
+[economy-open-finish] day=0 country=0.051 workset=0.005 fiscal=0.007 csr=0.000 recovery=0.000 vectors=0.414 audit=0.001 commands=0.001
+  [PASS] capacity farm produces goods without consuming natural resources
+  [PASS] subsistence grain, vegetables, and corn are produced and sold before consumption
+  [PASS] mine extracts local coal
+  [PASS] resource report separates capacity checks from extraction
+  [PASS] insufficient arable capacity reduces output without resource delta
+  [PASS] zero arable capacity stops farm production
+  [PASS] capacity cycles conserve economy ledgers
+[economy-open-finish] day=0 country=0.044 workset=0.002 fiscal=0.002 csr=0.000 recovery=0.000 vectors=0.131 audit=0.002 commands=0.001
+[economy-open-finish] day=0 country=0.070 workset=0.004 fiscal=0.003 csr=0.000 recovery=0.000 vectors=0.217 audit=0.002 commands=0.001
+  [PASS] resource production worker/scalar hashes match
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+[economy-open-finish] day=0 country=0.058 workset=0.009 fiscal=0.006 csr=0.000 recovery=0.000 vectors=0.406 audit=0.002 commands=0.001
+  [FAIL] shore fishery extracts only its local coastal-land reserve
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+[economy-open-finish] day=0 country=0.070 workset=0.006 fiscal=0.003 csr=0.000 recovery=0.000 vectors=0.139 audit=0.002 commands=0.001
+  [FAIL] freshwater fishery extracts only its local freshwater reserve
+=== building resource chain FAIL ===
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 307 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

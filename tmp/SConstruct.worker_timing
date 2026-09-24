@@ -1,0 +1,6 @@
+from pathlib import Path
+r=Path(Dir('.').abspath).parent
+env=Environment()
+env.Append(CPPPATH=[str(r/'gdext/src')],CCFLAGS=['/std:c++17','/EHsc','/O2','/utf-8'])
+obj=env.Object('worker_timing_test.obj',str(r/'gdext/tests/runtime_worker_timing_test.cpp'))
+Default(env.Program('worker_timing_test',obj))

@@ -1,0 +1,58 @@
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/organic.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1225)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/dry_sand.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1225)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/rock.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1225)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/snow_wet.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:360)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:343)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1187)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1225)
+WARNING: [runtime-climate-round] no ClimateDailySystem; SHADOW capture carries no shared pass input
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _build_runtime_climate_round_input (res://scripts/geography/map_generator.gd:4665)
+       [1] capture_runtime_inputs_for_worker (res://scripts/geography/map_generator.gd:2355)
+       [2] generate_world (res://scripts/game/world_runtime_host.gd:715)
+       [3] generate (res://scripts/geography/map_generator.gd:1606)
+       [4] _yield_generation_frame (res://scripts/geography/map_generator.gd:19912)
+[runtime-day-wait] day=1 env_day=0 missing=0x0 economy_input=-1
+[climate][boundary] cold-start env_day=0 plan_day=1 ok=0 ref_hash=17654908178720290524 adopted_parity=17654908178720290524 round_ran=1
+[climate/worker][b8] physics_knobs day=1 ready=0 missing=physics_knobs
+[climate-kernel][round] shared=1 ok=1 n_cells=2400 mask=0x1FF ran=0x1FF starved=0x0 knobs_cells=2400
+[climate][boundary] day=1 planned=1 compared=1 matched=0 worker_parity=16889906480812798445 ref=2108039919905478715 stage_ran=0xFF prod_stage=0xFF round_ran=1 alb=0 veg=0 fb=0 err=
+[climate][boundary] day=1 first_diff=temperature[1954] ref=0.575782776 worker=0.577629387
+[economy-open-finish] day=100 country=0.253 workset=0.016 fiscal=0.028 csr=0.005 recovery=0.001 vectors=0.461 audit=0.416 commands=0.000
+[economy-open-finish] day=200 country=0.303 workset=0.015 fiscal=0.029 csr=0.005 recovery=0.001 vectors=0.549 audit=0.464 commands=0.000
+[economy-open-finish] day=300 country=0.297 workset=0.013 fiscal=0.029 csr=0.005 recovery=0.001 vectors=0.446 audit=0.433 commands=0.000
+[economy-open-finish] day=400 country=0.267 workset=0.022 fiscal=0.029 csr=0.005 recovery=0.001 vectors=0.473 audit=0.459 commands=0.000
+ERROR: [stage-c/client] income test worker did not start
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _fail (res://tests/authority_stage_c_client_runner.gd:501)
+       [1] _on_world_ready (res://tests/income_tax_player_regression.gd:17)
+ERROR: 44 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 16 RID allocations of type 'PN18TextServerAdvanced22ShapedTextDataAdvancedE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 986 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

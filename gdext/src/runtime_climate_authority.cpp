@@ -1356,6 +1356,17 @@ bool RuntimeEnvironmentInputRing::pop_generation(uint64_t generation) {
     return true;
 }
 
+size_t RuntimeEnvironmentInputRing::pop_while_day_at_most(int64_t day) {
+    std::lock_guard<std::mutex> lock(_mutex);
+    size_t popped = 0;
+    while (!_queue.empty() && _queue.front() &&
+           _queue.front()->day <= day) {
+        _queue.pop_front();
+        ++popped;
+    }
+    return popped;
+}
+
 void RuntimeEnvironmentInputRing::reset() {
     std::lock_guard<std::mutex> lock(_mutex);
     _queue.clear();
@@ -1406,6 +1417,19 @@ bool RuntimeEnvironmentInputRing::self_test(std::string &error) {
     }
     if (ring.latest() == nullptr || ring.latest()->generation != 100) {
         error = "environment_ring_latest_broken";
+        return false;
+    }
+    // After force_push the queue holds gens 2..SLOT_COUNT then 100 was a drop of
+    // gen1 and push 100 — then we popped 2, so head is 3. Days were 10+g.
+    // Pop everything through day 14 (gen 4 has day 14).
+    const size_t drained = ring.pop_while_day_at_most(14);
+    if (drained == 0) {
+        error = "environment_ring_day_drain_empty";
+        return false;
+    }
+    oldest = ring.peek_oldest();
+    if (oldest != nullptr && oldest->day <= 14) {
+        error = "environment_ring_day_drain_left_old";
         return false;
     }
     return true;

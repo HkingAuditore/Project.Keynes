@@ -1,0 +1,18 @@
+[technology-runtime] repository contract files present
+[technology-runtime] running technology_catalog_test.gd
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[PASS] authoritative technology catalog: 369 definitions / 362 researchable
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 276 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
+[technology-runtime] running technology_network_design_test.gd
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+SCRIPT ERROR: Assertion failed.
+   at: _init (res://tests/technology_network_design_test.gd:355)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/technology_network_design_test.gd:355)

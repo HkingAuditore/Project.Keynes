@@ -1,0 +1,115 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] catalog compiles
+  [PASS] peer-valid DCWorldExt instantiates
+  [PASS] peer-valid modifier catalog configures
+  [PASS] peer-valid effect catalog configures
+  [PASS] peer-valid country configures
+  [PASS] peer-valid peer research catalog entries exist
+  [PASS] peer-valid country bootstraps
+  [PASS] peer-valid exposes a valid Country handle
+  [PASS] valid queues sheep evidence
+  [PASS] valid commits evidence boundary
+  [PASS] valid enables async peer mode
+  [PASS] valid queues research weights
+  [PASS] valid queues animal husbandry
+  [PASS] valid completion boundary runs
+  [PASS] valid emits a peer intent
+  [PASS] pending technology is not completed before peer ACK
+  [PASS] peer intent has complete identity
+  [PASS] valid paused save worker starts
+  [PASS] pending peer intent blocks runtime save
+  [PASS] wrong session ACK is rejected
+  [PASS] wrong Country generation ACK is rejected
+  [PASS] wrong peer generation ACK is rejected
+  [PASS] unknown request ACK is rejected
+  [PASS] terminal STALE result is rejected without mutation
+  [PASS] ACK below captured peer generation is rejected
+  [PASS] PENDING ACK keeps the intent outstanding
+  [PASS] valid Effect ACK is accepted
+  [PASS] identical ACK retry is idempotent
+  [PASS] different duplicate ACK is rejected
+  [PASS] valid ACK closes the pending protocol item
+  [PASS] same-day continuation 0 runs
+  [PASS] valid continuation 0 intent opcode is known
+  [PASS] valid continuation 0 ACK 0 is accepted
+  [PASS] same-day continuation activates the technology
+  [PASS] same-day continuation does not consume research twice
+  [PASS] Effect reward intent is emitted after activation
+  [PASS] unconfigured Economy does not fabricate a milestone intent
+  [PASS] valid bridge flow leaves no peer save barrier
+  [PASS] modifier peer day is quiescent before checkpoint
+  [PASS] valid bridge flow remains synchronously saveable
+  [PASS] peer-real DCWorldExt instantiates
+  [PASS] peer-real modifier catalog configures
+  [PASS] peer-real effect catalog configures
+  [PASS] peer-real country configures
+  [PASS] peer-real peer research catalog entries exist
+  [PASS] peer-real country bootstraps
+  [PASS] peer-real exposes a valid Country handle
+  [PASS] real adapter queues sheep evidence
+  [PASS] real adapter commits evidence boundary
+  [PASS] real adapter enables async peer mode
+  [PASS] real adapter queues research weights
+  [PASS] real adapter queues animal husbandry
+  [PASS] real adapter completion boundary runs
+  [PASS] real adapter emits a peer intent
+  [PASS] real adapter service accepts the Country Effect intent
+  [PASS] real adapter creates exactly one Effect instance
+  [PASS] real adapter first pass reports an unacked Effect
+  [PASS] real Effect daily evaluates the Country-created instance
+  [PASS] real Effect dispatches its Modifier transaction
+  [PASS] real Modifier safe boundary commits the transaction
+  [PASS] real Modifier ACK reaches Effect
+  [PASS] real Effect dispatches its publication transaction
+  [PASS] real gameplay adapter commits the publication event
+  [PASS] real publication ACK reaches Effect
+  [PASS] real adapter applies one Country technology Modifier
+  [PASS] real adapter closes the Effect intent after peer ACK
+  [PASS] real adapter same-day continuation 0 runs
+  [PASS] real adapter follow-up service 0 succeeds
+  [PASS] real adapter same-day continuation activates technology
+  [PASS] real adapter does not duplicate the Effect instance
+  [PASS] real adapter does not duplicate the Modifier
+  [PASS] real adapter preserves one-time research consumption
+  [PASS] real adapter generation remains monotonic
+  [PASS] real adapter flow leaves no peer or save barrier
+  [PASS] real adapter flow remains checkpointable
+  [PASS] peer-reject DCWorldExt instantiates
+  [PASS] peer-reject modifier catalog configures
+  [PASS] peer-reject effect catalog configures
+  [PASS] peer-reject country configures
+  [PASS] peer-reject peer research catalog entries exist
+  [PASS] peer-reject country bootstraps
+  [PASS] peer-reject exposes a valid Country handle
+  [PASS] rejection queues sheep evidence
+  [PASS] rejection commits evidence boundary
+  [PASS] rejection enables async peer mode
+  [PASS] rejection queues research weights
+  [PASS] rejection queues animal husbandry
+  [PASS] rejection completion boundary runs
+  [PASS] rejection emits a peer intent
+  [PASS] peer rejection is durably recorded
+  [PASS] rejection paused save worker starts
+  [PASS] rejected peer retry barrier blocks runtime save
+  [PASS] rejection is surfaced as a terminal Country step
+  [PASS] rejection reporting does not advance Country generation
+  [PASS] same-day rejection barrier holds pending activation
+  [PASS] next-day retry boundary runs
+  [PASS] next-day retry emits a new request identity
+  [PASS] new retry clears the old rejection barrier
+  [PASS] next-day retry ACK is accepted
+  [PASS] retry continuation 0 runs
+  [PASS] retry continuation 0 intent opcode is known
+  [PASS] retry continuation 0 ACK 0 is accepted
+  [PASS] rejected technology completes after next-day retry
+  [PASS] retry flow ends without a protocol barrier
+  [PASS] retry modifier peer day is quiescent before checkpoint
+  [PASS] retry flow can capture a Country checkpoint
+runtime country peer bridge: 106 checks, 0 failures
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 276 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

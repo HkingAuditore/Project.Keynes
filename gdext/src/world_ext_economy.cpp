@@ -1520,14 +1520,19 @@ Dictionary DCWorldExt::reset_economy(const String &reason) {
 
 Dictionary DCWorldExt::start_economy_csv_recording(const Dictionary &config) {
     Dictionary out;
-    std::unique_lock<std::mutex> boundary;
+    // Do not hold the economy authority boundary across start()/file-open.
+    // That lock is also the worker's per-day gate; holding it while the main
+    // thread waits on CSV open starves Country peer pumps and nails the sim
+    // on climate_input_capacity_day_barrier. Probe busy first, then start
+    // unlocked, and only take the lock briefly to attach.
     if (_runtime_host) {
-        boundary = _runtime_host->try_lock_economy_input_capture();
-        if (!boundary.owns_lock()) {
+        auto probe = _runtime_host->try_lock_economy_input_capture();
+        if (!probe.owns_lock()) {
             out["ok"] = false;
             out["error_code"] = "economy_boundary_busy";
             return out;
         }
+        probe.unlock();
     }
     if (_economy_runtime == nullptr) {
         out["ok"] = false;
@@ -1578,7 +1583,21 @@ Dictionary DCWorldExt::start_economy_csv_recording(const Dictionary &config) {
     EconomyCsvRecorder *recorder =
         static_cast<EconomyCsvRecorder *>(_economy_csv_recorder);
     const bool ok = recorder->start(native, *runtime_from(_economy_runtime), error);
-    if (ok) runtime_from(_economy_runtime)->attach_csv_recorder(recorder);
+    if (ok) {
+        if (_runtime_host) {
+            auto boundary = _runtime_host->try_lock_economy_input_capture();
+            if (!boundary.owns_lock()) {
+                recorder->request_stop();
+                out = recorder->status();
+                out["ok"] = false;
+                out["error_code"] = "economy_boundary_busy";
+                return out;
+            }
+            runtime_from(_economy_runtime)->attach_csv_recorder(recorder);
+        } else {
+            runtime_from(_economy_runtime)->attach_csv_recorder(recorder);
+        }
+    }
     out = recorder->status();
     out["ok"] = ok;
     if (!ok && !error.empty()) out["error_message"] = String(error.c_str());

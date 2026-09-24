@@ -183,6 +183,10 @@ public:
     }
     bool export_pod_catalog(RuntimeModifierPodCatalog &out,
                             std::string &error) const;
+    // Dense (definition_id, FNV key hash) pairs for Effect→Modifier POD handoff.
+    // Order matches `_definitions` / export_pod_catalog indices.
+    void export_definition_key_hashes(
+            std::vector<std::pair<uint64_t, int32_t>> &out) const;
     // E8 ACTIVE write-back: replace stores from a worker-committed POD
     // snapshot so evaluate_modifier_stat / hot-path consumers observe
     // the submitted state. Generation must be monotonic; failures leave

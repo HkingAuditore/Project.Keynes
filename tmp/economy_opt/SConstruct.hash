@@ -1,0 +1,5 @@
+from pathlib import Path
+r=Path(Dir('.').abspath).parents[1]
+env=Environment()
+env.Append(CPPPATH=[str(r/'gdext/src')],CCFLAGS=['/std:c++17','/EHsc','/O2','/utf-8'])
+Default(env.Program('hash_test',str(r/'gdext/tests/economy_hash_lanes_test.cpp')))

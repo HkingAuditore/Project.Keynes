@@ -293,6 +293,7 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_market_signals_rebuild_scratch.cost_anchor_price);
     cap(_market_signal_overflow_cells);
     cap(_epoch_business_demand_ema); cap(_epoch_derived_business_demand);
+    cap(_epoch_substitute_business_demand);
     cap(_epoch_desired_business_demand);
     cap(_epoch_funded_business_demand); cap(_epoch_offered_supply_ema);
     cap(_epoch_producer_sellable_current);

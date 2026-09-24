@@ -19,9 +19,26 @@ func _init(p_facade) -> void:
 
 func should_run(ctx: SusTickContext) -> bool:
 	# F8: when EFFECT is worker-authoritative, effect_should_run is false and
-	# this SUS must not evaluate or dispatch on the main thread.
-	return facade != null and facade.is_configured() and ctx != null \
-		and bool(facade.world_ext().effect_should_run(ctx.day_index))
+	# this SUS must not evaluate or dispatch catalog Effects on the main thread.
+	if facade == null or not facade.is_configured() or ctx == null:
+		return false
+	if bool(facade.world_ext().effect_should_run(ctx.day_index)):
+		return true
+	# ...but family colonization CLAIM/SETTLE transactions are enqueued onto the
+	# main EffectRuntime by Economy, not by the worker catalog. dispatch_effect_
+	# native_country is deliberately left unsuppressed for them; without this
+	# reduced pass nothing ever calls it and expeditions park in SETTLING.
+	return _colonization_adapter_pending()
+
+
+# Cheap predicate so the reduced pass below only wakes while an externally
+# enqueued transaction is actually waiting on the Country/Economy adapters.
+func _colonization_adapter_pending() -> bool:
+	var ext = facade.world_ext()
+	if not ext.has_method("get_effect_native_adapter_report"):
+		return false
+	var report: Dictionary = ext.get_effect_native_adapter_report()
+	return not bool(report.get("idle", true))
 
 
 func is_deadline_critical(ctx: SusTickContext) -> bool:
@@ -32,17 +49,35 @@ func tick(ctx) -> Dictionary:
 	var started_us := Time.get_ticks_usec()
 	if facade == null or not facade.is_configured():
 		return {"done": true, "stage_name": "effect_unavailable"}
-	# Hard no-op when worker owns Effect (belt-and-suspenders with effect_should_run).
+	# Worker owns catalog Effect evaluation. Skip run_effect_daily, the Modifier
+	# adapter and the legacy transaction fallback — all of those are suppressed
+	# or worker-owned — but still settle Economy-origin colonization
+	# transactions, whose CLAIM must reach Country and be ACKed here.
 	if facade.world_ext().has_method("get_runtime_thread_report"):
 		var report: Dictionary = facade.world_ext().get_runtime_thread_report()
 		if bool(report.get("effect_worker_authoritative", false)):
+			var claim: Dictionary = {}
+			if facade.world_ext().has_method("dispatch_effect_native_country"):
+				claim = facade.world_ext().dispatch_effect_native_country()
+			if facade.world_ext().has_method("ack_effect_native_country"):
+				facade.world_ext().ack_effect_native_country()
+			var settle: Dictionary = {}
+			if facade.world_ext().has_method("dispatch_effect_native_economy"):
+				settle = facade.world_ext().dispatch_effect_native_economy()
 			return {
 				"done": true,
-				"work_done": 0,
+				"work_done": int(claim.get("submitted_commands", 0))
+					+ int(settle.get("submitted_commands", 0)),
 				"elapsed_ms": float(Time.get_ticks_usec() - started_us) / 1000.0,
 				"progress_ratio": 1.0,
-				"stage_name": "effect_worker_authoritative",
+				"stage_name": "effect_worker_colonization_adapters",
 				"path": "EFFECT_WORKER",
+				"native_country_transactions": int(claim.get(
+					"submitted_transactions", 0)),
+				"native_country_commands": int(claim.get("submitted_commands", 0)),
+				"native_economy_transactions": int(settle.get(
+					"submitted_transactions", 0)),
+				"native_economy_commands": int(settle.get("submitted_commands", 0)),
 			}
 	var day := int(ctx.day_index) if ctx != null else 0
 	var result: Dictionary = facade.world_ext().run_effect_daily(day)

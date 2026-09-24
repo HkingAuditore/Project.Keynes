@@ -1,0 +1,67 @@
+[
+  {
+    "test": "building_runtime_test",
+    "exit": 1,
+    "failures": [
+      "  [FAIL] hunter subsistence remains an active explicitly financed producer",
+      "  [FAIL] tool shortage derives flint shadow demand without knapping sales",
+      "  [FAIL] derived flint demand lifts flint price over cold-start cycles",
+      "  [FAIL] higher owner income attracts the final low-income ACTIVE owner",
+      "  [FAIL] cross-profession owner movement transfers population and funds proportionally",
+      "  [FAIL] income-driven owner movement restores target production",
+      "  [FAIL] higher food owner income attracts an incumbent mining employee",
+      "  [FAIL] surplus merchant changes profession while final merchant is retained"
+    ]
+  },
+  {
+    "test": "economy_cadence_runtime_test",
+    "exit": 1,
+    "failures": [
+      "  [FAIL] restore keeps locked cadence",
+      "  [FAIL] ECP2 mid-epoch capture carries resume cursor"
+    ]
+  },
+  {
+    "test": "technology_procurement_runtime_test",
+    "exit": 0,
+    "failures": []
+  },
+  {
+    "test": "technology_research_runtime_test",
+    "exit": 0,
+    "failures": []
+  },
+  {
+    "test": "technology_modifier_activation_test",
+    "exit": 0,
+    "failures": []
+  },
+  {
+    "test": "technology_pending_activation_scheduler_test",
+    "exit": 0,
+    "failures": []
+  },
+  {
+    "test": "building_resource_chain_test",
+    "exit": 1,
+    "failures": [
+      "  [FAIL] mining efficiency improves across historical building tiers",
+      "  [FAIL] shore fishery extracts only its local coastal-land reserve",
+      "  [FAIL] freshwater fishery extracts only its local freshwater reserve"
+    ]
+  },
+  {
+    "test": "economy_rolling_runtime_test",
+    "exit": 3221225477,
+    "failures": [
+      "  [FAIL] PKEC v47 saves at a daily committed boundary",
+      "  [FAIL] rolling save restores exact hash",
+      "  [FAIL] day 8 uses bounded multi-chunk continuation",
+      "  [FAIL] day 8 exposes bounded investment continuation",
+      "  [FAIL] day 8 exposes baked building review phases",
+      "  [FAIL] day 8 exposes isolated investment prepare timing",
+      "  [FAIL] day 8 commits one rolling phase",
+      "  [FAIL] day 8 preserves completed-epoch performance diagnostics"
+    ]
+  }
+]

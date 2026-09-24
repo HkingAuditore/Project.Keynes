@@ -1,0 +1,6 @@
+scons: Reading SConscript files ...
+Building for architecture x86_64 on platform windows
+scons: done reading SConscript files.
+usage: scons [OPTIONS] [VARIABLES] [TARGETS]
+
+SCons Error: no such option: -B

@@ -801,7 +801,7 @@ stable good ID 排列的候选 CSR，并附带 good-level Q16 生产效率。每
 `1 - required` 的产能底线，库存/现金越接近完整物理需求，产能越线性恢复到满产。native 在冻结国家科技可用的候选
 中按 `price / efficiency` 选择最低有效成本；生产期还要求本地正库存。物理消耗为
 `ceil(effective_required / efficiency)` 乘以该产能实际需要的输入购买比例；若完整物理需求为正且购买比例为正，scaled 购买量至少为 1，避免硬输入在极低利用率下被截断为“零成本免费生产”。库存、业主现金与 goods audit 仍记录实际物理数量。
-这使早期木材等配方可以直接使用打制石器、青铜、金属或精密工具，不再需要商品转换站；每个输入槽仍按建筑时代设置最低品质，因此探索以后不会再选中打制石器，信息/AI 只接受精密工具。石器狩猎营地有 `tools` 软槽 `32768`、按劳动槽每日 100 工具；满工具标称日产 `1560/72/72` 野味/生皮/毛皮并抽取 `326` 野生动物。无工具时产能与抽取约为标称一半，对齐补槽前的徒手产量。纯抽取采集者在补软工具时把标称产出与 `extract` 加倍；含 `capacity` 的农田/牧场等保持原标称（满工具=旧产量，徒手约一半），以免土地生产力越出时代区间。邻近后期档按满工具人均产出至少 `1.34×` 前档上修。开局规划器按该软槽底线估算食物与抽取，且不把软互补品当作必须闭环的硬投入。
+这使早期木材等配方可以直接使用打制石器、青铜、金属或精密工具，不再需要商品转换站；每个输入槽仍按建筑时代设置最低品质，因此探索以后不会再选中打制石器，信息/AI 只接受精密工具。石器狩猎营地有 `tools` 软槽 `32768`、按劳动槽每日 100 工具；满工具标称日产 `1000/46/46` 野味/生皮/毛皮并抽取 `209` 野生动物。无工具时产能与抽取约为标称一半，对齐补槽前的徒手产量。纯抽取采集者在补软工具时把标称产出与 `extract` 加倍；含 `capacity` 的农田/牧场等保持原标称（满工具=旧产量，徒手约一半），以免土地生产力越出时代区间。邻近后期档按满工具人均产出至少 `1.34×` 前档上修。开局规划器按该软槽底线估算食物与抽取，且不把软互补品当作必须闭环的硬投入。采集营地满工具标称日产 `2300` 采集植物（土地 capacity `1215`）；枯枝采集营地满工具标称日产 `3400` 原木并抽取 `1148` 木材。
 玩家新建建筑列表必须展开当前科技可用的输入候选显示名，并标注非 100% 的 Q16 效率；不得只渲染槽位代表物资的 `display_name`。石器时代伐木场因此显示打制石器，而不是代表物资 `tools` 的「金属工具」。运行时仍按冻结科技可用候选的有效成本选择，不因 UI 文案改变。
 
 建造边使用同一套机制：`BuildingProfile.construction_category_ids` /
@@ -914,9 +914,16 @@ ACTIVE 自营业建筑的 planned owner demand 始终等于完整物理业主席
 资金和当期 cohort 账目，不发生出资、建设或额外现金转移。SUSPENDED、不可用建筑与不同民族
 不参与。report 以 `building_employee_to_owner_reallocations` 单独统计 employee 来源，
 `building_owner_understaffed_reallocations` 统计来源快照时缺编的 owner→owner 成功流动；
-兼容字段 `building_owner_job_probability_skips` 保留但当前确定性路径不再递增。既有类型仍有
-业主空缺时，投资审查继续以 `ACTIVE_OWNER_VACANCY` 拒绝新建扩容，直到就业侧先填齐空缺
-（生存食品短缺的 survival_vacancy 例外不变）。
+兼容字段 `building_owner_job_probability_skips` 保留但当前确定性路径不再递增。
+**同类型**已建组仍有业主空缺时，投资审查以 `ACTIVE_OWNER_VACANCY` 拒绝该类型继续扩容，
+直到就业侧先填齐空缺。**不得**因生存食品短缺（旧 `survival_vacancy`）绕过该门：空岗上的
+机会报价按满员假设仍可 `feasible`，短缺不会因继续垒空壳而消失，曾导致
+`wild_tuber_patch` / `wild_wheat_stand` 在数十人口下扩到上百座空建筑。生存食品缺口改为
+通过就业/转岗填现有空岗竞争劳动力。**不得**因格内其他类型的空缺而禁止无关 greenfield；
+新建产业与既有空缺岗通过利润/机会收益竞争劳动力，而不是用整格硬门互锁。就业追赶
+（`employment_catchup`）同样不得绕过同类型空缺门。capacity 资源边（如肥沃土壤）与 extract
+一样参与投资承诺与批量上限。单次审查还另加**人口编制硬顶**：已建 + 在建 + 本轮已分配的
+业主岗总数不得超过本格人口，避免赞助意愿/商人信贷在 greenfield 水填中一次盖出远超劳动力的空壳。
 利用率坍缩时失业者获跨周期缓冲、可长期失业，不再每周期从零重摊。商人全程排除（`ensure_merchant_invariant`
 保持），其失业/商业萧条为独立后续设计。随后业主按本地价购买输入并生产。每个 owner 从统一
 `survival_household` 基础量、冻结人口/环境和民族修正计算无财富/价格弹性的生存量，只对主食、蛋白质、蔬果保留饥饿阈值比例，并按寒冷
@@ -926,6 +933,14 @@ ACTIVE 自营业建筑的 planned owner demand 始终等于完整物理业主席
 结算系数推向 100%；短缺、生存品和生产投入只改变数量与预算优先级。期初采购现金
 保留 12.5%。Price V4 的成本锚继续用“生产者所需结算价 ÷ 收购系数”反推零售目标，
 因此可同时覆盖生产者成本和商人流通毛利。
+
+业主流动收入（`owner_mobility_income`）：已有结算产出的建筑用上期已实现现金流；
+**从未投产的空岗**改用 `owner_opportunity_quote` 的人均反事实机会（打制工坊的影子需求门仍生效），
+避免 UI「机会收益」很高、转职侧却因 settled=0 永久拒招的死锁。
+
+建设竣工（`commit_ready_construction`）：本次 pending 落成时只增加
+`pending.count × owner_slots` 的 `filled_owner`（与投资时迁入的出资人数一致），
+不把同签名 cohort 整批塞进建筑。1 人出资占 1 岗，N 栋新楼占 N×slots 岗。
 
 国内贸易按目的地冻结 `max(0, merchant_cash - existing_order_reserved_cash -
 merchant_cash × merchant_procurement_cash_reserve_q16)`。候选裁量、利润裁剪与最终
@@ -1488,7 +1503,11 @@ through the existing unemployed pool.
 Investment V5 derives entry utilization from `demand - offered_supply_ema`, never from
 installed count times recipe output. Each input edge then caps entry utilization by its
 soft-required share and actual one-period coverage from unreserved stock plus offered
-supply EMA. Zero coverage on a fully required input reports `INPUT_CHAIN`. These are
+supply EMA. Zero coverage on a **fully required** input reports `INPUT_CHAIN`. Soft
+inputs (`required_q16 < 1`) with no available candidate keep zero coverage / zero bill
+and only tighten the soft utilization bound — matching production's soft-input path so
+empty tool shelves cannot veto hunting/gathering investment while those buildings can
+still operate. These are
 formula and derived-diagnostic changes only; PKEC v15, cadence, authority, and state hash
 Candidate viability also reserves survival-food/clothing output up to the prospective owners'
 daily livelihood cost. That quantity is removed from merchant-sellable output and valued at the
@@ -1577,9 +1596,10 @@ rejects any other profile that omits construction goods. Output demand combines 
 stock and `merchant_inventory_target`. When that deficit is zero, a cheaper unlocked type may still
 enter if local incumbents offer the same good at a strictly higher unit cost after
 `investment_displacement_min_advantage_q16` (default 1/16). Rejection 15 is reserved for types with
-no marketable output; rejection 18 (`INVESTMENT_REJECTION_NO_COST_ADVANTAGE`) means no gap and no
-stealable incumbent supply. Utilization, livelihood, margin, and payback then use that stealable
-share exactly as they would a shortage.
+no marketable output; rejection 18 (`INVESTMENT_REJECTION_NO_COST_ADVANTAGE`) means no gap, no
+stealable incumbent supply, no employment catch-up, and no profitable full same-type seat
+expansion (`realized_profit_margin_q16 >= 1/4`). Utilization, livelihood, margin, and payback then
+use that stealable or catch-up share exactly as they would a shortage.
 
 The inspector-selected cell owns a bounded transient candidate table containing every
 evaluated unlocked type, including types with no installed group. Rejection reason 17 remains
@@ -1598,7 +1618,11 @@ extraction, or generation is a recoverable execution blockage and remains active
 `SUSPENDED_LOSS` always releases every owner to the unemployment pool while preserving
 installed capacity.
 
-A suspended producer publishes no production, employment, or input demand. Permanent-liquidation
+A suspended producer publishes no production or employment and does not claim
+funded procurement. It still publishes nameplate **desired** input demand (and
+business-demand EMA observations) so upstream producers can discover the latent
+restart buyer — for example a suspended flint quarry that needs soft tools.
+Permanent-liquidation
 reviews advance only when a full restart is physically and financially executable but the expected
 margin still misses the restart threshold. A supply, resource, or financing blockage resets failed
 liquidation reviews, so scarcity pauses the business without destroying it. The failed-review
@@ -1778,6 +1802,73 @@ trade import targets, and investment startup deficits fold that shadow demand
 with default weight `Q16_ONE/2`. Vacant downstream workshops can therefore raise
 intermediate prices (for example tools → flint) without realized input purchases.
 Conservation is unchanged: derived demand never withdraws stock or mints money.
+
+2026-09-18 briefly moved shadow out of `business_demand` so it would not inflate
+merchant inventory targets or vacant-owner opportunity. That separation remains:
+shadow stays out of procurement and owner hiring. Price formation still consumes
+shadow pressure, and when `_epoch_derived_business_demand > 0` the idle-default
+reversion path is suppressed so intermediate goods are not pinned to catalog
+default while a scarce downstream good is propagating one-hop demand.
+
+Cold-start soft-input discovery (2026-09-24): when every substitute on a
+production input is out of stock, candidate ranking prefers the good whose
+preferred startup producer can already cover hard inputs from local stock
+(for example knapping when flint is stocked) instead of ranking solely by
+ghost ceiling prices that push demand onto copper/bronze tools. Soft-only
+or input-free producers score cold_cover `0`, not `Q16_ONE`, so they cannot
+beat an empty hard-input stone-age lane on a vacuous cover. Empty-shelf
+input selection additionally requires `good_production_available` (tech
+unlock): `good_market_available` alone is insufficient because every
+trade-enabled stock good — including locked metal `tools` — was treated as
+marketable and absorbed soft-category demand before iron was researched.
+Suspended buyers publish nameplate desired demand into that same path so a
+paused flint quarry can still seed chipped-stone demand. Investment quotes
+bill soft inputs only for the covered (stocked/offered) share; missing soft
+tools must not also levy full ghost unit cost on top of the soft utilization
+bound (that combination rejected `flint_quarry` with `OWNER_LIVELIHOOD`
+while tools demand sat on the metal `tools` SKU). When every soft-input
+candidate fails availability, investment keeps coverage/bill at zero and
+continues — it must not emit `INPUT_CHAIN` the way a missing hard input does.
+
+## 2026-09-24 Distressed-owner mobility and profitable seat expansion
+
+Owner mobility no longer treats `last_output/last_revenue > 0` as a permanent
+pin. Reusing the already-computed mobility income, an incumbent is
+**distressed** (and remains a mobility source) when disposable income `<= 0`,
+settled profit margin `< 0`, or employee fill is below half of role slots
+(employee walk skipped when income/margin already distress). Healthy settled
+producers stay pinned; restart-intent lots stay protected.
+
+Investment `NO_COST_ADVANTAGE` gains a bounded sibling of employment catch-up:
+when the local same-type incumbent is fully owner-staffed and its
+representative `realized_profit_margin_q16 >= 1/4`, a `1/6` utilization quote
+may still open so sponsors can buy an owner seat / change profession. Losing
+industries (e.g. under-margin placer gold) do not qualify; `OWNER_LIVELIHOOD`
+continues to block expanding them.
+
+Portfolio spare-population staffing (`cell_population - committed_owner_slots`)
+applies only to greenfield seats that need a new body. A sponsor who already
+holds an owner seat and changes profession (`reallocates_owner_seat`) is a
+zero-sum reallocation and bypasses that ceiling; willing-population and capital
+caps still bind. Without this, fully owner-employed cells reported
+`owner_population_limited` forever while merchants stayed stuck on losing
+placer lots despite viable hunting/gathering candidates.
+
+## 2026-09-24 Same-edge substitute business demand
+
+When a building input edge selects one catalog candidate for procurement
+(e.g. `bronze_tools`), every other co-candidate on that same edge
+(already filtered by `input_category` + `min_quality`) receives equal
+`_epoch_substitute_business_demand`. This is deliberate substitute
+visibility: producers of `chipped_stone_tools` must see the unmet tools
+need even when the picker booked bronze. Substitute demand feeds
+investment deficits, `driver_real_evidence`, price shadow pressure, and
+next-epoch Leontief seeding. It does **not** inflate merchant inventory
+targets, funded procurement, or owner hiring — only the selected SKU
+keeps real `business_demand_ema` / funded demand.
+
+Complementary (BOM) demand remains the existing one-hop Leontief
+`_epoch_derived_business_demand` path (tools shortage → flint).
 
 
 

@@ -1,0 +1,19 @@
+[remap]
+
+importer="csv_translation"
+type="Translation"
+uid="uid://lsc616sk75og"
+
+[deps]
+
+files=["res://tmp/employment_final_probe/country_daily_metrics.en.translation", "res://tmp/employment_final_probe/country_daily_metrics.en.translation", "res://tmp/employment_final_probe/country_daily_metrics.en.translation", "res://tmp/employment_final_probe/country_daily_metrics.en.translation", "res://tmp/employment_final_probe/country_daily_metrics.en.translation", "res://tmp/employment_final_probe/country_daily_metrics.en.translation", "res://tmp/employment_final_probe/country_daily_metrics.en.translation"]
+
+source_file="res://tmp/employment_final_probe/country_daily_metrics.csv"
+dest_files=["res://tmp/employment_final_probe/country_daily_metrics.en.translation", "res://tmp/employment_final_probe/country_daily_metrics.en.translation", "res://tmp/employment_final_probe/country_daily_metrics.en.translation", "res://tmp/employment_final_probe/country_daily_metrics.en.translation", "res://tmp/employment_final_probe/country_daily_metrics.en.translation", "res://tmp/employment_final_probe/country_daily_metrics.en.translation", "res://tmp/employment_final_probe/country_daily_metrics.en.translation"]
+
+[params]
+
+compress=1
+delimiter=0
+unescape_keys=false
+unescape_translations=true

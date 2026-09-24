@@ -164,6 +164,9 @@ var _pending_tick_sus_ms: float = 0.0
 var _pending_tick_render_ms: float = 0.0
 var _pending_tick_skipped_day: bool = false
 var _climate_capacity_pending_day: int = -1
+var _climate_capacity_pending_since_msec: int = 0
+const _CLIMATE_CAPACITY_STALL_DIAG_MSEC := 3000
+var _climate_capacity_stall_next_diag_msec: int = 0
 var _map_overlay_request: Dictionary = {}
 var _map_overlay_tex: ImageTexture = null
 var _map_overlay_image: Image = null
@@ -343,12 +346,15 @@ func _on_clock_day_changed(day_idx: int) -> void:
 		var capacity := wait_for_climate_consumed(0)
 		_sched_day_climate_wait_ms += _sched_elapsed_ms(segment_usec)
 		if not bool(capacity.get("ok", false)):
-			_climate_capacity_pending_day = day_idx
-			_world_clock.request_simulation_backpressure(&"climate_input_capacity_day_barrier", true)
+			# Peer pump before parking: Country/fiscal soft-commit may be what
+			# frees ring capacity. wait_for_climate_consumed(0) does not pump.
+			segment_usec = Time.get_ticks_usec()
+			_service_country_worker_transport()
+			_sched_day_country_peer_ms += _sched_elapsed_ms(segment_usec)
+			_arm_climate_capacity_pending(day_idx)
 			_sched_day_total_ms = _sched_elapsed_ms(day_started_usec)
 			return
-	_climate_capacity_pending_day = -1
-	_world_clock.request_simulation_backpressure(&"climate_input_capacity_day_barrier", false)
+	_clear_climate_capacity_pending()
 	# Whole-graph only. `authority_ready` stays false until every domain has a
 	# POD handler; a per-domain promotion (Climate) must NOT skip the tick,
 	# because the other eleven domains are still computed right here. Reading
@@ -381,8 +387,10 @@ func _on_clock_day_changed(day_idx: int) -> void:
 			var capacity_result := wait_for_climate_consumed(0)
 			_sched_day_climate_wait_ms += _sched_elapsed_ms(segment_usec)
 			if not bool(capacity_result.get("ok", false)):
-				_climate_capacity_pending_day = day_idx
-				_world_clock.request_simulation_backpressure(&"climate_input_capacity_day_barrier", true)
+				segment_usec = Time.get_ticks_usec()
+				_service_country_worker_transport()
+				_sched_day_country_peer_ms += _sched_elapsed_ms(segment_usec)
+				_arm_climate_capacity_pending(day_idx)
 				_sched_day_total_ms = _sched_elapsed_ms(day_started_usec)
 				return
 		if _generator.has_method("capture_runtime_inputs_for_worker"):
@@ -439,8 +447,10 @@ func _on_clock_day_changed(day_idx: int) -> void:
 		var capacity_result := wait_for_climate_consumed(0)
 		_sched_day_climate_wait_ms += _sched_elapsed_ms(segment_usec)
 		if not bool(capacity_result.get("ok", false)):
-			_climate_capacity_pending_day = day_idx
-			_world_clock.request_simulation_backpressure(&"climate_input_capacity_day_barrier", true)
+			segment_usec = Time.get_ticks_usec()
+			_service_country_worker_transport()
+			_sched_day_country_peer_ms += _sched_elapsed_ms(segment_usec)
+			_arm_climate_capacity_pending(day_idx)
 			_sched_day_total_ms = _sched_elapsed_ms(day_started_usec)
 			return
 	segment_usec = Time.get_ticks_usec()
@@ -590,9 +600,7 @@ func is_day_night_enabled() -> bool:
 
 func generate_world(seed_override: int = -1, safe_area: Rect2 = Rect2()) -> void:
 	_runtime_ready_for_ticks = false
-	_climate_capacity_pending_day = -1
-	if _world_clock != null:
-		_world_clock.request_simulation_backpressure(&"climate_input_capacity_day_barrier", false)
+	_clear_climate_capacity_pending()
 	_runtime_commit_generation = 0
 	_runtime_commit_day = -1
 	_runtime_commit_family_cursors.clear()
@@ -969,6 +977,26 @@ func _process(_delta: float) -> void:
 	segment_usec = Time.get_ticks_usec()
 	_service_country_worker_transport()
 	_sched_proc_peer_ms += _sched_elapsed_ms(segment_usec)
+	# Capacity recovery must run before country read/visual. A full environment
+	# ring parks the calendar; spending 50–200ms on read-view/UI first means the
+	# worker never gets peer ACKs fast enough to drain the ring (feels like a
+	# hard freeze at 50x while weather lut keep ticking every 2s).
+	if _climate_capacity_pending_day >= 0 and not _runtime_worker_fault_paused:
+		segment_usec = Time.get_ticks_usec()
+		_consume_modifier_worker_snapshot_if_authoritative()
+		_consume_effect_worker_snapshot_if_authoritative()
+		_service_effect_worker_intents_if_authoritative()
+		_consume_trigger_worker_snapshot_if_authoritative()
+		_service_trigger_worker_intents_if_authoritative()
+		_consume_ideology_worker_snapshot_if_authoritative()
+		_service_ideology_worker_intents_if_authoritative()
+		_sched_proc_snapshots_ms += _sched_elapsed_ms(segment_usec)
+		_note_climate_capacity_pending_stall()
+		_on_clock_day_changed(_climate_capacity_pending_day)
+		_observe_runtime_worker_fault()
+		_poll_runtime_health()
+		_sched_proc_last_total_ms = _sched_elapsed_ms(frame_usec)
+		return
 	segment_usec = Time.get_ticks_usec()
 	_consume_modifier_worker_snapshot_if_authoritative()
 	_consume_effect_worker_snapshot_if_authoritative()
@@ -987,8 +1015,6 @@ func _process(_delta: float) -> void:
 	segment_usec = Time.get_ticks_usec()
 	_service_country_visual_refresh_budgeted(frame_usec)
 	_sched_proc_country_visual_ms += _sched_elapsed_ms(segment_usec)
-	if _climate_capacity_pending_day >= 0 and not _runtime_worker_fault_paused:
-		_on_clock_day_changed(_climate_capacity_pending_day)
 	segment_usec = Time.get_ticks_usec()
 	var now_msec := Time.get_ticks_msec()
 	if now_msec >= _building_visual_next_poll_msec:
@@ -1002,6 +1028,55 @@ func _process(_delta: float) -> void:
 	_refresh_map_overlay(false)
 	_sched_proc_overlay_ms += _sched_elapsed_ms(segment_usec)
 	_sched_proc_last_total_ms = _sched_elapsed_ms(frame_usec)
+
+
+func _arm_climate_capacity_pending(day_idx: int) -> void:
+	if _climate_capacity_pending_day != day_idx:
+		_climate_capacity_pending_since_msec = Time.get_ticks_msec()
+		_climate_capacity_stall_next_diag_msec = 0
+	_climate_capacity_pending_day = day_idx
+	if _world_clock != null:
+		_world_clock.request_simulation_backpressure(&"climate_input_capacity_day_barrier", true)
+
+
+func _clear_climate_capacity_pending() -> void:
+	_climate_capacity_pending_day = -1
+	_climate_capacity_pending_since_msec = 0
+	_climate_capacity_stall_next_diag_msec = 0
+	if _world_clock != null:
+		_world_clock.request_simulation_backpressure(&"climate_input_capacity_day_barrier", false)
+
+
+func _note_climate_capacity_pending_stall() -> void:
+	if _climate_capacity_pending_day < 0 or _climate_capacity_pending_since_msec <= 0:
+		return
+	var now_msec := Time.get_ticks_msec()
+	var stalled_ms := now_msec - _climate_capacity_pending_since_msec
+	if stalled_ms < _CLIMATE_CAPACITY_STALL_DIAG_MSEC:
+		return
+	if now_msec < _climate_capacity_stall_next_diag_msec:
+		return
+	_climate_capacity_stall_next_diag_msec = now_msec + _CLIMATE_CAPACITY_STALL_DIAG_MSEC
+	var report := _generator.get_runtime_thread_report() \
+		if _generator != null and _generator.has_method("get_runtime_thread_report") else {}
+	push_warning("[climate-capacity-stall] day=%d pending_ms=%d ring=%s worker=%s committed=%s economy_input=%s country_peer=%s"
+		% [_climate_capacity_pending_day, stalled_ms,
+			str(report.get("environment_ring_pending", -1)),
+			str(report.get("simulation_host_state", report.get("state", "?"))),
+			str(report.get("simulation_committed_day", report.get("committed_day", -1))),
+			str(report.get("economy_input_requested_day", -1)),
+			str(report.get("country_worker_waiting_for_peer", false))])
+	RuntimeForensics.capture_and_dump("climate_input_capacity_stalled", _generator,
+		_world_clock, "stall", {
+			"stalled_day": _climate_capacity_pending_day,
+			"stalled_ms": stalled_ms,
+			"environment_ring_pending": report.get("environment_ring_pending", -1),
+			"economy_input_requested_day": report.get("economy_input_requested_day", -1),
+			"country_worker_waiting_for_peer": report.get(
+				"country_worker_waiting_for_peer", false),
+			"simulation_committed_day": report.get(
+				"simulation_committed_day", report.get("committed_day", -1)),
+		})
 
 
 ## When the native worker enters FAULTED, pause the authoritative clock and keep
@@ -1348,7 +1423,8 @@ func _consume_country_worker_read_view_if_authoritative() -> void:
 	view.erase("full_cell_owners")
 	view.erase("changed_cells")
 	view.erase("changed_owners")
-	_country_worker_read_last_result = view.duplicate(true)
+	# Shallow copy is enough: remaining fields are scalars / packed arrays.
+	_country_worker_read_last_result = view.duplicate(false)
 	_country_worker_read_last_result["applied_cells"] = territory_changed_count
 	_country_worker_read_last_result["territory_changed_cells"] = territory_changed_count
 	_country_worker_read_last_result["full_snapshot_applied"] = full_required

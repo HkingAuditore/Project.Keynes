@@ -1,0 +1,60 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] catalog compiles
+  [PASS] three-country Country runtime configures
+  [PASS] three countries bootstrap
+  [PASS] three distinct Country handles are live
+  [PASS] negative income policy commits
+  [PASS] economy configures
+  [PASS] three population lanes bootstrap
+  [PASS] first reserve slice exposes a three-country continuation
+  [PASS] save rejects while fiscal reserve is pending
+  [PASS] restore rejects while fiscal reserve is pending
+  [PASS] later pulse day continues the admitted fiscal reservation
+  [PASS] fiscal reserve cursor is monotonic and advances by at most one
+  [PASS] pending reserve remains outside active Economy epoch
+  [PASS] fiscal reserve cursor is monotonic and advances by at most one
+  [PASS] pending reserve remains outside active Economy epoch
+  [PASS] fiscal reserve cursor is monotonic and advances by at most one
+  [PASS] fiscal reserve cursor is monotonic and advances by at most one
+  [PASS] fiscal reserve cursor is monotonic and advances by at most one
+  [PASS] fiscal settlement cursor is monotonic and advances by at most one
+  [PASS] fiscal reserve cursor is monotonic and advances by at most one
+  [PASS] fiscal settlement cursor is monotonic and advances by at most one
+  [PASS] fiscal reserve cursor is monotonic and advances by at most one
+  [PASS] fiscal reserve cursor is monotonic and advances by at most one
+  [PASS] fiscal reserve cursor is monotonic and advances by at most one
+  [PASS] fiscal reserve cursor is monotonic and advances by at most one
+  [PASS] fiscal reserve cursor is monotonic and advances by at most one
+  [PASS] fiscal reserve cursor is monotonic and advances by at most one
+  [PASS] fiscal reserve cursor is monotonic and advances by at most one
+  [PASS] fiscal reserve cursor is monotonic and advances by at most one
+  [PASS] fiscal reserve cursor is monotonic and advances by at most one
+  [PASS] one reserve transaction is executed per Country
+  [PASS] continuation reports pending intermediate slices
+  [PASS] fiscal continuation reaches a committed boundary
+  [PASS] country treasury remains nonnegative after reserve
+  [PASS] at least one fiscal reserve consumes Country cash
+  [PASS] final Economy ledger is conserved
+  [PASS] fiscal settlement exposes a per-country continuation when due
+  [PASS] fiscal settlement cursor advances monotonically
+  [PASS] save is rejected during fiscal settlement continuation
+  [PASS] restore is rejected during fiscal settlement continuation
+  [PASS] later pulse day continues the admitted fiscal settlement
+  [PASS] bridge Country runtime configures
+  [PASS] bridge Country bootstraps
+  [PASS] bridge Country handle is live
+  [PASS] bridge income policy commits
+  [PASS] bridge Economy configures
+  [PASS] bridge Economy bootstraps
+  [PASS] bridge captures Country POD inputs
+  [PASS] bridge publishes immutable Country worker input
+  [PASS] Country-only ACTIVE worker starts
+  [PASS] Country worker grant is observed before fiscal admission
+  [PASS] Country worker read-view exposes immutable treasury state
+  [PASS] fiscal bridge publishes pending work instead of a sync Country write
+  [PASS] Economy fiscal peer completes a Country-authorized request
+  [PASS] Country worker applies fiscal debit into its immutable read-view
+  [PASS] repeated pulses do not apply the fiscal debit twice
+  [PASS] bridge worker stops
+=== economy fiscal reservation continuation PASS (57 checks, 0 failures) ===

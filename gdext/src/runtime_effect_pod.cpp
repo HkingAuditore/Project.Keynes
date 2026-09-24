@@ -508,7 +508,20 @@ bool RuntimeEffectPodAuthority::upsert_instance(
     RuntimeEffectPodInstance &instance = _current.instances[static_cast<size_t>(index)];
     const uint32_t metric_base = static_cast<uint32_t>(
         static_cast<size_t>(index) * _catalog.metric_key_hashes.size());
-    const int64_t old_revision = instance.input_revision;
+    // Re-ENSURE from Country soft-skip must not wipe an in-flight fire ACK
+    // sequence. Preserve fire / ack / pending transaction identity when the
+    // same (instance_id, generation) is upserted again.
+    const bool same_identity =
+        instance.instance_id == input.instance_id &&
+        instance.generation == input.generation;
+    const uint64_t keep_fire = same_identity ? instance.fire_sequence : 0;
+    const uint64_t keep_acked =
+        same_identity ? instance.last_acked_fire_sequence : 0;
+    const int64_t keep_pending_tx =
+        same_identity ? instance.pending_transaction_id : 0;
+    const uint64_t keep_pending_key =
+        same_identity ? instance.pending_idempotency_key : 0;
+    const int64_t keep_revision = instance.input_revision;
     instance = RuntimeEffectPodInstance{};
     instance.instance_id = input.instance_id;
     instance.generation = input.generation;
@@ -520,7 +533,7 @@ bool RuntimeEffectPodAuthority::upsert_instance(
     instance.target_generation = input.target_generation;
     instance.level = input.level;
     instance.metric_base = metric_base;
-    instance.input_revision = old_revision;
+    instance.input_revision = keep_revision;
     instance.next_due_day = input.next_due_day;
     instance.cadence_days = definition.cadence_days;
     instance.lifecycle = definition.lifecycle;
@@ -528,6 +541,10 @@ bool RuntimeEffectPodAuthority::upsert_instance(
     instance.max_stacks = definition.max_stacks;
     instance.stack_key_hash = definition.stack_key_hash;
     instance.active = input.active ? 1 : 0;
+    instance.fire_sequence = keep_fire;
+    instance.last_acked_fire_sequence = keep_acked;
+    instance.pending_transaction_id = keep_pending_tx;
+    instance.pending_idempotency_key = keep_pending_key;
     _current.deterministic_state_hash = state_hash(_current);
     build_snapshot(_current, _snapshot);
     rebuild_report();
@@ -575,6 +592,145 @@ bool RuntimeEffectPodAuthority::set_metric(int64_t instance_id, uint32_t generat
     build_snapshot(_current, _snapshot);
     rebuild_report();
     return true;
+}
+
+uint32_t RuntimeEffectPodAuthority::reschedule_unfired_due_instances(
+        int64_t committed_day) {
+    if (!_configured || committed_day < 0 || _plan_ready) return 0;
+    const int64_t next_day = committed_day + 1;
+    uint32_t nudged = 0;
+    for (auto &instance : _current.instances) {
+        if (instance.active == 0 || instance.fire_sequence != 0) continue;
+        if (instance.next_due_day < 0) continue;
+        // Never-fired instances must land on the next sequential plan day.
+        // They may sit on the already-closed committed day (late ENSURE) or
+        // far in the future after a cadence-days failure backoff (technology
+        // programs author cadence_days=3650).
+        if (instance.next_due_day == next_day) continue;
+        instance.next_due_day = next_day;
+        ++nudged;
+    }
+    if (nudged == 0) return 0;
+    _current.deterministic_state_hash = state_hash(_current);
+    build_snapshot(_current, _snapshot);
+    rebuild_report();
+    return nudged;
+}
+
+uint32_t RuntimeEffectPodAuthority::catchup_fire_never_fired_instances(
+        int64_t fire_day, std::vector<RuntimeDomainIntent> &out_intents,
+        std::string &error) {
+    error.clear();
+    if (!_configured || fire_day < 0 || _plan_ready) return 0;
+    // Only catch up the immediate next Effect day. Firing further ahead would
+    // desync committed_day sequencing for the real plan_day lane.
+    if (_current.committed_day < 0 || fire_day != _current.committed_day + 1)
+        return 0;
+    uint32_t fired = 0;
+    std::vector<RuntimeEffectPodCommand> emitted;
+    emitted.reserve(16);
+    for (size_t instance_index_value = 0;
+         instance_index_value < _current.instances.size(); ++instance_index_value) {
+        RuntimeEffectPodInstance &instance =
+            _current.instances[instance_index_value];
+        if (instance.active == 0 || instance.fire_sequence != 0) continue;
+        if (instance.pending_transaction_id != 0) continue;
+        if (instance.next_due_day < 0 || instance.next_due_day > fire_day)
+            continue;
+        if (instance.program_id < 0 ||
+            instance.program_id >= static_cast<int32_t>(_catalog.definitions.size())) {
+            error = "effect_pod_program_invalid";
+            return fired;
+        }
+        const auto &definition =
+            _catalog.definitions[static_cast<size_t>(instance.program_id)];
+        if (definition.enabled == 0) {
+            instance.next_due_day = fire_day + 1;
+            continue;
+        }
+        if (!evaluate_conditions(definition, instance, _current)) {
+            instance.last_evaluated_input_revision = instance.input_revision;
+            instance.next_due_day = fire_day + 1;
+            continue;
+        }
+        emitted.clear();
+        if (!execute_program(definition, instance, _current, fire_day, emitted,
+                             error)) {
+            return fired;
+        }
+        if (emitted.empty()) {
+            instance.last_evaluated_input_revision = instance.input_revision;
+            if (definition.command_count > 0) {
+                instance.next_due_day = fire_day + 1;
+                continue;
+            }
+            instance.fire_sequence += 1u;
+            instance.next_due_day =
+                fire_day + std::max<int32_t>(1, definition.cadence_days);
+            ++fired;
+            continue;
+        }
+        std::stable_sort(emitted.begin(), emitted.end(), command_less);
+        RuntimeEffectPodTransaction transaction;
+        if (!append_transaction(_current, instance, fire_day, emitted,
+                                transaction, error)) {
+            return fired;
+        }
+        ++_next_transaction_id;
+        instance.fire_sequence += 1u;
+        instance.pending_transaction_id = transaction.transaction_id;
+        instance.pending_idempotency_key = emitted.front().idempotency_key;
+        instance.last_evaluated_input_revision = instance.input_revision;
+        instance.next_due_day = fire_day + definition.cadence_days;
+        instance.expires_day =
+            definition.lifecycle == RuntimeEffectPodLifecycle::DURATION
+                ? fire_day + definition.duration_days
+                : -1;
+        // Mirror commit_day: catch-up emits are already live on _current.
+        _current.transactions.back().status =
+            RuntimeEffectPodTransactionStatus::COMMITTED;
+        for (uint32_t ordinal = 0; ordinal < transaction.command_count;
+             ++ordinal) {
+            const auto &command =
+                _current.command_arena[transaction.command_begin + ordinal];
+            RuntimeDomainIntent intent;
+            intent.source_domain =
+                static_cast<uint16_t>(RuntimeDomainId::EFFECT);
+            intent.target_domain = adapter_domain(command.action);
+            intent.opcode = static_cast<uint16_t>(command.opcode);
+            intent.effect_action = static_cast<uint16_t>(command.action);
+            intent.source_id =
+                static_cast<uint64_t>(command.source_instance_id);
+            intent.target_handle = command.target_handle;
+            intent.target_generation = command.target_generation;
+            intent.value = command.value;
+            intent.effective_day = command.effective_day;
+            intent.payload = command.payload;
+            intent.request_id =
+                static_cast<uint64_t>(transaction.transaction_id);
+            intent.producer_id =
+                static_cast<uint32_t>(RuntimeDomainId::EFFECT);
+            intent.sequence = transaction.fire_sequence * 16u + ordinal;
+            intent.idempotency_key = command.idempotency_key;
+            intent.duration_days = command.duration_days;
+            intent.stacks = command.stacks;
+            intent.magnitude_q16 = command.value != 0
+                ? static_cast<int32_t>(command.value) : 65536;
+            if (command.action == RuntimeEffectPodAction::MODIFIER_COMMAND &&
+                intent.payload[1] == 0 && command.domain >= 0 &&
+                command.domain < 4) {
+                intent.payload[1] = command.domain;
+            }
+            out_intents.push_back(intent);
+        }
+        ++fired;
+    }
+    if (fired == 0) return 0;
+    _current.generation += 1u;
+    _current.deterministic_state_hash = state_hash(_current);
+    build_snapshot(_current, _snapshot);
+    rebuild_report();
+    return fired;
 }
 
 bool RuntimeEffectPodAuthority::evaluate_conditions(
@@ -1146,13 +1302,20 @@ bool RuntimeEffectPodAuthority::plan_day(int64_t day, uint64_t input_generation,
             return false;
         }
         const auto &definition = _catalog.definitions[static_cast<size_t>(instance.program_id)];
+        // Cadence is the gap after a successful fire. A never-fired instance
+        // (fire_sequence==0) must retry on the next calendar day — technology
+        // programs author cadence_days=3650, and using that as a failure
+        // backoff parks Country pending activation for a decade.
+        const int64_t retry_due = instance.fire_sequence == 0
+            ? day + 1
+            : day + std::max<int32_t>(1, definition.cadence_days);
         if (definition.enabled == 0) {
-            instance.next_due_day = day + definition.cadence_days;
+            instance.next_due_day = retry_due;
             continue;
         }
         if (!evaluate_conditions(definition, instance, _current)) {
             instance.last_evaluated_input_revision = instance.input_revision;
-            instance.next_due_day = day + definition.cadence_days;
+            instance.next_due_day = retry_due;
             continue;
         }
         emitted.clear();
@@ -1162,7 +1325,16 @@ bool RuntimeEffectPodAuthority::plan_day(int64_t day, uint64_t input_generation,
         }
         if (emitted.empty()) {
             instance.last_evaluated_input_revision = instance.input_revision;
-            instance.next_due_day = day + definition.cadence_days;
+            if (definition.command_count > 0 && instance.fire_sequence == 0) {
+                // Declarative commands exist but none emitted — retry tomorrow
+                // instead of applying the multi-year cadence backoff.
+                instance.next_due_day = day + 1;
+                continue;
+            }
+            // Match sync EffectRuntime: a passed evaluation with zero commands
+            // still advances fire_sequence so fire_acked observes the one-shot.
+            instance.fire_sequence += 1u;
+            instance.next_due_day = day + std::max<int32_t>(1, definition.cadence_days);
             continue;
         }
         std::stable_sort(emitted.begin(), emitted.end(), command_less);

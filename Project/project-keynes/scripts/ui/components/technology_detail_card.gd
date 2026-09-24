@@ -218,8 +218,9 @@ func update_progress(state: int, fraction: float, definition: Dictionary) -> voi
 	if not is_application:
 		_gauge.set_data("研究进度", clampf(fraction, 0.0, 1.0),
 			_progress_caption(definition, fraction, state), _accent)
-	# Clear optimistic "次日生效" once the authoritative state actually moves.
-	if _submitted and state != previous_state:
+	# Clear optimistic "次日生效" once the authoritative state actually moves,
+	# or once the node is observably queued (state 3) / finished (state >= 4).
+	if _submitted and (state != previous_state or state == 3 or state >= 4):
 		_submitted = false
 	if not _submitted and not is_application:
 		_apply_action(state)
@@ -419,6 +420,17 @@ func mark_submitted() -> void:
 	_submitted = true
 	_action.disabled = true
 	_action.text = "已提交 · 次日生效"
+
+
+func mark_rejected(message: String) -> void:
+	if _action == null:
+		return
+	_submitted = false
+	_action.disabled = _state != 2 and _state != 3
+	_action.visible = true
+	var trimmed := message.strip_edges()
+	_action.text = trimmed if not trimmed.is_empty() else "提交失败"
+	_action.tooltip_text = trimmed
 
 
 func _on_action_pressed() -> void:

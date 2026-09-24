@@ -594,18 +594,26 @@ func dispatch_committed_events(result: Dictionary) -> void:
 func dispatch_worker_committed_view(view: Dictionary) -> void:
 	if not _configured:
 		return
-	var normalized := view.duplicate(true)
+	var normalized := view.duplicate(false)
 	normalized["worker_read_view"] = true
-	var changed_cells: PackedInt32Array = normalized.get(
-		"changed_cells", PackedInt32Array())
-	normalized["changed_cells"] = changed_cells.size()
+	var changed_count := 0
+	var changed_raw = normalized.get("changed_cells", 0)
+	if changed_raw is PackedInt32Array:
+		changed_count = (changed_raw as PackedInt32Array).size()
+	else:
+		changed_count = int(changed_raw)
+	normalized["changed_cells"] = changed_count
 	normalized["changed_countries"] = maxi(
 		int(normalized.get("changed_countries", 0)),
-		1 if changed_cells.size() > 0 else 0)
+		1 if changed_count > 0 else 0)
 	if int(normalized.get("generation", 0)) <= 0:
 		return
+	# Research / treasury soft-commits advance generation with dirty_families
+	# and zero territory cells. Never drop those — the tech UI otherwise keeps
+	# painting the pre-handoff sync store.
 	if int(normalized.get("changed_countries", 0)) <= 0 \
-			and int(normalized.get("dirty_families", 0)) <= 0:
+			and int(normalized.get("dirty_families", 0)) <= 0 \
+			and int(normalized.get("research_watermark", 0)) <= 0:
 		return
 	country_committed.emit(normalized)
 

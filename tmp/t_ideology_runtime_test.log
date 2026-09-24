@@ -1,0 +1,79 @@
+﻿Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [OK] country catalog compiles
+  [OK] modifier runtime configures
+  [OK] effect runtime configures
+  [OK] country bootstrap supplies a generation-safe handle
+  [OK] ideology catalog configures
+  [OK] unmaterialized snapshot still reports catalog slot capacity
+  [OK] discover / points queue
+  [OK] initial ideology commands apply
+  [OK] discovery keeps inactive idea known
+  [OK] offer creates deterministic three unique choices
+  [OK] offer persists and cards are unique
+  [OK] stale offer generation is rejected
+  [OK] valid choice resolves the persisted offer
+  [OK] equip starts an ACK-gated ideology transition
+  [OK] equipped ideology reserves capacity and reports pending
+  [OK] effect evaluates ideology transaction
+  [OK] effect dispatches native ideology modifier
+  [OK] native ideology modifier is excluded from GDScript fallback polling
+  [OK] modifier commits ideology transaction
+  [OK] effect observes ideology modifier ACK
+  [OK] tier replacement stays pending until the new Effect ACK
+  [OK] effect evaluates ideology transaction
+  [OK] effect dispatches native ideology modifier
+  [OK] native ideology modifier is excluded from GDScript fallback polling
+  [OK] modifier commits ideology transaction
+  [OK] effect observes ideology modifier ACK
+  [OK] level confirms only after Effect ACK
+  [OK] promotion is irreversible and releases ideology capacity
+  [OK] national spirit remains active outside ideology slots
+  [OK] PKEF captures the active ideology external binding
+  [OK] PKID capture is nonempty
+  [OK] restored modifier runtime configures
+  [OK] restored effect runtime configures
+  [OK] restored ideology catalog configures
+  [OK] PKID rejects an active idea without its PKEF binding
+  [OK] PKEF then PKID round trip restores exact snapshot
+  [OK] additional ideology discovery/equip queues a strict pending source
+  [OK] pending restore modifier configures
+  [OK] pending restore Effect configures
+  [OK] pending restore Ideology configures
+  [OK] matching PKEF pending transactions restore with PKID
+  [OK] stale restore modifier configures
+  [OK] stale restore Effect configures
+  [OK] stale restore Ideology configures
+  [OK] PKID rejects an unknown pending ideology transaction
+  [OK] late-link modifier runtime configures
+  [OK] ideology configures before EffectRuntime
+  [OK] EffectRuntime links to existing ideology runtime
+  [OK] late-link discover queues
+  [OK] late-linked equip starts its Effect transition
+  [OK] event adapter modifier runtime configures
+  [OK] event adapter EffectRuntime configures
+  [OK] event/gameplay/custom adapter ideology catalog configures
+  [OK] event adapter queues discovery/equip
+  [OK] event adapter evaluates
+  [OK] event adapter dispatches native modifier
+  [OK] event/gameplay/custom share one atomic transition
+  [OK] native ideology transactions never enter GDScript fallback polling
+  [OK] Gameplay/PublishEvent/Custom commits exactly once to the native journal
+  [OK] native gameplay ACK settles the aggregate transition
+  [OK] journal persists Effect idempotency evidence
+  [OK] journal restores Effect idempotency evidence
+  [OK] journal restores idempotency even when referenced events scrolled out
+ideology runtime: 63 checks, 0 failures
+Godot_v4.6.2-stable_win64_console.exe : ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyText
+ureE' were leaked at exit.
+所在位置 C:\Users\hkinghuang\AppData\Local\Temp\ps-script-e6a10f6c-ca3c-4b95-9e9c-2da34fbc4042.ps1:97 字符: 3
++   & $godot --headless --path Project\project-keynes --script "res://t ...
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (ERROR: 11 RID a...leaked at exit.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 276 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

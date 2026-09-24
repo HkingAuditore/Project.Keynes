@@ -3116,6 +3116,12 @@ func _finish_continuation_perf_frame(started_us: int, frame_slices: int,
 
 
 func _continue_economy_inflight(day_index: int) -> void:
+	# Defense in depth: climate capacity is not an economy/country continuation
+	# target. WorldClock should already skip this pulse, but older callers or
+	# mixed barriers can still land here — never burn the frame on graph capture.
+	if _world_clock_ref != null and _world_clock_ref.has_method("needs_continuation_pulse") \
+			and not _world_clock_ref.needs_continuation_pulse():
+		return
 	if _sus == null:
 		return
 	if _runtime_graph_active and _data_core_world_ext != null \

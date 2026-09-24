@@ -10,7 +10,8 @@ refreshes afterward. This removes duplicate work on no-command days while
 preserving pre-command reads and post-command visibility. Parity stage refreshes,
 stage order, authority masks and save/hash schemas are unchanged.
 
-## Climate input capacity backpressure (2026-09-19)
+## Climate input capacity backpressure (2026-09-19; pulse fix 2026-09-24;
+## capacity-priority + ring drain 2026-09-24)
 
 `wait_for_climate_consumed(0)` checks native input-ring capacity with a zero
 timeout; zero is not an absent generation. At the player day boundary a full
@@ -21,9 +22,31 @@ continue. `_process` retries the retained day once per frame and clears the
 barrier only when capacity returns. This avoids both dropping an input day
 and blocking the main thread waiting for work that needs its peer pump.
 
+**Do not emit `simulation_backpressure_pulse` for climate capacity alone.** That
+pulse drives `MapGenerator._continue_economy_inflight` → `advance_runtime_pulse`,
+which under ACTIVE re-captures economy day inputs every frame (often 20–30ms)
+and starves Host peer/capacity retries — the calendar then stays nailed at 50x
+with a full ring. `WorldClock.needs_continuation_pulse()` covers economy /
+country / ideology / bio / native_daily barriers only; climate capacity is
+Host-owned.
+
+**While capacity is pending, Host `_process` skips country read-view / visual /
+overlay** and only runs peer pumps + snapshot ACKs + the retained-day retry.
+Otherwise a 50–200ms country read runs *before* the capacity retry and the
+worker cannot drain the ring fast enough (UI still paints weather LUT every 2s,
+so the freeze looks mysterious). After ~3s of retained capacity, Host logs
+`[climate-capacity-stall]` and writes `tmp/runtime_forensics_stall.json`.
+
+**Worker Climate idempotent retry** (`plan.day <= climate_committed`) calls
+`RuntimeEnvironmentInputRing::pop_while_day_at_most(climate_committed)` so
+already-absorbed env slots cannot fill the FIFO and pin the Host barrier.
+`[runtime-day-wait]` is also printed via `UtilityFunctions` so Godot's output
+panel shows the missing domain mask (stderr alone was invisible in-editor).
+
 `runtime_climate_capacity_backpressure_test.gd` covers full-ring retention and
 one-time execution after capacity returns, preservation of player pause state,
-and the whole-graph takeover input-day convention (`day_idx - 1`, matching
+`needs_continuation_pulse()==false` while capacity is armed, and the whole-graph
+takeover input-day convention (`day_idx - 1`, matching
 `MapGenerator.sus_tick_daily`). Using `day_idx` only after takeover skips one
 environment day and permanently parks the worker on a future FIFO head. It is a boundary regression test,
 not proof of full-game worker liveness; the headless performance runner directly
