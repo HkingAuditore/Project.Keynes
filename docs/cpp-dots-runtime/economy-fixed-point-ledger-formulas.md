@@ -160,11 +160,11 @@ good_budget_share = min(procurement_budget, sum(gap * buy_price))
 
 预算余数按稳定 good ID 和 building group 顺序落位；金银铸币结算不受普通采购预算限制。
 
-普通商人采购完成后，对正常目标库存尚未填满的耐储余货按冻结本地零售价的 20% 托底；`cycle_flow` 余货也会在本周期内先获得低价清算/托底机会，但不会跨周期留存在市场库存：
+普通商人采购完成后，对未售出的可卖余量按冻结本地零售价的 20% 托底应收尽收（不再按目标库存缺口截断），直到本格托底发行预算用尽；`cycle_flow` 余货也会在本周期内先获得低价清算/托底机会，但不会跨周期留存在市场库存：
 
 ```text
 supported_qty = min(offer_sellable - normal_merchant_purchase,
-                    remaining_target_inventory_gap)
+                    support_issuance_budget_in_qty)
 support_money = max(1, floor(supported_qty * frozen_retail_price / (GOODS_SCALE * 5)))
 if storage_mode != cycle_flow:
     market_stock += supported_qty
@@ -173,7 +173,7 @@ explicit_money_mint += support_money
 ```
 
 托底不扣商人资金。`production_output_supported` 和 `producer_support_money_issued` 分别报告接受量
-和发行额；超过目标库存的普通余量与周期流边界剩余量都进入真实 discard sink。
+和发行额；托底预算用尽后的普通余量与周期流边界剩余量都进入真实 discard sink。
 
 每次提交严格校验：
 
@@ -686,9 +686,14 @@ entry_output_utilization = min(1, output_deficit / candidate_daily_output)
 input_period_supply = max(0, stock - existing_input_reserve)
                     + offered_supply_ema * epoch_days
 input_coverage = min(1, input_period_supply / candidate_period_input)
-soft_input_bound = 1 - required_share + input_coverage * required_share
-entry_utilization = min(entry_output_utilization, every soft_input_bound)
+soft_efficiency = 1 - required_share + input_coverage * required_share
+entry_utilization = entry_output_utilization   # hard inputs only may bind below
+throughput = entry_utilization * every soft_efficiency
 ```
+
+Soft tools are optional productivity: they scale expected throughput, they do not
+ceiling the objective activity / entry utilization band. Hard-required inputs may
+still bind utilization by one-period stock coverage.
 
 The frozen-value credit is assigned only when retained goods are physically consumed.
 It is capped by owner livelihood when computing realized margin and never changes cohort

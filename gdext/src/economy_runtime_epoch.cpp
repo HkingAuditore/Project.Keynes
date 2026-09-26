@@ -796,8 +796,12 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
     const auto prepare_started = Clock::now();
     clear_epoch_metrics();
     _epoch_preflight_ms = preflight_ms;
-    _country_research_consumed_opening = _country_runtime == nullptr
-        ? 0 : _country_runtime->research_consumed_total();
+    // Do not pin research_consumed here. capture_country_epoch / workset rebuild
+    // can race peer-wait preview + late-fold catch_up, which spends TP and bumps
+    // research_consumed_total after this pin but before opening goods refresh —
+    // VERIFY then subtracts that spend twice and trips goods_error == spend.
+    // Opening goods/cash/consumed are sampled together below.
+    _country_research_consumed_opening = 0;
     _epoch_begin_reset_ms = elapsed_ms(prepare_started);
     const auto country_started = Clock::now();
     if (!capture_country_epoch(error)) return false;
@@ -1083,16 +1087,6 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
         ++_opening_audit_full_verifications;
     } else {
         _opening_totals = _closing_totals;
-        int64_t current_country_goods = 0;
-        if (_country_runtime != nullptr) {
-            _opening_totals.country_cash = _country_runtime->total_cash();
-            for (int32_t good = 0; good < market_store().good_count; ++good) {
-                current_country_goods +=
-                    _country_runtime->total_good(good);
-            }
-        } else {
-            _opening_totals.country_cash = 0;
-        }
         int64_t opening_escrow_saturation = 0;
         _opening_totals.expedition_funds = live_expedition_funds;
         _opening_totals.expedition_goods = live_expedition_goods;
@@ -1102,11 +1096,24 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
                            opening_escrow_saturation),
             live_expedition_funds, opening_escrow_saturation);
         _saturation_count += opening_escrow_saturation;
-        _opening_totals.goods_stock +=
-            current_country_goods - _opening_totals.country_goods;
-        _opening_totals.country_goods = current_country_goods;
         ++_opening_audit_fast_paths;
     }
+    // Pin country treasury goods/cash with research_consumed from one snapshot.
+    // Peer-wait preview / late-fold catch_up must not split these across the
+    // long epoch-begin window or VERIFY reports goods_error == spent TP.
+    int64_t opening_country_goods = 0;
+    int64_t opening_research_consumed = 0;
+    int64_t opening_country_cash = 0;
+    if (_country_runtime != nullptr) {
+        _country_runtime->sample_economy_goods_audit(
+            opening_country_goods, opening_research_consumed,
+            opening_country_cash);
+        _opening_totals.goods_stock +=
+            opening_country_goods - _opening_totals.country_goods;
+        _opening_totals.country_goods = opening_country_goods;
+        _opening_totals.country_cash = opening_country_cash;
+    }
+    _country_research_consumed_opening = opening_research_consumed;
     _opening_audit_force_full = false;
     _audit_ms += elapsed_ms(audit_started);
     _sample_day = day_index;

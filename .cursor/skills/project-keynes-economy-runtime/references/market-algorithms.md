@@ -70,16 +70,18 @@ indivisible proportional bundle.
 Order needs by priority and constrain funded quantity by remaining cohort funds. Keep money rounding
 deterministic.
 
-For each component good, allocate shortage with cumulative prefix quotients:
+For each component good, allocate shelf capacity with cumulative prefix quotients:
 
 ```text
 allocation_i = floor(prefix_i * available / total)
              - floor(prefix_(i-1) * available / total)
 ```
 
-The minimum component capacity determines filled bundle units. If primary inventory is abundant,
-use the fused abundant path and avoid component-reference CSR construction. Only inventory shortage
-may trigger one same-period substitution fallback; budget-only unmet demand must not re-enter fallback.
+Own-shelf shortfall for good G is `max(0, component_demand_G − available_G)`. The minimum
+component capacity still determines filled bundle units, but shortage accounting uses only that
+own-shelf shortfall — not `1 − sales/demand`. If primary inventory is abundant, use the fused
+abundant path and avoid component-reference CSR construction. Only inventory shortage may trigger
+one same-period substitution fallback; budget-only unmet demand must not re-enter fallback.
 
 ## 5. Merchant settlement and satisfaction
 
@@ -147,6 +149,19 @@ so intermediate goods such as flint receive reverse pressure from finished-good 
 downstream workshops are vacant. Investment `startup_demand` uses the same deficit×BOM scaling and
 may include derived demand when seeding upstream candidates. Shadow demand never withdraws stock or
 mints money.
+
+Household `last_shortage_q16` is **own-shelf** fill failure, not bundle residual failure:
+
+```text
+stock_shortfall_G = Σ max(0, funded_component_demand_G − available_stock_G)
+shortage_G        = stock_shortfall_G / funded_component_demand_G   # 0 when demand_G = 0
+```
+
+`available_stock_G` is household-clearing stock after the production-input floor. When a Leontief
+bundle fails because a complement is missing, only that binding good accumulates shortfall.
+Abundant complements that remain unsold because another component bound must keep `shortage = 0`.
+Do not use `1 − sales/demand`: that contaminates substitutes and complements. `demand_ema` still
+tracks funded component demand for inventory/price levels; only the shortage term changes.
 
 Price pressure combines excess demand, target-inventory gap, shortage, a confidence-weighted soft
 cost anchor, and inactive-default-price reversion. Divide the combined pressure by the configured

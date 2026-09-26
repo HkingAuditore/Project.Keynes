@@ -76,6 +76,7 @@ public:
     using FamilyExpeditionStore = EconomyFamilyExpeditionStore;
     friend class NativeEconomyBuildingPlanExecutor;
     friend class NativeEconomyGraphStageOps;
+    friend class NativeSimulationHost;
     friend bool economy_dispatch_mutate_stage(EconomySoAView &view,
                                               RuntimeEconomyGraphStage stage,
                                               EconomyStageCursor &cursor,
@@ -6374,6 +6375,12 @@ private:
         const std::vector<int64_t> &market_quantities, int64_t cash,
         int64_t &committed_cash, std::string &error);
     void refresh_country_research_goods_consumed();
+    // Re-pin closing country goods/cash with research_consumed from one Country
+    // snapshot immediately before VERIFY. Peer-wait previews / late-fold
+    // research catch-up can otherwise advance consumed after closing goods were
+    // frozen and trip goods_conservation_failed. Opening pins the same triple
+    // atomically in begin_epoch (see economy_runtime_epoch.cpp).
+    void resync_closing_country_goods_audit();
     bool compile_family_catalog(const godot::Dictionary &catalog,
                                 std::string &error);
     bool compile_family_trait_catalog(const godot::Dictionary &catalog,

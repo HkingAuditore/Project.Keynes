@@ -678,8 +678,28 @@ bool NativeEconomyRuntime::advance_fiscal_reservation(std::string &error) {
     }
 
     const int32_t country = continuation.country_cursor;
-    const int64_t requested = std::max<int64_t>(0,
+    int64_t requested = std::max<int64_t>(0,
         continuation.requested_by_country[static_cast<size_t>(country)]);
+    // Government research procurement spends post-fiscal treasury cash. If
+    // subsidy/tariff reservation empties the purse, queued techs starve with
+    // market stock still present. Keep one epoch of the configured daily
+    // research budget spendable whenever auto-purchase is on.
+    int64_t research_floor = 0;
+    bool research_enabled = false;
+    int64_t research_daily_budget = 0;
+    int64_t research_demand = 0;
+    if (_country_runtime != nullptr &&
+        _country_runtime->research_procurement_policy(
+            country, research_enabled, research_daily_budget, research_demand) &&
+        research_enabled && research_daily_budget > 0) {
+        research_floor = saturating_mul(
+            research_daily_budget, std::max(1, _epoch_days), _saturation_count);
+    }
+    const int64_t spendable = std::max<int64_t>(
+        0, _country_runtime->cash_for_slot(country));
+    const int64_t reservable =
+        std::max<int64_t>(0, spendable - research_floor);
+    if (requested > reservable) requested = reservable;
     int64_t reserved = 0;
     if (requested > 0) {
         std::string fiscal_transaction_error;

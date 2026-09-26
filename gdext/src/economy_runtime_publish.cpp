@@ -329,7 +329,10 @@ bool NativeEconomyRuntime::publish_epoch_slice(
         // Every closing total has now been recomputed for this epoch, so the
         // three conservation errors describe real balances from here on.
         _closing_totals_valid = true;
-        refresh_country_research_goods_consumed();
+        // Country research catch-up / plan preview can move treasury goods and
+        // research_consumed_total after incremental (or prior-slice full)
+        // closing totals were frozen. Resync both from one snapshot here.
+        resync_closing_country_goods_audit();
         const int64_t population_expected = _opening_totals.population +
             _births - _deaths + _external_population_delta;
         const int64_t money_open = _opening_totals.cohort_funds +

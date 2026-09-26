@@ -262,6 +262,17 @@ Dictionary DCWorldExt::bootstrap_country(const Dictionary &packet,
 
 Dictionary DCWorldExt::submit_country_commands(const Dictionary &packed_batch) {
     if (_country_runtime == nullptr) return country_unavailable();
+    if (_runtime_host != nullptr) {
+        const RuntimeWorkerState host_state = _runtime_host->state();
+        if (host_state == RuntimeWorkerState::FAULTED) {
+            Dictionary out;
+            out["ok"] = false;
+            out["code"] = "runtime_worker_faulted";
+            out["reason"] = "runtime_worker_faulted";
+            out["message"] = "运行时已故障，无法再提交国家指令。";
+            return out;
+        }
+    }
     const bool worker_authoritative = _runtime_host != nullptr &&
         _runtime_host->domain_is_worker_authoritative(
             RuntimeDomainId::COUNTRY);
@@ -1761,9 +1772,11 @@ int64_t DCWorldExt::get_country_state_hash() const {
 
 NativeCountryRuntime *DCWorldExt::country_query_runtime() const {
     auto *source = country_runtime_from(_country_runtime);
-    if (source == nullptr || _runtime_host == nullptr ||
-        !_runtime_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY))
+    if (source == nullptr || _runtime_host == nullptr)
         return source;
+    // Prefer any worker-published Country snapshot even after FAULTED revoked
+    // the authority grant. Falling back to the frozen sync store on revoke
+    // resets the tech UI to bootstrap gen=1 / starter TP stock.
     const auto snapshot = _runtime_host->country_asset_snapshot();
     if (!snapshot) return source;
     if (_country_query_runtime == nullptr)
@@ -1795,7 +1808,7 @@ NativeCountryRuntime *DCWorldExt::country_query_runtime() const {
             if (s_apply_fail_left-- > 0) {
                 UtilityFunctions::print(vformat(
                     "[tech-ui-diag/query] apply FAILED gen=%d day=%d "
-                    "countries=%d cells=%d techs=%d — UI stays on sync copy",
+                    "countries=%d cells=%d techs=%d — UI stays on prior replica",
                     static_cast<int64_t>(snapshot->generation),
                     snapshot->committed_day,
                     static_cast<int64_t>(snapshot->country_count),

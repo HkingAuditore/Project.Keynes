@@ -131,17 +131,7 @@ static func effect_summary(node: Dictionary) -> String:
 			parts.append(text)
 	for term_value in node.get("modifier_terms", []):
 		var term: Dictionary = term_value
-		var stat := String(term.get("stat", ""))
-		var subject := String(term.get("subject_display_name", ""))
-		if subject.is_empty():
-			subject = String(MODIFIER_SUBJECT_NAMES.get(stat, stat))
-		if stat.begins_with("country.output.building.") \
-				or stat.begins_with("country.output.family.") \
-				or stat.begins_with("country.output.good.") \
-				or stat.begins_with("country.output.terrain.") \
-				or stat.begins_with("country.output.landform."):
-			subject += "产出"
-		var text := "%s %s" % [subject, modifier_delta(term)]
+		var text := "%s %s" % [modifier_effect_subject(term), modifier_delta(term)]
 		if not seen.has(text):
 			seen[text] = true
 			parts.append(text)
@@ -157,6 +147,29 @@ static func effect_summary(node: Dictionary) -> String:
 		return "完成时代里程碑并开放下一时代" if bool(node.get(
 			"is_milestone", false)) else ""
 	return "；".join(parts)
+
+
+## Phrase the Modifier target so family/good/building cannot be read as the same
+## vague "××产出" bucket (e.g. a family id rendered as bare "食物产出").
+static func modifier_effect_subject(term: Dictionary) -> String:
+	var stat := String(term.get("stat", ""))
+	var subject := String(term.get("subject_display_name", "")).strip_edges()
+	if subject.is_empty():
+		subject = String(MODIFIER_SUBJECT_NAMES.get(stat, stat))
+	if stat.begins_with("country.output.family."):
+		return "「%s」生产家族建筑产出" % subject
+	if stat.begins_with("country.output.building."):
+		return "建筑「%s」产出" % subject
+	if stat.begins_with("country.output.good."):
+		return "商品「%s」产量" % subject
+	if stat.begins_with("country.output.terrain.") \
+			or stat.begins_with("country.output.landform."):
+		return "地理专长「%s」产出" % subject
+	if stat.begins_with("country.input.good."):
+		return "商品「%s」生产投入" % subject
+	if stat.begins_with("country.consumption.good."):
+		return "商品「%s」家庭消费" % subject
+	return subject
 
 
 static func modifier_delta(term: Dictionary) -> String:

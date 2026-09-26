@@ -87,6 +87,7 @@ func _run() -> void:
 	_test_price_quantity_response(stable_catalog)
 	_test_price_v3_numeric_guards_and_horizons(stable_catalog)
 	_test_price_rise_fade_and_soft_ceiling(stable_catalog)
+	_test_complement_shortage_stays_on_binding_good(stable_catalog)
 	_test_survival_labor_and_mortality(stable_catalog)
 	_test_demand_preview_query(stable_catalog)
 	_test_cycle_approximation(stable_catalog)
@@ -709,6 +710,84 @@ func _test_price_rise_fade_and_soft_ceiling(compiled: Dictionary) -> void:
 	shortage.get_market_cell_snapshot(0)
 	_expect("ceiling queries do not advance confirmation state",
 		shortage.get_economy_state_hash() == hash_before)
+
+func _test_complement_shortage_stays_on_binding_good(compiled: Dictionary) -> void:
+	# Housing variants include turf_block+lumber. Funded demand can name both
+	# components while only turf is missing; shortage must stay on turf.
+	var goods: PackedStringArray = compiled.good_ids
+	var survival := {
+		"gathered_plants": 5000000,
+		"game_meat": 5000000,
+		"cloth": 2000000,
+		"fur": 2000000,
+		"logs": 2000000,
+	}
+	var abundant_lumber := survival.duplicate()
+	abundant_lumber["lumber"] = 5000000
+	abundant_lumber["turf_block"] = 0
+	abundant_lumber["reed_bundle"] = 0
+	abundant_lumber["bast_fiber"] = 0
+	abundant_lumber["adobe_brick"] = 0
+	abundant_lumber["bricks"] = 0
+	abundant_lumber["lime"] = 0
+	abundant_lumber["raw_stone"] = 0
+	abundant_lumber["cement"] = 0
+	abundant_lumber["glass"] = 0
+	abundant_lumber["steel"] = 0
+	abundant_lumber["concrete"] = 0
+	abundant_lumber["construction_components"] = 0
+	var glut: Object = _configured_price_worker(compiled, 1911)
+	glut.submit_economy_commands(_stock_commands(0, goods, abundant_lumber, 0))
+	var glut_report: Dictionary = {}
+	for day in range(25):
+		glut_report = _run_price_day(glut, day)
+	var glut_market: Dictionary = glut.get_market_cell_snapshot(0)
+	var lumber_demand := _good_value(glut_market, "demand_ema", "lumber")
+	var lumber_shortage := _good_value(glut_market, "shortage_q16", "lumber")
+	var turf_demand := _good_value(glut_market, "demand_ema", "turf_block")
+	var turf_shortage := _good_value(glut_market, "shortage_q16", "turf_block")
+	_expect("complement fixture conserves ledgers",
+		int(glut_report.get("population_error", 1)) == 0 and
+		int(glut_report.get("money_error", 1)) == 0 and
+		int(glut_report.get("goods_error", 1)) == 0)
+	_expect("housing still funds a lumber-bearing complement bundle",
+		lumber_demand > 0)
+	_expect("abundant lumber keeps own-shelf shortage at zero",
+		lumber_shortage == 0)
+	_expect("binding turf keeps high own-shelf shortage",
+		turf_demand > 0 and turf_shortage >= 32768)
+	_expect("abundant lumber stock remains available to households",
+		_good_value(glut_market, "household_available_stock", "lumber") > 1000000)
+
+	var scarce_lumber := survival.duplicate()
+	scarce_lumber["lumber"] = 0
+	scarce_lumber["turf_block"] = 5000000
+	scarce_lumber["reed_bundle"] = 0
+	scarce_lumber["bast_fiber"] = 0
+	scarce_lumber["adobe_brick"] = 0
+	scarce_lumber["bricks"] = 0
+	scarce_lumber["lime"] = 0
+	scarce_lumber["raw_stone"] = 0
+	scarce_lumber["cement"] = 0
+	scarce_lumber["glass"] = 0
+	scarce_lumber["steel"] = 0
+	scarce_lumber["concrete"] = 0
+	scarce_lumber["construction_components"] = 0
+	var bind: Object = _configured_price_worker(compiled, 1912)
+	bind.submit_economy_commands(_stock_commands(0, goods, scarce_lumber, 0))
+	var bind_report: Dictionary = {}
+	for day in range(25):
+		bind_report = _run_price_day(bind, day)
+	var bind_market: Dictionary = bind.get_market_cell_snapshot(0)
+	_expect("binding lumber fixture conserves ledgers",
+		int(bind_report.get("population_error", 1)) == 0 and
+		int(bind_report.get("money_error", 1)) == 0 and
+		int(bind_report.get("goods_error", 1)) == 0)
+	_expect("missing lumber reports own-shelf shortage",
+		_good_value(bind_market, "demand_ema", "lumber") > 0 and
+		_good_value(bind_market, "shortage_q16", "lumber") >= 32768)
+	_expect("abundant turf does not inherit complement shortage",
+		_good_value(bind_market, "shortage_q16", "turf_block") == 0)
 
 func _run_price_day(ext: Object, day: int) -> Dictionary:
 	var report: Dictionary = {}

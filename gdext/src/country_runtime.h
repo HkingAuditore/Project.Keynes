@@ -375,6 +375,12 @@ public:
     }
     int64_t last_committed_day() const { return _last_committed_day; }
     int64_t total_good(int32_t good_id) const;
+    // Pin one Country asset snapshot and sample goods-ledger fields together so
+    // Economy VERIFY does not mix a stale closing country_goods with a newer
+    // research_consumed_total after late-fold / peer-preview catch-up.
+    void sample_economy_goods_audit(int64_t &country_goods_total,
+                                    int64_t &research_consumed_total,
+                                    int64_t &country_cash_total) const;
     // Cumulative research-point goods consumed by the country runtime. The
     // economy uses the value at an epoch boundary to account for research
     // that runs while the market cycle is frozen.

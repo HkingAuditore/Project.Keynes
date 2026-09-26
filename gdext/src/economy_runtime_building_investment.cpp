@@ -2241,14 +2241,8 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 int64_t output_pressure_q16 =
                     market_store().last_shortage_q16[index];
                 if (monetary_issue) {
-                    // Mint demand is bounded by the remaining physical quota.
-                    // A high issue value never turns an unused money allowance
-                    // into a fictitious unit price or a full-pressure signal.
-                    const int64_t issue_value = std::max<int64_t>(1,
-                        _good_monetary_issue_values[output.good_id]);
-                    const int64_t quota_quantity = mul_div_sat(
-                        std::max<int64_t>(0, bullion_cell_quota_remaining(cell)),
-                        GOODS_SCALE, issue_value, _saturation_count);
+                    // Mint clears at face. Executable output (labor + ore), not
+                    // the cell bullion pool, decides whether a gold lot can run.
                     bool employee_supply = type.employee_count == 0;
                     for (int32_t role_index = 0; role_index < type.employee_count;
                          ++role_index) {
@@ -2285,16 +2279,11 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                             resource_capacity_q16, Q16_ONE, _saturation_count);
                     const int64_t executable_output = employee_supply
                         ? effective_unit_output : 0;
-                    const int64_t quota_deficit = std::min<int64_t>(
-                        executable_output, quota_quantity);
-                    output_deficit = std::max(output_deficit, quota_deficit);
-                    const int64_t quota_pressure = effective_unit_output > 0
-                        ? mul_div_sat(quota_deficit, Q16_ONE,
-                            effective_unit_output, _saturation_count) : 0;
-                    output_pressure_q16 = std::min<int64_t>(Q16_ONE,
-                        std::max<int64_t>(output_pressure_q16, quota_pressure));
-                    if (quota_deficit < effective_unit_output)
-                        ++_bullion_quota_pressure_clamps;
+                    // Mint clears at face value, so executable output is the
+                    // absorbable demand — not the cell bullion pool.
+                    output_deficit = std::max(output_deficit, executable_output);
+                    if (executable_output > 0)
+                        output_pressure_q16 = Q16_ONE;
                 } else if (research_demand > 0 && supply <= 0) {
                     // Government procurement is a cash-backed buyer even before
                     // the first research producer exists. Seed one building of
@@ -2643,7 +2632,11 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
             }
             int64_t daily_input_cost = 0;
             int64_t daily_input_base_cost = 0;
-            int64_t input_coverage_bound_q16 = Q16_ONE;
+            // Hard inputs may ceiling entry utilization. Soft tools only cut
+            // throughput efficiency (and bill the covered share) — matching
+            // production's optional-productivity path.
+            int64_t hard_input_coverage_bound_q16 = Q16_ONE;
+            int64_t soft_efficiency_q16 = Q16_ONE;
             for (int32_t i = 0; i < type.input_count; ++i) {
                 const ProductionInput &input = _building_inputs[type.input_begin + i];
                 int64_t best_price = std::numeric_limits<int64_t>::max();
@@ -2716,21 +2709,28 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                         daily_input_cost = std::numeric_limits<int64_t>::max();
                         break;
                     }
-                    input_coverage_bound_q16 = std::min<int64_t>(
-                        input_coverage_bound_q16,
+                    soft_efficiency_q16 = std::min<int64_t>(
+                        soft_efficiency_q16,
                         std::clamp<int64_t>(Q16_ONE - required_q16, 0, Q16_ONE));
                     continue;
                 }
-                const int64_t soft_bound_q16 = Q16_ONE - required_q16 +
-                    mul_div_sat(std::max<int64_t>(0, best_coverage_q16),
-                                required_q16, Q16_ONE, _saturation_count);
-                input_coverage_bound_q16 = std::min<int64_t>(
-                    input_coverage_bound_q16,
-                    std::clamp<int64_t>(soft_bound_q16, 0, Q16_ONE));
+                if (required_q16 >= Q16_ONE) {
+                    hard_input_coverage_bound_q16 = std::min<int64_t>(
+                        hard_input_coverage_bound_q16,
+                        std::clamp<int64_t>(
+                            std::max<int64_t>(0, best_coverage_q16), 0, Q16_ONE));
+                } else if (required_q16 > 0) {
+                    soft_efficiency_q16 = std::min<int64_t>(
+                        soft_efficiency_q16,
+                        std::clamp<int64_t>(
+                            Q16_ONE - required_q16 + mul_div_sat(
+                                std::max<int64_t>(0, best_coverage_q16),
+                                required_q16, Q16_ONE, _saturation_count),
+                            0, Q16_ONE));
+                }
                 // Soft inputs are optional: charge only the covered (stocked /
-                // offered) share. Billing the full ghost-priced tool SKU while
-                // also cutting utilization for the soft shortfall double-killed
-                // flint_quarry livelihood quotes.
+                // offered) share. Hard inputs bill the full recipe quantity;
+                // utilization scales the period bill later.
                 int64_t bill_quantity = input.quantity;
                 if (required_q16 < Q16_ONE) {
                     bill_quantity = mul_div_sat(input.quantity,
@@ -2887,24 +2887,27 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                         _saturation_count), 0, Q16_ONE);
                 }
             }
-            // Market/climate may still bind expansion. Soft-input stock coverage
-            // must not undercut the executable intensity incumbents already
+            // Market/climate and hard-input stock may still bind expansion.
+            // Soft-tool coverage lowers throughput via soft_efficiency below,
+            // and must not undercut the executable intensity incumbents already
             // revealed in this cell.
             utilization_q16 = std::min(utilization_q16, climate_capacity_q16);
             if (revealed_util_q16 > 0) {
                 utilization_q16 = std::min(utilization_q16,
-                    std::max(input_coverage_bound_q16, revealed_util_q16));
+                    std::max(hard_input_coverage_bound_q16, revealed_util_q16));
             } else {
                 utilization_q16 = std::min(utilization_q16,
-                    input_coverage_bound_q16);
+                    hard_input_coverage_bound_q16);
             }
             if (utilization_q16 <= 0) {
                 reject(INVESTMENT_REJECTION_INPUT_CHAIN);
                 continue;
             }
+            const int64_t throughput_q16 = mul_div_sat(
+                utilization_q16, soft_efficiency_q16, Q16_ONE, _saturation_count);
             if (diagnostic != nullptr) {
                 diagnostic->shortage_q16 = shortage_q16;
-                diagnostic->utilization_q16 = utilization_q16;
+                diagnostic->utilization_q16 = throughput_q16;
                 diagnostic->driver_pressure_q16 = driver.pressure_q16;
                 diagnostic->driver_utilization_q16 = driver.utilization_q16;
                 diagnostic->stealable = stealable;
@@ -2939,7 +2942,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     const int64_t prospective_quantity =
                         effective_building_output_quantity_for_target(
                             cell, type_id, target_signature,
-                            output.good_id, output.quantity, utilization_q16, 1,
+                            output.good_id, output.quantity, throughput_q16, 1,
                             _saturation_count);
                     const int64_t retail_price = market_store().price[
                         market_store().index(market, output.good_id)];
@@ -2969,19 +2972,9 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                         research_demand > 0;
                     int64_t absorption_q16 = 0;
                     if (issue_value > 0 && sellable_quantity > 0) {
-                        // Investment is evaluated after current production has
-                        // consumed part of the mutable quota. Use the frozen
-                        // epoch opening pool for the next-period forecast, then
-                        // convert the epoch money into a daily physical lane.
-                        const int64_t quota_quantity = mul_div_sat(
-                            monetary_quota_money_daily, GOODS_SCALE,
-                            std::max<int64_t>(1, issue_value), _saturation_count);
-                        absorption_q16 = std::clamp<int64_t>(mul_div_sat(
-                            std::min<int64_t>(sellable_quantity, quota_quantity),
-                            Q16_ONE, sellable_quantity, _saturation_count),
-                            0, Q16_ONE);
-                        if (quota_quantity < sellable_quantity)
-                            ++_bullion_quote_overallocation_prevented;
+                        // Face × sellable output. Investment must not treat the
+                        // cell bullion pool as a demand ceiling.
+                        absorption_q16 = Q16_ONE;
                     }
                     if (issue_value <= 0 && government_research_output &&
                         sellable_quantity > 0) {
@@ -3297,7 +3290,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 candidate.construction_cost = construction_cost;
                 candidate.projected_income = projected_owner_income;
                 candidate.shortage_q16 = shortage_q16;
-                candidate.utilization_q16 = utilization_q16;
+                candidate.utilization_q16 = throughput_q16;
                 candidate.profit_per_day = daily_profit;
                 candidate.return_on_capital_q16 = return_on_capital_q16;
                 candidate.payback_days = payback;
@@ -3316,7 +3309,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     candidate.driver_output_per_building =
                         effective_building_output_quantity_for_target(
                             cell, type_id, target_signature,
-                            output.good_id, output.quantity, utilization_q16, 1,
+                            output.good_id, output.quantity, throughput_q16, 1,
                             _saturation_count);
                     break;
                 }

@@ -2,6 +2,8 @@ extends PanelContainer
 class_name TechnologyDetailCard
 
 const RelationRowScene := preload("res://scenes/ui/technology_relation_row.tscn")
+const TechnologyNetworkValidatorScript := preload(
+	"res://scripts/technology/technology_network_validator.gd")
 
 signal enqueue_requested(index: int)
 signal remove_requested(index: int)
@@ -294,58 +296,12 @@ func _effect_items(definition: Dictionary) -> Array:
 	var modifier_texts := {}
 	for term_value in definition.get("modifier_terms", []):
 		var term: Dictionary = term_value
-		var stat := String(term.get("stat", ""))
 		var value := int(round(float(term.get("value", 0.0)) * 100.0))
 		var delta := "%+d%%" % value
+		var subject := TechnologyNetworkValidatorScript.modifier_effect_subject(term)
 		var text := ""
-		if stat.begins_with("country.output.building."):
-			text = "%s产出 %s" % [String(term.get(
-				"subject_display_name", "指定建筑")), delta]
-		elif stat.begins_with("country.output.family."):
-			text = "%s产出 %s" % [String(term.get(
-				"subject_display_name", "相关生产家族")), delta]
-		elif stat.begins_with("country.input.good."):
-			text = "%s生产投入 %s" % [String(term.get(
-				"subject_display_name", "指定商品")), delta]
-		elif stat.begins_with("country.consumption.good."):
-			text = "%s家庭消费 %s" % [String(term.get(
-				"subject_display_name", "指定商品")), delta]
-		elif stat.begins_with("country.resource."):
-			text = "%s %s" % [String(term.get(
-				"subject_display_name", "指定自然资源")), delta]
-		elif stat.begins_with("country.output.terrain.") \
-				or stat.begins_with("country.output.landform."):
-			text = "%s产出 %s" % [String(term.get(
-				"subject_display_name", "指定地理生产")), delta]
-		elif stat.begins_with("country.output.good."):
-			text = "%s产出 %s" % [String(term.get(
-				"subject_display_name", "指定商品")), delta]
-		elif stat.begins_with("country.climate.profile."):
-			text = "%s %s" % [String(term.get(
-				"subject_display_name", "生产类型气候损失")), delta]
-		else:
-			var subject_names := {
-				"country.economy_output_factor": "全社会经济产出",
-				"country.production.input_factor": "全社会生产投入",
-				"country.household.consumption_factor": "全社会家庭消费",
-				"country.resource.use_factor": "全社会自然资源耗用",
-				"country.climate.cold_stress_factor": "寒冷损失",
-				"country.climate.drought_loss_factor": "旱灾损失",
-				"country.climate.flood_loss_factor": "洪灾损失",
-				"country.climate.heat_stress_factor": "热害损失",
-				"country.construction.cost_factor": "国家建设成本",
-				"country.output.agriculture_factor": "农业部门产出",
-				"country.output.extractive_factor": "采掘部门产出",
-				"country.output.manufacturing_factor": "制造部门产出",
-				"country.output.energy_factor": "能源部门产出",
-				"country.output.knowledge_factor": "知识部门产出",
-				"country.research.engineering_efficiency": "工程领域研究效率",
-				"country.research.science_efficiency": "科学领域研究效率",
-				"country.research.society_efficiency": "社会领域研究效率",
-				"country.trade.speed_factor": "贸易速度",
-			}
-			if subject_names.has(stat):
-				text = "%s %s" % [String(subject_names[stat]), delta]
+		if not subject.is_empty():
+			text = "%s %s" % [subject, delta]
 		if not text.is_empty() and not modifier_texts.has(text):
 			modifier_texts[text] = true
 			items.append({"text": text, "icon": &"metric.technology", "accent": UITokens.CLIMATE})

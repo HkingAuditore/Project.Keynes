@@ -34,11 +34,8 @@ signals, and four environment signals. Population alive at the boundary enters e
 building input purchases, output sales, and income distribution then update funds and stock before
 household clearing. Producer-retained food fills one aggregate emergency calorie pool across staple,
 protein, and produce needs, while active owner lots protect next-period physical-input cash from
-household spending. Calculate the whole period from that frozen state using the
-cell's actual elapsed days (`clamp(day - cell_last_settlement_day, 1, 5)`), not
-a newly chosen N. Production locks market N in 1–5 at cycle boundaries.
-`market_cycle_days=0` is ignored and treated as the maximum 5; it does not
-select the retired 50/334 auto-fast-forward path.
+household spending. Calculate the whole N-day period from that state. The production default is N=5. Setting
+`market_cycle_days=0` selects scale-driven automatic N.
 
 This is an approximation, not N sequential daily integrations. Keep its state invisible until
 the period deadline. Commands arriving after sample day apply next period.
@@ -73,16 +70,18 @@ indivisible proportional bundle.
 Order needs by priority and constrain funded quantity by remaining cohort funds. Keep money rounding
 deterministic.
 
-For each component good, allocate shortage with cumulative prefix quotients:
+For each component good, allocate shelf capacity with cumulative prefix quotients:
 
 ```text
 allocation_i = floor(prefix_i * available / total)
              - floor(prefix_(i-1) * available / total)
 ```
 
-The minimum component capacity determines filled bundle units. If primary inventory is abundant,
-use the fused abundant path and avoid component-reference CSR construction. Only inventory shortage
-may trigger one same-period substitution fallback; budget-only unmet demand must not re-enter fallback.
+Own-shelf shortfall for good G is `max(0, component_demand_G − available_G)`. The minimum
+component capacity still determines filled bundle units, but shortage accounting uses only that
+own-shelf shortfall — not `1 − sales/demand`. If primary inventory is abundant, use the fused
+abundant path and avoid component-reference CSR construction. Only inventory shortage may trigger
+one same-period substitution fallback; budget-only unmet demand must not re-enter fallback.
 
 ## 5. Merchant settlement and satisfaction
 
@@ -96,14 +95,19 @@ merchant funds += population-weighted revenue share
 merchant epoch_income += revenue share
 ```
 
-Distribute merchant revenue once per market, not per order, and only across
-living merchant cohorts (`population > 0`). A zero-population merchant lane is
-not a market-maker: repair the cell from the largest non-merchant cohort before
-debiting household funds, then credit the live slots on the market's cells.
-Stale `_merchant_offsets[market]` ranges must not be the sole owner lookup.
-
-Compute total and worst-need satisfaction
+Distribute merchant revenue once per market, not per order. Compute total and worst-need satisfaction
 in one linear pass over need states; do not scan all need states once per cohort.
+
+That same pass also drives composite satisfaction. Four `Σ(weight × satisfaction)` / `Σweight`
+accumulators — keyed by the data-driven `Need.satisfaction_tier` — produce the subsistence, basic,
+comfort, and luxury dimensions with **zero extra iteration**. Income growth, savings, tax burden,
+and social development come from cohort ledgers and the epoch-boundary
+`_epoch_cell_development_q16` cache, so the hot loop only does multiply-add plus one
+`mul_div_sat`. Never add a second pass over need states, a string comparison, or a `Dictionary`
+here. `_population.composite_satisfaction` is the authoritative index for births, hire order,
+family branch promotion, and social-pressure events; `needs_satisfaction`
+(`SAT_DIM_SUBSISTENCE`) drives starvation mortality and nothing else. Full contract:
+`docs/cpp-dots-runtime/satisfaction-runtime.md`.
 
 Merchants also submit household demand. Total cohort money does not change from purchases.
 
@@ -121,6 +125,43 @@ income_alpha = min(1, N / 8)
 Household demand remains market-major. Building input demand, offered supply, and production-cost
 anchors live in a sorted sparse `(cell, good)` signal store built from actual building input/output
 edges. Update those signals only after production so they feed the next frozen cycle.
+
+At each market sample boundary, after freezing realized business/supply/cost signals, run a sparse
+Leontief shadow pass over live cells: seed unmet deficits
+`max(household + realized_business + research - offered_supply, inventory_gap_daily)`, select the
+preferred unlocked producer via the investment good→type CSR, and explode hard/soft-required input
+edges as
+
+```text
+derived_B += deficit_A * input_qty_B_eff / output_qty_A * required_share_q16
+```
+
+Stamp-BFS continues upstream without cycles. Results land in `_epoch_derived_business_demand`
+(aligned to signal lanes; `ensure_market_signal_index` may create missing intermediate lanes). This
+column is recomputed each sample and is excluded from PKEC/hash. Price pressure folds
+
+```text
+business_for_price = realized_business + research
+                   + derived * derived_weight_q16   # default 1/2
+```
+
+so intermediate goods such as flint receive reverse pressure from finished-good shortages even when
+downstream workshops are vacant. Investment `startup_demand` uses the same deficit×BOM scaling and
+may include derived demand when seeding upstream candidates. Shadow demand never withdraws stock or
+mints money.
+
+Household `last_shortage_q16` is **own-shelf** fill failure, not bundle residual failure:
+
+```text
+stock_shortfall_G = Σ max(0, funded_component_demand_G − available_stock_G)
+shortage_G        = stock_shortfall_G / funded_component_demand_G   # 0 when demand_G = 0
+```
+
+`available_stock_G` is household-clearing stock after the production-input floor. When a Leontief
+bundle fails because a complement is missing, only that binding good accumulates shortfall.
+Abundant complements that remain unsold because another component bound must keep `shortage = 0`.
+Do not use `1 − sales/demand`: that contaminates substitutes and complements. `demand_ema` still
+tracks funded component demand for inventory/price levels; only the shortage term changes.
 
 Price pressure combines excess demand, target-inventory gap, shortage, a confidence-weighted soft
 cost anchor, and inactive-default-price reversion. Divide the combined pressure by the configured
@@ -218,37 +259,3 @@ new owner's projected income must cover 110% of living cost and exceed source in
 Per-capita source funds must cover local-price construction goods plus 30 living-cost days. Move one
 person with proportional funds, then use the ordinary BUILD transfer and construction-goods sink.
 Do not apply this price-driven path to collectors or services.
-
-## 普通投资建材需求（2026-09-21）
-
-普通自动投资缺料时，先以虚拟库存计算完整建材报价，仅用于利润、生计、回本期与
-出资人可行性检查，不扣库存或创建建筑。通过这些检查后才发布一座建筑的建材需求；
-批量分配因材料不足收窄时同样只发布一座的有界补货目标，不把批量试算次数作为需求。
-材料使用已解锁候选、国家建设成本系数和转换效率。每个 cell/good 的候选报价采用
-max 包络，与当轮既有需求合并，只对增量更新 desired/unfunded 汇总、建材保留量。
-
-投资位于 BUILDING_COMMIT，晚于生产端商业 EMA 更新，因此增量按实际 epoch 天数
-转成日需求，按既有商业 EMA alpha 追加到持久商业需求。下一周期价格、采购目标及
-贸易读取该信号；未成交不计入 funded demand，也不创造现金或商品。报价只是有资金
-来源的购买意愿，不等于已成交订单。多个替代投资候选不逐项相加，当前采用保守包络。
-
-回归：`building_runtime_test.gd -- --materials-only`，普通打制石器工坊缺原石：
-desired demand、business EMA、merchant target、价格响应、试算需求上界及守恒；
-无法负担的建设不应在既有维护需求之外增加投资需求。科研专项仍用 `--research-only`。
-
-## Employment wage bids and owner-to-employee mobility
-
-Adaptive wages use the reference/local wage anchor plus a vacancy bid. The bid
-uses vacancy share and the larger of realized margin or a potential margin
-computed from demand-backed/monetary daily revenue minus inputs and reference
-wages. Monetary output keeps a cold-start opportunity signal alive when a role
-has no employees yet. The wage target remains bounded by sustainable revenue
-and the configured daily rise/fall damping.
-
-When a role is both severely understaffed and materially profitable, its
-cross-profession hurdle is reduced. If the unemployed pool is empty, an owner
-cohort can move into the employee vacancy of a higher-opportunity building;
-the source and target groups are used at most once per employment period and
-the last merchant remains protected. The transfer always calls
-`move_cohort_population()` and updates role/cohort counters so population,
-money, and goods audits remain zero.

@@ -5471,6 +5471,8 @@ Dictionary NativeCountryRuntime::research_snapshot(int64_t handle) const {
     out["daily_procurement_budget"] =
         _country_research_daily_budgets[static_cast<size_t>(slot)];
     out["technology_points_stock"] = stock;
+    out["country_cash"] =
+        slot < _countries.cash.size() ? _countries.cash[slot] : 0;
     out["deferred_unallocated_points"] =
         _country_research_deferred_points[static_cast<size_t>(slot)];
     out["purchased_total"] = _country_research_purchased_total[static_cast<size_t>(slot)];
@@ -5498,11 +5500,14 @@ Dictionary NativeCountryRuntime::research_snapshot(int64_t handle) const {
             UtilityFunctions::print(vformat(
                 "[tech-ui-diag/research] handle=%d gen=%d day=%d "
                 "owned=%d pending=%d queued=%d progress_nonzero=%d stock=%d "
-                "deferred=%d consumed=%d",
+                "deferred=%d consumed=%d cash=%d budget=%d auto=%d",
                 handle, static_cast<int64_t>(_generation), _last_research_day,
                 owned, pending, queued, nonzero_progress, stock,
                 _country_research_deferred_points[static_cast<size_t>(slot)],
-                _country_research_consumed_total[static_cast<size_t>(slot)]));
+                _country_research_consumed_total[static_cast<size_t>(slot)],
+                slot < _countries.cash.size() ? _countries.cash[slot] : 0,
+                _country_research_daily_budgets[static_cast<size_t>(slot)],
+                _country_research_auto_purchase[static_cast<size_t>(slot)]));
         }
     }
     return out;
@@ -5550,38 +5555,72 @@ bool NativeCountryRuntime::research_procurement_policy(int32_t country_slot, boo
     const auto worker = _simulation_host != nullptr &&
         _simulation_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY)
         ? _simulation_host->country_asset_snapshot() : nullptr;
+    const auto &active = worker ? worker->country_active : _countries.active;
     const auto &_country_research_auto_purchase = worker ? worker->research_auto_purchase : this->_country_research_auto_purchase;
     const auto &_country_research_daily_budgets = worker ? worker->research_daily_budgets : this->_country_research_daily_budgets;
     const auto &_country_research_queues = worker ? worker->research_queues : this->_country_research_queues;
     const auto &_country_research_queue_lengths = worker ? worker->research_queue_lengths : this->_country_research_queue_lengths;
     const auto &_country_research_deferred_points = worker ? worker->research_deferred_points : this->_country_research_deferred_points;
     const auto &_country_goods = worker ? worker->country_goods : this->_country_goods;
-    if (country_slot < 0 || country_slot >= static_cast<int32_t>(_countries.active.size()) ||
-        _countries.active[static_cast<size_t>(country_slot)] == 0) return false;
+    const size_t good_count = worker != nullptr
+        ? static_cast<size_t>(worker->good_count) : _good_ids.size();
+    const int32_t technology_count = worker != nullptr
+        ? static_cast<int32_t>(worker->technology_count)
+        : static_cast<int32_t>(_technology_ids.size());
+    if (country_slot < 0 ||
+        country_slot >= static_cast<int32_t>(active.size()) ||
+        active[static_cast<size_t>(country_slot)] == 0) return false;
     const size_t slot = static_cast<size_t>(country_slot);
+    if (slot >= _country_research_auto_purchase.size() ||
+        slot >= _country_research_daily_budgets.size() ||
+        slot >= _country_research_deferred_points.size() ||
+        _technology_points_good_id < 0 ||
+        static_cast<size_t>(_technology_points_good_id) >= good_count) {
+        return false;
+    }
     enabled = _country_research_auto_purchase[slot] != 0;
     cash_budget = _country_research_daily_budgets[slot];
     remaining_points = 0;
     for (int32_t domain = 0; domain < 4; ++domain) {
         const size_t length_index = slot * 4U + domain;
+        if (length_index >= _country_research_queue_lengths.size()) break;
         const size_t queue_base = length_index * 8U;
-        for (int32_t position = 0; position < _country_research_queue_lengths[length_index]; ++position) {
-            const int32_t tech = _country_research_queues[queue_base + position];
-            remaining_points += std::max<int64_t>(
-                0, (worker ? country_effective_research_cost(
-                    _technology_costs[tech], worker->research_cost_factor[slot])
-                    : effective_research_cost(country_slot, tech)) -
-                (worker ? worker->research_progress[slot * worker->technology_count + tech]
-                    : progress_for(country_slot, tech)));
+        for (int32_t position = 0;
+             position < _country_research_queue_lengths[length_index];
+             ++position) {
+            if (queue_base + static_cast<size_t>(position) >=
+                _country_research_queues.size()) break;
+            const int32_t tech = _country_research_queues[
+                queue_base + static_cast<size_t>(position)];
+            if (tech < 0 || tech >= technology_count ||
+                tech >= static_cast<int32_t>(_technology_costs.size())) continue;
+            const int64_t cost = worker
+                ? country_effective_research_cost(
+                    _technology_costs[static_cast<size_t>(tech)],
+                    slot < worker->research_cost_factor.size()
+                        ? worker->research_cost_factor[slot] : 1.0)
+                : effective_research_cost(country_slot, tech);
+            const int64_t progress = worker
+                ? (slot * static_cast<size_t>(worker->technology_count) +
+                       static_cast<size_t>(tech) < worker->research_progress.size()
+                       ? worker->research_progress[
+                             slot * static_cast<size_t>(worker->technology_count) +
+                             static_cast<size_t>(tech)]
+                       : 0)
+                : progress_for(country_slot, tech);
+            remaining_points += std::max<int64_t>(0, cost - progress);
         }
     }
-    const int64_t stock = _country_goods[
-        slot * _good_ids.size() + static_cast<size_t>(_technology_points_good_id)];
+    const size_t stock_index =
+        slot * good_count + static_cast<size_t>(_technology_points_good_id);
+    const int64_t stock = stock_index < _country_goods.size()
+        ? _country_goods[stock_index] : 0;
     const int64_t unreserved = std::max<int64_t>(
         0, stock - _country_research_deferred_points[slot]);
     // Unreserved treasury stock is a real buyer gap of zero: government will
     // not purchase points it already holds. Starter grants must therefore not
-    // cover later queued techs, or automatic investment never sees demand.
+    // cover later queued techs, or automatic investment never sees demand —
+    // and epoch-frozen procurement must re-read this after stock is spent.
     remaining_points = std::max<int64_t>(0, remaining_points - unreserved);
     return true;
 }
@@ -7122,7 +7161,7 @@ bool NativeCountryRuntime::valid_handle(int64_t handle) const {
 int64_t NativeCountryRuntime::total_cash() const {
     if (_simulation_host != nullptr &&
         _simulation_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY)) {
-        const auto snapshot = _simulation_host->country_asset_snapshot();
+        const auto snapshot = _simulation_host->country_economy_audit_snapshot();
         if (snapshot != nullptr) {
             int64_t total = 0;
             for (size_t i = 0; i < snapshot->country_cash.size(); ++i) {
@@ -7147,7 +7186,7 @@ int64_t NativeCountryRuntime::total_cash() const {
 int64_t NativeCountryRuntime::cash_for_slot(int32_t country_slot) const {
     if (_simulation_host != nullptr &&
         _simulation_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY)) {
-        const auto snapshot = _simulation_host->country_asset_snapshot();
+        const auto snapshot = _simulation_host->country_economy_audit_snapshot();
         if (snapshot) return country_slot >= 0 &&
             static_cast<size_t>(country_slot) < snapshot->country_cash.size() &&
             snapshot->country_active[country_slot] != 0
@@ -7163,7 +7202,7 @@ int64_t NativeCountryRuntime::total_good(int32_t good_id) const {
     if (good_id < 0 || good_id >= static_cast<int32_t>(_good_ids.size())) return 0;
     const auto worker = _simulation_host != nullptr &&
         _simulation_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY)
-        ? _simulation_host->country_asset_snapshot() : nullptr;
+        ? _simulation_host->country_economy_audit_snapshot() : nullptr;
     const auto &_country_goods = worker ? worker->country_goods : this->_country_goods;
     int64_t total = 0;
     for (size_t slot = 0; slot < _countries.active.size(); ++slot) {
@@ -7175,10 +7214,70 @@ int64_t NativeCountryRuntime::total_good(int32_t good_id) const {
     return total;
 }
 
+void NativeCountryRuntime::sample_economy_goods_audit(
+        int64_t &country_goods_total, int64_t &research_consumed_total,
+        int64_t &country_cash_total) const {
+    country_goods_total = 0;
+    research_consumed_total = 0;
+    country_cash_total = 0;
+    // Economy opening/VERIFY must pin sealed authority assets — never the
+    // peer-wait plan preview that overlays uncommitted research spend.
+    const auto worker = _simulation_host != nullptr &&
+        _simulation_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY)
+        ? _simulation_host->country_economy_audit_snapshot() : nullptr;
+    const size_t good_count = worker != nullptr
+        ? static_cast<size_t>(worker->good_count)
+        : _good_ids.size();
+    const size_t country_count = worker != nullptr
+        ? static_cast<size_t>(worker->country_count)
+        : _countries.active.size();
+    const auto &active = worker != nullptr ? worker->country_active
+                                           : _countries.active;
+    const auto &cash = worker != nullptr ? worker->country_cash
+                                         : _countries.cash;
+    const auto &goods = worker != nullptr ? worker->country_goods
+                                          : _country_goods;
+    const auto &consumed = worker != nullptr
+        ? worker->research_consumed_total
+        : _country_research_consumed_total;
+    for (size_t slot = 0; slot < country_count; ++slot) {
+        if (slot >= active.size() || active[slot] == 0) continue;
+        if (slot < cash.size()) {
+            const int64_t value = cash[slot];
+            if (value > 0 &&
+                country_cash_total > std::numeric_limits<int64_t>::max() - value)
+                country_cash_total = std::numeric_limits<int64_t>::max();
+            else
+                country_cash_total += value;
+        }
+        if (slot < consumed.size()) {
+            const int64_t value = consumed[slot];
+            if (value > 0 &&
+                research_consumed_total >
+                    std::numeric_limits<int64_t>::max() - value)
+                research_consumed_total = std::numeric_limits<int64_t>::max();
+            else
+                research_consumed_total += value;
+        }
+        if (good_count == 0 || goods.size() < (slot + 1u) * good_count) continue;
+        const size_t base = slot * good_count;
+        for (size_t good = 0; good < good_count; ++good) {
+            const int64_t value = goods[base + good];
+            if (value > 0 &&
+                country_goods_total >
+                    std::numeric_limits<int64_t>::max() - value) {
+                country_goods_total = std::numeric_limits<int64_t>::max();
+                break;
+            }
+            country_goods_total += value;
+        }
+    }
+}
+
 int64_t NativeCountryRuntime::research_consumed_total() const {
     const auto worker = _simulation_host != nullptr &&
         _simulation_host->domain_is_worker_authoritative(RuntimeDomainId::COUNTRY)
-        ? _simulation_host->country_asset_snapshot() : nullptr;
+        ? _simulation_host->country_economy_audit_snapshot() : nullptr;
     const auto &_country_research_consumed_total = worker ? worker->research_consumed_total : this->_country_research_consumed_total;
     int64_t total = 0;
     for (size_t slot = 0; slot < _countries.active.size(); ++slot) {
