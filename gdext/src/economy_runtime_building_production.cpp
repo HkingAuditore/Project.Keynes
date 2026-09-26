@@ -810,14 +810,17 @@ bool NativeEconomyRuntime::run_building_production_cell(
             physical = saturating_add(physical, 1, _saturation_count);
         return physical;
     };
-    auto soft_input_bound_q16 = [&](const ProductionInput &input,
-                                    int64_t raw_capacity_q16) -> int64_t {
+    // Soft-input efficiency: (1-required)+required*coverage. Soft inputs are
+    // optional productivity, not an objective capacity ceiling on activity.
+    auto soft_efficiency_q16 = [&](const ProductionInput &input,
+                                   int64_t coverage_q16) -> int64_t {
         const int64_t required = std::clamp<int64_t>(input.required_q16, 0, Q16_ONE);
         if (required <= 0) return Q16_ONE;
-        raw_capacity_q16 = std::clamp<int64_t>(raw_capacity_q16, 0, Q16_ONE);
+        coverage_q16 = std::clamp<int64_t>(coverage_q16, 0, Q16_ONE);
+        if (required >= Q16_ONE) return coverage_q16;
         return std::clamp<int64_t>(
             Q16_ONE - required + mul_div_sat(
-                raw_capacity_q16, required, Q16_ONE, _saturation_count),
+                coverage_q16, required, Q16_ONE, _saturation_count),
             0, Q16_ONE);
     };
     auto resource_capacity_scale_q16 = [&](const ResourceAmount &item,
@@ -855,16 +858,13 @@ bool NativeEconomyRuntime::run_building_production_cell(
         if (available > 0 && scale == 0) scale = 1;
         return scale;
     };
+    // Soft inputs: buy for the full activity scale (optional productivity).
+    // Hard inputs: buy for the full activity scale. required<=0 never buys.
     auto input_purchase_scale_q16 = [&](const ProductionInput &input,
                                         int64_t output_scale_q16) -> int64_t {
         const int64_t required = std::clamp<int64_t>(input.required_q16, 0, Q16_ONE);
         if (required <= 0) return 0;
-        const int64_t floor_q16 = Q16_ONE - required;
-        output_scale_q16 = std::clamp<int64_t>(output_scale_q16, 0, Q16_ONE);
-        if (output_scale_q16 <= floor_q16) return 0;
-        const int64_t delta = output_scale_q16 - floor_q16;
-        return std::min<int64_t>(
-            Q16_ONE, mul_div_sat(delta, Q16_ONE, required, _saturation_count));
+        return std::clamp<int64_t>(output_scale_q16, 0, Q16_ONE);
     };
     auto scaled_input_quantity = [&](int64_t full_physical,
                                      int64_t purchase_scale_q16) -> int64_t {
@@ -959,7 +959,9 @@ bool NativeEconomyRuntime::run_building_production_cell(
             const ProductionInput &item = _building_inputs[type.input_begin + i];
             if (select_input_candidate(item, false, saturating_mul(
                     building_days, item.quantity, _saturation_count)) < 0) {
-                scale = std::min<int64_t>(scale, soft_input_bound_q16(item, 0));
+                // Soft shortage does not cut objective activity; hard does.
+                if (std::clamp<int64_t>(item.required_q16, 0, Q16_ONE) >= Q16_ONE)
+                    scale = 0;
             }
         }
         if (apply_climate) {
@@ -1002,9 +1004,17 @@ bool NativeEconomyRuntime::run_building_production_cell(
             const int64_t effective = saturating_mul(
                 building_days, item.quantity, _saturation_count);
             const int32_t selected = select_input_candidate(item, require_stock, effective);
-            if (selected < 0) return std::numeric_limits<int64_t>::max();
+            if (selected < 0) {
+                // Soft tools are optional: missing stock skips the buy and
+                // leaves throughput to soft_efficiency. Hard inputs abort.
+                const int64_t required = std::clamp<int64_t>(
+                    item.required_q16, 0, Q16_ONE);
+                if (required >= Q16_ONE)
+                    return std::numeric_limits<int64_t>::max();
+                continue;
+            }
             const InputCandidate &candidate = _building_input_candidates[selected];
-            const int64_t qty = scaled_input_quantity(
+            int64_t qty = scaled_input_quantity(
                 effective_production_input_quantity(cell, candidate.good_id,
                     physical_input_quantity(effective, candidate),
                     _saturation_count), purchase_scale_q16);
@@ -1023,9 +1033,26 @@ bool NativeEconomyRuntime::run_building_production_cell(
                     total->second = saturating_add(
                         total->second, qty, _saturation_count);
                 }
-                if (total->second > market_store().stock[
-                        market_store().index(market, candidate.good_id)]) {
-                    return std::numeric_limits<int64_t>::max();
+                const int64_t stock = market_store().stock[
+                    market_store().index(market, candidate.good_id)];
+                if (total->second > stock) {
+                    const int64_t required = std::clamp<int64_t>(
+                        item.required_q16, 0, Q16_ONE);
+                    if (required >= Q16_ONE)
+                        return std::numeric_limits<int64_t>::max();
+                    // Soft: buy only the residual shelf; do not ceiling
+                    // objective activity on tool scarcity.
+                    const int64_t prior = total->second - qty;
+                    const int64_t available = std::max<int64_t>(0, stock - prior);
+                    qty = available;
+                    total->second = prior + qty;
+                    if (quantities_out != nullptr)
+                        (*quantities_out)[input_index] = qty;
+                    if (qty <= 0) {
+                        if (selected_out != nullptr)
+                            (*selected_out)[input_index] = -1;
+                        continue;
+                    }
                 }
             }
             const int32_t rate = frozen_tax_rate(cell,
@@ -1405,12 +1432,14 @@ bool NativeEconomyRuntime::run_building_production_cell(
             int64_t scale_q16 = intent_scale_q16;
             for (int32_t i = 0; i < type.input_count; ++i) {
                 const ProductionInput &item = _building_inputs[type.input_begin + i];
+                const int64_t required = std::clamp<int64_t>(
+                    item.required_q16, 0, Q16_ONE);
+                if (required < Q16_ONE) continue; // soft: not an objective clamp
                 const int64_t effective = saturating_mul(
                     building_days, item.quantity, _saturation_count);
                 const int32_t selected = select_input_candidate(item, true, effective);
                 if (selected < 0) {
-                    scale_q16 = std::min<int64_t>(
-                        scale_q16, soft_input_bound_q16(item, 0));
+                    scale_q16 = 0;
                     continue;
                 }
                 const InputCandidate &candidate = _building_input_candidates[selected];
@@ -1424,8 +1453,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
                         market_store().stock[market_store().index(market, candidate.good_id)], Q16_ONE,
                         physical, _saturation_count));
                 }
-                scale_q16 = std::min<int64_t>(
-                    scale_q16, soft_input_bound_q16(item, raw_capacity_q16));
+                scale_q16 = std::min<int64_t>(scale_q16, raw_capacity_q16);
             }
             scale_q16 = clamp_scale_to_group_budget(scale_q16, true);
             const int64_t non_resource_scale_without_climate_q16 =
@@ -1465,11 +1493,48 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 group.last_climate_capacity_q16);
             scale_q16 = std::min<int64_t>(
                 scale_without_climate_q16, group.last_climate_capacity_q16);
+            // Soft inputs raise productivity at the objective activity level.
+            // Coverage is stock vs the tool need at this activity, not a cap on it.
+            int64_t soft_efficiency_total_q16 = Q16_ONE;
+            for (int32_t i = 0; i < type.input_count; ++i) {
+                const ProductionInput &item = _building_inputs[type.input_begin + i];
+                const int64_t required = std::clamp<int64_t>(
+                    item.required_q16, 0, Q16_ONE);
+                if (required <= 0 || required >= Q16_ONE) continue;
+                const int64_t effective = saturating_mul(
+                    building_days, item.quantity, _saturation_count);
+                const int64_t need_at_activity = mul_div_sat(
+                    effective, scale_q16, Q16_ONE, _saturation_count);
+                const int32_t selected = select_input_candidate(
+                    item, true, effective);
+                int64_t coverage_q16 = 0;
+                if (selected >= 0 && need_at_activity > 0) {
+                    const InputCandidate &candidate =
+                        _building_input_candidates[selected];
+                    const int64_t physical = effective_production_input_quantity(
+                        cell, candidate.good_id,
+                        physical_input_quantity(need_at_activity, candidate),
+                        _saturation_count);
+                    const int64_t stock = market_store().stock[
+                        market_store().index(market, candidate.good_id)];
+                    coverage_q16 = physical > 0
+                        ? std::min<int64_t>(Q16_ONE, mul_div_sat(
+                            std::max<int64_t>(0, stock), Q16_ONE, physical,
+                            _saturation_count))
+                        : Q16_ONE;
+                }
+                soft_efficiency_total_q16 = std::min<int64_t>(
+                    soft_efficiency_total_q16,
+                    soft_efficiency_q16(item, coverage_q16));
+            }
+            const int64_t activity_scale_q16 = scale_q16;
+            scale_q16 = mul_div_sat(activity_scale_q16, soft_efficiency_total_q16,
+                Q16_ONE, _saturation_count);
             if (resource_limited) ++_building_resource_limited_groups;
             if (resource_capacity_limited) ++_building_resource_capacity_limited_groups;
             group.purchase_intent_capacity_q16 = intent_scale_q16;
             group.last_capacity_q16 = scale_q16;
-            _building_funded_capacity_q16[g] = scale_q16;
+            _building_funded_capacity_q16[g] = activity_scale_q16;
             // ACTIVE_UNFUNDED: retain bounded purchase intent and stay ACTIVE
             // when finance (not physics) is the binding constraint.
             if (group.operating_state == 0 && intent_scale_q16 > 0 &&
@@ -1569,10 +1634,12 @@ bool NativeEconomyRuntime::run_building_production_cell(
                     }
                 }
             }
-            if (scale_q16 == 0) continue;
+            if (scale_q16 == 0 && activity_scale_q16 == 0) continue;
             touch_accounting_slot(owner_slot);
+            // Soft tools are bought for objective activity; missing soft stock
+            // only lowers throughput efficiency (scale_q16), not the buy intent.
             const int64_t actual_cost = quote_group_inputs(
-                group, type, scale_q16, true,
+                group, type, activity_scale_q16, true,
                 &quoted_input_candidates, &quoted_input_quantities);
             if (actual_cost == std::numeric_limits<int64_t>::max() ||
                 actual_cost > settlement_budget) {
@@ -2073,11 +2140,13 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 }
                 merchant_i = tier_end;
             }
-            const int64_t remaining_target = std::max<int64_t>(
-                0, quota_by_good[good] - merchant_total);
+            // Inventory-target quotas gate normal merchant cash procurement
+            // only. Producer support must buy every unit left unsold after
+            // that pass (应收尽收): leftover sellable must not fall through to
+            // discard while the cell still has support issuance budget.
             const int64_t remaining_sellable = std::max<int64_t>(
                 0, sellable_by_good[good] - merchant_total);
-            int64_t support_total = std::min(remaining_target, remaining_sellable);
+            int64_t support_total = remaining_sellable;
             if (producer_support_remaining <= 0) {
                 support_total = 0;
             } else {
@@ -2163,47 +2232,14 @@ bool NativeEconomyRuntime::run_building_production_cell(
         // pool by each offer's requested mint value, using a cumulative split
         // so gold and silver compete fairly and the last offer receives any
         // fixed-point remainder. The same physical output can never claim the
-        // full quota independently.
-        int32_t first_monetary_good = -1;
-        int64_t total_bullion_request = 0;
-        for (const Offer &offer : offers) {
+        // Monetary goods mint at face × sold. World bullion quotas used to
+        // shrink (or, in planning, inflate) receipts independently of output;
+        // income is face×output only.
+        for (Offer &offer : offers) {
             if (offer.good < 0 || offer.good >= market_store().good_count) continue;
             const int64_t issue_value = _good_monetary_issue_values[offer.good];
             if (issue_value <= 0 || offer.sellable <= 0) continue;
-            if (first_monetary_good < 0) first_monetary_good = offer.good;
-            total_bullion_request = saturating_add(total_bullion_request,
-                mul_div_sat(offer.sellable, issue_value, GOODS_SCALE,
-                            _saturation_count), _saturation_count);
-        }
-        if (first_monetary_good >= 0 && total_bullion_request > 0) {
-            const int64_t bullion_pool = bullion_quota_remaining(
-                cell, first_monetary_good);
-            const int64_t allocatable = std::min<int64_t>(
-                std::max<int64_t>(0, bullion_pool), total_bullion_request);
-            int64_t request_prefix = 0;
-            int64_t paid_prefix = 0;
-            for (Offer &offer : offers) {
-                if (offer.good < 0 || offer.good >= market_store().good_count) continue;
-                const int64_t issue_value = _good_monetary_issue_values[offer.good];
-                if (issue_value <= 0 || offer.sellable <= 0) continue;
-                request_prefix = saturating_add(request_prefix,
-                    mul_div_sat(offer.sellable, issue_value, GOODS_SCALE,
-                                _saturation_count), _saturation_count);
-                const int64_t target_paid = mul_div_sat(
-                    allocatable, request_prefix, total_bullion_request,
-                    _saturation_count);
-                const int64_t requested_paid = mul_div_sat(
-                    offer.sellable, issue_value, GOODS_SCALE, _saturation_count);
-                const int64_t paid_target = std::min<int64_t>(
-                    requested_paid, std::max<int64_t>(0, target_paid - paid_prefix));
-                offer.bullion_sold = std::min<int64_t>(offer.sellable,
-                    mul_div_sat(paid_target, GOODS_SCALE,
-                                std::max<int64_t>(1, issue_value),
-                                _saturation_count));
-                paid_prefix = saturating_add(paid_prefix,
-                    mul_div_sat(offer.bullion_sold, issue_value, GOODS_SCALE,
-                                _saturation_count), _saturation_count);
-            }
+            offer.bullion_sold = offer.sellable;
         }
         GoodsBill procurement_bill;
         int32_t procurement_bill_good = -1;
@@ -2223,10 +2259,6 @@ bool NativeEconomyRuntime::run_building_production_cell(
             int64_t supported = offer.supported;
             int64_t support_paid = offer.support_paid;
             if (issue_value > 0) {
-                // A bullion lane is a shared monetary sink. Convert the
-                // remaining money quota back to physical units before minting;
-                // this prevents each mine from independently seeing the full
-                // monthly cap.
                 sold = std::min<int64_t>(sold, std::max<int64_t>(0,
                     offer.bullion_sold));
                 paid = mul_div_sat(sold, issue_value, GOODS_SCALE, _saturation_count);
@@ -2924,6 +2956,8 @@ bool NativeEconomyRuntime::run_building_production_cell(
             const int32_t selected = select_input_candidate(item, false, 0);
             if (selected < 0) continue;
             const InputCandidate &candidate = _building_input_candidates[selected];
+            const int64_t required = std::clamp<int64_t>(
+                item.required_q16, 0, Q16_ONE);
             const int64_t effective = mul_div_sat(saturating_mul(
                 building_days, item.quantity, _saturation_count),
                 intent_q16, Q16_ONE, _saturation_count);
@@ -2938,9 +2972,25 @@ bool NativeEconomyRuntime::run_building_production_cell(
                     business_observed[local_signal], planned, _saturation_count);
             }
             credit_input_substitute_demand(cell, item, selected, planned);
+            // Soft tools: financed activity does not mean the shelf was bought.
+            // Fund only the stocked share so missing soft tools still print as
+            // unfunded upstream demand.
+            int64_t funded_scale_q16 = suspended ? 0 :
+                (g < static_cast<int32_t>(_building_funded_capacity_q16.size())
+                    ? _building_funded_capacity_q16[g] : group.last_capacity_q16);
+            if (!suspended && required > 0 && required < Q16_ONE &&
+                planned > 0) {
+                const int64_t stock = std::max<int64_t>(0,
+                    market_store().stock[market_store().index(
+                        market, candidate.good_id)]);
+                const int64_t coverage_q16 = std::min<int64_t>(Q16_ONE,
+                    mul_div_sat(stock, Q16_ONE, planned, _saturation_count));
+                funded_scale_q16 = mul_div_sat(
+                    funded_scale_q16, coverage_q16, Q16_ONE, _saturation_count);
+            }
             const int64_t funded_effective = suspended ? 0 : mul_div_sat(
                 saturating_mul(building_days, item.quantity, _saturation_count),
-                group.last_capacity_q16, Q16_ONE, _saturation_count);
+                funded_scale_q16, Q16_ONE, _saturation_count);
             const int64_t funded = suspended ? 0 : effective_production_input_quantity(
                 cell, candidate.good_id,
                 physical_input_quantity(funded_effective, candidate),

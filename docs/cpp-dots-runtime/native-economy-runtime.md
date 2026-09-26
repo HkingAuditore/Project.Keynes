@@ -437,8 +437,10 @@ state is introduced.
 `NativeEconomyRuntime` 继续单独持有建筑、债务、就业和贸易状态。PKEC v35 的建筑公开状态仅为
 `ACTIVE / SUSPENDED_LOSS`；停产组不再保留试产产能、岗位或投入需求。停产组可从本格
 商人聚合现金池取得仅用于建设材料或生产实物投入的信用，基础工资后、本期奖金前按本金
-优先偿还。满足输入、资源、融资和盈利条件的停产组只写入 `pending_operating_state=ACTIVE`，
-在下一个 frozen 结算边界直接恢复；连续 73 次五日清算复核（约 365 天）仍不可恢复时，
+优先偿还。满足硬输入、资源、融资和盈利条件的停产组只写入 `pending_operating_state=ACTIVE`，
+在下一个 frozen 结算边界直接恢复；软投入缺货不阻挡该门（只降低反事实产能）。有利可图的
+复工可从本格任意非商人劳动力回填业主（不仅限失业/同业），以便涨价后的燧石类停业组能重新上岗。
+连续 73 次五日清算复核（约 365 天）仍不可恢复时，
 才按确认的过剩产能分批清算，商栈除外，未偿债务只记坏账。自产实物收入按冻结零售价
 持久化到来源建筑，只参与经济收益和岗位选择，不可偿债。
 2026-09-20 旧语义对照修复：实际亏损停业的经营成本恢复为本组已结算的
@@ -509,14 +511,14 @@ sequence、settled day、稳定结果码及实际两类物资/现金支出；它
 - `EconomyProfile.building_output_efficiency_q16` 在 native 目录载入冷路径只缩放物资产出列，默认 `131072`（2 倍）；建设材料、日常投入、自然资源扣减、岗位与工资均不缩放。它是运行配置而非目录内容，因此不改变 building catalog hash、运行时状态布局或 PKEC 字节结构。
 - 食物产出倍率已从运行配置移除；食物平衡由各 `BuildingProfile.output_quantities_per_day` 直接表达。现有食物配置已吸收原 `1.25` 倍基线，石器时代采集、狩猎、捕鱼和陷阱线另有定向增产；自然资源消耗列保持不变。
 - 早期知识建筑的 `owner_slots_per_building` 为 1；知识产业（economic sector=knowledge）的新招聘和跨行业转岗软上限为本地人口的 30%（非零地块至少保留 1 个槽位），不会驱逐已在岗知识人口。
-- 实际利润率按 `(销售收入 - 输入成本 - 应付基础工资 - 到岗业主最低生活费) / max(经营成本, MONEY_SCALE)` 计算。业主生活费只参与企业可持续性判断，不生成额外现金支出；连续三周期不高于 -25% 后进入 `SUSPENDED_LOSS`。停产期间岗位、采购、产出和企业需求全为零；反事实利润连续两周期达到 +10%，且业主可支付一栋一周期输入、基础工资和生活费后恢复。
+- 实际利润率按 `(销售收入 - 输入成本 - 应付基础工资 - 到岗业主最低生活费) / max(经营成本, MONEY_SCALE)` 计算。业主生活费只参与企业可持续性判断，不生成额外现金支出；连续三周期不高于 -25% 后进入 `SUSPENDED_LOSS`。停产期间岗位、采购、产出和企业需求全为零；反事实利润达到重启门槛（默认约 +10%），且硬投入有货、自然资源可用、本地可回岗劳动力存在、业主/信贷能覆盖**可执行**一周期成本后恢复。软投入（`required_q16 < 1`）不是开工门槛：货架为空只按 `(1-required)+required*coverage` 降低反事实产能并不计入重启信贷，不得把涨价后有利可图的停业组（如燧石采掘场）永久锁死。
 - 下一周期利用率的可负担需求同时读取居民 `demand_ema` 与稀疏 `business_demand_ema`。库存不足时，以两者之和相对实际出库 EMA 的缺口触发短缺恢复；因此没有家庭终端消费、但被下游建筑持续采购的工具和中间品不会被误压到 1/32 探测产能。
 - 商人库存目标使用 `max(可行 household/business 日需求, 实际出库 EMA, 平滑供给下限) + 出口 EMA` 乘 30 日基线和 good-specific 比例后的有效天数；生存食品/御寒衣物的供给下限为供给 EMA 的 1/2，其他耐储品为 1/4，库存天数和目标量级不下调。采购开始冻结现金并保留 12.5%；有限现金按生存品、短缺压力、生产投入 reserve 缺口加权，但总采购预算仍封顶于真实缺口价值，避免“提高优先级”反而造成有钱不买。`cycle_flow` 目标仍为 0。
 - `GoodProfile.inventory_target_ratio_q16` 在 catalog 配置阶段预计算为 dense 有效天数列；热循环不做字符串分类或额外目录遍历。catalog 同时保留 legacy `good_target_inventory_days_q16` 兼容列，使编辑器误加载旧 DLL 时仍能完成 economy/population bootstrap；新版 DLL 优先读取比例列。
 - ACTIVE owner-lot 在家庭清算前按已到岗业主份额、计划利用率和冻结单位投入成本保留下周期营运资金；该资金仍在 owner cohort 账户内，但不会被本期居民订单花掉。报告发布 `owner_working_capital_reserved`。
 - 生产者只保留生存食品健康下限和寒冷条件下最低衣物；普通非生存自产商品全部进入市场。剩余自产食物可作为跨主食/蛋白质/蔬果的紧急热量。实际消费的自用物按冻结零售价计入来源建筑的实物收入而不产生现金，并进入实际出库 EMA；该价值影响经济收益和岗位选择，但不能偿债。
 - C++ 按建筑数、周期天数和计划利用率确定性重建稀疏生产投入硬预留。多投入配方先按同一可执行比例缩放，只预留能组成完整配方的数量；缺少任一互补投入时不会继续锁住其他投入。若非生存产出会消耗生存食物，则整套配方让家庭生存清算优先，只能使用清算后的余量。同一 CSR 遍历同时写入 `construction_material_reserve`：已安装建筑的作者维护日量（空配方则按部门地平线摊首选建造货）乘周期天数，并与一座建造 BOM 取 max。暂停组仍贡献维护预留。商人目标库存覆盖 `max(投入预留, 维护/建造预留)`；居民与国内贸易只能消费/导出 `stock - max(投入预留, 维护预留)`。业主在销售与工资之后按配方向商人付费购买维护货，买不起只记 unmet。`production_input_reserved`、`construction_material_reserved`、`maintenance_goods_consumed` / `maintenance_unmet` 及 selected-cell/CSV 逐商品列用于诊断。两份预留都是可重建缓存，不进入 PKEC。
-- 正常商人现金不足时，生产者托底只补足正常目标库存的剩余缺口，不再把全部可储存余货无条件入库；超过目标的余量进入真实 discard sink。被托底的数量仍获得冻结本地零售价 20% 的显式发行货币。`production_output_supported` 与 `producer_support_money_issued` 分开报告，货币审计把后者计入 `_explicit_money_mint`。`cycle_flow` 产出不能跨周期存货，但在边界清零前会先获得同周期低价采购/托底机会，剩余瞬态库存再计入 `cycle_flow_discarded`。
+- 正常商人现金采购仍受目标库存配额与现金预算约束；商人未买下的可卖余量由生产者托底应收尽收入库（不再按目标库存缺口截断），直到本格托底发行预算用尽。被托底的数量仍获得冻结本地零售价 20% 的显式发行货币。预算用尽后的余量才进入真实 discard sink。`production_output_supported` 与 `producer_support_money_issued` 分开报告，货币审计把后者计入 `_explicit_money_mint`。`cycle_flow` 产出不能跨周期存货，但在边界清零前会先获得同周期低价采购/托底机会，剩余瞬态库存再计入 `cycle_flow_discarded`。
 - 生成测试经济不再使用职业固定人均资金：每个 cohort 获得按当前气候、族群和默认价格计算的 30 日 `survival_household` 生存金；业主追加两周期最低有效输入成本；商人追加本地产出目标库存资金。
 - PKEC v47 是当前 writer，reader 接受 v47、v46、v45、v44、v43、v42 与 v41：保留 FamilyStore、NotablePersonStore、cohort membership、
   building ownership、Economy Modifier domain、冻结环境、财政与出生余数、家族特性、
@@ -592,6 +594,9 @@ catalog 编译成 CSR：plan→needs、need→variants、variant→components。
 - component：good 与每份 bundle 所需数量。
 - 同一 need 的 variants 是替代方案；同一 variant 的 components 是必须按比例满足的
   互补 bundle。
+- `last_shortage_q16` 只度量**本货自身货架**相对 funded component demand 的缺口
+  （`stock_shortfall / demand`），不把互补品/替代品导致的整包失败算进本货短缺。
+  `demand_ema` 仍跟踪 funded component demand。
 
 每 cohort 每日按优先级重置预算和需求。财富是 `funds/population` 相对
 `wealth_reference_per_capita` 的连续定点函数，不形成额外身份分桶。民族以稀疏 need
@@ -1501,13 +1506,14 @@ owner vacancy exists; otherwise active-first employment releases and rehires tha
 through the existing unemployed pool.
 
 Investment V5 derives entry utilization from `demand - offered_supply_ema`, never from
-installed count times recipe output. Each input edge then caps entry utilization by its
-soft-required share and actual one-period coverage from unreserved stock plus offered
-supply EMA. Zero coverage on a **fully required** input reports `INPUT_CHAIN`. Soft
-inputs (`required_q16 < 1`) with no available candidate keep zero coverage / zero bill
-and only tighten the soft utilization bound — matching production's soft-input path so
-empty tool shelves cannot veto hunting/gathering investment while those buildings can
-still operate. These are
+installed count times recipe output. Hard-required inputs may then cap entry
+utilization by one-period coverage from unreserved stock plus offered supply EMA.
+Soft inputs (`required_q16 < 1`) scale expected throughput as
+`(1 - required) + required * coverage` and bill only the covered share — they do
+not ceiling entry utilization. Zero coverage on a **fully required** input reports
+`INPUT_CHAIN`. Soft inputs with no available candidate keep zero coverage / zero
+bill and only lower soft efficiency — empty tool shelves cannot veto
+hunting/gathering investment while those buildings can still operate. These are
 formula and derived-diagnostic changes only; PKEC v15, cadence, authority, and state hash
 Candidate viability also reserves survival-food/clothing output up to the prospective owners'
 daily livelihood cost. That quantity is removed from merchant-sellable output and valued at the
@@ -1823,12 +1829,24 @@ trade-enabled stock good — including locked metal `tools` — was treated as
 marketable and absorbed soft-category demand before iron was researched.
 Suspended buyers publish nameplate desired demand into that same path so a
 paused flint quarry can still seed chipped-stone demand. Investment quotes
-bill soft inputs only for the covered (stocked/offered) share; missing soft
-tools must not also levy full ghost unit cost on top of the soft utilization
-bound (that combination rejected `flint_quarry` with `OWNER_LIVELIHOOD`
-while tools demand sat on the metal `tools` SKU). When every soft-input
+bill soft inputs only for the covered (stocked/offered) share and apply soft
+coverage as throughput efficiency rather than an entry-utilization ceiling.
+When every soft-input
 candidate fails availability, investment keeps coverage/bill at zero and
 continues — it must not emit `INPUT_CHAIN` the way a missing hard input does.
+
+Shadow-derived pricing (2026-09-26): one-hop derived/substitute demand enters
+price formation only as weighted pressure
+(`shadow_pressure = min(derived, flow) / flow * derived_weight`, then the same
+excess-demand weight as other pressure terms). There is **no** `change_q16`
+uplift floor and **no** empty-shelf `pressure = max(..., 1)` clamp — glut
+clearing stays on inventory/excess. Shadow still stays out of real business
+demand, procurement targets, and owner hiring.
+
+Owner mobility discovery income (2026-09-26): vacancy opportunity quotes and
+settled `projected_owner_income_per_day` are both **per-owner daily** signals
+(group residual ÷ nameplate seats for counterfactual quotes; ÷ attached
+`filled_owner` for settled lots). Mobility compares like-for-like per person.
 
 ## 2026-09-24 Distressed-owner mobility and profitable seat expansion
 

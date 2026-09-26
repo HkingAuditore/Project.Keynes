@@ -82,6 +82,9 @@ var current_day: float = 0.0   # 累积浮点天数 = _last_day(已模拟整数�
 # 再推进一日，并体现到 current_day 小数部分驱动 day_phase 平滑；过载丢弃整数部分。
 var _day_carry: float = 0.0
 var paused: bool = false
+## Latched when the native runtime enters FAULTED. Blocks day advance and
+## refuses unpause so the calendar cannot drift ahead of a dead Economy.
+var authority_fault_hold: bool = false
 var speed_multiplier: float = 1.0
 # [cylindrical-earth-daylight] 视觉昼夜相位 ∈ [0,1)：0=日出 0.25=正午 0.5=日落 0.75=午夜。
 # 与 day_phase()(随倍速) 解耦，驱动 shader 的 day_phase uniform、TODProfile 与 UI 小时位。
@@ -181,6 +184,9 @@ func _advance_one_sim_day() -> void:
 		_apply_year_rollover(day_year)
 
 func _process(delta: float) -> void:
+	if authority_fault_hold:
+		paused = true
+		return
 	if paused or speed_multiplier <= 0.0:
 		return
 	var proc_start_us: int = Time.get_ticks_usec()
@@ -472,10 +478,22 @@ func _apply_phase_step_for_speed(s: float) -> void:
 	_last_emit_season_phase = -1.0
 
 func toggle_pause() -> void:
-	paused = not paused
+	pause(not paused)
 
 func pause(v: bool) -> void:
+	if authority_fault_hold and not v:
+		paused = true
+		return
 	paused = v
+
+
+func latch_authority_fault_hold() -> void:
+	authority_fault_hold = true
+	paused = true
+
+
+func clear_authority_fault_hold() -> void:
+	authority_fault_hold = false
 
 
 func export_state() -> Dictionary:

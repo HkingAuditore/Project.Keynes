@@ -70,6 +70,10 @@ func _run() -> void:
 		_test_first_research_building_auto_investment(catalog, profile, true)
 		print("research startup failures=%d" % failures)
 		return
+	if OS.get_cmdline_user_args().has("--soft-restart-only"):
+		_test_soft_input_missing_does_not_block_suspended_restart(catalog, profile)
+		print("soft-restart failures=%d" % failures)
+		return
 	_test_construction_rebuild_preserves_employee_fill(compiled, profile)
 	_test_zero_resource_releases_building_labor(compiled, profile)
 	_test_owner_positions_are_independent_of_utilization(compiled, profile)
@@ -121,6 +125,7 @@ func _run() -> void:
 	_test_incumbent_gathering_expansion_uses_revealed_livelihood(catalog, profile)
 	_test_owner_only_loss_enters_lifecycle(catalog, profile)
 	_test_recovery_failure_commits_next_cycle(catalog, profile)
+	_test_soft_input_missing_does_not_block_suspended_restart(catalog, profile)
 	_test_service_building_excluded_from_producer_lifecycle(catalog, profile)
 	_test_endogenous_investment_repairs_dead_merchant(catalog, profile)
 	_test_building_plan_continuation(catalog, profile)
@@ -3695,6 +3700,135 @@ func _test_recovery_failure_commits_next_cycle(source_catalog: Dictionary,
 		int(cooldown_report.get("goods_error", 1)) == 0)
 
 
+func _test_soft_input_missing_does_not_block_suspended_restart(
+		source_catalog: Dictionary, source_profile: Dictionary) -> void:
+	# Soft tools are optional productivity. A suspended producer that becomes
+	# counterfactually profitable must restart and restaff even when the tools
+	# shelf is empty — matching flint_quarry after a flint price spike.
+	var catalog := source_catalog.duplicate(true)
+	var profile := source_profile.duplicate(true)
+	profile.starvation_death_rate_q32 = 0
+	profile.building_severe_loss_cycles = 1
+	profile.producer_support_monthly_cap_q16 = 0
+	# Settle every day so soft-efficiency output keeps consecutive loss
+	# observations; a multi-day cycle otherwise resets severe_loss_cycles on
+	# idle plan days and never reaches SUSPENDED_LOSS.
+	profile.market_cycle_days = 1
+	profile.economy_cadence_force_market_days = 1
+	profile.economy_cadence_force_slow_days = 1
+	profile.economy_cadence_force_investment_days = 1
+	profile.investment_review_days = 1
+	var signatures: PackedStringArray = catalog.signature_keys
+	var artisan_sig := signatures.find("artisan|default")
+	var merchant_sig := signatures.find("merchant|default")
+	var unemployed_sig := signatures.find("unemployed|default")
+	var loom_id := (catalog.building_type_ids as PackedStringArray).find("household_loom")
+	_strip_building_resources(catalog, loom_id)
+	_clear_building_climate(catalog, loom_id)
+	_set_building_first_output_quantity(catalog, loom_id, 1320)
+	_block_construction_except(catalog, PackedInt32Array([loom_id]),
+		_luxury_blocking_good(catalog))
+	_zero_building_input_quantities(catalog, loom_id)
+	var goods: PackedStringArray = catalog.good_ids
+	var cloth_good := goods.find("cloth")
+	var tools_good := goods.find("chipped_stone_tools")
+	if tools_good < 0:
+		tools_good = goods.find("tools")
+	_minimize_household_good_demand(catalog, cloth_good)
+	var input_offsets: PackedInt32Array = catalog.building_input_offsets
+	var input_quantities: PackedInt64Array = catalog.building_input_quantities
+	var input_required: PackedInt32Array = catalog.building_input_required_q16
+	var candidate_offsets: PackedInt32Array = catalog.building_input_candidate_offsets
+	var candidate_goods: PackedInt32Array = catalog.building_input_candidate_good_ids
+	var loom_input := int(input_offsets[loom_id])
+	if loom_input >= 0 and loom_input < input_quantities.size() and tools_good >= 0:
+		input_quantities[loom_input] = 100
+		input_required[loom_input] = 32768
+		catalog.building_input_quantities = input_quantities
+		catalog.building_input_required_q16 = input_required
+		if loom_input + 1 < candidate_offsets.size():
+			for candidate_idx in range(
+					int(candidate_offsets[loom_input]),
+					int(candidate_offsets[loom_input + 1])):
+				candidate_goods[candidate_idx] = tools_good
+			catalog.building_input_candidate_good_ids = candidate_goods
+	var prices: PackedInt32Array = catalog.good_default_price.duplicate()
+	var max_prices: PackedInt32Array = catalog.good_reference_max_price.duplicate()
+	# High nameplate price + glut stock: sales starve while recovery still quotes
+	# the counterfactual high price after suspension (same shape as recovery_failure).
+	prices[cloth_good] = 1000000000
+	max_prices[cloth_good] = 1000000000
+	catalog.good_default_price = prices
+	catalog.good_reference_max_price = max_prices
+	var ext := _new_ext(catalog)
+	_expect("soft-restart country bootstraps",
+		CountryTestHelper.configure_all_technologies(ext, catalog, 1, 292))
+	_expect("soft-restart runtime configures",
+		bool(ext.configure_economy(catalog, profile, 1, 292).get("ok", false)))
+	for slot_name in catalog.building_resource_reserve_slots as PackedStringArray:
+		var slot_id := int(ext.component_id(StringName(slot_name)))
+		if slot_id >= 0:
+			ext.write_f32_range(slot_id, 0, PackedFloat32Array([1000000000.0]))
+	var stock := PackedInt64Array()
+	stock.resize(goods.size())
+	stock.fill(1000000)
+	_zero_tool_good_stock(catalog, stock)
+	stock[cloth_good] = 1000000000
+	var boot: Dictionary = ext.bootstrap_economy({
+		"cell_indices": PackedInt32Array([0, 0, 0]),
+		"signature_ids": PackedInt32Array([artisan_sig, merchant_sig, unemployed_sig]),
+		"population": PackedInt64Array([1, 1, 4]),
+		"funds": PackedInt64Array([100000000, 100000000, 100000000]),
+	}, {
+		"stock": stock,
+		"price": prices,
+		"building_cells": PackedInt32Array([0]),
+		"building_type_ids": PackedInt32Array([loom_id]),
+		"building_owner_signature_ids": PackedInt32Array([artisan_sig]),
+		"building_counts": PackedInt64Array([1]),
+	})
+	_expect("soft-restart fixture bootstraps", bool(boot.get("ok", false)))
+	var suspended_day := -1
+	for day in range(12):
+		_run_day(ext, day)
+		var probe: Dictionary = ext.get_building_cell_snapshot(0)
+		var probe_group := (probe.group_type_ids as PackedInt32Array).find(loom_id)
+		if probe_group >= 0 and int((probe.operating_state as PackedByteArray)[probe_group]) == 1:
+			suspended_day = day
+			break
+	_expect("soft-restart fixture reaches suspension", suspended_day >= 0)
+	var restarted := false
+	var restaffed := false
+	var last_report := {}
+	if suspended_day >= 0:
+		for day in range(suspended_day + 1, suspended_day + 12):
+			last_report = _run_day(ext, day)
+			var buildings: Dictionary = ext.get_building_cell_snapshot(0)
+			var group := (buildings.group_type_ids as PackedInt32Array).find(loom_id)
+			var operating := int((buildings.operating_state as PackedByteArray)[group])
+			var pending := int((buildings.pending_operating_state as PackedByteArray)[group])
+			var filled := int((buildings.filled_owner as PackedInt64Array)[group])
+			if pending == 0 or operating == 0:
+				restarted = true
+			if operating == 0 and filled > 0:
+				restaffed = true
+				break
+	var market: Dictionary = ext.get_market_cell_snapshot(0)
+	var tools_stock := 0
+	if tools_good >= 0:
+		tools_stock = int((market.stock as PackedInt64Array)[tools_good])
+	_expect("missing soft tools do not block profitable suspended restart",
+		restarted)
+	_expect("restarted soft-input lot restaffs an owner",
+		restaffed)
+	_expect("soft-restart kept the tools shelf empty",
+		tools_stock == 0)
+	_expect("soft-restart cycles conserve every ledger",
+		int(last_report.get("population_error", 1)) == 0 and
+		int(last_report.get("money_error", 1)) == 0 and
+		int(last_report.get("goods_error", 1)) == 0)
+
+
 func _test_service_building_excluded_from_producer_lifecycle(
 		source_catalog: Dictionary, source_profile: Dictionary) -> void:
 	var catalog := source_catalog.duplicate(true)
@@ -4848,7 +4982,7 @@ func _test_producer_support_issuance(source_catalog: Dictionary,
 	var accepted := int((buildings.last_sold as PackedInt64Array)[0])
 	_expect("zero-cash merchant spends nothing on producer output",
 		int(report.get("merchant_procurement_spent", -1)) == 0)
-	_expect("bounded support accepts its quota and explicitly reports the remainder",
+	_expect("support buys every unsold sellable unit within issuance budget",
 		supported > 0 and accepted == supported and
 		output == retained + accepted +
 			int(report.get("production_output_discarded", -1)))

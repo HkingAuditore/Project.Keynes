@@ -1816,6 +1816,14 @@ void NativeSimulationHost::attach_economy_production_runtime(
     }
     _economy_production_runtime = rt;
     if (rt != nullptr) {
+        // Production may run on the worker before the first main-thread
+        // sync_runtime_domain_ownership pulse. Open research (and full D7 when
+        // Economy is ACTIVE) here so government procurement is not soft-gated
+        // for the entire early game.
+        if (domain_is_worker_authoritative(RuntimeDomainId::ECONOMY))
+            rt->open_all_d7_operation_gates();
+        else
+            rt->open_research_purchase_d7_gate();
         class NativeEconomyPodCommandExecutor final
             : public EconomyPodCommandExecutor {
         public:
@@ -2326,24 +2334,36 @@ void NativeSimulationHost::note_day_stall(uint32_t bits, int64_t day) {
         expected, started, std::memory_order_acq_rel, std::memory_order_acquire);
 }
 
-void NativeSimulationHost::clear_day_stall_peer_bits() {
-    constexpr uint32_t kPeerBits =
-        RUNTIME_DAY_STALL_COUNTRY_PEER | RUNTIME_DAY_STALL_EFFECT_ACK |
-        RUNTIME_DAY_STALL_IDEOLOGY_ACK | RUNTIME_DAY_STALL_FISCAL_PEER |
-        RUNTIME_DAY_STALL_ECONOMY_INPUT;
+void NativeSimulationHost::clear_day_stall_bits(uint32_t bits) {
+    if (bits == 0u) return;
     uint32_t current = _day_stall_reason_mask.load(std::memory_order_acquire);
-    while ((current & kPeerBits) != 0u) {
+    while ((current & bits) != 0u) {
         if (_day_stall_reason_mask.compare_exchange_weak(
-                current, current & ~kPeerBits, std::memory_order_acq_rel,
+                current, current & ~bits, std::memory_order_acq_rel,
                 std::memory_order_acquire)) {
             break;
         }
     }
-    _day_stall_peer_since_us.store(0, std::memory_order_release);
+    constexpr uint32_t kPeerTimerBits =
+        RUNTIME_DAY_STALL_COUNTRY_PEER | RUNTIME_DAY_STALL_EFFECT_ACK |
+        RUNTIME_DAY_STALL_IDEOLOGY_ACK | RUNTIME_DAY_STALL_FISCAL_PEER |
+        RUNTIME_DAY_STALL_ECONOMY_INPUT;
+    if ((_day_stall_reason_mask.load(std::memory_order_acquire) &
+         kPeerTimerBits) == 0u) {
+        _day_stall_peer_since_us.store(0, std::memory_order_release);
+    }
     if ((_day_stall_reason_mask.load(std::memory_order_acquire) &
          ~RUNTIME_DAY_STALL_CLIMATE_CAPACITY) == 0u) {
         _day_stall_day.store(-1, std::memory_order_release);
     }
+}
+
+void NativeSimulationHost::clear_day_stall_peer_bits() {
+    clear_day_stall_bits(RUNTIME_DAY_STALL_COUNTRY_PEER |
+                         RUNTIME_DAY_STALL_EFFECT_ACK |
+                         RUNTIME_DAY_STALL_IDEOLOGY_ACK |
+                         RUNTIME_DAY_STALL_FISCAL_PEER |
+                         RUNTIME_DAY_STALL_ECONOMY_INPUT);
 }
 
 bool NativeSimulationHost::fault_if_peer_stall_timed_out(
@@ -2365,11 +2385,14 @@ bool NativeSimulationHost::fault_if_peer_stall_timed_out(
     const uint64_t elapsed_ms = (now_us() - since) / 1000u;
     if (elapsed_ms < RUNTIME_DAY_STALL_PEER_FAULT_TIMEOUT_MS) return false;
     const uint32_t mask = day_stall_reason_mask();
-    godot::UtilityFunctions::printerr(godot::vformat(
+    const godot::String fault_line = godot::vformat(
         "[day-stall-fault] day=%d stall=0x%x peer_ms=%d code=%s ring=%d",
         day, static_cast<int64_t>(mask), static_cast<int64_t>(elapsed_ms),
         godot::String(fault_code != nullptr ? fault_code : "peer_stall_timeout"),
-        static_cast<int64_t>(_environment_ring.size())));
+        static_cast<int64_t>(_environment_ring.size()));
+    // print + printerr: Godot console may hide stderr-only lines.
+    godot::UtilityFunctions::print(fault_line);
+    godot::UtilityFunctions::printerr(fault_line);
     set_fault(fault_code != nullptr && fault_code[0] != '\0'
                   ? fault_code
                   : "peer_stall_timeout");
@@ -2705,9 +2728,10 @@ bool NativeSimulationHost::publish_country_snapshot(
     std::string error;
     if (!RuntimeCountryPodAdapter::validate_snapshot(snapshot, error)) return false;
     auto copy = std::make_shared<RuntimeCountryPodSnapshot>(snapshot);
-    std::atomic_store_explicit(&_country_snapshot,
-        std::shared_ptr<const RuntimeCountryPodSnapshot>(copy),
-        std::memory_order_release);
+    std::shared_ptr<const RuntimeCountryPodSnapshot> view = copy;
+    std::atomic_store_explicit(&_country_snapshot, view, std::memory_order_release);
+    std::atomic_store_explicit(&_country_economy_audit_snapshot, view,
+                               std::memory_order_release);
     {
         std::lock_guard<std::mutex> lock(_country_transport_mutex);
         const std::shared_ptr<const RuntimeCountryPodSnapshot> previous =
@@ -2789,6 +2813,8 @@ bool NativeSimulationHost::publish_country_worker_snapshot(
         committed_copy;
     std::atomic_store_explicit(&_country_snapshot, committed_view,
                                std::memory_order_release);
+    std::atomic_store_explicit(&_country_economy_audit_snapshot, committed_view,
+                               std::memory_order_release);
     _country_worker_country_generation = committed_copy->generation;
     _country_worker_day = committed_copy->committed_day;
     // A peer-rejected semantic day is still a committed Country state. It
@@ -2821,6 +2847,8 @@ bool NativeSimulationHost::publish_country_plan_preview_snapshot(
     _country_read_view_changed_owners.clear();
     auto preview_copy = std::make_shared<const RuntimeCountryPodSnapshot>(
         _country_pod_plan.next_state);
+    // UI / read-view only. Leave _country_economy_audit_snapshot on the last
+    // sealed authority publish so VERIFY cannot see uncommitted TP spend.
     _country_committed_snapshot = preview_copy;
     std::atomic_store_explicit(&_country_snapshot, preview_copy,
                                std::memory_order_release);
@@ -4711,6 +4739,7 @@ bool NativeSimulationHost::flush_country_economy_asset_commits(
         }
     }
     const bool plan_active = _country_pod_plan_active.load(std::memory_order_acquire);
+    uint32_t applied = 0u;
     for (const PendingCommit &item : pending) {
         if (plan_active) {
             // Plan next_state must see the debit so commit_day stays consistent.
@@ -4734,6 +4763,21 @@ bool NativeSimulationHost::flush_country_economy_asset_commits(
         }
         std::lock_guard<std::mutex> lock(_country_transport_mutex);
         _country_economy_asset_committed.insert(item.request_id);
+        ++applied;
+    }
+    // Authority treasury mutated outside an open plan must refresh the Economy
+    // audit pin immediately. Otherwise opening/VERIFY keep reading the last
+    // sealed day and report goods_error equal to the settled purchase.
+    if (applied > 0u && !plan_active) {
+        RuntimeCountryPodSnapshot audit_snap;
+        std::string audit_error;
+        if (_country_pod_authority.snapshot(audit_snap, audit_error)) {
+            auto audit_copy =
+                std::make_shared<const RuntimeCountryPodSnapshot>(
+                    std::move(audit_snap));
+            std::atomic_store_explicit(&_country_economy_audit_snapshot,
+                                       audit_copy, std::memory_order_release);
+        }
     }
     return true;
 }
@@ -4973,10 +5017,11 @@ bool NativeSimulationHost::install_country_authority_handoff(std::string &error)
         if (_country_pod_authority.snapshot(pod_snapshot, snapshot_error)) {
             auto copy = std::make_shared<RuntimeCountryPodSnapshot>(
                 std::move(pod_snapshot));
-            std::atomic_store_explicit(
-                &_country_snapshot,
-                std::shared_ptr<const RuntimeCountryPodSnapshot>(copy),
-                std::memory_order_release);
+            std::shared_ptr<const RuntimeCountryPodSnapshot> view = copy;
+            std::atomic_store_explicit(&_country_snapshot, view,
+                                       std::memory_order_release);
+            std::atomic_store_explicit(&_country_economy_audit_snapshot, view,
+                                       std::memory_order_release);
             _country_committed_snapshot = copy;
             _country_worker_country_generation = copy->generation;
             _country_worker_day = copy->committed_day;
@@ -7659,7 +7704,14 @@ bool NativeSimulationHost::execute_country_worker_stage(
                 std::min<size_t>(_country_worker_intent_queue.size(),
                                  std::numeric_limits<uint32_t>::max()));
         }
-        clear_day_stall_peer_bits();
+        // Country peers are done; do not wipe Economy fiscal/input stalls —
+        // those still park the day until fiscal peers / capture catch up.
+        clear_day_stall_bits(RUNTIME_DAY_STALL_COUNTRY_PEER |
+                             RUNTIME_DAY_STALL_EFFECT_ACK |
+                             RUNTIME_DAY_STALL_IDEOLOGY_ACK);
+        for (auto &character : _country_pod_fallback_reason) {
+            character.store('\0', std::memory_order_release);
+        }
         std::string snapshot_error;
         if (!publish_country_worker_snapshot(
                 _country_pod_plan.header.dirty_families, snapshot_error)) {
@@ -7698,7 +7750,13 @@ bool NativeSimulationHost::execute_country_worker_stage(
         _country_pod_authority.generation(), nullptr);
     _country_pod_plan_active.store(false, std::memory_order_release);
     _country_peer_wait_preview_published = false;
-    clear_day_stall_peer_bits();
+    // Same as soft-reject path: Country commit must not clear Economy stalls.
+    clear_day_stall_bits(RUNTIME_DAY_STALL_COUNTRY_PEER |
+                         RUNTIME_DAY_STALL_EFFECT_ACK |
+                         RUNTIME_DAY_STALL_IDEOLOGY_ACK);
+    for (auto &character : _country_pod_fallback_reason) {
+        character.store('\0', std::memory_order_release);
+    }
     RuntimeCountryPodSnapshot committed_snapshot;
     std::string snapshot_error;
     if (!_country_pod_authority.snapshot(committed_snapshot, snapshot_error)) {
@@ -7743,6 +7801,8 @@ bool NativeSimulationHost::execute_country_worker_stage(
             committed_copy;
         std::atomic_store_explicit(&_country_snapshot, committed_view,
                                    std::memory_order_release);
+        std::atomic_store_explicit(&_country_economy_audit_snapshot,
+                                   committed_view, std::memory_order_release);
         for (const RuntimeDomainIntent &intent : _country_pod_plan.intents) {
             const uint64_t request_id = intent.request_id != 0
                 ? intent.request_id : intent.source_id;
@@ -10136,12 +10196,27 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             // Host day loop when effective writer is STAGE_OPS (opt-in; start
             // gate still refuses until BOUNDED_KERNELS lands).
             if (climate_authority_requested && !active_climate_ok) {
+                // No peer wake source — arm a stall so day-wait timeout can fire
+                // instead of parking forever with stall=0x0.
+                note_day_stall(RUNTIME_DAY_STALL_FISCAL_PEER, plan.context.day);
+                {
+                    static int s_econ_climate_gate_left = 8;
+                    if (s_econ_climate_gate_left-- > 0) {
+                        godot::UtilityFunctions::print(godot::vformat(
+                            "[economy-climate-gate] day=%d climate_ok=0 "
+                            "stall=0x%x ring=%d",
+                            plan.context.day,
+                            static_cast<int64_t>(day_stall_reason_mask()),
+                            static_cast<int64_t>(_environment_ring.size())));
+                    }
+                }
                 stage.completed = 0;
                 continue;
             }
             if (_economy_production_runtime == nullptr) {
                 // Fail open: leave incomplete so the full mask does not grant
                 // ECONOMY suppression without a production runner.
+                note_day_stall(RUNTIME_DAY_STALL_FISCAL_PEER, plan.context.day);
                 stage.completed = 0;
                 continue;
             }
@@ -10248,6 +10323,22 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                     economy_fatal = true;
                     break;
                 }
+                // Prepare only publishes COUNTRY_PREPARED into the poll queue.
+                // StageOps research drain services at the start of the next
+                // advance; if that round still parks, an explicit service here
+                // closes the same-day Host peer before Climate capacity fills.
+                if (_economy_production_runtime != nullptr) {
+                    std::string service_error;
+                    if (!_economy_production_runtime
+                             ->service_country_economy_asset_peer(
+                                 64, service_error) &&
+                        !runtime_country_asset_pending_reason(service_error) &&
+                        !service_error.empty()) {
+                        economy_error = service_error;
+                        economy_fatal = true;
+                        break;
+                    }
+                }
                 if (prepared == 0u) {
                     // Request may already be COUNTRY_PREPARED/pollable from an
                     // earlier prepare. Keep slicing so service can terminal it
@@ -10323,6 +10414,35 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                     stage.completed = 0;
                     continue;
                 }
+                // Any other pending_input must still arm a stall bit. Parking
+                // with stall=0x0 + missing=ECONOMY waits on CV with no wake
+                // source, fills the Climate ring, and freezes WorldClock.
+                note_day_stall(RUNTIME_DAY_STALL_FISCAL_PEER, plan.context.day);
+                {
+                    static int s_unknown_pending_left = 12;
+                    if (s_unknown_pending_left-- > 0) {
+                        godot::UtilityFunctions::print(godot::vformat(
+                            "[economy-pending-stall] day=%d reason=%s "
+                            "stall=0x%x work=%d ring=%d",
+                            plan.context.day,
+                            godot::String(economy_error.empty()
+                                              ? "pending_input"
+                                              : economy_error.c_str()),
+                            static_cast<int64_t>(day_stall_reason_mask()),
+                            static_cast<int64_t>(economy_work),
+                            static_cast<int64_t>(_environment_ring.size())));
+                    }
+                }
+                if (fault_if_peer_stall_timed_out(
+                        plan.context.day,
+                        "economy_pending_input_stall_timeout")) {
+                    stage.completed = 0;
+                    commit.preflight_ok = 0;
+                    continue;
+                }
+                commit.continuation_pending = 1;
+                stage.dirty_families = RUNTIME_DIRTY_ECONOMY_UI;
+                stage.work_units = economy_work;
                 stage.completed = 0;
                 continue;
             }
@@ -10425,9 +10545,12 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                     // Clear ECONOMY from the completed mask — leaving it set
                     // produces missing=0x0 + preflight_ok=0, which force-advances
                     // over a failed ledger and desyncs the climate FIFO.
-                    set_fault(economy_error.empty()
+                    const char *ledger_fault = economy_error.empty()
                         ? "economy_pod_committed_ledger_capture_invalid"
-                        : economy_error.c_str());
+                        : economy_error.c_str();
+                    publish_economy_tax_diag(ledger_fault,
+                        static_cast<uint32_t>(economy_work));
+                    set_fault(ledger_fault);
                     commit.completed_domain_mask &=
                         ~runtime_domain_mask(RuntimeDomainId::ECONOMY);
                     if (commit.completed_stage_count > 0u)
@@ -10528,7 +10651,13 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                         _economy_production_runtime->committed_generation(),
                         _economy_production_runtime->current_day(),
                         economy_error)) {
-                    set_fault("economy_pod_command_recapture_failed");
+                    const char *recapture_fault =
+                        economy_error.empty()
+                            ? "economy_pod_command_recapture_failed"
+                            : economy_error.c_str();
+                    publish_economy_tax_diag(recapture_fault,
+                        static_cast<uint32_t>(economy_work));
+                    set_fault(recapture_fault);
                     commit.completed_domain_mask &=
                         ~runtime_domain_mask(RuntimeDomainId::ECONOMY);
                     if (commit.completed_stage_count > 0u)
@@ -10548,6 +10677,9 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                 _economy_production_runtime->capture_committed_ledger_state(
                     ledger_state);
                 if (!ledger_state.valid()) {
+                    publish_economy_tax_diag(
+                        "economy_pod_command_recapture_failed",
+                        static_cast<uint32_t>(economy_work));
                     set_fault("economy_pod_command_recapture_failed");
                     commit.completed_domain_mask &=
                         ~runtime_domain_mask(RuntimeDomainId::ECONOMY);
@@ -10583,7 +10715,13 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                             ledger_state, economy_error) ||
                         !_economy_pod_authority.capture_committed_ledger_state(
                             std::move(ledger_state))) {
-                        set_fault("economy_pod_command_recapture_failed");
+                        const char *recapture_fault =
+                            economy_error.empty()
+                                ? "economy_pod_command_recapture_failed"
+                                : economy_error.c_str();
+                        publish_economy_tax_diag(recapture_fault,
+                            static_cast<uint32_t>(economy_work));
+                        set_fault(recapture_fault);
                         commit.completed_domain_mask &=
                             ~runtime_domain_mask(RuntimeDomainId::ECONOMY);
                         if (commit.completed_stage_count > 0u)
@@ -11084,6 +11222,14 @@ void NativeSimulationHost::set_fault(const char *code) {
         std::memory_order_release);
     _economy_authority_last_committed_hash.store(
         _economy_pod_authority.state_hash(), std::memory_order_release);
+    // Godot console often drops stderr-only; always surface the code.
+    const godot::String fault_line = godot::vformat(
+        "[runtime-worker-fault] code=%s day=%d ring=%d",
+        godot::String(value),
+        _committed_day.load(std::memory_order_relaxed),
+        static_cast<int64_t>(_environment_ring.size()));
+    godot::UtilityFunctions::print(fault_line);
+    godot::UtilityFunctions::printerr(fault_line);
 }
 
 bool NativeSimulationHost::arm_fault_injection(const char *point) noexcept {
@@ -12928,6 +13074,13 @@ void NativeSimulationHost::worker_main() {
                     }
                 }
                 if (day_commit.preflight_ok == 0) {
+                    // execute_day_plan may already have set_fault (ledger /
+                    // compact fatal). Do not arm fiscal or prepare on a dead
+                    // worker — that printed empty yield= and hid the real code.
+                    if (_state.load(std::memory_order_acquire) ==
+                        RuntimeWorkerState::FAULTED) {
+                        break;
+                    }
                     const uint32_t missing = _requested_authority_mask.load(
                         std::memory_order_acquire) & ~day_commit.completed_domain_mask;
                     // Full domain coverage with preflight_ok=0 is a spurious
@@ -12996,6 +13149,45 @@ void NativeSimulationHost::worker_main() {
                             economy_input_requested_day(),
                             static_cast<int64_t>(_environment_ring.size()),
                             country_fallback));
+                        // Economy incomplete with no stall bit has no CV wake
+                        // source once Climate capacity fills. Arm a peer stall
+                        // so the timeout fault surfaces instead of a silent hang.
+                        if ((missing & runtime_domain_mask(
+                                 RuntimeDomainId::ECONOMY)) != 0u &&
+                            (day_stall_reason_mask() &
+                             (RUNTIME_DAY_STALL_COUNTRY_PEER |
+                              RUNTIME_DAY_STALL_EFFECT_ACK |
+                              RUNTIME_DAY_STALL_FISCAL_PEER |
+                              RUNTIME_DAY_STALL_ECONOMY_INPUT)) == 0u) {
+                            note_day_stall(RUNTIME_DAY_STALL_FISCAL_PEER, day);
+                            // Same drain as Economy fiscal-pending: free Host
+                            // capacity so peer/fiscal pumps can make progress.
+                            const int64_t climate_committed =
+                                _climate_authority.store().committed_day;
+                            if (climate_committed >= 0 &&
+                                _environment_ring.pop_while_day_at_most(
+                                    climate_committed) > 0u) {
+                                _climate_wait_cv.notify_all();
+                                _control_cv.notify_all();
+                            }
+                            char yield_reason[48];
+                            size_t yi = 0;
+                            for (; yi + 1 < sizeof(yield_reason) &&
+                                   yi < _economy_yield_reason.size(); ++yi) {
+                                yield_reason[yi] = _economy_yield_reason[yi].load(
+                                    std::memory_order_relaxed);
+                                if (yield_reason[yi] == '\0') break;
+                            }
+                            yield_reason[yi] = '\0';
+                            godot::UtilityFunctions::print(godot::vformat(
+                                "[runtime-day-wait] day=%d armed fiscal stall "
+                                "for economy-missing-without-stall ring=%d "
+                                "yield=%s climate_committed=%d",
+                                day,
+                                static_cast<int64_t>(_environment_ring.size()),
+                                godot::String(yield_reason),
+                                climate_committed));
+                        }
                     }
 
                     if (_state.load(std::memory_order_acquire) ==
@@ -13023,10 +13215,43 @@ void NativeSimulationHost::worker_main() {
                     }
                     // 捕获输入时主线程必须可取得边界锁；等待期间没有公式写入。
                     boundary_lock.unlock();
+                    // Peer-stall timeout must win over prepare-spin. Otherwise
+                    // prepared>0 busy-retries the day forever while Host is
+                    // stuck on a full Climate ring (day≈2745 hang: armed
+                    // fiscal stall, weather LUT for minutes, then faulted).
+                    if (fault_if_peer_stall_timed_out(
+                            day, "day_wait_peer_stall_timeout")) {
+                        break;
+                    }
                     if (prepared_before_wait > 0u) {
                         // Origin assets are now pollable; retry this day without
                         // waiting for an external wake that may never arrive.
                         break;
+                    }
+                    // Country plan rejected a research enqueue (queue full /
+                    // already queued) and published terminals. The bad command
+                    // is consumed; parking forever with stall=0x0 freezes the
+                    // calendar. Retry immediately.
+                    if ((missing & runtime_domain_mask(
+                             RuntimeDomainId::COUNTRY)) != 0u &&
+                        country_commands_terminal) {
+                        char reject_reason[64];
+                        size_t rb = 0;
+                        for (; rb + 1 < sizeof(reject_reason) &&
+                               rb < _country_pod_fallback_reason.size(); ++rb) {
+                            reject_reason[rb] =
+                                _country_pod_fallback_reason[rb].load(
+                                    std::memory_order_acquire);
+                            if (reject_reason[rb] == '\0') break;
+                        }
+                        reject_reason[rb] = '\0';
+                        if (std::strcmp(reject_reason,
+                                        "country_research_queue_full") == 0 ||
+                            std::strcmp(reject_reason,
+                                        "country_research_already_queued") ==
+                                0) {
+                            break;
+                        }
                     }
                     const auto next_input = _environment_ring.peek_oldest();
                     const bool stale_input_consumed = environment != nullptr &&
@@ -13043,7 +13268,11 @@ void NativeSimulationHost::worker_main() {
                     const uint64_t country_peer_signal = attempt_peer_signal;
                     std::unique_lock<std::mutex> lock(_control_mutex);
                     _worker_timing.set(RuntimeWorkerTiming::INPUT_WAIT);
-                _control_cv.wait(lock, [&] {
+                    // Timed wait: peer-stall timeout must be polled while the
+                    // Climate ring is full and no CV signal arrives.
+                    constexpr auto kDayWaitSlice =
+                        std::chrono::milliseconds(250);
+                    _control_cv.wait_for(lock, kDayWaitSlice, [&] {
                         // Match the save admission condition above. A pending
                         // save cannot consume an unfinished environment day;
                         // waking on the request alone spins and starves the
@@ -13068,6 +13297,10 @@ void NativeSimulationHost::worker_main() {
                              _climate_trace.consumable_depth() != 0);
                     });
                     _worker_timing.set(RuntimeWorkerTiming::OVERHEAD);
+                    if (fault_if_peer_stall_timed_out(
+                            day, "day_wait_peer_stall_timeout")) {
+                        break;
+                    }
                     break;
                     } // missing != 0
                 }

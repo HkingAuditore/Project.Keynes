@@ -417,6 +417,10 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     thread_local std::vector<int64_t> production_input_floor;
     thread_local std::vector<int64_t> good_demand;
     thread_local std::vector<int64_t> good_sales;
+    // Own-shelf shortfall only: funded component demand this good's stock could
+    // not cover. Complement/substitute failures that leave this good unsold do
+    // not accumulate here, so shortage stays attributed to the binding good.
+    thread_local std::vector<int64_t> good_stock_shortfall;
     thread_local std::vector<int64_t> pass_sales;
     thread_local std::vector<int64_t> pass_demand;
     thread_local std::vector<int64_t> opening_stock;
@@ -549,6 +553,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     production_input_floor.assign(market_store().good_count, 0);
     good_demand.assign(market_store().good_count, 0);
     good_sales.assign(market_store().good_count, 0);
+    good_stock_shortfall.assign(market_store().good_count, 0);
     opening_stock.resize(market_store().good_count);
     for (int32_t good = 0; good < market_store().good_count; ++good) {
         opening_stock[good] = market_store().stock[market_store().index(market, good)];
@@ -1452,6 +1457,12 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             const int64_t available = std::min<int64_t>(
                 std::max<int64_t>(0, market_store().stock[market_store().index(market, good)] -
                     production_input_floor[good]), total);
+            // Attribute physical shortage only to this good's own shelf gap.
+            // Bundle fill may still fall further when a complement binds; that
+            // residual is not this good's shortage.
+            good_stock_shortfall[good] = saturating_add(
+                good_stock_shortfall[good],
+                saturating_sub(total, available, sat), sat);
             int64_t demand_prefix = 0;
             int64_t filled_prefix = 0;
             for (int32_t k = good_offsets[good]; k < good_offsets[good + 1]; ++k) {
@@ -2205,7 +2216,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 mul_div_sat(observed_daily, alpha, Q16_ONE, sat), sat);
         }
         const int64_t shortage = good_demand[good] <= 0 ? 0 : std::clamp<int64_t>(
-            Q16_ONE - mul_div_sat(good_sales[good], Q16_ONE, good_demand[good], sat),
+            mul_div_sat(good_stock_shortfall[good], Q16_ONE, good_demand[good], sat),
             0, Q16_ONE);
         market_store().last_shortage_q16[idx] = static_cast<uint16_t>(
             std::min<int64_t>(Q16_ONE - 1, shortage));

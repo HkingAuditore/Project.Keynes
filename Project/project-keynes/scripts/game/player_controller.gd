@@ -653,16 +653,26 @@ func _on_speed_changed(speed: float) -> void:
 
 
 func _on_pause_toggled(paused: bool) -> void:
-	if _world_clock != null:
-		_world_clock.pause(paused)
+	if _world_clock == null:
+		return
+	if _runtime_host != null and _runtime_host.has_method("is_runtime_fault_paused") \
+			and _runtime_host.is_runtime_fault_paused() and not paused:
 		sync_ui()
+		return
+	_world_clock.pause(paused)
+	sync_ui()
 
 
 func _on_speed_selected(speed: float) -> void:
-	if _world_clock != null:
-		_world_clock.set_speed(speed)
-		_world_clock.pause(false)
+	if _world_clock == null:
+		return
+	if _runtime_host != null and _runtime_host.has_method("is_runtime_fault_paused") \
+			and _runtime_host.is_runtime_fault_paused():
 		sync_ui()
+		return
+	_world_clock.set_speed(speed)
+	_world_clock.pause(false)
+	sync_ui()
 
 
 func _on_pause_menu_visibility_changed(open: bool) -> void:
@@ -672,7 +682,11 @@ func _on_pause_menu_visibility_changed(open: bool) -> void:
 		_pause_before_menu = _world_clock.paused
 		_world_clock.pause(true)
 	else:
-		_world_clock.pause(_pause_before_menu)
+		if _runtime_host != null and _runtime_host.has_method("is_runtime_fault_paused") \
+				and _runtime_host.is_runtime_fault_paused():
+			_world_clock.pause(true)
+		else:
+			_world_clock.pause(_pause_before_menu)
 	sync_ui()
 
 

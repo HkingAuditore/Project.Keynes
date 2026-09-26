@@ -235,12 +235,21 @@ def effect_summary(node: dict) -> str:
             delta = value - 1.0
         else:
             delta = 1.0 / value - 1.0 if value else 0.0
-        subject = term.get("subject_display_name") or term.get("stat", "")
+        subject = str(term.get("subject_display_name") or "").strip() or str(
+            term.get("stat", ""))
         stat = str(term.get("stat", ""))
-        if stat.startswith(("country.output.building.", "country.output.family.",
-                            "country.output.good.", "country.output.terrain.",
-                            "country.output.landform.")):
-            subject += "产出"
+        if stat.startswith("country.output.family."):
+            subject = f"「{subject}」生产家族建筑产出"
+        elif stat.startswith("country.output.building."):
+            subject = f"建筑「{subject}」产出"
+        elif stat.startswith("country.output.good."):
+            subject = f"商品「{subject}」产量"
+        elif stat.startswith(("country.output.terrain.", "country.output.landform.")):
+            subject = f"地理专长「{subject}」产出"
+        elif stat.startswith("country.input.good."):
+            subject = f"商品「{subject}」生产投入"
+        elif stat.startswith("country.consumption.good."):
+            subject = f"商品「{subject}」家庭消费"
         parts.append(f"{subject} {'+' if delta >= 0 else '-'}{abs(delta) * 100:g}%")
     support = node.get("support_buildings", [])
     if support:

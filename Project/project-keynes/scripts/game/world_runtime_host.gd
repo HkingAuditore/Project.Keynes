@@ -1108,7 +1108,10 @@ func _observe_runtime_worker_fault(report: Dictionary = {}) -> void:
 		return
 	_runtime_worker_fault_paused = true
 	if _world_clock != null:
-		_world_clock.pause(true)
+		if _world_clock.has_method("latch_authority_fault_hold"):
+			_world_clock.latch_authority_fault_hold()
+		else:
+			_world_clock.pause(true)
 	_runtime_last_fault_diagnostics = {
 		"fault_code": String(report.get("fault_code", "")),
 		"committed_day": int(report.get("simulation_committed_day", report.get("committed_day", -1))),
@@ -1132,6 +1135,10 @@ func _observe_runtime_worker_fault(report: Dictionary = {}) -> void:
 
 func get_runtime_fault_diagnostics() -> Dictionary:
 	return _runtime_last_fault_diagnostics.duplicate(false)
+
+
+func is_runtime_fault_paused() -> bool:
+	return _runtime_worker_fault_paused
 
 
 ## Host-side Country intent drain. SHADOW replays typed results without
@@ -2401,11 +2408,19 @@ func execute_gm_command(command_id: String, raw_args: Dictionary) -> Dictionary:
 	if command_id == "time.pause":
 		var state := String(args.get("state", "toggle"))
 		var paused := not _world_clock.paused if state == "toggle" else state == "on"
+		if _runtime_worker_fault_paused and not paused:
+			return _gm_error("runtime_faulted",
+				"运行时已故障（%s），禁止继续推进日历。" % String(
+					_runtime_last_fault_diagnostics.get("fault_code", "faulted")))
 		_world_clock.pause(paused)
 		on_clock_running_changed(not paused)
 		gm_toggle_changed.emit("simulation.paused", paused)
 		return _gm_ok("模拟已%s。" % ("暂停" if paused else "继续"), false, -1)
 	if command_id == "time.speed":
+		if _runtime_worker_fault_paused:
+			return _gm_error("runtime_faulted",
+				"运行时已故障（%s），禁止改速推进。" % String(
+					_runtime_last_fault_diagnostics.get("fault_code", "faulted")))
 		var speed := float(args.get("value", 1.0))
 		_world_clock.set_speed(speed)
 		on_clock_running_changed(true)
@@ -2535,6 +2550,10 @@ func set_gm_toggle(toggle_id: String, enabled: bool) -> Dictionary:
 		"simulation.paused":
 			if _world_clock == null:
 				return _gm_error("clock_unavailable", "时钟尚未就绪。")
+			if _runtime_worker_fault_paused and not enabled:
+				return _gm_error("runtime_faulted",
+					"运行时已故障（%s），禁止继续推进日历。" % String(
+						_runtime_last_fault_diagnostics.get("fault_code", "faulted")))
 			_world_clock.pause(enabled)
 			on_clock_running_changed(not enabled)
 		"simulation.climate_worker_authority":

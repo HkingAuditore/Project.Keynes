@@ -269,10 +269,22 @@ bool RuntimeEconomyLedgerState::valid(const char **reason) const noexcept {
                 store.merchant_debt_premium[gi] < 0) {
                 return reject("building_merchant_debt_negative");
             }
+            // Principal is retired before the one-time premium, so
+            // principal==0 with premium>0 (and remaining terms) is a valid
+            // mid-repayment shape. Only orphan terms — no outstanding
+            // principal/premium — are illegal.
             if (store.merchant_debt_principal[gi] == 0 &&
-                (store.merchant_debt_premium[gi] != 0 ||
-                 store.merchant_debt_term_cycles_left[gi] != 0)) {
-                if (reason != nullptr) *reason = "building_zero_principal_with_debt_terms";
+                store.merchant_debt_premium[gi] == 0 &&
+                store.merchant_debt_term_cycles_left[gi] != 0) {
+                if (reason != nullptr) *reason = "building_orphan_debt_terms";
+                return false;
+            }
+            if ((store.merchant_debt_principal[gi] > 0 ||
+                 store.merchant_debt_premium[gi] > 0) &&
+                store.merchant_debt_term_cycles_left[gi] == 0 &&
+                store.merchant_debt_delinquent_cycles[gi] == 0) {
+                if (reason != nullptr)
+                    *reason = "building_outstanding_debt_without_terms";
                 return false;
             }
             if (store.employee_fill_begin[gi] < -1) return reject("building_employee_fill_begin_invalid");
@@ -292,10 +304,13 @@ bool RuntimeEconomyLedgerState::valid(const char **reason) const noexcept {
                 store.pending_merchant_debt_premium[pi] < 0) {
                 return reject("pending_merchant_debt_negative");
             }
+            // Pending credit mirrors the building rule: premium may remain
+            // after principal is zeroed, but terms without any outstanding
+            // debt are orphaned.
             if (store.pending_merchant_debt_principal[pi] == 0 &&
-                (store.pending_merchant_debt_premium[pi] != 0 ||
-                 store.pending_merchant_debt_term_cycles_left[pi] != 0)) {
-                if (reason != nullptr) *reason = "pending_zero_principal_with_debt_terms";
+                store.pending_merchant_debt_premium[pi] == 0 &&
+                store.pending_merchant_debt_term_cycles_left[pi] != 0) {
+                if (reason != nullptr) *reason = "pending_orphan_debt_terms";
                 return false;
             }
         }

@@ -511,25 +511,75 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
             int64_t affordable_ceiling = 0;
             // Keep a positive opportunity signal for a cold-start vacancy.  A
             // producer can have no realized margin yet simply because its
-            // employee lane is empty; for monetary outputs the issue value is
-            // already a committed daily receipt and is therefore a valid
-            // counterfactual profit signal.
+            // employee lane is empty; for monetary outputs face × output is
+            // the counterfactual receipt used below.
             int64_t profit_signal_q16 = std::clamp<int64_t>(
                 group.realized_profit_margin_q16, 0, Q16_ONE);
             if (_wage_income_cap_ratio_q16 > 0) {
+                // Wage affordability must track the staffed lot, not nameplate
+                // full employment across every empty seat (that made a 1/5
+                // staffed placer bid as if all five mines minted).
+                const int64_t owner_slots = saturating_mul(
+                    group.count, type.owner_slots_per_building, _saturation_count);
+                int64_t workforce_q16 = owner_slots > 0
+                    ? std::clamp<int64_t>(mul_div_sat(
+                        std::max<int64_t>(0, group.filled_owner), Q16_ONE,
+                        owner_slots, _saturation_count), 0, Q16_ONE)
+                    : Q16_ONE;
                 int64_t group_employee_slots = 0;
+                int64_t filled_employee_heads = 0;
                 int64_t reference_wage_pool = 0;
                 for (int32_t rr = 0; rr < type.employee_count; ++rr) {
                     const JobRole &rrole =
                         _building_employee_roles[type.employee_begin + rr];
                     const int64_t role_slots = saturating_mul(
                         group.count, rrole.slots_per_building, _saturation_count);
+                    const int32_t role_index = group.employee_fill_begin + rr;
+                    const int64_t role_filled = role_index >= 0 &&
+                            role_index < static_cast<int32_t>(
+                                _building_employee_filled.size())
+                        ? std::clamp<int64_t>(
+                            _building_employee_filled[role_index], 0, role_slots)
+                        : 0;
                     group_employee_slots = saturating_add(group_employee_slots,
                         role_slots, _saturation_count);
+                    filled_employee_heads = saturating_add(
+                        filled_employee_heads, role_filled, _saturation_count);
+                    const int64_t role_capacity = role_slots > 0
+                        ? std::clamp<int64_t>(mul_div_sat(
+                            role_filled, Q16_ONE, role_slots, _saturation_count),
+                            0, Q16_ONE)
+                        : Q16_ONE;
+                    workforce_q16 = std::min(workforce_q16, role_capacity);
                     reference_wage_pool = saturating_add(reference_wage_pool,
-                        saturating_mul(role_slots,
+                        saturating_mul(role_filled,
                             std::max<int64_t>(0, rrole.reference_wage_per_day),
                             _saturation_count), _saturation_count);
+                }
+                // Vacant employee lanes still need a first-hire bid: quote the
+                // revenue one seat could earn under current owners, not zero
+                // and not the fully staffed nameplate.
+                if (filled_employee_heads <= 0 && group_employee_slots > 0) {
+                    const int64_t owner_ratio = owner_slots > 0
+                        ? std::clamp<int64_t>(mul_div_sat(
+                            std::max<int64_t>(0, group.filled_owner), Q16_ONE,
+                            owner_slots, _saturation_count), 0, Q16_ONE)
+                        : Q16_ONE;
+                    const int64_t first_seat_q16 = mul_div_sat(
+                        Q16_ONE, 1, group_employee_slots, _saturation_count);
+                    workforce_q16 = std::min(owner_ratio, first_seat_q16);
+                    if (workforce_q16 <= 0 && owner_ratio > 0)
+                        workforce_q16 = first_seat_q16;
+                    reference_wage_pool = 0;
+                    for (int32_t rr = 0; rr < type.employee_count; ++rr) {
+                        const JobRole &rrole =
+                            _building_employee_roles[type.employee_begin + rr];
+                        if (rrole.slots_per_building <= 0) continue;
+                        reference_wage_pool = saturating_add(reference_wage_pool,
+                            std::max<int64_t>(0, rrole.reference_wage_per_day),
+                            _saturation_count);
+                        break;
+                    }
                 }
                 int64_t daily_market_revenue_per_building = 0;
                 int64_t daily_issue_revenue_per_building = 0;
@@ -544,9 +594,15 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
                                 group.planned_utilization_q16, 0, Q16_ONE), 1,
                             _saturation_count);
                     const bool monetary_issue =
+                        output.good_id >= 0 &&
+                        output.good_id < static_cast<int32_t>(
+                            _good_monetary_issue_values.size()) &&
                         _good_monetary_issue_values[output.good_id] > 0;
+                    // Monetary income is face value × output. Do not route
+                    // through bullion quota here — quota must not redefine
+                    // what a unit of gold is worth.
                     int64_t settlement =
-                        _good_monetary_issue_values[output.good_id];
+                        monetary_issue ? _good_monetary_issue_values[output.good_id] : 0;
                     int64_t funded_output = effective_output;
                     if (settlement <= 0) {
                         const int32_t output_signal = market_signal_index(
@@ -606,16 +662,39 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
                             funded_output, settlement, GOODS_SCALE,
                             _saturation_count), _saturation_count);
                 }
-                int64_t daily_revenue = saturating_mul(
+                int64_t nameplate_daily = saturating_mul(
                     daily_issue_revenue_per_building, group.count,
                     _saturation_count);
-                daily_revenue = saturating_add(
-                    daily_revenue, std::min<int64_t>(
+                nameplate_daily = saturating_add(
+                    nameplate_daily, std::min<int64_t>(
                         daily_merchant_cash,
                         saturating_mul(daily_market_revenue_per_building,
                             group.count, _saturation_count)),
                     _saturation_count);
-                if (daily_revenue > 0 && group_employee_slots > 0) {
+                int64_t daily_revenue = mul_div_sat(
+                    nameplate_daily, std::max<int64_t>(0, workforce_q16),
+                    Q16_ONE, _saturation_count);
+                // Once the lot has minted/sold, never bid wages against more
+                // cash than the previous period actually brought in per day.
+                if (group.last_observed_capacity_days_q16 > 0) {
+                    const int64_t epoch_days = std::max(1, _epoch_days);
+                    const int64_t realized_period = saturating_add(
+                        saturating_add(
+                            std::max<int64_t>(0, group.last_bullion_mint_receipt),
+                            std::max<int64_t>(0, group.last_market_receipt),
+                            _saturation_count),
+                        std::max<int64_t>(0, group.last_producer_support_receipt),
+                        _saturation_count);
+                    if (realized_period > 0) {
+                        const int64_t realized_daily = realized_period / epoch_days;
+                        daily_revenue = daily_revenue > 0
+                            ? std::min(daily_revenue, realized_daily)
+                            : realized_daily;
+                    }
+                }
+                const int64_t wage_heads = std::max<int64_t>(1,
+                    filled_employee_heads > 0 ? filled_employee_heads : 1);
+                if (daily_revenue > 0 && wage_heads > 0) {
                     const int64_t margin_denominator = saturating_add(
                         Q16_ONE, std::max<int32_t>(0,
                             type.target_operating_margin_q16), _saturation_count);
@@ -623,9 +702,12 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
                         daily_revenue, Q16_ONE,
                         std::max<int64_t>(1, margin_denominator),
                         _saturation_count);
-                    const int64_t daily_inputs = saturating_mul(
-                        std::max<int64_t>(0, group.sample_unit_input_cost),
-                        group.count, _saturation_count);
+                    const int64_t daily_inputs = mul_div_sat(
+                        saturating_mul(
+                            std::max<int64_t>(0, group.sample_unit_input_cost),
+                            group.count, _saturation_count),
+                        std::max<int64_t>(0, workforce_q16), Q16_ONE,
+                        _saturation_count);
                     const int64_t daily_wage_pool = std::max<int64_t>(
                         0, saturating_sub(operating_budget, daily_inputs,
                                           _saturation_count));
@@ -639,7 +721,7 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
                     profit_signal_q16 = std::max(profit_signal_q16,
                         std::clamp<int64_t>(potential_margin_q16, 0, Q16_ONE));
                     const int64_t sustainable_per_employee =
-                        daily_wage_pool / group_employee_slots;
+                        daily_wage_pool / wage_heads;
                     affordable_ceiling = mul_div_sat(sustainable_per_employee,
                         _wage_income_cap_ratio_q16, Q16_ONE, _saturation_count);
                 }
@@ -649,25 +731,10 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
                 if (role.profession_id != profession) continue;
                 const int32_t index = group.employee_fill_begin + r;
                 int64_t floor = std::max(general_cost, role_cost);
-                bool monetary_output = false;
-                for (int32_t output_index = 0;
-                     output_index < type.output_count; ++output_index) {
-                    const int32_t good_id = _building_outputs[
-                        type.output_begin + output_index].good_id;
-                    if (good_id >= 0 && good_id < static_cast<int32_t>(
-                            _good_monetary_issue_values.size()) &&
-                        _good_monetary_issue_values[good_id] > 0) {
-                        monetary_output = true;
-                        break;
-                    }
-                }
-                // A bullion receipt is a committed cash flow.  Its wage bid
-                // must clear the worker's reservation wage; otherwise the
-                // mine can retain owners while every miner vacancy remains
-                // unattractive and minting stops after the first cycle.
-                if (monetary_output && affordable_ceiling > 0)
-                    affordable_ceiling = std::max(affordable_ceiling,
-                        saturating_mul(floor, 2, _saturation_count));
+                // Living cost may spike above what face×output can pay (e.g.
+                // food shortage). Never lift the wage ceiling above revenue:
+                // that made placer contract wages >> mint income while rich
+                // owners still funded payroll from cash stock.
                 // Clamp the living-cost floor to the employer's ability to pay,
                 // but never below the configured reference wage (so a viable
                 // building still offers at least its nominal wage).
@@ -994,28 +1061,70 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         auto owner_mobility_income = [&](BuildingGroupConstRef group,
                                          int64_t &sat) -> int64_t {
             if (group.type_id < 0 || group.type_id >= static_cast<int32_t>(
-                    _building_types.size()) || group.operating_state == 1 ||
-                group.count <= 0) return 0;
+                    _building_types.size()) || group.count <= 0) return 0;
+            // Suspended survival-food lots still need a discovery income so
+            // empty hunting camps rank as mobility targets. Other suspended
+            // shells stay at zero (planned_owner_demand already zeros them).
+            if (group.operating_state == 1) {
+                const BuildingType &suspended_type =
+                    _building_types[group.type_id];
+                bool survival_food = false;
+                for (int32_t oi = 0; oi < suspended_type.output_count; ++oi) {
+                    const int32_t good = _building_outputs[
+                        suspended_type.output_begin + oi].good_id;
+                    if (good >= 0 &&
+                        good < static_cast<int32_t>(
+                            _survival_food_good_mask.size()) &&
+                        _survival_food_good_mask[good] != 0) {
+                        survival_food = true;
+                        break;
+                    }
+                }
+                if (!survival_food) return 0;
+            }
             const bool has_settled = group.last_output > 0 ||
                 group.last_sold > 0 || group.last_market_receipt > 0 ||
                 group.last_in_kind_livelihood_value > 0 ||
                 group.last_input_cost > 0 || group.last_base_wages_paid > 0;
-            if (!has_settled) {
+            if (!has_settled || group.operating_state == 1) {
                 int64_t quote_sat = 0;
                 const OwnerOpportunityQuote quote = owner_opportunity_quote(
                     group, Q16_ONE, Q16_ONE, quote_sat);
                 sat = saturating_add(sat, quote_sat, sat);
                 if (!quote.feasible || quote.executable_capacity_q16 <= 0)
                     return 0;
-                const BuildingType &type = _building_types[group.type_id];
-                const int64_t owner_slots = std::max<int64_t>(1,
-                    saturating_mul(group.count,
-                        std::max<int64_t>(1, type.owner_slots_per_building),
-                        sat));
+                // Per-owner disposable (quote already ÷ owner seats).
                 return std::max<int64_t>(0,
-                    quote.disposable_survival_power_per_day / owner_slots);
+                    quote.disposable_survival_power_per_day);
             }
             return projected_owner_income_per_day(group, sat);
+        };
+
+        auto schedule_suspended_survival_restart = [&](BuildingGroupRef group) {
+            if (group.operating_state != 1 || group.filled_owner <= 0) return;
+            if (group.type_id < 0 || group.type_id >= static_cast<int32_t>(
+                    _building_types.size())) return;
+            const BuildingType &type = _building_types[group.type_id];
+            bool survival_food = false;
+            for (int32_t oi = 0; oi < type.output_count; ++oi) {
+                const int32_t good =
+                    _building_outputs[type.output_begin + oi].good_id;
+                if (good >= 0 &&
+                    good < static_cast<int32_t>(
+                        _survival_food_good_mask.size()) &&
+                    _survival_food_good_mask[good] != 0) {
+                    survival_food = true;
+                    break;
+                }
+            }
+            if (!survival_food) return;
+            // Employment refill is the unlock for labour-empty SUSPENDED_LOSS
+            // food lots. Apply ACTIVE at the next due-cell boundary so this
+            // period's production slice stays on the frozen operating state.
+            group.pending_operating_state = 0;
+            group.severe_loss_cycles = 0;
+            group.recovery_failed_reviews = 0;
+            group.recovery_cooldown_cycles = 0;
         };
 
         auto owner_mobility_cooldown_active = [&](int32_t source_group,
@@ -1101,9 +1210,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                         0, Q16_ONE), 1, _saturation_count);
                 int64_t executable_quantity = quantity;
                 if (executable_quantity <= 0 && issue_value > 0) {
-                    // A collector with no employee has zero realized capacity,
-                    // but its bullion receipt is still a valid counterfactual
-                    // bid for the vacant owner/employee lane.
+                    // Vacant collectors still bid on face × nameplate output.
                     executable_quantity = mul_div_sat(
                         std::max<int64_t>(0, output.quantity),
                         std::clamp<int64_t>(group.planned_utilization_q16,
@@ -2358,6 +2465,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                     }
                     group.filled_owner = saturating_add(group.filled_owner, capped_take,
                                                         _saturation_count);
+                    schedule_suspended_survival_restart(group);
                     owner_need = std::max<int64_t>(0, owner_need - capped_take);
                     if (is_knowledge_group(group)) {
                         local_knowledge_employment = saturating_add(
@@ -2698,11 +2806,23 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         for (int32_t g = first; g < last; ++g) {
             const auto group = building_at(static_cast<size_t>(g));
             if (group.cell != cell || group.count <= 0 ||
-                group.operating_state == 1 ||
                 !building_available(cell, group.type_id, true)) continue;
             const BuildingType &type = _building_types[group.type_id];
             if (group.owner_signature_id < 0 ||
                 group.owner_signature_id >= static_cast<int32_t>(_signatures.size())) continue;
+            // Suspended survival-food lots keep owner demand and a discovery
+            // income so empty hunting camps can receive transfers. They are
+            // targets only; sources stay on ACTIVE incumbents.
+            if (group.operating_state == 1) {
+                const int64_t income = owner_mobility_income(
+                    group, _saturation_count);
+                projected_owner_income[g - first] = income;
+                const int64_t owner_target = group_owner_target[g - first];
+                if (type.kind != 2 && group.filled_owner < owner_target &&
+                    income > 0)
+                    owner_job_targets.push_back(g);
+                continue;
+            }
             const int64_t income = owner_mobility_income(
                 group, _saturation_count);
             projected_owner_income[g - first] = income;
@@ -2716,54 +2836,21 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             // understaffed positive-income lots cannot thrash on noise, while
             // leaving non-positive opportunity lots stays on the base hurdle.
             // The final local merchant remains protected below.
-            //
-            // Settled production alone must not pin owners forever: reuse the
-            // mobility income already computed above plus settled margin /
-            // employee fill. Distressed incumbents stay eligible as sources.
             const bool protected_restart_source =
                 group.purchase_intent_capacity_q16 > 0 &&
                 group.last_output <= 0 && group.last_sold <= 0 &&
                 group.last_observed_capacity_days_q16 > 0;
-            const bool has_settled_ops =
-                group.last_output > 0 || group.last_revenue > 0;
-            // Only walk employee fills when income/margin alone would keep the
-            // owner pinned; otherwise distress is already decided.
-            bool severe_employee_understaff = false;
-            if (has_settled_ops && income > 0 &&
-                group.realized_profit_margin_q16 >= 0 &&
-                type.employee_count > 0) {
-                int64_t emp_slots = 0;
-                int64_t emp_fill = 0;
-                for (int32_t r = 0; r < type.employee_count; ++r) {
-                    const JobRole &role = _building_employee_roles[
-                        type.employee_begin + r];
-                    emp_slots = saturating_add(emp_slots,
-                        saturating_mul(group.count, role.slots_per_building,
-                            _saturation_count), _saturation_count);
-                    const int32_t fill_index = group.employee_fill_begin + r;
-                    if (fill_index >= 0 && fill_index < static_cast<int32_t>(
-                            _building_employee_filled.size())) {
-                        emp_fill = saturating_add(emp_fill,
-                            std::max<int64_t>(0,
-                                _building_employee_filled[fill_index]),
-                            _saturation_count);
-                    }
-                }
-                severe_employee_understaff =
-                    emp_slots > 0 && emp_fill * 2 < emp_slots;
-            }
-            const bool distressed_owner = income <= 0 ||
-                group.realized_profit_margin_q16 < 0 ||
-                severe_employee_understaff;
             if (group.filled_owner > 0 && owner_target > 0) {
                 // An ACTIVE lot with a bounded restart intent is still an
                 // operating business, even when the last quote could not
                 // execute any physical input. Keep its incumbent owner
                 // attached so employment mobility cannot erase the retry
                 // reservation before the next funding/stock review.
-                // Healthy settled producers stay pinned; distressed ones do not.
-                if (protected_restart_source ||
-                    (has_settled_ops && !distressed_owner)) {
+                // Healthy settled producers are no longer absolute pins:
+                // understaffed gathering vacancies must not forbid higher-
+                // income cross-profession exits (e.g. forager → hunter).
+                // Match hysteresis still dampens same-class thrash.
+                if (protected_restart_source) {
                     // Preserve the owner, but still collect employee sources
                     // below; only the owner mobility lane is protected.
                 } else {
@@ -2771,52 +2858,11 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                         _signatures[group.owner_signature_id].profession_id);
                     if (source_slot >= 0 && population_store().owner_employed[
                             source_slot] > 0) {
-                        bool real_business_lane = has_settled_ops;
-                        if (!real_business_lane) {
-                            for (int32_t oi = 0; oi < type.output_count; ++oi) {
-                                const int32_t good = _building_outputs[
-                                    type.output_begin + oi].good_id;
-                                const int32_t signal = market_signal_index(cell, good);
-                                if (signal < 0) continue;
-                                const int64_t business = signal < static_cast<int32_t>(
-                                        _market_signals.business_demand_ema.size())
-                                    ? std::max<int64_t>(0,
-                                        _market_signals.business_demand_ema[signal]) : 0;
-                                const int64_t withdrawal = signal < static_cast<int32_t>(
-                                        _market_signals.realized_withdrawal_ema.size())
-                                    ? std::max<int64_t>(0,
-                                        _market_signals.realized_withdrawal_ema[signal]) : 0;
-                                const int64_t epoch_real = signal < static_cast<int32_t>(
-                                        _epoch_desired_business_demand.size())
-                                    ? std::max<int64_t>(0,
-                                        _epoch_desired_business_demand[signal]) : 0;
-                                const int64_t prior_business = signal < static_cast<int32_t>(
-                                        _epoch_business_demand_ema.size())
-                                    ? std::max<int64_t>(0,
-                                        _epoch_business_demand_ema[signal]) : 0;
-                                real_business_lane = business > 0 || withdrawal > 0 ||
-                                    epoch_real > 0 || prior_business > 0;
-                                if (real_business_lane) break;
-                            }
-                        }
-                        const bool source_understaffed = group.filled_owner < owner_target;
-                        // Do not drain an understaffed producer that has a
-                        // committed business buyer.  Its owner vacancy is the
-                        // employment demand signal that must be filled before
-                        // discretionary owner mobility can move on.
-                        // Distressed owners bypass this hold so micro-loss /
-                        // understaffed lots can exit into better seats.
-                        const bool established_producer = has_settled_ops ||
-                            (group.type_id >= 0 && group.type_id <
-                                static_cast<int32_t>(_building_type_ids.size()) &&
-                             _building_type_ids[group.type_id] == "knapping_workshop");
-                        if (distressed_owner ||
-                            !(source_understaffed &&
-                              (real_business_lane || established_producer))) {
-                            owner_job_sources.push_back(g);
-                            owner_job_source_understaffed.push_back(
-                                source_understaffed ? uint8_t{1} : uint8_t{0});
-                        }
+                        const bool source_understaffed =
+                            group.filled_owner < owner_target;
+                        owner_job_sources.push_back(g);
+                        owner_job_source_understaffed.push_back(
+                            source_understaffed ? uint8_t{1} : uint8_t{0});
                     }
                 }
             }
@@ -2964,25 +3010,11 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                         transition_hurdle_q16(source_profession,
                             target.profession), target_group_index,
                         target.fill_index);
-                    bool monetary_target = false;
-                    const BuildingType &target_type_for_bid = _building_types[
-                        target_group.type_id];
-                    for (int32_t output_index = 0;
-                         output_index < target_type_for_bid.output_count;
-                         ++output_index) {
-                        const int32_t good_id = _building_outputs[
-                            target_type_for_bid.output_begin + output_index].good_id;
-                        if (good_id >= 0 && good_id < static_cast<int32_t>(
-                                _good_monetary_issue_values.size()) &&
-                            _good_monetary_issue_values[good_id] > 0) {
-                            monetary_target = true;
-                            break;
-                        }
-                    }
-                    const bool severe_monetary_vacancy = monetary_target &&
-                        target_vacancy_q16 >= Q16_ONE / 2 &&
-                        vacancy_profit_signal_q16(target_group) >= Q16_ONE / 4;
-                    if (!severe_monetary_vacancy && improvement < hurdle) continue;
+                    // Monetary / bullion outputs must not waive the disposable-
+                    // income hurdle. Vacancy and face-value profit may ease the
+                    // hurdle via vacancy_adjusted_hurdle_q16, but a worse job
+                    // (e.g. forager in-kind >> miner wage) stays ineligible.
+                    if (improvement < hurdle) continue;
                     if (source_profession == _merchant_profession_id &&
                         local_merchant_population <= 1) {
                         ++_last_merchant_protected_rejects;
@@ -3098,8 +3130,10 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 const int64_t base_hurdle = transition_hurdle_q16(
                     source_signature.profession_id, target_owner_profession);
                 // Asymmetric hysteresis: easy exit from non-positive opportunity,
-                // raised bar only for understaffed鈫抲nderstaffed with positive
-                // source income (the historical thrash pair).
+                // raised bar only for understaffed→understaffed with positive
+                // source income (the historical thrash pair). Survival-priority
+                // food vacancies skip the understaffed raise so gathering
+                // vacancies cannot permanently block protein recovery.
                 int64_t effective_hurdle = base_hurdle;
                 const bool source_understaffed =
                     source_i < owner_job_source_understaffed.size() &&
@@ -3108,7 +3142,14 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                     group_owner_target[target_group_index - first];
                 const bool source_full = source_group.filled_owner >=
                     group_owner_target[candidate - first];
-                if (!(source_income <= 0 && target_income > 0) &&
+                int64_t survival_sat = 0;
+                const bool target_survival_priority =
+                    owner_opportunity_quote(target_group, Q16_ONE, Q16_ONE,
+                        survival_sat).survival_priority;
+                _saturation_count = saturating_add(
+                    _saturation_count, survival_sat, _saturation_count);
+                if (!target_survival_priority &&
+                    !(source_income <= 0 && target_income > 0) &&
                     source_income > 0 &&
                     (source_understaffed || (source_full && target_understaffed))) {
                     effective_hurdle = mul_div_sat(
@@ -3173,6 +3214,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 source_group.filled_owner -= 1;
                 target_group.filled_owner = saturating_add(
                     target_group.filled_owner, 1, _saturation_count);
+                schedule_suspended_survival_restart(target_group);
                 if (source_is_knowledge != is_knowledge_group(target_group)) {
                     local_knowledge_employment = std::max<int64_t>(0,
                         local_knowledge_employment +
@@ -3290,6 +3332,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 _building_employee_filled[candidate.fill_index] -= 1;
                 target_group.filled_owner = saturating_add(
                     target_group.filled_owner, 1, _saturation_count);
+                schedule_suspended_survival_restart(target_group);
                 if (source_is_knowledge != is_knowledge_group(target_group)) {
                     local_knowledge_employment = std::max<int64_t>(0,
                         local_knowledge_employment +

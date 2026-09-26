@@ -83,6 +83,9 @@ public:
     uint32_t day_stall_reason_mask() const;
     // Worker parks: OR sticky peer bits and arm the peer-stall timeout clock.
     void note_day_stall(uint32_t bits, int64_t day);
+    // Clear a subset of sticky stall bits. Prefer this over wiping every peer
+    // bit — Country commit must not erase Economy fiscal/input stalls.
+    void clear_day_stall_bits(uint32_t bits);
     void clear_day_stall_peer_bits();
     // Returns true if peer stall exceeded RUNTIME_DAY_STALL_PEER_FAULT_TIMEOUT_MS
     // and set_fault was called.
@@ -354,9 +357,20 @@ public:
     // Publish plan.next_state for UI while the open plan is still peer-waiting.
     // Does not close the plan or mutate authority committed_day; commit_day /
     // commit_rejected_day remain the only authority closes.
+    // Does NOT update country_economy_audit_snapshot — Economy conservation must
+    // not observe uncommitted research spend / purchase credits from preview.
     bool publish_country_plan_preview_snapshot(std::string &error);
     std::shared_ptr<const RuntimeCountryPodSnapshot> country_asset_snapshot() const {
         return std::atomic_load_explicit(&_country_snapshot, std::memory_order_acquire);
+    }
+    // Last sealed / authority-published Country assets for Economy audits.
+    // Falls back to country_asset_snapshot when no sealed view exists yet.
+    std::shared_ptr<const RuntimeCountryPodSnapshot>
+    country_economy_audit_snapshot() const {
+        auto audit = std::atomic_load_explicit(&_country_economy_audit_snapshot,
+                                               std::memory_order_acquire);
+        if (audit != nullptr) return audit;
+        return country_asset_snapshot();
     }
     enum class CountryAuthorityOwner : uint8_t { SYNC = 0, WORKER = 1 };
     struct CountryAuthorityHandoffStatus {
@@ -942,6 +956,9 @@ private:
     RuntimeEnvironmentInputRing _environment_ring;
     std::shared_ptr<const RuntimeCountryPodSnapshot> _country_snapshot;
     std::shared_ptr<const RuntimeCountryPodSnapshot> _country_committed_snapshot;
+    // Economy conservation / opening·VERIFY pins. Updated only by sealed
+    // authority publishes — never by peer-wait plan preview.
+    std::shared_ptr<const RuntimeCountryPodSnapshot> _country_economy_audit_snapshot;
     std::shared_ptr<const CountryCoreCheckpoint> _country_checkpoint;
     mutable std::shared_ptr<const RuntimeCountryPodDiagnostics> _country_pod_diagnostics;
     std::atomic<uint64_t> _environment_generation{0};
