@@ -42,8 +42,10 @@ struct EconomyPricingTests {
                 assert(R::goods_cost(quantity + 1, price, sat) > budget);
             }
         }
-        assert(R::base_price_ceiling(500, 10, 10) == 500);
-        assert(R::base_price_ceiling(500, 10, 11) == 550);
+        // Authored reference_max no longer seeds an economic cap.
+        assert(R::base_price_ceiling(500, 10, 10) == INT32_MAX);
+        assert(R::base_price_ceiling(500, 10, 11) == INT32_MAX);
+        assert(R::base_price_ceiling(1, 1, 1) == INT32_MAX);
         assert(R::base_price_ceiling(INT32_MAX, 1, INT32_MAX) == INT32_MAX);
         using State = R::PriceCeilingState;
         auto advance = [](State st, int days, int price = 900, int shortage = 32768) {
