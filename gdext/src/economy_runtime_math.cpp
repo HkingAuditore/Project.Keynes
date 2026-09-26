@@ -219,12 +219,10 @@ void NativeEconomyRuntime::formula_income_price_linear(const FormulaBatchInput &
 }
 
 int32_t NativeEconomyRuntime::base_price_ceiling(
-        int32_t reference, int32_t default_price, int64_t cost_anchor) {
-    const int64_t base = std::max<int64_t>(1, default_price);
-    const int64_t anchor = std::clamp<int64_t>(std::max(base, cost_anchor), 1, INT32_MAX);
-    // Valid catalog i32 operands have an exact, non-overflowing i64 product.
-    return static_cast<int32_t>(std::min<int64_t>(INT32_MAX,
-        (std::max<int64_t>(1, reference) * anchor + base - 1) / base));
+        int32_t /*reference*/, int32_t /*default_price*/, int64_t /*cost_anchor*/) {
+    // No authored economic ceiling. Catalog reference_max_price is retained for
+    // content/UI only; settlement clamps solely to the i32 numeric guard.
+    return PRICE_NUMERIC_GUARD_MAX;
 }
 
 NativeEconomyRuntime::PriceCeilingState NativeEconomyRuntime::advance_price_ceiling(

@@ -2143,12 +2143,12 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
     }
     result.merchant_settle_ms += elapsed_ms(merchant_start);
 
-    // Effective shortage is exceptional-path work. The reference bound is a
-    // cheap lower bound on every dynamic ceiling, so ordinary prices skip it.
+    // Sparse ceiling attribution is exceptional-path work near the numeric
+    // guard only; ordinary prices skip it (no authored economic cap).
     bool observe_ceiling = !market_store().price_ceilings[market].empty();
     for (int32_t good = 0; good < market_store().good_count && !observe_ceiling; ++good)
         observe_ceiling = int64_t(market_store().price[market_store().index(market, good)]) * 5 >=
-                          int64_t(_good_reference_max_price[good]) * 4;
+                          int64_t(PRICE_NUMERIC_GUARD_MAX) * 4;
     thread_local std::vector<int64_t> ceiling_requested, ceiling_unfilled, primary_unfilled;
     if (observe_ceiling) {
         ceiling_requested.assign(market_store().good_count, 0);
@@ -2252,11 +2252,7 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 base_ceiling, static_cast<int32_t>(std::min<int64_t>(_epoch_days, _sample_day + 1)),
                 requested, unfilled});
         }
-        if (next_price > PRICE_NUMERIC_GUARD_MAX ||
-            (base_ceiling == PRICE_NUMERIC_GUARD_MAX &&
-             int64_t(_good_reference_max_price[good]) * std::max<int64_t>(
-                 _good_default_price[good], pressure.adjustment_anchor_price) >
-             int64_t(PRICE_NUMERIC_GUARD_MAX) * _good_default_price[good]))
+        if (next_price > PRICE_NUMERIC_GUARD_MAX)
             ++result.price_numeric_ceiling_hits;
         if (bounded == PRICE_NUMERIC_GUARD_MIN) ++result.price_numeric_floor_hits;
         if (bounded != current_price && (minimum_tick || headroom_tick))

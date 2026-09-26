@@ -6259,9 +6259,10 @@ private:
                           const PricePressure &pressure, int32_t days,
                           int64_t &saturation_count, bool &rate_clamped,
                           bool &rise_damped, bool *minimum_tick = nullptr) const;
-    // Applies the catalog bounds to a candidate next price.  Settlement and
-    // trade projection must share this so a planned destination price can
-    // never exceed a price the settlement path is able to reach.
+    // Settlement / trade projection share this clamp. Economic prices are not
+    // capped by catalog reference_max_price; only the i32 numeric guard applies.
+    // The reference/default/cost arguments are retained for call-site ABI and
+    // ignored by the current formula.
     static int32_t base_price_ceiling(int32_t reference, int32_t default_price,
                                        int64_t cost_anchor);
     static PriceCeilingState advance_price_ceiling(PriceCeilingState state,

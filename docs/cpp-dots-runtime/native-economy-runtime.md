@@ -1890,7 +1890,7 @@ Complementary (BOM) demand remains the existing one-hop Leontief
 
 
 
-Price V6 的动态上限、30 实际日确认及稀疏存档契约见 [实施与验收](price-v6-validation.md)。
+Price V6 数值护栏（无人为经济限价）与稀疏上限 ABI 兼容说明见 [实施与验收](price-v6-validation.md)。
 
 
 ## 普通投资建材需求（2026-09-21）

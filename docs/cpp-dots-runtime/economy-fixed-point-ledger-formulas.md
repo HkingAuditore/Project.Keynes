@@ -15,9 +15,11 @@
 若需求、供给和库存全为零，再独立执行
 `p_next = p_market + (default_price-p_market)*min(1, alpha*N)`。
 Price V5 移除商品 `min_price`，下界仅为 1 个价格子单位（0.0001/物资单位）。
-V6 将原 `max_price` 数值保留为 `reference_max_price`，删除上涨锚点平方衰减。
-当前上限由成本基准及稀疏短缺确认状态决定，只在最后 20% 区域衰减上涨。
-非零调价被截断为零且仍有空间时保留一个子单位；目标上限收缩不强制跳价。
+V6 将原 `max_price` 数值保留为 `reference_max_price`（内容/UI 诊断列），
+定价路径不再用它做经济上限。当前唯一硬夹紧是 `INT32_MAX` 数值护栏；
+上涨仍受日速率限制与 default/cost 增量锚约束，下跌以当前价为基准。
+稀疏上限确认/扩张状态机仍保留存档 ABI，但在基础上限恒为数值护栏时不会被触发。
+非零调价被截断为零且仍有空间时保留一个子单位（仅在贴近数值护栏时相关）。
 量化修正最多一个价格子单位，极低价时可以超过相对限速。完整公式见下方动态上限段。
 
 库存压力为负时，只削弱正成本压力：`cost_positive *= max(0,1+inventory_pressure)`。
@@ -713,30 +715,23 @@ inventory_pressure_q16 = clamp((price_inventory_target - stock)
 
 merchant_inventory_target = protected_daily_flow
                             * good_target_inventory_days_q16 / Q16
-base_ceiling = ceil(reference_max_price * max(default_price, cost_anchor) / default_price)
-cap = max(base_ceiling, sparse_state.limit)              # clamp to INT32_MAX
+base_ceiling = INT32_MAX                      # numeric guard only; ignores reference_max
+cap = max(base_ceiling, sparse_state.limit)   # sparse rows are ABI-legacy / inert
 soft_start = floor(cap * 4 / 5)
 headroom = price < soft_start ? 1 : max(0, cap-price)/(cap-soft_start)
-shaped_price = price + (rate_limited_price-price)*headroom # rises only
+shaped_price = price + (rate_limited_price-price)*headroom # rises only; near INT32 only
 final_price = clamp(shaped_price, 1, max(cap, current_price))
 ```
 
-Price V6 removes the quadratic rise fade. Rises retain the default/cost adjustment
-anchor; falls retain the current-price reference and their existing daily rate limit.
-Only the last 20% of the cap dampens a rise. A nonzero rounded-away movement gets
-one tick when headroom exists. Contracting the target cap never forces a markdown.
+Catalog `reference_max_price` remains a compiled content column for UI/diagnostics and
+legacy catalog validation (`>= default_price`); it does not bind settlement or trade
+projection. Price V6 removes the quadratic rise fade. Rises retain the default/cost
+adjustment anchor; falls retain the current-price reference and their existing daily
+rate limit. Soft headroom damping only matters near the numeric guard.
 
-The price inventory target remains a transient settlement-period signal; merchant
-inventory authority retains its longer horizon. Positive cost pressure is weakened
-by excess inventory, so it does not guarantee a producer break-even price.
-
-The sparse cap state requires 30 actual observed days at price >=80% of cap and
-budget-backed unmet demand >=25%. Expansion starts after confirmation: 50bp/day.
-Shortage between 10% and 25% pauses expansion. Price below 70% or shortage <=10%
-resets confirmation. Recovery requires both price below 70% and shortage <=10%,
-then reduces the cap by 10bp/day without going below the cost-based base cap.
-Daily integer steps are replayed for N=1/3/5; negative bootstrap settlement days
-never contribute to confirmation. Query and trade forecasts never advance state.
+The sparse cap state machine (30-day confirm / 50bp expand / 10bp recover) remains in
+save/hash ABI for compatibility but is not reached while `base_ceiling = INT32_MAX`.
+Query and trade forecasts never advance that state.
 See [V6 validation](price-v6-validation.md) for funding rules and test results.
 
 

@@ -979,7 +979,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
     bool observe_price_ceiling = !market_store().price_ceilings[market].empty();
     for (int32_t good = 0; good < market_store().good_count && !observe_price_ceiling; ++good)
         observe_price_ceiling = int64_t(market_store().price[market_store().index(market, good)]) * 5 >=
-                                int64_t(_good_reference_max_price[good]) * 4;
+                                int64_t(PRICE_NUMERIC_GUARD_MAX) * 4;
     thread_local std::vector<int32_t> ceiling_input_candidates;
     thread_local std::vector<int64_t> ceiling_input_quantities;
     auto quote_group_inputs = [&](BuildingGroupConstRef group,

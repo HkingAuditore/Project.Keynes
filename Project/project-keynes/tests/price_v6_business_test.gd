@@ -3,11 +3,11 @@ extends "res://tests/building_runtime_test.gd"
 func _run() -> void:
 	print("=== Price V6 production funding regression ===")
 	var source: Dictionary = EconomyCatalogScript.compile_native_catalog()
-	_expect("production ceiling catalog compiles", bool(source.get("ok", false)))
+	_expect("production funding catalog compiles", bool(source.get("ok", false)))
 	if not bool(source.get("ok", false)): return
 	for scenario in ["funded", "cashless", "no_owner", "no_resource", "complement"]:
 		_case(source, scenario)
-	print("=== production ceiling %s failures=%d ===" % ["PASS" if failures == 0 else "FAIL", failures])
+	print("=== production funding %s failures=%d ===" % ["PASS" if failures == 0 else "FAIL", failures])
 
 func _case(source: Dictionary, scenario: String) -> void:
 	var catalog := source.duplicate(true)
@@ -60,9 +60,10 @@ func _case(source: Dictionary, scenario: String) -> void:
 		"building_cells": PackedInt32Array([0]), "building_type_ids": PackedInt32Array([hunting]),
 		"building_owner_signature_ids": PackedInt32Array([hunter]), "building_counts": PackedInt64Array([1]),
 	}).get("ok", false)))
-	var max_days := 0
 	var clean := true
-	var missing_days := 0
+	var max_desired_ore := 0
+	var max_desired_missing := 0
+	var base_ok := true
 	for day in range(5):
 		var report: Dictionary = {}
 		for slice in range(65536):
@@ -70,11 +71,17 @@ func _case(source: Dictionary, scenario: String) -> void:
 			if bool(report.get("done", false)) or bool(report.get("fatal", false)): break
 		clean = clean and not bool(report.get("fatal", true)) and int(report.get("money_error", 1)) == 0 and int(report.get("goods_error", 1)) == 0
 		var market: Dictionary = ext.get_market_cell_snapshot(0)
-		max_days = maxi(max_days, int(market.price_ceiling_confirmation_days[ore]))
-		missing_days = maxi(missing_days, int(market.price_ceiling_confirmation_days[missing_ore]))
+		if int(market.price_base_ceiling[ore]) != 2147483647:
+			base_ok = false
+		max_desired_ore = maxi(max_desired_ore, int(market.desired_business_demand[ore]))
+		max_desired_missing = maxi(max_desired_missing, int(market.desired_business_demand[missing_ore]))
+	_expect(scenario + " base ceiling stays numeric guard", base_ok)
 	_expect(scenario + " conserves ledgers", clean)
-	_expect(scenario + " only executable funded input demand confirms",
-		max_days > 0 if scenario == "funded" else max_days == 0)
-
+	# Authored economic ceilings are gone; this suite checks numeric guards
+	# under production, and that ownerless buildings emit no input desire.
+	# Missing natural resources may still leave an input wish on the books.
+	var expect_ore := scenario != "no_owner"
+	_expect(scenario + " executable buildings emit ore desire correctly",
+		max_desired_ore > 0 if expect_ore else max_desired_ore == 0)
 	if scenario == "complement":
-		_expect("missing complementary input confirms while stocked input does not", missing_days > 0 and max_days == 0)
+		_expect("complementary missing input still emits desire", max_desired_missing > 0)

@@ -43,6 +43,8 @@ extends Resource
 # reference is allowed: adding a good is a data-resource-only operation.
 @export var default_price: int = 10000
 @export var initial_stock: int = 0
+## Authored diagnostic reference only. Settlement no longer uses this as an
+## economic price ceiling; the native numeric guard is INT32_MAX.
 @export var reference_max_price: int = 100000000
 @export var price_adjust_q16: int = 2048
 
