@@ -6,6 +6,7 @@
 script = ExtResource("1")
 id = &"fish"
 display_name = "鱼类"
+shortage_weight_q16 = 131072
 semantic_tags = PackedStringArray()
 category_id = &"fish"
 substitution_category_ids = PackedStringArray("fish")

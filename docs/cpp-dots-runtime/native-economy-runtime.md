@@ -594,9 +594,10 @@ catalog 编译成 CSR：plan→needs、need→variants、variant→components。
 - component：good 与每份 bundle 所需数量。
 - 同一 need 的 variants 是替代方案；同一 variant 的 components 是必须按比例满足的
   互补 bundle。
-- `last_shortage_q16` 只度量**本货自身货架**相对 funded component demand 的缺口
+- `last_shortage_q16` 只度量**本货自身货架**相对本周期请求 component demand 的缺口
   （`stock_shortfall / demand`），不把互补品/替代品导致的整包失败算进本货短缺。
-  `demand_ema` 仍跟踪 funded component demand。
+  预算不足仍不会产生实际扣款或 withdrawal，`demand_ema` 仍跟踪 funded component
+  demand，但未满足的请求会进入统一货架短缺比例，避免库存为零时短缺信号被预算裁剪吞掉。
 
 每 cohort 每日按优先级重置预算和需求。财富是 `funds/population` 相对
 `wealth_reference_per_capita` 的连续定点函数，不形成额外身份分桶。民族以稀疏 need
@@ -1925,3 +1926,14 @@ desired demand、business EMA、merchant target、价格响应、试算需求上
 
 回归：`building_runtime_test.gd -- --employment-only` 覆盖一名 forager owner
 转入无失业人口的淘金场 miner vacancy、vacancy 工资上调、黄金铸币和三项审计。
+
+## 软投入与生存生产（2026-09-27）
+
+`required_q16 < Q16_ONE` 的生产投入属于可选生产增强：生产端按“软投入带来的
+边际产出价值是否超过投入成本”决定是否购买。未购买时不扣库存、不计入成本，也不
+发布对应的完整企业需求/短缺压力；购买后才计入投入成本，并按库存覆盖度提供效率加成。
+该判断按本轮市场的 catalog input edge 缓存，避免在报价、结算和商业需求汇总中重复报价。
+
+所有建筑的 owner 自用产出都属于 owner 的实物收入，并与现金收入共同参与经营可行性
+判断；已有结算值优先复用，只有没有结算值的新组才做一次机会报价。硬投入、资源、气候
+和实际资金约束仍保持原有执行限制。

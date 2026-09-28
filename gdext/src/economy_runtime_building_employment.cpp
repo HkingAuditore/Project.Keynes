@@ -2174,6 +2174,15 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             const int64_t target_cost = living_cost_for_signature(
                 cell, candidate.target_signature, -1, _saturation_count);
             const int64_t source_disposable = unemployed_disposable_income(pool);
+            // Apply the knowledge-sector cap before proportional allocation.
+            // Otherwise a knowledge vacancy can reserve the only unemployed
+            // move for this pass and be rejected later, after the allocation
+            // budget has already been consumed, starving executable owner and
+            // subsistence jobs in the same cell.
+            if (!knowledge_slot_available(
+                    building_at(static_cast<size_t>(candidate.group)), 1,
+                    false))
+                return deny(EMPLOYMENT_REJECTION_KNOWLEDGE_CAP);
             const int64_t improvement = improvement_q16(
                 source_disposable, candidate.target_disposable);
             const int64_t hurdle = transition_hurdle_q16(

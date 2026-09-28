@@ -858,12 +858,20 @@ bool NativeEconomyRuntime::run_building_production_cell(
         if (available > 0 && scale == 0) scale = 1;
         return scale;
     };
-    // Soft inputs: buy for the full activity scale (optional productivity).
-    // Hard inputs: buy for the full activity scale. required<=0 never buys.
+    // Soft inputs are optional productivity upgrades. Their purchase policy
+    // depends on the concrete building group (output price, scale, owner
+    // count, and local market), not merely on the catalog input edge. Cache by
+    // (building group, input edge) so one profitable producer cannot force its
+    // tool decision onto every other producer in the cell.
+    thread_local std::unordered_map<uint64_t, int8_t> soft_input_policy;
+    soft_input_policy.clear();
+    soft_input_policy.reserve(static_cast<size_t>(std::max(16, end - begin)) * 2);
     auto input_purchase_scale_q16 = [&](const ProductionInput &input,
-                                        int64_t output_scale_q16) -> int64_t {
+                                        int64_t output_scale_q16,
+                                        bool soft_purchase_enabled) -> int64_t {
         const int64_t required = std::clamp<int64_t>(input.required_q16, 0, Q16_ONE);
         if (required <= 0) return 0;
+        if (required < Q16_ONE && !soft_purchase_enabled) return 0;
         return std::clamp<int64_t>(output_scale_q16, 0, Q16_ONE);
     };
     auto scaled_input_quantity = [&](int64_t full_physical,
@@ -930,6 +938,61 @@ bool NativeEconomyRuntime::run_building_production_cell(
             }
         }
         return best;
+    };
+    auto soft_input_purchase_allowed = [&](const BuildingGroupConstRef &group,
+                                           const BuildingType &type,
+                                           int32_t input_index) -> bool {
+        const int32_t global_input = type.input_begin + input_index;
+        if (global_input < 0 || group.index < 0) return false;
+        const uint64_t cache_key =
+            (static_cast<uint64_t>(static_cast<uint32_t>(group.index)) << 32) |
+            static_cast<uint32_t>(global_input);
+        auto cached_it = soft_input_policy.find(cache_key);
+        if (cached_it != soft_input_policy.end()) return cached_it->second != 0;
+        int8_t cached = -1;
+        const ProductionInput &input = _building_inputs[global_input];
+        const int64_t required = std::clamp<int64_t>(input.required_q16, 0, Q16_ONE);
+        if (required <= 0 || required >= Q16_ONE) {
+            soft_input_policy.emplace(cache_key, 1);
+            return true;
+        }
+        const int64_t building_days = saturating_mul(
+            std::max<int64_t>(1, group.count), std::max(1, _epoch_days),
+            _saturation_count);
+        const int64_t effective = saturating_mul(
+            building_days, std::max<int64_t>(0, input.quantity),
+            _saturation_count);
+        const int32_t selected = select_input_candidate(input, false, effective);
+        if (selected < 0) {
+            soft_input_policy.emplace(cache_key, 0);
+            return false;
+        }
+        const InputCandidate &candidate = _building_input_candidates[selected];
+        const int64_t physical_input = effective_production_input_quantity(
+            group.cell, candidate.good_id,
+            physical_input_quantity(effective, candidate), _saturation_count);
+        const int64_t input_cost = goods_cost(
+            physical_input,
+            market_store().price[market_store().index(market, candidate.good_id)],
+            _saturation_count);
+        int64_t marginal_output_value = 0;
+        for (int32_t output_index = 0; output_index < type.output_count;
+             ++output_index) {
+            const GoodAmount &output = _building_outputs[
+                type.output_begin + output_index];
+            const int64_t full_output = effective_building_output_quantity(
+                group, output.good_id, output.quantity, Q16_ONE,
+                building_days, _saturation_count);
+            const int64_t output_price = market_store().price[
+                market_store().index(market, output.good_id)];
+            marginal_output_value = saturating_add(marginal_output_value,
+                mul_div_sat(mul_div_sat(full_output, required, Q16_ONE,
+                    _saturation_count), output_price, GOODS_SCALE,
+                    _saturation_count), _saturation_count);
+        }
+        cached = marginal_output_value > input_cost ? 1 : 0;
+        soft_input_policy.emplace(cache_key, cached);
+        return cached != 0;
     };
     auto desired_scale_for_group = [&](BuildingGroupConstRef group,
                                        const BuildingType &type,
@@ -999,7 +1062,8 @@ bool NativeEconomyRuntime::run_building_production_cell(
         for (int32_t input_index = 0; input_index < type.input_count; ++input_index) {
             const ProductionInput &item = _building_inputs[type.input_begin + input_index];
             const int64_t purchase_scale_q16 = input_purchase_scale_q16(
-                item, output_scale_q16);
+                item, output_scale_q16,
+                soft_input_purchase_allowed(group, type, input_index));
             if (purchase_scale_q16 <= 0) continue;
             const int64_t effective = saturating_mul(
                 building_days, item.quantity, _saturation_count);
@@ -1508,7 +1572,9 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 const int32_t selected = select_input_candidate(
                     item, true, effective);
                 int64_t coverage_q16 = 0;
-                if (selected >= 0 && need_at_activity > 0) {
+                const bool soft_purchase_enabled = required >= Q16_ONE ||
+                    soft_input_purchase_allowed(group, type, i);
+                if (soft_purchase_enabled && selected >= 0 && need_at_activity > 0) {
                     const InputCandidate &candidate =
                         _building_input_candidates[selected];
                     const int64_t physical = effective_production_input_quantity(
@@ -1605,7 +1671,9 @@ bool NativeEconomyRuntime::run_building_production_cell(
                         const int64_t requested = ceiling_input_quantities[i];
                         if (selected < 0 || requested <= 0) continue;
                         const auto &item = _building_inputs[type.input_begin + i];
-                        const int64_t requested_scale = input_purchase_scale_q16(item, affordable_scale);
+                        const int64_t requested_scale = input_purchase_scale_q16(
+                            item, affordable_scale,
+                            soft_input_purchase_allowed(group, type, i));
                         // Test this recipe edge independently. A missing
                         // complementary input must not make stocked goods scarce.
                         const int64_t effective = saturating_mul(building_days,
@@ -2953,11 +3021,13 @@ bool NativeEconomyRuntime::run_building_production_cell(
             : group.purchase_intent_capacity_q16;
         for (int32_t i = 0; i < type.input_count; ++i) {
             const ProductionInput &item = _building_inputs[type.input_begin + i];
+            const int64_t required = std::clamp<int64_t>(
+                item.required_q16, 0, Q16_ONE);
+            if (required > 0 && required < Q16_ONE &&
+                !soft_input_purchase_allowed(group, type, i)) continue;
             const int32_t selected = select_input_candidate(item, false, 0);
             if (selected < 0) continue;
             const InputCandidate &candidate = _building_input_candidates[selected];
-            const int64_t required = std::clamp<int64_t>(
-                item.required_q16, 0, Q16_ONE);
             const int64_t effective = mul_div_sat(saturating_mul(
                 building_days, item.quantity, _saturation_count),
                 intent_q16, Q16_ONE, _saturation_count);
