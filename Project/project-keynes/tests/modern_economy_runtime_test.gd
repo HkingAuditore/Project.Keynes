@@ -95,9 +95,8 @@ func _run() -> void:
 		silver_issued <= silver_accepted * 50000 / 1000)
 	_expect("only accepted bullion contributes monetary issue",
 		int(report.get("bullion_money_issued", 0)) == gold_issued + silver_issued)
-	_expect("shared bullion pool caps gold and silver together", bullion_quota_initial > 0 and
-		gold_issued + silver_issued <= bullion_quota_initial and
-		bullion_quota_initial - bullion_quota_remaining == gold_issued + silver_issued)
+	_expect("bullion quotas are retired", bullion_quota_initial == 0 and
+		bullion_quota_remaining == 0)
 	var flow_produced := int(report.get("cycle_flow_produced", 0))
 	var flow_consumed := int(report.get("cycle_flow_consumed", 0))
 	var flow_discarded := int(report.get("cycle_flow_discarded", 0))
@@ -438,7 +437,6 @@ func _test_bullion_entry_valuation(compiled: Dictionary,
 		buildings.investment_candidate_monetary_expected_revenue_per_day
 	var types: PackedStringArray = compiled.building_type_ids
 	var combined_expected_revenue := 0
-	var shared_daily_quota := 0
 	for type_name in ["gold_mine", "silver_mine"]:
 		var row := diagnostic_types.find(types.find(type_name))
 		_expect("mint face value makes new bullion entry viable: %s "
@@ -451,17 +449,15 @@ func _test_bullion_entry_valuation(compiled: Dictionary,
 				],
 			row >= 0 and pressures[row] == 65536 and
 			utilizations[row] == 65536 and profits[row] > 0)
-		_expect("greenfield bullion candidate receives only a shared quota slot: %s" % type_name,
+		_expect("greenfield bullion candidate uses face-value support: %s" % type_name,
 			row >= 0 and row < quota_daily.size() and row < monetary_units.size() and
 			row < candidate_slots.size() and row < expected_monetary_revenue.size() and
-			quota_daily[row] > 0 and monetary_units[row] == 0 and candidate_slots[row] >= 2 and
-			expected_monetary_revenue[row] <= quota_daily[row])
+			quota_daily[row] == 0 and monetary_units[row] == 0 and candidate_slots[row] == 0 and
+			expected_monetary_revenue[row] >= 0)
 		if row >= 0 and row < expected_monetary_revenue.size():
 			combined_expected_revenue += int(expected_monetary_revenue[row])
-		if row >= 0 and row < quota_daily.size():
-			shared_daily_quota = int(quota_daily[row])
-	_expect("gold and silver greenfield forecasts cannot duplicate the cell pool",
-		shared_daily_quota > 0 and combined_expected_revenue <= shared_daily_quota)
+	_expect("gold and silver greenfield forecasts use independent face-value receipts",
+		combined_expected_revenue >= 0)
 	_expect("bullion-entry review conserves exactly",
 		int(review.get("population_error", 1)) == 0 and
 		int(review.get("money_error", 1)) == 0 and

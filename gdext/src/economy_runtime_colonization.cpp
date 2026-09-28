@@ -1830,7 +1830,7 @@ bool NativeEconomyRuntime::apply_settle_family_expedition(
         // command replays intact once the committed snapshot carries the claim.
         // Treating this window as TARGET_LOST left the cell claimed by the
         // player while the settlers were sent home, so the cell kept 0 people.
-        if (owner == 0 && claimed) {
+        if (owner == 0) {
             error = "country_economy_asset_territory_claim_pending";
             return false;
         }
@@ -1961,7 +1961,7 @@ bool NativeEconomyRuntime::process_due_family_expeditions(
             const int32_t status = _effect_runtime == nullptr ? 0 :
                 _effect_runtime->transaction_status_pod(transaction_id);
             if (status == EffectRuntime::REJECTED ||
-                status == EffectRuntime::RESYNC_REQUIRED || status == 0) {
+                status == EffectRuntime::RESYNC_REQUIRED) {
                 if (_effect_runtime != nullptr && transaction_id != 0)
                     _effect_runtime->consume_rejected_transaction_pod(
                         transaction_id,
@@ -1979,9 +1979,12 @@ bool NativeEconomyRuntime::process_due_family_expeditions(
                     family_expeditions_store().departure_day[expedition], day, 3,
                     "TARGET_LOST_RETURNING");
             } else {
-                // ACKs normally complete within the same scheduler boundary.
-                // Keeping one sparse heap entry makes stalled transactions
-                // observable without scanning every active expedition daily.
+                // A worker-owned Effect transaction can be temporarily absent
+                // from the legacy status table while its Country CLAIM is
+                // being committed and published. Treat status==0 as pending;
+                // releasing the expedition here loses its population while
+                // the target remains unowned. The adapter/recovery path keeps
+                // the command alive and retries on the next due pulse.
                 family_expeditions_store().due_day[expedition] = day + 1;
                 push_family_expedition_due(expedition);
             }

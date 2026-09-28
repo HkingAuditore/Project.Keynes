@@ -15,7 +15,7 @@ func _init() -> void:
 	_compiled = EconomyCatalogScript.compile_native_catalog()
 	_expect("schema v4 catalog compiles", bool(_compiled.get("ok", false)))
 	var ids: PackedStringArray = _compiled.get("technology_ids", PackedStringArray())
-	_expect("stable technology manifest is present", ids.size() == 369)
+	_expect("stable technology manifest is present", ids.size() == 380)
 	_expect("route IR is present", (_compiled.get("research_route_ids", PackedStringArray()) as PackedStringArray).size() > 600)
 
 	# Ordinary next-era nodes: reveal, hard prerequisites and one complete route

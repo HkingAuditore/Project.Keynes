@@ -1,5 +1,13 @@
 # Economy Runtime Split Matrix
 
+## Current contract supplement (2026-09)
+
+Investment, employment catch-up, startup and research entry points share
+`EconomicOpportunityQuote`, `InvestmentCandidatePlan` and
+`InvestmentRequestContext`; they are not parallel economic models. Public
+economy restore follows `begin -> feed -> end`, and begin prepares candidate
+scratch through the native persistence module.
+
 Status: E9f completed. Storage, fiscal, building, household-market, domestic-trade,
 persistence, bounded domain-query, catalog, profile, configuration, committed
 event/report, epoch-lifecycle, publish/commit, result-container, read-only

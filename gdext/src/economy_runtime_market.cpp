@@ -1606,13 +1606,101 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                 return value.owner_slot < owner_slot;
             });
         while (entry != _owner_retained_outputs.end() && entry->owner_slot == slot) {
-            result.retained_output_discarded = saturating_add(
-                result.retained_output_discarded, entry->quantity, sat);
-            if (entry->quantity > 0 && entry->building_group >= 0 &&
-                entry->building_group < static_cast<int32_t>(building_count())) {
-                buildings_store().last_discarded[entry->building_group] = saturating_add(
-                    buildings_store().last_discarded[entry->building_group],
-                    entry->quantity, sat);
+            // Any owner-plan quantity left after actual household use is the
+            // final remainder of the same production chain.  Settle it through
+            // producer support immediately; do not create a second inventory
+            // path or defer the producer receipt to the next cycle.
+            bool supported_remainder = false;
+            if (entry->quantity > 0 && entry->owner_slot >= 0 &&
+                entry->owner_slot < static_cast<int32_t>(population_store().active.size())) {
+                const int32_t page = entry->owner_slot / COHORT_PAGE_SIZE;
+                if (page >= 0 && page < static_cast<int32_t>(population_store().page_cell.size())) {
+                    const int32_t cell = population_store().page_cell[page];
+                    if (cell >= 0 && cell < static_cast<int32_t>(market_store().cell_to_market.size())) {
+                        const int32_t market = market_store().cell_to_market[cell];
+                        if (market >= 0 && market < market_store().market_count &&
+                            entry->good_id >= 0 && entry->good_id < market_store().good_count) {
+                            const int64_t issue_value =
+                                _good_monetary_issue_values[entry->good_id];
+                            const int64_t market_price = market_store().price[
+                                market_store().index(market, entry->good_id)];
+                            const int64_t support_unit_value = issue_value > 0
+                                ? issue_value
+                                : mul_div_sat(market_price, Q16_ONE, 5, sat);
+                            const int64_t support_paid = mul_div_sat(
+                                entry->quantity, support_unit_value, GOODS_SCALE, sat);
+                            const int64_t stock_index = market_store().index(
+                                market, entry->good_id);
+                            audit_touch_market_lane(static_cast<size_t>(stock_index));
+                            market_store().stock[stock_index] = saturating_add(
+                                market_store().stock[stock_index], entry->quantity, sat);
+                            touch_accounting_slot(entry->owner_slot);
+                            population_store().funds[entry->owner_slot] = saturating_add(
+                                population_store().funds[entry->owner_slot],
+                                support_paid, sat);
+                            population_store().epoch_income[entry->owner_slot] = saturating_add(
+                                population_store().epoch_income[entry->owner_slot],
+                                support_paid, sat);
+                            trace_record_cashflow(cell,
+                                population_store().handle_for_slot(entry->owner_slot),
+                                CASHFLOW_PRODUCER_SUPPORT, support_paid, 0);
+                            if (entry->building_group >= 0 &&
+                                entry->building_group < static_cast<int32_t>(building_count())) {
+                                buildings_store().last_producer_support_receipt[
+                                    entry->building_group] = saturating_add(
+                                    buildings_store().last_producer_support_receipt[
+                                        entry->building_group], support_paid, sat);
+                                if (issue_value > 0)
+                                    buildings_store().last_bullion_mint_receipt[
+                                        entry->building_group] = saturating_add(
+                                        buildings_store().last_bullion_mint_receipt[
+                                            entry->building_group], support_paid, sat);
+                            }
+                            _production_output_supported = saturating_add(
+                                _production_output_supported, entry->quantity, sat);
+                            _production_output_stock = saturating_add(
+                                _production_output_stock, entry->quantity, sat);
+                            _producer_support_money_issued = saturating_add(
+                                _producer_support_money_issued, support_paid, sat);
+                            _explicit_money_mint = saturating_add(
+                                _explicit_money_mint, support_paid, sat);
+                            _producer_revenue = saturating_add(
+                                _producer_revenue, support_paid, sat);
+                            if (issue_value > 0) {
+                                _bullion_money_issued = saturating_add(
+                                    _bullion_money_issued, support_paid, sat);
+                                _bullion_stock_consumed = saturating_add(
+                                    _bullion_stock_consumed, entry->quantity, sat);
+                                market_store().stock[stock_index] = saturating_sub(
+                                    market_store().stock[stock_index], entry->quantity, sat);
+                                if (_good_ids[entry->good_id] == "gold") {
+                                    _gold_accepted = saturating_add(
+                                        _gold_accepted, entry->quantity, sat);
+                                    _gold_money_issued = saturating_add(
+                                        _gold_money_issued, support_paid, sat);
+                                } else {
+                                    _silver_accepted = saturating_add(
+                                        _silver_accepted, entry->quantity, sat);
+                                    _silver_money_issued = saturating_add(
+                                        _silver_money_issued, support_paid, sat);
+                                }
+                            }
+                            supported_remainder = true;
+                        }
+                    }
+                }
+            }
+            if (!supported_remainder) {
+                // Keep the existing safety fallback for malformed/stale owner
+                // handles so invalid records cannot leave goods unaccounted for.
+                result.retained_output_discarded = saturating_add(
+                    result.retained_output_discarded, entry->quantity, sat);
+                if (entry->quantity > 0 && entry->building_group >= 0 &&
+                    entry->building_group < static_cast<int32_t>(building_count())) {
+                    buildings_store().last_discarded[entry->building_group] = saturating_add(
+                        buildings_store().last_discarded[entry->building_group],
+                        entry->quantity, sat);
+                }
             }
             entry->quantity = 0;
             ++entry;
@@ -2131,6 +2219,11 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             population_changed = true;
             remaining_market_population -= deaths;
             result.deaths = saturating_add(result.deaths, deaths, sat);
+            if (birth_cell >= 0 && birth_cell < _cell_count &&
+                birth_cell < static_cast<int32_t>(_cell_deaths.size()))
+                _cell_deaths[static_cast<size_t>(birth_cell)] =
+                    saturating_add(_cell_deaths[static_cast<size_t>(birth_cell)],
+                        deaths, sat);
             if (population_store().population[slot] == 0) {
                 result.structural_commands.push_back({
                     0, slot, cell, static_cast<int32_t>(signature_id), 0, 0, _epoch_id});
@@ -2155,6 +2248,11 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             return false;
         }
         result.births = saturating_add(result.births, births, sat);
+        if (birth_cell >= 0 && birth_cell < _cell_count &&
+            birth_cell < static_cast<int32_t>(_cell_births.size()))
+            _cell_births[static_cast<size_t>(birth_cell)] =
+                saturating_add(_cell_births[static_cast<size_t>(birth_cell)],
+                    births, sat);
         result.structural_commands.push_back({
             STRUCTURAL_BIRTH, -1, birth_cell, unemployed_signature,
             births, 0, _epoch_id});
@@ -2305,17 +2403,9 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
             result.trade_active_goods.push_back(good);
         }
     }
-    // cycle_flow is local and non-storable. It remains available through the
-    // household settlement above, so only the genuine post-settlement remainder
-    // is discarded and never appears in closing stock or the next tick.
-    for (int32_t good : _cycle_flow_good_ids) {
-        const int64_t idx = market_store().index(market, good);
-        const int64_t discarded = std::max<int64_t>(0, market_store().stock[idx]);
-        audit_touch_market_lane(static_cast<size_t>(idx));
-        market_store().stock[idx] = 0;
-        result.cycle_flow_discarded = saturating_add(
-            result.cycle_flow_discarded, discarded, sat);
-    }
+    // Every produced good follows the same local chain and remains in stock
+    // until household use, merchant purchase, or producer support settles it.
+    // There is no cycle-flow discard sink in the unified economy rule.
     result.mutation_hash = trace_hash_mix(result.mutation_hash,
                                           static_cast<uint64_t>(result.revenue));
     result.mutation_hash = trace_hash_mix(result.mutation_hash,

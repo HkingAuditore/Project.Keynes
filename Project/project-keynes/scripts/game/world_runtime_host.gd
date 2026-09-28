@@ -1248,6 +1248,29 @@ func _service_effect_worker_intents_if_authoritative() -> void:
 		}
 		if ext.has_method("submit_effect_worker_ack"):
 			ext.submit_effect_worker_ack(ack)
+	# Economy-owned family expeditions enqueue their CLAIM/SETTLE transaction
+	# onto the legacy EffectRuntime while the Effect domain itself is worker
+	# authoritative. The worker intent queue above does not contain these
+	# program_id=-1 adapter transactions, so they must be pumped from the main
+	# thread. Keep the order explicit: Country CLAIM -> Country ACK -> Economy
+	# SETTLE -> Economy ACK. The native adapters are idempotent and retain
+	# incomplete bindings until the worker publishes their terminal receipts.
+	if ext.has_method("get_effect_native_adapter_report"):
+		var adapter_report: Dictionary = ext.get_effect_native_adapter_report()
+		if bool(adapter_report.get("idle", true)):
+			return
+	if ext.has_method("dispatch_effect_native_country"):
+		ext.dispatch_effect_native_country()
+	if ext.has_method("ack_effect_native_country"):
+		ext.ack_effect_native_country()
+	# Drain only non-mixed orphaned Country bindings. The native helper keeps
+	# CLAIM+SETTLE transactions pending until the claim is truly acknowledged.
+	if ext.has_method("settle_orphaned_effect_native_country_acks"):
+		ext.settle_orphaned_effect_native_country_acks()
+	if ext.has_method("dispatch_effect_native_economy"):
+		ext.dispatch_effect_native_economy()
+	if ext.has_method("ack_effect_native_economy"):
+		ext.ack_effect_native_economy()
 
 
 ## G8 ACTIVE Ideology write-back. Non-blocking: drops intermediate generations.

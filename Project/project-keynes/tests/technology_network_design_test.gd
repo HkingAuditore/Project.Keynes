@@ -298,13 +298,13 @@ func _init() -> void:
 	stone_buildings.sort()
 	for gathering_building in ["wild_wheat_stand", "wild_maize_stand",
 			"wild_rice_marsh", "wild_tuber_patch", "reed_cutting_camp",
-			"turf_cutting_ground", "earth_digging_pit"]:
+			"turf_cutting_ground", "earth_digging_pit", "pastoral_camp"]:
 		assert(stone_buildings.has(gathering_building), gathering_building)
 	var agrarian_buildings: Array = era_building_ids.get("agrarian", [])
 	for farming_building in ["rainfed_wheat_plot", "rainfed_maize_field",
 			"upland_rice_plot", "wetland_rice_garden", "maize_garden",
 			"highland_tuber_plot", "cotton_garden", "flax_collector",
-			"spice_shade_garden", "pastoral_camp", "creamery"]:
+			"spice_shade_garden", "creamery"]:
 		assert(agrarian_buildings.has(farming_building), farming_building)
 	for collapsed_id in ["tech.method.wild_wheat_stand",
 			"tech.method.reed_cutting_camp", "tech.method.turf_cutting_ground",

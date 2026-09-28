@@ -1,5 +1,13 @@
 # Market V2 / Price V6 定点数、需求曲线与守恒账本
 
+## 当前实现覆盖说明（2026-09）
+
+本文较早章节中的 cell-level bullion shared quota、冻结发行池和按配额削减贵金属产出属于历史设计记录。当前 native runtime 已退役该机制：贵金属不受铸币配额限制，商人不采购贵金属，产出由 producer support 按 `monetary_issue_value` 结算并计入显式货币发行审计。旧 quota report 字段只为兼容保留并恒为零。
+
+建筑产出统一按“业主自用 -> 商人收购 -> producer support -> 真实 discard”的顺序结算。普通物资的 support 仍受月度 support issuance cap；这不是商品流转分支，而是 support 发行额度耗尽后的最后一层货币约束。
+
+投资报价统一使用 `EconomicOpportunityQuote`，投资触发原因统一封装在 `InvestmentRequestContext`。
+
 ## Price V5 库存压力与参考价值积分
 
 令 `p` 为当前价格、`a_up=max(default_price,cost_anchor_price)`、`a_down=max(1,p)`，

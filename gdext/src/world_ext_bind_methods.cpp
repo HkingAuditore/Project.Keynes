@@ -526,6 +526,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::dispatch_effect_native_country);
     ClassDB::bind_method(D_METHOD("ack_effect_native_country"),
                          &DCWorldExt::ack_effect_native_country);
+    ClassDB::bind_method(D_METHOD("settle_orphaned_effect_native_country_acks"),
+                         &DCWorldExt::settle_orphaned_effect_native_country_acks);
     ClassDB::bind_method(D_METHOD("dispatch_effect_native_economy"),
                          &DCWorldExt::dispatch_effect_native_economy);
     ClassDB::bind_method(D_METHOD("ack_effect_native_economy"),

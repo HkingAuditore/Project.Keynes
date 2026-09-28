@@ -479,16 +479,18 @@ Dictionary NativeEconomyRuntime::begin_restore() {
             String(out["reason"]).utf8().get_data());
         return out;
     }
-    // Production restore is ECP2-only. begin_restore only arms the session
-    // bookkeeping; live committed lanes stay untouched until the ECP2
-    // transaction (or explicit PKEC migrate helper) prepares a candidate
-    // scratch after a rollback backup exists.
+    // The public chunked restore API is itself an ECP2 transaction boundary.
+    // Prepare the candidate surface here so callers using the documented
+    // begin -> feed -> end sequence do not need the internal migrate helper.
+    // The caller's live state remains recoverable through the restore backup
+    // established by begin_restore_internal().
     _restore = {};
     _restore.active = true;
     _restore.scratch_prepared = false;
+    prepare_restore_candidate_scratch();
     out["ok"] = true;
     out["schema_version"] = SCHEMA_VERSION;
-    out["scratch_prepared"] = false;
+    out["scratch_prepared"] = true;
     out["requires_ecp2"] = true;
     return out;
 }

@@ -308,10 +308,10 @@ void NativeEconomyRuntime::initialize_building_role_span(
     group.last_input_selection_begin = span.input_begin;
     for (int32_t role_index = 0; role_index < type.employee_count; ++role_index) {
         const int32_t lane = span.employee_begin + role_index;
-        const JobRole &role = _building_employee_roles[
-            type.employee_begin + role_index];
         _building_employee_filled[lane] = 0;
-        _building_role_contract_wage[lane] = role.reference_wage_per_day;
+        // Wage lanes start empty and are quoted by prepare_cell_wages from
+        // living-cost and market signals.  Never seed them from content wages.
+        _building_role_contract_wage[lane] = 0;
         _building_role_base_living_cost[lane] = 0;
         _building_role_living_cost[lane] = 0;
         _building_role_local_average_wage[lane] = 0;

@@ -563,6 +563,7 @@ public:
     godot::Dictionary ack_effect_native_modifier();
     godot::Dictionary dispatch_effect_native_country();
     godot::Dictionary ack_effect_native_country();
+    godot::Dictionary settle_orphaned_effect_native_country_acks();
     godot::Dictionary dispatch_effect_native_economy();
     godot::Dictionary ack_effect_native_economy();
     struct EffectGameplayCommand {

@@ -281,6 +281,13 @@ the ordering is not merely a priority convention: Modifier is the safe commit
 boundary for native Effect commands. `EffectFacade.dispatch_transactions()` is
 still called for unsupported/custom commands only.
 
+When the full runtime graph is worker-authoritative, the main thread still
+services the two native adapters from `WorldRuntimeHost` after polling worker
+intents. Economy family colonization uses a `program_id=-1` transaction that
+is not a worker Effect intent: the pump keeps the ordering Country CLAIM,
+Country ACK, Economy SETTLE, then Economy ACK. The adapters are idempotent and
+retain incomplete bindings until the worker publishes terminal receipts.
+
 `FAMILY_COMMIT` does not evaluate effect programs. It only reconciles sparse source bindings,
 publishes frozen metric revisions, and freezes family behavior-factor CSR from the same metric
 snapshot; priority 85 performs evaluation on its next eligible scheduler

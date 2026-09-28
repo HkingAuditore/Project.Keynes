@@ -1238,7 +1238,9 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
             employee_profession_ids.push_back(role.profession_id);
             const int32_t role_index = group.employee_fill_begin + r;
             employee_wage_policies.push_back(role.wage_policy);
-            employee_reference_wages.push_back(role.reference_wage_per_day);
+            // Legacy query field retained for schema compatibility; fixed
+            // reference wages are no longer part of the native economy.
+            employee_reference_wages.push_back(0);
             const int64_t contract = std::max<int64_t>(
                 0, _building_role_contract_wage[role_index]);
             employee_contract_wages.push_back(contract);

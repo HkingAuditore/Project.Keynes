@@ -9,6 +9,6 @@ display_name = "陶器"
 semantic_tags = PackedStringArray()
 category_id = &"pottery"
 substitution_category_ids = PackedStringArray("pottery")
-technology_tags = PackedStringArray("tech.hand_pottery", "tech.kiln_firing", "tech.pottery")
+technology_tags = PackedStringArray("tech.hand_pottery", "tech.kiln_firing", "tech.guild_organization")
 default_price = 11000
 reference_max_price = 550000

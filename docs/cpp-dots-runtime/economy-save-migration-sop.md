@@ -1,5 +1,11 @@
 # 经济存档、catalog migration 与内容扩展 SOP
 
+## 当前存档语义覆盖说明（2026-09）
+
+当前 writer 不再使用 bullion quota 作为经济状态。历史章节中关于 cell-level monetary shared quota、冻结发行上限、配额消耗和超额贵金属无回执的描述仅用于解释旧版本迁移；现行运行时将这些 quota report 字段置零，贵金属 producer support 按面值结算。
+
+公开 PKEC 恢复必须遵循 `begin_economy_restore() -> feed_economy_restore_chunk() -> end_economy_restore()`。`begin_economy_restore()` 已负责准备候选 scratch；调用者不需要内部 migrate helper。
+
 ## ECP2（Economy full-authority section，P0–E10 / M0–M4 scaffold）
 
 `encode_ecp2` / `decode_ecp2`（`runtime_economy_ecp2.{h,cpp}`）使用 marker
@@ -170,7 +176,7 @@ PKEC v47 在建筑业务状态尾部追加九个 `i64`：实际市场回执、�
 建筑角色 payload 的顺序不变，旧 reader 不会误读角色列。所有新增值必须非负；负税仍以独立
 补贴字段保存，不能伪装成收入。
 
-铸币收入不再由每个矿组看到完整发行上限。财政 reserve 后，经济 epoch 按可支配 cohort/国库
+（历史 v47 设计，当前版本不再执行）铸币收入不再由每个矿组看到完整发行上限。财政 reserve 后，经济 epoch 按可支配 cohort/国库
 现金、冻结发行上限和人口/现金权重以最大余数法建立 cell-level monetary shared 配额；
 fiscal/trade/expedition escrow 不进入发行基数。生产按配额消耗，投资预测只读取不消耗，且以既有、
 在建和有界绿地候选的共同份额估值，超出配额的矿产没有货币回执。科研需求在

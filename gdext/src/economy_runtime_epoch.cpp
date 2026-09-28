@@ -485,6 +485,10 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _consumed_goods = 0;
     _births = 0;
     _deaths = 0;
+    _cell_births.assign(static_cast<size_t>(std::max(0, _cell_count)), 0);
+    _cell_deaths.assign(static_cast<size_t>(std::max(0, _cell_count)), 0);
+    _cell_moved_in.assign(static_cast<size_t>(std::max(0, _cell_count)), 0);
+    _cell_moved_out.assign(static_cast<size_t>(std::max(0, _cell_count)), 0);
     _saturation_count = 0;
     _structural_touched_cells.clear();
     _population_changed_cells.clear();

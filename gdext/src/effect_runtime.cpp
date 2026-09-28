@@ -5792,6 +5792,18 @@ Dictionary EffectRuntime::ack_native_gameplay(DCWorldExt *world_ext) {
     return out;
 }
 
+bool EffectRuntime::has_pending_family_colonization_transactions() const {
+    for (const Transaction &transaction : _transactions) {
+        if (transaction.program_id != -1 || transaction.command_count == 0)
+            continue;
+        if (transaction.status == ACKED || transaction.status == REJECTED ||
+            transaction.status == RESYNC_REQUIRED)
+            continue;
+        return true;
+    }
+    return false;
+}
+
 bool EffectRuntime::should_run(int64_t day_index) const {
     if (!_configured) return false;
     if (_run_day == day_index &&

@@ -335,6 +335,11 @@ public:
     godot::Dictionary ack_native_economy(NativeEconomyRuntime *economy_runtime);
     godot::Dictionary dispatch_native_gameplay(DCWorldExt *world_ext);
     godot::Dictionary ack_native_gameplay(DCWorldExt *world_ext);
+    // Worker-authoritative Effect still needs a main-thread pump for the
+    // built-in family colonization transaction.  A freshly created transaction
+    // has not reached an adapter binding yet, so expose it to the wake-up
+    // predicate instead of reporting the adapters as idle.
+    bool has_pending_family_colonization_transactions() const;
     bool should_run(int64_t day_index) const;
     uint64_t catalog_hash() const { return _catalog_hash; }
     // Mutable peer-domain watermark.  This is deliberately distinct from the

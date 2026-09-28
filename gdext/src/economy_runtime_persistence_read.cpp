@@ -1212,9 +1212,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                     return false;
                 }
                 _building_employee_filled.push_back(value);
-                const JobRole &role = _building_employee_roles[
-                    _building_types[group.type_id].employee_begin + r];
-                int64_t contract = role.reference_wage_per_day;
+                int64_t contract = 0;
                 int64_t base_living = 0;
                 int64_t role_living = 0;
                 int64_t local_average = 0;

@@ -1342,14 +1342,6 @@ bool NativeEconomyRuntime::run_building_production_cell(
             allocate(candidate, candidate.desired_cost);
         }
     }
-    int64_t cell_opening_cash = 0;
-    population_store().for_each_in_cell(cell, [&](int32_t slot) {
-        cell_opening_cash = saturating_add(cell_opening_cash,
-            std::max<int64_t>(0, population_store().funds[slot]), _saturation_count);
-    });
-    int64_t producer_support_remaining = mul_div_sat(mul_div_sat(
-        cell_opening_cash, _producer_support_monthly_cap_q16, Q16_ONE,
-        _saturation_count), std::max(1, _epoch_days), 30, _saturation_count);
     auto process_phase = [&](bool cycle_flow_phase) -> bool {
         offers.clear();
         for (int32_t g = begin; g < end; ++g) {
@@ -1928,7 +1920,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 retention_slot_stamp[offer.owner_slot] == retention_generation) {
                 const size_t owner = static_cast<size_t>(
                     retention_owner_by_slot[offer.owner_slot]);
-                if (_survival_food_good_mask[offer.good] != 0) {
+            if (_survival_food_good_mask[offer.good] != 0) {
                     // All survival-food outputs feed the same aggregate calorie
                     // pool. A staple output must not suppress retention of fish,
                     // game, protein, or produce from the same owner.
@@ -1943,6 +1935,17 @@ bool NativeEconomyRuntime::run_building_production_cell(
                     retention_clothing_used[owner] = saturating_add(
                         retention_clothing_used[owner], offer.retained,
                         _saturation_count);
+            } else {
+                // All other goods use the same owner consumption plan that
+                // was compiled above.  Do not silently bypass it merely
+                // because the output is not classified as food or clothing.
+                const int32_t lane = retention_lane(owner, offer.good);
+                if (lane >= 0) {
+                    offer.retained = std::min<int64_t>(offer.qty, std::max<int64_t>(
+                        0, retention_targets[lane] - retention_used[lane]));
+                    retention_used[lane] = saturating_add(
+                        retention_used[lane], offer.retained, _saturation_count);
+                }
                 }
             }
             offer.sellable = offer.qty - offer.retained;
@@ -1957,7 +1960,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 _owner_retained_outputs.push_back(
                     {offer.owner_slot, offer.good, offer.group, offer.retained});
             }
-            if (_good_monetary_issue_values[offer.good] <= 0 && offer.sellable > 0) {
+            if (offer.sellable > 0) {
                 sellable_by_good[offer.good] = saturating_add(
                     sellable_by_good[offer.good], offer.sellable, _saturation_count);
                 if (offer.good != last_touched) {
@@ -1978,6 +1981,19 @@ bool NativeEconomyRuntime::run_building_production_cell(
         }
         int64_t total_purchase_value = 0;
         for (int32_t good : touched_goods) {
+            const int64_t monetary_issue_value = _good_monetary_issue_values[good];
+            if (monetary_issue_value > 0) {
+                // Bullion never competes for merchant inventory cash.  Its
+                // entire sellable remainder is settled by producer support,
+                // which mints the catalogued face value below.
+                quota_by_good[good] = 0;
+                purchase_value_by_good[good] = 0;
+                budget_by_good[good] = 0;
+                weight_by_good[good] = 0;
+                procurement_outlay_price_by_good[good] = 1;
+                buy_factor_by_good[good] = 0;
+                continue;
+            }
             const int32_t signal = market_signal_index(cell, good);
             const int64_t realized = signal >= 0
                 ? _market_signals.realized_withdrawal_ema[signal] : 0;
@@ -2214,21 +2230,20 @@ bool NativeEconomyRuntime::run_building_production_cell(
             // discard while the cell still has support issuance budget.
             const int64_t remaining_sellable = std::max<int64_t>(
                 0, sellable_by_good[good] - merchant_total);
-            int64_t support_total = remaining_sellable;
-            if (producer_support_remaining <= 0) {
-                support_total = 0;
-            } else {
-                support_total = std::min<int64_t>(support_total, mul_div_sat(
-                    producer_support_remaining,
-                    GOODS_SCALE * PRODUCER_SUPPORT_PRICE_DENOMINATOR,
-                    std::max<int64_t>(1, market_store().price[market_store().index(market, good)]),
-                    _saturation_count));
-            }
+            // Producer support is the final buyer in the local chain.  It
+            // accepts every unit left after merchant procurement; cash is an
+            // accounting settlement and must not turn a produced good into
+            // an unowned remainder.
+            const int64_t support_total = remaining_sellable;
+            const int64_t monetary_issue_value = _good_monetary_issue_values[good];
+            const int64_t support_unit_value = monetary_issue_value > 0
+                ? monetary_issue_value
+                : mul_div_sat(market_store().price[market_store().index(market, good)],
+                    Q16_ONE, PRODUCER_SUPPORT_PRICE_DENOMINATOR,
+                    _saturation_count);
             const int64_t total_support_paid = support_total > 0
                 ? std::max<int64_t>(1, mul_div_sat(support_total,
-                    market_store().price[market_store().index(market, good)],
-                    GOODS_SCALE * PRODUCER_SUPPORT_PRICE_DENOMINATOR,
-                    _saturation_count))
+                    support_unit_value, GOODS_SCALE, _saturation_count))
                 : 0;
             int64_t support_remaining = support_total;
             int64_t support_cash_remaining = total_support_paid;
@@ -2293,18 +2308,17 @@ bool NativeEconomyRuntime::run_building_production_cell(
                     support_cash_remaining = 0;
                 }
             }
-            producer_support_remaining = std::max<int64_t>(
-                0, producer_support_remaining - total_support_paid);
         }
         // Monetary outputs share one cell-level issuance pool. Allocate the
         // pool by each offer's requested mint value, using a cumulative split
         // so gold and silver compete fairly and the last offer receives any
         // fixed-point remainder. The same physical output can never claim the
-        // Monetary goods mint at face × sold. World bullion quotas used to
-        // shrink (or, in planning, inflate) receipts independently of output;
-        // income is face×output only.
+            // Monetary catalog goods do not bypass the local settlement chain.
         for (Offer &offer : offers) {
             if (offer.good < 0 || offer.good >= market_store().good_count) continue;
+            // Monetary catalog goods follow the same owner -> merchant ->
+            // producer-support path as every other good.  They are physical
+            // outputs here, not a separate minting sink.
             const int64_t issue_value = _good_monetary_issue_values[offer.good];
             if (issue_value <= 0 || offer.sellable <= 0) continue;
             offer.bullion_sold = offer.sellable;
@@ -2327,38 +2341,25 @@ bool NativeEconomyRuntime::run_building_production_cell(
             int64_t supported = offer.supported;
             int64_t support_paid = offer.support_paid;
             if (issue_value > 0) {
-                sold = std::min<int64_t>(sold, std::max<int64_t>(0,
-                    offer.bullion_sold));
-                paid = mul_div_sat(sold, issue_value, GOODS_SCALE, _saturation_count);
-                if (paid > 0)
-                    consume_bullion_quota(cell, offer.good, paid,
-                                          _saturation_count);
+                // Bullion is never a merchant purchase.  Producer support
+                // accepts the whole sellable batch and mints its face value.
+                sold = 0;
+                supported = offer.sellable;
+                support_paid = mul_div_sat(supported, issue_value, GOODS_SCALE,
+                    _saturation_count);
+                paid = 0;
                 _explicit_money_mint = saturating_add(
-                    _explicit_money_mint, paid, _saturation_count);
+                    _explicit_money_mint, support_paid, _saturation_count);
                 _bullion_money_issued = saturating_add(
-                    _bullion_money_issued, paid, _saturation_count);
+                    _bullion_money_issued, support_paid, _saturation_count);
                 if (_good_ids[offer.good] == "gold") {
-                    _gold_accepted = saturating_add(_gold_accepted, sold, _saturation_count);
+                    _gold_accepted = saturating_add(_gold_accepted, supported, _saturation_count);
                     _gold_money_issued = saturating_add(
-                        _gold_money_issued, paid, _saturation_count);
+                        _gold_money_issued, support_paid, _saturation_count);
                 } else {
-                    _silver_accepted = saturating_add(_silver_accepted, sold, _saturation_count);
+                    _silver_accepted = saturating_add(_silver_accepted, supported, _saturation_count);
                     _silver_money_issued = saturating_add(
-                        _silver_money_issued, paid, _saturation_count);
-                }
-                // Bullion mint is the primary sink for monetary goods (gold/silver):
-                // only the quota-backed portion is absorbed by the money system.
-                // Feed this back into the withdrawal signal so the utilization planner
-                // (see prepare_building_economic_plan inventory-absorption path) does
-                // not treat mint-cleared bullion as unsellable inventory and throttle
-                // production to the probe floor. Without this, demand_ema stays 0,
-                // target inventory collapses to ~0, stock >> target, and util decays.
-                const int32_t bullion_signal = market_signal_index(cell, offer.good);
-                if (bullion_signal >= 0 && bullion_signal < static_cast<int32_t>(
-                        _epoch_nonhousehold_withdrawals.size())) {
-                    _epoch_nonhousehold_withdrawals[bullion_signal] = saturating_add(
-                        _epoch_nonhousehold_withdrawals[bullion_signal], sold,
-                        _saturation_count);
+                        _silver_money_issued, support_paid, _saturation_count);
                 }
             } else {
                 sold = offer.merchant_sold;
@@ -2398,16 +2399,17 @@ bool NativeEconomyRuntime::run_building_production_cell(
                             buy_factor_by_good[offer.good],
                             _saturation_count),
                         _saturation_count);
-                if (supported > 0) {
+            }
+            if (supported > 0) {
+                if (issue_value <= 0)
                     _explicit_money_mint = saturating_add(
                         _explicit_money_mint, support_paid, _saturation_count);
-                    _producer_support_money_issued = saturating_add(
-                        _producer_support_money_issued, support_paid,
-                        _saturation_count);
-                    _production_output_supported = saturating_add(
-                        _production_output_supported, supported,
-                        _saturation_count);
-                }
+                _producer_support_money_issued = saturating_add(
+                    _producer_support_money_issued, support_paid,
+                    _saturation_count);
+                _production_output_supported = saturating_add(
+                    _production_output_supported, supported,
+                    _saturation_count);
             }
             int64_t business_tax = 0;
             // Positive business tax applies to every realized producer receipt,
@@ -2437,7 +2439,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 producer_after_business_tax, support_paid, _saturation_count);
             if (issue_value > 0)
                 group.last_bullion_mint_receipt = saturating_add(
-                    group.last_bullion_mint_receipt, paid, _saturation_count);
+                    group.last_bullion_mint_receipt, support_paid, _saturation_count);
             else
                 group.last_market_receipt = saturating_add(
                     group.last_market_receipt, paid, _saturation_count);
@@ -2504,10 +2506,10 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 // it as unsellable surplus, and throttles production to the probe
                 // floor -> owner/employee targets collapse -> mines shed workers.
                 market_store().stock[offer_stock_index] = saturating_sub(
-                    market_store().stock[offer_stock_index], sold,
+                    market_store().stock[offer_stock_index], supported,
                     _saturation_count);
                 _bullion_stock_consumed = saturating_add(
-                    _bullion_stock_consumed, sold, _saturation_count);
+                    _bullion_stock_consumed, supported, _saturation_count);
             }
             group.last_sold = saturating_add(
                 group.last_sold, accepted, _saturation_count);
@@ -2522,23 +2524,18 @@ bool NativeEconomyRuntime::run_building_production_cell(
                     saturating_add(
                         _epoch_producer_merchant_sold_current[producer_signal],
                         merchant_sold, _saturation_count);
-                _epoch_producer_discarded_current[producer_signal] =
-                    saturating_add(
-                        _epoch_producer_discarded_current[producer_signal],
-                        unsold, _saturation_count);
+                // Unsold sellable output is not destroyed.  It remains local
+                // inventory and can be purchased or producer-supported by the
+                // next settlement pass.
             }
-            if (unsold > 0) {
-                group.last_discarded = saturating_add(
-                    group.last_discarded, unsold, _saturation_count);
-            }
+            if (unsold > 0)
+                market_store().stock[offer_stock_index] = saturating_add(
+                    market_store().stock[offer_stock_index], unsold,
+                    _saturation_count);
             group.last_revenue = saturating_add(
                 group.last_revenue, total_paid, _saturation_count);
             _production_output_stock = saturating_add(
-                _production_output_stock, accepted, _saturation_count);
-            if (unsold > 0) {
-                _production_output_discarded = saturating_add(
-                    _production_output_discarded, unsold, _saturation_count);
-            }
+                _production_output_stock, offer.sellable, _saturation_count);
             _producer_revenue = saturating_add(
                 _producer_revenue, total_paid, _saturation_count);
             if (_good_storage_modes[offer.good] == 1) {
@@ -3096,7 +3093,6 @@ bool NativeEconomyRuntime::run_building_production_cell(
             sale.type_id >= static_cast<int32_t>(_building_types.size()) ||
             sale.group < 0 ||
             sale.group >= static_cast<int32_t>(building_count())) continue;
-        if (_good_monetary_issue_values[sale.good] > 0) continue;
         const auto sale_group = building_at(static_cast<size_t>(sale.group));
         if (sale_group.operating_state == 1) continue;
         const int32_t output_signal = market_signal_index(cell, sale.good);
@@ -3155,7 +3151,6 @@ bool NativeEconomyRuntime::run_building_production_cell(
             group.count, std::max(1, _epoch_days), _saturation_count);
         for (int32_t i = 0; i < type.output_count; ++i) {
             const GoodAmount &item = _building_outputs[type.output_begin + i];
-            if (_good_monetary_issue_values[item.good_id] > 0) continue;
             const int32_t output_signal = market_signal_index(cell, item.good_id);
             if (output_signal < cell_signal_begin ||
                 output_signal >= cell_signal_end) continue;
