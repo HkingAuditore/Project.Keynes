@@ -1,0 +1,5 @@
+﻿technology_content_binding_audit_test exit=0
+technology_unlock_closure_audit_test exit=0
+technology_industry_chain_balance_test exit=1
+crop_technology_parity_test exit=1
+DONE

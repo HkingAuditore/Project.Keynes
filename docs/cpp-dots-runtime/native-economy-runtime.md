@@ -1,5 +1,15 @@
 # 原生阶层与本地市场运行时（Market V2 / Price V6）
 
+## 当前经济闭环契约（2026-09）
+
+以下规则覆盖本文中较早的铸币配额、投资分路和固定工资描述；旧段落保留用于迁移历史，不能作为当前运行时行为依据。
+
+- 所有建筑产出统一走：业主按消费计划自用，剩余交给商人收购，商人未接走的可存余量进入 producer support，超过当前 support issuance cap 的部分才是真实 discard。贵金属不走商人现金采购，直接由 producer support 按 `monetary_issue_value` 产生货币。
+- 贵金属铸币配额已经退役。`bullion_quota_initial`、`bullion_quota_remaining` 和 `bullion_quota_remainder_units` 仅为兼容诊断保留并恒为零；投资预测不得以配额限制贵金属收入。
+- 工资预测不读取 `reference_wage_per_day` 作为固定工资。岗位报价由生活成本、同职业本地合同工资/已付工资 EMA、建筑盈利能力和岗位填充情况共同形成。
+- 投资、启动生产、研究建设和就业追赶共享 `EconomicOpportunityQuote` 与 `InvestmentCandidatePlan`。不同入口只能改变 `InvestmentRequestContext`，不得重新计算另一套利润或回本期。
+- 公开经济恢复流程是 `begin -> feed -> end`；`begin_economy_restore()` 会准备 candidate scratch。
+
 ## 2026-09-22 Country asset backpressure 与 fatal 取证
 
 ### 唯一的 pending reason 集合
@@ -299,7 +309,7 @@ capacity 执行，但就业、转职和投资使用一次性的建筑级 opportu
 总收入。绿地候选才使用结构化配方、冻结价格、财政支持比例和 bounded prior，并在
 首栋/首个职业上受数量上限约束。金银矿共享 epoch 铸币配额：财政 reserve 后只以可支配的 cohort
 现金和国库现金计算发行基数，排除 fiscal/trade/expedition escrow；同格已装/在建铸币单位和至多四个
-可执行绿地候选共同分摊该池，避免 gold/silver 各自预占全额。科研采购同样读取财政 reserve 后的
+可执行绿地候选共同分摊该池，避免 gold/silver 各自预占全额。**以上 bullion shared pool 仅为历史设计，当前版本已退役；现行贵金属按 producer support 面值结算，quota 字段恒为零。**科研采购同样读取财政 reserve 后的
 可用现金，正税、补贴、营业税和收入税通过同一 after-tax cashflow helper 同时进入事实与预测。
 `last_observed_capacity_days_q16` 是上一结算期实际到岗能力天数的事实标记，不是计划值；已观测
 回款先除以该标记得到满能力日回款，再乘当前 `min(workforce, plan, climate)` 一次，不能把周期总额
@@ -307,7 +317,7 @@ capacity 执行，但就业、转职和投资使用一次性的建筑级 opportu
 生存下限内获得有界执行探针，且仍受资源、投入和工作资本约束。
 
 经济录制器 CSV v25 追加且不重排既有列：`summary` 记录 epoch 的
-`bullion_quota_initial`、`bullion_quota_remaining` 与
+历史版本的 `bullion_quota_initial`、`bullion_quota_remaining` 与
 `bullion_quota_remainder_units`；被选格的 `buildings` 候选行记录共享额度、每日额度、
 已装/在建单位数、候选槽数、铸币请求和预期收入。这些是派生诊断，不进入 PKEC 或 state hash。
 领域 API 与跨域 ACK 契约见[运河运行时](./canal-runtime.md)。

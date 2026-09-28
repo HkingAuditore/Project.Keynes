@@ -510,11 +510,18 @@ static func _validate_starter_construction_closure(plan_result: Dictionary,
 		for output_good in profile.output_good_ids:
 			outputs[String(output_good)] = true
 		for group in _construction_groups(profile):
+			# Category expansion (e.g. primitive_construction) may list a
+			# building's own output as one optional substitute. That is not a
+			# closed loop while any external candidate remains.
+			var has_external_candidate := false
 			for candidate in group.candidates:
-				if outputs.has(String(candidate.good_id)):
-					return _error("starter_construction_self_dependency",
-						"开局可达建筑不得使用自身产物建造：%s -> %s" % [
-							String(profile.id), String(candidate.good_id)])
+				if not outputs.has(String(candidate.good_id)):
+					has_external_candidate = true
+					break
+			if not group.candidates.is_empty() and not has_external_candidate:
+				return _error("starter_construction_self_dependency",
+					"开局可达建筑不得使用自身产物建造：%s -> %s" % [
+						String(profile.id), String(group.candidates[0].good_id)])
 	var changed := true
 	while changed:
 		changed = false

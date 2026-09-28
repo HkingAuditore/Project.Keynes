@@ -1,0 +1,56 @@
+[gd_resource type="Resource" script_class="BuildingProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"textile_mill"
+display_name = "蒸汽纺织厂"
+economic_sector_id = "manufacturing"
+semantic_tags = PackedStringArray()
+technology_tags = PackedStringArray("tech.textile_machinery")
+required_technology_tags = PackedStringArray("tech.timber_sawing", "tech.ground_stone_tools", "tech.blast_furnace", "tech.coke_smelting", "tech.surface_iron_collection", "tech.flax_retting", "tech.wild_flax_collection", "tech.rainfed_field_system", "tech.crop_domestication")
+upgrade_family_id = &"cloth_weaving"
+upgrade_tier = 2
+industry_chain_id = &"cloth_weaving"
+progression_step = 2
+maturity_rank = 4
+maturity_display_name = "组织化生产"
+progression_role = "mainline"
+predecessor_building_ids = PackedStringArray("guild_weaving_house")
+construction_good_ids = PackedStringArray("lumber", "bricks", "construction_components", "steel")
+construction_quantities = PackedInt64Array(4361850, 6542775, 6542775, 4361850)
+construction_category_ids = PackedStringArray("classical_construction", "industrial_construction", "industrial_construction", "structural_metal")
+construction_min_quality_levels = PackedInt32Array(0, 0, 0, 0)
+construction_candidate_offsets = PackedInt32Array()
+construction_candidate_good_ids = PackedStringArray()
+construction_candidate_efficiency_q16 = PackedInt32Array()
+maintenance_good_ids = PackedStringArray()
+maintenance_quantities_per_day = PackedInt64Array()
+owner_profession_id = &"industrialist"
+employee_profession_ids = PackedStringArray("industrial_worker", "artisan", "manager")
+employee_slots_per_building = PackedInt64Array(16, 6, 2)
+employee_wage_policy_ids = PackedStringArray("adaptive", "adaptive", "adaptive")
+employee_reference_wages_per_day = PackedInt64Array(15608, 16222, 17136)
+input_good_ids = PackedStringArray("flax_fiber", "coal", "tools")
+input_quantities_per_day = PackedInt64Array(5567, 8286, 2330)
+input_required_q16 = PackedInt32Array(65536, 49152, 32768)
+input_category_ids = PackedStringArray("natural_spinnable_fiber", "solid_fuel", "tools")
+input_min_quality_levels = PackedInt32Array(0, 1, 3)
+input_candidate_offsets = PackedInt32Array(0, 0, 0, 0)
+input_candidate_good_ids = PackedStringArray()
+input_candidate_efficiency_q16 = PackedInt32Array()
+output_good_ids = PackedStringArray("cloth")
+output_quantities_per_day = PackedInt64Array(176042)
+output_cost_shares_q16 = PackedInt32Array()
+resource_ids = PackedStringArray()
+resource_quantities_per_day = PackedInt64Array()
+resource_interaction_modes = PackedStringArray()
+resource_access_modes = PackedStringArray()
+resource_generation_ids = PackedStringArray()
+resource_generation_quantities_per_day = PackedInt64Array()
+condition_opcodes = PackedInt32Array()
+condition_signals = PackedInt32Array()
+condition_compares = PackedInt32Array()
+condition_reference_ids = PackedStringArray()
+condition_values = PackedInt64Array()

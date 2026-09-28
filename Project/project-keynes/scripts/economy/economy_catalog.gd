@@ -1476,7 +1476,10 @@ static func _compile_building_columns(profession_index: Dictionary,
 				return {"ok": false, "reason": "invalid building employee role: %s" % stable_id}
 			employee_professions.append(int(profession_index[profession_id]))
 			employee_slot_counts.append(int(role_slots[i]))
-			employee_wage_policies.append(0 if role_policy == "none" else (1 if role_policy == "fixed" else 2))
+			# Employee wages are always discovered from the live labour market.
+			# Keep accepting legacy "fixed" content for load compatibility, but
+			# never compile it into a fixed native wage policy.
+			employee_wage_policies.append(2)
 			employee_reference_wages.append(role_reference)
 		employee_offsets.append(employee_professions.size())
 

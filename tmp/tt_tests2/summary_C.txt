@@ -1,0 +1,7 @@
+﻿technology_research_runtime_test exit=0
+technology_breakthrough_trigger_test exit=0
+technology_modifier_activation_test exit=0
+technology_workspace_smoke_test exit=0
+technology_procurement_runtime_test exit=0
+technology_pending_activation_scheduler_test exit=0
+DONE

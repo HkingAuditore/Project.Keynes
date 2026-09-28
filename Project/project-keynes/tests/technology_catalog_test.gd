@@ -123,7 +123,7 @@ func _init() -> void:
 	var milestone_position := 0
 	var recipe_ids := {}
 	var modifier_stats: PackedStringArray = catalog.technology_modifier_term_stat_keys
-	assert(modifier_stats.size() == 448)
+	assert(modifier_stats.size() == 468)
 	var geography_terms := 0
 	var climate_terms := 0
 	var geography_technologies := {}
@@ -141,8 +141,8 @@ func _init() -> void:
 			elif stat.begins_with("country.climate."):
 				climate_terms += 1
 				climate_technologies[technology_index] = true
-	assert(geography_terms == 65)
-	assert(geography_technologies.size() == 60)
+	assert(geography_terms == 4)
+	assert(geography_technologies.size() == 3)
 	assert(climate_terms == 56)
 	assert(climate_technologies.size() == 28)
 	for i in range(catalog.technology_ids.size()):

@@ -1249,8 +1249,9 @@ private:
     struct JobRole {
         int32_t profession_id = -1;
         int64_t slots_per_building = 0;
-        int32_t wage_policy = 0; // 0=none, 1=fixed, 2=adaptive.
-        int64_t reference_wage_per_day = 0;
+        // Employee wages are discovered from living-cost, market, and
+        // employer-profit signals at each planning boundary.
+        int32_t wage_policy = 2; // retained for catalog/save compatibility
     };
 
     struct GoodAmount {
@@ -1527,6 +1528,27 @@ private:
         bool survival_priority = false;
         bool monetary_quote_capped = false;
         bool feasible = false;
+        // Normalized fields shared with investment and wage planning.
+        int32_t cell = -1;
+        int32_t type_id = -1;
+        int32_t owner_signature_id = -1;
+        int64_t utilization_q16 = 0;
+        int64_t owner_use_value_per_day = 0;
+        int64_t merchant_revenue_per_day = 0;
+        int64_t producer_support_revenue_per_day = 0;
+        int64_t cash_revenue_per_day = 0;
+        int64_t economic_revenue_per_day = 0;
+        int64_t input_cost_per_day = 0;
+        int64_t wage_cost_per_day = 0;
+        int64_t maintenance_cost_per_day = 0;
+        int64_t owner_living_cost_per_day = 0;
+        int64_t after_tax_revenue_per_day = 0;
+        int64_t profit_per_day = 0;
+        int64_t affordable_wage_per_day = 0;
+        int64_t owner_slots = 0;
+        int64_t employee_slots = 0;
+        int64_t owner_jobs_filled = 0;
+        int64_t employee_jobs_filled = 0;
     };
 
     struct PendingConstruction {
@@ -1875,6 +1897,61 @@ private:
         INVESTMENT_REJECTION_NO_COST_ADVANTAGE = 18,
     };
 
+    // One quote type is shared by employment, investment and diagnostics.
+    // Keep the historical OwnerOpportunityQuote name as the storage type so
+    // existing employment callers do not create a second economic path.
+    using EconomicOpportunityQuote = OwnerOpportunityQuote;
+
+    enum InvestmentRequestReason : int32_t {
+        INVESTMENT_REQUEST_ORDINARY_EXPANSION = 0,
+        INVESTMENT_REQUEST_EMPLOYMENT_CATCHUP = 1,
+        INVESTMENT_REQUEST_STARTUP_DEMAND = 2,
+        INVESTMENT_REQUEST_RESEARCH_DEMAND = 3,
+        INVESTMENT_REQUEST_RECOVERY = 4,
+    };
+
+    struct InvestmentRequestContext {
+        int32_t reason = INVESTMENT_REQUEST_ORDINARY_EXPANSION;
+        int64_t demand_pressure = 0;
+        bool allow_credit = true;
+        bool allow_reallocation = false;
+        int64_t max_batch_count = 0;
+    };
+
+    // One proposed investment, regardless of whether it came from startup,
+    // research construction, recovery or ordinary expansion.  The plan owns
+    // the physical requirements; the quote above owns the economics.
+    struct InvestmentCandidatePlan {
+        int32_t cell = -1;
+        int32_t type_id = -1;
+        int32_t owner_signature_id = -1;
+        InvestmentRequestContext request;
+        int32_t rejection_reason = INVESTMENT_REJECTION_NONE;
+        int64_t utilization_q16 = 0;
+        int64_t construction_cost = 0;
+        int64_t required_capital = 0;
+        // Funding terms are filled after sponsor/credit discovery. They are
+        // kept on the same candidate plan consumed by allocation and commit.
+        int64_t funding_capital = 0;
+        int64_t merchant_credit = 0;
+        int64_t payback_days = 0;
+        int64_t target_profit_per_day = 0;
+        int64_t target_return_on_capital_q16 = 0;
+        int64_t planned_output_quantity = 0;
+        int64_t employee_slots = 0;
+        int64_t owner_slots = 0;
+        int64_t max_batch_count = 0;
+        int64_t allocated_count = 0;
+        int32_t sponsor = -1;
+        uint64_t sponsor_family_handle = 0;
+        bool uses_merchant_credit = false;
+        std::vector<int32_t> input_good_ids;
+        std::vector<int64_t> input_quantities;
+        std::vector<int32_t> material_good_ids;
+        std::vector<int64_t> material_quantities;
+        EconomicOpportunityQuote quote;
+    };
+
     struct InvestmentDiagnostic {
         int32_t type_id = -1;
         int32_t rejection_reason = INVESTMENT_REJECTION_NONE;
@@ -1905,6 +1982,8 @@ private:
         int32_t failed_material_group = -1;
         std::vector<int32_t> selected_material_good_ids;
         std::vector<int64_t> selected_material_quantities;
+        EconomicOpportunityQuote opportunity_quote;
+        InvestmentCandidatePlan candidate_plan;
     };
 
     // One value per `continue`/skip site on the unemployed-hiring path in
@@ -3871,6 +3950,11 @@ private:
     int64_t _consumed_goods = 0;
     int64_t _births = 0;
     int64_t _deaths = 0;
+    // Epoch-local per-cell demography attribution for recorder diagnostics.
+    std::vector<int64_t> _cell_births;
+    std::vector<int64_t> _cell_deaths;
+    std::vector<int64_t> _cell_moved_in;
+    std::vector<int64_t> _cell_moved_out;
     int64_t _saturation_count = 0;
     uint64_t _next_submit_order = 1;
 
@@ -6093,6 +6177,8 @@ private:
                                              int32_t good_id,
                                              int64_t &sat) const;
     int32_t select_startup_producer(int32_t cell, int32_t good_id) const;
+    int32_t select_startup_producer(int32_t cell, int32_t good_id,
+                                    InvestmentCandidatePlan *plan) const;
     // Cold-start ranking aid: how well the preferred producer of `good_id`
     // can cover its hard inputs from current local stock. Used when every
     // soft-input substitute is out of stock so ghost market prices alone
@@ -6101,6 +6187,31 @@ private:
     // hard-input cold-start lane that is merely empty this epoch.
     int64_t startup_producer_hard_input_cover_q16(int32_t cell, int32_t good_id,
                                                  int64_t &sat) const;
+    bool startup_candidate_better(int64_t coverage, int64_t cold_cover,
+                                  int64_t price, int32_t good_id,
+                                  int64_t best_coverage, int64_t best_cold_cover,
+                                  int64_t best_price, int32_t best_good) const;
+    bool resolve_startup_construction_material(int32_t cell, int32_t bom,
+                                               int32_t cost_factor_q16,
+                                               int32_t &good,
+                                               int64_t &physical) const;
+    void initialize_investment_candidate_plan(
+        InvestmentCandidatePlan &plan, int32_t cell, int32_t type_id,
+        int32_t owner_signature_id, int64_t utilization_q16,
+        int64_t construction_cost, int64_t required_capital,
+        int64_t payback_days, int64_t profit_per_day,
+        int64_t return_on_capital_q16, int64_t owner_slots,
+        int64_t employee_slots,
+        const EconomicOpportunityQuote &quote) const;
+    // Final shared financial normalization for every investment trigger.
+    // Startup, research, recovery and ordinary expansion may discover a
+    // candidate differently, but they all publish the same plan economics.
+    bool evaluate_investment_candidate(
+        InvestmentCandidatePlan &plan, int32_t cell, int32_t type_id,
+        int32_t owner_signature_id, int64_t utilization_q16,
+        int64_t construction_cost, int64_t required_capital,
+        int64_t owner_slots, int64_t employee_slots,
+        const EconomicOpportunityQuote &quote) const;
     int32_t select_startup_input_candidate(int32_t cell,
                                            const ProductionInput &input,
                                            int64_t &physical_daily) const;

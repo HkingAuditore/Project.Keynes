@@ -1,5 +1,11 @@
 # 税收与财政结算运行时
 
+## 当前经济运行时覆盖说明（2026-09）
+
+金银铸币配额已退役。财政 reserve 不再建立 cell-level bullion issuance pool，投资预测也不再读取配额上限；贵金属由 producer support 按 `monetary_issue_value` 产生显式货币，继续进入营业税与货币审计路径。本文后续 quota 段落属于历史税务设计记录。
+
+建筑工资与投资候选均使用动态岗位报价：生活成本、同职业市场工资 EMA、已付工资和建筑机会利润共同决定可接受工资。`reference_wage_per_day` 不是运行时固定工资来源。
+
 税收不是独立运行时。政策、国家级 Modifier 和现金国库归
 `NativeCountryRuntime`；应税事件、冻结有效税率、财政托管与结算归
 `NativeEconomyRuntime`。GDScript 只负责 stable ID 校验、命令打包和玩家界面。
@@ -89,7 +95,7 @@ policy ID 不进入存档或确定性 hash。PKEC v47 保存交易订单税转�
   目标利润率、回本期和创业者收入改善，因此高税率可以阻止税前可行但税后不可行的项目。
 - 建筑预测先读取同一冻结 epoch 的事实锚：安装组按实际 owner/role fill 的最小容量缩放，
   上期实际市场回款优先于名义配方回款；绿地候选才使用结构化价格/需求反事实。金银铸币
-  预测受 cell-level monetary shared 发行配额约束：额度在财政 reserve 后以可支配 cohort/国库
+  （历史设计）预测受 cell-level monetary shared 发行配额约束：额度在财政 reserve 后以可支配 cohort/国库
   现金计算，fiscal/trade/expedition escrow 不进入基数；同格既有、在建和有界绿地候选共同分摊，
   因而 gold/silver 不会分别把完整额度写入预期收入。科研采购需求也在财政 reserve 后计算。
   上期回款先按 `last_observed_capacity_days_q16` 归一为满能力日流量，再只应用一次当前

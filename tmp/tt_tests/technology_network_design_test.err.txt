@@ -1,0 +1,9 @@
+SCRIPT ERROR: Assertion failed: identification reveal count mismatch: tech.coal_geology
+   at: _assert_identification_reveal (res://tests/technology_network_design_test.gd:605)
+   GDScript backtrace (most recent call first):
+       [0] _assert_identification_reveal (res://tests/technology_network_design_test.gd:605)
+       [1] _init (res://tests/technology_network_design_test.gd:142)
+SCRIPT ERROR: Assertion failed: pastoral_camp
+   at: _init (res://tests/technology_network_design_test.gd:308)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/technology_network_design_test.gd:308)

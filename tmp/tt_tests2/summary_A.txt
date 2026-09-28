@@ -1,0 +1,7 @@
+﻿technology_catalog_test exit=-1
+technology_catalog_test exit=0
+technology_network_design_test exit=0
+technology_topology_audit_test exit=0
+technology_eligibility_v2_test exit=0
+modern_economy_catalog_test exit=1
+DONE

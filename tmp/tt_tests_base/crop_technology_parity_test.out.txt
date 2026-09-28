@@ -1,0 +1,516 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] native economy catalog compiles with all crop methods
+  [PASS] wheat_grain has dedicated building wheat_farm
+  [PASS] wheat_grain/wheat_farm is a collector
+  [PASS] wheat_grain/wheat_farm is agriculture
+  [PASS] wheat_grain/wheat_farm has correct climate
+  [PASS] wheat_grain/wheat_farm has correct land resources
+  [PASS] wheat_grain/wheat_farm outputs only its dedicated good
+  [PASS] wheat_grain/wheat_farm does not use generic grain/vegetables outputs
+  [PASS] wheat_grain tag binds wheat_farm
+  [PASS] wheat_grain has dedicated building tenant_rainfed_wheat_field
+  [PASS] wheat_grain/tenant_rainfed_wheat_field is a collector
+  [PASS] wheat_grain/tenant_rainfed_wheat_field is agriculture
+  [PASS] wheat_grain/tenant_rainfed_wheat_field has correct climate
+  [PASS] wheat_grain/tenant_rainfed_wheat_field has correct land resources
+  [PASS] wheat_grain/tenant_rainfed_wheat_field outputs only its dedicated good
+  [PASS] wheat_grain/tenant_rainfed_wheat_field does not use generic grain/vegetables outputs
+  [PASS] wheat_grain tag binds tenant_rainfed_wheat_field
+  [PASS] wheat_grain has dedicated building method_wheat_farm_r3
+  [PASS] wheat_grain/method_wheat_farm_r3 is a collector
+  [PASS] wheat_grain/method_wheat_farm_r3 is agriculture
+  [PASS] wheat_grain/method_wheat_farm_r3 has correct climate
+  [PASS] wheat_grain/method_wheat_farm_r3 has correct land resources
+  [PASS] wheat_grain/method_wheat_farm_r3 outputs only its dedicated good
+  [PASS] wheat_grain/method_wheat_farm_r3 does not use generic grain/vegetables outputs
+  [PASS] wheat_grain tag binds method_wheat_farm_r3
+  [PASS] wheat_grain has dedicated building method_wheat_farm_r5
+  [PASS] wheat_grain/method_wheat_farm_r5 is a collector
+  [PASS] wheat_grain/method_wheat_farm_r5 is agriculture
+  [PASS] wheat_grain/method_wheat_farm_r5 has correct climate
+  [PASS] wheat_grain/method_wheat_farm_r5 has correct land resources
+  [PASS] wheat_grain/method_wheat_farm_r5 outputs only its dedicated good
+  [PASS] wheat_grain/method_wheat_farm_r5 does not use generic grain/vegetables outputs
+  [PASS] wheat_grain tag binds method_wheat_farm_r5
+  [PASS] wheat_grain has dedicated building method_wheat_farm_r6
+  [PASS] wheat_grain/method_wheat_farm_r6 is a collector
+  [PASS] wheat_grain/method_wheat_farm_r6 is agriculture
+  [PASS] wheat_grain/method_wheat_farm_r6 has correct climate
+  [PASS] wheat_grain/method_wheat_farm_r6 has correct land resources
+  [PASS] wheat_grain/method_wheat_farm_r6 outputs only its dedicated good
+  [PASS] wheat_grain/method_wheat_farm_r6 does not use generic grain/vegetables outputs
+  [PASS] wheat_grain tag binds method_wheat_farm_r6
+  [PASS] wheat_grain has dedicated building method_wheat_farm_r8
+  [PASS] wheat_grain/method_wheat_farm_r8 is a collector
+  [PASS] wheat_grain/method_wheat_farm_r8 is agriculture
+  [PASS] wheat_grain/method_wheat_farm_r8 has correct climate
+  [PASS] wheat_grain/method_wheat_farm_r8 has correct land resources
+  [PASS] wheat_grain/method_wheat_farm_r8 outputs only its dedicated good
+  [PASS] wheat_grain/method_wheat_farm_r8 does not use generic grain/vegetables outputs
+  [PASS] wheat_grain tag binds method_wheat_farm_r8
+  [PASS] wheat_grain has dedicated building method_wheat_farm_r10
+  [PASS] wheat_grain/method_wheat_farm_r10 is a collector
+  [PASS] wheat_grain/method_wheat_farm_r10 is agriculture
+  [PASS] wheat_grain/method_wheat_farm_r10 has correct climate
+  [PASS] wheat_grain/method_wheat_farm_r10 has correct land resources
+  [PASS] wheat_grain/method_wheat_farm_r10 outputs only its dedicated good
+  [PASS] wheat_grain/method_wheat_farm_r10 does not use generic grain/vegetables outputs
+  [PASS] wheat_grain tag binds method_wheat_farm_r10
+  [PASS] rice_grain has dedicated building rice_collector
+  [PASS] rice_grain/rice_collector is a collector
+  [PASS] rice_grain/rice_collector is agriculture
+  [PASS] rice_grain/rice_collector has correct climate
+  [PASS] rice_grain/rice_collector has correct land resources
+  [PASS] rice_grain/rice_collector outputs only its dedicated good
+  [PASS] rice_grain/rice_collector does not use generic grain/vegetables outputs
+  [PASS] rice_grain tag binds rice_collector
+  [PASS] rice_grain has dedicated building tenant_paddy
+  [PASS] rice_grain/tenant_paddy is a collector
+  [PASS] rice_grain/tenant_paddy is agriculture
+  [PASS] rice_grain/tenant_paddy has correct climate
+  [PASS] rice_grain/tenant_paddy has correct land resources
+  [PASS] rice_grain/tenant_paddy outputs only its dedicated good
+  [PASS] rice_grain/tenant_paddy does not use generic grain/vegetables outputs
+  [PASS] rice_grain tag binds tenant_paddy
+  [PASS] rice_grain has dedicated building estate_paddy
+  [PASS] rice_grain/estate_paddy is a collector
+  [PASS] rice_grain/estate_paddy is agriculture
+  [PASS] rice_grain/estate_paddy has correct climate
+  [PASS] rice_grain/estate_paddy has correct land resources
+  [PASS] rice_grain/estate_paddy outputs only its dedicated good
+  [PASS] rice_grain/estate_paddy does not use generic grain/vegetables outputs
+  [PASS] rice_grain tag binds estate_paddy
+  [PASS] rice_grain has dedicated building method_rice_collector_r3
+  [PASS] rice_grain/method_rice_collector_r3 is a collector
+  [PASS] rice_grain/method_rice_collector_r3 is agriculture
+  [PASS] rice_grain/method_rice_collector_r3 has correct climate
+  [PASS] rice_grain/method_rice_collector_r3 has correct land resources
+  [PASS] rice_grain/method_rice_collector_r3 outputs only its dedicated good
+  [PASS] rice_grain/method_rice_collector_r3 does not use generic grain/vegetables outputs
+  [PASS] rice_grain tag binds method_rice_collector_r3
+  [PASS] rice_grain has dedicated building method_rice_collector_r5
+  [PASS] rice_grain/method_rice_collector_r5 is a collector
+  [PASS] rice_grain/method_rice_collector_r5 is agriculture
+  [PASS] rice_grain/method_rice_collector_r5 has correct climate
+  [PASS] rice_grain/method_rice_collector_r5 has correct land resources
+  [PASS] rice_grain/method_rice_collector_r5 outputs only its dedicated good
+  [PASS] rice_grain/method_rice_collector_r5 does not use generic grain/vegetables outputs
+  [PASS] rice_grain tag binds method_rice_collector_r5
+  [PASS] rice_grain has dedicated building method_rice_collector_r6
+  [PASS] rice_grain/method_rice_collector_r6 is a collector
+  [PASS] rice_grain/method_rice_collector_r6 is agriculture
+  [PASS] rice_grain/method_rice_collector_r6 has correct climate
+  [PASS] rice_grain/method_rice_collector_r6 has correct land resources
+  [PASS] rice_grain/method_rice_collector_r6 outputs only its dedicated good
+  [PASS] rice_grain/method_rice_collector_r6 does not use generic grain/vegetables outputs
+  [PASS] rice_grain tag binds method_rice_collector_r6
+  [PASS] rice_grain has dedicated building method_rice_collector_r8
+  [PASS] rice_grain/method_rice_collector_r8 is a collector
+  [PASS] rice_grain/method_rice_collector_r8 is agriculture
+  [PASS] rice_grain/method_rice_collector_r8 has correct climate
+  [PASS] rice_grain/method_rice_collector_r8 has correct land resources
+  [PASS] rice_grain/method_rice_collector_r8 outputs only its dedicated good
+  [PASS] rice_grain/method_rice_collector_r8 does not use generic grain/vegetables outputs
+  [PASS] rice_grain tag binds method_rice_collector_r8
+  [PASS] rice_grain has dedicated building method_rice_collector_r10
+  [PASS] rice_grain/method_rice_collector_r10 is a collector
+  [PASS] rice_grain/method_rice_collector_r10 is agriculture
+  [PASS] rice_grain/method_rice_collector_r10 has correct climate
+  [PASS] rice_grain/method_rice_collector_r10 has correct land resources
+  [PASS] rice_grain/method_rice_collector_r10 outputs only its dedicated good
+  [PASS] rice_grain/method_rice_collector_r10 does not use generic grain/vegetables outputs
+  [PASS] rice_grain tag binds method_rice_collector_r10
+  [PASS] corn_grain has dedicated building maize_garden
+  [PASS] corn_grain/maize_garden is a collector
+  [PASS] corn_grain/maize_garden is agriculture
+  [PASS] corn_grain/maize_garden has correct climate
+  [PASS] corn_grain/maize_garden has correct land resources
+  [PASS] corn_grain/maize_garden outputs only its dedicated good
+  [PASS] corn_grain/maize_garden does not use generic grain/vegetables outputs
+  [PASS] corn_grain tag binds maize_garden
+  [PASS] corn_grain has dedicated building tenant_rainfed_maize_field
+  [PASS] corn_grain/tenant_rainfed_maize_field is a collector
+  [PASS] corn_grain/tenant_rainfed_maize_field is agriculture
+  [PASS] corn_grain/tenant_rainfed_maize_field has correct climate
+  [PASS] corn_grain/tenant_rainfed_maize_field has correct land resources
+  [PASS] corn_grain/tenant_rainfed_maize_field outputs only its dedicated good
+  [PASS] corn_grain/tenant_rainfed_maize_field does not use generic grain/vegetables outputs
+  [PASS] corn_grain tag binds tenant_rainfed_maize_field
+  [PASS] corn_grain has dedicated building landed_estate
+  [PASS] corn_grain/landed_estate is a collector
+  [PASS] corn_grain/landed_estate is agriculture
+  [PASS] corn_grain/landed_estate has correct climate
+  [PASS] corn_grain/landed_estate has correct land resources
+  [PASS] corn_grain/landed_estate outputs only its dedicated good
+  [PASS] corn_grain/landed_estate does not use generic grain/vegetables outputs
+  [PASS] corn_grain tag binds landed_estate
+  [PASS] corn_grain has dedicated building method_landed_estate_r6
+  [PASS] corn_grain/method_landed_estate_r6 is a collector
+  [PASS] corn_grain/method_landed_estate_r6 is agriculture
+  [PASS] corn_grain/method_landed_estate_r6 has correct climate
+  [PASS] corn_grain/method_landed_estate_r6 has correct land resources
+  [PASS] corn_grain/method_landed_estate_r6 outputs only its dedicated good
+  [PASS] corn_grain/method_landed_estate_r6 does not use generic grain/vegetables outputs
+  [PASS] corn_grain tag binds method_landed_estate_r6
+  [PASS] corn_grain has dedicated building method_maize_farm_r8
+  [PASS] corn_grain/method_maize_farm_r8 is a collector
+  [PASS] corn_grain/method_maize_farm_r8 is agriculture
+  [PASS] corn_grain/method_maize_farm_r8 has correct climate
+  [PASS] corn_grain/method_maize_farm_r8 has correct land resources
+  [PASS] corn_grain/method_maize_farm_r8 outputs only its dedicated good
+  [PASS] corn_grain/method_maize_farm_r8 does not use generic grain/vegetables outputs
+  [PASS] corn_grain tag binds method_maize_farm_r8
+  [PASS] corn_grain has dedicated building method_maize_farm_r10
+  [PASS] corn_grain/method_maize_farm_r10 is a collector
+  [PASS] corn_grain/method_maize_farm_r10 is agriculture
+  [PASS] corn_grain/method_maize_farm_r10 has correct climate
+  [PASS] corn_grain/method_maize_farm_r10 has correct land resources
+  [PASS] corn_grain/method_maize_farm_r10 outputs only its dedicated good
+  [PASS] corn_grain/method_maize_farm_r10 does not use generic grain/vegetables outputs
+  [PASS] corn_grain tag binds method_maize_farm_r10
+  [PASS] potatoes has dedicated building highland_tuber_plot
+  [PASS] potatoes/highland_tuber_plot is a collector
+  [PASS] potatoes/highland_tuber_plot is agriculture
+  [PASS] potatoes/highland_tuber_plot has correct climate
+  [PASS] potatoes/highland_tuber_plot has correct land resources
+  [PASS] potatoes/highland_tuber_plot outputs only its dedicated good
+  [PASS] potatoes/highland_tuber_plot does not use generic grain/vegetables outputs
+  [PASS] potatoes tag binds highland_tuber_plot
+  [PASS] potatoes has dedicated building potato_collector
+  [PASS] potatoes/potato_collector is a collector
+  [PASS] potatoes/potato_collector is agriculture
+  [PASS] potatoes/potato_collector has correct climate
+  [PASS] potatoes/potato_collector has correct land resources
+  [PASS] potatoes/potato_collector outputs only its dedicated good
+  [PASS] potatoes/potato_collector does not use generic grain/vegetables outputs
+  [PASS] potatoes tag binds potato_collector
+  [PASS] potatoes has dedicated building tenant_potato_field
+  [PASS] potatoes/tenant_potato_field is a collector
+  [PASS] potatoes/tenant_potato_field is agriculture
+  [PASS] potatoes/tenant_potato_field has correct climate
+  [PASS] potatoes/tenant_potato_field has correct land resources
+  [PASS] potatoes/tenant_potato_field outputs only its dedicated good
+  [PASS] potatoes/tenant_potato_field does not use generic grain/vegetables outputs
+  [PASS] potatoes tag binds tenant_potato_field
+  [PASS] potatoes has dedicated building potato_estate
+  [PASS] potatoes/potato_estate is a collector
+  [PASS] potatoes/potato_estate is agriculture
+  [PASS] potatoes/potato_estate has correct climate
+  [PASS] potatoes/potato_estate has correct land resources
+  [PASS] potatoes/potato_estate outputs only its dedicated good
+  [PASS] potatoes/potato_estate does not use generic grain/vegetables outputs
+  [PASS] potatoes tag binds potato_estate
+  [PASS] potatoes has dedicated building method_potato_farm_r5
+  [PASS] potatoes/method_potato_farm_r5 is a collector
+  [PASS] potatoes/method_potato_farm_r5 is agriculture
+  [PASS] potatoes/method_potato_farm_r5 has correct climate
+  [PASS] potatoes/method_potato_farm_r5 has correct land resources
+  [PASS] potatoes/method_potato_farm_r5 outputs only its dedicated good
+  [PASS] potatoes/method_potato_farm_r5 does not use generic grain/vegetables outputs
+  [PASS] potatoes tag binds method_potato_farm_r5
+  [PASS] potatoes has dedicated building method_potato_collector_r6
+  [PASS] potatoes/method_potato_collector_r6 is a collector
+  [PASS] potatoes/method_potato_collector_r6 is agriculture
+  [PASS] potatoes/method_potato_collector_r6 has correct climate
+  [PASS] potatoes/method_potato_collector_r6 has correct land resources
+  [PASS] potatoes/method_potato_collector_r6 outputs only its dedicated good
+  [PASS] potatoes/method_potato_collector_r6 does not use generic grain/vegetables outputs
+  [PASS] potatoes tag binds method_potato_collector_r6
+  [PASS] potatoes has dedicated building method_potato_farm_r8
+  [PASS] potatoes/method_potato_farm_r8 is a collector
+  [PASS] potatoes/method_potato_farm_r8 is agriculture
+  [PASS] potatoes/method_potato_farm_r8 has correct climate
+  [PASS] potatoes/method_potato_farm_r8 has correct land resources
+  [PASS] potatoes/method_potato_farm_r8 outputs only its dedicated good
+  [PASS] potatoes/method_potato_farm_r8 does not use generic grain/vegetables outputs
+  [PASS] potatoes tag binds method_potato_farm_r8
+  [PASS] potatoes has dedicated building method_potato_farm_r10
+  [PASS] potatoes/method_potato_farm_r10 is a collector
+  [PASS] potatoes/method_potato_farm_r10 is agriculture
+  [PASS] potatoes/method_potato_farm_r10 has correct climate
+  [PASS] potatoes/method_potato_farm_r10 has correct land resources
+  [PASS] potatoes/method_potato_farm_r10 outputs only its dedicated good
+  [PASS] potatoes/method_potato_farm_r10 does not use generic grain/vegetables outputs
+  [PASS] potatoes tag binds method_potato_farm_r10
+  [PASS] seed_cotton has dedicated building cotton_garden
+  [PASS] seed_cotton/cotton_garden is a collector
+  [PASS] seed_cotton/cotton_garden is agriculture
+  [PASS] seed_cotton/cotton_garden has correct climate
+  [PASS] seed_cotton/cotton_garden has correct land resources
+  [PASS] seed_cotton/cotton_garden outputs only its dedicated good
+  [PASS] seed_cotton/cotton_garden does not use generic grain/vegetables outputs
+  [PASS] seed_cotton tag binds cotton_garden
+  [PASS] seed_cotton has dedicated building cotton_collector
+  [PASS] seed_cotton/cotton_collector is a collector
+  [PASS] seed_cotton/cotton_collector is agriculture
+  [PASS] seed_cotton/cotton_collector has correct climate
+  [PASS] seed_cotton/cotton_collector has correct land resources
+  [PASS] seed_cotton/cotton_collector outputs only its dedicated good
+  [PASS] seed_cotton/cotton_collector does not use generic grain/vegetables outputs
+  [PASS] seed_cotton tag binds cotton_collector
+  [PASS] seed_cotton has dedicated building method_cotton_collector_r6
+  [PASS] seed_cotton/method_cotton_collector_r6 is a collector
+  [PASS] seed_cotton/method_cotton_collector_r6 is agriculture
+  [PASS] seed_cotton/method_cotton_collector_r6 has correct climate
+  [PASS] seed_cotton/method_cotton_collector_r6 has correct land resources
+  [PASS] seed_cotton/method_cotton_collector_r6 outputs only its dedicated good
+  [PASS] seed_cotton/method_cotton_collector_r6 does not use generic grain/vegetables outputs
+  [PASS] seed_cotton tag binds method_cotton_collector_r6
+  [PASS] seed_cotton has dedicated building cotton_smallholding
+  [PASS] seed_cotton/cotton_smallholding is a collector
+  [PASS] seed_cotton/cotton_smallholding is agriculture
+  [PASS] seed_cotton/cotton_smallholding has correct climate
+  [PASS] seed_cotton/cotton_smallholding has correct land resources
+  [PASS] seed_cotton/cotton_smallholding outputs only its dedicated good
+  [PASS] seed_cotton/cotton_smallholding does not use generic grain/vegetables outputs
+  [PASS] seed_cotton tag binds cotton_smallholding
+  [PASS] seed_cotton has dedicated building method_cotton_collector_r8
+  [PASS] seed_cotton/method_cotton_collector_r8 is a collector
+  [PASS] seed_cotton/method_cotton_collector_r8 is agriculture
+  [PASS] seed_cotton/method_cotton_collector_r8 has correct climate
+  [PASS] seed_cotton/method_cotton_collector_r8 has correct land resources
+  [PASS] seed_cotton/method_cotton_collector_r8 outputs only its dedicated good
+  [PASS] seed_cotton/method_cotton_collector_r8 does not use generic grain/vegetables outputs
+  [PASS] seed_cotton tag binds method_cotton_collector_r8
+  [PASS] seed_cotton has dedicated building method_cotton_collector_r10
+  [PASS] seed_cotton/method_cotton_collector_r10 is a collector
+  [PASS] seed_cotton/method_cotton_collector_r10 is agriculture
+  [PASS] seed_cotton/method_cotton_collector_r10 has correct climate
+  [PASS] seed_cotton/method_cotton_collector_r10 has correct land resources
+  [PASS] seed_cotton/method_cotton_collector_r10 outputs only its dedicated good
+  [PASS] seed_cotton/method_cotton_collector_r10 does not use generic grain/vegetables outputs
+  [PASS] seed_cotton tag binds method_cotton_collector_r10
+  [PASS] bast_fiber has dedicated building flax_collector
+  [PASS] bast_fiber/flax_collector is a collector
+  [PASS] bast_fiber/flax_collector is agriculture
+  [PASS] bast_fiber/flax_collector has correct climate
+  [PASS] bast_fiber/flax_collector has correct land resources
+  [PASS] bast_fiber/flax_collector outputs only its dedicated good
+  [PASS] bast_fiber/flax_collector does not use generic grain/vegetables outputs
+  [PASS] bast_fiber tag binds flax_collector
+  [PASS] bast_fiber has dedicated building method_flax_collector_r3
+  [PASS] bast_fiber/method_flax_collector_r3 is a collector
+  [PASS] bast_fiber/method_flax_collector_r3 is agriculture
+  [PASS] bast_fiber/method_flax_collector_r3 has correct climate
+  [PASS] bast_fiber/method_flax_collector_r3 has correct land resources
+  [PASS] bast_fiber/method_flax_collector_r3 outputs only its dedicated good
+  [PASS] bast_fiber/method_flax_collector_r3 does not use generic grain/vegetables outputs
+  [PASS] bast_fiber tag binds method_flax_collector_r3
+  [PASS] bast_fiber has dedicated building method_flax_collector_r5
+  [PASS] bast_fiber/method_flax_collector_r5 is a collector
+  [PASS] bast_fiber/method_flax_collector_r5 is agriculture
+  [PASS] bast_fiber/method_flax_collector_r5 has correct climate
+  [PASS] bast_fiber/method_flax_collector_r5 has correct land resources
+  [PASS] bast_fiber/method_flax_collector_r5 outputs only its dedicated good
+  [PASS] bast_fiber/method_flax_collector_r5 does not use generic grain/vegetables outputs
+  [PASS] bast_fiber tag binds method_flax_collector_r5
+  [PASS] bast_fiber has dedicated building method_flax_collector_r6
+  [PASS] bast_fiber/method_flax_collector_r6 is a collector
+  [PASS] bast_fiber/method_flax_collector_r6 is agriculture
+  [PASS] bast_fiber/method_flax_collector_r6 has correct climate
+  [PASS] bast_fiber/method_flax_collector_r6 has correct land resources
+  [PASS] bast_fiber/method_flax_collector_r6 outputs only its dedicated good
+  [PASS] bast_fiber/method_flax_collector_r6 does not use generic grain/vegetables outputs
+  [PASS] bast_fiber tag binds method_flax_collector_r6
+  [PASS] bast_fiber has dedicated building method_flax_collector_r8
+  [PASS] bast_fiber/method_flax_collector_r8 is a collector
+  [PASS] bast_fiber/method_flax_collector_r8 is agriculture
+  [PASS] bast_fiber/method_flax_collector_r8 has correct climate
+  [PASS] bast_fiber/method_flax_collector_r8 has correct land resources
+  [PASS] bast_fiber/method_flax_collector_r8 outputs only its dedicated good
+  [PASS] bast_fiber/method_flax_collector_r8 does not use generic grain/vegetables outputs
+  [PASS] bast_fiber tag binds method_flax_collector_r8
+  [PASS] bast_fiber has dedicated building method_flax_collector_r10
+  [PASS] bast_fiber/method_flax_collector_r10 is a collector
+  [PASS] bast_fiber/method_flax_collector_r10 is agriculture
+  [PASS] bast_fiber/method_flax_collector_r10 has correct climate
+  [PASS] bast_fiber/method_flax_collector_r10 has correct land resources
+  [PASS] bast_fiber/method_flax_collector_r10 outputs only its dedicated good
+  [PASS] bast_fiber/method_flax_collector_r10 does not use generic grain/vegetables outputs
+  [PASS] bast_fiber tag binds method_flax_collector_r10
+  [PASS] spices has dedicated building spice_shade_garden
+  [PASS] spices/spice_shade_garden is a collector
+  [PASS] spices/spice_shade_garden is agriculture
+  [PASS] spices/spice_shade_garden has correct climate
+  [PASS] spices/spice_shade_garden has correct land resources
+  [PASS] spices/spice_shade_garden outputs only its dedicated good
+  [PASS] spices/spice_shade_garden does not use generic grain/vegetables outputs
+  [PASS] spices tag binds spice_shade_garden
+  [PASS] spices has dedicated building spice_plants_collector
+  [PASS] spices/spice_plants_collector is a collector
+  [PASS] spices/spice_plants_collector is agriculture
+  [PASS] spices/spice_plants_collector has correct climate
+  [PASS] spices/spice_plants_collector has correct land resources
+  [PASS] spices/spice_plants_collector outputs only its dedicated good
+  [PASS] spices/spice_plants_collector does not use generic grain/vegetables outputs
+  [PASS] spices tag binds spice_plants_collector
+  [PASS] spices has dedicated building spice_managed_garden
+  [PASS] spices/spice_managed_garden is a collector
+  [PASS] spices/spice_managed_garden is agriculture
+  [PASS] spices/spice_managed_garden has correct climate
+  [PASS] spices/spice_managed_garden has correct land resources
+  [PASS] spices/spice_managed_garden outputs only its dedicated good
+  [PASS] spices/spice_managed_garden does not use generic grain/vegetables outputs
+  [PASS] spices tag binds spice_managed_garden
+  [PASS] spices has dedicated building spice_commercial_plantation
+  [PASS] spices/spice_commercial_plantation is a collector
+  [PASS] spices/spice_commercial_plantation is agriculture
+  [PASS] spices/spice_commercial_plantation has correct climate
+  [PASS] spices/spice_commercial_plantation has correct land resources
+  [PASS] spices/spice_commercial_plantation outputs only its dedicated good
+  [PASS] spices/spice_commercial_plantation does not use generic grain/vegetables outputs
+  [PASS] spices tag binds spice_commercial_plantation
+  [PASS] spices has dedicated building method_spice_plants_collector_r6
+  [PASS] spices/method_spice_plants_collector_r6 is a collector
+  [PASS] spices/method_spice_plants_collector_r6 is agriculture
+  [PASS] spices/method_spice_plants_collector_r6 has correct climate
+  [PASS] spices/method_spice_plants_collector_r6 has correct land resources
+  [PASS] spices/method_spice_plants_collector_r6 outputs only its dedicated good
+  [PASS] spices/method_spice_plants_collector_r6 does not use generic grain/vegetables outputs
+  [PASS] spices tag binds method_spice_plants_collector_r6
+  [PASS] spices has dedicated building method_spice_plants_collector_r8
+  [PASS] spices/method_spice_plants_collector_r8 is a collector
+  [PASS] spices/method_spice_plants_collector_r8 is agriculture
+  [PASS] spices/method_spice_plants_collector_r8 has correct climate
+  [PASS] spices/method_spice_plants_collector_r8 has correct land resources
+  [PASS] spices/method_spice_plants_collector_r8 outputs only its dedicated good
+  [PASS] spices/method_spice_plants_collector_r8 does not use generic grain/vegetables outputs
+  [PASS] spices tag binds method_spice_plants_collector_r8
+  [PASS] spices has dedicated building method_spice_plants_collector_r10
+  [PASS] spices/method_spice_plants_collector_r10 is a collector
+  [PASS] spices/method_spice_plants_collector_r10 is agriculture
+  [PASS] spices/method_spice_plants_collector_r10 has correct climate
+  [PASS] spices/method_spice_plants_collector_r10 has correct land resources
+  [PASS] spices/method_spice_plants_collector_r10 outputs only its dedicated good
+  [PASS] spices/method_spice_plants_collector_r10 does not use generic grain/vegetables outputs
+  [PASS] spices tag binds method_spice_plants_collector_r10
+  [PASS] medicinal_herbs has dedicated building medicinal_herbs_collector
+  [PASS] medicinal_herbs/medicinal_herbs_collector is a collector
+  [PASS] medicinal_herbs/medicinal_herbs_collector is agriculture
+  [PASS] medicinal_herbs/medicinal_herbs_collector has correct climate
+  [PASS] medicinal_herbs/medicinal_herbs_collector has correct land resources
+  [PASS] medicinal_herbs/medicinal_herbs_collector outputs only its dedicated good
+  [PASS] medicinal_herbs/medicinal_herbs_collector does not use generic grain/vegetables outputs
+  [PASS] medicinal_herbs tag binds medicinal_herbs_collector
+  [PASS] medicinal_herbs has dedicated building method_medicinal_herbs_collector_r7
+  [PASS] medicinal_herbs/method_medicinal_herbs_collector_r7 is a collector
+  [PASS] medicinal_herbs/method_medicinal_herbs_collector_r7 is agriculture
+  [PASS] medicinal_herbs/method_medicinal_herbs_collector_r7 has correct climate
+  [PASS] medicinal_herbs/method_medicinal_herbs_collector_r7 has correct land resources
+  [PASS] medicinal_herbs/method_medicinal_herbs_collector_r7 outputs only its dedicated good
+  [PASS] medicinal_herbs/method_medicinal_herbs_collector_r7 does not use generic grain/vegetables outputs
+  [PASS] medicinal_herbs tag binds method_medicinal_herbs_collector_r7
+  [PASS] medicinal_herbs has dedicated building medicinal_herb_garden
+  [PASS] medicinal_herbs/medicinal_herb_garden is a collector
+  [PASS] medicinal_herbs/medicinal_herb_garden is agriculture
+  [PASS] medicinal_herbs/medicinal_herb_garden has correct climate
+  [PASS] medicinal_herbs/medicinal_herb_garden has correct land resources
+  [PASS] medicinal_herbs/medicinal_herb_garden outputs only its dedicated good
+  [PASS] medicinal_herbs/medicinal_herb_garden does not use generic grain/vegetables outputs
+  [PASS] medicinal_herbs tag binds medicinal_herb_garden
+  [PASS] medicinal_herbs has dedicated building medicinal_herb_estate
+  [PASS] medicinal_herbs/medicinal_herb_estate is a collector
+  [PASS] medicinal_herbs/medicinal_herb_estate is agriculture
+  [PASS] medicinal_herbs/medicinal_herb_estate has correct climate
+  [PASS] medicinal_herbs/medicinal_herb_estate has correct land resources
+  [PASS] medicinal_herbs/medicinal_herb_estate outputs only its dedicated good
+  [PASS] medicinal_herbs/medicinal_herb_estate does not use generic grain/vegetables outputs
+  [PASS] medicinal_herbs tag binds medicinal_herb_estate
+  [PASS] medicinal_herbs has dedicated building method_medicinal_herbs_collector_r8
+  [PASS] medicinal_herbs/method_medicinal_herbs_collector_r8 is a collector
+  [PASS] medicinal_herbs/method_medicinal_herbs_collector_r8 is agriculture
+  [PASS] medicinal_herbs/method_medicinal_herbs_collector_r8 has correct climate
+  [PASS] medicinal_herbs/method_medicinal_herbs_collector_r8 has correct land resources
+  [PASS] medicinal_herbs/method_medicinal_herbs_collector_r8 outputs only its dedicated good
+  [PASS] medicinal_herbs/method_medicinal_herbs_collector_r8 does not use generic grain/vegetables outputs
+  [PASS] medicinal_herbs tag binds method_medicinal_herbs_collector_r8
+  [PASS] medicinal_herbs has dedicated building method_medicinal_herbs_collector_r10
+  [PASS] medicinal_herbs/method_medicinal_herbs_collector_r10 is a collector
+  [PASS] medicinal_herbs/method_medicinal_herbs_collector_r10 is agriculture
+  [PASS] medicinal_herbs/method_medicinal_herbs_collector_r10 has correct climate
+  [PASS] medicinal_herbs/method_medicinal_herbs_collector_r10 has correct land resources
+  [PASS] medicinal_herbs/method_medicinal_herbs_collector_r10 outputs only its dedicated good
+  [PASS] medicinal_herbs/method_medicinal_herbs_collector_r10 does not use generic grain/vegetables outputs
+  [PASS] medicinal_herbs tag binds method_medicinal_herbs_collector_r10
+  [PASS] latex has dedicated building rubber_tapping_camp
+  [PASS] latex/rubber_tapping_camp is a collector
+  [PASS] latex/rubber_tapping_camp has correct climate
+  [PASS] latex/rubber_tapping_camp has correct land resources
+  [PASS] latex/rubber_tapping_camp outputs only its dedicated good
+  [PASS] latex/rubber_tapping_camp does not use generic grain/vegetables outputs
+  [PASS] latex tag binds rubber_tapping_camp
+  [PASS] latex has dedicated building rubber_tree_collector
+  [PASS] latex/rubber_tree_collector is a collector
+  [PASS] latex/rubber_tree_collector is agriculture
+  [PASS] latex/rubber_tree_collector has correct climate
+  [PASS] latex/rubber_tree_collector has correct land resources
+  [PASS] latex/rubber_tree_collector outputs only its dedicated good
+  [PASS] latex/rubber_tree_collector does not use generic grain/vegetables outputs
+  [PASS] latex tag binds rubber_tree_collector
+  [PASS] latex has dedicated building method_rubber_tree_collector_r6
+  [PASS] latex/method_rubber_tree_collector_r6 is a collector
+  [PASS] latex/method_rubber_tree_collector_r6 is agriculture
+  [PASS] latex/method_rubber_tree_collector_r6 has correct climate
+  [PASS] latex/method_rubber_tree_collector_r6 has correct land resources
+  [PASS] latex/method_rubber_tree_collector_r6 outputs only its dedicated good
+  [PASS] latex/method_rubber_tree_collector_r6 does not use generic grain/vegetables outputs
+  [PASS] latex tag binds method_rubber_tree_collector_r6
+  [PASS] latex has dedicated building method_rubber_tree_collector_r8
+  [PASS] latex/method_rubber_tree_collector_r8 is a collector
+  [PASS] latex/method_rubber_tree_collector_r8 is agriculture
+  [PASS] latex/method_rubber_tree_collector_r8 has correct climate
+  [PASS] latex/method_rubber_tree_collector_r8 has correct land resources
+  [PASS] latex/method_rubber_tree_collector_r8 outputs only its dedicated good
+  [PASS] latex/method_rubber_tree_collector_r8 does not use generic grain/vegetables outputs
+  [PASS] latex tag binds method_rubber_tree_collector_r8
+  [PASS] latex has dedicated building method_rubber_tree_collector_r10
+  [PASS] latex/method_rubber_tree_collector_r10 is a collector
+  [PASS] latex/method_rubber_tree_collector_r10 is agriculture
+  [PASS] latex/method_rubber_tree_collector_r10 has correct climate
+  [PASS] latex/method_rubber_tree_collector_r10 has correct land resources
+  [PASS] latex/method_rubber_tree_collector_r10 outputs only its dedicated good
+  [PASS] latex/method_rubber_tree_collector_r10 does not use generic grain/vegetables outputs
+  [PASS] latex tag binds method_rubber_tree_collector_r10
+  [PASS] wheat_grain has dedicated foundation-stage production
+  [PASS] wheat_grain has dedicated managed-stage production
+  [PASS] wheat_grain has dedicated industrial-stage production
+  [PASS] wheat_grain has dedicated digital-stage production
+  [PASS] rice_grain has dedicated foundation-stage production
+  [PASS] rice_grain has dedicated managed-stage production
+  [PASS] rice_grain has dedicated industrial-stage production
+  [PASS] rice_grain has dedicated digital-stage production
+  [PASS] corn_grain has dedicated foundation-stage production
+  [PASS] corn_grain has dedicated managed-stage production
+  [PASS] corn_grain has dedicated industrial-stage production
+  [PASS] corn_grain has dedicated digital-stage production
+  [PASS] potatoes has dedicated foundation-stage production
+  [PASS] potatoes has dedicated managed-stage production
+  [PASS] potatoes has dedicated industrial-stage production
+  [PASS] potatoes has dedicated digital-stage production
+  [PASS] seed_cotton has dedicated foundation-stage production
+  [PASS] seed_cotton has dedicated managed-stage production
+  [PASS] seed_cotton has dedicated industrial-stage production
+  [PASS] seed_cotton has dedicated digital-stage production
+  [PASS] bast_fiber has dedicated foundation-stage production
+  [PASS] bast_fiber has dedicated managed-stage production
+  [PASS] bast_fiber has dedicated industrial-stage production
+  [PASS] bast_fiber has dedicated digital-stage production
+  [PASS] spices has dedicated foundation-stage production
+  [PASS] spices has dedicated managed-stage production
+  [PASS] spices has dedicated industrial-stage production
+  [PASS] spices has dedicated digital-stage production
+  [PASS] medicinal_herbs has dedicated foundation-stage production
+  [PASS] medicinal_herbs has dedicated managed-stage production
+  [PASS] medicinal_herbs has dedicated industrial-stage production
+  [PASS] medicinal_herbs has dedicated digital-stage production
+  [PASS] latex has dedicated foundation-stage production
+  [PASS] latex has dedicated managed-stage production
+  [PASS] latex has dedicated industrial-stage production
+  [PASS] latex has dedicated digital-stage production
+  [PASS] flax farm produces bast_fiber
+  [FAIL] retting consumes bast_fiber and produces flax_fiber
+  [PASS] retting construction does not consume bast_fiber
+  [PASS] flax_fiber is unlocked by retting, not field production
+  [PASS] generic modern farms remain generic only
+crop technology parity: FAIL

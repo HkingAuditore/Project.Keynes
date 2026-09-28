@@ -205,7 +205,7 @@ func _audit_unlock_semantics(catalog: Dictionary, failures: Array) -> void:
 		"wire_plant": "electrical", "basic_electrical_equipment_works": "electrical",
 		"scientific_instrument_works": "electrical",
 		"industrial_research_laboratory": "electrical",
-		"polytechnic_institute": "electrical", "nuclear_power_plant": "information",
+		"polytechnic_institute": "electrical", "nuclear_power_plant": "atomic",
 	}
 	var building_ids: PackedStringArray = catalog.building_type_ids
 	var technology_eras: PackedStringArray = catalog.technology_era_ids

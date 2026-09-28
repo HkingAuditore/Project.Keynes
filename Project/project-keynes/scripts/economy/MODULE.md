@@ -1,5 +1,9 @@
 # economy — 原生阶层与本地市场模块
 
+## 当前经济契约（2026-09）
+
+实现与文档冲突时，以 native `economy_runtime.*` 为准：建筑产出只有“业主自用 -> 商人收购 -> producer support -> discard”一条本地路径；贵金属不受铸币配额限制，由 producer support 按面值发行货币；工资由生活成本、市场工资 EMA、已付工资和建筑盈利共同形成；投资、就业追赶、研究建设和启动生产共享 `EconomicOpportunityQuote`、`InvestmentCandidatePlan` 与 `InvestmentRequestContext`；公开存档恢复按 `begin -> feed -> end` 工作，begin 阶段准备 candidate scratch。
+
 当前价格为 Native Price V5：无目录最低售价，仅保留正数值下界与既有最高价；
 积压削弱向上成本压力，小额账单合并后向上取整。GoodProfile 的旧 `min_price`
 和原生目录 `good_min_price` 均显式拒绝。PKEC v48 仅支持新游戏。
@@ -491,7 +495,7 @@ explicit rejection reasons. Loss-suspended groups release every owner/employee; 
 viable suspended group returns to ACTIVE at the next frozen boundary with its full
 physical owner capacity. CSV schema v25 retains the v24 resource-flow,
 procurement, livelihood, and unresolved-trade columns, and appends global bullion
-quota initial/remaining/remainder values plus selected-cell candidate monetary
+historical quota initial/remaining/remainder values (current writer publishes zero for compatibility) plus selected-cell candidate monetary
 quota, slot, request, and expected-revenue fields. These remain derived debug
 state outside PKEC and replay hash. High discard accelerates the existing
 utilization response when no active shortage recovery is required, while

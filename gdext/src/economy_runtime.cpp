@@ -5225,6 +5225,10 @@ void NativeEconomyRuntime::refresh_epoch_bullion_quota() {
     _epoch_bullion_quota_initial_total = 0;
     _epoch_bullion_quota_remaining_total = 0;
     _epoch_bullion_quota_remainder_units = 0;
+    // Retire bullion issuance quotas. Keep the old lanes empty for save/CSV
+    // compatibility; monetary goods settle at face value without a cap.
+    return;
+#if 0
     if (_cell_count <= 0 || market_store().good_count <= 0 ||
         _epoch_settlement_cells.empty() || _bullion_monthly_issue_cap_q16 <= 0)
         return;
@@ -5420,6 +5424,7 @@ void NativeEconomyRuntime::refresh_epoch_bullion_quota() {
             _epoch_bullion_quota_remaining_total, std::max<int64_t>(0, row.base),
             _saturation_count);
     }
+#endif
 }
 
 int64_t NativeEconomyRuntime::bullion_cell_quota_remaining(
@@ -5454,7 +5459,8 @@ int64_t NativeEconomyRuntime::bullion_quota_remaining(
         good >= static_cast<int32_t>(_good_monetary_issue_values.size()) ||
         _good_monetary_issue_values[good] <= 0)
         return 0;
-    return bullion_cell_quota_remaining(cell);
+    (void)cell;
+    return std::numeric_limits<int64_t>::max();
 }
 
 int64_t NativeEconomyRuntime::consume_bullion_quota(
@@ -5464,20 +5470,10 @@ int64_t NativeEconomyRuntime::consume_bullion_quota(
     if (good >= static_cast<int32_t>(_good_monetary_issue_values.size()) ||
         _good_monetary_issue_values[good] <= 0)
         return 0;
-    const uint64_t key = static_cast<uint64_t>(static_cast<uint32_t>(cell));
-    const auto it = std::lower_bound(_epoch_bullion_quota_keys.begin(),
-        _epoch_bullion_quota_keys.end(), key);
-    if (it == _epoch_bullion_quota_keys.end() || *it != key) return 0;
-    const size_t index = static_cast<size_t>(it -
-        _epoch_bullion_quota_keys.begin());
-    if (index >= _epoch_bullion_quota_remaining.size()) return 0;
-    const int64_t take = std::min<int64_t>(requested,
-        std::max<int64_t>(0, _epoch_bullion_quota_remaining[index]));
-    _epoch_bullion_quota_remaining[index] = saturating_sub(
-        _epoch_bullion_quota_remaining[index], take, sat);
-    _epoch_bullion_quota_remaining_total = saturating_sub(
-        _epoch_bullion_quota_remaining_total, take, sat);
-    return take;
+    (void)cell;
+    (void)sat;
+    // Retained API name for old callers; monetary output is no longer capped.
+    return requested;
 }
 
 int64_t NativeEconomyRuntime::epoch_research_demand_daily(
@@ -8138,7 +8134,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
             const int64_t wage = role_index >= 0 &&
                 role_index < static_cast<int32_t>(_building_role_contract_wage.size())
                     ? _building_role_contract_wage[role_index]
-                    : role.reference_wage_per_day;
+                    : 0;
             const int32_t filled_index = role_index;
             const int64_t filled = filled_index >= 0 && filled_index <
                     static_cast<int32_t>(_building_employee_filled.size())
@@ -8198,11 +8194,19 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
             // normalized by the observed workforce-capacity-days. A zero
             // receipt therefore remains zero; it cannot fall back to a stale
             // nameplate quote or a frozen commodity price.
+            // Economic receipts include both cash settlement and the market
+            // value of output consumed in kind by the owner household.  A
+            // survival producer can legitimately receive zero cash while its
+            // retained food fully pays for the owner's livelihood; treating
+            // that period as zero revenue creates a self reinforcing shutdown.
             const int64_t observed_receipts = saturating_add(
-                saturating_add(std::max<int64_t>(0, group.last_market_receipt),
-                               std::max<int64_t>(0, group.last_bullion_mint_receipt),
-                               _saturation_count),
-                std::max<int64_t>(0, group.last_producer_support_receipt),
+                saturating_add(
+                    saturating_add(std::max<int64_t>(0, group.last_market_receipt),
+                                   std::max<int64_t>(0, group.last_bullion_mint_receipt),
+                                   _saturation_count),
+                    std::max<int64_t>(0, group.last_producer_support_receipt),
+                    _saturation_count),
+                std::max<int64_t>(0, group.last_in_kind_livelihood_value),
                 _saturation_count);
             // `last_observed_capacity_days_q16` already contains the prior
             // group count, elapsed days, and Q16 workforce share. Convert
@@ -8843,8 +8847,14 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                 saturating_sub(saturating_sub(revenue, expected_operating_cost,
                     _saturation_count), business_transfer, _saturation_count),
                 income_transfer, _saturation_count);
+            // When an observed group uses its realized-receipt quote above,
+            // retained owner output is already part of `revenue`.  Add the
+            // counterfactual in-kind quote only for unobserved groups so the
+            // unified income basis does not count the same livelihood twice.
             const int64_t expected_profit = saturating_add(
-                expected_cash_profit, expected_in_kind, _saturation_count);
+                expected_cash_profit,
+                observed_capacity ? 0 : expected_in_kind,
+                _saturation_count);
             group.planned_utilization_q16 = expected_profit > 0
                 ? static_cast<int32_t>(Q16_ONE) : 0;
             // Survival output is a bounded exception to pure cash-profit
@@ -10006,7 +10016,7 @@ int64_t NativeEconomyRuntime::projected_owner_income_per_day(
             const int64_t wage = role_index >= 0 && role_index <
                     static_cast<int32_t>(_building_role_contract_wage.size())
                 ? _building_role_contract_wage[role_index]
-                : role.reference_wage_per_day;
+                : 0;
             const int64_t filled = role_index >= 0 && role_index <
                     static_cast<int32_t>(_building_employee_filled.size())
                 ? std::max<int64_t>(0, _building_employee_filled[role_index]) : 0;
@@ -10023,10 +10033,17 @@ int64_t NativeEconomyRuntime::projected_owner_income_per_day(
         saturating_mul(living_cost_for_signature(
             group.cell, group.owner_signature_id, _living_cost_base_plan_id,
             sat), owner_jobs, sat), days, sat);
+    // Keep the owner opportunity quote on the same realized-income basis as
+    // the production plan: cash receipts, support, and retained owner output
+    // are all income.  Otherwise a cashless subsistence cycle is reported as
+    // a loss even when it covered the owner's food needs.
     const int64_t observed_receipts = scale_fact(saturating_add(
-        saturating_add(std::max<int64_t>(0, group.last_market_receipt),
-                       std::max<int64_t>(0, group.last_bullion_mint_receipt), sat),
-        std::max<int64_t>(0, group.last_producer_support_receipt), sat));
+        saturating_add(
+            saturating_add(std::max<int64_t>(0, group.last_market_receipt),
+                           std::max<int64_t>(0, group.last_bullion_mint_receipt),
+                           sat),
+            std::max<int64_t>(0, group.last_producer_support_receipt), sat),
+        std::max<int64_t>(0, group.last_in_kind_livelihood_value), sat));
     int64_t realized_survival_output_value = 0;
     if (group.last_output > 0 && group.cell >= 0 && group.cell < _cell_count) {
         const int32_t market = market_store().cell_to_market[group.cell];
@@ -10047,7 +10064,10 @@ int64_t NativeEconomyRuntime::projected_owner_income_per_day(
     // so it is a live figure rather than a stale nameplate. Groups without a
     // quote fall back to the previous period's settled receipts.
     const int64_t quoted_revenue = group.last_quoted_market_receipt > 0
-        ? scale_fact(group.last_quoted_market_receipt)
+        ? saturating_add(
+            scale_fact(group.last_quoted_market_receipt),
+            observed_capacity
+                ? scale_fact(group.last_in_kind_livelihood_value) : 0, sat)
         : (observed_capacity ? observed_receipts
             : std::max<int64_t>(0, group.last_expected_revenue));
     const uint8_t owner_tax_mask = static_cast<uint8_t>(
@@ -10243,7 +10263,7 @@ NativeEconomyRuntime::owner_opportunity_quote(
         const int64_t wage = ri >= 0 && ri < static_cast<int32_t>(
                 _building_role_contract_wage.size())
             ? std::max<int64_t>(0, _building_role_contract_wage[ri])
-            : std::max<int64_t>(0, role.reference_wage_per_day);
+            : 0;
         wages_at_full_scale = saturating_add(wages_at_full_scale, saturating_mul(
             group.count, saturating_mul(role.slots_per_building, wage, sat), sat), sat);
     }
@@ -10433,6 +10453,20 @@ NativeEconomyRuntime::owner_opportunity_quote(
     auto finalize_at_scale = [&](int64_t activity_scale,
                                   bool buy_soft) -> OwnerOpportunityQuote {
         OwnerOpportunityQuote result = quote;
+        result.cell = group.cell;
+        result.type_id = group.type_id;
+        result.owner_signature_id = group.owner_signature_id;
+        result.owner_slots = saturating_mul(group.count,
+            std::max<int64_t>(1, type.owner_slots_per_building), sat);
+        result.employee_slots = 0;
+        for (int32_t r = 0; r < type.employee_count; ++r) {
+            const JobRole &role = _building_employee_roles[type.employee_begin + r];
+            result.employee_slots = saturating_add(result.employee_slots,
+                saturating_mul(group.count,
+                    std::max<int64_t>(0, role.slots_per_building), sat), sat);
+        }
+        result.owner_jobs_filled = has_owner_cohort ? result.owner_slots : 0;
+        result.employee_jobs_filled = 0;
         activity_scale = std::clamp<int64_t>(activity_scale, 0, Q16_ONE);
         const int64_t soft_eff = buy_soft
             ? soft_efficiency_tooled_q16 : soft_efficiency_bare_q16;
@@ -10563,6 +10597,30 @@ NativeEconomyRuntime::owner_opportunity_quote(
                 result.survival_priority = result.feasible;
             }
         }
+        // Normalized economic decomposition.  These fields are projections of
+        // the same quote used by employment; investment and diagnostics must
+        // consume this result instead of recomputing a second receipt path.
+        result.utilization_q16 = result.executable_capacity_q16;
+        result.owner_use_value_per_day = result.in_kind_retail_value;
+        result.merchant_revenue_per_day = result.cash_receipt;
+        result.producer_support_revenue_per_day = 0;
+        result.cash_revenue_per_day = result.cash_receipt;
+        result.economic_revenue_per_day = saturating_add(
+            result.cash_receipt, result.in_kind_retail_value, sat);
+        result.input_cost_per_day = result.input_cost;
+        result.wage_cost_per_day = result.wages;
+        result.maintenance_cost_per_day = result.maintenance;
+        result.owner_living_cost_per_day = result.owner_living_cost;
+        result.after_tax_revenue_per_day = std::max<int64_t>(0,
+            saturating_sub(saturating_sub(result.cash_receipt,
+                result.business_transfer, sat), result.income_transfer, sat));
+        result.profit_per_day = result.owner_income_per_day;
+        result.affordable_wage_per_day = result.employee_slots > 0
+            ? std::max<int64_t>(0, saturating_sub(
+                saturating_sub(result.after_tax_revenue_per_day,
+                    result.input_cost, sat), result.maintenance, sat)) /
+                result.employee_slots
+            : 0;
         return result;
     };
 
@@ -10602,7 +10660,7 @@ int64_t NativeEconomyRuntime::projected_employee_tax_retention_q16(
         const int64_t gross_wage = role_index >= 0 && role_index <
                 static_cast<int32_t>(_building_role_contract_wage.size())
             ? _building_role_contract_wage[role_index]
-            : role.reference_wage_per_day;
+            : 0;
         const int64_t take_home = expected_after_tax_income(
             group.cell, role.profession_id, gross_wage, sat);
         const int64_t slots = std::max<int64_t>(0,
@@ -12411,6 +12469,16 @@ bool NativeEconomyRuntime::move_cohort_population(int32_t source, int32_t dest_c
                  SUBJECT_COHORT, source_handle, cmd_signature, cmd_cell,
                  move_pop, move_funds, source_cell, cmd_cell,
                  legs.empty() ? nullptr : &legs);
+    if (source_cell != cmd_cell) {
+        if (source_cell >= 0 && source_cell < static_cast<int32_t>(_cell_moved_out.size()))
+            _cell_moved_out[static_cast<size_t>(source_cell)] =
+                saturating_add(_cell_moved_out[static_cast<size_t>(source_cell)],
+                    move_pop, _saturation_count);
+        if (cmd_cell >= 0 && cmd_cell < static_cast<int32_t>(_cell_moved_in.size()))
+            _cell_moved_in[static_cast<size_t>(cmd_cell)] =
+                saturating_add(_cell_moved_in[static_cast<size_t>(cmd_cell)],
+                    move_pop, _saturation_count);
+    }
     return true;
 }
 

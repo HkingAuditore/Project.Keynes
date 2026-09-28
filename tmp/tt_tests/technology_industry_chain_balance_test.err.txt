@@ -1,0 +1,74 @@
+ERROR: {"gap":2,"good":"oceanic_vessels","kind":"good_sink_gap","producer_era":"exploration","sink_era":"steam"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/technology_industry_chain_balance_test.gd:56)
+ERROR: {"actual":"atomic","building":"nuclear_power_plant","expected":"information","kind":"semantic_era_mismatch"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/technology_industry_chain_balance_test.gd:56)
+ERROR: {"era":"information","kind":"era_productivity_gap","ratio_to_stone":9.08032284217529}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/technology_industry_chain_balance_test.gd:56)
+ERROR: {"era":"intelligent","kind":"era_productivity_gap","ratio_to_stone":10.7261350407451}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/technology_industry_chain_balance_test.gd:56)
+ERROR: {"building":"wild_wheat_stand","capacity":4.16990291262136,"expected_era":"stone","kind":"early_farm_capacity_out_of_range","range":[1.4,1.48]}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/technology_industry_chain_balance_test.gd:56)
+ERROR: {"building":"wild_rice_marsh","capacity":4.16990291262136,"expected_era":"stone","kind":"early_farm_capacity_out_of_range","range":[1.4,1.48]}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/technology_industry_chain_balance_test.gd:56)
+ERROR: {"building":"wild_maize_stand","capacity":4.16990291262136,"expected_era":"stone","kind":"early_farm_capacity_out_of_range","range":[1.4,1.48]}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/technology_industry_chain_balance_test.gd:56)
+ERROR: {"building":"wild_tuber_patch","capacity":4.16990291262136,"expected_era":"stone","kind":"early_farm_capacity_out_of_range","range":[1.4,1.48]}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/technology_industry_chain_balance_test.gd:56)
+ERROR: {"building":"subsistence_farm","capacity":4.89320388349515,"expected_era":"agrarian","kind":"early_farm_capacity_out_of_range","range":[1.65,1.72]}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/technology_industry_chain_balance_test.gd:56)
+ERROR: {"building":"floodplain_wheat_plot","capacity":4.89563106796117,"expected_era":"agrarian","kind":"early_farm_capacity_out_of_range","range":[1.65,1.72]}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/technology_industry_chain_balance_test.gd:56)
+ERROR: {"building":"upland_rice_plot","capacity":4.89563106796117,"expected_era":"agrarian","kind":"early_farm_capacity_out_of_range","range":[1.65,1.72]}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/technology_industry_chain_balance_test.gd:56)
+ERROR: {"building":"maize_garden","capacity":5.28883495145631,"expected_era":"agrarian","kind":"early_farm_capacity_out_of_range","range":[1.78,1.86]}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/technology_industry_chain_balance_test.gd:56)
+ERROR: {"building":"rainfed_wheat_plot","capacity":5.28883495145631,"expected_era":"agrarian","kind":"early_farm_capacity_out_of_range","range":[1.78,1.86]}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/technology_industry_chain_balance_test.gd:56)
+ERROR: {"building":"wetland_rice_garden","capacity":5.28883495145631,"expected_era":"agrarian","kind":"early_farm_capacity_out_of_range","range":[1.78,1.86]}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/technology_industry_chain_balance_test.gd:56)
+ERROR: {"building":"rainfed_maize_field","capacity":5.62985436893204,"expected_era":"agrarian","kind":"early_farm_capacity_out_of_range","range":[1.9,1.98]}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/technology_industry_chain_balance_test.gd:56)
+ERROR: {"building":"swidden_maize_plot","capacity":5.62985436893204,"expected_era":"agrarian","kind":"early_farm_capacity_out_of_range","range":[1.9,1.98]}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/technology_industry_chain_balance_test.gd:56)
+ERROR: 16 technology/industry timing failures
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/technology_industry_chain_balance_test.gd:58)
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 277 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

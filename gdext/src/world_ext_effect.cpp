@@ -769,6 +769,11 @@ Dictionary DCWorldExt::ack_effect_native_country() {
         static_cast<NativeCountryRuntime *>(_country_runtime));
 }
 
+Dictionary DCWorldExt::settle_orphaned_effect_native_country_acks() {
+    if (_effect_runtime == nullptr) return unavailable();
+    return runtime_from(_effect_runtime)->settle_orphaned_native_country_acks();
+}
+
 Dictionary DCWorldExt::dispatch_effect_native_economy() {
     // Same exception as Country: colonization SETTLE waits on this adapter and
     // is not covered by the EFFECT POD worker plan stage.
@@ -818,14 +823,18 @@ Dictionary DCWorldExt::get_effect_native_adapter_report() const {
         static_cast<const NativeEconomyRuntime *>(_economy_runtime)
             ->has_pending_effect_commands();
     const bool gameplay_pending = !_effect_gameplay_commands.empty();
+    const bool colonization_pending = _effect_runtime != nullptr &&
+        runtime_from(_effect_runtime)->has_pending_family_colonization_transactions();
     out["country_pending"] = country_pending;
     out["economy_pending"] = economy_pending;
     out["gameplay_pending"] = gameplay_pending;
+    out["colonization_pending"] = colonization_pending;
     out["country_pending_count"] = country_pending ? 1 : 0;
     out["economy_pending_count"] = economy_pending ? 1 : 0;
     out["gameplay_pending_count"] = static_cast<int64_t>(
         _effect_gameplay_commands.size());
-    out["idle"] = !country_pending && !economy_pending && !gameplay_pending;
+    out["idle"] = !country_pending && !economy_pending && !gameplay_pending &&
+        !colonization_pending;
     return out;
 }
 

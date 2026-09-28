@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"natural_rubber"
+display_name = "凝固天然橡胶"
+semantic_tags = PackedStringArray()
+category_id = &"elastomer"
+substitution_category_ids = PackedStringArray("elastomer")
+technology_tags = PackedStringArray("industry.primary", "tech.latex_smoke_coagulation")
+production_quality_level = 1
+default_price = 14000
+reference_max_price = 700000
+price_adjust_q16 = 922
+demand_price_elasticity_q16 = 29491

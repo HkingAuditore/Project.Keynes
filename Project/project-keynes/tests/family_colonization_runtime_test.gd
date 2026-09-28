@@ -210,6 +210,10 @@ func _run() -> void:
 		country_handle, second_handle)
 	_expect("arrival enqueue moves the expedition into SETTLING",
 		int(settling.get("state", -1)) == 2)
+	var adapter_report: Dictionary = ext.get_effect_native_adapter_report()
+	_expect("undispatched colonization transaction wakes the Effect adapter",
+		not bool(adapter_report.get("idle", true))
+		and bool(adapter_report.get("colonization_pending", false)))
 	var premature_economy_dispatch: Dictionary = ext.dispatch_effect_native_economy()
 	var country_dispatch: Dictionary = ext.dispatch_effect_native_country()
 	var country_commit: Dictionary = ext.run_country_slice({"day_index": 6})

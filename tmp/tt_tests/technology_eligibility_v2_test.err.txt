@@ -1,0 +1,21 @@
+ERROR: [FAIL] stable technology manifest is present
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/technology_eligibility_v2_test.gd:250)
+       [1] _init (res://tests/technology_eligibility_v2_test.gd:18)
+ERROR: [FAIL] completed coastal fishing alone opens fishing boats
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/technology_eligibility_v2_test.gd:250)
+       [1] _init (res://tests/technology_eligibility_v2_test.gd:160)
+ERROR: [FAIL] completed freshwater fishing alone opens fishing boats
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _expect (res://tests/technology_eligibility_v2_test.gd:250)
+       [1] _init (res://tests/technology_eligibility_v2_test.gd:165)
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 279 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

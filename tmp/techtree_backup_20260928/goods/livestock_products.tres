@@ -1,0 +1,17 @@
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"livestock_products"
+display_name = "畜牧产品"
+semantic_tags = PackedStringArray()
+category_id = &"livestock_products"
+substitution_category_ids = PackedStringArray("livestock_products")
+technology_tags = PackedStringArray("industry.food", "tech.herd_management", "tech.pastoral_networks", "tech.modern_husbandry")
+default_price = 16000
+reference_max_price = 800000
+price_adjust_q16 = 717
+demand_price_elasticity_q16 = 22938
+inventory_target_ratio_q16 = 98304

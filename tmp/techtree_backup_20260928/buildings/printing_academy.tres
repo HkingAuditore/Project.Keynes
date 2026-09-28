@@ -1,0 +1,57 @@
+[gd_resource type="Resource" script_class="BuildingProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/building_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"printing_academy"
+display_name = "印刷学社"
+economic_sector_id = "knowledge"
+semantic_tags = PackedStringArray()
+technology_tags = PackedStringArray("tech.chartered_universities")
+required_technology_tags = PackedStringArray("tech.screw_press_printing", "tech.timber_sawing", "tech.ground_stone_tools", "tech.early_glassmaking", "tech.natural_observation", "tech.woodblock_printing", "tech.manuscript_culture", "tech.composite_tools", "tech.plant_fiber_papermaking", "tech.writing", "tech.fiber_twisting", "tech.wild_flax_collection")
+upgrade_family_id = &"research_institution"
+upgrade_tier = 5
+industry_chain_id = &"research_institution"
+progression_step = 5
+maturity_rank = 2
+maturity_display_name = "家户试作"
+progression_role = "mainline"
+predecessor_building_ids = PackedStringArray("chartered_university")
+construction_days = 80
+construction_good_ids = PackedStringArray("bricks", "lumber", "glass")
+construction_quantities = PackedInt64Array(20199987, 12119993, 4039998)
+construction_category_ids = PackedStringArray("classical_construction", "classical_construction", "industrial_construction")
+construction_min_quality_levels = PackedInt32Array(0, 0, 0)
+construction_candidate_offsets = PackedInt32Array()
+construction_candidate_good_ids = PackedStringArray()
+construction_candidate_efficiency_q16 = PackedInt32Array()
+maintenance_good_ids = PackedStringArray()
+maintenance_quantities_per_day = PackedInt64Array()
+owner_profession_id = &"scholar"
+employee_profession_ids = PackedStringArray("scholar", "natural_philosopher")
+employee_slots_per_building = PackedInt64Array(20, 8)
+employee_wage_policy_ids = PackedStringArray("adaptive", "adaptive")
+employee_reference_wages_per_day = PackedInt64Array(16500, 17500)
+input_good_ids = PackedStringArray("printed_materials")
+input_quantities_per_day = PackedInt64Array(5085)
+input_required_q16 = PackedInt32Array(65536)
+input_category_ids = PackedStringArray()
+input_min_quality_levels = PackedInt32Array()
+input_candidate_offsets = PackedInt32Array(0)
+input_candidate_good_ids = PackedStringArray()
+input_candidate_efficiency_q16 = PackedInt32Array()
+output_good_ids = PackedStringArray("technology_points")
+output_quantities_per_day = PackedInt64Array(659750)
+output_cost_shares_q16 = PackedInt32Array()
+resource_ids = PackedStringArray()
+resource_quantities_per_day = PackedInt64Array()
+resource_interaction_modes = PackedStringArray()
+resource_access_modes = PackedStringArray()
+resource_generation_ids = PackedStringArray()
+resource_generation_quantities_per_day = PackedInt64Array()
+condition_opcodes = PackedInt32Array()
+condition_signals = PackedInt32Array()
+condition_compares = PackedInt32Array()
+condition_reference_ids = PackedStringArray()
+condition_values = PackedInt64Array()

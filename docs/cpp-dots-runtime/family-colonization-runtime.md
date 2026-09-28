@@ -102,7 +102,7 @@ runtime graph / Economy idle 边界必须始终 `dispatch_native_country` +
 
 COUNTRY worker 权威下 CLAIM 在 worker 自己的边界提交，`country_asset_snapshot()`
 要到 worker 发布后才带上新归属。因此 `apply_settle_family_expedition` 看到目标仍为
-无主（`owner == 0`）且本事务确实含 CLAIM 时，必须按 backpressure 让出：返回
+无主（`owner == 0`）时，必须按 backpressure 让出：返回
 `country_economy_asset_territory_claim_pending`（`runtime_country_asset_pending_reason()`
 成员），命令原样重排、Effect 请求保持未完成，等快照带上 CLAIM 后重放。把这个时序窗口
 当成 `TARGET_LOST_RETURNING` 会让领土归玩家、移民却被遣返，玩家看到的就是
@@ -111,6 +111,10 @@ COUNTRY worker 权威下 CLAIM 在 worker 自己的边界提交，`country_asset
 命令的事务伪造 ACK——那正是 `dispatch_native_economy` 的排序前置；只有不跨这两域的
 事务才继续 soft-settle，以保留它防止 Country 卡死时钟的原意。
 `country_economy_asset_protocol_self_test()` 守护这条原因分类不被合并回 fatal。
+
+同理，`process_due_family_expeditions` 查询到 `EffectRuntime` 的 `status == 0`
+时不得立即转返程；worker 事务可能尚未进入 legacy 状态表。该状态保留
+`SETTLING` 并推迟到下一次 due pulse，避免事务短暂不可见时丢失移民人口。
 
 若冻结周期
 已开始且阶段仍在 `BUILDING_PLAN` / `TRADE_SETTLE` / `LEDGER_APPLY`，SETTLE

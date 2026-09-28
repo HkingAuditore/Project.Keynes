@@ -1,5 +1,9 @@
 # Market V2 冻结周期、错峰与调度契约
 
+## 当前建筑经济决策说明（2026-09）
+
+`building_commit.investment_prepare` 与 `investment` 不再为普通扩张、就业追赶、研究建设和启动生产维护独立利润算法。所有候选最终都写入 `InvestmentCandidatePlan`，经济字段来自 `EconomicOpportunityQuote`，触发差异只记录在 `InvestmentRequestContext`。生产结算统一执行“业主自用 -> 商人收购 -> producer support -> discard”。
+
 开放资源与可兑现工资 / PKEC v50：只支持新游戏。调度阶段与 N/P/I cadence
 不变；CPUE 在现有资源边检查内计算，工资兑现纠偏在现有
 `building_employment` cell-local CSR 内完成，不新增全图 pass。

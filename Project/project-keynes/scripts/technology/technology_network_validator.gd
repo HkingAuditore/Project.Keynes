@@ -116,7 +116,10 @@ static func effect_summary(node: Dictionary) -> String:
 	var seen := {}
 	for effect_value in node.get("content_effects", []):
 		var effect: Dictionary = effect_value
-		if String(effect.get("operation", "")) != "unlock":
+		# Goods already permitted by a hard ancestor keep their binding but are
+		# not repeated as a new unlock in the player-facing summary.
+		if String(effect.get("operation", "")) != "unlock" \
+				or not bool(effect.get("summary_visible", true)):
 			continue
 		var display_name := String(effect.get("display_name", effect.get("id", "")))
 		var prefix := ""

@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"cloth"
+display_name = "布料"
+semantic_tags = PackedStringArray()
+category_id = &"rag_paper_fiber"
+substitution_category_ids = PackedStringArray("rag_paper_fiber")
+technology_tags = PackedStringArray("industry.textile", "tech.weaving", "tech.loom_weaving", "tech.hand_spinning", "tech.mechanical_workshops", "tech.textile_machinery", "tech.mass_production", "tech.synthetic_fiber_engineering")
+default_price = 24000
+reference_max_price = 1200000
+price_adjust_q16 = 1843
+demand_price_elasticity_q16 = 58982

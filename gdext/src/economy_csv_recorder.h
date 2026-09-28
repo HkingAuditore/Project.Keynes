@@ -278,6 +278,10 @@ public:
         int64_t owner_employed = 0;
         int64_t employee_employed = 0;
         int64_t unemployed = 0;
+        int64_t cell_births = 0;
+        int64_t cell_deaths = 0;
+        int64_t cell_moved_in = 0;
+        int64_t cell_moved_out = 0;
     };
 
     struct BuildingRow {

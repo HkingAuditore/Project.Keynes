@@ -1,0 +1,134 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] schema v4 catalog compiles
+  [PASS] route IR is present
+  [PASS] fixture configures
+  [PASS] fixture bootstraps
+  [PASS] signal queues: development.population.500_90d
+  [PASS] signals commit
+[tech-ui-diag/research] handle=4294967296 gen=2 day=1 owned=2 pending=0 queued=0 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=0 budget=10000000 auto=1
+  [PASS] development-revealed kingdom node stays ineligible without a route
+  [PASS] fixture configures
+  [PASS] fixture bootstraps
+  [PASS] signal queues: development.population.500_90d
+  [PASS] signal queues: development.employment.agriculture.10_90d
+  [PASS] signals commit
+[tech-ui-diag/research] handle=4294967296 gen=2 day=1 owned=2 pending=0 queued=0 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=0 budget=10000000 auto=1
+  [PASS] revealed kingdom node is researchable without the agrarian milestone
+  [PASS] eligible enqueue command submits
+  [PASS] eligible enqueue command commits
+[tech-ui-diag/research] handle=4294967296 gen=3 day=2 owned=2 pending=0 queued=1 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=0 budget=10000000 auto=1
+  [PASS] kingdom node can enter the queue without the agrarian milestone
+  [PASS] fixture configures
+  [PASS] fixture bootstraps
+  [PASS] signal queues: development.population.500_90d
+  [PASS] signals commit
+[tech-ui-diag/research] handle=4294967296 gen=2 day=1 owned=3 pending=0 queued=0 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=0 budget=10000000 auto=1
+  [PASS] milestone plus reveal still requires a complete route
+  [PASS] signal queues: development.employment.agriculture.10_90d
+  [PASS] signals commit
+[tech-ui-diag/research] handle=4294967296 gen=3 day=2 owned=3 pending=0 queued=0 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=0 budget=10000000 auto=1
+  [PASS] one complete research route produces eligible state
+  [PASS] eligible enqueue command submits
+  [PASS] eligible enqueue command commits
+[tech-ui-diag/research] handle=4294967296 gen=4 day=3 owned=3 pending=0 queued=1 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=0 budget=10000000 auto=1
+  [PASS] eligible node can enter the queue
+  [PASS] fixture configures
+  [PASS] fixture bootstraps
+[tech-ui-diag/research] handle=4294967296 gen=1 day=-1 owned=4 pending=0 queued=0 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=0 budget=10000000 auto=1
+  [PASS] kingdom milestone stays era-locked without agrarian_society
+  [PASS] fixture configures
+  [PASS] fixture bootstraps
+[tech-ui-diag/research] handle=4294967296 gen=1 day=-1 owned=5 pending=0 queued=0 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=0 budget=10000000 auto=1
+  [PASS] kingdom milestone opens after the previous era and candidate threshold
+  [PASS] fixture configures
+  [PASS] fixture bootstraps
+  [PASS] signal queues: development.commodity_crop_variety_2
+  [PASS] signals commit
+[tech-ui-diag/research] handle=4294967296 gen=2 day=1 owned=5 pending=0 queued=0 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=0 budget=10000000 auto=1
+  [PASS] plantation reveal waits for both development facts
+  [PASS] signal queues: development.commodity_crop_facilities_4_180d
+  [PASS] signals commit
+[tech-ui-diag/research] handle=4294967296 gen=3 day=2 owned=5 pending=0 queued=0 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=0 budget=10000000 auto=1
+  [PASS] plantation land-institution route is eligible
+  [PASS] fixture configures
+  [PASS] fixture bootstraps
+  [PASS] signal queues: resource.flint
+  [PASS] signals commit
+[tech-ui-diag/research] handle=4294967296 gen=2 day=1 owned=1 pending=0 queued=0 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=0 budget=10000000 auto=1
+  [PASS] flint stays ineligible until a knowledge practice is completed
+  [PASS] fixture configures
+  [PASS] fixture bootstraps
+  [PASS] signal queues: resource.flint
+  [PASS] signals commit
+[tech-ui-diag/research] handle=4294967296 gen=2 day=1 owned=2 pending=0 queued=0 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=0 budget=10000000 auto=1
+  [PASS] the unified institution route opens flint research
+  [PASS] fixture configures
+  [PASS] fixture bootstraps
+[tech-ui-diag/research] handle=4294967296 gen=1 day=-1 owned=1 pending=0 queued=0 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=0 budget=10000000 auto=1
+  [PASS] seasonal foraging stays ineligible until a knowledge practice is completed
+  [PASS] fixture configures
+  [PASS] fixture bootstraps
+[tech-ui-diag/research] handle=4294967296 gen=1 day=-1 owned=2 pending=0 queued=0 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=0 budget=10000000 auto=1
+  [PASS] the unified institution opens seasonal foraging
+  [PASS] fixture configures
+  [PASS] fixture bootstraps
+[tech-ui-diag/research] handle=4294967296 gen=1 day=-1 owned=1 pending=0 queued=0 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=0 budget=10000000 auto=1
+  [PASS] composite tools stay hidden without stone or flint evidence
+  [PASS] signal queues: resource.stone
+  [PASS] signals commit
+[tech-ui-diag/research] handle=4294967296 gen=2 day=2 owned=1 pending=0 queued=0 progress_nonzero=0 stock=0 deferred=0 consumed=0 cash=0 budget=10000000 auto=1
+  [PASS] stone evidence reveals composite tools
+  [PASS] fixture configures
+  [PASS] fixture bootstraps
+  [PASS] signal queues: resource.wild_game
+  [PASS] signals commit
+  [PASS] hide scraping stays ineligible on a warm start until knowledge
+  [PASS] fixture configures
+  [PASS] fixture bootstraps
+  [PASS] signal queues: resource.wild_game
+  [PASS] signals commit
+  [PASS] the unified institution opens hide scraping
+  [PASS] fixture configures
+  [PASS] fixture bootstraps
+  [PASS] signal queues: resource.marine_fish
+  [PASS] signals commit
+  [PASS] marine evidence opens coastal fishing after knowledge and net fiber
+  [PASS] fixture configures
+  [PASS] fixture bootstraps
+  [PASS] signal queues: resource.freshwater_fish
+  [PASS] signals commit
+  [PASS] freshwater evidence opens fishing after knowledge and net fiber
+  [PASS] fixture configures
+  [PASS] fixture bootstraps
+  [PASS] signal queues: resource.timber
+  [PASS] signal queues: resource.marine_fish
+  [PASS] signals commit
+  [PASS] fire control remains locked without gathering and deadwood collection
+  [PASS] husbandry stays hidden without a domesticable animal signal
+  [PASS] signal queues: bio.sheep
+  [PASS] signals commit
+  [PASS] a domesticable animal signal reveals husbandry
+  [PASS] fixture configures
+  [PASS] fixture bootstraps
+  [PASS] signal queues: resource.timber
+  [PASS] signals commit
+  [PASS] fire control opens after its fuel and food supply foundations
+  [PASS] fixture configures
+  [PASS] fixture bootstraps
+  [PASS] signal queues: resource.marine_fish
+  [PASS] signals commit
+  [PASS] fixture configures
+  [PASS] fixture bootstraps
+  [PASS] signal queues: resource.freshwater_fish
+  [PASS] signals commit
+  [PASS] fixture configures
+  [PASS] fixture bootstraps
+  [PASS] signal queues: resource.marine_fish
+  [PASS] signal queues: resource.freshwater_fish
+  [PASS] signals commit
+  [PASS] fishing boats stay ineligible without either fishing technology
+  [PASS] fixture configures
+  [PASS] fixture bootstraps
+  [PASS] the unified institution opens seasonal calendar after its core history
+technology eligibility v4: FAIL

@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"limestone"
+display_name = "石灰岩"
+semantic_tags = PackedStringArray()
+category_id = &"limestone"
+substitution_category_ids = PackedStringArray("limestone")
+technology_tags = PackedStringArray("industry.primary", "tech.canal_engineering", "tech.geographic_information_systems")
+reference_max_price = 500000
+price_adjust_q16 = 922
+demand_price_elasticity_q16 = 29491

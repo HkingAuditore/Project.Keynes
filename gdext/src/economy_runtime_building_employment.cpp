@@ -473,29 +473,15 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
         const int32_t profession = _labor_signals.profession_ids[signal];
         const int64_t general_cost = _labor_signals.base_living_cost[signal];
         int64_t role_cost = _labor_signals.role_living_cost[signal];
-        int64_t reference_total = 0;
-        int64_t reference_weight = 0;
-        for (int32_t g = begin; g < end; ++g) {
-            const auto group = building_at(static_cast<size_t>(g));
-            if (!building_available(cell, group.type_id, true)) continue;
-            const BuildingType &type = _building_types[group.type_id];
-            for (int32_t r = 0; r < type.employee_count; ++r) {
-                const JobRole &role = _building_employee_roles[type.employee_begin + r];
-                if (role.profession_id != profession) continue;
-                const int64_t slots = saturating_mul(
-                    group.count, role.slots_per_building, _saturation_count);
-                reference_total = saturating_add(reference_total,
-                    saturating_mul(slots, role.reference_wage_per_day,
-                                   _saturation_count), _saturation_count);
-                reference_weight = saturating_add(reference_weight, slots,
-                                                  _saturation_count);
-            }
-        }
-        const int64_t reference = reference_weight > 0
-            ? reference_total / reference_weight : 0;
-        if (role_cost == 0) role_cost = std::max(general_cost, reference);
+        // A content-side reference wage is not an economic primitive.  It may
+        // remain in old catalog/save data for compatibility, but it must not
+        // anchor the live wage quote or investment cost.
+        role_cost = std::max<int64_t>(0, role_cost);
         const int64_t local_average = _labor_signals.contract_wage_ema[signal] > 0
-            ? _labor_signals.contract_wage_ema[signal] : reference;
+            ? _labor_signals.contract_wage_ema[signal]
+            : (_labor_signals.paid_wage_ema[signal] > 0
+                ? _labor_signals.paid_wage_ema[signal]
+                : std::max(general_cost, role_cost));
         for (int32_t g = begin; g < end; ++g) {
             auto group = building_at(static_cast<size_t>(g));
             if (!building_available(cell, group.type_id, true)) continue;
@@ -551,9 +537,15 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
                             0, Q16_ONE)
                         : Q16_ONE;
                     workforce_q16 = std::min(workforce_q16, role_capacity);
+                    const int32_t role_signal = labor_signal_index(
+                        cell, rrole.profession_id);
+                    const int64_t role_floor = role_signal >= 0
+                        ? std::max(_labor_signals.base_living_cost[role_signal],
+                            _labor_signals.role_living_cost[role_signal])
+                        : 0;
                     reference_wage_pool = saturating_add(reference_wage_pool,
                         saturating_mul(role_filled,
-                            std::max<int64_t>(0, rrole.reference_wage_per_day),
+                            std::max<int64_t>(role_floor, local_average),
                             _saturation_count), _saturation_count);
                 }
                 // Vacant employee lanes still need a first-hire bid: quote the
@@ -575,8 +567,14 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
                         const JobRole &rrole =
                             _building_employee_roles[type.employee_begin + rr];
                         if (rrole.slots_per_building <= 0) continue;
+                        const int32_t role_signal = labor_signal_index(
+                            cell, rrole.profession_id);
+                        const int64_t role_floor = role_signal >= 0
+                            ? std::max(_labor_signals.base_living_cost[role_signal],
+                                _labor_signals.role_living_cost[role_signal])
+                            : 0;
                         reference_wage_pool = saturating_add(reference_wage_pool,
-                            std::max<int64_t>(0, rrole.reference_wage_per_day),
+                            std::max<int64_t>(role_floor, local_average),
                             _saturation_count);
                         break;
                     }
@@ -739,14 +737,12 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
                 // but never below the configured reference wage (so a viable
                 // building still offers at least its nominal wage).
                 if (affordable_ceiling > 0) {
-                    const int64_t floor_cap = std::max(
-                        role.reference_wage_per_day, affordable_ceiling);
-                    floor = std::min(floor, floor_cap);
+                    floor = std::min(floor, affordable_ceiling);
                 }
                 int64_t current = _building_role_contract_wage[index] > 0
-                    ? _building_role_contract_wage[index] : role.reference_wage_per_day;
-                int64_t next = role.reference_wage_per_day;
-                if (role.wage_policy == 2) {
+                    ? _building_role_contract_wage[index] : std::max(floor, local_average);
+                int64_t next = std::max(floor, local_average);
+                {
                     int64_t desired = std::max(floor, local_average);
                     // A vacancy is a market signal in its own right.  The old
                     // target followed only the profession-wide wage EMA, so a
@@ -774,7 +770,7 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
                             shortage_bid, profit_q16, Q16_ONE,
                             _saturation_count);
                         desired = std::max(desired,
-                            saturating_add(role.reference_wage_per_day,
+                            saturating_add(floor,
                                 profit_bid / 2, _saturation_count));
                     }
                     // Damping also caps the target the wage chases toward, so an
@@ -782,7 +778,7 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
                     // employer's affordability either.
                     if (affordable_ceiling > 0) {
                         const int64_t desired_cap = std::max(
-                            role.reference_wage_per_day, affordable_ceiling);
+                            floor, affordable_ceiling);
                         desired = std::min(desired, desired_cap);
                     }
                     if (desired > current) {
@@ -803,10 +799,6 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
                             current, cap, _saturation_count));
                     }
                     next = std::max(next, floor);
-                } else if (role.wage_policy == 1) {
-                    next = role.reference_wage_per_day;
-                } else {
-                    next = 0;
                 }
                 _building_role_contract_wage[index] = next;
                 int32_t forecast_pay_ratio_q16 =
@@ -901,12 +893,19 @@ bool NativeEconomyRuntime::run_building_employment_cell(
     };
     auto expected_employee_gross = [&](const JobRole &role,
                                        int32_t role_index) -> int64_t {
+        const int32_t signal = labor_signal_index(cell, role.profession_id);
+        const int64_t living_floor = signal >= 0
+            ? std::max(_labor_signals.base_living_cost[signal],
+                _labor_signals.role_living_cost[signal]) : 0;
+        const int64_t market_quote = signal >= 0 && signal <
+                static_cast<int32_t>(_labor_signals.contract_wage_ema.size())
+            ? std::max(_labor_signals.contract_wage_ema[signal],
+                _labor_signals.paid_wage_ema[signal]) : 0;
         const int64_t contract = role_index >= 0 && role_index <
                 static_cast<int32_t>(_building_role_contract_wage.size())
             ? std::max<int64_t>(0, _building_role_contract_wage[role_index])
-            : std::max<int64_t>(0, role.reference_wage_per_day);
+            : std::max(living_floor, market_quote);
         if (contract <= 0) return 0;
-        const int32_t signal = labor_signal_index(cell, role.profession_id);
         const int64_t profession_paid = signal >= 0 && signal <
                 static_cast<int32_t>(_labor_signals.paid_wage_ema.size())
             ? std::max<int64_t>(0, _labor_signals.paid_wage_ema[signal]) : 0;
@@ -955,11 +954,19 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 0, _building_role_base_wage_due[role_index])
             : 0;
         if (due > 0) return expected;
+        const int32_t signal = labor_signal_index(cell, role.profession_id);
+        const int64_t living_floor = signal >= 0
+            ? std::max(_labor_signals.base_living_cost[signal],
+                _labor_signals.role_living_cost[signal]) : 0;
+        const int64_t market_quote = signal >= 0 && signal <
+                static_cast<int32_t>(_labor_signals.contract_wage_ema.size())
+            ? std::max(_labor_signals.contract_wage_ema[signal],
+                _labor_signals.paid_wage_ema[signal]) : 0;
         const int64_t contract = role_index >= 0 && role_index <
                 static_cast<int32_t>(_building_role_contract_wage.size())
             ? std::max<int64_t>(
                 0, _building_role_contract_wage[role_index])
-            : std::max<int64_t>(0, role.reference_wage_per_day);
+            : std::max(living_floor, market_quote);
         // A cold-start vacancy has no realized payroll ratio yet. Use the
         // nominal contract for the unemployed entry path; affordability is
         // still enforced by the owner/production working-capital and input
@@ -1231,9 +1238,17 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                     type.employee_begin + role_offset];
                 const int64_t slots = saturating_mul(
                     group.count, role.slots_per_building, _saturation_count);
+                const int32_t signal = labor_signal_index(cell, role.profession_id);
+                const int64_t living_floor = signal >= 0
+                    ? std::max(_labor_signals.base_living_cost[signal],
+                        _labor_signals.role_living_cost[signal]) : 0;
+                const int64_t market_quote = signal >= 0 && signal <
+                        static_cast<int32_t>(_labor_signals.contract_wage_ema.size())
+                    ? std::max(_labor_signals.contract_wage_ema[signal],
+                        _labor_signals.paid_wage_ema[signal]) : 0;
                 reference_wage_pool = saturating_add(reference_wage_pool,
                     saturating_mul(slots,
-                        std::max<int64_t>(0, role.reference_wage_per_day),
+                        std::max(living_floor, market_quote),
                         _saturation_count), _saturation_count);
             }
             const int64_t input_cost = saturating_mul(

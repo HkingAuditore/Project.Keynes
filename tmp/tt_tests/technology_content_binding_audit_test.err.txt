@@ -1,0 +1,178 @@
+SCRIPT ERROR: Assertion failed: method_steam_shipping
+   at: _assert_steam_scope (res://tests/technology_content_binding_audit_test.gd:561)
+   GDScript backtrace (most recent call first):
+       [0] _assert_steam_scope (res://tests/technology_content_binding_audit_test.gd:561)
+       [1] _init (res://tests/technology_content_binding_audit_test.gd:87)
+SCRIPT ERROR: Assertion failed: early_iron_mine missing technology foundation tech.iron_smelting
+   at: _assert_building_supports (res://tests/technology_content_binding_audit_test.gd:972)
+   GDScript backtrace (most recent call first):
+       [0] _assert_building_supports (res://tests/technology_content_binding_audit_test.gd:972)
+       [1] _assert_progressive_unlocks (res://tests/technology_content_binding_audit_test.gd:598)
+       [2] _init (res://tests/technology_content_binding_audit_test.gd:90)
+SCRIPT ERROR: Assertion failed: shallow_silver_working missing technology foundation tech.ground_stone_tools
+   at: _assert_building_supports (res://tests/technology_content_binding_audit_test.gd:972)
+   GDScript backtrace (most recent call first):
+       [0] _assert_building_supports (res://tests/technology_content_binding_audit_test.gd:972)
+       [1] _assert_progressive_unlocks (res://tests/technology_content_binding_audit_test.gd:604)
+       [2] _init (res://tests/technology_content_binding_audit_test.gd:90)
+SCRIPT ERROR: Assertion failed: identification alone constructs production: tech.tin_identification -> early_tin_mine
+   at: _assert_networked_crop_and_resource_gates (res://tests/technology_content_binding_audit_test.gd:655)
+   GDScript backtrace (most recent call first):
+       [0] _assert_networked_crop_and_resource_gates (res://tests/technology_content_binding_audit_test.gd:655)
+       [1] _init (res://tests/technology_content_binding_audit_test.gd:91)
+SCRIPT ERROR: Assertion failed: tech.rice_water_control missing binding method_rice_collector_r3
+   at: _assert_technology_has_binding (res://tests/technology_content_binding_audit_test.gd:1046)
+   GDScript backtrace (most recent call first):
+       [0] _assert_technology_has_binding (res://tests/technology_content_binding_audit_test.gd:1046)
+       [1] _assert_estate_institution_scope (res://tests/technology_content_binding_audit_test.gd:724)
+       [2] _init (res://tests/technology_content_binding_audit_test.gd:92)
+SCRIPT ERROR: Assertion failed: tech.estate_paddy_management missing binding method_rice_collector_r5
+   at: _assert_technology_has_binding (res://tests/technology_content_binding_audit_test.gd:1046)
+   GDScript backtrace (most recent call first):
+       [0] _assert_technology_has_binding (res://tests/technology_content_binding_audit_test.gd:1046)
+       [1] _assert_estate_institution_scope (res://tests/technology_content_binding_audit_test.gd:724)
+       [2] _init (res://tests/technology_content_binding_audit_test.gd:92)
+SCRIPT ERROR: Assertion failed: method_wheat_farm_r3 missing technology foundation tech.wheat_propagation
+   at: _assert_building_supports (res://tests/technology_content_binding_audit_test.gd:972)
+   GDScript backtrace (most recent call first):
+       [0] _assert_building_supports (res://tests/technology_content_binding_audit_test.gd:972)
+       [1] _assert_estate_institution_scope (res://tests/technology_content_binding_audit_test.gd:726)
+       [2] _init (res://tests/technology_content_binding_audit_test.gd:92)
+SCRIPT ERROR: Assertion failed: method_wheat_farm_r5 missing technology foundation tech.wheat_propagation
+   at: _assert_building_supports (res://tests/technology_content_binding_audit_test.gd:972)
+   GDScript backtrace (most recent call first):
+       [0] _assert_building_supports (res://tests/technology_content_binding_audit_test.gd:972)
+       [1] _assert_estate_institution_scope (res://tests/technology_content_binding_audit_test.gd:729)
+       [2] _init (res://tests/technology_content_binding_audit_test.gd:92)
+SCRIPT ERROR: Assertion failed: tech.nuclear_fuel_cycle missing binding method_reactor_component_works_r10
+   at: _assert_technology_has_binding (res://tests/technology_content_binding_audit_test.gd:1046)
+   GDScript backtrace (most recent call first):
+       [0] _assert_technology_has_binding (res://tests/technology_content_binding_audit_test.gd:1046)
+       [1] _assert_engineering_method_scope (res://tests/technology_content_binding_audit_test.gd:773)
+       [2] _init (res://tests/technology_content_binding_audit_test.gd:93)
+SCRIPT ERROR: Assertion failed: tech.fertilizer_processing missing binding method_phosphate_rock_collector_r9
+   at: _assert_technology_has_binding (res://tests/technology_content_binding_audit_test.gd:1046)
+   GDScript backtrace (most recent call first):
+       [0] _assert_technology_has_binding (res://tests/technology_content_binding_audit_test.gd:1046)
+       [1] _assert_engineering_method_scope (res://tests/technology_content_binding_audit_test.gd:773)
+       [2] _init (res://tests/technology_content_binding_audit_test.gd:93)
+SCRIPT ERROR: Assertion failed: tech.systems_engineering missing binding method_zinc_plant_r9
+   at: _assert_technology_has_binding (res://tests/technology_content_binding_audit_test.gd:1046)
+   GDScript backtrace (most recent call first):
+       [0] _assert_technology_has_binding (res://tests/technology_content_binding_audit_test.gd:1046)
+       [1] _assert_engineering_method_scope (res://tests/technology_content_binding_audit_test.gd:773)
+       [2] _init (res://tests/technology_content_binding_audit_test.gd:93)
+SCRIPT ERROR: Assertion failed: tech.currency missing binding jewelry_plant
+   at: _assert_technology_has_binding (res://tests/technology_content_binding_audit_test.gd:1046)
+   GDScript backtrace (most recent call first):
+       [0] _assert_technology_has_binding (res://tests/technology_content_binding_audit_test.gd:1046)
+       [1] _assert_engineering_method_scope (res://tests/technology_content_binding_audit_test.gd:773)
+       [2] _init (res://tests/technology_content_binding_audit_test.gd:93)
+SCRIPT ERROR: Assertion failed: tech.platform_coordination missing binding method_petrochemicals_plant_r10
+   at: _assert_technology_has_binding (res://tests/technology_content_binding_audit_test.gd:1046)
+   GDScript backtrace (most recent call first):
+       [0] _assert_technology_has_binding (res://tests/technology_content_binding_audit_test.gd:1046)
+       [1] _assert_engineering_method_scope (res://tests/technology_content_binding_audit_test.gd:773)
+       [2] _init (res://tests/technology_content_binding_audit_test.gd:93)
+SCRIPT ERROR: Assertion failed: tech.industrial_agronomy missing binding method_agricultural_machinery_plant_r9
+   at: _assert_technology_has_binding (res://tests/technology_content_binding_audit_test.gd:1046)
+   GDScript backtrace (most recent call first):
+       [0] _assert_technology_has_binding (res://tests/technology_content_binding_audit_test.gd:1046)
+       [1] _assert_engineering_method_scope (res://tests/technology_content_binding_audit_test.gd:773)
+       [2] _init (res://tests/technology_content_binding_audit_test.gd:93)
+SCRIPT ERROR: Assertion failed: method_oceanic_shipyard_r7 missing technology foundation tech.oceanic_ship_design
+   at: _assert_building_supports (res://tests/technology_content_binding_audit_test.gd:972)
+   GDScript backtrace (most recent call first):
+       [0] _assert_building_supports (res://tests/technology_content_binding_audit_test.gd:972)
+       [1] _assert_engineering_method_scope (res://tests/technology_content_binding_audit_test.gd:775)
+       [2] _init (res://tests/technology_content_binding_audit_test.gd:93)
+SCRIPT ERROR: Assertion failed: method_lead_plant_r9 missing technology foundation tech.advanced_metallurgy
+   at: _assert_building_supports (res://tests/technology_content_binding_audit_test.gd:972)
+   GDScript backtrace (most recent call first):
+       [0] _assert_building_supports (res://tests/technology_content_binding_audit_test.gd:972)
+       [1] _assert_engineering_method_scope (res://tests/technology_content_binding_audit_test.gd:778)
+       [2] _init (res://tests/technology_content_binding_audit_test.gd:93)
+SCRIPT ERROR: Assertion failed: method_steam_shipping missing technology foundation tech.coastal_shipyards
+   at: _assert_building_supports (res://tests/technology_content_binding_audit_test.gd:972)
+   GDScript backtrace (most recent call first):
+       [0] _assert_building_supports (res://tests/technology_content_binding_audit_test.gd:972)
+       [1] _assert_specialized_production_methods (res://tests/technology_content_binding_audit_test.gd:815)
+       [2] _init (res://tests/technology_content_binding_audit_test.gd:94)
+SCRIPT ERROR: Assertion failed: method_automated_port missing technology foundation tech.semiconductor_manufacturing
+   at: _assert_building_supports (res://tests/technology_content_binding_audit_test.gd:972)
+   GDScript backtrace (most recent call first):
+       [0] _assert_building_supports (res://tests/technology_content_binding_audit_test.gd:972)
+       [1] _assert_specialized_production_methods (res://tests/technology_content_binding_audit_test.gd:815)
+       [2] _init (res://tests/technology_content_binding_audit_test.gd:94)
+SCRIPT ERROR: Assertion failed: method_autonomous_shipping missing technology foundation tech.smart_grid
+   at: _assert_building_supports (res://tests/technology_content_binding_audit_test.gd:972)
+   GDScript backtrace (most recent call first):
+       [0] _assert_building_supports (res://tests/technology_content_binding_audit_test.gd:972)
+       [1] _assert_specialized_production_methods (res://tests/technology_content_binding_audit_test.gd:815)
+       [2] _init (res://tests/technology_content_binding_audit_test.gd:94)
+SCRIPT ERROR: Assertion failed: hydropower_station missing technology foundation tech.hydraulic_engineering
+   at: _assert_building_supports (res://tests/technology_content_binding_audit_test.gd:972)
+   GDScript backtrace (most recent call first):
+       [0] _assert_building_supports (res://tests/technology_content_binding_audit_test.gd:972)
+       [1] _assert_specialized_production_methods (res://tests/technology_content_binding_audit_test.gd:815)
+       [2] _init (res://tests/technology_content_binding_audit_test.gd:94)
+SCRIPT ERROR: Assertion failed: watershed_governance_center missing technology foundation tech.hydraulic_engineering
+   at: _assert_building_supports (res://tests/technology_content_binding_audit_test.gd:972)
+   GDScript backtrace (most recent call first):
+       [0] _assert_building_supports (res://tests/technology_content_binding_audit_test.gd:972)
+       [1] _assert_specialized_production_methods (res://tests/technology_content_binding_audit_test.gd:815)
+       [2] _init (res://tests/technology_content_binding_audit_test.gd:94)
+SCRIPT ERROR: Assertion failed: smart_water_network missing technology foundation tech.hydrological_remote_sensing
+   at: _assert_building_supports (res://tests/technology_content_binding_audit_test.gd:972)
+   GDScript backtrace (most recent call first):
+       [0] _assert_building_supports (res://tests/technology_content_binding_audit_test.gd:972)
+       [1] _assert_specialized_production_methods (res://tests/technology_content_binding_audit_test.gd:815)
+       [2] _init (res://tests/technology_content_binding_audit_test.gd:94)
+SCRIPT ERROR: Assertion failed: method_forest_remote_sensing missing technology foundation tech.forest_management
+   at: _assert_building_supports (res://tests/technology_content_binding_audit_test.gd:972)
+   GDScript backtrace (most recent call first):
+       [0] _assert_building_supports (res://tests/technology_content_binding_audit_test.gd:972)
+       [1] _assert_specialized_production_methods (res://tests/technology_content_binding_audit_test.gd:815)
+       [2] _init (res://tests/technology_content_binding_audit_test.gd:94)
+SCRIPT ERROR: Assertion failed: method_autonomous_forestry missing technology foundation tech.smart_grid
+   at: _assert_building_supports (res://tests/technology_content_binding_audit_test.gd:972)
+   GDScript backtrace (most recent call first):
+       [0] _assert_building_supports (res://tests/technology_content_binding_audit_test.gd:972)
+       [1] _assert_specialized_production_methods (res://tests/technology_content_binding_audit_test.gd:815)
+       [2] _init (res://tests/technology_content_binding_audit_test.gd:94)
+SCRIPT ERROR: Assertion failed: method_highland_precision_agriculture missing technology foundation tech.highland_tuber_farming
+   at: _assert_building_supports (res://tests/technology_content_binding_audit_test.gd:972)
+   GDScript backtrace (most recent call first):
+       [0] _assert_building_supports (res://tests/technology_content_binding_audit_test.gd:972)
+       [1] _assert_specialized_production_methods (res://tests/technology_content_binding_audit_test.gd:815)
+       [2] _init (res://tests/technology_content_binding_audit_test.gd:94)
+SCRIPT ERROR: Assertion failed: tech.modern_husbandry missing binding method_smart_husbandry
+   at: _assert_technology_has_binding (res://tests/technology_content_binding_audit_test.gd:1046)
+   GDScript backtrace (most recent call first):
+       [0] _assert_technology_has_binding (res://tests/technology_content_binding_audit_test.gd:1046)
+       [1] _assert_specialized_production_methods (res://tests/technology_content_binding_audit_test.gd:814)
+       [2] _init (res://tests/technology_content_binding_audit_test.gd:94)
+SCRIPT ERROR: Assertion failed: method_smart_husbandry missing technology foundation tech.sensor_networks
+   at: _assert_building_supports (res://tests/technology_content_binding_audit_test.gd:972)
+   GDScript backtrace (most recent call first):
+       [0] _assert_building_supports (res://tests/technology_content_binding_audit_test.gd:972)
+       [1] _assert_specialized_production_methods (res://tests/technology_content_binding_audit_test.gd:815)
+       [2] _init (res://tests/technology_content_binding_audit_test.gd:94)
+SCRIPT ERROR: Assertion failed: tech.commodity_crop_management missing binding method_specialty_commodity_plantation
+   at: _assert_technology_has_binding (res://tests/technology_content_binding_audit_test.gd:1046)
+   GDScript backtrace (most recent call first):
+       [0] _assert_technology_has_binding (res://tests/technology_content_binding_audit_test.gd:1046)
+       [1] _assert_specialized_production_methods (res://tests/technology_content_binding_audit_test.gd:814)
+       [2] _init (res://tests/technology_content_binding_audit_test.gd:94)
+SCRIPT ERROR: Assertion failed: method_specialty_commodity_plantation missing technology foundation tech.precision_agriculture
+   at: _assert_building_supports (res://tests/technology_content_binding_audit_test.gd:972)
+   GDScript backtrace (most recent call first):
+       [0] _assert_building_supports (res://tests/technology_content_binding_audit_test.gd:972)
+       [1] _assert_specialized_production_methods (res://tests/technology_content_binding_audit_test.gd:815)
+       [2] _init (res://tests/technology_content_binding_audit_test.gd:94)
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 276 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"spices"
+display_name = "香料"
+semantic_tags = PackedStringArray()
+category_id = &"spices"
+substitution_category_ids = PackedStringArray("spices")
+technology_tags = PackedStringArray("industry.primary", "tech.wild_spice_collection", "tech.spice_shade_gardening", "tech.estate_plantation_management", "tech.motorized_agriculture", "tech.commodity_crop_management", "tech.precision_agriculture", "tech.automated_agriculture")
+reference_max_price = 500000
+price_adjust_q16 = 922
+demand_price_elasticity_q16 = 29491
+inventory_target_ratio_q16 = 43691

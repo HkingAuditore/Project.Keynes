@@ -1,0 +1,4 @@
+SCRIPT ERROR: Assertion failed.
+   at: _init (res://tests/technology_catalog_test.gd:126)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/technology_catalog_test.gd:126)

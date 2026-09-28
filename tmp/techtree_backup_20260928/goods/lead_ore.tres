@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"lead_ore"
+display_name = "铅矿石"
+semantic_tags = PackedStringArray()
+category_id = &"lead_ore"
+substitution_category_ids = PackedStringArray("lead_ore")
+technology_tags = PackedStringArray("industry.primary", "tech.mine_ventilation", "tech.geological_prospecting")
+reference_max_price = 500000
+price_adjust_q16 = 922
+demand_price_elasticity_q16 = 29491

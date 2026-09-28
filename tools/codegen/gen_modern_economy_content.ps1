@@ -7,6 +7,11 @@
 
 $ErrorActionPreference = 'Stop'
 $DesignSellThroughQ16 = 52429 # 80%; leaves room for inventory/discard and price noise.
+$foodOutputGoodIds = @(
+    'prepared_staples','bread','grain','gathered_plants','potatoes',
+    'game_meat','meat','fish','canned_fish','dairy_products','vegetables',
+    'processed_food','edible_oil','beverages','wheat_grain','rice_grain','corn_grain',
+    'livestock_products')
 $project = Join-Path $RepoRoot 'Project/project-keynes'
 $goodsDir = Join-Path $project 'data/goods'
 $buildingsDir = Join-Path $project 'data/economy/buildings'
@@ -187,6 +192,20 @@ function PSArray([string[]]$Values) {
 function PI64([long[]]$Values) {
     if ($Values.Count -eq 0) { return 'PackedInt64Array()' }
     return 'PackedInt64Array(' + ($Values -join ', ') + ')'
+}
+
+function Scale-Food-Output-Quantities([string]$Content) {
+    $outputs = @(Content-Strings $Content 'output_good_ids')
+    $quantities = @(Content-Numbers $Content 'output_quantities_per_day')
+    if ($outputs.Count -eq 0 -or $outputs.Count -ne $quantities.Count) { return $Content }
+    for ($i = 0; $i -lt $outputs.Count; $i++) {
+        if ($outputs[$i] -in $foodOutputGoodIds) {
+            $quantities[$i] = [long]$quantities[$i] * 2
+        }
+    }
+    return [regex]::Replace($Content,
+        '(?m)^output_quantities_per_day = PackedInt64Array\(.*\)\r?$',
+        'output_quantities_per_day = ' + (PI64 @($quantities)))
 }
 function PI32([int[]]$Values) {
     if ($Values.Count -eq 0) { return 'PackedInt32Array()' }
@@ -1299,9 +1318,11 @@ function Calibrate-CuratedBuilding([string]$Content, [string]$Id) {
     if ($Id -in @('knapping_workshop', 'communal_hearth')) {
         # These Stone Age recipes are physical balance anchors. Price and living-cost
         # calibration must not silently rewrite their audited throughput.
-        return $Content
+        return Scale-Food-Output-Quantities $Content
     }
-    if ($outputs -contains 'gold' -or $outputs -contains 'silver') { return $Content }
+    if ($outputs -contains 'gold' -or $outputs -contains 'silver') {
+        return Scale-Food-Output-Quantities $Content
+    }
     $ownerId = Content-String $Content 'owner_profession_id'
     $ownerSlots = [Math]::Max(1, (Content-Integer $Content 'owner_slots_per_building' 1))
     $ownerLivingCost = [double](Reference-Living-Cost-For-Profession $ownerId) * $ownerSlots
@@ -1350,7 +1371,7 @@ function Calibrate-CuratedBuilding([string]$Content, [string]$Id) {
             '(?m)^resource_quantities_per_day = PackedInt64Array\(.*\)\r?$',
             'resource_quantities_per_day = ' + (PI64 @($resourceQty)))
     }
-    return $Content
+    return Scale-Food-Output-Quantities $Content
 }
 
 $explicitInputCandidates = @{
@@ -1531,6 +1552,11 @@ function Write-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[
         }
     )
     if ($Id -eq 'marine_fish_collector') { $resourceQty = @([long]242) }
+    for ($i = 0; $i -lt $Outputs.Count; $i++) {
+        if ($Outputs[$i] -in $foodOutputGoodIds) {
+            $outputQty[$i] = [long]$outputQty[$i] * 2
+        }
+    }
     $resourceAccessModes = @($Resources | ForEach-Object { 'local' })
     [string[]]$roleIds = @()
     [long[]]$roleSlots = @()
@@ -1857,6 +1883,11 @@ function Write-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[
         'energy'
     } else {
         'manufacturing'
+    }
+    # Wage policy is an emergent labour-market quote.  Legacy fixed policy
+    # entries remain readable, but generated employee roles are always adaptive.
+    if ($roleIds.Count -gt 0) {
+        $roleWagePolicies = @($roleIds | ForEach-Object { 'adaptive' })
     }
     Write-Utf8 (Join-Path $buildingsDir "$Id.tres") @"
 [gd_resource type="Resource" script_class="BuildingProfile" load_steps=2 format=3]

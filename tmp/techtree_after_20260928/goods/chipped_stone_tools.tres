@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"chipped_stone_tools"
+display_name = "打制石器"
+semantic_tags = PackedStringArray()
+category_id = &"tools"
+substitution_category_ids = PackedStringArray("tools")
+technology_tags = PackedStringArray("tech.stone_knapping")
+production_quality_level = 1
+production_efficiency_q16 = 32768
+default_price = 75000
+reference_max_price = 3750000

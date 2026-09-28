@@ -309,10 +309,18 @@ int64_t NativeEconomyRuntime::prospective_business_subsidy_request(
         for (int32_t role = 0; role < type.employee_count; ++role) {
             const JobRole &job =
                 _building_employee_roles[type.employee_begin + role];
+            const int32_t signal = labor_signal_index(cell, job.profession_id);
+            const int64_t living_floor = signal >= 0
+                ? std::max(_labor_signals.base_living_cost[signal],
+                    _labor_signals.role_living_cost[signal]) : 0;
+            const int64_t market_quote = signal >= 0 && signal <
+                    static_cast<int32_t>(_labor_signals.contract_wage_ema.size())
+                ? std::max(_labor_signals.contract_wage_ema[signal],
+                    _labor_signals.paid_wage_ema[signal]) : 0;
             daily_eligible_cost = saturating_add(
                 daily_eligible_cost,
                 saturating_mul(job.slots_per_building,
-                    job.reference_wage_per_day, _saturation_count),
+                    std::max(living_floor, market_quote), _saturation_count),
                 _saturation_count);
         }
         const int64_t maintenance = daily_maintenance_cost_for_type(

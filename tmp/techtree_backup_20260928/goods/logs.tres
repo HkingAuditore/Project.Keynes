@@ -1,0 +1,15 @@
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"logs"
+display_name = "原木"
+semantic_tags = PackedStringArray()
+category_id = &"logs"
+substitution_category_ids = PackedStringArray("logs", "primitive_construction", "solid_fuel")
+technology_tags = PackedStringArray("industry.primary", "tech.deadwood_collection", "tech.composite_tools", "tech.forest_management", "tech.satellite_observation", "tech.autonomous_forestry_operations")
+reference_max_price = 500000
+price_adjust_q16 = 922
+demand_price_elasticity_q16 = 29491

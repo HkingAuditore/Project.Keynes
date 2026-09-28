@@ -61,6 +61,8 @@ func tick(ctx) -> Dictionary:
 				claim = facade.world_ext().dispatch_effect_native_country()
 			if facade.world_ext().has_method("ack_effect_native_country"):
 				facade.world_ext().ack_effect_native_country()
+			if facade.world_ext().has_method("settle_orphaned_effect_native_country_acks"):
+				facade.world_ext().settle_orphaned_effect_native_country_acks()
 			var settle: Dictionary = {}
 			if facade.world_ext().has_method("dispatch_effect_native_economy"):
 				settle = facade.world_ext().dispatch_effect_native_economy()

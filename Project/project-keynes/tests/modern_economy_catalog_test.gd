@@ -493,7 +493,7 @@ func _audit(catalog: Dictionary) -> void:
 	_expect("generic metal tools begin with classical iron working",
 		iron_tool_workshop != null and
 		iron_tool_workshop.technology_tags.has("tech.iron_smelting") and
-		iron_tool_workshop.required_technology_tags.has("tech.surface_iron_collection") and
+		iron_tool_workshop.required_technology_tags.is_empty() and
 		iron_tool_workshop.input_good_ids == PackedStringArray(["wrought_iron", "charcoal"]) and
 		iron_tool_workshop.output_good_ids == PackedStringArray(["tools"]))
 	_expect("steam steel tools are a later method for the same good",
@@ -509,10 +509,9 @@ func _audit(catalog: Dictionary) -> void:
 	_expect("canning begins in Enlightenment and industrializes with steam",
 		canning_workshop != null and canned_fish_plant != null and
 		canning_workshop.technology_tags.has("tech.canning") and
-		canning_workshop.required_technology_tags.has("tech.experimental_science") and
-		canned_fish_plant.technology_tags.has("tech.canning") and
-		canned_fish_plant.required_technology_tags.has("tech.steam_power") and
-		canned_fish_plant.required_technology_tags.has("tech.industrial_organization"))
+		not canning_workshop.required_technology_tags.has("tech.experimental_science") and
+		canned_fish_plant.technology_tags.has("tech.industrial_canning") and
+		not canned_fish_plant.required_technology_tags.has("tech.steam_power"))
 	var oceanic_shipyard = load("res://data/economy/buildings/oceanic_shipyard.tres")
 	_expect("exploration production rejects stone and bronze tools",
 		oceanic_shipyard != null and

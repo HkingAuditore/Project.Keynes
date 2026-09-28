@@ -2294,14 +2294,12 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
     for (size_t i = 0; i < employee_prof.size(); ++i) {
         if (employee_prof[i] < 0 || employee_prof[i] >= static_cast<int32_t>(_profession_ids.size()) ||
             employee_slots[i] <= 0 || employee_wage_policies[i] < 0 ||
-            employee_wage_policies[i] > 2 || employee_reference_wages[i] < 0 ||
-            (employee_wage_policies[i] != 0 && employee_reference_wages[i] <= 0)) {
+            employee_wage_policies[i] > 2) {
             error = "building_employee_role_invalid";
             return false;
         }
         _building_employee_roles[i] = {employee_prof[i], employee_slots[i],
-                                       employee_wage_policies[i],
-                                       employee_reference_wages[i]};
+                                       employee_wage_policies[i]};
     }
     auto compile_goods = [&](const std::vector<int32_t> &ids, const std::vector<int64_t> &qty,
                              std::vector<GoodAmount> &dst, const char *reason) {

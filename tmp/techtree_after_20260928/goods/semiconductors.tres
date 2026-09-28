@@ -1,0 +1,16 @@
+[gd_resource type="Resource" script_class="GoodProfile" format=3]
+
+[ext_resource type="Script" path="res://scripts/data/good_profile.gd" id="1"]
+
+[resource]
+script = ExtResource("1")
+id = &"semiconductors"
+display_name = "半导体"
+semantic_tags = PackedStringArray()
+category_id = &"processor_component"
+substitution_category_ids = PackedStringArray("processor_component")
+technology_tags = PackedStringArray("industry.machinery", "tech.semiconductor_manufacturing")
+default_price = 52000
+reference_max_price = 2600000
+price_adjust_q16 = 2355
+demand_price_elasticity_q16 = 75366
