@@ -64,6 +64,11 @@ func tick(ctx) -> Dictionary:
 			var settle: Dictionary = {}
 			if facade.world_ext().has_method("dispatch_effect_native_economy"):
 				settle = facade.world_ext().dispatch_effect_native_economy()
+			# Economy ACK is part of the same reduced adapter pass.  Without it,
+			# the SETTLE command is applied but the Effect transaction remains
+			# pending, so the expedition stays visible as "落地结算中" forever.
+			if facade.world_ext().has_method("ack_effect_native_economy"):
+				facade.world_ext().ack_effect_native_economy()
 			return {
 				"done": true,
 				"work_done": int(claim.get("submitted_commands", 0))

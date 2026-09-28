@@ -330,7 +330,12 @@ int32_t NativeEconomyRuntime::select_startup_construction_candidate(
          cursor < _building_construction_candidate_offsets[group + 1]; ++cursor) {
         const ConstructionCandidate &candidate =
             _building_construction_candidates[cursor];
-        if (!good_market_available(cell, candidate.good_id, true)) continue;
+        // Construction materials must be able to bootstrap their own supply.
+        // A zero-stock good is still a valid candidate when a locally available
+        // producer can be started for it; otherwise the selector drops the
+        // material before demand is recorded and upstream pressure never forms.
+        if (!good_market_available(cell, candidate.good_id, true) &&
+            select_startup_producer(cell, candidate.good_id) < 0) continue;
         int64_t physical = mul_div_sat(preferred.quantity, Q16_ONE,
             std::max<int32_t>(1, candidate.efficiency_q16), sat);
         if (mul_div_sat(physical, candidate.efficiency_q16,
@@ -495,6 +500,44 @@ void NativeEconomyRuntime::record_investment_material_demand(
         _construction_material_reserved = saturating_add(_construction_material_reserved,
             std::max<int64_t>(0, demand - reserve), _saturation_count);
         reserve = std::max(reserve, demand);
+    }
+
+    // A candidate producer also creates a future operating-input demand.  It
+    // must enter the same total-good price signal as household and installed
+    // building demand; otherwise a hard-input chain can never cold-start
+    // (for example knapping waits for flint while the flint quarry waits for
+    // a flint price signal).  This is prospective demand, so it is recorded
+    // as desired/unfunded demand and never as a spend or a physical reserve.
+    for (int32_t input_index = 0; input_index < type.input_count; ++input_index) {
+        const ProductionInput &input = _building_inputs[
+            type.input_begin + input_index];
+        if (input.quantity <= 0) continue;
+        int32_t good = input.preferred_good_id;
+        if (good < 0 && input.candidate_count > 0)
+            good = _building_input_candidates[input.candidate_begin].good_id;
+        if (good < 0 || good >= market_store().good_count) continue;
+        const int32_t signal = ensure_market_signal_index(cell, good);
+        if (signal < 0) continue;
+        const int64_t demand = saturating_mul(
+            saturating_mul(input.quantity, std::max<int64_t>(1, count),
+                _saturation_count),
+            std::max<int64_t>(1, _epoch_days), _saturation_count);
+        const int64_t previous = _epoch_desired_business_demand[signal];
+        const int64_t increase = std::max<int64_t>(0, demand - previous);
+        _epoch_desired_business_demand[signal] = std::max(previous, demand);
+        if (increase <= 0) continue;
+        const int64_t daily = increase / std::max(1, _epoch_days);
+        const int64_t alpha = std::min<int64_t>(Q16_ONE,
+            static_cast<int64_t>(_good_business_demand_ema_alpha_q16[good]) *
+                std::max(1, _epoch_days));
+        _market_signals.business_demand_ema[signal] = saturating_add(
+            _market_signals.business_demand_ema[signal],
+            mul_div_sat(daily, alpha, Q16_ONE, _saturation_count),
+            _saturation_count);
+        _desired_business_demand = saturating_add(
+            _desired_business_demand, increase, _saturation_count);
+        _unfunded_business_demand = saturating_add(
+            _unfunded_business_demand, increase, _saturation_count);
     }
 }
 
@@ -2637,12 +2680,32 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
             // production's optional-productivity path.
             int64_t hard_input_coverage_bound_q16 = Q16_ONE;
             int64_t soft_efficiency_q16 = Q16_ONE;
+            // Value of one full daily recipe's outputs at the frozen local
+            // prices. This is used only for the optional-input decision: a
+            // soft input is purchased when its marginal output value exceeds
+            // its full purchase cost, otherwise the investment is evaluated
+            // at bare efficiency with zero soft-input cost.
+            int64_t daily_output_value = 0;
+            for (int32_t output_edge = 0;
+                 output_edge < type.output_count; ++output_edge) {
+                const GoodAmount &output = _building_outputs[
+                    type.output_begin + output_edge];
+                if (output.good_id < 0 || output.good_id >= market_store().good_count)
+                    continue;
+                const int64_t price = std::max<int64_t>(0,
+                    market_store().price[market_store().index(
+                        market, output.good_id)]);
+                daily_output_value = saturating_add(daily_output_value,
+                    goods_cost(std::max<int64_t>(0, output.quantity), price,
+                        _saturation_count), _saturation_count);
+            }
             for (int32_t i = 0; i < type.input_count; ++i) {
                 const ProductionInput &input = _building_inputs[type.input_begin + i];
                 int64_t best_price = std::numeric_limits<int64_t>::max();
                 int64_t best_base_price = 0;
                 int64_t best_coverage_q16 = -1;
                 int64_t best_cold_cover = -1;
+                int32_t best_efficiency_q16 = Q16_ONE;
                 for (int32_t c = input.candidate_begin;
                      c < input.candidate_begin + input.candidate_count; ++c) {
                     const InputCandidate &candidate = _building_input_candidates[c];
@@ -2697,6 +2760,8 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                         best_cold_cover = cold_cover;
                         best_price = effective_price;
                         best_base_price = base_effective_price;
+                        best_efficiency_q16 = std::max<int32_t>(1,
+                            candidate.efficiency_q16);
                     }
                 }
                 const int64_t required_q16 = std::clamp<int64_t>(
@@ -2720,23 +2785,43 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                         std::clamp<int64_t>(
                             std::max<int64_t>(0, best_coverage_q16), 0, Q16_ONE));
                 } else if (required_q16 > 0) {
-                    soft_efficiency_q16 = std::min<int64_t>(
-                        soft_efficiency_q16,
-                        std::clamp<int64_t>(
-                            Q16_ONE - required_q16 + mul_div_sat(
-                                std::max<int64_t>(0, best_coverage_q16),
-                                required_q16, Q16_ONE, _saturation_count),
-                            0, Q16_ONE));
-                }
-                // Soft inputs are optional: charge only the covered (stocked /
-                // offered) share. Hard inputs bill the full recipe quantity;
-                // utilization scales the period bill later.
-                int64_t bill_quantity = input.quantity;
-                if (required_q16 < Q16_ONE) {
-                    bill_quantity = mul_div_sat(input.quantity,
-                        std::max<int64_t>(0, best_coverage_q16), Q16_ONE,
+                    // Evaluate both soft-input choices. The bare branch keeps
+                    // only (1 - required) productivity and pays nothing. The
+                    // tooled branch restores full productivity and pays the
+                    // complete physical input bill. This makes investment
+                    // profitability use max(bare, tooled), rather than
+                    // treating a partially available tool as mandatory cost.
+                    const int64_t physical_daily = mul_div_sat(
+                        input.quantity, Q16_ONE,
+                        best_efficiency_q16,
                         _saturation_count);
+                    const int64_t tooled_cost = goods_cost(
+                        std::max<int64_t>(1, physical_daily), best_price,
+                        _saturation_count);
+                    const int64_t marginal_output_value = mul_div_sat(
+                        daily_output_value, required_q16, Q16_ONE,
+                        _saturation_count);
+                    const bool buy_soft = tooled_cost > 0 &&
+                        marginal_output_value >= tooled_cost;
+                    if (buy_soft) {
+                        daily_input_cost = saturating_add(daily_input_cost,
+                            tooled_cost, _saturation_count);
+                        daily_input_base_cost = saturating_add(
+                            daily_input_base_cost,
+                            goods_cost(std::max<int64_t>(1, physical_daily),
+                                best_base_price, _saturation_count),
+                            _saturation_count);
+                    } else {
+                        soft_efficiency_q16 = std::min<int64_t>(
+                            soft_efficiency_q16,
+                            std::clamp<int64_t>(Q16_ONE - required_q16,
+                                0, Q16_ONE));
+                    }
+                    continue;
                 }
+                // Hard inputs bill their full physical recipe quantity;
+                // utilization scales the period bill later.
+                const int64_t bill_quantity = input.quantity;
                 daily_input_cost = saturating_add(daily_input_cost,
                     goods_cost(bill_quantity, best_price, _saturation_count),
                     _saturation_count);
@@ -2744,6 +2829,14 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     daily_input_base_cost, goods_cost(bill_quantity, best_base_price, _saturation_count), _saturation_count);
             }
             if (daily_input_cost == std::numeric_limits<int64_t>::max()) {
+                // A hard production input shortage must still expose the
+                // construction BOM.  Otherwise a producer such as the
+                // knapping workshop is rejected before the material pass and
+                // its flint/log demand never reaches the upstream producer.
+                // The reserve update is monotonic, so repeated review passes
+                // do not multiply the same demand.
+                record_investment_material_demand(cell, type_id, 1,
+                    country_cost_factor);
                 reject(INVESTMENT_REJECTION_INPUT_CHAIN);
                 continue;
             }
@@ -2900,6 +2993,12 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     hard_input_coverage_bound_q16);
             }
             if (utilization_q16 <= 0) {
+                // Preserve upstream construction pressure even when the
+                // first executable utilization is currently zero.  This is
+                // needed for hard-input bootstrap chains whose producer must
+                // be built before utilization can become positive.
+                record_investment_material_demand(cell, type_id, 1,
+                    country_cost_factor);
                 reject(INVESTMENT_REJECTION_INPUT_CHAIN);
                 continue;
             }

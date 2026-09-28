@@ -6627,6 +6627,11 @@ int64_t NativeEconomyRuntime::rebuild_production_input_reserves_for_cell(
         bool household_priority_bundle = false;
         for (int32_t i = 0; i < type.input_count; ++i) {
             const ProductionInput &input = _building_inputs[type.input_begin + i];
+            const int64_t required = std::clamp<int64_t>(input.required_q16, 0, Q16_ONE);
+            // Optional inputs are decided by the production pass' marginal
+            // value test.  They must never become hard inventory reserves or
+            // emit full upstream shortage pressure here.
+            if (required > 0 && required < Q16_ONE) continue;
             int32_t selected = -1;
             int32_t selected_signal = -1;
             int64_t selected_physical_qty = 0;
@@ -6687,8 +6692,6 @@ int64_t NativeEconomyRuntime::rebuild_production_input_reserves_for_cell(
                 }
             }
             if (selected < 0) {
-                const int64_t required = std::clamp<int64_t>(
-                    input.required_q16, 0, Q16_ONE);
                 // Soft shortage cuts throughput efficiency later; hard zeros.
                 if (required >= Q16_ONE) executable_q16 = 0;
                 else if (required > 0) {
@@ -6700,8 +6703,6 @@ int64_t NativeEconomyRuntime::rebuild_production_input_reserves_for_cell(
             const InputCandidate &candidate = _building_input_candidates[selected];
             selected_signals[i] = selected_signal;
             selected_physical[i] = selected_physical_qty;
-            const int64_t required = std::clamp<int64_t>(
-                input.required_q16, 0, Q16_ONE);
             if (required >= Q16_ONE) {
                 executable_q16 = std::min(executable_q16, best_capacity_q16);
             } else if (required > 0) {
@@ -7644,6 +7645,23 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                     !building_available(cell, group.type_id, true)) continue;
                 const BuildingType &type = _building_types[group.type_id];
                 int64_t group_floor_q16 = 0;
+                // The owner floor is expressed in full-recipe output.  When a
+                // soft input is absent, production deliberately keeps only the
+                // bare efficiency (1 - required), so the planned activity must
+                // be lifted to preserve the same survival quantity.  Without
+                // this conversion a missing tool silently halves food output
+                // and can turn a temporary shortage into starvation.
+                int64_t bare_efficiency_q16 = Q16_ONE;
+                for (int32_t i = 0; i < type.input_count; ++i) {
+                    const ProductionInput &input = _building_inputs[
+                        type.input_begin + i];
+                    const int64_t required = std::clamp<int64_t>(
+                        input.required_q16, 0, Q16_ONE);
+                    if (required > 0 && required < Q16_ONE)
+                        bare_efficiency_q16 = std::min<int64_t>(
+                            bare_efficiency_q16, Q16_ONE - required);
+                }
+                if (bare_efficiency_q16 <= 0) bare_efficiency_q16 = 1;
                 for (int32_t i = 0; i < type.output_count; ++i) {
                     const int32_t good = _building_outputs[type.output_begin + i].good_id;
                     if (_survival_food_good_mask[good] != 0) {
@@ -7654,6 +7672,14 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                         group_floor_q16 = std::max(
                             group_floor_q16, owner_clothing_floor_q16[owner]);
                 }
+                if (group_floor_q16 > 0 && bare_efficiency_q16 < Q16_ONE)
+                    group_floor_q16 = std::clamp<int64_t>(
+                        saturating_add(
+                            saturating_mul(group_floor_q16, Q16_ONE,
+                                _saturation_count),
+                            bare_efficiency_q16 - 1, _saturation_count) /
+                            bare_efficiency_q16,
+                        0, Q16_ONE);
                 _building_survival_utilization_floor_q16[g] = group_floor_q16;
             }
         }
@@ -8497,6 +8523,8 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
             // Counterfactual restart margin must match the executable soft path:
             // unstocked soft inputs cut throughput and drop out of operating cost.
             int64_t recovery_profit_margin = expected_profit_margin;
+            int64_t recovery_margin_denominator = std::max<int64_t>(
+                MONEY_SCALE, operating);
             if (soft_coverage_scale_q16 < Q16_ONE ||
                 restart_input_unit_cost != input_cost) {
                 const int64_t recovery_revenue = mul_div_sat(
@@ -8506,6 +8534,8 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                         employee_wages, _saturation_count),
                         owner_living_cost, _saturation_count),
                     maintenance_cost, _saturation_count);
+                recovery_margin_denominator = std::max<int64_t>(
+                    MONEY_SCALE, recovery_operating);
                 const int64_t recovery_business_eligible = saturating_add(
                     saturating_add(restart_input_unit_cost, employee_wages,
                         _saturation_count),
@@ -8546,12 +8576,39 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                 recovery_profit_margin = std::clamp<int64_t>(
                     recovery_profit_margin, -Q16_ONE, Q16_ONE);
             }
+            // Owner-retained output is income for every building, including a
+            // suspended one. Revalue it at the current market price in the
+            // same recovery decision; do not create a food-only exception.
+            if (executable) {
+                int64_t quote_sat = 0;
+                const OwnerOpportunityQuote recovery_quote =
+                    owner_opportunity_quote(group, Q16_ONE, Q16_ONE, quote_sat);
+                const int64_t recovery_cash_profit = mul_div_sat(
+                    recovery_profit_margin, recovery_margin_denominator,
+                    Q16_ONE, _saturation_count);
+                const int64_t recovery_total_profit = saturating_add(
+                    recovery_cash_profit,
+                    std::max<int64_t>(0, recovery_quote.in_kind_retail_value),
+                    _saturation_count);
+                recovery_profit_margin = std::clamp<int64_t>(mul_div_sat(
+                    recovery_total_profit, Q16_ONE,
+                    recovery_margin_denominator, _saturation_count),
+                    -Q16_ONE, Q16_ONE);
+                _saturation_count = saturating_add(_saturation_count, quote_sat,
+                    _saturation_count);
+            }
             if (group_index < static_cast<int32_t>(
                     _building_recovery_liquidation_eligible.size())) {
                 _building_recovery_liquidation_eligible[group_index] =
                     executable &&
                     recovery_profit_margin < _building_restart_margin_q16;
             }
+            // Recovery must be able to bootstrap an empty owner roster. The
+            // employment pass only advertises vacancies for ACTIVE groups, so
+            // requiring an already seated owner here creates a circular gate.
+            // All buildings use the same current-price cash + owner-retained
+            // income test; survival goods receive no special profitability
+            // exemption.
             const bool viable = executable &&
                 recovery_profit_margin >= _building_restart_margin_q16;
             if (viable) {
@@ -8748,24 +8805,44 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                     ? std::max<int64_t>(income_base, owner_living_cost)
                     : income_base,
                 1, _saturation_count);
-            // Owner-retained output is economic income even when no merchant
-            // transaction occurs. Reuse the realized value when available; for
-            // an empty/new group, take a read-only opportunity quote only when
-            // cash profit would otherwise shut the group down. This avoids a
-            // hot-loop duplicate for ordinary cash-positive groups while still
-            // allowing self-use-only buildings to start and attract labour.
-            int64_t expected_in_kind = std::max<int64_t>(0,
-                group.last_in_kind_livelihood_value);
+            // Owner-retained output is economic income for every building.
+            // Cache the current-price opportunity quote for this group during
+            // the frozen epoch, rather than reusing last epoch's currency
+            // value. A new epoch invalidates the cache and observes prices,
+            // stocks, and demand again.
+            thread_local const NativeEconomyRuntime *in_kind_cache_runtime = nullptr;
+            thread_local int64_t in_kind_cache_epoch = std::numeric_limits<int64_t>::min();
+            thread_local std::vector<int64_t> in_kind_cache_values;
+            thread_local std::vector<uint8_t> in_kind_cache_valid;
+            if (in_kind_cache_runtime != this || in_kind_cache_epoch != _epoch_id) {
+                in_kind_cache_runtime = this;
+                in_kind_cache_epoch = _epoch_id;
+                in_kind_cache_values.assign(building_count(), 0);
+                in_kind_cache_valid.assign(building_count(), 0);
+            } else if (in_kind_cache_values.size() < building_count()) {
+                const size_t old_size = in_kind_cache_values.size();
+                in_kind_cache_values.resize(building_count(), 0);
+                in_kind_cache_valid.resize(building_count(), 0);
+                std::fill(in_kind_cache_valid.begin() + old_size,
+                    in_kind_cache_valid.end(), 0);
+            }
+            int64_t expected_in_kind = 0;
+            if (group.index >= 0 && group.index < static_cast<int32_t>(
+                    in_kind_cache_values.size())) {
+                const size_t cache_index = static_cast<size_t>(group.index);
+                if (in_kind_cache_valid[cache_index] == 0) {
+                    const OwnerOpportunityQuote opportunity = owner_opportunity_quote(
+                        group, Q16_ONE, Q16_ONE, _saturation_count);
+                    in_kind_cache_values[cache_index] = std::max<int64_t>(0,
+                        opportunity.in_kind_retail_value);
+                    in_kind_cache_valid[cache_index] = 1;
+                }
+                expected_in_kind = in_kind_cache_values[cache_index];
+            }
             const int64_t expected_cash_profit = saturating_sub(
                 saturating_sub(saturating_sub(revenue, expected_operating_cost,
                     _saturation_count), business_transfer, _saturation_count),
                 income_transfer, _saturation_count);
-            if (expected_in_kind <= 0 && expected_cash_profit <= 0) {
-                const OwnerOpportunityQuote opportunity = owner_opportunity_quote(
-                    group, Q16_ONE, Q16_ONE, _saturation_count);
-                expected_in_kind = std::max<int64_t>(0,
-                    opportunity.in_kind_retail_value);
-            }
             const int64_t expected_profit = saturating_add(
                 expected_cash_profit, expected_in_kind, _saturation_count);
             group.planned_utilization_q16 = expected_profit > 0
@@ -9824,18 +9901,14 @@ int64_t NativeEconomyRuntime::planned_owner_demand(
     // ACTIVE self-employment keeps every physical owner position. Utilization
     // scales work and output per building, not the number of proprietors.
     if (group.operating_state == 0) return full;
-    // Suspended survival-food producers keep owner demand so SUSPENDED_LOSS
-    // cannot permanently zero hire targets after shedding labour. Production
-    // and investment stay gated on operating_state; employment may refill and
-    // schedule restart. Non-survival suspended lots still wait for recovery.
+    // A suspended producer is not an employment target. Keeping its owner
+    // demand alive used to pin proprietors to a zero-output lot while its hard
+    // inputs were unavailable. That made upstream food vacancies impossible
+    // to staff and created a starvation loop. Recovery is decided by the
+    // economic plan above; when it becomes viable, pending_operating_state is
+    // flipped to ACTIVE and the next employment pass hires by the normal
+    // income comparison.
     if (group.operating_state == 1) {
-        for (int32_t i = 0; i < type.output_count; ++i) {
-            const int32_t good = _building_outputs[type.output_begin + i].good_id;
-            if (good >= 0 &&
-                good < static_cast<int32_t>(_survival_food_good_mask.size()) &&
-                _survival_food_good_mask[good] != 0)
-                return full;
-        }
         return 0;
     }
     return 0;
