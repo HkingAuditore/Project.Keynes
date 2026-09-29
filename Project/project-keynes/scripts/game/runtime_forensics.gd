@@ -33,6 +33,17 @@ const ECONOMY_CONSERVATION_KEYS := [
 	"producer_support_money_issued", "bullion_money_issued",
 	"closing_audit_mode", "closing_audit_incremental_this_epoch",
 	"opening_audit_fast_paths", "opening_audit_full_verifications",
+	"opening_goods_stock", "closing_goods_stock",
+	"opening_country_goods", "closing_country_goods",
+	"opening_expedition_goods", "closing_expedition_goods",
+	"opening_transit_goods", "closing_transit_goods",
+	"explicit_stock_delta", "production_output_stock",
+	"production_output_discarded", "production_output_retained",
+	"consumed_goods", "owner_output_consumed",
+	"construction_goods_consumed", "production_inputs_consumed",
+	"maintenance_goods_consumed", "cycle_flow_discarded",
+	"bullion_stock_consumed", "country_research_goods_consumed",
+	"goods_expected", "saturation_count",
 ]
 
 ## 定位一次停机真正需要的东西：哪个 stage、哪条命令、哪些边界开着。

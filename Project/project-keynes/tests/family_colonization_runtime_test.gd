@@ -31,6 +31,21 @@ func _cell_has_living_merchant(ext: Object, cell: int) -> bool:
 	return false
 
 
+func _employment_shape_valid(ext: Object, cell: int) -> bool:
+	var snap: Dictionary = ext.get_population_cell_snapshot(cell)
+	var populations: PackedInt64Array = snap.get("populations", PackedInt64Array())
+	var owners: PackedInt64Array = snap.get("owner_employed_by_cohort", PackedInt64Array())
+	var employees: PackedInt64Array = snap.get("employee_employed_by_cohort", PackedInt64Array())
+	if populations.size() != owners.size() or populations.size() != employees.size():
+		return false
+	for index in range(populations.size()):
+		if int(owners[index]) < 0 or int(employees[index]) < 0:
+			return false
+		if int(owners[index]) + int(employees[index]) > int(populations[index]):
+			return false
+	return true
+
+
 func _run() -> void:
 	if not ClassDB.class_exists("DCWorldExt"):
 		print("[SKIP] DCWorldExt unavailable")
@@ -41,6 +56,7 @@ func _run() -> void:
 		return
 	var catalog := compiled.duplicate(true)
 	catalog.erase("ok")
+	_run_employed_expedition_departure(catalog.duplicate(true))
 	var fixture := _make_fixture(catalog, 260810)
 	var ext: Object = fixture.ext
 	var country_handle := int(fixture.country_handle)
@@ -744,6 +760,8 @@ func _run_greenfield_kit_settle(catalog: Dictionary) -> void:
 		and not bool(ext.get_economy_report().get("fatal", false))
 		and int(ext.get_economy_report().get("goods_error", -1)) == 0
 		and int(ext.get_economy_report().get("population_error", -1)) == 0)
+	_expect("greenfield arrival keeps destination employment within population",
+		_employment_shape_valid(ext, 2))
 	var dest_before := _building_group_total(ext, 2)
 	ext.capture_economy_trade_topology(fixture.neighbors, fixture.terrain,
 		fixture.passable, fixture.costs, 2)
@@ -1613,7 +1631,8 @@ func _make_two_country_fixture(catalog: Dictionary, seed: int) -> Dictionary:
 
 func _make_fixture(catalog: Dictionary, seed: int, stock_fill: int = 1000000,
 		stock_overrides: Dictionary = {},
-		granted_technology_ids: PackedStringArray = PackedStringArray()) -> Dictionary:
+		granted_technology_ids: PackedStringArray = PackedStringArray(),
+		founder_building_count: int = 1) -> Dictionary:
 	var map := MapData.new(3, 1)
 	for q in range(3):
 		var cell := HexCell.new(q, 0)
@@ -1714,7 +1733,7 @@ func _make_fixture(catalog: Dictionary, seed: int, stock_fill: int = 1000000,
 		"building_cells": PackedInt32Array([0]),
 		"building_type_ids": PackedInt32Array([building]),
 		"building_owner_signature_ids": PackedInt32Array([forager]),
-		"building_counts": PackedInt64Array([1]),
+		"building_counts": PackedInt64Array([founder_building_count]),
 		"founder_family_cells": PackedInt32Array([0]),
 		"founder_family_building_type_ids": PackedInt32Array([building]),
 		"founder_family_owner_signature_ids": PackedInt32Array([forager]),
@@ -1723,6 +1742,71 @@ func _make_fixture(catalog: Dictionary, seed: int, stock_fill: int = 1000000,
 	return {"ext": ext, "map": map, "country_handle": country_handle,
 		"neighbors": neighbors, "terrain": terrain,
 		"passable": passable, "costs": costs}
+
+
+func _run_employed_expedition_departure(catalog: Dictionary) -> void:
+	var fixture := _make_fixture(catalog, 260809, 1000000, {},
+		PackedStringArray(), 10)
+	var ext: Object = fixture.ext
+	var country_handle := int(fixture.country_handle)
+	if ext == null or country_handle == 0:
+		return
+	var initial_population: Dictionary = ext.get_population_cell_snapshot(0)
+	var initial_owners: PackedInt64Array = initial_population.get(
+		"owner_employed_by_cohort", PackedInt64Array())
+	var initial_employees: PackedInt64Array = initial_population.get(
+		"employee_employed_by_cohort", PackedInt64Array())
+	var initial_employed := 0
+	for value in initial_owners:
+		initial_employed += int(value)
+	for value in initial_employees:
+		initial_employed += int(value)
+	_expect("employed expedition fixture starts with filled source jobs",
+		initial_employed >= 9)
+	if initial_employed < 9:
+		return
+	var families: Dictionary = ext.get_family_cell_snapshot(0, 0, 64)
+	if int(families.get("total", 0)) != 1:
+		_expect("employed departure fixture has one founder family", false)
+		return
+	var family_handle := int((families.family_handles as PackedInt64Array)[0])
+	var family_population := int(ext.get_family_snapshot(family_handle).population)
+	var request := family_population - 1
+	var quotes: Dictionary = ext.get_family_colonization_quotes(
+		country_handle, 2, family_handle, 0, 0, 64)
+	if int(quotes.get("total", 0)) != 1 or request <= 0:
+		_expect("employed departure fixture can quote a large expedition", false)
+		print("  employed_departure_quotes=", quotes)
+		return
+	var token := int((quotes.quote_tokens as PackedInt64Array)[0])
+	var start_day := maxi(0, int(ext.get_economy_report().get("current_day", 0)))
+	var started: Dictionary = ext.start_family_colonization(country_handle,
+		family_handle, 0, 2, request, token, start_day, 8801)
+	_expect("large employed departure starts", bool(started.get("ok", false)))
+	if not bool(started.get("ok", false)):
+		return
+	var remaining: Dictionary = ext.get_population_cell_snapshot(0)
+	var populations: PackedInt64Array = remaining.get(
+		"populations", PackedInt64Array())
+	var owner_jobs: PackedInt64Array = remaining.get(
+		"owner_employed_by_cohort", PackedInt64Array())
+	var employee_jobs: PackedInt64Array = remaining.get(
+		"employee_employed_by_cohort", PackedInt64Array())
+	var employment_valid := populations.size() == owner_jobs.size() \
+		and populations.size() == employee_jobs.size()
+	for index in range(mini(populations.size(), mini(owner_jobs.size(),
+			employee_jobs.size()))):
+		employment_valid = employment_valid \
+			and int(owner_jobs[index]) + int(employee_jobs[index]) \
+			<= int(populations[index])
+	_expect("departure removes the payload employment from source cohorts",
+		employment_valid)
+	var next_day := start_day + 1
+	var settled := _run_day(ext, next_day)
+	var report: Dictionary = ext.get_economy_report()
+	_expect("employed departure commits without an invalid ledger",
+		bool(settled.get("done", false)) and not bool(report.get("fatal", false))
+		and int(report.get("population_error", -1)) == 0)
 
 
 func _grow_founder_family(ext: Object, family_handle: int, cell_idx: int,

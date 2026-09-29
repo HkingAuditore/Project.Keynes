@@ -6230,7 +6230,8 @@ Dictionary NativeCountryRuntime::begin_economy_good_to_market(
 
 Dictionary NativeCountryRuntime::begin_economy_good_from_market(
         int64_t country_handle, int32_t good_id, int64_t offered,
-        int64_t origin_epoch, int32_t origin_stage, uint64_t request_id) {
+        int64_t origin_epoch, int32_t origin_stage, uint64_t request_id,
+        int64_t cash) {
     if (request_id != 0) {
         EconomyAssetTransaction previous;
         if (find_economy_asset_transaction(request_id, previous)) {
@@ -6244,6 +6245,7 @@ Dictionary NativeCountryRuntime::begin_economy_good_from_market(
     transaction.country_handle = static_cast<uint64_t>(country_handle);
     transaction.good_id = good_id;
     transaction.requested_quantity = offered;
+    transaction.requested_cash = cash;
     transaction.all_or_nothing = false;
     begin_economy_asset_transaction(transaction, request_id,
         static_cast<uint32_t>(RuntimeDomainId::ECONOMY), origin_epoch,
@@ -6262,13 +6264,17 @@ Dictionary NativeCountryRuntime::begin_economy_good_from_market(
         out["code"] = reason;
         return out;
     };
-    if (offered <= 0 || good_id < 0 ||
+    if (offered <= 0 || cash < 0 || good_id < 0 ||
         good_id >= static_cast<int32_t>(_good_ids.size()) ||
         !validate_handle(static_cast<uint64_t>(country_handle), slot))
         return reject("country_good_from_market_async_target_invalid");
     transaction.country_slot = slot;
     transaction.country_generation_before = _generation;
     transaction.country_cash_before = _countries.cash[static_cast<size_t>(slot)];
+    const int64_t available_cash = transaction.country_cash_before -
+        _economy_asset_reserved_cash[static_cast<size_t>(slot)];
+    if (available_cash < cash)
+        return reject("country_good_from_market_async_cash_insufficient");
     const size_t index = static_cast<size_t>(slot) * _good_ids.size() +
         static_cast<size_t>(good_id);
     transaction.country_good_before = _country_goods[index];
@@ -6280,6 +6286,8 @@ Dictionary NativeCountryRuntime::begin_economy_good_from_market(
     transaction.good_ids.push_back(good_id);
     transaction.good_quantities.push_back(transaction.prepared_quantity);
     transaction.requested_goods_total = offered;
+    transaction.reserved_cash = cash;
+    _economy_asset_reserved_cash[static_cast<size_t>(slot)] += cash;
     transaction.status = ECONOMY_ASSET_AWAITING_PEER_PREPARED;
     ++_economy_asset_prepare_count;
     _economy_asset_transactions_in_flight.emplace(

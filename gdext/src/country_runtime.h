@@ -514,7 +514,7 @@ public:
     godot::Dictionary begin_economy_good_from_market(
         int64_t country_handle, int32_t good_id, int64_t offered,
         int64_t origin_epoch = -1, int32_t origin_stage = -1,
-        uint64_t request_id = 0);
+        uint64_t request_id = 0, int64_t cash = 0);
     godot::Dictionary begin_economy_research_purchase(
         int64_t country_handle, int64_t quantity, int64_t total_cost,
         int64_t origin_epoch = -1, int32_t origin_stage = -1,

@@ -1,6 +1,7 @@
 #include "economy_runtime.h"
 #include "country_runtime.h"
 #include "modifier_runtime.h"
+#include "native_simulation_host.h"
 
 #include <algorithm>
 #include <limits>
@@ -828,7 +829,7 @@ void NativeEconomyRuntime::collect_family_expedition_reserved_stock(
 }
 
 bool NativeEconomyRuntime::reserve_preparing_family_expedition_cargo(
-        int32_t expedition, const ColonizationKitPlan &kit,
+        int32_t expedition, ColonizationKitPlan &kit,
         std::string &error) {
     const int32_t source_cell = family_expeditions_store().source_cell[expedition];
     const uint32_t begin = family_expeditions_store().cargo_begin[expedition];
@@ -840,24 +841,75 @@ bool NativeEconomyRuntime::reserve_preparing_family_expedition_cargo(
     // The planner already counted the escrow as available stock, so every kit
     // line states the total the party must hold. Only the difference moves:
     // surplus goes back to the source market first so the top-up can spend it.
-    auto planned_quantity = [&](int32_t good, uint8_t flags) -> int64_t {
-        for (const FamilyExpeditionCargoLine &line : kit.cargo)
+    // Cargo can contain duplicate rows after a kit is re-planned.  Treat the
+    // escrow as a multiset; looking only at the first row loses stock when the
+    // market delta is calculated and eventually breaks goods conservation.
+    auto quantity_for = [](const std::vector<FamilyExpeditionCargoLine> &rows,
+            int32_t good, uint8_t flags) -> int64_t {
+        int64_t total = 0;
+        int64_t saturation = 0;
+        for (const FamilyExpeditionCargoLine &line : rows)
             if (line.good_id == good && line.flags == flags)
-                return line.quantity;
-        return 0;
+                total = NativeEconomyRuntime::saturating_add(
+                    total, line.quantity, saturation);
+        return total;
     };
-    auto held_quantity = [&](int32_t good, uint8_t flags) -> int64_t {
-        for (uint32_t i = 0; i < count; ++i) {
-            const FamilyExpeditionCargoLine &line =
-                family_expedition_cargo()[begin + i];
-            if (line.good_id == good && line.flags == flags)
-                return line.quantity;
-        }
-        return 0;
-    };
+    std::vector<FamilyExpeditionCargoLine> old_cargo;
+    old_cargo.reserve(count);
+    for (uint32_t i = 0; i < count; ++i)
+        old_cargo.push_back(family_expedition_cargo()[begin + i]);
     std::vector<std::pair<int32_t, int64_t>> applied;
     auto move_stock = [&](int32_t good, int64_t delta) -> bool {
         if (delta == 0) return true;
+        if (delta < 0) {
+            const int64_t quantity = -delta;
+            const int32_t market = market_store().cell_to_market[source_cell];
+            const int64_t price = market >= 0 && market < market_store().market_count
+                ? std::max<int64_t>(0, market_store().price[
+                    market_store().index(market, good)]) : 0;
+            const int64_t cash = saturating_mul(quantity, price, _saturation_count);
+            std::vector<int32_t> ids{good};
+            std::vector<int64_t> treasury{0};
+            std::vector<int64_t> market_goods{quantity};
+            int64_t committed_cash = 0;
+            FamilyExpeditionProcurementContinuation &continuation =
+                _family_expedition_procurement_continuation;
+            bool purchased = false;
+            if (continuation.active) {
+                if (continuation.expedition != expedition ||
+                    continuation.good != good ||
+                    continuation.quantity != quantity) {
+                    error = "colonization_treasury_peer_busy";
+                    return false;
+                }
+                purchased = advance_family_expedition_procurement(
+                    continuation, error);
+            } else {
+                purchased = start_family_expedition_procurement(
+                    continuation, expedition, source_cell, market, good,
+                    quantity, cash, error);
+            }
+            if (!purchased) {
+                if (error.empty()) error = "colonization_treasury_purchase_failed";
+                return false;
+            }
+            // The purchase is also a non-household demand event.  Keep the
+            // market pressure path identical to construction procurement.
+            const int32_t signal = ensure_market_signal_index(source_cell, good);
+            if (signal >= 0 && signal < static_cast<int32_t>(
+                    _epoch_nonhousehold_withdrawals.size())) {
+                _epoch_nonhousehold_withdrawals[signal] = saturating_add(
+                    _epoch_nonhousehold_withdrawals[signal], quantity,
+                    _saturation_count);
+                _market_signals.business_demand_ema[signal] = saturating_add(
+                    _market_signals.business_demand_ema[signal], quantity,
+                    _saturation_count);
+                _market_signals.realized_withdrawal_ema[signal] = saturating_add(
+                    _market_signals.realized_withdrawal_ema[signal], quantity,
+                    _saturation_count);
+            }
+            return true;
+        }
         if (!adjust_market_stock(source_cell, good, delta, error)) {
             for (auto it = applied.rbegin(); it != applied.rend(); ++it) {
                 std::string ignored;
@@ -869,18 +921,56 @@ bool NativeEconomyRuntime::reserve_preparing_family_expedition_cargo(
         applied.push_back({good, delta});
         return true;
     };
-    for (uint32_t i = 0; i < count; ++i) {
-        const FamilyExpeditionCargoLine held =
-            family_expedition_cargo()[begin + i];
-        const int64_t surplus = held.quantity -
-            planned_quantity(held.good_id, held.flags);
-        if (surplus > 0 && !move_stock(held.good_id, surplus)) return false;
+    for (size_t old_index = 0; old_index < old_cargo.size(); ++old_index) {
+        const FamilyExpeditionCargoLine &held = old_cargo[old_index];
+        bool seen = false;
+        for (size_t j = 0; j < old_index; ++j)
+            if (old_cargo[j].good_id == held.good_id &&
+                old_cargo[j].flags == held.flags) {
+                seen = true;
+                break;
+            }
+        if (seen) continue;
+        const int64_t held_total = quantity_for(old_cargo, held.good_id, held.flags);
+        const int64_t net_surplus = held_total -
+            quantity_for(kit.cargo, held.good_id, held.flags);
+        // Returning already purchased cargo would require a matching merchant
+        // refund. Keep the escrow monotonic during preparation; the planner's
+        // reserve-aware quote prevents unnecessary top-ups.
+        if (net_surplus > 0) continue;
     }
-    for (const FamilyExpeditionCargoLine &line : kit.cargo) {
-        const int64_t shortfall = line.quantity -
-            held_quantity(line.good_id, line.flags);
-        if (shortfall > 0 && !move_stock(line.good_id, -shortfall)) return false;
+    for (size_t kit_index = 0; kit_index < kit.cargo.size(); ++kit_index) {
+        const FamilyExpeditionCargoLine &line = kit.cargo[kit_index];
+        bool seen = false;
+        for (size_t j = 0; j < kit_index; ++j)
+            if (kit.cargo[j].good_id == line.good_id &&
+                kit.cargo[j].flags == line.flags) {
+                seen = true;
+                break;
+            }
+        if (seen) continue;
+        const int64_t net_shortfall = quantity_for(kit.cargo, line.good_id,
+            line.flags) - quantity_for(old_cargo, line.good_id, line.flags);
+        if (net_shortfall > 0 && !move_stock(line.good_id, -net_shortfall)) return false;
     }
+    // The planner's quote is a target, not the authoritative escrow. A quote
+    // can shrink when market stock or a substitute changes; never overwrite
+    // goods already purchased by earlier preparation days. Merge by key and
+    // keep the larger quantity, then append any old key omitted by the quote.
+    std::vector<FamilyExpeditionCargoLine> merged = kit.cargo;
+    for (const FamilyExpeditionCargoLine &old_line : old_cargo) {
+        auto found = std::find_if(merged.begin(), merged.end(),
+            [&](const FamilyExpeditionCargoLine &line) {
+                return line.good_id == old_line.good_id &&
+                    line.flags == old_line.flags;
+            });
+        if (found == merged.end()) {
+            merged.push_back(old_line);
+        } else if (found->quantity < old_line.quantity) {
+            found->quantity = old_line.quantity;
+        }
+    }
+    kit.cargo.swap(merged);
     if (kit.cargo.size() <= count) {
         for (size_t i = 0; i < kit.cargo.size(); ++i)
             family_expedition_cargo()[begin + i] = kit.cargo[i];
@@ -900,19 +990,10 @@ bool NativeEconomyRuntime::reserve_preparing_family_expedition_cargo(
 bool NativeEconomyRuntime::extract_family_expedition_cargo(
         int32_t expedition, const ColonizationKitPlan &kit,
         std::string &error) {
-    const int32_t source_cell = family_expeditions_store().source_cell[expedition];
-    for (const FamilyExpeditionCargoLine &line : kit.cargo) {
-        if (!adjust_market_stock(source_cell, line.good_id, -line.quantity,
-                error)) {
-            for (const FamilyExpeditionCargoLine &undo : kit.cargo) {
-                if (&undo == &line) break;
-                std::string ignored;
-                adjust_market_stock(source_cell, undo.good_id, undo.quantity,
-                    ignored);
-            }
-            return false;
-        }
-    }
+    // Kit cargo is already acquired by the unified Country procurement path:
+    // market -> country treasury -> expedition transfer.  This function only
+    // records the acquired cargo and must not debit the source market again.
+    error.clear();
     family_expeditions_store().cargo_begin[expedition] = static_cast<uint32_t>(
         family_expedition_cargo().size());
     family_expedition_cargo().insert(family_expedition_cargo().end(),
@@ -943,13 +1024,13 @@ bool NativeEconomyRuntime::restore_family_expedition_cargo(
         error = "colonization_cargo_range_invalid";
         return false;
     }
+    int64_t construction_consumed = 0;
     for (uint32_t i = begin; i < end; ++i) {
         const FamilyExpeditionCargoLine &line = family_expedition_cargo()[i];
         if (consume_construction &&
             line.flags == EXPEDITION_CARGO_CONSTRUCTION) {
-            _construction_goods_consumed = saturating_add(
-                _construction_goods_consumed, line.quantity,
-                _saturation_count);
+            construction_consumed = saturating_add(construction_consumed,
+                line.quantity, _saturation_count);
             continue;
         }
         if (!adjust_market_stock(destination_cell, line.good_id, line.quantity,
@@ -957,7 +1038,317 @@ bool NativeEconomyRuntime::restore_family_expedition_cargo(
             return false;
     }
     family_expeditions_store().cargo_count[expedition] = 0;
+    if (construction_consumed > 0)
+        _construction_goods_consumed = saturating_add(
+            _construction_goods_consumed, construction_consumed,
+            _saturation_count);
     return true;
+}
+
+bool NativeEconomyRuntime::advance_family_expedition_procurement(
+        FamilyExpeditionProcurementContinuation &c, std::string &error) {
+    error.clear();
+    if (!c.active) return true;
+    if (_country_runtime == nullptr || !_country_runtime->economy_available()) {
+        c.last_error = "colonization_treasury_peer_unavailable";
+        c.active = false;
+        error = c.last_error;
+        return false;
+    }
+    if (c.phase == 1) {
+        if (c.pending_request_id != 0) {
+            RuntimeEconomyAssetResult terminal;
+            if (!_simulation_host ||
+                !_simulation_host->country_economy_asset_terminal_result(
+                    c.pending_request_id, terminal)) {
+                error = "colonization_treasury_peer_pending";
+                return false;
+            }
+            if (terminal.code != RuntimeEconomyAssetResultCode::COMPLETED ||
+                terminal.operation != RuntimeEconomyAssetOperation::GOOD_FROM_MARKET) {
+                c.last_error = terminal.reason[0] != '\0'
+                    ? terminal.reason.data()
+                    : "colonization_treasury_peer_rejected";
+                c.active = false;
+                c.pending_request_id = 0;
+                error = c.last_error;
+                return false;
+            }
+            if (_simulation_host->domain_is_worker_authoritative(
+                    RuntimeDomainId::ECONOMY)) {
+                if (!_simulation_host->finish_worker_country_asset(
+                        c.pending_request_id, terminal, error)) {
+                    c.active = false;
+                    return false;
+                }
+            } else if (!_simulation_host->flush_country_economy_asset_commits(
+                           error, c.pending_request_id) ||
+                       !_simulation_host->publish_country_worker_snapshot(
+                           RUNTIME_DIRTY_COUNTRY_STATE, error)) {
+                c.active = false;
+                return false;
+            }
+            c.transaction_id = c.pending_request_id;
+            c.session_epoch = terminal.session_epoch;
+            c.country_generation = terminal.country_generation;
+            c.peer_generation = _committed_generation;
+            c.pending_request_id = 0;
+            c.host_peer = true;
+            // The worker-side GOOD_FROM_MARKET service already removed the
+            // market stock. Only the sync path applies that mutation below.
+            c.market_applied = true;
+            c.phase = 4;
+        } else {
+            error = "colonization_treasury_peer_pending";
+            return false;
+        }
+    }
+    if (c.phase == 4) {
+        if (!c.market_applied) {
+            const size_t lane = market_store().index(c.market, c.good);
+            if (lane >= market_store().stock.size() ||
+                market_store().stock[lane] < c.quantity) {
+                c.active = false;
+                error = "colonization_treasury_peer_market_stock_drift";
+                return false;
+            }
+            audit_touch_market_lane(lane);
+            market_store().stock[lane] -= c.quantity;
+            c.market_applied = true;
+        }
+        while (c.merchant_cursor < c.living_merchants.size()) {
+            const int32_t slot = c.living_merchants[c.merchant_cursor++];
+            c.merchant_population_prefix = saturating_add(
+                c.merchant_population_prefix,
+                population_store().population[slot], _saturation_count);
+            const int64_t next = mul_div_sat(
+                c.cash, c.merchant_population_prefix,
+                c.merchant_population, _saturation_count);
+            const int64_t share = std::max<int64_t>(
+                0, next - c.merchant_distributed);
+            c.merchant_distributed = next;
+            audit_touch_population_lane(slot);
+            touch_accounting_slot(slot);
+            population_store().funds[slot] = saturating_add(
+                population_store().funds[slot], share, _saturation_count);
+            population_store().epoch_income[slot] = saturating_add(
+                population_store().epoch_income[slot], share, _saturation_count);
+            trace_record_cashflow(c.source_cell,
+                population_store().handle_for_slot(slot),
+                CASHFLOW_MERCHANT_BUSINESS, share, 0);
+        }
+        if (c.merchant_distributed != c.cash) {
+            c.active = false;
+            error = "colonization_treasury_peer_distribution_drift";
+            return false;
+        }
+        if (!c.host_peer) {
+            const godot::Dictionary applied =
+                _country_runtime->acknowledge_economy_asset_peer_applied(
+                    c.transaction_id, c.session_epoch, c.country_generation,
+                    c.peer_generation, true, godot::String());
+            if (!static_cast<bool>(applied.get("ok", false)) ||
+                godot::String(applied.get("status_name", "")) != "completed") {
+                c.active = false;
+                error = "colonization_treasury_peer_apply_ack_failed";
+                return false;
+            }
+        }
+        // The market purchase has put the goods into the Country treasury.
+        // Move the same quantity out of that treasury before the caller adds
+        // it to the expedition cargo, preserving the goods ledger.
+        c.host_peer = false;
+        c.pending_request_id = 0;
+        const std::vector<int32_t> ids{c.good};
+        const std::vector<int64_t> treasury{c.quantity};
+        const auto route = block_or_enqueue_country_worker_asset(
+            static_cast<uint16_t>(NativeCountryRuntime::ECONOMY_ASSET_TREASURY_SPEND),
+            static_cast<uint64_t>(family_expeditions_store().country_handle[c.expedition]),
+            0, c.quantity, ids, treasury, error, &c.pending_request_id);
+        if (route == CountryWorkerAssetRoute::ENQUEUED_PENDING) {
+            c.host_peer = true;
+            c.phase = 5;
+            error = "colonization_treasury_transfer_pending";
+            return false;
+        }
+        if (route != CountryWorkerAssetRoute::NOT_APPLICABLE) {
+            c.active = false;
+            return false;
+        }
+        const godot::PackedInt32Array packed_ids = [&]() {
+            godot::PackedInt32Array out; out.resize(1); out.set(0, c.good); return out;
+        }();
+        const godot::PackedInt64Array packed_qty = [&]() {
+            godot::PackedInt64Array out; out.resize(1); out.set(0, c.quantity); return out;
+        }();
+        const godot::Dictionary begun = _country_runtime->begin_economy_treasury_spend(
+            static_cast<int64_t>(family_expeditions_store().country_handle[c.expedition]),
+            packed_ids, packed_qty, 0, _epoch_id, static_cast<int32_t>(_stage));
+        if (!static_cast<bool>(begun.get("ok", false))) {
+            c.active = false;
+            error = godot::String(begun.get(
+                "code", "colonization_treasury_transfer_rejected")).utf8().get_data();
+            return false;
+        }
+        c.transaction_id = static_cast<uint64_t>(
+            static_cast<int64_t>(begun.get("transaction_id", 0)));
+        c.session_epoch = static_cast<uint64_t>(
+            static_cast<int64_t>(begun.get("session_epoch", 0)));
+        c.country_generation = static_cast<uint64_t>(
+            static_cast<int64_t>(begun.get("country_generation", 0)));
+        c.peer_generation = _committed_generation;
+        const godot::Dictionary prepared =
+            _country_runtime->acknowledge_economy_asset_peer_prepared(
+                c.transaction_id, c.session_epoch, c.country_generation,
+                c.peer_generation, true, godot::String());
+        if (!static_cast<bool>(prepared.get("ok", false))) {
+            c.active = false; error = "colonization_treasury_transfer_prepare_failed";
+            return false;
+        }
+        const godot::Dictionary committed =
+            _country_runtime->commit_economy_asset_transaction(c.transaction_id);
+        if (!static_cast<bool>(committed.get("ok", false))) {
+            c.active = false; error = "colonization_treasury_transfer_commit_failed";
+            return false;
+        }
+        const godot::Dictionary applied =
+            _country_runtime->acknowledge_economy_asset_peer_applied(
+                c.transaction_id, c.session_epoch, c.country_generation,
+                c.peer_generation, true, godot::String());
+        if (!static_cast<bool>(applied.get("ok", false)) ||
+            godot::String(applied.get("status_name", "")) != "completed") {
+            c.active = false; error = "colonization_treasury_transfer_ack_failed";
+            return false;
+        }
+        c.active = false;
+        return true;
+    }
+    if (c.phase == 5) {
+        RuntimeEconomyAssetResult terminal;
+        if (!_simulation_host || !_simulation_host->country_economy_asset_terminal_result(
+                c.pending_request_id, terminal)) {
+            error = "colonization_treasury_transfer_pending";
+            return false;
+        }
+        if (terminal.code != RuntimeEconomyAssetResultCode::COMPLETED ||
+            terminal.operation != RuntimeEconomyAssetOperation::TREASURY_SPEND) {
+            c.active = false;
+            error = terminal.reason[0] != '\0' ? terminal.reason.data()
+                : "colonization_treasury_transfer_rejected";
+            return false;
+        }
+        if (_simulation_host->domain_is_worker_authoritative(RuntimeDomainId::ECONOMY)) {
+            if (!_simulation_host->finish_worker_country_asset(
+                    c.pending_request_id, terminal, error)) {
+                c.active = false; return false;
+            }
+        } else if (!_simulation_host->flush_country_economy_asset_commits(
+                       error, c.pending_request_id) ||
+                   !_simulation_host->publish_country_worker_snapshot(
+                       RUNTIME_DIRTY_COUNTRY_STATE, error)) {
+            c.active = false; return false;
+        }
+        c.active = false;
+        return true;
+    }
+    error = "colonization_treasury_peer_phase_invalid";
+    c.active = false;
+    return false;
+}
+
+bool NativeEconomyRuntime::start_family_expedition_procurement(
+        FamilyExpeditionProcurementContinuation &c,
+        int32_t expedition, int32_t source_cell, int32_t market,
+        int32_t good, int64_t quantity, int64_t cash, std::string &error) {
+    c = NativeEconomyRuntime::FamilyExpeditionProcurementContinuation{};
+    c.active = true;
+    c.phase = 1;
+    c.expedition = expedition;
+    c.source_cell = source_cell;
+    c.market = market;
+    c.good = good;
+    c.quantity = quantity;
+    c.cash = cash;
+    if (_merchant_offsets.size() == static_cast<size_t>(_cell_count + 1)) {
+        for (int32_t edge = _merchant_offsets[source_cell];
+             edge < _merchant_offsets[source_cell + 1]; ++edge) {
+            const int32_t slot = _merchant_slots[edge];
+            if (is_merchant_slot(slot) && slot >= 0 &&
+                slot < static_cast<int32_t>(population_store().population.size()) &&
+                population_store().population[slot] > 0)
+                c.living_merchants.push_back(slot);
+        }
+    }
+    if (cash > 0 && c.living_merchants.empty()) {
+        error = "country_treasury_peer_merchant_missing";
+        c.active = false;
+        return false;
+    }
+    for (int32_t slot : c.living_merchants)
+        c.merchant_population = saturating_add(
+            c.merchant_population, population_store().population[slot],
+            _saturation_count);
+    std::vector<int32_t> ids{good};
+    std::vector<int64_t> goods{quantity};
+    const auto route = block_or_enqueue_country_worker_asset(
+        static_cast<uint16_t>(NativeCountryRuntime::ECONOMY_ASSET_GOOD_FROM_MARKET),
+        static_cast<uint64_t>(family_expeditions_store().country_handle[expedition]),
+        cash, quantity, ids, goods, error, &c.pending_request_id, market);
+    if (route == CountryWorkerAssetRoute::ENQUEUED_PENDING) {
+        error = "colonization_treasury_peer_pending";
+        c.host_peer = true;
+        return false;
+    }
+    if (route != CountryWorkerAssetRoute::NOT_APPLICABLE) {
+        c.active = false;
+        return false;
+    }
+    const godot::Dictionary begun = _country_runtime->begin_economy_good_from_market(
+        static_cast<int64_t>(family_expeditions_store().country_handle[expedition]),
+        good, quantity, _epoch_id, static_cast<int32_t>(_stage), 0, cash);
+    if (!static_cast<bool>(begun.get("ok", false))) {
+        error = godot::String(begun.get(
+            "code", "colonization_treasury_peer_country_rejected")).utf8().get_data();
+        c.active = false;
+        return false;
+    }
+    c.transaction_id = static_cast<uint64_t>(
+        static_cast<int64_t>(begun.get("transaction_id", 0)));
+    c.session_epoch = static_cast<uint64_t>(
+        static_cast<int64_t>(begun.get("session_epoch", 0)));
+    c.country_generation = static_cast<uint64_t>(
+        static_cast<int64_t>(begun.get("country_generation", 0)));
+    c.peer_generation = _committed_generation;
+    const int64_t prepared_quantity = static_cast<int64_t>(
+        begun.get("prepared_quantity", 0));
+    if (c.transaction_id == 0 || c.session_epoch == 0 ||
+        c.country_generation == 0 || c.peer_generation == 0 ||
+        prepared_quantity != quantity) {
+        error = "colonization_treasury_peer_identity_invalid";
+        c.active = false;
+        return false;
+    }
+    const godot::Dictionary prepared =
+        _country_runtime->acknowledge_economy_asset_peer_prepared(
+            c.transaction_id, c.session_epoch, c.country_generation,
+            c.peer_generation, true, godot::String());
+    if (!static_cast<bool>(prepared.get("ok", false))) {
+        error = "colonization_treasury_peer_prepare_failed";
+        c.active = false;
+        return false;
+    }
+    const godot::Dictionary committed =
+        _country_runtime->commit_economy_asset_transaction(c.transaction_id);
+    if (!static_cast<bool>(committed.get("ok", false)) ||
+        static_cast<int64_t>(committed.get("committed_quantity", 0)) != quantity ||
+        static_cast<int64_t>(committed.get("committed_cash", cash)) != cash) {
+        error = "colonization_treasury_peer_commit_failed";
+        c.active = false;
+        return false;
+    }
+    c.host_peer = false;
+    c.phase = 4;
+    return advance_family_expedition_procurement(c, error);
 }
 
 bool NativeEconomyRuntime::settle_family_expedition_kit(
@@ -965,8 +1356,8 @@ bool NativeEconomyRuntime::settle_family_expedition_kit(
     if (!restore_family_expedition_cargo(expedition, destination_cell, true,
             error))
         return false;
-    const uint32_t begin = family_expeditions_store().kit_building_begin[expedition];
     const uint32_t count = family_expeditions_store().kit_building_count[expedition];
+    const uint32_t begin = family_expeditions_store().kit_building_begin[expedition];
     const uint32_t end = begin + count;
     if (end > family_expedition_kit_buildings().size()) {
         error = "colonization_kit_building_range_invalid";

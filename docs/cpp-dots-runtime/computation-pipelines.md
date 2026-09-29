@@ -1261,7 +1261,7 @@ CSR 包并 bootstrap country authority，再配置 economy；随后把每国 20 
 `capture_economy_trade_topology(neighbors, terrain, passable_lut, move_cost_lut, generation)`。
 默认 ACTIVE 模式只有在 `trade_topology_ready=true` 后才继续注册 `economy_daily`。
 显式测试经济夹具会先按可见资源生成候选建筑；collector 的 24 仅是资源支持上限，随后
-`_balance_basic_capacity()` 以 `min(岗位容量, 净食物承载人数, 净衣着承载人数, 300)` 为每格目标
+`_balance_basic_capacity()` 以 `min(岗位容量, 预测 K_eff, 300)` 为每格目标；预测 K_eff 使用计划食物净供给除以每人每日生存口粮，衣着产能仅作为诊断列保留。
 人口；商栈岗位包含在容量需求内。平衡器在每种已投放建筑至少保留一栋的条件下，只删除超过目标
 所需的重复建筑，再由剩余岗位反推初始人口。贫瘠格可以为 0，资源丰富格最多为 300。
 

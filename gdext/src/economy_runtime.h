@@ -985,6 +985,34 @@ private:
         std::string last_error;
     };
 
+    // One expedition cargo purchase may cross the Country worker boundary.
+    // Keep its wire identity and market application state until the Country
+    // terminal is observed; otherwise preparation re-enqueues the same order
+    // every day and the expedition cargo never grows.
+    struct FamilyExpeditionProcurementContinuation {
+        bool active = false;
+        int32_t phase = 0; // 1=market purchase, 4=market apply, 5=treasury transfer
+        int32_t expedition = -1;
+        int32_t source_cell = -1;
+        int32_t market = -1;
+        int32_t good = -1;
+        int64_t quantity = 0;
+        int64_t cash = 0;
+        uint64_t transaction_id = 0;
+        uint64_t session_epoch = 0;
+        uint64_t country_generation = 0;
+        uint64_t peer_generation = 0;
+        uint64_t pending_request_id = 0;
+        bool host_peer = false;
+        bool market_applied = false;
+        size_t merchant_cursor = 0;
+        int64_t merchant_population = 0;
+        int64_t merchant_population_prefix = 0;
+        int64_t merchant_distributed = 0;
+        std::vector<int32_t> living_merchants;
+        std::string last_error;
+    };
+
     // Fiscal settlement is a peer boundary too. Keep the per-country
     // return/collect work outside the stack so a large country set can yield
     // without rebuilding the already aggregated fiscal rows.
@@ -4152,6 +4180,8 @@ private:
     int64_t _country_research_procurement_transactions = 0;
     int64_t _country_research_procurement_rejections = 0;
     CountryResearchProcurementContinuation _country_research_procurement_continuation;
+    FamilyExpeditionProcurementContinuation
+        _family_expedition_procurement_continuation;
     std::vector<int64_t> _merchant_procurement_paid_by_cell;
     std::vector<int64_t> _merchant_procurement_retail_by_cell;
     std::vector<int64_t> _merchant_procurement_factor_weighted_cash_by_cell;
@@ -5954,8 +5984,15 @@ private:
     void collect_family_expedition_reserved_stock(
         int32_t expedition, std::vector<int64_t> &reserved) const;
     bool reserve_preparing_family_expedition_cargo(
-        int32_t expedition, const ColonizationKitPlan &kit,
+        int32_t expedition, ColonizationKitPlan &kit,
         std::string &error);
+    bool advance_family_expedition_procurement(
+        FamilyExpeditionProcurementContinuation &continuation,
+        std::string &error);
+    bool start_family_expedition_procurement(
+        FamilyExpeditionProcurementContinuation &continuation,
+        int32_t expedition, int32_t source_cell, int32_t market,
+        int32_t good, int64_t quantity, int64_t cash, std::string &error);
     void add_colonization_kit_cargo(ColonizationKitPlan &kit, int32_t good_id,
                                     int64_t quantity, uint8_t flags,
                                     int64_t &sat) const;
@@ -6439,7 +6476,7 @@ private:
         uint16_t operation, int64_t country_handle, int64_t cash,
         int64_t quantity, const std::vector<int32_t> &good_ids,
         const std::vector<int64_t> &good_quantities, std::string &error,
-        uint64_t *request_id = nullptr);
+        uint64_t *request_id = nullptr, int32_t target_slot = -1);
     bool coordinate_country_fiscal_transaction(
         int32_t country, int32_t operation, int64_t amount,
         int64_t &committed, std::string &error,
