@@ -4137,6 +4137,10 @@ func _on_country_committed(report: Dictionary) -> void:
 	if _player_country_slot < 0:
 		_player_country_slot = _resolve_player_country_slot()
 	if int(report.get("changed_cells", 0)) > 0:
+		# CLAIM may be published by the worker before the deferred visual refresh
+		# pulse. Push the immutable territory snapshot immediately so MapData,
+		# market-cell ownership and the border layer cannot observe the old owner.
+		_sync_country_territory_to_map()
 		_country_visual_refresh_pending = true
 		_country_visual_refresh_reason = "country_territory_committed"
 		return

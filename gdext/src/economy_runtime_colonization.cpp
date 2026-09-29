@@ -1078,6 +1078,10 @@ void NativeEconomyRuntime::refresh_preparing_family_expedition_missing(
 
 void NativeEconomyRuntime::abort_preparing_family_expedition(
         int32_t expedition, int64_t day, uint8_t kind, const char *code) {
+    if (_family_expedition_procurement_continuation.active &&
+        _family_expedition_procurement_continuation.expedition == expedition)
+        _family_expedition_procurement_continuation =
+            FamilyExpeditionProcurementContinuation{};
     // Stocked goods were drawn from the source market and must go back there,
     // or cancelling a preparation would destroy them.
     if (family_expeditions_store().cargo_count[expedition] > 0) {
@@ -1114,6 +1118,27 @@ bool NativeEconomyRuntime::launch_preparing_family_expedition(
     }
     if (!extract_family_expedition_payload(expedition,
             family_expeditions_store().population[expedition], error)) {
+        // These failures cannot be fixed by waiting another day.  Keeping the
+        // party in PREPARING while discarding the reason made the UI look like
+        // a completed kit was simply waiting forever.
+        if (error == "colonization_population_insufficient" ||
+            error == "colonization_population_guard_failed" ||
+            error == "colonization_payload_empty") {
+            const std::string reason = error;
+            abort_preparing_family_expedition(expedition, day, 7,
+                reason == "colonization_population_insufficient"
+                    ? "PREPARING_POPULATION_INSUFFICIENT"
+                    : "PREPARING_PAYLOAD_INVALID");
+            error.clear();
+            return true;
+        }
+        // Slot allocation and peer synchronization are transient. Keep the
+        // escrow and retry, but retain a receipt so the blocked cause is
+        // inspectable instead of silently becoming "waiting for departure".
+        const std::string retry_reason = error.empty()
+            ? "colonization_payload_retry" : error;
+        append_colonization_receipt(expedition, 0, day, day, 2,
+            retry_reason.c_str());
         error.clear();
         family_expeditions_store().kit_building_count[expedition] = 0;
         store_preparing_missing_goods(expedition, kit);
@@ -1322,6 +1347,12 @@ void NativeEconomyRuntime::unwind_family_expedition_payload_extract(
             audit_touch_population_lane(slot);
             touch_accounting_slot(slot);
             population_store().population[slot] += payload.people;
+            population_store().owner_employed[slot] = saturating_add(
+                population_store().owner_employed[slot],
+                payload.owner_employed, _saturation_count);
+            population_store().employee_employed[slot] = saturating_add(
+                population_store().employee_employed[slot],
+                payload.employee_employed, _saturation_count);
             population_store().funds[slot] += payload.funds;
             population_store().epoch_income[slot] += payload.epoch_income;
             population_store().epoch_expense[slot] += payload.epoch_expense;
@@ -1583,6 +1614,12 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
             family_expedition_person_handles().size()) - payload.person_begin;
         audit_touch_population_lane(slot);
         population_store().population[slot] -= payload.people;
+        population_store().owner_employed[slot] = saturating_sub(
+            population_store().owner_employed[slot], payload.owner_employed,
+            _saturation_count);
+        population_store().employee_employed[slot] = saturating_sub(
+            population_store().employee_employed[slot],
+            payload.employee_employed, _saturation_count);
         population_store().funds[slot] -= payload.funds;
         population_store().epoch_income[slot] -= payload.epoch_income;
         population_store().epoch_expense[slot] -= payload.epoch_expense;
@@ -1671,6 +1708,19 @@ bool NativeEconomyRuntime::restore_family_expedition_payload(
         payload.reserved_slot = -1;
         const int64_t old_population = population_store().population[slot];
         const int64_t merged_population = old_population + payload.people;
+        // Employment leaves the source cohort together with the payload.  Put
+        // it back on the destination lane as part of the same atomic merge;
+        // otherwise family attribution can reconstruct jobs against a stale
+        // population and the next POD export rejects the ledger.
+        const int64_t incoming_employment = std::min<int64_t>(
+            payload.people,
+            std::max<int64_t>(0, payload.owner_employed) +
+            std::max<int64_t>(0, payload.employee_employed));
+        const int64_t incoming_owner_employed = std::min<int64_t>(
+            std::max<int64_t>(0, payload.owner_employed), incoming_employment);
+        const int64_t incoming_employee_employed = std::min<int64_t>(
+            std::max<int64_t>(0, payload.employee_employed),
+            incoming_employment - incoming_owner_employed);
         auto blend = [&](uint16_t old_value, uint16_t incoming) {
             if (merged_population <= 0) return incoming;
             return static_cast<uint16_t>((static_cast<int64_t>(old_value) *
@@ -1679,6 +1729,19 @@ bool NativeEconomyRuntime::restore_family_expedition_payload(
         };
         audit_touch_population_lane(slot); touch_accounting_slot(slot);
         population_store().population[slot] = merged_population;
+        population_store().owner_employed[slot] = saturating_add(
+            population_store().owner_employed[slot],
+            incoming_owner_employed, _saturation_count);
+        population_store().employee_employed[slot] = saturating_add(
+            population_store().employee_employed[slot],
+            incoming_employee_employed, _saturation_count);
+        const int64_t total_employment =
+            population_store().owner_employed[slot] +
+            population_store().employee_employed[slot];
+        if (total_employment > merged_population) {
+            population_store().employee_employed[slot] = std::max<int64_t>(
+                0, merged_population - population_store().owner_employed[slot]);
+        }
         population_store().funds[slot] += payload.funds;
         population_store().epoch_income[slot] += payload.epoch_income;
         population_store().epoch_expense[slot] += payload.epoch_expense;
@@ -1706,7 +1769,8 @@ bool NativeEconomyRuntime::restore_family_expedition_payload(
         const uint64_t cohort_handle = population_store().handle_for_slot(slot);
         family_memberships().push_back({family_handle, cohort_handle,
             payload.people, payload.cash_claim, merged_population,
-            population_store().funds[slot], 0, 0});
+            population_store().funds[slot], incoming_owner_employed,
+            incoming_employee_employed});
         if (static_cast<size_t>(payload.person_begin) + payload.person_count >
                 family_expedition_person_handles().size()) {
             error = "colonization_person_payload_range_invalid"; return false;
@@ -2226,9 +2290,32 @@ Dictionary NativeEconomyRuntime::family_expedition_snapshot(
                 family_expeditions_store().population[expedition], travel,
                 _epoch_active, kit, false, &reserve)) {
             bridge_required = kit.bridge_required_units;
-            bridge_missing = kit.bridge_missing_units;
             material_required = kit.material_required_units;
-            material_missing = kit.material_missing_units;
+            // Progress is measured from authoritative escrow, never from the
+            // current quote's affordable subset.  The quote may change with
+            // market stock, while already purchased cargo must remain.
+            int64_t acquired_bridge = 0;
+            int64_t acquired_material = 0;
+            int64_t progress_saturation = 0;
+            const uint32_t cargo_begin =
+                family_expeditions_store().cargo_begin[expedition];
+            const uint32_t cargo_end = std::min<uint32_t>(
+                cargo_begin + family_expeditions_store().cargo_count[expedition],
+                static_cast<uint32_t>(family_expedition_cargo().size()));
+            for (uint32_t i = cargo_begin; i < cargo_end; ++i) {
+                const FamilyExpeditionCargoLine &line =
+                    family_expedition_cargo()[i];
+                if (line.flags != EXPEDITION_CARGO_CONSTRUCTION)
+                    acquired_bridge = saturating_add(acquired_bridge,
+                        line.quantity, progress_saturation);
+                if (line.flags == EXPEDITION_CARGO_CONSTRUCTION)
+                    acquired_material = saturating_add(acquired_material,
+                        line.quantity, progress_saturation);
+            }
+            bridge_missing = std::max<int64_t>(0,
+                bridge_required - acquired_bridge);
+            material_missing = std::max<int64_t>(0,
+                material_required - acquired_material);
             // One reason, ordered by how final it is: an unreachable material
             // ends the preparation, an empty plan is a target problem, and the
             // two shortfalls are the ordinary day-by-day stockpiling states.

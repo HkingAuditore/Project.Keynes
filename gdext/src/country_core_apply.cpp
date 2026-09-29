@@ -845,6 +845,10 @@ bool country_core_country_pays(RuntimeEconomyAssetOperation operation) {
         operation == Op::FISCAL_RESERVE ||
         operation == Op::CASH_TO_COHORT ||
         operation == Op::GOOD_TO_MARKET ||
+        // A market purchase may also carry a cash price.  Treat it as a
+        // treasury payer when requested_cash is non-zero; zero-cost transfers
+        // retain the existing no-cash behavior.
+        operation == Op::GOOD_FROM_MARKET ||
         operation == Op::TREASURY_SPEND;
 }
 
@@ -874,7 +878,8 @@ bool country_core_apply_economy_asset_prepare(
         }
         // RESEARCH_PURCHASE credits technology_points into the treasury; the
         // good payload is the purchase quantity, not a debit from stock.
-        if (request.operation != RuntimeEconomyAssetOperation::RESEARCH_PURCHASE) {
+        if (request.operation != RuntimeEconomyAssetOperation::RESEARCH_PURCHASE &&
+            request.operation != RuntimeEconomyAssetOperation::GOOD_FROM_MARKET) {
             for (uint32_t i = 0; i < request.good_count &&
                  i < RUNTIME_ECONOMY_ASSET_GOOD_CAPACITY; ++i) {
                 const int32_t good = request.good_ids[i];
@@ -968,11 +973,19 @@ bool country_core_apply_economy_asset_commit(
             if (good < 0 || good >= static_cast<int32_t>(state.good_count)) continue;
             int64_t &stock = state.country_goods[
                 country * state.good_count + static_cast<size_t>(good)];
-            if (stock < qty) {
-                error = "country_economy_asset_goods_insufficient";
-                return false;
+            if (request.operation == RuntimeEconomyAssetOperation::GOOD_FROM_MARKET) {
+                if (stock > std::numeric_limits<int64_t>::max() - qty) {
+                    error = "country_economy_asset_goods_overflow";
+                    return false;
+                }
+                stock += qty;
+            } else {
+                if (stock < qty) {
+                    error = "country_economy_asset_goods_insufficient";
+                    return false;
+                }
+                stock -= qty;
             }
-            stock -= qty;
         }
     } else {
         state.country_cash[country] += cash;

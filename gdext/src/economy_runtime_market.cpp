@@ -1624,9 +1624,12 @@ bool NativeEconomyRuntime::process_market_cell(int32_t market, MarketResult &res
                                 _good_monetary_issue_values[entry->good_id];
                             const int64_t market_price = market_store().price[
                                 market_store().index(market, entry->good_id)];
+                            // Market prices are native currency-per-GOODS_SCALE
+                            // units.  Apply the documented one-fifth support
+                            // price without introducing a Q16 scale factor.
                             const int64_t support_unit_value = issue_value > 0
                                 ? issue_value
-                                : mul_div_sat(market_price, Q16_ONE, 5, sat);
+                                : mul_div_sat(market_price, 1, 5, sat);
                             const int64_t support_paid = mul_div_sat(
                                 entry->quantity, support_unit_value, GOODS_SCALE, sat);
                             const int64_t stock_index = market_store().index(

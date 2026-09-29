@@ -1060,7 +1060,7 @@ NativeEconomyRuntime::block_or_enqueue_country_worker_asset(
         uint16_t operation, int64_t country_handle, int64_t cash,
         int64_t quantity, const std::vector<int32_t> &good_ids,
         const std::vector<int64_t> &good_quantities, std::string &error,
-        uint64_t *request_id) {
+        uint64_t *request_id, int32_t target_slot) {
     if (_country_runtime == nullptr ||
         (!_country_runtime->sync_store_writes_forbidden() &&
          !(_simulation_host != nullptr && _simulation_host->domain_is_worker_authoritative(
@@ -1115,6 +1115,7 @@ NativeEconomyRuntime::block_or_enqueue_country_worker_asset(
     // aggregate publish, after every same-epoch peer request has terminated.
     request.peer_generation = _committed_generation;
     request.country_handle = static_cast<uint64_t>(country_handle);
+    request.target_slot = target_slot;
     request.requested_cash = cash;
     request.requested_quantity = quantity;
     request.requested_goods_total = quantity;
@@ -2075,17 +2076,9 @@ bool NativeEconomyRuntime::pull_owned_command_result(
             error = "country_treasury_target_invalid";
             return false;
         }
-        if (settled > 0) {
-            if (command.opcode == COMMAND_COUNTRY_GOOD_TO_MARKET) {
-                market_store().stock[static_cast<size_t>(index)] =
-                    std::max<int64_t>(0, market_store().stock[static_cast<size_t>(index)] -
-                                                 settled);
-            } else {
-                market_store().stock[static_cast<size_t>(index)] = saturating_add(
-                    market_store().stock[static_cast<size_t>(index)], settled,
-                    _saturation_count);
-            }
-        }
+        // The Country/Economy asset coordinator owns the market mutation.
+        // Do not pre-apply the stock delta here: the coordinator commits the
+        // Country transaction and applies the market side exactly once.
         int64_t moved = 0;
         const int32_t operation =
             command.opcode == COMMAND_COUNTRY_GOOD_TO_MARKET

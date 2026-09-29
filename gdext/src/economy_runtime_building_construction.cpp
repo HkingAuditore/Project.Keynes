@@ -46,6 +46,19 @@ bool NativeEconomyRuntime::plan_construction_materials(
     } else if (virtual_stock->size() < _good_ids.size()) {
         virtual_stock->resize(_good_ids.size(), 0);
     }
+    // A construction plan is allowed to consume goods that are already on
+    // the source market (or are carried in additional/reserved stock).  The
+    // previous gate only consulted good_market_available(), which describes
+    // current production/technology reachability.  That made an occupied
+    // market lane with a positive shelf stock look unavailable whenever the
+    // good had no producer signal in the current epoch.
+    auto construction_candidate_available = [&](int32_t good_id) {
+        if (good_id < 0 || good_id >= static_cast<int32_t>(virtual_stock->size()))
+            return false;
+        if ((*virtual_stock)[static_cast<size_t>(good_id)] > 0)
+            return true;
+        return good_market_available(cell, good_id, true);
+    };
     auto add_selection = [&](int32_t good, int64_t quantity) {
         for (size_t index = 0; index < plan.good_ids.size(); ++index) {
             if (plan.good_ids[index] == good) {
@@ -83,7 +96,7 @@ bool NativeEconomyRuntime::plan_construction_materials(
                         if ((pass == 0) != preferred_candidate ||
                             candidate.good_id < 0 || candidate.good_id >=
                                 static_cast<int32_t>(virtual_stock->size()) ||
-                            !good_market_available(cell, candidate.good_id, true)) {
+                            !construction_candidate_available(candidate.good_id)) {
                             continue;
                         }
                         const int32_t efficiency = std::max<int32_t>(
@@ -126,7 +139,7 @@ bool NativeEconomyRuntime::plan_construction_materials(
                  candidate_index < candidate_end; ++candidate_index) {
                 const ConstructionCandidate &candidate =
                     _building_construction_candidates[candidate_index];
-                if (!good_market_available(cell, candidate.good_id, true)) continue;
+                if (!construction_candidate_available(candidate.good_id)) continue;
                 int64_t physical = mul_div_sat(required, Q16_ONE,
                     std::max<int32_t>(1, candidate.efficiency_q16),
                     sat);

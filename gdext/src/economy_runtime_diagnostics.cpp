@@ -2450,6 +2450,10 @@ Dictionary NativeEconomyRuntime::report() const {
     out["closing_escrow_cash"] = _closing_totals.escrow_cash;
     out["opening_expedition_funds"] = _opening_totals.expedition_funds;
     out["closing_expedition_funds"] = _closing_totals.expedition_funds;
+    out["opening_expedition_goods"] = _opening_totals.expedition_goods;
+    out["closing_expedition_goods"] = _closing_totals.expedition_goods;
+    out["opening_transit_goods"] = _opening_totals.transit_goods;
+    out["closing_transit_goods"] = _closing_totals.transit_goods;
     out["opening_transit_population"] = _opening_totals.transit_population;
     out["closing_transit_population"] = _closing_totals.transit_population;
     out["closing_audit_incremental_this_epoch"] =

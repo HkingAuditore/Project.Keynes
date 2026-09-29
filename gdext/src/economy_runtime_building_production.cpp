@@ -2236,10 +2236,13 @@ bool NativeEconomyRuntime::run_building_production_cell(
             // an unowned remainder.
             const int64_t support_total = remaining_sellable;
             const int64_t monetary_issue_value = _good_monetary_issue_values[good];
+            // Market prices are native currency-per-GOODS_SCALE units, not
+            // Q16 values.  Producer support is one-fifth of that price;
+            // applying Q16_ONE here would over-issue by 65536x.
             const int64_t support_unit_value = monetary_issue_value > 0
                 ? monetary_issue_value
                 : mul_div_sat(market_store().price[market_store().index(market, good)],
-                    Q16_ONE, PRODUCER_SUPPORT_PRICE_DENOMINATOR,
+                    1, PRODUCER_SUPPORT_PRICE_DENOMINATOR,
                     _saturation_count);
             const int64_t total_support_paid = support_total > 0
                 ? std::max<int64_t>(1, mul_div_sat(support_total,

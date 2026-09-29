@@ -979,10 +979,11 @@ static func _balance_basic_capacity(groups: Array, reserved_population: int = 0)
 
 
 static func _planned_survival_capacity(totals: Dictionary) -> int:
+	# Bootstrap uses the same carrying contract as runtime K_eff: food supply
+	# over the authored survival ration. Clothing remains a reported production
+	# column, but is not a second population-capacity axis.
 	var food := maxi(0, int(totals.food)) * PLANNED_UTILIZATION_Q16 / Q16_ONE
-	var clothing := maxi(0, int(totals.clothing)) * PLANNED_UTILIZATION_Q16 / Q16_ONE
-	return clampi(mini(food / FOOD_REQUIREMENT_PER_CAPITA,
-		clothing / CLOTHING_REQUIREMENT_PER_CAPITA), 0, CELL_POPULATION_CAP)
+	return clampi(food / FOOD_REQUIREMENT_PER_CAPITA, 0, CELL_POPULATION_CAP)
 
 
 static func _groups_input_covered(groups: Array) -> bool:
@@ -1262,10 +1263,10 @@ static func _groups_have_survival_output(groups: Array,
 
 static func _regional_planned_survival_capacity(totals: Dictionary,
 		active_cell_count: int) -> int:
+	# Regional bootstrap K_eff uses the same food-ration denominator as the
+	# runtime flow estimator; active_cell_count only supplies the hard cell cap.
 	var food := maxi(0, int(totals.food)) * PLANNED_UTILIZATION_Q16 / Q16_ONE
-	var clothing := maxi(0, int(totals.clothing)) * PLANNED_UTILIZATION_Q16 / Q16_ONE
-	return clampi(mini(food / FOOD_REQUIREMENT_PER_CAPITA,
-		clothing / CLOTHING_REQUIREMENT_PER_CAPITA), 0,
+	return clampi(food / FOOD_REQUIREMENT_PER_CAPITA, 0,
 		maxi(0, active_cell_count) * CELL_POPULATION_CAP)
 
 
@@ -1674,9 +1675,7 @@ static func _basic_capacity_deficit_people(totals: Dictionary) -> int:
 static func _carrying_capacity_population(totals: Dictionary) -> int:
 	var workforce := maxi(0, int(totals.population))
 	var food_capacity := int(maxi(0, int(totals.food)) / FOOD_REQUIREMENT_PER_CAPITA)
-	var clothing_capacity := int(
-		maxi(0, int(totals.clothing)) / CLOTHING_REQUIREMENT_PER_CAPITA)
-	return clampi(mini(workforce, mini(food_capacity, clothing_capacity)),
+	return clampi(mini(workforce, food_capacity),
 		0, CELL_POPULATION_CAP)
 
 
