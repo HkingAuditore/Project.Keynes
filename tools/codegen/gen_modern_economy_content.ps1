@@ -1230,7 +1230,6 @@ function Calibrate-CuratedBuilding([string]$Content, [string]$Id) {
     $outputQty = @(Content-Numbers $Content 'output_quantities_per_day')
     $roleSlots = @(Content-Numbers $Content 'employee_slots_per_building')
     $roleIds = @(Content-Strings $Content 'employee_profession_ids')
-    $roleWages = @(Content-Numbers $Content 'employee_reference_wages_per_day')
     $technologyTags = @(Content-Strings $Content 'technology_tags')
     $ownerSlots = Content-Integer $Content 'owner_slots_per_building' 1
     $jobs = [long]$ownerSlots + [long](($roleSlots | Measure-Object -Sum).Sum)
@@ -1297,23 +1296,13 @@ function Calibrate-CuratedBuilding([string]$Content, [string]$Id) {
         }
         $cost += [double]$inputQty[$i] * $effectivePrice / 1000.0
     }
-    for ($i = 0; $i -lt [Math]::Min($roleIds.Count, $roleWages.Count); $i++) {
-        $roleWages[$i] = [Math]::Max(
-            [long]$roleWages[$i], (Reference-Living-Cost-For-Profession $roleIds[$i]))
-    }
-    if ($roleWages.Count -gt 0) {
-        $Content = [regex]::Replace($Content,
-            '(?m)^employee_reference_wages_per_day = PackedInt64Array\(.*\)\r?$',
-            'employee_reference_wages_per_day = ' + (PI64 @($roleWages)))
-        if ($roleWages.Count -eq 1 -and
-            [regex]::IsMatch($Content, '(?m)^wage_per_employee_per_day = \d+\r?$')) {
-            $Content = [regex]::Replace($Content,
-                '(?m)^wage_per_employee_per_day = \d+\r?$',
-                "wage_per_employee_per_day = $($roleWages[0])")
-        }
-    }
-    for ($i = 0; $i -lt [Math]::Min($roleSlots.Count, $roleWages.Count); $i++) {
-        $cost += [double]$roleSlots[$i] * [double]$roleWages[$i]
+    # Wage amounts are not authored content. Calibration uses the profession's
+    # living-cost floor solely as a deterministic planning estimate.
+    $roleLivingCosts = @($roleIds | ForEach-Object {
+        Reference-Living-Cost-For-Profession $_
+    })
+    for ($i = 0; $i -lt [Math]::Min($roleSlots.Count, $roleLivingCosts.Count); $i++) {
+        $cost += [double]$roleSlots[$i] * [double]$roleLivingCosts[$i]
     }
     if ($Id -in @('knapping_workshop', 'communal_hearth')) {
         # These Stone Age recipes are physical balance anchors. Price and living-cost
@@ -1466,7 +1455,7 @@ function Write-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[
     [string[]]$RequiredTechnologyTags = @(), [int[]]$InputRequiredQ16Override = @(),
     [object[]]$InputCandidateOverride = @(), [string[]]$EmployeeProfessionIdsOverride = @(),
     [long[]]$EmployeeSlotsOverride = @(), [string[]]$EmployeeWagePolicyIdsOverride = @(),
-    [long[]]$EmployeeReferenceWagesOverride = @(), [switch]$PreserveWorkforce) {
+    [switch]$PreserveWorkforce) {
     $requestedOwner = $Owner
     $unitQty = switch ($Id) {
         'marine_fish_collector' { [long]3600 }
@@ -1561,7 +1550,6 @@ function Write-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[
     [string[]]$roleIds = @()
     [long[]]$roleSlots = @()
     [string[]]$roleWagePolicies = @()
-    [long[]]$roleWages = @()
     if ($Outputs.Count -eq 1 -and $Outputs[0] -in @('gold','silver') -and
         $Kind -eq 'collector' -and $rank -lt 6) {
         $Owner = 'merchant'
@@ -1578,15 +1566,15 @@ function Write-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[
         $Owner = 'subsistence_farmer'
     } elseif ($Id -in @('landed_estate','manorial_pasture')) {
         $Owner = 'landlord'; $roleIds = @('serf'); $roleSlots = @(10)
-        $roleWagePolicies = @('fixed'); $roleWages = @(1000)
+        $roleWagePolicies = @('fixed')
     } elseif ($Id -in @('pastoral_camp','horse_breeding_camp')) {
         $Owner = 'pastoralist'
     } elseif ($Id -eq 'horse_breeder') {
         $Owner = 'landlord'; $roleIds = @('pastoralist'); $roleSlots = @(8)
-        $roleWagePolicies = @('fixed'); $roleWages = @(2000)
+        $roleWagePolicies = @('fixed')
     } elseif ($Id -in @('cotton_collector','spice_plants_collector','rubber_tree_collector','medicinal_herbs_collector')) {
         $Owner = 'landlord'; $roleIds = @('indentured_laborer'); $roleSlots = @(10)
-        $roleWagePolicies = @('fixed'); $roleWages = @(1500)
+        $roleWagePolicies = @('fixed')
     } elseif ($Id -eq 'flax_collector') {
         $Owner = 'subsistence_farmer'
     } elseif ($Id -eq 'timber_collector') {
@@ -1599,51 +1587,51 @@ function Write-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[
         if ($rank -lt 6) {
             $Owner = 'landlord'; $roleIds = @('tenant_farmer')
             $roleSlots = @((12 + 2 * [Math]::Max(0, $rank - 3)))
-            $roleWagePolicies = @('fixed'); $roleWages = @(2200)
+            $roleWagePolicies = @('fixed')
         } else {
             $Owner = 'landlord'; $roleIds = @('agricultural_worker','manager')
             $roleSlots = @((24 + 4 * ($rank - 6)), (2 + [Math]::Floor(($rank - 6) / 2)))
-            $roleWagePolicies = @('adaptive','adaptive'); $roleWages = @(5000,9000)
+            $roleWagePolicies = @('adaptive','adaptive')
         }
     } elseif ($Id -eq 'lumber_plant') {
         $Owner = 'artisan'; $roleIds = @('forestry_worker'); $roleSlots = @(4)
-        $roleWagePolicies = @('fixed'); $roleWages = @(1500)
+        $roleWagePolicies = @('fixed')
     } elseif ($Id -in @('bakery','staple_kitchen','slaughterhouse','creamery')) {
         $Owner = 'artisan'; $roleIds = @('apprentice'); $roleSlots = @(3)
-        $roleWagePolicies = @('fixed'); $roleWages = @(1000)
+        $roleWagePolicies = @('fixed')
     } elseif ($Kind -eq 'collector' -and $rank -lt 6) {
         if ($Worker -ne '') { $Owner = $Worker }
         if ($Worker -ne '') {
             $roleIds = @($Worker); $roleSlots = @(8)
-            $roleWagePolicies = @('fixed'); $roleWages = @(1500)
+            $roleWagePolicies = @('fixed')
         }
     } elseif ($Kind -eq 'collector') {
         $Owner = 'industrialist'; $roleIds = @($Worker, 'manager'); $roleSlots = @(14, 2)
-        $roleWagePolicies = @('adaptive', 'adaptive'); $roleWages = @(5000, 9000)
+        $roleWagePolicies = @('adaptive', 'adaptive')
     } else {
         if ($rank -lt 3) {
             $Owner = 'artisan'
         } elseif ($rank -lt 6) {
             $Owner = 'guild_master'; $roleIds = @('apprentice', 'journeyman'); $roleSlots = @(6, 4)
-            $roleWagePolicies = @('fixed', 'fixed'); $roleWages = @(1000, 2500)
+            $roleWagePolicies = @('fixed', 'fixed')
         } else {
             $Owner = 'industrialist'
         }
         if ($rank -lt 3) {
             if ($Id -notin @('knapping_workshop','communal_hearth','ore_bronzesmith_camp')) {
                 $roleIds = @('apprentice'); $roleSlots = @(3)
-                $roleWagePolicies = @('fixed'); $roleWages = @(1000)
+                $roleWagePolicies = @('fixed')
             }
         } elseif ($rank -lt 6) {
             $roleIds = @('apprentice','journeyman')
             $roleSlots = @((6 + [Math]::Max(0, $rank - 3)), (6 + [Math]::Max(0, $rank - 3)))
-            $roleWagePolicies = @('fixed','fixed'); $roleWages = @(1000,2500)
+            $roleWagePolicies = @('fixed','fixed')
         } elseif ($rank -eq 6 -and $Worker -eq 'industrial_worker') {
             $roleIds = @('industrial_worker', 'manager'); $roleSlots = @(20, 2)
-            $roleWagePolicies = @('adaptive', 'adaptive'); $roleWages = @(5000, 9000)
+            $roleWagePolicies = @('adaptive', 'adaptive')
         } elseif ($rank -eq 6) {
             $roleIds = @('industrial_worker', $Worker, 'manager'); $roleSlots = @(16, 6, 2)
-            $roleWagePolicies = @('adaptive', 'adaptive', 'adaptive'); $roleWages = @(5000, 7000, 9000)
+            $roleWagePolicies = @('adaptive', 'adaptive', 'adaptive')
         } elseif ($rank -le 8) {
             $roleIds = if ($Worker -eq 'technician') {
                 @('industrial_worker','technician','engineer','manager')
@@ -1656,9 +1644,6 @@ function Write-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[
                 @((28 + 4 * ($rank - 7)), (4 + 2 * ($rank - 7)), 3)
             } else { @((24 + 4 * ($rank - 7)), (8 + 2 * ($rank - 7)), 4, 3) }
             $roleWagePolicies = @($roleIds | ForEach-Object { 'adaptive' })
-            $roleWages = @($roleIds | ForEach-Object {
-                switch ($_) { 'industrial_worker' {5000} 'manager' {9000} default {7000} }
-            })
         } else {
             $roleIds = if ($Worker -eq 'technician') {
                 @('industrial_worker','technician','engineer','researcher','manager')
@@ -1675,26 +1660,24 @@ function Write-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[
                 else { @(32,12,9,6,4) }
             }
             $roleWagePolicies = @($roleIds | ForEach-Object { 'adaptive' })
-            $roleWages = @($roleIds | ForEach-Object {
-                switch ($_) { 'industrial_worker' {5000} 'manager' {9000} 'researcher' {8500} default {7000} }
-            })
         }
     }
     if ($PreserveWorkforce -or $isTerminalFamily) {
         if ($EmployeeProfessionIdsOverride.Count -ne $EmployeeSlotsOverride.Count -or
-            $EmployeeProfessionIdsOverride.Count -ne $EmployeeWagePolicyIdsOverride.Count -or
-            $EmployeeProfessionIdsOverride.Count -ne $EmployeeReferenceWagesOverride.Count) {
+            $EmployeeProfessionIdsOverride.Count -ne $EmployeeWagePolicyIdsOverride.Count) {
             throw "workforce override columns mismatch: $Id"
         }
         $Owner = $requestedOwner
         $roleIds = @($EmployeeProfessionIdsOverride)
         $roleSlots = @($EmployeeSlotsOverride | ForEach-Object { [long]$_ })
         $roleWagePolicies = @($EmployeeWagePolicyIdsOverride)
-        $roleWages = @($EmployeeReferenceWagesOverride | ForEach-Object { [long]$_ })
     }
+    $roleLivingCosts = @($roleIds | ForEach-Object {
+        Reference-Living-Cost-For-Profession $_
+    })
     for ($roleIndex = 0; $roleIndex -lt $roleIds.Count; $roleIndex++) {
-        $roleWages[$roleIndex] = [Math]::Max(
-            [long]$roleWages[$roleIndex],
+        $roleLivingCosts[$roleIndex] = [Math]::Max(
+            [long]$roleLivingCosts[$roleIndex],
             (Reference-Living-Cost-For-Profession $roleIds[$roleIndex]))
     }
     $candidateOffsets = @(0); $candidateGoodIds = @(); $candidateEfficiencies = @()
@@ -1799,11 +1782,11 @@ function Write-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[
         $dailyInputCost += [long][Math]::Ceiling(
             [double]$inputQty[$inputIndex] * $effectivePrice / 1000.0)
     }
-    $dailyWageCost = [long]0
+    $dailyLivingCost = [long]0
     for ($roleIndex = 0; $roleIndex -lt $roleSlots.Count; $roleIndex++) {
-        $dailyWageCost += [long]$roleSlots[$roleIndex] * [long]$roleWages[$roleIndex]
+        $dailyLivingCost += [long]$roleSlots[$roleIndex] * [long]$roleLivingCosts[$roleIndex]
     }
-    $dailyCost = $dailyInputCost + $dailyWageCost
+    $dailyCost = $dailyInputCost + $dailyLivingCost
     $ownerLivingCost = Reference-Living-Cost-For-Profession $Owner
     if (-not ($Outputs | Where-Object { $_ -in @('gold','silver') })) {
         $outputPriceTotal = [long]0
@@ -1909,7 +1892,6 @@ owner_slots_per_building = 1
 employee_profession_ids = $(PSArray $roleIds)
 employee_slots_per_building = $(PI64 $roleSlots)
 employee_wage_policy_ids = $(PSArray $roleWagePolicies)
-employee_reference_wages_per_day = $(PI64 $roleWages)
 input_good_ids = $(PSArray $Inputs)
 input_quantities_per_day = $(PI64 $inputQty)
 input_required_q16 = $(PI32 $inputRequiredQ16)
@@ -1943,9 +1925,9 @@ function Add-Building([string]$Id,[string]$Name,[string]$Kind,[string]$Owner,[st
     [string[]]$RequiredTechnologyTags = @(), [int[]]$InputRequiredQ16Override = @(),
     [object[]]$InputCandidateOverride = @(), [string[]]$EmployeeProfessionIdsOverride = @(),
     [long[]]$EmployeeSlotsOverride = @(), [string[]]$EmployeeWagePolicyIdsOverride = @(),
-    [long[]]$EmployeeReferenceWagesOverride = @(), [switch]$PreserveWorkforce) {
+    [switch]$PreserveWorkforce) {
     if (-not $buildingIds.Add($Id)) { throw "duplicate building id: $Id" }
-    Write-Building -Id $Id -Name $Name -Kind $Kind -Owner $Owner -Worker $Worker -Inputs $Inputs -Outputs $Outputs -Resources $Resources -ResourceModes $ResourceModes -Behavior $Behavior -Category $Category -Family $Family -Tier $Tier -TechnologyOverride $TechnologyOverride -InputQuantityOverride $InputQuantityOverride -RecipeSourceId $RecipeSourceId -TechnologyTagsOverride $TechnologyTagsOverride -RequiredTechnologyTags $RequiredTechnologyTags -InputRequiredQ16Override $InputRequiredQ16Override -InputCandidateOverride $InputCandidateOverride -EmployeeProfessionIdsOverride $EmployeeProfessionIdsOverride -EmployeeSlotsOverride $EmployeeSlotsOverride -EmployeeWagePolicyIdsOverride $EmployeeWagePolicyIdsOverride -EmployeeReferenceWagesOverride $EmployeeReferenceWagesOverride -PreserveWorkforce:$PreserveWorkforce
+    Write-Building -Id $Id -Name $Name -Kind $Kind -Owner $Owner -Worker $Worker -Inputs $Inputs -Outputs $Outputs -Resources $Resources -ResourceModes $ResourceModes -Behavior $Behavior -Category $Category -Family $Family -Tier $Tier -TechnologyOverride $TechnologyOverride -InputQuantityOverride $InputQuantityOverride -RecipeSourceId $RecipeSourceId -TechnologyTagsOverride $TechnologyTagsOverride -RequiredTechnologyTags $RequiredTechnologyTags -InputRequiredQ16Override $InputRequiredQ16Override -InputCandidateOverride $InputCandidateOverride -EmployeeProfessionIdsOverride $EmployeeProfessionIdsOverride -EmployeeSlotsOverride $EmployeeSlotsOverride -EmployeeWagePolicyIdsOverride $EmployeeWagePolicyIdsOverride -PreserveWorkforce:$PreserveWorkforce
 }
 
 function Add-Terminal-Upgrade-Family([string]$Family, [string]$Token, [string]$DisplayName,
@@ -1954,19 +1936,19 @@ function Add-Terminal-Upgrade-Family([string]$Family, [string]$Token, [string]$D
         @{ id="${Token}_workshop"; name="${DisplayName}小作坊"; tier=1;
            tech=@("tech.application.${Token}_workshop_kingdom");
            inputs=@($PrimaryInput,'tools'); qty=@(1000,250); req=@(65536,32768);
-           roles=@('artisan','apprentice'); slots=@(6,3); wages=@('fixed','fixed'); refs=@(2500,1000) },
+           roles=@('artisan','apprentice'); slots=@(6,3); wages=@('fixed','fixed') },
         @{ id="${Token}_manufactory"; name="${DisplayName}工场"; tier=2;
            tech=@("tech.application.${Token}_manufactory_exploration");
            inputs=@($PrimaryInput,'tools'); qty=@(1600,350); req=@(65536,32768);
-           roles=@('artisan','journeyman'); slots=@(8,6); wages=@('fixed','fixed'); refs=@(3000,2500) },
+           roles=@('artisan','journeyman'); slots=@(8,6); wages=@('fixed','fixed') },
         @{ id="${Token}_factory"; name="${DisplayName}工厂"; tier=3;
            tech=@("tech.application.${Token}_factory_steam","tech.application.${Token}_factory_electrical");
            inputs=@($PrimaryInput,'tools','steam_engines','coal'); qty=@(2400,500,300,600); req=@(65536,32768,32768,32768);
-           roles=@('industrial_worker','technician','manager'); slots=@(28,8,3); wages=@('adaptive','adaptive','adaptive'); refs=@(5000,7000,9000) },
+           roles=@('industrial_worker','technician','manager'); slots=@(28,8,3); wages=@('adaptive','adaptive','adaptive') },
         @{ id="smart_${Token}_factory"; name="智能${DisplayName}工厂"; tier=4;
            tech=@("tech.application.${Token}_smart_factory");
            inputs=@($PrimaryInput,'tools','electricity','autonomous_systems'); qty=@(3200,700,900,300); req=@(65536,32768,32768,32768);
-           roles=@('industrial_worker','technician','engineer','manager'); slots=@(36,12,8,4); wages=@('adaptive','adaptive','adaptive','adaptive'); refs=@(5000,7000,7000,9000) }
+           roles=@('industrial_worker','technician','engineer','manager'); slots=@(36,12,8,4); wages=@('adaptive','adaptive','adaptive','adaptive') }
     )
     if ($Token -eq 'metal_housewares') {
         $familySpecs[0].inputs = @('wrought_iron','tools')
@@ -2008,7 +1990,7 @@ function Add-Terminal-Upgrade-Family([string]$Family, [string]$Token, [string]$D
             -TechnologyTagsOverride $spec['tech'] -InputQuantityOverride $spec['qty'] `
             -InputRequiredQ16Override $spec['req'] -InputCandidateOverride $candidateOverride `
             -EmployeeProfessionIdsOverride $spec['roles'] -EmployeeSlotsOverride $spec['slots'] `
-            -EmployeeWagePolicyIdsOverride $spec['wages'] -EmployeeReferenceWagesOverride $spec['refs'] `
+            -EmployeeWagePolicyIdsOverride $spec['wages'] `
             -PreserveWorkforce
     }
 }
@@ -2086,7 +2068,6 @@ owner_slots_per_building = $OwnerSlots
 employee_profession_ids = PackedStringArray()
 employee_slots_per_building = PackedInt64Array()
 employee_wage_policy_ids = PackedStringArray()
-employee_reference_wages_per_day = PackedInt64Array()
 $inputGoodsLine
 $inputQtyLine
 $inputRequiredLine
@@ -2109,7 +2090,6 @@ resource_generation_quantities_per_day = PackedInt64Array()
 resource_generation_floor_q16 = 0
 behavior_id = "consume_local_resources"
 wage_policy_id = "none"
-wage_per_employee_per_day = 0
 "@
 }
 
@@ -2281,7 +2261,6 @@ owner_slots_per_building = 1
 employee_profession_ids = PackedStringArray()
 employee_slots_per_building = PackedInt64Array()
 employee_wage_policy_ids = PackedStringArray()
-employee_reference_wages_per_day = PackedInt64Array()
 input_good_ids = PackedStringArray("gathered_plants")
 input_quantities_per_day = PackedInt64Array(120)
 output_good_ids = PackedStringArray("cloth")
@@ -2298,7 +2277,6 @@ resource_generation_quantities_per_day = PackedInt64Array()
 resource_generation_floor_q16 = 0
 behavior_id = "none"
 wage_policy_id = "none"
-wage_per_employee_per_day = 0
 "@
 Write-SelfSufficientBuilding 'household_loom' '家用织机' 'tech.pottery' `
     'household_cloth' 2 'artisan' @('cloth') @(1320) @('arable_land','fertile_soil') @(10000,10000)

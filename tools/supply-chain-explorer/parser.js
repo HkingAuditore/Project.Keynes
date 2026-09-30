@@ -283,14 +283,13 @@
       const er = erasForTags(b.technology_tags);
       const jobs = [];
       if (b.owner_profession_id) {
-        jobs.push({ profession: b.owner_profession_id, slots: b.owner_slots_per_building || 1, role: 'owner', wagePolicy: b.wage_policy_id, refWage: b.wage_per_employee_per_day });
+        jobs.push({ profession: b.owner_profession_id, slots: b.owner_slots_per_building || 1, role: 'owner', wagePolicy: b.wage_policy_id });
       }
       const ep = b.employee_profession_ids || [];
       const es = b.employee_slots_per_building || [];
       const ewp = b.employee_wage_policy_ids || [];
-      const erw = b.employee_reference_wages_per_day || [];
       for (let i = 0; i < ep.length; i++) {
-        jobs.push({ profession: ep[i], slots: es[i] !== undefined ? es[i] : 1, role: 'employee', wagePolicy: ewp[i], refWage: erw[i] });
+        jobs.push({ profession: ep[i], slots: es[i] !== undefined ? es[i] : 1, role: 'employee', wagePolicy: ewp[i] });
       }
       const produces = (b.output_good_ids || []).map((g, i) => ({ good: g, qty: (b.output_quantities_per_day || [])[i] || 0 }));
       const consumes = [];
@@ -767,11 +766,10 @@
       let employeeWages = 0;
       const employeeIds = building.employee_profession_ids || [];
       const employeeSlots = building.employee_slots_per_building || [];
-      const employeeReferenceWages = building.employee_reference_wages_per_day || [];
       employeeIds.forEach((professionId, index) => {
         const slots = Number(employeeSlots[index] == null ? 1 : employeeSlots[index]) * count * utilization;
         addAmount(professionPopulation, professionId, slots * professionScale);
-        employeeWages += Number(employeeReferenceWages[index] || building.wage_per_employee_per_day || 0) * slots;
+        employeeWages += professionDemand(professionId).livingCost * slots;
       });
       const ownerSlots = Number(building.owner_slots_per_building || 1) * count * utilization;
       if (building.owner_profession_id) addAmount(professionPopulation, building.owner_profession_id, ownerSlots * professionScale);

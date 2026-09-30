@@ -31,7 +31,6 @@ owner_profession_id = &"landlord"
 employee_profession_ids = PackedStringArray("serf", "corvee_worker")
 employee_slots_per_building = PackedInt64Array(10, 3)
 employee_wage_policy_ids = PackedStringArray("fixed", "fixed")
-employee_reference_wages_per_day = PackedInt64Array(6500, 6000)
 input_good_ids = PackedStringArray("fertilizer", "tools")
 input_quantities_per_day = PackedInt64Array(655, 1400)
 input_required_q16 = PackedInt32Array(32768, 32768)

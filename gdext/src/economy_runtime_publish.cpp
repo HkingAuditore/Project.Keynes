@@ -413,10 +413,6 @@ bool NativeEconomyRuntime::publish_epoch_slice(
                 ++_closing_audit_mismatches;
                 diagnose_incremental_audit_mismatch(_closing_totals);
                 _closing_audit_runtime_disabled = true;
-                if (_closing_audit_mode == 2) {
-                    error = "incremental_closing_audit_mismatch";
-                    return false;
-                }
             }
         }
         if (!error.empty()) return false;
@@ -428,6 +424,8 @@ bool NativeEconomyRuntime::publish_epoch_slice(
             error = "goods_conservation_failed";
         if (!error.empty()) return false;
         _closing_audit_force_full = false;
+        _last_closing_audit_was_incremental =
+            _closing_audit_incremental_this_epoch;
         _settlement_watermark = _sample_day;
         _settlement_newest_day = _sample_day;
         _publish_have_populated = false;

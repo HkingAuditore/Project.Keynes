@@ -129,13 +129,15 @@ void DCWorldExt::sync_runtime_domain_ownership() {
             economy->attach_simulation_host(_runtime_host.get());
             _runtime_host->set_economy_sync_writes_forbidden(
                 economy_worker_authoritative);
-            // Country ACTIVE + Economy sync still needs RESEARCH_PURCHASE so
-            // government procurement can debit treasury via Host peer. Full
-            // Economy ACTIVE opens every D7 op as before.
+            // Country ACTIVE + Economy sync needs research plus the two
+            // market/treasury legs used by local expedition procurement.
+            // Full Economy ACTIVE opens every D7 op as before.
             if (economy_worker_authoritative)
                 economy->open_all_d7_operation_gates();
-            else if (country_worker_authoritative)
+            else if (country_worker_authoritative) {
                 economy->open_research_purchase_d7_gate();
+                economy->open_country_market_purchase_d7_gates();
+            }
         }
     }
 }

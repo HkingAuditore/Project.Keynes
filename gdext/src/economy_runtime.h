@@ -113,7 +113,9 @@ public:
     // same-version reader.
     // 53: optional D7 peer journal extension (session/domains/hashes) after
     // cadence; base fiscal-peer wire shape stays schema-52 compatible.
-    static constexpr int32_t SCHEMA_VERSION = 53;
+    // 54: PREPARING expeditions persist the fixed bridge/material demand used
+    // by their stocking progress denominator.
+    static constexpr int32_t SCHEMA_VERSION = 54;
     static constexpr uint32_t BUILDING_KIT_ROLE_TRADE = 1u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CONSTRUCTION = 2u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CLOTHING_INPUT = 4u;
@@ -359,6 +361,17 @@ public:
         _d7_operation_gate_mask |=
             (1u << static_cast<uint32_t>(
                 RuntimeEconomyAssetOperation::RESEARCH_PURCHASE));
+    }
+    // Country ACTIVE + Economy sync still needs the two legs used by local
+    // expedition procurement: market -> Country treasury, then treasury ->
+    // expedition cargo.  They are peer-routed through the Country worker;
+    // leaving either gate closed parks PREPARING at 0% without a fatal.
+    void open_country_market_purchase_d7_gates() {
+        _d7_operation_gate_mask |=
+            (1u << static_cast<uint32_t>(
+                RuntimeEconomyAssetOperation::GOOD_FROM_MARKET)) |
+            (1u << static_cast<uint32_t>(
+                RuntimeEconomyAssetOperation::TREASURY_SPEND));
     }
     bool bind_soa_view(EconomySoAView &view, std::string &error);
     // Phase-5 A+Y: formula hot path mutates OwnedState population/market in
@@ -685,6 +698,7 @@ public:
     godot::Dictionary reset(const godot::String &reason);
 
     godot::Dictionary begin_save(int32_t chunk_bytes);
+    godot::Dictionary begin_forensics_save(int32_t chunk_bytes);
     godot::PackedByteArray read_save_chunk(int32_t max_bytes);
     godot::Dictionary end_save();
     godot::Dictionary begin_restore();
@@ -991,11 +1005,12 @@ private:
     // every day and the expedition cargo never grows.
     struct FamilyExpeditionProcurementContinuation {
         bool active = false;
-        int32_t phase = 0; // 1=market purchase, 4=market apply, 5=treasury transfer
+        int32_t phase = 0; // 1=market purchase, 4=market apply, 5=treasury transfer, 6=peer ack
         int32_t expedition = -1;
         int32_t source_cell = -1;
         int32_t market = -1;
         int32_t good = -1;
+        uint8_t cargo_flags = 0;
         int64_t quantity = 0;
         int64_t cash = 0;
         uint64_t transaction_id = 0;
@@ -1241,7 +1256,6 @@ private:
         int32_t upgrade_tier = 0;
         int32_t owner_profession_id = -1;
         int64_t owner_slots_per_building = 0;
-        int64_t wage_per_employee_per_day = 0;
         int32_t employee_begin = 0;
         int32_t employee_count = 0;
         int32_t construction_begin = 0;
@@ -1277,9 +1291,9 @@ private:
     struct JobRole {
         int32_t profession_id = -1;
         int64_t slots_per_building = 0;
-        int64_t base_wage_per_day = 0;
         // Employee wages are discovered from living-cost, market, and
-        // employer-profit signals at each planning boundary.
+        // employer-profit signals at each planning boundary. Content never
+        // supplies a wage amount.
         int32_t wage_policy = 2; // retained for catalog/save compatibility
     };
 
@@ -2807,6 +2821,17 @@ private:
         int64_t net_change = 0;
     };
 
+    struct MoneyAuditAccountDiagnostic {
+        int32_t slot = -1;
+        int32_t cell = -1;
+        int32_t signature = -1;
+        int32_t profession = -1;
+        uint64_t handle = 0;
+        int64_t opening_funds = 0;
+        int64_t closing_funds = 0;
+        int64_t net_change = 0;
+    };
+
     struct TradePlanInitState {
         TradePlanInitPhase phase = TradePlanInitPhase::IDLE;
         size_t cursor = 0;
@@ -4301,6 +4326,9 @@ private:
     int64_t _closing_audit_market_full_scan_entries = 0;
     AuditTotals _incremental_closing_totals;
     bool _opening_audit_force_full = false;
+    // An incremental close is a derived snapshot. Do not reuse it as the
+    // next epoch's opening baseline without one full physical rescan.
+    bool _last_closing_audit_was_incremental = false;
     std::vector<int64_t> _audit_shadow_population;
     std::vector<int64_t> _audit_shadow_funds;
     std::vector<int64_t> _audit_shadow_market_stock;
@@ -4312,6 +4340,7 @@ private:
     std::string _closing_audit_mismatch_ledger = "none";
     int64_t _closing_audit_mismatch_lane = -1;
     std::vector<GoodsAuditLaneDiagnostic> _goods_audit_candidate_lanes;
+    std::vector<MoneyAuditAccountDiagnostic> _money_audit_candidate_accounts;
     int64_t _investment_scheduled_review_cells = 0;
     int64_t _investment_review_cells = 0;
     int64_t _investment_type_evaluations = 0;
@@ -6018,7 +6047,8 @@ private:
     bool start_family_expedition_procurement(
         FamilyExpeditionProcurementContinuation &continuation,
         int32_t expedition, int32_t source_cell, int32_t market,
-        int32_t good, int64_t quantity, int64_t cash, std::string &error);
+        int32_t good, uint8_t cargo_flags, int64_t quantity, int64_t cash,
+        std::string &error);
     void add_colonization_kit_cargo(ColonizationKitPlan &kit, int32_t good_id,
                                     int64_t quantity, uint8_t flags,
                                     int64_t &sat) const;
@@ -6821,6 +6851,7 @@ private:
     void commit_incremental_audit_shadow();
     void diagnose_incremental_audit_mismatch(const AuditTotals &full);
     void capture_goods_audit_candidates();
+    void capture_money_audit_candidates();
     AuditTotals audit_totals() const;
     int64_t memory_bytes() const;
     int32_t choose_epoch_days(int64_t cohort_count);
@@ -7000,6 +7031,7 @@ private:
 
     // ECP2 mid-epoch export bypasses the committed-boundary gate in begin_save.
     mutable bool _ecp2_allow_mid_epoch_export = false;
+    mutable bool _forensics_allow_fatal_export = false;
     // Set only for the begin_save call inside an ECP2 rollback-backup capture.
     mutable bool _ecp2_rollback_backup_export = false;
     // Country identity written into the save header while the Host builds a

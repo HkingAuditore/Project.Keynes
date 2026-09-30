@@ -932,6 +932,10 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             append_le<uint8_t>(record, family_expeditions_store().state[i]);
             append_le<int64_t>(record, family_expeditions_store().population[i]);
             append_le<int64_t>(record,
+                family_expeditions_store().kit_bridge_required_units[i]);
+            append_le<int64_t>(record,
+                family_expeditions_store().kit_material_required_units[i]);
+            append_le<int64_t>(record,
                 family_expeditions_store().effect_transaction_id[i]);
             append_le<uint64_t>(record, family_expeditions_store().idempotency_key[i]);
             const uint32_t route_count = family_expeditions_store().active[i] != 0

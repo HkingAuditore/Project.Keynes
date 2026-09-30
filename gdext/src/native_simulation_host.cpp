@@ -1822,6 +1822,10 @@ void NativeSimulationHost::attach_economy_production_runtime(
         // for the entire early game.
         if (domain_is_worker_authoritative(RuntimeDomainId::ECONOMY))
             rt->open_all_d7_operation_gates();
+        else if (country_authority_owner_is_worker()) {
+            rt->open_research_purchase_d7_gate();
+            rt->open_country_market_purchase_d7_gates();
+        }
         else
             rt->open_research_purchase_d7_gate();
         class NativeEconomyPodCommandExecutor final
@@ -4057,25 +4061,30 @@ bool NativeSimulationHost::publish_country_economy_asset_requests(
     return true;
 }
 
-void NativeSimulationHost::discard_country_economy_asset_requests(
-        const std::vector<uint64_t> &request_ids) noexcept {
-    if (request_ids.empty()) return;
+void NativeSimulationHost::acknowledge_country_economy_asset_consumed(
+        uint64_t request_id) noexcept {
+    if (request_id == 0) return;
     std::lock_guard<std::mutex> lock(_country_transport_mutex);
-    for (const uint64_t request_id : request_ids) {
-        _country_economy_asset_request_queue.erase(
-            std::remove(_country_economy_asset_request_queue.begin(),
-                        _country_economy_asset_request_queue.end(), request_id),
-            _country_economy_asset_request_queue.end());
-        const auto request = _country_economy_asset_requests.find(request_id);
-        if (request == _country_economy_asset_requests.end()) continue;
-        _country_economy_asset_requests.erase(request);
-        _country_economy_asset_results.erase(request_id);
-        _country_economy_asset_terminal_results.erase(request_id);
-        _country_economy_asset_dispatched.erase(request_id);
-        _country_economy_asset_committed.erase(request_id);
-        if (_country_economy_asset_protocol.pending_requests > 0)
-            --_country_economy_asset_protocol.pending_requests;
-    }
+    const auto request = _country_economy_asset_requests.find(request_id);
+    const auto terminal = _country_economy_asset_terminal_results.find(request_id);
+    if (request == _country_economy_asset_requests.end() ||
+        terminal == _country_economy_asset_terminal_results.end() ||
+        !economy_asset_result_terminal(terminal->second)) return;
+    _country_economy_asset_request_queue.erase(
+        std::remove(_country_economy_asset_request_queue.begin(),
+                    _country_economy_asset_request_queue.end(), request_id),
+        _country_economy_asset_request_queue.end());
+    _economy_origin_asset_queue.erase(
+        std::remove(_economy_origin_asset_queue.begin(),
+                    _economy_origin_asset_queue.end(), request_id),
+        _economy_origin_asset_queue.end());
+    _country_economy_asset_requests.erase(request);
+    _country_economy_asset_results.erase(request_id);
+    _country_economy_asset_terminal_results.erase(terminal);
+    _country_economy_asset_dispatched.erase(request_id);
+    _country_economy_asset_committed.erase(request_id);
+    if (_country_economy_asset_protocol.pending_requests > 0)
+        --_country_economy_asset_protocol.pending_requests;
     _country_economy_asset_protocol.queued_requests = static_cast<uint32_t>(
         std::min<size_t>(_country_economy_asset_request_queue.size(),
                          std::numeric_limits<uint32_t>::max()));
@@ -4561,6 +4570,37 @@ bool NativeSimulationHost::country_economy_asset_protocol_self_test(
             : result_error;
         return false;
     }
+    restored->acknowledge_country_economy_asset_consumed(request.request_id);
+    if (restored->_country_economy_asset_requests.find(request.request_id) !=
+            restored->_country_economy_asset_requests.end() ||
+        restored->_country_economy_asset_terminal_results.find(request.request_id) !=
+            restored->_country_economy_asset_terminal_results.end() ||
+        restored->_country_economy_asset_requests.find(pending.request_id) ==
+            restored->_country_economy_asset_requests.end()) {
+        error = "country_economy_asset_self_test_consumed_retirement_failed";
+        return false;
+    }
+    std::vector<uint8_t> retired_journal;
+    if (!restored->serialize_country_economy_asset_journal(
+            retired_journal, journal_error)) {
+        error = journal_error.empty()
+            ? "country_economy_asset_self_test_retired_journal_encode_failed"
+            : journal_error;
+        return false;
+    }
+    auto retired_restore = std::make_unique<NativeSimulationHost>();
+    retired_restore->_country_worker_session_epoch = 54;
+    if (!retired_restore->restore_country_economy_asset_journal(
+            retired_journal.data(), retired_journal.size(), journal_error) ||
+        retired_restore->_country_economy_asset_requests.find(request.request_id) !=
+            retired_restore->_country_economy_asset_requests.end() ||
+        retired_restore->_country_economy_asset_requests.find(pending.request_id) ==
+            retired_restore->_country_economy_asset_requests.end()) {
+        error = journal_error.empty()
+            ? "country_economy_asset_self_test_retired_journal_restore_failed"
+            : journal_error;
+        return false;
+    }
     std::vector<uint8_t> corrupted = journal;
     corrupted[4] ^= 0xffu;
     auto corrupt_probe = std::make_unique<NativeSimulationHost>();
@@ -4897,7 +4937,10 @@ bool NativeSimulationHost::finish_worker_country_asset(
         return false;
     }
     if (!flush_country_economy_asset_commits(error, request_id)) return false;
-    return publish_country_worker_snapshot(RUNTIME_DIRTY_COUNTRY_STATE, error);
+    if (!publish_country_worker_snapshot(RUNTIME_DIRTY_COUNTRY_STATE, error))
+        return false;
+    acknowledge_country_economy_asset_consumed(request_id);
+    return true;
 }
 
 bool NativeSimulationHost::country_authority_drain_idle_locked() const {

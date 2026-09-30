@@ -63,6 +63,7 @@ void EconomyFamilyExpeditionStore::clear() {
     route_begin.clear(); route_count.clear(); payload_begin.clear();
     payload_count.clear(); cargo_begin.clear(); cargo_count.clear();
     kit_building_begin.clear(); kit_building_count.clear();
+    kit_bridge_required_units.clear(); kit_material_required_units.clear();
     kit_missing_stock_identity.clear();
     missing_good_begin.clear(); missing_good_count.clear();
     effect_transaction_id.clear();
@@ -77,6 +78,8 @@ int32_t EconomyFamilyExpeditionStore::allocate() {
         generation[index] = std::max<uint32_t>(1, generation[index] + 1);
         cargo_begin[index] = 0; cargo_count[index] = 0;
         kit_building_begin[index] = 0; kit_building_count[index] = 0;
+        kit_bridge_required_units[index] = 0;
+        kit_material_required_units[index] = 0;
         kit_missing_stock_identity[index] = 0;
         missing_good_begin[index] = 0; missing_good_count[index] = 0;
     } else {
@@ -91,6 +94,8 @@ int32_t EconomyFamilyExpeditionStore::allocate() {
         payload_begin.push_back(0); payload_count.push_back(0);
         cargo_begin.push_back(0); cargo_count.push_back(0);
         kit_building_begin.push_back(0); kit_building_count.push_back(0);
+        kit_bridge_required_units.push_back(0);
+        kit_material_required_units.push_back(0);
         kit_missing_stock_identity.push_back(0);
         missing_good_begin.push_back(0); missing_good_count.push_back(0);
         effect_transaction_id.push_back(0); idempotency_key.push_back(0);
@@ -1177,6 +1182,66 @@ bool NativeEconomyRuntime::advance_preparing_family_expedition(
         abort_preparing_family_expedition(expedition, day, 7, "PREPARING_ABORTED");
         return true;
     }
+    FamilyExpeditionProcurementContinuation &continuation =
+        _family_expedition_procurement_continuation;
+    if (continuation.active) {
+        if (continuation.expedition != expedition) {
+            error = "colonization_treasury_peer_busy";
+            family_expeditions_store().due_day[expedition] = day + 1;
+            push_family_expedition_due(expedition);
+            return true;
+        }
+        const int32_t good = continuation.good;
+        const uint8_t cargo_flags = continuation.cargo_flags;
+        const int64_t quantity = continuation.quantity;
+        const bool purchased = advance_family_expedition_procurement(
+            continuation, error);
+        if (!purchased && continuation.active) {
+            error.clear();
+            family_expeditions_store().due_day[expedition] = day + 1;
+            push_family_expedition_due(expedition);
+            return true;
+        }
+        if (purchased && good >= 0 && quantity > 0) {
+            const uint32_t begin =
+                family_expeditions_store().cargo_begin[expedition];
+            const uint32_t count =
+                family_expeditions_store().cargo_count[expedition];
+            const uint32_t end = begin + count;
+            if (end > family_expedition_cargo().size()) {
+                error = "colonization_cargo_range_invalid";
+                return false;
+            }
+            std::vector<FamilyExpeditionCargoLine> cargo;
+            cargo.reserve(count + 1);
+            for (uint32_t i = begin; i < end; ++i)
+                cargo.push_back(family_expedition_cargo()[i]);
+            auto held = std::find_if(cargo.begin(), cargo.end(),
+                [&](const FamilyExpeditionCargoLine &line) {
+                    return line.good_id == good && line.flags == cargo_flags;
+                });
+            if (held == cargo.end()) {
+                cargo.push_back({good, quantity, cargo_flags});
+            } else {
+                held->quantity = saturating_add(held->quantity, quantity,
+                    _saturation_count);
+            }
+            std::sort(cargo.begin(), cargo.end(),
+                [](const FamilyExpeditionCargoLine &a,
+                   const FamilyExpeditionCargoLine &b) {
+                    return std::tie(a.flags, a.good_id) <
+                        std::tie(b.flags, b.good_id);
+                });
+            family_expeditions_store().cargo_begin[expedition] =
+                static_cast<uint32_t>(family_expedition_cargo().size());
+            family_expedition_cargo().insert(family_expedition_cargo().end(),
+                cargo.begin(), cargo.end());
+            family_expeditions_store().cargo_count[expedition] =
+                static_cast<uint32_t>(cargo.size());
+            note_family_expedition_audit_invalidation();
+        }
+        error.clear();
+    }
     // Stock up day by day. A cell that never holds a whole kit at once can
     // still fund one over time, so the party escrows the spare stock it can
     // afford today and the planner treats that escrow as available tomorrow.
@@ -1256,6 +1321,13 @@ bool NativeEconomyRuntime::apply_start_family_expedition(
         std::max(1, quote.travel_days);
     family_expeditions_store().state[expedition] = EXPEDITION_OUTBOUND;
     family_expeditions_store().population[expedition] = cmd.i64_0;
+    // Freeze the stocking denominator at expedition creation.  The live
+    // market may re-plan substitutes later, but that must never make an
+    // already funded party appear to lose progress.
+    family_expeditions_store().kit_bridge_required_units[expedition] =
+        std::max<int64_t>(0, kit.bridge_required_units);
+    family_expeditions_store().kit_material_required_units[expedition] =
+        std::max<int64_t>(0, kit.material_required_units);
     family_expeditions_store().route_begin[expedition] = static_cast<uint32_t>(
         family_expedition_route_cells().size());
     family_expeditions_store().route_count[expedition] = quote.route_count;
@@ -1277,7 +1349,6 @@ bool NativeEconomyRuntime::apply_start_family_expedition(
     const bool kit_incomplete = kit.kit_partial != 0 || kit.buildings.empty();
     auto occupy_preparing = [&]() {
         family_expeditions_store().payload_count[expedition] = 0;
-        family_expeditions_store().cargo_count[expedition] = 0;
         family_expeditions_store().kit_building_count[expedition] = 0;
         store_preparing_missing_goods(expedition, kit);
         family_expeditions_store().state[expedition] = EXPEDITION_PREPARING;
@@ -1292,6 +1363,18 @@ bool NativeEconomyRuntime::apply_start_family_expedition(
     };
     if (needs_complete_kit && kit_incomplete)
         return occupy_preparing();
+    const bool cargo_reserved =
+        reserve_preparing_family_expedition_cargo(expedition, kit, error);
+    const FamilyExpeditionProcurementContinuation &continuation =
+        _family_expedition_procurement_continuation;
+    const bool procurement_pending = continuation.active &&
+        continuation.expedition == expedition;
+    if (!cargo_reserved && (needs_complete_kit || procurement_pending)) {
+        error.clear();
+        return occupy_preparing();
+    }
+    if (!cargo_reserved)
+        error.clear();
     if (!extract_family_expedition_cargo(expedition, kit, error)) {
         if (needs_complete_kit) {
             error.clear();
@@ -1562,10 +1645,45 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
             source_population, _saturation_count);
         payload.cash_claim = mul_div_sat(edge.cash_claim, candidate.selected,
             edge.people, _saturation_count);
-        payload.owner_employed = mul_div_sat(edge.owner_employed,
-            candidate.selected, edge.people, _saturation_count);
-        payload.employee_employed = mul_div_sat(edge.employee_employed,
-            candidate.selected, edge.people, _saturation_count);
+        // Family employment attribution is a derived split and can lag the
+        // authoritative cohort lane after a building/employment pass.  A
+        // zero attribution must not make a populated employed cohort look
+        // unemployed during extraction: the source population lane is what
+        // the ledger export validates.  When no family edge carries a lane,
+        // distribute the authoritative lane by this edge's population and
+        // then take the selected share.
+        int64_t attributed_owner = 0;
+        int64_t attributed_employee = 0;
+        for (const FamilyMembershipEdge &other : family_memberships()) {
+            if (other.cohort_handle != edge.cohort_handle) continue;
+            attributed_owner = saturating_add(attributed_owner,
+                std::max<int64_t>(0, other.owner_employed),
+                _saturation_count);
+            attributed_employee = saturating_add(attributed_employee,
+                std::max<int64_t>(0, other.employee_employed),
+                _saturation_count);
+        }
+        const int64_t source_owner = std::clamp<int64_t>(
+            population_store().owner_employed[slot], 0, source_population);
+        const int64_t source_employee = std::clamp<int64_t>(
+            population_store().employee_employed[slot], 0,
+            std::max<int64_t>(0, source_population - source_owner));
+        const int64_t edge_owner = attributed_owner == 0 && source_owner > 0
+            ? mul_div_sat(source_owner, edge.people, source_population,
+                _saturation_count)
+            : std::max<int64_t>(0, edge.owner_employed);
+        const int64_t edge_employee = attributed_employee == 0 &&
+                source_employee > 0
+            ? mul_div_sat(source_employee, edge.people, source_population,
+                _saturation_count)
+            : std::max<int64_t>(0, edge.employee_employed);
+        payload.owner_employed = std::min<int64_t>(candidate.selected,
+            mul_div_sat(edge_owner, candidate.selected, edge.people,
+                _saturation_count));
+        payload.employee_employed = std::min<int64_t>(
+            std::max<int64_t>(0, candidate.selected - payload.owner_employed),
+            mul_div_sat(edge_employee, candidate.selected, edge.people,
+                _saturation_count));
         payload.needs_satisfaction = population_store().needs_satisfaction[slot];
         payload.worst_need_id = population_store().worst_need_id[slot];
         payload.composite_satisfaction =
@@ -1630,8 +1748,10 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
         population_store().income_baseline_ema[slot] -= payload.income_baseline_ema;
         population_store().demography_residual[slot] -= payload.demography_residual;
         edge.people -= payload.people; edge.cash_claim -= payload.cash_claim;
-        edge.owner_employed -= payload.owner_employed;
-        edge.employee_employed -= payload.employee_employed;
+        edge.owner_employed = std::max<int64_t>(0,
+            edge_owner - payload.owner_employed);
+        edge.employee_employed = std::max<int64_t>(0,
+            edge_employee - payload.employee_employed);
         edge.population_basis = std::max<int64_t>(0,
             edge.population_basis - payload.people);
         edge.funds_basis = std::max<int64_t>(0,
@@ -1641,6 +1761,19 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
             static_cast<uint32_t>(family_expedition_payloads().size()) -
             family_expeditions_store().payload_begin[expedition];
     }
+    // Population extraction is a structural mutation.  Keep the authoritative
+    // cohort employment lanes clipped to the remaining population before any
+    // POD mirror/export can observe the command, including rounding across
+    // multiple family membership edges.
+    population_store().for_each_in_cell(source_cell, [&](int32_t slot) {
+        const int64_t population = std::max<int64_t>(0,
+            population_store().population[slot]);
+        population_store().owner_employed[slot] = std::clamp<int64_t>(
+            population_store().owner_employed[slot], 0, population);
+        population_store().employee_employed[slot] = std::clamp<int64_t>(
+            population_store().employee_employed[slot], 0,
+            population - population_store().owner_employed[slot]);
+    });
     family_expeditions_store().payload_count[expedition] = static_cast<uint32_t>(
         family_expedition_payloads().size()) -
         family_expeditions_store().payload_begin[expedition];
@@ -2272,8 +2405,13 @@ Dictionary NativeEconomyRuntime::family_expedition_snapshot(
     int64_t material_missing = 0;
     String blocker;
     if (family_expeditions_store().state[expedition] == EXPEDITION_PREPARING) {
-        // Stocking progress needs the unclamped survival-bridge demand, which
-        // only the planner knows. Replan read-only against the live escrow.
+        bridge_required = family_expeditions_store().kit_bridge_required_units[
+            expedition];
+        material_required = family_expeditions_store().kit_material_required_units[
+            expedition];
+        // Replan read-only against the live escrow for blocker and candidate
+        // diagnostics; the progress denominator comes from the fixed fields
+        // above and is therefore available even if this replan is unavailable.
         ColonizationReserveContext reserve;
         std::vector<int64_t> reserved_stock;
         collect_family_expedition_reserved_stock(expedition, reserved_stock);
@@ -2289,8 +2427,10 @@ Dictionary NativeEconomyRuntime::family_expedition_snapshot(
                 family_expeditions_store().target_cell[expedition],
                 family_expeditions_store().population[expedition], travel,
                 _epoch_active, kit, false, &reserve)) {
-            bridge_required = kit.bridge_required_units;
-            material_required = kit.material_required_units;
+            if (bridge_required <= 0)
+                bridge_required = kit.bridge_required_units;
+            if (material_required <= 0)
+                material_required = kit.material_required_units;
             // Progress is measured from authoritative escrow, never from the
             // current quote's affordable subset.  The quote may change with
             // market stock, while already purchased cargo must remain.

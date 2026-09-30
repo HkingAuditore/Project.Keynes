@@ -191,7 +191,7 @@ WorldClock 硬日屏障和 real-frame catchup。独立 ECONOMY_GRAPH 不进入�
 
 `BuildingProfile` 位于 `data/economy/buildings/`，由 `EconomyCatalog` 编译进 native catalog。
 `EconomyFacade.build/demolish/treasury_sponsored_build/building_cell_snapshot` 是 GDScript 粗边界；建筑、岗位、生产、所有权
-份额和账本只由 C++ 修改。目录生成时 fixed/adaptive role 的参考工资均以职业默认生活成本为
+份额和账本只由 C++ 修改。目录生成时 fixed/adaptive role 的冷启动工资估计均以职业默认生活成本为
 下限，并按默认商人收购价、80% 售出率校准足以覆盖投入、工资、业主生活成本和目标利润的产量。目录审计遍历全部建筑并另限制生产原料成本
 不超过默认商人收购收入的 60%、工具维护不超过 `100 GOODS_SCALE/岗位/日`，且工业总投入物量不超过
 总产出物量的三倍，避免用异常放大的产量掩盖过高投入；运行时 `adaptive` 工资再使用

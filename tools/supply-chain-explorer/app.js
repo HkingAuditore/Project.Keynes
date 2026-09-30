@@ -291,7 +291,7 @@
     html += '</tbody></table></div></section>';
 
     const buildings = result.buildings.slice().sort((a, b) => a.margin - b.margin || String(a.building.id).localeCompare(String(b.building.id)));
-    html += `<section class="balance-panel"><div class="balance-panel-head"><div><h3>建筑单位经济</h3><p>收入使用各产出物资的 merchant buy factor；成本包含选定投入、员工参考工资和业主参考生活费。</p></div><span>${buildings.length} 类建筑</span></div>`;
+    html += `<section class="balance-panel"><div class="balance-panel-head"><div><h3>建筑单位经济</h3><p>收入使用各产出物资的 merchant buy factor；成本包含选定投入、员工生活成本估计和业主生活费。</p></div><span>${buildings.length} 类建筑</span></div>`;
     html += '<div class="balance-table-wrap"><table class="grid balance-grid"><thead><tr><th>建筑</th><th>承接收入</th><th>投入成本</th><th>员工工资</th><th>业主生活费</th><th>净盈余</th><th>利润率 / 目标</th><th>盈亏平衡售出率</th></tr></thead><tbody>';
     buildings.forEach((row) => {
       const tone = row.isMonetaryIssue ? 'row-info' : (row.surplus < 0 ? 'row-bad' : (!row.sustainable ? 'row-warn' : 'row-good'));
@@ -627,7 +627,7 @@
         const nm = p ? (p.display_name || p.id) : j.profession;
         c.push(`<div class="job-row ${j.role === 'owner' ? 'owner' : ''}" data-pick="profession:${j.profession}">
           <span><span class="role">${j.role === 'owner' ? '业主' : '雇员'}</span> ${esc(nm)}</span>
-          <span>×${j.slots} · ${esc(j.wagePolicy || '')}${j.refWage ? ' ' + j.refWage : ''}</span></div>`);
+          <span>×${j.slots} · ${esc(j.wagePolicy || '')}</span></div>`);
       });
       c.push(`</div>`);
     }

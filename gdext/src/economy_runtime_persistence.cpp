@@ -238,8 +238,9 @@ bool validate_owned_state_soa(const std::vector<uint8_t> &wire) {
 
 Dictionary NativeEconomyRuntime::begin_save(int32_t chunk_bytes) {
     Dictionary out;
-    if (_fiscal_reservation_continuation.active ||
-        _epoch_begin_post_fiscal_pending) {
+    if (!_forensics_allow_fatal_export &&
+        (_fiscal_reservation_continuation.active ||
+         _epoch_begin_post_fiscal_pending)) {
         out["ok"] = false;
         out["reason"] = "economy_save_fiscal_reservation_pending";
         out["country_cursor"] =
@@ -257,7 +258,8 @@ Dictionary NativeEconomyRuntime::begin_save(int32_t chunk_bytes) {
         out["epoch_begin_pending"] = _epoch_begin_post_fiscal_pending;
         return out;
     }
-    if (_country_research_procurement_continuation.active) {
+    if (!_forensics_allow_fatal_export &&
+        _country_research_procurement_continuation.active) {
         out["ok"] = false;
         out["reason"] = "economy_save_research_procurement_pending";
         out["transaction_id"] = static_cast<int64_t>(
@@ -265,7 +267,7 @@ Dictionary NativeEconomyRuntime::begin_save(int32_t chunk_bytes) {
         out["phase"] = _country_research_procurement_continuation.phase;
         return out;
     }
-    if (_fiscal_settlement_continuation.active) {
+    if (!_forensics_allow_fatal_export && _fiscal_settlement_continuation.active) {
         out["ok"] = false;
         out["reason"] = "economy_save_fiscal_settlement_pending";
         out["country_cursor"] = _fiscal_settlement_continuation.country_cursor;
@@ -275,7 +277,7 @@ Dictionary NativeEconomyRuntime::begin_save(int32_t chunk_bytes) {
         out["last_collected"] = _fiscal_settlement_continuation.last_collected;
         return out;
     }
-    if (!_bootstrapped || _fatal || _save.active || _restore.active ||
+    if (!_bootstrapped || (_fatal && !_forensics_allow_fatal_export) || _save.active || _restore.active ||
         (_epoch_active && !_ecp2_allow_mid_epoch_export)) {
         out["ok"] = false;
         out["reason"] = !_bootstrapped ? "economy_not_bootstrapped"
@@ -289,7 +291,7 @@ Dictionary NativeEconomyRuntime::begin_save(int32_t chunk_bytes) {
     // whose Country state legitimately carries due commands (worker start
     // after load then fell back to the synchronous path).
     if (_country_runtime == nullptr || !_country_runtime->economy_available() ||
-        (!_ecp2_rollback_backup_export &&
+        (!_ecp2_rollback_backup_export && !_forensics_allow_fatal_export &&
          _country_runtime->should_run(_last_committed_day))) {
         out["ok"] = false;
         out["reason"] = "save_requires_idle_country_runtime";
@@ -418,6 +420,17 @@ Dictionary NativeEconomyRuntime::begin_save(int32_t chunk_bytes) {
     out["catalog_hash"] = _catalog_hash;
     out["committed_day"] = _last_committed_day;
     return out;
+}
+
+Dictionary NativeEconomyRuntime::begin_forensics_save(int32_t chunk_bytes) {
+    const bool saved_mid_epoch = _ecp2_allow_mid_epoch_export;
+    const bool saved_fatal = _forensics_allow_fatal_export;
+    _ecp2_allow_mid_epoch_export = true;
+    _forensics_allow_fatal_export = true;
+    Dictionary result = begin_save(chunk_bytes);
+    _ecp2_allow_mid_epoch_export = saved_mid_epoch;
+    _forensics_allow_fatal_export = saved_fatal;
+    return result;
 }
 
 Dictionary NativeEconomyRuntime::end_save() {

@@ -29,7 +29,6 @@ owner_profession_id = &"industrialist"
 employee_profession_ids = PackedStringArray("industrial_worker", "machinist", "technician", "engineer", "manager")
 employee_slots_per_building = PackedInt64Array(30, 10, 7, 4, 4)
 employee_wage_policy_ids = PackedStringArray("adaptive", "adaptive", "adaptive", "adaptive", "adaptive")
-employee_reference_wages_per_day = PackedInt64Array(15608, 17136, 17136, 17136, 17136)
 input_good_ids = PackedStringArray("machine_parts", "steam_engines", "tools", "computers", "electricity")
 input_quantities_per_day = PackedInt64Array(12668, 12668, 3800, 6333, 8106)
 input_required_q16 = PackedInt32Array(57344, 57344, 32768, 57344, 57344)

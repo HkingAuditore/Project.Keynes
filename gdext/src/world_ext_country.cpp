@@ -1388,6 +1388,10 @@ Dictionary DCWorldExt::install_country_authority_handoff() {
         country_runtime_from(_country_runtime)->set_sync_store_writes_forbidden(
             after.owner == NativeSimulationHost::CountryAuthorityOwner::WORKER);
     }
+    // The handoff can happen after Economy was attached. Re-run the ownership
+    // mirror so Country ACTIVE + Economy sync opens the market purchase legs
+    // immediately instead of leaving D7 at the research-only mask.
+    sync_runtime_domain_ownership();
     out["ok"] = true;
     out["code"] = "ok";
     out["owner"] = static_cast<int>(after.owner);
@@ -1954,6 +1958,11 @@ Dictionary DCWorldExt::begin_country_save(int chunk_bytes) {
         out["reason"] = "country_save_requires_committed_economy_boundary";
         return out;
     }
+    return country_runtime_from(_country_runtime)->begin_save(chunk_bytes);
+}
+
+Dictionary DCWorldExt::begin_country_forensics_save(int chunk_bytes) {
+    if (_country_runtime == nullptr) return country_unavailable();
     return country_runtime_from(_country_runtime)->begin_save(chunk_bytes);
 }
 

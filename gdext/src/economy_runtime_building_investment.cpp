@@ -2965,11 +2965,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                         static_cast<int32_t>(_labor_signals.contract_wage_ema.size())
                     ? std::max(_labor_signals.contract_wage_ema[signal],
                         _labor_signals.paid_wage_ema[signal]) : 0;
-                // Use the catalog basic wage as the floor for a cold-start
-                // quote, then let the live labour market and profit share
-                // raise it through the normal employment path.
-                const int64_t dynamic_wage = std::max(living_floor,
-                    std::max(market_quote, role.base_wage_per_day));
+                const int64_t dynamic_wage = std::max(living_floor, market_quote);
                 daily_wages = saturating_add(daily_wages, saturating_mul(
                     role.slots_per_building, dynamic_wage,
                     _saturation_count), _saturation_count);
@@ -3311,9 +3307,8 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                             static_cast<int32_t>(_labor_signals.contract_wage_ema.size())
                         ? std::max(_labor_signals.contract_wage_ema[signal],
                             _labor_signals.paid_wage_ema[signal]) : 0;
-                    const int64_t wage = std::max(living_floor,
-                        std::max(role.base_wage_per_day,
-                            std::max(market_quote, profit_share_per_employee)));
+                    const int64_t wage = std::max({living_floor, market_quote,
+                        profit_share_per_employee});
                     daily_wages = saturating_add(daily_wages,
                         saturating_mul(role.slots_per_building, wage,
                             _saturation_count), _saturation_count);

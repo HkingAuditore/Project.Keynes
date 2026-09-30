@@ -528,7 +528,8 @@ v8 在 BUILDINGS 记录追加 owner-lot 的基础工资、奖金和欠薪停产�
 `LABOR_SIGNALS` 保存按 `(cell, profession)` 排序的生活成本、合同/实付工资 EMA、
 job-days 与支付率；END 移至 section 10，header 追加 labor signal count。
 
-v7 restore 使用 role reference wage 初始化合同工资，劳动市场信号在下一冻结周期重建。
+包含 role reference wage 的旧 PKEC 存档不再迁移；参考工资不是新的合同工资初始值。旧版本存档
+必须重新开始，避免把内容硬编码工资注入劳动市场。
 编译器同时发布排除 v8 新目录列的 v7-compatible market/building hash。v8 round-trip
 必须保持 group、role、LaborMarketStore 和其 CSR offsets 的完整 state hash。
 

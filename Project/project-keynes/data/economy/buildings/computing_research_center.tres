@@ -32,7 +32,6 @@ owner_profession_id = &"data_scientist"
 employee_profession_ids = PackedStringArray("data_scientist", "research_scientist", "engineer")
 employee_slots_per_building = PackedInt64Array(56, 28, 24)
 employee_wage_policy_ids = PackedStringArray("adaptive", "adaptive", "adaptive")
-employee_reference_wages_per_day = PackedInt64Array(22500, 21500, 20000)
 input_good_ids = PackedStringArray("computers", "electricity", "radio_equipment")
 input_quantities_per_day = PackedInt64Array(32625, 58000, 13920)
 input_required_q16 = PackedInt32Array(49152, 49152, 65536)

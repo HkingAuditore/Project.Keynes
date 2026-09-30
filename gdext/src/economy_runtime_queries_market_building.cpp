@@ -870,7 +870,6 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     out["period_days"] = std::max(1, _epoch_days);
     PackedStringArray type_ids;
     PackedInt64Array type_counts;
-    PackedInt64Array wage_per_employee_per_day;
     PackedInt32Array target_operating_margin_q16;
     PackedInt32Array supply_price_elasticity_q16;
 	PackedInt32Array building_kinds;
@@ -889,7 +888,6 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     type_counts.fill(0);
     for (const std::string &id : _building_type_ids) type_ids.push_back(String(id.c_str()));
     for (const BuildingType &type : _building_types) {
-        wage_per_employee_per_day.push_back(type.wage_per_employee_per_day);
         target_operating_margin_q16.push_back(type.target_operating_margin_q16);
         supply_price_elasticity_q16.push_back(type.supply_price_elasticity_q16);
     }
@@ -938,7 +936,6 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     PackedInt64Array employee_required;
     PackedInt64Array employee_filled;
     PackedInt32Array employee_wage_policies;
-    PackedInt64Array employee_reference_wages;
     PackedInt64Array employee_contract_wages;
     PackedInt64Array employee_expected_wages;
     PackedInt32Array employee_payment_credibility_q16;
@@ -1238,8 +1235,6 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
             employee_profession_ids.push_back(role.profession_id);
             const int32_t role_index = group.employee_fill_begin + r;
             employee_wage_policies.push_back(role.wage_policy);
-            employee_reference_wages.push_back(std::max<int64_t>(0,
-                role.base_wage_per_day));
             const int64_t contract = std::max<int64_t>(
                 0, _building_role_contract_wage[role_index]);
             employee_contract_wages.push_back(contract);
@@ -1412,7 +1407,6 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     }
     out["building_type_ids"] = type_ids;
     out["building_counts_by_type"] = type_counts;
-    out["wage_per_employee_per_day_by_type"] = wage_per_employee_per_day;
     out["target_operating_margin_q16_by_type"] = target_operating_margin_q16;
     out["supply_price_elasticity_q16_by_type"] = supply_price_elasticity_q16;
 	out["building_kinds"] = building_kinds;
@@ -1458,7 +1452,6 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     out["employee_required"] = employee_required;
     out["employee_filled"] = employee_filled;
     out["employee_wage_policies"] = employee_wage_policies;
-    out["employee_reference_wages_per_day"] = employee_reference_wages;
     out["employee_contract_wages_per_day"] = employee_contract_wages;
     out["employee_expected_wages_per_day"] = employee_expected_wages;
     out["employee_payment_credibility_q16"] =

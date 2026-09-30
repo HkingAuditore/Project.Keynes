@@ -295,7 +295,7 @@ func _test_bullion_business_tax(compiled: Dictionary,
 		"value_i64": PackedInt64Array([0]),
 		"tax_kinds": PackedInt32Array([2]),
 		"tax_item_indices": PackedInt32Array([-1]),
-		"tax_rate_basis_points": PackedInt32Array([10000]),
+		"tax_rate_basis_points": PackedInt32Array([9500]),
 		"stable_ids": PackedStringArray([""]),
 		"display_names": PackedStringArray([""]),
 	}
@@ -351,15 +351,15 @@ func _test_bullion_business_tax(compiled: Dictionary,
 	var tax_queued := bool(ext.submit_country_commands(tax_command).get("ok", false))
 	var tax_committed := tax_queued and bool(
 		ext.run_country_slice({"day_index": 1}).get("done", false))
-	_expect("100% bullion business tax commits", tax_committed)
+	_expect("95% bullion business tax commits", tax_committed)
 	var tax_policy_debug: Dictionary = ext.get_country_cell_tax_policy_snapshot(0)
 	var tax_business_debug: Dictionary = tax_policy_debug.get("business", {})
 	var tax_ids_debug: PackedStringArray = tax_business_debug.get("item_ids", PackedStringArray())
 	var tax_idx_debug := tax_ids_debug.find("placer_gold_working")
-	_expect("100% bullion business tax is authoritative",
+	_expect("95% bullion business tax is authoritative",
 		tax_idx_debug >= 0 and
-		int((tax_business_debug.get("final_base_rates_basis_points", PackedInt32Array()) as PackedInt32Array)[tax_idx_debug]) == 10000 and
-		int((tax_business_debug.get("effective_rates_basis_points", PackedInt32Array()) as PackedInt32Array)[tax_idx_debug]) == 10000)
+		int((tax_business_debug.get("final_base_rates_basis_points", PackedInt32Array()) as PackedInt32Array)[tax_idx_debug]) == 9500 and
+		int((tax_business_debug.get("effective_rates_basis_points", PackedInt32Array()) as PackedInt32Array)[tax_idx_debug]) == 9500)
 	report = _run_day(ext, 1)
 	var buildings: Dictionary = ext.get_building_cell_snapshot(0)
 	var group := (buildings.group_type_ids as PackedInt32Array).find(placer_gold)
@@ -371,10 +371,12 @@ func _test_bullion_business_tax(compiled: Dictionary,
 		as PackedInt64Array)[group]) if group >= 0 else -1
 	var fiscal: Dictionary = ext.get_country_fiscal_snapshot(handle)
 	var collected: PackedInt64Array = fiscal.get("collected", PackedInt64Array())
-	_expect("100% business tax withholds the full bullion receipt",
-		mint_receipt > 0 and business_tax == mint_receipt and net_revenue == 0)
+	var expected_tax := int(mint_receipt * 9500 / 10000)
+	_expect("95% business tax withholds bullion support receipts",
+		mint_receipt > 0 and business_tax == expected_tax and
+		net_revenue == mint_receipt - expected_tax)
 	_expect("bullion business tax reaches the country fiscal ledger",
-		collected.size() > 2 and int(collected[2]) == mint_receipt)
+		collected.size() > 2 and int(collected[2]) == expected_tax)
 	_expect("bullion business tax conserves all ledgers",
 		int(report.get("population_error", 1)) == 0 and
 		int(report.get("money_error", 1)) == 0 and

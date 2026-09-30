@@ -2005,7 +2005,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             uint8_t active = 0, state = 0;
             uint32_t generation = 0, route_count = 0, payload_count = 0;
             int64_t stable_id = 0, departure_day = -1, due_day = -1,
-                population = 0, transaction_id = 0;
+                population = 0, kit_bridge_required = 0,
+                kit_material_required = 0, transaction_id = 0;
             uint64_t country_handle = 0, family_handle = 0,
                 idempotency_key = 0;
             int32_t route_cost = 0, speed = 0;
@@ -2023,6 +2024,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 !read_le(bytes, cursor, speed) ||
                 !read_le(bytes, cursor, state) ||
                 !read_le(bytes, cursor, population) ||
+                !read_le(bytes, cursor, kit_bridge_required) ||
+                !read_le(bytes, cursor, kit_material_required) ||
                 !read_le(bytes, cursor, transaction_id) ||
                 !read_le(bytes, cursor, idempotency_key) ||
                 !read_le(bytes, cursor, route_count) ||
@@ -2063,7 +2066,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                     error = "save_family_expedition_state_invalid"; return false;
                 }
                 const bool preparing = state == EXPEDITION_PREPARING;
-                if (population < 1 ||
+                if (population < 1 || kit_bridge_required < 0 ||
+                    kit_material_required < 0 ||
                     (preparing ? payload_count != 0 : payload_count < 1)) {
                     error = "save_family_expedition_payload_header_invalid"; return false;
                 }
@@ -2085,6 +2089,10 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             family_expeditions_store().speed.push_back(speed);
             family_expeditions_store().state.push_back(state);
             family_expeditions_store().population.push_back(population);
+            family_expeditions_store().kit_bridge_required_units.push_back(
+                kit_bridge_required);
+            family_expeditions_store().kit_material_required_units.push_back(
+                kit_material_required);
             family_expeditions_store().effect_transaction_id.push_back(transaction_id);
             family_expeditions_store().idempotency_key.push_back(idempotency_key);
             family_expeditions_store().route_begin.push_back(static_cast<uint32_t>(

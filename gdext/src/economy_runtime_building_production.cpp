@@ -2514,8 +2514,10 @@ bool NativeEconomyRuntime::run_building_production_cell(
                     _saturation_count);
             }
             int64_t business_tax = 0;
-            // Positive business tax applies to every realized producer receipt,
-            // including quota-backed bullion issuance. Negative business tax is
+            const int64_t producer_receipt = saturating_add(
+                paid, support_paid, _saturation_count);
+            // Tax the same gross receipt shown by the building, including
+            // producer support and bullion issuance. Negative business tax is
             // settled once against eligible costs after payroll and maintenance.
             if (business_tax_active) {
                 const auto tax_group = building_at(static_cast<size_t>(offer.group));
@@ -2530,15 +2532,15 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 if (business_rate > 0 &&
                     business_mode != NativeCountryRuntime::TAX_MODE_ABSOLUTE) {
                     business_tax = apply_fiscal_tax(
-                        cell, NativeCountryRuntime::TAX_BUSINESS, paid,
+                        cell, NativeCountryRuntime::TAX_BUSINESS,
+                        producer_receipt,
                         business_rate, business_mode, _saturation_count);
                     record_cohort_fiscal(offer.owner_slot, business_tax);
                 }
             }
             const int64_t producer_after_business_tax = saturating_sub(
-                paid, business_tax, _saturation_count);
-            const int64_t total_paid = saturating_add(
-                producer_after_business_tax, support_paid, _saturation_count);
+                producer_receipt, business_tax, _saturation_count);
+            const int64_t total_paid = producer_after_business_tax;
             if (issue_value > 0)
                 group.last_bullion_mint_receipt = saturating_add(
                     group.last_bullion_mint_receipt, support_paid, _saturation_count);

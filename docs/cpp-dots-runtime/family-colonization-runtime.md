@@ -42,6 +42,12 @@ scratch 长期复用，generation stamp 避免每次清空全图数组，单次�
 `colonization_kit_requote_required`。出发后路线、许可与开工建筑计划冻结，
 抵达前不重寻路。
 
+筹备期的本地采购按两条规则规划：建材按每个开工材料组的候选物资逐组配齐，
+口粮、衣物和软工具则可以直接购买源地市场已有的现货。现货不因源地尚未具备
+对应生产科技而被过滤；只有没有现货时，候选物资才要求源地具备生产能力。这样
+市场中已经存在的野味、采集植物等库存可以进入远征队托管，而不会把“有货”误报
+成“口粮 0%”。
+
 ## 守恒人口托管
 
 `FamilyExpeditionStore` 是 generation-safe SoA，路线、累计成本、cohort 载荷和
@@ -70,7 +76,9 @@ person stable ID 确定性随行。
 漏设该标志，只要 live 开拓队人口、`expedition_funds` 或 `expedition_goods` 与上一收盘不一致，
 opening 也会自动改走全量 scan。落地和返程只把同一载荷合并回真实 cohort / 源地市场，
 不生成现金、物资、建筑或人口；绿地到达额外消耗 construction cargo 并插入已冻结的
-家族建筑计划，审计记入 `construction_goods_consumed`。冻结周期内落地只把新建筑组
+家族建筑计划；只有 `_epoch_active` 时才把 construction sink 记入
+`construction_goods_consumed`。开盘前的立即落地已经包含在下一次 opening baseline，不能
+再从该轮 flow ledger 扣一次。冻结周期内落地只把新建筑组
 追加到 `_buildings` 尾部，不得调用 `rebuild_building_role_storage` /
 `rebuild_market_signals`：epoch 初冻结的 group 下标、生产 reserve 和市场信号 CSR
 按 `(cell, good)` 排序，中途插入中间格会平移后续信号，活地图上货物守恒失败并把
@@ -168,6 +176,9 @@ busy。家族入口进入地图选点模式，Esc/右键退出。
 投资仍要求单个候选独自满足一组，并按现有低成本规则选择，不启用开拓专用 split policy。
 已有建筑或在建的目标只带桥接库存，不落成新建筑。`N < 3` 标记 `kit_partial`，
 只带桥接。绿地 `N >= 3` **不允许带着空建筑列表出发**：库存不够就留在 `PREPARING`。
+初始报价已经齐套时也必须先通过 `reserve_preparing_family_expedition_cargo` 完成本地市场购买，
+再把实际买到的货物与建筑计划登记到远征队；Country worker 请求待处理时先留在 `PREPARING`，
+等采购完成后再抽人口出发。报价中的可用库存只是规划输入，不能直接当作已购买 cargo。
 
 开工包规模由 `COLONIZATION_KIT_FOOD_COVERAGE_Q16` 封顶，不再把剩余业主槽全部填成采集营；
 派遣人数上升不会让建材需求线性膨胀，也就不会把筹备拖成看不到头的囤积。
@@ -178,6 +189,7 @@ busy。家族入口进入地图选点模式，Esc/右键退出。
 托管 cargo。规划把已托管量当作可用库存（`ColonizationReserveContext::reserved`），所以每条
 `kit.cargo` 表示"必须持有的总量"，只搬差额；计划缩小时超额先退回源地市场。`prefer_reserved_candidates`
 让已囤积的替代品排在候选前面，避免新到货的首选候选把已付出的货搁死。
+每笔成功购买都立即并入托管 cargo；后续商品暂时无法购买时，已完成的交易不能从账本中丢失。
 
 托管不得吃掉源地自己的口粮：`ColonizationReserveContext::floor` 由
 `colonization_source_survival_floor` 用同一套桥接规划器跑源地自身人口
@@ -206,7 +218,7 @@ busy。家族入口进入地图选点模式，Esc/右键退出。
 
 ## 存档与诊断
 
-当前写出为 PKCN v11、PKEC v52；PKEF 当前为 v11。reader 只接受同版本。
+当前写出为 PKCN v11、PKEC v54；PKEF 当前为 v11。reader 只接受同版本。
 v51 的 `EXPEDITION_PREPARING` 记录要求 `payload_count == 0` 且 `kit_count == 0`，
 但 `cargo_count` **可以非零**——那是筹备期逐日囤积的托管货物，已计入在途货物守恒总量与
 authoritative state hash。v42 曾要求 PREPARING 的 cargo 也为 0，该约束在 v51 解除。
@@ -222,7 +234,7 @@ revision 5 起 identity 不再用于跳过重规划（每日必重规划），�
 （完整开工意图的建造需求，以及源地当前仍供不起的那部分）暴露，`kit_blocker` 再给出
 `READY` / `BRIDGE` / `MATERIALS` / `NO_BUILDINGS` / `UNBUILDABLE` 之一说明真正卡在哪。
 UI 的"已囤积 N%"必须按桥接 + 建材合计口径算：只看桥接会在建材还差一大截时显示 100%。
-这五个值都是每次查询时只读重规划得到的派生量，不落存档，PKEC schema 不变。已有建筑的本国地块迁徙仍只携带桥接库存，不落成新建筑，也不额外抽取建材。
+桥接/建材总需求在进入 PREPARING 时固定并随远征存档；缺口仍按当前权威托管货物计算，市场重规划只用于更新 blocker 和待购候选，不会改变进度分母。已有建筑的本国地块迁徙仍只携带桥接库存，不落成新建筑，也不额外抽取建材。
 v36 在途队伍 cargo 为空，到达后不落成开工包。
 
 `get_economy_report()` 暴露活动队数、到期堆大小、在途人口、路线查询、载荷拆分

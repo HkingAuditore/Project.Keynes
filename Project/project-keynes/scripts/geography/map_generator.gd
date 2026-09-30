@@ -2999,6 +2999,7 @@ func _ensure_continuation_perf_pending() -> void:
 		"last_substage": "",
 		"last_path": "",
 		"done": false,
+		
 		"stage_counts": {},
 		"stage_wall_ms": {},
 		"stage_max_slice_ms": {},
