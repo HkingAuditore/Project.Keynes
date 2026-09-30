@@ -350,7 +350,51 @@ bool NativeEconomyRuntime::publish_epoch_slice(
             _production_output_discarded -
             _cycle_flow_discarded - _bullion_stock_consumed -
             _country_research_goods_consumed;
+        const bool incremental_conservation_mismatch =
+            _closing_audit_incremental_this_epoch &&
+            (_closing_totals.population != population_expected ||
+             money_close != money_expected ||
+             _closing_totals.goods_stock != goods_expected);
+        if (incremental_conservation_mismatch) {
+            // Incremental audit is an optimization. A nonzero ledger delta is
+            // not actionable until a full snapshot confirms it; otherwise a
+            // missed lane touch can pause an otherwise balanced economy.
+            const AuditTotals incremental = _closing_totals;
+            _closing_totals = audit_totals();
+            ++_closing_audit_full_verifications;
+            ++_closing_audit_mismatches;
+            diagnose_incremental_audit_mismatch(_closing_totals);
+            _closing_audit_runtime_disabled = true;
+            _closing_audit_force_full = true;
+            _closing_audit_incremental_this_epoch = false;
+            _closing_totals_valid = true;
+            const int64_t full_money = _closing_totals.cohort_funds +
+                _closing_totals.country_cash + _closing_totals.escrow_cash;
+            const int64_t full_goods_expected = _opening_totals.goods_stock +
+                _explicit_stock_delta + _production_output_stock +
+                _production_output_discarded + _production_output_retained -
+                _consumed_goods - _owner_output_consumed -
+                _construction_goods_consumed - _production_inputs_consumed -
+                _maintenance_goods_consumed - _production_output_discarded -
+                _cycle_flow_discarded - _bullion_stock_consumed -
+                _country_research_goods_consumed;
+            const bool full_audit_matches_incremental =
+                incremental.population == _closing_totals.population &&
+                incremental.cohort_funds == _closing_totals.cohort_funds &&
+                incremental.goods_stock == _closing_totals.goods_stock;
+            if (full_audit_matches_incremental) {
+                _closing_audit_mismatch_ledger = "none";
+                _closing_audit_mismatch_lane = -1;
+            }
+            if (_closing_totals.population != population_expected)
+                error = "population_conservation_failed";
+            else if (full_money != money_expected)
+                error = "money_conservation_failed";
+            else if (_closing_totals.goods_stock != full_goods_expected)
+                error = "goods_conservation_failed";
+        }
         if (!_closing_audit_incremental_this_epoch &&
+            !incremental_conservation_mismatch &&
             _closing_audit_mode != 0) {
             const int64_t incremental_money =
                 _incremental_closing_totals.cohort_funds +
@@ -375,6 +419,7 @@ bool NativeEconomyRuntime::publish_epoch_slice(
                 }
             }
         }
+        if (!error.empty()) return false;
         if (_closing_totals.population != population_expected)
             error = "population_conservation_failed";
         else if (money_close != money_expected)

@@ -67,6 +67,9 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
         }
         _epoch_ceiling_research_touched.clear();
     }
+    _epoch_previous_producer_sellable = _epoch_producer_sellable_current;
+    _epoch_previous_producer_merchant_sold =
+        _epoch_producer_merchant_sold_current;
     _epoch_offered_supply_ema.clear();
     _epoch_producer_sellable_current.clear();
     _epoch_producer_merchant_sold_current.clear();
@@ -1056,6 +1059,14 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
     _epoch_producer_sellable_current.assign(_market_signals.good_ids.size(), 0);
     _epoch_producer_merchant_sold_current.assign(
         _market_signals.good_ids.size(), 0);
+    if (_epoch_previous_producer_sellable.size() !=
+            _market_signals.good_ids.size())
+        _epoch_previous_producer_sellable.assign(
+            _market_signals.good_ids.size(), 0);
+    if (_epoch_previous_producer_merchant_sold.size() !=
+            _market_signals.good_ids.size())
+        _epoch_previous_producer_merchant_sold.assign(
+            _market_signals.good_ids.size(), 0);
     _epoch_producer_discarded_current.assign(_market_signals.good_ids.size(), 0);
     _epoch_nonhousehold_withdrawals.assign(_market_signals.good_ids.size(), 0);
     _epoch_cost_anchor_price = _market_signals.cost_anchor_price;

@@ -2965,10 +2965,11 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                         static_cast<int32_t>(_labor_signals.contract_wage_ema.size())
                     ? std::max(_labor_signals.contract_wage_ema[signal],
                         _labor_signals.paid_wage_ema[signal]) : 0;
-                // Investment must price the same live labour market used by
-                // employment.  The catalog reference wage is legacy content
-                // data and is deliberately excluded from this quote.
-                const int64_t dynamic_wage = std::max(living_floor, market_quote);
+                // Use the catalog basic wage as the floor for a cold-start
+                // quote, then let the live labour market and profit share
+                // raise it through the normal employment path.
+                const int64_t dynamic_wage = std::max(living_floor,
+                    std::max(market_quote, role.base_wage_per_day));
                 daily_wages = saturating_add(daily_wages, saturating_mul(
                     role.slots_per_building, dynamic_wage,
                     _saturation_count), _saturation_count);
@@ -3155,6 +3156,8 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     living_cost, std::max<int64_t>(1,
                         type.owner_slots_per_building), _saturation_count);
                 int64_t daily_cash_revenue = 0;
+                int64_t daily_merchant_cash_revenue = 0;
+                int64_t daily_producer_support_revenue = 0;
                 int64_t monetary_request_money_per_day = 0;
                 int64_t monetary_expected_revenue_per_day = 0;
                 int64_t daily_in_kind_livelihood = 0;
@@ -3243,9 +3246,25 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                         : mul_div_sat(retail_price,
                             _good_merchant_buy_factor_q16[output.good_id], Q16_ONE,
                             _saturation_count);
-                    daily_cash_revenue = saturating_add(daily_cash_revenue,
-                        mul_div_sat(absorbed_quantity, settlement_price,
-                            GOODS_SCALE, _saturation_count), _saturation_count);
+                    const int64_t merchant_revenue = mul_div_sat(
+                        absorbed_quantity, settlement_price, GOODS_SCALE,
+                        _saturation_count);
+                    daily_merchant_cash_revenue = saturating_add(
+                        daily_merchant_cash_revenue, merchant_revenue,
+                        _saturation_count);
+                    // Production settlement sends the sellable remainder to
+                    // producer support after merchant procurement.
+                    const int64_t support_quantity = issue_value > 0 ? 0 :
+                        std::max<int64_t>(0,
+                            sellable_quantity - absorbed_quantity);
+                    daily_producer_support_revenue = saturating_add(
+                        daily_producer_support_revenue,
+                        producer_support_receipt_value(cell, output.good_id,
+                            support_quantity, _saturation_count),
+                        _saturation_count);
+                    daily_cash_revenue = saturating_add(
+                        daily_merchant_cash_revenue,
+                        daily_producer_support_revenue, _saturation_count);
                     if (issue_value > 0) {
                         monetary_request_money_per_day = saturating_add(
                             monetary_request_money_per_day,
@@ -3293,7 +3312,8 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                         ? std::max(_labor_signals.contract_wage_ema[signal],
                             _labor_signals.paid_wage_ema[signal]) : 0;
                     const int64_t wage = std::max(living_floor,
-                        std::max(market_quote, profit_share_per_employee));
+                        std::max(role.base_wage_per_day,
+                            std::max(market_quote, profit_share_per_employee)));
                     daily_wages = saturating_add(daily_wages,
                         saturating_mul(role.slots_per_building, wage,
                             _saturation_count), _saturation_count);
@@ -3314,39 +3334,14 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                             _saturation_count), daily_maintenance,
                             _saturation_count),
                         utilization_q16, Q16_ONE, _saturation_count);
-                    const int32_t business_rate = frozen_tax_rate(
-                        cell, NativeCountryRuntime::TAX_BUSINESS, type_id);
-                    const int64_t business_percent_base = business_rate < 0
-                        ? eligible_cost_base : daily_cash_revenue;
-                    // Absolute business levy is per building-day.
-                    const int64_t business_transfer =
-                        expected_resolved_fiscal_transfer(
-                            cell, NativeCountryRuntime::TAX_BUSINESS, type_id,
-                            business_percent_base, 1, _saturation_count);
-                    const int64_t taxable_owner_income =
-                        std::max<int64_t>(0, saturating_sub(
-                            saturating_sub(
-                                daily_cash_revenue, daily_variable_cost,
-                                _saturation_count),
-                            std::max<int64_t>(0, business_transfer),
-                            _saturation_count));
-                    const int32_t income_rate = frozen_tax_rate(
-                        cell, NativeCountryRuntime::TAX_INCOME,
-                        type.owner_profession_id);
-                    const int64_t income_subsidy_base = income_rate < 0
-                        ? std::max(taxable_owner_income, owner_livelihood)
-                        : taxable_owner_income;
-                    // Absolute income levy is per person-day for the owner.
-                    const int64_t income_transfer =
-                        expected_resolved_fiscal_transfer(
-                            cell, NativeCountryRuntime::TAX_INCOME,
-                            type.owner_profession_id, income_subsidy_base, 1,
-                            _saturation_count);
-                    daily_after_tax_cash_revenue = saturating_sub(
-                        saturating_sub(
-                            daily_cash_revenue, business_transfer,
-                            _saturation_count),
-                        income_transfer, _saturation_count);
+                    const BuildingTaxQuote tax_quote =
+                        expected_building_tax_quote(
+                            cell, type_id, type.owner_profession_id,
+                            daily_merchant_cash_revenue,
+                            daily_producer_support_revenue,
+                            eligible_cost_base, daily_variable_cost,
+                            owner_livelihood, 1, 1, _saturation_count);
+                    daily_after_tax_cash_revenue = tax_quote.after_tax_cash;
                 }
                 // Incumbent expansion: forecast the marginal building from
                 // revealed local unit economics so soft-input stock quotes
@@ -3460,8 +3455,9 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                     quote.utilization_q16 = throughput_q16;
                     quote.owner_use_value_per_day = daily_in_kind_livelihood;
                     quote.cash_revenue_per_day = daily_after_tax_cash_revenue;
-                    quote.merchant_revenue_per_day = daily_after_tax_cash_revenue;
-                    quote.producer_support_revenue_per_day = 0;
+                    quote.merchant_revenue_per_day = daily_merchant_cash_revenue;
+                    quote.producer_support_revenue_per_day =
+                        daily_producer_support_revenue;
                     quote.economic_revenue_per_day = daily_economic_revenue;
                     quote.input_cost_per_day = daily_input_cost;
                     quote.wage_cost_per_day = daily_wages;
@@ -3601,7 +3597,9 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 candidate_quote.cash_revenue_per_day =
                     daily_after_tax_cash_revenue;
                 candidate_quote.merchant_revenue_per_day =
-                    daily_after_tax_cash_revenue;
+                    daily_merchant_cash_revenue;
+                candidate_quote.producer_support_revenue_per_day =
+                    daily_producer_support_revenue;
                 candidate_quote.economic_revenue_per_day =
                     daily_economic_revenue;
                 candidate_quote.input_cost_per_day = daily_input_cost;

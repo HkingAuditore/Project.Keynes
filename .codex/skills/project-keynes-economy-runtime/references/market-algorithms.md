@@ -230,6 +230,15 @@ cash, report any final shortfall without cancelling current production, and sett
 excess-profit bonuses without minting money. Households then spend same-period income against the
 post-production market stock.
 
+Optional soft-input purchases compare expected incremental output receipts with the input's
+buyer outlay, including transaction tax. Value incremental output retained for owner consumption
+at frozen retail price, but only above the same group's base output's share of the current
+retention target. Value the remaining output using the previous epoch's same-cell/good producer
+merchant-sold share at the effective merchant buy price; the residual share receives the producer
+support value (one-fifth of retail). A new lane without prior sellable output uses a full merchant
+share for its first estimate. The prior sellable and merchant-sold quantities are transient
+epoch-boundary snapshots aligned with sparse market-signal lanes, excluded from PKEC/hash.
+
 At epoch begin, compute each owner-lot's frozen expected producer revenue, input replacement cost,
 full wage obligation, and target-margin gap for diagnostics and post-sale profit sharing. Keep
 planned utilization responsive to sell-through. Ignore discard rates up to one percent as rounding

@@ -44,6 +44,7 @@ const ECONOMY_CONSERVATION_KEYS := [
 	"maintenance_goods_consumed", "cycle_flow_discarded",
 	"bullion_stock_consumed", "country_research_goods_consumed",
 	"goods_expected", "saturation_count",
+	"goods_audit_candidate_lanes",
 ]
 
 ## 定位一次停机真正需要的东西：哪个 stage、哪条命令、哪些边界开着。

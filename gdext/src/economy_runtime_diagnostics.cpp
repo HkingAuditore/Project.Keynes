@@ -847,6 +847,21 @@ Dictionary NativeEconomyRuntime::compact_report() const {
     out["closing_audit_mismatch_ledger"] =
         _closing_audit_mismatch_ledger.c_str();
     out["closing_audit_mismatch_lane"] = _closing_audit_mismatch_lane;
+    godot::Array goods_audit_candidates;
+    for (const GoodsAuditLaneDiagnostic &lane : _goods_audit_candidate_lanes) {
+        godot::Dictionary item;
+        item["market"] = lane.market;
+        item["cell"] = lane.cell;
+        item["good_index"] = lane.good;
+        item["good_id"] = lane.good >= 0 &&
+            lane.good < static_cast<int32_t>(_good_ids.size())
+            ? godot::String(_good_ids[lane.good].c_str()) : godot::String("unknown");
+        item["opening_stock"] = lane.opening_stock;
+        item["closing_stock"] = lane.closing_stock;
+        item["net_change"] = lane.net_change;
+        goods_audit_candidates.push_back(item);
+    }
+    out["goods_audit_candidate_lanes"] = goods_audit_candidates;
     out["closing_audit_population_touched_lanes"] =
         static_cast<int64_t>(_audit_population_touched_lanes.size());
     out["closing_audit_market_touched_lanes"] =
@@ -1521,6 +1536,21 @@ Dictionary NativeEconomyRuntime::report() const {
     out["closing_audit_mismatch_ledger"] =
         _closing_audit_mismatch_ledger.c_str();
     out["closing_audit_mismatch_lane"] = _closing_audit_mismatch_lane;
+    godot::Array goods_audit_candidates;
+    for (const GoodsAuditLaneDiagnostic &lane : _goods_audit_candidate_lanes) {
+        godot::Dictionary item;
+        item["market"] = lane.market;
+        item["cell"] = lane.cell;
+        item["good_index"] = lane.good;
+        item["good_id"] = lane.good >= 0 &&
+            lane.good < static_cast<int32_t>(_good_ids.size())
+            ? godot::String(_good_ids[lane.good].c_str()) : godot::String("unknown");
+        item["opening_stock"] = lane.opening_stock;
+        item["closing_stock"] = lane.closing_stock;
+        item["net_change"] = lane.net_change;
+        goods_audit_candidates.push_back(item);
+    }
+    out["goods_audit_candidate_lanes"] = goods_audit_candidates;
     out["closing_audit_population_touched_lanes"] =
         static_cast<int64_t>(_audit_population_touched_lanes.size());
     out["closing_audit_market_touched_lanes"] =

@@ -1136,6 +1136,62 @@ int64_t NativeEconomyRuntime::expected_resolved_fiscal_transfer(
         cell, kind, base, rate, mode, saturation_count);
 }
 
+int64_t NativeEconomyRuntime::producer_support_receipt_value(
+        int32_t cell, int32_t good, int64_t quantity,
+        int64_t &saturation_count) const {
+    if (quantity <= 0 || cell < 0 || cell >= _cell_count || good < 0 ||
+        good >= market_store().good_count) return 0;
+    const int32_t market = market_store().cell_to_market[cell];
+    if (market < 0 || market >= market_store().market_count) return 0;
+    const int64_t issue_value = good < static_cast<int32_t>(
+            _good_monetary_issue_values.size())
+        ? _good_monetary_issue_values[good] : 0;
+    const int32_t lane = market_store().index(market, good);
+    if (lane < 0 || lane >= static_cast<int32_t>(market_store().price.size()))
+        return 0;
+    const int64_t unit_value = issue_value > 0 ? issue_value :
+        mul_div_sat(market_store().price[lane],
+            PRODUCER_SUPPORT_PRICE_NUMERATOR,
+            PRODUCER_SUPPORT_PRICE_DENOMINATOR, saturation_count);
+    return mul_div_sat(quantity, unit_value, GOODS_SCALE, saturation_count);
+}
+
+NativeEconomyRuntime::BuildingTaxQuote
+NativeEconomyRuntime::expected_building_tax_quote(
+        int32_t cell, int32_t type_id, int32_t owner_profession,
+        int64_t merchant_cash, int64_t producer_support_cash,
+        int64_t business_eligible_cost, int64_t operating_cost,
+        int64_t owner_living_cost, int64_t building_days,
+        int64_t owner_days, int64_t &saturation_count) const {
+    BuildingTaxQuote result;
+    const int32_t business_rate = frozen_tax_rate(
+        cell, NativeCountryRuntime::TAX_BUSINESS, type_id);
+    const int64_t business_base = business_rate < 0
+        ? std::max<int64_t>(0, business_eligible_cost)
+        : std::max<int64_t>(0, merchant_cash);
+    result.business_transfer = expected_resolved_fiscal_transfer(
+        cell, NativeCountryRuntime::TAX_BUSINESS, type_id, business_base,
+        std::max<int64_t>(1, building_days), saturation_count);
+    const int64_t taxable_owner_income = std::max<int64_t>(0,
+        saturating_sub(saturating_sub(merchant_cash, operating_cost,
+            saturation_count), std::max<int64_t>(0,
+                result.business_transfer), saturation_count));
+    const int32_t income_rate = frozen_tax_rate(
+        cell, NativeCountryRuntime::TAX_INCOME, owner_profession);
+    const int64_t income_base = income_rate < 0
+        ? std::max(taxable_owner_income, std::max<int64_t>(0,
+            owner_living_cost)) : taxable_owner_income;
+    result.income_transfer = expected_resolved_fiscal_transfer(
+        cell, NativeCountryRuntime::TAX_INCOME, owner_profession, income_base,
+        std::max<int64_t>(1, owner_days), saturation_count);
+    result.after_tax_cash = saturating_add(
+        saturating_sub(saturating_sub(merchant_cash,
+            result.business_transfer, saturation_count),
+            result.income_transfer, saturation_count),
+        producer_support_cash, saturation_count);
+    return result;
+}
+
 int64_t NativeEconomyRuntime::expected_after_tax_income(
         int32_t cell, int32_t profession, int64_t gross_income,
         int64_t &saturation_count) const {
