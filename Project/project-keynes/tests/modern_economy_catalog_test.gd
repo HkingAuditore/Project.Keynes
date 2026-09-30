@@ -420,11 +420,10 @@ func _audit(catalog: Dictionary) -> void:
 	_expect("primitive logging extracts rather than creates timber",
 		timber_collector.resource_generation_ids.is_empty() and
 		String(timber_collector.behavior_id) == "consume_local_resources")
-	_expect("early gold employment and wage scale is bounded",
+	_expect("early gold employment role is present",
 		early_gold.owner_slots_per_building == 1 and
 		early_gold.employee_profession_ids == PackedStringArray(["miner"]) and
-		early_gold.employee_slots_per_building == PackedInt64Array([1]) and
-		early_gold.employee_reference_wages_per_day == PackedInt64Array([40000]))
+		early_gold.employee_slots_per_building == PackedInt64Array([1]))
 	var bronze_workshop = load("res://data/economy/buildings/bronze_tool_workshop.tres")
 	var guild_hall = load("res://data/economy/buildings/guild_hall.tres")
 	var steam_works = load("res://data/economy/buildings/steam_engine_works.tres")
@@ -655,8 +654,6 @@ func _audit(catalog: Dictionary) -> void:
 	var resource_offsets: PackedInt32Array = catalog.building_resource_offsets
 	var output_offsets: PackedInt32Array = catalog.building_output_offsets
 	var employee_offsets: PackedInt32Array = catalog.building_employee_offsets
-	var role_reference_wages: PackedInt64Array = \
-		catalog.building_employee_reference_wages_per_day
 	var owner_professions: PackedInt32Array = catalog.building_owner_profession_ids
 	var behavior_ids: PackedInt32Array = catalog.building_behavior_ids
 	var merchant_profession := professions.find("merchant")
@@ -677,10 +674,6 @@ func _audit(catalog: Dictionary) -> void:
 			owner_professions[type_id] != merchant_profession or
 			buildings[type_id] in ["merchant_post", "early_merchant_post", "placer_gold_working",
 				"surface_silver_working"])
-		if employee_offsets[type_id + 1] > employee_offsets[type_id]:
-			_expect("employee roles have positive reference wages: %s" % buildings[type_id],
-				_range_positive(role_reference_wages, employee_offsets[type_id],
-					employee_offsets[type_id + 1]))
 		if kinds[type_id] == 0:
 			collectors += 1
 			_expect("collector has natural resource: %s" % buildings[type_id], resource_offsets[type_id + 1] > resource_offsets[type_id])

@@ -38,6 +38,14 @@ try {
             'Project/project-keynes/scripts/simulation/systems/economy_daily_system.gd' `
             'Project/project-keynes/scripts/data/economy_profile.gd' | Out-Null
         if ($LASTEXITCODE -ne 0) { throw 'Economy contract symbols not found' }
+
+        & rg -n 'base_wage_per_day|building_employee_reference_wages_per_day|building_wage_per_employee_per_day' `
+            'gdext/src' | Out-Null
+        if ($LASTEXITCODE -eq 0) { throw 'Native economy still contains authored wage amount inputs' }
+        & rg -n '^(employee_reference_wages_per_day|wage_per_employee_per_day)\s*=' `
+            'Project/project-keynes/data/economy/buildings' `
+            'tools/codegen/economy_content/buildings' | Out-Null
+        if ($LASTEXITCODE -eq 0) { throw 'Economy content still authors wage amounts' }
     }
 } finally {
     Pop-Location

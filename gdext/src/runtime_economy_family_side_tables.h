@@ -195,6 +195,10 @@ struct EconomyFamilyExpeditionStore {
     std::vector<uint32_t> cargo_count;
     std::vector<uint32_t> kit_building_begin;
     std::vector<uint32_t> kit_building_count;
+    // Fixed at the moment a PREPARING expedition is created.  The UI must
+    // not let a later market re-plan change the progress denominator.
+    std::vector<int64_t> kit_bridge_required_units;
+    std::vector<int64_t> kit_material_required_units;
     std::vector<uint64_t> kit_missing_stock_identity;
     std::vector<uint32_t> missing_good_begin;
     std::vector<uint32_t> missing_good_count;

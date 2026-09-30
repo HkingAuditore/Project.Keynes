@@ -1090,6 +1090,7 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
         live_expedition_funds != _closing_totals.expedition_funds ||
         live_expedition_goods != _closing_totals.expedition_goods;
     const bool full_audit_verify = _opening_audit_force_full ||
+        _last_closing_audit_was_incremental ||
         expedition_holdings_changed ||
         day_index % _full_audit_verify_interval_days == 0;
     // The new epoch invalidates last epoch's close until AGGREGATE_PUBLISH

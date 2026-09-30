@@ -8,6 +8,26 @@ var _failures := 0
 
 
 func _init() -> void:
+	if OS.get_cmdline_user_args().has("--worker-procurement-only"):
+		var compiled: Dictionary = EconomyCatalogScript.compile_native_catalog()
+		_expect("economy catalog compiles", bool(compiled.get("ok", false)))
+		if bool(compiled.get("ok", false)):
+			var catalog := compiled.duplicate(true)
+			catalog.erase("ok")
+			_run_worker_local_market_procurement(catalog)
+		print("=== family colonization worker procurement: %d failures ===" % _failures)
+		quit(0 if _failures == 0 else 1)
+		return
+	if OS.get_cmdline_user_args().has("--interior-only"):
+		var compiled: Dictionary = EconomyCatalogScript.compile_native_catalog()
+		_expect("economy catalog compiles", bool(compiled.get("ok", false)))
+		if bool(compiled.get("ok", false)):
+			var catalog := compiled.duplicate(true)
+			catalog.erase("ok")
+			_run_interior_kit_settle_during_frozen_cycle(catalog)
+		print("=== family colonization interior probe: %d failures ===" % _failures)
+		quit(0 if _failures == 0 else 1)
+		return
 	_run()
 	print("=== family colonization runtime: %d failures ===" % _failures)
 	quit(0 if _failures == 0 else 1)
@@ -56,6 +76,7 @@ func _run() -> void:
 		return
 	var catalog := compiled.duplicate(true)
 	catalog.erase("ok")
+	_run_worker_local_market_procurement(catalog.duplicate(true))
 	_run_employed_expedition_departure(catalog.duplicate(true))
 	var fixture := _make_fixture(catalog, 260810)
 	var ext: Object = fixture.ext
@@ -130,8 +151,8 @@ func _run() -> void:
 			restored_page.get("total", 0)) != 1:
 		print("restore=", restored_result, " page=", restored_page,
 			" saved_schema=", saved.get("schema", 0))
-	_expect("PKEC v52 restores in-flight route, payload, cargo and due heap exactly",
-		int(saved.get("schema", 0)) == 52
+	_expect("PKEC v54 restores in-flight route, payload, cargo and due heap exactly",
+		int(saved.get("schema", 0)) == 54
 		and bool(restored_result.get("ok", false))
 		and int(restored_page.get("total", 0)) == 1
 		and int(restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))
@@ -279,6 +300,175 @@ func _run_colonization_kit_cases(catalog: Dictionary) -> void:
 	_run_unreachable_material_aborts(catalog.duplicate(true))
 
 
+func _run_worker_local_market_procurement(catalog: Dictionary) -> void:
+	var fixture := _make_fixture(catalog, 260844, 1000000, {},
+		PackedStringArray(), 10, 1000000000000)
+	var ext: Object = fixture.ext
+	var country_handle := int(fixture.country_handle)
+	if ext == null or country_handle == 0:
+		return
+	var families: Dictionary = ext.get_family_cell_snapshot(0, 0, 64)
+	if int(families.get("total", 0)) != 1:
+		_expect("worker procurement fixture has a founder family", false)
+		return
+	var family_handle := int((families.family_handles as PackedInt64Array)[0])
+	var quotes: Dictionary = ext.get_family_colonization_quotes(
+		country_handle, 2, family_handle, 0, 0, 64)
+	if int(quotes.get("total", 0)) != 1:
+		_expect("worker procurement quote exists", false)
+		return
+	var token := int((quotes.quote_tokens as PackedInt64Array)[0])
+	var start_day := _economy_command_day(ext)
+	var country_catalog: Dictionary = ext.capture_country_pod_catalog()
+	var country_snapshot: Dictionary = ext.capture_country_runtime_snapshot()
+	_expect("Country POD inputs are ready for worker procurement",
+		bool(country_catalog.get("ok", false))
+		and bool(country_snapshot.get("ok", false)))
+	if not bool(country_catalog.get("ok", false)) or \
+			not bool(country_snapshot.get("ok", false)):
+		return
+	var runtime_inputs: Dictionary = ext.capture_runtime_inputs({
+		"generation": 1,
+		"day": start_day,
+		# The fixture's passability table marks terrain id 2 as land. Keep the
+		# worker input consistent with the quoted route; terrain id 1 would make
+		# the source cell fail route revalidation after worker startup.
+		"terrain": PackedByteArray([2, 2, 2]),
+		"neighbor_offsets": PackedInt32Array([0, 0, 0, 0]),
+		"neighbor_indices": PackedInt32Array(),
+		"cell_temp": PackedFloat32Array([15.0, 15.0, 15.0]),
+		"cell_moisture": PackedFloat32Array([0.5, 0.5, 0.5]),
+		"cell_plant_available_water": PackedFloat32Array([0.5, 0.5, 0.5]),
+	})
+	_expect("worker fixture runtime inputs publish",
+		bool(runtime_inputs.get("ok", false)))
+	if not bool(runtime_inputs.get("ok", false)):
+		return
+	ext.configure_runtime_graph({"enabled": true, "day": start_day})
+	var worker: Dictionary = ext.start_runtime_worker({
+		"simulation_thread_mode": "ACTIVE",
+		"graph_coverage_complete": true,
+		# Country (bit 3) and Economy (bit 9), plus the implicit COMMIT bit.
+		"authoritative_domain_mask": 0x208,
+		"economy_production_writer": "compact_slice",
+		"day": start_day,
+		"speed_days_per_second": 1000.0,
+		"paused": false,
+	})
+	_expect("Country and Economy ACTIVE worker starts",
+		bool(worker.get("ok", false)))
+	if not bool(worker.get("ok", false)):
+		return
+	var worker_authority_ready := false
+	for _attempt in range(100):
+		ext.capture_economy_day_inputs(-1)
+		if (int(ext.get_runtime_thread_report().get(
+				"authoritative_domain_mask", 0)) & 0x208) == 0x208:
+			worker_authority_ready = true
+			break
+		OS.delay_msec(2)
+	_expect("Country and Economy worker authority is active",
+		worker_authority_ready)
+	if not worker_authority_ready:
+		ext.request_runtime_stop()
+		return
+	var stock_before := _market_stock_total(ext, 0)
+	var treasury_before: Dictionary = ext.get_country_treasury_snapshot(country_handle)
+	var cash_before := int(treasury_before.get("cash", -1))
+	var requested_population := maxi(1,
+		int(ext.get_family_snapshot(family_handle).population) - 1)
+	var started: Dictionary = ext.start_family_colonization(country_handle,
+		family_handle, 0, 2, requested_population, token, start_day, 8441)
+	_expect("worker-backed greenfield dispatch is accepted",
+		bool(started.get("ok", false)) and started.has("expedition_handle"))
+	if not bool(started.get("ok", false)) or \
+			not started.has("expedition_handle"):
+		var runtime: Dictionary = ext.get_runtime_thread_report()
+		print("  worker dispatch diagnostic=", {
+			"start": started,
+			"day": start_day,
+			"requested_mask": runtime.get("requested_authority_mask", 0),
+			"authoritative_mask": runtime.get("authoritative_domain_mask", 0),
+			"committed_day": runtime.get("simulation_committed_day", -1),
+			"economy_input_requested_day": runtime.get(
+				"economy_input_requested_day", -1),
+			"blocker": runtime.get("simulation_worker_blocker", ""),
+		})
+		ext.request_runtime_stop()
+		return
+	var expedition_handle := int(started.get("expedition_handle", 0))
+	var reached_outbound := false
+	var committed_after_departure := false
+	var no_fatal := true
+	for _step in range(128):
+		ext.capture_economy_day_inputs(-1)
+		ext.advance_runtime_pulse(0, 0.0, 1.0, 4000)
+		var report: Dictionary = ext.get_economy_report()
+		no_fatal = no_fatal and not bool(report.get("fatal", false))
+		if not no_fatal:
+			break
+		var snapshot: Dictionary = ext.get_family_expedition_snapshot(
+			country_handle, expedition_handle)
+		var quantities: PackedInt64Array = snapshot.get(
+			"cargo_quantities", PackedInt64Array())
+		var cargo_total := 0
+		for quantity in quantities:
+			cargo_total += int(quantity)
+		if int(snapshot.get("state", -1)) == 1 and cargo_total > 0:
+			reached_outbound = true
+			var runtime_report: Dictionary = ext.get_runtime_thread_report()
+			committed_after_departure = int(runtime_report.get(
+				"simulation_committed_day", -1)) > start_day
+			if committed_after_departure:
+				break
+		ext.set_runtime_clock(false, 1000.0)
+		OS.delay_msec(3)
+		ext.set_runtime_clock(true, 1000.0)
+	var cash_after := -1
+	for _snapshot_attempt in range(64):
+		OS.delay_msec(2)
+		ext.capture_country_runtime_snapshot()
+		cash_after = int(ext.get_country_treasury_snapshot(
+			country_handle).get("cash", -1))
+		if cash_after >= 0 and cash_after < cash_before:
+			break
+	var final_report: Dictionary = ext.get_economy_report()
+	_expect("Country worker purchase completes into expedition cargo",
+		reached_outbound and _market_stock_total(ext, 0) < stock_before
+		and cash_after >= 0 and cash_after < cash_before)
+	_expect("employed expedition departure crosses a worker commit",
+		committed_after_departure)
+	_expect("Country worker local purchase conserves goods and money",
+		no_fatal and not bool(final_report.get("fatal", false))
+		and int(final_report.get("goods_error", -1)) == 0
+		and int(final_report.get("money_error", -1)) == 0)
+	if not reached_outbound or bool(final_report.get("fatal", false)):
+		var runtime: Dictionary = ext.get_runtime_thread_report()
+		var expedition: Dictionary = ext.get_family_expedition_snapshot(
+			country_handle, expedition_handle)
+		print("  worker procurement diagnostic=", {
+			"start": started,
+			"state": runtime.get("simulation_host_state", ""),
+			"requested_mask": runtime.get("requested_authority_mask", 0),
+			"authoritative_mask": runtime.get("authoritative_domain_mask", 0),
+			"committed_day": runtime.get("simulation_committed_day", -1),
+			"economy_input_requested_day": runtime.get(
+				"economy_input_requested_day", -1),
+			"blocker": runtime.get("simulation_worker_blocker", ""),
+			"expedition_state": expedition.get("state", -1),
+			"cargo_quantities": expedition.get(
+				"cargo_quantities", PackedInt64Array()),
+			"market_stock_before": stock_before,
+			"market_stock_after": _market_stock_total(ext, 0),
+			"cash_before": cash_before,
+			"cash_after": cash_after,
+			"fatal_reason": final_report.get("fatal_reason", ""),
+			"goods_error": final_report.get("goods_error", -1),
+			"money_error": final_report.get("money_error", -1),
+		})
+	ext.request_runtime_stop()
+
+
 func _run_mixed_substitute_kit(catalog: Dictionary) -> void:
 	var fixture := _make_fixture(catalog, 260832, 1000000000, {
 		"prepared_staples": 1,
@@ -289,7 +479,7 @@ func _run_mixed_substitute_kit(catalog: Dictionary) -> void:
 		"raw_stone": 0,
 		"adobe_brick": 0,
 		"turf_block": 0,
-	})
+	}, PackedStringArray(), 1, 1000000000000)
 	var ext: Object = fixture.ext
 	var country_handle := int(fixture.country_handle)
 	if ext == null or country_handle == 0:
@@ -368,6 +558,14 @@ func _run_mixed_substitute_kit(catalog: Dictionary) -> void:
 
 
 func _run_aggregate_food_bridge(catalog: Dictionary) -> void:
+	# Keep the stocked staple deliberately unproducible at the source.  A local
+	# market shelf must still be a valid procurement source for the bridge.
+	var stock_only_technology_ids := PackedStringArray()
+	for technology_id in catalog.technology_ids as PackedStringArray:
+		if String(technology_id) in ["tech.fire_control", "tech.mass_production",
+				"tech.grain_threshing"]:
+			continue
+		stock_only_technology_ids.append(String(technology_id))
 	# A single stocked food candidate must satisfy the expedition's aggregate
 	# bridge even when every other staple/protein/produce candidate is absent.
 	var fixture := _make_fixture(catalog, 260833, 1000000, {
@@ -383,7 +581,7 @@ func _run_aggregate_food_bridge(catalog: Dictionary) -> void:
 		"dairy_products": 0,
 		"vegetables": 0,
 		"processed_food": 0,
-	})
+	}, stock_only_technology_ids, 1, 1000000000000)
 	var ext: Object = fixture.ext
 	var country_handle := int(fixture.country_handle)
 	if ext == null or country_handle == 0:
@@ -614,7 +812,8 @@ func _economy_command_day(ext: Object) -> int:
 
 
 func _run_greenfield_kit_and_return(catalog: Dictionary) -> void:
-	var fixture := _make_fixture(catalog, 260820)
+	var fixture := _make_fixture(catalog, 260820, 1000000, {},
+		PackedStringArray(), 1, 1000000000000)
 	var ext: Object = fixture.ext
 	var country_handle := int(fixture.country_handle)
 	if ext == null or country_handle == 0:
@@ -651,6 +850,7 @@ func _run_greenfield_kit_and_return(catalog: Dictionary) -> void:
 		bool(started.get("ok", false))
 		and stock_after_start < stock_before
 		and int(ext.get_economy_report().get("goods_error", -1)) == 0
+		and int(ext.get_economy_report().get("money_error", -1)) == 0
 		and int(ext.get_economy_report().get("population_error", -1)) == 0)
 	var kit_snap: Dictionary = ext.get_family_expedition_snapshot(
 		country_handle, int(started.get("expedition_handle", 0)))
@@ -681,8 +881,8 @@ func _run_greenfield_kit_and_return(catalog: Dictionary) -> void:
 	var restored_fixture := _make_fixture(catalog.duplicate(true), 260820)
 	var restored: Object = restored_fixture.ext
 	var restored_result := _restore_economy(restored, saved.get("chunks", []))
-	_expect("PKEC v52 restores in-flight kit cargo and frozen buildings",
-		int(saved.get("schema", 0)) == 52
+	_expect("PKEC v54 restores in-flight kit cargo and frozen buildings",
+		int(saved.get("schema", 0)) == 54
 		and bool(restored_result.get("ok", false))
 		and int(restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))
 	var cancelled: Dictionary = ext.cancel_family_colonization(
@@ -701,7 +901,8 @@ func _run_greenfield_kit_and_return(catalog: Dictionary) -> void:
 
 
 func _run_greenfield_kit_settle(catalog: Dictionary) -> void:
-	var fixture := _make_fixture(catalog, 260821)
+	var fixture := _make_fixture(catalog, 260821, 1000000, {},
+		PackedStringArray(), 1, 1000000000000)
 	var ext: Object = fixture.ext
 	var country_handle := int(fixture.country_handle)
 	if ext == null or country_handle == 0:
@@ -796,7 +997,8 @@ func _run_interior_kit_settle_during_frozen_cycle(catalog: Dictionary) -> void:
 	# Cell 2 keeps buildings while the second landing inserts cell 1, which
 	# sorts into the middle of (cell, good) market signals. Mid-epoch topology
 	# rebuild used to shift cell 2's reserves and fatal the live calendar.
-	var fixture := _make_fixture(catalog, 260823)
+	var fixture := _make_fixture(catalog, 260823, 1000000, {},
+		PackedStringArray(), 1, 1000000000000)
 	var ext: Object = fixture.ext
 	var country_handle := int(fixture.country_handle)
 	if ext == null or country_handle == 0:
@@ -822,9 +1024,10 @@ func _run_interior_kit_settle_during_frozen_cycle(catalog: Dictionary) -> void:
 	if not bool(first_started.get("ok", false)):
 		print("interior_first_start=", first_started)
 		return
+	var first_handle := int(first_started.expedition_handle)
 	var first_arrival := int(first_started.get("arrival_day", first_start_day + 4))
 	var first_landed := _settle_unowned_expedition(ext, country_handle,
-		int(first_started.expedition_handle), first_arrival)
+		first_handle, first_arrival)
 	_expect("coastal cell keeps kit buildings as the higher-index producer",
 		first_landed and _building_group_total(ext, 2) >= 1
 		and not bool(ext.get_economy_report().get("fatal", false)))
@@ -881,6 +1084,18 @@ func _run_interior_kit_settle_during_frozen_cycle(catalog: Dictionary) -> void:
 	var type_ids: PackedInt32Array = buildings.get("group_type_ids",
 		PackedInt32Array())
 	var report: Dictionary = ext.get_economy_report()
+	var audit_day := int(report.get("current_day", interior_arrival))
+	for _audit_attempt in range(12):
+		if bool(report.get("fatal", false)):
+			break
+		if not bool(report.get("epoch_active", false)) and int(
+				report.get("last_committed_day", -1)) >= int(
+				report.get("current_day", audit_day)):
+			break
+		audit_day = maxi(audit_day, int(report.get("current_day", audit_day)))
+		report = _run_day(ext, audit_day)
+		ext.ack_effect_native_economy()
+		audit_day += 1
 	if bool(report.get("fatal", false)):
 		print("interior_fatal=", report)
 	_expect("mid-index kit landing during a frozen cycle stays conserved",
@@ -888,6 +1103,7 @@ func _run_interior_kit_settle_during_frozen_cycle(catalog: Dictionary) -> void:
 		and type_ids.has(gathering) and type_ids.has(merchant)
 		and int(ext.get_population_cell_snapshot(1).population) == 3
 		and not bool(report.get("fatal", false))
+		and not bool(report.get("epoch_active", false))
 		and int(report.get("goods_error", -1)) == 0
 		and int(report.get("population_error", -1)) == 0
 		and int(report.get("money_error", -1)) == 0)
@@ -941,7 +1157,8 @@ func _run_preparing_stock_accumulation(catalog: Dictionary) -> void:
 	# A source cell that never holds a whole kit at once must still be able to
 	# fund one: the preparing party escrows the daily surplus it can afford,
 	# and stays conserved without a colonization-only source reserve.
-	var fixture := _make_fixture(catalog, 260823, 0)
+	var fixture := _make_fixture(catalog, 260823, 0, {},
+		PackedStringArray(), 1, 1000000000000)
 	var ext: Object = fixture.ext
 	var country_handle := int(fixture.country_handle)
 	if ext == null or country_handle == 0:
@@ -1093,7 +1310,8 @@ func _run_material_topup_departs(catalog: Dictionary) -> void:
 	for stable_id in _building_construction_candidate_ids(catalog, "gathering_ground"):
 		scarce[stable_id] = 0
 	scarce["logs"] = 4000
-	var fixture := _make_fixture(catalog, 260841, 1000000, scarce)
+	var fixture := _make_fixture(catalog, 260841, 1000000, scarce,
+		PackedStringArray(), 1, 1000000000000)
 	var ext: Object = fixture.ext
 	var country_handle := int(fixture.country_handle)
 	if ext == null or country_handle == 0:
@@ -1144,7 +1362,8 @@ func _run_construction_category_substitute(catalog: Dictionary) -> void:
 	for stable_id in _building_construction_candidate_ids(catalog, "gathering_ground"):
 		overrides[stable_id] = 0
 	overrides["reed_bundle"] = 1000000
-	var fixture := _make_fixture(catalog, 260842, 1000000, overrides)
+	var fixture := _make_fixture(catalog, 260842, 1000000, overrides,
+		PackedStringArray(), 1, 1000000000000)
 	var ext: Object = fixture.ext
 	var country_handle := int(fixture.country_handle)
 	if ext == null or country_handle == 0:
@@ -1234,7 +1453,8 @@ func _run_unreachable_material_aborts(catalog: Dictionary) -> void:
 
 
 func _run_zero_stock_partial_kit(catalog: Dictionary) -> void:
-	var fixture := _make_fixture(catalog, 260822, 0)
+	var fixture := _make_fixture(catalog, 260822, 0, {},
+		PackedStringArray(), 1, 1000000000000)
 	var ext: Object = fixture.ext
 	var country_handle := int(fixture.country_handle)
 	if ext == null or country_handle == 0:
@@ -1354,8 +1574,8 @@ func _run_zero_stock_partial_kit(catalog: Dictionary) -> void:
 	var restored_fixture := _make_fixture(catalog.duplicate(true), 260822, 0)
 	var restored: Object = restored_fixture.ext
 	var restored_result := _restore_economy(restored, saved.get("chunks", []))
-	_expect("v52 preparing/outbound expeditions restore with matching state hash",
-		int(saved.get("schema", 0)) == 52
+	_expect("v54 preparing/outbound expeditions restore with matching state hash",
+		int(saved.get("schema", 0)) == 54
 		and bool(restored_result.get("ok", false))
 		and int(restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))
 
@@ -1632,7 +1852,8 @@ func _make_two_country_fixture(catalog: Dictionary, seed: int) -> Dictionary:
 func _make_fixture(catalog: Dictionary, seed: int, stock_fill: int = 1000000,
 		stock_overrides: Dictionary = {},
 		granted_technology_ids: PackedStringArray = PackedStringArray(),
-		founder_building_count: int = 1) -> Dictionary:
+		founder_building_count: int = 1,
+		country_cash: int = 0) -> Dictionary:
 	var map := MapData.new(3, 1)
 	for q in range(3):
 		var cell := HexCell.new(q, 0)
@@ -1670,7 +1891,7 @@ func _make_fixture(catalog: Dictionary, seed: int, stock_fill: int = 1000000,
 	_expect("one-cell country bootstraps", bool(ext.bootstrap_country({
 		"country_ids": PackedStringArray(["country.colonization_test"]),
 		"country_names": PackedStringArray(["开拓测试国"]),
-		"country_cash": PackedInt64Array([0]),
+		"country_cash": PackedInt64Array([country_cash]),
 		"territory_offsets": PackedInt32Array([0, 1]),
 		"territory_cells": PackedInt32Array([0]),
 		"technology_offsets": PackedInt32Array([0, technology_indices.size()]),
@@ -1746,7 +1967,7 @@ func _make_fixture(catalog: Dictionary, seed: int, stock_fill: int = 1000000,
 
 func _run_employed_expedition_departure(catalog: Dictionary) -> void:
 	var fixture := _make_fixture(catalog, 260809, 1000000, {},
-		PackedStringArray(), 10)
+		PackedStringArray(), 10, 1000000000000)
 	var ext: Object = fixture.ext
 	var country_handle := int(fixture.country_handle)
 	if ext == null or country_handle == 0:

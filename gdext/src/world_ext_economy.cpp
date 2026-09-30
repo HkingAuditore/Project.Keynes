@@ -1636,6 +1636,11 @@ Dictionary DCWorldExt::begin_economy_save(int chunk_bytes) {
     return runtime_from(_economy_runtime)->begin_save(chunk_bytes);
 }
 
+Dictionary DCWorldExt::begin_economy_forensics_save(int chunk_bytes) {
+    if (_economy_runtime == nullptr) return unavailable();
+    return runtime_from(_economy_runtime)->begin_forensics_save(chunk_bytes);
+}
+
 PackedByteArray DCWorldExt::read_economy_save_chunk(int max_bytes) {
     if (_economy_runtime == nullptr) return {};
     return runtime_from(_economy_runtime)->read_save_chunk(max_bytes);

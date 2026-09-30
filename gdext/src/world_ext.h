@@ -466,6 +466,7 @@ public:
     godot::Dictionary poll_country_events(int64_t after_event_id, int limit = 128) const;
     godot::Dictionary reset_country(const godot::String &reason);
     godot::Dictionary begin_country_save(int chunk_bytes = 4 * 1024 * 1024);
+    godot::Dictionary begin_country_forensics_save(int chunk_bytes = 4 * 1024 * 1024);
     godot::PackedByteArray read_country_save_chunk(int max_bytes = 4 * 1024 * 1024);
     godot::Dictionary end_country_save();
     godot::Dictionary begin_country_restore();
@@ -778,6 +779,7 @@ public:
     godot::Dictionary request_stop_economy_csv_recording();
     godot::Dictionary get_economy_csv_recording_status() const;
     godot::Dictionary begin_economy_save(int chunk_bytes = 4 * 1024 * 1024);
+    godot::Dictionary begin_economy_forensics_save(int chunk_bytes = 4 * 1024 * 1024);
     godot::PackedByteArray read_economy_save_chunk(int max_bytes = 4 * 1024 * 1024);
     godot::Dictionary end_economy_save();
     godot::Dictionary capture_economy_ecp2(int flags = 0) const;

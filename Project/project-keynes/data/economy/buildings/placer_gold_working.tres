@@ -32,7 +32,6 @@ owner_profession_id = &"merchant"
 employee_profession_ids = PackedStringArray("miner")
 employee_slots_per_building = PackedInt64Array(1)
 employee_wage_policy_ids = PackedStringArray("adaptive")
-employee_reference_wages_per_day = PackedInt64Array(40000)
 input_good_ids = PackedStringArray()
 input_quantities_per_day = PackedInt64Array()
 input_required_q16 = PackedInt32Array()

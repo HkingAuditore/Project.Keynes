@@ -32,6 +32,13 @@ const ECONOMY_CONSERVATION_KEYS := [
 	"opening_expedition_funds", "closing_expedition_funds",
 	"producer_support_money_issued", "bullion_money_issued",
 	"closing_audit_mode", "closing_audit_incremental_this_epoch",
+	"closing_audit_runtime_disabled", "closing_audit_mismatches",
+	"closing_audit_mismatch_ledger", "closing_audit_mismatch_lane",
+	"closing_audit_full_verifications", "closing_audit_fast_paths",
+	"incremental_closing_population", "incremental_closing_cohort_funds",
+	"incremental_closing_country_cash", "incremental_closing_escrow_cash",
+	"incremental_closing_goods_stock", "incremental_closing_country_goods",
+	"incremental_closing_transit_goods", "incremental_closing_expedition_goods",
 	"opening_audit_fast_paths", "opening_audit_full_verifications",
 	"opening_goods_stock", "closing_goods_stock",
 	"opening_country_goods", "closing_country_goods",
@@ -45,6 +52,7 @@ const ECONOMY_CONSERVATION_KEYS := [
 	"bullion_stock_consumed", "country_research_goods_consumed",
 	"goods_expected", "saturation_count",
 	"goods_audit_candidate_lanes",
+	"money_audit_candidate_accounts",
 ]
 
 ## 定位一次停机真正需要的东西：哪个 stage、哪条命令、哪些边界开着。
@@ -129,7 +137,7 @@ static func dump(payload: Dictionary, tag: String) -> String:
 	DirAccess.make_dir_recursive_absolute(
 		ProjectSettings.globalize_path(DIAGNOSTICS_DIR))
 	var stamp := Time.get_datetime_string_from_system().replace(":", "").replace(
-		"-", "").replace("T", "_")
+		"-", "").replace("T", "_") + "_%d" % Time.get_ticks_usec()
 	var user_file := FileAccess.open(
 		"%s/%s_%s.json" % [DIAGNOSTICS_DIR, tag, stamp], FileAccess.WRITE)
 	if user_file != null:
@@ -148,7 +156,95 @@ static func dump(payload: Dictionary, tag: String) -> String:
 
 static func capture_and_dump(reason: String, generator, clock, tag: String,
 		extra: Dictionary = {}) -> String:
-	return dump(capture(reason, generator, clock, extra), tag)
+	var payload := capture(reason, generator, clock, extra)
+	if tag == "economy_fatal":
+		payload["economic_snapshots"] = _dump_economic_snapshots(generator,
+			payload, tag)
+	return dump(payload, tag)
+
+
+static func _dump_economic_snapshots(generator, payload: Dictionary,
+		tag: String) -> Dictionary:
+	var stamp := Time.get_datetime_string_from_system().replace(":", "").replace(
+		"-", "").replace("T", "_")
+	var root := ProjectSettings.globalize_path("res://").path_join(
+		"%s\\runtime_snapshots_%s_%s" % [REPO_TMP_RELATIVE, tag, stamp]
+		).simplify_path()
+	var result := {"directory": root, "files": {}}
+	if DirAccess.make_dir_recursive_absolute(root) != OK:
+		result["error"] = "snapshot_directory_create_failed"
+		return result
+	var ext = generator.get_data_core_world_ext() \
+		if generator != null and generator.has_method("get_data_core_world_ext") else null
+	if ext == null:
+		result["error"] = "world_ext_unavailable"
+		return result
+	var epoch_active := bool(payload.get("economy", {}).get("epoch_active", false))
+	result["epoch_active"] = epoch_active
+	result["snapshot_boundary"] = "half_open_epoch" if epoch_active else "committed_boundary"
+	result["forensics_only"] = true
+	result["restore_eligible"] = false
+	result["files"]["country.pkcn"] = _write_native_save_stream(
+		ext, "country", root.path_join("country.pkcn"), 4 * 1024 * 1024)
+	result["files"]["economy.pkec"] = _write_native_save_stream(
+		ext, "economy", root.path_join("economy.pkec"), 4 * 1024 * 1024)
+	var manifest := FileAccess.open(root.path_join("manifest.json"), FileAccess.WRITE)
+	if manifest != null:
+		manifest.store_string(JSON.stringify({
+			"reason": payload.get("reason", ""),
+			"captured_at": payload.get("captured_at", ""),
+			"economy": payload.get("economy", {}),
+			"files": result["files"],
+			"epoch_active": epoch_active,
+			"snapshot_boundary": result["snapshot_boundary"],
+			"forensics_only": true,
+			"restore_eligible": false,
+		}, "\t"))
+		manifest.close()
+	else:
+		result["manifest_error"] = "manifest_open_failed"
+	return result
+
+
+static func _write_native_save_stream(ext, domain: String, path: String,
+		chunk_bytes: int) -> Dictionary:
+	var begin_method := "begin_country_forensics_save" if domain == "country" \
+		else "begin_economy_forensics_save"
+	var read_method := "read_country_save_chunk" if domain == "country" \
+		else "read_economy_save_chunk"
+	var end_method := "end_country_save" if domain == "country" \
+		else "end_economy_save"
+	if not ext.has_method(begin_method) or not ext.has_method(read_method) \
+			or not ext.has_method(end_method):
+		return {"ok": false, "reason": "native_forensics_save_api_unavailable"}
+	var begun: Dictionary = ext.call(begin_method, chunk_bytes)
+	if not bool(begun.get("ok", false)):
+		return {"ok": false, "reason": String(begun.get("reason", "begin_failed"))}
+	var file := FileAccess.open(path, FileAccess.WRITE)
+	var bytes_written := 0
+	var write_error := ""
+	if file == null:
+		write_error = "snapshot_file_open_failed:%s" % error_string(FileAccess.get_open_error())
+	while true:
+		var chunk: PackedByteArray = ext.call(read_method, chunk_bytes)
+		if chunk.is_empty():
+			break
+		if file != null and write_error.is_empty():
+			file.store_buffer(chunk)
+			if file.get_error() != OK:
+				write_error = "snapshot_file_write_failed:%s" % error_string(file.get_error())
+			else:
+				bytes_written += chunk.size()
+	if file != null:
+		file.close()
+	var ended: Dictionary = ext.call(end_method)
+	if not write_error.is_empty():
+		return {"ok": false, "reason": write_error, "bytes": bytes_written}
+	return {"ok": bool(ended.get("ok", false)), "path": path,
+		"bytes": bytes_written, "reason": String(ended.get("reason", "")),
+		"native_schema_version": int(begun.get("schema_version", 0)),
+		"native_state_hash": int(begun.get("state_hash", 0)),
+		"native_generation": int(begun.get("generation", 0))}
 
 
 static func _report(generator, method: String) -> Dictionary:

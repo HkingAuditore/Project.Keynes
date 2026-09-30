@@ -232,6 +232,8 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(family_expeditions_store().population); cap(family_expeditions_store().route_begin);
     cap(family_expeditions_store().route_count); cap(family_expeditions_store().payload_begin);
     cap(family_expeditions_store().payload_count);
+    cap(family_expeditions_store().kit_bridge_required_units);
+    cap(family_expeditions_store().kit_material_required_units);
     cap(family_expeditions_store().effect_transaction_id);
     cap(family_expeditions_store().idempotency_key); cap(family_expeditions_store().free_indices);
     cap(family_expedition_route_cells()); cap(family_expedition_route_costs());
@@ -847,6 +849,22 @@ Dictionary NativeEconomyRuntime::compact_report() const {
     out["closing_audit_mismatch_ledger"] =
         _closing_audit_mismatch_ledger.c_str();
     out["closing_audit_mismatch_lane"] = _closing_audit_mismatch_lane;
+    out["incremental_closing_population"] =
+        _incremental_closing_totals.population;
+    out["incremental_closing_cohort_funds"] =
+        _incremental_closing_totals.cohort_funds;
+    out["incremental_closing_country_cash"] =
+        _incremental_closing_totals.country_cash;
+    out["incremental_closing_escrow_cash"] =
+        _incremental_closing_totals.escrow_cash;
+    out["incremental_closing_goods_stock"] =
+        _incremental_closing_totals.goods_stock;
+    out["incremental_closing_country_goods"] =
+        _incremental_closing_totals.country_goods;
+    out["incremental_closing_transit_goods"] =
+        _incremental_closing_totals.transit_goods;
+    out["incremental_closing_expedition_goods"] =
+        _incremental_closing_totals.expedition_goods;
     godot::Array goods_audit_candidates;
     for (const GoodsAuditLaneDiagnostic &lane : _goods_audit_candidate_lanes) {
         godot::Dictionary item;
@@ -862,6 +880,28 @@ Dictionary NativeEconomyRuntime::compact_report() const {
         goods_audit_candidates.push_back(item);
     }
     out["goods_audit_candidate_lanes"] = goods_audit_candidates;
+    godot::Array money_audit_candidates;
+    for (const MoneyAuditAccountDiagnostic &account : _money_audit_candidate_accounts) {
+        godot::Dictionary item;
+        item["slot"] = account.slot;
+        item["handle"] = static_cast<int64_t>(account.handle);
+        item["cell"] = account.cell;
+        item["signature_id"] = account.signature;
+        item["profession_id"] = account.profession;
+        item["profession"] = account.profession >= 0 &&
+            account.profession < static_cast<int32_t>(_profession_ids.size())
+            ? godot::String(_profession_ids[account.profession].c_str())
+            : godot::String("unknown");
+        item["opening_funds"] = account.opening_funds;
+        item["closing_funds"] = account.closing_funds;
+        item["net_change"] = account.net_change;
+        money_audit_candidates.push_back(item);
+    }
+    out["money_audit_candidate_accounts"] = money_audit_candidates;
+    out["opening_escrow_cash"] = _opening_totals.escrow_cash;
+    out["closing_escrow_cash"] = _closing_totals.escrow_cash;
+    out["producer_support_money_issued"] = _producer_support_money_issued;
+    out["bullion_money_issued"] = _bullion_money_issued;
     out["closing_audit_population_touched_lanes"] =
         static_cast<int64_t>(_audit_population_touched_lanes.size());
     out["closing_audit_market_touched_lanes"] =
@@ -1536,6 +1576,22 @@ Dictionary NativeEconomyRuntime::report() const {
     out["closing_audit_mismatch_ledger"] =
         _closing_audit_mismatch_ledger.c_str();
     out["closing_audit_mismatch_lane"] = _closing_audit_mismatch_lane;
+    out["incremental_closing_population"] =
+        _incremental_closing_totals.population;
+    out["incremental_closing_cohort_funds"] =
+        _incremental_closing_totals.cohort_funds;
+    out["incremental_closing_country_cash"] =
+        _incremental_closing_totals.country_cash;
+    out["incremental_closing_escrow_cash"] =
+        _incremental_closing_totals.escrow_cash;
+    out["incremental_closing_goods_stock"] =
+        _incremental_closing_totals.goods_stock;
+    out["incremental_closing_country_goods"] =
+        _incremental_closing_totals.country_goods;
+    out["incremental_closing_transit_goods"] =
+        _incremental_closing_totals.transit_goods;
+    out["incremental_closing_expedition_goods"] =
+        _incremental_closing_totals.expedition_goods;
     godot::Array goods_audit_candidates;
     for (const GoodsAuditLaneDiagnostic &lane : _goods_audit_candidate_lanes) {
         godot::Dictionary item;
@@ -1551,6 +1607,28 @@ Dictionary NativeEconomyRuntime::report() const {
         goods_audit_candidates.push_back(item);
     }
     out["goods_audit_candidate_lanes"] = goods_audit_candidates;
+    godot::Array money_audit_candidates;
+    for (const MoneyAuditAccountDiagnostic &account : _money_audit_candidate_accounts) {
+        godot::Dictionary item;
+        item["slot"] = account.slot;
+        item["handle"] = static_cast<int64_t>(account.handle);
+        item["cell"] = account.cell;
+        item["signature_id"] = account.signature;
+        item["profession_id"] = account.profession;
+        item["profession"] = account.profession >= 0 &&
+            account.profession < static_cast<int32_t>(_profession_ids.size())
+            ? godot::String(_profession_ids[account.profession].c_str())
+            : godot::String("unknown");
+        item["opening_funds"] = account.opening_funds;
+        item["closing_funds"] = account.closing_funds;
+        item["net_change"] = account.net_change;
+        money_audit_candidates.push_back(item);
+    }
+    out["money_audit_candidate_accounts"] = money_audit_candidates;
+    out["opening_escrow_cash"] = _opening_totals.escrow_cash;
+    out["closing_escrow_cash"] = _closing_totals.escrow_cash;
+    out["producer_support_money_issued"] = _producer_support_money_issued;
+    out["bullion_money_issued"] = _bullion_money_issued;
     out["closing_audit_population_touched_lanes"] =
         static_cast<int64_t>(_audit_population_touched_lanes.size());
     out["closing_audit_market_touched_lanes"] =

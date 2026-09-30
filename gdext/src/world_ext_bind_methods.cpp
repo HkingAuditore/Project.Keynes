@@ -396,6 +396,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::reset_country);
     ClassDB::bind_method(D_METHOD("begin_country_save", "chunk_bytes"),
                          &DCWorldExt::begin_country_save, DEFVAL(4 * 1024 * 1024));
+    ClassDB::bind_method(D_METHOD("begin_country_forensics_save", "chunk_bytes"),
+                         &DCWorldExt::begin_country_forensics_save, DEFVAL(4 * 1024 * 1024));
     ClassDB::bind_method(D_METHOD("read_country_save_chunk", "max_bytes"),
                          &DCWorldExt::read_country_save_chunk, DEFVAL(4 * 1024 * 1024));
     ClassDB::bind_method(D_METHOD("end_country_save"),
@@ -792,6 +794,8 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::get_economy_csv_recording_status);
     ClassDB::bind_method(D_METHOD("begin_economy_save", "chunk_bytes"),
                          &DCWorldExt::begin_economy_save, DEFVAL(4 * 1024 * 1024));
+    ClassDB::bind_method(D_METHOD("begin_economy_forensics_save", "chunk_bytes"),
+                         &DCWorldExt::begin_economy_forensics_save, DEFVAL(4 * 1024 * 1024));
     ClassDB::bind_method(D_METHOD("read_economy_save_chunk", "max_bytes"),
                          &DCWorldExt::read_economy_save_chunk, DEFVAL(4 * 1024 * 1024));
     ClassDB::bind_method(D_METHOD("end_economy_save"),

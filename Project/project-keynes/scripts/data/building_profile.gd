@@ -70,9 +70,9 @@ var economic_sector_id: String = ""
 @export_range(1, 1000000, 1) var owner_slots_per_building: int = 1
 @export var employee_profession_ids: PackedStringArray = PackedStringArray()
 @export var employee_slots_per_building: PackedInt64Array = PackedInt64Array()
-## Parallel role-level wage columns. Empty arrays accept the legacy type-level
-## fields below so v7 content remains loadable during migration.
+## Parallel role-level wage policy columns. Wage amounts are not content data.
 @export var employee_wage_policy_ids: PackedStringArray = PackedStringArray()
+## Legacy load-only field. Catalog compilation ignores it.
 @export var employee_reference_wages_per_day: PackedInt64Array = PackedInt64Array()
 
 ## Quantities are per building per simulation day in GOODS_SCALE (1000).
@@ -136,7 +136,6 @@ var economic_sector_id: String = ""
 @export var condition_reference_ids: PackedStringArray = PackedStringArray()
 @export var condition_values: PackedInt64Array = PackedInt64Array()
 
-## Legacy v7 type-level wage ABI. New content should use the parallel role
-## columns above. `adaptive` seeds each role from this reference wage.
+## Legacy load-only wage fields. Native economy ignores all authored amounts.
 @export_enum("none", "fixed", "adaptive") var wage_policy_id: String = "none"
 @export_range(0, 1000000000000, 1) var wage_per_employee_per_day: int = 0

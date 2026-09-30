@@ -29,7 +29,6 @@ function fixture() {
       id: 'factory', display_name: '工厂', technology_tags: ['tech0'],
       owner_profession_id: 'worker', owner_slots_per_building: 1,
       employee_profession_ids: ['worker'], employee_slots_per_building: [2],
-      employee_reference_wages_per_day: [2000],
       input_good_ids: ['grain'], input_quantities_per_day: [1000],
       input_category_ids: ['feed'], input_min_quality_levels: [0],
       input_candidate_offsets: [0, 0], input_candidate_good_ids: [], input_candidate_efficiency_q16: [],
@@ -60,9 +59,9 @@ assert.equal(scenario.totals.buildingTypes, 1);
 assert.equal(scenario.totals.workforce, 3);
 assert.equal(scenario.buildings[0].acceptedOutputValue, 32000);
 assert.equal(scenario.buildings[0].inputCost, 6000);
-assert.equal(scenario.buildings[0].employeeWages, 4000);
+assert.equal(scenario.buildings[0].employeeWages, 30000);
 assert.equal(scenario.buildings[0].ownerLivingCost, 15000);
-assert.equal(scenario.buildings[0].surplus, 7000);
+assert.equal(scenario.buildings[0].surplus, -19000);
 
 const byGood = Object.fromEntries(scenario.goods.map((row) => [row.good.id, row]));
 assert.equal(byGood.product.supply, 3200);

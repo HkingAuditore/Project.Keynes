@@ -22,7 +22,7 @@
 
 - 所有建筑产出统一走：业主按消费计划自用，剩余交给商人收购，商人未接走的可存余量进入 producer support，超过当前 support issuance cap 的部分才是真实 discard。贵金属不走商人现金采购，直接由 producer support 按 `monetary_issue_value` 产生货币。
 - 贵金属铸币配额已经退役。`bullion_quota_initial`、`bullion_quota_remaining` 和 `bullion_quota_remainder_units` 仅为兼容诊断保留并恒为零；投资预测不得以配额限制贵金属收入。
-- 工资预测不读取 `reference_wage_per_day` 作为固定工资。岗位报价由生活成本、同职业本地合同工资/已付工资 EMA、建筑盈利能力和岗位填充情况共同形成。
+- 工资预测不读取建筑内容工资。岗位报价由生活成本、同职业本地合同工资/已付工资 EMA、建筑盈利能力和岗位填充情况共同形成。
 - 投资、启动生产、研究建设和就业追赶共享 `EconomicOpportunityQuote` 与 `InvestmentCandidatePlan`。不同入口只能改变 `InvestmentRequestContext`，不得重新计算另一套利润或回本期。
 - 公开经济恢复流程是 `begin -> feed -> end`；`begin_economy_restore()` 会准备 candidate scratch。
 
@@ -1874,9 +1874,9 @@ continues — it must not emit `INPUT_CHAIN` the way a missing hard input does.
 `climate_factor_q16`、`resource_factor_q16`，自然产能为两者的 Q16 乘积，软投入只写入
 `soft_productivity_q16` 生产率倍率。报价同时保留 `natural_max_output`、
 `optimal_output`、`fundable_output` 和 `actual_output`，用于区分自然上限、收益目标、
-资金可支付上限和最终结算产量。岗位目录的 `employee_reference_wages_per_day` 进入
-`JobRole::base_wage_per_day`，作为缺少动态合同工资时的基本工资成本和查询字段；动态
-合同工资仍由就业阶段更新，实际工资转移仍走原有守恒结算。
+资金可支付上限和最终结算产量。岗位目录不再提供工资金额；缺少动态合同工资时，岗位使用当地
+职业生活成本作为冷启动底线，再由合同工资/实付工资 EMA、岗位收入、vacancy 和企业支付能力
+形成动态报价。实际工资转移仍走原有守恒结算。
 
 关闭审计的增量快速路径若得到非零人口、货币或商品守恒误差，会在判定 fatal 前
 仅对此周期执行一次全量账本重算。全量审计平衡时以全量结果完成提交，并停用后续
@@ -1960,8 +1960,8 @@ desired demand、business EMA、merchant target、价格响应、试算需求上
 
 ## 2026-09-21 就业工资与跨职业流动
 
-自适应岗位工资以参考工资和本地工资 EMA 为基础，并叠加当前可兑现的
-岗位收入、参考工资成本和 vacancy 比例形成的岗位 bid。货币产出（例如黄金）
+自适应岗位工资以生活成本底线和本地工资 EMA 为基础，并叠加当前可兑现的
+岗位收入、动态工资成本和 vacancy 比例形成的岗位 bid。货币产出（例如黄金）
 在尚无员工、尚无已实现利润时仍提供潜在日利润信号，因此不会因为缺员停产
 而把招聘工资信号清零；工资目标仍受可持续经营收入上限和每日变化阻尼约束。
 

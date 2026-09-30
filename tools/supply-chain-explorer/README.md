@@ -134,7 +134,7 @@ macOS 启动器优先使用 `python3`，完成后通过系统 `open` 命令打�
 - 采用当前 `GoodProfile.default_price`。
 - 建筑显式、类目和配方局部候选投入使用与内容审计一致的“价格 ÷ Q16 效率”最低成本候选。
 - 建筑收入使用每种产出的 `merchant_buy_price_factor_q16`，并乘用户输入的商人承接/售出率。
-- 员工成本使用 `employee_reference_wages_per_day`。
+- 员工成本使用职业生活成本作为冷启动估计；运行时工资由劳动市场动态形成。
 - 业主生活费只累计 `NeedProfile.living_cost_weight_q16` 加权的消费计划部分；目标利润率按
   `max(运营成本/(1-target margin), 运营成本+业主生活费)` 检查。
 - 居民消费在默认价格、财富/环境/族群系数为 1、库存充足的参考点展开；同一 need 的 variants

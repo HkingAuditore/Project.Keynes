@@ -114,7 +114,7 @@ daily_wage_pool = max(0, daily_operating_budget - full_capacity_daily_inputs)
 affordable_wage_per_employee = daily_wage_pool / employee_slots * wage_income_cap_ratio
 ```
 
-目录参考工资仍是最低报价；该上限只防止 epoch 总收入被误当成单日收入，并为停产恢复提供同口径反事实报价。
+生活成本底线是最低岗位报价；该上限只防止 epoch 总收入被误当成单日收入，并为停产恢复提供同口径反事实报价。
 
 生产只按业主现有资金购买物理投入，不预付工资；产出出售后，同一 owner 对全部 role 比例支付。
 最终欠薪只形成诊断和取消奖金，不追溯停止本期生产。随后，

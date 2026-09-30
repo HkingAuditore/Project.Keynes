@@ -467,6 +467,7 @@ void NativeEconomyRuntime::diagnose_incremental_audit_mismatch(
     }
     if (_incremental_closing_totals.goods_stock != full.goods_stock) {
         _closing_audit_mismatch_ledger = "goods";
+        capture_goods_audit_candidates();
         for (size_t index = 0; index < market_store().stock.size(); ++index) {
             if (index < _audit_shadow_market_stock.size() &&
                 market_store().stock[index] != _audit_shadow_market_stock[index] &&
@@ -512,6 +513,44 @@ void NativeEconomyRuntime::capture_goods_audit_candidates() {
     });
     const size_t count = std::min<size_t>(12, candidates.size());
     _goods_audit_candidate_lanes.assign(candidates.begin(), candidates.begin() + count);
+}
+
+void NativeEconomyRuntime::capture_money_audit_candidates() {
+    _money_audit_candidate_accounts.clear();
+    const size_t slot_count = population_store().active.size();
+    if (_audit_shadow_funds.size() < slot_count) return;
+    std::vector<MoneyAuditAccountDiagnostic> candidates;
+    candidates.reserve(slot_count);
+    for (size_t slot = 0; slot < slot_count; ++slot) {
+        const int64_t opening = _audit_shadow_funds[slot];
+        const int64_t closing = population_store().active[slot] != 0
+            ? population_store().funds[slot] : 0;
+        if (opening == closing) continue;
+        const int32_t signature = slot < population_store().signature_id.size()
+            ? static_cast<int32_t>(population_store().signature_id[slot]) : -1;
+        const int32_t cell = slot / COHORT_PAGE_SIZE < population_store().page_cell.size()
+            ? population_store().page_cell[slot / COHORT_PAGE_SIZE] : -1;
+        const int32_t profession = signature >= 0 &&
+                signature < static_cast<int32_t>(_signatures.size())
+            ? _signatures[signature].profession_id : -1;
+        const uint64_t handle = population_store().active[slot] != 0
+            ? population_store().handle_for_slot(static_cast<int32_t>(slot)) : 0;
+        candidates.push_back({static_cast<int32_t>(slot), cell, signature,
+                              profession, handle, opening, closing,
+                              closing - opening});
+    }
+    std::sort(candidates.begin(), candidates.end(), [](const auto &a, const auto &b) {
+        const uint64_t abs_a = a.net_change < 0
+            ? static_cast<uint64_t>(-(a.net_change + 1)) + 1
+            : static_cast<uint64_t>(a.net_change);
+        const uint64_t abs_b = b.net_change < 0
+            ? static_cast<uint64_t>(-(b.net_change + 1)) + 1
+            : static_cast<uint64_t>(b.net_change);
+        if (abs_a != abs_b) return abs_a > abs_b;
+        return a.slot < b.slot;
+    });
+    const size_t count = std::min<size_t>(16, candidates.size());
+    _money_audit_candidate_accounts.assign(candidates.begin(), candidates.begin() + count);
 }
 
 void NativeEconomyRuntime::touch_accounting_slot(int32_t slot) {
@@ -830,6 +869,8 @@ bool NativeEconomyRuntime::advance_country_research_procurement(
                             RuntimeEconomyAssetOperation::RESEARCH_PURCHASE) {
                         // Drop the parked wire id; Country flush will retire
                         // the rejected terminal without debiting treasury.
+                        _simulation_host->acknowledge_country_economy_asset_consumed(
+                            continuation.pending_request_id);
                         continuation.pending_request_id = 0;
                         return reject_prepare(
                             terminal.reason[0] != '\0'
@@ -855,6 +896,9 @@ bool NativeEconomyRuntime::advance_country_research_procurement(
                         return fail_fault(error.empty()
                             ? "country_research_host_flush_failed"
                             : error.c_str());
+                    } else {
+                        _simulation_host->acknowledge_country_economy_asset_consumed(
+                            continuation.pending_request_id);
                     }
                     const int64_t committed_qty = terminal.committed_quantity > 0
                         ? terminal.committed_quantity : continuation.quantity;
@@ -1635,12 +1679,14 @@ bool NativeEconomyRuntime::apply_peer_asset_side_effects(
                 error = "country_economy_market_goods_overflow";
                 return false;
             }
+            audit_touch_market_lane(index);
             market_store().stock[index] += amount;
         } else {
             if (market_store().stock[index] < amount) {
                 error = "country_economy_market_goods_insufficient";
                 return false;
             }
+            audit_touch_market_lane(index);
             market_store().stock[index] -= amount;
         }
         return true;
@@ -1933,6 +1979,10 @@ bool NativeEconomyRuntime::sync_owned_columns_to_production(
                 population_store().epoch_income.size() ||
             owned.population.epoch_expense.size() !=
                 population_store().epoch_expense.size() ||
+            owned.population.owner_employed.size() !=
+                population_store().owner_employed.size() ||
+            owned.population.employee_employed.size() !=
+                population_store().employee_employed.size() ||
             owned.market.stock.size() != market_store().stock.size()) {
             error = "economy_pod_owned_core_shape_mismatch";
             return false;
@@ -1943,8 +1993,15 @@ bool NativeEconomyRuntime::sync_owned_columns_to_production(
         if (owned.population.population.size() ==
             population_store().population.size())
             population_store().population = owned.population.population;
+        population_store().owner_employed = owned.population.owner_employed;
+        population_store().employee_employed =
+            owned.population.employee_employed;
         market_store().stock = owned.market.stock;
     } else if (owned.population.funds.size() != population_store().funds.size() ||
+               owned.population.owner_employed.size() !=
+                   population_store().owner_employed.size() ||
+               owned.population.employee_employed.size() !=
+                   population_store().employee_employed.size() ||
                owned.market.stock.size() != market_store().stock.size()) {
         error = "economy_pod_owned_core_shape_mismatch";
         return false;
@@ -1997,6 +2054,13 @@ void NativeEconomyRuntime::sync_production_core_columns_to_owned(
         if (owned.population.population.size() ==
             population_store().population.size())
             owned.population.population = population_store().population;
+        if (owned.population.owner_employed.size() ==
+                population_store().owner_employed.size())
+            owned.population.owner_employed = population_store().owner_employed;
+        if (owned.population.employee_employed.size() ==
+                population_store().employee_employed.size())
+            owned.population.employee_employed =
+                population_store().employee_employed;
         if (owned.market.stock.size() == market_store().stock.size())
             owned.market.stock = market_store().stock;
     }
@@ -2854,6 +2918,13 @@ bool NativeEconomyRuntime::coordinate_country_fiscal_transaction(
         RuntimeEconomyAssetResult terminal;
         if (_simulation_host->country_economy_asset_terminal_result(
                 *transport_request_id, terminal)) {
+            if (terminal.code != RuntimeEconomyAssetResultCode::COMPLETED ||
+                terminal.operation != static_cast<RuntimeEconomyAssetOperation>(operation)) {
+                _simulation_host->acknowledge_country_economy_asset_consumed(
+                    *transport_request_id);
+                error = "country_economy_asset_host_terminal_rejected";
+                return false;
+            }
             // Peer completion has debited Economy escrow, but Country's
             // terminal commit/read snapshot must also be visible to this
             // worker before the same epoch's conservation audit.
@@ -2861,17 +2932,14 @@ bool NativeEconomyRuntime::coordinate_country_fiscal_transaction(
                 !_simulation_host->finish_worker_country_asset(
                     *transport_request_id, terminal, error))
                 return false;
-            if (terminal.code != RuntimeEconomyAssetResultCode::COMPLETED ||
-                terminal.operation != static_cast<RuntimeEconomyAssetOperation>(operation)) {
-                error = "country_economy_asset_host_terminal_rejected";
-                return false;
-            }
             committed = terminal.committed_quantity > 0
                 ? terminal.committed_quantity : terminal.committed_cash;
             if (committed <= 0 || committed > amount) {
                 error = "country_economy_asset_host_terminal_quantity_invalid";
                 return false;
             }
+            _simulation_host->acknowledge_country_economy_asset_consumed(
+                *transport_request_id);
             return true;
         }
     }
@@ -10288,12 +10356,18 @@ NativeEconomyRuntime::owner_opportunity_quote(
     for (int32_t r = 0; r < type.employee_count; ++r) {
         const JobRole &role = _building_employee_roles[type.employee_begin + r];
         const int32_t ri = group.employee_fill_begin + r;
+        const int32_t signal = labor_signal_index(group.cell, role.profession_id);
+        const int64_t living_floor = signal >= 0
+            ? std::max(_labor_signals.base_living_cost[signal],
+                _labor_signals.role_living_cost[signal]) : 0;
+        const int64_t market_quote = signal >= 0 && signal <
+                static_cast<int32_t>(_labor_signals.contract_wage_ema.size())
+            ? std::max(_labor_signals.contract_wage_ema[signal],
+                _labor_signals.paid_wage_ema[signal]) : 0;
         const int64_t wage = ri >= 0 && ri < static_cast<int32_t>(
                 _building_role_contract_wage.size())
-            ? std::max<int64_t>(0, _building_role_contract_wage[ri])
-            : std::max<int64_t>(0, role.base_wage_per_day);
-        const int64_t effective_wage = wage > 0 ? wage :
-            std::max<int64_t>(0, role.base_wage_per_day);
+            ? std::max<int64_t>(0, _building_role_contract_wage[ri]) : 0;
+        const int64_t effective_wage = std::max({living_floor, market_quote, wage});
         wages_at_full_scale = saturating_add(wages_at_full_scale, saturating_mul(
             group.count, saturating_mul(role.slots_per_building, effective_wage, sat), sat), sat);
     }
@@ -12140,6 +12214,15 @@ bool NativeEconomyRuntime::apply_command(const Command &cmd, std::string &error)
                                                                       _saturation_count));
             const int64_t actual_delta = after - before;
             population_store().population[slot] = after;
+            // A negative population adjustment (for example an externally
+            // issued removal) must carry its employment out of the cohort too;
+            // otherwise the next POD mirror export can observe jobs belonging
+            // to people who no longer exist.
+            population_store().owner_employed[slot] = std::clamp<int64_t>(
+                population_store().owner_employed[slot], 0, after);
+            population_store().employee_employed[slot] = std::clamp<int64_t>(
+                population_store().employee_employed[slot], 0,
+                after - population_store().owner_employed[slot]);
             settled_value = actual_delta;
             add_leg(FIELD_COHORT_POPULATION, SUBJECT_COHORT,
                     static_cast<int64_t>(cmd.target_handle), -1, before, after);
@@ -12778,6 +12861,42 @@ void NativeEconomyRuntime::capture_fatal_context(const std::string &reason) {
 }
 
 void NativeEconomyRuntime::fail(const std::string &reason) {
+    if (reason == "money_conservation_failed") {
+        capture_money_audit_candidates();
+        std::fprintf(stderr,
+            "[economy-money-audit] open=%lld close=%lld expected=%lld error=%lld mint=%lld burn=%lld producer_support=%lld bullion=%lld opening_escrow=%lld closing_escrow=%lld\n",
+            static_cast<long long>(_opening_totals.cohort_funds +
+                _opening_totals.country_cash + _opening_totals.escrow_cash),
+            static_cast<long long>(_closing_totals.cohort_funds +
+                _closing_totals.country_cash + _closing_totals.escrow_cash),
+            static_cast<long long>(_opening_totals.cohort_funds +
+                _opening_totals.country_cash + _opening_totals.escrow_cash +
+                _explicit_money_mint - _explicit_money_burn),
+            static_cast<long long>(_closing_totals.cohort_funds +
+                _closing_totals.country_cash + _closing_totals.escrow_cash -
+                (_opening_totals.cohort_funds + _opening_totals.country_cash +
+                 _opening_totals.escrow_cash + _explicit_money_mint -
+                 _explicit_money_burn)),
+            static_cast<long long>(_explicit_money_mint),
+            static_cast<long long>(_explicit_money_burn),
+            static_cast<long long>(_producer_support_money_issued),
+            static_cast<long long>(_bullion_money_issued),
+            static_cast<long long>(_opening_totals.escrow_cash),
+            static_cast<long long>(_closing_totals.escrow_cash));
+        for (const MoneyAuditAccountDiagnostic &account :
+                _money_audit_candidate_accounts) {
+            const char *profession = account.profession >= 0 &&
+                account.profession < static_cast<int32_t>(_profession_ids.size())
+                ? _profession_ids[account.profession].c_str() : "unknown";
+            std::fprintf(stderr,
+                "[economy-money-audit-candidate] slot=%d handle=%llu cell=%d signature=%d profession=%d:%s opening=%lld closing=%lld net_change=%lld\n",
+                account.slot, static_cast<unsigned long long>(account.handle),
+                account.cell, account.signature, account.profession, profession,
+                static_cast<long long>(account.opening_funds),
+                static_cast<long long>(account.closing_funds),
+                static_cast<long long>(account.net_change));
+        }
+    }
     if (reason == "goods_conservation_failed") {
         capture_goods_audit_candidates();
         for (const GoodsAuditLaneDiagnostic &lane : _goods_audit_candidate_lanes) {
@@ -21210,6 +21329,10 @@ int64_t NativeEconomyRuntime::state_hash() const {
         mix_u64(static_cast<uint32_t>(family_expeditions_store().speed[i]));
         mix_u64(family_expeditions_store().state[i]);
         mix_u64(static_cast<uint64_t>(family_expeditions_store().population[i]));
+        mix_u64(static_cast<uint64_t>(
+            family_expeditions_store().kit_bridge_required_units[i]));
+        mix_u64(static_cast<uint64_t>(
+            family_expeditions_store().kit_material_required_units[i]));
         mix_u64(static_cast<uint64_t>(family_expeditions_store().effect_transaction_id[i]));
         mix_u64(family_expeditions_store().idempotency_key[i]);
         const uint32_t route_begin = family_expeditions_store().route_begin[i];

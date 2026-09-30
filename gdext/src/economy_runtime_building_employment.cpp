@@ -473,9 +473,8 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
         const int32_t profession = _labor_signals.profession_ids[signal];
         const int64_t general_cost = _labor_signals.base_living_cost[signal];
         int64_t role_cost = _labor_signals.role_living_cost[signal];
-        // A content-side reference wage is not an economic primitive.  It may
-        // remain in old catalog/save data for compatibility, but it must not
-        // anchor the live wage quote or investment cost.
+        // Wage amounts are not content primitives. Legacy resource fields may
+        // load for compatibility, but they never enter this live quote.
         role_cost = std::max<int64_t>(0, role_cost);
         const int64_t local_average = _labor_signals.contract_wage_ema[signal] > 0
             ? _labor_signals.contract_wage_ema[signal]
@@ -514,7 +513,7 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
                     : Q16_ONE;
                 int64_t group_employee_slots = 0;
                 int64_t filled_employee_heads = 0;
-                int64_t reference_wage_pool = 0;
+                int64_t living_floor_wage_pool = 0;
                 for (int32_t rr = 0; rr < type.employee_count; ++rr) {
                     const JobRole &rrole =
                         _building_employee_roles[type.employee_begin + rr];
@@ -543,7 +542,7 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
                         ? std::max(_labor_signals.base_living_cost[role_signal],
                             _labor_signals.role_living_cost[role_signal])
                         : 0;
-                    reference_wage_pool = saturating_add(reference_wage_pool,
+                    living_floor_wage_pool = saturating_add(living_floor_wage_pool,
                         saturating_mul(role_filled,
                             std::max<int64_t>(role_floor, local_average),
                             _saturation_count), _saturation_count);
@@ -562,7 +561,7 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
                     workforce_q16 = std::min(owner_ratio, first_seat_q16);
                     if (workforce_q16 <= 0 && owner_ratio > 0)
                         workforce_q16 = first_seat_q16;
-                    reference_wage_pool = 0;
+                    living_floor_wage_pool = 0;
                     for (int32_t rr = 0; rr < type.employee_count; ++rr) {
                         const JobRole &rrole =
                             _building_employee_roles[type.employee_begin + rr];
@@ -573,7 +572,7 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
                             ? std::max(_labor_signals.base_living_cost[role_signal],
                                 _labor_signals.role_living_cost[role_signal])
                             : 0;
-                        reference_wage_pool = saturating_add(reference_wage_pool,
+                        living_floor_wage_pool = saturating_add(living_floor_wage_pool,
                             std::max<int64_t>(role_floor, local_average),
                             _saturation_count);
                         break;
@@ -711,7 +710,7 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
                                           _saturation_count));
                     const int64_t potential_profit = std::max<int64_t>(0,
                         saturating_sub(daily_revenue,
-                            saturating_add(daily_inputs, reference_wage_pool,
+                            saturating_add(daily_inputs, living_floor_wage_pool,
                                 _saturation_count), _saturation_count));
                     const int64_t potential_margin_q16 = mul_div_sat(
                         potential_profit, Q16_ONE, daily_revenue,
@@ -734,8 +733,7 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
                 // that made placer contract wages >> mint income while rich
                 // owners still funded payroll from cash stock.
                 // Clamp the living-cost floor to the employer's ability to pay,
-                // but never below the configured reference wage (so a viable
-                // building still offers at least its nominal wage).
+                // but never below the living-cost floor.
                 if (affordable_ceiling > 0) {
                     floor = std::min(floor, affordable_ceiling);
                 }
@@ -1231,7 +1229,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                         _saturation_count), _saturation_count);
             }
             if (potential_revenue <= 0) return signal;
-            int64_t reference_wage_pool = 0;
+            int64_t living_floor_wage_pool = 0;
             for (int32_t role_offset = 0;
                  role_offset < type.employee_count; ++role_offset) {
                 const JobRole &role = _building_employee_roles[
@@ -1246,7 +1244,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                         static_cast<int32_t>(_labor_signals.contract_wage_ema.size())
                     ? std::max(_labor_signals.contract_wage_ema[signal],
                         _labor_signals.paid_wage_ema[signal]) : 0;
-                reference_wage_pool = saturating_add(reference_wage_pool,
+                living_floor_wage_pool = saturating_add(living_floor_wage_pool,
                     saturating_mul(slots,
                         std::max(living_floor, market_quote),
                         _saturation_count), _saturation_count);
@@ -1256,7 +1254,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 group.count, _saturation_count);
             const int64_t potential_profit = std::max<int64_t>(0,
                 saturating_sub(potential_revenue,
-                    saturating_add(input_cost, reference_wage_pool,
+                    saturating_add(input_cost, living_floor_wage_pool,
                         _saturation_count), _saturation_count));
             const int64_t potential_margin = mul_div_sat(
                 potential_profit, Q16_ONE, potential_revenue,

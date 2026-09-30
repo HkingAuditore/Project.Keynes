@@ -300,7 +300,7 @@ class BalanceValidator:
                 slots = finite(job.get("slots"), 0.0) * job_units
                 add(profession_population, pid, slots)
                 if job.get("role") == "employee":
-                    wage = finite(job.get("refWage"), finite(building.get("wage_per_employee_per_day")))
+                    wage = self.profession_reference(pid)["living_cost"]
                     paid = wage * slots
                     wages += paid
                     employee_slots += slots

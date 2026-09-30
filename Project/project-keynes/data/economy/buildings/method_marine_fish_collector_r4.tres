@@ -30,7 +30,6 @@ owner_profession_id = &"fisher"
 employee_profession_ids = PackedStringArray("fisher")
 employee_slots_per_building = PackedInt64Array(8)
 employee_wage_policy_ids = PackedStringArray("fixed")
-employee_reference_wages_per_day = PackedInt64Array(14740)
 input_good_ids = PackedStringArray("tools")
 input_quantities_per_day = PackedInt64Array(1163)
 input_required_q16 = PackedInt32Array(32768)

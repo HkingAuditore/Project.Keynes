@@ -585,8 +585,7 @@ public:
     bool publish_country_economy_asset_requests(
             const std::vector<RuntimeEconomyAssetRequest> &requests,
             std::string &error);
-    void discard_country_economy_asset_requests(
-            const std::vector<uint64_t> &request_ids) noexcept;
+    void acknowledge_country_economy_asset_consumed(uint64_t request_id) noexcept;
     void set_country_economy_asset_protocol_error_locked(
             RuntimeEconomyAssetProtocolError code, uint64_t transaction_id,
             uint64_t request_id, const char *reason) noexcept;

@@ -2057,7 +2057,6 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
 		catalog, "building_production_climate_profile_indices");
     const std::vector<int32_t> owner_prof = packed_i32(catalog, "building_owner_profession_ids");
     const std::vector<int64_t> owner_slots = packed_i64(catalog, "building_owner_slots");
-    const std::vector<int64_t> wages = packed_i64(catalog, "building_wage_per_employee_per_day");
     const std::vector<int32_t> construction_days = packed_i32(catalog, "building_construction_days");
     const std::vector<int32_t> behavior_ids = packed_i32(catalog, "building_behavior_ids");
     const std::vector<int32_t> behavior_versions = packed_i32(catalog, "building_behavior_versions");
@@ -2104,7 +2103,7 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
         return v.size() == types + 1 && !v.empty() && v.front() == 0 &&
                std::is_sorted(v.begin(), v.end());
     };
-    if (owner_prof.size() != types || owner_slots.size() != types || wages.size() != types ||
+    if (owner_prof.size() != types || owner_slots.size() != types ||
         construction_days.size() != types || behavior_ids.size() != types ||
 		behavior_versions.size() != types || target_margins.size() != types ||
         supply_elasticities.size() != types || _building_kinds.size() != types ||
@@ -2157,8 +2156,6 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
     const std::vector<int64_t> employee_slots = packed_i64(catalog, "building_employee_slots");
     const std::vector<int32_t> employee_wage_policies =
         packed_i32(catalog, "building_employee_wage_policies");
-    const std::vector<int64_t> employee_reference_wages =
-        packed_i64(catalog, "building_employee_reference_wages_per_day");
     const std::vector<int32_t> construction_goods = packed_i32(catalog, "building_construction_good_ids");
     const std::vector<int64_t> construction_qty = packed_i64(catalog, "building_construction_quantities");
     std::vector<int32_t> construction_candidate_offsets = packed_i32(
@@ -2215,7 +2212,6 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
     if (employee_offsets.back() != static_cast<int32_t>(employee_prof.size()) ||
         employee_slots.size() != employee_prof.size() ||
         employee_wage_policies.size() != employee_prof.size() ||
-        employee_reference_wages.size() != employee_prof.size() ||
         construction_offsets.back() != static_cast<int32_t>(construction_goods.size()) ||
         construction_qty.size() != construction_goods.size() ||
         construction_candidate_offsets.size() != construction_goods.size() + 1 ||
@@ -2299,8 +2295,6 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
             return false;
         }
         _building_employee_roles[i] = {employee_prof[i], employee_slots[i],
-                                       std::max<int64_t>(0,
-                                           employee_reference_wages[i]),
                                        employee_wage_policies[i]};
     }
     auto compile_goods = [&](const std::vector<int32_t> &ids, const std::vector<int64_t> &qty,
@@ -2410,7 +2404,7 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
         // (industrial) keep their original output/resource/behavior coupling.
         const bool kind_is_service = _building_kinds[i] == 2;
         if (owner_prof[i] < 0 || owner_prof[i] >= static_cast<int32_t>(_profession_ids.size()) ||
-            owner_slots[i] <= 0 || wages[i] < 0 || construction_days[i] < 0 ||
+            owner_slots[i] <= 0 || construction_days[i] < 0 ||
             _building_kinds[i] < 0 || _building_kinds[i] > 2 ||
             _building_economic_sectors[i] < 0 ||
             _building_economic_sectors[i] >= 5 ||
@@ -2473,7 +2467,7 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
         }
         _building_types[i] = {
 			_building_kinds[i], _building_economic_sectors[i], climate_profile_indices[i], family, tier,
-            owner_prof[i], owner_slots[i], wages[i],
+            owner_prof[i], owner_slots[i],
             employee_offsets[i], employee_offsets[i + 1] - employee_offsets[i],
             construction_offsets[i], construction_offsets[i + 1] - construction_offsets[i],
             0, 0,

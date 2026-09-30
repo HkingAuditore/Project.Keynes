@@ -799,6 +799,14 @@ bool RuntimeEconomyPodAuthority::try_apply_owned_core_command(
             std::max<int64_t>(0, sat_add(before, command.payload0));
         const int64_t actual_delta = after - before;
         population.population[static_cast<size_t>(slot)] = after;
+        population.owner_employed[static_cast<size_t>(slot)] =
+            std::clamp<int64_t>(
+                population.owner_employed[static_cast<size_t>(slot)], 0,
+                after);
+        population.employee_employed[static_cast<size_t>(slot)] =
+            std::clamp<int64_t>(
+                population.employee_employed[static_cast<size_t>(slot)], 0,
+                after - population.owner_employed[static_cast<size_t>(slot)]);
         settled_out = actual_delta;
         _state.external_population_delta =
             sat_add(_state.external_population_delta, actual_delta);

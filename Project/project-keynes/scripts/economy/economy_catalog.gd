@@ -654,7 +654,6 @@ static func compile_native_catalog(
 	]:
 		building_v7_columns.erase(key)
 	building_v7_columns.erase("building_employee_wage_policies")
-	building_v7_columns.erase("building_employee_reference_wages_per_day")
 	var building_v6_columns := building_v7_columns.duplicate(true)
 	for key in [
 		"building_target_operating_margin_q16", "building_supply_price_elasticity_q16",
@@ -1292,7 +1291,6 @@ static func _compile_building_columns(profession_index: Dictionary,
 	var type_ids := PackedStringArray()
 	var owner_professions := PackedInt32Array()
 	var owner_slots := PackedInt64Array()
-	var wages_per_employee_per_day := PackedInt64Array()
 	var construction_days := PackedInt32Array()
 	var behavior_ids := PackedInt32Array()
 	var behavior_versions := PackedInt32Array()
@@ -1321,7 +1319,6 @@ static func _compile_building_columns(profession_index: Dictionary,
 	var employee_professions := PackedInt32Array()
 	var employee_slot_counts := PackedInt64Array()
 	var employee_wage_policies := PackedInt32Array()
-	var employee_reference_wages := PackedInt64Array()
 	var construction_offsets := PackedInt32Array([0])
 	var construction_goods := PackedInt32Array()
 	var construction_quantities := PackedInt64Array()
@@ -1424,15 +1421,11 @@ static func _compile_building_columns(profession_index: Dictionary,
 		semantic_tags.append_array(normalized_building_tags)
 		semantic_tag_offsets.append(semantic_tags.size())
 		var wage_policy := String(profile.wage_policy_id)
-		var wage_per_employee := int(profile.wage_per_employee_per_day)
 		if wage_policy not in ["none", "fixed", "adaptive"]:
 			return {"ok": false, "reason": "unsupported building wage policy: %s" % stable_id}
-		if wage_per_employee < 0 or (wage_policy == "none" and wage_per_employee != 0):
-			return {"ok": false, "reason": "invalid building wage: %s" % stable_id}
 		type_ids.append(stable_id)
 		owner_professions.append(int(profession_index[owner_id]))
 		owner_slots.append(int(profile.owner_slots_per_building))
-		wages_per_employee_per_day.append(wage_per_employee if wage_policy != "none" else 0)
 		construction_days.append(int(profile.construction_days))
 		var behavior_id := String(profile.behavior_id)
 		if behavior_id not in ["none", "consume_local_resources", "cultivate_local_resources"]:
@@ -1455,24 +1448,16 @@ static func _compile_building_columns(profession_index: Dictionary,
 		var role_ids: PackedStringArray = profile.employee_profession_ids
 		var role_slots: PackedInt64Array = profile.employee_slots_per_building
 		var role_wage_policies: PackedStringArray = profile.employee_wage_policy_ids
-		var role_reference_wages: PackedInt64Array = profile.employee_reference_wages_per_day
 		if role_ids.size() != role_slots.size():
 			return {"ok": false, "reason": "building employee columns mismatch: %s" % stable_id}
 		if not role_wage_policies.is_empty() and role_wage_policies.size() != role_ids.size():
 			return {"ok": false, "reason": "building role wage policies mismatch: %s" % stable_id}
-		if not role_reference_wages.is_empty() and role_reference_wages.size() != role_ids.size():
-			return {"ok": false, "reason": "building role reference wages mismatch: %s" % stable_id}
-		if not role_ids.is_empty() and role_wage_policies.is_empty() \
-				and (wage_policy == "none" or wage_per_employee <= 0):
-			return {"ok": false, "reason": "employee building requires wage policy: %s" % stable_id}
 		for i in range(role_ids.size()):
 			var profession_id := String(role_ids[i])
 			var role_policy := String(role_wage_policies[i]) if not role_wage_policies.is_empty() else wage_policy
-			var role_reference := int(role_reference_wages[i]) if not role_reference_wages.is_empty() else wage_per_employee
 			if not profession_index.has(profession_id) or int(role_slots[i]) <= 0 \
 					or profession_id == UNEMPLOYED_PROFESSION_ID \
-					or role_policy not in ["none", "fixed", "adaptive"] \
-					or role_reference < 0 or (role_policy != "none" and role_reference <= 0):
+					or role_policy not in ["none", "fixed", "adaptive"]:
 				return {"ok": false, "reason": "invalid building employee role: %s" % stable_id}
 			employee_professions.append(int(profession_index[profession_id]))
 			employee_slot_counts.append(int(role_slots[i]))
@@ -1480,7 +1465,6 @@ static func _compile_building_columns(profession_index: Dictionary,
 			# Keep accepting legacy "fixed" content for load compatibility, but
 			# never compile it into a fixed native wage policy.
 			employee_wage_policies.append(2)
-			employee_reference_wages.append(role_reference)
 		employee_offsets.append(employee_professions.size())
 
 		var zero_cost_construction: bool = allows_zero_cost_construction(profile)
@@ -1758,7 +1742,6 @@ static func _compile_building_columns(profession_index: Dictionary,
 		"building_progression_terminal_reasons": progression_columns.building_progression_terminal_reasons,
 		"building_owner_profession_ids": owner_professions,
 		"building_owner_slots": owner_slots,
-		"building_wage_per_employee_per_day": wages_per_employee_per_day,
 		"building_construction_days": construction_days,
 		"building_behavior_ids": behavior_ids,
 		"building_behavior_versions": behavior_versions,
@@ -1768,7 +1751,6 @@ static func _compile_building_columns(profession_index: Dictionary,
 		"building_employee_profession_ids": employee_professions,
 		"building_employee_slots": employee_slot_counts,
 		"building_employee_wage_policies": employee_wage_policies,
-		"building_employee_reference_wages_per_day": employee_reference_wages,
 		"building_construction_offsets": construction_offsets,
 		"building_construction_good_ids": construction_goods,
 		"building_construction_quantities": construction_quantities,
