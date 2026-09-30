@@ -2299,6 +2299,8 @@ bool NativeEconomyRuntime::compile_building_catalog(const Dictionary &catalog,
             return false;
         }
         _building_employee_roles[i] = {employee_prof[i], employee_slots[i],
+                                       std::max<int64_t>(0,
+                                           employee_reference_wages[i]),
                                        employee_wage_policies[i]};
     }
     auto compile_goods = [&](const std::vector<int32_t> &ids, const std::vector<int64_t> &qty,

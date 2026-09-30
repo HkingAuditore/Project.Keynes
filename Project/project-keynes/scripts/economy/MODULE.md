@@ -254,7 +254,8 @@ gathering、pottery、guild、steam 四档，蒸汽档封顶。
 三种模式在单个输入槽互斥；目录把候选按 stable good ID 规范化为 good/效率 CSR。native 只考虑本国科技可用的候选，按库存满足度、有效单位成本和 stable
 good ID 稳定选择。`GoodProfile.production_quality_level` 控制最低等级，
 `production_efficiency_q16` 把物理库存换算为有效投入。当前工具等级为打制石器 1/50%、青铜工具
-2/80%、标准工具 3/100%、精密工具 4/150%，木材、狩猎、行会和部分古典配方可直接使用相应等级，
+2/80%、标准工具 3/100%、精密工具 4/150%；这些百分比表示同一物理库存可覆盖的有效投入量，满覆盖时
+再按建筑软投入的 `required_q16 × coverage` 作为独立产量加成，基础活动率仍从 100% 起算，多个软投入逐项相加。
 不再通过交换站把时代商品转换成通用工具。
 `GoodProfile.substitution_category_ids` 允许一个 good 同时加入多个配方角色组；每个建筑槽只选择
 一个角色，因此多重归类不会自动产生全局互换。`category_id` 仅保留为主角色兼容字段。

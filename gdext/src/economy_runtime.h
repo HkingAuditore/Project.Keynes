@@ -1277,6 +1277,7 @@ private:
     struct JobRole {
         int32_t profession_id = -1;
         int64_t slots_per_building = 0;
+        int64_t base_wage_per_day = 0;
         // Employee wages are discovered from living-cost, market, and
         // employer-profit signals at each planning boundary.
         int32_t wage_policy = 2; // retained for catalog/save compatibility
@@ -1541,6 +1542,19 @@ private:
     // is rebuilt from frozen inputs and is intentionally absent from PKEC.
     struct OwnerOpportunityQuote {
         int64_t prospective_scale_q16 = 0;
+        int64_t owner_run_q16 = 0;
+        int64_t climate_factor_q16 = Q16_ONE;
+        int64_t resource_factor_q16 = Q16_ONE;
+        int64_t natural_capacity_q16 = Q16_ONE;
+        int64_t soft_productivity_q16 = Q16_ONE;
+        int64_t natural_max_output = 0;
+        int64_t optimal_output = 0;
+        int64_t fundable_output = 0;
+        int64_t actual_output = 0;
+        int64_t fixed_cost = 0;
+        int64_t variable_cost = 0;
+        int64_t optimal_revenue = 0;
+        int64_t optimal_profit = 0;
         int64_t cash_receipt = 0;
         int64_t in_kind_retail_value = 0;
         int64_t input_cost = 0;
@@ -2782,6 +2796,15 @@ private:
         int64_t merchant_cash = 0;
         int64_t merchant_inventory_retail_value = 0;
         int64_t merchant_inventory_liquidation_value = 0;
+    };
+
+    struct GoodsAuditLaneDiagnostic {
+        int32_t market = -1;
+        int32_t cell = -1;
+        int32_t good = -1;
+        int64_t opening_stock = 0;
+        int64_t closing_stock = 0;
+        int64_t net_change = 0;
     };
 
     struct TradePlanInitState {
@@ -4288,6 +4311,7 @@ private:
     uint32_t _audit_mutation_generation = 0;
     std::string _closing_audit_mismatch_ledger = "none";
     int64_t _closing_audit_mismatch_lane = -1;
+    std::vector<GoodsAuditLaneDiagnostic> _goods_audit_candidate_lanes;
     int64_t _investment_scheduled_review_cells = 0;
     int64_t _investment_review_cells = 0;
     int64_t _investment_type_evaluations = 0;
@@ -4719,11 +4743,13 @@ private:
     int64_t _derived_business_demand_lanes = 0;
     int64_t _derived_business_demand_edges = 0;
     std::vector<int64_t> _epoch_offered_supply_ema;
-    // Current-cycle producer absorption diagnostics, aligned to the sparse
-    // (cell, good) market-signal lanes. These are transient and excluded from
-    // PKEC and the authoritative state hash.
+    // Current and previous-cycle producer absorption observations, aligned to
+    // sparse (cell, good) market-signal lanes. These are transient and excluded
+    // from PKEC and the authoritative state hash.
     std::vector<int64_t> _epoch_producer_sellable_current;
     std::vector<int64_t> _epoch_producer_merchant_sold_current;
+    std::vector<int64_t> _epoch_previous_producer_sellable;
+    std::vector<int64_t> _epoch_previous_producer_merchant_sold;
     std::vector<int64_t> _epoch_producer_discarded_current;
     std::vector<int64_t> _epoch_nonhousehold_withdrawals;
     std::vector<int32_t> _epoch_cost_anchor_price;
@@ -6107,12 +6133,17 @@ private:
         int64_t seller_receipt = 0;
         int64_t fiscal_transfer = 0;
     };
+    struct BuildingTaxQuote {
+        int64_t business_transfer = 0;
+        int64_t income_transfer = 0;
+        int64_t after_tax_cash = 0;
+    };
     TransactionQuote quote_transaction(int32_t cell, int32_t good,
                                         int64_t base_value,
                                         bool settle,
                                         bool subsidy_eligible,
                                         int64_t &saturation_count,
-                                        int64_t filled_quantity = -1);
+                                        int64_t filled_quantity);
     void settle_income_subsidies_for_cell(int32_t cell,
                                           int64_t &saturation_count);
     void settle_absolute_daily_taxes_for_cell(int32_t cell,
@@ -6138,6 +6169,15 @@ private:
     int64_t expected_resolved_fiscal_transfer(
             int32_t cell, int32_t kind, int32_t item, int64_t percent_base,
             int64_t absolute_units, int64_t &saturation_count) const;
+    int64_t producer_support_receipt_value(int32_t cell, int32_t good,
+                                           int64_t quantity,
+                                           int64_t &saturation_count) const;
+    BuildingTaxQuote expected_building_tax_quote(
+            int32_t cell, int32_t type_id, int32_t owner_profession,
+            int64_t merchant_cash, int64_t producer_support_cash,
+            int64_t business_eligible_cost, int64_t operating_cost,
+            int64_t owner_living_cost, int64_t building_days,
+            int64_t owner_days, int64_t &saturation_count) const;
     int32_t tariff_epoch_lane_index(int32_t cell, int32_t tariff_kind,
                                     bool create);
     int64_t expected_after_tax_income(int32_t cell, int32_t profession,
@@ -6780,6 +6820,7 @@ private:
     AuditTotals incremental_audit_totals() const;
     void commit_incremental_audit_shadow();
     void diagnose_incremental_audit_mismatch(const AuditTotals &full);
+    void capture_goods_audit_candidates();
     AuditTotals audit_totals() const;
     int64_t memory_bytes() const;
     int32_t choose_epoch_days(int64_t cohort_count);

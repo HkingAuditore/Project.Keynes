@@ -1,5 +1,21 @@
 # 原生阶层与本地市场运行时（Market V2 / Price V6）
 
+## 建筑报价与税费口径（2026-09-30）
+
+建筑预测把产出拆成业主自用、商人收购和 producer support 三条收入分量。商人收购比例
+使用上一期 `producer_sellable` 与 `producer_merchant_sold` 的冻结快照；本期未被商人收购的
+可销售余量按实际结算的 producer support 价格（普通商品为零售价的五分之一，贵金属为
+`monetary_issue_value`）计入预计现金收入。没有历史渠道数据时，商人份额按 100% 处理，
+避免冷启动凭空创造 support 收入。
+
+正营业税和业主收入税的预测税基与结算保持一致：正营业税、收入税只对商人经营收入计征；
+营业补贴继续以合格投入、实际支付基础工资和维护费为基数；producer support 单独进入
+经济收入，不在当前税基中重复计税。投资、业主机会报价和就业使用同一分解字段。
+
+生产投入的 `quote_transaction()` 必须同时接收金额和实际商品数量。百分比交易税使用金额，
+绝对额交易税使用数量；生产输入按 `(good_id, rate, mode)` 聚合账单，不能只按税率合并。
+库存内部采购明确传入非应税标记，避免把库存采购误当成企业原材料采购。
+
 ## 当前经济闭环契约（2026-09）
 
 以下规则覆盖本文中较早的铸币配额、投资分路和固定工资描述；旧段落保留用于迁移历史，不能作为当前运行时行为依据。
@@ -385,10 +401,13 @@ Ideology 只读上一个 committed buffer，不扫描 cohort。报告字段
 
 ## PKEC v22 production climate（历史基础，当前由 PKEC v41 持久化）
 
-PKEC v22 introduced frozen 30-day temperature and plant-available water in every
-cell record and four climate diagnostics in every building record. Those fields
-remain in v41, enter the state hash, and participate in restore range validation;
-the current reader accepts only v41.
+PKEC v22 introduced frozen daily temperature, 30-day temperature, and
+plant-available water in every cell record and four climate diagnostics in every
+building record. The `foraging_plants` profile now uses the daily temperature
+snapshot. All production profiles use plant-available water captured at the
+economy-day boundary, while other profiles retain the established 30-day
+thermal signal. These fields remain in v41, enter the state hash,
+and participate in restore range validation; the current reader accepts only v41.
 
 `ProductionClimateProfile` is compiled by stable ID. Due-cell building prepare
 computes Q16 temperature fit, water fit, and floor/exposure capacity. Employment
@@ -521,7 +540,7 @@ sequence、settled day、稳定结果码及实际两类物资/现金支出；它
 - `EconomyProfile.building_output_efficiency_q16` 在 native 目录载入冷路径只缩放物资产出列，默认 `131072`（2 倍）；建设材料、日常投入、自然资源扣减、岗位与工资均不缩放。它是运行配置而非目录内容，因此不改变 building catalog hash、运行时状态布局或 PKEC 字节结构。
 - 食物产出倍率已从运行配置移除；食物平衡由各 `BuildingProfile.output_quantities_per_day` 直接表达。现有食物配置已吸收原 `1.25` 倍基线，石器时代采集、狩猎、捕鱼和陷阱线另有定向增产；自然资源消耗列保持不变。
 - 早期知识建筑的 `owner_slots_per_building` 为 1；知识产业（economic sector=knowledge）的新招聘和跨行业转岗软上限为本地人口的 30%（非零地块至少保留 1 个槽位），不会驱逐已在岗知识人口。
-- 实际利润率按 `(销售收入 - 输入成本 - 应付基础工资 - 到岗业主最低生活费) / max(经营成本, MONEY_SCALE)` 计算。业主生活费只参与企业可持续性判断，不生成额外现金支出；连续三周期不高于 -25% 后进入 `SUSPENDED_LOSS`。停产期间岗位、采购、产出和企业需求全为零；反事实利润达到重启门槛（默认约 +10%），且硬投入有货、自然资源可用、本地可回岗劳动力存在、业主/信贷能覆盖**可执行**一周期成本后恢复。软投入（`required_q16 < 1`）不是开工门槛：货架为空只按 `(1-required)+required*coverage` 降低反事实产能并不计入重启信贷，不得把涨价后有利可图的停业组（如燧石采掘场）永久锁死。
+- 实际利润率按 `(销售收入 - 输入成本 - 应付基础工资 - 到岗业主最低生活费) / max(经营成本, MONEY_SCALE)` 计算。业主生活费只参与企业可持续性判断，不生成额外现金支出；连续三周期不高于 -25% 后进入 `SUSPENDED_LOSS`。停产期间岗位、采购、产出和企业需求全为零；反事实利润达到重启门槛（默认约 +10%），且硬投入有货、自然资源可用、本地可回岗劳动力存在、业主/信贷能覆盖**可执行**一周期成本后恢复。软投入（`required_q16 < 1`）不是开工门槛：货架为空时基础活动率仍按 100% 计算，实际产量倍率按 `1 + Σ(required × coverage)` 计算，不把软投入缺货计入重启信贷，不得把涨价后有利可图的停业组（如燧石采掘场）永久锁死。
 - 下一周期利用率的可负担需求同时读取居民 `demand_ema` 与稀疏 `business_demand_ema`。库存不足时，以两者之和相对实际出库 EMA 的缺口触发短缺恢复；因此没有家庭终端消费、但被下游建筑持续采购的工具和中间品不会被误压到 1/32 探测产能。
 - 商人库存目标使用 `max(可行 household/business 日需求, 实际出库 EMA, 平滑供给下限) + 出口 EMA` 乘 30 日基线和 good-specific 比例后的有效天数；生存食品/御寒衣物的供给下限为供给 EMA 的 1/2，其他耐储品为 1/4，库存天数和目标量级不下调。采购开始冻结现金并保留 12.5%；有限现金按生存品、短缺压力、生产投入 reserve 缺口加权，但总采购预算仍封顶于真实缺口价值，避免“提高优先级”反而造成有钱不买。`cycle_flow` 目标仍为 0。
 - `GoodProfile.inventory_target_ratio_q16` 在 catalog 配置阶段预计算为 dense 有效天数列；热循环不做字符串分类或额外目录遍历。catalog 同时保留 legacy `good_target_inventory_days_q16` 兼容列，使编辑器误加载旧 DLL 时仍能完成 economy/population bootstrap；新版 DLL 优先读取比例列。
@@ -547,7 +566,7 @@ sequence、settled day、稳定结果码及实际两类物资/现金支出；它
 
 - 消费目录新增 Need 总量价格弹性和刚需下限，并加入商品/阶层财富弹性与储蓄门槛。variant 分数仍负责替代选择；总量因子按 market×need 预计算。主食、采集食物和电力 utility 走同一 native bundle 清算，房屋材料按低频日量摊销。
 - 低于目标库存且仍有需求时，生产成本锚通过受单日涨幅上限约束的正向价格压力形成动态软底；库存堆积时下跌按当前价格限速，仍可跌破成本清仓。企业同时按上一周期售罄率缩放下一周期计划利用率，但忽略不超过 1% 的舍入丢弃，并在家庭可用库存不足 `max(1 商品单位, max(实际出库 EMA, 需求 EMA) × 周期日数)` 且短缺率至少 12.5% 时主动恢复。耐储商品保留 1/32 探测下限，易腐/周期流商品保留 1/6 下限；生存食物生产者另按同一业主人口跨过饥饿阈值所需的自留量计算动态下限，取二者较高值。
-- 全建筑目录改用默认生活成本和 80% 保守售出率校准。当前石器狩猎营地为 2 个共同经营岗位，标称日产 `6670/80` 野味/生皮并抽取 `1430` 野生动物，工具软槽 `32768`（无工具时约一半产能，与补槽前徒手产量对齐）；采集营地为 2 个岗位、标称日产 `14000` 采集植物（承载力占用保持原值）；家庭织造棚为 1 个岗位、日产 `900` 布匹并消耗采集植物。早期砂金/露天银矿由 merchant 所有，均雇用 1 个 miner 岗位；露天银矿日产降为 `1000` GOODS_SCALE，资源扣减为 `200`。
+- 全建筑目录改用默认生活成本和 80% 保守售出率校准。当前石器狩猎营地为 2 个共同经营岗位，标称日产 `6670/80` 野味/生皮并抽取 `1430` 野生动物，工具软槽 `32768`；软投入缺货不再把基础产量减半，而是从 100% 基础活动率开始，按工具库存覆盖度累加产量加成。采集营地为 2 个岗位、标称日产 `14000` 采集植物（承载力占用保持原值）；家庭织造棚为 1 个岗位、日产 `900` 布匹并消耗采集植物。早期砂金/露天银矿由 merchant 所有，均雇用 1 个 miner 岗位；露天银矿日产降为 `1000` GOODS_SCALE，资源扣减为 `200`。
 - `audit_economy_content.ps1` 现在委托 `audit_economy_content_v2.ps1`，从权威 technology topology 展开 goods/building/Need/plan 图，验证全部 135 goods、356 buildings、20 needs、11 plans 的真实终端和外部来源闭包；孤儿产出、未引用 goods、不可启动的产业 SCC 均拒绝。审计不再依赖过期时代或收益硬编码。
 
 ### 2026-07-18 调度、贸易与工资稳定性修正
@@ -817,7 +836,7 @@ stable good ID 排列的候选 CSR，并附带 good-level Q16 生产效率。每
 `1 - required` 的产能底线，库存/现金越接近完整物理需求，产能越线性恢复到满产。native 在冻结国家科技可用的候选
 中按 `price / efficiency` 选择最低有效成本；生产期还要求本地正库存。物理消耗为
 `ceil(effective_required / efficiency)` 乘以该产能实际需要的输入购买比例；若完整物理需求为正且购买比例为正，scaled 购买量至少为 1，避免硬输入在极低利用率下被截断为“零成本免费生产”。库存、业主现金与 goods audit 仍记录实际物理数量。
-这使早期木材等配方可以直接使用打制石器、青铜、金属或精密工具，不再需要商品转换站；每个输入槽仍按建筑时代设置最低品质，因此探索以后不会再选中打制石器，信息/AI 只接受精密工具。石器狩猎营地有 `tools` 软槽 `32768`、按劳动槽每日 100 工具；满工具标称日产 `1000/46/46` 野味/生皮/毛皮并抽取 `209` 野生动物。无工具时产能与抽取约为标称一半，对齐补槽前的徒手产量。纯抽取采集者在补软工具时把标称产出与 `extract` 加倍；含 `capacity` 的农田/牧场等保持原标称（满工具=旧产量，徒手约一半），以免土地生产力越出时代区间。邻近后期档按满工具人均产出至少 `1.34×` 前档上修。开局规划器按该软槽底线估算食物与抽取，且不把软互补品当作必须闭环的硬投入。采集营地满工具标称日产 `2300` 采集植物（土地 capacity `1215`）；枯枝采集营地满工具标称日产 `3400` 原木并抽取 `1148` 木材。
+这使早期木材等配方可以直接使用打制石器、青铜、金属或精密工具，不再需要商品转换站；每个输入槽仍按建筑时代设置最低品质，因此探索以后不会再选中打制石器，信息/AI 只接受精密工具。石器狩猎营地有 `tools` 软槽 `32768`、按劳动槽每日 100 工具；满工具标称日产 `1000/46/46` 野味/生皮/毛皮并抽取 `209` 野生动物。无工具时仍按基础活动率产出，工具库存覆盖度按 `required × coverage` 逐项增加产量。纯抽取采集者的软工具加成只影响产出，不扩大 `extract` 资源消耗；含 `capacity` 的农田/牧场等也保持资源容量与基础活动率上限。邻近后期档按满工具人均产出至少 `1.34×` 前档上修。开局规划器按基础活动率估算食物与抽取，且不把软互补品当作必须闭环的硬投入。采集营地满工具标称日产 `2300` 采集植物（土地 capacity `1215`）；枯枝采集营地满工具标称日产 `3400` 原木并抽取 `1148` 木材。
 玩家新建建筑列表必须展开当前科技可用的输入候选显示名，并标注非 100% 的 Q16 效率；不得只渲染槽位代表物资的 `display_name`。石器时代伐木场因此显示打制石器，而不是代表物资 `tools` 的「金属工具」。运行时仍按冻结科技可用候选的有效成本选择，不因 UI 文案改变。
 
 建造边使用同一套机制：`BuildingProfile.construction_category_ids` /
@@ -1842,10 +1861,27 @@ marketable and absorbed soft-category demand before iron was researched.
 Suspended buyers publish nameplate desired demand into that same path so a
 paused flint quarry can still seed chipped-stone demand. Investment quotes
 bill soft inputs only for the covered (stocked/offered) share and apply soft
-coverage as throughput efficiency rather than an entry-utilization ceiling.
+coverage as an independent output bonus rather than an entry-utilization
+ceiling. The production multiplier is `1 + Σ(required × coverage)`, so
+multiple soft inputs add together while activity, jobs, resources, and base
+input purchasing remain bounded by the ordinary activity scale.
 When every soft-input
 candidate fails availability, investment keeps coverage/bill at zero and
 continues — it must not emit `INPUT_CHAIN` the way a missing hard input does.
+
+建筑经济报价（2026-09-30）：`owner_opportunity_quote` 是就业、投资和生产诊断共用的
+周期报价。owner 到岗率 `owner_run_q16` 只作为运行规模；气候和自然资源分别计算
+`climate_factor_q16`、`resource_factor_q16`，自然产能为两者的 Q16 乘积，软投入只写入
+`soft_productivity_q16` 生产率倍率。报价同时保留 `natural_max_output`、
+`optimal_output`、`fundable_output` 和 `actual_output`，用于区分自然上限、收益目标、
+资金可支付上限和最终结算产量。岗位目录的 `employee_reference_wages_per_day` 进入
+`JobRole::base_wage_per_day`，作为缺少动态合同工资时的基本工资成本和查询字段；动态
+合同工资仍由就业阶段更新，实际工资转移仍走原有守恒结算。
+
+关闭审计的增量快速路径若得到非零人口、货币或商品守恒误差，会在判定 fatal 前
+仅对此周期执行一次全量账本重算。全量审计平衡时以全量结果完成提交，并停用后续
+增量审计；全量审计仍不平衡时才报告守恒 fatal。正常周期仍使用原快速路径，不增加
+全表扫描。
 
 Shadow-derived pricing (2026-09-26): one-hop derived/substitute demand enters
 price formation only as weighted pressure
@@ -1940,10 +1976,14 @@ desired demand、business EMA、merchant target、价格响应、试算需求上
 
 ## 软投入与生存生产（2026-09-27）
 
-`required_q16 < Q16_ONE` 的生产投入属于可选生产增强：生产端按“软投入带来的
-边际产出价值是否超过投入成本”决定是否购买。未购买时不扣库存、不计入成本，也不
-发布对应的完整企业需求/短缺压力；购买后才计入投入成本，并按库存覆盖度提供效率加成。
-该判断按本轮市场的 catalog input edge 缓存，避免在报价、结算和商业需求汇总中重复报价。
+`required_q16 < Q16_ONE` 的生产投入属于可选生产增强。生产端估算软投入带来的增量产出，
+先扣除基准产量本来能满足的业主自用需求，再把剩余增产按上一期同格同商品的商人实购占比
+和兜底支持占比分段估值：商人部分按本地有效收购价，兜底部分按零售价的五分之一。新组
+没有历史销量时，首期按正常商人收购估值。只有增量收入大于软投入采购支出才购买；采购
+支出包含本地交易税。上一期可售量与商人实购量在 epoch 边界冻结为瞬态快照，不进入
+PKEC 或权威状态哈希。未购买时不扣库存、不计入成本，也不发布对应的完整企业需求/短缺
+压力；购买后才计入投入成本，并按库存覆盖度提供效率加成。该判断按本轮市场的 catalog
+input edge 缓存。
 
 所有建筑的 owner 自用产出都属于 owner 的实物收入，并与现金收入共同参与经营可行性
 判断；已有结算值优先复用，只有没有结算值的新组才做一次机会报价。硬投入、资源、气候

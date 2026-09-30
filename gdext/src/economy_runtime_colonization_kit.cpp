@@ -1172,7 +1172,16 @@ bool NativeEconomyRuntime::advance_family_expedition_procurement(
             return false;
         }
         if (route != CountryWorkerAssetRoute::NOT_APPLICABLE) {
-            c.active = false;
+            // The market -> Country leg has already committed at this point.
+            // Country worker backpressure (including a temporarily closed
+            // operation gate) must not discard that completed leg: doing so
+            // leaves cash and market goods debited while the expedition cargo
+            // is still empty, which later trips the global conservation audit.
+            // Keep the continuation at phase 4 and retry the treasury ->
+            // expedition transfer on the next pulse.
+            c.host_peer = false;
+            c.phase = 4;
+            error = "colonization_treasury_transfer_pending";
             return false;
         }
         const godot::PackedInt32Array packed_ids = [&]() {
