@@ -152,7 +152,7 @@ func _run() -> void:
 		print("restore=", restored_result, " page=", restored_page,
 			" saved_schema=", saved.get("schema", 0))
 	_expect("PKEC v54 restores in-flight route, payload, cargo and due heap exactly",
-		int(saved.get("schema", 0)) == 54
+		int(saved.get("schema", 0)) == 55
 		and bool(restored_result.get("ok", false))
 		and int(restored_page.get("total", 0)) == 1
 		and int(restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))
@@ -882,7 +882,7 @@ func _run_greenfield_kit_and_return(catalog: Dictionary) -> void:
 	var restored: Object = restored_fixture.ext
 	var restored_result := _restore_economy(restored, saved.get("chunks", []))
 	_expect("PKEC v54 restores in-flight kit cargo and frozen buildings",
-		int(saved.get("schema", 0)) == 54
+		int(saved.get("schema", 0)) == 55
 		and bool(restored_result.get("ok", false))
 		and int(restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))
 	var cancelled: Dictionary = ext.cancel_family_colonization(
@@ -1575,7 +1575,7 @@ func _run_zero_stock_partial_kit(catalog: Dictionary) -> void:
 	var restored: Object = restored_fixture.ext
 	var restored_result := _restore_economy(restored, saved.get("chunks", []))
 	_expect("v54 preparing/outbound expeditions restore with matching state hash",
-		int(saved.get("schema", 0)) == 54
+		int(saved.get("schema", 0)) == 55
 		and bool(restored_result.get("ok", false))
 		and int(restored.get_economy_state_hash()) == int(ext.get_economy_state_hash()))
 
@@ -1797,8 +1797,9 @@ func _make_two_country_fixture(catalog: Dictionary, seed: int) -> Dictionary:
 	var profile: Dictionary = load(
 		"res://data/economy/default_economy.tres").to_native_profile()
 	profile.family_runtime_mode = "ACTIVE"
-	profile.family_min_settlement_tier = 0
-	profile.family_min_population_per_active = 1
+	profile.family_milestone_populations = PackedInt64Array([1, 2, 3, 4, 5, 6, 7, 8])
+	profile.family_min_founder_people = 20
+	profile.family_founding_choice_mode = "AUTO"
 	profile.notable_person_runtime_mode = "ACTIVE"
 	profile.starvation_death_rate_q32 = 0
 	var birth_rates: PackedInt64Array = catalog.signature_birth_rate_q32
@@ -1904,8 +1905,9 @@ func _make_fixture(catalog: Dictionary, seed: int, stock_fill: int = 1000000,
 	var profile: Dictionary = load(
 		"res://data/economy/default_economy.tres").to_native_profile()
 	profile.family_runtime_mode = "ACTIVE"
-	profile.family_min_settlement_tier = 0
-	profile.family_min_population_per_active = 1
+	profile.family_milestone_populations = PackedInt64Array([1, 2, 3, 4, 5, 6, 7, 8])
+	profile.family_min_founder_people = 20
+	profile.family_founding_choice_mode = "AUTO"
 	profile.notable_person_runtime_mode = "ACTIVE"
 	profile.starvation_death_rate_q32 = 0
 	var birth_rates: PackedInt64Array = catalog.signature_birth_rate_q32

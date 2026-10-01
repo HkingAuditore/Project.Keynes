@@ -10,6 +10,7 @@ signal command_settled(id: StringName, result: Dictionary)
 signal regeneration_requested()
 signal country_committed(report: Dictionary)
 signal era_reward_offer_changed(offer: Dictionary)
+signal family_founding_offer_changed(offer: Dictionary)
 
 const COMMAND_RESEARCH_SET_WEIGHTS := &"research.set_weights"
 const COMMAND_RESEARCH_SET_BUDGET := &"research.set_budget"
@@ -28,6 +29,7 @@ const COMMAND_CONSTRUCTION_BUILD := &"construction.build"
 const COMMAND_FAMILY_COLONIZATION_START := &"family.colonization.start"
 const COMMAND_FAMILY_COLONIZATION_CANCEL := &"family.colonization.cancel"
 const COMMAND_ERA_REWARD_CHOOSE := &"era_reward.choose"
+const COMMAND_FAMILY_FOUNDING_CHOOSE := &"family.founding.choose"
 const COMMAND_IDEOLOGY_OFFER := &"ideology.offer"
 const COMMAND_IDEOLOGY_CHOOSE := &"ideology.choose"
 const COMMAND_IDEOLOGY_EQUIP := &"ideology.equip"
@@ -52,6 +54,7 @@ const SUPPORTED_COMMANDS := {
 	COMMAND_FAMILY_COLONIZATION_START: true,
 	COMMAND_FAMILY_COLONIZATION_CANCEL: true,
 	COMMAND_ERA_REWARD_CHOOSE: true,
+	COMMAND_FAMILY_FOUNDING_CHOOSE: true,
 	COMMAND_IDEOLOGY_OFFER: true,
 	COMMAND_IDEOLOGY_CHOOSE: true,
 	COMMAND_IDEOLOGY_EQUIP: true,
@@ -77,6 +80,11 @@ var _era_reward_previous_speed := 1.0
 var _era_reward_generation := 0
 var _era_reward_last_status := "NONE"
 var _era_reward_drain_active := false
+var _family_founding_locked := false
+var _family_founding_resume_running := false
+var _family_founding_previous_speed := 1.0
+var _family_founding_offer_id := 0
+var _family_founding_generation := 0
 
 
 func configure(
@@ -195,6 +203,7 @@ func refresh_country_binding() -> void:
 	if _country_facade != null:
 		_resolve_player_country()
 		_sync_era_reward_offer()
+	_sync_family_founding_offer()
 
 
 func capture_view_state() -> Dictionary:
@@ -207,6 +216,9 @@ func capture_view_state() -> Dictionary:
 		"era_reward_resume_running": _era_reward_resume_running,
 		"era_reward_previous_speed": _era_reward_previous_speed,
 		"era_reward_generation": _era_reward_generation,
+		"family_founding_locked": _family_founding_locked,
+		"family_founding_resume_running": _family_founding_resume_running,
+		"family_founding_previous_speed": _family_founding_previous_speed,
 	}
 
 
@@ -216,6 +228,13 @@ func restore_view_state(map, state: Dictionary) -> void:
 	_era_reward_previous_speed = float(state.get("era_reward_previous_speed", 1.0))
 	_era_reward_generation = int(state.get("era_reward_generation", 0))
 	_era_reward_locked = bool(state.get("era_reward_locked", false))
+	_family_founding_resume_running = bool(state.get(
+		"family_founding_resume_running", false))
+	_family_founding_previous_speed = float(state.get(
+		"family_founding_previous_speed", 1.0))
+	_family_founding_locked = bool(state.get("family_founding_locked", false))
+	_family_founding_offer_id = 0
+	_family_founding_generation = 0
 	if _camera != null:
 		var saved_position = state.get(
 			"camera_position", _camera.global_position)
@@ -235,12 +254,17 @@ func restore_view_state(map, state: Dictionary) -> void:
 		else:
 			clear_selection()
 	_sync_era_reward_offer()
+	_sync_family_founding_offer()
 
 
 func request_command(id: StringName, args: Dictionary = {}) -> Dictionary:
 	if _era_reward_locked and id != COMMAND_ERA_REWARD_CHOOSE:
 		return _complete_command(id, _result(false,
 			"era_reward_choice_required", "必须先完成时代奖励选择。"))
+	if _family_founding_locked and id != COMMAND_FAMILY_FOUNDING_CHOOSE \
+			and id != COMMAND_ERA_REWARD_CHOOSE:
+		return _complete_command(id, _result(false,
+			"family_founding_choice_required", "必须先选择要扶持的家族。"))
 	if not SUPPORTED_COMMANDS.has(id):
 		return _complete_command(id, _result(false, "unsupported_command", "该正式玩家命令尚未开放。"))
 	var ready := _resolve_player_country()
@@ -253,7 +277,8 @@ func request_command(id: StringName, args: Dictionary = {}) -> Dictionary:
 	var effective_day := maxi(0, _world_clock.day_index()) \
 		if id == COMMAND_FAMILY_COLONIZATION_START or \
 		id == COMMAND_FAMILY_COLONIZATION_CANCEL or \
-		id == COMMAND_ERA_REWARD_CHOOSE else _next_effective_day()
+		id == COMMAND_ERA_REWARD_CHOOSE or \
+		id == COMMAND_FAMILY_FOUNDING_CHOOSE else _next_effective_day()
 	var sequence := _command_sequence
 	_command_sequence += 1
 	var result: Dictionary
@@ -325,6 +350,15 @@ func request_command(id: StringName, args: Dictionary = {}) -> Dictionary:
 			result = facade.choose_era_reward(
 				int(args.get("offer_generation", 0)),
 				int(args.get("choice_index", -1)), effective_day)
+		COMMAND_FAMILY_FOUNDING_CHOOSE:
+			result = _economy_facade.submit_family_founding_choice(
+				int(args.get("offer_id", 0)), int(args.get("generation", 0)),
+				int(args.get("choice_index", -1)), effective_day)
+			if not bool(result.get("ok", false)):
+				result["code"] = String(result.get("reason", "command_rejected"))
+				result["message"] = "家族扶持选择未被接受，请重试。"
+			else:
+				result["message"] = "已选定扶持家族，将在下一次经济结算时立族。"
 		COMMAND_IDEOLOGY_OFFER:
 			result = _ideology_facade.request_offer(
 				_player_country_handle, effective_day, sequence)
@@ -465,7 +499,9 @@ func _dispatch_player_input(event: InputEvent) -> void:
 	var key := event as InputEventKey
 	var debug_hotkeys_enabled := OS.is_debug_build()
 	if key.is_action_pressed(&"player_pause"):
-		if _world_clock != null:
+		if _family_founding_locked:
+			get_viewport().set_input_as_handled()
+		elif _world_clock != null:
 			_world_clock.toggle_pause()
 			sync_ui()
 			get_viewport().set_input_as_handled()
@@ -523,6 +559,7 @@ func _on_simulation_committed(_from_day: int, to_day: int, _generation: int) -> 
 	if _ui_manager != null and _selected_cell != null:
 		_ui_manager.refresh_selected_daily_lines(false, to_day)
 	_sync_era_reward_offer()
+	_sync_family_founding_offer()
 
 
 func _connect_ui() -> void:
@@ -541,6 +578,11 @@ func _connect_ui() -> void:
 				_on_era_reward_choice_requested):
 		_ui_manager.era_reward_choice_requested.connect(
 			_on_era_reward_choice_requested)
+	if _ui_manager.has_signal("family_founding_choice_requested") and not \
+			_ui_manager.family_founding_choice_requested.is_connected(
+				_on_family_founding_choice_requested):
+		_ui_manager.family_founding_choice_requested.connect(
+			_on_family_founding_choice_requested)
 	_ui_manager.set_player_controller(self)
 	refresh_country_binding()
 
@@ -565,6 +607,7 @@ func get_player_country_handle() -> int:
 func _on_country_committed(report: Dictionary) -> void:
 	country_committed.emit(report)
 	_sync_era_reward_offer()
+	_sync_family_founding_offer()
 
 
 func _on_construction_command_settled(result: Dictionary) -> void:
@@ -602,6 +645,7 @@ func _on_day_changed(day_idx: int) -> void:
 	# presentation state; keeping simulation out of this callback prevents a
 	# second SUS invocation when a worker commit is introduced.
 	_sync_era_reward_offer()
+	_sync_family_founding_offer()
 	if _economy_facade != null and _player_country_handle != 0 and \
 			_economy_facade.has_method("dispatch_family_colonization_receipts"):
 		_economy_facade.dispatch_family_colonization_receipts(
@@ -659,6 +703,9 @@ func _on_pause_toggled(paused: bool) -> void:
 			and _runtime_host.is_runtime_fault_paused() and not paused:
 		sync_ui()
 		return
+	if _family_founding_locked and not paused:
+		sync_ui()
+		return
 	_world_clock.pause(paused)
 	sync_ui()
 
@@ -668,6 +715,11 @@ func _on_speed_selected(speed: float) -> void:
 		return
 	if _runtime_host != null and _runtime_host.has_method("is_runtime_fault_paused") \
 			and _runtime_host.is_runtime_fault_paused():
+		sync_ui()
+		return
+	if _family_founding_locked:
+		_family_founding_previous_speed = speed
+		_family_founding_resume_running = true
 		sync_ui()
 		return
 	_world_clock.set_speed(speed)
@@ -858,6 +910,17 @@ func _validate_command_args(id: StringName, args: Dictionary, facade = null) -> 
 					or generation != _era_reward_generation:
 				return _result(false, "era_reward_choice_invalid",
 					"时代奖励代际或选项无效。")
+		COMMAND_FAMILY_FOUNDING_CHOOSE:
+			if _economy_facade == null or not _economy_facade.has_method(
+					"submit_family_founding_choice"):
+				return _result(false, "runtime_unavailable", "经济运行时尚未就绪。")
+			var founding_choice := int(args.get("choice_index", -1))
+			if founding_choice < 0 or founding_choice > 2 \
+					or int(args.get("offer_id", 0)) != _family_founding_offer_id \
+					or _family_founding_offer_id <= 0 \
+					or int(args.get("generation", 0)) != _family_founding_generation:
+				return _result(false, "family_founding_choice_invalid",
+					"家族候选已过期或选项无效。")
 		COMMAND_IDEOLOGY_OFFER:
 			if _ideology_facade == null:
 				return _result(false, "runtime_unavailable", "理念运行时尚未就绪。")
@@ -941,10 +1004,82 @@ func _sync_era_reward_offer() -> void:
 		_era_reward_generation = 0
 		sync_ui()
 		era_reward_offer_changed.emit(offer)
+		_sync_family_founding_offer()
 
 
 func era_reward_locked() -> bool:
 	return _era_reward_locked
+
+
+func family_founding_locked() -> bool:
+	return _family_founding_locked
+
+
+func _on_family_founding_choice_requested(offer_id: int, generation: int,
+		choice_index: int) -> void:
+	var result := request_command(COMMAND_FAMILY_FOUNDING_CHOOSE, {
+		"offer_id": offer_id,
+		"generation": generation,
+		"choice_index": choice_index,
+	})
+	if not bool(result.get("ok", false)) and _ui_manager != null \
+			and _ui_manager.has_method("show_family_founding_error"):
+		_ui_manager.show_family_founding_error(String(result.get("message", "")))
+	_sync_family_founding_offer()
+
+
+## Player-owned milestone offers block the session one at a time. Era rewards
+## take precedence: a founding pick waits (hidden) while an era reward is open.
+func _sync_family_founding_offer() -> void:
+	if _economy_facade == null or not _economy_facade.has_method(
+			"family_founding_offers"):
+		return
+	var snapshot: Dictionary = _economy_facade.family_founding_offers(0, 64)
+	if not bool(snapshot.get("ok", false)):
+		return
+	var open_offers: Array = []
+	for offer in snapshot.get("offers", []):
+		if bool(offer.get("player_choice", false)) \
+				and String(offer.get("status", "")) == "OPEN":
+			open_offers.append(offer)
+	if open_offers.is_empty():
+		if _family_founding_locked:
+			if _ui_manager != null and _ui_manager.has_method(
+					"close_family_founding_offer"):
+				_ui_manager.close_family_founding_offer()
+			_family_founding_locked = false
+			_family_founding_offer_id = 0
+			_family_founding_generation = 0
+			if _era_reward_locked:
+				_era_reward_resume_running = _family_founding_resume_running
+				_era_reward_previous_speed = _family_founding_previous_speed
+			elif _world_clock != null:
+				_world_clock.set_speed(_family_founding_previous_speed)
+				_world_clock.pause(not _family_founding_resume_running)
+			sync_ui()
+			family_founding_offer_changed.emit({})
+		return
+	if not _family_founding_locked:
+		_family_founding_resume_running = _world_clock != null and not _world_clock.paused
+		_family_founding_previous_speed = _world_clock.speed_multiplier \
+			if _world_clock != null else 1.0
+		_family_founding_locked = true
+	if _world_clock != null:
+		_world_clock.pause(true)
+	var current: Dictionary = open_offers[0]
+	current["queue_remaining"] = open_offers.size() - 1
+	var changed := int(current.get("offer_id", 0)) != _family_founding_offer_id
+	_family_founding_offer_id = int(current.get("offer_id", 0))
+	_family_founding_generation = int(current.get("generation", 0))
+	if _ui_manager != null and _ui_manager.has_method("show_family_founding_offer"):
+		if _era_reward_locked:
+			if _ui_manager.is_family_founding_modal_open():
+				_ui_manager.close_family_founding_offer()
+		elif changed or not _ui_manager.is_family_founding_modal_open():
+			_ui_manager.show_family_founding_offer(current)
+	sync_ui()
+	if changed:
+		family_founding_offer_changed.emit(current)
 
 
 func _tax_item_exists(facade, kind: int, item_id: StringName) -> bool:

@@ -23,6 +23,7 @@
 [ext_resource type="PackedScene" path="res://scenes/ui/colonization_planner_panel.tscn" id="25_colonization_panel"]
 [ext_resource type="PackedScene" path="res://scenes/ui/era_reward_dialog.tscn" id="26_era_reward"]
 [ext_resource type="Theme" path="res://assets/themes/player_ui_theme.tres" id="27_legacy_theme"]
+[ext_resource type="PackedScene" path="res://scenes/ui/family/family_founding_dialog.tscn" id="28_family_founding"]
 
 [node name="PlayerGame" type="Node2D" unique_id=198229795]
 script = ExtResource("1_player")
@@ -138,6 +139,10 @@ mouse_filter = 2
 
 [node name="ColonizationPlannerPanel" parent="UI/UIRoot/ModalLayer" unique_id=798826369 instance=ExtResource("25_colonization_panel")]
 unique_name_in_owner = true
+
+[node name="FamilyFoundingDialog" parent="UI/UIRoot/ModalLayer" unique_id=1837402615 instance=ExtResource("28_family_founding")]
+unique_name_in_owner = true
+layout_mode = 1
 
 [node name="EraRewardDialog" parent="UI/UIRoot/ModalLayer" unique_id=1525594621 instance=ExtResource("26_era_reward")]
 unique_name_in_owner = true

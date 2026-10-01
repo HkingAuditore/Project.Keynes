@@ -14322,18 +14322,43 @@ void NativeEconomyRuntime::assign_core_family_traits(int32_t family_index) {
             families_store().active.size()) || families_store().active[family_index] == 0 ||
         _family_trait_ids.empty()) return;
     const uint64_t family_handle = families_store().handle_for_index(family_index);
+    const int32_t origin = families_store().origin_cell[family_index];
+    const int32_t home = families_store().home_cell[family_index];
+    const int32_t tech_cell = origin >= 0 && origin < _cell_count ? origin : home;
+    const int32_t origin_cell = origin >= 0 && origin < _cell_count
+        ? origin : tech_cell;
+    std::vector<int32_t> selected, strengths;
+    roll_core_family_traits(static_cast<uint64_t>(
+        families_store().stable_id[family_index]), tech_cell, origin_cell,
+        selected, strengths);
+    for (size_t i = 0; i < selected.size(); ++i)
+        family_trait_rolls().push_back({family_handle, selected[i], strengths[i], 1});
+    std::sort(family_trait_rolls().begin(), family_trait_rolls().end(),
+        [](const FamilyTraitRoll &a, const FamilyTraitRoll &b) {
+            return std::tie(a.family_handle, a.trait_id) <
+                std::tie(b.family_handle, b.trait_id);
+        });
+    if (!selected.empty())
+        mark_family_behavior_cache_dirty(FAMILY_BEHAVIOR_DIRTY_TRAITS);
+}
+
+int32_t NativeEconomyRuntime::roll_core_family_traits(
+        uint64_t stable_id, int32_t tech_cell, int32_t origin_cell,
+        std::vector<int32_t> &selected, std::vector<int32_t> &strengths) const {
+    selected.clear();
+    strengths.clear();
+    if (_family_trait_ids.empty()) return 0;
     uint64_t rng = 1469598103934665603ULL;
     rng = trace_hash_mix(rng, static_cast<uint64_t>(_seed));
-    rng = trace_hash_mix(rng, static_cast<uint64_t>(
-        families_store().stable_id[family_index]));
+    rng = trace_hash_mix(rng, stable_id);
     rng = trace_hash_mix(rng, static_cast<uint32_t>(
         _family_trait_catalog_version));
     const int32_t span = _family_core_trait_max - _family_core_trait_min + 1;
     const int32_t desired = _family_core_trait_min + static_cast<int32_t>(
         trace_hash_mix(rng, 0x434f554e54ULL) %
         static_cast<uint64_t>(std::max(1, span)));
-    std::vector<int32_t> selected;
     selected.reserve(desired);
+    strengths.reserve(desired);
     for (int32_t pick = 0; pick < desired; ++pick) {
         std::vector<int32_t> candidates;
         int64_t total_weight = 0;
@@ -14356,8 +14381,9 @@ void NativeEconomyRuntime::assign_core_family_traits(int32_t family_index) {
                      allowed && p < _family_trait_exclusion_offsets[chosen + 1]; ++p)
                     allowed = _family_trait_exclusions[p] != trait_id;
             }
-            allowed = allowed && family_trait_context_allows(
-                trait_id, family_index);
+            allowed = allowed &&
+                family_trait_technology_unlocked(trait_id, tech_cell) &&
+                family_trait_origin_gates_allow(trait_id, origin_cell);
             if (!allowed) continue;
             candidates.push_back(trait_id);
             total_weight += _family_trait_weights[trait_id];
@@ -14383,15 +14409,9 @@ void NativeEconomyRuntime::assign_core_family_traits(int32_t family_index) {
             trace_hash_mix(rng, 0x535452454e475448ULL +
                 static_cast<uint64_t>(pick)) %
             static_cast<uint64_t>(steps + 1));
-        family_trait_rolls().push_back({family_handle, chosen, strength, 1});
+        strengths.push_back(strength);
     }
-    std::sort(family_trait_rolls().begin(), family_trait_rolls().end(),
-        [](const FamilyTraitRoll &a, const FamilyTraitRoll &b) {
-            return std::tie(a.family_handle, a.trait_id) <
-                std::tie(b.family_handle, b.trait_id);
-        });
-    if (!selected.empty())
-        mark_family_behavior_cache_dirty(FAMILY_BEHAVIOR_DIRTY_TRAITS);
+    return static_cast<int32_t>(selected.size());
 }
 
 void NativeEconomyRuntime::mark_family_behavior_cache_dirty(uint32_t reason) {
@@ -17088,10 +17108,11 @@ void NativeEconomyRuntime::update_family_employment_attribution() {
 
 int32_t NativeEconomyRuntime::create_family_for_building(
         int32_t cell, int32_t building_index, int64_t founders,
-        int64_t filled_owner, bool allow_small_starter) {
+        int64_t filled_owner, bool allow_small_starter,
+        const FamilyFoundingIdentity *identity) {
     if (cell < 0 || cell >= _cell_count || building_index < 0 ||
         building_index >= static_cast<int32_t>(building_count()) || founders <= 0 ||
-        (!allow_small_starter && founders < FAMILY_MIN_ACTIVE_PEOPLE)) return -1;
+        (!allow_small_starter && founders < _family_min_founder_people)) return -1;
     const auto group = building_at(static_cast<size_t>(building_index));
     if (group.cell != cell || group.count <= 0 || group.modifier_handle == 0)
         return -1;
@@ -17106,8 +17127,11 @@ int32_t NativeEconomyRuntime::create_family_for_building(
     hash = trace_hash_mix(hash, static_cast<uint64_t>(identity_day));
     hash = trace_hash_mix(hash, static_cast<uint32_t>(cell));
     hash = trace_hash_mix(hash, static_cast<uint32_t>(family_index));
-    int64_t stable_id = static_cast<int64_t>(
-        (hash & 0x7fffffffffffffffULL) | 1ULL);
+    if (identity != nullptr && identity->stable_id > 0)
+        hash = static_cast<uint64_t>(identity->stable_id);
+    int64_t stable_id = identity != nullptr && identity->stable_id > 0
+        ? identity->stable_id
+        : static_cast<int64_t>((hash & 0x7fffffffffffffffULL) | 1ULL);
     for (uint64_t probe = 1;
          _family_stable_ids.count(stable_id) != 0; ++probe) {
         stable_id = static_cast<int64_t>((trace_hash_mix(hash, probe) &
@@ -17119,18 +17143,23 @@ int32_t NativeEconomyRuntime::create_family_for_building(
     const int32_t culture_group = founder_ethnicity >= 0 &&
         founder_ethnicity < static_cast<int32_t>(_ethnicity_culture_group_ids.size())
         ? _ethnicity_culture_group_ids[founder_ethnicity] : 0;
-    int64_t total_weight = 0;
-    for (size_t i = 0; i < _family_surname_weights.size(); ++i)
-        if (_family_surname_culture_group_ids[i] == culture_group)
-            total_weight += _family_surname_weights[i];
-    int64_t roll = static_cast<int64_t>(trace_hash_mix(
-        trace_hash_mix(hash, static_cast<uint64_t>(culture_group)),
-        0x5355524eULL) % static_cast<uint64_t>(std::max<int64_t>(1, total_weight)));
     int32_t surname = 0;
-    for (int32_t candidate = 0; candidate < static_cast<int32_t>(_family_surname_weights.size()); ++candidate) {
-        if (_family_surname_culture_group_ids[candidate] != culture_group) continue;
-        if (roll < _family_surname_weights[candidate]) { surname = candidate; break; }
-        roll -= _family_surname_weights[candidate];
+    if (identity != nullptr && identity->surname_id >= 0 &&
+        identity->surname_id < static_cast<int32_t>(_family_surname_weights.size())) {
+        surname = identity->surname_id;
+    } else {
+        int64_t total_weight = 0;
+        for (size_t i = 0; i < _family_surname_weights.size(); ++i)
+            if (_family_surname_culture_group_ids[i] == culture_group)
+                total_weight += _family_surname_weights[i];
+        int64_t roll = static_cast<int64_t>(trace_hash_mix(
+            trace_hash_mix(hash, static_cast<uint64_t>(culture_group)),
+            0x5355524eULL) % static_cast<uint64_t>(std::max<int64_t>(1, total_weight)));
+        for (int32_t candidate = 0; candidate < static_cast<int32_t>(_family_surname_weights.size()); ++candidate) {
+            if (_family_surname_culture_group_ids[candidate] != culture_group) continue;
+            if (roll < _family_surname_weights[candidate]) { surname = candidate; break; }
+            roll -= _family_surname_weights[candidate];
+        }
     }
     uint32_t disambiguator = 0;
     // Only same-surname families can shift the disambiguator, so consult that
@@ -17184,7 +17213,36 @@ int32_t NativeEconomyRuntime::create_family_for_building(
             .owner_slots_per_building) : 0;
     family_ownerships().push_back({family_handle, group.modifier_handle, 1,
         std::min(membership.owner_employed, founder_owner_capacity)});
-    assign_core_family_traits(family_index);
+    if (identity != nullptr && identity->trait_ids != nullptr &&
+        identity->trait_strength_q16 != nullptr &&
+        identity->trait_ids->size() == identity->trait_strength_q16->size()) {
+        bool pushed = false;
+        for (size_t i = 0; i < identity->trait_ids->size(); ++i) {
+            const int32_t trait_id = (*identity->trait_ids)[i];
+            if (trait_id < 0 || trait_id >= static_cast<int32_t>(_family_trait_ids.size()))
+                continue;
+            family_trait_rolls().push_back({family_handle, trait_id,
+                (*identity->trait_strength_q16)[i], 1});
+            pushed = true;
+        }
+        std::sort(family_trait_rolls().begin(), family_trait_rolls().end(),
+            [](const FamilyTraitRoll &a, const FamilyTraitRoll &b) {
+                return std::tie(a.family_handle, a.trait_id) <
+                    std::tie(b.family_handle, b.trait_id);
+            });
+        if (pushed) mark_family_behavior_cache_dirty(FAMILY_BEHAVIOR_DIRTY_TRAITS);
+    } else {
+        assign_core_family_traits(family_index);
+    }
+    if (identity != nullptr && identity->effect_id >= 0) {
+        auto it = std::lower_bound(_family_founding_effects.begin(),
+            _family_founding_effects.end(), std::make_pair(stable_id,
+                std::numeric_limits<int32_t>::min()));
+        if (it != _family_founding_effects.end() && it->first == stable_id)
+            it->second = identity->effect_id;
+        else
+            _family_founding_effects.insert(it, {stable_id, identity->effect_id});
+    }
     ++_families_formed;
     _family_indices_dirty = true;
     return family_index;
@@ -17229,75 +17287,6 @@ bool NativeEconomyRuntime::repair_forced_capital_founder(int32_t cell) {
             owner_slots, true) >= 0;
     }
     return false;
-}
-
-bool NativeEconomyRuntime::form_family_for_cell(int32_t cell) {
-    if (_family_runtime_mode != 2 || cell < 0 || cell >= _cell_count ||
-        _settlements.tier[cell] < _family_min_settlement_tier ||
-        _committed_cells[cell].population < _family_min_population_per_active)
-        return false;
-    if (_family_cell_offsets.size() == static_cast<size_t>(_cell_count + 1) &&
-        _family_cell_offsets[cell + 1] - _family_cell_offsets[cell] >=
-            _family_max_per_cell) return false;
-    const int32_t first = _building_cell_offsets[cell];
-    const int32_t last = _building_cell_offsets[cell + 1];
-    int32_t best = -1;
-    for (int32_t g = first; g < last; ++g) {
-        const auto group = building_at(static_cast<size_t>(g));
-        if (group.count <= 0 || group.modifier_handle == 0 ||
-            group.operating_state != 0) continue;
-        const BuildingType &type = _building_types[group.type_id];
-        const int64_t owner_slots = type.owner_slots_per_building;
-        if (owner_slots <= 0 || group.filled_owner < owner_slots ||
-            group.realized_profit_margin_q16 < type.target_operating_margin_q16)
-            continue;
-        int64_t family_owned = 0;
-        if (_family_building_offsets.size() == building_count() + 1) {
-            for (int32_t p = _family_building_offsets[g];
-                 p < _family_building_offsets[g + 1]; ++p)
-                family_owned += family_ownerships()[
-                    _family_building_edge_indices[p]].owned_count;
-        }
-        if (family_owned >= group.count) continue;
-        const int32_t slot = find_cohort_slot(cell, group.owner_signature_id);
-        if (slot < 0) continue;
-        int64_t family_people = 0;
-        if (_family_cohort_offsets.size() == population_store().active.size() + 1) {
-            for (int32_t p = _family_cohort_offsets[slot];
-                 p < _family_cohort_offsets[slot + 1]; ++p)
-                family_people += family_memberships()[
-                    _family_cohort_edge_indices[p]].people;
-        }
-        if (population_store().population[slot] - family_people < owner_slots)
-            continue;
-        int64_t sat = 0;
-        const int64_t living_cost = living_cost_for_signature(cell,
-            group.owner_signature_id, -1, sat);
-        const int64_t projected_income = projected_owner_income_per_day(
-            group, sat);
-        if (projected_income <= living_cost) continue;
-        const int64_t reserve = saturating_mul(saturating_mul(living_cost,
-            owner_slots, sat), 30, sat);
-        const int64_t anonymous_cash = population_store().population[slot] > 0
-            ? mul_div_sat(population_store().funds[slot],
-                population_store().population[slot] - family_people,
-                population_store().population[slot], _saturation_count) : 0;
-        if (anonymous_cash < reserve) continue;
-        if (best < 0 || std::tie(group.realized_profit_margin_q16,
-                group.last_revenue, group.type_id, group.owner_signature_id) >
-            std::tie(buildings_store().realized_profit_margin_q16[best],
-                buildings_store().last_revenue[best], buildings_store().type_id[best],
-                buildings_store().owner_signature_id[best])) best = g;
-    }
-    if (best < 0) return false;
-    const auto group = building_at(static_cast<size_t>(best));
-    const BuildingType &type = _building_types[group.type_id];
-    const int32_t slot = find_cohort_slot(cell, group.owner_signature_id);
-    const int64_t owner_slots = type.owner_slots_per_building;
-    if (slot < 0 || owner_slots <= 0) return false;
-    const int64_t founders = family_household_people_for_slot(slot, owner_slots);
-    if (founders < FAMILY_MIN_ACTIVE_PEOPLE) return false;
-    return create_family_for_building(cell, best, founders, owner_slots) >= 0;
 }
 
 void NativeEconomyRuntime::split_family_branches() {
@@ -19221,6 +19210,7 @@ bool NativeEconomyRuntime::run_family_commit_slice(int64_t &work_done,
             mark_family_behavior_cache_dirty(
                 FAMILY_BEHAVIOR_DIRTY_CONDITION_METRICS);
         apply_due_family_trait_commands();
+        apply_due_family_founding_choices();
         normalize_family_memberships(false);
         absorb_family_households();
         _family_commit_normalize_ms += elapsed_ms(normalize_started);
@@ -19238,13 +19228,11 @@ bool NativeEconomyRuntime::run_family_commit_slice(int64_t &work_done,
             _family_cells_per_slice * _family_review_days);
         const int32_t end = std::min(_cell_count,
             _family_commit_cursor + scan_budget);
-        const int32_t phase = static_cast<int32_t>(((_current_day %
-            _family_review_days) + _family_review_days) % _family_review_days);
         for (; _family_commit_cursor < end; ++_family_commit_cursor) {
             const int32_t cell = _family_commit_cursor;
             const bool repaired = repair_forced_capital_founder(cell);
-            if (!repaired && cell % _family_review_days == phase)
-                form_family_for_cell(cell);
+            if (!repaired)
+                review_family_milestone(cell);
         }
         work_done += end - std::max(0, end - scan_budget);
         _family_commit_form_ms += elapsed_ms(form_started);
@@ -19297,6 +19285,7 @@ bool NativeEconomyRuntime::run_family_commit_slice(int64_t &work_done,
     rebuild_family_behavior_cache();
     if (structure_changed || refresh_influence)
         rebuild_family_owned_output_csr();
+    prune_family_founding_effects();
     _family_membership_edges_processed +=
         static_cast<int64_t>(family_memberships().size());
     _family_ownership_edges_processed +=
@@ -21313,6 +21302,7 @@ int64_t NativeEconomyRuntime::state_hash() const {
         mix_u64(static_cast<uint64_t>(command.sequence));
         mix_u64(command.submit_order);
     }
+    append_family_founding_hash(hash);
     mix_u64(0x455850454449544eULL); // "EXPEDITN"
     for (size_t i = 0; i < family_expeditions_store().active.size(); ++i) {
         mix_u64(i); mix_u64(family_expeditions_store().active[i]);
@@ -21903,6 +21893,7 @@ Dictionary NativeEconomyRuntime::reset(const String &reason) {
     _family_policy_stamped_cells.clear();
     _family_trigger_bindings.clear();
     _family_trait_commands.clear();
+    clear_family_founding_state();
     _family_effect_bindings.clear();
     _family_effect_binding_by_instance.clear();
     _family_effect_instances_by_branch.clear();

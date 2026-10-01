@@ -56,10 +56,10 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         int64_t saved_prosperity_profile_hash = 0;
         int64_t saved_family_catalog_hash = 0;
         int32_t saved_family_mode = _family_runtime_mode;
-        int32_t saved_family_min_tier = _family_min_settlement_tier;
+        int32_t saved_family_min_founders = static_cast<int32_t>(
+            _family_min_founder_people);
         int32_t saved_family_review_days = _family_review_days;
-        int64_t saved_family_min_population =
-            _family_min_population_per_active;
+        int64_t saved_family_milestone_hash = family_milestone_hash();
         int64_t saved_family_split_population_threshold =
             _family_split_population_threshold;
         int32_t saved_family_max_per_cell = _family_max_per_cell;
@@ -261,9 +261,9 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 return false;
             }
             if (!read_le(bytes, cursor, saved_family_mode) ||
-                !read_le(bytes, cursor, saved_family_min_tier) ||
+                !read_le(bytes, cursor, saved_family_min_founders) ||
                 !read_le(bytes, cursor, saved_family_review_days) ||
-                !read_le(bytes, cursor, saved_family_min_population) ||
+                !read_le(bytes, cursor, saved_family_milestone_hash) ||
                 (schema >= 40 && !read_le(bytes, cursor,
                     saved_family_split_population_threshold)) ||
                 !read_le(bytes, cursor, saved_family_max_per_cell) ||
@@ -272,10 +272,9 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 return false;
             }
             if (saved_family_mode != _family_runtime_mode ||
-                saved_family_min_tier != _family_min_settlement_tier ||
+                saved_family_min_founders != _family_min_founder_people ||
                 saved_family_review_days != _family_review_days ||
-                saved_family_min_population !=
-                    _family_min_population_per_active ||
+                saved_family_milestone_hash != family_milestone_hash() ||
                 saved_family_split_population_threshold !=
                     _family_split_population_threshold ||
                 saved_family_max_per_cell != _family_max_per_cell ||
@@ -820,6 +819,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         family_ownerships().clear();
         family_trait_rolls().clear();
         _family_trait_commands.clear();
+        clear_family_founding_state();
         _family_modifier_bindings.clear();
         _family_industry_stats.clear();
         _family_owned_output_rows.clear();
@@ -2837,6 +2837,10 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             ++_restore.restored_d7_peer_ext;
         }
         _restore.d7_peer_ext_seen = true;
+    } else if (section == SAVE_SECTION_FAMILY_FOUNDING) {
+        if (!read_family_founding_save_records(bytes, cursor, records, error))
+            return false;
+        _restore.family_founding_seen = true;
     } else if (section == SAVE_SECTION_END ||
                (schema == 33 && section == SAVE_SECTION_END_V33)) {
         if (records != 0 || payload_bytes != 0) {

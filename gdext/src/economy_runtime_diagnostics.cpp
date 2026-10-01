@@ -1090,6 +1090,11 @@ Dictionary NativeEconomyRuntime::compact_report() const {
     out["family_ownership_edges_processed"] =
         _family_ownership_edges_processed;
     out["families_formed"] = _families_formed;
+    out["family_offers_opened"] = _family_offers_opened;
+    out["family_offers_auto_resolved"] = _family_offers_auto_resolved;
+    out["family_offer_choice_rejected"] = _family_offer_choice_rejected;
+    out["family_offers_voided"] = _family_offers_voided;
+    out["family_offers_pending"] = static_cast<int64_t>(_family_founding_offers.size());
     out["families_dissolved"] = _families_dissolved;
     out["family_owner_jobs_filled"] = _family_owner_jobs_filled;
     out["family_owner_jobs_vacant"] = _family_owner_jobs_vacant;
@@ -2019,6 +2024,11 @@ Dictionary NativeEconomyRuntime::report() const {
     out["family_ownership_edges_processed"] =
         _family_ownership_edges_processed;
     out["families_formed"] = _families_formed;
+    out["family_offers_opened"] = _family_offers_opened;
+    out["family_offers_auto_resolved"] = _family_offers_auto_resolved;
+    out["family_offer_choice_rejected"] = _family_offer_choice_rejected;
+    out["family_offers_voided"] = _family_offers_voided;
+    out["family_offers_pending"] = static_cast<int64_t>(_family_founding_offers.size());
     out["families_dissolved"] = _families_dissolved;
     out["family_owner_jobs_filled"] = _family_owner_jobs_filled;
     out["family_owner_jobs_vacant"] = _family_owner_jobs_vacant;

@@ -754,6 +754,13 @@ void DCWorldExt::_bind_methods() {
                          &DCWorldExt::get_family_branch_effects);
     ClassDB::bind_method(D_METHOD("submit_family_trait_commands", "packed_batch"),
                          &DCWorldExt::submit_family_trait_commands);
+    ClassDB::bind_method(D_METHOD("get_family_founding_offers", "offset", "limit"),
+                         &DCWorldExt::get_family_founding_offers, DEFVAL(0),
+                         DEFVAL(16));
+    ClassDB::bind_method(D_METHOD("submit_family_founding_choice", "offer_id",
+                                 "generation", "choice_index", "effective_day",
+                                 "sequence"),
+                         &DCWorldExt::submit_family_founding_choice);
     ClassDB::bind_method(D_METHOD("get_family_industries", "family_handle",
                                  "offset", "limit"),
                          &DCWorldExt::get_family_industries, DEFVAL(0),

@@ -1087,6 +1087,7 @@ void NativeEconomyRuntime::abort_preparing_family_expedition(
         _family_expedition_procurement_continuation.expedition == expedition)
         _family_expedition_procurement_continuation =
             FamilyExpeditionProcurementContinuation{};
+    _family_expedition_procurement_rejections.erase(expedition);
     // Stocked goods were drawn from the source market and must go back there,
     // or cancelling a preparation would destroy them.
     if (family_expeditions_store().cargo_count[expedition] > 0) {
@@ -1160,6 +1161,7 @@ bool NativeEconomyRuntime::launch_preparing_family_expedition(
     family_expeditions_store().due_day[expedition] = day + travel;
     family_expeditions_store().missing_good_count[expedition] = 0;
     family_expeditions_store().kit_missing_stock_identity[expedition] = 0;
+    _family_expedition_procurement_rejections.erase(expedition);
     push_family_expedition_due(expedition);
     note_family_expedition_audit_invalidation();
     append_colonization_receipt(expedition, 0, day, day, 1, "STARTED");
@@ -1202,6 +1204,9 @@ bool NativeEconomyRuntime::advance_preparing_family_expedition(
             push_family_expedition_due(expedition);
             return true;
         }
+        if (!purchased)
+            note_family_expedition_procurement_rejection(expedition, good,
+                cargo_flags, day, error.empty() ? continuation.last_error : error);
         if (purchased && good >= 0 && quantity > 0) {
             const uint32_t begin =
                 family_expeditions_store().cargo_begin[expedition];
@@ -1271,7 +1276,7 @@ bool NativeEconomyRuntime::advance_preparing_family_expedition(
             "PREPARING_UNBUILDABLE");
         return true;
     }
-    if (!reserve_preparing_family_expedition_cargo(expedition, kit, error)) {
+    if (!reserve_preparing_family_expedition_cargo(expedition, kit, error, day)) {
         // Escrow accounting must never fatal the economy: keep what is already
         // held, report the shortfall, and try again tomorrow.
         error.clear();
@@ -1363,8 +1368,8 @@ bool NativeEconomyRuntime::apply_start_family_expedition(
     };
     if (needs_complete_kit && kit_incomplete)
         return occupy_preparing();
-    const bool cargo_reserved =
-        reserve_preparing_family_expedition_cargo(expedition, kit, error);
+    const bool cargo_reserved = reserve_preparing_family_expedition_cargo(
+        expedition, kit, error, cmd.effective_day);
     const FamilyExpeditionProcurementContinuation &continuation =
         _family_expedition_procurement_continuation;
     const bool procurement_pending = continuation.active &&
@@ -2259,6 +2264,7 @@ bool NativeEconomyRuntime::process_due_family_expeditions(
 void NativeEconomyRuntime::rebuild_family_expedition_indices() {
     _family_expedition_target_index.clear();
     _family_expedition_due_heap.clear();
+    _family_expedition_procurement_rejections.clear();
     for (int32_t i = 0; i < static_cast<int32_t>(
             family_expeditions_store().active.size()); ++i) {
         if (family_expeditions_store().active[i] == 0) continue;
@@ -2476,6 +2482,29 @@ Dictionary NativeEconomyRuntime::family_expedition_snapshot(
     out["kit_material_required_units"] = material_required;
     out["kit_material_missing_units"] = material_missing;
     out["kit_blocker"] = blocker;
+    const FamilyExpeditionProcurementContinuation &procurement =
+        _family_expedition_procurement_continuation;
+    const bool procurement_pending = procurement.active &&
+        procurement.expedition == expedition;
+    out["kit_procurement_pending"] = procurement_pending;
+    out["kit_procurement_blocked_by_peer"] = procurement.active &&
+        procurement.expedition != expedition;
+    out["kit_procurement_phase"] = procurement_pending ? procurement.phase : 0;
+    out["kit_procurement_good_id"] = procurement_pending ? procurement.good : -1;
+    out["kit_procurement_quantity"] =
+        procurement_pending ? procurement.quantity : 0;
+    out["kit_procurement_started_day"] =
+        procurement_pending ? procurement.started_day : -1;
+    const auto rejection = _family_expedition_procurement_rejections.find(
+        expedition);
+    const bool rejected = rejection != _family_expedition_procurement_rejections.end() &&
+        rejection->second.generation ==
+            family_expeditions_store().generation[expedition];
+    out["kit_procurement_rejected_good_id"] =
+        rejected ? rejection->second.good : -1;
+    out["kit_procurement_rejected_day"] = rejected ? rejection->second.day : -1;
+    out["kit_procurement_rejection"] = rejected
+        ? String(rejection->second.reason.c_str()) : String();
     return out;
 }
 

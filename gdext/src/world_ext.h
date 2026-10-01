@@ -754,6 +754,13 @@ public:
                                                 int cell_idx) const;
     godot::Dictionary submit_family_trait_commands(
         const godot::Dictionary &packed_batch);
+    godot::Dictionary get_family_founding_offers(int offset = 0,
+                                                 int limit = 16) const;
+    godot::Dictionary submit_family_founding_choice(int64_t offer_id,
+                                                    int64_t generation,
+                                                    int choice_index,
+                                                    int64_t effective_day,
+                                                    int64_t sequence);
     godot::Dictionary get_family_industries(int64_t family_handle,
                                             int offset = 0,
                                             int limit = 64) const;

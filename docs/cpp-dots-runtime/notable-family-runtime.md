@@ -180,17 +180,60 @@ Modifier stat，也禁止家族第二钱包：
 
 ## 形成与消亡
 
-默认策略只在乡村及以上、人口至少 150 的地块评审，每格最多 8 家族；普通新家族至少需要 20 名
-创始成员，正式开局的 Starter 家族是唯一例外。评审以 cell/day 相位
-错开。候选建筑必须同时满足：
+### 人口里程碑与三选一扶持（PKEC v55）
+
+新家族只在地块人口跨过 `family_milestone_populations`（默认
+`100, 200, 500, 1000, 2000, 5000, 10000, 20000`，严格升序，至多 255 项）时出现，每个里程碑
+至多立一族，每格最多 `family_max_per_cell`（默认 8）族。`_family_milestones_reached[cell]`
+记录已兑现的里程碑数；只有成功立族才前进，候选不足时下一次评审重试。普通新家族至少需要
+`family_min_founder_people`（默认 30）名创始成员；正式开局首都的 Starter 家族是唯一例外。
+`FAMILY_MIN_ACTIVE_PEOPLE=20` 只保留为既有家族的衰退下限。里程碑列表 hash 与创始下限写进
+PKEC family policy header，改动会使旧存档 `save_family_policy_profile_mismatch`。
+
+`FAMILY_COMMIT` phase 1 每次提交都扫描全部地块（`review_family_milestone`）。候选建筑必须：
 
 1. 正常营业，存在稳定 building identity；
 2. 至少一栋尚属匿名所有，且一栋所需业主岗位已实际填满；
-3. 实际利润率达到建筑目标；
-4. 预计每名业主日收入高于当地同 signature 生活成本；
-5. 匿名业主人口拥有至少 30 天的创始人生计现金储备。
+3. 业主 signature 的匿名人口足以提供 `family_min_founder_people` 名创始人。
 
-候选按利润率、收入、建筑类型和业主 signature 确定性择优。家庭规模按该家族在该格
+创始人数 = `min(家庭规模目标, 业主 signature 剩余匿名人口, max(创始下限, 半城余量))`，
+半城余量 = 地块人口/2 − 地块所有家族人口。利润率、收入、类型、signature 只用于确定性排序，
+不再是硬门槛。排序后按 `(建筑类型, 业主 signature)` 去重取至多 3 个产业，生成 3 张卡；产业
+不足 3 个时循环复用，但每张卡的 stable_id、姓氏（同文化组内去重）、核心特性
+（`roll_core_family_traits`）与随机池效果（`roll_random_pool_family_effect`，卡间去重）都
+独立抽取，种子为 `(seed, cell, milestone_index, card, next_offer_id)`。
+
+- **玩家地块**（`family_founding_choice_mode=PLAYER` 且本 epoch 该格属于 `starting_country_slot`）：
+  卡组存为 `FamilyFoundingOffer(status=OPEN)`，同格同时至多一组。玩家通过
+  `submit_family_founding_choice(offer_id, generation, choice_index, effective_day, sequence)`
+  排队；phase 0 `apply_due_family_founding_choices` 按 `(effective_day, sequence, submit_order)`
+  校验 generation/状态后置为 SELECTED，phase 1 立族。
+- **AI/无主地块或 `AUTO` 模式**：按 `(seed, offer_id, cell, milestone)` 确定性选卡，当场立族，不
+  留下待决卡组。玩家地块转手后，遗留 OPEN 卡组在下一次评审自动结算。
+
+立族沿用被选卡的 stable_id、姓氏、核心特性；卡上的随机池效果写入
+`_family_founding_effects`（按 stable_id 排序的侧表），`grant_random_pool_family_effect`
+优先授予它（若与已有效果互斥则回退正常抽取），家族消亡后在 phase 2 修剪。所选建筑失效时
+改绑到该格当前最优的合格建筑（身份不变）；连续 `FAMILY_FOUNDING_MAX_FAILED_REVIEWS=6` 次
+仍无法立族则作废该卡组（`family_offers_voided`），里程碑不前进，下次重新出卡。未选中的两户
+永不出现。
+
+报告计数：`family_offers_opened / family_offers_auto_resolved / family_offer_choice_rejected /
+family_offers_voided / family_offers_pending`。查询 `get_family_founding_offers(offset, limit)`
+返回卡组、候选的 trait/effect/building/profession 稳定键与 `player_choice`；有排队选择时状态
+显示 `SELECTED_PENDING`。`EconomyFacade.family_founding_offers()` 附加家族显示名、建筑/职业
+中文名、特性描述与效果当前档文案。
+
+PlayerController 把玩家 OPEN 卡组当作强制模态：锁定其他玩家命令
+（`family_founding_choice_required`），暂停时钟并记住原速度，逐个出示队列；时代奖励优先，
+二者同时存在时家族卡组隐藏等待。选择提交后状态转 `SELECTED_PENDING`，控制器解锁并恢复原速度，
+家族在下一次经济结算出现。锁定状态随 view state 存读。UI 为
+`scenes/ui/family/family_founding_dialog.tscn`（ModalLayer，档案纸风格，1/2/3 列响应式，
+键盘焦点导航）。
+
+### 家庭规模与吸收
+
+家庭规模按该家族在该格
 **全部业主槽**乘以 `family_household_people_per_owner_slot`（默认 256，上限
 `family_household_max_people` 默认 1024）计算，因此一槽作坊约 256 人、两槽营地约 512 人，
 四槽起碰到 1024 封顶。创始人口只从业主 signature 的剩余匿名人口吸收，并把 `filled_owner`
@@ -264,7 +307,7 @@ building/market transaction
 `AGGREGATE_PUBLISH`。家族阶段：
 
 1. 归一化成员人口/现金 claim，并按业主槽把偏小家族吸收到家庭规模目标，再更新职业就业归因；
-2. 按确定 cell work budget 评审形成；
+2. 按确定 cell work budget 评审人口里程碑、出卡或按已选/自动选择立族；
 3. 对当日新家族再吸收一次依附人口，复核衰退/消亡，压缩边表并重建索引。
 
 热循环只遍历当前建筑格和稀疏关系边。提交后重建以下 transient CSR：family→cohort、
@@ -299,9 +342,18 @@ commands，section 23 为 END。v41 的 cell record 将降水加入环境快照�
 binding 与冻结消费/资源因子。FamilyEffect binding 由 trait CSR 和当前权威分支重新协调，不在 PKEC
 复制 EffectRuntime 的实例权威。派生缓存不进入 PKEC 或 state hash。当前 reader 只接受 v41。
 
+v55 增补：family policy header 原 `min_settlement_tier` / `min_population_per_active` 两个字段
+改存 `family_min_founder_people` 与里程碑列表 hash。扩展 section 35 `FAMILY_FOUNDING`（ECP2
+归入 family domain，位于 D7 peer 扩展之后、END 之前）按记录保存：kind 0 头（next_offer_id 与
+各类计数，reader 据此校验总记录数）、kind 1 非零里程碑计数、kind 2 待决卡组（含三张候选完整
+身份）、kind 3 排队选择、kind 4 立族效果侧表。恢复后校验 offer id 唯一且小于 next、每格至多
+一组、状态/选择下标/目录引用合法、排队选择无孤儿。上述状态同时进入 economy state hash。
+
 ## 验证要求
 
-最低验收包括：家族形成门槛、实际业主占岗、职业统计、所有权 CSR、人口/货币/商品守恒、PKEC
+最低验收包括：家族形成门槛（`tests/family_founding_offer_runtime_test.gd`：里程碑出卡、30 人下限、
+陈旧 generation 拒绝、未选两户不出现、AUTO 当场立族、卡组存读 hash；
+`tests/family_founding_dialog_ui_test.gd`：卡面、焦点、模态锁与时钟恢复）、实际业主占岗、职业统计、所有权 CSR、人口/货币/商品守恒、PKEC
 v41 hash round-trip、旧 schema 明确拒绝、特性抽取/命令排序、分支威望滞回、分支满意度门控只挡晋升不挡降级、
 六类目标路由、八类 selector、五类 stack policy、EVENT_ONCE/retire 拒绝重试、精确 selector/stat 校验、
 稀疏 exact-good override、奖励防递归、generation 旧句柄拒绝、行为条件冻结 CSR、打分轴、

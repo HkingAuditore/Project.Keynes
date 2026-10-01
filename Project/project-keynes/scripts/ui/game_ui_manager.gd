@@ -14,6 +14,7 @@ signal pause_menu_visibility_changed(open: bool)
 signal return_main_menu_requested()
 signal exit_game_requested()
 signal era_reward_choice_requested(offer_generation: int, choice_index: int)
+signal family_founding_choice_requested(offer_id: int, generation: int, choice_index: int)
 
 const RIGHT_PANEL_WIDTH := 460.0
 const DETAIL_LAYOUT_BREAKPOINT := UITokens.DETAIL_BREAKPOINT_COMPACT
@@ -70,6 +71,7 @@ var _map_overlay_toolbar: MapOverlayToolbar
 var _map_overlay_legend: OverlayLegend
 var _pause_menu
 var _era_reward_dialog: EraRewardDialog
+var _family_founding_dialog: FamilyFoundingDialog
 var _gm_available := false
 var _debug_layer: Control
 var _inspector_suppressed_for_country := false
@@ -860,7 +862,7 @@ func map_safe_area() -> Rect2:
 
 
 func dismiss_overlay_menu() -> bool:
-	if is_era_reward_modal_open():
+	if is_era_reward_modal_open() or is_family_founding_modal_open():
 		return true
 	if not _colonization_targeting.is_empty():
 		_cancel_colonization_targeting()
@@ -883,7 +885,8 @@ func dismiss_overlay_menu() -> bool:
 
 
 func toggle_pause_menu() -> void:
-	if _pause_menu != null and not is_era_reward_modal_open():
+	if _pause_menu != null and not is_era_reward_modal_open() \
+			and not is_family_founding_modal_open():
 		_pause_menu.toggle()
 
 
@@ -909,6 +912,25 @@ func close_era_reward_offer() -> void:
 
 func is_era_reward_modal_open() -> bool:
 	return _era_reward_dialog != null and _era_reward_dialog.is_offer_open()
+
+
+func show_family_founding_offer(offer: Dictionary) -> void:
+	if _family_founding_dialog != null:
+		_family_founding_dialog.present_offer(offer)
+
+
+func show_family_founding_error(message: String) -> void:
+	if _family_founding_dialog != null and _family_founding_dialog.is_offer_open():
+		_family_founding_dialog.show_error(message)
+
+
+func close_family_founding_offer() -> void:
+	if _family_founding_dialog != null:
+		_family_founding_dialog.close_offer()
+
+
+func is_family_founding_modal_open() -> bool:
+	return _family_founding_dialog != null and _family_founding_dialog.is_offer_open()
 
 
 func show_exit_save_failure(action: String, result: Dictionary) -> void:
@@ -1067,6 +1089,12 @@ func _bind_ui() -> void:
 	_era_reward_dialog.choice_requested.connect(
 		func(generation: int, index: int) -> void:
 			era_reward_choice_requested.emit(generation, index))
+	_family_founding_dialog = get_node_or_null(
+		"UIRoot/ModalLayer/FamilyFoundingDialog") as FamilyFoundingDialog
+	if _family_founding_dialog != null:
+		_family_founding_dialog.choice_requested.connect(
+			func(offer_id: int, generation: int, index: int) -> void:
+				family_founding_choice_requested.emit(offer_id, generation, index))
 
 
 func _cancel_colonization_targeting() -> void:

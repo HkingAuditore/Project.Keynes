@@ -22,8 +22,13 @@ func _run() -> void:
 	print("=== native notable-family runtime test ===")
 	var default_profile: Dictionary = load(
 		"res://data/economy/default_economy.tres").to_native_profile()
-	_expect("ordinary family cell threshold defaults to 150",
-		int(default_profile.get("family_min_population_per_active", 0)) == 150)
+	_expect("family milestones default to 100..20000",
+		default_profile.get("family_milestone_populations", PackedInt64Array()) \
+			== PackedInt64Array([100, 200, 500, 1000, 2000, 5000, 10000, 20000]))
+	_expect("new families need at least 30 founders",
+		int(default_profile.get("family_min_founder_people", 0)) == 30)
+	_expect("player founding choice is the default",
+		String(default_profile.get("family_founding_choice_mode", "")) == "PLAYER")
 	var compiled: Dictionary = EconomyCatalogScript.compile_native_catalog()
 	_expect("family surname catalog compiles", bool(compiled.get("ok", false))
 		and int(compiled.get("family_catalog_hash", 0)) != 0
@@ -98,9 +103,10 @@ func _run() -> void:
 	var profile: Dictionary = load(
 		"res://data/economy/default_economy.tres").to_native_profile()
 	profile.family_runtime_mode = "ACTIVE"
-	profile.family_min_settlement_tier = 0
 	profile.family_review_days = 1
-	profile.family_min_population_per_active = 1
+	profile.family_milestone_populations = PackedInt64Array([1, 2, 3, 4, 5, 6, 7, 8])
+	profile.family_min_founder_people = 20
+	profile.family_founding_choice_mode = "AUTO"
 	profile.family_decline_reviews = 2
 	profile.notable_person_runtime_mode = "ACTIVE"
 	profile.notable_person_max_per_family = 4
@@ -453,8 +459,8 @@ func _run() -> void:
 	var person_before_save: Dictionary = ext.get_notable_person_snapshot(person_handle)
 	var hash_before := int(ext.get_economy_state_hash())
 	var save_begin: Dictionary = ext.begin_economy_save(65536)
-	_expect("PKEC v50 save begins", bool(save_begin.get("ok", false))
-		and int(save_begin.get("schema_version", 0)) == 50)
+	_expect("PKEC v55 save begins", bool(save_begin.get("ok", false))
+		and int(save_begin.get("schema_version", 0)) == 55)
 	var chunks: Array[PackedByteArray] = []
 	for _i in 512:
 		var chunk: PackedByteArray = ext.read_economy_save_chunk(65536)
@@ -516,9 +522,10 @@ func _test_opening_capital_keeps_anonymous_majority(catalog: Dictionary) -> void
 	var profile: Dictionary = load(
 		"res://data/economy/default_economy.tres").to_native_profile()
 	profile.family_runtime_mode = "ACTIVE"
-	profile.family_min_settlement_tier = 0
 	profile.family_review_days = 1
-	profile.family_min_population_per_active = 1
+	profile.family_milestone_populations = PackedInt64Array([1, 2, 3, 4, 5, 6, 7, 8])
+	profile.family_min_founder_people = 20
+	profile.family_founding_choice_mode = "AUTO"
 	profile.notable_person_runtime_mode = "ACTIVE"
 	profile.starvation_death_rate_q32 = 0
 	var birth_rates: PackedInt64Array = catalog.signature_birth_rate_q32
@@ -582,9 +589,10 @@ func _test_ordinary_family_minimum(catalog: Dictionary) -> void:
 	var profile: Dictionary = load(
 		"res://data/economy/default_economy.tres").to_native_profile()
 	profile.family_runtime_mode = "ACTIVE"
-	profile.family_min_settlement_tier = 0
 	profile.family_review_days = 1
-	profile.family_min_population_per_active = 1
+	profile.family_milestone_populations = PackedInt64Array([1, 2, 3, 4, 5, 6, 7, 8])
+	profile.family_min_founder_people = 20
+	profile.family_founding_choice_mode = "AUTO"
 	profile.notable_person_runtime_mode = "OFF"
 	profile.starvation_death_rate_q32 = 0
 	var building_id := (catalog.building_type_ids as PackedStringArray).find(

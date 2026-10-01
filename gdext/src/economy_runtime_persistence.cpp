@@ -836,6 +836,24 @@ Dictionary NativeEconomyRuntime::end_restore() {
         set_restore_rejected_reason("restore_family_expedition_section_incomplete");
         return out;
     }
+    if (!_restore.family_founding_seen ||
+        _restore.expected_family_founding_records < 0 ||
+        _restore.restored_family_founding_records !=
+            _restore.expected_family_founding_records) {
+        out["ok"] = false;
+        out["reason"] = "restore_family_founding_section_incomplete";
+        set_restore_rejected_reason("restore_family_founding_section_incomplete");
+        return out;
+    }
+    {
+        std::string founding_error;
+        if (!validate_restored_family_founding(founding_error)) {
+            out["ok"] = false;
+            out["reason"] = String(founding_error.c_str());
+            set_restore_rejected_reason(founding_error.c_str());
+            return out;
+        }
+    }
     const auto trade_key = [](int32_t first, int32_t second) {
         return (static_cast<uint64_t>(static_cast<uint32_t>(first)) << 32) |
             static_cast<uint32_t>(second);
@@ -1993,7 +2011,7 @@ bool NativeEconomyRuntime::apply_ecp2_authority_internal(
     // maps to no ECP2 domain, so visiting it here collects nothing and the
     // terminator is appended below.
     for (uint16_t section = SAVE_SECTION_HEADER;
-         section <= SAVE_SECTION_D7_PEER_EXT; ++section) {
+         section <= SAVE_SECTION_LAST_EXTENSION; ++section) {
         ecp2_collect_pkec_chunks_for_section(in.domain_blobs, section,
                                              ordered_chunks);
     }
