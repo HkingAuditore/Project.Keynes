@@ -191,10 +191,15 @@ busy。家族入口进入地图选点模式，Esc/右键退出。
 让已囤积的替代品排在候选前面，避免新到货的首选候选把已付出的货搁死。
 每笔成功购买都立即并入托管 cargo；后续商品暂时无法购买时，已完成的交易不能从账本中丢失。
 
-托管不得吃掉源地自己的口粮：`ColonizationReserveContext::floor` 由
-`colonization_source_survival_floor` 用同一套桥接规划器跑源地自身人口
-`COLONIZATION_RESERVE_SOURCE_FLOOR_DAYS = 10` 天算出，规划与划账都只看
-`max(0, 市场库存 - floor) + 已托管`。到期处理发生在市场结算之前，没有这条底线会把源地掏空。
+采购由国库出钱，按源地零售价走 `goods_cost(quantity, price)`（与玩家建造、投资同一口径，
+数量按 `GOODS_SCALE` 折算）；不得写成 `quantity * price`，那会多收 1000 倍并让国家侧现金校验拒单。
+同一时刻全局只有一笔在途采购（`FamilyExpeditionProcurementContinuation`）。在途时当日停止；
+某一行被国家侧或经济侧**终态拒绝**时，记入运行时诊断 `FamilyExpeditionProcurementRejection`
+（不入存档、不入 hash），当日跳过该行继续尝试后面的托管行，次日再重试。只要有任一行未买到，
+就不得把规划目标量当作托管写入，也不得出发。旧实现在第一行被拒时直接返回，后续行（口粮、工具）
+永远轮不到，表现为"源地有货、国库有钱、进度永远 0%"。
+
+规划与划账只看 `市场库存 + 已托管`，不再设开拓专用的源地口粮底线；源地家户生存仍由正常市场结算负责。
 
 齐套后 `launch_preparing_family_expedition` 只抽人口（cargo 已在托管里），并在此刻才写入
 `kit_building_*`；抽人失败保留托管、次日重试。`abort_preparing_family_expedition`（取消、
@@ -234,6 +239,12 @@ revision 5 起 identity 不再用于跳过重规划（每日必重规划），�
 （完整开工意图的建造需求，以及源地当前仍供不起的那部分）暴露，`kit_blocker` 再给出
 `READY` / `BRIDGE` / `MATERIALS` / `NO_BUILDINGS` / `UNBUILDABLE` 之一说明真正卡在哪。
 UI 的"已囤积 N%"必须按桥接 + 建材合计口径算：只看桥接会在建材还差一大截时显示 100%。
+快照另带只读采购诊断：`kit_procurement_pending` / `kit_procurement_phase` /
+`kit_procurement_good_id` / `kit_procurement_quantity` / `kit_procurement_started_day`
+描述本队在途的国库采购；`kit_procurement_blocked_by_peer` 表示被另一支队伍的在途采购占用；
+`kit_procurement_rejected_good_id` / `kit_procurement_rejected_day` / `kit_procurement_rejection`
+给出最近一次被拒的物资与原因码。面板在缺货说明里显示"正在用国库采购…"或"第 N 日采购…被拒：原因"。
+面板 `open_target` 必须通过 `_clear_list()` 释放旧行；只清行引用字典会让每次重开都再追加一组重复行。
 桥接/建材总需求在进入 PREPARING 时固定并随远征存档；缺口仍按当前权威托管货物计算，市场重规划只用于更新 blocker 和待购候选，不会改变进度分母。已有建筑的本国地块迁徙仍只携带桥接库存，不落成新建筑，也不额外抽取建材。
 v36 在途队伍 cargo 为空，到达后不落成开工包。
 

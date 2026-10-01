@@ -115,9 +115,10 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
         append_le<int32_t>(payload, _building_plan_days);
         append_le<int64_t>(payload, _family_catalog_hash);
         append_le<int32_t>(payload, _family_runtime_mode);
-        append_le<int32_t>(payload, _family_min_settlement_tier);
+        append_le<int32_t>(payload, static_cast<int32_t>(
+            _family_min_founder_people));
         append_le<int32_t>(payload, _family_review_days);
-        append_le<int64_t>(payload, _family_min_population_per_active);
+        append_le<int64_t>(payload, family_milestone_hash());
         append_le<int64_t>(payload, _family_split_population_threshold);
         append_le<int32_t>(payload, _family_max_per_cell);
         append_le<int32_t>(payload, _family_decline_reviews);
@@ -1373,10 +1374,21 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             append_le<uint64_t>(payload, record.state_hash_before);
             append_le<uint64_t>(payload, record.state_hash_after);
         }
-        if (_save.d7_peer_ext_cursor >= static_cast<int32_t>(request_ids.size()))
-            _save.section = SAVE_SECTION_END;
+        if (_save.d7_peer_ext_cursor >= static_cast<int32_t>(request_ids.size())) {
+            _save.section = SAVE_SECTION_FAMILY_FOUNDING;
+            _save.family_founding_cursor = 0;
+            _save.family_founding_cells.clear();
+        }
         return make_save_chunk(SAVE_SECTION_D7_PEER_EXT,
             static_cast<uint32_t>(_save.d7_peer_ext_cursor - begin), payload);
+    }
+    if (_save.section == SAVE_SECTION_FAMILY_FOUNDING) {
+        const uint32_t begin = static_cast<uint32_t>(_save.family_founding_cursor);
+        const bool done = write_family_founding_save_records(budget, payload);
+        const uint32_t records =
+            static_cast<uint32_t>(_save.family_founding_cursor) - begin;
+        if (done) _save.section = SAVE_SECTION_END;
+        return make_save_chunk(SAVE_SECTION_FAMILY_FOUNDING, records, payload);
     }
     _save.end_emitted = true;
     return make_save_chunk(SAVE_SECTION_END, 0, payload);

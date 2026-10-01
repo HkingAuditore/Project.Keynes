@@ -1394,6 +1394,19 @@ Dictionary DCWorldExt::submit_family_trait_commands(
         packed_batch);
 }
 
+Dictionary DCWorldExt::get_family_founding_offers(int offset, int limit) const {
+    if (_economy_runtime == nullptr) return unavailable();
+    return runtime_from(_economy_runtime)->family_founding_offers(offset, limit);
+}
+
+Dictionary DCWorldExt::submit_family_founding_choice(
+        int64_t offer_id, int64_t generation, int choice_index,
+        int64_t effective_day, int64_t sequence) {
+    if (_economy_runtime == nullptr) return unavailable();
+    return runtime_from(_economy_runtime)->submit_family_founding_choice(
+        offer_id, generation, choice_index, effective_day, sequence);
+}
+
 Dictionary DCWorldExt::get_family_industries(
         int64_t family_handle, int offset, int limit) const {
     if (_economy_runtime == nullptr) return unavailable();

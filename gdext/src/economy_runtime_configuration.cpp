@@ -336,6 +336,7 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _epoch_cell_cold_capacity_factor_q16.clear();
     _epoch_cell_sector_output_factor_q16.clear();
     _family_trait_commands.clear();
+    clear_family_founding_state();
     _family_effect_bindings.clear();
     _family_effect_binding_by_instance.clear();
     _family_effect_instances_by_branch.clear();
@@ -1129,6 +1130,11 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     out["family_ownership_edges_processed"] =
         _family_ownership_edges_processed;
     out["families_formed"] = _families_formed;
+    out["family_offers_opened"] = _family_offers_opened;
+    out["family_offers_auto_resolved"] = _family_offers_auto_resolved;
+    out["family_offer_choice_rejected"] = _family_offer_choice_rejected;
+    out["family_offers_voided"] = _family_offers_voided;
+    out["family_offers_pending"] = static_cast<int64_t>(_family_founding_offers.size());
     out["families_dissolved"] = _families_dissolved;
     out["family_owner_jobs_filled"] = _family_owner_jobs_filled;
     out["family_owner_jobs_vacant"] = _family_owner_jobs_vacant;

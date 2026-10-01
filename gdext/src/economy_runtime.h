@@ -115,7 +115,11 @@ public:
     // cadence; base fiscal-peer wire shape stays schema-52 compatible.
     // 54: PREPARING expeditions persist the fixed bridge/material demand used
     // by their stocking progress denominator.
-    static constexpr int32_t SCHEMA_VERSION = 54;
+    // 55: population-milestone family founding. The family policy header
+    // carries the founder minimum and milestone-list hash, and section 35
+    // stores milestone counts, open founding offers, queued choices, and
+    // preselected founding effects.
+    static constexpr int32_t SCHEMA_VERSION = 55;
     static constexpr uint32_t BUILDING_KIT_ROLE_TRADE = 1u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CONSTRUCTION = 2u;
     static constexpr uint32_t BUILDING_KIT_ROLE_CLOTHING_INPUT = 4u;
@@ -242,6 +246,8 @@ public:
     // Only the formal starter bootstrap may create a household below the
     // ordinary notable-family minimum. Child branches are ordinary families.
     static constexpr uint16_t FAMILY_FLAG_STARTER = 32u;
+    // Lifecycle floor for an existing non-starter family. New families use
+    // the profile-driven _family_min_founder_people instead.
     static constexpr int64_t FAMILY_MIN_ACTIVE_PEOPLE = 20;
     static constexpr uint16_t FAMILY_FLAG_SPLIT_MODE_MASK =
         FAMILY_FLAG_SPLIT_RETAIN_ONLY | FAMILY_FLAG_SPLIT_BONUS_WEIGHT |
@@ -650,6 +656,11 @@ public:
                                             int32_t cell) const;
     godot::Dictionary submit_family_trait_commands(
         const godot::Dictionary &packed_batch);
+    godot::Dictionary family_founding_offers(int32_t offset,
+                                             int32_t limit) const;
+    godot::Dictionary submit_family_founding_choice(
+        int64_t offer_id, int64_t generation, int32_t choice_index,
+        int64_t effective_day, int64_t sequence);
     godot::Dictionary family_industries(int64_t family_handle, int32_t offset,
                                         int32_t limit) const;
     godot::Dictionary family_notable_people(int64_t family_handle,
@@ -1024,8 +1035,20 @@ private:
         int64_t merchant_population = 0;
         int64_t merchant_population_prefix = 0;
         int64_t merchant_distributed = 0;
+        int64_t started_day = -1;
         std::vector<int32_t> living_merchants;
         std::string last_error;
+    };
+
+    // Runtime-only diagnostic of the last rejected procurement line per
+    // preparing expedition. Not saved or hashed: it only lets the planner skip
+    // a line rejected today and lets the UI explain a stalled 0% stockpile.
+    struct FamilyExpeditionProcurementRejection {
+        uint32_t generation = 0;
+        int32_t good = -1;
+        uint8_t cargo_flags = 0;
+        int64_t day = -1;
+        std::string reason;
     };
 
     // Fiscal settlement is a peer boundary too. Keep the per-country
@@ -1802,6 +1825,54 @@ private:
         int32_t priority = 0;
         int64_t sequence = 0;
         uint64_t submit_order = 0;
+    };
+
+    static constexpr int32_t FAMILY_FOUNDING_CARD_COUNT = 3;
+    static constexpr int32_t FAMILY_FOUNDING_MAX_FAILED_REVIEWS = 6;
+    static constexpr uint8_t FAMILY_FOUNDING_OPEN = 1;
+    static constexpr uint8_t FAMILY_FOUNDING_SELECTED = 2;
+
+    struct FamilyFoundingCandidate {
+        int64_t stable_id = 0;
+        int32_t surname_id = -1;
+        int32_t culture_group_id = 0;
+        uint64_t building_handle = 0;
+        int32_t building_type_id = -1;
+        int32_t owner_signature_id = -1;
+        int64_t founders = 0;
+        int32_t effect_id = -1;
+        std::vector<int32_t> trait_ids;
+        std::vector<int32_t> trait_strength_q16;
+    };
+
+    struct FamilyFoundingOffer {
+        int64_t offer_id = 0;
+        uint32_t generation = 1;
+        int32_t cell = -1;
+        int32_t milestone_index = 0;
+        int64_t milestone_population = 0;
+        uint8_t status = FAMILY_FOUNDING_OPEN;
+        int32_t chosen_index = -1;
+        int64_t created_day = 0;
+        int32_t failed_reviews = 0;
+        std::vector<FamilyFoundingCandidate> candidates;
+    };
+
+    struct FamilyFoundingChoiceCommand {
+        int64_t offer_id = 0;
+        uint32_t generation = 0;
+        int32_t choice_index = -1;
+        int64_t effective_day = 0;
+        int64_t sequence = 0;
+        uint64_t submit_order = 0;
+    };
+
+    struct FamilyFoundingIdentity {
+        int64_t stable_id = 0;
+        int32_t surname_id = -1;
+        int32_t effect_id = -1;
+        const std::vector<int32_t> *trait_ids = nullptr;
+        const std::vector<int32_t> *trait_strength_q16 = nullptr;
     };
 
     struct FamilyModifierBinding {
@@ -3597,6 +3668,8 @@ private:
         int32_t ceiling_row_cursor = 0;
         int32_t resource_cursor = 0;
         int32_t cadence_cursor = 0;
+        int32_t family_founding_cursor = 0;
+        std::vector<int32_t> family_founding_cells;
         std::vector<uint8_t> modifier_bytes;
         size_t modifier_cursor = 0;
         bool end_emitted = false;
@@ -3668,6 +3741,9 @@ private:
         bool fiscal_seen = false;
         bool fiscal_peer_seen = false;
         bool d7_peer_ext_seen = false;
+        bool family_founding_seen = false;
+        int32_t expected_family_founding_records = -1;
+        int32_t restored_family_founding_records = 0;
         bool resource_stock_seen = false;
         bool cadence_state_seen = false;
         int32_t restored_cadence_cells = 0;
@@ -4083,6 +4159,10 @@ private:
     int64_t _filled_employee_jobs = 0;
     int64_t _unemployed_population = 0;
     int64_t _families_formed = 0;
+    int64_t _family_offers_opened = 0;
+    int64_t _family_offers_auto_resolved = 0;
+    int64_t _family_offer_choice_rejected = 0;
+    int64_t _family_offers_voided = 0;
     int64_t _families_dissolved = 0;
     int64_t _family_membership_edges_processed = 0;
     int64_t _family_ownership_edges_processed = 0;
@@ -4230,6 +4310,8 @@ private:
     CountryResearchProcurementContinuation _country_research_procurement_continuation;
     FamilyExpeditionProcurementContinuation
         _family_expedition_procurement_continuation;
+    std::unordered_map<int32_t, FamilyExpeditionProcurementRejection>
+        _family_expedition_procurement_rejections;
     std::vector<int64_t> _merchant_procurement_paid_by_cell;
     std::vector<int64_t> _merchant_procurement_retail_by_cell;
     std::vector<int64_t> _merchant_procurement_factor_weighted_cash_by_cell;
@@ -4667,6 +4749,16 @@ private:
     std::vector<int32_t> _family_absorb_bonus_q16;
     std::vector<int32_t> _family_colonization_population_reward;
     std::vector<FamilyTraitCommand> _family_trait_commands;
+    // Milestone founding: per-cell count of population milestones that have
+    // produced a family, offers awaiting a player choice, queued choices, and
+    // the random-pool effect preselected on the chosen card (by stable id).
+    std::vector<uint8_t> _family_milestones_reached;
+    std::vector<FamilyFoundingOffer> _family_founding_offers;
+    std::vector<FamilyFoundingChoiceCommand> _family_founding_choices;
+    std::vector<std::pair<int64_t, int32_t>> _family_founding_effects;
+    int64_t _next_family_founding_offer_id = 1;
+    std::vector<int32_t> _family_founding_offer_by_cell;
+    bool _family_founding_offer_index_dirty = true;
     std::vector<FamilyModifierBinding> _family_modifier_bindings;
     std::vector<FamilyEffectBinding> _family_effect_bindings;
     std::unordered_map<int64_t, size_t> _family_effect_binding_by_instance;
@@ -5782,9 +5874,13 @@ private:
 
     // Notable-family policy. The anonymous majority remains implicit.
     int32_t _family_runtime_mode = 2; // 0=OFF, 1=PROBE, 2=ACTIVE.
-    int32_t _family_min_settlement_tier = 2;
     int32_t _family_review_days = 30;
-    int64_t _family_min_population_per_active = 150;
+    // Ascending committed-population thresholds; each one crossed by a cell
+    // produces one founding offer. Starter capital founders do not count.
+    std::vector<int64_t> _family_milestone_populations{
+        100, 200, 500, 1000, 2000, 5000, 10000, 20000};
+    int64_t _family_min_founder_people = 30;
+    int32_t _family_founding_choice_mode = 1; // 0=AUTO, 1=PLAYER.
     int64_t _family_split_population_threshold = 100;
     int32_t _family_max_per_cell = 8;
     int32_t _family_cells_per_slice = 128;
@@ -6040,7 +6136,10 @@ private:
         int32_t expedition, std::vector<int64_t> &reserved) const;
     bool reserve_preparing_family_expedition_cargo(
         int32_t expedition, ColonizationKitPlan &kit,
-        std::string &error);
+        std::string &error, int64_t day = -1);
+    void note_family_expedition_procurement_rejection(
+        int32_t expedition, int32_t good, uint8_t cargo_flags, int64_t day,
+        const std::string &reason);
     bool advance_family_expedition_procurement(
         FamilyExpeditionProcurementContinuation &continuation,
         std::string &error);
@@ -6671,6 +6770,8 @@ private:
     void rebuild_family_policy_scalars();
     void grant_random_pool_family_effect(int32_t family_index,
                                          bool submit_changes);
+    void grant_family_effect_to_branches(int32_t family_index,
+                                         int32_t effect_id);
     void grant_ancestral_precept_for_country(uint64_t country_handle);
     int32_t family_effect_id_for_key(const std::string &program_key) const;
     int32_t family_effect_prestige_magnitude_q16(int32_t effect_id,
@@ -6703,12 +6804,43 @@ private:
     int64_t family_people_on_slot(int32_t slot) const;
     void update_family_employment_attribution();
     void attribute_family_owner_employment_for_cell(int32_t cell);
-    int32_t create_family_for_building(int32_t cell, int32_t building_index,
-                                       int64_t founders,
-                                       int64_t filled_owner,
-                                       bool allow_small_starter = false);
+    int32_t create_family_for_building(
+        int32_t cell, int32_t building_index, int64_t founders,
+        int64_t filled_owner, bool allow_small_starter = false,
+        const FamilyFoundingIdentity *identity = nullptr);
     bool repair_forced_capital_founder(int32_t cell);
-    bool form_family_for_cell(int32_t cell);
+    void review_family_milestone(int32_t cell);
+    int64_t family_milestone_hash() const;
+    int64_t family_founding_founders_for_group(int32_t cell,
+                                               int32_t group_index) const;
+    int32_t build_family_founding_candidates(
+        int32_t cell, int32_t milestone_index,
+        std::vector<FamilyFoundingCandidate> &out) const;
+    bool resolve_family_founding_offer(FamilyFoundingOffer &offer,
+                                       int32_t choice_index);
+    bool family_founding_player_choice(int32_t cell) const;
+    int32_t family_founding_auto_choice(const FamilyFoundingOffer &offer) const;
+    void apply_due_family_founding_choices();
+    void rebuild_family_founding_offer_index();
+    int32_t family_founding_offer_for_cell(int32_t cell);
+    void prune_family_founding_effects();
+    void clear_family_founding_state();
+    bool write_family_founding_save_records(int32_t budget,
+                                            std::vector<uint8_t> &payload);
+    bool read_family_founding_save_records(const std::vector<uint8_t> &bytes,
+                                           size_t &cursor, uint32_t records,
+                                           std::string &error);
+    bool validate_restored_family_founding(std::string &error) const;
+    void append_family_founding_hash(uint64_t &hash) const;
+    int32_t family_founding_effect_for(int64_t stable_id) const;
+    int32_t roll_core_family_traits(uint64_t stable_id, int32_t tech_cell,
+                                    int32_t origin_cell,
+                                    std::vector<int32_t> &trait_ids,
+                                    std::vector<int32_t> &strengths) const;
+    int32_t roll_random_pool_family_effect(
+        uint64_t stable_id, int32_t tech_cell,
+        const std::vector<int32_t> &owned_sorted,
+        const std::vector<int32_t> &avoid) const;
     void review_family_lifecycle();
     void assign_core_family_traits(int32_t family_index);
     void apply_due_family_trait_commands();

@@ -24,6 +24,10 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _epoch_begin_pending_day = -1;
     _fiscal_reservation_continuation = {};
     _families_formed = 0;
+    _family_offers_opened = 0;
+    _family_offers_auto_resolved = 0;
+    _family_offer_choice_rejected = 0;
+    _family_offers_voided = 0;
     _families_dissolved = 0;
     _family_membership_edges_processed = 0;
     _family_ownership_edges_processed = 0;

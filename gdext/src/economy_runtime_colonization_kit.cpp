@@ -833,9 +833,24 @@ void NativeEconomyRuntime::collect_family_expedition_reserved_stock(
     }
 }
 
+void NativeEconomyRuntime::note_family_expedition_procurement_rejection(
+        int32_t expedition, int32_t good, uint8_t cargo_flags, int64_t day,
+        const std::string &reason) {
+    if (expedition < 0 || expedition >= static_cast<int32_t>(
+            family_expeditions_store().active.size())) return;
+    FamilyExpeditionProcurementRejection &note =
+        _family_expedition_procurement_rejections[expedition];
+    note.generation = family_expeditions_store().generation[expedition];
+    note.good = good;
+    note.cargo_flags = cargo_flags;
+    note.day = day;
+    note.reason = reason.empty() ? "colonization_treasury_purchase_failed"
+                                 : reason;
+}
+
 bool NativeEconomyRuntime::reserve_preparing_family_expedition_cargo(
         int32_t expedition, ColonizationKitPlan &kit,
-        std::string &error) {
+        std::string &error, int64_t day) {
     const int32_t source_cell = family_expeditions_store().source_cell[expedition];
     const uint32_t begin = family_expeditions_store().cargo_begin[expedition];
     const uint32_t count = family_expeditions_store().cargo_count[expedition];
@@ -892,7 +907,7 @@ bool NativeEconomyRuntime::reserve_preparing_family_expedition_cargo(
             const int64_t price = market >= 0 && market < market_store().market_count
                 ? std::max<int64_t>(0, market_store().price[
                     market_store().index(market, good)]) : 0;
-            const int64_t cash = saturating_mul(quantity, price, _saturation_count);
+            const int64_t cash = goods_cost(quantity, price, _saturation_count);
             std::vector<int32_t> ids{good};
             std::vector<int64_t> treasury{0};
             std::vector<int64_t> market_goods{quantity};
@@ -982,6 +997,24 @@ bool NativeEconomyRuntime::reserve_preparing_family_expedition_cargo(
         // reserve-aware quote prevents unnecessary top-ups.
         if (net_surplus > 0) continue;
     }
+    // Only one purchase can be in flight. A line the Country side rejected
+    // must not starve every later line, so a terminal rejection is recorded
+    // and the next line is tried; a line rejected earlier today waits.
+    int32_t skip_good = -1;
+    uint8_t skip_flags = 0;
+    {
+        const auto rejection = _family_expedition_procurement_rejections.find(
+            expedition);
+        if (day >= 0 &&
+            rejection != _family_expedition_procurement_rejections.end() &&
+            rejection->second.generation ==
+                family_expeditions_store().generation[expedition] &&
+            rejection->second.day == day) {
+            skip_good = rejection->second.good;
+            skip_flags = rejection->second.cargo_flags;
+        }
+    }
+    bool short_lines = false;
     for (size_t kit_index = 0; kit_index < kit.cargo.size(); ++kit_index) {
         const FamilyExpeditionCargoLine &line = kit.cargo[kit_index];
         bool seen = false;
@@ -994,8 +1027,23 @@ bool NativeEconomyRuntime::reserve_preparing_family_expedition_cargo(
         if (seen) continue;
         const int64_t net_shortfall = quantity_for(kit.cargo, line.good_id,
             line.flags) - quantity_for(old_cargo, line.good_id, line.flags);
-        if (net_shortfall > 0 && !move_stock(line.good_id, -net_shortfall,
-                line.flags)) return false;
+        if (net_shortfall <= 0) continue;
+        if (skip_good == line.good_id && skip_flags == line.flags) {
+            short_lines = true;
+            continue;
+        }
+        if (move_stock(line.good_id, -net_shortfall, line.flags)) continue;
+        const FamilyExpeditionProcurementContinuation &continuation =
+            _family_expedition_procurement_continuation;
+        if (continuation.active) return false;
+        note_family_expedition_procurement_rejection(expedition,
+            line.good_id, line.flags, day, error);
+        error.clear();
+        short_lines = true;
+    }
+    if (short_lines) {
+        error = "colonization_procurement_short";
+        return false;
     }
     // The planner's quote is a target, not the authoritative escrow. A quote
     // can shrink when market stock or a substitute changes; never overwrite
@@ -1336,6 +1384,7 @@ bool NativeEconomyRuntime::start_family_expedition_procurement(
     c.cargo_flags = cargo_flags;
     c.quantity = quantity;
     c.cash = cash;
+    c.started_day = std::max<int64_t>(0, _current_day);
     if (_merchant_offsets.size() == static_cast<size_t>(_cell_count + 1)) {
         for (int32_t edge = _merchant_offsets[source_cell];
              edge < _merchant_offsets[source_cell + 1]; ++edge) {

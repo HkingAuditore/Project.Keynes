@@ -27,7 +27,7 @@ try {
 
     $bindings = rg -n 'configure_country|bootstrap_country|submit_country_commands|run_country_slice|get_country_state_hash|restore_country_runtime_checkpoint|prepare_country_authority_handoff|abort_country_authority_handoff' gdext/src/world_ext_bind_methods.cpp
     if (-not $bindings) { throw 'Country DCWorldExt bindings are missing.' }
-    if ($bindings -notmatch 'abort_country_authority_handoff') {
+    if (($bindings -join "`n") -notmatch 'abort_country_authority_handoff') {
         throw 'Country authority handoff abort binding is missing.'
     }
     $checkpoint = rg -n 'COUNTRY_CHECKPOINT_ABI_VERSION = 2|RUNTIME_SAVE_SECTION_COUNTRY|SECTION_COUNTRY := 8' gdext/src/country_core.h gdext/src/runtime_pod_protocol.h Project/project-keynes/scripts/game/pksr_bundle_header.gd

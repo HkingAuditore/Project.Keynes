@@ -389,12 +389,34 @@ bool NativeEconomyRuntime::configure_profile(const Dictionary &profile, std::str
         profile, "family_runtime_mode", "ACTIVE");
     _family_runtime_mode = family_mode == "OFF" ? 0
         : (family_mode == "PROBE" ? 1 : 2);
-    _family_min_settlement_tier = std::clamp(dict_num<int32_t>(
-        profile, "family_min_settlement_tier", 2), 0, 7);
     _family_review_days = std::clamp(dict_num<int32_t>(
         profile, "family_review_days", 30), 1, 3650);
-    _family_min_population_per_active = std::clamp<int64_t>(dict_num<int64_t>(
-        profile, "family_min_population_per_active", 150), 1, 1000000000LL);
+    {
+        std::vector<int64_t> milestones = packed_i64(
+            profile, "family_milestone_populations");
+        if (milestones.empty()) {
+            for (int32_t value : packed_i32(profile, "family_milestone_populations"))
+                milestones.push_back(value);
+        }
+        if (milestones.empty())
+            milestones = {100, 200, 500, 1000, 2000, 5000, 10000, 20000};
+        if (milestones.size() > 255) {
+            error = "family_milestone_populations_too_long";
+            return false;
+        }
+        for (size_t i = 0; i < milestones.size(); ++i) {
+            if (milestones[i] <= 0 || milestones[i] > 1000000000LL ||
+                (i > 0 && milestones[i] <= milestones[i - 1])) {
+                error = "family_milestone_populations_not_ascending";
+                return false;
+            }
+        }
+        _family_milestone_populations = std::move(milestones);
+    }
+    _family_min_founder_people = std::clamp<int64_t>(dict_num<int64_t>(
+        profile, "family_min_founder_people", 30), 1, 1000000LL);
+    _family_founding_choice_mode = dict_string(
+        profile, "family_founding_choice_mode", "PLAYER") == "AUTO" ? 0 : 1;
     _family_max_per_cell = std::clamp(dict_num<int32_t>(
         profile, "family_max_per_cell", 8), 1, 4096);
     _family_cells_per_slice = std::clamp(dict_num<int32_t>(

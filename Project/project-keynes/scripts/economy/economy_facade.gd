@@ -63,6 +63,7 @@ var _family_effect_displays: Dictionary = {}
 var _family_modifier_displays: Dictionary = {}
 var _family_trigger_displays: Dictionary = {}
 var _family_trait_sequence: int = 0
+var _family_founding_sequence: int = 0
 var _construction_receipt_cursor: int = 0
 var _colonization_receipt_cursors: Dictionary = {}
 var _canal_receipt_cursors: Dictionary = {}
@@ -876,6 +877,64 @@ func queue_family_trait_mutation(family_handle: int, operation: Variant,
 	return int(orders[0]) if bool(result.get("ok", false)) and not orders.is_empty() else 0
 
 
+## Pending 1-of-3 family founding offers with player-facing card copy.
+func family_founding_offers(offset: int = 0, limit: int = 16) -> Dictionary:
+	if not _configured or not _world_ext.has_method("get_family_founding_offers"):
+		return {"ok": false, "reason": "family_founding_runtime_unavailable"}
+	var result: Dictionary = _world_ext.get_family_founding_offers(offset, limit)
+	if not bool(result.get("ok", false)) or (result.get("offers", []) as Array).is_empty():
+		return result
+	var settlements := _settlement_name_lookup()
+	for offer in result.get("offers", []):
+		var settlement_name := String(settlements.get(int(offer.get("cell", -1)), ""))
+		offer["settlement_name"] = settlement_name
+		for card in offer.get("candidates", []):
+			_decorate_family_founding_card(card, settlement_name)
+	return result
+
+
+func submit_family_founding_choice(offer_id: int, generation: int,
+		choice_index: int, effective_day: int) -> Dictionary:
+	if not _configured or not _world_ext.has_method("submit_family_founding_choice"):
+		return {"ok": false, "reason": "family_founding_runtime_unavailable"}
+	_family_founding_sequence += 1
+	return _world_ext.submit_family_founding_choice(offer_id, generation,
+		choice_index, maxi(0, effective_day), _family_founding_sequence)
+
+
+func _decorate_family_founding_card(card: Dictionary, settlement_name: String) -> void:
+	card["family_name"] = compose_family_display_name(settlement_name,
+		String(card.get("surname", "")),
+		String(card.get("culture_group_naming_format", "CITY_SURNAME_SUFFIX")),
+		String(card.get("culture_group_separator", "-")),
+		String(card.get("culture_group_suffix", "氏")))
+	var building_id := String(card.get("building_type_id", ""))
+	card["building_display_name"] = String(
+		_building_display_names.get(building_id, building_id))
+	var profession_id := String(card.get("owner_profession_id", ""))
+	card["owner_profession_display_name"] = String(
+		_profession_display_names.get(profession_id, profession_id))
+	var trait_keys: PackedStringArray = card.get("trait_keys", PackedStringArray())
+	var trait_names := PackedStringArray()
+	for trait_key in trait_keys:
+		var copy: Dictionary = _family_trait_copy.get(String(trait_key), {})
+		var display := String(copy.get("display_name", ""))
+		trait_names.append(display if not display.is_empty() else String(trait_key))
+	card["trait_display_names"] = trait_names
+	card["trait_descriptions"] = _family_trait_description_column(
+		trait_keys, card.get("trait_strength_q16", PackedInt32Array()))
+	var effect_key := String(card.get("effect_key", ""))
+	if effect_key.is_empty():
+		card["effect_display_name"] = ""
+		card["effect_description"] = ""
+		return
+	var keys := PackedStringArray([effect_key])
+	card["effect_display_name"] = String(_mapped_effect_names(
+		keys, _family_effect_displays)[0])
+	card["effect_description"] = String(
+		_mapped_effect_current_descriptions(keys, 0)[0])
+
+
 func queue_family_trigger_reward(effect: Dictionary) -> Dictionary:
 	if not _configured:
 		return {"ok": false, "reason": "economy facade is not configured"}
@@ -1422,6 +1481,7 @@ func _load_family_effect_displays() -> void:
 			_family_trait_descriptions[trait_key] = String(
 				definition.description).strip_edges()
 			_family_trait_copy[trait_key] = {
+				"display_name": String(definition.display_name).strip_edges(),
 				"template": String(definition.get("description_template")).strip_edges(),
 				"range_text": String(definition.get("range_text")).strip_edges(),
 				"strength_min_q16": int(definition.strength_min_q16),

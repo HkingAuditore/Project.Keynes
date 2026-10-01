@@ -26,6 +26,7 @@ using persistence_codec::SAVE_SECTION_COUNTRY_GOOD;
 using persistence_codec::SAVE_SECTION_COUNTRY_PARTNER;
 using persistence_codec::SAVE_SECTION_END;
 using persistence_codec::SAVE_SECTION_FAMILY_EXPEDITIONS;
+using persistence_codec::SAVE_SECTION_FAMILY_FOUNDING;
 using persistence_codec::SAVE_SECTION_FAMILY_INFLUENCES;
 using persistence_codec::SAVE_SECTION_FAMILY_MEMBERSHIP;
 using persistence_codec::SAVE_SECTION_FAMILY_OWNERSHIP;
@@ -339,6 +340,7 @@ uint32_t ecp2_domain_for_pkec_section(uint16_t section) noexcept {
     case SAVE_SECTION_FAMILY_INFLUENCES:
     case SAVE_SECTION_FAMILY_TRAIT_COMMANDS:
     case SAVE_SECTION_FAMILY_EXPEDITIONS:
+    case SAVE_SECTION_FAMILY_FOUNDING:
         return ECP2_DOMAIN_FAMILY;
     case SAVE_SECTION_TRADE_FLOWS:
     case SAVE_SECTION_TARIFF_HISTORY:

@@ -465,9 +465,10 @@ func _active_profile() -> Dictionary:
 	var profile: Dictionary = load(
 		"res://data/economy/default_economy.tres").to_native_profile()
 	profile.family_runtime_mode = "ACTIVE"
-	profile.family_min_settlement_tier = 0
 	profile.family_review_days = 1
-	profile.family_min_population_per_active = 1
+	profile.family_milestone_populations = PackedInt64Array([1, 2, 3, 4, 5, 6, 7, 8])
+	profile.family_min_founder_people = 20
+	profile.family_founding_choice_mode = "AUTO"
 	profile.notable_person_runtime_mode = "ACTIVE"
 	profile.starvation_death_rate_q32 = 0
 	return profile

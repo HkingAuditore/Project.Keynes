@@ -110,11 +110,22 @@ contract from roadmap text or a previous chat.
 
 Keep formation deterministic and based on realized economy state:
 
-1. Require the configured settlement tier and population threshold.
-2. Require an active building with stable identity and an anonymously owned unit.
-3. Require actual filled owner slots, target realized margin, sufficient projected owner income,
-   and the founders' living-reserve cash.
-4. Choose candidates with stable economic and ID tie-breaks.
+1. Found at most one family per crossed `family_milestone_populations` entry (default
+   100/200/500/1000/2000/5000/10000/20000; `_family_milestones_reached[cell]` advances only on a
+   successful founding). New families need `family_min_founder_people` (default 30); only the
+   opening capital starter is exempt. `FAMILY_MIN_ACTIVE_PEOPLE=20` is the lifecycle floor only.
+2. Require an active building with stable identity, an anonymously owned unit, and actual filled
+   owner slots. Margin/revenue are ranking inputs, not gates.
+3. `build_family_founding_candidates` produces 3 cards from up to 3 distinct
+   `(building type, owner signature)` industries, each with an independent stable_id, surname
+   (deduped per culture group), core traits (`roll_core_family_traits`) and random-pool effect
+   (`roll_random_pool_family_effect`, deduped across cards). Player-country cells in PLAYER mode
+   store a `FamilyFoundingOffer` and wait for `submit_family_founding_choice`; AI/unowned cells
+   and AUTO mode pick deterministically and found immediately. Never let unchosen cards leak into
+   FamilyStore; the chosen card's effect goes through the sorted `_family_founding_effects` side
+   table. Offers, choices, milestones and that table are PKEC v55 section 35 and state-hash inputs.
+4. Resolve a chosen card on the offered building, rebind to the best eligible building if it
+   vanished, and void after `FAMILY_FOUNDING_MAX_FAILED_REVIEWS` failed reviews.
 5. Move one building unit, its actual owner operators, and a conserved household of
    owner-signature dependents (`owner_slots in the cell * family_household_people_per_owner_slot`,
    capped by `family_household_max_people`; defaults 256 per slot, 1024 cap, 8 families per
@@ -130,7 +141,7 @@ The formal `StarterSettlementBootstrap v3` path is the only opening exception: i
 founder building per capital so native bootstrap immediately creates one conserved founder family
 and promotes one already-filled owner as its notable representative. Keep this declaration sparse,
 validate exact cell/type/owner-signature columns, rebuild the normal family/person CSR, and never
-lower the ordinary tier/population/profit/reserve thresholds to simulate an opening guarantee.
+lower the ordinary milestone/founder thresholds to simulate an opening guarantee.
 Treat `forced_named_cells` plus an actually bootstrapped `gathering_ground` as the native v2-packet
 compatibility signature when explicit founder columns are absent. Repair an empty forced capital only
 during days 0..30 and only after its exact owner posts are occupied; use authoritative membership edges

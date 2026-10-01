@@ -453,12 +453,6 @@ void NativeEconomyRuntime::grant_random_pool_family_effect(
         families_store().active[family_index] == 0 ||
         _effect_runtime == nullptr || _family_effect_keys.empty())
         return;
-    uint64_t rng = 1469598103934665603ULL;
-    rng = trace_hash_mix(rng, static_cast<uint64_t>(_seed));
-    rng = trace_hash_mix(rng, static_cast<uint64_t>(
-        families_store().stable_id[family_index]));
-    rng = trace_hash_mix(rng, static_cast<uint32_t>(
-        _family_effect_catalog_version));
     const uint64_t family_handle = families_store().handle_for_index(family_index);
     std::vector<int32_t> owned;
     bool has_random_pool = false;
@@ -487,6 +481,38 @@ void NativeEconomyRuntime::grant_random_pool_family_effect(
     const int32_t origin = families_store().origin_cell[family_index];
     const int32_t home = families_store().home_cell[family_index];
     const int32_t tech_cell = origin >= 0 && origin < _cell_count ? origin : home;
+    int32_t chosen = family_founding_effect_for(
+        families_store().stable_id[family_index]);
+    if (chosen >= 0) {
+        bool allowed = chosen < static_cast<int32_t>(_family_effect_keys.size());
+        for (int32_t mine : owned) {
+            if (!allowed) break;
+            if (mine + 1 >= static_cast<int32_t>(_family_effect_exclusion_offsets.size()))
+                continue;
+            for (int32_t p = _family_effect_exclusion_offsets[static_cast<size_t>(mine)];
+                 allowed && p < _family_effect_exclusion_offsets[
+                    static_cast<size_t>(mine) + 1]; ++p)
+                allowed = _family_effect_exclusions[static_cast<size_t>(p)] != chosen;
+        }
+        if (!allowed) chosen = -1;
+    }
+    if (chosen < 0)
+        chosen = roll_random_pool_family_effect(static_cast<uint64_t>(
+            families_store().stable_id[family_index]), tech_cell, owned, {});
+    if (chosen < 0) return;
+    grant_family_effect_to_branches(family_index, chosen);
+}
+
+int32_t NativeEconomyRuntime::roll_random_pool_family_effect(
+        uint64_t stable_id, int32_t tech_cell,
+        const std::vector<int32_t> &owned,
+        const std::vector<int32_t> &avoid) const {
+    if (_family_effect_keys.empty()) return -1;
+    uint64_t rng = 1469598103934665603ULL;
+    rng = trace_hash_mix(rng, static_cast<uint64_t>(_seed));
+    rng = trace_hash_mix(rng, stable_id);
+    rng = trace_hash_mix(rng, static_cast<uint32_t>(
+        _family_effect_catalog_version));
     std::vector<int32_t> candidates;
     int64_t total_weight = 0;
     for (int32_t effect_id = 0; effect_id < static_cast<int32_t>(
@@ -495,6 +521,8 @@ void NativeEconomyRuntime::grant_random_pool_family_effect(
             _family_effect_random_pool_eligible[static_cast<size_t>(effect_id)] == 0)
             continue;
         if (!family_effect_technology_unlocked(effect_id, tech_cell))
+            continue;
+        if (std::find(avoid.begin(), avoid.end(), effect_id) != avoid.end())
             continue;
         bool allowed = true;
         if (effect_id + 1 < static_cast<int32_t>(
@@ -523,7 +551,7 @@ void NativeEconomyRuntime::grant_random_pool_family_effect(
         candidates.push_back(effect_id);
         total_weight += weight;
     }
-    if (candidates.empty() || total_weight <= 0) return;
+    if (candidates.empty() || total_weight <= 0) return -1;
     int64_t roll = static_cast<int64_t>(trace_hash_mix(rng, 0x5049434bULL) %
         static_cast<uint64_t>(total_weight));
     int32_t chosen = candidates.back();
@@ -537,6 +565,12 @@ void NativeEconomyRuntime::grant_random_pool_family_effect(
         }
         roll -= weight;
     }
+    return chosen;
+}
+
+void NativeEconomyRuntime::grant_family_effect_to_branches(
+        int32_t family_index, int32_t chosen) {
+    const uint64_t family_handle = families_store().handle_for_index(family_index);
     const std::string &key = _family_effect_keys[static_cast<size_t>(chosen)];
     int32_t prestige = 0;
     for (int32_t branch = 0; branch < static_cast<int32_t>(
