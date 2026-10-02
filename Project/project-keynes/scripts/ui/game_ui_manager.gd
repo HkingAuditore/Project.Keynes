@@ -479,6 +479,17 @@ func _on_country_committed(report: Dictionary) -> void:
 	if territory_changed or state_dirty \
 			or (dirty_families & NATIVE_DIRTY_COUNTRY_TERRITORY) != 0:
 		domains |= COUNTRY_DIRTY_ECONOMY
+	# A worker country commit can advance the published country generation while
+	# leaving the legacy dirty-family bits empty.  The technology archive reads
+	# that committed research snapshot, so while it is open it must observe every
+	# committed country boundary; otherwise the old cached model survives until a
+	# technology click forces a direct live snapshot.
+	if _country_panel != null and _country_panel.is_panel_open() \
+			and String(_country_panel.current_section()) == "technology" \
+			and (int(report.get("generation", report.get("country_generation", 0))) > 0 \
+			or int(report.get("changed_countries", 0)) > 0 \
+			or state_dirty):
+		domains |= COUNTRY_DIRTY_TECHNOLOGY
 	var research_poll := {"states_changed": false, "completed": false}
 	if state_dirty:
 		var now_ms := Time.get_ticks_msec()

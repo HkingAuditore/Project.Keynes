@@ -1,0 +1,18 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+ERROR: worker source contains forbidden token '#include <godot': gdext/src/native_simulation_host.cpp
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _fail (res://tests/runtime_worker_source_scan_test.gd:66)
+       [1] _init (res://tests/runtime_worker_source_scan_test.gd:59)
+ERROR: worker source contains forbidden token 'godot::': gdext/src/native_simulation_host.cpp
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _fail (res://tests/runtime_worker_source_scan_test.gd:66)
+       [1] _init (res://tests/runtime_worker_source_scan_test.gd:59)
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 111 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

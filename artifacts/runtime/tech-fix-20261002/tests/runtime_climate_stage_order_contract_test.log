@@ -1,0 +1,15 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+=== climate stage order contract ===
+canonical: PASS_A>PASS_B>OCEAN_WATER>OCEAN_LAND>WIND_AIR>WIND_SURFACE>SEA_ICE>TRANSPIRATION>WEATHER>RUNTIME_HYDROLOGY>ALBEDO>VEGETATION_DYNAMICS>CLIMATE_FEEDBACK>STAGE_B_AFTER_HYDROLOGY
+=== climate field ownership ledger ===
+ledger fields: 39 parity + 13 extra
+=== climate wait api contract ===
+checks: 582, failures: 0
+runtime climate stage order contract: PASS
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 111 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

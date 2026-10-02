@@ -1,0 +1,45 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [OK] catalog compiles
+  [OK] country configures
+  [OK] country bootstraps
+  [OK] bootstrap exposes a country handle
+  [OK] saved rename queues
+  [OK] saved rename commits
+  [OK] future rename queues before capture
+  [OK] direct checkpoint is canonical PKCN v13
+  [OK] SHADOW worker starts for save
+  [OK] runtime save becomes ready (ok)
+  [OK] PKSR v2 header accepts the Country bundle
+  [OK] Country section bit 0x8 is present
+  [OK] Country section payload is non-empty
+  [OK] Country provider returns PKCN v13
+  [OK] save provider reuses the exact canonical PKCN capture
+  [OK] CPD2 section is locatable and uses ABI v2
+  [OK] CPD2 embeds the same canonical PKCN
+  [OK] worker stops before restore
+  [OK] post-save mutation queues
+  [OK] post-save mutation commits
+  [OK] post-save mutation changes the state hash
+  [OK] PKSR restore prepares the Country checkpoint (ok)
+  [OK] mismatched PKCN is rejected precisely
+  [OK] rejected restore leaves the live Country unchanged
+  [OK] matching CPD2/PKCN restores atomically (ok)
+  [OK] Country business hash round-trips exactly
+  [OK] Country generation and day round-trip exactly
+  [OK] saved identity is restored
+  [OK] pre-save events are not replayed during restore
+  [OK] worker restarts on the restored bundle
+  [OK] restored Country can be saved again
+  [OK] save -> restore -> save keeps canonical PKCN unchanged
+  [OK] re-saved CPD2 embeds the same canonical PKCN
+  [OK] restarted worker stops
+  [OK] restored future command commits
+  [OK] event cursor resumes without replaying the saved rename
+runtime country save roundtrip: 36 checks, 0 failures
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 276 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
