@@ -536,6 +536,9 @@ func _connect_runtime() -> void:
 	if _runtime_host != null and _runtime_host.has_signal("simulation_committed") \
 			and not _runtime_host.simulation_committed.is_connected(_on_simulation_committed):
 		_runtime_host.simulation_committed.connect(_on_simulation_committed)
+	if _runtime_host != null and _runtime_host.has_signal("country_peer_serviced") \
+			and not _runtime_host.country_peer_serviced.is_connected(_on_country_peer_serviced):
+		_runtime_host.country_peer_serviced.connect(_on_country_peer_serviced)
 	if _world_clock == null:
 		return
 	if not _world_clock.day_changed.is_connected(_on_day_changed):
@@ -558,6 +561,17 @@ func _on_simulation_committed(_from_day: int, to_day: int, _generation: int) -> 
 	_sync_time_ui()
 	if _ui_manager != null and _selected_cell != null:
 		_ui_manager.refresh_selected_daily_lines(false, to_day)
+	_sync_era_reward_offer()
+	_sync_family_founding_offer()
+
+
+func _on_country_peer_serviced(report: Dictionary) -> void:
+	# Era reward planning is completed while the host drains Country peer
+	# intents, after the worker commit signal has already been published.
+	# The host emits only when it actually serviced an intent, so this is an
+	# event wake-up rather than a per-frame offer poll.
+	if int(report.get("inspected", 0)) <= 0:
+		return
 	_sync_era_reward_offer()
 	_sync_family_founding_offer()
 

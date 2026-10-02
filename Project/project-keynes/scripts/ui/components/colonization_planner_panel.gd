@@ -258,9 +258,15 @@ func _sync_quote_rows(quotes: Array, keep_population: int) -> bool:
 		if selected:
 			_selected_quote = decorated.duplicate(true)
 			var maximum := maxi(1, maximum_population)
-			_population.max_value = maximum
-			_population.value = clampi(keep_population, 1, maximum) \
-				if keep_population > 0 else maximum
+			var population_editor := _population.get_line_edit()
+			var population_editing := _population.has_focus() \
+				or (population_editor != null and population_editor.has_focus())
+			# Daily quote refreshes may update the selected row, but they must not
+			# write into a SpinBox while the player is editing its value.
+			if not population_editing:
+				_population.max_value = maximum
+				_population.value = clampi(keep_population, 1, maximum) \
+					if keep_population > 0 else maximum
 			restored = true
 	var stale: Array = []
 	for handle_value in _quote_row_refs.keys():

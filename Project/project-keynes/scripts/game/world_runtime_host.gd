@@ -7,6 +7,7 @@ signal world_ready(map: MapData, world_data: WorldData, generator: MapGenerator,
 signal daily_tick_completed(report: Dictionary)
 ## 后台 worker 完整日提交通知。该信号只用于展示和诊断，订阅者不得推进模拟。
 signal simulation_committed(from_day: int, to_day: int, generation: int)
+signal country_peer_serviced(report: Dictionary)
 signal generation_progress(stage: String, fraction: float)
 signal gm_toggle_changed(toggle_id: String, enabled: bool)
 signal gm_action_completed(action_id: String, result: Dictionary)
@@ -1158,6 +1159,8 @@ func _service_country_worker_transport() -> void:
 	var shadow_replay := mode != "ACTIVE"
 	_country_worker_transport_last_service = \
 		_generator.service_country_worker_peer_adapter(64, shadow_replay)
+	if int(_country_worker_transport_last_service.get("inspected", 0)) > 0:
+		country_peer_serviced.emit(_country_worker_transport_last_service.duplicate(false))
 
 
 ## ACTIVE Country's only MapData read-back boundary.  The worker snapshot is

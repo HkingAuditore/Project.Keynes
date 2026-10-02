@@ -72,6 +72,11 @@ var _trade_revision := -1
 var _trade_cache: Dictionary = {}
 var _partner_name_cache: Dictionary = {}
 var _pending: Dictionary = {}
+# Keep the value the player just submitted visible until a committed policy
+# snapshot explicitly reflects it.  Worker/UI snapshots can cross one another
+# around the effective day; relying on _pending alone allowed an older snapshot
+# to repaint the input after focus had already left it.
+var _submitted_tax: Dictionary = {}
 var _preview_defaults: Dictionary = {}
 var _draft_overrides: Dictionary = {}
 var _draft_timer: Timer
@@ -155,6 +160,7 @@ func set_model(model: Dictionary) -> void:
 		_ready()
 	_preview_defaults.clear()
 	_draft_overrides.clear()
+	_submitted_tax.clear()
 	_stop_draft_timer()
 	for row_value in _rows.values():
 		if row_value is Dictionary:
@@ -911,6 +917,18 @@ func _update_card(card: Dictionary, kind_data: Dictionary) -> void:
 	var signature_parts: Array[String] = []
 	for kind in card.kinds:
 		var data: Dictionary = kind_data.get(kind, {})
+		var submitted_key := "%s:%s" % [kind, String(card.item_id)]
+		if _submitted_tax.has(submitted_key):
+			var submitted: Dictionary = _submitted_tax[submitted_key]
+			if _tax_submission_reflected(card, kind, data, submitted):
+				_submitted_tax.erase(submitted_key)
+			else:
+				# Preserve the player's committed value while the next authoritative
+				# snapshot is still catching up.
+				data = data.duplicate(false)
+				data["base"] = int(submitted.get("rate", data.get("base", 0)))
+				data["mode"] = int(submitted.get("mode", data.get("mode", TAX_MODE_PERCENT_BP)))
+				data["has_override"] = bool(submitted.get("has_override", false))
 		var base := int(data.get("base", 0))
 		var mode := int(data.get("mode", TAX_MODE_PERCENT_BP))
 		var overridden := bool(data.get("has_override", false))
@@ -972,6 +990,21 @@ func _update_card(card: Dictionary, kind_data: Dictionary) -> void:
 			if sub.visible:
 				sub.text = "修正后 %s" % _format_rate(effective)
 	_refresh_override_frame(card)
+
+
+func _tax_submission_reflected(card: Dictionary, kind: String,
+		data: Dictionary, submitted: Dictionary) -> bool:
+	var expected_rate := int(submitted.get("rate", 0))
+	var expected_mode := int(submitted.get("mode", TAX_MODE_PERCENT_BP))
+	var actual_rate := int(data.get("base", 0))
+	var actual_mode := int(data.get("mode", TAX_MODE_PERCENT_BP))
+	var expected_override := bool(submitted.get("has_override", false))
+	var actual_override := bool(data.get("has_override", false))
+	if actual_rate != expected_rate or actual_mode != expected_mode:
+		return false
+	if card.is_default:
+		return true
+	return actual_override == expected_override
 
 
 func _visual_rate(card: Dictionary, kind: String, authoritative_rate: int,
@@ -1259,6 +1292,11 @@ func _clear_override(kind: String, item_id: String) -> void:
 			"kind": int(TAX_KIND[kind]), "item_id": StringName(item_id)})
 	if bool(result.get("ok", false)):
 		_mark_pending(kind, item_id, _default_rate(kind), "clear")
+		_submitted_tax["%s:%s" % [kind, item_id]] = {
+			"rate": _default_rate(kind),
+			"mode": _default_mode(kind),
+			"has_override": false,
+		}
 		var card: Dictionary = _rows.get("%s:%s" % [_kind_page(kind), item_id], {})
 		if not card.is_empty():
 			var default_rate := _default_rate(kind)
@@ -1290,6 +1328,11 @@ func _submit_rate(kind: String, item_id: String, rate: int, is_default: bool,
 		if is_default:
 			_preview_defaults.erase(kind)
 		_mark_pending(kind, item_id, rate, "set", mode)
+		_submitted_tax["%s:%s" % [kind, item_id]] = {
+			"rate": rate,
+			"mode": mode,
+			"has_override": not is_default,
+		}
 		var card: Dictionary = _rows.get("%s:%s" % [_kind_page(kind), item_id], {})
 		if not card.is_empty():
 			var spin := (card.spins as Dictionary)[kind] as SpinBox
