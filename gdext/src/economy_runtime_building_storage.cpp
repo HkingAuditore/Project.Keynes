@@ -257,7 +257,7 @@ int32_t NativeEconomyRuntime::find_building_group(int32_t cell, int32_t type_id,
                                                    int32_t owner_signature_id) const {
     ++_scan_calls_find_building_group;
     for (int32_t i = 0; i < static_cast<int32_t>(building_count()); ++i) {
-        const auto group = building_at(static_cast<size_t>(i));
+        const auto group = building_view(static_cast<size_t>(i));
         if (group.cell == cell && group.type_id == type_id &&
             group.owner_signature_id == owner_signature_id) {
             _scan_steps_find_building_group += i + 1;
@@ -348,13 +348,13 @@ void NativeEconomyRuntime::rebuild_building_role_storage() {
         }
     } role_storage_timer{this, merge_started};
     auto key = [&](int32_t index) {
-        const auto group = building_at(static_cast<size_t>(index));
+        const auto group = building_view(static_cast<size_t>(index));
         return std::tuple(group.cell, group.type_id, group.owner_signature_id);
     };
     _building_existing_indices_scratch.clear();
     _building_new_indices_scratch.clear();
     for (int32_t index = 0; index < static_cast<int32_t>(building_count()); ++index) {
-        const auto group = building_at(static_cast<size_t>(index));
+        const auto group = building_view(static_cast<size_t>(index));
         if (group.count <= 0) {
             if (group.cell >= 0 && group.cell < _cell_count.get()) {
                 mark_market_signal_cell_dirty(group.cell);
@@ -469,7 +469,7 @@ void NativeEconomyRuntime::rebuild_building_cell_offsets() {
     _building_cell_offsets.assign(static_cast<size_t>(std::max(0, _cell_count.get())) + 1, 0);
     _building_active_cells.clear();
     for (size_t pk_row = 0; pk_row < building_count(); ++pk_row) {
-        const auto group = building_at(pk_row);
+        const auto group = building_view(pk_row);
         if (group.cell >= 0 && group.cell < _cell_count.get() && group.count > 0) {
             ++_building_cell_offsets[group.cell + 1];
         }
@@ -493,7 +493,7 @@ void NativeEconomyRuntime::rebuild_building_visual_snapshot() {
     int32_t last_cell = -1;
     int32_t last_type = -1;
     for (size_t pk_row = 0; pk_row < building_count(); ++pk_row) {
-        const auto group = building_at(pk_row);
+        const auto group = building_view(pk_row);
         if (group.count <= 0 || group.cell < 0 || group.cell >= _cell_count.get() ||
             group.type_id < 0 ||
             group.type_id >= static_cast<int32_t>(_building_types.size()))
@@ -548,7 +548,7 @@ void NativeEconomyRuntime::rebuild_building_review_buckets() {
 
     for (int32_t group_index = 0;
          group_index < static_cast<int32_t>(building_count()); ++group_index) {
-        const auto group = building_at(static_cast<size_t>(group_index));
+        const auto group = building_view(static_cast<size_t>(group_index));
         if (group.count <= 0 || group.cell < 0 || group.cell >= _cell_count.get() ||
             group.type_id < 0 ||
             group.type_id >= static_cast<int32_t>(_building_types.size())) continue;
@@ -565,7 +565,7 @@ void NativeEconomyRuntime::rebuild_building_review_buckets() {
     int32_t cursor = _building_review_phase_offsets[0];
     for (int32_t group_index = 0;
          group_index < static_cast<int32_t>(building_count()); ++group_index) {
-        const auto group = building_at(static_cast<size_t>(group_index));
+        const auto group = building_view(static_cast<size_t>(group_index));
         if (group.count <= 0 || group.cell < 0 || group.cell >= _cell_count.get() ||
             group.type_id < 0 ||
             group.type_id >= static_cast<int32_t>(_building_types.size()) ||

@@ -536,6 +536,10 @@ void NativeEconomyRuntime::prepare_restore_candidate_scratch() {
     _family_expedition_target_index.clear();
     _family_expedition_due_heap.clear();
     _colonization_receipts.clear();
+    {
+        std::lock_guard<std::mutex> lock(_worker_command_inbox->mutex);
+        _worker_command_inbox->commands.clear();
+    }
     _birth_residual_q32.assign(
         static_cast<size_t>(_cell_count.get()) * _ethnicity_ids.size(), 0);
     _settlements.clear(_cell_count.get());

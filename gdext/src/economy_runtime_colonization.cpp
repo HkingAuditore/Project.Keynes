@@ -824,7 +824,8 @@ Dictionary NativeEconomyRuntime::submit_family_colonization_start(
         int64_t country_handle_value, int64_t family_handle_value,
         int32_t source_cell, int32_t target_cell, int64_t population,
         int64_t quote_token_value, int64_t effective_day, int64_t sequence,
-        const uint8_t *visible, int32_t visible_count, uint64_t vision_revision) {
+        const uint8_t *visible, int32_t visible_count, uint64_t vision_revision,
+        bool queue_for_worker) {
     Dictionary out;
     if (!_bootstrapped || _fatal || _save.active || _restore.active) {
         out["ok"] = false;
@@ -904,9 +905,15 @@ Dictionary NativeEconomyRuntime::submit_family_colonization_start(
     command.target_handle = static_cast<uint64_t>(family_handle_value);
     command.i32_0 = source_cell; command.i32_1 = target_cell;
     command.i64_0 = population; command.i64_1 = quote_token_value;
-    command.submit_order = _next_submit_order++;
-    if (_epoch_active) {
-        _pending_commands.push_back(command);
+    // Under worker execution the caller is the main thread while the worker
+    // may be mid-day: applying here races the expedition heap and stores.
+    if (queue_for_worker) {
+        enqueue_worker_command(command);
+    } else {
+        command.submit_order = _next_submit_order++;
+        if (_epoch_active) _pending_commands.push_back(command);
+    }
+    if (queue_for_worker || _epoch_active) {
         out["ok"] = true; out["code"] = "colonization_queued";
         out["message"] = "Family expedition queued until settlement";
         out["queued"] = true;
@@ -933,7 +940,7 @@ Dictionary NativeEconomyRuntime::submit_family_colonization_start(
 
 Dictionary NativeEconomyRuntime::submit_family_colonization_cancel(
         int64_t country_handle_value, int64_t expedition_handle_value,
-        int64_t effective_day, int64_t sequence) {
+        int64_t effective_day, int64_t sequence, bool queue_for_worker) {
     Dictionary out;
     if (_fatal || _save.active || _restore.active) {
         out["ok"] = false;
@@ -959,9 +966,13 @@ Dictionary NativeEconomyRuntime::submit_family_colonization_cancel(
     command.opcode = COMMAND_CANCEL_FAMILY_EXPEDITION;
     command.effective_day = effective_day; command.sequence = sequence;
     command.target_handle = static_cast<uint64_t>(expedition_handle_value);
-    command.submit_order = _next_submit_order++;
-    if (_epoch_active) {
-        _pending_commands.push_back(command);
+    if (queue_for_worker) {
+        enqueue_worker_command(command);
+    } else {
+        command.submit_order = _next_submit_order++;
+        if (_epoch_active) _pending_commands.push_back(command);
+    }
+    if (queue_for_worker || _epoch_active) {
         out["ok"] = true; out["code"] = "colonization_cancel_queued";
         out["message"] = "Family expedition cancel queued until settlement";
         out["queued"] = true;
@@ -979,6 +990,23 @@ Dictionary NativeEconomyRuntime::submit_family_colonization_cancel(
                                : "Family expedition is returning";
     out["effective_day"] = effective_day; out["sequence"] = sequence;
     return out;
+}
+
+void NativeEconomyRuntime::enqueue_worker_command(const Command &command) {
+    std::lock_guard<std::mutex> lock(_worker_command_inbox->mutex);
+    _worker_command_inbox->commands.push_back(command);
+}
+
+void NativeEconomyRuntime::drain_worker_command_inbox() {
+    std::vector<Command> commands;
+    {
+        std::lock_guard<std::mutex> lock(_worker_command_inbox->mutex);
+        commands.swap(_worker_command_inbox->commands);
+    }
+    for (Command &command : commands) {
+        command.submit_order = _next_submit_order++;
+        _pending_commands.push_back(command);
+    }
 }
 
 void NativeEconomyRuntime::push_family_expedition_due(int32_t expedition) {
@@ -1034,6 +1062,9 @@ bool NativeEconomyRuntime::pending_family_expedition_target_taken(
         if (matches(cmd)) return true;
     for (const Command &cmd : _epoch_commands)
         if (matches(cmd)) return true;
+    std::lock_guard<std::mutex> lock(_worker_command_inbox->mutex);
+    for (const Command &cmd : _worker_command_inbox->commands)
+        if (matches(cmd)) return true;
     return false;
 }
 
@@ -1047,6 +1078,9 @@ bool NativeEconomyRuntime::pending_family_expedition_cancel_taken(
         if (matches(cmd)) return true;
     for (const Command &cmd : _epoch_commands)
         if (matches(cmd)) return true;
+    std::lock_guard<std::mutex> lock(_worker_command_inbox->mutex);
+    for (const Command &cmd : _worker_command_inbox->commands)
+        if (matches(cmd)) return true;
     return false;
 }
 
@@ -1059,7 +1093,8 @@ bool NativeEconomyRuntime::has_pending_family_expedition_player_command() const 
         if (matches(cmd)) return true;
     for (const Command &cmd : _epoch_commands)
         if (matches(cmd)) return true;
-    return false;
+    std::lock_guard<std::mutex> lock(_worker_command_inbox->mutex);
+    return !_worker_command_inbox->commands.empty();
 }
 
 bool NativeEconomyRuntime::apply_family_expedition_player_command(

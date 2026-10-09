@@ -1,6 +1,11 @@
 extends SceneTree
 
 const SHADER_PATH := "res://shaders/world_map.gdshader"
+const TERRAIN_RELIEF_UNIFORMS := [
+	"tod_terrain_relief_slope_gain",
+	"terrain_erosion_strength",
+	"terrain_erosion_world_size",
+]
 
 var _checks := 0
 var _failures := 0
@@ -19,6 +24,8 @@ func _init() -> void:
 		"res://shaders/include/land_pipeline.gdshaderinc")
 	var material_constants_source := FileAccess.get_file_as_string(
 		"res://shaders/include/material_constants.gdshaderinc")
+	var hillshade_source := FileAccess.get_file_as_string(
+		"res://shaders/include/hillshade_tod.gdshaderinc")
 	_expect(surface_source.contains("terrain_static_biome_is_water"),
 		"terrain edge blend contains an explicit coast-domain guard")
 	_expect(surface_source.contains("terrain_hybrid_static_weight"),
@@ -43,6 +50,21 @@ func _init() -> void:
 		"river center replaces terrain normal through an explicit bank blend")
 	_expect(not land_source.contains("mix(normal, river_wn, river_w"),
 		"river wave normal no longer inherits terrain normal in its core")
+	_expect(land_source.contains("vec3 N = normalize(surface.macro_normal)"),
+		"tod aspect relief reads the macro normal, not material detail")
+	_expect(land_source.contains("length(surface.macro_normal.xy)"),
+		"relief tint slope reads the macro normal")
+	_expect(land_source.contains("sp.macro_normal = normalize(macro_normal)"),
+		"land base surface keeps material detail out of macro_normal")
+	_expect(land_source.contains("float facing = dot(Nh, Ln) * tod_terrain_relief_slope_gain")
+		and not land_source.contains("slope_face = Nh / slope"),
+		"tod relief scales with slope instead of a normalized binary aspect")
+	_expect(land_source.contains("terrain_apply_erosion_detail(")
+		and hillshade_source.contains("vec4 terrain_apply_erosion_detail("),
+		"macro normal carries slope-aligned erosion gullies")
+	_expect(hillshade_source.contains("terrain_erosion_cell_coord")
+		and hillshade_source.contains("wrap_period_x"),
+		"erosion noise stays periodic across the world X wrap")
 	_expect(material_constants_source.contains("RIVER_NORMAL_WAVE_WEIGHT")
 		and material_constants_source.contains("RIVER_NORMAL_BLEND_END"),
 		"river normal separation uses centralized material constants")
@@ -95,6 +117,8 @@ func _init() -> void:
 		_expect(names.has("terrain_material_tex_bound"), "%s exposes terrain material bound flag" % label)
 		_expect(names.has("terrain_materials_enabled"), "%s exposes terrain material switch" % label)
 		_expect(names.has("terrain_material_world_size"), "%s exposes terrain material world size" % label)
+		for relief_uniform in TERRAIN_RELIEF_UNIFORMS:
+			_expect(names.has(relief_uniform), "%s exposes %s" % [label, relief_uniform])
 		_expect(names.has("camera_zoom"), "%s exposes camera zoom" % label)
 	for label in variants:
 		var shader := Shader.new()
@@ -125,11 +149,18 @@ func _init() -> void:
 	var web_budget := Shader.new()
 	web_budget.code = "#define PK_WEB_TEXTURE_BUDGET\n" + source
 	var web_names := {}
+	var web_sampler_count := 0
 	for entry in web_budget.get_shader_uniform_list():
 		web_names[String(entry.get("name", ""))] = true
+		if int(entry.get("type", TYPE_NIL)) == TYPE_OBJECT:
+			web_sampler_count += 1
+	_expect(web_sampler_count <= 8,
+		"web budget keeps material samplers within 8 units (got %d)" % web_sampler_count)
 	_expect(not web_names.is_empty(), "web texture budget variant compiles")
 	_expect(web_names.has("terrain_material_tex"),
 		"web budget exposes terrain_material_tex after eco_lut retire")
+	for relief_uniform in TERRAIN_RELIEF_UNIFORMS:
+		_expect(web_names.has(relief_uniform), "web budget exposes %s" % relief_uniform)
 	_expect(not web_names.has("eco_lut"),
 		"web budget omits eco_lut from main terrain")
 	_expect(not web_names.has("flow_tex"),

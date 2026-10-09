@@ -1,9 +1,11 @@
 #pragma once
 
+#include "economy_cost_probe.h"
 #include "runtime_climate_kernel.h"
 
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <deque>
@@ -210,21 +212,32 @@ public:
     uint64_t last_input_generation() const { return _last_input_generation; }
     RuntimeClimateSnapshot snapshot() const {
         RuntimeClimateSnapshot result;
-        result.generation = _store.generation;
-        result.committed_day = _store.committed_day;
-        result.input_generation = _last_input_generation;
-        result.catalog_hash = _catalog.hash;
-        result.state_hash = _store.state_hash();
-        result.payload = _store;
-        result.soil_moisture = _kernel.distribute_soil_moisture();
-        const auto &ro = _kernel.round_output();
-        result.insolation_now = ro.insolation_now;
-        result.insolation_dev = ro.insolation_dev;
-        result.day_length = ro.day_length;
-        result.heat_input = ro.heat_input;
-        result.temp_season_offset = ro.temp_season_offset;
-        result.weather_field_init = _kernel.weather_field_init();
+        snapshot_into(result);
         return result;
+    }
+    // 拷贝赋值进调用方的缓冲，复用其 lane 容量（writeback ring 槽位跨天复用）。
+    // state_hash 只取已知的提交态归约；ACTIVE 热路径 plan 不算哈希时为 0，
+    // 这里不补算整 store —— 唯一读者是写回诊断字典，存档 serialize 自己会算。
+    void snapshot_into(RuntimeClimateSnapshot &out) const {
+        out.generation = _store.generation;
+        out.committed_day = _store.committed_day;
+        out.input_generation = _last_input_generation;
+        out.catalog_hash = _catalog.hash;
+        out.state_hash = _committed_state_hash;
+        const auto probe_started = std::chrono::steady_clock::now();
+        out.payload = _store;
+        out.soil_moisture = _kernel.distribute_soil_moisture();
+        const auto &ro = _kernel.round_output();
+        out.insolation_now = ro.insolation_now;
+        out.insolation_dev = ro.insolation_dev;
+        out.day_length = ro.day_length;
+        out.heat_input = ro.heat_input;
+        out.temp_season_offset = ro.temp_season_offset;
+        out.weather_field_init = _kernel.weather_field_init();
+        EconomyCostProbe::record("climate.snapshot.copy", _store.committed_day,
+            std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - probe_started).count(),
+            _store.temperature_history.size());
     }
 
     // 与 host 外层 climate section 的 64 MiB 上限一致，禁止让外层静默截断。
@@ -247,6 +260,9 @@ private:
     // plan_day 已对 `_next` 算过的归约；commit 只做 swap，必须复用，禁止再扫整 store。
     uint64_t _planned_state_hash = 0;
     uint64_t _planned_parity_hash = 0;
+    // `_store` 已知的 state_hash；0 = 未知（ACTIVE plan 跳过哈希，或刚播种）。
+    // 每个改写 `_store` 的入口都必须同步它。
+    uint64_t _committed_state_hash = 0;
     uint64_t _last_input_generation = 0;
     RuntimeClimateVerticalReport _last_report{};
 };

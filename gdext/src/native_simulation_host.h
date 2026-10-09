@@ -2,6 +2,7 @@
 
 #include "runtime_pod_protocol.h"
 #include "runtime_worker_timing.h"
+#include "runtime_day_waterfall.h"
 #include "runtime_snapshot_ring.h"
 #include "runtime_country_pod.h"
 #include "country_core.h"
@@ -1098,6 +1099,7 @@ private:
     std::atomic<uint64_t> _command_queue_capacity_exceeded{0};
     std::atomic<uint64_t> _receipt_queue_capacity_exceeded{0};
     RuntimeWorkerTiming _worker_timing;
+    RuntimeDayWaterfall _day_waterfall;
     std::atomic<uint64_t> _worker_fault_count{0};
     std::atomic<uint64_t> _completed_days{0};
     std::atomic<uint32_t> _last_day_stage_count{0};
@@ -1148,6 +1150,9 @@ private:
     std::array<std::atomic<uint8_t>, RUNTIME_ECONOMY_GRAPH_STAGE_COUNT>
         _economy_stage_reference_present{};
     RuntimeEconomyPodAuthority _economy_pod_authority;
+    // Worker-only capture buffer for the daily non-bound mirror; swapped with
+    // the POD publication each day so lane storage is reused, not reallocated.
+    RuntimeEconomyLedgerState _economy_mirror_capture_scratch;
     std::unique_ptr<EconomyGraphStageOps> _economy_stage_ops;
     // Default ACTIVE_ONLY; StageOps mutate/writer are armed at worker start
     // (Phase-2.4.5 defaults: mutate=true, writer=stage_ops).

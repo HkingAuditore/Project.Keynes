@@ -228,12 +228,16 @@ void NativeEconomyRuntime::rebuild_incremental_audit_shadow() {
     _audit_mutation_generation = 0;
 }
 
-void NativeEconomyRuntime::begin_incremental_audit_epoch() {
-    // Diagnostic rollout: retain preimages for worker sinks, which register
-    // lanes after their writes. Idle writes join the same generation and are
-    // installed before starting the next epoch. Full mode never trusts this.
+bool NativeEconomyRuntime::audit_shadow_reuse_enabled() {
     const char *reuse = std::getenv("PK_ECONOMY_AUDIT_SHADOW_REUSE");
-    const bool retain = reuse && std::strcmp(reuse, "1") == 0 &&
+    return !(reuse && std::strcmp(reuse, "0") == 0);
+}
+
+void NativeEconomyRuntime::begin_incremental_audit_epoch() {
+    // Retain preimages for worker sinks, which register lanes after their
+    // writes. Idle writes join the same generation and are installed before
+    // starting the next epoch. Full mode never trusts this.
+    const bool retain = audit_shadow_reuse_enabled() &&
         _closing_audit_mode == 2 && !_closing_audit_runtime_disabled &&
         _audit_mutation_generation != 0 &&
         _audit_shadow_population.size() == population_store().active.size() &&
@@ -2826,14 +2830,17 @@ PK_RESOURCE_SCRATCH_ACCESSOR(uint32_t, resource_lane_generation_lanes,
 #undef PK_RESOURCE_SCRATCH_ACCESSOR
 
 void NativeEconomyRuntime::capture_committed_ledger_state(
-        RuntimeEconomyLedgerState &out, uint64_t completed_stage_hash) const {
+        RuntimeEconomyLedgerState &out, uint64_t completed_stage_hash,
+        bool compute_ledger_hash) const {
     out.clear();
     // ECP2 mid-epoch checkpoints need the live SoA shape as a rollback source;
     // the public legacy save gate still rejects mid-epoch writes unless its
     // explicit ECP2 flag is enabled.
     if (_fatal) return;
+    const auto source_started = Clock::now();
     out.source_state_hash = completed_stage_hash != 0 ? completed_stage_hash :
         static_cast<uint64_t>(std::max<int64_t>(0, state_hash()));
+    const auto population_started = Clock::now();
     out.generation = _committed_generation;
     out.committed_day = _current_day.get();
     out.market_count = market_store().market_count.get();
@@ -2860,6 +2867,7 @@ void NativeEconomyRuntime::capture_committed_ledger_state(
     out.cohort_composite_satisfaction = population_store().composite_satisfaction;
     out.cohort_owner_employed = population_store().owner_employed;
     out.cohort_employee_employed = population_store().employee_employed;
+    const auto market_started = Clock::now();
     out.market_stock = market_store().stock;
     out.market_price = market_store().price;
     out.market_demand_ema = market_store().demand_ema;
@@ -2868,8 +2876,10 @@ void NativeEconomyRuntime::capture_committed_ledger_state(
 
     // A+Y N2/N8: one live group/pending lane in both modes; sync only repacks
     // the role CSR before the ledger reads it.
+    const auto building_started = Clock::now();
     sync_owned_building_store(mutable_buildings_store());
     fill_ledger_building_from_store(out.building, buildings_store());
+    const auto blocks_started = Clock::now();
 
     if (formula_owned_bound()) {
         out.trade_escrow = _formula_owned->trade_escrow;
@@ -2891,7 +2901,21 @@ void NativeEconomyRuntime::capture_committed_ledger_state(
 
     fill_ledger_epoch_cursor(out.epoch_cursor);
 
-    out.recompute_hash();
+    const auto hash_started = Clock::now();
+    if (compute_ledger_hash) out.recompute_hash();
+    const auto finished = Clock::now();
+    const auto ms = [](Clock::time_point from, Clock::time_point to) {
+        return std::chrono::duration<double, std::milli>(to - from).count();
+    };
+    const int64_t day = out.committed_day;
+    EconomyCostProbe::record("mirror.capture.source_hash", day, ms(source_started, population_started));
+    EconomyCostProbe::record("mirror.capture.population", day, ms(population_started, market_started),
+        out.cohort_active.size());
+    EconomyCostProbe::record("mirror.capture.market", day, ms(market_started, building_started),
+        out.market_stock.size());
+    EconomyCostProbe::record("mirror.capture.building", day, ms(building_started, blocks_started));
+    EconomyCostProbe::record("mirror.capture.blocks", day, ms(blocks_started, hash_started));
+    EconomyCostProbe::record("mirror.capture.hash", day, ms(hash_started, finished));
 }
 
 bool NativeEconomyRuntime::kernel_run_household_market_boundary(
@@ -6299,7 +6323,7 @@ void NativeEconomyRuntime::rebuild_market_signals() {
                 static_cast<size_t>(_cell_count.get() + 1)) {
             for (int32_t group_index = _building_cell_offsets[cell];
                  group_index < _building_cell_offsets[cell + 1]; ++group_index) {
-                const auto group = building_at(static_cast<size_t>(group_index));
+                const auto group = building_view(static_cast<size_t>(group_index));
                 if (group.count <= 0 || group.type_id < 0 ||
                     group.type_id >= static_cast<int32_t>(_building_types.size()))
                     continue;
@@ -6695,7 +6719,7 @@ int64_t NativeEconomyRuntime::rebuild_production_input_reserves_for_cell(
     const int32_t group_begin = _building_cell_offsets[cell];
     const int32_t group_end = _building_cell_offsets[cell + 1];
     for (int32_t group_index = group_begin; group_index < group_end; ++group_index) {
-        const auto group = building_at(static_cast<size_t>(group_index));
+        const auto group = building_view(static_cast<size_t>(group_index));
         if (group.count <= 0 ||
             group.cell < 0 || group.cell >= _cell_count.get() ||
             group.type_id < 0 ||
@@ -7206,7 +7230,7 @@ void NativeEconomyRuntime::rebuild_labor_signals() {
                 static_cast<size_t>(_cell_count.get() + 1)) {
             for (int32_t group_index = _building_cell_offsets[cell];
                  group_index < _building_cell_offsets[cell + 1]; ++group_index) {
-                const auto group = building_at(static_cast<size_t>(group_index));
+                const auto group = building_view(static_cast<size_t>(group_index));
                 if (group.count <= 0 || group.type_id < 0 ||
                     group.type_id >= static_cast<int32_t>(_building_types.size()))
                     continue;
@@ -7722,7 +7746,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                 static_cast<uint32_t>(cell);
             touched_owners.clear();
             for (int32_t g = begin; g < end; ++g) {
-                const auto group = building_at(static_cast<size_t>(g));
+                const auto group = building_view(static_cast<size_t>(g));
                 if (group.count <= 0 || group.operating_state != 0 ||
                     !building_available(cell, group.type_id, true)) continue;
                 if (group.owner_signature_id < 0 || group.owner_signature_id >=
@@ -7747,7 +7771,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                 }
             }
             for (int32_t g = begin; g < end; ++g) {
-                const auto group = building_at(static_cast<size_t>(g));
+                const auto group = building_view(static_cast<size_t>(g));
                 if (group.count <= 0 || group.operating_state != 0 ||
                     !building_available(cell, group.type_id, true)) continue;
                 const int32_t owner = group.owner_signature_id;
@@ -7820,7 +7844,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
                 }
             }
             for (int32_t g = begin; g < end; ++g) {
-                const auto group = building_at(static_cast<size_t>(g));
+                const auto group = building_view(static_cast<size_t>(g));
                 const int32_t owner = group.owner_signature_id;
                 if (group.count <= 0 || group.operating_state != 0 ||
                     owner < 0 || owner >= static_cast<int32_t>(owner_seen_key.size()) ||
@@ -7932,7 +7956,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
             group_order.reserve(static_cast<size_t>(group_end - group_begin));
         }
         for (int32_t g = group_begin; g < group_end; ++g) {
-            const auto candidate = building_at(static_cast<size_t>(g));
+            const auto candidate = building_view(static_cast<size_t>(g));
             RecoveryPlanOrder order;
             order.group = g;
             if (candidate.operating_state == 1 && candidate.type_id >= 0 &&
@@ -8043,7 +8067,7 @@ bool NativeEconomyRuntime::prepare_building_economic_plan_body(
         int64_t units = 0;
         for (int32_t peer = _building_cell_offsets[cell];
              peer < _building_cell_offsets[cell + 1]; ++peer) {
-            const auto peer_group = building_at(static_cast<size_t>(peer));
+            const auto peer_group = building_view(static_cast<size_t>(peer));
             if (peer_group.count <= 0 || peer_group.operating_state != 0 ||
                 peer_group.type_id < 0 || peer_group.type_id >=
                     static_cast<int32_t>(type_emits_monetary.size())) continue;
@@ -10905,7 +10929,6 @@ NativeEconomyRuntime::owner_opportunity_quote_uncached(
         result.profit_per_day = result.owner_income_per_day;
         result.fundable_output = 0;
         result.actual_output = 0;
-        result.optimal_output = 0;
         for (int32_t oi = 0; oi < type.output_count; ++oi) {
             const GoodAmount &output = _building_outputs[type.output_begin + oi];
             const int64_t quantity = effective_building_output_quantity(
@@ -10915,12 +10938,9 @@ NativeEconomyRuntime::owner_opportunity_quote_uncached(
                 quantity, sat);
         }
         result.actual_output = result.fundable_output;
-        result.optimal_output = result.actual_output;
         result.fixed_cost = saturating_add(result.maintenance,
             result.wages, sat);
         result.variable_cost = result.input_cost;
-        result.optimal_revenue = result.economic_revenue_per_day;
-        result.optimal_profit = result.profit_per_day;
         result.affordable_wage_per_day = result.employee_slots > 0
             ? std::max<int64_t>(0, saturating_sub(
                 saturating_sub(result.after_tax_revenue_per_day,
@@ -10931,37 +10951,14 @@ NativeEconomyRuntime::owner_opportunity_quote_uncached(
     };
 
     const int64_t activity_scale = scale;
-    auto optimal_at_scale = [&](bool buy_soft) -> OwnerOpportunityQuote {
-        OwnerOpportunityQuote optimal = finalize_at_scale(0, buy_soft);
-        for (int32_t step = 1; step <= 16; ++step) {
-            const int64_t candidate_scale = mul_div_sat(
-                activity_scale, step, 16, sat);
-            const OwnerOpportunityQuote candidate = finalize_at_scale(
-                candidate_scale, buy_soft);
-            if (candidate.owner_income_per_day > optimal.owner_income_per_day ||
-                (candidate.owner_income_per_day == optimal.owner_income_per_day &&
-                 candidate.actual_output > optimal.actual_output)) {
-                optimal = candidate;
-            }
-        }
-        return optimal;
-    };
-    const OwnerOpportunityQuote tooled_optimal = optimal_at_scale(true);
     OwnerOpportunityQuote tooled = finalize_at_scale(
         clamp_scale_to_owner_funds(activity_scale, true), true);
-    tooled.optimal_output = tooled_optimal.actual_output;
-    tooled.optimal_revenue = tooled_optimal.economic_revenue_per_day;
-    tooled.optimal_profit = tooled_optimal.profit_per_day;
     OwnerOpportunityQuote best = tooled;
     if (has_soft_partial_input ||
         soft_efficiency_bare_q16 < Q16_ONE ||
         soft_efficiency_tooled_q16 < Q16_ONE) {
         OwnerOpportunityQuote bare = finalize_at_scale(
             clamp_scale_to_owner_funds(activity_scale, false), false);
-        const OwnerOpportunityQuote bare_optimal = optimal_at_scale(false);
-        bare.optimal_output = bare_optimal.actual_output;
-        bare.optimal_revenue = bare_optimal.economic_revenue_per_day;
-        bare.optimal_profit = bare_optimal.profit_per_day;
         // Prefer the scale production would choose: higher disposable first.
         if (bare.owner_income_per_day > best.owner_income_per_day ||
             (bare.owner_income_per_day == best.owner_income_per_day &&
@@ -13870,7 +13867,7 @@ Dictionary NativeEconomyRuntime::run_slice_internal(const Dictionary &ctx, bool 
                 int64_t cell_work = 1;
                 for (int32_t group_index = group_begin;
                      group_index < group_end; ++group_index) {
-                    const auto group = building_at(static_cast<size_t>(group_index));
+                    const auto group = building_view(static_cast<size_t>(group_index));
                     if (group.type_id < 0 ||
                         group.type_id >= static_cast<int32_t>(_building_types.size())) {
                         ++cell_work;
@@ -15165,7 +15162,7 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
     if (building_csr) {
         for (int32_t group_index = _building_cell_offsets[cell];
              group_index < _building_cell_offsets[cell + 1]; ++group_index) {
-            const auto group = building_at(static_cast<size_t>(static_cast<size_t>(group_index)));
+            const auto group = building_view(static_cast<size_t>(static_cast<size_t>(group_index)));
             if (group.count <= 0 || group.type_id < 0 ||
                 group.type_id >= static_cast<int32_t>(_building_types.size()))
                 continue;
@@ -15255,7 +15252,7 @@ void NativeEconomyRuntime::fill_family_behavior_metrics(
             }
             for (int32_t group_index = _building_cell_offsets[cell];
                  group_index < _building_cell_offsets[cell + 1]; ++group_index) {
-                const auto group = building_at(static_cast<size_t>(static_cast<size_t>(group_index)));
+                const auto group = building_view(static_cast<size_t>(static_cast<size_t>(group_index)));
                 if (group.count <= 0 || group.type_id < 0 ||
                     group.type_id >= static_cast<int32_t>(
                         _building_upgrade_family_indices.size()))
@@ -16884,7 +16881,7 @@ int64_t NativeEconomyRuntime::family_owned_owner_slots_in_cell(
         if (edge.family_handle != handle) continue;
         const int32_t building = building_index_for_handle(edge.building_handle);
         if (building < 0) continue;
-        const auto group = building_at(static_cast<size_t>(building));
+        const auto group = building_view(static_cast<size_t>(building));
         if (group.cell != cell || group.type_id < 0 ||
             group.type_id >= static_cast<int32_t>(_building_types.size()))
             continue;
@@ -17180,7 +17177,7 @@ void NativeEconomyRuntime::sanitize_family_ownership_edges() {
             continue;
         }
         const size_t group = static_cast<size_t>(found->second);
-        const auto building = building_at(static_cast<size_t>(group));
+        const auto building = building_view(static_cast<size_t>(group));
         edge.owned_count = std::clamp<int64_t>(edge.owned_count, 0,
             std::max<int64_t>(0, building.count - claimed[group]));
         claimed[group] += edge.owned_count;
@@ -17211,7 +17208,7 @@ void NativeEconomyRuntime::update_family_employment_attribution() {
         return;
     for (int32_t group_index = 0;
          group_index < static_cast<int32_t>(building_count()); ++group_index) {
-        const auto group = building_at(static_cast<size_t>(group_index));
+        const auto group = building_view(static_cast<size_t>(group_index));
         const int32_t slot = find_cohort_slot(group.cell,
                                               group.owner_signature_id);
         if (slot < 0) continue;
@@ -17280,7 +17277,7 @@ int32_t NativeEconomyRuntime::create_family_for_building(
     if (cell < 0 || cell >= _cell_count.get() || building_index < 0 ||
         building_index >= static_cast<int32_t>(building_count()) || founders <= 0 ||
         (!allow_small_starter && founders < _family_min_founder_people.get())) return -1;
-    const auto group = building_at(static_cast<size_t>(building_index));
+    const auto group = building_view(static_cast<size_t>(building_index));
     if (group.cell != cell || group.count <= 0 || group.modifier_handle == 0)
         return -1;
     const int32_t slot = find_cohort_slot(cell, group.owner_signature_id);
@@ -17439,7 +17436,7 @@ bool NativeEconomyRuntime::repair_forced_capital_founder(int32_t cell) {
     const int32_t first = _building_cell_offsets[cell];
     const int32_t last = _building_cell_offsets[cell + 1];
     for (int32_t group_index = first; group_index < last; ++group_index) {
-        const auto group = building_at(static_cast<size_t>(group_index));
+        const auto group = building_view(static_cast<size_t>(group_index));
         if (group.type_id != type_id || group.count <= 0 ||
             group.modifier_handle == 0) continue;
         const int64_t owner_slots =
@@ -17782,7 +17779,7 @@ void NativeEconomyRuntime::rebuild_family_influences(bool rebuild_derived) {
         const auto found = building_by_handle.find(edge.building_handle);
         if (!families_store().valid_handle(edge.family_handle, family) ||
             found == building_by_handle.end()) continue;
-        const auto group = building_at(static_cast<size_t>(found->second));
+        const auto group = building_view(static_cast<size_t>(found->second));
         const int64_t unit_value = building_reset_capital_value(group);
         Aggregate &aggregate = aggregates[{edge.family_handle, group.cell}];
         aggregate.asset = saturating_add(aggregate.asset, saturating_mul(
@@ -17808,7 +17805,7 @@ void NativeEconomyRuntime::rebuild_family_influences(bool rebuild_derived) {
         });
     }
     for (size_t pk_row = 0; pk_row < building_count(); ++pk_row) {
-        const auto group = building_at(pk_row);
+        const auto group = building_view(pk_row);
         if (group.cell < 0 || group.cell >= _cell_count.get() || group.count <= 0 ||
             relevant_cells[group.cell] == 0) continue;
         total_asset[group.cell] = saturating_add(total_asset[group.cell],
@@ -20543,7 +20540,7 @@ void NativeEconomyRuntime::bind_notable_person_jobs() {
             const int32_t building = building_index_for_handle(
                 ownership.building_handle);
             if (building < 0) continue;
-            const auto group = building_at(static_cast<size_t>(building));
+            const auto group = building_view(static_cast<size_t>(building));
             const int32_t owner_slot = find_cohort_slot(
                 group.cell, group.owner_signature_id);
             if (owner_slot < 0) continue;
@@ -20583,7 +20580,7 @@ void NativeEconomyRuntime::bind_notable_person_jobs() {
         const int32_t profession = _signatures[signature].profession_id;
         for (int32_t g = _building_cell_offsets[cell];
              g < _building_cell_offsets[cell + 1] && persons_store().job_kind[i] == 0; ++g) {
-            const auto group = building_at(static_cast<size_t>(g));
+            const auto group = building_view(static_cast<size_t>(g));
             const BuildingType &type = _building_types[group.type_id];
             for (int32_t r = 0; r < type.employee_count; ++r) {
                 const int32_t role_lane = group.employee_fill_begin + r;
@@ -20707,8 +20704,12 @@ bool NativeEconomyRuntime::run_person_commit_slice(int64_t &work_done,
         if (_person_runtime_mode.get() == 0 && persons_store().active_count == 0) {
             _stage = Stage::AGGREGATE_PUBLISH; ++work_done; return true;
         }
-        person_needs().swap(_person_epoch_needs);
-        _person_epoch_needs.clear();
+        {
+            EconomyCostProbe probe("person.epoch_swap", _current_day.get(),
+                _person_epoch_needs.size());
+            person_needs().swap(_person_epoch_needs);
+            _person_epoch_needs.clear();
+        }
         _person_needs_normalized = false;
         _person_commit_cursor = 0;
         _person_commit_phase = 1;
@@ -21629,7 +21630,7 @@ int64_t NativeEconomyRuntime::state_hash_internal(bool paged) const {
         mix_u64(cmd.effect_idempotency_key);
     }
     for (size_t pk_row = 0; pk_row < building_count(); ++pk_row) {
-        const auto group = building_at(pk_row);
+        const auto group = building_view(pk_row);
         mix_u64(static_cast<uint32_t>(group.cell));
         mix_u64(static_cast<uint32_t>(group.type_id));
         mix_u64(static_cast<uint32_t>(group.owner_signature_id));
@@ -21695,7 +21696,7 @@ int64_t NativeEconomyRuntime::state_hash_internal(bool paged) const {
     }
     auto hash_building_role_lanes = [&](const std::vector<int64_t> &lanes) {
         for (size_t pk_row = 0; pk_row < building_count(); ++pk_row) {
-            const auto group = building_at(pk_row);
+            const auto group = building_view(pk_row);
             const BuildingType &type = _building_types[group.type_id];
             for (int32_t role = 0; role < type.employee_count; ++role) {
                 mix_u64(static_cast<uint64_t>(

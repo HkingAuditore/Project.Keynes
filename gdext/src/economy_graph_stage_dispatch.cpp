@@ -292,6 +292,12 @@ bool economy_dispatch_mutate_stage(EconomySoAView &view,
         EconomyCostProbe::record("person.claims", input.sample_day, runtime->_person_commit_claims_ms);
         EconomyCostProbe::record("person.equity", input.sample_day, runtime->_person_commit_equity_ms);
         EconomyCostProbe::record("person.promote", input.sample_day, runtime->_person_commit_promote_ms);
+        EconomyCostProbe::record("person.index.needs", input.sample_day, runtime->_rebuild_person_needs_ms,
+            static_cast<uint64_t>(runtime->person_needs().size()));
+        EconomyCostProbe::record("person.index.count", input.sample_day, runtime->_rebuild_person_count_ms,
+            static_cast<uint64_t>(runtime->persons_store().active.size()));
+        EconomyCostProbe::record("person.index.fill", input.sample_day, runtime->_rebuild_person_fill_ms);
+        EconomyCostProbe::record("person.index.sort", input.sample_day, runtime->_rebuild_person_sort_ms);
         finish_ok(result, input, runtime, stage);
         probe.set_work(static_cast<uint64_t>(work));
         return true;

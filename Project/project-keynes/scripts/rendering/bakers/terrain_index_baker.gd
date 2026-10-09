@@ -64,6 +64,42 @@ static func build_cell_inputs(map: MapData) -> Dictionary:
 	}
 
 
+# [DEM 地貌 2026-10-09] P0 起伏：山脊网络 + 顺坡沟谷（gdext bake_dem_landform.h）。
+# 两项振幅都 = 邻格最大高差 × *_amp_per_relief，relief 低于 relief_lo 的平原不加；
+# 最粗一层间距 *_wavelength_hex，逐层减半，最细层由栅格分辨率截断。
+const DEM_DEFAULTS := {
+	"dem_relief_lo": 0.006,
+	"dem_relief_hi": 0.120,
+	"dem_relief_cap": 0.25,
+	"dem_ridge_amp_per_relief": 0.2,
+	"dem_ridge_wavelength_hex": 1.6,
+	"dem_amp_per_relief": 0.1,
+	"dem_base_wavelength_hex": 1.0,
+	"dem_octaves": 4,
+	"dem_gain_wet": 0.48,
+	"dem_gain_dry": 0.62,
+	"dem_ridge_gain": 0.5,
+	# 汇流刻谷：谷深 = 起伏 × depth_per_relief × smooth(log 汇水面积)，谷壁坡度 = 起伏 × wall_per_relief / 格。
+	"dem_valley_depth_per_relief": 1.2,
+	"dem_valley_wall_per_relief": 3.0,
+	"dem_valley_area_lo": 8.0,
+	"dem_valley_area_hi": 4000.0,
+	"dem_valley_depth_exp": 0.8,
+	"dem_valley_mfd_exponent": 6.0,
+	# 河心 flow 不低于它的像素也是汇流出口（>= 1 关闭）。
+	"dem_valley_river_outlet_flow": 0.6,
+}
+const DEM_SETTING_PREFIX := "project_keynes/rendering/dem/"
+
+
+static func dem_landform_knobs() -> Dictionary:
+	var out := {}
+	for key in DEM_DEFAULTS:
+		out[key] = ProjectSettings.get_setting(
+				DEM_SETTING_PREFIX + String(key).trim_prefix("dem_"), DEM_DEFAULTS[key])
+	return out
+
+
 static func build_knobs(map: MapData, world: WorldData, hex_size: float,
 		seed_value: int = -1) -> Dictionary:
 	var inputs := build_cell_inputs(map)
@@ -90,6 +126,7 @@ static func build_knobs(map: MapData, world: WorldData, hex_size: float,
 		"cell_water_depth": inputs["cell_water_depth"],
 		"offset_to_index": inputs["offset_to_index"],
 	}
+	knobs.merge(dem_landform_knobs())
 	return {"knobs": knobs, "inputs": inputs}
 
 

@@ -31,6 +31,17 @@ Dictionary unavailable() {
     out["reason"] = "effect_runtime_unavailable";
     return out;
 }
+Dictionary economy_adapter_deferred() {
+    Dictionary out;
+    out["ok"] = true;
+    out["deferred"] = true;
+    out["reason"] = "economy_worker_day_inflight";
+    out["submitted_transactions"] = 0;
+    out["submitted_commands"] = 0;
+    out["acknowledged"] = 0;
+    out["rejected"] = 0;
+    return out;
+}
 
 template <typename T>
 T packed_value(const godot::Dictionary &catalog, const char *key,
@@ -778,12 +789,46 @@ Dictionary DCWorldExt::dispatch_effect_native_economy() {
     // Same exception as Country: colonization SETTLE waits on this adapter and
     // is not covered by the EFFECT POD worker plan stage.
     if (_effect_runtime == nullptr || _economy_runtime == nullptr) return unavailable();
+    // Under Economy worker execution the worker mutates NativeEconomyRuntime
+    // and pulls SETTLE through this same EffectRuntime inside its day
+    // transaction. An idle-boundary SETTLE applied from this thread races the
+    // worker's epoch-begin audit (opening totals vs shadow) and trips
+    // incremental_audit_mismatch. Enter only between worker days; never block,
+    // the worker may hold the boundary while parked on main-thread input. A
+    // deferred call is replayed by the next input capture, which holds the
+    // boundary.
+    std::unique_lock<std::mutex> boundary;
+    if (_runtime_host != nullptr && _runtime_host->economy_worker_owns_execution()) {
+        boundary = _runtime_host->try_lock_economy_input_capture();
+        if (!boundary.owns_lock()) {
+            _economy_effect_adapter_retry = true;
+            return economy_adapter_deferred();
+        }
+    }
+    return dispatch_effect_native_economy_unlocked();
+}
+
+Dictionary DCWorldExt::dispatch_effect_native_economy_unlocked() {
     return runtime_from(_effect_runtime)->dispatch_native_economy(
         static_cast<NativeEconomyRuntime *>(_economy_runtime));
 }
 
 Dictionary DCWorldExt::ack_effect_native_economy() {
     if (_effect_runtime == nullptr || _economy_runtime == nullptr) return unavailable();
+    // Same worker boundary as dispatch: ACK reads Economy effect results and
+    // rewrites EffectRuntime bindings the worker's SETTLE pull also touches.
+    std::unique_lock<std::mutex> boundary;
+    if (_runtime_host != nullptr && _runtime_host->economy_worker_owns_execution()) {
+        boundary = _runtime_host->try_lock_economy_input_capture();
+        if (!boundary.owns_lock()) {
+            _economy_effect_adapter_retry = true;
+            return economy_adapter_deferred();
+        }
+    }
+    return ack_effect_native_economy_unlocked();
+}
+
+Dictionary DCWorldExt::ack_effect_native_economy_unlocked() {
     return runtime_from(_effect_runtime)->ack_native_economy(
         static_cast<NativeEconomyRuntime *>(_economy_runtime));
 }

@@ -66,6 +66,7 @@ uniform float gi_bent_strength : hint_range(0.0, 1.0) = 0.35;
 uniform float gi_normal_floor : hint_range(0.0, 1.0) = 0.85;
 uniform float gi_bounce_strength : hint_range(0.0, 0.5) = 0.18;
 // 0=off 1=sky visibility 2=bent normal 3=occluder cell id 4=bounce only
+// 5=白模光照（底色换中性灰，光照全保留）
 uniform int gi_debug_view = 0;
 // [terrain-gi 档 2] per-cell 弹射代表色（RGBA8 NEAREST，与 enum/dyn/eco 同 lut_dims 网格）。
 // RGB=该 cell 当前地表代表色，A=有效性/强度缩放（0=水体或 map 外，不参与弹射）。
@@ -253,6 +254,9 @@ uniform bool tod_latitude_sun_enabled = true;
 //   不影响水面反射）。朝阳坡变亮、背阳坡变暗，随太阳方位旋转 → 光源移动清晰可见。默认 0.55。
 uniform float tod_sun_relief_max_up        : hint_range(0.5, 1.0) = 0.88;
 uniform float tod_terrain_relief_strength  : hint_range(0.0, 1.0) = 0.55;
+// [tod relief 按坡度 2026-10-09] relief = 强度 × soft(dot(N.xy, L方位) × slope_gain)：
+//   明暗随坡度连续变化，缓坡弱、陡坡强；slope_gain 越大越早接近满幅。
+uniform float tod_terrain_relief_slope_gain : hint_range(0.5, 12.0) = 3.0;
 
 // ─── Pass 2 新增开关（任务 4/6） ─────────────────────────────────────────
 // cloud_tod_tint_enabled：只给云阴影用；云本体渲染在 weather_overlay.gdshader。
@@ -495,6 +499,12 @@ uniform bool  hillshade_detail_enabled = true;                          // 细�
 // [normal-soften 2026-07-31] 细节法线改走更宽差分 + zoom 门控，全局强度再降到 0.16。
 // 高画质不再等于"更碎"：见 hillshade_tod.compute_terrain_normal。
 uniform float hillshade_detail_strength : hint_range(0.0, 1.0)  = 0.16;
+// [terrain-erosion 2026-10-09] 沿宏观坡向延伸的多尺度沟谷 / 山脊细节（DEM 晕渲观感）。
+//   strength = 细节坡度幅度（0 关）；world_size = 最粗一层的沟距（世界单位），每层减半。
+//   每层按屏幕像素波长淡出，远景不产生闪烁；平地不出现，坡越陡、海拔越高越清晰。
+//   格子尺度以上的谷地已由烘焙期汇流刻谷写进高度图，这里只补近景细纹。
+uniform float terrain_erosion_strength   : hint_range(0.0, 2.0) = 0.35;
+uniform float terrain_erosion_world_size : hint_range(8.0, 256.0) = 72.0;
 // [shore-normal 2026-06-25] 近岸滩坡法线：近海陆地(elev 略高于 sea_level 的窄带)单独解开细节门控，
 //   让海岸读出滩坡/切岸起伏（B_COAST 是水体不调本函数；近岸陆地多为 B_PLAIN，biome 因子≈0.12 被压平）。
 //   用 coast_sdf=elev-sea_level 做近岸 gate，不影响内陆平原(P0 真平)。

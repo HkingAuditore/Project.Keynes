@@ -136,7 +136,15 @@ CPU 端（Godot GDScript）把 hex 内恒定的动态状态打包成 cell-index 
 | `map_index_atlas` | RGBA8 NEAREST | R=biome, G/B=`cell.index` low/high, A=landform |
 | `enum_lut` | RGB8 NEAREST | per-cell biome / vegetation / cover |
 | `dyn_lut` | RGBA8 NEAREST | R=temp, G=wetness, B=snow_cover, A=sea_ice 或 vitality |
-| `terrain_material_tex` | Texture2DArray | 四方连续材质族（Compatibility 亦启用；主地形已不绑 `eco_lut`） |
+| `terrain_material_tex` | Texture2DArray | 四方连续材质族（Compatibility 亦启用；主地形已不绑 `eco_lut`）。R=albedo 细节，GB=切线法线 xy，A=roughness |
+
+**材质族缩放分层（2026-10-09）**：贴图本身是近景尺度（石块 / 裂纹 / 草团），在大陆视角下直接铺会变成密集斑点。
+
+- 近层用 `terrain_material_world_size`（默认 256 世界单位，约 11.6 个 hex），远层用 `world_size × terrain_material_far_scale`（默认 ×4），远层 UV 转置并偏移，与近层错开相位。按 `camera_zoom` 在 `terrain_material_far_zoom_start..end`（0.9..1.8）之间混合，albedo 和 roughness 两层都参与，法线只取近层。远景 1 次采样，过渡带 2 次，不新增 sampler。
+- 材质法线在 `terrain_material_normal_zoom_start..end`（1.35..2.2）之间淡入，远景为 0；幅度上限是 `TERRAIN_MATERIAL_NORMAL_MAX_XY = 0.18`。移动端两组缩放阈值都整体后移 0.30。
+- albedo 细节经过 `d/(1+|d|)` 软压缩后再乘 `terrain_biome_material_strength(biome)` 和远景系数 `terrain_material_far_albedo_scale`。
+- `terrain_apply_macro_variation()` 用 x 方向按环绕周期取整的 value noise（纯 ALU，接缝无断层）叠一层大尺度明度和冷暖斑块（`terrain_macro_variation_strength / _world_size`），材质路径和程序化路径都会经过这一步。
+- 参数的唯一默认值来源是 `uniforms.gdshaderinc`，与 `hex_renderer.gd` 的 export 默认值保持一致；`player_game.tscn` 和 `world_map_material.tres` 不再覆盖。`terrain_surface_debug_view = 18` 可视化这三项权重：R=材质法线权重，G=远层权重，B=大尺度斑块。
 
 **关键约定**：
 
@@ -274,7 +282,8 @@ vec3 evaluate_brdf(SurfaceParams s, LightingContext lc,
 ```glsl
 struct SurfaceParams {
     vec3  base_color;   // sRGB 域；BRDF 内 srgb_to_linear
-    vec3  normal;       // 已归一化
+    vec3  normal;       // 已归一化；BRDF N·L 消费，含材质细节法线
+    vec3  macro_normal; // 只含高度场宏观起伏；坡向 hillshade / 坡度调色 / 地貌着色只读它
     float roughness;    // [ROUGHNESS_MIN, ROUGHNESS_MAX]
     float metallic;     // [0,1]
     float ao;           // [0,1]
@@ -339,7 +348,9 @@ vec3 render_land_pipeline(
 | 1.2 河流 | base_color, ao | 沿 flow_accum 描线，ao 微降 |
 | 1.3 顺坡明暗 | base_color | 旧 hillshade 微调（保持 v9 风味） |
 | 1.4 等高线 | base_color | 等高线条 |
-| 1.5 N/R/AO/metallic | normal/roughness/ao/metallic | 切坡度→法线，地表粗糙度按 biome 派生 |
+| 1.5 N/R/AO/metallic | normal/macro_normal/roughness/ao/metallic | `compute_terrain_normal` → `macro_normal`；`normal` = macro + 随缩放淡入的材质法线；地表粗糙度按 biome 派生 |
+
+`shade_land_surface` 的 TOD 坡向明暗会把 `N.xy` 归一化成坡向，任何非零细节法线都会被放大成满幅明暗，所以它、`apply_relief_tint` 和 `landform_visual` 必须读 `macro_normal`。河流、冻河和积雪压平要同时作用于两个法线。
 
 ### 8.3 LAND 2.x — `apply_land_material_modifiers`
 
@@ -690,6 +701,7 @@ const bool USE_PBR_BRDF = false;   // 改这一行
 | `world_map.gdshader` | 跳过 `flow_tex`；像素级细节噪声由下游宏裁剪 | 保留主 atlas，跳过部分高频路径 |
 | `biome_detail.gdshaderinc` | 不采样，不跑内部纹理 | 读 `terrain_detail_tex` 单次采样，替代每像素 `fbm/voronoi` |
 | `snow_cover.gdshaderinc` | 跳过 cosmetic fbm 与暴雪新雪增强 | 保留 |
+| `terrain_surface_detail.gdshaderinc` | 材质族编译裁掉；跳过大尺度明暗斑块（`terrain_apply_macro_variation`） | 材质族编译裁掉；保留大尺度斑块（8 次 hash，无采样） |
 | `land_pipeline.gdshaderinc` | 跳过河流 pulse、顺坡流动、cover fbm、水面法线细节 | 同 Low 的水/河流高频裁剪 |
 | `water.gdshaderinc` / `water_pipeline.gdshaderinc` | 编译期跳过水体副格查找，并跳过 domain warp、额外水噪声、kelp/ice fbm、coast foam、暴雪薄冰、caustics、波坡明暗、SSS、sparkle | 复用距离场连续混合静态水体，不跑 3×3 biome 邻域；取消高细节法线与额外 domain warp，保留主波形 |
 | `weather_overlay.gdshader` | 云层使用廉价密度，不采 biome atlas | overlay quality 钳到 1 |
@@ -720,6 +732,7 @@ const bool USE_PBR_BRDF = false;   // 改这一行
 17. **任何吃 TOD 的图层都必须消费 `EarthDaylight` 的月光三件套**（`moon_dir`/`moon_col`/`moon_strength`）。日月方向近乎相反，不能直接向量插值；实体表面可选主光硬切，透明/云层则应分别计算日光与月光后连续相加，并在方向轴切换附近削弱方向性阴影。高空云的昼夜过渡应比地表更宽，可加入暮光金橙散射。月光不能简单复用太阳的法线、直射与质量阴影增益：深夜应由低方向性的冷灰天空光和多重散射主导，局部法线只保留微弱月光层次。
 18. **动态云层必须消费表现时钟倍率。** 程序化噪声的各频段要用不同相位随时间演化，不能只做整场刚性平移；天气云与迷雾云都通过 `set_clock_speed_multiplier()` 同步游戏倍速，避免 x20 时模拟飞奔而云形仍按真实时间慢放。
 19. 与时间无关、只随地图/biome 变化的视觉细节优先烘进 atlas；当前 `terrain_detail_tex` 由 `MapBaker` 初次 bake 和 biome 轴重烘维护。
+20. **近景尺度的贴图细节不能直接进入大陆视角的光照。** 地形材质法线必须随 `camera_zoom` 淡入，并且不能进入 `macro_normal`；远景纹理密度靠放大平铺的远层和低频斑块提供，不能靠压低单层平铺尺寸。
 
 ---
 

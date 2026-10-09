@@ -624,6 +624,34 @@ bool NativeEconomyRuntime::run_building_production_cell(
         retention_owner_by_signature[signature] = static_cast<int32_t>(owner);
         retention_signature_stamp[signature] = retention_generation;
     }
+    // Each payroll owner's groups in ascending group order: exactly the groups
+    // a full `owner_signature_id == owner` scan of [begin, end) would visit.
+    // Group ownership is not mutated anywhere in production.
+    thread_local std::vector<int32_t> owner_group_offsets;
+    thread_local std::vector<int32_t> owner_groups;
+    thread_local std::vector<int32_t> group_payroll_owner;
+    owner_group_offsets.assign(payroll_owners.size() + 1, 0);
+    group_payroll_owner.assign(static_cast<size_t>(std::max(0, end - begin)), -1);
+    for (int32_t g = begin; g < end; ++g) {
+        const int32_t signature = buildings_store().owner_signature_id[g];
+        const auto it = std::lower_bound(payroll_owners.begin(), payroll_owners.end(), signature);
+        if (it == payroll_owners.end() || *it != signature) continue;
+        const int32_t owner = static_cast<int32_t>(it - payroll_owners.begin());
+        group_payroll_owner[static_cast<size_t>(g - begin)] = owner;
+        ++owner_group_offsets[static_cast<size_t>(owner) + 1];
+    }
+    for (size_t owner = 0; owner < payroll_owners.size(); ++owner)
+        owner_group_offsets[owner + 1] += owner_group_offsets[owner];
+    owner_groups.resize(static_cast<size_t>(owner_group_offsets.back()));
+    {
+        thread_local std::vector<int32_t> fill_cursor;
+        fill_cursor.assign(owner_group_offsets.begin(), owner_group_offsets.end() - 1);
+        for (int32_t g = begin; g < end; ++g) {
+            const int32_t owner = group_payroll_owner[static_cast<size_t>(g - begin)];
+            if (owner >= 0)
+                owner_groups[static_cast<size_t>(fill_cursor[static_cast<size_t>(owner)]++)] = g;
+        }
+    }
     auto retention_lane = [&](size_t owner, int32_t good) -> int32_t {
         if (owner >= payroll_owners.size() || good < 0 || good >= market_store().good_count.get())
             return -1;
@@ -653,7 +681,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
     retention_clothing_used.assign(payroll_owners.size(), 0);
     retention_produces_survival_food.assign(payroll_owners.size(), uint8_t{0});
     for (int32_t g = begin; g < end; ++g) {
-        const auto group = building_at(static_cast<size_t>(g));
+        const auto group = building_view(static_cast<size_t>(g));
         if (group.cell != cell || group.count <= 0) continue;
         if (group.owner_signature_id < 0 ||
             group.owner_signature_id >= static_cast<int32_t>(_signatures.size()) ||
@@ -1259,7 +1287,8 @@ bool NativeEconomyRuntime::run_building_production_cell(
               _building_funded_capacity_q16.begin() + end, 0);
     std::fill(_building_working_capital_allocated.begin() + begin,
               _building_working_capital_allocated.begin() + end, 0);
-    for (int32_t owner_signature : payroll_owners) {
+    for (size_t owner_index = 0; owner_index < payroll_owners.size(); ++owner_index) {
+        const int32_t owner_signature = payroll_owners[owner_index];
         const int32_t owner_slot = find_cohort_slot(cell, owner_signature);
         if (owner_slot < 0) continue;
         int64_t wage_commitment = 0;
@@ -1267,7 +1296,9 @@ bool NativeEconomyRuntime::run_building_production_cell(
         int64_t filled_owner = 0;
         candidates.clear();
         candidates.reserve(static_cast<size_t>(std::max(0, end - begin)));
-        for (int32_t g = begin; g < end; ++g) {
+        for (int32_t gi = owner_group_offsets[owner_index];
+             gi < owner_group_offsets[owner_index + 1]; ++gi) {
+            const int32_t g = owner_groups[static_cast<size_t>(gi)];
             auto group = building_at(static_cast<size_t>(g));
             if (group.owner_signature_id != owner_signature || group.count <= 0 ||
                 group.operating_state == 1 || !building_available(cell, group.type_id, true)) continue;
@@ -1976,7 +2007,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
             if (offer.group < 0 ||
                 offer.group >= static_cast<int32_t>(building_count()) ||
                 offer.qty <= 0 || offer.output_index < 0) continue;
-            const auto group = building_at(static_cast<size_t>(offer.group));
+            const auto group = building_view(static_cast<size_t>(offer.group));
             if (offer.type_id < 0 ||
                 offer.type_id >= static_cast<int32_t>(_building_types.size()))
                 continue;
@@ -2520,7 +2551,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
             // producer support and bullion issuance. Negative business tax is
             // settled once against eligible costs after payroll and maintenance.
             if (business_tax_active) {
-                const auto tax_group = building_at(static_cast<size_t>(offer.group));
+                const auto tax_group = building_view(static_cast<size_t>(offer.group));
                 const int32_t business_rate = frozen_tax_rate(
                     cell, NativeCountryRuntime::TAX_BUSINESS,
                     tax_group.type_id);
@@ -2656,11 +2687,15 @@ bool NativeEconomyRuntime::run_building_production_cell(
 
     // Production first spends only on physical inputs. Base wages are income
     // distribution and settle after the producer has sold this cycle's output.
-    for (int32_t owner_signature : payroll_owners) {
+    for (size_t owner_index = 0; owner_index < payroll_owners.size(); ++owner_index) {
+        const int32_t owner_signature = payroll_owners[owner_index];
+        const int32_t owner_groups_begin = owner_group_offsets[owner_index];
+        const int32_t owner_groups_end = owner_group_offsets[owner_index + 1];
         const int32_t owner_slot = find_cohort_slot(cell, owner_signature);
         int64_t total_due = 0;
-        for (int32_t g = begin; g < end; ++g) {
-            const auto group = building_at(static_cast<size_t>(g));
+        for (int32_t gi = owner_groups_begin; gi < owner_groups_end; ++gi) {
+            const int32_t g = owner_groups[static_cast<size_t>(gi)];
+            const auto group = building_view(static_cast<size_t>(g));
             if (group.owner_signature_id != owner_signature ||
                 !building_available(cell, group.type_id, true)) continue;
             total_due = saturating_add(total_due, std::max<int64_t>(
@@ -2673,7 +2708,8 @@ bool NativeEconomyRuntime::run_building_production_cell(
         int64_t prefix = 0;
         int64_t allocated = 0;
         int64_t owner_paid = 0;
-        for (int32_t g = begin; g < end; ++g) {
+        for (int32_t gi = owner_groups_begin; gi < owner_groups_end; ++gi) {
+            const int32_t g = owner_groups[static_cast<size_t>(gi)];
             auto group = building_at(static_cast<size_t>(g));
             if (group.owner_signature_id != owner_signature ||
                 !building_available(cell, group.type_id, true)) continue;
@@ -2708,7 +2744,8 @@ bool NativeEconomyRuntime::run_building_production_cell(
             _building_wages_paid, owner_paid, _saturation_count);
         _building_wages_unpaid = saturating_add(
             _building_wages_unpaid, total_due - owner_paid, _saturation_count);
-        for (int32_t g = begin; g < end; ++g) {
+        for (int32_t gi = owner_groups_begin; gi < owner_groups_end; ++gi) {
+            const int32_t g = owner_groups[static_cast<size_t>(gi)];
             auto group = building_at(static_cast<size_t>(g));
             if (group.owner_signature_id != owner_signature ||
                 !building_available(cell, group.type_id, true)) continue;
@@ -2783,13 +2820,16 @@ bool NativeEconomyRuntime::run_building_production_cell(
             allocated = next;
         }
     }
-    for (int32_t owner_signature : payroll_owners) {
+    for (size_t owner_index = 0; owner_index < payroll_owners.size(); ++owner_index) {
+        const int32_t owner_signature = payroll_owners[owner_index];
+        const int32_t owner_groups_begin = owner_group_offsets[owner_index];
+        const int32_t owner_groups_end = owner_group_offsets[owner_index + 1];
         const int32_t owner_slot = find_cohort_slot(cell, owner_signature);
         int64_t total_due = 0;
-        for (int32_t g = begin; g < end; ++g) {
-            if (buildings_store().owner_signature_id[g] == owner_signature)
-                total_due = saturating_add(
-                    total_due, buildings_store().last_bonus_due[g], _saturation_count);
+        for (int32_t gi = owner_groups_begin; gi < owner_groups_end; ++gi) {
+            const int32_t g = owner_groups[static_cast<size_t>(gi)];
+            total_due = saturating_add(
+                total_due, buildings_store().last_bonus_due[g], _saturation_count);
         }
         const int64_t available = owner_slot >= 0
             ? std::min(total_due, std::max<int64_t>(
@@ -2797,9 +2837,9 @@ bool NativeEconomyRuntime::run_building_production_cell(
         int64_t prefix = 0;
         int64_t allocated = 0;
         int64_t owner_paid = 0;
-        for (int32_t g = begin; g < end; ++g) {
+        for (int32_t gi = owner_groups_begin; gi < owner_groups_end; ++gi) {
+            const int32_t g = owner_groups[static_cast<size_t>(gi)];
             auto group = building_at(static_cast<size_t>(g));
-            if (group.owner_signature_id != owner_signature) continue;
             const BuildingType &type = _building_types[group.type_id];
             for (int32_t r = 0; r < type.employee_count; ++r) {
                 const int32_t role_index = group.employee_fill_begin + r;
@@ -2843,12 +2883,15 @@ bool NativeEconomyRuntime::run_building_production_cell(
     ceiling_maintenance_wallets.clear();
     if (observe_price_ceiling) ceiling_maintenance_wallets.reserve(end - begin);
     for (int32_t g = begin; g < end; ++g) {
+        {
+            const auto view = building_view(static_cast<size_t>(g));
+            if (view.cell != cell || view.count <= 0 ||
+                view.operating_state == 1 ||
+                !building_available(cell, view.type_id, true) ||
+                _building_types[view.type_id].maintenance_count <= 0) continue;
+        }
         auto group = building_at(static_cast<size_t>(g));
-        if (group.cell != cell || group.count <= 0 ||
-            group.operating_state == 1 ||
-            !building_available(cell, group.type_id, true)) continue;
         const BuildingType &type = _building_types[group.type_id];
-        if (type.maintenance_count <= 0) continue;
         const int64_t maintenance_daily = daily_maintenance_cost_for_type(
             cell, type, _saturation_count);
         if (maintenance_daily != std::numeric_limits<int64_t>::max())
@@ -2960,7 +3003,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
     // owner livelihood, debt service, construction and taxes are excluded.
     if (business_tax_active) {
         for (int32_t g = begin; g < end; ++g) {
-            auto group = building_at(static_cast<size_t>(g));
+            const auto group = building_view(static_cast<size_t>(g));
             const int32_t rate = frozen_tax_rate(
                 cell, NativeCountryRuntime::TAX_BUSINESS, group.type_id);
             const int32_t mode = frozen_tax_mode(
@@ -2984,9 +3027,9 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 rate, mode, _saturation_count);
             if (transfer >= 0) continue;
             const int64_t subsidy = -transfer;
-            group.last_business_subsidy_received = saturating_add(
-                group.last_business_subsidy_received, subsidy,
-                _saturation_count);
+            buildings_store().last_business_subsidy_received.write_scalar(g,
+                saturating_add(group.last_business_subsidy_received, subsidy,
+                    _saturation_count), market_mutation_sink());
             business_transfer_by_group[g - begin] = saturating_add(
                 business_transfer_by_group[g - begin], transfer,
                 _saturation_count);
@@ -3005,12 +3048,14 @@ bool NativeEconomyRuntime::run_building_production_cell(
     // Tax positive net operating income only after inputs, actually paid wages,
     // and positive business tax are known. Tax/subsidy transfers themselves are
     // intentionally excluded from this base and losses never cross a cycle.
-    if (income_tax_active) for (const int32_t owner_signature : payroll_owners) {
+    if (income_tax_active) for (size_t owner_index = 0; owner_index < payroll_owners.size(); ++owner_index) {
+        const int32_t owner_signature = payroll_owners[owner_index];
         const int32_t owner_slot = find_cohort_slot(cell, owner_signature);
         if (owner_slot < 0) continue;
         int64_t net_operating_income = 0;
-        for (int32_t g = begin; g < end; ++g) {
-            if (buildings_store().owner_signature_id[g] != owner_signature) continue;
+        for (int32_t gi = owner_group_offsets[owner_index];
+             gi < owner_group_offsets[owner_index + 1]; ++gi) {
+            const int32_t g = owner_groups[static_cast<size_t>(gi)];
             const int64_t costs = saturating_add(
                 saturating_add(saturating_add(buildings_store().last_input_cost[g],
                                buildings_store().last_wages_paid[g],
@@ -3062,8 +3107,11 @@ bool NativeEconomyRuntime::run_building_production_cell(
             trace_record_cashflow(cell, population_store().handle_for_slot(owner_slot),
                                   CASHFLOW_INCOME_SUBSIDY, -income_tax, 0);
     }
+    {
+    // Prices are not written until the signal pass below.
+    LivingCostMemoScope margin_memo(*this);
     for (int32_t g = begin; g < end; ++g) {
-        auto group = building_at(static_cast<size_t>(g));
+        const auto group = building_view(static_cast<size_t>(g));
         const int64_t owner_livelihood = saturating_mul(saturating_mul(
             living_cost_for_signature(cell, group.owner_signature_id, -1,
                                       _saturation_count),
@@ -3087,8 +3135,10 @@ bool NativeEconomyRuntime::run_building_production_cell(
             saturating_sub(after_business_revenue, realized_cost,
                            _saturation_count),
             Q16_ONE, std::max<int64_t>(MONEY_SCALE, realized_cost), _saturation_count);
-        group.realized_profit_margin_q16 = static_cast<int32_t>(
-            std::clamp<int64_t>(margin, -Q16_ONE, Q16_ONE));
+        buildings_store().realized_profit_margin_q16.write_scalar(g,
+            static_cast<int32_t>(std::clamp<int64_t>(margin, -Q16_ONE, Q16_ONE)),
+            market_mutation_sink());
+    }
     }
     update_cell_labor_signals(cell);
     const auto signal_started = Clock::now();
@@ -3104,7 +3154,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
         business_observed[i] = maintenance_observed[i];
     }
     for (int32_t g = begin; g < end; ++g) {
-        const auto group = building_at(static_cast<size_t>(g));
+        const auto group = building_view(static_cast<size_t>(g));
         if (group.cell != cell || group.count <= 0 ||
             !building_available(cell, group.type_id, true)) continue;
         const BuildingType &type = _building_types[group.type_id];
@@ -3196,7 +3246,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
             sale.type_id >= static_cast<int32_t>(_building_types.size()) ||
             sale.group < 0 ||
             sale.group >= static_cast<int32_t>(building_count())) continue;
-        const auto sale_group = building_at(static_cast<size_t>(sale.group));
+        const auto sale_group = building_view(static_cast<size_t>(sale.group));
         if (sale_group.operating_state == 1) continue;
         const int32_t output_signal = market_signal_index(cell, sale.good);
         if (output_signal < cell_signal_begin || output_signal >= cell_signal_end)
@@ -3245,7 +3295,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
             _saturation_count);
     }
     for (int32_t g = begin; g < end; ++g) {
-        const auto group = building_at(static_cast<size_t>(g));
+        const auto group = building_view(static_cast<size_t>(g));
         if (group.cell != cell || group.count <= 0 ||
             group.operating_state == 1 ||
             !building_available(cell, group.type_id, true)) continue;
@@ -3359,7 +3409,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
     }
     _market_signal_ms += elapsed_ms(signal_started);
     for (int32_t g = begin; g < end; ++g) {
-        const auto group = building_at(static_cast<size_t>(g));
+        const auto group = building_view(static_cast<size_t>(g));
         if (group.cell != cell || group.count <= 0) continue;
         std::vector<EventLeg> legs;
         if (trace_detail) {

@@ -430,6 +430,13 @@ relief（见下 “P0 relief”）。
 
 总振幅量级（谷 ≈ −0.09 ~ 峰 ≈ +0.17）与旧 `MOUNTAIN_RIDGE_AMP=0.26` 同档，下游 erosion/SDF 行为不被打乱。常量先以文件内 `constexpr`/`const` 落地（C++↔GDScript 同名同值），稳定后可按需提升到 `ClimateProfile`。
 
+**DEM 地貌（2026-10-09，取代上面第 2、4、5 条）**：旧 ridge/crag 噪声按约 1 世界单位的波长采样，远高于 1024 宽烘焙栅格（≈2.34 单位/像素）的奈奎斯特频率，烘出来是混叠碎点和斜纹，读不出山脊和沟谷。现在分两层：
+
+1. **噪声地貌（C++ step7，`gdext/src/bake_dem_landform.h::landform`）**：ridged 山脊 + 顺坡沟纹，振幅 = 局地起伏 × `dem_*_amp_per_relief`，最细倍频截断在 4 像素波长。它只提供小尺度纹理和汇流的初始扰动，默认振幅已调低（`amp 0.1`，`ridge 0.2`）。
+2. **汇流刻谷（`pk_dem::carve_drainage_valleys`，fused pass 的 ①b，terrain-index 之后、droplet erosion 之前）**：Barnes ε 优先级洪泛填洼（出口 = 水体像素、河心 `flow >= dem_valley_river_outlet_flow` 的像素、上下边缘）→ 多流向（slope^`mfd_exponent`）累积汇水面积 → 谷底下切 `depth_per_relief × relief × smooth(log A)^depth_exp` → 倒角最大值传播成 V 形谷壁（坡度 `wall_per_relief × relief / 格`，谷深不超过 `depth_per_relief × relief`）→ 按拓扑序保证每点不低于下游，支谷在河口和海岸平接、不出凹坑。X 方向在 `round(wrap_period_x / step)` 列上环绕，别名列复制周期内的下切量。`relief` 来自 terrain-index 新输出的 `dem_relief_buffer`（局地起伏 × 门控，平原和水体为 0），所以平原不刻。全图约 135 ms（1024×606）。
+
+旋钮全部在 `terrain_index_baker.gd::DEM_DEFAULTS`，可用 ProjectSettings `project_keynes/rendering/dem/<去掉 dem_ 前缀的键>` 覆盖。粗法线半径 `TERRAIN_NORMAL_SAMPLE_RADIUS_HEX` 相应降到 0.35 格，否则谷地会被法线低通抹平；shader 侧 `terrain_erosion_strength` 降到 0.35，只补近景细纹。
+
 下游收益：权威主索引固定为 warp 后的 `cube_round`，`dyn_lut`、`eco_lut`、天气、迷雾和交互状态均使用同一个 NEAREST 主格，不再通过图集空间 Dither 改派归属。静态地表边界由独立的 RG8 副索引与 R8 距离纹理在屏幕空间窄带内处理；边界数据缺失时直接退化为硬主索引。C++ 单 pass 与 fused pass 应逐字节一致，并由 headless parity 测试覆盖。
 
 **分层地形法线（2026-06-25，2026-09-01 尺度修复，宏观起伏增强）**：粗法线仍优先采样 `terrain_normal_tex`；烘焙与未绑定 fallback 统一按 `terrain_normal_sample_radius_hex=1.35` 与 `terrain_normal_height_scale_hex=2.10` 从 `world_size/hm_resolution/hex_size` 换算差分半径和增益。1.35-hex 宽半径低通格内 residual，保留山系、高地和盆地的跨格走向；2.10 只夸张视觉法线，不改权威 elevation。显示端 hillshade 默认强度为 `0.90`，粗法线增益为 `1.65`；Terrain GI/AO 默认强度为 `0.90`、天空可见度下限为 `0.38`。陆地 hypsometric 色带同步收紧为 `0.08/0.42/0.72/0.94`，使强环境光下仍有高程分层。细节法线和性能分档契约不变。
@@ -511,7 +518,7 @@ relief（见下 “P0 relief”）。
 
 
 - **latitude field**：复刻 `_bake_latitude_buffer`。逐像素 `ny = y / max(H-1,1)` → F32。输入 `width/height`，输出 `latitude_buffer`（F32）。
-- **river SDF**：`terrain_baker.gd::DCTerrainBaker.bake_river_sdf` 只发送显式几何 knobs 并校验 `out_buf`。`run_bake_river_sdf_pass` 在 C++ 内完成拓扑 trace、跨经度展开、Catmull-Rom、warp、可变宽度 stamp、3-4 chamfer SDT、端点 taper 和归一化；河流拓扑由 post-base 暂存于 `DCWorldExt::_gen_river_*`，不跨语言传输。
+- **river SDF**：`terrain_baker.gd::DCTerrainBaker.bake_river_sdf` 只发送显式几何 knobs 并校验 `out_buf`。`run_bake_river_sdf_pass` 在 C++ 内完成拓扑 trace、跨经度展开、Catmull-Rom、warp、可变宽度 stamp、3-4 chamfer SDT、端点 taper 和归一化；河流拓扑由 post-base 暂存于 `DCWorldExt::_gen_river_*`，不跨语言传输。fused pass 里它在汇流刻谷之前执行（不读高度），河心像素作为刻谷出口。
 - **erosion（droplet 水力侵蚀）**：`terrain_baker.gd::DCTerrainBaker.bake_hydraulic_erosion` 只发送 `height_buffer`、seed 和显式 erosion knobs，并校验 `height_out` 尺寸。`run_bake_erosion_pass` 在 C++ 内完成 droplet 侵蚀、沉积、蒸发和 [0,1] clamp；GDScript 不保留计算 fallback。
 - **coast SDF（海/湖统一离岸距离场，water-bodies systemic）**：从 per-pixel terrain（`biome_buffer`）的 land-water 边界做 **chamfer 3-4 双通距离变换**（X 向可环绕 `coast_sdf_wrap_x`），产出每像素到最近水体的像素距离（水体=0，向内陆递增，clamp 于 `coast_sdf_max_dist_px`）。水集合与 `terrain_index` `is_water` / `pk_is_water_terrain` 一致 = `{0,1,18,19,20,21}`。`run_bake_geometry_fields_pass` 在 **river carve 之后、bundle 之前**用此距离对 `height_final` 逐像素刻"陆侧上坡、止于水线"的连续岸坡（`notch=smoothstep(1-d/band)`，`shore_carve_amp`/`shore_carve_band`）→ `terrain_normal_tex` 拿到 crisp 海岸/湖岸法线，与河岸 #2a 同法、与旧 barycentric beach carve 加性叠加（均向水线单调下压、clamp `sea_level`，无冲突）。`shore_carve_amp<=0` → 关闭回退旧法。输入 `width/height/biome_buffer/coast_sdf_max_dist_px/coast_sdf_wrap_x`，输出 `out_buf`（F32 离岸像素距离）。chamfer 两遍光栅扫描有行间依赖，单线程 O(n_pixels)（如需并行可换 jump-flood）。
 

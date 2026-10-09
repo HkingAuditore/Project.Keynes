@@ -20,6 +20,13 @@ const DEFAULT_MAP_HEIGHT := 40
 const DEFAULT_POPULATION_SCALE := 0
 const DEFAULT_FOREIGN_COUNT := 3
 const MAX_BARRIER_PULSES_PER_DAY := 4096
+# Days the driver may run ahead of the worker commit, like WorldClock does in
+# the player scene. The environment FIFO holds 4 slots: `depth` in flight plus
+# the day being submitted, so 3 is the deepest lead that never fills it.
+# pipeline_depth=0 reproduces the old one-day lockstep, where the worker idles
+# while the driver notices each commit and captures the next input.
+const DEFAULT_PIPELINE_DEPTH := 3
+const MAX_PIPELINE_DEPTH := 3
 # M7 PERFORMANCE checkpoint: authoritative simulation throughput >= 50 days/s.
 const AUTHORITATIVE_THROUGHPUT_CHECKPOINT_DAYS_PER_SEC := 50.0
 
@@ -86,6 +93,10 @@ func _run() -> int:
 		return 2
 	if warmup_days < 0:
 		push_error("[headless-perf] warmup_days must be non-negative")
+		return 2
+	var pipeline_depth := int(args.get("pipeline_depth", DEFAULT_PIPELINE_DEPTH))
+	if pipeline_depth < 0 or pipeline_depth > MAX_PIPELINE_DEPTH:
+		push_error("[headless-perf] pipeline_depth must be within 0..%d" % MAX_PIPELINE_DEPTH)
 		return 2
 	if speed <= 0.0:
 		push_error("[headless-perf] speed must be positive")
@@ -317,6 +328,7 @@ func _run() -> int:
 	var harness_writeback_window_us := 0
 	var harness_writeback_consume_us := 0
 	var harness_writeback_poll_count := 0
+	var harness_capacity_wait_count := 0
 	var country_perf_samples: Array[Dictionary] = []
 	var last_country_perf_day := -1
 	var last_authoritative_committed_day := int(runtime_report_start.get("committed_day", -1))
@@ -324,8 +336,13 @@ func _run() -> int:
 	var authoritative_measured := 0
 	var auth_measure_start_us := 0
 	var auth_measure_end_us := 0
-	# sus_tick_daily captures driver_day - 1. Include the final input day.
-	var total_driver_days := warmup_days + days + 1
+	var auth_measure_start_day := -1
+	var auth_measure_end_day := -1
+	# sus_tick_daily captures driver_day - 1. With a pipeline one observation
+	# can cover several commits, so the loop ends on measured observations and
+	# this bound only stops a run whose worker no longer commits.
+	var total_driver_days := warmup_days + days + 1 if pipeline_depth == 0 \
+		else 2 * (warmup_days + days + pipeline_depth) + 16
 	for day in range(1, total_driver_days + 1):
 		if country_daily_workload:
 			if country == null or country_handles.is_empty():
@@ -377,15 +394,22 @@ func _run() -> int:
 		# publishes and eventually receive the authority grant (mask != 0).
 		if host.runtime_climate_authority_enabled:
 			if host.has_method("wait_for_climate_consumed"):
-				host.wait_for_climate_consumed(0)
+				# A full FIFO would reject this day's input. The player scene
+				# retains the day on the same capacity check; mirror that here.
+				var capacity_deadline := Time.get_ticks_usec() + 60000000
+				while not bool(host.wait_for_climate_consumed(0).get("ok", true)) \
+						and Time.get_ticks_usec() < capacity_deadline:
+					host._consume_runtime_commit_if_ready()
+					harness_capacity_wait_count += 1
+					await process_frame
 			host._consume_runtime_commit_if_ready()
 		host.run_daily_tick(day, phase)
 		host.finish_daily_tick(0.0, {})
 		if host.runtime_climate_authority_enabled:
 			# run_daily_tick already froze driver_day - 1. A second capture with
 			# driver_day skips the production input-day convention.
-			# Stop polling as soon as that actual input day commits; a fixed 40ms
-			# wait imposed an artificial throughput ceiling below 50 days/s.
+			# Stop polling once the worker is within pipeline_depth days of that
+			# input day; waiting for the input day itself idles the worker.
 			var writeback_window_started := Time.get_ticks_usec()
 			var writeback_deadline := writeback_window_started + 60000000
 			while Time.get_ticks_usec() < writeback_deadline:
@@ -395,7 +419,7 @@ func _run() -> int:
 				harness_writeback_poll_count += 1
 				var progress := _runtime_report_snapshot(generator)
 				if int(progress.get("simulation_committed_day",
-						progress.get("committed_day", -1))) >= day - 1:
+						progress.get("committed_day", -1))) >= day - 1 - pipeline_depth:
 					break
 				if Time.get_ticks_usec() >= writeback_deadline:
 					break
@@ -470,24 +494,39 @@ func _run() -> int:
 			day_report.get("committed_day", -1)))
 		var produced_us := int(day_report.get("last_commit_produced_at_us", 0))
 		if committed_day > last_authoritative_committed_day:
+			# Under a pipeline one observation can cover several commits; warmup
+			# counts committed days so the measured window starts at warmup_days.
+			var warmed_before := authoritative_observed
+			authoritative_observed += 1 if pipeline_depth == 0 \
+				else committed_day - maxi(last_authoritative_committed_day, 0)
 			last_authoritative_committed_day = committed_day
-			authoritative_observed += 1
-			if authoritative_observed <= warmup_days:
+			if warmed_before < warmup_days:
 				recorder.configure_authoritative_sampling(committed_day)
-				if authoritative_observed == warmup_days:
+				if authoritative_observed >= warmup_days:
 					# Clear warmup rows; the next commit starts the measured window.
 					recorder.start(detail_mode, 1)
 					auth_measure_start_us = produced_us if produced_us > 0 else Time.get_ticks_usec()
+					auth_measure_start_day = committed_day
 				continue
 			authoritative_measured += 1
 			if auth_measure_start_us == 0:
 				auth_measure_start_us = produced_us if produced_us > 0 else Time.get_ticks_usec()
+				auth_measure_start_day = committed_day - 1
 			auth_measure_end_us = produced_us if produced_us > 0 else Time.get_ticks_usec()
+			auth_measure_end_day = committed_day
 			# Commit consumption can precede its recorder callback by one frame.
 			host._consume_runtime_commit_if_ready()
-			if authoritative_measured >= days:
+			if pipeline_depth == 0 and authoritative_measured >= days:
 				break
+		# Under a pipeline the recorder samples at finish_daily_tick and this loop
+		# after the poll, so each can group several commits differently. The
+		# recorder rows are the measured samples.
+		if pipeline_depth > 0 and authoritative_observed > warmup_days \
+				and int(recorder.call("row_count")) >= days:
+			break
 
+	var recorded_rows := int(recorder.call("row_count"))
+	var measured_samples := recorded_rows if pipeline_depth > 0 else authoritative_measured
 	var output_path := String(recorder.call("stop_and_export"))
 	var country_perf_path := _write_country_perf_samples(
 		output_dir, country_perf_samples)
@@ -504,7 +543,7 @@ func _run() -> int:
 	var idle_wait_ms := 0.0
 	var adjusted_run_ms := run_ms
 	var lower_bound_run_ms := maxf(0.0, run_ms - writeback_window_ms)
-	var expected_rows := authoritative_measured if authoritative_measured > 0 else host.get_fast_tick_count()
+	var expected_rows := measured_samples if measured_samples > 0 else host.get_fast_tick_count()
 	if fatal:
 		expected_rows = host.get_fast_tick_count()
 	var rows_ok := rows == expected_rows
@@ -512,18 +551,24 @@ func _run() -> int:
 	var auth_elapsed_ms := 0.0
 	if auth_measure_end_us > auth_measure_start_us and auth_measure_start_us > 0:
 		auth_elapsed_ms = float(auth_measure_end_us - auth_measure_start_us) / 1000.0
+	# One observation can cover several commits once the driver runs ahead, so
+	# throughput counts committed days, not observations.
+	var authoritative_committed_days := authoritative_measured
+	if auth_measure_start_day >= 0 and auth_measure_end_day > auth_measure_start_day:
+		authoritative_committed_days = auth_measure_end_day - auth_measure_start_day
 	var authoritative_days_per_second := _days_per_second(
-		float(authoritative_measured), auth_elapsed_ms)
+		float(authoritative_committed_days), auth_elapsed_ms)
 	var raw_days_per_second := _days_per_second(effective_days, run_ms)
 	var adjusted_days_per_second := authoritative_days_per_second
 	var lower_bound_days_per_second := _days_per_second(effective_days, lower_bound_run_ms)
 	var main_wait_on_sim_us := int(runtime_report_end.get("main_wait_on_sim_us", 0))
 	# Checkpoint (assert when measuring): authoritative throughput >= 50 days/s.
 	# M7 PERFORMANCE reads authoritative_days_per_second from the session JSON.
-	var throughput_checkpoint_ok := authoritative_measured >= days \
+	var throughput_checkpoint_ok := measured_samples >= days \
 		and authoritative_days_per_second >= AUTHORITATIVE_THROUGHPUT_CHECKPOINT_DAYS_PER_SEC
-	print("[headless-perf/auth] warmup_days=%d measured_days=%d observed=%d commit_us=%d..%d authoritative_days_per_second=%.6f main_wait_on_sim_us=%d checkpoint_ok=%s" % [
-		warmup_days, authoritative_measured, authoritative_observed,
+	print("[headless-perf/auth] warmup_days=%d pipeline_depth=%d measured_days=%d committed_days=%d observed=%d commit_us=%d..%d authoritative_days_per_second=%.6f main_wait_on_sim_us=%d checkpoint_ok=%s" % [
+		warmup_days, pipeline_depth, authoritative_measured, authoritative_committed_days,
+		authoritative_observed,
 		auth_measure_start_us, auth_measure_end_us, authoritative_days_per_second,
 		main_wait_on_sim_us, str(throughput_checkpoint_ok),
 	])
@@ -569,10 +614,11 @@ func _run() -> int:
 		int(climate_diag.get("writeback_last_day", -1)),
 		int(climate_diag.get("authoritative_domain_mask", 0)),
 	])
-	print("[headless-perf/harness] writeback_window_ms=%.3f consume_ms=%.3f idle_wait_ms=%.3f adjusted_run_ms=%.3f lower_bound_run_ms=%.3f raw_days_per_second=%.6f adjusted_days_per_second=%.6f lower_bound_days_per_second=%.6f polls=%d" % [
-		writeback_window_ms, writeback_consume_ms, idle_wait_ms, adjusted_run_ms,
+	print("[headless-perf/harness] pipeline_depth=%d writeback_window_ms=%.3f consume_ms=%.3f idle_wait_ms=%.3f adjusted_run_ms=%.3f lower_bound_run_ms=%.3f raw_days_per_second=%.6f adjusted_days_per_second=%.6f lower_bound_days_per_second=%.6f polls=%d capacity_waits=%d" % [
+		pipeline_depth, writeback_window_ms, writeback_consume_ms, idle_wait_ms, adjusted_run_ms,
 		lower_bound_run_ms, raw_days_per_second, adjusted_days_per_second,
 		lower_bound_days_per_second, harness_writeback_poll_count,
+		harness_capacity_wait_count,
 	])
 	if not output_dir.is_empty():
 		_write_stage_c_outputs(output_dir, {
@@ -592,7 +638,9 @@ func _run() -> int:
 			"requested_days": days,
 			"warmup_days": warmup_days,
 			"effective_days": expected_rows,
+			"pipeline_depth": pipeline_depth,
 			"authoritative_measured_days": authoritative_measured,
+			"authoritative_committed_days": authoritative_committed_days,
 			"authoritative_observed_days": authoritative_observed,
 			"authoritative_days_per_second": authoritative_days_per_second,
 			"auth_measure_start_us": auth_measure_start_us,
@@ -612,6 +660,7 @@ func _run() -> int:
 			"adjusted_days_per_second": adjusted_days_per_second,
 			"lower_bound_days_per_second": lower_bound_days_per_second,
 			"harness_writeback_poll_count": harness_writeback_poll_count,
+			"harness_capacity_wait_count": harness_capacity_wait_count,
 			"barrier_pulses": barrier_pulses,
 			"worker_fault_count": int(runtime_report_end.get("worker_fault_count", 0)),
 			"main_wait_on_sim_us": main_wait_on_sim_us,
@@ -646,7 +695,7 @@ func _run() -> int:
 	# assert: authoritative throughput >= 50 days/s after warm-up
 	if not throughput_checkpoint_ok:
 		push_error("[headless-perf] authoritative throughput checkpoint failed: measured=%d need>=%d days/s=%.3f threshold=%.3f main_wait_on_sim_us=%d" % [
-			authoritative_measured, days, authoritative_days_per_second,
+			measured_samples, days, authoritative_days_per_second,
 			AUTHORITATIVE_THROUGHPUT_CHECKPOINT_DAYS_PER_SEC, main_wait_on_sim_us])
 		return 9
 	return 0

@@ -107,7 +107,9 @@ const TERRAIN_HORIZON_STEP_PX := 2.0
 const TERRAIN_HORIZON_STEP_GROWTH := 0.35  # 近密远疏；0 退回固定步长
 const TERRAIN_HORIZON_LOWPASS_RADIUS := 1  # Horizon 专用 3x3 低通，不改权威高度场
 const TERRAIN_HORIZON_MAX_ANGLE := 1.309      # 约 75°，与运行期解码契约一致
-const TERRAIN_HORIZON_BIAS := 0.01            # height 单位，抑制同高/高频 relief 自遮蔽
+# height 单位，抑制同高/高频 relief 自遮蔽。高度按 16 hex 夸张后，0.01 的侵蚀残差在 1~3 texel
+# 内就构成 60° 以上的遮挡角，山地满屏碎点状投影；0.04 只滤掉残差，山体与河谷投影保留。
+const TERRAIN_HORIZON_BIAS := 0.04
 const TERRAIN_HORIZON_HEIGHT_SCALE_HEX := 16.0   # 归一高程 → world units（×hex_size）
 const TERRAIN_HORIZON_MAX_DISTANCE_HEX := 24.0  # 固定近场遮挡射程，避免大地图引入更远山体
 
@@ -447,7 +449,8 @@ const CRAG_FREQ_MUL := 1.05    # 岩屑频率乘子
 const HYPSO_LAYER_A_MIX := 0.0    # [bimodal 2026-06-26] 置 0：双峰地台模型已产出平台，Layer A 关闭
 
 # [terrain-normal-bake 2026-06-25] 生成期烘焙"总体地形法线"（粗法线）的参数。
-const TERRAIN_NORMAL_SAMPLE_RADIUS_HEX := 1.35 # 宽半径低通：强调山系/盆地走向，过滤格内碎起伏
+# 半径须小于汇流刻谷的谷宽（约 0.3–0.5 格），否则谷地被低通抹平；格内高频噪声已按奈奎斯特截断。
+const TERRAIN_NORMAL_SAMPLE_RADIUS_HEX := 0.35
 const TERRAIN_NORMAL_HEIGHT_SCALE_HEX := 2.10  # 宏观法线的视觉垂直夸张；不改权威 elevation
 
 # ─── 轻度侵蚀（仅做边界平滑，不刻河谷） ──────────────────────────────────
@@ -1338,6 +1341,7 @@ func _bake_visual_tiles(map: MapData, world: WorldData, hex_size: float,
 		"normal_sample_radius_hex": TERRAIN_NORMAL_SAMPLE_RADIUS_HEX,
 		"normal_height_scale_hex": TERRAIN_NORMAL_HEIGHT_SCALE_HEX,
 	}
+	base_knobs.merge(TerrainIndexBakerScript.dem_landform_knobs())
 	var texel_world: Vector2 = layout.visual_domain.size / Vector2(layout.logical_size)
 	var layer_reports: Array[Dictionary] = []
 	var bake_t0 := Time.get_ticks_usec()
@@ -4217,6 +4221,7 @@ func _bake_geometry_fields_native(map: MapData, hex_size: float, world: WorldDat
 		"shore_carve_band": SHORE_CARVE_BAND,
 		"coast_sdf_max_dist_px": COAST_SDF_MAX_DIST_PX,
 	}
+	knobs.merge(TerrainIndexBakerScript.dem_landform_knobs())
 	var rep: Dictionary = _world_ext.run_bake_geometry_fields_pass(knobs)
 	if rep == null or typeof(rep) != TYPE_DICTIONARY or bool(rep.get("fallback", true)):
 		push_warning("[bake_geometry_fields] 融合 pass 返回 fallback（reason=%s）；回退旧 per-pass 编排。"
@@ -4240,8 +4245,9 @@ func _bake_geometry_fields_native(map: MapData, hex_size: float, world: WorldDat
 	var wd_buf: PackedByteArray = rep.get("water_depth_buffer", PackedByteArray())
 	world.water_depth_buffer = wd_buf if wd_buf.size() == pix_count else PackedByteArray()
 
-	print("    [fused] terrain=%.1fms erosion=%.1fms(ok=%s) river=%.1fms(ok=%s) latitude=%.1fms coast_sdf=%.1fms(ok=%s)" % [
-		float(rep.get("terrain_ms", -1.0)), float(rep.get("erosion_ms", -1.0)), str(bool(rep.get("erosion_ok", false))),
+	print("    [fused] terrain=%.1fms valley=%.1fms erosion=%.1fms(ok=%s) river=%.1fms(ok=%s) latitude=%.1fms coast_sdf=%.1fms(ok=%s)" % [
+		float(rep.get("terrain_ms", -1.0)), float(rep.get("valley_ms", -1.0)),
+		float(rep.get("erosion_ms", -1.0)), str(bool(rep.get("erosion_ok", false))),
 		float(rep.get("river_ms", -1.0)), str(bool(rep.get("river_ok", false))),
 		float(rep.get("latitude_ms", -1.0)),
 		float(rep.get("coast_ms", -1.0)), str(bool(rep.get("coast_ok", false)))])

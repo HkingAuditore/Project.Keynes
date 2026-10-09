@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cstdio>
 #include <limits>
 #include <tuple>
 
@@ -209,7 +210,7 @@ int64_t NativeEconomyRuntime::startup_producer_hard_input_cover_q16(
         int32_t cell, int32_t good_id, int64_t &sat) const {
     // Recursion guard: cover ranking may nest through select_startup_producer
     // → select_startup_input_candidate → cover again on a different good.
-    thread_local int32_t depth = 0;
+    int32_t &depth = startup_cover_depth();
     if (depth >= 3) return 0;
     ++depth;
     struct DepthGuard {
@@ -378,13 +379,89 @@ int32_t NativeEconomyRuntime::select_startup_producer(
     return select_startup_producer(cell, good_id, nullptr);
 }
 
+NativeEconomyRuntime::StartupProducerMemoScope::StartupProducerMemoScope(
+        const NativeEconomyRuntime &owner) : runtime(owner) {
+    auto &state = startup_producer_memo_state();
+    const char *disabled = std::getenv("PK_ECONOMY_MEMO_DISABLE");
+    if (disabled && std::strcmp(disabled, "1") == 0) return;
+    if (state.depth != 0 && state.owner != &owner) return;
+    if (state.depth++ == 0) {
+        state.owner = &owner;
+        state.entries.clear();
+        state.hits = state.misses = 0;
+    }
+    active = true;
+}
+
+NativeEconomyRuntime::StartupProducerMemoScope::~StartupProducerMemoScope() {
+    if (!active) return;
+    auto &state = startup_producer_memo_state();
+    if (--state.depth == 0) {
+        EconomyCostProbe::record("startup_producer.memo_hit",
+            runtime._current_day.get(), 0.0, state.hits);
+        EconomyCostProbe::record("startup_producer.memo_miss",
+            runtime._current_day.get(), 0.0, state.misses);
+        state.entries.clear();
+        state.owner = nullptr;
+    }
+}
+
+bool NativeEconomyRuntime::same_startup_plan(const InvestmentCandidatePlan &a,
+                                             const InvestmentCandidatePlan &b) {
+    return a.cell == b.cell && a.type_id == b.type_id &&
+        a.utilization_q16 == b.utilization_q16 &&
+        a.construction_cost == b.construction_cost &&
+        a.required_capital == b.required_capital &&
+        a.payback_days == b.payback_days &&
+        a.target_profit_per_day == b.target_profit_per_day &&
+        a.target_return_on_capital_q16 == b.target_return_on_capital_q16 &&
+        a.planned_output_quantity == b.planned_output_quantity &&
+        a.employee_slots == b.employee_slots && a.owner_slots == b.owner_slots &&
+        a.input_good_ids == b.input_good_ids &&
+        a.input_quantities == b.input_quantities &&
+        a.material_good_ids == b.material_good_ids &&
+        a.material_quantities == b.material_quantities &&
+        a.quote.cash_revenue_per_day == b.quote.cash_revenue_per_day &&
+        a.quote.input_cost_per_day == b.quote.input_cost_per_day &&
+        a.quote.wage_cost_per_day == b.quote.wage_cost_per_day &&
+        a.quote.profit_per_day == b.quote.profit_per_day;
+}
+
 int32_t NativeEconomyRuntime::select_startup_producer(
         int32_t cell, int32_t good_id,
         InvestmentCandidatePlan *selected_plan) const {
-    EconomyCostProbe cost("startup_producer_select", _current_day.get(), 1);
     if (cell < 0 || cell >= _cell_count.get() || good_id < 0 ||
         good_id + 1 >= static_cast<int32_t>(_investment_good_type_offsets.size()))
         return -1;
+    auto &memo = startup_producer_memo_state();
+    const bool memo_active = memo.depth > 0 && memo.owner == this;
+    const std::array<int32_t, 3> memo_key{cell, good_id, startup_cover_depth()};
+    if (memo_active) {
+        const auto found = memo.entries.find(memo_key);
+        if (found != memo.entries.end()) {
+            const char *verify = std::getenv("PK_ECONOMY_MEMO_VERIFY");
+            if (verify && std::strcmp(verify, "1") == 0) {
+                const auto *previous_owner = memo.owner;
+                memo.owner = nullptr;
+                InvestmentCandidatePlan reference_plan;
+                const int32_t reference = select_startup_producer(
+                    cell, good_id, &reference_plan);
+                memo.owner = previous_owner;
+                if (reference != found->second.first ||
+                    !same_startup_plan(reference_plan, found->second.second)) {
+                    std::fprintf(stderr,
+                        "[startup-producer-memo-mismatch] day=%lld cell=%d good=%d\n",
+                        static_cast<long long>(_current_day.get()), cell, good_id);
+                    std::abort();
+                }
+            }
+            ++memo.hits;
+            if (selected_plan != nullptr) *selected_plan = found->second.second;
+            return found->second.first;
+        }
+        ++memo.misses;
+    }
+    EconomyCostProbe cost("startup_producer_select", _current_day.get(), 1);
     int32_t best_type = -1;
     int64_t best_return = std::numeric_limits<int64_t>::min();
     int64_t best_unit_cost = std::numeric_limits<int64_t>::max();
@@ -524,6 +601,8 @@ int32_t NativeEconomyRuntime::select_startup_producer(
             best_plan = candidate_plan;
         }
     }
+    if (memo_active && memo.owner == this)
+        memo.entries.emplace(memo_key, std::make_pair(best_type, best_plan));
     if (selected_plan != nullptr) *selected_plan = best_plan;
     return best_type;
 }
@@ -717,7 +796,7 @@ void NativeEconomyRuntime::reserve_first_research_construction(int32_t cell) {
     // 首座机构的材料必须能跨周期积累；已有科研产能后交回普通投资规则。
     for (int32_t g = _building_cell_offsets[cell];
          g < _building_cell_offsets[cell + 1]; ++g) {
-        const auto group = building_at(static_cast<size_t>(g));
+        const auto group = building_view(static_cast<size_t>(g));
         if (group.count <= 0) continue;
         const BuildingType &type = _building_types[group.type_id];
         for (int32_t i = 0; i < type.output_count; ++i)
@@ -939,7 +1018,7 @@ void NativeEconomyRuntime::prepare_startup_demand() {
                 static_cast<size_t>(_cell_count.get() + 1)) {
             for (int32_t group_index = _building_cell_offsets[cell];
                  group_index < _building_cell_offsets[cell + 1]; ++group_index) {
-                const auto group = building_at(static_cast<size_t>(group_index));
+                const auto group = building_view(static_cast<size_t>(group_index));
                 if (group.count <= 0 || group.operating_state == 1 ||
                     group.type_id < 0 || group.type_id >= static_cast<int32_t>(
                         _building_types.size())) continue;
@@ -1127,6 +1206,7 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
     for (const int32_t cell : _economy_live_cells) {
         if (cell < 0 || cell >= _cell_count.get()) continue;
         LivingCostMemoScope memo(*this);
+        StartupProducerMemoScope startup_memo(*this);
         ++_investment_review_stamp_generation;
         if (_investment_review_stamp_generation == 0) {
             std::fill(_investment_good_stamp.begin(),
@@ -1324,6 +1404,7 @@ void NativeEconomyRuntime::refresh_derived_business_demand() {
 void NativeEconomyRuntime::propagate_startup_demand_for_cell(int32_t cell) {
     if (_startup_demand_runtime_mode.get() == 0 || cell < 0 || cell >= _cell_count.get() ||
         _investment_good_stamp.size() != _good_ids.size()) return;
+    StartupProducerMemoScope startup_memo(*this);
     ++_investment_review_stamp_generation;
     if (_investment_review_stamp_generation == 0) {
         std::fill(_investment_good_stamp.begin(),
@@ -1696,7 +1777,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
        if (!is_review_cell(active_cell)) continue;
        for (int32_t g = _building_cell_offsets[active_cell];
             g < _building_cell_offsets[active_cell + 1]; ++g) {
-       const auto group = building_at(static_cast<size_t>(g));
+       const auto group = building_view(static_cast<size_t>(g));
         if (group.count <= 0 || group.cell < 0 || group.cell >= _cell_count.get() ||
             group.type_id < 0 || group.type_id >= static_cast<int32_t>(_building_types.size()))
             continue;
@@ -2180,7 +2261,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
             for (int32_t group_index = _building_cell_offsets[cell];
                  group_index < _building_cell_offsets[cell + 1];
                  ++group_index) {
-                const auto group = building_at(static_cast<size_t>(group_index));
+                const auto group = building_view(static_cast<size_t>(group_index));
                 if (group.count <= 0 || group.operating_state == 1 ||
                     group.type_id < 0 ||
                     group.type_id >= static_cast<int32_t>(
@@ -3024,7 +3105,7 @@ bool NativeEconomyRuntime::run_endogenous_building_investment(
                 existing->representative_group >= 0 &&
                 existing->representative_group < static_cast<int32_t>(
                     building_count())) {
-                const auto incumbent = building_at(static_cast<size_t>(
+                const auto incumbent = building_view(static_cast<size_t>(
                     existing->representative_group));
                 profitable_incumbent_seat_expansion =
                     incumbent.realized_profit_margin_q16 >= Q16_ONE / 4;
