@@ -200,6 +200,7 @@ void RuntimeClimateAuthority::reset(uint32_t cell_count) {
     _planned_day = -1;
     _planned_state_hash = 0;
     _planned_parity_hash = 0;
+    _committed_state_hash = 0;
     _last_input_generation = 0;
     _last_report = RuntimeClimateVerticalReport{};
 }
@@ -257,6 +258,7 @@ bool RuntimeClimateAuthority::seed_from_input(
     // 未编译 catalog 的新基线没有物理历史，下一次计划从输入冷播种。
     _store.physics_state.clear();
     _next = _store;
+    _committed_state_hash = 0;
     return true;
 }
 
@@ -375,7 +377,7 @@ bool RuntimeClimateAuthority::plan_day(
     report.work_units = kernel_report.work_units;
     report.changed_cells = kernel_report.changed_cells;
     report.state_hash = kernel_report.state_hash;
-    // SHADOW 对拍需要 parity；ACTIVE 热路径跳过（writeback/save 会自算 state_hash）。
+    // SHADOW 对拍需要 parity；ACTIVE 热路径跳过（save 会自算 state_hash，writeback 报 0）。
     report.parity_hash = compute_hashes ? _next.parity_hash() : 0;
     report.input_hash = kernel_report.input_hash;
     report.catalog_hash = _catalog.hash;
@@ -420,6 +422,7 @@ bool RuntimeClimateAuthority::commit_day(
     _kernel.commit(_store, _next);
     report.state_hash = _planned_state_hash;
     report.parity_hash = _planned_parity_hash;
+    _committed_state_hash = _planned_state_hash;
     report.replay_ms = std::chrono::duration<double, std::milli>(
         std::chrono::steady_clock::now() - begin).count();
     report.completed = 1;
@@ -451,6 +454,7 @@ bool RuntimeClimateAuthority::commit_day_forced(
     // pre-adoption values would misdescribe the state that is now committed.
     report.state_hash = _store.state_hash();
     report.parity_hash = _store.parity_hash();
+    _committed_state_hash = report.state_hash;
     _last_report = report;
     return true;
 }
@@ -517,6 +521,7 @@ bool RuntimeClimateAuthority::adopt_reference_baseline(
     report.catalog_hash = _catalog.hash;
     report.state_hash = _store.state_hash();
     report.parity_hash = _store.parity_hash();
+    _committed_state_hash = report.state_hash;
     _last_report = report;
     return true;
 }
@@ -774,6 +779,7 @@ bool RuntimeClimateAuthority::restore(const uint8_t *bytes, size_t size,
     restored_catalog.map_height = map_height;
     _store = std::move(restored);
     _next = std::move(restored_next);
+    _committed_state_hash = section_abi >= 8u ? expected_hash : 0;
     _catalog = restored_catalog;
     _catalog_ready = catalog_hash != 0;
     _last_input_generation = input_generation;

@@ -122,6 +122,7 @@ const float DEFAULT_METALLIC_SNOW      = 0.02;   // 雪面有微弱镜面金属�
 const float DEFAULT_METALLIC_ICE       = 0.05;
 const float DEFAULT_AO_LAND            = 1.00;
 const float DEFAULT_AO_WATER           = 1.00;
+const float TERRAIN_EROSION_CREASE_AO  = 0.22;   // 侵蚀沟谷最深处的局部遮蔽量
 const float DEFAULT_ALPHA              = 1.00;
 const vec3  DEFAULT_EMISSION           = vec3(0.0);
 

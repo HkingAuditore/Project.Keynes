@@ -9479,6 +9479,7 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
     //
     // Reaching this point requires the per-domain gate to have granted CLIMATE,
     // so this cannot run while the main thread is still computing Climate.
+    _day_waterfall.mark(RuntimeDayWaterfall::PRE_SETUP);
     const bool climate_authority_requested =
         _mode.load(std::memory_order_acquire) == RuntimeSimulationMode::ACTIVE &&
         (_requested_authority_mask.load(std::memory_order_acquire) &
@@ -9655,11 +9656,14 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
         }
     }
 
+    _day_waterfall.mark(RuntimeDayWaterfall::CLIMATE_COMPUTE);
     RuntimeDomainId previous_domain = RuntimeDomainId::INPUT_CAPTURE;
     bool previous_domain_valid = false;
     for (uint32_t i = 0; i < plan.stage_count; ++i) {
         RuntimeDomainPlan &stage = plan.stages[i];
         if (previous_domain_valid) {
+            _day_waterfall.mark(RuntimeDayWaterfall::domain(
+                static_cast<uint16_t>(previous_domain)));
             char after_point[72];
             std::snprintf(after_point, sizeof(after_point), "%s.plan.after",
                           runtime_domain_fault_tag(previous_domain));
@@ -10529,6 +10533,7 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
             }
             // slice done 也可能表示空闲或前置领域尚未就绪，不能伪造 epoch 提交。
             const auto economy_formulas_finished = std::chrono::steady_clock::now();
+            _day_waterfall.mark(RuntimeDayWaterfall::ECONOMY_FORMULAS);
             economy_day_done = economy_day_done &&
                 !_economy_production_runtime->epoch_active() &&
                 _economy_production_runtime->last_committed_day() >= 0;
@@ -10582,23 +10587,29 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                     // and republish the snapshot from that live state instead.
                     _economy_production_runtime
                         ->flush_formula_owned_domain_mirrors();
+                    _day_waterfall.mark(RuntimeDayWaterfall::ECONOMY_MIRROR_CAPTURE);
                     ledger_published =
                         _economy_pod_authority.publish_owned_committed_mirror(
                             _economy_production_runtime->committed_generation(),
                             _economy_production_runtime->current_day(),
                             economy_error);
+                    _day_waterfall.mark(RuntimeDayWaterfall::ECONOMY_MIRROR_PUBLISH);
                 } else {
-                    RuntimeEconomyLedgerState ledger_state;
+                    RuntimeEconomyLedgerState &ledger_state =
+                        _economy_mirror_capture_scratch;
                     const auto capture_started = std::chrono::steady_clock::now();
                     _economy_production_runtime
                         ->capture_committed_ledger_state(ledger_state,
                             production_writer == EconomyProductionWriter::STAGE_OPS
                                 ? _economy_replay_stage_hash[RUNTIME_ECONOMY_GRAPH_STAGE_COUNT - 1].load(
-                                      std::memory_order_acquire) : 0);
+                                      std::memory_order_acquire) : 0,
+                            false);
+                    _day_waterfall.mark(RuntimeDayWaterfall::ECONOMY_MIRROR_CAPTURE);
                     const auto import_started = std::chrono::steady_clock::now();
                     ledger_published =
-                        _economy_pod_authority.import_and_publish_committed_ledger(
-                            std::move(ledger_state), economy_error);
+                        _economy_pod_authority.import_and_publish_captured_ledger(
+                            ledger_state, economy_error);
+                    _day_waterfall.mark(RuntimeDayWaterfall::ECONOMY_MIRROR_PUBLISH);
                     static thread_local unsigned mirror_samples = 0;
                     if (mirror_samples++ < 8) {
                         std::fprintf(stderr, "[economy-mirror-cost] day=%lld capture_ms=%.3f import_ms=%.3f\n",
@@ -10632,9 +10643,11 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                 // at a later, observable epoch boundary; this prevents a
                 // silent dual-writer handoff in the middle of a day.
             }
+            _day_waterfall.mark(RuntimeDayWaterfall::DOMAIN_ECONOMY);
             if (economy_day_done) {
                 _economy_pod_state_hash.store(_economy_pod_authority.state_hash(), std::memory_order_release);
             }
+            _day_waterfall.mark(RuntimeDayWaterfall::ECONOMY_POD_HASH);
             if (plan.context.day % 100 == 0) {
                 double stages_ms = 0;
                 for (const auto &ms : _economy_replay_stage_ms) stages_ms += ms.load(std::memory_order_relaxed);
@@ -10701,6 +10714,7 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                     _economy_pod_authority.snapshot_ring().publish(ring_index);
                 }
             }
+            _day_waterfall.mark(RuntimeDayWaterfall::ECONOMY_SNAPSHOT);
             // POD command execute via apply_command, then drain receipts.
             _economy_pod_authority.sync_identity(
                 1u, _economy_production_runtime->committed_generation());
@@ -10814,6 +10828,7 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
                 }
                 commit.work_units += ack_n;
             }
+            _day_waterfall.mark(RuntimeDayWaterfall::ECONOMY_COMMANDS);
             // ACTIVE_WITH_PARITY: after a completed epoch, replay StageOps
             // (mutate=false) against frozen stage refs from compact slices.
             // Incomplete pulses skip — refs would be partial.
@@ -11079,6 +11094,8 @@ RuntimeDayCommit NativeSimulationHost::execute_day_plan(
         ++commit.completed_stage_count;
     }
     if (previous_domain_valid) {
+        _day_waterfall.mark(RuntimeDayWaterfall::domain(
+            static_cast<uint16_t>(previous_domain)));
         char after_point[72];
         std::snprintf(after_point, sizeof(after_point), "%s.plan.after",
                       runtime_domain_fault_tag(previous_domain));
@@ -13066,12 +13083,15 @@ void NativeSimulationHost::worker_main() {
                 const uint64_t attempt_economy_signal =
                     _economy_input_signal.load(std::memory_order_acquire);
                 _worker_timing.set(RuntimeWorkerTiming::EXECUTE);
+                _day_waterfall.begin(day);
                 RuntimeDayPlan day_plan = build_day_plan(
                     day, speed, environment.get());
+                _day_waterfall.mark(RuntimeDayWaterfall::BUILD_PLAN);
                 const auto day_attempt_started = std::chrono::steady_clock::now();
                 const RuntimeDayCommit day_commit = execute_day_plan(
                     day_plan, environment.get(), day_commands, day_receipts,
                     admitted_submit_order);
+                _day_waterfall.mark(RuntimeDayWaterfall::POST_LOOP);
                 if (day % 100 == 0) {
                     std::fprintf(stderr, "[runtime-day-cost] day=%lld ok=%u ms=%.3f\n",
                         static_cast<long long>(day), static_cast<unsigned>(day_commit.preflight_ok),
@@ -13141,6 +13161,7 @@ void NativeSimulationHost::worker_main() {
                         publish_pending_count();
                     }
                 }
+                _day_waterfall.mark(RuntimeDayWaterfall::WORKER_RECEIPTS);
                 if (day_commit.preflight_ok == 0) {
                     // execute_day_plan may already have set_fault (ledger /
                     // compact fatal). Do not arm fiscal or prepare on a dead
@@ -13277,6 +13298,7 @@ void NativeSimulationHost::worker_main() {
                     std::string prepare_error;
                     const uint32_t prepared_before_wait =
                         prepare_economy_origin_country_assets(prepare_error);
+                    _day_waterfall.mark(RuntimeDayWaterfall::WORKER_RETRY);
                     if (!prepare_error.empty()) {
                         set_fault(prepare_error.c_str());
                         break;
@@ -13335,6 +13357,8 @@ void NativeSimulationHost::worker_main() {
                     const uint64_t environment_signal = attempt_environment_signal;
                     const uint64_t country_peer_signal = attempt_peer_signal;
                     std::unique_lock<std::mutex> lock(_control_mutex);
+                    _day_waterfall.mark(RuntimeDayWaterfall::WORKER_RETRY);
+                    _day_waterfall.finish(false, day_commit.completed_domain_mask);
                     _worker_timing.set(RuntimeWorkerTiming::INPUT_WAIT);
                     // Timed wait: peer-stall timeout must be polled while the
                     // Climate ring is full and no CV signal arrives.
@@ -13417,7 +13441,7 @@ void NativeSimulationHost::worker_main() {
                             _climate_writeback.try_begin_write(slot)) {
                             RuntimeClimateSnapshot &out =
                                 _climate_writeback.write_buffer(slot);
-                            out = _climate_authority.snapshot();
+                            _climate_authority.snapshot_into(out);
                             // Own monotonic sequence, not the commit
                             // generation: the commit generation is bumped later
                             // inside publish_day, so reading it here would
@@ -13435,6 +13459,7 @@ void NativeSimulationHost::worker_main() {
                         }
                     }
                 }
+                _day_waterfall.mark(RuntimeDayWaterfall::WORKER_CLIMATE_WRITEBACK);
                 _last_day_stage_count.store(day_plan.stage_count,
                                             std::memory_order_release);
                 _last_day_completed_stages.store(day_commit.completed_stage_count,
@@ -13444,6 +13469,8 @@ void NativeSimulationHost::worker_main() {
                 _committed_day.store(day, std::memory_order_release);
                 _completed_days.fetch_add(1, std::memory_order_relaxed);
                 publish_day(from_day, day, day_commit, day_receipts);
+                _day_waterfall.mark(RuntimeDayWaterfall::WORKER_PUBLISH_DAY);
+                _day_waterfall.finish(true, day_commit.completed_domain_mask);
                 _worker_timing.set(RuntimeWorkerTiming::OVERHEAD);
                 // Control messages are intentionally checked at the day
                 // barrier as well as the outer loop.  A long catch-up batch

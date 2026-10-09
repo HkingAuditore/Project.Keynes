@@ -1873,8 +1873,9 @@ continues — it must not emit `INPUT_CHAIN` the way a missing hard input does.
 周期报价。owner 到岗率 `owner_run_q16` 只作为运行规模；气候和自然资源分别计算
 `climate_factor_q16`、`resource_factor_q16`，自然产能为两者的 Q16 乘积，软投入只写入
 `soft_productivity_q16` 生产率倍率。报价同时保留 `natural_max_output`、
-`optimal_output`、`fundable_output` 和 `actual_output`，用于区分自然上限、收益目标、
-资金可支付上限和最终结算产量。岗位目录不再提供工资金额；缺少动态合同工资时，岗位使用当地
+`fundable_output` 和 `actual_output`，用于区分自然上限、资金可支付上限和最终结算产量。
+报价只在资金约束后的规模上试算（有软投入时再试算一次不买软投入的方案）；原先 0..16/16
+共 17 档的收益最优规模搜索只写 `optimal_*` 字段而无任何读者，2026-10-09 已删除。岗位目录不再提供工资金额；缺少动态合同工资时，岗位使用当地
 职业生活成本作为冷启动底线，再由合同工资/实付工资 EMA、岗位收入、vacancy 和企业支付能力
 形成动态报价。实际工资转移仍走原有守恒结算。
 

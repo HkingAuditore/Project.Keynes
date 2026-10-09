@@ -9,6 +9,7 @@
 #include <limits>
 #include <memory>
 #include <map>
+#include <mutex>
 #include <numeric>
 #include <string>
 #include <type_traits>
@@ -443,8 +444,11 @@ public:
                                        int32_t &summary_families) const;
     // Copies only committed ledger columns. This is a cold publish-boundary
     // handoff for POD parity; it is never used while an epoch is mutable.
+    // `compute_ledger_hash=false` leaves ledger_hash 0; every reader of such a
+    // ledger must hash on demand.
     void capture_committed_ledger_state(RuntimeEconomyLedgerState &out,
-                                       uint64_t completed_stage_hash = 0) const;
+                                       uint64_t completed_stage_hash = 0,
+                                       bool compute_ledger_hash = true) const;
     // Phase-4 layout unification: AoS→OwnedState SoA mirrors (capture path).
     void flush_formula_owned_domain_mirrors();
     // A+Y N2: refreshes the role/pending projections on the sole live group
@@ -686,10 +690,12 @@ public:
         int64_t country_handle, int64_t family_handle, int32_t source_cell,
         int32_t target_cell, int64_t population, int64_t quote_token,
         int64_t effective_day, int64_t sequence, const uint8_t *visible,
-        int32_t visible_count, uint64_t vision_revision);
+        int32_t visible_count, uint64_t vision_revision,
+        bool queue_for_worker = false);
     godot::Dictionary submit_family_colonization_cancel(
         int64_t country_handle, int64_t expedition_handle,
-        int64_t effective_day, int64_t sequence);
+        int64_t effective_day, int64_t sequence,
+        bool queue_for_worker = false);
     godot::Dictionary family_expeditions(int64_t country_handle,
                                          int32_t offset,
                                          int32_t limit) const;
@@ -1635,6 +1641,12 @@ private:
     BuildingGroupConstRef building_at(size_t row) const noexcept {
         return BuildingGroupConstRef(buildings_store(), row);
     }
+    // Read-only row view from mutable code. A mutable building_at() borrows
+    // every column (lease entry + audit preimage per column), so pure reads
+    // in hot loops must use this instead.
+    BuildingGroupConstRef building_view(size_t row) const noexcept {
+        return BuildingGroupConstRef(buildings_store(), row);
+    }
     // Appends one row to every group column. Role spans are not allocated
     // here; rebuild_building_role_storage() assigns them for new rows.
     size_t append_building_group(const BuildingGroup &group);
@@ -1661,13 +1673,10 @@ private:
         int64_t natural_capacity_q16 = Q16_ONE;
         int64_t soft_productivity_q16 = Q16_ONE;
         int64_t natural_max_output = 0;
-        int64_t optimal_output = 0;
         int64_t fundable_output = 0;
         int64_t actual_output = 0;
         int64_t fixed_cost = 0;
         int64_t variable_cost = 0;
-        int64_t optimal_revenue = 0;
-        int64_t optimal_profit = 0;
         int64_t cash_receipt = 0;
         int64_t in_kind_retail_value = 0;
         int64_t input_cost = 0;
@@ -1708,9 +1717,9 @@ private:
             return prospective_scale_q16 == b.prospective_scale_q16 && owner_run_q16 == b.owner_run_q16 &&
                 climate_factor_q16 == b.climate_factor_q16 && resource_factor_q16 == b.resource_factor_q16 &&
                 natural_capacity_q16 == b.natural_capacity_q16 && soft_productivity_q16 == b.soft_productivity_q16 &&
-                natural_max_output == b.natural_max_output && optimal_output == b.optimal_output &&
+                natural_max_output == b.natural_max_output &&
                 fundable_output == b.fundable_output && actual_output == b.actual_output && fixed_cost == b.fixed_cost &&
-                variable_cost == b.variable_cost && optimal_revenue == b.optimal_revenue && optimal_profit == b.optimal_profit &&
+                variable_cost == b.variable_cost &&
                 cash_receipt == b.cash_receipt && in_kind_retail_value == b.in_kind_retail_value && input_cost == b.input_cost &&
                 wages == b.wages && maintenance == b.maintenance && owner_living_cost == b.owner_living_cost &&
                 business_transfer == b.business_transfer && income_transfer == b.income_transfer &&
@@ -2247,6 +2256,36 @@ private:
         std::vector<int64_t> material_quantities;
         EconomicOpportunityQuote quote;
     };
+
+    // Startup-producer selection reads frozen catalog/epoch lanes plus market
+    // price, stock and offered supply. A scope may only span work that changes
+    // none of those for its cell. The key carries the cover recursion depth,
+    // because nesting is truncated at a fixed depth.
+    struct StartupProducerMemoState {
+        const NativeEconomyRuntime *owner = nullptr;
+        int32_t depth = 0;
+        uint64_t hits = 0, misses = 0;
+        std::map<std::array<int32_t, 3>,
+            std::pair<int32_t, InvestmentCandidatePlan>> entries;
+    };
+    static StartupProducerMemoState &startup_producer_memo_state() {
+        thread_local StartupProducerMemoState state;
+        return state;
+    }
+    static int32_t &startup_cover_depth() {
+        thread_local int32_t depth = 0;
+        return depth;
+    }
+    struct StartupProducerMemoScope {
+        const NativeEconomyRuntime &runtime;
+        bool active = false;
+        explicit StartupProducerMemoScope(const NativeEconomyRuntime &owner);
+        ~StartupProducerMemoScope();
+        StartupProducerMemoScope(const StartupProducerMemoScope &) = delete;
+        StartupProducerMemoScope &operator=(const StartupProducerMemoScope &) = delete;
+    };
+    static bool same_startup_plan(const InvestmentCandidatePlan &a,
+                                  const InvestmentCandidatePlan &b);
 
     struct InvestmentDiagnostic {
         int32_t type_id = -1;
@@ -5543,6 +5582,17 @@ private:
     std::vector<int32_t> _market_cells;
     EconomyTrackedRecords<Command> _pending_commands{{{14, 1}, "commands.pending_commands", EconomyFieldEncoding::CanonicalRecord, 1}};
     EconomyTrackedRecords<Command> _epoch_commands{{{14, 2}, "commands.epoch_commands", EconomyFieldEncoding::CanonicalRecord, 1}};
+    // Player commands submitted from the main thread while a worker owns this
+    // runtime. Tracked command records and submit order may only be written
+    // by the owning thread, so the worker folds these in at epoch start.
+    struct WorkerCommandInbox {
+        std::mutex mutex;
+        std::vector<Command> commands;
+    };
+    std::unique_ptr<WorkerCommandInbox> _worker_command_inbox =
+        std::make_unique<WorkerCommandInbox>();
+    void enqueue_worker_command(const Command &command);
+    void drain_worker_command_inbox();
     std::unordered_map<int64_t, EffectCommandResult> _effect_command_results;
     std::unordered_map<uint64_t, int64_t> _effect_idempotency_requests;
     int64_t _next_effect_request_id = 1;
@@ -7219,6 +7269,9 @@ private:
     void record_cohort_fiscal(int32_t slot, int64_t signed_amount);
     void rebuild_incremental_audit_shadow();
     void begin_incremental_audit_epoch();
+    // Continuous audit (touched-lane shadow carried across epochs) is on unless
+    // PK_ECONOMY_AUDIT_SHADOW_REUSE=0. The 25-day full audit still runs.
+    static bool audit_shadow_reuse_enabled();
     void audit_touch_population_lane(int32_t slot);
     void audit_touch_market_lane(size_t index);
     void sum_family_expedition_holdings(int64_t &population, int64_t &funds,

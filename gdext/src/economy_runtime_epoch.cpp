@@ -898,7 +898,7 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
                 bool needs_lifecycle_review = false;
                 for (int32_t g = _building_cell_offsets[cell];
                      g < _building_cell_offsets[cell + 1]; ++g) {
-                    const auto group = building_at(static_cast<size_t>(g));
+                    const auto group = building_view(static_cast<size_t>(g));
                     if (group.count > 0 && group.severe_loss_cycles >= 2) {
                         needs_lifecycle_review = true;
                         break;
@@ -1093,8 +1093,7 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
         live_expedition_population != _closing_totals.transit_population ||
         live_expedition_funds != _closing_totals.expedition_funds ||
         live_expedition_goods != _closing_totals.expedition_goods;
-    const char *reuse_shadow = std::getenv("PK_ECONOMY_AUDIT_SHADOW_REUSE");
-    const bool continuous_audit = reuse_shadow && std::strcmp(reuse_shadow, "1") == 0 &&
+    const bool continuous_audit = audit_shadow_reuse_enabled() &&
         _closing_audit_mode == 2 && !_closing_audit_runtime_disabled &&
         _audit_mutation_generation != 0;
     const bool full_audit_verify = _opening_audit_force_full ||
@@ -1170,6 +1169,7 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
     trace_begin_epoch();
     const auto commands_started = Clock::now();
     _epoch_commands.clear();
+    drain_worker_command_inbox();
     auto due_end = _pending_commands.stable_partition(
                                          [&](const Command &c) { return c.effective_day <= day_index; });
     _epoch_commands.assign(_pending_commands.begin(), due_end);

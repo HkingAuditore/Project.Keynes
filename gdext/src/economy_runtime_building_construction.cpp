@@ -204,7 +204,7 @@ int32_t NativeEconomyRuntime::treasury_build_owner_signature(
     if (_building_cell_offsets.size() == static_cast<size_t>(_cell_count.get() + 1)) {
         for (int32_t group = _building_cell_offsets[cell];
              group < _building_cell_offsets[cell + 1]; ++group) {
-            const auto candidate = building_at(static_cast<size_t>(group));
+            const auto candidate = building_view(static_cast<size_t>(group));
             if (candidate.type_id == type_id && candidate.count > 0 &&
                 candidate.owner_signature_id >= 0 &&
                 candidate.owner_signature_id < static_cast<int32_t>(_signatures.size()) &&
@@ -465,7 +465,7 @@ bool NativeEconomyRuntime::apply_build_command(const Command &cmd, int32_t owner
             ? investment_outstanding_credit(cell) : 0;
         if (!cached_investment_credit) {
             for (size_t pk_row = 0; pk_row < building_count(); ++pk_row) {
-                const auto group = building_at(pk_row);
+                const auto group = building_view(pk_row);
                 if (group.cell == cell) outstanding = saturating_add(
                     outstanding,
                     std::max<int64_t>(0, group.merchant_debt_principal),

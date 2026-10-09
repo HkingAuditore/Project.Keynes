@@ -330,10 +330,20 @@ public:
     uint64_t state_hash() const noexcept;
     bool import_and_publish_committed_ledger(RuntimeEconomyLedgerState &&ledger,
                                             std::string &error);
+    // Daily non-bound mirror. `ledger` was just captured from live state on this
+    // thread, so only shape is re-validated (the && overload re-hashes). It may
+    // arrive with ledger_hash 0; the published copy then stays undigested until
+    // a reader (ECP1 save, mirror verify) hashes it. A same-shape `_state` is updated in place, keeping
+    // the market change registry and hash pages incremental. On success `ledger`
+    // holds the previous publication, ready to be reused as the next capture.
+    bool import_and_publish_captured_ledger(RuntimeEconomyLedgerState &ledger,
+                                            std::string &error);
     bool import_committed_ledger(const RuntimeEconomyLedgerState &ledger,
                                  std::string &error);
+    // `compute_hash=false` leaves ledger_hash 0 (see import_and_publish_captured_ledger).
     bool export_committed_ledger(RuntimeEconomyLedgerState &ledger,
-                                 std::string &error) const;
+                                 std::string &error,
+                                 bool compute_hash = true) const;
     // N10 Owned identity export. When NativeEconomyRuntime is formula-bound,
     // `_state` IS the runtime's live state, so `import_committed_ledger` would
     // replace the very object the bind aliases. This republishes the committed

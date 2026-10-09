@@ -24,7 +24,9 @@
 // ═══════════════════════════════════════════════════════════════════════
 //   base_color  ：基础反照率（sRGB 域，进入 BRDF 前由 brdf.gdshaderinc 负责
 //                 srgb_to_linear；其他风格化路径继续在 sRGB 域消费）
-//   normal      ：表面法线（世界空间 / 屏幕空间 z+ up，已归一化）
+//   normal      ：表面法线（世界空间 / 屏幕空间 z+ up，已归一化），BRDF N·L 消费
+//   macro_normal：只含宏观地形起伏的法线。坡向 hillshade、坡度调色、地貌着色
+//                 只读这一项；材质细节法线不进入，否则会被坡向归一化放大成像素级明暗点
 //   roughness   ：粗糙度 [0,1]，通过 clamp 落到 [ROUGHNESS_MIN, ROUGHNESS_MAX]
 //   metallic    ：金属度 [0,1]；半 PBR 路径用于 F0 lerp 与 diffuse 屏蔽
 //   ao          ：环境遮蔽 [0,1]，乘到 ambient 项
@@ -34,6 +36,7 @@
 struct SurfaceParams {
 	vec3 base_color;
 	vec3 normal;
+	vec3 macro_normal;
 	float roughness;
 	float metallic;
 	float ao;
@@ -46,6 +49,7 @@ SurfaceParams make_surface_params(vec3 base_color, vec3 normal, float roughness,
 	SurfaceParams s;
 	s.base_color = base_color;
 	s.normal = normalize(normal);
+	s.macro_normal = s.normal;
 	s.roughness = clamp(roughness, ROUGHNESS_MIN, ROUGHNESS_MAX);
 	s.metallic = clamp(metallic, 0.0, 1.0);
 	s.ao = clamp(ao, 0.0, 1.0);
@@ -62,6 +66,7 @@ SurfaceParams make_surface_params_full(
 	SurfaceParams s;
 	s.base_color = base_color;
 	s.normal = normalize(normal);
+	s.macro_normal = s.normal;
 	s.roughness = clamp(roughness, ROUGHNESS_MIN, ROUGHNESS_MAX);
 	s.metallic = clamp(metallic, 0.0, 1.0);
 	s.ao = clamp(ao, 0.0, 1.0);
@@ -82,6 +87,7 @@ SurfaceParams blend_surface_overlay(
 	float w = clamp(weight, 0.0, 1.0);
 	s.base_color = mix(s.base_color, overlay_color, w);
 	s.normal = normalize(mix(s.normal, normalize(overlay_normal), w));
+	s.macro_normal = normalize(mix(s.macro_normal, normalize(overlay_normal), w));
 	s.roughness = mix(s.roughness, clamp(overlay_roughness, ROUGHNESS_MIN, ROUGHNESS_MAX), w);
 	s.metallic = mix(s.metallic, clamp(overlay_metallic, 0.0, 1.0), w);
 	s.ao = mix(s.ao, clamp(overlay_ao, 0.0, 1.0), w);

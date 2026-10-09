@@ -813,6 +813,10 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         _family_expedition_target_index.clear();
         _family_expedition_due_heap.clear();
         _colonization_receipts.clear();
+        {
+            std::lock_guard<std::mutex> lock(_worker_command_inbox->mutex);
+            _worker_command_inbox->commands.clear();
+        }
         family_influences().clear();
         persons_store().clear();
         family_memberships().clear();

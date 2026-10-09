@@ -9,6 +9,7 @@
 #include <chrono>
 #include <cstring>
 #include <cstdio>
+#include <cstdlib>
 #include <limits>
 
 namespace pk {
@@ -179,19 +180,26 @@ uint64_t fnv1a(const uint8_t *data, size_t size) noexcept {
     return hash;
 }
 
-bool build_owned_state_from_ledger(const RuntimeEconomyLedgerState &ledger,
-                                   RuntimeEconomyOwnedState &restored,
-                                   std::string &error) {
-    if (!ledger.valid()) {
-        error = ledger.ledger_hash != 0 && ledger.computed_hash() != ledger.ledger_hash
-            ? "economy_pod_ledger_hash_invalid" : "economy_pod_ledger_shape_invalid";
+// Every rule an owned import enforces before touching any state. `verify_digest`
+// re-hashes the ledger and requires a digest; only a ledger the caller captured
+// from live state on this thread may skip it, and it may carry no digest yet.
+bool validate_owned_ledger(const RuntimeEconomyLedgerState &ledger,
+                           bool verify_digest, std::string &error) {
+    if (verify_digest) {
+        if (!ledger.valid()) {
+            error = ledger.ledger_hash != 0 && ledger.computed_hash() != ledger.ledger_hash
+                ? "economy_pod_ledger_hash_invalid" : "economy_pod_ledger_shape_invalid";
+            return false;
+        }
+    } else if (!ledger.validate_shape_and_values()) {
+        error = "economy_pod_ledger_shape_invalid";
         return false;
     }
     if (ledger.market_count <= 0 || ledger.good_count <= 0) {
         error = "economy_pod_ledger_dimensions_invalid";
         return false;
     }
-    if (ledger.ledger_hash == 0) {
+    if (verify_digest && ledger.ledger_hash == 0) {
         error = "economy_pod_ledger_hash_invalid";
         return false;
     }
@@ -236,11 +244,22 @@ bool build_owned_state_from_ledger(const RuntimeEconomyLedgerState &ledger,
         }
     }
 
-    RuntimeEconomyOwnedState candidate;
-    candidate.clear(ledger.market_count, ledger.good_count);
+    return true;
+}
+
+// Requires validate_owned_ledger(). Builds into a scratch store so a failed
+// restore never leaves the destination half written.
+bool restore_population_from_ledger(const RuntimeEconomyLedgerState &ledger,
+                                    RuntimeEconomyPopulationStore &population,
+                                    std::string &error) {
+    const size_t lanes = ledger.cohort_active.size();
+    constexpr size_t page_size =
+        static_cast<size_t>(RuntimeEconomyPopulationStore::COHORT_PAGE_SIZE);
+    const size_t page_count = lanes / page_size;
+    population.clear(ledger.market_count);
     for (size_t page = 0; page < page_count; ++page) {
         const int32_t cell = ledger.cohort_cell[page * page_size];
-        if (!candidate.population.restore_page_at(
+        if (!population.restore_page_at(
                 static_cast<int32_t>(page), cell)) {
             error = "economy_pod_population_page_restore_failed";
             return false;
@@ -251,7 +270,7 @@ bool build_owned_state_from_ledger(const RuntimeEconomyLedgerState &ledger,
     for (size_t slot = 0; slot < lanes; ++slot) {
         if (ledger.cohort_active[slot] == 0) continue;
         const int32_t cell = ledger.cohort_cell[slot];
-        if (candidate.population.restore_slot_at(
+        if (population.restore_slot_at(
                 static_cast<int32_t>(slot), cell,
                 ledger.cohort_signature_id[slot]) < 0) {
             error = "economy_pod_population_slot_restore_failed";
@@ -260,54 +279,116 @@ bool build_owned_state_from_ledger(const RuntimeEconomyLedgerState &ledger,
         ++active_count;
     }
 
-    candidate.population.active = ledger.cohort_active;
-    candidate.population.signature_id = ledger.cohort_signature_id;
+    population.active = ledger.cohort_active;
+    population.signature_id = ledger.cohort_signature_id;
     if (!ledger.cohort_generation.empty())
-        candidate.population.generation = ledger.cohort_generation;
+        population.generation = ledger.cohort_generation;
     if (!ledger.cohort_reserved.empty())
-        candidate.population.reserved = ledger.cohort_reserved;
+        population.reserved = ledger.cohort_reserved;
     if (!ledger.cohort_reservation_owner.empty())
-        candidate.population.reservation_owner = ledger.cohort_reservation_owner;
-    candidate.population.population = ledger.cohort_population;
-    candidate.population.funds = ledger.cohort_funds;
-    candidate.population.epoch_income = ledger.cohort_epoch_income;
-    candidate.population.epoch_expense = ledger.cohort_epoch_expense;
+        population.reservation_owner = ledger.cohort_reservation_owner;
+    population.population = ledger.cohort_population;
+    population.funds = ledger.cohort_funds;
+    population.epoch_income = ledger.cohort_epoch_income;
+    population.epoch_expense = ledger.cohort_epoch_expense;
     if (!ledger.cohort_needs_satisfaction.empty())
-        candidate.population.needs_satisfaction = ledger.cohort_needs_satisfaction;
-    if (!ledger.cohort_composite_satisfaction.empty()) {
-        candidate.population.composite_satisfaction =
-            ledger.cohort_composite_satisfaction;
-    }
+        population.needs_satisfaction = ledger.cohort_needs_satisfaction;
+    if (!ledger.cohort_composite_satisfaction.empty())
+        population.composite_satisfaction = ledger.cohort_composite_satisfaction;
     if (!ledger.cohort_owner_employed.empty())
-        candidate.population.owner_employed = ledger.cohort_owner_employed;
+        population.owner_employed = ledger.cohort_owner_employed;
     if (!ledger.cohort_employee_employed.empty())
-        candidate.population.employee_employed = ledger.cohort_employee_employed;
-    candidate.population.active_count = active_count;
-    candidate.market.stock = ledger.market_stock;
-    candidate.market.price = ledger.market_price;
-    candidate.market.demand_ema = ledger.market_demand_ema;
+        population.employee_employed = ledger.cohort_employee_employed;
+    population.active_count = active_count;
+    return true;
+}
+
+// Requires `state.market` freshly cleared to the ledger's dimensions.
+void assign_market_from_ledger(const RuntimeEconomyLedgerState &ledger,
+                               RuntimeEconomyMarketStore &market) {
+    market.stock = ledger.market_stock;
+    market.price = ledger.market_price;
+    market.demand_ema = ledger.market_demand_ema;
     if (!ledger.market_last_shortage_q16.empty())
-        candidate.market.last_shortage_q16 = ledger.market_last_shortage_q16;
+        market.last_shortage_q16 = ledger.market_last_shortage_q16;
     if (!ledger.market_cell_to_market.empty())
-        candidate.market.cell_to_market = ledger.market_cell_to_market;
-    candidate.state_generation = ledger.generation;
-    candidate.committed_day = ledger.committed_day;
-    candidate.committed = ledger;
-    candidate.building = ledger.building;
+        market.cell_to_market = ledger.market_cell_to_market;
+}
+
+template<class T>
+void overwrite_lanes(EconomyTrackedColumn<T> &column, const std::vector<T> &source) {
+    column.write_values(0, source.data(), source.size());
+}
+
+// Same result as clear() + assign_market_from_ledger(), but only lanes whose
+// value changed are written, so the change registry (and the POD hash pages
+// fed from it) see the real daily delta instead of a full reshape.
+bool overwrite_market_from_ledger(const RuntimeEconomyLedgerState &ledger,
+                                  RuntimeEconomyMarketStore &market) {
+    const size_t markets = static_cast<size_t>(ledger.market_count);
+    const size_t lanes = markets * static_cast<size_t>(ledger.good_count);
+    if (market.market_count.get() != ledger.market_count ||
+        market.good_count.get() != ledger.good_count ||
+        ledger.market_stock.size() != lanes || ledger.market_price.size() != lanes ||
+        ledger.market_demand_ema.size() != lanes ||
+        ledger.market_last_shortage_q16.size() != lanes ||
+        ledger.market_cell_to_market.size() != markets ||
+        market.stock.size() != lanes || market.price.size() != lanes ||
+        market.demand_ema.size() != lanes || market.last_shortage_q16.size() != lanes ||
+        market.cell_to_market.size() != markets) {
+        return false;
+    }
+    overwrite_lanes(market.stock, ledger.market_stock);
+    overwrite_lanes(market.price, ledger.market_price);
+    overwrite_lanes(market.demand_ema, ledger.market_demand_ema);
+    overwrite_lanes(market.last_shortage_q16, ledger.market_last_shortage_q16);
+    overwrite_lanes(market.cell_to_market, ledger.market_cell_to_market);
+    if (market.price_ceilings.size() != markets) {
+        market.price_ceilings.clear();
+        market.price_ceilings.resize(markets);
+    } else {
+        for (size_t row = 0; row < markets; ++row) {
+            if (!market.price_ceilings[row].empty())
+                market.price_ceilings.write_record(row, {});
+        }
+    }
+    return true;
+}
+
+// The committed ledger is published separately as _committed_ledger_state;
+// `state.committed` is left cleared rather than holding a third copy of it.
+void assign_owned_blocks_from_ledger(const RuntimeEconomyLedgerState &ledger,
+                                     RuntimeEconomyOwnedState &state) {
+    state.state_generation = ledger.generation;
+    state.committed_day = ledger.committed_day;
+    state.building = ledger.building;
     if (ledger.building.captured)
-        candidate.buildings = ledger.building.store;
-    candidate.trade_escrow = ledger.trade_escrow;
+        state.buildings = ledger.building.store;
+    state.trade_escrow = ledger.trade_escrow;
     if (ledger.trade_escrow.captured)
-        candidate.trade_orders = ledger.trade_escrow.store;
-    candidate.family = ledger.family;
+        state.trade_orders = ledger.trade_escrow.store;
+    state.family = ledger.family;
     if (ledger.family.captured)
-        candidate.families = ledger.family.store;
-    candidate.resource = ledger.resource;
+        state.families = ledger.family.store;
+    state.resource = ledger.resource;
     if (ledger.resource.captured)
-        candidate.resources = ledger.resource.store;
-    candidate.epoch_cursor = ledger.epoch_cursor;
+        state.resources = ledger.resource.store;
+    state.epoch_cursor = ledger.epoch_cursor;
     if (ledger.epoch_cursor.captured)
-        candidate.epoch_cursors = ledger.epoch_cursor.store;
+        state.epoch_cursors = ledger.epoch_cursor.store;
+}
+
+bool build_owned_state_from_ledger(const RuntimeEconomyLedgerState &ledger,
+                                   RuntimeEconomyOwnedState &restored,
+                                   std::string &error) {
+    if (!validate_owned_ledger(ledger, true, error)) return false;
+    RuntimeEconomyPopulationStore population;
+    if (!restore_population_from_ledger(ledger, population, error)) return false;
+    RuntimeEconomyOwnedState candidate;
+    candidate.clear(ledger.market_count, ledger.good_count);
+    candidate.population = std::move(population);
+    assign_market_from_ledger(ledger, candidate.market);
+    assign_owned_blocks_from_ledger(ledger, candidate);
     restored = std::move(candidate);
     return true;
 }
@@ -446,6 +527,60 @@ bool RuntimeEconomyPodAuthority::import_and_publish_committed_ledger(
     return true;
 }
 
+bool RuntimeEconomyPodAuthority::import_and_publish_captured_ledger(
+        RuntimeEconomyLedgerState &ledger, std::string &error) {
+    error.clear();
+    const int64_t probe_day = ledger.committed_day;
+    auto probe_started = std::chrono::steady_clock::now();
+    const auto probe_lap = [&](const char *name) {
+        const auto now = std::chrono::steady_clock::now();
+        EconomyCostProbe::record(name, probe_day,
+            std::chrono::duration<double, std::milli>(now - probe_started).count());
+        probe_started = now;
+    };
+    if (!validate_owned_ledger(ledger, false, error)) return false;
+    RuntimeEconomyPopulationStore population;
+    if (!restore_population_from_ledger(ledger, population, error)) return false;
+    probe_lap("mirror.import.validate");
+    // Nothing below can fail: the ledger is fully validated and the population
+    // already restored, so `_state` is never left half written.
+    const bool in_place = state_initialized() &&
+        overwrite_market_from_ledger(ledger, _state.market);
+    if (in_place) {
+        _state.clear_except_market(ledger.market_count);
+    } else {
+        _state.clear(ledger.market_count, ledger.good_count);
+        assign_market_from_ledger(ledger, _state.market);
+    }
+    _state.population = std::move(population);
+    probe_lap(in_place ? "mirror.import.market_in_place" : "mirror.import.market_rebuild");
+    assign_owned_blocks_from_ledger(ledger, _state);
+    // The caller gets the previous publication back as its next capture buffer.
+    std::swap(_committed_ledger_state, ledger);
+    publish_mirror_features();
+    probe_lap("mirror.import.blocks");
+    static const bool verify = [] {
+        const char *value = std::getenv("PK_ECONOMY_MIRROR_VERIFY");
+        return value && std::strcmp(value, "1") == 0;
+    }();
+    if (verify) {
+        RuntimeEconomyLedgerState roundtrip;
+        std::string verify_error;
+        const uint64_t published_hash = _committed_ledger_state.ledger_hash != 0
+            ? _committed_ledger_state.ledger_hash
+            : _committed_ledger_state.computed_hash();
+        if (!export_committed_ledger(roundtrip, verify_error) ||
+            roundtrip.ledger_hash != published_hash) {
+            std::fprintf(stderr,
+                "economy_mirror_import_mismatch day=%lld in_place=%d error=%s\n",
+                static_cast<long long>(probe_day), in_place ? 1 : 0,
+                verify_error.c_str());
+            std::abort();
+        }
+    }
+    return true;
+}
+
 bool RuntimeEconomyPodAuthority::publish_owned_committed_mirror(
         uint64_t generation, int64_t committed_day, std::string &error) {
     error.clear();
@@ -459,7 +594,8 @@ bool RuntimeEconomyPodAuthority::publish_owned_committed_mirror(
     // and a committed day even on the very first publish.
     _state.state_generation = std::max(generation, _state.state_generation);
     if (committed_day >= 0) _state.committed_day = committed_day;
-    if (!export_committed_ledger(ledger, error)) return false;
+    // Published undigested like the captured mirror; readers hash on demand.
+    if (!export_committed_ledger(ledger, error, false)) return false;
     // The caller refreshed the committed blocks; export_committed_ledger()
     // validated them. Keeping a second full copy in _state.committed here
     // only duplicated all population/market vectors before the move below;
@@ -471,7 +607,8 @@ bool RuntimeEconomyPodAuthority::publish_owned_committed_mirror(
 }
 
 bool RuntimeEconomyPodAuthority::export_committed_ledger(
-        RuntimeEconomyLedgerState &ledger, std::string &error) const {
+        RuntimeEconomyLedgerState &ledger, std::string &error,
+        bool compute_hash) const {
     error.clear();
     ledger.clear();
     const auto copy_started = std::chrono::steady_clock::now();
@@ -531,7 +668,7 @@ bool RuntimeEconomyPodAuthority::export_committed_ledger(
         return false;
     }
     const auto hash_started = std::chrono::steady_clock::now();
-    ledger.recompute_hash();
+    if (compute_hash) ledger.recompute_hash();
     EconomyCostProbe::record("ledger_export.population", ledger.committed_day,
         std::chrono::duration<double, std::milli>(population_finished - copy_started).count());
     EconomyCostProbe::record("ledger_export.market", ledger.committed_day,
@@ -1464,10 +1601,13 @@ bool RuntimeEconomyPodAuthority::encode_ecp1(std::vector<uint8_t> &out,
         return false;
     }
     const bool has_committed_ledger = _committed_ledger_state.valid();
+    // The daily mirror publishes without a digest; hash it here on demand.
+    const uint64_t committed_ledger_hash = has_committed_ledger
+        ? _committed_ledger_state.computed_hash() : 0;
     if (has_committed_ledger &&
-        (_committed_ledger_state.ledger_hash == 0 ||
-         _committed_ledger_state.computed_hash() !=
-             _committed_ledger_state.ledger_hash)) {
+        (committed_ledger_hash == 0 ||
+         (_committed_ledger_state.ledger_hash != 0 &&
+          committed_ledger_hash != _committed_ledger_state.ledger_hash))) {
         error = "economy_pod_ecp1_ledger_hash_invalid";
         return false;
     }
@@ -1516,7 +1656,7 @@ bool RuntimeEconomyPodAuthority::encode_ecp1(std::vector<uint8_t> &out,
     if (has_committed_ledger) {
         const auto &ledger = _committed_ledger_state;
         append_u64(out, ledger.source_state_hash);
-        append_u64(out, ledger.ledger_hash);
+        append_u64(out, committed_ledger_hash);
         append_u64(out, ledger.generation);
         append_i64(out, ledger.committed_day);
         append_i32(out, ledger.market_count);
@@ -2570,10 +2710,14 @@ bool RuntimeEconomyPodAuthority::self_test(std::string &error) {
         error = "economy_pod_ecp4_page_topology_mismatch";
         return false;
     }
-    const auto ledgers_equal = [](const RuntimeEconomyLedgerState &left,
+    // Published mirrors may be undigested (ledger_hash 0).
+    const auto effective_hash = [](const RuntimeEconomyLedgerState &ledger) {
+        return ledger.ledger_hash != 0 ? ledger.ledger_hash : ledger.computed_hash();
+    };
+    const auto ledgers_equal = [&effective_hash](const RuntimeEconomyLedgerState &left,
                                   const RuntimeEconomyLedgerState &right) {
         return left.source_state_hash == right.source_state_hash &&
-            left.ledger_hash == right.ledger_hash &&
+            effective_hash(left) == effective_hash(right) &&
             left.generation == right.generation &&
             left.committed_day == right.committed_day &&
             left.market_count == right.market_count &&
@@ -2959,11 +3103,11 @@ bool RuntimeEconomyPodAuthority::self_test(std::string &error) {
         error = "economy_pod_failed_import_mutated_state";
         return false;
     }
-    const uint64_t mirror_hash_before = restored._committed_ledger_state.ledger_hash;
+    const uint64_t mirror_hash_before = effective_hash(restored._committed_ledger_state);
     if (restored.import_and_publish_committed_ledger(std::move(bad_hash), rejected_error) ||
         rejected_error != "economy_pod_ledger_hash_invalid" ||
         restored.state_hash() != state_hash_before_reject ||
-        restored._committed_ledger_state.ledger_hash != mirror_hash_before) {
+        effective_hash(restored._committed_ledger_state) != mirror_hash_before) {
         error = "economy_pod_failed_combined_import_mutated_state";
         return false;
     }
@@ -2982,11 +3126,11 @@ bool RuntimeEconomyPodAuthority::self_test(std::string &error) {
             return false;
         }
     }
-    const auto published_hash = restored._committed_ledger_state.ledger_hash;
+    const auto published_hash = effective_hash(restored._committed_ledger_state);
     restored.state().building.content_hash ^= 1u;
     if (restored.publish_owned_committed_mirror(
             fixture_ledger.generation, fixture_ledger.committed_day, rejected_error) ||
-        restored._committed_ledger_state.ledger_hash != published_hash) {
+        effective_hash(restored._committed_ledger_state) != published_hash) {
         error = "economy_owned_failed_export_changed_published_ledger";
         return false;
     }

@@ -419,6 +419,7 @@ Dictionary DCWorldExt::capture_economy_day_inputs(int64_t day_index) {
         pending["fatal"] = false;
         pending["captured"] = false;
         if (!boundary.owns_lock()) return pending;
+        service_economy_boundary_inbox();
         int64_t requested = _runtime_host->economy_input_requested_day();
         if (requested < 0) {
             // 主线程发布下一日环境前可预先冻结同一批 slots；只允许严格
@@ -1370,6 +1371,14 @@ Dictionary DCWorldExt::get_family_colonization_quote_detail(
             quote_token, population);
 }
 
+void DCWorldExt::service_economy_boundary_inbox() {
+    if (!_economy_effect_adapter_retry || _effect_runtime == nullptr ||
+        _economy_runtime == nullptr) return;
+    _economy_effect_adapter_retry = false;
+    dispatch_effect_native_economy_unlocked();
+    ack_effect_native_economy_unlocked();
+}
+
 Dictionary DCWorldExt::start_family_colonization(
         int64_t country_handle, int64_t family_handle, int source_cell,
         int target_cell, int64_t population, int64_t quote_token,
@@ -1383,18 +1392,25 @@ Dictionary DCWorldExt::start_family_colonization(
     const PackedByteArray visible = visible_variant;
     const uint64_t revision = static_cast<uint64_t>(static_cast<int64_t>(
         _map_data->get(StringName("vision_revision"))));
+    // A running worker rarely yields the economy boundary to this thread, so
+    // the command goes through the runtime's worker inbox instead of waiting.
+    const bool worker_owned = _runtime_host != nullptr &&
+        _runtime_host->economy_worker_owns_execution();
     return runtime_from(_economy_runtime)->submit_family_colonization_start(
         country_handle, family_handle, source_cell, target_cell, population,
         quote_token, effective_day, sequence, visible.ptr(), visible.size(),
-        revision);
+        revision, worker_owned);
 }
 
 Dictionary DCWorldExt::cancel_family_colonization(
         int64_t country_handle, int64_t expedition_handle,
         int64_t effective_day, int64_t sequence) {
-    return _economy_runtime == nullptr ? unavailable() :
-        runtime_from(_economy_runtime)->submit_family_colonization_cancel(
-            country_handle, expedition_handle, effective_day, sequence);
+    if (_economy_runtime == nullptr) return unavailable();
+    const bool worker_owned = _runtime_host != nullptr &&
+        _runtime_host->economy_worker_owns_execution();
+    return runtime_from(_economy_runtime)->submit_family_colonization_cancel(
+        country_handle, expedition_handle, effective_day, sequence,
+        worker_owned);
 }
 
 Dictionary DCWorldExt::get_family_expeditions(

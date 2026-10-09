@@ -1,0 +1,330 @@
+staged tmp\late_manual1_2044.pksv as slot 'manual_1' in C:\Users\hkinghuang\AppData\Local\Temp\pk-save-replay-abdca05c4
+7b040cab7f20d35cc538751
+replaying slot=manual_1 days=500 speed=50 ...
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+[save-repository] slot directory overridden to C:\Users\hkinghuang\AppData\Local\Temp\pk-save-replay-abdca05c47b040cab7f20d35cc538751
+[save-replay] slot=manual_1 days=500 speed=50.0 day_timeout=60000ms
+[ui-layout-diag/bind_ui] is_web=false viewport_visible_rect=[P: (0.0, 0.0), S: (51.2, 51.2)] window_size=(64, 64) content_scale_factor=1.250 content_scale_mode=0 device_pixel_ratio=-1.000 top_bar_rect=[P: (0.0, 0.0), S: (543.0, 56.0)] right_panel_rect=[P: (-408.8, 68.0), S: (460.0, 366.0)] country_action_bar_rect=[P: (8.0, -30.8), S: (336.0, 74.0)]
+[building-visual] queue_probe ticks=1 queued=0 chunk=-1 camera_rect=[P: (-25.6, -25.6), S: (51.2, 51.2)] prefetch=false zoom=1.000
+[building-visual] queue_probe ticks=2 queued=0 chunk=-1 camera_rect=[P: (-25.6, -25.6), S: (51.2, 51.2)] prefetch=false zoom=1.000
+[native_generation/base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=2400 native_ms=8.120 water=1592 land=808
+[native_generation/post_base] path=gdext algorithm=post_base_priority_flood_hydrology_v3 n=2400 native_ms=1.802 lakes=0 rivers=95 volcanoes=0
+[native_generation/vegetation] native_ms=0.709 candidates=808 none=1228 score=[0.000,1.214,1.146] plant_water_land=808 river_adjacent_desert=0 coastal_highland_desert=0 terrain_weight=[0.180,1.200]
+[native_generation/qa] single_water=0 tiny<=3=0 small<=5=0 bodies=1 largest=1592 | land_below_sea=0.0% | terr_distinct=19 entropy=3.015bit | river_ratio=3.958%
+MapGenerator v7: per-cell 72ms (2400 cells, path=gdext)
+[building-visual] queue_probe ticks=3 queued=0 chunk=-1 camera_rect=[P: (-25.6, -25.6), S: (51.2, 51.2)] prefetch=false zoom=1.000
+MapBaker v6: hm=(1024, 606) seed=923508611
+    [fused] terrain=70.7ms erosion=3.1ms(ok=true) river=12.4ms(ok=true) latitude=0.2ms coast_sdf=4.1ms(ok=true)
+  geometry fields (fused C++): 151ms
+  physical circulation hex solve: deferred until DCWorldExt bind (ext=true idx=true soa=false)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+  visual tiles: {"degradation_reason":"","effective_budget_px":1717248,"effective_texels_per_hex":16.0059221751742,"effective_world_units_per_texel":"(1.373983, 1.375)","estimated_peak_bytes":68402880,"estimated_resident_bytes":40340160,"fallback_reason":"","generation_id":1,"grid_size":"(4, 3)","gutter_px":2,"hex_size":22.0,"horizon_path":"neutral_pending","interior_size":"(416, 344)","layer_size":"(420, 348)","layers":[{"bake_ms":54.0494,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":2401480217482156695,"edge_neighbor":-1307009658368153824,"height":-7806478679225694011,"map_index":946999531870684647,"terrain_detail":4423089876606126707,"terrain_normal":-8444486672929394042,"water_depth":6451181748871890998},"layer":0,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.069,"wall_ms":54.244},{"bake_ms":32.5249,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-2996932276009827316,"edge_neighbor":6141255591705410494,"height":-8954200761160806394,"map_index":2299594161862096755,"terrain_detail":8154503632811448804,"terrain_normal":-6474391834928439772,"water_depth":5136773154621151899},"layer":1,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.066,"wall_ms":32.712},{"bake_ms":75.8788,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-5221244681147060599,"edge_neighbor":-6918422489760986179,"height":9216825925421570545,"map_index":-4794509182644430120,"terrain_detail":-1266518777719836281,"terrain_normal":-193104603339916600,"water_depth":-7243594346091312440},"layer":2,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.104,"wall_ms":76.128},{"bake_ms":59.6585,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":1743863193001852878,"edge_neighbor":-390922018459942676,"height":-6520891096532754001,"map_index":-8359373561511851539,"terrain_detail":-7568563648907841911,"terrain_normal":6527449561823090501,"water_depth":-6442351764528339335},"layer":3,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.06,"wall_ms":59.81},{"bake_ms":64.8635,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-2355066385038573484,"edge_neighbor":4903407200541065760,"height":-6145690911638893075,"map_index":4313526783736686857,"terrain_detail":3398900133209291599,"terrain_normal":8322561932583411480,"water_depth":953395300630229678},"layer":4,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.071,"wall_ms":65.035},{"bake_ms":87.4734,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":-5531565431268577319,"edge_neighbor":-7340492301851297676,"height":-6488052083959957637,"map_index":-3966201729930388820,"terrain_detail":7910361462182533007,"terrain_normal":185344566001083055,"water_depth":-2629118591006637973},"layer":5,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.058,"wall_ms":87.62},{"bake_ms":119.4828,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":851847706573785512,"edge_neighbor":-6580282863649517220,"height":5118570913316725671,"map_index":6701640453278440433,"terrain_detail":-7091009139473163798,"terrain_normal":-1015236569375050902,"water_depth":9074935565349898203},"layer":6,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.106,"wall_ms":119.726},{"bake_ms":99.0737,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":2144419074106539604,"edge_neighbor":-1775541601030272900,"height":4843603131942915673,"map_index":7284030862333759192,"terrain_detail":-6960956593255433698,"terrain_normal":5075824693316987016,"water_depth":1409468957517791690},"layer":7,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.138,"wall_ms":99.401},{"bake_ms":94.1016,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":625383819416612667,"edge_neighbor":-2821432004030442857,"height":-4425570587435873376,"map_index":239686232577538746,"terrain_detail":-1921851909623288338,"terrain_normal":-6342990311081133124,"water_depth":5418055691854182045},"layer":8,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.061,"wall_ms":94.29},{"bake_ms":81.0672,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":1010921564580680552,"edge_neighbor":-678254469097035427,"height":-1006864180099184788,"map_index":-2096544417011166728,"terrain_detail":-7175471268436387912,"terrain_normal":3721807640847047912,"water_depth":6067604227018254937},"layer":9,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.068,"wall_ms":81.273},{"bake_ms":72.4789,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":2370701410806154466,"edge_neighbor":1578360461039976311,"height":6745210778916637784,"map_index":3719938670439099324,"terrain_detail":-8283951463711340138,"terrain_normal":3855397283623770011,"water_depth":3374283378588351306},"layer":10,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.132,"wall_ms":72.789},{"bake_ms":42.97,"coast_sdf_max_dist_px":13.6162309214075,"distance_scale":1.70202886517594,"edge_distance_saturate_hex":0.9,"edge_distance_units":"normalized_hex_center_gap","hashes":{"edge_distance":4922157838299548235,"edge_neighbor":4101280863922079036,"height":2734033179694226924,"map_index":-5341462742107234039,"terrain_detail":-4510659664790678826,"terrain_normal":-3068948792820051554,"water_depth":-147955248518781719},"layer":11,"normal_radius_px":"(22, 22)","raster_scale":"(1.701088, 1.70297)","river_sdf_max_dist_px":5.9571010281158,"shore_carve_band_px":10,"upload_ms":0.066,"wall_ms":43.141}],"logical_size":"(1664, 1032)","mode":"tiled","path":"visual_tiled_static","profile":"desktop_high","renderer":"mobile","requested_budget_px":1716216,"requested_texels_per_hex":16.0,"requested_tile_world_span":"(704.0, 704.0)","requested_world_units_per_texel":1.375,"tile_world_area":270355.817993164,"tile_world_span":"(571.5768, 473.0)","total_ms":891.365,"visual_domain":"[P: (0.0, -44.0), S: (2286.307, 1419.0)]","wrap_period_x":2286.30706599092,"wrap_x":true}
+Godot_v4.6.2-stable_win64_console.exe : WARNING: Loaded resource as image file, this will not work on export: 'res://as
+sets/textures/terrain_materials/organic.png'. Instead, import the image file as an Image resource and load it normally 
+as a resource.
+ËùÔÚÎ»ÖÃ D:\Godot\ProjectKeynes\Project.Keynes\tools\runtime\Invoke-SaveReplay.ps1:75 ×Ö·û: 5
++     & $godot '--headless' '--path' $project 2>&1 | Tee-Object -FilePa ...
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (WARNING: Loaded... as a resource.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:362)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:345)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1189)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1227)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/dry_sand
+.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:362)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:345)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1189)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1227)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/rock.png
+'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:362)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:345)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1189)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1227)
+WARNING: Loaded resource as image file, this will not work on export: 'res://assets/textures/terrain_materials/snow_wet
+.png'. Instead, import the image file as an Image resource and load it normally as a resource.
+   at: load (core/io/image.cpp:2756)
+   GDScript backtrace (most recent call first):
+       [0] _build_terrain_material_tex (res://scripts/rendering/map_baker.gd:362)
+       [1] get_or_build_shared_terrain_material_tex (res://scripts/rendering/map_baker.gd:345)
+       [2] bake_world (res://scripts/rendering/map_baker.gd:1189)
+       [3] _yield_generation_frame (res://scripts/rendering/map_baker.gd:1227)
+  cell LUT encode: deferred until DCWorldExt bind
+  encode: 3783ms
+MapBaker v6: total 3943ms
+MapGenerator v7: bake 3970ms
+MapGenerator: skip _compute_ocean_currents (physical-hex path writes per-cell directly)
+MapGenerator: skip _compute_terrain_perturbed_wind (physical-hex solver writes per-cell)
+[SUS] sim budget strict=false frame=8.00ms warn=2.00ms slice=0.75ms upload=1.50ms scheduler=DCSystemScheduler native_sus=auto
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Ã‚Â§11)
+[DataCore] _data_core_world_ext bound=true (climate co-processor; class=DCWorldExt)
+[native_world] configure rc=0 reason=configured cells=2400 wrap_period_x=103.923
+[native_generation] path=gdext n=2400 published=9 native_ms=0.182 compute_ms=0.114 flush_ms=0.068
+[hex_cell] facade ENABLED (2400 cells bound; ext=true)
+[DataCore] _baker climate_profile injected=true (fixes WorldData.config==null sea_ice prepare path)
+[phys_solve][oneshot] OK slp=1.62ms wind=0.41ms psi=0.33ms(ran=true) upwelling=0.04ms total=2.91ms
+PhysicalCirculation solve@phase=1.50 total=3ms (C++ one-shot run_physical_solve_pass)
+  wind/ocean pixel buffers: skipped (ocean_current_visual off)
+[physical_init] deferred native refresh complete: 3ms
+[cell_lut] deferred encode: 3ms path=gdext
+[bio-occupancy] seed landmasses=5 provinces=5 species=20 secondary_hearths=0
+[bio-occupancy]   bio.maize envelope=73 hearth=14 seeded_landmasses=1 primary_landmass=2 primary_envelope=73 occupied=14 occupied/envelope=0.19
+[bio-occupancy]   bio.wheat envelope=194 hearth=30 seeded_landmasses=1 primary_landmass=2 primary_envelope=185 occupied=30 occupied/envelope=0.16
+[bio-occupancy]   bio.rice envelope=75 hearth=7 seeded_landmasses=1 primary_landmass=2 primary_envelope=70 occupied=7 occupied/envelope=0.10
+[bio-occupancy]   bio.potato envelope=145 hearth=69 seeded_landmasses=1 primary_landmass=2 primary_envelope=132 occupied=69 occupied/envelope=0.52
+[bio-occupancy]   bio.horse envelope=229 hearth=108 seeded_landmasses=1 primary_landmass=2 primary_envelope=216 occupied=108 occupied/envelope=0.50
+[bio-occupancy]   bio.cotton envelope=135 hearth=61 seeded_landmasses=1 primary_landmass=2 primary_envelope=135 occupied=61 occupied/envelope=0.45
+[bio-occupancy]   bio.flax envelope=185 hearth=96 seeded_landmasses=1 primary_landmass=2 primary_envelope=176 occupied=96 occupied/envelope=0.55
+[bio-occupancy]   bio.spice envelope=98 hearth=6 seeded_landmasses=1 primary_landmass=2 primary_envelope=98 occupied=6 occupied/envelope=0.06
+[bio-occupancy]   bio.rubber envelope=66 hearth=2 seeded_landmasses=1 primary_landmass=2 primary_envelope=66 occupied=2 occupied/envelope=0.03
+[bio-occupancy]   bio.sheep envelope=41 hearth=1 seeded_landmasses=1 primary_landmass=2 primary_envelope=41 occupied=1 occupied/envelope=0.02
+[bio-occupancy]   bio.goat envelope=373 hearth=52 seeded_landmasses=1 primary_landmass=2 primary_envelope=334 occupied=52 occupied/envelope=0.16
+[bio-occupancy]   bio.cattle envelope=16 hearth=1 seeded_landmasses=1 primary_landmass=2 primary_envelope=16 occupied=1 occupied/envelope=0.06
+[bio-occupancy]   bio.pig envelope=354 hearth=117 seeded_landmasses=1 primary_landmass=2 primary_envelope=345 occupied=117 occupied/envelope=0.34
+[bio-occupancy]   bio.camel envelope=61 hearth=26 seeded_landmasses=1 primary_landmass=2 primary_envelope=61 occupied=26 occupied/envelope=0.43
+[bio-occupancy]   bio.yak envelope=84 hearth=19 seeded_landmasses=1 primary_landmass=2 primary_envelope=38 occupied=19 occupied/envelope=0.50
+[bio-occupancy]   bio.silkworm envelope=164 hearth=49 seeded_landmasses=1 primary_landmass=2 primary_envelope=164 occupied=49 occupied/envelope=0.30
+[bio-occupancy]   bio.reed envelope=142 hearth=15 seeded_landmasses=1 primary_landmass=2 primary_envelope=130 occupied=15 occupied/envelope=0.12
+[bio-occupancy]   bio.bast_fiber envelope=276 hearth=82 seeded_landmasses=1 primary_landmass=2 primary_envelope=259 occupied=82 occupied/envelope=0.32
+[bio-occupancy]   bio.dye_plant envelope=152 hearth=22 seeded_landmasses=1 primary_landmass=2 primary_envelope=152 occupied=22 occupied/envelope=0.14
+[bio-occupancy]   bio.medicinal_herb envelope=410 hearth=128 seeded_landmasses=1 primary_landmass=2 primary_envelope=376 occupied=128 occupied/envelope=0.34
+[bio-occupancy]   landmass 1 classes=none foods=none
+[bio-occupancy]   landmass 2 classes=cold_grazer, fiber_forest, dry_grazer, forest_grazer, highland_food, fiber_open, fiber_wet, open_food, open_grazer, tropical, wetland_food foods=potato, wheat, rice, maize
+[bio-occupancy]   landmass 3 classes=none foods=none
+[bio-occupancy]   landmass 4 classes=none foods=none
+[bio-occupancy]   landmass 5 classes=none foods=none
+[weather] gdext acceleration ON (class=DCWorldExt)
+[weather] gdext field commit ON
+[weather] gdext distribute ON
+[weather] gdext summary ON
+[weather] hexcell facade ON (skip AoS double-write in hot loop)
+[weather] gdext resident knobs ON (class=KnobsHandle)
+[save/restore] country configured without bootstrap; awaiting PKCN
+[weather/knobs] resident KnobsHandle path ACTIVE â€?first to_*_knobs_dict hit (field_rebuild_count=1 expected â‰?; stable Hz target â‰? Hz)
+[native_daily] ACTIVE: registered native_daily_sim + natural_resource_daily + bio_occupancy_daily; retained season_refresh + ocean_currents boundary jobs
+[DCSystemScheduler] topology: ["season_refresh", "effect_runtime", "gameplay_effect", "natural_resource_daily", "bio_occupancy_daily", "enum_atlas_upload", "ocean_currents", "native_daily_sim", "dynamic_visual_atlas_upload"]
+[save/restore] PKCN restored; economy configured and awaiting PKEC
+[DCSystemScheduler] topology: ["trigger_runtime", "ideology_runtime", "modifier_daily", "season_refresh", "effect_runtime", "gameplay_effect", "natural_resource_daily", "bio_occupancy_daily", "enum_atlas_upload", "ocean_currents", "native_daily_sim", "dynamic_visual_atlas_upload", "country_daily", "economy_daily"]
+[save/restore] PKCN and PKEC restored; country/economy systems registered
+[building-visual] intel_refresh requested=14 changed=1 known=6 catalog=400 resident=0 body=0 queued=0 zoom=1.000
+WARNING: [runtime-climate-round] no ClimateDailySystem; SHADOW capture carries no shared pass input
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _build_runtime_climate_round_input (res://scripts/geography/map_generator.gd:4673)
+       [1] capture_runtime_inputs_for_worker (res://scripts/geography/map_generator.gd:2356)
+       [2] generate_world (res://scripts/game/world_runtime_host.gd:724)
+       [3] generate (res://scripts/geography/map_generator.gd:1606)
+       [4] _yield_generation_frame (res://scripts/geography/map_generator.gd:19920)
+WARNING: [runtime-worker] Ideology opinion publish deferred: ideology_opinion_snapshot_invalid
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _start_production_shadow_worker (res://scripts/game/world_runtime_host.gd:815)
+       [1] generate_world (res://scripts/game/world_runtime_host.gd:733)
+       [2] generate (res://scripts/geography/map_generator.gd:1606)
+       [3] _yield_generation_frame (res://scripts/geography/map_generator.gd:19920)
+[climate/worker][b8] physics_knobs day=13725 ready=0 missing=physics_knobs
+[runtime-worker] production ACTIVE started mask=4095 auto_pod=true
+[tech-ui-diag/query] apply ok gen=7700 day=13724 view_gen=7700 progress_total=298420002 pending_words=36
+[climate-kernel][round] shared=1 ok=1 n_cells=2400 mask=0x1FF ran=0x1FF starved=0x0 knobs_cells=2400
+[country][parity] worker_day=13725 uncompared reference_range=-1..-1 depth=0
+[runtime-day-wait] day=13725 env_day=13725 missing=0x100 stall=0x20 economy_input=13725
+[runtime-day-wait] day=13725 env_day=13725 missing=0x100 stall=0x20 economy_input=13725 ring=0 country=
+[tech-ui-diag/query] apply ok gen=7700 day=13725 view_gen=7700 progress_total=298420002 pending_words=36
+[save-replay] loaded day=13725 country=0 economy=""
+[research-procure-diag] day=13725 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_
+gate=1 orders=0 rej=0 procured=0 last_err=
+[DCSystemScheduler][RT] ocean_skip#1 tick=13726 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[economy-mirror-cost] day=13725 capture_ms=1.943 import_ms=4.205
+[phys/knobs] projection ready: slp=31 wind=33 psi=26 up=10
+[climate/worker][b8] physics_knobs day=13726 ready=1 missing=
+[DCSystemScheduler][RT] ocean_skip#2 tick=13727 reason=policy_gated slices=0 elapsed=0.000 progress=0.000 source=day_changed
+[climate/worker][b8] paw day=13726 cell=184 moisture=0.525065 wb30=-0.00397116 soil=0 paw=0.522484 zeros(water=1592 lan
+d=0) nonzero=808 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[climate/worker][b8] cyclone_gate day=13726 input_enabled=0 force_env=0 effective=0
+[climate/worker][b8] weather_solve day=13726 cells=2400 psi=1 vapor0=0.0548794 precip0=0.0429856 cloud0=0.227118 type0=
+0 field_init0=1
+[climate/writeback][b8] day=13725 vapor store0=0.0630544 map0=0.0630544 dirty_fields=42 applied=42
+[country][parity] worker_day=13726 uncompared reference_range=-1..-1 depth=0
+[country][parity] worker_day=13726 uncompared reference_range=-1..-1 depth=0
+[research-procure-diag] day=13726 phase=0 done=0 cands=3 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_
+gate=1 orders=0 rej=0 procured=0 last_err=
+[tech-ui-diag/query] apply ok gen=7701 day=13726 view_gen=7701 progress_total=298420002 pending_words=36
+[tech-ui-diag/research] handle=4294967296 gen=7701 day=13726 owned=69 pending=0 queued=0 progress_nonzero=64 stock=0 deferred=0 consumed=298420002 cash=2478101165562 budget=10000000 auto=1
+[climate/worker][b8] physics_knobs day=13727 ready=1 missing=
+[climate/worker][b8] paw day=13727 cell=184 moisture=0.215855 wb30=-0.00395918 soil=0 paw=0.213281 zeros(water=1592 lan
+d=3) nonzero=805 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[climate/writeback][b8] day=13726 vapor store0=0.0548794 map0=0.0548794 dirty_fields=54 applied=54
+[climate/worker][b8] cyclone_gate day=13727 input_enabled=0 force_env=0 effective=0
+[climate/worker][b8] weather_solve day=13727 cells=2400 psi=1 vapor0=0.0814662 precip0=0 cloud0=0.0817735 type0=0 field
+_init0=1
+[country][parity] worker_day=13727 uncompared reference_range=-1..-1 depth=0
+[country][parity] worker_day=13727 uncompared reference_range=-1..-1 depth=0
+[research-procure-diag] day=13727 phase=0 done=0 cands=3 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_
+gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] physics_knobs day=13728 ready=1 missing=
+[climate/writeback][b8] day=13727 vapor store0=0.0814662 map0=0.0814662 dirty_fields=54 applied=54
+[climate/worker][b8] paw day=13728 cell=184 moisture=0.444579 wb30=-0.00392762 soil=-0.000288943 paw=0.442026 zeros(wat
+er=1592 land=0) nonzero=808 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[climate/worker][b8] weather_solve day=13728 cells=2400 psi=1 vapor0=0.0868499 precip0=0 cloud0=0.040883 type0=0 field_
+init0=1
+[country][parity] worker_day=13728 uncompared reference_range=-1..-1 depth=0
+[country][parity] worker_day=13728 uncompared reference_range=-1..-1 depth=0
+[tech-ui-diag/query] apply ok gen=7703 day=13728 view_gen=7703 progress_total=298420002 pending_words=36
+[research-procure-diag] day=13728 phase=0 done=0 cands=3 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_
+gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] physics_knobs day=13729 ready=1 missing=
+[climate/worker][b8] paw day=13729 cell=184 moisture=0.222563 wb30=-0.00393036 soil=-0.000240998 paw=0.220008 zeros(wat
+er=1592 land=0) nonzero=808 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[climate/writeback][b8] day=13728 vapor store0=0.0868499 map0=0.0868499 dirty_fields=54 applied=54
+[climate/worker][b8] weather_solve day=13729 cells=2400 psi=1 vapor0=0.085836 precip0=0 cloud0=0.027355 type0=0 field_i
+nit0=1
+[country][parity] worker_day=13729 uncompared reference_range=-1..-1 depth=0
+[tech-ui-diag/query] apply ok gen=7704 day=13729 view_gen=7704 progress_total=298420002 pending_words=36
+[research-procure-diag] day=13729 phase=0 done=0 cands=3 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_
+gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] physics_knobs day=13730 ready=1 missing=
+[climate/worker][b8] paw day=13730 cell=184 moisture=0.393849 wb30=-0.00389215 soil=-0.000601043 paw=0.391319 zeros(wat
+er=1592 land=0) nonzero=808 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[research-procure-diag] day=13730 phase=0 done=0 cands=3 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_
+gate=1 orders=0 rej=0 procured=0 last_err=
+[tech-ui-diag/query] apply ok gen=7705 day=13730 view_gen=7705 progress_total=298420002 pending_words=36
+[climate/worker][b8] paw day=13731 cell=184 moisture=0.230712 wb30=-0.00389909 soil=-0.00045651 paw=0.228177 zeros(wate
+r=1592 land=0) nonzero=808 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[research-procure-diag] day=13731 phase=0 done=0 cands=3 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_
+gate=1 orders=0 rej=0 procured=0 last_err=
+[tech-ui-diag/query] apply ok gen=7706 day=13731 view_gen=7706 progress_total=298420002 pending_words=36
+[tech-ui-diag/research] handle=4294967296 gen=7706 day=13731 owned=69 pending=0 queued=0 progress_nonzero=64 stock=0 deferred=0 consumed=298420002 cash=2478100676986 budget=10000000 auto=1
+[climate/worker][b8] paw day=13732 cell=184 moisture=0.356182 wb30=-0.00386975 soil=-0.000911031 paw=0.353667 zeros(wat
+er=1592 land=0) nonzero=808 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[research-procure-diag] day=13732 phase=0 done=0 cands=3 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_
+gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] paw day=13733 cell=184 moisture=0.238204 wb30=-0.00387842 soil=-0.000684334 paw=0.235683 zeros(wat
+er=1592 land=0) nonzero=808 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[tech-ui-diag/query] apply ok gen=7707 day=13732 view_gen=7707 progress_total=298420002 pending_words=36
+[research-procure-diag] day=13733 phase=0 done=0 cands=3 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_
+gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] paw day=13734 cell=184 moisture=0.328893 wb30=-0.00385648 soil=-0.00121408 paw=0.326387 zeros(wate
+r=1592 land=0) nonzero=808 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[research-procure-diag] day=13734 phase=0 done=0 cands=3 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_
+gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] paw day=13735 cell=184 moisture=0.246925 wb30=-0.00386508 soil=-0.000921411 paw=0.244412 zeros(wat
+er=1592 land=0) nonzero=808 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[research-procure-diag] day=13735 phase=0 done=0 cands=3 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_
+gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] paw day=13736 cell=184 moisture=0.311538 wb30=-0.00384743 soil=-0.00150684 paw=0.309038 zeros(wate
+r=1592 land=0) nonzero=808 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[research-procure-diag] day=13736 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_
+gate=1 orders=0 rej=0 procured=0 last_err=
+[climate/worker][b8] paw day=13737 cell=184 moisture=0.255147 wb30=-0.00385526 soil=-0.00116062 paw=0.252642 zeros(wate
+r=1592 land=0) nonzero=808 weights(wb=0.35 soil=0.25 dry=0.65) round=1 distribute=1 hydrology=0
+[research-procure-diag] day=13737 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_
+gate=1 orders=0 rej=0 procured=0 last_err=
+[tech-ui-diag/research] handle=4294967296 gen=7711 day=13737 owned=69 pending=0 queued=0 progress_nonzero=64 stock=0 deferred=0 consumed=298420002 cash=2478100564302 budget=10000000 auto=1
+[research-procure-diag] day=13738 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_
+gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=13739 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_
+gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=13740 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_
+gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=13741 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_
+gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=13742 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_
+gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=13743 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_
+gate=1 orders=0 rej=0 procured=0 last_err=
+[tech-ui-diag/research] handle=4294967296 gen=7715 day=13743 owned=69 pending=0 queued=0 progress_nonzero=64 stock=0 deferred=0 consumed=298420002 cash=2478099763718 budget=10000000 auto=1
+[research-procure-diag] day=13744 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_
+gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=13745 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_
+gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=13746 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_
+gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=13747 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_
+gate=1 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=13748 phase=0 done=0 cands=6 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x3fe research_
+gate=1 orders=0 rej=0 procured=0 last_err=
+[tech-ui-diag/research] handle=4294967296 gen=7721 day=13749 owned=69 pending=0 queued=0 progress_nonzero=64 stock=0 deferred=0 consumed=298420002 cash=2478099666097 budget=10000000 auto=1
+[tech-ui-diag/research] handle=4294967296 gen=7726 day=13754 owned=69 pending=0 queued=0 progress_nonzero=64 stock=0 deferred=0 consumed=298420002 cash=2478099532341 budget=10000000 auto=1
+[clock/step] delta=6.9ms speed=50x target=0.35d cap=1.57d/f cost=5.08ms ran=0 pulse=0.00ms loop=0.00ms full=0.28ms carry=0.84 barrier=
+[tech-ui-diag/research] handle=4294967296 gen=7729 day=13762 owned=69 pending=0 queued=0 progress_nonzero=64 stock=0 deferred=0 consumed=298420002 cash=2478099320403 budget=10000000 auto=1
+[tech-ui-diag/research] handle=4294967296 gen=7733 day=13767 owned=69 pending=0 queued=0 progress_nonzero=64 stock=0 deferred=0 consumed=298420002 cash=2478096510287 budget=10000000 auto=1
+[clock/step] delta=6.9ms speed=50x target=0.35d cap=1.62d/f cost=4.94ms ran=0 pulse=0.00ms loop=0.00ms full=0.20ms carry=0.51 barrier=
+[economy-open-finish] day=13800 country=0.287 workset=0.030 fiscal=0.032 csr=0.004 recovery=0.049 vectors=1.588 audit=0
+.738 commands=0.001
+[economy-prelude-cost] day=13800 ms=2.941 pending=0
+[economy-aggregate-cost] day=13800 publish_ms=2.512 native_hash_ms=0.387
+[economy-ledger-cost] day=13800 copy_ms=0.749 validate_ms=0.156 hash_ms=0.000 cohorts=448 markets=321600
+[economy-boundary-cost] day=13800 formulas_ms=12.344 stages_ms=8.875 mirror_ms=1.495
+[runtime-day-cost] day=13800 ok=1 ms=18.949
+[clock/step] delta=6.9ms speed=50x target=0.35d cap=1.62d/f cost=4.94ms ran=0 pulse=0.00ms loop=0.00ms full=0.19ms carry=0.52 barrier=
+[clock/step] delta=118.9ms speed=50x target=5.94d cap=1.60d/f cost=5.03ms ran=2 pulse=0.00ms loop=10.44ms full=10.74ms carry=0.16 barrier=
+[clock/fat-day] loop=10.44ms largest=0.00ms job= stage= over_budget=false native_stage=pending
+[economy-open-finish] day=13900 country=0.328 workset=0.032 fiscal=0.032 csr=0.004 recovery=0.054 vectors=1.551 audit=0
+.682 commands=0.001
+[economy-prelude-cost] day=13900 ms=2.892 pending=0
+[economy-aggregate-cost] day=13900 publish_ms=2.580 native_hash_ms=0.343
+[economy-ledger-cost] day=13900 copy_ms=0.471 validate_ms=0.174 hash_ms=0.000 cohorts=448 markets=321600
+[economy-boundary-cost] day=13900 formulas_ms=12.142 stages_ms=8.506 mirror_ms=1.068
+[runtime-day-cost] day=13900 ok=1 ms=17.937
+[clock/step] delta=6.9ms speed=50x target=0.35d cap=1.53d/f cost=5.22ms ran=0 pulse=0.00ms loop=0.00ms full=0.40ms carry=0.94 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=1.47d/f cost=5.24ms ran=1 pulse=0.00ms loop=4.46ms full=5.01ms carry=0.32 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.35d cap=7.20d/f cost=1.11ms ran=0 pulse=0.00ms loop=0.00ms full=0.43ms carry=0.68 barrier=
+[economy-open-finish] day=14000 country=0.307 workset=0.034 fiscal=0.043 csr=0.004 recovery=0.058 vectors=2.159 audit=1
+.528 commands=0.002
+[economy-prelude-cost] day=14000 ms=4.322 pending=0
+[economy-aggregate-cost] day=14000 publish_ms=3.995 native_hash_ms=0.643
+[economy-ledger-cost] day=14000 copy_ms=1.128 validate_ms=0.383 hash_ms=0.001 cohorts=448 markets=321600
+[economy-boundary-cost] day=14000 formulas_ms=19.227 stages_ms=14.347 mirror_ms=2.478
+[runtime-day-cost] day=14000 ok=1 ms=27.805
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=4.64d/f cost=1.72ms ran=0 pulse=0.00ms loop=0.00ms full=0.45ms carry=0.13 barrier=climate_input_capacity_day_barrier
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=6.93d/f cost=1.15ms ran=0 pulse=0.00ms loop=0.00ms full=0.34ms carry=0.54 barrier=
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=2.13d/f cost=3.75ms ran=0 pulse=0.00ms loop=0.00ms full=0.23ms carry=0.64 barrier=
+[economy-open-finish] day=14100 country=0.551 workset=0.064 fiscal=0.076 csr=0.008 recovery=0.086 vectors=2.163 audit=1
+.230 commands=0.002
+[economy-prelude-cost] day=14100 ms=4.442 pending=0
+[economy-aggregate-cost] day=14100 publish_ms=2.922 native_hash_ms=0.381
+[economy-ledger-cost] day=14100 copy_ms=0.757 validate_ms=0.190 hash_ms=0.000 cohorts=448 markets=321600
+[economy-boundary-cost] day=14100 formulas_ms=18.071 stages_ms=12.587 mirror_ms=1.385
+[runtime-day-cost] day=14100 ok=1 ms=25.261
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=4.72d/f cost=1.51ms ran=1 pulse=0.00ms loop=0.78ms full=0.98ms carry=0.16 barrier=climate_input_capacity_day_barrier
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=4.97d/f cost=1.61ms ran=0 pulse=0.00ms loop=0.00ms full=0.46ms carry=0.26 barrier=climate_input_capacity_day_barrier
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=1.82d/f cost=4.40ms ran=0 pulse=0.00ms loop=0.00ms full=0.30ms carry=0.95 barrier=
+[economy-open-finish] day=14200 country=0.352 workset=0.033 fiscal=0.035 csr=0.004 recovery=0.070 vectors=1.776 audit=1
+.099 commands=0.002
+[economy-prelude-cost] day=14200 ms=3.573 pending=0
+[economy-aggregate-cost] day=14200 publish_ms=3.200 native_hash_ms=0.408
+[economy-ledger-cost] day=14200 copy_ms=0.716 validate_ms=0.332 hash_ms=0.001 cohorts=448 markets=321600
+[economy-boundary-cost] day=14200 formulas_ms=14.730 stages_ms=10.515 mirror_ms=1.627
+[runtime-day-cost] day=14200 ok=1 ms=22.272
+WARNING: [save] runtime bundle failed: {"code":"runtime_save_failed","ok":false,"pending":false,"reason":"save_country_
+checkpoint_day_mismatch","request_id":2}
+   at: push_warning (core/variant/variant_utility.cpp:1034)
+   GDScript backtrace (most recent call first):
+       [0] _capture_native_runtime_bundle (res://scripts/game/game_save_coordinator.gd:626)
+[clock/step] delta=6.9ms speed=50x target=0.34d cap=2.58d/f cost=3.10ms ran=0 pulse=0.00ms loop=0.00ms full=0.16ms carry=0.43 barrier=
+[runtime-forensics/save_replay_ok] {"captured_at":"2026-10-09T22:02:49","clock":{"day_index":14280,"paused":false,"speed_multiplier":0.0},"context":{"days":500,"slot":"manual_1"},"country":{"bootstrapped":true,"generation":7736,"last_committed_day":14279,"state_hash":0},"economy":{"country_research_procurement_continuation_phase":0,"country_research_procurement_last_error":"","current_day":14279,"epoch_active":false,"epoch_begin_pending_day":-1,"epoch_begin_post_fiscal_pending":false,"epoch_id":14278,"executed_stage":"fiscal_settlement","executed_substage":"commit","fatal":false,"fatal_context":{"valid":false},"fatal_reason":"","fiscal_reservation_continuation_active":false,"fiscal_reservation_continuation_phase":2,"fiscal_reservation_last_error":"","last_completed_sample_day":14279,"newest_state_day":14279,"sample_day":14279,"stage":"trade_planning"},"economy_conservation":{"audit_incomplete":false,"audit_incomplete_reason":"","bullion_money_issued":5942400,"bullion_stock_consumed":7428,"closing_audit_fast_paths":1,"closing_audit_full_verifications":0,"closing_audit_incremental_this_epoch":true,"closing_audit_mismatch_lane":-1,"closing_audit_mismatch_ledger":"none","closing_audit_mismatches":0,"closing_audit_mode":"INCREMENTAL","closing_audit_runtime_disabled":false,"closing_cohort_funds":169554040440,"closing_country_cash":14978096490981,"closing_country_goods":15000000,"closing_escrow_cash":3369,"closing_expedition_funds":0,"closing_expedition_goods":0,"closing_goods_stock":5812988754,"closing_transit_goods":9615,"construction_goods_consumed":0,"consumed_goods":29928473,"country_research_goods_consumed":0,"cycle_flow_discarded":0,"explicit_money_burn":0,"explicit_money_mint":40702070,"explicit_stock_delta":0,"goods_audit_candidate_lanes":[],"goods_error":0,"goods_expected":5812988754,"incremental_closing_cohort_funds":169554040440,"incremental_closing_country_cash":14978096490981,"incremental_closing_country_goods":15000000,"incremental_closing_escrow_cash":3369,"incremental_closing_expedition_goods":0,"incremental_closing_goods_stock":5812988754,"incremental_closing_population":32257,"incremental_closing_transit_goods":9615,"maintenance_goods_consumed":61180,"money_audit_candidate_accounts":[],"money_close":15147650534790,"money_error":0,"money_expected":15147650534790,"money_open":15147609832720,"opening_audit_fast_paths":1,"opening_audit_full_verifications":0,"opening_cohort_funds":169510772169,"opening_country_cash":14978096490981,"opening_country_goods":15000000,"opening_escrow_cash":2569570,"opening_expedition_funds":0,"opening_expedition_goods":0,"opening_goods_stock":5797120062,"opening_transit_goods":131259,"owner_output_consumed":20762036,"population_error":0,"producer_support_money_issued":40702070,"production_inputs_consumed":34242,"production_output_discarded":0,"production_output_retained":20762036,"production_output_stock":45900015,"saturation_count":0},"engine":{"debug_build":true,"headless":true,"process_frames":1839},"reason":"save_replay_completed","runtime_thread":{"active_gate_blocked":false,"authoritative_domain_mask":4095,"climate_committed_day":14279,"climate_worker_authoritative":true,"completion_gate_missing_domain_mask":0,"country_worker_authoritative":true,"country_worker_plan_active":false,"country_worker_waiting_for_peer":false,"coverage_blocker":"","day_stall_day":-1,"day_stall_peer_ms":0,"day_stall_reason_mask":0,"economy_authority_fault_paused":false,"economy_authority_last_committed_generation":13726,"economy_input_requested_day":-1,"economy_pod_active_ready":true,"economy_stage_name":"trade_planning","economy_stage_ops_prelude_ready":false,"economy_substage_name":"commit","economy_yield_reason":"","environment_ring_pending":0,"fault_code":"","generation":14279,"missing_domain_mask":0,"requested_authority_mask":4095,"simulation_committed_day":14279,"simulation_host_state":"PAUSED","simulation_worker_blocker":"","simulation_worker_ready":true,"state":"PAUSED","state_hash":-5115214988943276475,"worker_fault_count":0}}
+[save-replay/result] {"audit_incomplete":false,"committed_audit":{"audit_incomplete":false,"available":true,"day":14279,"full_verification":false,"generation":14280,"goods_error":0,"money_error":0,"population_error":0,"revision_phase":"before_effect_command_drain"},"day_timeout_msec":60000,"days_per_sec":41.5178942124056,"elapsed_msec":12043,"end_authoritative_day":14274,"end_day":14280,"end_host_state":"PAUSED","end_newest_state_day":14279,"failures":[],"final_report_wait_msec":104,"forensics":"","goods_error":0,"measurement_worker_time_us":{"boundary_wait":0,"clock_wait":0,"execute":10876160,"input_wait":259932,"overhead":27026,"paused":0,"save_build":205984,"save_pause":672698},"money_error":0,"ok":true,"population_error":0,"requested_days":500,"restore":{"country_bootstrapped":true,"economy_bootstrapped":true,"host_state":"RUNNING","settlement_source":"save_restore"},"slot":"manual_1","speed":50.0,"start_authoritative_day":13774,"start_day":13725,"start_newest_state_day":13724,"target_authoritative_day":14274,"target_day":14225,"warmup_actual_days":50,"warmup_days":50,"warmup_start_authoritative_day":13724}
+ERROR: 44 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced22ShapedTextDataAdvancedE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 986 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
+
+log      : D:\Godot\ProjectKeynes\Project.Keynes\tmp\save_replay_20261009_220209.log
+slot     : manual_1
+days     : 13725 -> 14280 (requested 500)
+throughput: 41.52 authoritative days/s
+PASS
+

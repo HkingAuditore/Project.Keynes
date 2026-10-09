@@ -178,7 +178,7 @@ bool NativeEconomyRuntime::commit_ready_construction(
     changed = erase_ready_pending_construction(_current_day.get()) > 0 || changed;
     if (prune_empty_groups || topology_changed) {
         for (size_t pk_row = 0; pk_row < building_count(); ++pk_row) {
-            const auto group = building_at(pk_row);
+            const auto group = building_view(pk_row);
             if (group.count > 0) continue;
             if (_modifier_runtime != nullptr)
                 _modifier_runtime->retire_building_identity(

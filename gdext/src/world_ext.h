@@ -3106,6 +3106,13 @@ private:
     // Main-thread-only compatibility report. Never read worker-owned vectors
     // without the authority boundary; a busy worker yields this private copy.
     mutable godot::Dictionary                _economy_read_report_cache;
+    // A running worker re-takes the economy boundary right after each input
+    // capture, so a deferred Economy effect adapter call is replayed by the
+    // next capture that already holds the boundary.
+    bool                                     _economy_effect_adapter_retry = false;
+    void service_economy_boundary_inbox();
+    godot::Dictionary dispatch_effect_native_economy_unlocked();
+    godot::Dictionary ack_effect_native_economy_unlocked();
     uint64_t                                  _canal_topology_generation = 0;
     // 运河编译态。原先是五个独立成员，现在整组进 HydrologyCanalState ——
     // hydrology_pass_pure 要能在 worker 侧跑，而 worker 拿不到 DCWorldExt 的成员。

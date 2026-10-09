@@ -133,11 +133,17 @@ SurfaceParams compute_land_base_surface(
 		col = mix(col, contour_color, contour_t * contour_strength);
 	}
 	// LAND 1.5：Normal / roughness / AO / metallic
-	vec3 normal = compute_terrain_normal(uv, visual_quality, biome);
+	// macro_normal = 高度场法线 + 侵蚀沟谷（都是地形几何）；材质贴图法线只进 BRDF 的 normal。
+	vec3 coarse_normal = terrain_coarse_normal(uv);
+	vec4 erosion = terrain_apply_erosion_detail(
+			terrain_add_height_detail(coarse_normal, uv, visual_quality, biome),
+			coarse_normal, wp, elev, visual_quality);
+	vec3 macro_normal = erosion.xyz;
+	vec3 normal = macro_normal;
 	if (terrain_materials_active()) {
 		normal = normalize(vec3(
-				normal.xy + static_mat.material_normal_xy,
-				max(normal.z, 0.12)));
+				macro_normal.xy + static_mat.material_normal_xy,
+				max(macro_normal.z, 0.12)));
 	}
 	float roughness = static_mat.roughness;
 	// [terrain-gi 2026-07-31] 地形级环境遮蔽已由 horizon 派生的 sky visibility 接管
@@ -146,7 +152,9 @@ SurfaceParams compute_land_base_surface(
 	// s.ao 此后的语义收窄为"材质自身的局部遮蔽"，由下方 cover/river 分支按需微调。
 	float ao = gi_lut_bound
 		? DEFAULT_AO_LAND
-		: mix(0.92, DEFAULT_AO_LAND, clamp(normal.z, 0.0, 1.0));
+		: mix(0.92, DEFAULT_AO_LAND, clamp(macro_normal.z, 0.0, 1.0));
+	// 沟谷底部的局部遮蔽：horizon 烘焙分辨率远粗于侵蚀细节，看不到这一层凹陷。
+	ao *= 1.0 - TERRAIN_EROSION_CREASE_AO * erosion.w;
 	float metallic = DEFAULT_METALLIC_LAND;
 
 	// LAND 1.5b：[河流独立法线 2026-08-03] 河心法线必须从水平水面构造，不能把 terrain normal
@@ -170,6 +178,7 @@ SurfaceParams compute_land_base_surface(
 		}
 #endif
 		normal = normalize(mix(normal, river_surface_normal, river_normal_w));
+		macro_normal = normalize(mix(macro_normal, vec3(0.0, 0.0, 1.0), river_normal_w));
 		roughness = mix(roughness, 0.16, river_w);
 		metallic = mix(metallic, DEFAULT_METALLIC_WATER, river_w);
 		ao = mix(ao, 0.98, river_w * 0.5);
@@ -178,10 +187,11 @@ SurfaceParams compute_land_base_surface(
 	// LAND 1.6：[landform 轴可视化] 给 terrain 表达不了的地貌（火山/高原/峡谷/裂谷/高峰）
 	// 叠加专属着色。火山已改为生成期高度场环形山 + hillshade 表现，不再发光（lf_vis.a 恒 0）；
 	// emission 通道保留作为未来地貌发光的通用接口。
-	float slope_mag = clamp(length(normal.xy), 0.0, 1.0);
+	float slope_mag = clamp(length(macro_normal.xy), 0.0, 1.0);
 	vec4 lf_vis = landform_visual(landform, wp, col, slope_mag, flow);
 	col = lf_vis.rgb;
 	SurfaceParams sp = make_surface_params(col, normal, roughness, metallic, ao);
+	sp.macro_normal = normalize(macro_normal);
 	sp.emission = vec3(1.30, 0.42, 0.10) * lf_vis.a;
 	return sp;
 }
@@ -259,7 +269,7 @@ SurfaceParams apply_climate_vegetation_tint(SurfaceParams surface, LandModInputs
 // ─── LAND 2.2：海拔 / 坡度 / 风塑形；纯 ALU，无额外纹理采样 ────────────
 SurfaceParams apply_relief_tint(SurfaceParams surface, LandModInputs i) {
 	float land_h = clamp((i.elev - sea_level) / max(1.0 - sea_level, 0.001), 0.0, 1.0);
-	float slope_mag = clamp(length(surface.normal.xy), 0.0, 1.0);
+	float slope_mag = clamp(length(surface.macro_normal.xy), 0.0, 1.0);
 	float foothill_w = smoothstep(0.10, 0.38, land_h);
 	float highland_w = smoothstep(0.34, 0.78, land_h);
 	float alpine_w = smoothstep(0.66, 0.96, land_h);
@@ -534,6 +544,7 @@ SurfaceParams apply_land_material_overlays(
 		float snow_normal_flatten = rocky ? 0.18 : 0.35;
 		float snow_material_w = snow_w * (1.0 - river_freeze_w * 0.82);
 		surface.normal    = normalize(mix(surface.normal, vec3(0.0, 0.0, 1.0), snow_material_w * snow_normal_flatten));
+		surface.macro_normal = normalize(mix(surface.macro_normal, vec3(0.0, 0.0, 1.0), snow_material_w * snow_normal_flatten));
 		float snow_rough_target = rocky ? 0.74 : (icy ? 0.14 : 0.34);
 		surface.roughness = mix(surface.roughness, snow_rough_target, snow_material_w);
 		surface.ao        = mix(surface.ao, 0.96, snow_material_w);
@@ -543,6 +554,7 @@ SurfaceParams apply_land_material_overlays(
 	}
 	if (river_freeze_w > 0.001) {
 		surface.normal = normalize(mix(surface.normal, vec3(0.0, 0.0, 1.0), river_freeze_w * 0.55));
+		surface.macro_normal = normalize(mix(surface.macro_normal, vec3(0.0, 0.0, 1.0), river_freeze_w * 0.55));
 		surface.roughness = mix(surface.roughness, 0.18, river_freeze_w);
 		surface.metallic = mix(surface.metallic, DEFAULT_METALLIC_ICE, river_freeze_w * 0.65);
 		surface.ao = mix(surface.ao, 0.99, river_freeze_w * 0.55);
@@ -566,6 +578,14 @@ SurfaceParams apply_land_material_overlays(
 vec3 shade_land_surface(SurfaceParams surface, vec2 uv, float lat_signed) {
 	// [cylindrical-earth-daylight] 传 uv+lat_signed 进光照上下文 → 逐像素经纬度日照。
 	LightingContext lc = make_lighting_context(AMBIENT_FLOOR_LAND, uv, lat_signed);
+	// 5 = 白模光照：底色换成中性灰、其余光照全保留，只看地形明暗本身。
+	if (gi_debug_view == 5) {
+		surface.base_color = vec3(0.55);
+	}
+	if (gi_debug_view == 6) {
+		surface.base_color = vec3(0.55);
+		surface.roughness = max(surface.roughness, 0.8);
+	}
 	if (terrain_horizon_debug_view == 1) {
 		return vec3(clamp((1.0 - lc.direct_shadow) * lc.local_day, 0.0, 1.0));
 	}
@@ -598,25 +618,18 @@ vec3 shade_land_surface(SurfaceParams surface, vec2 uv, float lat_signed) {
 	// [tod 地形方向性 2026-06-25 / 加强 2026-06-25b] 在 BRDF 之上叠一层 terrain-only 的方向性
 	// 明暗，让"太阳南北移动"在地形起伏上清晰可读。仅陆地调用，不污染水面反射；夜侧按昼夜系数淡出。
 	//
-	// ⚠ 旧实现 bug：直接用原始 N.xy 的【量级】(slope_dir = dot(N.xy, Ln))。RG8 高度图跨单 texel
-	//   的梯度极小，典型缓坡 N.xy≈0.05 → relief≈0.05*0.35≈0.017（仅 1.7% 亮度差）→ 肉眼几乎
-	//   看不出太阳移动的影响，正是用户反馈的现象。
-	// ✅ 新实现（经典 hillshade aspect）：把水平法线【归一化成坡向】aspect = dot(slope_face, Ln)
-	//   ∈[-1,1]，与坡陡无关——朝阳坡满量程提亮、背阳坡满量程压暗；坡度量级只作"有没有起伏"的
-	//   软遮罩(slope_mask)，缓坡也响应、平地不响应（不引入噪声）。太阳水平方向 Ln 随时角/纬度/
-	//   季节旋转（含南北分量）→ aspect 符号随之翻转 → 光源移动一眼可见。
+	// 明暗量 = soft(dot(N.xy, Ln) × slope_gain)：坡度 × 朝向余弦，缓坡近线性、陡坡趋饱和。
+	//   不能把 N.xy 归一化成纯坡向——那样 3° 缓坡与陡崖同为满幅，平原被切成黑白色块，
+	//   坡向一转就硬翻转。也不能直接用原始量级（缓坡只有 ~2% 差），slope_gain 负责放大。
 	if (tod_terrain_relief_strength > 0.001) {
-		vec3 N = normalize(surface.normal);
+		vec3 N = normalize(surface.macro_normal);
 		vec2 Nh = N.xy;
-		float slope = length(Nh);
 		vec2 Lh = lc.L.xy;
 		float Lh_len = length(Lh);
-		if (Lh_len > 1e-3 && slope > 1e-4) {
+		if (Lh_len > 1e-3) {
 			vec2 Ln = Lh / Lh_len;
-			vec2 slope_face = Nh / slope;               // 归一化坡向（与坡陡解耦）
-			float aspect = dot(slope_face, Ln);          // +1 正朝阳, -1 正背阳
-			// 只要有可辨识的起伏就给足方向性；平地(slope→0)平滑淡出，避免高度图量化噪声闪烁。
-			float slope_mask = smoothstep(0.006, 0.05, slope);
+			float facing = dot(Nh, Ln) * tod_terrain_relief_slope_gain;
+			float aspect = facing / (1.0 + abs(facing)); // (-1, 1)，缓坡近线性，陡坡趋饱和
 			float day_w = lc.local_day;                 // 昼夜开启时夜侧淡出；关闭时永昼=1
 			// 永昼没有晨昏线作为运动参照，因此适度加强坡向明暗，让全局光方位旋转可被玩家识别。
 			// 只放大已有 terrain relief，不新增光照通路；上限避免山地出现过曝/死黑翻转。
@@ -628,7 +641,7 @@ vec3 shade_land_surface(SurfaceParams surface, vec2 uv, float lat_signed) {
 				? relief_strength
 				: min(tod_terrain_relief_strength * 0.85, 0.30);
 			float signed_strength = (aspect >= 0.0) ? relief_strength : back_strength;
-			float relief = aspect * slope_mask * signed_strength * day_w;
+			float relief = aspect * signed_strength * day_w;
 			float relief_floor = day_night_enabled ? 0.58 : 0.70;
 			lit *= clamp(1.0 + relief, relief_floor, 1.50);
 		}

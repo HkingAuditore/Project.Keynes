@@ -1,0 +1,556 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+Godot_v4.6.2-stable_win64_console.exe : ERROR: {"good":"adobe_brick","reason":"no_reachable_producer","unlock_era":"agr
+arian"}
+ËùÔÚÎ»ÖÃ C:\Users\hkinghuang\AppData\Local\Temp\ps-script-15481dce-4757-4efe-a5d0-464ce92a7d15.ps1:92 ×Ö·û: 260
++ ... $t"; $out = & 'D:\Godot\Godot_v4.6.2-stable_win64.exe\Godot_v4.6.2-st ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (ERROR: {"good":...ra":"agrarian"}:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"advanced_chips","reason":"no_reachable_producer","unlock_era":"intelligent"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"agricultural_machinery","reason":"no_reachable_producer","unlock_era":"electrical"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"aluminum","reason":"no_reachable_producer","unlock_era":"atomic"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"automobiles","reason":"no_reachable_producer","unlock_era":"information"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"autonomous_systems","reason":"no_reachable_producer","unlock_era":"intelligent"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"bast_fiber","reason":"no_reachable_producer","unlock_era":"stone"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"batteries","reason":"no_reachable_producer","unlock_era":"atomic"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"bauxite","reason":"no_reachable_producer","unlock_era":"atomic"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"beverages","reason":"no_reachable_producer","unlock_era":"agrarian"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"bread","reason":"no_reachable_producer","unlock_era":"agrarian"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"bricks","reason":"no_reachable_producer","unlock_era":"agrarian"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"brine","reason":"no_reachable_producer","unlock_era":"stone"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"bronze_tools","reason":"no_reachable_producer","unlock_era":"agrarian"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"canned_fish","reason":"no_reachable_producer","unlock_era":"enlightenment"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"cement","reason":"no_reachable_producer","unlock_era":"enlightenment"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"charcoal","reason":"no_reachable_producer","unlock_era":"stone"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"chipped_stone_tools","reason":"no_reachable_producer","unlock_era":"stone"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"clay","reason":"no_reachable_producer","unlock_era":"stone"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"cloth","reason":"no_reachable_producer","unlock_era":"agrarian"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"clothing","reason":"no_reachable_producer","unlock_era":"stone"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"coal","reason":"no_reachable_producer","unlock_era":"kingdom"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"coke","reason":"no_reachable_producer","unlock_era":"steam"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"computers","reason":"no_reachable_producer","unlock_era":"information"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"concrete","reason":"no_reachable_producer","unlock_era":"steam"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"construction_components","reason":"no_reachable_producer","unlock_era":"kingdom"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"copper","reason":"no_reachable_producer","unlock_era":"agrarian"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"copper_ore","reason":"no_reachable_producer","unlock_era":"kingdom"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"copper_tools","reason":"no_reachable_producer","unlock_era":"agrarian"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"corn_grain","reason":"no_reachable_producer","unlock_era":"stone"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"cotton_fiber","reason":"no_reachable_producer","unlock_era":"agrarian"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"crude_oil","reason":"no_reachable_producer","unlock_era":"electrical"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"dairy_products","reason":"no_reachable_producer","unlock_era":"agrarian"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"detergent","reason":"no_reachable_producer","unlock_era":"atomic"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"edible_oil","reason":"no_reachable_producer","unlock_era":"kingdom"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"electric_motor","reason":"no_reachable_producer","unlock_era":"electrical"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"electrical_equipment","reason":"no_reachable_producer","unlock_era":"electrical"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"electricity","reason":"no_reachable_producer","unlock_era":"electrical"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"electronic_components","reason":"no_reachable_producer","unlock_era":"atomic"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"engines","reason":"no_reachable_producer","unlock_era":"information"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"explosives","reason":"no_reachable_producer","unlock_era":"exploration"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"fertilizer","reason":"no_reachable_producer","unlock_era":"kingdom"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"fine_clothing","reason":"no_reachable_producer","unlock_era":"empire"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"fine_furniture","reason":"no_reachable_producer","unlock_era":"empire"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"fish","reason":"no_reachable_producer","unlock_era":"stone"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"flax_fiber","reason":"no_reachable_producer","unlock_era":"agrarian"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"flint","reason":"no_reachable_producer","unlock_era":"stone"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"footwear","reason":"no_reachable_producer","unlock_era":"agrarian"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"fur","reason":"no_reachable_producer","unlock_era":"stone"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"furniture","reason":"no_reachable_producer","unlock_era":"empire"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"game_meat","reason":"no_reachable_producer","unlock_era":"stone"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"gathered_plants","reason":"no_reachable_producer","unlock_era":"stone"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"glass","reason":"no_reachable_producer","unlock_era":"agrarian"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"glassware","reason":"no_reachable_producer","unlock_era":"agrarian"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"gold","reason":"no_reachable_producer","unlock_era":"stone"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"grain","reason":"no_reachable_producer","unlock_era":"agrarian"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"horses","reason":"no_reachable_producer","unlock_era":"agrarian"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"household_appliances","reason":"no_reachable_producer","unlock_era":"atomic"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"industrial_chemicals","reason":"no_reachable_producer","unlock_era":"steam"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"industrial_machinery","reason":"no_reachable_producer","unlock_era":"electrical"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"insulated_cable","reason":"no_reachable_producer","unlock_era":"atomic"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"iron_ore","reason":"no_reachable_producer","unlock_era":"kingdom"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"jewelry","reason":"no_reachable_producer","unlock_era":"stone"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"latex","reason":"no_reachable_producer","unlock_era":"agrarian"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"lead","reason":"no_reachable_producer","unlock_era":"electrical"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"lead_ore","reason":"no_reachable_producer","unlock_era":"steam"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"leather","reason":"no_reachable_producer","unlock_era":"agrarian"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"leather_goods","reason":"no_reachable_producer","unlock_era":"agrarian"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"lime","reason":"no_reachable_producer","unlock_era":"kingdom"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"limestone","reason":"no_reachable_producer","unlock_era":"kingdom"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"livestock_products","reason":"no_reachable_producer","unlock_era":"stone"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"logs","reason":"no_reachable_producer","unlock_era":"stone"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"lubricants","reason":"no_reachable_producer","unlock_era":"information"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"lumber","reason":"no_reachable_producer","unlock_era":"agrarian"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"machine_parts","reason":"no_reachable_producer","unlock_era":"electrical"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"manganese_ore","reason":"no_reachable_producer","unlock_era":"atomic"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"manuscripts","reason":"no_reachable_producer","unlock_era":"kingdom"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"meat","reason":"no_reachable_producer","unlock_era":"agrarian"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"medicinal_herbs","reason":"no_reachable_producer","unlock_era":"stone"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"metal_housewares","reason":"no_reachable_producer","unlock_era":"kingdom"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"natural_gas","reason":"no_reachable_producer","unlock_era":"atomic"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"natural_rubber","reason":"no_reachable_producer","unlock_era":"agrarian"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"nuclear_fuel","reason":"no_reachable_producer","unlock_era":"atomic"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"oceanic_vessels","reason":"no_reachable_producer","unlock_era":"exploration"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"packaging","reason":"no_reachable_producer","unlock_era":"exploration"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"paper","reason":"no_reachable_producer","unlock_era":"kingdom"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"petrochemicals","reason":"no_reachable_producer","unlock_era":"atomic"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"pharmaceuticals","reason":"no_reachable_producer","unlock_era":"electrical"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"phosphate_rock","reason":"no_reachable_producer","unlock_era":"steam"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"plastics","reason":"no_reachable_producer","unlock_era":"atomic"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"potatoes","reason":"no_reachable_producer","unlock_era":"stone"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"pottery","reason":"no_reachable_producer","unlock_era":"stone"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"precision_tools","reason":"no_reachable_producer","unlock_era":"enlightenment"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"prepared_staples","reason":"no_reachable_producer","unlock_era":"stone"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"printed_materials","reason":"no_reachable_producer","unlock_era":"empire"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"processed_food","reason":"no_reachable_producer","unlock_era":"electrical"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"radio_equipment","reason":"no_reachable_producer","unlock_era":"atomic"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"railway_equipment","reason":"no_reachable_producer","unlock_era":"steam"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"rare_earth_metals","reason":"no_reachable_producer","unlock_era":"atomic"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"rare_earth_ore","reason":"no_reachable_producer","unlock_era":"atomic"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"raw_hide","reason":"no_reachable_producer","unlock_era":"stone"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"raw_stone","reason":"no_reachable_producer","unlock_era":"stone"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"reactor_components","reason":"no_reachable_producer","unlock_era":"atomic"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"reed_bundle","reason":"no_reachable_producer","unlock_era":"stone"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"refined_fuel","reason":"no_reachable_producer","unlock_era":"electrical"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"rice_grain","reason":"no_reachable_producer","unlock_era":"stone"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"salt","reason":"no_reachable_producer","unlock_era":"agrarian"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"saltpeter","reason":"no_reachable_producer","unlock_era":"empire"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"scientific_instruments","reason":"no_reachable_producer","unlock_era":"electrical"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"seed_cotton","reason":"no_reachable_producer","unlock_era":"stone"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"semiconductors","reason":"no_reachable_producer","unlock_era":"information"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"silica_sand","reason":"no_reachable_producer","unlock_era":"agrarian"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"silver","reason":"no_reachable_producer","unlock_era":"stone"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"soap","reason":"no_reachable_producer","unlock_era":"kingdom"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"spices","reason":"no_reachable_producer","unlock_era":"stone"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"stainless_steel","reason":"no_reachable_producer","unlock_era":"atomic"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"steam_engines","reason":"no_reachable_producer","unlock_era":"enlightenment"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"steel","reason":"no_reachable_producer","unlock_era":"steam"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"sulfur","reason":"no_reachable_producer","unlock_era":"empire"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"synthetic_fiber","reason":"no_reachable_producer","unlock_era":"atomic"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"synthetic_rubber","reason":"no_reachable_producer","unlock_era":"atomic"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"technology_points","reason":"no_reachable_producer","unlock_era":"stone"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"telecom_equipment","reason":"no_reachable_producer","unlock_era":"information"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"tin","reason":"no_reachable_producer","unlock_era":"agrarian"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"tin_ore","reason":"no_reachable_producer","unlock_era":"agrarian"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"tools","reason":"no_reachable_producer","unlock_era":"kingdom"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"turf_block","reason":"no_reachable_producer","unlock_era":"stone"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"vegetables","reason":"no_reachable_producer","unlock_era":"agrarian"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"wheat_grain","reason":"no_reachable_producer","unlock_era":"stone"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"wire","reason":"no_reachable_producer","unlock_era":"electrical"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"wool","reason":"no_reachable_producer","unlock_era":"agrarian"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"wrought_iron","reason":"no_reachable_producer","unlock_era":"kingdom"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"zinc","reason":"no_reachable_producer","unlock_era":"electrical"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: {"good":"zinc_ore","reason":"no_reachable_producer","unlock_era":"steam"}
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:21)
+ERROR: 134 goods fail lifecycle closure (399 unavailable buildings)
+   at: push_error (core/variant/variant_utility.cpp:1024)
+   GDScript backtrace (most recent call first):
+       [0] _init (res://tests/economy_goods_lifecycle_audit_test.gd:23)
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 277 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)
+

@@ -2331,6 +2331,11 @@ reservoir，避免全量 CSV 常驻内存。
 .\tools\runtime\Invoke-AuthorityStageCHeadless.ps1
 ```
 
+`headless_perf_record.gd` 默认 `pipeline_depth=3`：驱动可领先 worker 提交 3 天（环境 FIFO 4 槽），
+与玩家场景 `WorldClock` 的容量背压同义；`pipeline_depth=0` 为旧逐日锁步，worker 每天在 `input_wait`
+空等驱动发现提交（2026-10-09 实测 12.7 ms/天，且空睡使 execute 偏高约 15%），只用于复现旧口径。
+`authoritative_days_per_second` 按提交日差（`committed_days`）计，一次观察可跨多个提交。
+
 `run_ms` 保留历史定义。`harness_adjusted_run_ms` 只扣除 40ms writeback 窗口里的实测 idle
 delay，保留 `_consume_runtime_commit_if_ready()` 的主线程工作；
 `harness_lower_bound_run_ms` 才扣除整个实测窗口。报告把 ACTIVE worker timing、主线程 native
@@ -2484,8 +2489,9 @@ The migrated late save is 60x40 at day 26280; it must not be presented as a
 unverified until the specified 200-day warmup, 3000-day repeated measurement
 and graphical/autosave acceptance runs pass.
 
-Continuous audit rollout is currently diagnostic-only:
-`PK_ECONOMY_AUDIT_SHADOW_REUSE=1` retains touched lane preimages across commits,
+Continuous audit is the default incremental closing path (2026-10-09);
+`PK_ECONOMY_AUDIT_SHADOW_REUSE=0` restores the per-epoch opening full scan for
+A/B comparison. It retains touched lane preimages across commits,
 registers idle writes, and derives opening totals from the last close plus
 boundary changes. Worker sinks keep their prior shadow values until merge;
 they must not capture an already-mutated value as the first preimage.

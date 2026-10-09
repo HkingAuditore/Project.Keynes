@@ -493,7 +493,6 @@ struct RuntimeEconomyOwnedState {
 
     void clear(int32_t cells, int32_t goods) {
         for (auto &column : market_hash_pages) column.clear();
-        population.clear(cells);
         market.clear();
         market.market_count = std::max(0, cells);
         market.good_count = std::max(0, goods);
@@ -507,6 +506,13 @@ struct RuntimeEconomyOwnedState {
         for (int32_t cell = 0; cell < market.market_count; ++cell)
             market.cell_to_market.write_scalar(static_cast<size_t>(cell), cell);
         market.price_ceilings.resize(static_cast<size_t>(market.market_count));
+        clear_except_market(cells);
+    }
+    // Everything clear() resets except the market store and its hash cache.
+    // A same-shape import overwrites market lanes in place so the change
+    // registry and market_hash_pages keep tracking only the lanes that moved.
+    void clear_except_market(int32_t cells) {
+        population.clear(cells);
         committed.clear();
         building.clear();
         buildings.clear();
