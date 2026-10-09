@@ -45,6 +45,10 @@ func _run() -> int:
 		args.get("synthetic_test_economy", "false"))
 	var trade_scenario := _argument_enabled(args.get("trade_scenario", "false"))
 	var label := str(args.get("label", "headless"))
+	var detail_mode := str(args.get("detail_mode", "CORE")).to_upper()
+	if detail_mode not in ["CORE", "DETAIL"]:
+		push_error("[headless-perf] detail_mode must be CORE or DETAIL")
+		return 2
 	var output_dir := str(args.get("output_dir", "")).strip_edges()
 	if not output_dir.is_empty():
 		output_dir = ProjectSettings.globalize_path(output_dir).simplify_path()
@@ -295,11 +299,15 @@ func _run() -> int:
 	if not output_dir.is_empty():
 		recorder.call("configure_export", output_dir, "perf.csv")
 	host.set_perf_recorder(recorder)
-	# The benchmark deliberately requests per-tick DETAIL so performance CSV
-	# diagnosis retains every job and breakdown. Player recording defaults CORE.
-	recorder.call("start", "DETAIL", 1)
+	# Production throughput uses compact snapshots. Full diagnostics are an
+	# explicit separate measurement, not hidden inside every measured day.
+	recorder.call("start", detail_mode, 1)
 
 	var runtime_report_start := _runtime_report_snapshot(generator)
+	if host.runtime_climate_authority_enabled:
+		# The first input is day zero. Gate by observed commits below rather
+		# than assuming a particular bootstrap watermark.
+		recorder.configure_authoritative_sampling(0)
 	var climate_diag_start: Dictionary = host.climate_authority_diagnostics() \
 		if host.has_method("climate_authority_diagnostics") else {}
 	var run_started := Time.get_ticks_usec()
@@ -316,7 +324,8 @@ func _run() -> int:
 	var authoritative_measured := 0
 	var auth_measure_start_us := 0
 	var auth_measure_end_us := 0
-	var total_driver_days := warmup_days + days
+	# sus_tick_daily captures driver_day - 1. Include the final input day.
+	var total_driver_days := warmup_days + days + 1
 	for day in range(1, total_driver_days + 1):
 		if country_daily_workload:
 			if country == null or country_handles.is_empty():
@@ -373,17 +382,21 @@ func _run() -> int:
 		host.run_daily_tick(day, phase)
 		host.finish_daily_tick(0.0, {})
 		if host.runtime_climate_authority_enabled:
-			if generator != null and generator.has_method("capture_runtime_inputs_for_worker"):
-				generator.capture_runtime_inputs_for_worker(day, phase)
-			# Drain write-back without OS.delay_msec harness pollution. Use a
-			# short process_frame poll so the SceneTree can service the host.
+			# run_daily_tick already froze driver_day - 1. A second capture with
+			# driver_day skips the production input-day convention.
+			# Stop polling as soon as that actual input day commits; a fixed 40ms
+			# wait imposed an artificial throughput ceiling below 50 days/s.
 			var writeback_window_started := Time.get_ticks_usec()
-			var writeback_deadline := writeback_window_started + 40000
+			var writeback_deadline := writeback_window_started + 60000000
 			while Time.get_ticks_usec() < writeback_deadline:
 				var consume_started := Time.get_ticks_usec()
 				host._consume_runtime_commit_if_ready()
 				harness_writeback_consume_us += Time.get_ticks_usec() - consume_started
 				harness_writeback_poll_count += 1
+				var progress := _runtime_report_snapshot(generator)
+				if int(progress.get("simulation_committed_day",
+						progress.get("committed_day", -1))) >= day - 1:
+					break
 				if Time.get_ticks_usec() >= writeback_deadline:
 					break
 				await process_frame
@@ -460,11 +473,18 @@ func _run() -> int:
 			last_authoritative_committed_day = committed_day
 			authoritative_observed += 1
 			if authoritative_observed <= warmup_days:
+				recorder.configure_authoritative_sampling(committed_day)
+				if authoritative_observed == warmup_days:
+					# Clear warmup rows; the next commit starts the measured window.
+					recorder.start(detail_mode, 1)
+					auth_measure_start_us = produced_us if produced_us > 0 else Time.get_ticks_usec()
 				continue
 			authoritative_measured += 1
 			if auth_measure_start_us == 0:
 				auth_measure_start_us = produced_us if produced_us > 0 else Time.get_ticks_usec()
 			auth_measure_end_us = produced_us if produced_us > 0 else Time.get_ticks_usec()
+			# Commit consumption can precede its recorder callback by one frame.
+			host._consume_runtime_commit_if_ready()
 			if authoritative_measured >= days:
 				break
 
@@ -487,7 +507,7 @@ func _run() -> int:
 	var expected_rows := authoritative_measured if authoritative_measured > 0 else host.get_fast_tick_count()
 	if fatal:
 		expected_rows = host.get_fast_tick_count()
-	var rows_ok := rows == expected_rows or authoritative_measured >= days
+	var rows_ok := rows == expected_rows
 	var effective_days := float(maxi(authoritative_measured, 0))
 	var auth_elapsed_ms := 0.0
 	if auth_measure_end_us > auth_measure_start_us and auth_measure_start_us > 0:
@@ -685,7 +705,7 @@ func _runtime_report_snapshot(generator) -> Dictionary:
 	var report: Dictionary = generator.get_runtime_thread_report() \
 		if generator != null and generator.has_method("get_runtime_thread_report") else {}
 	if generator != null and generator.has_method("get_runtime_perf_snapshot"):
-		var graph: Dictionary = generator.get_runtime_perf_snapshot(1)
+		var graph: Dictionary = generator.get_runtime_perf_snapshot(0)
 		for key in graph:
 			report[key] = graph[key]
 	return report

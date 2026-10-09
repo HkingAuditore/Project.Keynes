@@ -19,12 +19,12 @@ void NativeEconomyRuntime::record_cohort_fiscal(int32_t slot,
         population_store().active[slot] == 0) return;
     touch_accounting_slot(slot);
     if (signed_amount > 0) {
-        population_store().epoch_tax_paid[slot] = saturating_add(
-            population_store().epoch_tax_paid[slot], signed_amount, _saturation_count);
+        population_store().epoch_tax_paid.write_scalar(slot, saturating_add(
+            population_store().epoch_tax_paid[slot], signed_amount, _saturation_count), market_mutation_sink());
     } else {
-        population_store().epoch_subsidy_received[slot] = saturating_add(
+        population_store().epoch_subsidy_received.write_scalar(slot, saturating_add(
             population_store().epoch_subsidy_received[slot], -signed_amount,
-            _saturation_count);
+            _saturation_count), market_mutation_sink());
     }
 }
 
@@ -246,7 +246,7 @@ int64_t NativeEconomyRuntime::prospective_business_subsidy_request(
         market_store().cell_to_market.size() != static_cast<size_t>(_cell_count))
         return 0;
     const int32_t market = market_store().cell_to_market[static_cast<size_t>(cell)];
-    if (market < 0 || market >= market_store().market_count) return 0;
+    if (market < 0 || market >= market_store().market_count.get()) return 0;
     const int32_t type_begin = _epoch_country_building_type_offsets[country];
     const int32_t type_end = _epoch_country_building_type_offsets[country + 1];
     const int64_t days = std::max(1, _epoch_days);
@@ -875,8 +875,8 @@ void NativeEconomyRuntime::settle_income_subsidies_for_cell(
         const int32_t slot = subsidy_slots[i];
         touch_accounting_slot(slot);
         record_cohort_fiscal(slot, -paid);
-        population_store().funds[slot] = saturating_add(
-            population_store().funds[slot], paid, saturation_count);
+        population_store().funds.write_scalar(slot, saturating_add(
+            population_store().funds[slot], paid, saturation_count), market_mutation_sink());
         trace_record_cashflow(
             cell, population_store().handle_for_slot(slot),
             CASHFLOW_INCOME_SUBSIDY, paid, 0);
@@ -933,7 +933,7 @@ void NativeEconomyRuntime::settle_absolute_daily_taxes_for_cell(
                     return;
                 }
                 touch_accounting_slot(slot);
-                population_store().funds[slot] -= collected;
+                population_store().funds.write_scalar(slot, population_store().funds[slot] - (collected), market_mutation_sink());
                 record_cohort_fiscal(slot, collected);
                 const size_t lane = static_cast<size_t>(cell) *
                     ACTIVE_TAX_KIND_COUNT + NativeCountryRuntime::TAX_INCOME;
@@ -958,8 +958,8 @@ void NativeEconomyRuntime::settle_absolute_daily_taxes_for_cell(
             if (transfer >= 0) return;
             touch_accounting_slot(slot);
             record_cohort_fiscal(slot, transfer);
-            population_store().funds[slot] = saturating_add(
-                population_store().funds[slot], -transfer, saturation_count);
+            population_store().funds.write_scalar(slot, saturating_add(
+                population_store().funds[slot], -transfer, saturation_count), market_mutation_sink());
             trace_record_cashflow(
                 cell, population_store().handle_for_slot(slot),
                 CASHFLOW_INCOME_SUBSIDY, -transfer, 0);
@@ -998,7 +998,7 @@ void NativeEconomyRuntime::settle_absolute_daily_taxes_for_cell(
                     std::max<int64_t>(0, population_store().funds[owner_slot]));
                 if (collected > 0) {
                     touch_accounting_slot(owner_slot);
-                    population_store().funds[owner_slot] -= collected;
+                    population_store().funds.write_scalar(owner_slot, population_store().funds[owner_slot] - (collected), market_mutation_sink());
                     record_cohort_fiscal(owner_slot, collected);
                     trace_record_cashflow(
                         cell, population_store().handle_for_slot(owner_slot),
@@ -1029,9 +1029,9 @@ void NativeEconomyRuntime::settle_absolute_daily_taxes_for_cell(
             if (transfer < 0) {
                 touch_accounting_slot(owner_slot);
                 record_cohort_fiscal(owner_slot, transfer);
-                population_store().funds[owner_slot] = saturating_add(
+                population_store().funds.write_scalar(owner_slot, saturating_add(
                     population_store().funds[owner_slot], -transfer,
-                    saturation_count);
+                    saturation_count), market_mutation_sink());
                 group.last_business_subsidy_received = saturating_add(
                     group.last_business_subsidy_received, -transfer,
                     saturation_count);
@@ -1140,9 +1140,9 @@ int64_t NativeEconomyRuntime::producer_support_receipt_value(
         int32_t cell, int32_t good, int64_t quantity,
         int64_t &saturation_count) const {
     if (quantity <= 0 || cell < 0 || cell >= _cell_count || good < 0 ||
-        good >= market_store().good_count) return 0;
+        good >= market_store().good_count.get()) return 0;
     const int32_t market = market_store().cell_to_market[cell];
-    if (market < 0 || market >= market_store().market_count) return 0;
+    if (market < 0 || market >= market_store().market_count.get()) return 0;
     const int64_t issue_value = good < static_cast<int32_t>(
             _good_monetary_issue_values.size())
         ? _good_monetary_issue_values[good] : 0;

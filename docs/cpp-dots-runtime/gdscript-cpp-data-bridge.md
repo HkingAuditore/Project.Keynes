@@ -1483,6 +1483,49 @@ facade 同时校验末尾 little-endian FNV-1a checksum。bundle 当前还携带
 `runtime_bundle_version_incompatible`，不再按早期最小长度猜测解析。
 # Country snapshot bridge
 
+## Economy hash protocol and checkpoint format (2026-10-08)
+
+`DCWorldExt.get_economy_checkpoint_format()` exposes the loaded extension's
+`abi_version`, `schema_version` and `hash_version`. The save coordinator uses
+this descriptor when registering ECP2, rather than assuming the source tree's
+schema matches a running editor's DLL. Current ECP2 uses ABI 3 / schema 54 and
+stores `hash_version` after `seed`; the business PKEC layout remains schema 55.
+ABI 2 / schema 53 is accepted only through explicit `PK_SAVE_MIGRATE=1` migration.
+The migration tool writes a new path and preserves the source file.
+
+Hash version 2 replaces the four dense market column traversals with ordered
+4 KiB canonical integral page roots (domain 1, stable columns 1..4: stock,
+price, demand EMA, shortage). Leaf metadata includes protocol, domain, column,
+block and valid length; root metadata also includes field width and lane count.
+All other native state fields retain their existing traversal, except fiscal
+journal records, whose stable request-ID digests also cover K3 transaction
+identity and terminal fields. Native and bound POD share market hash pages in
+OwnedState. These caches are transient and rebuilt after restore.
+
+Unchanged hash pages are immutable and shared. This is **not** yet an immutable
+economy commit view: the daily linear ledger export and its copies still exist.
+Page updates conservatively compare every source page; complete writer-driven
+dirty registration is pending. `PK_ECONOMY_HASH_VERIFY=1` rebuilds each page root
+and the fiscal digest map from its source for diagnostic comparison. It is not
+a performance measurement mode. `PK_ECONOMY_HASH_V2=0` selects the legacy
+diagnostic protocol; v1 and v2 digest values must not be compared for equality.
+
+Ledger validation separates `validate_shape_and_values()` from
+`verify_external_digest()`. External digest verification rejects a missing
+digest; the compatibility `valid()` call still permits an internal unfinished
+ledger with hash zero. Export validates shape before constructing a new digest,
+instead of verifying a stale prior digest and then recomputing it again.
+
+`get_economy_committed_audit_report()` reads an atomically published immutable
+native audit view. It includes audited day, Economy generation, full/incremental
+verification and differences derived from actual/expected totals. VERIFY fills
+the private view; successful COMMIT publishes it. Reset/restore invalidate it.
+Its `revision_phase=before_effect_command_drain` is explicit: this is the
+verified epoch result, not an audit of later commands or worker-owned live
+arrays. Headless replay uses this view for final conservation checks because
+sampling a live report while the next epoch opens can combine different
+revisions. Complete post-command EconomyCommitView publication remains pending.
+
 After Country bootstrap, the facade may call `capture_country_runtime_snapshot()`.
 The return value contains only `ok`, error `code`, generation, state hash, day,
 and array sizes. Array contents stay in the native immutable snapshot and are not

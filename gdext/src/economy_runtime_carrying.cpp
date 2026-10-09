@@ -115,9 +115,9 @@ int64_t NativeEconomyRuntime::food_flow_capacity_for_cell(
     // household-available stock into equivalent flow for the current period,
     // excluding production/construction reserves from the stock contribution.
     int64_t stock_food_eq = 0;
-    if (cell < market_store().market_count) {
+    if (cell < market_store().market_count.get()) {
         const int32_t market = cell;
-        for (int32_t good = 0; good < market_store().good_count; ++good) {
+        for (int32_t good = 0; good < market_store().good_count.get(); ++good) {
             if (good < 0 || good >= static_cast<int32_t>(
                     _good_food_equivalent_q16.size())) continue;
             const int32_t coefficient = _good_food_equivalent_q16[
@@ -584,7 +584,7 @@ int64_t NativeEconomyRuntime::cell_family_surplus_q16(
         int64_t food_desired, const int64_t *good_demand,
         const int64_t *good_sales, int64_t &sat) const {
     if (family < 0 || family >= CARRYING_FAMILY_COUNT ||
-        market < 0 || market >= market_store().market_count) return Q16_ONE;
+        market < 0 || market >= market_store().market_count.get()) return Q16_ONE;
     if (_carrying_family_good_offsets.size() != CARRYING_FAMILY_COUNT + 1)
         return Q16_ONE;
     const int32_t availability_cell = cell >= 0 ? cell : market;
@@ -604,7 +604,7 @@ int64_t NativeEconomyRuntime::cell_family_surplus_q16(
         if (demand_ema <= 0) continue;
         int64_t shortage = 0;
         if (good_demand != nullptr && good_sales != nullptr &&
-            good >= 0 && good < market_store().good_count) {
+            good >= 0 && good < market_store().good_count.get()) {
             shortage = good_demand[good] <= 0 ? 0 : std::clamp<int64_t>(
                 Q16_ONE - mul_div_sat(good_sales[good], Q16_ONE,
                                       good_demand[good], sat),
@@ -655,8 +655,8 @@ void NativeEconomyRuntime::append_carrying_capacity_fields(
             _cell_food_export_eq_previous[cell]) : 0;
     int64_t sat = 0;
     int64_t stock_food_eq = 0;
-    if (cell_idx < market_store().market_count) {
-        for (int32_t good = 0; good < market_store().good_count; ++good) {
+    if (cell_idx < market_store().market_count.get()) {
+        for (int32_t good = 0; good < market_store().good_count.get(); ++good) {
             if (good < 0 || good >= static_cast<int32_t>(
                     _good_food_equivalent_q16.size())) continue;
             const int32_t coefficient = _good_food_equivalent_q16[

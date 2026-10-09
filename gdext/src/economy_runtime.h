@@ -2,17 +2,20 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <deque>
 #include <limits>
 #include <memory>
+#include <map>
 #include <numeric>
 #include <string>
 #include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
+#include "runtime_chunk_hash.h"
 
 #include <godot_cpp/variant/dictionary.hpp>
 #include <godot_cpp/variant/packed_byte_array.hpp>
@@ -344,6 +347,7 @@ public:
     ~NativeEconomyRuntime();
     void attach_country_runtime(NativeCountryRuntime *runtime) { _country_runtime = runtime; }
     void attach_simulation_host(NativeSimulationHost *host) { _simulation_host = host; }
+    uint64_t asset_peer_request_high_watermark() const noexcept;
     void attach_csv_recorder(EconomyCsvRecorder *recorder) { _csv_recorder = recorder; }
     void set_sync_writes_forbidden(bool forbidden) {
         _sync_writes_forbidden = forbidden;
@@ -470,8 +474,8 @@ public:
     RuntimeEconomyResourceStore *bound_resource_store() const noexcept {
         return _resource_store_alias;
     }
-    std::vector<int64_t> &resource_stock_lanes() noexcept;
-    const std::vector<int64_t> &resource_stock_lanes() const noexcept;
+    EconomyTrackedColumn<int64_t> &resource_stock_lanes() noexcept;
+    const EconomyTrackedColumn<int64_t> &resource_stock_lanes() const noexcept;
     // A+Y N9: epoch harvest scratch follows the same alias rule as the stock
     // lanes — the bound store owns it, the NER locals are the unbound fallback.
     std::vector<int64_t> &resource_remaining_lanes() noexcept;
@@ -599,6 +603,7 @@ public:
                               godot::PackedInt32Array &bits);
     godot::PackedInt32Array economy_live_cells_query();
     godot::Dictionary report() const;
+    godot::Dictionary committed_audit_report() const;
     // Test-only previous-cycle wall time. Negative values clear the override.
     // Injected milliseconds participate in N/P/I selection only; they never enter
     // the authoritative state hash or PKEC. The third argument is optional; a
@@ -706,6 +711,7 @@ public:
     godot::Dictionary production_climate_math_probe(
         const godot::Dictionary &vectors) const;
     int64_t state_hash() const;
+    int64_t state_hash_legacy() const;
     godot::Dictionary reset(const godot::String &reason);
 
     godot::Dictionary begin_save(int32_t chunk_bytes);
@@ -1111,6 +1117,54 @@ private:
         std::array<char, RUNTIME_ECONOMY_ASSET_REASON_CAPACITY> late_ack_rejection_reason{};
     };
     using AssetPeerJournalRecord = FiscalPeerJournalRecord;
+    static uint64_t fiscal_record_digest(const FiscalPeerJournalRecord &record);
+    mutable std::map<uint64_t, uint64_t> _fiscal_record_digests;
+    mutable std::vector<uint64_t> _fiscal_hash_words;
+    mutable RuntimeChunkHash _fiscal_hash_pages;
+    mutable bool _fiscal_digest_rebuild = true;
+    mutable bool _fiscal_words_dirty = true;
+    struct OwnerOpportunityQuote;
+    struct LivingCostMemoState {
+        const NativeEconomyRuntime *owner = nullptr;
+        int32_t depth = 0;
+        uint64_t hits = 0, misses = 0;
+        std::map<std::array<int32_t, 3>, std::pair<int64_t, int64_t>> values;
+        struct PreviewBasis {
+            std::vector<int64_t> scores, sums, composites, environment;
+            int64_t saturations = 0;
+        };
+        std::map<std::array<int32_t, 9>, PreviewBasis> previews;
+        bool quote_enabled = false;
+        std::map<std::vector<int64_t>, std::pair<std::shared_ptr<const OwnerOpportunityQuote>, int64_t>> quotes;
+    };
+    static LivingCostMemoState &living_cost_memo_state() {
+        thread_local LivingCostMemoState state;
+        return state;
+    }
+    struct LivingCostMemoScope {
+        NativeEconomyRuntime &runtime;
+        bool active = false;
+        bool previous_quotes = false;
+        explicit LivingCostMemoScope(NativeEconomyRuntime &owner, bool allow_quotes = false) : runtime(owner) {
+            auto &state = living_cost_memo_state();
+            const char *disabled = std::getenv("PK_ECONOMY_MEMO_DISABLE");
+            if (disabled && std::strcmp(disabled, "1") == 0) return;
+            if (state.depth != 0 && state.owner != &owner) return;
+            if (state.depth++ == 0) {
+                state.owner = &owner;
+                state.values.clear();
+                state.previews.clear();
+                state.quotes.clear();
+                state.hits = state.misses = 0;
+            }
+            previous_quotes = state.quote_enabled;
+            state.quote_enabled = state.quote_enabled || allow_quotes;
+            active = true;
+        }
+        ~LivingCostMemoScope();
+        LivingCostMemoScope(const LivingCostMemoScope &) = delete;
+        LivingCostMemoScope &operator=(const LivingCostMemoScope &) = delete;
+    };
 
     // Epoch-open fiscal reservation is a peer transaction boundary as well.
     // Keep the request plan immutable while countries are reserved one at a
@@ -1516,20 +1570,27 @@ private:
     // cheap and never copies group state; the referenced columns stay sole.
     template <bool Const>
     struct BuildingGroupRefT {
+        std::shared_ptr<EconomyRowWriteLease> write_lease;
         using StoreType =
             std::conditional_t<Const, const RuntimeEconomyBuildingStore,
                                RuntimeEconomyBuildingStore>;
         template <typename T>
         using Field = std::conditional_t<Const, const T, T> &;
+        template<typename T>
+        Field<T> bind_field(std::conditional_t<Const, const EconomyTrackedColumn<T>, EconomyTrackedColumn<T>> &column,
+            size_t row) {
+            if constexpr (Const) return column[row];
+            else return column.borrow_row(row, *write_lease);
+        }
 
 #define PK_BUILDING_GROUP_DECL(TYPE, NAME, COLUMN) Field<TYPE> NAME;
         PK_BUILDING_GROUP_COLUMNS(PK_BUILDING_GROUP_DECL)
 #undef PK_BUILDING_GROUP_DECL
         size_t index;
 
-        BuildingGroupRefT(StoreType &store, size_t row)
-            :
-#define PK_BUILDING_GROUP_BIND(TYPE, NAME, COLUMN) NAME(store.COLUMN[row]),
+        BuildingGroupRefT(StoreType &store, size_t row, EconomyWorkerChanges *sink = nullptr)
+            : write_lease(Const ? nullptr : EconomyRowWriteLease::create(sink)),
+#define PK_BUILDING_GROUP_BIND(TYPE, NAME, COLUMN) NAME(bind_field<TYPE>(store.COLUMN, row)),
               PK_BUILDING_GROUP_COLUMNS(PK_BUILDING_GROUP_BIND)
 #undef PK_BUILDING_GROUP_BIND
               index(row) {}
@@ -1537,7 +1598,7 @@ private:
         template <bool OtherConst,
                   typename = std::enable_if_t<Const && !OtherConst>>
         BuildingGroupRefT(const BuildingGroupRefT<OtherConst> &other)
-            :
+            : write_lease(other.write_lease),
 #define PK_BUILDING_GROUP_REBIND(TYPE, NAME, COLUMN) NAME(other.NAME),
               PK_BUILDING_GROUP_COLUMNS(PK_BUILDING_GROUP_REBIND)
 #undef PK_BUILDING_GROUP_REBIND
@@ -1554,7 +1615,7 @@ private:
         return buildings_store().cell.size();
     }
     BuildingGroupRef building_at(size_t row) noexcept {
-        return BuildingGroupRef(buildings_store(), row);
+        return BuildingGroupRef(buildings_store(), row, market_mutation_sink());
     }
     BuildingGroupConstRef building_at(size_t row) const noexcept {
         return BuildingGroupConstRef(buildings_store(), row);
@@ -1628,6 +1689,29 @@ private:
         int64_t employee_slots = 0;
         int64_t owner_jobs_filled = 0;
         int64_t employee_jobs_filled = 0;
+        bool operator==(const OwnerOpportunityQuote &b) const noexcept {
+            return prospective_scale_q16 == b.prospective_scale_q16 && owner_run_q16 == b.owner_run_q16 &&
+                climate_factor_q16 == b.climate_factor_q16 && resource_factor_q16 == b.resource_factor_q16 &&
+                natural_capacity_q16 == b.natural_capacity_q16 && soft_productivity_q16 == b.soft_productivity_q16 &&
+                natural_max_output == b.natural_max_output && optimal_output == b.optimal_output &&
+                fundable_output == b.fundable_output && actual_output == b.actual_output && fixed_cost == b.fixed_cost &&
+                variable_cost == b.variable_cost && optimal_revenue == b.optimal_revenue && optimal_profit == b.optimal_profit &&
+                cash_receipt == b.cash_receipt && in_kind_retail_value == b.in_kind_retail_value && input_cost == b.input_cost &&
+                wages == b.wages && maintenance == b.maintenance && owner_living_cost == b.owner_living_cost &&
+                business_transfer == b.business_transfer && income_transfer == b.income_transfer &&
+                owner_income_per_day == b.owner_income_per_day && disposable_survival_power_per_day == b.disposable_survival_power_per_day &&
+                executable_capacity_q16 == b.executable_capacity_q16 && monetary_quota_absorption_q16 == b.monetary_quota_absorption_q16 &&
+                survival_priority == b.survival_priority && monetary_quote_capped == b.monetary_quote_capped && feasible == b.feasible &&
+                cell == b.cell && type_id == b.type_id && owner_signature_id == b.owner_signature_id &&
+                utilization_q16 == b.utilization_q16 && owner_use_value_per_day == b.owner_use_value_per_day &&
+                merchant_revenue_per_day == b.merchant_revenue_per_day && producer_support_revenue_per_day == b.producer_support_revenue_per_day &&
+                cash_revenue_per_day == b.cash_revenue_per_day && economic_revenue_per_day == b.economic_revenue_per_day &&
+                input_cost_per_day == b.input_cost_per_day && wage_cost_per_day == b.wage_cost_per_day &&
+                maintenance_cost_per_day == b.maintenance_cost_per_day && owner_living_cost_per_day == b.owner_living_cost_per_day &&
+                after_tax_revenue_per_day == b.after_tax_revenue_per_day && profit_per_day == b.profit_per_day &&
+                affordable_wage_per_day == b.affordable_wage_per_day && owner_slots == b.owner_slots && employee_slots == b.employee_slots &&
+                owner_jobs_filled == b.owner_jobs_filled && employee_jobs_filled == b.employee_jobs_filled;
+        }
     };
 
     struct PendingConstruction {
@@ -1663,11 +1747,18 @@ private:
     // Field-reference view over one pending row, mirroring BuildingGroupRefT.
     template <bool Const>
     struct PendingConstructionRefT {
+        std::shared_ptr<EconomyRowWriteLease> write_lease;
         using StoreType =
             std::conditional_t<Const, const RuntimeEconomyBuildingStore,
                                RuntimeEconomyBuildingStore>;
         template <typename T>
         using Field = std::conditional_t<Const, const T, T> &;
+        template<typename T>
+        Field<T> bind_field(std::conditional_t<Const, const EconomyTrackedColumn<T>, EconomyTrackedColumn<T>> &column,
+            size_t row) {
+            if constexpr (Const) return column[row];
+            else return column.borrow_row(row, *write_lease);
+        }
 
 #define PK_PENDING_CONSTRUCTION_DECL(TYPE, NAME, COLUMN) Field<TYPE> NAME;
         PK_PENDING_CONSTRUCTION_COLUMNS(PK_PENDING_CONSTRUCTION_DECL)
@@ -1675,8 +1766,8 @@ private:
         size_t index;
 
         PendingConstructionRefT(StoreType &store, size_t row)
-            :
-#define PK_PENDING_CONSTRUCTION_BIND(TYPE, NAME, COLUMN) NAME(store.COLUMN[row]),
+            : write_lease(Const ? nullptr : EconomyRowWriteLease::create()),
+#define PK_PENDING_CONSTRUCTION_BIND(TYPE, NAME, COLUMN) NAME(bind_field<TYPE>(store.COLUMN, row)),
               PK_PENDING_CONSTRUCTION_COLUMNS(PK_PENDING_CONSTRUCTION_BIND)
 #undef PK_PENDING_CONSTRUCTION_BIND
               index(row) {}
@@ -1684,7 +1775,7 @@ private:
         template <bool OtherConst,
                   typename = std::enable_if_t<Const && !OtherConst>>
         PendingConstructionRefT(const PendingConstructionRefT<OtherConst> &other)
-            :
+            : write_lease(other.write_lease),
 #define PK_PENDING_CONSTRUCTION_REBIND(TYPE, NAME, COLUMN) NAME(other.NAME),
               PK_PENDING_CONSTRUCTION_COLUMNS(PK_PENDING_CONSTRUCTION_REBIND)
 #undef PK_PENDING_CONSTRUCTION_REBIND
@@ -2645,55 +2736,55 @@ private:
 
     PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(NotablePersonStore, persons_store,
                                           live_persons, _persons_local)
-    PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(std::vector<FamilyMembershipEdge>,
+    PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(EconomyTrackedRecords<FamilyMembershipEdge>,
                                           family_memberships, live_memberships,
                                           _family_memberships_local)
-    PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(std::vector<FamilyBuildingOwnership>,
+    PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(EconomyTrackedRecords<FamilyBuildingOwnership>,
                                           family_ownerships, live_ownerships,
                                           _family_ownerships_local)
     PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(FamilyExpeditionStore,
                                           family_expeditions_store,
                                           live_expeditions,
                                           _family_expeditions_local)
-    PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(std::vector<int32_t>,
+    PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(EconomyOwnedColumn<int32_t>,
                                           family_expedition_route_cells,
                                           live_expedition_route_cells,
                                           _family_expedition_route_cells_local)
-    PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(std::vector<int32_t>,
+    PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(EconomyOwnedColumn<int32_t>,
                                           family_expedition_route_costs,
                                           live_expedition_route_costs,
                                           _family_expedition_route_costs_local)
-    PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(std::vector<FamilyExpeditionPayload>,
+    PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(EconomyTrackedRecords<FamilyExpeditionPayload>,
                                           family_expedition_payloads,
                                           live_expedition_payloads,
                                           _family_expedition_payloads_local)
-    PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(std::vector<uint64_t>,
+    PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(EconomyOwnedColumn<uint64_t>,
                                           family_expedition_person_handles,
                                           live_expedition_person_handles,
                                           _family_expedition_person_handles_local)
-    PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(std::vector<FamilyExpeditionCargoLine>,
+    PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(EconomyTrackedRecords<FamilyExpeditionCargoLine>,
                                           family_expedition_cargo,
                                           live_expedition_cargo,
                                           _family_expedition_cargo_local)
     PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(
-        std::vector<FamilyExpeditionKitBuilding>,
+        EconomyTrackedRecords<FamilyExpeditionKitBuilding>,
         family_expedition_kit_buildings, live_expedition_kit_buildings,
         _family_expedition_kit_buildings_local)
     PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(
-        std::vector<int32_t>, family_expedition_missing_good_ids,
+        EconomyOwnedColumn<int32_t>, family_expedition_missing_good_ids,
         live_expedition_missing_good_ids,
         _family_expedition_missing_good_ids_local)
     PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(
-        std::vector<int64_t>, family_expedition_missing_good_quantities,
+        EconomyOwnedColumn<int64_t>, family_expedition_missing_good_quantities,
         live_expedition_missing_good_quantities,
         _family_expedition_missing_good_quantities_local)
     PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(FamilyCellInfluenceStore,
                                           family_influences, live_influences,
                                           _family_influences_local)
-    PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(std::vector<FamilyTraitRoll>,
+    PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(EconomyTrackedRecords<FamilyTraitRoll>,
                                           family_trait_rolls, live_traits,
                                           _family_traits_local)
-    PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(std::vector<PersonNeedState>,
+    PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR(EconomyTrackedRecords<PersonNeedState>,
                                           person_needs, live_person_needs,
                                           _person_needs_local)
 
@@ -2882,6 +2973,18 @@ private:
         int64_t merchant_inventory_retail_value = 0;
         int64_t merchant_inventory_liquidation_value = 0;
     };
+    // The audited epoch precedes Effect command drain; never interpret this
+    // revision as an audit of arbitrary live post-command lanes.
+    struct CommittedAuditView {
+        uint64_t generation = 0;
+        int64_t day = -1;
+        int64_t population_actual = 0, population_expected = 0;
+        int64_t money_actual = 0, money_expected = 0;
+        int64_t goods_actual = 0, goods_expected = 0;
+        bool full_verification = false;
+    };
+    CommittedAuditView _verified_epoch_audit;
+    std::shared_ptr<const CommittedAuditView> _committed_audit_view;
 
     struct GoodsAuditLaneDiagnostic {
         int32_t market = -1;
@@ -3064,6 +3167,7 @@ private:
         // shared audit vectors; the owning thread registers these during merge.
         std::vector<size_t> audit_population_lanes;
         std::vector<size_t> audit_market_lanes;
+        EconomyWorkerChanges market_changes;
         int64_t allocation_growth_count = 0;
         int64_t allocation_growth_bytes = 0;
         int64_t approximation_decisions = 0;
@@ -3427,6 +3531,7 @@ private:
         std::vector<size_t> audit_population_lanes;
         std::vector<size_t> audit_market_lanes;
         // Worker-local occupancy introductions. The shared
+        EconomyWorkerChanges market_changes;
         // `_bio_introduce_keys` set must not be mutated from production
         // workers; merge_building_production_result commits these in cell order.
         std::vector<int32_t> bio_introduce_cells;
@@ -4414,6 +4519,8 @@ private:
     std::vector<int64_t> _audit_shadow_population;
     std::vector<int64_t> _audit_shadow_funds;
     std::vector<int64_t> _audit_shadow_market_stock;
+    mutable std::array<RuntimeChunkHash, 4> _market_hash_pages;
+    int64_t state_hash_internal(bool paged) const;
     std::vector<uint32_t> _audit_population_lane_stamp;
     std::vector<uint32_t> _audit_market_lane_stamp;
     std::vector<size_t> _audit_population_touched_lanes;
@@ -4696,15 +4803,14 @@ private:
     // A+Y N5: unbound fallback only; see family_expeditions_store() and the
     // companion CSR accessors below.
     FamilyExpeditionStore _family_expeditions_local;
-    std::vector<int32_t> _family_expedition_route_cells_local;
-    std::vector<int32_t> _family_expedition_route_costs_local;
-    std::vector<FamilyExpeditionPayload> _family_expedition_payloads_local;
-    std::vector<uint64_t> _family_expedition_person_handles_local;
-    std::vector<FamilyExpeditionCargoLine> _family_expedition_cargo_local;
-    std::vector<FamilyExpeditionKitBuilding>
-        _family_expedition_kit_buildings_local;
-    std::vector<int32_t> _family_expedition_missing_good_ids_local;
-    std::vector<int64_t> _family_expedition_missing_good_quantities_local;
+    EconomyOwnedColumn<int32_t> _family_expedition_route_cells_local{{{11, 1}, "expedition_side.route_cells", EconomyFieldEncoding::I32, 4}};
+    EconomyOwnedColumn<int32_t> _family_expedition_route_costs_local{{{11, 2}, "expedition_side.route_costs", EconomyFieldEncoding::I32, 4}};
+    EconomyTrackedRecords<FamilyExpeditionPayload> _family_expedition_payloads_local{{{12, 5}, "family_records.family_expedition_payloads", EconomyFieldEncoding::CanonicalRecord, 1}};
+    EconomyOwnedColumn<uint64_t> _family_expedition_person_handles_local{{{11, 3}, "expedition_side.person_handles", EconomyFieldEncoding::U64, 8}};
+    EconomyTrackedRecords<FamilyExpeditionCargoLine> _family_expedition_cargo_local{{{12, 6}, "family_records.family_expedition_cargo", EconomyFieldEncoding::CanonicalRecord, 1}};
+    EconomyTrackedRecords<FamilyExpeditionKitBuilding> _family_expedition_kit_buildings_local{{{12, 7}, "family_records.family_expedition_kit_buildings", EconomyFieldEncoding::CanonicalRecord, 1}};
+    EconomyOwnedColumn<int32_t> _family_expedition_missing_good_ids_local{{{11, 4}, "expedition_side.missing_good_ids", EconomyFieldEncoding::I32, 4}};
+    EconomyOwnedColumn<int64_t> _family_expedition_missing_good_quantities_local{{{11, 5}, "expedition_side.missing_good_quantities", EconomyFieldEncoding::I64, 8}};
     // Derived lookup/scheduling caches over the expedition store. Rebuilt from
     // the authoritative columns, so they stay NER-local across bind/unbind.
     std::unordered_map<uint64_t, int32_t> _family_expedition_target_index;
@@ -4738,9 +4844,9 @@ private:
     // A+Y N5: unbound fallback only; see the accessors below.
     FamilyCellInfluenceStore _family_influences_local;
     NotablePersonStore _persons_local;
-    std::vector<FamilyMembershipEdge> _family_memberships_local;
-    std::vector<FamilyBuildingOwnership> _family_ownerships_local;
-    std::vector<FamilyTraitRoll> _family_traits_local;
+    EconomyTrackedRecords<FamilyMembershipEdge> _family_memberships_local{{{12, 1}, "family_records.family_memberships", EconomyFieldEncoding::CanonicalRecord, 1}};
+    EconomyTrackedRecords<FamilyBuildingOwnership> _family_ownerships_local{{{12, 2}, "family_records.family_ownerships", EconomyFieldEncoding::CanonicalRecord, 1}};
+    EconomyTrackedRecords<FamilyTraitRoll> _family_traits_local{{{12, 3}, "family_records.family_trait_rolls", EconomyFieldEncoding::CanonicalRecord, 1}};
     std::vector<int32_t> _family_behavior_factor_offsets;
     std::vector<FamilyBehaviorFactorRow> _family_behavior_factor_rows;
     std::vector<int32_t> _family_purchase_factor_q16;
@@ -4768,7 +4874,7 @@ private:
         _family_effect_instances_by_cell;
     std::vector<FamilyTriggerBinding> _family_trigger_bindings;
     // A+Y N5: unbound fallback only; see person_needs().
-    std::vector<PersonNeedState> _person_needs_local;
+    EconomyTrackedRecords<PersonNeedState> _person_needs_local{{{12, 4}, "family_records.person_needs", EconomyFieldEncoding::CanonicalRecord, 1}};
     // Set when a retirement leaves need rows behind. Compaction is deferred to
     // one pass so retiring N people costs O(rows) instead of O(N * rows).
     bool _person_needs_orphaned = false;
@@ -4911,7 +5017,9 @@ private:
     std::vector<uint32_t> _cell_population_gen;
     std::vector<uint32_t> _cell_building_structure_gen;
     std::vector<uint32_t> _cell_technology_gen;
-    std::vector<uint32_t> _cell_resource_gen;
+    ChangeRegistry _resource_changes_local;
+    EconomyTrackedColumn<uint32_t> _cell_resource_gen{_resource_changes_local,
+        {{3, 2}, "resource.cell_generation", EconomyFieldEncoding::U32, 4}};
     std::vector<uint32_t> _cell_trade_gen;
     std::vector<int32_t> _cell_effect_shortage_q16;
     std::vector<int32_t> _cell_essentials_shortage_q16;
@@ -5254,7 +5362,8 @@ private:
     std::vector<int32_t> _building_neighbors;
     // A+Y N5/N9: unbound fallback for the live resource lanes. While a store is
     // bound these stay empty and the accessors alias OwnedState::resources.
-    std::vector<int64_t> _resource_snapshot;
+    EconomyTrackedColumn<int64_t> _resource_snapshot{_resource_changes_local,
+        {{3, 1}, "resource.stock", EconomyFieldEncoding::I64, 8}};
     std::vector<int64_t> _resource_remaining;
     // Per-epoch extract allowance for renewable resources. This is derived from
     // the frozen reserve, never serialized, and is shared by all local extractors.
@@ -5754,18 +5863,19 @@ private:
     std::vector<int32_t> _building_review_phase_offsets;
     std::vector<int32_t> _building_review_group_indices;
     std::vector<int32_t> _building_special_reset_group_indices;
-    std::vector<int64_t> _building_employee_filled;
+    ChangeRegistry _building_role_changes;
+    EconomyTrackedColumn<int64_t> _building_employee_filled{_building_role_changes, {{10, 1}, "building_roles.building_employee_filled", EconomyFieldEncoding::I64, 8}};
     // Inspector-only last purchased good per (building group, input slot).
     // This diagnostic lane is intentionally excluded from save and state hash.
     std::vector<int32_t> _building_last_input_selected_goods;
-    std::vector<int64_t> _building_role_contract_wage;
-    std::vector<int64_t> _building_role_base_living_cost;
-    std::vector<int64_t> _building_role_living_cost;
-    std::vector<int64_t> _building_role_local_average_wage;
-    std::vector<int64_t> _building_role_base_wage_due;
-    std::vector<int64_t> _building_role_base_wage_paid;
-    std::vector<int64_t> _building_role_bonus_due;
-    std::vector<int64_t> _building_role_bonus_paid;
+    EconomyTrackedColumn<int64_t> _building_role_contract_wage{_building_role_changes, {{10, 2}, "building_roles.building_role_contract_wage", EconomyFieldEncoding::I64, 8}};
+    EconomyTrackedColumn<int64_t> _building_role_base_living_cost{_building_role_changes, {{10, 3}, "building_roles.building_role_base_living_cost", EconomyFieldEncoding::I64, 8}};
+    EconomyTrackedColumn<int64_t> _building_role_living_cost{_building_role_changes, {{10, 4}, "building_roles.building_role_living_cost", EconomyFieldEncoding::I64, 8}};
+    EconomyTrackedColumn<int64_t> _building_role_local_average_wage{_building_role_changes, {{10, 5}, "building_roles.building_role_local_average_wage", EconomyFieldEncoding::I64, 8}};
+    EconomyTrackedColumn<int64_t> _building_role_base_wage_due{_building_role_changes, {{10, 6}, "building_roles.building_role_base_wage_due", EconomyFieldEncoding::I64, 8}};
+    EconomyTrackedColumn<int64_t> _building_role_base_wage_paid{_building_role_changes, {{10, 7}, "building_roles.building_role_base_wage_paid", EconomyFieldEncoding::I64, 8}};
+    EconomyTrackedColumn<int64_t> _building_role_bonus_due{_building_role_changes, {{10, 8}, "building_roles.building_role_bonus_due", EconomyFieldEncoding::I64, 8}};
+    EconomyTrackedColumn<int64_t> _building_role_bonus_paid{_building_role_changes, {{10, 9}, "building_roles.building_role_bonus_paid", EconomyFieldEncoding::I64, 8}};
     // Epoch-derived cold-start funding ceiling. This is rebuilt before
     // employment from demand-backed absorption and is intentionally excluded
     // from PKEC and the authoritative state hash.
@@ -6441,6 +6551,9 @@ private:
     OwnerOpportunityQuote owner_opportunity_quote(
         BuildingGroupConstRef group, int64_t owner_fillability_q16,
         int64_t employee_fillability_q16, int64_t &sat) const;
+    OwnerOpportunityQuote owner_opportunity_quote_uncached(
+        BuildingGroupConstRef group, int64_t owner_fillability_q16,
+        int64_t employee_fillability_q16, int64_t &sat) const;
     int64_t projected_employee_tax_retention_q16(
         BuildingGroupConstRef group, int64_t &sat) const;
     int64_t effective_building_output_quantity(
@@ -6980,6 +7093,7 @@ private:
     int64_t family_expedition_payload_people(int32_t expedition) const;
     void note_family_expedition_audit_invalidation();
     AuditTotals incremental_audit_totals() const;
+    AuditTotals audit_totals_from_shadow(const AuditTotals &baseline) const;
     void commit_incremental_audit_shadow();
     void diagnose_incremental_audit_mismatch(const AuditTotals &full);
     void capture_goods_audit_candidates();
@@ -6988,6 +7102,58 @@ private:
     int64_t memory_bytes() const;
     int32_t choose_epoch_days(int64_t cohort_count);
     void write_cadence_report(godot::Dictionary &out) const;
+    void write_hash_work_report(godot::Dictionary &out) const;
+    EconomyWorkerChanges *market_mutation_sink() const {
+        if (_production_result_sink) return &_production_result_sink->market_changes;
+        if (_market_result_sink) return &_market_result_sink->market_changes;
+        return nullptr;
+    }
+    ChangeRegistry &worker_change_registry(EconomyFieldId field) {
+        switch (field.domain) {
+            case 1: return population_store().changes;
+            case 2: return market_store().changes;
+            case 3:
+                return _formula_owned && field.column == 1
+                    ? _formula_owned->resources.changes : _resource_changes_local;
+            case 4: return buildings_store().changes;
+            case 5: return families_store().changes;
+            case 6: return persons_store().changes;
+            case 7: return family_influences().changes;
+            case 8: return family_expeditions_store().changes;
+            case 9: return trade_orders_store().changes;
+            case 10: return _building_role_changes;
+            case 12:
+                switch (field.column) {
+                    case 1: return family_memberships().registry();
+                    case 2: return family_ownerships().registry();
+                    case 3: return family_trait_rolls().registry();
+                    case 4: return person_needs().registry();
+                    case 5: return family_expedition_payloads().registry();
+                    case 6: return family_expedition_cargo().registry();
+                    case 7: return family_expedition_kit_buildings().registry();
+                    default: throw std::logic_error("economy_worker_record_column_unregistered");
+                }
+            case 11:
+                switch (field.column) {
+                    case 1: return family_expedition_route_cells().registry();
+                    case 2: return family_expedition_route_costs().registry();
+                    case 3: return family_expedition_person_handles().registry();
+                    case 4: return family_expedition_missing_good_ids().registry();
+                    case 5: return family_expedition_missing_good_quantities().registry();
+                    default: throw std::logic_error("economy_worker_change_side_column_unregistered");
+                }
+
+            default: throw std::logic_error("economy_worker_change_domain_unregistered");
+        }
+    }
+    void merge_economy_worker_changes(const EconomyWorkerChanges &changes) {
+        // The coordinator visits each private record once in task order.
+        // Adding domains must not multiply scans over the same touched list.
+        for (const auto &before : changes.preimages)
+            worker_change_registry(before.field).capture_before(before.field, before.lane, before.bits);
+        for (const auto &range : changes.ranges)
+            worker_change_registry(range.field).touch(range.field, range.first, range.count);
+    }
     void write_fiscal_continuation_report(godot::Dictionary &out) const;
     godot::Dictionary fatal_context_report() const;
     int32_t locked_market_cycle_days() const;

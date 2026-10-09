@@ -568,6 +568,7 @@ public:
     bool enqueue_batch(std::vector<RuntimeCommandPacket> packets);
     bool enqueue_modifier_shadow(RuntimeCommandPacket packet);
     uint64_t allocate_command_request_id();
+    void reserve_command_request_ids_through(uint64_t maximum) noexcept;
     uint64_t allocate_producer_sequence(uint32_t producer_id);
     bool next_command(RuntimeCommandPacket &out) const;
     bool poll_commit(uint64_t after_generation, RuntimeCommit &out);

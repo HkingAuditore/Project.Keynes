@@ -222,6 +222,7 @@ public:
     godot::Dictionary get_runtime_thread_report() const;
     godot::Dictionary get_runtime_perf_snapshot(int detail_level = 0) const;
     godot::Dictionary get_runtime_graph_last_economy_report() const;
+    godot::Dictionary get_economy_checkpoint_format() const;
     godot::Dictionary record_runtime_visual_timings(double ui_input_to_feedback_ms,
                                                     double visual_apply_ms,
                                                     double gpu_upload_ms);
@@ -681,6 +682,7 @@ public:
     bool economy_deadline_critical(int64_t day_index) const;
     godot::PackedInt32Array get_economy_live_cells();
     godot::Dictionary get_economy_report() const;
+    godot::Dictionary get_economy_committed_audit_report() const;
     godot::Dictionary get_country_class_opinion_snapshot() const;
     godot::Dictionary get_population_cell_summary(int cell_idx) const;
     godot::Dictionary get_named_settlement_snapshot() const;

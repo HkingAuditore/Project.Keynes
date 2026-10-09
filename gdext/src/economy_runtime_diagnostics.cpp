@@ -115,7 +115,7 @@ int32_t NativeEconomyRuntime::stage_progress_q16() const {
         case Stage::HOUSEHOLD_MARKET:
             return static_cast<int32_t>(Q16_ONE / 2 +
                 (static_cast<int64_t>(_cell_cursor) * (Q16_ONE * 3 / 10)) /
-                    std::max(1, market_store().market_count));
+                    std::max(1, market_store().market_count.get()));
         case Stage::STRUCTURAL_COMMIT:
             return static_cast<int32_t>(Q16_ONE * 4 / 5 +
                 (_structural_commands.empty() ? Q16_ONE / 10
@@ -156,6 +156,11 @@ int32_t NativeEconomyRuntime::stage_progress_q16() const {
 
 int64_t NativeEconomyRuntime::memory_bytes() const {
     int64_t bytes = 0;
+    const auto &market_pages = _formula_owned != nullptr ? _formula_owned->market_hash_pages : _market_hash_pages;
+    for (const auto &column : market_pages) bytes += static_cast<int64_t>(column.memory_bytes());
+    bytes += static_cast<int64_t>(_fiscal_hash_pages.memory_bytes());
+    bytes += static_cast<int64_t>(_fiscal_hash_words.capacity() * sizeof(uint64_t));
+    bytes += static_cast<int64_t>(_fiscal_record_digests.size() * (sizeof(std::pair<const uint64_t, uint64_t>) + 3 * sizeof(void *)));
     auto cap = [&](const auto &v) { bytes += static_cast<int64_t>(v.capacity() * sizeof(typename std::decay_t<decltype(v)>::value_type)); };
     cap(market_store().price_ceilings);
     for (const auto &row : market_store().price_ceilings) cap(row);
@@ -663,6 +668,7 @@ Dictionary NativeEconomyRuntime::household_slice_breakdown_work() const {
 
 Dictionary NativeEconomyRuntime::compact_report() const {
     Dictionary out;
+    write_hash_work_report(out);
     const int64_t age_days = _epoch_active
         ? std::max<int64_t>(0, _current_day - _sample_day)
         : _settlement_max_age_days;
@@ -1005,7 +1011,7 @@ Dictionary NativeEconomyRuntime::compact_report() const {
         _budgeted_publish_phase_fusions;
     out["family_runtime_mode"] = _family_runtime_mode == 0 ? "OFF" :
         (_family_runtime_mode == 1 ? "PROBE" : "ACTIVE");
-    out["family_count"] = families_store().active_count;
+    out["family_count"] = families_store().active_count.get();
     out["family_membership_edge_count"] = static_cast<int64_t>(
         family_memberships().size());
     out["family_ownership_edge_count"] = static_cast<int64_t>(
@@ -1100,7 +1106,7 @@ Dictionary NativeEconomyRuntime::compact_report() const {
     out["family_owner_jobs_vacant"] = _family_owner_jobs_vacant;
     out["notable_person_runtime_mode"] = _person_runtime_mode == 0 ? "OFF" :
         (_person_runtime_mode == 1 ? "PROBE" : "ACTIVE");
-    out["notable_person_count"] = persons_store().active_count;
+    out["notable_person_count"] = persons_store().active_count.get();
     out["person_need_edge_count"] = static_cast<int64_t>(person_needs().size());
     out["persons_promoted"] = _persons_promoted;
     out["persons_died"] = _persons_died;
@@ -1148,8 +1154,63 @@ Dictionary NativeEconomyRuntime::compact_report() const {
     return out;
 }
 
+Dictionary NativeEconomyRuntime::committed_audit_report() const {
+    Dictionary out;
+    const auto view = std::atomic_load_explicit(&_committed_audit_view,
+        std::memory_order_acquire);
+    out["available"] = view != nullptr;
+    if (!view) return out;
+    out["generation"] = static_cast<int64_t>(view->generation);
+    out["day"] = view->day;
+    out["revision_phase"] = "before_effect_command_drain";
+    out["full_verification"] = view->full_verification;
+    out["population_error"] = view->population_actual - view->population_expected;
+    out["money_error"] = view->money_actual - view->money_expected;
+    out["goods_error"] = view->goods_actual - view->goods_expected;
+    out["audit_incomplete"] = false;
+    return out;
+}
+
+void NativeEconomyRuntime::write_hash_work_report(Dictionary &out) const {
+    out["hash_version"] = runtime_chunk_hash_enabled() ? 2 : 1;
+    RuntimeChunkHash::Metrics hash_metrics{};
+    RuntimeChunkHash::Metrics cumulative_hash_metrics{};
+    const auto &market_pages = _formula_owned != nullptr ? _formula_owned->market_hash_pages : _market_hash_pages;
+    for (const auto &column : market_pages) {
+        const auto metrics = column.metrics();
+        hash_metrics.compared_bytes += metrics.compared_bytes;
+        hash_metrics.copied_bytes += metrics.copied_bytes;
+        hash_metrics.rebuilt_pages += metrics.rebuilt_pages;
+        hash_metrics.reused_pages += metrics.reused_pages;
+        const auto cumulative = column.cumulative_metrics();
+        cumulative_hash_metrics.compared_bytes += cumulative.compared_bytes;
+        cumulative_hash_metrics.copied_bytes += cumulative.copied_bytes;
+        cumulative_hash_metrics.rebuilt_pages += cumulative.rebuilt_pages;
+        cumulative_hash_metrics.reused_pages += cumulative.reused_pages;
+    }
+    const auto fiscal_metrics = _fiscal_hash_pages.metrics();
+    hash_metrics.compared_bytes += fiscal_metrics.compared_bytes;
+    hash_metrics.copied_bytes += fiscal_metrics.copied_bytes;
+    hash_metrics.rebuilt_pages += fiscal_metrics.rebuilt_pages;
+    hash_metrics.reused_pages += fiscal_metrics.reused_pages;
+    const auto fiscal_cumulative = _fiscal_hash_pages.cumulative_metrics();
+    cumulative_hash_metrics.compared_bytes += fiscal_cumulative.compared_bytes;
+    cumulative_hash_metrics.copied_bytes += fiscal_cumulative.copied_bytes;
+    cumulative_hash_metrics.rebuilt_pages += fiscal_cumulative.rebuilt_pages;
+    cumulative_hash_metrics.reused_pages += fiscal_cumulative.reused_pages;
+    out["hash_compared_bytes"] = static_cast<int64_t>(hash_metrics.compared_bytes);
+    out["hash_copied_bytes"] = static_cast<int64_t>(hash_metrics.copied_bytes);
+    out["hash_rebuilt_pages"] = static_cast<int64_t>(hash_metrics.rebuilt_pages);
+    out["hash_reused_pages"] = static_cast<int64_t>(hash_metrics.reused_pages);
+    out["hash_cumulative_compared_bytes"] = static_cast<int64_t>(cumulative_hash_metrics.compared_bytes);
+    out["hash_cumulative_copied_bytes"] = static_cast<int64_t>(cumulative_hash_metrics.copied_bytes);
+    out["hash_cumulative_rebuilt_pages"] = static_cast<int64_t>(cumulative_hash_metrics.rebuilt_pages);
+    out["hash_cumulative_reused_pages"] = static_cast<int64_t>(cumulative_hash_metrics.reused_pages);
+}
+
 Dictionary NativeEconomyRuntime::report() const {
     Dictionary out;
+    write_hash_work_report(out);
     const int64_t age_days = _epoch_active
         ? std::max<int64_t>(0, _current_day - _sample_day)
         : _settlement_max_age_days;
@@ -1940,7 +2001,7 @@ Dictionary NativeEconomyRuntime::report() const {
     out["auto_slice_by_scale"] = _auto_slice_by_scale;
     out["family_runtime_mode"] = _family_runtime_mode == 0 ? "OFF" :
         (_family_runtime_mode == 1 ? "PROBE" : "ACTIVE");
-    out["family_count"] = families_store().active_count;
+    out["family_count"] = families_store().active_count.get();
     out["family_membership_edge_count"] = static_cast<int64_t>(
         family_memberships().size());
     out["family_ownership_edge_count"] = static_cast<int64_t>(
@@ -2034,7 +2095,7 @@ Dictionary NativeEconomyRuntime::report() const {
     out["family_owner_jobs_vacant"] = _family_owner_jobs_vacant;
     out["notable_person_runtime_mode"] = _person_runtime_mode == 0 ? "OFF" :
         (_person_runtime_mode == 1 ? "PROBE" : "ACTIVE");
-    out["notable_person_count"] = persons_store().active_count;
+    out["notable_person_count"] = persons_store().active_count.get();
     out["person_need_edge_count"] = static_cast<int64_t>(person_needs().size());
     out["persons_promoted"] = _persons_promoted;
     out["persons_died"] = _persons_died;
@@ -2062,9 +2123,9 @@ Dictionary NativeEconomyRuntime::report() const {
         _city_output_good_indices.capacity() * sizeof(int32_t) +
         _city_output_factors_q16.capacity() * sizeof(int32_t));
     out["canal_next_project_id"] = static_cast<int64_t>(_next_canal_project_id);
-    out["cohort_count"] = population_store().active_count;
-    out["market_count"] = market_store().market_count;
-    out["good_count"] = market_store().good_count;
+    out["cohort_count"] = population_store().active_count.get();
+    out["market_count"] = market_store().market_count.get();
+    out["good_count"] = market_store().good_count.get();
     out["building_type_count"] = static_cast<int64_t>(_building_types.size());
     out["building_group_count"] = static_cast<int64_t>(building_count());
     out["pending_construction_count"] = static_cast<int64_t>(pending_construction_count());

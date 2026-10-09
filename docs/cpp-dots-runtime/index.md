@@ -32,6 +32,9 @@
 当前性能缓存、认证近似、closing audit 与 native daily 紧凑边界见
 [运行时性能优化契约（2026-07）](runtime-performance-optimization-2026-07.md)。
 
+[50× 性能优化实施状态（2026-10）](runtime-performance-optimization-2026-10.md)
+区分已实现机制、诊断实验路径和仍未完成的验收。
+
 显赫家族的原生 SoA、特性、地块威望、成员/建筑稀疏边、守恒财产归属、FamilyEffect 与 PKEC v41
 契约见[显赫家族原生运行时](./notable-family-runtime.md)。
 

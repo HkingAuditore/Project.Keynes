@@ -5,6 +5,109 @@
 #include <limits>
 
 namespace pk {
+RuntimeEconomyPopulationStore::RuntimeEconomyPopulationStore()
+    : cell_first_page(changes, {{1, 1}, "population.cell_first_page", EconomyFieldEncoding::I32, 4}),
+      page_next(changes, {{1, 2}, "population.page_next", EconomyFieldEncoding::I32, 4}),
+      page_cell(changes, {{1, 3}, "population.page_cell", EconomyFieldEncoding::I32, 4}),
+      free_pages(changes, {{1, 4}, "population.free_pages", EconomyFieldEncoding::I32, 4}),
+      active(changes, {{1, 5}, "population.active", EconomyFieldEncoding::U8, 1}),
+      reserved(changes, {{1, 6}, "population.reserved", EconomyFieldEncoding::U8, 1}),
+      reservation_owner(changes, {{1, 7}, "population.reservation_owner", EconomyFieldEncoding::U64, 8}),
+      signature_id(changes, {{1, 8}, "population.signature_id", EconomyFieldEncoding::U32, 4}),
+      generation(changes, {{1, 9}, "population.generation", EconomyFieldEncoding::U32, 4}),
+      population(changes, {{1, 10}, "population.population", EconomyFieldEncoding::I64, 8}),
+      funds(changes, {{1, 11}, "population.funds", EconomyFieldEncoding::I64, 8}),
+      epoch_income(changes, {{1, 12}, "population.epoch_income", EconomyFieldEncoding::I64, 8}),
+      epoch_expense(changes, {{1, 13}, "population.epoch_expense", EconomyFieldEncoding::I64, 8}),
+      epoch_in_kind_income(changes, {{1, 14}, "population.epoch_in_kind_income", EconomyFieldEncoding::I64, 8}),
+      income_ema(changes, {{1, 15}, "population.income_ema", EconomyFieldEncoding::I64, 8}),
+      epoch_tax_paid(changes, {{1, 16}, "population.epoch_tax_paid", EconomyFieldEncoding::I64, 8}),
+      epoch_subsidy_received(changes, {{1, 17}, "population.epoch_subsidy_received", EconomyFieldEncoding::I64, 8}),
+      income_baseline_ema(changes, {{1, 18}, "population.income_baseline_ema", EconomyFieldEncoding::I64, 8}),
+      needs_satisfaction(changes, {{1, 19}, "population.needs_satisfaction", EconomyFieldEncoding::U16, 2}),
+      worst_need_id(changes, {{1, 20}, "population.worst_need_id", EconomyFieldEncoding::U16, 2}),
+      composite_satisfaction(changes, {{1, 21}, "population.composite_satisfaction", EconomyFieldEncoding::U16, 2}),
+      satisfaction_dims(changes, {{1, 22}, "population.satisfaction_dims", EconomyFieldEncoding::U16, 2}),
+      worst_dimension_id(changes, {{1, 23}, "population.worst_dimension_id", EconomyFieldEncoding::U8, 1}),
+      flags(changes, {{1, 24}, "population.flags", EconomyFieldEncoding::U16, 2}),
+      demography_residual(changes, {{1, 25}, "population.demography_residual", EconomyFieldEncoding::I64, 8}),
+      owner_employed(changes, {{1, 26}, "population.owner_employed", EconomyFieldEncoding::I64, 8}),
+      employee_employed(changes, {{1, 27}, "population.employee_employed", EconomyFieldEncoding::I64, 8}),
+      active_count(changes, {{1, 1001}, "population.active_count", EconomyFieldEncoding::I64, 8}),
+      high_water_slots(changes, {{1, 1002}, "population.high_water_slots", EconomyFieldEncoding::I64, 8}) {}
+
+RuntimeEconomyPopulationStore::RuntimeEconomyPopulationStore(const RuntimeEconomyPopulationStore &other)
+    : RuntimeEconomyPopulationStore() { *this = other; }
+RuntimeEconomyPopulationStore &RuntimeEconomyPopulationStore::operator=(const RuntimeEconomyPopulationStore &other) {
+    if (this == &other) return *this;
+    cell_first_page.assign(other.cell_first_page.values());
+    page_next.assign(other.page_next.values());
+    page_cell.assign(other.page_cell.values());
+    free_pages.assign(other.free_pages.values());
+    active.assign(other.active.values());
+    reserved.assign(other.reserved.values());
+    reservation_owner.assign(other.reservation_owner.values());
+    signature_id.assign(other.signature_id.values());
+    generation.assign(other.generation.values());
+    population.assign(other.population.values());
+    funds.assign(other.funds.values());
+    epoch_income.assign(other.epoch_income.values());
+    epoch_expense.assign(other.epoch_expense.values());
+    epoch_in_kind_income.assign(other.epoch_in_kind_income.values());
+    income_ema.assign(other.income_ema.values());
+    epoch_tax_paid.assign(other.epoch_tax_paid.values());
+    epoch_subsidy_received.assign(other.epoch_subsidy_received.values());
+    income_baseline_ema.assign(other.income_baseline_ema.values());
+    needs_satisfaction.assign(other.needs_satisfaction.values());
+    worst_need_id.assign(other.worst_need_id.values());
+    composite_satisfaction.assign(other.composite_satisfaction.values());
+    satisfaction_dims.assign(other.satisfaction_dims.values());
+    worst_dimension_id.assign(other.worst_dimension_id.values());
+    flags.assign(other.flags.values());
+    demography_residual.assign(other.demography_residual.values());
+    owner_employed.assign(other.owner_employed.values());
+    employee_employed.assign(other.employee_employed.values());
+    active_count = other.active_count; high_water_slots = other.high_water_slots; scan_steps = other.scan_steps;
+    return *this;
+}
+
+RuntimeEconomyPopulationStore::RuntimeEconomyPopulationStore(RuntimeEconomyPopulationStore &&other)
+    : RuntimeEconomyPopulationStore() { *this = std::move(other); }
+RuntimeEconomyPopulationStore &RuntimeEconomyPopulationStore::operator=(RuntimeEconomyPopulationStore &&other) {
+    if (this == &other) return *this;
+    cell_first_page.move_from(other.cell_first_page);
+    page_next.move_from(other.page_next);
+    page_cell.move_from(other.page_cell);
+    free_pages.move_from(other.free_pages);
+    active.move_from(other.active);
+    reserved.move_from(other.reserved);
+    reservation_owner.move_from(other.reservation_owner);
+    signature_id.move_from(other.signature_id);
+    generation.move_from(other.generation);
+    population.move_from(other.population);
+    funds.move_from(other.funds);
+    epoch_income.move_from(other.epoch_income);
+    epoch_expense.move_from(other.epoch_expense);
+    epoch_in_kind_income.move_from(other.epoch_in_kind_income);
+    income_ema.move_from(other.income_ema);
+    epoch_tax_paid.move_from(other.epoch_tax_paid);
+    epoch_subsidy_received.move_from(other.epoch_subsidy_received);
+    income_baseline_ema.move_from(other.income_baseline_ema);
+    needs_satisfaction.move_from(other.needs_satisfaction);
+    worst_need_id.move_from(other.worst_need_id);
+    composite_satisfaction.move_from(other.composite_satisfaction);
+    satisfaction_dims.move_from(other.satisfaction_dims);
+    worst_dimension_id.move_from(other.worst_dimension_id);
+    flags.move_from(other.flags);
+    demography_residual.move_from(other.demography_residual);
+    owner_employed.move_from(other.owner_employed);
+    employee_employed.move_from(other.employee_employed);
+    active_count = other.active_count; high_water_slots = other.high_water_slots; scan_steps = other.scan_steps;
+    other.active_count = other.high_water_slots = other.scan_steps = 0;
+    return *this;
+}
+
+
 namespace {
 
 void append_page_storage(RuntimeEconomyPopulationStore &store,
@@ -53,12 +156,12 @@ void append_page_storage(RuntimeEconomyPopulationStore &store,
 void link_page_to_cell(RuntimeEconomyPopulationStore &store, int32_t page,
                        int32_t cell) {
     if (store.cell_first_page[cell] < 0) {
-        store.cell_first_page[cell] = page;
+        store.cell_first_page.write_scalar(cell, page);
         return;
     }
     int32_t tail = store.cell_first_page[cell];
     while (store.page_next[tail] >= 0) tail = store.page_next[tail];
-    store.page_next[tail] = page;
+    store.page_next.write_scalar(tail, page);
 }
 
 } // namespace
@@ -96,17 +199,16 @@ void RuntimeEconomyPopulationStore::clear(int32_t cells) {
 }
 
 void RuntimeEconomyPopulationStore::reset_satisfaction_slot(int32_t slot) {
-    epoch_tax_paid[slot] = 0;
-    epoch_subsidy_received[slot] = 0;
-    income_baseline_ema[slot] = 0;
-    needs_satisfaction[slot] = static_cast<uint16_t>(Q16_ONE - 1);
-    worst_need_id[slot] = std::numeric_limits<uint16_t>::max();
-    composite_satisfaction[slot] = static_cast<uint16_t>(Q16_ONE - 1);
-    worst_dimension_id[slot] = std::numeric_limits<uint8_t>::max();
+    epoch_tax_paid.write_scalar(slot, 0);
+    epoch_subsidy_received.write_scalar(slot, 0);
+    income_baseline_ema.write_scalar(slot, 0);
+    needs_satisfaction.write_scalar(slot, static_cast<uint16_t>(Q16_ONE - 1));
+    worst_need_id.write_scalar(slot, std::numeric_limits<uint16_t>::max());
+    composite_satisfaction.write_scalar(slot, static_cast<uint16_t>(Q16_ONE - 1));
+    worst_dimension_id.write_scalar(slot, std::numeric_limits<uint8_t>::max());
     const size_t base = static_cast<size_t>(slot) * static_cast<size_t>(SAT_DIM_COUNT);
     for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim) {
-        satisfaction_dims[base + static_cast<size_t>(dim)] =
-            static_cast<uint16_t>(Q16_ONE - 1);
+        satisfaction_dims.write_scalar(base + static_cast<size_t>(dim), static_cast<uint16_t>(Q16_ONE - 1));
     }
 }
 
@@ -115,15 +217,12 @@ int32_t RuntimeEconomyPopulationStore::allocate_page(int32_t cell) {
     if (!free_pages.empty()) {
         page = free_pages.back();
         free_pages.pop_back();
-        page_cell[page] = cell;
-        page_next[page] = -1;
+        page_cell.write_scalar(page, cell);
+        page_next.write_scalar(page, -1);
         const int32_t base = page * COHORT_PAGE_SIZE;
-        std::fill(active.begin() + base, active.begin() + base + COHORT_PAGE_SIZE, uint8_t{0});
-        std::fill(reserved.begin() + base,
-                  reserved.begin() + base + COHORT_PAGE_SIZE, uint8_t{0});
-        std::fill(reservation_owner.begin() + base,
-                  reservation_owner.begin() + base + COHORT_PAGE_SIZE,
-                  uint64_t{0});
+        active.fill_range(base, COHORT_PAGE_SIZE, uint8_t{0});
+        reserved.fill_range(base, COHORT_PAGE_SIZE, uint8_t{0});
+        reservation_owner.fill_range(base, COHORT_PAGE_SIZE, uint64_t{0});
     } else {
         page = static_cast<int32_t>(page_next.size());
         append_page_storage(*this, cell);
@@ -168,38 +267,38 @@ int32_t RuntimeEconomyPopulationStore::allocate_slot(int32_t cell,
         for (int32_t lane = 0; lane < COHORT_PAGE_SIZE; ++lane) {
             const int32_t slot = base + lane;
             if (active[slot] != 0 || reserved[slot] != 0) continue;
-            active[slot] = 1;
-            signature_id[slot] = signature;
-            population[slot] = 0;
-            funds[slot] = 0;
-            epoch_income[slot] = 0;
-            epoch_expense[slot] = 0;
-            epoch_in_kind_income[slot] = 0;
-            income_ema[slot] = 0;
+            active.write_scalar(slot, 1);
+            signature_id.write_scalar(slot, signature);
+            population.write_scalar(slot, 0);
+            funds.write_scalar(slot, 0);
+            epoch_income.write_scalar(slot, 0);
+            epoch_expense.write_scalar(slot, 0);
+            epoch_in_kind_income.write_scalar(slot, 0);
+            income_ema.write_scalar(slot, 0);
             reset_satisfaction_slot(slot);
-            flags[slot] = 0;
-            demography_residual[slot] = 0;
-            owner_employed[slot] = 0;
-            employee_employed[slot] = 0;
+            flags.write_scalar(slot, 0);
+            demography_residual.write_scalar(slot, 0);
+            owner_employed.write_scalar(slot, 0);
+            employee_employed.write_scalar(slot, 0);
             ++active_count;
             return slot;
         }
     }
     const int32_t page = allocate_page(cell);
     const int32_t slot = page * COHORT_PAGE_SIZE;
-    active[slot] = 1;
-    signature_id[slot] = signature;
-    population[slot] = 0;
-    funds[slot] = 0;
-    epoch_income[slot] = 0;
-    epoch_expense[slot] = 0;
-    epoch_in_kind_income[slot] = 0;
-    income_ema[slot] = 0;
+    active.write_scalar(slot, 1);
+    signature_id.write_scalar(slot, signature);
+    population.write_scalar(slot, 0);
+    funds.write_scalar(slot, 0);
+    epoch_income.write_scalar(slot, 0);
+    epoch_expense.write_scalar(slot, 0);
+    epoch_in_kind_income.write_scalar(slot, 0);
+    income_ema.write_scalar(slot, 0);
     reset_satisfaction_slot(slot);
-    flags[slot] = 0;
-    demography_residual[slot] = 0;
-    owner_employed[slot] = 0;
-    employee_employed[slot] = 0;
+    flags.write_scalar(slot, 0);
+    demography_residual.write_scalar(slot, 0);
+    owner_employed.write_scalar(slot, 0);
+    employee_employed.write_scalar(slot, 0);
     ++active_count;
     return slot;
 }
@@ -216,8 +315,8 @@ int32_t RuntimeEconomyPopulationStore::restore_slot_at(
         return -1;
     }
     if (active[slot] == 0) {
-        active[slot] = 1;
-        signature_id[slot] = signature;
+        active.write_scalar(slot, 1);
+        signature_id.write_scalar(slot, signature);
         ++active_count;
     }
     return slot;
@@ -241,17 +340,17 @@ int32_t RuntimeEconomyPopulationStore::reserve_slot(
         for (int32_t lane = 0; lane < COHORT_PAGE_SIZE; ++lane) {
             const int32_t slot = base + lane;
             if (active[slot] != 0 || reserved[slot] != 0) continue;
-            reserved[slot] = 1;
-            reservation_owner[slot] = owner;
-            signature_id[slot] = signature;
+            reserved.write_scalar(slot, 1);
+            reservation_owner.write_scalar(slot, owner);
+            signature_id.write_scalar(slot, signature);
             return slot;
         }
     }
     const int32_t page = allocate_page(cell);
     const int32_t slot = page * COHORT_PAGE_SIZE;
-    reserved[slot] = 1;
-    reservation_owner[slot] = owner;
-    signature_id[slot] = signature;
+    reserved.write_scalar(slot, 1);
+    reservation_owner.write_scalar(slot, owner);
+    signature_id.write_scalar(slot, signature);
     return slot;
 }
 
@@ -266,20 +365,20 @@ int32_t RuntimeEconomyPopulationStore::claim_reserved_slot(
         active[slot] != 0 || reserved[slot] == 0 ||
         reservation_owner[slot] != owner || signature_id[slot] != signature ||
         page_cell[slot / COHORT_PAGE_SIZE] != cell) return -1;
-    reserved[slot] = 0;
-    reservation_owner[slot] = 0;
-    active[slot] = 1;
-    population[slot] = 0;
-    funds[slot] = 0;
-    epoch_income[slot] = 0;
-    epoch_expense[slot] = 0;
-    epoch_in_kind_income[slot] = 0;
-    income_ema[slot] = 0;
+    reserved.write_scalar(slot, 0);
+    reservation_owner.write_scalar(slot, 0);
+    active.write_scalar(slot, 1);
+    population.write_scalar(slot, 0);
+    funds.write_scalar(slot, 0);
+    epoch_income.write_scalar(slot, 0);
+    epoch_expense.write_scalar(slot, 0);
+    epoch_in_kind_income.write_scalar(slot, 0);
+    income_ema.write_scalar(slot, 0);
     reset_satisfaction_slot(slot);
-    flags[slot] = 0;
-    demography_residual[slot] = 0;
-    owner_employed[slot] = 0;
-    employee_employed[slot] = 0;
+    flags.write_scalar(slot, 0);
+    demography_residual.write_scalar(slot, 0);
+    owner_employed.write_scalar(slot, 0);
+    employee_employed.write_scalar(slot, 0);
     ++active_count;
     return slot;
 }
@@ -289,8 +388,8 @@ void RuntimeEconomyPopulationStore::release_reserved_slot(
     if (slot < 0 || slot >= static_cast<int32_t>(reserved.size()) ||
         active[slot] != 0 || reserved[slot] == 0 ||
         reservation_owner[slot] != owner) return;
-    reserved[slot] = 0;
-    reservation_owner[slot] = 0;
+    reserved.write_scalar(slot, 0);
+    reservation_owner.write_scalar(slot, 0);
 }
 
 bool RuntimeEconomyPopulationStore::valid_handle(uint64_t handle,
@@ -310,19 +409,19 @@ uint64_t RuntimeEconomyPopulationStore::handle_for_slot(int32_t slot) const {
 
 void RuntimeEconomyPopulationStore::release_slot(int32_t slot) {
     if (slot < 0 || slot >= static_cast<int32_t>(active.size()) || active[slot] == 0) return;
-    active[slot] = 0;
-    population[slot] = 0;
-    funds[slot] = 0;
-    epoch_income[slot] = 0;
-    epoch_expense[slot] = 0;
-    epoch_in_kind_income[slot] = 0;
-    income_ema[slot] = 0;
+    active.write_scalar(slot, 0);
+    population.write_scalar(slot, 0);
+    funds.write_scalar(slot, 0);
+    epoch_income.write_scalar(slot, 0);
+    epoch_expense.write_scalar(slot, 0);
+    epoch_in_kind_income.write_scalar(slot, 0);
+    income_ema.write_scalar(slot, 0);
     reset_satisfaction_slot(slot);
-    demography_residual[slot] = 0;
-    owner_employed[slot] = 0;
-    employee_employed[slot] = 0;
-    generation[slot] = generation[slot] == std::numeric_limits<uint32_t>::max()
-                           ? 1u : generation[slot] + 1u;
+    demography_residual.write_scalar(slot, 0);
+    owner_employed.write_scalar(slot, 0);
+    employee_employed.write_scalar(slot, 0);
+    generation.write_scalar(slot, generation[slot] == std::numeric_limits<uint32_t>::max()
+                           ? 1u : generation[slot] + 1u);
     --active_count;
 }
 
@@ -337,10 +436,10 @@ void RuntimeEconomyPopulationStore::reclaim_empty_pages(int32_t cell) {
         for (int32_t lane = 0; lane < COHORT_PAGE_SIZE; ++lane)
             any |= active[base + lane] != 0 || reserved[base + lane] != 0;
         if (!any) {
-            if (previous < 0) cell_first_page[cell] = next;
-            else page_next[previous] = next;
-            page_next[page] = -1;
-            page_cell[page] = -1;
+            if (previous < 0) cell_first_page.write_scalar(cell, next);
+            else page_next.write_scalar(previous, next);
+            page_next.write_scalar(page, -1);
+            page_cell.write_scalar(page, -1);
             free_pages.push_back(page);
         } else {
             previous = page;

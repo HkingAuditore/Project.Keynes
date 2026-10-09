@@ -69,6 +69,7 @@ void NativeEconomyRuntime::MarketResult::reset() {
     trade_active_goods.clear();
     audit_population_lanes.clear();
     audit_market_lanes.clear();
+    market_changes.clear();
     allocation_growth_count = 0;
     allocation_growth_bytes = 0;
     approximation_decisions = 0;
@@ -174,6 +175,7 @@ void NativeEconomyRuntime::ProductionResult::reset() {
     cashflow_drafts.clear();
     audit_population_lanes.clear();
     audit_market_lanes.clear();
+    market_changes.clear();
     bio_introduce_cells.clear();
     bio_introduce_bits.clear();
     allocation_growth_count = 0;

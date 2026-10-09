@@ -407,11 +407,19 @@ uint64_t RuntimeEconomyPodAuthority::state_hash() const noexcept {
         mix(static_cast<uint64_t>(_state.population.population[i]));
         mix(static_cast<uint64_t>(_state.population.funds[i]));
     }
-    for (size_t i = 0; i < _state.market.stock.size(); ++i) {
-        mix(static_cast<uint64_t>(_state.market.stock[i]));
-        mix(static_cast<uint64_t>(_state.market.price[i]));
-        mix(static_cast<uint64_t>(_state.market.demand_ema[i]));
-        mix(_state.market.last_shortage_q16[i]);
+    if (runtime_chunk_hash_enabled()) {
+        mix(RuntimeChunkHash::VERSION);
+        mix(_state.market_hash_pages[0].update(_state.market.stock, 1, 1));
+        mix(_state.market_hash_pages[1].update(_state.market.price, 1, 2));
+        mix(_state.market_hash_pages[2].update(_state.market.demand_ema, 1, 3));
+        mix(_state.market_hash_pages[3].update(_state.market.last_shortage_q16, 1, 4));
+    } else {
+        for (size_t i = 0; i < _state.market.stock.size(); ++i) {
+            mix(static_cast<uint64_t>(_state.market.stock[i]));
+            mix(static_cast<uint64_t>(_state.market.price[i]));
+            mix(static_cast<uint64_t>(_state.market.demand_ema[i]));
+            mix(_state.market.last_shortage_q16[i]);
+        }
     }
     return hash;
 }
@@ -517,7 +525,7 @@ bool RuntimeEconomyPodAuthority::export_committed_ledger(
     const auto blocks_finished = std::chrono::steady_clock::now();
     const auto validation_started = std::chrono::steady_clock::now();
     const char *validation_reason = nullptr;
-    if (!ledger.valid(&validation_reason)) {
+    if (!ledger.validate_shape_and_values(&validation_reason)) {
         error = std::string("economy_pod_ledger_export_invalid:") +
             (validation_reason != nullptr ? validation_reason : "unknown");
         return false;
@@ -686,10 +694,10 @@ bool RuntimeEconomyPodAuthority::try_apply_owned_core_command(
             return false;
         }
         const int64_t amount = std::max<int64_t>(0, command.payload0);
-        population.funds[static_cast<size_t>(slot)] = sat_add(
-            population.funds[static_cast<size_t>(slot)], amount);
-        population.epoch_income[static_cast<size_t>(slot)] = sat_add(
-            population.epoch_income[static_cast<size_t>(slot)], amount);
+        population.funds.write_scalar(static_cast<size_t>(slot), sat_add(
+            population.funds[static_cast<size_t>(slot)], amount));
+        population.epoch_income.write_scalar(static_cast<size_t>(slot), sat_add(
+            population.epoch_income[static_cast<size_t>(slot)], amount));
         settled_out = amount;
         return true;
     }
@@ -705,11 +713,11 @@ bool RuntimeEconomyPodAuthority::try_apply_owned_core_command(
             error = "economy_pod_owned_core_slot_oob";
             return false;
         }
-        population.funds[static_cast<size_t>(slot)] = sat_add(
-            population.funds[static_cast<size_t>(slot)], command.payload0);
-        population.epoch_income[static_cast<size_t>(slot)] = sat_add(
+        population.funds.write_scalar(static_cast<size_t>(slot), sat_add(
+            population.funds[static_cast<size_t>(slot)], command.payload0));
+        population.epoch_income.write_scalar(static_cast<size_t>(slot), sat_add(
             population.epoch_income[static_cast<size_t>(slot)],
-            command.payload0);
+            command.payload0));
         settled_out = command.payload0;
         return true;
     }
@@ -729,9 +737,9 @@ bool RuntimeEconomyPodAuthority::try_apply_owned_core_command(
             population.funds[static_cast<size_t>(slot)];
         const int64_t amount =
             std::min(command.payload0, std::max<int64_t>(0, funds));
-        population.funds[static_cast<size_t>(slot)] = funds - amount;
-        population.epoch_expense[static_cast<size_t>(slot)] = sat_add(
-            population.epoch_expense[static_cast<size_t>(slot)], amount);
+        population.funds.write_scalar(static_cast<size_t>(slot), funds - amount);
+        population.epoch_expense.write_scalar(static_cast<size_t>(slot), sat_add(
+            population.epoch_expense[static_cast<size_t>(slot)], amount));
         settled_out = amount;
         return true;
     }
@@ -750,8 +758,8 @@ bool RuntimeEconomyPodAuthority::try_apply_owned_core_command(
             return false;
         }
         const int64_t before = market.stock[static_cast<size_t>(idx)];
-        market.stock[static_cast<size_t>(idx)] =
-            sat_add(before, command.payload0);
+        market.stock.write_scalar(static_cast<size_t>(idx),
+            sat_add(before, command.payload0));
         settled_out = market.stock[static_cast<size_t>(idx)] - before;
         return true;
     }
@@ -772,7 +780,7 @@ bool RuntimeEconomyPodAuthority::try_apply_owned_core_command(
         const int64_t stock = market.stock[static_cast<size_t>(idx)];
         const int64_t amount =
             std::min(command.payload0, std::max<int64_t>(0, stock));
-        market.stock[static_cast<size_t>(idx)] = stock - amount;
+        market.stock.write_scalar(static_cast<size_t>(idx), stock - amount);
         settled_out = amount;
         return true;
     }
@@ -798,15 +806,13 @@ bool RuntimeEconomyPodAuthority::try_apply_owned_core_command(
         const int64_t after =
             std::max<int64_t>(0, sat_add(before, command.payload0));
         const int64_t actual_delta = after - before;
-        population.population[static_cast<size_t>(slot)] = after;
-        population.owner_employed[static_cast<size_t>(slot)] =
-            std::clamp<int64_t>(
+        population.population.write_scalar(static_cast<size_t>(slot), after);
+        population.owner_employed.write_scalar(static_cast<size_t>(slot), std::clamp<int64_t>(
                 population.owner_employed[static_cast<size_t>(slot)], 0,
-                after);
-        population.employee_employed[static_cast<size_t>(slot)] =
-            std::clamp<int64_t>(
+                after));
+        population.employee_employed.write_scalar(static_cast<size_t>(slot), std::clamp<int64_t>(
                 population.employee_employed[static_cast<size_t>(slot)], 0,
-                after - population.owner_employed[static_cast<size_t>(slot)]);
+                after - population.owner_employed[static_cast<size_t>(slot)]));
         settled_out = actual_delta;
         _state.external_population_delta =
             sat_add(_state.external_population_delta, actual_delta);
@@ -875,9 +881,9 @@ bool RuntimeEconomyPodAuthority::try_apply_owned_core_command(
             population.funds[static_cast<size_t>(slot)];
         const int64_t amount =
             std::min(command.payload0, std::max<int64_t>(0, funds));
-        population.funds[static_cast<size_t>(slot)] = funds - amount;
-        population.epoch_expense[static_cast<size_t>(slot)] = sat_add(
-            population.epoch_expense[static_cast<size_t>(slot)], amount);
+        population.funds.write_scalar(static_cast<size_t>(slot), funds - amount);
+        population.epoch_expense.write_scalar(static_cast<size_t>(slot), sat_add(
+            population.epoch_expense[static_cast<size_t>(slot)], amount));
         settled_out = amount;
         return true;
     }
@@ -907,7 +913,7 @@ bool RuntimeEconomyPodAuthority::try_apply_owned_core_command(
             error = "demolish_owned_count_insufficient";
             return false;
         }
-        buildings.group_units[static_cast<size_t>(group_id)] -= count;
+        buildings.group_units.write_scalar(static_cast<size_t>(group_id), buildings.group_units[static_cast<size_t>(group_id)] - (count));
         settled_out = count;
         return true;
     }
@@ -926,8 +932,8 @@ bool RuntimeEconomyPodAuthority::try_apply_owned_core_command(
             return false;
         }
         const int64_t before = market.stock[static_cast<size_t>(idx)];
-        market.stock[static_cast<size_t>(idx)] =
-            sat_add(before, command.payload0);
+        market.stock.write_scalar(static_cast<size_t>(idx),
+            sat_add(before, command.payload0));
         settled_out = market.stock[static_cast<size_t>(idx)] - before;
         return true;
     }
@@ -948,7 +954,7 @@ bool RuntimeEconomyPodAuthority::try_apply_owned_core_command(
         const int64_t stock = market.stock[static_cast<size_t>(idx)];
         const int64_t amount =
             std::min(command.payload0, std::max<int64_t>(0, stock));
-        market.stock[static_cast<size_t>(idx)] = stock - amount;
+        market.stock.write_scalar(static_cast<size_t>(idx), stock - amount);
         settled_out = amount;
         return true;
     }
@@ -2337,8 +2343,8 @@ bool RuntimeEconomyPodAuthority::self_test(std::string &error) {
             return false;
         }
         const uint64_t handle = pop.handle_for_slot(slot);
-        pop.funds[static_cast<size_t>(slot)] = 10;
-        pop.epoch_income[static_cast<size_t>(slot)] = 0;
+        pop.funds.write_scalar(static_cast<size_t>(slot), 10);
+        pop.epoch_income.write_scalar(static_cast<size_t>(slot), 0);
         owned.set_authority_mode(RuntimeEconomyAuthorityMode::POD_ACTIVE);
         RuntimeEconomyPodCommand mint;
         mint.opcode = 2;
@@ -2362,7 +2368,7 @@ bool RuntimeEconomyPodAuthority::self_test(std::string &error) {
             if (error.empty()) error = "economy_pod_owned_core_burn_failed";
             return false;
         }
-        owned.state().market.stock[0] = 8;
+        owned.state().market.stock.write_scalar(0, 8);
         RuntimeEconomyPodCommand add_stock;
         add_stock.opcode = 4;
         add_stock.target_cell = 0;
@@ -2373,7 +2379,7 @@ bool RuntimeEconomyPodAuthority::self_test(std::string &error) {
             if (error.empty()) error = "economy_pod_owned_core_add_stock_failed";
             return false;
         }
-        pop.population[static_cast<size_t>(slot)] = 100;
+        pop.population.write_scalar(static_cast<size_t>(slot), 100);
         RuntimeEconomyPodCommand add_pop;
         add_pop.opcode = NativeEconomyRuntime::COMMAND_ADD_POPULATION;
         add_pop.target_cohort = handle;
@@ -2413,36 +2419,36 @@ bool RuntimeEconomyPodAuthority::self_test(std::string &error) {
         error = "economy_pod_state_fixture_topology_failed";
         return false;
     }
-    fixture_population.signature_id[
-        RuntimeEconomyPopulationStore::COHORT_PAGE_SIZE] = 77;
-    fixture_population.population[pod_slot] = 17;
-    fixture_population.funds[pod_slot] = 2300;
-    fixture_population.epoch_income[pod_slot] = 91;
-    fixture_population.epoch_expense[pod_slot] = 12;
-    fixture_population.generation[pod_slot] = 5;
-    fixture_population.reserved[pod_slot] = 0;
-    fixture_population.reservation_owner[pod_slot] = 0;
-    fixture_population.needs_satisfaction[pod_slot] = 40000;
-    fixture_population.composite_satisfaction[pod_slot] = 42000;
-    fixture_population.owner_employed[pod_slot] = 3;
-    fixture_population.employee_employed[pod_slot] = 11;
-    fixture_population.population[pod_slot_two] = 29;
-    fixture_population.funds[pod_slot_two] = 4100;
-    fixture_population.epoch_income[pod_slot_two] = 101;
-    fixture_population.epoch_expense[pod_slot_two] = 22;
-    fixture_population.generation[pod_slot_two] = 9;
-    fixture_population.reserved[pod_slot_two] = 1;
-    fixture_population.reservation_owner[pod_slot_two] = 99;
-    fixture_population.needs_satisfaction[pod_slot_two] = 50000;
-    fixture_population.composite_satisfaction[pod_slot_two] = 51000;
-    fixture_population.owner_employed[pod_slot_two] = 1;
-    fixture_population.employee_employed[pod_slot_two] = 4;
-    authority.state().market.stock[4] = 77;
-    authority.state().market.price[4] = 19;
-    authority.state().market.demand_ema[4] = 31;
-    authority.state().market.last_shortage_q16[4] = 1024;
-    authority.state().market.cell_to_market[0] = 0;
-    authority.state().market.cell_to_market[1] = 1;
+    fixture_population.signature_id.write_scalar(
+        RuntimeEconomyPopulationStore::COHORT_PAGE_SIZE, 77);
+    fixture_population.population.write_scalar(pod_slot, 17);
+    fixture_population.funds.write_scalar(pod_slot, 2300);
+    fixture_population.epoch_income.write_scalar(pod_slot, 91);
+    fixture_population.epoch_expense.write_scalar(pod_slot, 12);
+    fixture_population.generation.write_scalar(pod_slot, 5);
+    fixture_population.reserved.write_scalar(pod_slot, 0);
+    fixture_population.reservation_owner.write_scalar(pod_slot, 0);
+    fixture_population.needs_satisfaction.write_scalar(pod_slot, 40000);
+    fixture_population.composite_satisfaction.write_scalar(pod_slot, 42000);
+    fixture_population.owner_employed.write_scalar(pod_slot, 3);
+    fixture_population.employee_employed.write_scalar(pod_slot, 11);
+    fixture_population.population.write_scalar(pod_slot_two, 29);
+    fixture_population.funds.write_scalar(pod_slot_two, 4100);
+    fixture_population.epoch_income.write_scalar(pod_slot_two, 101);
+    fixture_population.epoch_expense.write_scalar(pod_slot_two, 22);
+    fixture_population.generation.write_scalar(pod_slot_two, 9);
+    fixture_population.reserved.write_scalar(pod_slot_two, 1);
+    fixture_population.reservation_owner.write_scalar(pod_slot_two, 99);
+    fixture_population.needs_satisfaction.write_scalar(pod_slot_two, 50000);
+    fixture_population.composite_satisfaction.write_scalar(pod_slot_two, 51000);
+    fixture_population.owner_employed.write_scalar(pod_slot_two, 1);
+    fixture_population.employee_employed.write_scalar(pod_slot_two, 4);
+    authority.state().market.stock.write_scalar(4, 77);
+    authority.state().market.price.write_scalar(4, 19);
+    authority.state().market.demand_ema.write_scalar(4, 31);
+    authority.state().market.last_shortage_q16.write_scalar(4, 1024);
+    authority.state().market.cell_to_market.write_scalar(0, 0);
+    authority.state().market.cell_to_market.write_scalar(1, 1);
     authority.state().building.captured = true;
     authority.state().building.catalog_hash = 0xB17D;
     authority.state().building.store.clear();

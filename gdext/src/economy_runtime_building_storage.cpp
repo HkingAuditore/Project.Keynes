@@ -16,7 +16,7 @@ double elapsed_ms(const Clock::time_point &start) {
 // Gathers one group column through `order`. The scratch buffer is reused so a
 // topology rebuild does not allocate once per column.
 template <typename T>
-void gather_column(std::vector<T> &column, const std::vector<int32_t> &order) {
+void gather_column(EconomyTrackedColumn<T> &column, const std::vector<int32_t> &order) {
     static thread_local std::vector<T> scratch;
     scratch.clear();
     scratch.reserve(order.size());
@@ -53,7 +53,7 @@ void NativeEconomyRuntime::write_building_group(size_t row,
     RuntimeEconomyBuildingStore &store = buildings_store();
     if (row >= store.cell.size()) return;
 #define PK_BUILDING_GROUP_STORE(TYPE, NAME, COLUMN) \
-    store.COLUMN[row] = group.NAME;
+    store.COLUMN.write_scalar(row, group.NAME);
     PK_BUILDING_GROUP_COLUMNS(PK_BUILDING_GROUP_STORE)
 #undef PK_BUILDING_GROUP_STORE
     _building_handle_index_clean = false;
@@ -146,8 +146,8 @@ void NativeEconomyRuntime::refresh_building_store_role_lanes() const {
              type_id < static_cast<int32_t>(_building_types.size()))
                 ? _building_types[static_cast<size_t>(type_id)].employee_count
                 : 0;
-        store.role_count[g] = roles;
-        store.role_begin[g] = static_cast<int32_t>(store.role_filled.size());
+        store.role_count.write_scalar(g, roles);
+        store.role_begin.write_scalar(g, static_cast<int32_t>(store.role_filled.size()));
         const int32_t begin = store.employee_fill_begin[g];
         for (int32_t r = 0; r < roles; ++r) {
             const int32_t lane = begin + r;
@@ -239,7 +239,7 @@ size_t NativeEconomyRuntime::erase_ready_pending_construction(int64_t day) {
         if (store.pending_ready_day[row] <= day) continue;
         if (keep != row) {
 #define PK_PENDING_CONSTRUCTION_COMPACT(TYPE, NAME, COLUMN) \
-            store.COLUMN[keep] = store.COLUMN[row];
+            store.COLUMN.write_scalar(keep, store.COLUMN[row]);
             PK_PENDING_CONSTRUCTION_COLUMNS(PK_PENDING_CONSTRUCTION_COMPACT)
 #undef PK_PENDING_CONSTRUCTION_COMPACT
         }
@@ -308,17 +308,17 @@ void NativeEconomyRuntime::initialize_building_role_span(
     group.last_input_selection_begin = span.input_begin;
     for (int32_t role_index = 0; role_index < type.employee_count; ++role_index) {
         const int32_t lane = span.employee_begin + role_index;
-        _building_employee_filled[lane] = 0;
+        _building_employee_filled.write_scalar(lane, 0, market_mutation_sink());
         // Wage lanes start empty and are quoted by prepare_cell_wages from
         // living-cost and market signals.  Never seed them from content wages.
-        _building_role_contract_wage[lane] = 0;
-        _building_role_base_living_cost[lane] = 0;
-        _building_role_living_cost[lane] = 0;
-        _building_role_local_average_wage[lane] = 0;
-        _building_role_base_wage_due[lane] = 0;
-        _building_role_base_wage_paid[lane] = 0;
-        _building_role_bonus_due[lane] = 0;
-        _building_role_bonus_paid[lane] = 0;
+        _building_role_contract_wage.write_scalar(lane, 0, market_mutation_sink());
+        _building_role_base_living_cost.write_scalar(lane, 0, market_mutation_sink());
+        _building_role_living_cost.write_scalar(lane, 0, market_mutation_sink());
+        _building_role_local_average_wage.write_scalar(lane, 0, market_mutation_sink());
+        _building_role_base_wage_due.write_scalar(lane, 0, market_mutation_sink());
+        _building_role_base_wage_paid.write_scalar(lane, 0, market_mutation_sink());
+        _building_role_bonus_due.write_scalar(lane, 0, market_mutation_sink());
+        _building_role_bonus_paid.write_scalar(lane, 0, market_mutation_sink());
         _building_role_forecast_pay_ratio_q16[lane] = 0;
     }
     std::fill(_building_last_input_selected_goods.begin() + span.input_begin,

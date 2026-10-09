@@ -149,6 +149,7 @@ void append_envelope(std::vector<uint8_t> &out,
     append_i32(out, envelope.epoch_days);
     append_u64(out, envelope.committed_generation);
     append_i64(out, envelope.seed);
+    append_u32(out, envelope.hash_version);
 }
 
 bool read_envelope(const uint8_t *&p, const uint8_t *end,
@@ -174,6 +175,12 @@ bool read_envelope(const uint8_t *&p, const uint8_t *end,
         !read_u64(p, end, envelope.committed_generation) ||
         !read_i64(p, end, envelope.seed)) {
         return false;
+    }
+    if (envelope.abi_version >= 3u) {
+        if (!read_u32(p, end, envelope.hash_version) ||
+            (envelope.hash_version != 1u && envelope.hash_version != 2u)) return false;
+    } else {
+        envelope.hash_version = 1u;
     }
     return p <= end;
 }
@@ -474,11 +481,12 @@ bool decode_ecp2(const uint8_t *data, size_t size,
     out.authority_domain_mask = mask;
     out.content_hash = content_hash;
 
-    if (abi != RUNTIME_ECONOMY_ECP2_ABI_VERSION) {
+    const bool migrating = runtime_hash_migration_enabled() && abi == 2u && schema == 53u;
+    if (abi != RUNTIME_ECONOMY_ECP2_ABI_VERSION && !migrating) {
         error = "ecp2_abi_version_incompatible";
         return false;
     }
-    if (schema != static_cast<uint32_t>(RUNTIME_ECONOMY_ECP2_SCHEMA_VERSION)) {
+    if (schema != static_cast<uint32_t>(RUNTIME_ECONOMY_ECP2_SCHEMA_VERSION) && !migrating) {
         error = "ecp2_schema_version_incompatible";
         return false;
     }
@@ -499,7 +507,9 @@ bool decode_ecp2(const uint8_t *data, size_t size,
         }
         const uint8_t *ep = p;
         const uint8_t *eend = p + envelope_size;
-        if (!read_envelope(ep, eend, out.envelope)) {
+        if (!read_envelope(ep, eend, out.envelope) ||
+            out.envelope.abi_version != abi ||
+            out.envelope.schema_version != static_cast<int32_t>(schema)) {
             error = "ecp2_envelope_invalid";
             return false;
         }

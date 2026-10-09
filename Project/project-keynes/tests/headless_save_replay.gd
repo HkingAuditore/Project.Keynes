@@ -34,6 +34,7 @@ const RUNTIME_READY_FRAMES := 4800
 var _game_flow: Node
 var _failures := PackedStringArray()
 var _result := {}
+var _finished := false
 
 
 func _ready() -> void:
@@ -83,6 +84,25 @@ func _run() -> void:
 		_fail(restore_error)
 		return
 	var start_day := clock.day_index()
+	if OS.get_environment("PK_SAVE_MIGRATE") == "1" and not OS.get_environment("PK_SAVE_MIGRATE_OUTPUT_SLOT").is_empty():
+		var format: Dictionary = generator.get_data_core_world_ext().get_economy_checkpoint_format()
+		if int(format.get("hash_version", 0)) != 2 or int(format.get("schema_version", 0)) != 54:
+			_fail("save_migration_requires_hash_v2_extension")
+			return
+		clock.pause(true)
+		var save = get_tree().root.get_node("GameSave")
+		# Tool-local suppression; do not change the player's persisted settings.
+		save.set("_autosave_enabled", false)
+		var migrated: Dictionary = await save.request_manual_save(OS.get_environment("PK_SAVE_MIGRATE_OUTPUT_SLOT"))
+		_result["migration"] = migrated
+		_result["checkpoint_format"] = format
+		_result["start_day"] = start_day
+		_result["end_day"] = clock.day_index()
+		if not bool(migrated.get("ok", false)) or clock.day_index() != start_day:
+			_fail("save_migration_failed_or_advanced_day")
+			return
+		_finish()
+		return
 	_result["start_day"] = start_day
 	_result["target_day"] = start_day + days
 	print("[save-replay] loaded day=%d country=%s economy=%s" % [
@@ -104,22 +124,51 @@ func _advance(host: WorldRuntimeHost, clock: WorldClock, generator,
 	# 时钟前进不等于模拟前进。经济结算水位不动的话，这轮回放什么也没验证。
 	var start_newest_day := int(
 		generator.get_economy_report().get("newest_state_day", -1))
-	var last_day := clock.day_index()
 	var last_day_msec := Time.get_ticks_msec()
 	var started_msec := last_day_msec
-	while clock.day_index() < target_day:
+	var thread_start: Dictionary = generator.get_runtime_perf_snapshot(0)
+	var worker_start := int(thread_start.get("simulation_committed_day", -1))
+	var worker_target := worker_start + int(_result["requested_days"])
+	var worker_end := worker_start
+	var last_day := worker_start if worker_start >= 0 else clock.day_index()
+	var warmup_days := maxi(0, int(_env("PK_SAVE_REPLAY_WARMUP_DAYS", "0")))
+	var warmup_target := worker_start + warmup_days
+	var measuring := warmup_days == 0
+	_result["warmup_days"] = warmup_days
+	_result["warmup_start_authoritative_day"] = worker_start
+	_result["target_authoritative_day"] = worker_target
+	while true:
 		await get_tree().process_frame
-		var economy: Dictionary = generator.get_economy_report()
-		if bool(economy.get("fatal", false)):
+		var progress: Dictionary = generator.get_runtime_perf_snapshot(0)
+		worker_end = int(progress.get("simulation_committed_day", -1))
+		if not measuring and worker_start >= 0 and worker_end >= warmup_target:
+			# Anchor to the actual observed commit, including any frame coalescing.
+			worker_start = worker_end
+			worker_target = worker_start + int(_result["requested_days"])
+			_result["target_authoritative_day"] = worker_target
+			_result["warmup_actual_days"] = worker_start - int(_result["warmup_start_authoritative_day"])
+			thread_start = progress
+			started_msec = Time.get_ticks_msec()
+			measuring = true
+		if measuring and worker_start >= 0 and worker_end >= worker_target:
+			break
+		if worker_start < 0 and clock.day_index() >= target_day:
+			break
+		var economy: Dictionary = generator.get_economy_perf_report()
+		var worker_fault := int(progress.get("worker_fault_count", 0)) > 0 \
+			or bool(progress.get("economy_authority_fault_paused", false)) \
+			or not String(progress.get("economy_capture_fatal_reason", "")).is_empty()
+		if worker_fault or bool(economy.get("fatal", false)):
 			clock.set_speed(0.0)
 			_result["fatal_day"] = clock.day_index()
 			_result["forensics"] = RuntimeForensics.capture_and_dump(
 				String(economy.get("fatal_reason", "unknown")),
 				generator, clock, "save_replay_fatal",
 				{"slot": _result["slot"], "start_day": _result["start_day"]})
-			_fail("economy_fatal:%s" % String(economy.get("fatal_reason", "unknown")))
+			_fail("economy_fatal:%s" % String(economy.get("fatal_reason",
+				progress.get("fault_code", "unknown"))))
 			return
-		var day := clock.day_index()
+		var day := worker_end if worker_start >= 0 else clock.day_index()
 		var now := Time.get_ticks_msec()
 		if day != last_day:
 			last_day = day
@@ -141,8 +190,25 @@ func _advance(host: WorldRuntimeHost, clock: WorldClock, generator,
 	_result["end_day"] = clock.day_index()
 	_result["elapsed_msec"] = elapsed
 	_result["days_per_sec"] = (
-		float(clock.day_index() - _result["start_day"]) / max(0.001, elapsed / 1000.0))
+		float(worker_end - worker_start if worker_start >= 0 else
+			clock.day_index() - _result["start_day"]) / max(0.001, elapsed / 1000.0))
+	_result["start_authoritative_day"] = worker_start
+	_result["end_authoritative_day"] = worker_end
+	var final_progress: Dictionary = generator.get_runtime_perf_snapshot(0)
+	var timing_deltas := {}
+	for category in ["execute", "input_wait", "clock_wait", "save_build",
+			"save_pause", "paused", "overhead", "boundary_wait"]:
+		var key := "worker_time_%s_us" % category
+		timing_deltas[category] = int(final_progress.get(key, 0)) - int(thread_start.get(key, 0))
+	_result["measurement_worker_time_us"] = timing_deltas
 	var final_economy: Dictionary = generator.get_economy_report()
+	var final_audit := final_economy
+	var audit_ext = generator.get_data_core_world_ext()
+	if audit_ext != null and audit_ext.has_method("get_economy_committed_audit_report"):
+		final_audit = audit_ext.get_economy_committed_audit_report()
+		if not bool(final_audit.get("available", false)):
+			_failures.append("committed_audit_missing")
+		_result["committed_audit"] = final_audit
 	_result["start_newest_state_day"] = start_newest_day
 	_result["end_newest_state_day"] = int(
 		final_economy.get("newest_state_day", -1))
@@ -151,14 +217,13 @@ func _advance(host: WorldRuntimeHost, clock: WorldClock, generator,
 	var worker_error := _worker_defect(generator)
 	if not worker_error.is_empty():
 		_failures.append(worker_error)
-	if not _failures.is_empty():
-		# 取证只挑了关键键；判断 worker 为什么一天都提交不了需要整份报告。
-		_dump_full_thread_report(generator)
-	_result["audit_incomplete"] = bool(final_economy.get("audit_incomplete", false))
+	# One cold report at the end also supplies reproducible workload counters.
+	_dump_full_thread_report(generator)
+	_result["audit_incomplete"] = bool(final_audit.get("audit_incomplete", true))
 	for key in ["population_error", "money_error", "goods_error"]:
-		_result[key] = int(final_economy.get(key, 0))
-		if int(final_economy.get(key, 0)) != 0:
-			_failures.append("%s=%d" % [key, int(final_economy.get(key, 0))])
+		_result[key] = int(final_audit.get(key, 0))
+		if int(final_audit.get(key, 0)) != 0:
+			_failures.append("%s=%d" % [key, int(final_audit.get(key, 0))])
 	# 走到这里意味着复现没有重现故障。这同样是结论，而且要留下现场以便和失败
 	# 的那一次逐字段比对。
 	_result["forensics"] = RuntimeForensics.capture_and_dump(
@@ -249,6 +314,9 @@ func _fail(reason: String) -> void:
 
 
 func _finish() -> void:
+	if _finished:
+		return
+	_finished = true
 	_result["failures"] = _failures
 	_result["ok"] = _failures.is_empty()
 	# 单行机器可读结果。包装脚本按这个前缀解析，不要改前缀。

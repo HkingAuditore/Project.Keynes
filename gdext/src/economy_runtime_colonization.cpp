@@ -17,6 +17,111 @@
 #include <godot_cpp/variant/variant.hpp>
 
 namespace pk {
+EconomyFamilyExpeditionStore::EconomyFamilyExpeditionStore()
+    : active_count(changes, {{8, 1001}, "expedition.active_count", EconomyFieldEncoding::I64, 8}, 0),
+      active(changes, {{8, 1}, "expedition.active", EconomyFieldEncoding::U8, 1}),
+      generation(changes, {{8, 2}, "expedition.generation", EconomyFieldEncoding::U32, 4}),
+      stable_id(changes, {{8, 3}, "expedition.stable_id", EconomyFieldEncoding::I64, 8}),
+      country_handle(changes, {{8, 4}, "expedition.country_handle", EconomyFieldEncoding::U64, 8}),
+      family_handle(changes, {{8, 5}, "expedition.family_handle", EconomyFieldEncoding::U64, 8}),
+      source_cell(changes, {{8, 6}, "expedition.source_cell", EconomyFieldEncoding::I32, 4}),
+      target_cell(changes, {{8, 7}, "expedition.target_cell", EconomyFieldEncoding::I32, 4}),
+      departure_day(changes, {{8, 8}, "expedition.departure_day", EconomyFieldEncoding::I64, 8}),
+      due_day(changes, {{8, 9}, "expedition.due_day", EconomyFieldEncoding::I64, 8}),
+      route_cost(changes, {{8, 10}, "expedition.route_cost", EconomyFieldEncoding::I32, 4}),
+      speed(changes, {{8, 11}, "expedition.speed", EconomyFieldEncoding::I32, 4}),
+      state(changes, {{8, 12}, "expedition.state", EconomyFieldEncoding::U8, 1}),
+      population(changes, {{8, 13}, "expedition.population", EconomyFieldEncoding::I64, 8}),
+      route_begin(changes, {{8, 14}, "expedition.route_begin", EconomyFieldEncoding::U32, 4}),
+      route_count(changes, {{8, 15}, "expedition.route_count", EconomyFieldEncoding::U32, 4}),
+      payload_begin(changes, {{8, 16}, "expedition.payload_begin", EconomyFieldEncoding::U32, 4}),
+      payload_count(changes, {{8, 17}, "expedition.payload_count", EconomyFieldEncoding::U32, 4}),
+      cargo_begin(changes, {{8, 18}, "expedition.cargo_begin", EconomyFieldEncoding::U32, 4}),
+      cargo_count(changes, {{8, 19}, "expedition.cargo_count", EconomyFieldEncoding::U32, 4}),
+      kit_building_begin(changes, {{8, 20}, "expedition.kit_building_begin", EconomyFieldEncoding::U32, 4}),
+      kit_building_count(changes, {{8, 21}, "expedition.kit_building_count", EconomyFieldEncoding::U32, 4}),
+      kit_bridge_required_units(changes, {{8, 22}, "expedition.kit_bridge_required_units", EconomyFieldEncoding::I64, 8}),
+      kit_material_required_units(changes, {{8, 23}, "expedition.kit_material_required_units", EconomyFieldEncoding::I64, 8}),
+      kit_missing_stock_identity(changes, {{8, 24}, "expedition.kit_missing_stock_identity", EconomyFieldEncoding::U64, 8}),
+      missing_good_begin(changes, {{8, 25}, "expedition.missing_good_begin", EconomyFieldEncoding::U32, 4}),
+      missing_good_count(changes, {{8, 26}, "expedition.missing_good_count", EconomyFieldEncoding::U32, 4}),
+      effect_transaction_id(changes, {{8, 27}, "expedition.effect_transaction_id", EconomyFieldEncoding::I64, 8}),
+      idempotency_key(changes, {{8, 28}, "expedition.idempotency_key", EconomyFieldEncoding::U64, 8}),
+      free_indices(changes, {{8, 29}, "expedition.free_indices", EconomyFieldEncoding::I32, 4}) {}
+EconomyFamilyExpeditionStore::EconomyFamilyExpeditionStore(const EconomyFamilyExpeditionStore &other)
+    : EconomyFamilyExpeditionStore() { *this = other; }
+EconomyFamilyExpeditionStore &EconomyFamilyExpeditionStore::operator=(const EconomyFamilyExpeditionStore &other) {
+    if (this == &other) return *this;
+    active.assign(other.active.values());
+    generation.assign(other.generation.values());
+    stable_id.assign(other.stable_id.values());
+    country_handle.assign(other.country_handle.values());
+    family_handle.assign(other.family_handle.values());
+    source_cell.assign(other.source_cell.values());
+    target_cell.assign(other.target_cell.values());
+    departure_day.assign(other.departure_day.values());
+    due_day.assign(other.due_day.values());
+    route_cost.assign(other.route_cost.values());
+    speed.assign(other.speed.values());
+    state.assign(other.state.values());
+    population.assign(other.population.values());
+    route_begin.assign(other.route_begin.values());
+    route_count.assign(other.route_count.values());
+    payload_begin.assign(other.payload_begin.values());
+    payload_count.assign(other.payload_count.values());
+    cargo_begin.assign(other.cargo_begin.values());
+    cargo_count.assign(other.cargo_count.values());
+    kit_building_begin.assign(other.kit_building_begin.values());
+    kit_building_count.assign(other.kit_building_count.values());
+    kit_bridge_required_units.assign(other.kit_bridge_required_units.values());
+    kit_material_required_units.assign(other.kit_material_required_units.values());
+    kit_missing_stock_identity.assign(other.kit_missing_stock_identity.values());
+    missing_good_begin.assign(other.missing_good_begin.values());
+    missing_good_count.assign(other.missing_good_count.values());
+    effect_transaction_id.assign(other.effect_transaction_id.values());
+    idempotency_key.assign(other.idempotency_key.values());
+    free_indices.assign(other.free_indices.values());
+    active_count = other.active_count;
+    return *this;
+}
+EconomyFamilyExpeditionStore::EconomyFamilyExpeditionStore(EconomyFamilyExpeditionStore &&other)
+    : EconomyFamilyExpeditionStore() { *this = std::move(other); }
+EconomyFamilyExpeditionStore &EconomyFamilyExpeditionStore::operator=(EconomyFamilyExpeditionStore &&other) {
+    if (this == &other) return *this;
+    active.move_from(other.active);
+    generation.move_from(other.generation);
+    stable_id.move_from(other.stable_id);
+    country_handle.move_from(other.country_handle);
+    family_handle.move_from(other.family_handle);
+    source_cell.move_from(other.source_cell);
+    target_cell.move_from(other.target_cell);
+    departure_day.move_from(other.departure_day);
+    due_day.move_from(other.due_day);
+    route_cost.move_from(other.route_cost);
+    speed.move_from(other.speed);
+    state.move_from(other.state);
+    population.move_from(other.population);
+    route_begin.move_from(other.route_begin);
+    route_count.move_from(other.route_count);
+    payload_begin.move_from(other.payload_begin);
+    payload_count.move_from(other.payload_count);
+    cargo_begin.move_from(other.cargo_begin);
+    cargo_count.move_from(other.cargo_count);
+    kit_building_begin.move_from(other.kit_building_begin);
+    kit_building_count.move_from(other.kit_building_count);
+    kit_bridge_required_units.move_from(other.kit_bridge_required_units);
+    kit_material_required_units.move_from(other.kit_material_required_units);
+    kit_missing_stock_identity.move_from(other.kit_missing_stock_identity);
+    missing_good_begin.move_from(other.missing_good_begin);
+    missing_good_count.move_from(other.missing_good_count);
+    effect_transaction_id.move_from(other.effect_transaction_id);
+    idempotency_key.move_from(other.idempotency_key);
+    free_indices.move_from(other.free_indices);
+    active_count = other.active_count;
+    other.active_count = 0;
+    return *this;
+}
+
 
 using namespace godot;
 using namespace variant_helpers;
@@ -75,13 +180,13 @@ int32_t EconomyFamilyExpeditionStore::allocate() {
     if (!free_indices.empty()) {
         index = free_indices.back();
         free_indices.pop_back();
-        generation[index] = std::max<uint32_t>(1, generation[index] + 1);
-        cargo_begin[index] = 0; cargo_count[index] = 0;
-        kit_building_begin[index] = 0; kit_building_count[index] = 0;
-        kit_bridge_required_units[index] = 0;
-        kit_material_required_units[index] = 0;
-        kit_missing_stock_identity[index] = 0;
-        missing_good_begin[index] = 0; missing_good_count[index] = 0;
+        generation.write_scalar(index, std::max<uint32_t>(1, generation[index] + 1));
+        cargo_begin.write_scalar(index, 0); cargo_count.write_scalar(index, 0);
+        kit_building_begin.write_scalar(index, 0); kit_building_count.write_scalar(index, 0);
+        kit_bridge_required_units.write_scalar(index, 0);
+        kit_material_required_units.write_scalar(index, 0);
+        kit_missing_stock_identity.write_scalar(index, 0);
+        missing_good_begin.write_scalar(index, 0); missing_good_count.write_scalar(index, 0);
     } else {
         index = static_cast<int32_t>(active.size());
         active.push_back(0); generation.push_back(1); stable_id.push_back(0);
@@ -100,7 +205,7 @@ int32_t EconomyFamilyExpeditionStore::allocate() {
         missing_good_begin.push_back(0); missing_good_count.push_back(0);
         effect_transaction_id.push_back(0); idempotency_key.push_back(0);
     }
-    active[index] = 1;
+    active.write_scalar(index, 1);
     ++active_count;
     return index;
 }
@@ -108,9 +213,9 @@ int32_t EconomyFamilyExpeditionStore::allocate() {
 void EconomyFamilyExpeditionStore::release(int32_t index) {
     if (index < 0 || index >= static_cast<int32_t>(active.size()) ||
         active[index] == 0) return;
-    active[index] = 0;
-    country_handle[index] = 0; family_handle[index] = 0;
-    population[index] = 0; effect_transaction_id[index] = 0;
+    active.write_scalar(index, 0);
+    country_handle.write_scalar(index, 0); family_handle.write_scalar(index, 0);
+    population.write_scalar(index, 0); effect_transaction_id.write_scalar(index, 0);
     free_indices.push_back(index);
     --active_count;
 }
@@ -1005,10 +1110,10 @@ int64_t NativeEconomyRuntime::family_expedition_displayed_population(
 
 int64_t NativeEconomyRuntime::market_stock(int32_t cell, int32_t good_id) const {
     if (cell < 0 || cell >= _cell_count || good_id < 0 ||
-        good_id >= market_store().good_count)
+        good_id >= market_store().good_count.get())
         return 0;
     const int32_t market = market_store().cell_to_market[cell];
-    if (market < 0 || market >= market_store().market_count) return 0;
+    if (market < 0 || market >= market_store().market_count.get()) return 0;
     return std::max<int64_t>(0, market_store().stock[market_store().index(market, good_id)]);
 }
 
@@ -1034,16 +1139,14 @@ uint64_t NativeEconomyRuntime::hash_preparing_missing_stock(
 
 void NativeEconomyRuntime::store_preparing_missing_goods(
         int32_t expedition, const ColonizationKitPlan &kit) {
-    family_expeditions_store().missing_good_begin[expedition] =
-        static_cast<uint32_t>(family_expedition_missing_good_ids().size());
+    family_expeditions_store().missing_good_begin.write_scalar(expedition, static_cast<uint32_t>(family_expedition_missing_good_ids().size()), market_mutation_sink());
     const int32_t source = family_expeditions_store().source_cell[expedition];
     for (const int32_t good : kit.missing_good_ids) {
         family_expedition_missing_good_ids().push_back(good);
         family_expedition_missing_good_quantities().push_back(
             market_stock(source, good));
     }
-    family_expeditions_store().missing_good_count[expedition] =
-        static_cast<uint32_t>(kit.missing_good_ids.size());
+    family_expeditions_store().missing_good_count.write_scalar(expedition, static_cast<uint32_t>(kit.missing_good_ids.size()), market_mutation_sink());
     uint64_t identity = hash_preparing_missing_stock(source,
         kit.missing_good_ids.empty() ? nullptr : kit.missing_good_ids.data(),
         static_cast<uint32_t>(kit.missing_good_ids.size()));
@@ -1059,8 +1162,7 @@ void NativeEconomyRuntime::store_preparing_missing_goods(
         identity = trace_hash_mix(identity,
             static_cast<uint64_t>(line.quantity));
     }
-    family_expeditions_store().kit_missing_stock_identity[expedition] =
-        identity == 0 ? 1 : identity;
+    family_expeditions_store().kit_missing_stock_identity.write_scalar(expedition, identity == 0 ? 1 : identity, market_mutation_sink());
 }
 
 void NativeEconomyRuntime::refresh_preparing_family_expedition_missing(
@@ -1070,14 +1172,13 @@ void NativeEconomyRuntime::refresh_preparing_family_expedition_missing(
     const int32_t source = family_expeditions_store().source_cell[expedition];
     if (count == 0 ||
         begin + count > family_expedition_missing_good_ids().size()) {
-        family_expeditions_store().kit_missing_stock_identity[expedition] = 0;
+        family_expeditions_store().kit_missing_stock_identity.write_scalar(expedition, 0, market_mutation_sink());
         return;
     }
     for (uint32_t i = 0; i < count; ++i) {
         const int32_t good = family_expedition_missing_good_ids()[begin + i];
         if (begin + i < family_expedition_missing_good_quantities().size())
-            family_expedition_missing_good_quantities()[begin + i] =
-                market_stock(source, good);
+            family_expedition_missing_good_quantities().write_scalar(begin + i, market_stock(source, good), market_mutation_sink());
     }
 }
 
@@ -1111,16 +1212,15 @@ bool NativeEconomyRuntime::launch_preparing_family_expedition(
     // The escrow already holds every kit line, so only the people still have
     // to leave. A blocked payload extract keeps the stocked goods and retries
     // tomorrow instead of dumping them back on the market.
-    family_expeditions_store().kit_building_begin[expedition] = static_cast<uint32_t>(
-        family_expedition_kit_buildings().size());
+    family_expeditions_store().kit_building_begin.write_scalar(expedition, static_cast<uint32_t>(
+        family_expedition_kit_buildings().size()), market_mutation_sink());
     if (kit.place_buildings != 0) {
         family_expedition_kit_buildings().insert(
             family_expedition_kit_buildings().end(),
             kit.buildings.begin(), kit.buildings.end());
-        family_expeditions_store().kit_building_count[expedition] =
-            static_cast<uint32_t>(kit.buildings.size());
+        family_expeditions_store().kit_building_count.write_scalar(expedition, static_cast<uint32_t>(kit.buildings.size()), market_mutation_sink());
     } else {
-        family_expeditions_store().kit_building_count[expedition] = 0;
+        family_expeditions_store().kit_building_count.write_scalar(expedition, 0, market_mutation_sink());
     }
     if (!extract_family_expedition_payload(expedition,
             family_expeditions_store().population[expedition], error)) {
@@ -1146,9 +1246,9 @@ bool NativeEconomyRuntime::launch_preparing_family_expedition(
         append_colonization_receipt(expedition, 0, day, day, 2,
             retry_reason.c_str());
         error.clear();
-        family_expeditions_store().kit_building_count[expedition] = 0;
+        family_expeditions_store().kit_building_count.write_scalar(expedition, 0, market_mutation_sink());
         store_preparing_missing_goods(expedition, kit);
-        family_expeditions_store().due_day[expedition] = day + 1;
+        family_expeditions_store().due_day.write_scalar(expedition, day + 1, market_mutation_sink());
         push_family_expedition_due(expedition);
         return true;
     }
@@ -1156,11 +1256,11 @@ bool NativeEconomyRuntime::launch_preparing_family_expedition(
         (family_expeditions_store().route_cost[expedition] +
          std::max(1, family_expeditions_store().speed[expedition]) - 1) /
         std::max(1, family_expeditions_store().speed[expedition]));
-    family_expeditions_store().state[expedition] = EXPEDITION_OUTBOUND;
-    family_expeditions_store().departure_day[expedition] = day;
-    family_expeditions_store().due_day[expedition] = day + travel;
-    family_expeditions_store().missing_good_count[expedition] = 0;
-    family_expeditions_store().kit_missing_stock_identity[expedition] = 0;
+    family_expeditions_store().state.write_scalar(expedition, EXPEDITION_OUTBOUND, market_mutation_sink());
+    family_expeditions_store().departure_day.write_scalar(expedition, day, market_mutation_sink());
+    family_expeditions_store().due_day.write_scalar(expedition, day + travel, market_mutation_sink());
+    family_expeditions_store().missing_good_count.write_scalar(expedition, 0, market_mutation_sink());
+    family_expeditions_store().kit_missing_stock_identity.write_scalar(expedition, 0, market_mutation_sink());
     _family_expedition_procurement_rejections.erase(expedition);
     push_family_expedition_due(expedition);
     note_family_expedition_audit_invalidation();
@@ -1189,7 +1289,7 @@ bool NativeEconomyRuntime::advance_preparing_family_expedition(
     if (continuation.active) {
         if (continuation.expedition != expedition) {
             error = "colonization_treasury_peer_busy";
-            family_expeditions_store().due_day[expedition] = day + 1;
+            family_expeditions_store().due_day.write_scalar(expedition, day + 1, market_mutation_sink());
             push_family_expedition_due(expedition);
             return true;
         }
@@ -1200,7 +1300,7 @@ bool NativeEconomyRuntime::advance_preparing_family_expedition(
             continuation, error);
         if (!purchased && continuation.active) {
             error.clear();
-            family_expeditions_store().due_day[expedition] = day + 1;
+            family_expeditions_store().due_day.write_scalar(expedition, day + 1, market_mutation_sink());
             push_family_expedition_due(expedition);
             return true;
         }
@@ -1237,12 +1337,10 @@ bool NativeEconomyRuntime::advance_preparing_family_expedition(
                     return std::tie(a.flags, a.good_id) <
                         std::tie(b.flags, b.good_id);
                 });
-            family_expeditions_store().cargo_begin[expedition] =
-                static_cast<uint32_t>(family_expedition_cargo().size());
+            family_expeditions_store().cargo_begin.write_scalar(expedition, static_cast<uint32_t>(family_expedition_cargo().size()), market_mutation_sink());
             family_expedition_cargo().insert(family_expedition_cargo().end(),
                 cargo.begin(), cargo.end());
-            family_expeditions_store().cargo_count[expedition] =
-                static_cast<uint32_t>(cargo.size());
+            family_expeditions_store().cargo_count.write_scalar(expedition, static_cast<uint32_t>(cargo.size()), market_mutation_sink());
             note_family_expedition_audit_invalidation();
         }
         error.clear();
@@ -1281,14 +1379,14 @@ bool NativeEconomyRuntime::advance_preparing_family_expedition(
         // held, report the shortfall, and try again tomorrow.
         error.clear();
         store_preparing_missing_goods(expedition, kit);
-        family_expeditions_store().due_day[expedition] = day + 1;
+        family_expeditions_store().due_day.write_scalar(expedition, day + 1, market_mutation_sink());
         push_family_expedition_due(expedition);
         return true;
     }
     if (kit.kit_partial == 0 && !kit.buildings.empty())
         return launch_preparing_family_expedition(expedition, day, kit, error);
     store_preparing_missing_goods(expedition, kit);
-    family_expeditions_store().due_day[expedition] = day + 1;
+    family_expeditions_store().due_day.write_scalar(expedition, day + 1, market_mutation_sink());
     push_family_expedition_due(expedition);
     return true;
 }
@@ -1313,29 +1411,26 @@ bool NativeEconomyRuntime::apply_start_family_expedition(
         error = "colonization_kit_requote_required"; return false;
     }
     const int32_t expedition = family_expeditions_store().allocate();
-    family_expeditions_store().stable_id[expedition] =
-        _next_family_expedition_stable_id++;
-    family_expeditions_store().country_handle[expedition] = quote.country_handle;
-    family_expeditions_store().family_handle[expedition] = quote.family_handle;
-    family_expeditions_store().source_cell[expedition] = quote.source_cell;
-    family_expeditions_store().target_cell[expedition] = quote.target_cell;
-    family_expeditions_store().departure_day[expedition] = cmd.effective_day;
-    family_expeditions_store().route_cost[expedition] = quote.route_cost;
-    family_expeditions_store().speed[expedition] = COLONIZATION_SPEED;
-    family_expeditions_store().due_day[expedition] = cmd.effective_day +
-        std::max(1, quote.travel_days);
-    family_expeditions_store().state[expedition] = EXPEDITION_OUTBOUND;
-    family_expeditions_store().population[expedition] = cmd.i64_0;
+    family_expeditions_store().stable_id.write_scalar(expedition, _next_family_expedition_stable_id++, market_mutation_sink());
+    family_expeditions_store().country_handle.write_scalar(expedition, quote.country_handle, market_mutation_sink());
+    family_expeditions_store().family_handle.write_scalar(expedition, quote.family_handle, market_mutation_sink());
+    family_expeditions_store().source_cell.write_scalar(expedition, quote.source_cell, market_mutation_sink());
+    family_expeditions_store().target_cell.write_scalar(expedition, quote.target_cell, market_mutation_sink());
+    family_expeditions_store().departure_day.write_scalar(expedition, cmd.effective_day, market_mutation_sink());
+    family_expeditions_store().route_cost.write_scalar(expedition, quote.route_cost, market_mutation_sink());
+    family_expeditions_store().speed.write_scalar(expedition, COLONIZATION_SPEED, market_mutation_sink());
+    family_expeditions_store().due_day.write_scalar(expedition, cmd.effective_day +
+        std::max(1, quote.travel_days), market_mutation_sink());
+    family_expeditions_store().state.write_scalar(expedition, EXPEDITION_OUTBOUND, market_mutation_sink());
+    family_expeditions_store().population.write_scalar(expedition, cmd.i64_0, market_mutation_sink());
     // Freeze the stocking denominator at expedition creation.  The live
     // market may re-plan substitutes later, but that must never make an
     // already funded party appear to lose progress.
-    family_expeditions_store().kit_bridge_required_units[expedition] =
-        std::max<int64_t>(0, kit.bridge_required_units);
-    family_expeditions_store().kit_material_required_units[expedition] =
-        std::max<int64_t>(0, kit.material_required_units);
-    family_expeditions_store().route_begin[expedition] = static_cast<uint32_t>(
-        family_expedition_route_cells().size());
-    family_expeditions_store().route_count[expedition] = quote.route_count;
+    family_expeditions_store().kit_bridge_required_units.write_scalar(expedition, std::max<int64_t>(0, kit.bridge_required_units), market_mutation_sink());
+    family_expeditions_store().kit_material_required_units.write_scalar(expedition, std::max<int64_t>(0, kit.material_required_units), market_mutation_sink());
+    family_expeditions_store().route_begin.write_scalar(expedition, static_cast<uint32_t>(
+        family_expedition_route_cells().size()), market_mutation_sink());
+    family_expeditions_store().route_count.write_scalar(expedition, quote.route_count, market_mutation_sink());
     for (uint32_t i = 0; i < quote.route_count; ++i) {
         family_expedition_route_cells().push_back(
             _colonization_quote_route_cells[quote.route_begin + i]);
@@ -1347,17 +1442,16 @@ bool NativeEconomyRuntime::apply_start_family_expedition(
         static_cast<uint64_t>(family_expeditions_store().stable_id[expedition]));
     idempotency_key = trace_hash_mix(idempotency_key,
         static_cast<uint64_t>(cmd.sequence));
-    family_expeditions_store().idempotency_key[expedition] =
-        idempotency_key == 0 ? 1 : idempotency_key;
+    family_expeditions_store().idempotency_key.write_scalar(expedition, idempotency_key == 0 ? 1 : idempotency_key, market_mutation_sink());
     const bool needs_complete_kit = kit.place_buildings != 0 &&
         cmd.i64_0 >= COLONIZATION_KIT_MIN_OWNER_SLOTS;
     const bool kit_incomplete = kit.kit_partial != 0 || kit.buildings.empty();
     auto occupy_preparing = [&]() {
-        family_expeditions_store().payload_count[expedition] = 0;
-        family_expeditions_store().kit_building_count[expedition] = 0;
+        family_expeditions_store().payload_count.write_scalar(expedition, 0, market_mutation_sink());
+        family_expeditions_store().kit_building_count.write_scalar(expedition, 0, market_mutation_sink());
         store_preparing_missing_goods(expedition, kit);
-        family_expeditions_store().state[expedition] = EXPEDITION_PREPARING;
-        family_expeditions_store().due_day[expedition] = cmd.effective_day;
+        family_expeditions_store().state.write_scalar(expedition, EXPEDITION_PREPARING, market_mutation_sink());
+        family_expeditions_store().due_day.write_scalar(expedition, cmd.effective_day, market_mutation_sink());
         _family_expedition_target_index[family_expedition_target_key(
             quote.country_handle, quote.target_cell)] = expedition;
         push_family_expedition_due(expedition);
@@ -1426,7 +1520,8 @@ void NativeEconomyRuntime::unwind_family_expedition_payload_extract(
     uint32_t person_begin = static_cast<uint32_t>(
         family_expedition_person_handles().size());
     for (uint32_t p = begin; p < end; ++p) {
-        FamilyExpeditionPayload &payload = family_expedition_payloads()[p];
+        auto payload_write = family_expedition_payloads().edit_row(p, market_mutation_sink());
+        FamilyExpeditionPayload &payload = payload_write[0];
         population_store().release_reserved_slot(payload.reserved_slot, owner);
         payload.reserved_slot = -1;
         person_begin = std::min(person_begin, payload.person_begin);
@@ -1434,23 +1529,22 @@ void NativeEconomyRuntime::unwind_family_expedition_payload_extract(
         if (population_store().valid_handle(payload.source_cohort_handle, slot)) {
             audit_touch_population_lane(slot);
             touch_accounting_slot(slot);
-            population_store().population[slot] += payload.people;
-            population_store().owner_employed[slot] = saturating_add(
+            population_store().population.write_scalar(slot, population_store().population[slot] + (payload.people), market_mutation_sink());
+            population_store().owner_employed.write_scalar(slot, saturating_add(
                 population_store().owner_employed[slot],
-                payload.owner_employed, _saturation_count);
-            population_store().employee_employed[slot] = saturating_add(
+                payload.owner_employed, _saturation_count), market_mutation_sink());
+            population_store().employee_employed.write_scalar(slot, saturating_add(
                 population_store().employee_employed[slot],
-                payload.employee_employed, _saturation_count);
-            population_store().funds[slot] += payload.funds;
-            population_store().epoch_income[slot] += payload.epoch_income;
-            population_store().epoch_expense[slot] += payload.epoch_expense;
-            population_store().epoch_in_kind_income[slot] += payload.epoch_in_kind_income;
-            population_store().income_ema[slot] += payload.income_ema;
-            population_store().epoch_tax_paid[slot] += payload.epoch_tax_paid;
-            population_store().epoch_subsidy_received[slot] +=
-                payload.epoch_subsidy_received;
-            population_store().income_baseline_ema[slot] += payload.income_baseline_ema;
-            population_store().demography_residual[slot] += payload.demography_residual;
+                payload.employee_employed, _saturation_count), market_mutation_sink());
+            population_store().funds.write_scalar(slot, population_store().funds[slot] + (payload.funds), market_mutation_sink());
+            population_store().epoch_income.write_scalar(slot, population_store().epoch_income[slot] + (payload.epoch_income), market_mutation_sink());
+            population_store().epoch_expense.write_scalar(slot, population_store().epoch_expense[slot] + (payload.epoch_expense), market_mutation_sink());
+            population_store().epoch_in_kind_income.write_scalar(slot, population_store().epoch_in_kind_income[slot] + (payload.epoch_in_kind_income), market_mutation_sink());
+            population_store().income_ema.write_scalar(slot, population_store().income_ema[slot] + (payload.income_ema), market_mutation_sink());
+            population_store().epoch_tax_paid.write_scalar(slot, population_store().epoch_tax_paid[slot] + (payload.epoch_tax_paid), market_mutation_sink());
+            population_store().epoch_subsidy_received.write_scalar(slot, population_store().epoch_subsidy_received[slot] + (payload.epoch_subsidy_received), market_mutation_sink());
+            population_store().income_baseline_ema.write_scalar(slot, population_store().income_baseline_ema[slot] + (payload.income_baseline_ema), market_mutation_sink());
+            population_store().demography_residual.write_scalar(slot, population_store().demography_residual[slot] + (payload.demography_residual), market_mutation_sink());
         }
         auto membership = std::find_if(family_memberships().begin(),
             family_memberships().end(), [&](const FamilyMembershipEdge &edge) {
@@ -1477,15 +1571,15 @@ void NativeEconomyRuntime::unwind_family_expedition_payload_extract(
             int32_t person = -1;
             if (persons_store().valid_handle(family_expedition_person_handles()[i],
                     person))
-                persons_store().cohort_handle[person] = payload.source_cohort_handle;
+                persons_store().cohort_handle.write_scalar(person, payload.source_cohort_handle, market_mutation_sink());
         }
     }
     if (end > begin)
         family_expedition_payloads().resize(begin);
     if (person_begin < family_expedition_person_handles().size())
         family_expedition_person_handles().resize(person_begin);
-    family_expeditions_store().payload_count[expedition] = 0;
-    family_expeditions_store().population[expedition] = 0;
+    family_expeditions_store().payload_count.write_scalar(expedition, 0, market_mutation_sink());
+    family_expeditions_store().population.write_scalar(expedition, 0, market_mutation_sink());
     _family_indices_dirty = true;
     _person_indices_dirty = true;
 }
@@ -1608,12 +1702,13 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
         error = "colonization_population_insufficient";
         return false;
     }
-    family_expeditions_store().payload_begin[expedition] = static_cast<uint32_t>(
-        family_expedition_payloads().size());
-    family_expeditions_store().payload_count[expedition] = 0;
+    family_expeditions_store().payload_begin.write_scalar(expedition, static_cast<uint32_t>(
+        family_expedition_payloads().size()), market_mutation_sink());
+    family_expeditions_store().payload_count.write_scalar(expedition, 0, market_mutation_sink());
     for (Candidate &candidate : candidates) {
         if (candidate.selected <= 0) continue;
-        FamilyMembershipEdge &edge = family_memberships()[candidate.edge];
+        auto edge_write = family_memberships().edit_row(candidate.edge, market_mutation_sink());
+        FamilyMembershipEdge &edge = edge_write[0];
         const int32_t slot = candidate.slot;
         const int64_t source_population = population_store().population[slot];
         if (candidate.selected > edge.people || candidate.selected >=
@@ -1725,10 +1820,10 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
                     remaining_people)) < remaining_selected) {
                 family_expedition_person_handles().push_back(
                     persons_store().handle_for_index(person));
-                persons_store().cohort_handle[person] = 0;
-                persons_store().building_handle[person] = 0;
-                persons_store().job_kind[person] = 0;
-                persons_store().employee_role_index[person] = -1;
+                persons_store().cohort_handle.write_scalar(person, 0, market_mutation_sink());
+                persons_store().building_handle.write_scalar(person, 0, market_mutation_sink());
+                persons_store().job_kind.write_scalar(person, 0, market_mutation_sink());
+                persons_store().employee_role_index.write_scalar(person, -1, market_mutation_sink());
                 --remaining_selected;
             }
             --remaining_people;
@@ -1736,22 +1831,22 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
         payload.person_count = static_cast<uint32_t>(
             family_expedition_person_handles().size()) - payload.person_begin;
         audit_touch_population_lane(slot);
-        population_store().population[slot] -= payload.people;
-        population_store().owner_employed[slot] = saturating_sub(
+        population_store().population.write_scalar(slot, population_store().population[slot] - (payload.people), market_mutation_sink());
+        population_store().owner_employed.write_scalar(slot, saturating_sub(
             population_store().owner_employed[slot], payload.owner_employed,
-            _saturation_count);
-        population_store().employee_employed[slot] = saturating_sub(
+            _saturation_count), market_mutation_sink());
+        population_store().employee_employed.write_scalar(slot, saturating_sub(
             population_store().employee_employed[slot],
-            payload.employee_employed, _saturation_count);
-        population_store().funds[slot] -= payload.funds;
-        population_store().epoch_income[slot] -= payload.epoch_income;
-        population_store().epoch_expense[slot] -= payload.epoch_expense;
-        population_store().epoch_in_kind_income[slot] -= payload.epoch_in_kind_income;
-        population_store().income_ema[slot] -= payload.income_ema;
-        population_store().epoch_tax_paid[slot] -= payload.epoch_tax_paid;
-        population_store().epoch_subsidy_received[slot] -= payload.epoch_subsidy_received;
-        population_store().income_baseline_ema[slot] -= payload.income_baseline_ema;
-        population_store().demography_residual[slot] -= payload.demography_residual;
+            payload.employee_employed, _saturation_count), market_mutation_sink());
+        population_store().funds.write_scalar(slot, population_store().funds[slot] - (payload.funds), market_mutation_sink());
+        population_store().epoch_income.write_scalar(slot, population_store().epoch_income[slot] - (payload.epoch_income), market_mutation_sink());
+        population_store().epoch_expense.write_scalar(slot, population_store().epoch_expense[slot] - (payload.epoch_expense), market_mutation_sink());
+        population_store().epoch_in_kind_income.write_scalar(slot, population_store().epoch_in_kind_income[slot] - (payload.epoch_in_kind_income), market_mutation_sink());
+        population_store().income_ema.write_scalar(slot, population_store().income_ema[slot] - (payload.income_ema), market_mutation_sink());
+        population_store().epoch_tax_paid.write_scalar(slot, population_store().epoch_tax_paid[slot] - (payload.epoch_tax_paid), market_mutation_sink());
+        population_store().epoch_subsidy_received.write_scalar(slot, population_store().epoch_subsidy_received[slot] - (payload.epoch_subsidy_received), market_mutation_sink());
+        population_store().income_baseline_ema.write_scalar(slot, population_store().income_baseline_ema[slot] - (payload.income_baseline_ema), market_mutation_sink());
+        population_store().demography_residual.write_scalar(slot, population_store().demography_residual[slot] - (payload.demography_residual), market_mutation_sink());
         edge.people -= payload.people; edge.cash_claim -= payload.cash_claim;
         edge.owner_employed = std::max<int64_t>(0,
             edge_owner - payload.owner_employed);
@@ -1762,9 +1857,8 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
         edge.funds_basis = std::max<int64_t>(0,
             edge.funds_basis - payload.cash_claim);
         family_expedition_payloads().push_back(payload);
-        family_expeditions_store().payload_count[expedition] =
-            static_cast<uint32_t>(family_expedition_payloads().size()) -
-            family_expeditions_store().payload_begin[expedition];
+        family_expeditions_store().payload_count.write_scalar(expedition, static_cast<uint32_t>(family_expedition_payloads().size()) -
+            family_expeditions_store().payload_begin[expedition], market_mutation_sink());
     }
     // Population extraction is a structural mutation.  Keep the authoritative
     // cohort employment lanes clipped to the remaining population before any
@@ -1773,15 +1867,15 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
     population_store().for_each_in_cell(source_cell, [&](int32_t slot) {
         const int64_t population = std::max<int64_t>(0,
             population_store().population[slot]);
-        population_store().owner_employed[slot] = std::clamp<int64_t>(
-            population_store().owner_employed[slot], 0, population);
-        population_store().employee_employed[slot] = std::clamp<int64_t>(
+        population_store().owner_employed.write_scalar(slot, std::clamp<int64_t>(
+            population_store().owner_employed[slot], 0, population), market_mutation_sink());
+        population_store().employee_employed.write_scalar(slot, std::clamp<int64_t>(
             population_store().employee_employed[slot], 0,
-            population - population_store().owner_employed[slot]);
+            population - population_store().owner_employed[slot]), market_mutation_sink());
     });
-    family_expeditions_store().payload_count[expedition] = static_cast<uint32_t>(
+    family_expeditions_store().payload_count.write_scalar(expedition, static_cast<uint32_t>(
         family_expedition_payloads().size()) -
-        family_expeditions_store().payload_begin[expedition];
+        family_expeditions_store().payload_begin[expedition], market_mutation_sink());
     if (family_expeditions_store().payload_count[expedition] == 0) {
         error = "colonization_payload_empty";
         unwind_family_expedition_payload_extract(expedition);
@@ -1793,7 +1887,8 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
     const uint32_t payload_end = payload_begin +
         family_expeditions_store().payload_count[expedition];
     for (uint32_t p = payload_begin; p < payload_end; ++p) {
-        FamilyExpeditionPayload &payload = family_expedition_payloads()[p];
+        auto payload_write = family_expedition_payloads().edit_row(p, market_mutation_sink());
+        FamilyExpeditionPayload &payload = payload_write[0];
         payload.reserved_slot = population_store().reserve_slot(
             family_expeditions_store().target_cell[expedition],
             static_cast<uint32_t>(payload.signature), reservation_owner);
@@ -1803,8 +1898,7 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
             return false;
         }
     }
-    family_expeditions_store().population[expedition] =
-        family_expedition_payload_people(expedition);
+    family_expeditions_store().population.write_scalar(expedition, family_expedition_payload_people(expedition), market_mutation_sink());
     _family_indices_dirty = true; _person_indices_dirty = true;
     _structural_touched_cells.push_back(source_cell);
     if (!repair_cell_merchant_and_rebuild(source_cell, error)) {
@@ -1828,7 +1922,8 @@ bool NativeEconomyRuntime::restore_family_expedition_payload(
         error = "colonization_payload_range_invalid"; return false;
     }
     for (uint32_t p = begin; p < end; ++p) {
-        FamilyExpeditionPayload &payload = family_expedition_payloads()[p];
+        auto payload_write = family_expedition_payloads().edit_row(p, market_mutation_sink());
+        FamilyExpeditionPayload &payload = payload_write[0];
         const uint64_t reservation_owner =
             family_expeditions_store().handle_for_index(expedition);
         int32_t slot = -1;
@@ -1866,43 +1961,43 @@ bool NativeEconomyRuntime::restore_family_expedition_payload(
                 merged_population);
         };
         audit_touch_population_lane(slot); touch_accounting_slot(slot);
-        population_store().population[slot] = merged_population;
-        population_store().owner_employed[slot] = saturating_add(
+        population_store().population.write_scalar(slot, merged_population, market_mutation_sink());
+        population_store().owner_employed.write_scalar(slot, saturating_add(
             population_store().owner_employed[slot],
-            incoming_owner_employed, _saturation_count);
-        population_store().employee_employed[slot] = saturating_add(
+            incoming_owner_employed, _saturation_count), market_mutation_sink());
+        population_store().employee_employed.write_scalar(slot, saturating_add(
             population_store().employee_employed[slot],
-            incoming_employee_employed, _saturation_count);
+            incoming_employee_employed, _saturation_count), market_mutation_sink());
         const int64_t total_employment =
             population_store().owner_employed[slot] +
             population_store().employee_employed[slot];
         if (total_employment > merged_population) {
-            population_store().employee_employed[slot] = std::max<int64_t>(
-                0, merged_population - population_store().owner_employed[slot]);
+            population_store().employee_employed.write_scalar(slot, std::max<int64_t>(
+                0, merged_population - population_store().owner_employed[slot]), market_mutation_sink());
         }
-        population_store().funds[slot] += payload.funds;
-        population_store().epoch_income[slot] += payload.epoch_income;
-        population_store().epoch_expense[slot] += payload.epoch_expense;
-        population_store().epoch_in_kind_income[slot] += payload.epoch_in_kind_income;
-        population_store().income_ema[slot] += payload.income_ema;
-        population_store().epoch_tax_paid[slot] += payload.epoch_tax_paid;
-        population_store().epoch_subsidy_received[slot] += payload.epoch_subsidy_received;
-        population_store().income_baseline_ema[slot] += payload.income_baseline_ema;
-        population_store().demography_residual[slot] += payload.demography_residual;
-        population_store().needs_satisfaction[slot] = blend(
-            population_store().needs_satisfaction[slot], payload.needs_satisfaction);
-        population_store().composite_satisfaction[slot] = blend(
+        population_store().funds.write_scalar(slot, population_store().funds[slot] + (payload.funds), market_mutation_sink());
+        population_store().epoch_income.write_scalar(slot, population_store().epoch_income[slot] + (payload.epoch_income), market_mutation_sink());
+        population_store().epoch_expense.write_scalar(slot, population_store().epoch_expense[slot] + (payload.epoch_expense), market_mutation_sink());
+        population_store().epoch_in_kind_income.write_scalar(slot, population_store().epoch_in_kind_income[slot] + (payload.epoch_in_kind_income), market_mutation_sink());
+        population_store().income_ema.write_scalar(slot, population_store().income_ema[slot] + (payload.income_ema), market_mutation_sink());
+        population_store().epoch_tax_paid.write_scalar(slot, population_store().epoch_tax_paid[slot] + (payload.epoch_tax_paid), market_mutation_sink());
+        population_store().epoch_subsidy_received.write_scalar(slot, population_store().epoch_subsidy_received[slot] + (payload.epoch_subsidy_received), market_mutation_sink());
+        population_store().income_baseline_ema.write_scalar(slot, population_store().income_baseline_ema[slot] + (payload.income_baseline_ema), market_mutation_sink());
+        population_store().demography_residual.write_scalar(slot, population_store().demography_residual[slot] + (payload.demography_residual), market_mutation_sink());
+        population_store().needs_satisfaction.write_scalar(slot, blend(
+            population_store().needs_satisfaction[slot], payload.needs_satisfaction), market_mutation_sink());
+        population_store().composite_satisfaction.write_scalar(slot, blend(
             population_store().composite_satisfaction[slot],
-            payload.composite_satisfaction);
+            payload.composite_satisfaction), market_mutation_sink());
         for (int32_t dim = 0; dim < SAT_DIM_COUNT; ++dim) {
             const size_t lane = static_cast<size_t>(slot) * SAT_DIM_COUNT + dim;
-            population_store().satisfaction_dims[lane] = blend(
+            population_store().satisfaction_dims.write_scalar(lane, blend(
                 population_store().satisfaction_dims[lane],
-                payload.satisfaction_dims[dim]);
+                payload.satisfaction_dims[dim]), market_mutation_sink());
         }
         if (old_population == 0) {
-            population_store().worst_need_id[slot] = payload.worst_need_id;
-            population_store().worst_dimension_id[slot] = payload.worst_dimension_id;
+            population_store().worst_need_id.write_scalar(slot, payload.worst_need_id, market_mutation_sink());
+            population_store().worst_dimension_id.write_scalar(slot, payload.worst_dimension_id, market_mutation_sink());
         }
         const uint64_t cohort_handle = population_store().handle_for_slot(slot);
         family_memberships().push_back({family_handle, cohort_handle,
@@ -1918,7 +2013,7 @@ bool NativeEconomyRuntime::restore_family_expedition_payload(
             if (persons_store().valid_handle(
                     family_expedition_person_handles()[payload.person_begin + i],
                     person))
-                persons_store().cohort_handle[person] = cohort_handle;
+                persons_store().cohort_handle.write_scalar(person, cohort_handle, market_mutation_sink());
         }
     }
     _family_indices_dirty = true; _person_indices_dirty = true;
@@ -1968,7 +2063,8 @@ void NativeEconomyRuntime::release_family_expedition_reservations(
         begin + family_expeditions_store().payload_count[expedition],
         static_cast<uint32_t>(family_expedition_payloads().size()));
     for (uint32_t p = begin; p < end; ++p) {
-        FamilyExpeditionPayload &payload = family_expedition_payloads()[p];
+        auto payload_write = family_expedition_payloads().edit_row(p, market_mutation_sink());
+        FamilyExpeditionPayload &payload = payload_write[0];
         population_store().release_reserved_slot(payload.reserved_slot, owner);
         payload.reserved_slot = -1;
     }
@@ -1999,10 +2095,10 @@ bool NativeEconomyRuntime::apply_cancel_family_expedition(
     const int64_t return_days = (progressed +
         std::max(1, family_expeditions_store().speed[expedition]) - 1) /
         std::max(1, family_expeditions_store().speed[expedition]);
-    family_expeditions_store().state[expedition] = EXPEDITION_RETURNING;
+    family_expeditions_store().state.write_scalar(expedition, EXPEDITION_RETURNING, market_mutation_sink());
     release_family_expedition_reservations(expedition);
     note_family_expedition_audit_invalidation();
-    family_expeditions_store().due_day[expedition] = cmd.effective_day + return_days;
+    family_expeditions_store().due_day.write_scalar(expedition, cmd.effective_day + return_days, market_mutation_sink());
     push_family_expedition_due(expedition);
     append_colonization_receipt(expedition, cmd.sequence, cmd.effective_day,
         cmd.effective_day, 2, "CANCELLED_RETURNING");
@@ -2036,13 +2132,13 @@ bool NativeEconomyRuntime::apply_settle_family_expedition(
             error = "country_economy_asset_territory_claim_pending";
             return false;
         }
-        family_expeditions_store().state[expedition] = EXPEDITION_RETURNING;
+        family_expeditions_store().state.write_scalar(expedition, EXPEDITION_RETURNING, market_mutation_sink());
         release_family_expedition_reservations(expedition);
         note_family_expedition_audit_invalidation();
-        family_expeditions_store().due_day[expedition] = _current_day +
+        family_expeditions_store().due_day.write_scalar(expedition, _current_day +
             std::max<int64_t>(1, (family_expeditions_store().route_cost[expedition] +
                 family_expeditions_store().speed[expedition] - 1) /
-                family_expeditions_store().speed[expedition]);
+                family_expeditions_store().speed[expedition]), market_mutation_sink());
         push_family_expedition_due(expedition);
         append_colonization_receipt(expedition, cmd.sequence,
             cmd.effective_day, _current_day, 3, "TARGET_LOST_RETURNING");
@@ -2168,14 +2264,14 @@ bool NativeEconomyRuntime::process_due_family_expeditions(
                     _effect_runtime->consume_rejected_transaction_pod(
                         transaction_id,
                         family_expeditions_store().stable_id[expedition]);
-                family_expeditions_store().effect_transaction_id[expedition] = 0;
-                family_expeditions_store().state[expedition] = EXPEDITION_RETURNING;
+                family_expeditions_store().effect_transaction_id.write_scalar(expedition, 0, market_mutation_sink());
+                family_expeditions_store().state.write_scalar(expedition, EXPEDITION_RETURNING, market_mutation_sink());
                 release_family_expedition_reservations(expedition);
-                family_expeditions_store().due_day[expedition] = day +
+                family_expeditions_store().due_day.write_scalar(expedition, day +
                     std::max<int64_t>(1,
                         (family_expeditions_store().route_cost[expedition] +
                          family_expeditions_store().speed[expedition] - 1) /
-                        family_expeditions_store().speed[expedition]);
+                        family_expeditions_store().speed[expedition]), market_mutation_sink());
                 push_family_expedition_due(expedition);
                 append_colonization_receipt(expedition, 0,
                     family_expeditions_store().departure_day[expedition], day, 3,
@@ -2187,7 +2283,7 @@ bool NativeEconomyRuntime::process_due_family_expeditions(
                 // releasing the expedition here loses its population while
                 // the target remains unowned. The adapter/recovery path keeps
                 // the command alive and retries on the next due pulse.
-                family_expeditions_store().due_day[expedition] = day + 1;
+                family_expeditions_store().due_day.write_scalar(expedition, day + 1, market_mutation_sink());
                 push_family_expedition_due(expedition);
             }
             continue;
@@ -2218,12 +2314,12 @@ bool NativeEconomyRuntime::process_due_family_expeditions(
             if (_country_runtime == nullptr ||
                 (owner != 0 && owner != static_cast<int64_t>(
                     family_expeditions_store().country_handle[expedition]))) {
-                family_expeditions_store().state[expedition] = EXPEDITION_RETURNING;
+                family_expeditions_store().state.write_scalar(expedition, EXPEDITION_RETURNING, market_mutation_sink());
                 release_family_expedition_reservations(expedition);
-                family_expeditions_store().due_day[expedition] = day +
+                family_expeditions_store().due_day.write_scalar(expedition, day +
                     std::max<int64_t>(1, (family_expeditions_store().route_cost[expedition] +
                         family_expeditions_store().speed[expedition] - 1) /
-                        family_expeditions_store().speed[expedition]);
+                        family_expeditions_store().speed[expedition]), market_mutation_sink());
                 push_family_expedition_due(expedition);
                 append_colonization_receipt(expedition, 0,
                     family_expeditions_store().departure_day[expedition], day, 3,
@@ -2250,9 +2346,9 @@ bool NativeEconomyRuntime::process_due_family_expeditions(
                     family_expeditions_store().target_cell[expedition],
                     family_expeditions_store().idempotency_key[expedition], error,
                     &transaction_id, claim_unowned, population_reward)) return false;
-            family_expeditions_store().effect_transaction_id[expedition] = transaction_id;
-            family_expeditions_store().state[expedition] = EXPEDITION_SETTLING;
-            family_expeditions_store().due_day[expedition] = day + 1;
+            family_expeditions_store().effect_transaction_id.write_scalar(expedition, transaction_id, market_mutation_sink());
+            family_expeditions_store().state.write_scalar(expedition, EXPEDITION_SETTLING, market_mutation_sink());
+            family_expeditions_store().due_day.write_scalar(expedition, day + 1, market_mutation_sink());
             push_family_expedition_due(expedition);
         }
     }
@@ -2278,8 +2374,8 @@ void NativeEconomyRuntime::rebuild_family_expedition_indices() {
                 family_expeditions_store().payload_count[i], static_cast<uint32_t>(
                     family_expedition_payloads().size()));
             for (uint32_t p = begin; p < end; ++p) {
-                FamilyExpeditionPayload &payload =
-                    family_expedition_payloads()[p];
+                auto payload_write = family_expedition_payloads().edit_row(p, market_mutation_sink());
+                FamilyExpeditionPayload &payload = payload_write[0];
                 payload.reserved_slot = population_store().reserve_slot(
                     family_expeditions_store().target_cell[i],
                     static_cast<uint32_t>(payload.signature), owner);

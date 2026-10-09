@@ -93,8 +93,8 @@ Dictionary NativeEconomyRuntime::market_cell_snapshot(int32_t cell_idx) const {
     int64_t snapshot_saturation = 0;
     int64_t merchant_inventory_retail_value = 0;
     int64_t merchant_inventory_liquidation_value = 0;
-    std::vector<int64_t> inbound(static_cast<size_t>(market_store().good_count), 0);
-    std::vector<int64_t> outbound(static_cast<size_t>(market_store().good_count), 0);
+    std::vector<int64_t> inbound(static_cast<size_t>(market_store().good_count.get()), 0);
+    std::vector<int64_t> outbound(static_cast<size_t>(market_store().good_count.get()), 0);
     int64_t next_arrival = -1;
     int64_t inbound_escrow = 0;
     int64_t outbound_escrow = 0;
@@ -118,7 +118,7 @@ Dictionary NativeEconomyRuntime::market_cell_snapshot(int32_t cell_idx) const {
             if (is_outbound) outbound[good] += trade_orders_store().line_quantities[line];
         }
     }
-    for (int32_t g = 0; g < market_store().good_count; ++g) {
+    for (int32_t g = 0; g < market_store().good_count.get(); ++g) {
         const int64_t market_index = market_store().index(market, g);
         const int64_t retail_value = mul_div_sat(
             std::max<int64_t>(0, market_store().stock[market_index]),
@@ -1811,10 +1811,10 @@ Dictionary NativeEconomyRuntime::treasury_construction_quotes(
                     std::max<int64_t>(0, _country_runtime->good_for_handle(
                         country_handle, good_id)));
                 const int64_t shortfall = required - treasury;
-                const int64_t local_stock = market >= 0 && market < market_store().market_count
+                const int64_t local_stock = market >= 0 && market < market_store().market_count.get()
                     ? std::max<int64_t>(0, market_store().stock[
                         market_store().index(market, good_id)]) : 0;
-                const int32_t price = market >= 0 && market < market_store().market_count
+                const int32_t price = market >= 0 && market < market_store().market_count.get()
                     ? market_store().price[market_store().index(market, good_id)] : 0;
                 material_good_ids.push_back(good_id);
                 material_required.push_back(required);

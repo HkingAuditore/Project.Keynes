@@ -403,7 +403,7 @@ void NativeEconomyRuntime::refresh_cadence_estimates() {
     rebuild_economy_live_cells();
     int32_t populated_markets = 0;
     const int32_t populated_cells = static_cast<int32_t>(_economy_live_cells.size());
-    const int32_t market_count = std::max(0, market_store().market_count);
+    const int32_t market_count = std::max(0, market_store().market_count.get());
     std::vector<uint8_t> market_seen(static_cast<size_t>(market_count), 0);
     const bool have_market_map =
         market_store().cell_to_market.size() == static_cast<size_t>(_cell_count);

@@ -48,10 +48,22 @@ func _run() -> void:
 	_test_recorder_skipped_day_no_job_columns()
 	_test_recorder_state_machine()
 	_test_schema_and_custom_export()
+	_test_authoritative_sampling()
 	print("=== perf_recorder test summary: %d checks, %d failures ===" % [_checks, _failures])
 
 
 # ─── CSV 转义 ─────────────────────────────────────────────────────
+
+func _test_authoritative_sampling() -> void:
+	var rec := PerfRecorder.new()
+	rec.configure_authoritative_sampling(5)
+	rec.start()
+	for day in [4, 5, 6, 6, 6, 7]:
+		rec.on_fast_tick({"tick_idx": day,
+			"runtime_graph": {"simulation_committed_day": day}})
+	_expect(rec.get("_rows").size() == 2, "warmup and repeated callbacks do not duplicate authority rows")
+	_expect(rec.get("_rows")[0]["runtime_graph_simulation_committed_day"] == 6,
+		"first measured row is a real committed day")
 
 func _test_csv_escape_basic() -> void:
 	_expect(PerfRecorder._csv_escape("hello") == "hello", "plain string passthrough")

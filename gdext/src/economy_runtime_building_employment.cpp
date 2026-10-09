@@ -1,5 +1,6 @@
 #include "economy_runtime.h"
 #include "country_runtime.h"
+#include "economy_cost_probe.h"
 
 #include <algorithm>
 #include <chrono>
@@ -206,7 +207,7 @@ bool NativeEconomyRuntime::reconcile_building_employment_cells_range(
                     group.type_id < static_cast<int32_t>(_building_types.size())) {
                     const BuildingType &type = _building_types[group.type_id];
                     for (int32_t r = 0; r < type.employee_count; ++r)
-                        _building_employee_filled[group.employee_fill_begin + r] = 0;
+                        _building_employee_filled.write_scalar(group.employee_fill_begin + r, 0, market_mutation_sink());
                 }
                 continue;
             }
@@ -357,8 +358,8 @@ bool NativeEconomyRuntime::reconcile_building_employment_cells_range(
                 const int64_t available = std::max<int64_t>(
                     0, profession_capacity[role.profession_id] -
                         profession_filled[role.profession_id]);
-                _building_employee_filled[index] = std::min(
-                    std::max<int64_t>(0, _building_employee_filled[index]), available);
+                _building_employee_filled.write_scalar(index, std::min(
+                    std::max<int64_t>(0, _building_employee_filled[index]), available), market_mutation_sink());
                 profession_filled[role.profession_id] = saturating_add(
                     profession_filled[role.profession_id],
                     _building_employee_filled[index], _saturation_count);
@@ -389,8 +390,8 @@ bool NativeEconomyRuntime::reconcile_building_employment_cells_range(
                     0, next - profession_distributed[profession]));
                 profession_distributed[profession] = next;
             }
-            population_store().owner_employed[slot] = owner;
-            population_store().employee_employed[slot] = employee;
+            population_store().owner_employed.write_scalar(slot, owner, market_mutation_sink());
+            population_store().employee_employed.write_scalar(slot, employee, market_mutation_sink());
             owner_after = saturating_add(owner_after, owner, _saturation_count);
             employee_after = saturating_add(employee_after, employee, _saturation_count);
             unemployed_after = saturating_add(unemployed_after,
@@ -439,6 +440,8 @@ double elapsed_ms(const Clock::time_point &start) {
 } // namespace
 
 bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) {
+    EconomyCostProbe cost("employment.wage_prepare", _current_day);
+    uint64_t quoted_pairs = 0;
     const auto started = Clock::now();
     if (cell < 0 || cell >= _cell_count ||
         _building_cell_offsets.size() != static_cast<size_t>(_cell_count + 1) ||
@@ -485,6 +488,19 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
             auto group = building_at(static_cast<size_t>(g));
             if (!building_available(cell, group.type_id, true)) continue;
             const BuildingType &type = _building_types[group.type_id];
+            // Only this profession's employee roles consume the quote below.
+            // Previously every labor signal evaluated every producer's inputs,
+            // outputs and workforce, even when the final role loop was empty.
+            bool has_profession = false;
+            for (int32_t role = 0; role < type.employee_count; ++role) {
+                if (_building_employee_roles[type.employee_begin + role].profession_id == profession) {
+                    has_profession = true;
+                    break;
+                }
+            }
+            if (!has_profession) continue;
+            ++quoted_pairs;
+            cost.set_work(quoted_pairs);
             // Affordability damping is a daily-flow calculation. Historical
             // last_expected_revenue is an epoch total, so comparing it directly
             // with a per-day wage lets contract wages grow by roughly epoch_days.
@@ -798,7 +814,7 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
                     }
                     next = std::max(next, floor);
                 }
-                _building_role_contract_wage[index] = next;
+                _building_role_contract_wage.write_scalar(index, next, market_mutation_sink());
                 int32_t forecast_pay_ratio_q16 =
                     next <= 0 ? Q16_ONE
                     : _wage_income_cap_ratio_q16 <= 0 ? Q16_ONE
@@ -812,9 +828,9 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
                     forecast_pay_ratio_q16;
                 if (forecast_pay_ratio_q16 < Q16_ONE)
                     ++_building_employee_funding_limited_forecasts;
-                _building_role_base_living_cost[index] = general_cost;
-                _building_role_living_cost[index] = role_cost;
-                _building_role_local_average_wage[index] = local_average;
+                _building_role_base_living_cost.write_scalar(index, general_cost, market_mutation_sink());
+                _building_role_living_cost.write_scalar(index, role_cost, market_mutation_sink());
+                _building_role_local_average_wage.write_scalar(index, local_average, market_mutation_sink());
             }
         }
     }
@@ -876,6 +892,9 @@ void NativeEconomyRuntime::update_cell_labor_signals(int32_t cell) {
 
 bool NativeEconomyRuntime::run_building_employment_cell(
         int32_t cell, bool allow_owner_job_reallocation, std::string &error) {
+    // This scope mutates cohorts and role fills, which are explicit quote keys;
+    // market prices, stock, environment and frozen modifiers stay unchanged.
+    LivingCostMemoScope memo(*this, true);
     if (!prepare_cell_wages(cell, error)) return false;
     // demand[p] = profession p 鏈懆鏈?employee 鐩爣涔嬪拰锛沠ill[p] = 澶圭揣鍚庡湪宀?
     // employee 涔嬪拰銆備簩鑰呭湪 A1 涓ゆ閫昏緫涓 std::fill 閲嶇疆澶嶇敤锛堣涓嬶級銆?
@@ -1465,11 +1484,11 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 // building's output lane can suppress a vacant owner target.
                 bool output_stock_available = false;
                 const int32_t owner_market = market_store().cell_to_market[group.cell];
-                if (owner_market >= 0 && owner_market < market_store().market_count) {
+                if (owner_market >= 0 && owner_market < market_store().market_count.get()) {
                     for (int32_t oi = 0; oi < owner_type.output_count; ++oi) {
                         const int32_t output_good = _building_outputs[
                             owner_type.output_begin + oi].good_id;
-                        if (output_good < 0 || output_good >= market_store().good_count)
+                        if (output_good < 0 || output_good >= market_store().good_count.get())
                             continue;
                         const int32_t lane = market_store().index(owner_market, output_good);
                         if (lane >= 0 && lane < static_cast<int32_t>(market_store().stock.size()) &&
@@ -1668,7 +1687,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 const int32_t fi = group.employee_fill_begin + r;
                 const int64_t cur = std::max<int64_t>(0, _building_employee_filled[fi]);
                 const int64_t keep = std::min(cur, emp_remaining[p]);
-                _building_employee_filled[fi] = keep;
+                _building_employee_filled.write_scalar(fi, keep, market_mutation_sink());
                 emp_remaining[p] -= keep;
                 fill[p] = saturating_add(fill[p], keep, _saturation_count);
             }
@@ -1820,8 +1839,8 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 // 鍟嗕汉 slot 涓嶅仛 employee锛堜粎 owner 宀楋級锛涗繚搴?1 涓仛甯傚晢涓嶈銆?
                 const int64_t retained = std::min(pop,
                     std::max<int64_t>(owner_here, pop > 0 ? 1 : 0));
-                population_store().owner_employed[slot] = owner_here;
-                population_store().employee_employed[slot] = 0;
+                population_store().owner_employed.write_scalar(slot, owner_here, market_mutation_sink());
+                population_store().employee_employed.write_scalar(slot, 0, market_mutation_sink());
                 const int64_t surplus = std::max<int64_t>(0, pop - retained);
                 if (surplus > 0 && eth >= 0 && eth < n_eth) {
                     shed_source_slots.push_back(slot);
@@ -1839,9 +1858,9 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             emp_distributed[p] = emp_next;
             const int64_t retained = std::min(pop, saturating_add(owner_here, emp_here,
                                                                    _saturation_count));
-            population_store().owner_employed[slot] = owner_here;
-            population_store().employee_employed[slot] = std::min(emp_here,
-                std::max<int64_t>(0, pop - owner_here));
+            population_store().owner_employed.write_scalar(slot, owner_here, market_mutation_sink());
+            population_store().employee_employed.write_scalar(slot, std::min(emp_here,
+                std::max<int64_t>(0, pop - owner_here)), market_mutation_sink());
             const int64_t surplus = std::max<int64_t>(0, pop - retained);
             if (surplus > 0 && eth >= 0 && eth < n_eth) {
                 shed_source_slots.push_back(slot);
@@ -2496,9 +2515,9 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                     const int32_t dest = population_store().find_signature(
                         cell, static_cast<uint32_t>(target_sig));
                     if (dest >= 0) {
-                        population_store().owner_employed[dest] = saturating_add(
+                        population_store().owner_employed.write_scalar(dest, saturating_add(
                             population_store().owner_employed[dest], capped_take,
-                            _saturation_count);
+                            _saturation_count), market_mutation_sink());
                     }
                     budget = std::max<int64_t>(0, budget - capped_take);
                 }
@@ -2605,8 +2624,8 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                                                 &drained, preferred_family)) {
                         return false;
                     }
-                    _building_employee_filled[fi] = saturating_add(
-                        _building_employee_filled[fi], take, _saturation_count);
+                    _building_employee_filled.write_scalar(fi, saturating_add(
+                        _building_employee_filled[fi], take, _saturation_count), market_mutation_sink());
                     if (is_knowledge_group(group)) {
                         local_knowledge_employment = saturating_add(
                             local_knowledge_employment, take, _saturation_count);
@@ -2614,8 +2633,8 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                     const int32_t dest = population_store().find_signature(
                         cell, static_cast<uint32_t>(target_sig));
                     if (dest >= 0) {
-                        population_store().employee_employed[dest] = saturating_add(
-                            population_store().employee_employed[dest], take, _saturation_count);
+                        population_store().employee_employed.write_scalar(dest, saturating_add(
+                            population_store().employee_employed[dest], take, _saturation_count), market_mutation_sink());
                     }
                     need -= take;
                     budget = std::max<int64_t>(0, budget - take);
@@ -2745,10 +2764,9 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                                 target_signature, 1, error, &source_drained,
                                 preferred_family)) return false;
                         if (!source_drained) {
-                            population_store().employee_employed[source_slot] =
-                                std::max<int64_t>(0,
+                            population_store().employee_employed.write_scalar(source_slot, std::max<int64_t>(0,
                                     population_store().employee_employed[
-                                        source_slot] - 1);
+                                        source_slot] - 1), market_mutation_sink());
                         }
                         const int32_t destination =
                             population_store().find_signature(
@@ -2758,17 +2776,16 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                                 "employee_job_reallocation_destination_missing";
                             return false;
                         }
-                        population_store().employee_employed[destination] =
-                            saturating_add(
+                        population_store().employee_employed.write_scalar(destination, saturating_add(
                                 population_store().employee_employed[destination],
-                                1, _saturation_count);
+                                1, _saturation_count), market_mutation_sink());
                         ++_building_employee_job_profession_changes;
                     }
-                    --_building_employee_filled[source.fill_index];
-                    _building_employee_filled[target.fill_index] =
-                        saturating_add(
+                    _building_employee_filled.write_scalar(source.fill_index,
+                        _building_employee_filled[source.fill_index] - 1, market_mutation_sink());
+                    _building_employee_filled.write_scalar(target.fill_index, saturating_add(
                             _building_employee_filled[target.fill_index], 1,
-                            _saturation_count);
+                            _saturation_count), market_mutation_sink());
                     ++_building_employee_job_reallocations;
                     break;
                 }
@@ -3066,9 +3083,8 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                             preferred_family))
                         return false;
                     if (!source_drained) {
-                        population_store().owner_employed[source_slot] =
-                            std::max<int64_t>(0,
-                                population_store().owner_employed[source_slot] - 1);
+                        population_store().owner_employed.write_scalar(source_slot, std::max<int64_t>(0,
+                                population_store().owner_employed[source_slot] - 1), market_mutation_sink());
                     }
                     const int32_t destination = population_store().find_signature(
                         cell, static_cast<uint32_t>(source_target_signature));
@@ -3076,28 +3092,24 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                         error = "owner_employee_reallocation_destination_missing";
                         return false;
                     }
-                    population_store().employee_employed[destination] =
-                        saturating_add(
+                    population_store().employee_employed.write_scalar(destination, saturating_add(
                             population_store().employee_employed[destination],
-                            1, _saturation_count);
+                            1, _saturation_count), market_mutation_sink());
                     ++_building_employee_job_profession_changes;
                 } else {
                     // Same-profession owner→employee conversion stays in the
                     // existing cohort and therefore needs no population move.
-                    population_store().owner_employed[source_slot] =
-                        std::max<int64_t>(0,
-                            population_store().owner_employed[source_slot] - 1);
-                    population_store().employee_employed[source_slot] =
-                        saturating_add(
+                    population_store().owner_employed.write_scalar(source_slot, std::max<int64_t>(0,
+                            population_store().owner_employed[source_slot] - 1), market_mutation_sink());
+                    population_store().employee_employed.write_scalar(source_slot, saturating_add(
                             population_store().employee_employed[source_slot],
-                            1, _saturation_count);
+                            1, _saturation_count), market_mutation_sink());
                 }
                 source_group.filled_owner = std::max<int64_t>(0,
                     source_group.filled_owner - 1);
-                _building_employee_filled[target.fill_index] =
-                    saturating_add(
+                _building_employee_filled.write_scalar(target.fill_index, saturating_add(
                         _building_employee_filled[target.fill_index], 1,
-                        _saturation_count);
+                        _saturation_count), market_mutation_sink());
                 if (source_is_knowledge != is_knowledge_group(target_group)) {
                     local_knowledge_employment = std::max<int64_t>(0,
                         local_knowledge_employment +
@@ -3215,8 +3227,8 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                         return false;
                     }
                     if (!source_drained) {
-                        population_store().owner_employed[source_slot] = std::max<int64_t>(
-                            0, population_store().owner_employed[source_slot] - 1);
+                        population_store().owner_employed.write_scalar(source_slot, std::max<int64_t>(
+                            0, population_store().owner_employed[source_slot] - 1), market_mutation_sink());
                     }
                     const int32_t destination = population_store().find_signature(
                         cell, static_cast<uint32_t>(source_target_signature));
@@ -3224,9 +3236,9 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                         error = "owner_job_reallocation_destination_missing";
                         return false;
                     }
-                    population_store().owner_employed[destination] = saturating_add(
+                    population_store().owner_employed.write_scalar(destination, saturating_add(
                         population_store().owner_employed[destination], 1,
-                        _saturation_count);
+                        _saturation_count), market_mutation_sink());
                     if (source_signature.profession_id == _merchant_profession_id) {
                         local_merchant_population = std::max<int64_t>(
                             0, local_merchant_population - 1);
@@ -3331,9 +3343,8 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                         return false;
                     }
                     if (!source_drained) {
-                        population_store().employee_employed[employee_slot] =
-                            std::max<int64_t>(0,
-                                population_store().employee_employed[employee_slot] - 1);
+                        population_store().employee_employed.write_scalar(employee_slot, std::max<int64_t>(0,
+                                population_store().employee_employed[employee_slot] - 1), market_mutation_sink());
                     }
                     const int32_t destination = population_store().find_signature(
                         cell, static_cast<uint32_t>(selected_employee_target_signature));
@@ -3341,17 +3352,17 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                         error = "employee_owner_reallocation_destination_missing";
                         return false;
                     }
-                    population_store().owner_employed[destination] = saturating_add(
+                    population_store().owner_employed.write_scalar(destination, saturating_add(
                         population_store().owner_employed[destination], 1,
-                        _saturation_count);
+                        _saturation_count), market_mutation_sink());
                     ++_building_owner_job_profession_changes;
                 } else {
-                    population_store().employee_employed[employee_slot] -= 1;
-                    population_store().owner_employed[employee_slot] = saturating_add(
+                    population_store().employee_employed.write_scalar(employee_slot, population_store().employee_employed[employee_slot] - (1), market_mutation_sink());
+                    population_store().owner_employed.write_scalar(employee_slot, saturating_add(
                         population_store().owner_employed[employee_slot], 1,
-                        _saturation_count);
+                        _saturation_count), market_mutation_sink());
                 }
-                _building_employee_filled[candidate.fill_index] -= 1;
+                _building_employee_filled.write_scalar(candidate.fill_index, _building_employee_filled[candidate.fill_index] - (1), market_mutation_sink());
                 target_group.filled_owner = saturating_add(
                     target_group.filled_owner, 1, _saturation_count);
                 schedule_suspended_survival_restart(target_group);

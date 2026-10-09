@@ -25,6 +25,7 @@ var _last_autosave_year := -1
 var _autosave_enabled := true
 var _busy := false
 var _providers: Array = []
+var _economy_format: Dictionary = {}
 var _next_runtime_save_request_id: int = 1
 
 
@@ -374,6 +375,17 @@ func _collect_sections(saved_paused: bool, saved_speed: float,
 		"provider_manifest": provider_manifest}
 
 
+func _economy_checkpoint_format() -> Dictionary:
+	if not _economy_format.is_empty():
+		return _economy_format
+	_economy_format = {"schema_version": 53, "abi_version": 2, "hash_version": 1}
+	if ClassDB.class_exists("DCWorldExt"):
+		var probe = ClassDB.instantiate("DCWorldExt")
+		if probe != null and probe.has_method("get_economy_checkpoint_format"):
+			_economy_format = probe.get_economy_checkpoint_format()
+	return _economy_format
+
+
 func _register_providers() -> void:
 	_providers = [
 		_make_provider(&"dynamic_world", 1,
@@ -397,9 +409,9 @@ func _register_providers() -> void:
 		_make_provider(&"pkef", 11, PackedStringArray(["pkef"]),
 			"_can_effect_provider", "_write_effect_provider",
 			"_restore_effect_provider"),
-		# ECP2-only production economy section (ABI2 / schema 53). Bare PKEC
-		# is rejected by the facade/host; use an explicit migrate helper.
-		_make_provider(&"ecp2", 53, PackedStringArray(["ecp2"]),
+		# Negotiate with the loaded DLL: an old editor must never stamp a new
+		# manifest on bytes produced by its still-loaded ABI2 extension.
+		_make_provider(&"ecp2", int(_economy_checkpoint_format().schema_version), PackedStringArray(["ecp2"]),
 			"_can_economy_provider", "_write_economy_provider", "_restore_economy_provider"),
 		_make_provider(&"pkgp", 3, PackedStringArray(["pkgp"]),
 			"_can_modifier_provider", "_write_gameplay_modifier_provider",
@@ -474,9 +486,9 @@ func _manifest_compatible(raw_manifest) -> bool:
 			# until after partial session restore.
 			schema_compatible = saved_schema == 11
 		elif provider_id == "ecp2":
-			# ECP2 is exact ABI2/schema53 only. Reject bare PKEC/ECP1 before
-			# any provider mutates live state.
-			schema_compatible = saved_schema == 53
+			schema_compatible = saved_schema == int(_economy_checkpoint_format().schema_version)
+			if OS.get_environment("PK_SAVE_MIGRATE") == "1" and saved_schema == 53:
+				schema_compatible = true
 		elif provider_id == "pkec":
 			# Legacy provider id is no longer loadable through the coordinator.
 			schema_compatible = false
@@ -940,7 +952,11 @@ func _restore_environment_provider(sections: Dictionary, context: Dictionary) ->
 
 
 func _restore_clock_provider(sections: Dictionary, _context: Dictionary) -> Dictionary:
-	return _world_clock.restore_state(sections.world_clock)
+	var state: Dictionary = sections.world_clock.duplicate(true)
+	if OS.get_environment("PK_SAVE_MIGRATE") == "1":
+		# Offline migration may not advance business state while loading.
+		state["paused"] = true
+	return _world_clock.restore_state(state)
 
 
 func _restore_country_provider(sections: Dictionary, context: Dictionary) -> Dictionary:

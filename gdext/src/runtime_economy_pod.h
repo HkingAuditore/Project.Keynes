@@ -5,6 +5,7 @@
 #include "runtime_domain_pod.h"
 #include "runtime_economy_ecp2.h"
 #include "runtime_pod_protocol.h"
+#include "runtime_chunk_hash.h"
 
 #include <array>
 #include <atomic>

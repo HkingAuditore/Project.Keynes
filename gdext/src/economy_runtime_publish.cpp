@@ -72,7 +72,7 @@ bool NativeEconomyRuntime::publish_epoch_slice(
             stage_cell_summary(cell, summary);
             if (summary.population != 0) continue;
             const int32_t market = market_store().cell_to_market[cell];
-            for (int32_t good = 0; good < market_store().good_count; ++good) {
+            for (int32_t good = 0; good < market_store().good_count.get(); ++good) {
                 if (market_store().stock[market_store().index(market, good)] > 0) {
                     error = "empty_cell_cannot_retain_owned_stock";
                     return false;
@@ -89,9 +89,12 @@ bool NativeEconomyRuntime::publish_epoch_slice(
             const bool periodic_full =
                 _full_audit_verify_interval_days > 0 &&
                 _current_day % _full_audit_verify_interval_days == 0;
+            const char *verify_every_day = std::getenv("PK_ECONOMY_AUDIT_VERIFY_EVERY_DAY");
+            const bool diagnostic_full = verify_every_day &&
+                std::strcmp(verify_every_day, "1") == 0;
             const bool full_required = _closing_audit_mode != 2 ||
                 _closing_audit_runtime_disabled ||
-                _closing_audit_force_full || periodic_full;
+                _closing_audit_force_full || periodic_full || diagnostic_full;
             _closing_audit_incremental_this_epoch = !full_required;
             _closing_totals_valid = false;
             if (full_required) {
@@ -139,8 +142,8 @@ bool NativeEconomyRuntime::publish_epoch_slice(
             _publish_phase = PublishPhase::AUDIT_MARKET;
         }
     } else if (_publish_phase == PublishPhase::AUDIT_MARKET) {
-        const size_t total = static_cast<size_t>(market_store().market_count) *
-                             static_cast<size_t>(market_store().good_count);
+        const size_t total = static_cast<size_t>(market_store().market_count.get()) *
+                             static_cast<size_t>(market_store().good_count.get());
         const size_t start = _publish_cursor;
         const size_t end = std::min(total, start + audit_budget);
         const int32_t entry_count = static_cast<int32_t>(end - start);
@@ -177,7 +180,7 @@ bool NativeEconomyRuntime::publish_epoch_slice(
                         const size_t index =
                             start + static_cast<size_t>(relative);
                         const int32_t good = static_cast<int32_t>(
-                            index % static_cast<size_t>(market_store().good_count));
+                            index % static_cast<size_t>(market_store().good_count.get()));
                         local.goods_stock += market_store().stock[index];
                         const int64_t retail_value = mul_div_sat(
                             std::max<int64_t>(0, market_store().stock[index]),
@@ -225,7 +228,7 @@ bool NativeEconomyRuntime::publish_epoch_slice(
         } else {
             for (size_t index = start; index < end; ++index) {
                 const int32_t good = static_cast<int32_t>(
-                    index % static_cast<size_t>(market_store().good_count));
+                    index % static_cast<size_t>(market_store().good_count.get()));
                 _closing_totals.goods_stock += market_store().stock[index];
                 const int64_t retail_value = mul_div_sat(
                     std::max<int64_t>(0, market_store().stock[index]),
@@ -310,7 +313,7 @@ bool NativeEconomyRuntime::publish_epoch_slice(
     } else if (_publish_phase == PublishPhase::AUDIT_COUNTRY) {
         const size_t start = _publish_cursor;
         const size_t end = std::min(
-            static_cast<size_t>(market_store().good_count), start + audit_budget);
+            static_cast<size_t>(market_store().good_count.get()), start + audit_budget);
         if (_country_runtime != nullptr) {
             for (; _publish_cursor < end; ++_publish_cursor) {
                 const int64_t country_good =
@@ -323,7 +326,7 @@ bool NativeEconomyRuntime::publish_epoch_slice(
             _publish_cursor = end;
         }
         work_done += static_cast<int64_t>(end - start);
-        if (_publish_cursor >= static_cast<size_t>(market_store().good_count))
+        if (_publish_cursor >= static_cast<size_t>(market_store().good_count.get()))
             _publish_phase = PublishPhase::VERIFY;
     } else if (_publish_phase == PublishPhase::VERIFY) {
         // Every closing total has now been recomputed for this epoch, so the
@@ -392,6 +395,8 @@ bool NativeEconomyRuntime::publish_epoch_slice(
                 error = "money_conservation_failed";
             else if (_closing_totals.goods_stock != full_goods_expected)
                 error = "goods_conservation_failed";
+            if (!full_audit_matches_incremental && error.empty())
+                error = "incremental_audit_mismatch";
         }
         if (!_closing_audit_incremental_this_epoch &&
             !incremental_conservation_mismatch &&
@@ -413,6 +418,8 @@ bool NativeEconomyRuntime::publish_epoch_slice(
                 ++_closing_audit_mismatches;
                 diagnose_incremental_audit_mismatch(_closing_totals);
                 _closing_audit_runtime_disabled = true;
+                _closing_audit_force_full = true;
+                error = "incremental_audit_mismatch";
             }
         }
         if (!error.empty()) return false;
@@ -424,6 +431,14 @@ bool NativeEconomyRuntime::publish_epoch_slice(
             error = "goods_conservation_failed";
         if (!error.empty()) return false;
         _closing_audit_force_full = false;
+        _verified_epoch_audit.day = _sample_day;
+        _verified_epoch_audit.population_actual = _closing_totals.population;
+        _verified_epoch_audit.population_expected = population_expected;
+        _verified_epoch_audit.money_actual = money_close;
+        _verified_epoch_audit.money_expected = money_expected;
+        _verified_epoch_audit.goods_actual = _closing_totals.goods_stock;
+        _verified_epoch_audit.goods_expected = goods_expected;
+        _verified_epoch_audit.full_verification = !_closing_audit_incremental_this_epoch;
         _last_closing_audit_was_incremental =
             _closing_audit_incremental_this_epoch;
         _settlement_watermark = _sample_day;
@@ -590,14 +605,14 @@ bool NativeEconomyRuntime::publish_epoch_slice(
             ++_cell_price_stock_gen[cell];
             ++_cell_owner_cash_gen[cell];
             ++_cell_population_gen[cell];
-            ++_cell_resource_gen[cell];
+            _cell_resource_gen.write_scalar(cell, _cell_resource_gen[cell] + uint32_t{1});
             if (cell < static_cast<int32_t>(market_store().cell_to_market.size()) &&
                 cell < static_cast<int32_t>(_cell_effect_shortage_q16.size())) {
                 const int32_t market = market_store().cell_to_market[cell];
                 int32_t shortage_q16 = 0;
                 int32_t essentials_q16 = 0;
-                if (market >= 0 && market < market_store().market_count) {
-                    for (int32_t good = 0; good < market_store().good_count; ++good) {
+                if (market >= 0 && market < market_store().market_count.get()) {
+                    for (int32_t good = 0; good < market_store().good_count.get(); ++good) {
                         const int64_t lane = market_store().index(market, good);
                         if (lane < 0 || lane >= static_cast<int64_t>(
                                 market_store().last_shortage_q16.size())) continue;
@@ -709,6 +724,10 @@ bool NativeEconomyRuntime::publish_epoch_slice(
     if (executed_phase == PublishPhase::WATERMARK)
         _watermark_ms += slice_ms;
     if (executed_phase == PublishPhase::COMMIT && !_epoch_active && !_fatal) {
+        _verified_epoch_audit.generation = _committed_generation;
+        std::atomic_store_explicit(&_committed_audit_view,
+            std::make_shared<const CommittedAuditView>(_verified_epoch_audit),
+            std::memory_order_release);
         capture_completed_perf_snapshot();
         note_completed_epoch_cadence_ms();
         if (_csv_recorder && _simulation_host &&

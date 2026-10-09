@@ -1290,6 +1290,13 @@ bool NativeSimulationHost::start(RuntimeSimulationMode mode,
         _command_request_id.store(restored_request_id,
                                   std::memory_order_release);
     }
+    // Economy persists terminal peer identities independently of the Host's
+    // live transport queues. A quiescent save may have no Host request states
+    // while its PKEC journal still owns thousands of request IDs. Seed from
+    // both authorities before any new worker or facade request is allocated.
+    if (_economy_production_runtime != nullptr)
+        reserve_command_request_ids_through(
+            _economy_production_runtime->asset_peer_request_high_watermark());
     // Country is initialized from the immutable main-thread capture exactly
     // once per worker lifetime. The worker never calls NativeCountryRuntime;
     // it owns this POD authority and its continuation state after bootstrap.
@@ -4315,6 +4322,16 @@ bool NativeSimulationHost::country_economy_asset_protocol_self_test(
     error.clear();
     NativeSimulationHost probe;
     probe._country_worker_session_epoch = 41;
+    probe.reserve_command_request_ids_through(9000);
+    if (probe.allocate_command_request_id() != 9001) {
+        error = "country_economy_asset_restored_request_floor_failed";
+        return false;
+    }
+    probe.reserve_command_request_ids_through(7000);
+    if (probe.allocate_command_request_id() != 9002) {
+        error = "country_economy_asset_request_floor_rewound";
+        return false;
+    }
 
     RuntimeEconomyAssetRequest off_thread_cash;
     off_thread_cash.operation = RuntimeEconomyAssetOperation::CASH_FROM_COHORT;
@@ -6615,6 +6632,14 @@ bool NativeSimulationHost::enqueue_batch(
     _last_command_admitted_us.store(now_us(), std::memory_order_release);
     _control_cv.notify_one();
     return true;
+}
+
+void NativeSimulationHost::reserve_command_request_ids_through(uint64_t maximum) noexcept {
+    uint64_t observed = _command_request_id.load(std::memory_order_acquire);
+    while (observed < maximum &&
+           !_command_request_id.compare_exchange_weak(
+               observed, maximum, std::memory_order_acq_rel,
+               std::memory_order_acquire)) {}
 }
 
 uint64_t NativeSimulationHost::allocate_command_request_id() {

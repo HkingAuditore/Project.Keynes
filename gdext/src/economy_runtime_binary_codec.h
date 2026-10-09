@@ -5,6 +5,7 @@
 #include <type_traits>
 #include <utility>
 #include <vector>
+#include "economy_tracked_column.h"
 
 namespace pk::binary_codec {
 
@@ -27,6 +28,15 @@ inline bool read_le(const std::vector<uint8_t> &in, size_t &cursor,
     for (size_t i = 0; i < sizeof(T); ++i)
         bits |= static_cast<U>(in[cursor++]) << (i * 8);
     value = static_cast<T>(bits);
+    return true;
+}
+
+template <typename T>
+inline bool read_column_le(const std::vector<uint8_t> &in, size_t &cursor,
+    EconomyTrackedColumn<T> &column, size_t index) {
+    T value{};
+    if (!read_le(in, cursor, value)) return false;
+    column.write_scalar(index, value);
     return true;
 }
 

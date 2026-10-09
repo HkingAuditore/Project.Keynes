@@ -497,8 +497,8 @@ bool NativeEconomyRuntime::run_building_production_cell(
             trace_cell_income.push_back(population_store().epoch_income[slot]);
             trace_cell_expense.push_back(population_store().epoch_expense[slot]);
         });
-        trace_market_stock.resize(market_store().good_count);
-        for (int32_t good = 0; good < market_store().good_count; ++good) {
+        trace_market_stock.resize(market_store().good_count.get());
+        for (int32_t good = 0; good < market_store().good_count.get(); ++good) {
             trace_market_stock[good] = market_store().stock[market_store().index(market, good)];
         }
         trace_resource_delta.resize(_resource_ids.size());
@@ -559,10 +559,10 @@ bool NativeEconomyRuntime::run_building_production_cell(
                                _building_role_contract_wage[role_index],
                                _saturation_count),
                 std::max(1, _epoch_days), _saturation_count);
-            _building_role_base_wage_due[role_index] = wage_due;
-            _building_role_base_wage_paid[role_index] = 0;
-            _building_role_bonus_due[role_index] = 0;
-            _building_role_bonus_paid[role_index] = 0;
+            _building_role_base_wage_due.write_scalar(role_index, wage_due, market_mutation_sink());
+            _building_role_base_wage_paid.write_scalar(role_index, 0, market_mutation_sink());
+            _building_role_bonus_due.write_scalar(role_index, 0, market_mutation_sink());
+            _building_role_bonus_paid.write_scalar(role_index, 0, market_mutation_sink());
             group.last_base_wages_due = saturating_add(
                 group.last_base_wages_due, wage_due, _saturation_count);
         }
@@ -605,7 +605,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
         retention_generation = 1;
     }
     const size_t retention_dense_size = payroll_owners.size() *
-        static_cast<size_t>(market_store().good_count);
+        static_cast<size_t>(market_store().good_count.get());
     if (retention_lane_by_owner_good.size() < retention_dense_size) {
         retention_lane_by_owner_good.resize(retention_dense_size, -1);
         retention_lane_stamp.resize(retention_dense_size, 0);
@@ -625,15 +625,15 @@ bool NativeEconomyRuntime::run_building_production_cell(
         retention_signature_stamp[signature] = retention_generation;
     }
     auto retention_lane = [&](size_t owner, int32_t good) -> int32_t {
-        if (owner >= payroll_owners.size() || good < 0 || good >= market_store().good_count)
+        if (owner >= payroll_owners.size() || good < 0 || good >= market_store().good_count.get())
             return -1;
-        const size_t key = owner * static_cast<size_t>(market_store().good_count) +
+        const size_t key = owner * static_cast<size_t>(market_store().good_count.get()) +
             static_cast<size_t>(good);
         return retention_lane_stamp[key] == retention_generation
             ? retention_lane_by_owner_good[key] : -1;
     };
     auto ensure_retention_lane = [&](size_t owner, int32_t good) -> int32_t {
-        const size_t key = owner * static_cast<size_t>(market_store().good_count) +
+        const size_t key = owner * static_cast<size_t>(market_store().good_count.get()) +
             static_cast<size_t>(good);
         if (retention_lane_stamp[key] == retention_generation)
             return retention_lane_by_owner_good[key];
@@ -1131,7 +1131,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
     input_policy_bills.resize(std::max<size_t>(1, _building_inputs.size()));
     size_t input_policy_count = 0;
     bool observe_price_ceiling = !market_store().price_ceilings[market].empty();
-    for (int32_t good = 0; good < market_store().good_count && !observe_price_ceiling; ++good)
+    for (int32_t good = 0; good < market_store().good_count.get() && !observe_price_ceiling; ++good)
         observe_price_ceiling = int64_t(market_store().price[market_store().index(market, good)]) * 5 >=
                                 int64_t(PRICE_NUMERIC_GUARD_MAX) * 4;
     thread_local std::vector<int32_t> ceiling_input_candidates;
@@ -1857,8 +1857,8 @@ bool NativeEconomyRuntime::run_building_production_cell(
                     continue;
                 }
                 touch_accounting_slot(owner_slot);
-                population_store().funds[owner_slot] = saturating_add(
-                    population_store().funds[owner_slot], draw, _saturation_count);
+                population_store().funds.write_scalar(owner_slot, saturating_add(
+                    population_store().funds[owner_slot], draw, _saturation_count), market_mutation_sink());
                 trace_record_cashflow(cell, population_store().handle_for_slot(owner_slot),
                                       CASHFLOW_OTHER, draw, 0);
                 const int64_t premium = saturating_add(saturating_mul(
@@ -1885,7 +1885,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 const int64_t stock_index =
                     market_store().index(market, candidate.good_id);
                 audit_touch_market_lane(static_cast<size_t>(stock_index));
-                market_store().stock[stock_index] -= qty;
+                market_store().stock.write_scalar(stock_index, market_store().stock[stock_index] - (qty), market_mutation_sink());
                 const int32_t signal = market_signal_index(cell, candidate.good_id);
                 if (signal >= 0 && signal < static_cast<int32_t>(
                         _epoch_nonhousehold_withdrawals.size())) {
@@ -1911,18 +1911,18 @@ bool NativeEconomyRuntime::run_building_production_cell(
                         _cycle_flow_consumed, qty, _saturation_count);
                 }
             }
-            population_store().funds[owner_slot] = saturating_add(
+            population_store().funds.write_scalar(owner_slot, saturating_add(
                 population_store().funds[owner_slot] - cash_input_outlay,
-                input_subsidy_income, _saturation_count);
+                input_subsidy_income, _saturation_count), market_mutation_sink());
             group.last_input_cost = base_input_cost;
             group.last_operating_cost = saturating_add(
                 cash_input_outlay, group.last_wages_due, _saturation_count);
-            population_store().epoch_expense[owner_slot] = saturating_add(
+            population_store().epoch_expense.write_scalar(owner_slot, saturating_add(
                 population_store().epoch_expense[owner_slot], cash_input_outlay,
-                _saturation_count);
-            population_store().epoch_income[owner_slot] = saturating_add(
+                _saturation_count), market_mutation_sink());
+            population_store().epoch_income.write_scalar(owner_slot, saturating_add(
                 population_store().epoch_income[owner_slot], input_subsidy_income,
-                _saturation_count);
+                _saturation_count), market_mutation_sink());
             record_cohort_fiscal(owner_slot, input_fiscal_transfer);
             trace_record_cashflow(cell, population_store().handle_for_slot(owner_slot),
                                   CASHFLOW_PRODUCTION_INPUT, 0,
@@ -2002,7 +2002,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
         thread_local std::vector<int64_t> procurement_outlay_price_by_good;
         thread_local std::vector<int32_t> buy_factor_by_good;
         thread_local std::vector<int32_t> touched_goods;
-        const size_t good_count = static_cast<size_t>(market_store().good_count);
+        const size_t good_count = static_cast<size_t>(market_store().good_count.get());
         sellable_by_good.resize(good_count);
         quota_by_good.resize(good_count);
         purchase_value_by_good.resize(good_count);
@@ -2417,7 +2417,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
         // fixed-point remainder. The same physical output can never claim the
             // Monetary catalog goods do not bypass the local settlement chain.
         for (Offer &offer : offers) {
-            if (offer.good < 0 || offer.good >= market_store().good_count) continue;
+            if (offer.good < 0 || offer.good >= market_store().good_count.get()) continue;
             // Monetary catalog goods follow the same owner -> merchant ->
             // producer-support path as every other good.  They are physical
             // outputs here, not a separate minting sink.
@@ -2575,11 +2575,11 @@ bool NativeEconomyRuntime::run_building_production_cell(
             const int64_t accepted = saturating_add(
                 sold, supported, _saturation_count);
             touch_accounting_slot(offer.owner_slot);
-            population_store().funds[offer.owner_slot] = saturating_add(
-                population_store().funds[offer.owner_slot], total_paid, _saturation_count);
-            population_store().epoch_income[offer.owner_slot] = saturating_add(
+            population_store().funds.write_scalar(offer.owner_slot, saturating_add(
+                population_store().funds[offer.owner_slot], total_paid, _saturation_count), market_mutation_sink());
+            population_store().epoch_income.write_scalar(offer.owner_slot, saturating_add(
                 population_store().epoch_income[offer.owner_slot], total_paid,
-                _saturation_count);
+                _saturation_count), market_mutation_sink());
             trace_record_cashflow(cell, population_store().handle_for_slot(offer.owner_slot),
                                   CASHFLOW_OWNER_OPERATIONS, paid, 0);
             trace_record_cashflow(cell, population_store().handle_for_slot(offer.owner_slot),
@@ -2596,9 +2596,9 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 market_store().index(market, offer.good);
             audit_touch_market_lane(
                 static_cast<size_t>(offer_stock_index));
-            market_store().stock[offer_stock_index] = saturating_add(
+            market_store().stock.write_scalar(offer_stock_index, saturating_add(
                 market_store().stock[offer_stock_index], accepted,
-                _saturation_count);
+                _saturation_count), market_mutation_sink());
             if (issue_value > 0) {
                 // Coined bullion is consumed by the money system: the sold batch
                 // was minted into currency (see the issue_value branch above), so
@@ -2609,9 +2609,9 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 // stock accrues as ghost inventory, the utilization planner reads
                 // it as unsellable surplus, and throttles production to the probe
                 // floor -> owner/employee targets collapse -> mines shed workers.
-                market_store().stock[offer_stock_index] = saturating_sub(
+                market_store().stock.write_scalar(offer_stock_index, saturating_sub(
                     market_store().stock[offer_stock_index], supported,
-                    _saturation_count);
+                    _saturation_count), market_mutation_sink());
                 _bullion_stock_consumed = saturating_add(
                     _bullion_stock_consumed, supported, _saturation_count);
             }
@@ -2633,9 +2633,9 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 // next settlement pass.
             }
             if (unsold > 0)
-                market_store().stock[offer_stock_index] = saturating_add(
+                market_store().stock.write_scalar(offer_stock_index, saturating_add(
                     market_store().stock[offer_stock_index], unsold,
-                    _saturation_count);
+                    _saturation_count), market_mutation_sink());
             group.last_revenue = saturating_add(
                 group.last_revenue, total_paid, _saturation_count);
             _production_output_stock = saturating_add(
@@ -2693,8 +2693,8 @@ bool NativeEconomyRuntime::run_building_production_cell(
                     cell, owner_slot, role.profession_id,
                     _building_employee_filled[role_index], due, cap,
                     &_saturation_count);
-                _building_role_base_wage_paid[role_index] = saturating_add(
-                    _building_role_base_wage_paid[role_index], paid, _saturation_count);
+                _building_role_base_wage_paid.write_scalar(role_index, saturating_add(
+                    _building_role_base_wage_paid[role_index], paid, _saturation_count), market_mutation_sink());
                 group.last_base_wages_paid = saturating_add(
                     group.last_base_wages_paid, paid, _saturation_count);
                 owner_paid = saturating_add(owner_paid, paid, _saturation_count);
@@ -2779,8 +2779,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
             const int64_t next = mul_div_sat(
                 group.last_bonus_due, prefix, group.last_base_wages_due,
                 _saturation_count);
-            _building_role_bonus_due[role_index] =
-                std::max<int64_t>(0, next - allocated);
+            _building_role_bonus_due.write_scalar(role_index, std::max<int64_t>(0, next - allocated), market_mutation_sink());
             allocated = next;
         }
     }
@@ -2815,7 +2814,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
                     cell, owner_slot, role.profession_id,
                     _building_employee_filled[role_index], due, cap,
                     &_saturation_count);
-                _building_role_bonus_paid[role_index] = paid;
+                _building_role_bonus_paid.write_scalar(role_index, paid, market_mutation_sink());
                 owner_paid = saturating_add(owner_paid, paid, _saturation_count);
                 group.last_bonus_paid = saturating_add(
                     group.last_bonus_paid, paid, _saturation_count);
@@ -2919,10 +2918,10 @@ bool NativeEconomyRuntime::run_building_production_cell(
             const int64_t cost = maintenance_bill.add(bought, price, _saturation_count);
             if (cost > population_store().funds[owner_slot]) continue;
             audit_touch_market_lane(static_cast<size_t>(stock_index));
-            market_store().stock[stock_index] -= bought;
-            population_store().funds[owner_slot] -= cost;
-            population_store().epoch_expense[owner_slot] = saturating_add(
-                population_store().epoch_expense[owner_slot], cost, _saturation_count);
+            market_store().stock.write_scalar(stock_index, market_store().stock[stock_index] - (bought), market_mutation_sink());
+            population_store().funds.write_scalar(owner_slot, population_store().funds[owner_slot] - (cost), market_mutation_sink());
+            population_store().epoch_expense.write_scalar(owner_slot, saturating_add(
+                population_store().epoch_expense[owner_slot], cost, _saturation_count), market_mutation_sink());
             paid = saturating_add(paid, cost, _saturation_count);
             _maintenance_goods_consumed = saturating_add(
                 _maintenance_goods_consumed, bought, _saturation_count);
@@ -2992,11 +2991,11 @@ bool NativeEconomyRuntime::run_building_production_cell(
                 business_transfer_by_group[g - begin], transfer,
                 _saturation_count);
             touch_accounting_slot(owner_slot);
-            population_store().funds[owner_slot] = saturating_add(
-                population_store().funds[owner_slot], subsidy, _saturation_count);
-            population_store().epoch_income[owner_slot] = saturating_add(
+            population_store().funds.write_scalar(owner_slot, saturating_add(
+                population_store().funds[owner_slot], subsidy, _saturation_count), market_mutation_sink());
+            population_store().epoch_income.write_scalar(owner_slot, saturating_add(
                 population_store().epoch_income[owner_slot], subsidy,
-                _saturation_count);
+                _saturation_count), market_mutation_sink());
             record_cohort_fiscal(owner_slot, transfer);
             trace_record_cashflow(
                 cell, population_store().handle_for_slot(owner_slot),
@@ -3054,8 +3053,8 @@ bool NativeEconomyRuntime::run_building_production_cell(
         }
         if (income_tax == 0) continue;
         touch_accounting_slot(owner_slot);
-        population_store().funds[owner_slot] = saturating_sub(
-            population_store().funds[owner_slot], income_tax, _saturation_count);
+        population_store().funds.write_scalar(owner_slot, saturating_sub(
+            population_store().funds[owner_slot], income_tax, _saturation_count), market_mutation_sink());
         if (income_tax > 0)
             trace_record_cashflow(cell, population_store().handle_for_slot(owner_slot),
                                   CASHFLOW_INCOME_TAX, 0, income_tax);
@@ -3428,7 +3427,7 @@ bool NativeEconomyRuntime::run_building_production_cell(
             add(FIELD_COHORT_EPOCH_EXPENSE, SUBJECT_COHORT, handle, -1,
                 trace_cell_expense[i], population_store().epoch_expense[slot]);
         }
-        for (int32_t good = 0; good < market_store().good_count; ++good) {
+        for (int32_t good = 0; good < market_store().good_count.get(); ++good) {
             add(FIELD_MARKET_STOCK, SUBJECT_MARKET, market, good,
                 trace_market_stock[good], market_store().stock[market_store().index(market, good)]);
         }
@@ -3474,6 +3473,7 @@ void NativeEconomyRuntime::merge_building_production_result(ProductionResult &re
         audit_touch_population_lane(static_cast<int32_t>(lane));
     for (const size_t lane : result.audit_market_lanes)
         audit_touch_market_lane(lane);
+    merge_economy_worker_changes(result.market_changes);
     _saturation_count = saturating_add(
         _saturation_count, result.saturation_count, _saturation_count);
     auto merge = [&](int64_t &target, int64_t value) {

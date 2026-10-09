@@ -619,6 +619,11 @@ void NativeEconomyRuntime::prepare_restore_candidate_scratch() {
     _fiscal_reservation_continuation = {};
     _fiscal_settlement_continuation = {};
     _asset_peer_journal.clear();
+    _fiscal_digest_rebuild = true;
+    _fiscal_words_dirty = true;
+    _fiscal_record_digests.clear();
+    _fiscal_hash_words.clear();
+    _fiscal_hash_pages.clear();
     _epoch_begin_post_fiscal_pending = false;
     _epoch_begin_pending_day = -1;
     _fiscal_last_events.clear();
@@ -706,7 +711,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
     const auto s = _restore.schema_version;
     const char *first_incomplete =
         _restore.restored_pages != _restore.expected_pages ? "pages" :
-        _restore.restored_markets != market_store().market_count ? "markets" :
+        _restore.restored_markets != market_store().market_count.get() ? "markets" :
         _restore.restored_cells != _cell_count ? "cells" :
         _restore.restored_commands != _restore.expected_commands ? "commands" :
         _restore.restored_buildings != _restore.expected_buildings ? "buildings" :
@@ -749,7 +754,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
             _restore.restored_family_trait_commands !=
                 _restore.expected_family_trait_commands)) ? "family_traits" : nullptr;
     if (_restore.restored_pages != _restore.expected_pages ||
-        _restore.restored_markets != market_store().market_count ||
+        _restore.restored_markets != market_store().market_count.get() ||
         _restore.restored_cells != _cell_count ||
         _restore.restored_commands != _restore.expected_commands ||
         _restore.restored_buildings != _restore.expected_buildings ||
@@ -975,7 +980,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
             out["reason"] = "restore_multiple_page_chain_heads";
             return out;
         }
-        population_store().cell_first_page[cell] = page;
+        population_store().cell_first_page.write_scalar(cell, page, market_mutation_sink());
     }
     std::vector<uint8_t> visited(population_store().page_next.size(), 0);
     for (int32_t cell = 0; cell < _cell_count; ++cell) {
@@ -1003,7 +1008,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
         return out;
     }
     for (int32_t cell = 0; cell < _cell_count; ++cell) {
-        if (market_store().cell_to_market[cell] < 0 || market_store().cell_to_market[cell] >= market_store().market_count) {
+        if (market_store().cell_to_market[cell] < 0 || market_store().cell_to_market[cell] >= market_store().market_count.get()) {
             out["ok"] = false;
             out["reason"] = "restore_cell_market_invalid";
             return out;
@@ -1019,8 +1024,8 @@ Dictionary NativeEconomyRuntime::end_restore() {
             return out;
         }
     }
-    for (int32_t market = 0; market < market_store().market_count; ++market) {
-        for (int32_t good = 0; good < market_store().good_count; ++good) {
+    for (int32_t market = 0; market < market_store().market_count.get(); ++market) {
+        for (int32_t good = 0; good < market_store().good_count.get(); ++good) {
             const int64_t idx = market_store().index(market, good);
             if (market_store().stock[idx] < 0 || market_store().demand_ema[idx] < 0 ||
                 market_store().price[idx] < PRICE_NUMERIC_GUARD_MIN ||
@@ -1088,8 +1093,8 @@ Dictionary NativeEconomyRuntime::end_restore() {
                    cmd.i64_0 >= 1)
                 : family_expeditions_store().valid_handle(cmd.target_handle, expedition))
             : market_target
-            ? (cmd.i32_0 >= 0 && cmd.i32_0 < market_store().market_count &&
-               cmd.i32_1 >= 0 && cmd.i32_1 < market_store().good_count &&
+            ? (cmd.i32_0 >= 0 && cmd.i32_0 < market_store().market_count.get() &&
+               cmd.i32_1 >= 0 && cmd.i32_1 < market_store().good_count.get() &&
                ((cmd.opcode != COMMAND_COUNTRY_GOOD_TO_MARKET &&
                  cmd.opcode != COMMAND_MARKET_GOOD_TO_COUNTRY) ||
                 (_country_runtime != nullptr && _country_runtime->valid_handle(
@@ -1194,7 +1199,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
     rebuild_building_cell_offsets();
     _pending_building_topology_rebuild = false;
     if (_auto_slice_by_scale)
-        _cells_per_slice = std::clamp(market_store().market_count, 1, 128);
+        _cells_per_slice = std::clamp(market_store().market_count.get(), 1, 128);
     if (_auto_building_slice_by_scale)
         _building_cells_per_slice = AUTO_BUILDING_CELLS_PER_SLICE;
     refresh_cadence_estimates();
@@ -1636,6 +1641,8 @@ Dictionary NativeEconomyRuntime::end_restore() {
         _settlements.revision = 1;
     }
     _closing_totals = audit_totals();
+    std::atomic_store_explicit(&_committed_audit_view,
+        std::shared_ptr<const CommittedAuditView>{}, std::memory_order_release);
     _opening_totals = _closing_totals;
     rebuild_incremental_audit_shadow();
     _closing_audit_force_full = true;
@@ -1676,10 +1683,10 @@ Dictionary NativeEconomyRuntime::end_restore() {
     out["restored_buildings"] = restored_buildings;
     out["restored_trade_orders"] = trade_orders_store().size();
     out["restored_trade_flows"] = static_cast<int64_t>(_trade_flows.cells.size());
-    out["cohort_count"] = population_store().active_count;
+    out["cohort_count"] = population_store().active_count.get();
     out["state_hash_catalog"] = _catalog_hash;
-    out["restored_families"] = families_store().active_count;
-    out["restored_persons"] = persons_store().active_count;
+    out["restored_families"] = families_store().active_count.get();
+    out["restored_persons"] = persons_store().active_count.get();
     out["restored_person_needs"] = static_cast<int64_t>(person_needs().size());
     out["migration"] = restored_schema == 27
         ? "v27_empty_birth_residual_bootstrap"
@@ -1719,12 +1726,18 @@ bool NativeEconomyRuntime::end_restore_internal(std::string &error) {
 bool NativeEconomyRuntime::validate_ecp2_candidate(
         const RuntimeEconomyEcp2State &in, std::string &error) const {
     error.clear();
-    if (in.abi_version != RUNTIME_ECONOMY_ECP2_ABI_VERSION) {
+    const bool migrating = runtime_hash_migration_enabled() && in.abi_version == 2u && in.schema_version == 53;
+    if (in.abi_version != RUNTIME_ECONOMY_ECP2_ABI_VERSION && !migrating) {
         error = "ecp2_abi_version_incompatible";
         return false;
     }
-    if (in.schema_version != RUNTIME_ECONOMY_ECP2_SCHEMA_VERSION) {
+    if (in.schema_version != RUNTIME_ECONOMY_ECP2_SCHEMA_VERSION && !migrating) {
         error = "ecp2_schema_version_incompatible";
+        return false;
+    }
+    if (in.envelope.hash_version != (runtime_chunk_hash_enabled() ? 2u : 1u) &&
+        !runtime_hash_migration_enabled()) {
+        error = "ecp2_hash_version_requires_explicit_migration";
         return false;
     }
     if ((in.authority_domain_mask & ECP2_DOMAIN_ENVELOPE) == 0) {
@@ -1869,8 +1882,8 @@ bool NativeEconomyRuntime::capture_ecp2_authority(RuntimeEconomyEcp2State &out,
     out.envelope.schema_version = RUNTIME_ECONOMY_ECP2_SCHEMA_VERSION;
     out.envelope.abi_version = RUNTIME_ECONOMY_ECP2_ABI_VERSION;
     out.envelope.cell_count = _cell_count;
-    out.envelope.market_count = market_store().market_count;
-    out.envelope.good_count = market_store().good_count;
+    out.envelope.market_count = market_store().market_count.get();
+    out.envelope.good_count = market_store().good_count.get();
     out.envelope.catalog_hash = _catalog_hash;
     out.envelope.building_catalog_hash = _building_catalog_hash;
     out.envelope.settlement_catalog_hash = _settlement_catalog_hash;

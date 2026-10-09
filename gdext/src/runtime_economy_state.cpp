@@ -5,6 +5,37 @@
 #include <cstring>
 
 namespace pk {
+RuntimeEconomyMarketStore::RuntimeEconomyMarketStore()
+    : market_count(changes, {{2, 1001}, "market.market_count", EconomyFieldEncoding::I32, 4}, 0),
+      good_count(changes, {{2, 1002}, "market.good_count", EconomyFieldEncoding::I32, 4}, 0),
+      stock(changes, {{2, 1}, "market.stock", EconomyFieldEncoding::I64, 8}),
+      price(changes, {{2, 2}, "market.price", EconomyFieldEncoding::I32, 4}),
+      demand_ema(changes, {{2, 3}, "market.demand_ema", EconomyFieldEncoding::I64, 8}),
+      last_shortage_q16(changes, {{2, 4}, "market.last_shortage_q16", EconomyFieldEncoding::U16, 2}),
+      cell_to_market(changes, {{2, 5}, "market.cell_to_market", EconomyFieldEncoding::I32, 4}) {}
+
+RuntimeEconomyMarketStore::RuntimeEconomyMarketStore(const RuntimeEconomyMarketStore &other)
+    : RuntimeEconomyMarketStore() { *this = other; }
+RuntimeEconomyMarketStore::RuntimeEconomyMarketStore(RuntimeEconomyMarketStore &&other)
+    : RuntimeEconomyMarketStore() { *this = std::move(other); }
+RuntimeEconomyMarketStore &RuntimeEconomyMarketStore::operator=(const RuntimeEconomyMarketStore &other) {
+    if (this == &other) return *this;
+    market_count = other.market_count; good_count = other.good_count;
+    stock.assign(other.stock.values()); price.assign(other.price.values());
+    demand_ema.assign(other.demand_ema.values()); last_shortage_q16.assign(other.last_shortage_q16.values());
+    cell_to_market = other.cell_to_market; price_ceilings = other.price_ceilings;
+    return *this;
+}
+RuntimeEconomyMarketStore &RuntimeEconomyMarketStore::operator=(RuntimeEconomyMarketStore &&other) {
+    if (this == &other) return *this;
+    market_count = other.market_count; good_count = other.good_count;
+    stock.move_from(other.stock); price.move_from(other.price);
+    demand_ema.move_from(other.demand_ema); last_shortage_q16.move_from(other.last_shortage_q16);
+    cell_to_market.move_from(other.cell_to_market); price_ceilings = std::move(other.price_ceilings);
+    other.market_count = other.good_count = 0;
+    return *this;
+}
+
 void RuntimeEconomyMarketStore::clear() {
     market_count = 0;
     good_count = 0;
@@ -14,6 +45,33 @@ void RuntimeEconomyMarketStore::clear() {
     last_shortage_q16.clear();
     cell_to_market.clear();
     price_ceilings.clear();
+}
+
+RuntimeEconomyResourceStore::RuntimeEconomyResourceStore()
+    : resource_count(changes, {{3, 1001}, "resource.resource_count", EconomyFieldEncoding::I32, 4}, 0),
+      cell_count(changes, {{3, 1002}, "resource.cell_count", EconomyFieldEncoding::I32, 4}, 0),
+      stock(changes, {{3, 1}, "resource.stock", EconomyFieldEncoding::I64, 8}),
+      cell_generation(changes, {{3, 2}, "resource.cell_generation", EconomyFieldEncoding::U32, 4}) {}
+RuntimeEconomyResourceStore::RuntimeEconomyResourceStore(const RuntimeEconomyResourceStore &other)
+    : RuntimeEconomyResourceStore() { *this = other; }
+RuntimeEconomyResourceStore::RuntimeEconomyResourceStore(RuntimeEconomyResourceStore &&other)
+    : RuntimeEconomyResourceStore() { *this = std::move(other); }
+RuntimeEconomyResourceStore &RuntimeEconomyResourceStore::operator=(const RuntimeEconomyResourceStore &other) {
+    if (this == &other) return *this;
+    resource_count = other.resource_count; cell_count = other.cell_count;
+    stock.assign(other.stock.values()); cell_generation.assign(other.cell_generation.values());
+    remaining = other.remaining; harvest_remaining = other.harvest_remaining;
+    deltas = other.deltas; lane_generation = other.lane_generation;
+    return *this;
+}
+RuntimeEconomyResourceStore &RuntimeEconomyResourceStore::operator=(RuntimeEconomyResourceStore &&other) {
+    if (this == &other) return *this;
+    resource_count = other.resource_count; cell_count = other.cell_count;
+    stock.move_from(other.stock); cell_generation.move_from(other.cell_generation);
+    remaining = std::move(other.remaining); harvest_remaining = std::move(other.harvest_remaining);
+    deltas = std::move(other.deltas); lane_generation = std::move(other.lane_generation);
+    other.resource_count = other.cell_count = 0;
+    return *this;
 }
 
 void RuntimeEconomyResourceStore::clear() noexcept {
@@ -80,13 +138,13 @@ bool RuntimeEconomyResourceStore::load_wire(const uint8_t *data, size_t size,
     for (size_t i = 0; i < lanes; ++i) {
         int64_t value = 0;
         std::memcpy(&value, data + offset, sizeof(value));
-        stock[i] = value;
+        stock.write_scalar(i, value);
         offset += sizeof(value);
     }
     for (int32_t cell = 0; cell < cell_count; ++cell) {
         uint32_t value = 0;
         std::memcpy(&value, data + offset, sizeof(value));
-        cell_generation[static_cast<size_t>(cell)] = value;
+        cell_generation.write_scalar(static_cast<size_t>(cell), value);
         offset += sizeof(value);
     }
     return offset == size;
@@ -182,6 +240,19 @@ bool RuntimeEconomyLedgerState::has_diagnostics_columns() const noexcept {
 }
 
 bool RuntimeEconomyLedgerState::valid(const char **reason) const noexcept {
+    if (!validate_shape_and_values(reason)) return false;
+    if (ledger_hash != 0 && !verify_external_digest()) {
+        if (reason != nullptr) *reason = "ledger_hash_mismatch";
+        return false;
+    }
+    return true;
+}
+
+bool RuntimeEconomyLedgerState::verify_external_digest() const noexcept {
+    return ledger_hash != 0 && ledger_hash == computed_hash();
+}
+
+bool RuntimeEconomyLedgerState::validate_shape_and_values(const char **reason) const noexcept {
     EconomyCostProbe probe("ledger_validate", committed_day, market_stock.size());
     // Every rejection names its check. A save that fails here faults the
     // worker, and a single generic reason left no way to tell which of ~30
@@ -385,7 +456,6 @@ bool RuntimeEconomyLedgerState::valid(const char **reason) const noexcept {
         return reject("ledger_day_before_epoch_cursor_commit");
     }
 
-    if (ledger_hash != 0 && ledger_hash != computed_hash()) return reject("ledger_hash_mismatch");
     if (reason != nullptr) *reason = nullptr;
     return true;
 }
@@ -459,8 +529,8 @@ uint64_t RuntimeEconomyLedgerState::computed_hash() const noexcept {
     hash = mix(hash, static_cast<uint64_t>(resource.safe_harvest_q16));
     hash = mix(hash, static_cast<uint64_t>(resource.min_horizon_days));
     hash = mix(hash, resource.content_hash);
-    mix_vector(hash, resource.store.stock);
-    mix_vector(hash, resource.store.cell_generation);
+    mix_vector(hash, resource.store.stock.values());
+    mix_vector(hash, resource.store.cell_generation.values());
     hash = mix(hash, epoch_cursor.captured ? 1u : 0u);
     hash = mix(hash, static_cast<uint64_t>(epoch_cursor.sample_day));
     hash = mix(hash, static_cast<uint64_t>(epoch_cursor.current_day));

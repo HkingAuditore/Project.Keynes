@@ -101,6 +101,14 @@ Worker 侧税收（epoch 累加，epoch 清空后回到 0，不要把一行的�
 - `runtime_graph_economy_attempt_slices`：这一次 Economy 访问跑了多少 compact slice
 
 `runtime_graph_worker_time_*_us` 与 `input_capture_count` 是进程累计，比较两行必须取差。
+CORE CSV 同时记录 `worker_time_save_build_us`、`worker_time_save_pause_us` 与
+`worker_time_paused_us`，使八个 worker phase 的差分之和与 `worker_time_total_us`
+一致。旧 CSV 缺少这三列时，total 减 execute/input_wait/clock_wait/boundary_wait/overhead
+的差分只能称为未记录 phase 时间，不能全部算作计算或 peer 等待。
+端到端天/秒使用 committed_day 与 timestamp 的差分；纯执行预算使用 execute 的差分
+除以提交天数，两者不可混用。`sched_proc_*` 是相邻发布点之间的累计，首行可能包含
+开始录制前的运行历史；不能将首行累计量解释为单帧耗时。仅剔除长 timestamp 间隔也
+不能证明这些间隔全部属于暂停或自动存档。
 `country_worker_waiting_for_peer` 与 `country_worker_last_reason` 说明国家阶段有没有被
 peer 挡住。这些列不改变权威状态。
 
@@ -2436,3 +2444,42 @@ counts at days 1000 and 1900. The run committed 1916 days in 45 seconds
 it does not establish that the user's default running binary contains the fix.
 The full building suite remains failing, including the newer owner-livelihood-only
 suspension assertions which conflict with the restored operating-cost semantics.
+# 2026-10-08 economy performance validation
+
+Headless recording deduplicates samples by authoritative committed day after
+warmup. Driver-day callbacks and calendar advancement are not committed-day
+evidence. Save replay also waits for worker committed-day progress and uses
+compact reports in its frame loop; a progressing calendar cannot hide a stalled
+worker. DETAIL is opt-in for the performance recorder.
+
+The worker timing partition includes `execute`, `input_wait`, `clock_wait`,
+`save_build`, `save_pause`, `paused`, `overhead` and `boundary_wait`. Save and
+paused categories must be retained when explaining wall-time gaps.
+
+CORE and DETAIL economy reports expose `hash_version` and
+`hash_cumulative_compared_bytes`, `hash_cumulative_copied_bytes`,
+`hash_cumulative_rebuilt_pages`, `hash_cumulative_reused_pages`. Compare deltas
+within the same configured session; cache clear/restore resets their counters.
+The existing `hash_compared_bytes` / copied / rebuilt / reused fields describe
+the last cache update, **not** the entire committed day. Shared native/POD calls
+both count their actual comparison work. Diagnostic reference rebuilds are
+excluded from the production cache counters.
+
+`PK_ECONOMY_MEMO_VERIFY=1` and `PK_ECONOMY_HASH_VERIFY=1` deliberately add
+reference calculations. Their throughput is correctness evidence only.
+The migrated late save is 60x40 at day 26280; it must not be presented as a
+100x64 late-world acceptance run. The 50 authoritative days/s goal remains
+unverified until the specified 200-day warmup, 3000-day repeated measurement
+and graphical/autosave acceptance runs pass.
+
+Continuous audit rollout is currently diagnostic-only:
+`PK_ECONOMY_AUDIT_SHADOW_REUSE=1` retains touched lane preimages across commits,
+registers idle writes, and derives opening totals from the last close plus
+boundary changes. Worker sinks keep their prior shadow values until merge;
+they must not capture an already-mutated value as the first preimage.
+Bootstrap, restore, profile change, shape change and FULL mode rebuild the
+shadow. Periodic full audits remain enabled at the configured 25-day interval.
+`PK_ECONOMY_AUDIT_VERIFY_EVERY_DAY=1` additionally compares every opening and
+closing against a full scan. Neither flag changes economic settlement cadence.
+An audit mismatch disables the incremental path and fails before publishing
+the generation; it must not silently publish a corrected partial commit.

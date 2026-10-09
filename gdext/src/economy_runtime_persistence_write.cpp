@@ -18,8 +18,8 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
     std::vector<uint8_t> payload;
     if (_save.section == SAVE_SECTION_HEADER) {
         append_le<int32_t>(payload, _cell_count);
-        append_le<int32_t>(payload, market_store().market_count);
-        append_le<int32_t>(payload, market_store().good_count);
+        append_le<int32_t>(payload, market_store().market_count.get());
+        append_le<int32_t>(payload, market_store().good_count.get());
         append_le<int32_t>(payload, static_cast<int32_t>(population_store().page_next.size()));
         append_le<int64_t>(payload, population_store().active_count);
         append_le<int32_t>(payload, _epoch_days);
@@ -223,15 +223,15 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                                static_cast<uint32_t>(_save.page_cursor - begin), payload);
     }
     if (_save.section == SAVE_SECTION_MARKETS) {
-        const int32_t record_bytes = 4 + market_store().good_count * 22;
+        const int32_t record_bytes = 4 + market_store().good_count.get() * 22;
         const int32_t max_records = std::max(1, (budget - 16) / std::max(1, record_bytes));
-        const int32_t end = std::min(market_store().market_count, _save.market_cursor + max_records);
+        const int32_t end = std::min(market_store().market_count.get(), _save.market_cursor + max_records);
         payload.reserve(static_cast<size_t>(std::max(0, end - _save.market_cursor)) * record_bytes);
         const int32_t begin = _save.market_cursor;
         for (; _save.market_cursor < end; ++_save.market_cursor) {
             const int32_t market = _save.market_cursor;
             append_le<int32_t>(payload, market);
-            for (int32_t good = 0; good < market_store().good_count; ++good) {
+            for (int32_t good = 0; good < market_store().good_count.get(); ++good) {
                 const int64_t idx = market_store().index(market, good);
                 append_le<int64_t>(payload, market_store().stock[idx]);
                 append_le<int32_t>(payload, market_store().price[idx]);
@@ -239,7 +239,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                 append_le<uint16_t>(payload, market_store().last_shortage_q16[idx]);
             }
         }
-        if (_save.market_cursor >= market_store().market_count) ++_save.section;
+        if (_save.market_cursor >= market_store().market_count.get()) ++_save.section;
         return make_save_chunk(SAVE_SECTION_MARKETS,
                                static_cast<uint32_t>(_save.market_cursor - begin), payload);
     }
@@ -1211,7 +1211,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
     }
     if (_save.section == SAVE_SECTION_PRICE_CEILINGS) {
         uint32_t records = 0;
-        while (_save.ceiling_market_cursor < market_store().market_count) {
+        while (_save.ceiling_market_cursor < market_store().market_count.get()) {
             const auto &row = market_store().price_ceilings[_save.ceiling_market_cursor];
             if (_save.ceiling_row_cursor >= static_cast<int32_t>(row.size())) {
                 ++_save.ceiling_market_cursor; _save.ceiling_row_cursor = 0; continue;
@@ -1224,7 +1224,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             append_le<uint16_t>(payload, state.confirmation_days);
             ++records;
         }
-        if (_save.ceiling_market_cursor >= market_store().market_count) ++_save.section;
+        if (_save.ceiling_market_cursor >= market_store().market_count.get()) ++_save.section;
         return make_save_chunk(SAVE_SECTION_PRICE_CEILINGS, records, payload);
     }
     if (_save.section == SAVE_SECTION_FISCAL_PEER) {

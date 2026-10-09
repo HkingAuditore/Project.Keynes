@@ -1,14 +1,20 @@
 #pragma once
 
 #include <cstdint>
+#include <array>
 #include <algorithm>
 #include <vector>
+#include "runtime_chunk_hash.h"
+#include "economy_tracked_column.h"
+#include "economy_owned_column.h"
+#include "economy_tracked_scalar.h"
 #include "runtime_economy_population_store.h"
 #include "runtime_economy_building_store.h"
 #include "runtime_economy_trade_escrow_store.h"
 #include "runtime_economy_family_store.h"
 #include "runtime_economy_live_tables.h"
 #include "runtime_economy_family_side_tables.h"
+#include "economy_tracked_records.h"
 
 namespace pk {
 
@@ -21,29 +27,48 @@ struct RuntimeEconomyPriceCeilingState {
 // Live market storage, independent of the Godot facade and formula executor.
 // Preserve column order and sparse price-ceiling rows for existing PKEC I/O.
 struct RuntimeEconomyMarketStore {
-    int32_t market_count = 0;
-    int32_t good_count = 0;
-    std::vector<int64_t> stock;
-    std::vector<int32_t> price;
-    std::vector<int64_t> demand_ema;
-    std::vector<uint16_t> last_shortage_q16;
-    std::vector<int32_t> cell_to_market;
+    ChangeRegistry changes;
+    EconomyTrackedScalar<int32_t> market_count;
+    EconomyTrackedScalar<int32_t> good_count;
+    EconomyTrackedColumn<int64_t> stock;
+    EconomyTrackedColumn<int32_t> price;
+    EconomyTrackedColumn<int64_t> demand_ema;
+    EconomyTrackedColumn<uint16_t> last_shortage_q16;
+    EconomyTrackedColumn<int32_t> cell_to_market;
     std::vector<std::vector<RuntimeEconomyPriceCeilingState>> price_ceilings;
+
+    RuntimeEconomyMarketStore();
+    RuntimeEconomyMarketStore(const RuntimeEconomyMarketStore &other);
+    RuntimeEconomyMarketStore(RuntimeEconomyMarketStore &&other);
+    RuntimeEconomyMarketStore &operator=(const RuntimeEconomyMarketStore &other);
+    RuntimeEconomyMarketStore &operator=(RuntimeEconomyMarketStore &&other);
 
     void clear();
     int64_t index(int32_t market, int32_t good) const {
         return static_cast<int64_t>(market) * good_count + good;
     }
+    // Canonical field traversal uses the same bindings as the writers.
+    template<class Visitor> void visit_registered_columns(Visitor &&visit) const {
+        visit(stock);
+        visit(price);
+        visit(demand_ema);
+        visit(last_shortage_q16);
+        visit(cell_to_market);
+        visit(market_count.column());
+        visit(good_count.column());
+    }
+
 };
 
 // Phase-2.5.1: live resource SoA (dense resource×cell stock + per-cell gen).
 // Replaces the ABI9 opaque payload as the in-memory authority for the committed
 // mirror; ECP ABI9 still packs these columns to/from wire bytes.
 struct RuntimeEconomyResourceStore {
-    int32_t resource_count = 0;
-    int32_t cell_count = 0;
-    std::vector<int64_t> stock;
-    std::vector<uint32_t> cell_generation;
+    ChangeRegistry changes;
+    EconomyTrackedScalar<int32_t> resource_count;
+    EconomyTrackedScalar<int32_t> cell_count;
+    EconomyTrackedColumn<int64_t> stock;
+    EconomyTrackedColumn<uint32_t> cell_generation;
     // A+Y N9: epoch harvest scratch, parallel to `stock`. These lanes are the
     // live home for NativeEconomyRuntime's per-epoch remaining/harvest/delta
     // bookkeeping while the store is bound, so there is no second copy. They
@@ -53,6 +78,12 @@ struct RuntimeEconomyResourceStore {
     std::vector<int64_t> harvest_remaining;
     std::vector<int64_t> deltas;
     std::vector<uint32_t> lane_generation;
+
+    RuntimeEconomyResourceStore();
+    RuntimeEconomyResourceStore(const RuntimeEconomyResourceStore &other);
+    RuntimeEconomyResourceStore(RuntimeEconomyResourceStore &&other);
+    RuntimeEconomyResourceStore &operator=(const RuntimeEconomyResourceStore &other);
+    RuntimeEconomyResourceStore &operator=(RuntimeEconomyResourceStore &&other);
 
     void clear() noexcept;
     void resize(int32_t resources, int32_t cells);
@@ -69,6 +100,14 @@ struct RuntimeEconomyResourceStore {
     int64_t index(int32_t resource, int32_t cell) const {
         return static_cast<int64_t>(resource) * cell_count + cell;
     }
+    // Canonical field traversal uses the same bindings as the writers.
+    template<class Visitor> void visit_registered_columns(Visitor &&visit) const {
+        visit(stock);
+        visit(cell_generation);
+        visit(resource_count.column());
+        visit(cell_count.column());
+    }
+
 };
 
 // Committed-only business columns shared by the legacy-to-POD migration.
@@ -375,6 +414,8 @@ struct RuntimeEconomyLedgerState {
     uint64_t computed_hash() const noexcept;
     uint64_t recompute_hash() noexcept;
     bool valid(const char **reason = nullptr) const noexcept;
+    bool validate_shape_and_values(const char **reason = nullptr) const noexcept;
+    bool verify_external_digest() const noexcept;
 };
 
 // Mirrors NativeEconomyRuntime::StructuralCommand for OwnedState queues.
@@ -393,6 +434,9 @@ struct RuntimeEconomyOwnedStructuralCommand {
 // container explicit prevents a copied summary from being mistaken for an
 // ownership transfer and gives the worker a stable home for future stores.
 struct RuntimeEconomyOwnedState {
+    // Transient shared cache for the single OwnedState formula owner and its
+    // POD reader. Never encoded in ECP2 or included as business state.
+    mutable std::array<RuntimeChunkHash, 4> market_hash_pages;
     RuntimeEconomyPopulationStore population;
     RuntimeEconomyMarketStore market;
     RuntimeEconomyLedgerState committed;
@@ -415,20 +459,20 @@ struct RuntimeEconomyOwnedState {
     // family_memberships(), family_expeditions_store(), ... while bound.
     // Derived CSR rebuild caches over these rows stay NER-local.
     EconomyNotablePersonStore live_persons;
-    std::vector<EconomyFamilyMembershipEdge> live_memberships;
-    std::vector<EconomyFamilyBuildingOwnership> live_ownerships;
+    EconomyTrackedRecords<EconomyFamilyMembershipEdge> live_memberships{{{12, 1}, "family_records.family_memberships", EconomyFieldEncoding::CanonicalRecord, 1}};
+    EconomyTrackedRecords<EconomyFamilyBuildingOwnership> live_ownerships{{{12, 2}, "family_records.family_ownerships", EconomyFieldEncoding::CanonicalRecord, 1}};
     EconomyFamilyExpeditionStore live_expeditions;
-    std::vector<int32_t> live_expedition_route_cells;
-    std::vector<int32_t> live_expedition_route_costs;
-    std::vector<EconomyFamilyExpeditionPayload> live_expedition_payloads;
-    std::vector<uint64_t> live_expedition_person_handles;
-    std::vector<EconomyFamilyExpeditionCargoLine> live_expedition_cargo;
-    std::vector<EconomyFamilyExpeditionKitBuilding> live_expedition_kit_buildings;
-    std::vector<int32_t> live_expedition_missing_good_ids;
-    std::vector<int64_t> live_expedition_missing_good_quantities;
+    EconomyOwnedColumn<int32_t> live_expedition_route_cells{{{11, 1}, "expedition_side.route_cells", EconomyFieldEncoding::I32, 4}};
+    EconomyOwnedColumn<int32_t> live_expedition_route_costs{{{11, 2}, "expedition_side.route_costs", EconomyFieldEncoding::I32, 4}};
+    EconomyTrackedRecords<EconomyFamilyExpeditionPayload> live_expedition_payloads{{{12, 5}, "family_records.family_expedition_payloads", EconomyFieldEncoding::CanonicalRecord, 1}};
+    EconomyOwnedColumn<uint64_t> live_expedition_person_handles{{{11, 3}, "expedition_side.person_handles", EconomyFieldEncoding::U64, 8}};
+    EconomyTrackedRecords<EconomyFamilyExpeditionCargoLine> live_expedition_cargo{{{12, 6}, "family_records.family_expedition_cargo", EconomyFieldEncoding::CanonicalRecord, 1}};
+    EconomyTrackedRecords<EconomyFamilyExpeditionKitBuilding> live_expedition_kit_buildings{{{12, 7}, "family_records.family_expedition_kit_buildings", EconomyFieldEncoding::CanonicalRecord, 1}};
+    EconomyOwnedColumn<int32_t> live_expedition_missing_good_ids{{{11, 4}, "expedition_side.missing_good_ids", EconomyFieldEncoding::I32, 4}};
+    EconomyOwnedColumn<int64_t> live_expedition_missing_good_quantities{{{11, 5}, "expedition_side.missing_good_quantities", EconomyFieldEncoding::I64, 8}};
     EconomyFamilyCellInfluenceStore live_influences;
-    std::vector<EconomyFamilyTraitRoll> live_traits;
-    std::vector<EconomyPersonNeedState> live_person_needs;
+    EconomyTrackedRecords<EconomyFamilyTraitRoll> live_traits{{{12, 3}, "family_records.family_trait_rolls", EconomyFieldEncoding::CanonicalRecord, 1}};
+    EconomyTrackedRecords<EconomyPersonNeedState> live_person_needs{{{12, 4}, "family_records.person_needs", EconomyFieldEncoding::CanonicalRecord, 1}};
     RuntimeEconomyResourceCommittedBlock resource;
     // Phase-2.5.1: live resource SoA view (mirrors resource.store when captured).
     RuntimeEconomyResourceStore resources;
@@ -443,6 +487,7 @@ struct RuntimeEconomyOwnedState {
     std::vector<RuntimeEconomyOwnedStructuralCommand> structural_commands;
 
     void clear(int32_t cells, int32_t goods) {
+        for (auto &column : market_hash_pages) column.clear();
         population.clear(cells);
         market.clear();
         market.market_count = std::max(0, cells);
@@ -455,7 +500,7 @@ struct RuntimeEconomyOwnedState {
         market.last_shortage_q16.assign(lanes, 0);
         market.cell_to_market.resize(static_cast<size_t>(market.market_count));
         for (int32_t cell = 0; cell < market.market_count; ++cell)
-            market.cell_to_market[static_cast<size_t>(cell)] = cell;
+            market.cell_to_market.write_scalar(static_cast<size_t>(cell), cell);
         market.price_ceilings.resize(static_cast<size_t>(market.market_count));
         committed.clear();
         building.clear();

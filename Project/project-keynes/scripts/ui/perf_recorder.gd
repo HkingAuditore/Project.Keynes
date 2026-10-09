@@ -322,6 +322,9 @@ const FIXED_COLUMNS: Array = [
 	"runtime_graph_worker_time_execute_us",
 	"runtime_graph_worker_time_input_wait_us",
 	"runtime_graph_worker_time_clock_wait_us",
+	"runtime_graph_worker_time_save_build_us",
+	"runtime_graph_worker_time_save_pause_us",
+	"runtime_graph_worker_time_paused_us",
 	"runtime_graph_worker_time_boundary_wait_us",
 	"runtime_graph_worker_time_overhead_us",
 	"runtime_graph_worker_time_total_us",
@@ -404,6 +407,13 @@ const MOBILE_EXPORT_DIR: String = "user://perf"
 var _main = null  # 鸭子类型（运行时只 has_method/call 调用）；
                   # 留 untyped 是为了单测可注入 RefCounted Mock 而不必 extends Node。
 var _recording: bool = false
+var _authoritative_after_day: int = -1
+
+
+## Optional headless gate: driver ticks and continuation callbacks cannot
+## duplicate a committed day. Player recording keeps its normal tick contract.
+func configure_authoritative_sampling(after_day: int) -> void:
+	_authoritative_after_day = after_day
 var _rows: Array = []
 var _start_tick: int = 0
 var _hit_limit: bool = false
@@ -526,6 +536,12 @@ func on_fast_tick(sample: Dictionary) -> void:
 		return
 	if _hit_limit:
 		return
+	if _authoritative_after_day >= 0:
+		var graph: Dictionary = sample.get("runtime_graph", {})
+		var committed := int(graph.get("simulation_committed_day", -1))
+		if committed <= _authoritative_after_day:
+			return
+		_authoritative_after_day = committed
 	var row: Dictionary = sample.duplicate()
 
 	# 计算 row_idx（录制内序号，从 0 开始；区别于 tick_idx 的全局序号）
@@ -586,6 +602,8 @@ func on_fast_tick(sample: Dictionary) -> void:
 				"country_pod_blocker",
 				"worker_time_execute_us", "worker_time_input_wait_us",
 				"worker_time_clock_wait_us", "worker_time_boundary_wait_us",
+				"worker_time_save_build_us", "worker_time_save_pause_us",
+				"worker_time_paused_us",
 				"worker_time_overhead_us", "worker_time_total_us",
 				"input_capture_count", "input_capture_reused",
 				"economy_input_requested_day",

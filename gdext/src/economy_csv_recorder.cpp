@@ -358,9 +358,9 @@ bool EconomyCsvRecorder::start(const Config &config, NativeEconomyRuntime &runti
         batch.resources.reserve(_config.enabled[RESOURCES]
             ? sampled_cells * _config.resource_ids.size() : 0);
         batch.market.reserve(_config.enabled[MARKET]
-            ? sampled_cells * static_cast<size_t>(runtime.market_store().good_count) : 0);
+            ? sampled_cells * static_cast<size_t>(runtime.market_store().good_count.get()) : 0);
         const size_t trade_cells = _config.enabled[MARKET]
-            ? sampled_cells * runtime.market_store().good_count : 0;
+            ? sampled_cells * runtime.market_store().good_count.get() : 0;
         batch.scratch_trade_inbound.reserve(trade_cells);
         batch.scratch_trade_outbound.reserve(trade_cells);
     }
@@ -422,7 +422,7 @@ int64_t EconomyCsvRecorder::projected_rows(const NativeEconomyRuntime &runtime) 
                     runtime._employment_diagnostics.size());
             }
         }
-        if (_config.enabled[MARKET]) rows += runtime.market_store().good_count;
+        if (_config.enabled[MARKET]) rows += runtime.market_store().good_count.get();
     }
     if (_config.enabled[RESOURCES]) {
         rows += static_cast<int64_t>(_sample_cells.size()) *
@@ -634,7 +634,7 @@ bool EconomyCsvRecorder::fill_batch(
         row.epoch_active = runtime._epoch_active; row.stage = static_cast<int32_t>(runtime._stage);
         row.progress_q16 = runtime.stage_progress_q16(); row.sample_day = runtime._sample_day;
         row.commit_day = runtime._commit_day; row.cohort_count = runtime.population_store().active_count;
-        row.market_count = runtime.market_store().market_count; row.good_count = runtime.market_store().good_count;
+        row.market_count = runtime.market_store().market_count.get(); row.good_count = runtime.market_store().good_count.get();
         row.building_type_count = runtime._building_types.size();
         row.building_group_count = runtime.building_count();
         row.pending_construction_count = runtime.pending_construction_count();
@@ -880,7 +880,7 @@ bool EconomyCsvRecorder::fill_batch(
     std::vector<int64_t> &inbound = batch.scratch_trade_inbound;
     std::vector<int64_t> &outbound = batch.scratch_trade_outbound;
     if (_config.enabled[MARKET]) {
-        const size_t total = _sample_cells.size() * runtime.market_store().good_count;
+        const size_t total = _sample_cells.size() * runtime.market_store().good_count.get();
         inbound.assign(total, 0); outbound.assign(total, 0);
         for (int32_t order = 0; order < runtime.trade_orders_store().size(); ++order) {
             if (runtime.trade_orders_store().cargo_delivered[order] != 0) continue;
@@ -895,9 +895,9 @@ bool EconomyCsvRecorder::fill_batch(
                 const int32_t dst_pos = dst >= 0 && dst < runtime._cell_count
                     ? _sample_cell_positions[dst] : -1;
                 if (src_pos >= 0)
-                    outbound[static_cast<size_t>(src_pos) * runtime.market_store().good_count + good] += qty;
+                    outbound[static_cast<size_t>(src_pos) * runtime.market_store().good_count.get() + good] += qty;
                 if (dst_pos >= 0)
-                    inbound[static_cast<size_t>(dst_pos) * runtime.market_store().good_count + good] += qty;
+                    inbound[static_cast<size_t>(dst_pos) * runtime.market_store().good_count.get() + good] += qty;
             }
         }
     }
@@ -906,7 +906,7 @@ bool EconomyCsvRecorder::fill_batch(
     batch.buildings.reserve(_config.enabled[BUILDINGS]
         ? runtime.building_count() + runtime.pending_construction_count() : 0);
     if (_config.enabled[MARKET]) batch.market.reserve(
-        _sample_cells.size() * runtime.market_store().good_count);
+        _sample_cells.size() * runtime.market_store().good_count.get());
     if (_config.enabled[RESOURCES]) batch.resources.reserve(
         _sample_cells.size() * resource_arrays.size());
 
@@ -1395,7 +1395,7 @@ bool EconomyCsvRecorder::fill_batch(
             });
             int64_t inventory_retail_value = 0;
             int64_t inventory_liquidation_value = 0;
-            for (int32_t good = 0; good < runtime.market_store().good_count; ++good) {
+            for (int32_t good = 0; good < runtime.market_store().good_count.get(); ++good) {
                 const int64_t mi = runtime.market_store().index(market, good);
                 const int64_t retail_value = runtime.mul_div_sat(
                     std::max<int64_t>(0, runtime.market_store().stock[mi]),
@@ -1444,7 +1444,7 @@ bool EconomyCsvRecorder::fill_batch(
                     runtime._market_signals.business_demand_ema.size() &&
                 runtime._epoch_offered_supply_ema.size() ==
                     runtime._market_signals.offered_supply_ema.size();
-            for (int32_t good = 0; good < runtime.market_store().good_count; ++good) {
+            for (int32_t good = 0; good < runtime.market_store().good_count.get(); ++good) {
                 MarketRow row;
                 row.c = common; row.good_index = good;
                 const int64_t mi = runtime.market_store().index(market, good);
@@ -1527,7 +1527,7 @@ bool EconomyCsvRecorder::fill_batch(
                 row.trade_deadline_exceeded = first_seen >= 0 && first_dispatch < 0 &&
                     runtime._sample_day - first_seen > runtime._trade_response_days;
                 const size_t flat = static_cast<size_t>(_sample_cell_positions[cell]) *
-                                    runtime.market_store().good_count + good;
+                                    runtime.market_store().good_count.get() + good;
                 row.trade_inbound = inbound[flat]; row.trade_outbound = outbound[flat];
                 row.merchant_cash = merchant_cash;
                 row.merchant_inventory_retail_value =
