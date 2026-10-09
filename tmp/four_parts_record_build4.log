@@ -1,0 +1,46 @@
+scons: Entering directory `F:\Developent\Godot\Project.Keynes\gdext'
+scons: Reading SConscript files ...
+Building for architecture x86_64 on platform windows
+scons: done reading SConscript files.
+scons: Building targets ...
+scons: `godot-cpp\bin\libgodot-cpp.windows.template_debug.x86_64.lib' is up to date.
+Compiling shared src\economy_runtime_colonization.cpp ...
+Compiling shared src\economy_runtime_diagnostics.cpp ...
+Compiling shared src\economy_runtime_epoch.cpp ...
+Compiling shared src\economy_runtime_events.cpp ...
+Compiling shared src\economy_runtime_family_buff.cpp ...
+Compiling shared src\economy_runtime_family_founding.cpp ...
+Compiling shared src\economy_runtime_fiscal.cpp ...
+Compiling shared src\economy_runtime_market.cpp ...
+src\economy_runtime_diagnostics.cpp(164): error C2039: "capacity": 不是 "pk::EconomyTrackedRecords<pk::EconomyFamilyMembershipEdge>" 的成�\ufffd
+F:\Developent\Godot\Project.Keynes\gdext\src\economy_tracked_records.h(34): note: 参�\ufffd��\ufffd�pk::EconomyTrackedRecords<pk::EconomyFamilyMembershipEdge>”的声明
+src\economy_runtime_diagnostics.cpp(164): note: 模板实例化上下文(�\ufffd早的实例化上下文)�\ufffd
+src\economy_runtime_diagnostics.cpp(203): note: 查看对�\ufffd�在编译的函�\ufffd 模板 实例化�\ufffd�auto pk::NativeEconomyRuntime::memory_bytes::<lambda_4973b1f7d87dbaf573c0fd0b9fa50261>::operator ()<pk::EconomyTrackedRecords<pk::EconomyFamilyMembershipEdge>>(const pk::EconomyTrackedRecords<pk::EconomyFamilyMembershipEdge> &) const”的引用
+src\economy_runtime_diagnostics.cpp(164): error C2039: "__this": 不是 "pk::EconomyTrackedRecords<pk::EconomyFamilyMembershipEdge>" 的成�\ufffd
+F:\Developent\Godot\Project.Keynes\gdext\src\economy_tracked_records.h(34): note: 参�\ufffd��\ufffd�pk::EconomyTrackedRecords<pk::EconomyFamilyMembershipEdge>”的声明
+src\economy_runtime_diagnostics.cpp(164): error C2039: "capacity": 不是 "pk::EconomyTrackedRecords<pk::EconomyFamilyBuildingOwnership>" 的成�\ufffd
+F:\Developent\Godot\Project.Keynes\gdext\src\economy_tracked_records.h(34): note: 参�\ufffd��\ufffd�pk::EconomyTrackedRecords<pk::EconomyFamilyBuildingOwnership>”的声明
+src\economy_runtime_diagnostics.cpp(164): note: 模板实例化上下文(�\ufffd早的实例化上下文)�\ufffd
+src\economy_runtime_diagnostics.cpp(203): note: 查看对�\ufffd�在编译的函�\ufffd 模板 实例化�\ufffd�auto pk::NativeEconomyRuntime::memory_bytes::<lambda_4973b1f7d87dbaf573c0fd0b9fa50261>::operator ()<pk::EconomyTrackedRecords<pk::EconomyFamilyBuildingOwnership>>(const pk::EconomyTrackedRecords<pk::EconomyFamilyBuildingOwnership> &) const”的引用
+src\economy_runtime_diagnostics.cpp(164): error C2039: "__this": 不是 "pk::EconomyTrackedRecords<pk::EconomyFamilyBuildingOwnership>" 的成�\ufffd
+F:\Developent\Godot\Project.Keynes\gdext\src\economy_tracked_records.h(34): note: 参�\ufffd��\ufffd�pk::EconomyTrackedRecords<pk::EconomyFamilyBuildingOwnership>”的声明
+src\economy_runtime_diagnostics.cpp(164): error C2039: "capacity": 不是 "pk::EconomyTrackedRecords<pk::EconomyFamilyTraitRoll>" 的成�\ufffd
+F:\Developent\Godot\Project.Keynes\gdext\src\economy_tracked_records.h(34): note: 参�\ufffd��\ufffd�pk::EconomyTrackedRecords<pk::EconomyFamilyTraitRoll>”的声明
+src\economy_runtime_diagnostics.cpp(164): note: 模板实例化上下文(�\ufffd早的实例化上下文)�\ufffd
+src\economy_runtime_diagnostics.cpp(204): note: 查看对�\ufffd�在编译的函�\ufffd 模板 实例化�\ufffd�auto pk::NativeEconomyRuntime::memory_bytes::<lambda_4973b1f7d87dbaf573c0fd0b9fa50261>::operator ()<pk::EconomyTrackedRecords<pk::EconomyFamilyTraitRoll>>(const pk::EconomyTrackedRecords<pk::EconomyFamilyTraitRoll> &) const”的引用
+src\economy_runtime_diagnostics.cpp(164): error C2039: "__this": 不是 "pk::EconomyTrackedRecords<pk::EconomyFamilyTraitRoll>" 的成�\ufffd
+F:\Developent\Godot\Project.Keynes\gdext\src\economy_tracked_records.h(34): note: 参�\ufffd��\ufffd�pk::EconomyTrackedRecords<pk::EconomyFamilyTraitRoll>”的声明
+src\economy_runtime_diagnostics.cpp(164): error C2039: "capacity": 不是 "pk::EconomyTrackedRecords<pk::EconomyFamilyExpeditionPayload>" 的成�\ufffd
+F:\Developent\Godot\Project.Keynes\gdext\src\economy_tracked_records.h(34): note: 参�\ufffd��\ufffd�pk::EconomyTrackedRecords<pk::EconomyFamilyExpeditionPayload>”的声明
+src\economy_runtime_diagnostics.cpp(164): note: 模板实例化上下文(�\ufffd早的实例化上下文)�\ufffd
+src\economy_runtime_diagnostics.cpp(245): note: 查看对�\ufffd�在编译的函�\ufffd 模板 实例化�\ufffd�auto pk::NativeEconomyRuntime::memory_bytes::<lambda_4973b1f7d87dbaf573c0fd0b9fa50261>::operator ()<pk::EconomyTrackedRecords<pk::EconomyFamilyExpeditionPayload>>(const pk::EconomyTrackedRecords<pk::EconomyFamilyExpeditionPayload> &) const”的引用
+src\economy_runtime_diagnostics.cpp(164): error C2039: "__this": 不是 "pk::EconomyTrackedRecords<pk::EconomyFamilyExpeditionPayload>" 的成�\ufffd
+F:\Developent\Godot\Project.Keynes\gdext\src\economy_tracked_records.h(34): note: 参�\ufffd��\ufffd�pk::EconomyTrackedRecords<pk::EconomyFamilyExpeditionPayload>”的声明
+src\economy_runtime_diagnostics.cpp(164): error C2039: "capacity": 不是 "pk::EconomyTrackedRecords<pk::EconomyPersonNeedState>" 的成�\ufffd
+F:\Developent\Godot\Project.Keynes\gdext\src\economy_tracked_records.h(34): note: 参�\ufffd��\ufffd�pk::EconomyTrackedRecords<pk::EconomyPersonNeedState>”的声明
+src\economy_runtime_diagnostics.cpp(164): note: 模板实例化上下文(�\ufffd早的实例化上下文)�\ufffd
+src\economy_runtime_diagnostics.cpp(265): note: 查看对�\ufffd�在编译的函�\ufffd 模板 实例化�\ufffd�auto pk::NativeEconomyRuntime::memory_bytes::<lambda_4973b1f7d87dbaf573c0fd0b9fa50261>::operator ()<pk::EconomyTrackedRecords<pk::EconomyPersonNeedState>>(const pk::EconomyTrackedRecords<pk::EconomyPersonNeedState> &) const”的引用
+src\economy_runtime_diagnostics.cpp(164): error C2039: "__this": 不是 "pk::EconomyTrackedRecords<pk::EconomyPersonNeedState>" 的成�\ufffd
+F:\Developent\Godot\Project.Keynes\gdext\src\economy_tracked_records.h(34): note: 参�\ufffd��\ufffd�pk::EconomyTrackedRecords<pk::EconomyPersonNeedState>”的声明
+scons: *** [src\economy_runtime_diagnostics.windows.template_debug.x86_64.obj] Error 2
+scons: building terminated because of errors.

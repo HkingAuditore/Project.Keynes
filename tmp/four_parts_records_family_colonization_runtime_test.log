@@ -1,0 +1,289 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+  [PASS] economy catalog compiles
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] map binds to native world
+  [PASS] modifier runtime configures
+  [PASS] effect runtime configures for built-in colonization transactions
+  [PASS] country runtime configures
+  [PASS] one-cell country bootstraps
+  [PASS] economy runtime configures
+  [PASS] packed six-neighbor topology configures
+  [PASS] economy and founder family bootstrap
+  [PASS] Country POD inputs are ready for worker procurement
+  [PASS] worker fixture runtime inputs publish
+  [PASS] Country and Economy ACTIVE worker starts
+  [PASS] Country and Economy worker authority is active
+[tech-ui-diag/query] apply ok gen=1 day=-1 view_gen=1 progress_total=0 pending_words=6
+  [PASS] worker-backed greenfield dispatch is accepted
+[tech-ui-diag/query] apply ok gen=11 day=-1 view_gen=11 progress_total=0 pending_words=6
+  [PASS] Country worker purchase completes into expedition cargo
+  [PASS] employed expedition departure crosses a worker commit
+  [PASS] Country worker local purchase conserves goods and money
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] map binds to native world
+  [PASS] modifier runtime configures
+  [PASS] effect runtime configures for built-in colonization transactions
+  [PASS] country runtime configures
+  [PASS] one-cell country bootstraps
+  [PASS] economy runtime configures
+  [PASS] packed six-neighbor topology configures
+  [PASS] economy and founder family bootstrap
+  [PASS] employed expedition fixture starts with filled source jobs
+  [PASS] large employed departure starts
+  [PASS] departure removes the payload employment from source cohorts
+[research-procure-diag] day=1 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+  [PASS] employed departure commits without an invalid ledger
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] map binds to native world
+  [PASS] modifier runtime configures
+  [PASS] effect runtime configures for built-in colonization transactions
+  [PASS] country runtime configures
+  [PASS] one-cell country bootstraps
+  [PASS] economy runtime configures
+  [PASS] packed six-neighbor topology configures
+  [PASS] economy and founder family bootstrap
+  [PASS] founder family is available as a source branch
+  [PASS] a route with any fogged intermediate cell produces no quote
+  [PASS] one reverse Dijkstra returns the owned family branch
+  [PASS] quote detail freezes route and cumulative enter costs
+  [PASS] revision-only requote validation accepts an unchanged route
+  [PASS] departure moves population into sparse transit custody
+  [PASS] idle departure keeps a living merchant on the remaining source
+  [PASS] idle expedition start does not pause the money ledger
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] map binds to native world
+  [PASS] modifier runtime configures
+  [PASS] effect runtime configures for built-in colonization transactions
+  [PASS] country runtime configures
+  [PASS] one-cell country bootstraps
+  [PASS] economy runtime configures
+  [PASS] packed six-neighbor topology configures
+  [PASS] economy and founder family bootstrap
+restore={ "ok": false, "first_incomplete": "resource_rows", "reason": "restore_section_incomplete first=resource_rows pages=2/2 buildings=1/1 construction=0/0 trade_orders=0/0", "expected_pages": 2, "restored_pages": 2, "expected_buildings": 1, "restored_buildings": 1, "expected_construction": 0, "restored_construction": 0, "expected_trade_orders": 0, "restored_trade_orders": 0, "expected_trade_flows": 0, "restored_trade_flows": 0, "expected_tariff_history": 0, "restored_tariff_history": 0, "expected_fiscal": 1, "restored_fiscal": 1 } page={ "busy": true, "fatal": false, "committed": false, "nonbinding": false, "snapshot_day": -1, "ok": true, "expedition_handles": [4294967296], "family_handles": [4294967296], "source_cells": [0], "target_cells": [2], "populations": [1], "departure_days": [0], "due_days": [4], "route_costs": [4], "states": [1], "kit_missing_stock_identities": [0], "offset": 0, "limit": 64, "total": 1, "has_more": false } saved_schema=55
+  [FAIL] PKEC v54 restores in-flight route, payload, cargo and due heap exactly
+  [PASS] country and target active index rejects duplicates in O(1)
+  [PASS] cancellation derives return duration from progressed route cost
+[research-procure-diag] day=2 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+  [PASS] return restores the original source even without ownership checks
+  [PASS] return epoch keeps money conservation at zero
+  [PASS] event receipts publish start, cancellation and return
+  [PASS] diagnostics expose sparse-heap and stage timing counters
+  [PASS] returned source can be quoted again after the transit release
+  [PASS] second expedition starts for the cross-domain arrival path
+  [PASS] quotes stay readable while a frozen cycle may be open
+  [PASS] arrival enqueue moves the expedition into SETTLING
+  [PASS] undispatched colonization transaction wakes the Effect adapter
+[research-procure-diag] day=6 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+  [PASS] arrival claims neutral territory and settles custody through two ACKs
+  [PASS] economy remains conserved after the unowned claim landing
+  [PASS] source branch influence exists for family growth
+  [FAIL] family population reward queues extra source-branch members
+[research-procure-diag] day=7 phase=0 done=0 cands=2 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+  [FAIL] extra family members land without breaking conservation
+  [PASS] source cell is not a colonization target for its own branch
+  [PASS] owned populated cell returns a relocate quote
+  [PASS] relocate quote detail names the owned destination
+  [PASS] owned-cell relocation extracts conserved transit population
+[research-procure-diag] day=11 phase=0 done=0 cands=2 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+  [PASS] owned-cell relocation does not submit a country claim
+  [PASS] SETTLE-only idle arrival lands without a second GDScript dispatch
+  [PASS] relocation settles into the owned populated cell without claiming
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] foreign cell is owned by a different country
+  [PASS] foreign owned cells stay invalid colonization targets
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] map binds to native world
+  [PASS] modifier runtime configures
+  [PASS] effect runtime configures for built-in colonization transactions
+  [PASS] country runtime configures
+  [PASS] one-cell country bootstraps
+  [PASS] economy runtime configures
+  [PASS] packed six-neighbor topology configures
+  [PASS] economy and founder family bootstrap
+  [PASS] greenfield kit quote is available from the founder household
+  [PASS] N=3 greenfield quote plans gathering plus a merchant post
+  [PASS] greenfield kit extracts conserved cargo from the source market
+  [PASS] clothing buffer equals travel days plus 15
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] map binds to native world
+  [PASS] modifier runtime configures
+  [PASS] effect runtime configures for built-in colonization transactions
+  [PASS] country runtime configures
+  [PASS] one-cell country bootstraps
+  [PASS] economy runtime configures
+  [PASS] packed six-neighbor topology configures
+  [PASS] economy and founder family bootstrap
+  [FAIL] PKEC v54 restores in-flight kit cargo and frozen buildings
+[research-procure-diag] day=2 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+  [PASS] returned kit cargo is restored to the source market
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] map binds to native world
+  [PASS] modifier runtime configures
+  [PASS] effect runtime configures for built-in colonization transactions
+  [PASS] country runtime configures
+  [PASS] one-cell country bootstraps
+  [PASS] economy runtime configures
+  [PASS] packed six-neighbor topology configures
+  [PASS] economy and founder family bootstrap
+  [PASS] kit settle expedition starts with three people
+  [PASS] three-person kit departure still leaves a source merchant
+  [PASS] greenfield arrival consumes cargo and places family buildings
+  [PASS] greenfield arrival keeps destination employment within population
+  [PASS] developed cells only carry a survival bridge, not new buildings
+[research-procure-diag] day=8 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=9 phase=0 done=0 cands=2 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+  [PASS] relocation into a developed cell does not place another kit
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] map binds to native world
+  [PASS] modifier runtime configures
+  [PASS] effect runtime configures for built-in colonization transactions
+  [PASS] country runtime configures
+  [PASS] one-cell country bootstraps
+  [PASS] economy runtime configures
+  [PASS] packed six-neighbor topology configures
+  [PASS] economy and founder family bootstrap
+  [PASS] coastal kit expedition starts before the interior landing
+  [PASS] coastal cell keeps kit buildings as the higher-index producer
+[research-procure-diag] day=5 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+  [PASS] interior kit expedition starts toward the mid-index cell
+[research-procure-diag] day=7 phase=0 done=0 cands=2 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+  [PASS] mid-index kit landing during a frozen cycle stays conserved
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] map binds to native world
+  [PASS] modifier runtime configures
+  [PASS] effect runtime configures for built-in colonization transactions
+  [PASS] country runtime configures
+  [PASS] one-cell country bootstraps
+  [PASS] economy runtime configures
+  [PASS] packed six-neighbor topology configures
+  [PASS] economy and founder family bootstrap
+  [PASS] mixed substitute greenfield kit departs without preparing
+  [PASS] staple-food need mixes preferred staples with bread
+  [PASS] clothing bridge mixes preferred cloth with fur
+  [PASS] construction group spends preferred logs then mixes in a substitute
+  [PASS] mixed substitute departure remains goods-conserved
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] map binds to native world
+  [PASS] modifier runtime configures
+  [PASS] effect runtime configures for built-in colonization transactions
+  [PASS] country runtime configures
+  [PASS] one-cell country bootstraps
+  [PASS] economy runtime configures
+  [PASS] packed six-neighbor topology configures
+  [PASS] economy and founder family bootstrap
+  [PASS] one stocked food candidate fills the aggregate bridge
+  [PASS] aggregate food bridge departs without preparing
+  [PASS] aggregate food bridge carries the stocked staple candidate
+  [PASS] aggregate food bridge preserves economy ledgers
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] map binds to native world
+  [PASS] modifier runtime configures
+  [PASS] effect runtime configures for built-in colonization transactions
+  [PASS] country runtime configures
+  [PASS] one-cell country bootstraps
+  [PASS] economy runtime configures
+  [PASS] packed six-neighbor topology configures
+  [PASS] economy and founder family bootstrap
+  [PASS] zero source stock drops paid buildings and marks the kit partial
+  [PASS] zero-stock greenfield N=3 occupies the target as PREPARING
+  [PASS] preparing expeditions stay in state 4 without extracting people
+  [PASS] preparing snapshot publishes missing goods
+  [PASS] cancelling preparation does not extract people
+  [PASS] second prepare after cancel occupies the target again
+  [FAIL] missing kit goods can be injected at the source market
+[research-procure-diag] day=1 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=2 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=5 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+  [FAIL] modest clothing stock is enough for the authored clothing need
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] map binds to native world
+  [PASS] modifier runtime configures
+  [PASS] effect runtime configures for built-in colonization transactions
+  [PASS] country runtime configures
+  [PASS] one-cell country bootstraps
+  [PASS] economy runtime configures
+  [PASS] packed six-neighbor topology configures
+  [PASS] economy and founder family bootstrap
+  [FAIL] v54 preparing/outbound expeditions restore with matching state hash
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] map binds to native world
+  [PASS] modifier runtime configures
+  [PASS] effect runtime configures for built-in colonization transactions
+  [PASS] country runtime configures
+  [PASS] one-cell country bootstraps
+  [PASS] economy runtime configures
+  [PASS] packed six-neighbor topology configures
+  [PASS] economy and founder family bootstrap
+  [PASS] zero-stock accumulation start occupies the target as PREPARING
+  [FAIL] accumulation drip is accepted at the source market
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] map binds to native world
+  [PASS] modifier runtime configures
+  [PASS] effect runtime configures for built-in colonization transactions
+  [PASS] country runtime configures
+  [PASS] one-cell country bootstraps
+  [PASS] economy runtime configures
+  [PASS] packed six-neighbor topology configures
+  [PASS] economy and founder family bootstrap
+  [PASS] a kit short on construction goods waits as PREPARING
+  [PASS] preparing snapshot separates the construction shortfall
+  [FAIL] material top-up is accepted at the source market
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] map binds to native world
+  [PASS] modifier runtime configures
+  [PASS] effect runtime configures for built-in colonization transactions
+  [PASS] country runtime configures
+  [PASS] one-cell country bootstraps
+  [PASS] economy runtime configures
+  [PASS] packed six-neighbor topology configures
+  [PASS] economy and founder family bootstrap
+  [PASS] a source without logs or bast fibre still departs
+  [PASS] the opening kit is built entirely from the stocked reed substitute
+  [PASS] category-substituted departure remains goods-conserved
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] map binds to native world
+  [PASS] modifier runtime configures
+  [PASS] effect runtime configures for built-in colonization transactions
+  [PASS] country runtime configures
+  [PASS] one-cell country bootstraps
+  [PASS] economy runtime configures
+  [PASS] packed six-neighbor topology configures
+  [PASS] economy and founder family bootstrap
+  [PASS] an unfundable kit first occupies the target as PREPARING
+[research-procure-diag] day=1 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=2 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=3 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+[research-procure-diag] day=4 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+  [FAIL] an unreachable construction group ends the preparation
+  [FAIL] aborting an unfundable preparation keeps no cargo and stays conserved
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] map binds to native world
+  [PASS] modifier runtime configures
+  [PASS] effect runtime configures for built-in colonization transactions
+  [PASS] country runtime configures
+  [PASS] one-cell country bootstraps
+  [PASS] economy runtime configures
+  [PASS] packed six-neighbor topology configures
+  [PASS] economy and founder family bootstrap
+  [PASS] colonization reward fixture has a source branch
+  [FAIL] colonization population reward can be frozen without minting
+stash={ "ok": false, "reason": "economy_legacy_ingress_disabled" }
+[DCWorldExt] bind_map_data: 148 components bound (auto-registered=148; snapshot model; see world_ext.cpp comment & charter Â§11)
+  [PASS] map binds to native world
+  [PASS] modifier runtime configures
+  [PASS] effect runtime configures for built-in colonization transactions
+  [PASS] country runtime configures
+  [PASS] one-cell country bootstraps
+  [PASS] economy runtime configures
+  [PASS] packed six-neighbor topology configures
+  [PASS] economy and founder family bootstrap
+  [FAIL] founder can absorb anonymous merchants before a near-full dispatch
+clip_absorb={ "ok": false, "reason": "economy_legacy_ingress_disabled" }
+=== family colonization runtime: 13 failures ===
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 312 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

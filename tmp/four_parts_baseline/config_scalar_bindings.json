@@ -1,0 +1,434 @@
+[
+  {
+    "name": "_building_maintenance_cost_factor_q16",
+    "type": "int32_t",
+    "column": 32,
+    "default": "Q16_ONE"
+  },
+  {
+    "name": "_building_plan_days",
+    "type": "int32_t",
+    "column": 33,
+    "default": "10"
+  },
+  {
+    "name": "_building_restart_cycles",
+    "type": "int32_t",
+    "column": 34,
+    "default": "2"
+  },
+  {
+    "name": "_building_restart_margin_q16",
+    "type": "int32_t",
+    "column": 35,
+    "default": "6554"
+  },
+  {
+    "name": "_building_severe_loss_cycles",
+    "type": "int32_t",
+    "column": 36,
+    "default": "3"
+  },
+  {
+    "name": "_building_severe_loss_threshold_q16",
+    "type": "int32_t",
+    "column": 37,
+    "default": "-16384"
+  },
+  {
+    "name": "_bullion_monthly_issue_cap_q16",
+    "type": "int32_t",
+    "column": 38,
+    "default": "655"
+  },
+  {
+    "name": "_event_stream_hash",
+    "type": "uint64_t",
+    "column": 39,
+    "default": "1469598103934665603ULL"
+  },
+  {
+    "name": "_family_catalog_hash",
+    "type": "int64_t",
+    "column": 40,
+    "default": "0"
+  },
+  {
+    "name": "_family_decline_reviews",
+    "type": "int32_t",
+    "column": 41,
+    "default": "3"
+  },
+  {
+    "name": "_family_max_per_cell",
+    "type": "int32_t",
+    "column": 42,
+    "default": "8"
+  },
+  {
+    "name": "_family_min_founder_people",
+    "type": "int64_t",
+    "column": 43,
+    "default": "30"
+  },
+  {
+    "name": "_family_review_days",
+    "type": "int32_t",
+    "column": 44,
+    "default": "30"
+  },
+  {
+    "name": "_family_runtime_mode",
+    "type": "int32_t",
+    "column": 45,
+    "default": "2"
+  },
+  {
+    "name": "_family_split_population_threshold",
+    "type": "int64_t",
+    "column": 46,
+    "default": "100"
+  },
+  {
+    "name": "_government_research_procured_points",
+    "type": "int64_t",
+    "column": 47,
+    "default": "0"
+  },
+  {
+    "name": "_government_research_procurement_cash",
+    "type": "int64_t",
+    "column": 48,
+    "default": "0"
+  },
+  {
+    "name": "_government_research_procurement_orders",
+    "type": "int64_t",
+    "column": 49,
+    "default": "0"
+  },
+  {
+    "name": "_investment_gap_fill_share_q16",
+    "type": "int32_t",
+    "column": 50,
+    "default": "Q16_ONE / 4"
+  },
+  {
+    "name": "_investment_max_growth_share_q16",
+    "type": "int32_t",
+    "column": 51,
+    "default": "16384"
+  },
+  {
+    "name": "_investment_max_payback_days",
+    "type": "int32_t",
+    "column": 52,
+    "default": "365"
+  },
+  {
+    "name": "_investment_max_type_owner_share_q16",
+    "type": "int32_t",
+    "column": 53,
+    "default": "Q16_ONE / 2"
+  },
+  {
+    "name": "_investment_merchant_transition_min_improvement_q16",
+    "type": "int32_t",
+    "column": 54,
+    "default": "Q16_ONE / 2"
+  },
+  {
+    "name": "_investment_min_shortage_q16",
+    "type": "int32_t",
+    "column": 55,
+    "default": "Q16_ONE / 8"
+  },
+  {
+    "name": "_investment_min_utilization_q16",
+    "type": "int32_t",
+    "column": 56,
+    "default": "42598"
+  },
+  {
+    "name": "_investment_new_type_seed_buildings",
+    "type": "int32_t",
+    "column": 57,
+    "default": "1"
+  },
+  {
+    "name": "_investment_operating_cycles",
+    "type": "int32_t",
+    "column": 58,
+    "default": "2"
+  },
+  {
+    "name": "_investment_portfolio_max_types",
+    "type": "int32_t",
+    "column": 59,
+    "default": "4"
+  },
+  {
+    "name": "_investment_review_days",
+    "type": "int32_t",
+    "column": 60,
+    "default": "30"
+  },
+  {
+    "name": "_merchant_credit_exposure_q16",
+    "type": "int32_t",
+    "column": 61,
+    "default": "16384"
+  },
+  {
+    "name": "_merchant_credit_premium_q16",
+    "type": "int32_t",
+    "column": 62,
+    "default": "3277"
+  },
+  {
+    "name": "_merchant_credit_runtime_mode",
+    "type": "int32_t",
+    "column": 63,
+    "default": "2"
+  },
+  {
+    "name": "_merchant_credit_term_cycles",
+    "type": "int32_t",
+    "column": 64,
+    "default": "6"
+  },
+  {
+    "name": "_merchant_market_making_days_q16",
+    "type": "int32_t",
+    "column": 65,
+    "default": "Q16_ONE * 60"
+  },
+  {
+    "name": "_merchant_procurement_cash_reserve_q16",
+    "type": "int32_t",
+    "column": 66,
+    "default": "8192"
+  },
+  {
+    "name": "_next_canal_quote_token",
+    "type": "uint64_t",
+    "column": 67,
+    "default": "1"
+  },
+  {
+    "name": "_next_canal_receipt_id",
+    "type": "int64_t",
+    "column": 68,
+    "default": "1"
+  },
+  {
+    "name": "_next_colonization_receipt_id",
+    "type": "int64_t",
+    "column": 69,
+    "default": "1"
+  },
+  {
+    "name": "_next_event_id",
+    "type": "int64_t",
+    "column": 70,
+    "default": "1"
+  },
+  {
+    "name": "_next_family_expedition_stable_id",
+    "type": "int64_t",
+    "column": 71,
+    "default": "1"
+  },
+  {
+    "name": "_next_submit_order",
+    "type": "uint64_t",
+    "column": 72,
+    "default": "1"
+  },
+  {
+    "name": "_person_catalog_hash",
+    "type": "int64_t",
+    "column": 73,
+    "default": "0"
+  },
+  {
+    "name": "_person_max_per_cell",
+    "type": "int32_t",
+    "column": 74,
+    "default": "128"
+  },
+  {
+    "name": "_person_max_per_family",
+    "type": "int32_t",
+    "column": 75,
+    "default": "4"
+  },
+  {
+    "name": "_person_max_total",
+    "type": "int32_t",
+    "column": 76,
+    "default": "65536"
+  },
+  {
+    "name": "_person_records_per_slice",
+    "type": "int32_t",
+    "column": 77,
+    "default": "4096"
+  },
+  {
+    "name": "_person_runtime_mode",
+    "type": "int32_t",
+    "column": 78,
+    "default": "2"
+  },
+  {
+    "name": "_producer_support_monthly_cap_q16",
+    "type": "int32_t",
+    "column": 79,
+    "default": "3277"
+  },
+  {
+    "name": "_recovery_liquidation_failed_reviews",
+    "type": "int32_t",
+    "column": 80,
+    "default": "73"
+  },
+  {
+    "name": "_recovery_liquidation_max_share_q16",
+    "type": "int32_t",
+    "column": 81,
+    "default": "Q16_ONE / 4"
+  },
+  {
+    "name": "_recovery_success_cycles",
+    "type": "int32_t",
+    "column": 82,
+    "default": "2"
+  },
+  {
+    "name": "_resource_min_horizon_days",
+    "type": "int32_t",
+    "column": 83,
+    "default": "3650"
+  },
+  {
+    "name": "_resource_min_reserve_q16",
+    "type": "int32_t",
+    "column": 84,
+    "default": "22938"
+  },
+  {
+    "name": "_resource_safe_harvest_q16",
+    "type": "int32_t",
+    "column": 85,
+    "default": "0"
+  },
+  {
+    "name": "_seed",
+    "type": "int64_t",
+    "column": 86,
+    "default": "0"
+  },
+  {
+    "name": "_trade_capacity_per_merchant_q16",
+    "type": "int64_t",
+    "column": 87,
+    "default": "64 * Q16_ONE"
+  },
+  {
+    "name": "_trade_export_floor_days",
+    "type": "int32_t",
+    "column": 88,
+    "default": "5"
+  },
+  {
+    "name": "_trade_export_inventory_fraction_q16",
+    "type": "int32_t",
+    "column": 89,
+    "default": "Q16_ONE / 2"
+  },
+  {
+    "name": "_trade_flow_ema_alpha_q16",
+    "type": "int32_t",
+    "column": 90,
+    "default": "8192"
+  },
+  {
+    "name": "_trade_import_fill_fraction_q16",
+    "type": "int32_t",
+    "column": 91,
+    "default": "Q16_ONE / 2"
+  },
+  {
+    "name": "_trade_max_candidates",
+    "type": "int32_t",
+    "column": 92,
+    "default": "8192"
+  },
+  {
+    "name": "_trade_max_orders",
+    "type": "int32_t",
+    "column": 93,
+    "default": "4096"
+  },
+  {
+    "name": "_trade_max_route_expansions",
+    "type": "int32_t",
+    "column": 94,
+    "default": "8192"
+  },
+  {
+    "name": "_trade_max_signals",
+    "type": "int32_t",
+    "column": 95,
+    "default": "32768"
+  },
+  {
+    "name": "_trade_max_stock_share_q16",
+    "type": "int32_t",
+    "column": 96,
+    "default": "16384"
+  },
+  {
+    "name": "_trade_min_margin_q16",
+    "type": "int32_t",
+    "column": 97,
+    "default": "3277"
+  },
+  {
+    "name": "_trade_response_days",
+    "type": "int32_t",
+    "column": 98,
+    "default": "15"
+  },
+  {
+    "name": "_trade_route_cache_entries",
+    "type": "int32_t",
+    "column": 99,
+    "default": "16384"
+  },
+  {
+    "name": "_trade_route_searches_per_slice",
+    "type": "int32_t",
+    "column": 100,
+    "default": "32"
+  },
+  {
+    "name": "_trade_signal_pairs_per_slice",
+    "type": "int32_t",
+    "column": 101,
+    "default": "4096"
+  },
+  {
+    "name": "_trade_speed_cost_per_day",
+    "type": "int32_t",
+    "column": 102,
+    "default": "4"
+  },
+  {
+    "name": "_trade_target_count",
+    "type": "int32_t",
+    "column": 103,
+    "default": "4"
+  }
+]

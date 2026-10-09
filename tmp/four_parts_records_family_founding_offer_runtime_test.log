@@ -1,0 +1,48 @@
+Godot Engine v4.6.2.stable.official.71f334935 - https://godotengine.org
+
+=== family founding offer runtime test ===
+  [PASS] economy catalog compiles
+  [PASS] player fixture boots
+[economy-open-finish] day=0 country=0.088 workset=0.004 fiscal=0.005 csr=0.000 recovery=0.001 vectors=0.120 audit=0.008 commands=0.001
+[research-procure-diag] day=0 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+  [PASS] player milestone opens exactly one offer
+  [PASS] offer carries three distinct candidate houses
+  [PASS] every candidate brings at least 30 founders
+  [PASS] offer is OPEN, player-owned, at the 100 milestone
+  [PASS] no family appears before the player chooses
+[research-procure-diag] day=5 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+  [PASS] pending offer is not duplicated while waiting
+  [PASS] stale generation is rejected
+  [PASS] valid choice is queued
+  [PASS] queued choice reports SELECTED_PENDING
+  [PASS] second choice for the same offer is rejected
+[research-procure-diag] day=10 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+  [PASS] chosen house is founded with its offered identity
+  [PASS] the two unchosen houses never appear
+  [PASS] resolved offer leaves the pending list
+[research-procure-diag] day=15 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+  [PASS] next milestone opens a fresh offer after resolution
+  [PASS] auto fixture boots
+[economy-open-finish] day=0 country=0.069 workset=0.003 fiscal=0.003 csr=0.000 recovery=0.003 vectors=0.097 audit=0.007 commands=0.000
+[research-procure-diag] day=0 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+  [PASS] AUTO mode leaves no pending offer
+  [PASS] AUTO mode founds a family at the first milestone
+  [PASS] AUTO resolution is counted
+  [PASS] small fixture boots
+[economy-open-finish] day=0 country=0.068 workset=0.003 fiscal=0.002 csr=0.000 recovery=0.001 vectors=0.089 audit=0.007 commands=0.001
+[research-procure-diag] day=0 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+  [PASS] no offer when no candidate can bring 30 founders
+[economy-open-finish] day=0 country=0.073 workset=0.003 fiscal=0.003 csr=0.000 recovery=0.001 vectors=0.093 audit=0.007 commands=0.000
+[research-procure-diag] day=0 phase=0 done=0 cands=1 cursor=0 enabled=0 remain=0 budget=0 gate_mask=0x1c research_gate=0 orders=0 rej=0 procured=0 last_err=
+  [PASS] PKEC v55 save begins
+  [PASS] save completes
+  [PASS] restore accepts founding section
+  [PASS] state hash round-trips with a pending offer
+  [PASS] pending offer and its cards survive restore
+=== family founding offer runtime test: PASS ===
+ERROR: 11 RID allocations of type 'PN13RendererDummy14TextureStorage12DummyTextureE' were leaked at exit.
+ERROR: 1 RID allocations of type 'PN18TextServerAdvanced12FontAdvancedE' were leaked at exit.
+WARNING: ObjectDB instances leaked at exit (run with --verbose for details).
+   at: cleanup (core/object/object.cpp:2641)
+ERROR: 276 resources still in use at exit (run with --verbose for details).
+   at: clear (core/io/resource.cpp:810)

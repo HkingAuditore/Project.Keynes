@@ -382,7 +382,8 @@ func _notification(what: int) -> void:
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
-	if event.is_action_pressed("ui_cancel"):
+	# Hidden workspaces stay in the tree; swallowing Esc there blocks the pause menu.
+	if is_visible_in_tree() and event.is_action_pressed("ui_cancel"):
 		accept_event()
 
 

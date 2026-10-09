@@ -1,0 +1,57 @@
+scons: Entering directory `F:\Developent\Godot\Project.Keynes\gdext'
+scons: Reading SConscript files ...
+Building for architecture x86_64 on platform windows
+scons: done reading SConscript files.
+scons: Building targets ...
+scons: `godot-cpp\bin\libgodot-cpp.windows.template_debug.x86_64.lib' is up to date.
+Compiling shared src\economy_runtime_carrying.cpp ...
+Compiling shared src\economy_runtime_family_founding.cpp ...
+Compiling shared src\economy_runtime_fiscal.cpp ...
+Compiling shared src\economy_runtime_market.cpp ...
+Compiling shared src\economy_runtime_math.cpp ...
+Compiling shared src\economy_runtime_persistence.cpp ...
+Compiling shared src\economy_runtime_persistence_read.cpp ...
+Compiling shared src\economy_runtime_persistence_write.cpp ...
+src\economy_runtime_persistence_read.cpp(1029): error C2440: “初始化�\ufffd: 无法从�\ufffd�const T”转�\ufffd为�\ufffd�int64_t &�\ufffd
+        with
+        [
+            T=int64_t
+        ]
+src\economy_runtime_persistence_read.cpp(1029): note: �\ufffd�\ufffd丢失限定�\ufffd
+src\economy_runtime_persistence_read.cpp(1582): error C2664: “bool pk::NativeEconomyRuntime::decode_restore_chunk::<lambda_c94edcb76a84f4f501b123bb405b9c48>::operator ()(std::vector<T,std::allocator<T>> &,int32_t) const�\ufffd: 无法将参�\ufffd 1 从�\ufffd�pk::EconomyOwnedColumn<int64_t>”转�\ufffd为�\ufffd�std::vector<T,std::allocator<T>> &�\ufffd
+        with
+        [
+            T=int64_t
+        ]
+src\economy_runtime_persistence_read.cpp(1567): note: 参�\ufffd��\ufffd�pk::NativeEconomyRuntime::decode_restore_chunk::<lambda_c94edcb76a84f4f501b123bb405b9c48>::operator ()”的声明
+src\economy_runtime_persistence_read.cpp(1582): note: 尝试匹配参数列表�\ufffd(pk::EconomyOwnedColumn<int64_t>, int32_t)”时
+src\economy_runtime_persistence_read.cpp(1583): error C2664: “bool pk::NativeEconomyRuntime::decode_restore_chunk::<lambda_c94edcb76a84f4f501b123bb405b9c48>::operator ()(std::vector<T,std::allocator<T>> &,int32_t) const�\ufffd: 无法将参�\ufffd 1 从�\ufffd�pk::EconomyOwnedColumn<int64_t>”转�\ufffd为�\ufffd�std::vector<T,std::allocator<T>> &�\ufffd
+        with
+        [
+            T=int64_t
+        ]
+src\economy_runtime_persistence_read.cpp(1567): note: 参�\ufffd��\ufffd�pk::NativeEconomyRuntime::decode_restore_chunk::<lambda_c94edcb76a84f4f501b123bb405b9c48>::operator ()”的声明
+src\economy_runtime_persistence_read.cpp(1583): note: 尝试匹配参数列表�\ufffd(pk::EconomyOwnedColumn<int64_t>, int32_t)”时
+src\economy_runtime_persistence_read.cpp(1584): error C2664: “bool pk::NativeEconomyRuntime::decode_restore_chunk::<lambda_c94edcb76a84f4f501b123bb405b9c48>::operator ()(std::vector<T,std::allocator<T>> &,int32_t) const�\ufffd: 无法将参�\ufffd 1 从�\ufffd�pk::EconomyOwnedColumn<int64_t>”转�\ufffd为�\ufffd�std::vector<T,std::allocator<T>> &�\ufffd
+        with
+        [
+            T=int64_t
+        ]
+src\economy_runtime_persistence_read.cpp(1567): note: 参�\ufffd��\ufffd�pk::NativeEconomyRuntime::decode_restore_chunk::<lambda_c94edcb76a84f4f501b123bb405b9c48>::operator ()”的声明
+src\economy_runtime_persistence_read.cpp(1584): note: 尝试匹配参数列表�\ufffd(pk::EconomyOwnedColumn<int64_t>, int32_t)”时
+src\economy_runtime_persistence_read.cpp(1585): error C2664: “bool pk::NativeEconomyRuntime::decode_restore_chunk::<lambda_c94edcb76a84f4f501b123bb405b9c48>::operator ()(std::vector<T,std::allocator<T>> &,int32_t) const�\ufffd: 无法将参�\ufffd 1 从�\ufffd�pk::EconomyOwnedColumn<int64_t>”转�\ufffd为�\ufffd�std::vector<T,std::allocator<T>> &�\ufffd
+        with
+        [
+            T=int64_t
+        ]
+src\economy_runtime_persistence_read.cpp(1567): note: 参�\ufffd��\ufffd�pk::NativeEconomyRuntime::decode_restore_chunk::<lambda_c94edcb76a84f4f501b123bb405b9c48>::operator ()”的声明
+src\economy_runtime_persistence_read.cpp(1585): note: 尝试匹配参数列表�\ufffd(pk::EconomyOwnedColumn<int64_t>, int32_t)”时
+src\economy_runtime_persistence_read.cpp(1586): error C2664: “bool pk::NativeEconomyRuntime::decode_restore_chunk::<lambda_c94edcb76a84f4f501b123bb405b9c48>::operator ()(std::vector<T,std::allocator<T>> &,int32_t) const�\ufffd: 无法将参�\ufffd 1 从�\ufffd�pk::EconomyOwnedColumn<int64_t>”转�\ufffd为�\ufffd�std::vector<T,std::allocator<T>> &�\ufffd
+        with
+        [
+            T=int64_t
+        ]
+src\economy_runtime_persistence_read.cpp(1567): note: 参�\ufffd��\ufffd�pk::NativeEconomyRuntime::decode_restore_chunk::<lambda_c94edcb76a84f4f501b123bb405b9c48>::operator ()”的声明
+src\economy_runtime_persistence_read.cpp(1586): note: 尝试匹配参数列表�\ufffd(pk::EconomyOwnedColumn<int64_t>, int32_t)”时
+scons: *** [src\economy_runtime_persistence_read.windows.template_debug.x86_64.obj] Error 2
+scons: building terminated because of errors.
