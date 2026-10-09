@@ -292,12 +292,12 @@ Dictionary NativeEconomyRuntime::begin_save(int32_t chunk_bytes) {
     // after load then fell back to the synchronous path).
     if (_country_runtime == nullptr || !_country_runtime->economy_available() ||
         (!_ecp2_rollback_backup_export && !_forensics_allow_fatal_export &&
-         _country_runtime->should_run(_last_committed_day))) {
+         _country_runtime->should_run(_last_committed_day.get()))) {
         out["ok"] = false;
         out["reason"] = "save_requires_idle_country_runtime";
         return out;
     }
-    const size_t cells = static_cast<size_t>(_cell_count);
+    const size_t cells = static_cast<size_t>(_cell_count.get());
     if (market_store().cell_to_market.size() != cells ||
         _environment_temperature_q16.size() != cells ||
         _environment_temperature_30d_q16.size() != cells ||
@@ -417,8 +417,8 @@ Dictionary NativeEconomyRuntime::begin_save(int32_t chunk_bytes) {
     out["ok"] = true;
     out["chunk_bytes"] = _save.chunk_bytes;
     out["schema_version"] = SCHEMA_VERSION;
-    out["catalog_hash"] = _catalog_hash;
-    out["committed_day"] = _last_committed_day;
+    out["catalog_hash"] = _catalog_hash.get();
+    out["committed_day"] = _last_committed_day.get();
     return out;
 }
 
@@ -523,7 +523,7 @@ void NativeEconomyRuntime::prepare_restore_candidate_scratch() {
     // ECP2 backup (or be on the explicit migrate helper path).
     _restore.scratch_prepared = true;
     _bootstrapped = false;
-    population_store().clear(_cell_count);
+    population_store().clear(_cell_count.get());
     family_expeditions_store().clear();
     family_expedition_route_cells().clear();
     family_expedition_route_costs().clear();
@@ -537,11 +537,11 @@ void NativeEconomyRuntime::prepare_restore_candidate_scratch() {
     _family_expedition_due_heap.clear();
     _colonization_receipts.clear();
     _birth_residual_q32.assign(
-        static_cast<size_t>(_cell_count) * _ethnicity_ids.size(), 0);
-    _settlements.clear(_cell_count);
+        static_cast<size_t>(_cell_count.get()) * _ethnicity_ids.size(), 0);
+    _settlements.clear(_cell_count.get());
     market_store().clear();
-    _market_signals.clear(_cell_count);
-    _labor_signals.clear(_cell_count);
+    _market_signals.clear(_cell_count.get());
+    _labor_signals.clear(_cell_count.get());
     _trade_plan.clear_transient();
     _trade_signal_clock_keys.clear();
     _trade_signal_bulk_keys_scratch.clear();
@@ -599,23 +599,23 @@ void NativeEconomyRuntime::prepare_restore_candidate_scratch() {
     _next_canal_quote_token = 1;
     _next_canal_project_id = 1;
     _next_canal_receipt_id = 1;
-    _committed_cells.assign(_cell_count, {});
-    _cell_last_settlement_day.assign(_cell_count, -ROLLING_PHASE_COUNT);
-    _cell_settlement_generation.assign(_cell_count, 0);
-    _cell_price_stock_gen.assign(_cell_count, 0);
-    _cell_owner_cash_gen.assign(_cell_count, 0);
-    _cell_population_gen.assign(_cell_count, 0);
-    _cell_building_structure_gen.assign(_cell_count, 0);
-    _cell_technology_gen.assign(_cell_count, 0);
-    _cell_resource_gen.assign(_cell_count, 0);
-    _cell_trade_gen.assign(_cell_count, 0);
-    _cell_effect_shortage_q16.assign(_cell_count, 0);
-    _cell_essentials_shortage_q16.assign(_cell_count, 0);
-    _cell_resource_abundance_q16.assign(_cell_count, 0);
+    _committed_cells.assign(_cell_count.get(), {});
+    _cell_last_settlement_day.assign(_cell_count.get(), -ROLLING_PHASE_COUNT);
+    _cell_settlement_generation.assign(_cell_count.get(), 0);
+    _cell_price_stock_gen.assign(_cell_count.get(), 0);
+    _cell_owner_cash_gen.assign(_cell_count.get(), 0);
+    _cell_population_gen.assign(_cell_count.get(), 0);
+    _cell_building_structure_gen.assign(_cell_count.get(), 0);
+    _cell_technology_gen.assign(_cell_count.get(), 0);
+    _cell_resource_gen.assign(_cell_count.get(), 0);
+    _cell_trade_gen.assign(_cell_count.get(), 0);
+    _cell_effect_shortage_q16.assign(_cell_count.get(), 0);
+    _cell_essentials_shortage_q16.assign(_cell_count.get(), 0);
+    _cell_resource_abundance_q16.assign(_cell_count.get(), 0);
     _fiscal_previous_country_handles.assign(
-        static_cast<size_t>(_cell_count), 0);
+        static_cast<size_t>(_cell_count.get()), 0);
     _fiscal_previous_requests.assign(
-        static_cast<size_t>(_cell_count) * ACTIVE_TAX_KIND_COUNT, 0);
+        static_cast<size_t>(_cell_count.get()) * ACTIVE_TAX_KIND_COUNT, 0);
     _fiscal_reservation_continuation = {};
     _fiscal_settlement_continuation = {};
     _asset_peer_journal.clear();
@@ -712,7 +712,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
     const char *first_incomplete =
         _restore.restored_pages != _restore.expected_pages ? "pages" :
         _restore.restored_markets != market_store().market_count.get() ? "markets" :
-        _restore.restored_cells != _cell_count ? "cells" :
+        _restore.restored_cells != _cell_count.get() ? "cells" :
         _restore.restored_commands != _restore.expected_commands ? "commands" :
         _restore.restored_buildings != _restore.expected_buildings ? "buildings" :
         _restore.restored_construction != _restore.expected_construction ? "construction" :
@@ -755,7 +755,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
                 _restore.expected_family_trait_commands)) ? "family_traits" : nullptr;
     if (_restore.restored_pages != _restore.expected_pages ||
         _restore.restored_markets != market_store().market_count.get() ||
-        _restore.restored_cells != _cell_count ||
+        _restore.restored_cells != _cell_count.get() ||
         _restore.restored_commands != _restore.expected_commands ||
         _restore.restored_buildings != _restore.expected_buildings ||
         _restore.restored_construction != _restore.expected_construction ||
@@ -902,7 +902,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
             restored_environment_hash *= 1099511628211ULL;
         }
     };
-    for (int32_t cell = 0; cell < _cell_count; ++cell) {
+    for (int32_t cell = 0; cell < _cell_count.get(); ++cell) {
         const int32_t values[] = {
             _environment_temperature_q16[cell],
             _environment_temperature_30d_q16[cell],
@@ -923,10 +923,10 @@ Dictionary NativeEconomyRuntime::end_restore() {
     }
     const int64_t computed_environment_hash = static_cast<int64_t>(
         (restored_environment_hash & 0x7fffffffffffffffULL) | 1ULL);
-    if (computed_environment_hash != _environment_hash) {
+    if (computed_environment_hash != _environment_hash.get()) {
         out["ok"] = false;
         out["reason"] = "restore_environment_hash_mismatch";
-        out["expected_environment_hash"] = _environment_hash;
+        out["expected_environment_hash"] = _environment_hash.get();
         out["computed_environment_hash"] = computed_environment_hash;
         return out;
     }
@@ -948,7 +948,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
     for (int32_t page = 0; page < static_cast<int32_t>(population_store().page_next.size()); ++page) {
         const int32_t cell = population_store().page_cell[page];
         const int32_t next = population_store().page_next[page];
-        if (cell < -1 || cell >= _cell_count || next < -1 ||
+        if (cell < -1 || cell >= _cell_count.get() || next < -1 ||
             next >= static_cast<int32_t>(population_store().page_next.size()) ||
             (next >= 0 && population_store().page_cell[next] != cell)) {
             out["ok"] = false;
@@ -971,7 +971,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
             ++actual_active;
         }
     }
-    population_store().cell_first_page.assign(_cell_count, -1);
+    population_store().cell_first_page.assign(_cell_count.get(), -1);
     for (int32_t page = 0; page < static_cast<int32_t>(population_store().page_next.size()); ++page) {
         const int32_t cell = population_store().page_cell[page];
         if (cell < 0 || referenced[page] != 0) continue;
@@ -983,7 +983,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
         population_store().cell_first_page.write_scalar(cell, page, market_mutation_sink());
     }
     std::vector<uint8_t> visited(population_store().page_next.size(), 0);
-    for (int32_t cell = 0; cell < _cell_count; ++cell) {
+    for (int32_t cell = 0; cell < _cell_count.get(); ++cell) {
         int32_t steps = 0;
         for (int32_t page = population_store().cell_first_page[cell]; page >= 0;
              page = population_store().page_next[page]) {
@@ -1007,7 +1007,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
         out["reason"] = "restore_active_count_mismatch";
         return out;
     }
-    for (int32_t cell = 0; cell < _cell_count; ++cell) {
+    for (int32_t cell = 0; cell < _cell_count.get(); ++cell) {
         if (market_store().cell_to_market[cell] < 0 || market_store().cell_to_market[cell] >= market_store().market_count.get()) {
             out["ok"] = false;
             out["reason"] = "restore_cell_market_invalid";
@@ -1043,7 +1043,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
         return out;
     }
     int64_t restore_merchant_repairs = 0;
-    for (int32_t cell = 0; cell < _cell_count; ++cell) {
+    for (int32_t cell = 0; cell < _cell_count.get(); ++cell) {
         if (!ensure_merchant_invariant(cell, restore_merchant_repairs, market_range_error)) {
             out["ok"] = false;
             out["reason"] = String(market_range_error.c_str());
@@ -1078,7 +1078,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
             : treasury_build
             ? (_country_runtime != nullptr && _country_runtime->valid_handle(
                    static_cast<int64_t>(cmd.target_handle)) &&
-               cmd.i32_0 >= 0 && cmd.i32_0 < _cell_count &&
+               cmd.i32_0 >= 0 && cmd.i32_0 < _cell_count.get() &&
                cmd.i32_1 >= 0 && cmd.i32_1 < static_cast<int32_t>(
                    _building_types.size()) && cmd.i64_0 == 1 &&
                cmd.i64_1 == OWNERSHIP_TREASURY_SPONSORED_PRIVATE)
@@ -1088,8 +1088,8 @@ Dictionary NativeEconomyRuntime::end_restore() {
             : expedition_player
             ? (cmd.opcode == COMMAND_START_FAMILY_EXPEDITION
                 ? (families_store().valid_handle(cmd.target_handle, family) &&
-                   cmd.i32_0 >= 0 && cmd.i32_0 < _cell_count &&
-                   cmd.i32_1 >= 0 && cmd.i32_1 < _cell_count &&
+                   cmd.i32_0 >= 0 && cmd.i32_0 < _cell_count.get() &&
+                   cmd.i32_1 >= 0 && cmd.i32_1 < _cell_count.get() &&
                    cmd.i64_0 >= 1)
                 : family_expeditions_store().valid_handle(cmd.target_handle, expedition))
             : market_target
@@ -1207,16 +1207,16 @@ Dictionary NativeEconomyRuntime::end_restore() {
         synthesize_cadence_locks_from_legacy_save();
     _commit_lag_budget_days = std::max(0, locked_market_cycle_days() - 1);
     if (_restore.schema_version < 15) {
-        for (int32_t cell = 0; cell < _cell_count; ++cell) {
+        for (int32_t cell = 0; cell < _cell_count.get(); ++cell) {
             const int64_t phase = cell % ROLLING_PHASE_COUNT;
-            const int64_t delta = ((_last_committed_day - phase) %
+            const int64_t delta = ((_last_committed_day.get() - phase) %
                 ROLLING_PHASE_COUNT + ROLLING_PHASE_COUNT) %
                 ROLLING_PHASE_COUNT;
-            _cell_last_settlement_day[cell] = _last_committed_day - delta;
+            _cell_last_settlement_day.write_scalar(cell, _last_committed_day.get() - delta, market_mutation_sink());
         }
     }
-    for (int32_t cell = 0; cell < _cell_count; ++cell)
-        _market_signals.cell_offsets[cell + 1] += _market_signals.cell_offsets[cell];
+    for (int32_t cell = 0; cell < _cell_count.get(); ++cell)
+        _market_signals.cell_offsets.write_scalar(cell + 1, _market_signals.cell_offsets[cell + 1] + (_market_signals.cell_offsets[cell]), market_mutation_sink());
     // PKEC stores the committed signal rows, including zero-valued rows that
     // keep the stable CSR shape. Rebuild only derived lookups here; the
     // topology rebuild intentionally prunes rows and would change restored
@@ -1229,13 +1229,13 @@ Dictionary NativeEconomyRuntime::end_restore() {
     _market_signal_full_rebuild_reason = "save_restore";
     _labor_signal_full_rebuild_reason = "save_restore";
     _input_reserve_full_rebuild_reason = "save_restore";
-    if (_cell_count > 0) {
-        _market_signal_cell_dirty.assign(static_cast<size_t>(_cell_count), 0);
-        _labor_signal_cell_dirty.assign(static_cast<size_t>(_cell_count), 0);
-        _input_reserve_cell_dirty.assign(static_cast<size_t>(_cell_count), 0);
+    if (_cell_count.get() > 0) {
+        _market_signal_cell_dirty.assign(static_cast<size_t>(_cell_count.get()), 0);
+        _labor_signal_cell_dirty.assign(static_cast<size_t>(_cell_count.get()), 0);
+        _input_reserve_cell_dirty.assign(static_cast<size_t>(_cell_count.get()), 0);
     }
-    for (int32_t cell = 0; cell < _cell_count; ++cell)
-        _labor_signals.cell_offsets[cell + 1] += _labor_signals.cell_offsets[cell];
+    for (int32_t cell = 0; cell < _cell_count.get(); ++cell)
+        _labor_signals.cell_offsets.write_scalar(cell + 1, _labor_signals.cell_offsets[cell + 1] + (_labor_signals.cell_offsets[cell]), market_mutation_sink());
     std::string country_restore_error;
     if (!capture_country_epoch(country_restore_error)) {
         out["ok"] = false;
@@ -1626,7 +1626,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
     if (_restore.schema_version < 24) {
         initialize_settlements_from_population();
     } else {
-        for (int32_t cell = 0; cell < _cell_count; ++cell) {
+        for (int32_t cell = 0; cell < _cell_count.get(); ++cell) {
             const bool should_have_name =
                 _settlements.tier[cell] >= _settlement_named_tier ||
                 _settlements.name_forced[cell] != 0;
@@ -1646,10 +1646,10 @@ Dictionary NativeEconomyRuntime::end_restore() {
     _opening_totals = _closing_totals;
     rebuild_incremental_audit_shadow();
     _closing_audit_force_full = true;
-    _settlement_watermark = _last_committed_day;
-    _settlement_newest_day = _last_committed_day;
+    _settlement_watermark = _last_committed_day.get();
+    _settlement_newest_day = _last_committed_day.get();
     bool have_populated = false;
-    for (int32_t cell = 0; cell < _cell_count; ++cell) {
+    for (int32_t cell = 0; cell < _cell_count.get(); ++cell) {
         if (_committed_cells[cell].population <= 0) continue;
         if (!have_populated) {
             _settlement_watermark = _cell_last_settlement_day[cell];
@@ -1663,7 +1663,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
         }
     }
     _settlement_max_age_days = have_populated
-        ? std::max<int64_t>(0, _last_committed_day - _settlement_watermark) : 0;
+        ? std::max<int64_t>(0, _last_committed_day.get() - _settlement_watermark) : 0;
     const int32_t restored_pages = _restore.restored_pages;
     const int32_t restored_commands = _restore.restored_commands;
     const int32_t restored_buildings = _restore.restored_buildings;
@@ -1673,9 +1673,9 @@ Dictionary NativeEconomyRuntime::end_restore() {
     trace_begin_epoch();
     trace_append(EVENT_RESTORE_BOUNDARY,
                  static_cast<int32_t>(Stage::AGGREGATE_PUBLISH), -1,
-                 SUBJECT_NONE, _epoch_id, SCHEMA_VERSION, -1,
+                 SUBJECT_NONE, _epoch_id.get(), SCHEMA_VERSION, -1,
                  restored_pages, restored_commands, restored_buildings,
-                 _last_committed_day, nullptr);
+                 _last_committed_day.get(), nullptr);
     trace_commit_epoch(0, 0, 0);
     out["ok"] = true;
     out["restored_pages"] = restored_pages;
@@ -1684,7 +1684,7 @@ Dictionary NativeEconomyRuntime::end_restore() {
     out["restored_trade_orders"] = trade_orders_store().size();
     out["restored_trade_flows"] = static_cast<int64_t>(_trade_flows.cells.size());
     out["cohort_count"] = population_store().active_count.get();
-    out["state_hash_catalog"] = _catalog_hash;
+    out["state_hash_catalog"] = _catalog_hash.get();
     out["restored_families"] = families_store().active_count.get();
     out["restored_persons"] = persons_store().active_count.get();
     out["restored_person_needs"] = static_cast<int64_t>(person_needs().size());
@@ -1757,12 +1757,12 @@ bool NativeEconomyRuntime::validate_ecp2_candidate(
         return false;
     }
     if (_bootstrapped && in.envelope.catalog_hash != 0 &&
-        in.envelope.catalog_hash != _catalog_hash) {
+        in.envelope.catalog_hash != _catalog_hash.get()) {
         error = "ecp2_catalog_hash_mismatch";
         return false;
     }
     if (_bootstrapped && in.envelope.cell_count > 0 &&
-        in.envelope.cell_count != _cell_count) {
+        in.envelope.cell_count != _cell_count.get()) {
         error = "ecp2_cell_count_mismatch";
         return false;
     }
@@ -1810,7 +1810,7 @@ bool NativeEconomyRuntime::validate_restored_committed_snapshot(
                                       : _fatal_reason;
         return false;
     }
-    if (_last_committed_day < 0 || _current_day < _last_committed_day) {
+    if (_last_committed_day.get() < 0 || _current_day.get() < _last_committed_day.get()) {
         error = "restore_day_order_invalid";
         return false;
     }
@@ -1881,24 +1881,24 @@ bool NativeEconomyRuntime::capture_ecp2_authority(RuntimeEconomyEcp2State &out,
     out.abi_version = RUNTIME_ECONOMY_ECP2_ABI_VERSION;
     out.envelope.schema_version = RUNTIME_ECONOMY_ECP2_SCHEMA_VERSION;
     out.envelope.abi_version = RUNTIME_ECONOMY_ECP2_ABI_VERSION;
-    out.envelope.cell_count = _cell_count;
+    out.envelope.cell_count = _cell_count.get();
     out.envelope.market_count = market_store().market_count.get();
     out.envelope.good_count = market_store().good_count.get();
-    out.envelope.catalog_hash = _catalog_hash;
-    out.envelope.building_catalog_hash = _building_catalog_hash;
+    out.envelope.catalog_hash = _catalog_hash.get();
+    out.envelope.building_catalog_hash = _building_catalog_hash.get();
     out.envelope.settlement_catalog_hash = _settlement_catalog_hash;
-    out.envelope.family_catalog_hash = _family_catalog_hash;
-    out.envelope.person_catalog_hash = _person_catalog_hash;
+    out.envelope.family_catalog_hash = _family_catalog_hash.get();
+    out.envelope.person_catalog_hash = _person_catalog_hash.get();
     out.envelope.market_cycle_days = locked_market_cycle_days();
     out.envelope.plan_cycle_days = locked_plan_cycle_days();
     out.envelope.investment_cycle_days = locked_investment_cycle_days();
-    out.envelope.epoch_id = _epoch_id;
-    out.envelope.last_committed_day = _last_committed_day;
-    out.envelope.current_day = _current_day;
+    out.envelope.epoch_id = _epoch_id.get();
+    out.envelope.last_committed_day = _last_committed_day.get();
+    out.envelope.current_day = _current_day.get();
     out.envelope.sample_day = _sample_day;
-    out.envelope.epoch_days = _epoch_days;
+    out.envelope.epoch_days = _epoch_days.get();
     out.envelope.committed_generation = _committed_generation;
-    out.envelope.seed = _seed;
+    out.envelope.seed = _seed.get();
     out.authority_domain_mask = ECP2_DOMAIN_ENVELOPE;
 
     while (true) {
@@ -1933,7 +1933,7 @@ bool NativeEconomyRuntime::capture_ecp2_authority(RuntimeEconomyEcp2State &out,
     RuntimeEconomyResourceStore resource_store;
     resource_store.resource_count =
         static_cast<int32_t>(_resource_ids.size());
-    resource_store.cell_count = _cell_count;
+    resource_store.cell_count = _cell_count.get();
     resource_store.stock = resource_stock_lanes();
     if (_resource_store_alias != nullptr)
         resource_store.cell_generation = _resource_store_alias->cell_generation;
@@ -1963,9 +1963,9 @@ bool NativeEconomyRuntime::capture_ecp2_authority(RuntimeEconomyEcp2State &out,
         resume.native_stage = static_cast<int32_t>(_stage);
         resume.graph_completed_mask = 0;
         resume.sample_day = _sample_day;
-        resume.current_day = _current_day;
-        resume.epoch_id = _epoch_id;
-        resume.epoch_days = _epoch_days;
+        resume.current_day = _current_day.get();
+        resume.epoch_id = _epoch_id.get();
+        resume.epoch_days = _epoch_days.get();
         resume.publish_cursor = _publish_cursor;
         resume.publish_order_cursor = _publish_order_cursor;
         resume.publish_line_cursor = _publish_line_cursor;
@@ -2091,7 +2091,7 @@ bool NativeEconomyRuntime::apply_ecp2_authority_internal(
         }
         RuntimeEconomyResourceStore store;
         store.resource_count = static_cast<int32_t>(_resource_ids.size());
-        store.cell_count = _cell_count;
+        store.cell_count = _cell_count.get();
         // A freshly configured restore target has no captured resource lanes
         // yet. Validate the incoming wire against the catalog/world shape,
         // not the destination's previous (possibly empty) snapshot.
@@ -2172,7 +2172,7 @@ bool NativeEconomyRuntime::apply_ecp2_authority(
     }
 
     const uint64_t live_generation = _committed_generation;
-    const int64_t live_committed_day = _last_committed_day;
+    const int64_t live_committed_day = _last_committed_day.get();
     const int64_t live_state_hash =
         _bootstrapped ? state_hash() : 0;
 
@@ -2208,7 +2208,7 @@ bool NativeEconomyRuntime::apply_ecp2_authority(
             // Live committed identity must match the pre-apply snapshot after
             // a successful rollback.
             if (_committed_generation != live_generation ||
-                _last_committed_day != live_committed_day ||
+                _last_committed_day.get() != live_committed_day ||
                 (_bootstrapped && state_hash() != live_state_hash)) {
                 error += ";rollback_identity_drift";
             }

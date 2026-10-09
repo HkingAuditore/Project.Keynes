@@ -1,5 +1,17 @@
 # GDScript / C++ Data Bridge
 
+## Economy compatibility report boundary (2026-10-09)
+
+`get_economy_report()` acquires the native economy authority boundary with
+`try_lock` before inspecting live vectors. When the worker holds the boundary,
+the bridge returns a deep copy of its last safely captured main-thread report,
+with `report_boundary_pending=true`. `report_available` distinguishes a valid
+cached report from an empty cache. Configure clears the cache; bootstrap and
+successful restore seed it. Callers cannot mutate the private cached Dictionary.
+This closes a concurrent live-vector read; it is still a compatibility DETAIL
+report, not the requested immutable post-command `EconomyCommitView`. The
+committed audit summary remains separately bound to `before_effect_command_drain`.
+
 ## Fiscal terminal visibility (2026-09-20)
 
 Country's actual worker grant routes Economy-origin asset transactions even

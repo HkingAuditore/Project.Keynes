@@ -211,7 +211,7 @@ int64_t NativeEconomyRuntime::fiscal_escrow_total() const {
 
 int32_t NativeEconomyRuntime::tariff_epoch_lane_index(
         int32_t cell, int32_t tariff_kind, bool create) {
-    if (cell < 0 || cell >= _cell_count || tariff_kind < 0 || tariff_kind >= 2)
+    if (cell < 0 || cell >= _cell_count.get() || tariff_kind < 0 || tariff_kind >= 2)
         return -1;
     const size_t key = static_cast<size_t>(cell) * 2U +
         static_cast<size_t>(tariff_kind);
@@ -240,16 +240,16 @@ int32_t NativeEconomyRuntime::tariff_epoch_lane_index(
 
 int64_t NativeEconomyRuntime::prospective_business_subsidy_request(
         int32_t cell, int32_t country) {
-    if (cell < 0 || cell >= _cell_count || country < 0 ||
+    if (cell < 0 || cell >= _cell_count.get() || country < 0 ||
         country + 1 >= static_cast<int32_t>(
             _epoch_country_building_type_offsets.size()) ||
-        market_store().cell_to_market.size() != static_cast<size_t>(_cell_count))
+        market_store().cell_to_market.size() != static_cast<size_t>(_cell_count.get()))
         return 0;
     const int32_t market = market_store().cell_to_market[static_cast<size_t>(cell)];
     if (market < 0 || market >= market_store().market_count.get()) return 0;
     const int32_t type_begin = _epoch_country_building_type_offsets[country];
     const int32_t type_end = _epoch_country_building_type_offsets[country + 1];
-    const int64_t days = std::max(1, _epoch_days);
+    const int64_t days = std::max(1, _epoch_days.get());
     int64_t best = 0;
     for (int32_t cursor = type_begin; cursor < type_end; ++cursor) {
         if (cursor < 0 || cursor >= static_cast<int32_t>(
@@ -343,9 +343,9 @@ bool NativeEconomyRuntime::prepare_fiscal_budgets(int64_t day_index,
         error = "country_runtime_required";
         return false;
     }
-    const size_t lane_count = static_cast<size_t>(_cell_count) *
+    const size_t lane_count = static_cast<size_t>(_cell_count.get()) *
         ACTIVE_TAX_KIND_COUNT;
-    const size_t tariff_lookup_count = static_cast<size_t>(_cell_count) * 2U;
+    const size_t tariff_lookup_count = static_cast<size_t>(_cell_count.get()) * 2U;
     if (_tariff_lane_index.size() != tariff_lookup_count) {
         _tariff_lane_index.assign(tariff_lookup_count, -1);
         _tariff_lane_stamp.assign(tariff_lookup_count, 0);
@@ -372,9 +372,9 @@ bool NativeEconomyRuntime::prepare_fiscal_budgets(int64_t day_index,
     if (_fiscal_previous_requests.size() != lane_count)
         _fiscal_previous_requests.assign(lane_count, 0);
     if (_fiscal_previous_country_handles.size() !=
-            static_cast<size_t>(_cell_count))
+            static_cast<size_t>(_cell_count.get()))
         _fiscal_previous_country_handles.assign(
-            static_cast<size_t>(_cell_count), 0);
+            static_cast<size_t>(_cell_count.get()), 0);
     if (_income_taxable_base_by_slot.size() < population_store().active.size())
         _income_taxable_base_by_slot.resize(population_store().active.size(), 0);
     if (_income_subsidy_floor_by_slot.size() < population_store().active.size())
@@ -384,7 +384,7 @@ bool NativeEconomyRuntime::prepare_fiscal_budgets(int64_t day_index,
             1U << NativeCountryRuntime::TAX_INCOME)) != 0;
     if (income_subsidy_active) {
         for (const int32_t cell : _epoch_settlement_cells) {
-            if (cell < 0 || cell >= _cell_count) continue;
+            if (cell < 0 || cell >= _cell_count.get()) continue;
             population_store().for_each_in_cell(cell, [&](int32_t slot) {
                 _income_taxable_base_by_slot[slot] = 0;
                 _income_subsidy_floor_by_slot[slot] = 0;
@@ -430,12 +430,12 @@ bool NativeEconomyRuntime::prepare_fiscal_budgets(int64_t day_index,
             _saturation_count);
         // Per-batch fields are rebuilt by dispatch. Cumulative fields remain
         // the persistent audit history used by fiscal_snapshot and PKEC.
-        _tariff_history.bases[row] = 0;
-        _tariff_history.assessed[row] = 0;
-        _tariff_history.collected[row] = 0;
-        _tariff_history.requests[row] = 0;
-        _tariff_history.reserved[row] = 0;
-        _tariff_history.paid[row] = 0;
+        _tariff_history.bases.write_scalar(row, 0, market_mutation_sink());
+        _tariff_history.assessed.write_scalar(row, 0, market_mutation_sink());
+        _tariff_history.collected.write_scalar(row, 0, market_mutation_sink());
+        _tariff_history.requests.write_scalar(row, 0, market_mutation_sink());
+        _tariff_history.reserved.write_scalar(row, 0, market_mutation_sink());
+        _tariff_history.paid.write_scalar(row, 0, market_mutation_sink());
     }
     for (int32_t country = 0; country < _epoch_country_count; ++country) {
         for (int32_t tariff_kind = 0; tariff_kind < 2; ++tariff_kind) {
@@ -449,7 +449,7 @@ bool NativeEconomyRuntime::prepare_fiscal_budgets(int64_t day_index,
     for (int32_t kind = 0; domestic_fiscal_active &&
             kind < ACTIVE_TAX_KIND_COUNT; ++kind) {
         for (const int32_t cell : _epoch_settlement_cells) {
-            if (cell < 0 || cell >= _cell_count) continue;
+            if (cell < 0 || cell >= _cell_count.get()) continue;
             const int32_t country = _epoch_cell_country[cell];
             if (country < 0 || country >= _epoch_country_count) continue;
             const size_t lane = static_cast<size_t>(cell) *
@@ -458,7 +458,7 @@ bool NativeEconomyRuntime::prepare_fiscal_budgets(int64_t day_index,
                 _fiscal_previous_country_handles[cell] ==
                     _epoch_country_handles[country];
             if (!history_matches)
-                _fiscal_previous_requests[lane] = 0;
+                _fiscal_previous_requests.write_scalar(lane, 0, market_mutation_sink());
             int64_t reservation_request = history_matches
                 ? std::max<int64_t>(0, _fiscal_previous_requests[lane]) : 0;
             const uint8_t kind_bit = static_cast<uint8_t>(1U << kind);
@@ -505,7 +505,7 @@ bool NativeEconomyRuntime::prepare_fiscal_budgets(int64_t day_index,
                                 signature_for_profession_ethnicity(
                                     profession, ethnicity);
                             if (signature < 0) continue;
-                            const int64_t days = std::max(1, _epoch_days);
+                            const int64_t days = std::max(1, _epoch_days.get());
                             const int64_t subsidy =
                                 mode == NativeCountryRuntime::TAX_MODE_ABSOLUTE
                                     ? saturating_mul(
@@ -556,7 +556,7 @@ bool NativeEconomyRuntime::prepare_fiscal_budgets(int64_t day_index,
                     const int32_t mode = frozen_tax_mode(
                         cell, NativeCountryRuntime::TAX_INCOME, profession);
                     if (population_store().population[slot] <= 0) return;
-                    const int64_t days = std::max(1, _epoch_days);
+                    const int64_t days = std::max(1, _epoch_days.get());
                     const int64_t population = std::max<int64_t>(
                         0, population_store().population[slot]);
                     if (mode == NativeCountryRuntime::TAX_MODE_ABSOLUTE) {
@@ -701,7 +701,7 @@ bool NativeEconomyRuntime::advance_fiscal_reservation(std::string &error) {
             country, research_enabled, research_daily_budget, research_demand) &&
         research_enabled && research_daily_budget > 0) {
         research_floor = saturating_mul(
-            research_daily_budget, std::max(1, _epoch_days), _saturation_count);
+            research_daily_budget, std::max(1, _epoch_days.get()), _saturation_count);
     }
     const int64_t spendable = std::max<int64_t>(
         0, _country_runtime->cash_for_slot(country));
@@ -725,7 +725,7 @@ bool NativeEconomyRuntime::advance_fiscal_reservation(std::string &error) {
         if (reserved <= 0 || reserved > requested)
             return fail("fiscal_reserve_quantity_invalid");
     }
-    _fiscal_escrow_by_country[static_cast<size_t>(country)] = reserved;
+    _fiscal_escrow_by_country.write_scalar(static_cast<size_t>(country), reserved, market_mutation_sink());
     continuation.last_requested = requested;
     continuation.last_reserved = reserved;
 
@@ -739,7 +739,7 @@ bool NativeEconomyRuntime::advance_fiscal_reservation(std::string &error) {
     for (int32_t kind = 0; domestic_fiscal_active &&
             kind < ACTIVE_TAX_KIND_COUNT; ++kind) {
         for (const int32_t cell : _epoch_settlement_cells) {
-            if (cell < 0 || cell >= _cell_count ||
+            if (cell < 0 || cell >= _cell_count.get() ||
                 _epoch_cell_country[cell] != country) continue;
             const size_t lane = static_cast<size_t>(cell) *
                 ACTIVE_TAX_KIND_COUNT + kind;
@@ -804,7 +804,7 @@ bool NativeEconomyRuntime::advance_fiscal_reservation(std::string &error) {
 
 void NativeEconomyRuntime::settle_income_subsidies_for_cell(
         int32_t cell, int64_t &saturation_count) {
-    if (cell < 0 || cell >= _cell_count ||
+    if (cell < 0 || cell >= _cell_count.get() ||
         (_epoch_negative_tax_mask & static_cast<uint8_t>(
             1U << NativeCountryRuntime::TAX_INCOME)) == 0)
         return;
@@ -888,11 +888,11 @@ void NativeEconomyRuntime::settle_income_subsidies_for_cell(
 
 void NativeEconomyRuntime::settle_absolute_daily_taxes_for_cell(
         int32_t cell, int64_t &saturation_count) {
-    if (cell < 0 || cell >= _cell_count ||
+    if (cell < 0 || cell >= _cell_count.get() ||
         _epoch_absolute_tax_mask == 0) return;
     const uint8_t absolute_mask =
         _epoch_cell_absolute_tax_mask[static_cast<size_t>(cell)];
-    const int64_t days = std::max(1, _epoch_days);
+    const int64_t days = std::max(1, _epoch_days.get());
 
     if ((absolute_mask & static_cast<uint8_t>(
             1U << NativeCountryRuntime::TAX_INCOME)) != 0) {
@@ -1054,7 +1054,7 @@ int64_t NativeEconomyRuntime::apply_fiscal_tax(
 int64_t NativeEconomyRuntime::apply_fiscal_tax(
         int32_t cell, int32_t kind, int64_t base, int32_t rate, int32_t mode,
         int64_t &saturation_count) {
-    if (cell < 0 || cell >= _cell_count || kind < 0 ||
+    if (cell < 0 || cell >= _cell_count.get() || kind < 0 ||
         kind >= ACTIVE_TAX_KIND_COUNT || base <= 0 || rate == 0) return 0;
     const size_t lane = static_cast<size_t>(cell) *
         ACTIVE_TAX_KIND_COUNT + kind;
@@ -1101,7 +1101,7 @@ int64_t NativeEconomyRuntime::expected_fiscal_transfer(
 int64_t NativeEconomyRuntime::expected_fiscal_transfer(
         int32_t cell, int32_t kind, int64_t base, int32_t rate, int32_t mode,
         int64_t &saturation_count) const {
-    if (cell < 0 || cell >= _cell_count || kind < 0 ||
+    if (cell < 0 || cell >= _cell_count.get() || kind < 0 ||
         kind >= ACTIVE_TAX_KIND_COUNT || base <= 0 || rate == 0 ||
         (_epoch_active_tax_mask & static_cast<uint8_t>(1U << kind)) == 0)
         return 0;
@@ -1139,7 +1139,7 @@ int64_t NativeEconomyRuntime::expected_resolved_fiscal_transfer(
 int64_t NativeEconomyRuntime::producer_support_receipt_value(
         int32_t cell, int32_t good, int64_t quantity,
         int64_t &saturation_count) const {
-    if (quantity <= 0 || cell < 0 || cell >= _cell_count || good < 0 ||
+    if (quantity <= 0 || cell < 0 || cell >= _cell_count.get() || good < 0 ||
         good >= market_store().good_count.get()) return 0;
     const int32_t market = market_store().cell_to_market[cell];
     if (market < 0 || market >= market_store().market_count.get()) return 0;
@@ -1235,7 +1235,7 @@ NativeEconomyRuntime::quote_transaction(
     TransactionQuote quote;
     quote.base_value = std::max<int64_t>(0, base_value);
     quote.seller_receipt = quote.base_value;
-    if (quote.base_value <= 0 || cell < 0 || cell >= _cell_count || good < 0 ||
+    if (quote.base_value <= 0 || cell < 0 || cell >= _cell_count.get() || good < 0 ||
         good >= static_cast<int32_t>(_good_ids.size())) {
         quote.buyer_outlay = quote.base_value;
         return quote;
@@ -1297,7 +1297,7 @@ bool NativeEconomyRuntime::commit_fiscal(std::string &error) {
     _fiscal_cumulative_paid.resize(summary_count, 0);
     _fiscal_settlement_continuation = {};
     _fiscal_settlement_continuation.country_count = _epoch_country_count;
-    _fiscal_settlement_continuation.day_index = _current_day;
+    _fiscal_settlement_continuation.day_index = _current_day.get();
     _fiscal_settlement_continuation.unused_by_country.assign(
         static_cast<size_t>(std::max(0, _epoch_country_count)), 0);
     _fiscal_settlement_continuation.collected_by_country.assign(
@@ -1332,27 +1332,27 @@ bool NativeEconomyRuntime::commit_fiscal(std::string &error) {
         const size_t summary = static_cast<size_t>(country) *
             NativeCountryRuntime::TAX_KIND_COUNT +
             NativeCountryRuntime::TAX_IMPORT + tariff_kind;
-        _fiscal_last_bases[summary] = saturating_add(
+        _fiscal_last_bases.write_scalar(summary, saturating_add(
             _fiscal_last_bases[summary], _tariff_epoch_bases[lane],
-            _saturation_count);
-        _fiscal_last_assessed[summary] = saturating_add(
+            _saturation_count), market_mutation_sink());
+        _fiscal_last_assessed.write_scalar(summary, saturating_add(
             _fiscal_last_assessed[summary], _tariff_epoch_assessed[lane],
-            _saturation_count);
-        _fiscal_last_collected[summary] = saturating_add(
+            _saturation_count), market_mutation_sink());
+        _fiscal_last_collected.write_scalar(summary, saturating_add(
             _fiscal_last_collected[summary], _tariff_epoch_collected[lane],
-            _saturation_count);
-        _fiscal_last_requests[summary] = saturating_add(
+            _saturation_count), market_mutation_sink());
+        _fiscal_last_requests.write_scalar(summary, saturating_add(
             _fiscal_last_requests[summary], _tariff_epoch_requests[lane],
-            _saturation_count);
-        _fiscal_last_reserved[summary] = saturating_add(
+            _saturation_count), market_mutation_sink());
+        _fiscal_last_reserved.write_scalar(summary, saturating_add(
             _fiscal_last_reserved[summary], _tariff_epoch_reserved[lane],
-            _saturation_count);
-        _fiscal_last_paid[summary] = saturating_add(
+            _saturation_count), market_mutation_sink());
+        _fiscal_last_paid.write_scalar(summary, saturating_add(
             _fiscal_last_paid[summary], _tariff_epoch_paid[lane],
-            _saturation_count);
-        _fiscal_last_events[summary] = saturating_add(
+            _saturation_count), market_mutation_sink());
+        _fiscal_last_events.write_scalar(summary, saturating_add(
             _fiscal_last_events[summary], _tariff_epoch_events[lane],
-            _saturation_count);
+            _saturation_count), market_mutation_sink());
     }
     for (int32_t country = 0; country < _epoch_country_count; ++country) {
         int64_t collected_total = 0;
@@ -1362,46 +1362,46 @@ bool NativeEconomyRuntime::commit_fiscal(std::string &error) {
             const size_t summary = static_cast<size_t>(country) *
                 NativeCountryRuntime::TAX_KIND_COUNT + kind;
             for (const int32_t cell : _epoch_settlement_cells) {
-                if (cell < 0 || cell >= _cell_count ||
+                if (cell < 0 || cell >= _cell_count.get() ||
                     _epoch_cell_country[cell] != country) continue;
                 const size_t lane = static_cast<size_t>(cell) *
                     ACTIVE_TAX_KIND_COUNT + kind;
-                _fiscal_last_bases[summary] = saturating_add(
+                _fiscal_last_bases.write_scalar(summary, saturating_add(
                     _fiscal_last_bases[summary], _fiscal_epoch_bases[lane],
-                    _saturation_count);
-                _fiscal_last_assessed[summary] = saturating_add(
+                    _saturation_count), market_mutation_sink());
+                _fiscal_last_assessed.write_scalar(summary, saturating_add(
                     _fiscal_last_assessed[summary], _fiscal_epoch_assessed[lane],
-                    _saturation_count);
-                _fiscal_last_collected[summary] = saturating_add(
+                    _saturation_count), market_mutation_sink());
+                _fiscal_last_collected.write_scalar(summary, saturating_add(
                     _fiscal_last_collected[summary], _fiscal_epoch_collected[lane],
-                    _saturation_count);
-                _fiscal_last_requests[summary] = saturating_add(
+                    _saturation_count), market_mutation_sink());
+                _fiscal_last_requests.write_scalar(summary, saturating_add(
                     _fiscal_last_requests[summary], _fiscal_current_requests[lane],
-                    _saturation_count);
-                _fiscal_last_reserved[summary] = saturating_add(
+                    _saturation_count), market_mutation_sink());
+                _fiscal_last_reserved.write_scalar(summary, saturating_add(
                     _fiscal_last_reserved[summary], _fiscal_budgets[lane],
-                    _saturation_count);
-                _fiscal_last_paid[summary] = saturating_add(
+                    _saturation_count), market_mutation_sink());
+                _fiscal_last_paid.write_scalar(summary, saturating_add(
                     _fiscal_last_paid[summary], _fiscal_epoch_paid[lane],
-                    _saturation_count);
+                    _saturation_count), market_mutation_sink());
                 unused_total = saturating_add(
                     unused_total, _fiscal_remaining[lane], _saturation_count);
-                _fiscal_previous_requests[lane] = _fiscal_current_requests[lane];
+                _fiscal_previous_requests.write_scalar(lane, _fiscal_current_requests[lane], market_mutation_sink());
             }
-            _fiscal_last_unmet[summary] = std::max<int64_t>(
-                0, _fiscal_last_requests[summary] - _fiscal_last_paid[summary]);
-            _fiscal_cumulative_bases[summary] = saturating_add(
+            _fiscal_last_unmet.write_scalar(summary, std::max<int64_t>(
+                0, _fiscal_last_requests[summary] - _fiscal_last_paid[summary]), market_mutation_sink());
+            _fiscal_cumulative_bases.write_scalar(summary, saturating_add(
                 _fiscal_cumulative_bases[summary], _fiscal_last_bases[summary],
-                _saturation_count);
-            _fiscal_cumulative_collected[summary] = saturating_add(
+                _saturation_count), market_mutation_sink());
+            _fiscal_cumulative_collected.write_scalar(summary, saturating_add(
                 _fiscal_cumulative_collected[summary],
-                _fiscal_last_collected[summary], _saturation_count);
-            _fiscal_cumulative_requests[summary] = saturating_add(
+                _fiscal_last_collected[summary], _saturation_count), market_mutation_sink());
+            _fiscal_cumulative_requests.write_scalar(summary, saturating_add(
                 _fiscal_cumulative_requests[summary],
-                _fiscal_last_requests[summary], _saturation_count);
-            _fiscal_cumulative_paid[summary] = saturating_add(
+                _fiscal_last_requests[summary], _saturation_count), market_mutation_sink());
+            _fiscal_cumulative_paid.write_scalar(summary, saturating_add(
                 _fiscal_cumulative_paid[summary], _fiscal_last_paid[summary],
-                _saturation_count);
+                _saturation_count), market_mutation_sink());
             collected_total = saturating_add(
                 collected_total, _fiscal_last_collected[summary],
                 _saturation_count);
@@ -1415,10 +1415,10 @@ bool NativeEconomyRuntime::commit_fiscal(std::string &error) {
             const size_t tariff_budget_index = static_cast<size_t>(country) * 2U +
                 static_cast<size_t>(tariff_kind);
             if (tariff_budget_index < _tariff_country_budgets.size()) {
-                _fiscal_last_reserved[summary] = saturating_add(
+                _fiscal_last_reserved.write_scalar(summary, saturating_add(
                     _fiscal_last_reserved[summary],
                     _tariff_country_budgets[tariff_budget_index],
-                    _saturation_count);
+                    _saturation_count), market_mutation_sink());
                 if (tariff_budget_index < _tariff_country_remaining.size()) {
                     unused_total = saturating_add(
                         unused_total,
@@ -1426,20 +1426,20 @@ bool NativeEconomyRuntime::commit_fiscal(std::string &error) {
                         _saturation_count);
                 }
             }
-            _fiscal_last_unmet[summary] = std::max<int64_t>(
-                0, _fiscal_last_requests[summary] - _fiscal_last_paid[summary]);
-            _fiscal_cumulative_bases[summary] = saturating_add(
+            _fiscal_last_unmet.write_scalar(summary, std::max<int64_t>(
+                0, _fiscal_last_requests[summary] - _fiscal_last_paid[summary]), market_mutation_sink());
+            _fiscal_cumulative_bases.write_scalar(summary, saturating_add(
                 _fiscal_cumulative_bases[summary], _fiscal_last_bases[summary],
-                _saturation_count);
-            _fiscal_cumulative_collected[summary] = saturating_add(
+                _saturation_count), market_mutation_sink());
+            _fiscal_cumulative_collected.write_scalar(summary, saturating_add(
                 _fiscal_cumulative_collected[summary],
-                _fiscal_last_collected[summary], _saturation_count);
-            _fiscal_cumulative_requests[summary] = saturating_add(
+                _fiscal_last_collected[summary], _saturation_count), market_mutation_sink());
+            _fiscal_cumulative_requests.write_scalar(summary, saturating_add(
                 _fiscal_cumulative_requests[summary],
-                _fiscal_last_requests[summary], _saturation_count);
-            _fiscal_cumulative_paid[summary] = saturating_add(
+                _fiscal_last_requests[summary], _saturation_count), market_mutation_sink());
+            _fiscal_cumulative_paid.write_scalar(summary, saturating_add(
                 _fiscal_cumulative_paid[summary], _fiscal_last_paid[summary],
-                _saturation_count);
+                _saturation_count), market_mutation_sink());
             collected_total = saturating_add(
                 collected_total, _fiscal_last_collected[summary],
                 _saturation_count);
@@ -1452,8 +1452,7 @@ bool NativeEconomyRuntime::commit_fiscal(std::string &error) {
         // withheld taxes and spent subsidies once, before Country transfers
         // validate/debit escrow; the opening reservation is no longer its
         // current balance.
-        _fiscal_escrow_by_country[static_cast<size_t>(country)] =
-            saturating_add(unused_total, collected_total, _saturation_count);
+        _fiscal_escrow_by_country.write_scalar(static_cast<size_t>(country), saturating_add(unused_total, collected_total, _saturation_count), market_mutation_sink());
     }
     _fiscal_settlement_continuation.active = true;
     _fiscal_settlement_continuation.phase = 1;
@@ -1545,7 +1544,7 @@ bool NativeEconomyRuntime::advance_fiscal_settlement(std::string &error) {
                 return false;
             }
         }
-        _fiscal_escrow_by_country[static_cast<size_t>(country)] = 0;
+        _fiscal_escrow_by_country.write_scalar(static_cast<size_t>(country), 0, market_mutation_sink());
         for (int32_t tariff_kind = 0; tariff_kind < 2; ++tariff_kind) {
             const size_t index = static_cast<size_t>(country) * 2U +
                 static_cast<size_t>(tariff_kind);
@@ -1559,29 +1558,28 @@ bool NativeEconomyRuntime::advance_fiscal_settlement(std::string &error) {
         return true;
     }
     for (size_t row = 0; row < _tariff_history.countries.size(); ++row) {
-        _tariff_history.cumulative_bases[row] = saturating_add(
+        _tariff_history.cumulative_bases.write_scalar(row, saturating_add(
             _tariff_history.cumulative_bases[row],
             std::max<int64_t>(0, _tariff_history.bases[row]),
-            _saturation_count);
-        _tariff_history.cumulative_collected[row] = saturating_add(
+            _saturation_count), market_mutation_sink());
+        _tariff_history.cumulative_collected.write_scalar(row, saturating_add(
             _tariff_history.cumulative_collected[row],
             std::max<int64_t>(0, _tariff_history.collected[row]),
-            _saturation_count);
-        _tariff_history.cumulative_requests[row] = saturating_add(
+            _saturation_count), market_mutation_sink());
+        _tariff_history.cumulative_requests.write_scalar(row, saturating_add(
             _tariff_history.cumulative_requests[row],
             std::max<int64_t>(0, _tariff_history.requests[row]),
-            _saturation_count);
-        _tariff_history.cumulative_paid[row] = saturating_add(
+            _saturation_count), market_mutation_sink());
+        _tariff_history.cumulative_paid.write_scalar(row, saturating_add(
             _tariff_history.cumulative_paid[row],
             std::max<int64_t>(0, _tariff_history.paid[row]),
-            _saturation_count);
+            _saturation_count), market_mutation_sink());
     }
     for (const int32_t cell : _epoch_settlement_cells) {
-        if (cell < 0 || cell >= _cell_count) continue;
+        if (cell < 0 || cell >= _cell_count.get()) continue;
         const int32_t country = _epoch_cell_country[cell];
-        _fiscal_previous_country_handles[cell] =
-            country >= 0 && country < _epoch_country_count
-            ? _epoch_country_handles[country] : 0;
+        _fiscal_previous_country_handles.write_scalar(cell, country >= 0 && country < _epoch_country_count
+            ? _epoch_country_handles[country] : 0, market_mutation_sink());
     }
     ++_country_trade_revision;
     continuation.phase = 2;

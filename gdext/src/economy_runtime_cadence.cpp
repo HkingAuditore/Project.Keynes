@@ -50,7 +50,7 @@ const char *cadence_reason_name(int32_t reason) {
 } // namespace
 
 int32_t NativeEconomyRuntime::locked_market_cycle_days() const {
-    return std::clamp(_locked_market_cycle_days, _min_epoch_days, _max_epoch_days);
+    return std::clamp(_locked_market_cycle_days.get(), _min_epoch_days, _max_epoch_days);
 }
 
 int32_t NativeEconomyRuntime::locked_slow_cycle_days() const {
@@ -58,12 +58,12 @@ int32_t NativeEconomyRuntime::locked_slow_cycle_days() const {
 }
 
 int32_t NativeEconomyRuntime::locked_plan_cycle_days() const {
-    return std::clamp(_locked_slow_cycle_days, SLOW_CYCLE_MIN_DAYS,
+    return std::clamp(_locked_slow_cycle_days.get(), SLOW_CYCLE_MIN_DAYS,
                       SLOW_CYCLE_MAX_DAYS);
 }
 
 int32_t NativeEconomyRuntime::locked_investment_cycle_days() const {
-    return std::clamp(_locked_investment_cycle_days, _invest_cycle_min_days,
+    return std::clamp(_locked_investment_cycle_days.get(), _invest_cycle_min_days,
                       _invest_cycle_max_days);
 }
 
@@ -79,14 +79,14 @@ int32_t NativeEconomyRuntime::cycle_phase(int64_t day, int64_t start,
 bool NativeEconomyRuntime::market_in_workset(int32_t market, int64_t day) const {
     const int32_t n = locked_market_cycle_days();
     const int32_t bucket = ((market % n) + n) % n;
-    return bucket == cycle_phase(day, _market_cycle_start_day, n);
+    return bucket == cycle_phase(day, _market_cycle_start_day.get(), n);
 }
 
 bool NativeEconomyRuntime::cell_in_market_workset(int32_t cell,
                                                   int64_t day) const {
     const int32_t n = locked_market_cycle_days();
     const int32_t bucket = ((cell % n) + n) % n;
-    return bucket == cycle_phase(day, _market_cycle_start_day, n);
+    return bucket == cycle_phase(day, _market_cycle_start_day.get(), n);
 }
 
 bool NativeEconomyRuntime::cell_due_slow_review(int32_t cell,
@@ -98,7 +98,7 @@ bool NativeEconomyRuntime::cell_due_plan_review(int32_t cell,
                                                 int64_t day) const {
     const int32_t p = locked_plan_cycle_days();
     const int32_t bucket = ((cell % p) + p) % p;
-    if (bucket != cycle_phase(day, _slow_cycle_start_day, p)) return false;
+    if (bucket != cycle_phase(day, _slow_cycle_start_day.get(), p)) return false;
     return cell_in_market_workset(cell, day);
 }
 
@@ -106,14 +106,14 @@ bool NativeEconomyRuntime::cell_due_investment_review(int32_t cell,
                                                       int64_t day) const {
     const int32_t i = locked_investment_cycle_days();
     const int32_t bucket = ((cell % i) + i) % i;
-    if (bucket != cycle_phase(day, _investment_cycle_start_day, i))
+    if (bucket != cycle_phase(day, _investment_cycle_start_day.get(), i))
         return false;
     return cell_in_market_workset(cell, day);
 }
 
 void NativeEconomyRuntime::rebuild_economy_live_cells() {
     _economy_live_cells.clear();
-    const size_t cell_slots = static_cast<size_t>(std::max(0, _cell_count));
+    const size_t cell_slots = static_cast<size_t>(std::max(0, _cell_count.get()));
     if (_cell_population_total.size() != cell_slots)
         _cell_population_total.assign(cell_slots, 0);
     else
@@ -121,7 +121,7 @@ void NativeEconomyRuntime::rebuild_economy_live_cells() {
     const int32_t page_count = static_cast<int32_t>(population_store().page_cell.size());
     for (int32_t page = 0; page < page_count; ++page) {
         const int32_t cell = population_store().page_cell[page];
-        if (cell < 0 || cell >= _cell_count) continue;
+        if (cell < 0 || cell >= _cell_count.get()) continue;
         int64_t total = 0;
         population_store().for_each_in_cell(cell, [&](int32_t slot) {
             total += std::max<int64_t>(0, population_store().population[slot]);
@@ -130,11 +130,11 @@ void NativeEconomyRuntime::rebuild_economy_live_cells() {
         if (total > 0) _economy_live_cells.push_back(cell);
     }
     for (const int32_t cell : _building_active_cells) {
-        if (cell >= 0 && cell < _cell_count)
+        if (cell >= 0 && cell < _cell_count.get())
             _economy_live_cells.push_back(cell);
     }
     for (const auto pending : pending_construction()) {
-        if (pending.count > 0 && pending.cell >= 0 && pending.cell < _cell_count)
+        if (pending.count > 0 && pending.cell >= 0 && pending.cell < _cell_count.get())
             _economy_live_cells.push_back(pending.cell);
     }
     std::sort(_economy_live_cells.begin(), _economy_live_cells.end());
@@ -157,7 +157,7 @@ int32_t NativeEconomyRuntime::workset_elapsed_days(int64_t day_index) const {
     bool any = false;
     const int32_t cap = MARKET_CYCLE_MAX_DAYS;
     for (const int32_t cell : _epoch_settlement_cells) {
-        if (cell < 0 || cell >= _cell_count) continue;
+        if (cell < 0 || cell >= _cell_count.get()) continue;
         const int64_t last = cell < static_cast<int32_t>(
             _cell_last_settlement_day.size())
             ? _cell_last_settlement_day[cell] : day_index - 1;
@@ -172,14 +172,14 @@ void NativeEconomyRuntime::capture_cell_elapsed_days(int64_t day_index) {
     // 每格自己的未结算天数。全局 _epoch_days 取的是这些值的最小值，落后格的
     // 差额目前被直接丢弃。休眠分级会把这个差额从「偶发」变成「常态」，所以先把
     // per-cell 值与丢失量落地成可观测量，再决定消费侧改造范围。
-    if (static_cast<int32_t>(_cell_elapsed_days.size()) != _cell_count)
-        _cell_elapsed_days.assign(static_cast<size_t>(std::max(0, _cell_count)), 1);
+    if (static_cast<int32_t>(_cell_elapsed_days.size()) != _cell_count.get())
+        _cell_elapsed_days.assign(static_cast<size_t>(std::max(0, _cell_count.get())), 1);
     const int32_t cap = MARKET_CYCLE_MAX_DAYS;
     _epoch_elapsed_days_max = 0;
     _epoch_elapsed_days_spread_cells = 0;
     _epoch_elapsed_days_lost = 0;
     for (const int32_t cell : _epoch_settlement_cells) {
-        if (cell < 0 || cell >= _cell_count) continue;
+        if (cell < 0 || cell >= _cell_count.get()) continue;
         const int64_t last = cell < static_cast<int32_t>(
             _cell_last_settlement_day.size())
             ? _cell_last_settlement_day[cell] : day_index - 1;
@@ -187,9 +187,9 @@ void NativeEconomyRuntime::capture_cell_elapsed_days(int64_t day_index) {
         _cell_elapsed_days[static_cast<size_t>(cell)] = cell_elapsed;
         if (cell_elapsed > _epoch_elapsed_days_max)
             _epoch_elapsed_days_max = cell_elapsed;
-        if (cell_elapsed != _epoch_days) {
+        if (cell_elapsed != _epoch_days.get()) {
             ++_epoch_elapsed_days_spread_cells;
-            _epoch_elapsed_days_lost += cell_elapsed - _epoch_days;
+            _epoch_elapsed_days_lost += cell_elapsed - _epoch_days.get();
         }
     }
     _total_elapsed_days_lost = saturating_add(
@@ -200,7 +200,7 @@ void NativeEconomyRuntime::capture_cell_elapsed_days(int64_t day_index) {
 
 int32_t NativeEconomyRuntime::cell_elapsed_days(int32_t cell) const {
     if (cell < 0 || cell >= static_cast<int32_t>(_cell_elapsed_days.size()))
-        return std::max(1, _epoch_days);
+        return std::max(1, _epoch_days.get());
     return std::max(1, _cell_elapsed_days[static_cast<size_t>(cell)]);
 }
 
@@ -221,7 +221,7 @@ uint8_t NativeEconomyRuntime::classify_cell_activity_tier(
         if (reason_out != nullptr) *reason_out = reason;
         return tier;
     };
-    if (cell < 0 || cell >= _cell_count) return hit(TIER_REASON_OUT_OF_RANGE, 3);
+    if (cell < 0 || cell >= _cell_count.get()) return hit(TIER_REASON_OUT_OF_RANGE, 3);
     const size_t idx = static_cast<size_t>(cell);
 
     // 可见性只有在开启视野门控时才有区分度：未门控时这张表整体为 1，含义是
@@ -275,7 +275,7 @@ uint8_t NativeEconomyRuntime::classify_cell_activity_tier(
 }
 
 void NativeEconomyRuntime::refresh_cell_activity_tiers(int64_t day_index) {
-    const size_t n = static_cast<size_t>(std::max(0, _cell_count));
+    const size_t n = static_cast<size_t>(std::max(0, _cell_count.get()));
     if (_cell_tier.size() != n) _cell_tier.assign(n, 1);
     if (_cell_next_review_day.size() != n) _cell_next_review_day.assign(n, 0);
     if (_cell_force_wake.size() != n) _cell_force_wake.assign(n, 0);
@@ -290,7 +290,7 @@ void NativeEconomyRuntime::refresh_cell_activity_tiers(int64_t day_index) {
     for (int32_t i = 0; i < 4; ++i) _tier_histogram[i] = 0;
     for (int32_t i = 0; i < TIER_REASON_COUNT; ++i) _tier_reason_histogram[i] = 0;
     for (const int32_t cell : _economy_live_cells) {
-        if (cell < 0 || cell >= _cell_count) continue;
+        if (cell < 0 || cell >= _cell_count.get()) continue;
         const size_t idx = static_cast<size_t>(cell);
         // _cell_population_gen 在每次 publish 里对每个结算格无条件自增，它是
         // 「本格被处理过」而不是「本格发生了变化」，用它做判据会把所有格都判成
@@ -304,9 +304,9 @@ void NativeEconomyRuntime::refresh_cell_activity_tiers(int64_t day_index) {
                                        ? _cell_population_total[idx] : 0;
         if (fused != _cell_tier_seen_gen[idx] ||
             population != _cell_tier_seen_population[idx]) {
-            _cell_tier_seen_gen[idx] = fused;
-            _cell_tier_seen_population[idx] = population;
-            _cell_tier_change_day[idx] = day_index;
+            _cell_tier_seen_gen.write_scalar(idx, fused, market_mutation_sink());
+            _cell_tier_seen_population.write_scalar(idx, population, market_mutation_sink());
+            _cell_tier_change_day.write_scalar(idx, day_index, market_mutation_sink());
         }
         const bool shortage_now =
             (idx < _cell_effect_shortage_q16.size() &&
@@ -314,32 +314,31 @@ void NativeEconomyRuntime::refresh_cell_activity_tiers(int64_t day_index) {
             (idx < _cell_essentials_shortage_q16.size() &&
              _cell_essentials_shortage_q16[idx] > 0);
         if (!shortage_now)
-            _cell_shortage_since_day[idx] = -1;
+            _cell_shortage_since_day.write_scalar(idx, -1, market_mutation_sink());
         else if (_cell_shortage_since_day[idx] < 0)
-            _cell_shortage_since_day[idx] = day_index;
+            _cell_shortage_since_day.write_scalar(idx, day_index, market_mutation_sink());
 
         int32_t reason = TIER_REASON_DORMANT;
         const uint8_t tier = classify_cell_activity_tier(cell, day_index, &reason);
         if (reason >= 0 && reason < TIER_REASON_COUNT)
             ++_tier_reason_histogram[reason];
         if (tier == 0 && _cell_force_wake[idx] != 0) {
-            _cell_force_wake[idx] = 0;
+            _cell_force_wake.write_scalar(idx, 0, market_mutation_sink());
             ++_tier_forced_wakes;
         }
-        _cell_tier[idx] = tier;
-        _cell_next_review_day[idx] =
-            day_index + static_cast<int64_t>(tier_review_period_days(tier));
+        _cell_tier.write_scalar(idx, tier, market_mutation_sink());
+        _cell_next_review_day.write_scalar(idx, day_index + static_cast<int64_t>(tier_review_period_days(tier)), market_mutation_sink());
         ++_tier_histogram[tier];
     }
 }
 
 void NativeEconomyRuntime::request_cell_wake(int32_t cell) {
-    if (cell < 0 || cell >= _cell_count) return;
-    const size_t n = static_cast<size_t>(std::max(0, _cell_count));
+    if (cell < 0 || cell >= _cell_count.get()) return;
+    const size_t n = static_cast<size_t>(std::max(0, _cell_count.get()));
     if (_cell_force_wake.size() != n) _cell_force_wake.assign(n, 0);
-    _cell_force_wake[static_cast<size_t>(cell)] = 1;
+    _cell_force_wake.write_scalar(static_cast<size_t>(cell), 1, market_mutation_sink());
     if (_cell_next_review_day.size() == n)
-        _cell_next_review_day[static_cast<size_t>(cell)] = 0;
+        _cell_next_review_day.write_scalar(static_cast<size_t>(cell), 0, market_mutation_sink());
 }
 
 int32_t NativeEconomyRuntime::knives_per_day(double ms_per_knife) const {
@@ -406,7 +405,7 @@ void NativeEconomyRuntime::refresh_cadence_estimates() {
     const int32_t market_count = std::max(0, market_store().market_count.get());
     std::vector<uint8_t> market_seen(static_cast<size_t>(market_count), 0);
     const bool have_market_map =
-        market_store().cell_to_market.size() == static_cast<size_t>(_cell_count);
+        market_store().cell_to_market.size() == static_cast<size_t>(_cell_count.get());
     for (const int32_t cell : _economy_live_cells) {
         if (!have_market_map) continue;
         const int32_t market = market_store().cell_to_market[cell];
@@ -427,9 +426,9 @@ void NativeEconomyRuntime::refresh_cadence_estimates() {
     int32_t populated_building_cells = 0;
     int64_t populated_building_groups = 0;
     const bool have_offsets =
-        _building_cell_offsets.size() == static_cast<size_t>(_cell_count) + 1;
+        _building_cell_offsets.size() == static_cast<size_t>(_cell_count.get()) + 1;
     for (const int32_t cell : _building_active_cells) {
-        if (cell < 0 || cell >= _cell_count) continue;
+        if (cell < 0 || cell >= _cell_count.get()) continue;
         ++populated_building_cells;
         if (have_offsets) {
             populated_building_groups +=
@@ -560,7 +559,7 @@ void NativeEconomyRuntime::apply_locked_slow_days() {
 
 void NativeEconomyRuntime::lock_market_cycle(int64_t day_index) {
     refresh_cadence_estimates();
-    const int32_t current = std::clamp(_locked_market_cycle_days,
+    const int32_t current = std::clamp(_locked_market_cycle_days.get(),
                                        MARKET_CYCLE_MIN_DAYS,
                                        MARKET_CYCLE_MAX_DAYS);
     const bool had_timing = _market_ms_per_knife_ema > 0.0 ||
@@ -595,7 +594,7 @@ void NativeEconomyRuntime::lock_market_cycle(int64_t day_index) {
                                      _estimated_populated_market_knives)
             : _market_ms_per_knife_ema);
     _cycle_market_ms_accum = 0.0;
-    _commit_lag_budget_days = std::max(0, _locked_market_cycle_days - 1);
+    _commit_lag_budget_days = std::max(0, _locked_market_cycle_days.get() - 1);
 }
 
 void NativeEconomyRuntime::lock_slow_cycle(int64_t day_index) {
@@ -620,7 +619,7 @@ void NativeEconomyRuntime::lock_plan_cycle(int64_t day_index) {
         ? snap_cycle_days(_forced_slow_cycle_days, n,
                           PLAN_CYCLE_MIN_DAYS, PLAN_CYCLE_MAX_DAYS)
         : choose_locked_slow_cycle_days(current, n);
-    const int32_t phase = cycle_phase(day_index, _market_cycle_start_day, n);
+    const int32_t phase = cycle_phase(day_index, _market_cycle_start_day.get(), n);
     _slow_cycle_start_day = day_index - phase;
     apply_locked_slow_days();
     _cadence_slow_knives_per_day = knives_per_day(
@@ -655,7 +654,7 @@ void NativeEconomyRuntime::lock_investment_cycle(int64_t day_index) {
         ? snap_cycle_days(_forced_investment_cycle_days, n,
                           _invest_cycle_min_days, _invest_cycle_max_days)
         : choose_locked_investment_cycle_days(current, n, plan_days);
-    const int32_t phase = cycle_phase(day_index, _market_cycle_start_day, n);
+    const int32_t phase = cycle_phase(day_index, _market_cycle_start_day.get(), n);
     _investment_cycle_start_day = day_index - phase;
     apply_locked_slow_days();
     _cadence_investment_knives_per_day = knives_per_day(
@@ -675,15 +674,15 @@ void NativeEconomyRuntime::maybe_lock_cadence_cycles(int64_t day_index) {
         return;
     }
     const int32_t n = locked_market_cycle_days();
-    if (day_index >= _market_cycle_start_day + n) {
+    if (day_index >= _market_cycle_start_day.get() + n) {
         lock_market_cycle(day_index);
     }
     const int32_t p = locked_plan_cycle_days();
-    if (day_index >= _slow_cycle_start_day + p) {
+    if (day_index >= _slow_cycle_start_day.get() + p) {
         lock_plan_cycle(day_index);
     }
     const int32_t i = locked_investment_cycle_days();
-    if (day_index >= _investment_cycle_start_day + i) {
+    if (day_index >= _investment_cycle_start_day.get() + i) {
         lock_investment_cycle(day_index);
     }
 }
@@ -716,18 +715,18 @@ void NativeEconomyRuntime::note_completed_epoch_cadence_ms() {
 void NativeEconomyRuntime::synthesize_cadence_locks_from_legacy_save() {
     _locked_market_cycle_days = MARKET_CYCLE_MAX_DAYS;
     _market_cycle_start_day = align_cycle_start(
-        _last_committed_day, _locked_market_cycle_days);
+        _last_committed_day.get(), _locked_market_cycle_days.get());
     _locked_slow_cycle_days = snap_slow_days_to_market_multiple(
-        std::clamp(_building_plan_days, _slow_cycle_min_days,
+        std::clamp(_building_plan_days.get(), _slow_cycle_min_days,
                    _slow_cycle_max_days),
-        _locked_market_cycle_days);
+        _locked_market_cycle_days.get());
     _slow_cycle_start_day = align_cycle_start(
-        _last_committed_day, _locked_slow_cycle_days);
+        _last_committed_day.get(), _locked_slow_cycle_days.get());
     _locked_investment_cycle_days = longer_investment_cycle_days(
-        locked_plan_cycle_days(), _locked_market_cycle_days,
-        _investment_review_days);
+        locked_plan_cycle_days(), _locked_market_cycle_days.get(),
+        _investment_review_days.get());
     _investment_cycle_start_day = align_cycle_start(
-        _last_committed_day, _locked_investment_cycle_days);
+        _last_committed_day.get(), _locked_investment_cycle_days.get());
     apply_locked_slow_days();
     _cadence_initialized = true;
     _cadence_change_reason = 0;
@@ -740,9 +739,9 @@ int32_t NativeEconomyRuntime::choose_epoch_days(int64_t cohorts) {
     (void)cohorts;
     refresh_cadence_estimates();
     if (!_cadence_initialized) {
-        lock_market_cycle(std::max<int64_t>(0, _last_committed_day + 1));
-        lock_plan_cycle(_market_cycle_start_day);
-        lock_investment_cycle(_market_cycle_start_day);
+        lock_market_cycle(std::max<int64_t>(0, _last_committed_day.get() + 1));
+        lock_plan_cycle(_market_cycle_start_day.get());
+        lock_investment_cycle(_market_cycle_start_day.get());
         _cadence_initialized = true;
     }
     return locked_market_cycle_days();
@@ -753,22 +752,22 @@ void NativeEconomyRuntime::write_cadence_report(Dictionary &out) const {
     const int32_t p = locked_plan_cycle_days();
     const int32_t i = locked_investment_cycle_days();
     const int64_t day = _epoch_active ? _sample_day :
-        (_current_day >= 0 ? _current_day : 0);
+        (_current_day.get() >= 0 ? _current_day.get() : 0);
     const int32_t market_remaining = _cadence_initialized
         ? std::max(0, static_cast<int32_t>(
-            _market_cycle_start_day + n - day))
+            _market_cycle_start_day.get() + n - day))
         : n;
     const int32_t plan_remaining = _cadence_initialized
         ? std::max(0, static_cast<int32_t>(
-            _slow_cycle_start_day + p - day))
+            _slow_cycle_start_day.get() + p - day))
         : p;
     const int32_t investment_remaining = _cadence_initialized
         ? std::max(0, static_cast<int32_t>(
-            _investment_cycle_start_day + i - day))
+            _investment_cycle_start_day.get() + i - day))
         : i;
     out["settlement_mode"] = "locked_cycle";
     out["market_cycle_days"] = n;
-    out["epoch_days"] = _epoch_days;
+    out["epoch_days"] = _epoch_days.get();
     out["epoch_elapsed_days_max"] = _epoch_elapsed_days_max;
     out["epoch_elapsed_days_spread_cells"] = _epoch_elapsed_days_spread_cells;
     out["epoch_elapsed_days_lost"] = _epoch_elapsed_days_lost;
@@ -794,19 +793,19 @@ void NativeEconomyRuntime::write_cadence_report(Dictionary &out) const {
     out["market_min_cycle_days"] = _min_epoch_days;
     out["market_max_cycle_days"] = _max_epoch_days;
     out["locked_market_cycle_days"] = n;
-    out["market_cycle_start_day"] = _market_cycle_start_day;
+    out["market_cycle_start_day"] = _market_cycle_start_day.get();
     out["market_cycle_days_remaining"] = market_remaining;
     out["locked_slow_cycle_days"] = p;
     out["locked_plan_cycle_days"] = p;
-    out["slow_cycle_start_day"] = _slow_cycle_start_day;
-    out["plan_cycle_start_day"] = _slow_cycle_start_day;
+    out["slow_cycle_start_day"] = _slow_cycle_start_day.get();
+    out["plan_cycle_start_day"] = _slow_cycle_start_day.get();
     out["slow_cycle_days_remaining"] = plan_remaining;
     out["plan_cycle_days_remaining"] = plan_remaining;
     out["locked_investment_cycle_days"] = i;
-    out["investment_cycle_start_day"] = _investment_cycle_start_day;
+    out["investment_cycle_start_day"] = _investment_cycle_start_day.get();
     out["investment_cycle_days_remaining"] = investment_remaining;
-    out["building_plan_days"] = _building_plan_days;
-    out["investment_review_days"] = _investment_review_days;
+    out["building_plan_days"] = _building_plan_days.get();
+    out["investment_review_days"] = _investment_review_days.get();
     out["settlement_phase"] = _rolling_phase;
     out["settlement_phase_count"] = n;
     out["cadence_populated_knives"] = _estimated_populated_market_knives;

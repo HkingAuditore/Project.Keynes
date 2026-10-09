@@ -55,21 +55,21 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 saved_research_orders = 0;
         int64_t saved_prosperity_profile_hash = 0;
         int64_t saved_family_catalog_hash = 0;
-        int32_t saved_family_mode = _family_runtime_mode;
+        int32_t saved_family_mode = _family_runtime_mode.get();
         int32_t saved_family_min_founders = static_cast<int32_t>(
-            _family_min_founder_people);
-        int32_t saved_family_review_days = _family_review_days;
+            _family_min_founder_people.get());
+        int32_t saved_family_review_days = _family_review_days.get();
         int64_t saved_family_milestone_hash = family_milestone_hash();
         int64_t saved_family_split_population_threshold =
-            _family_split_population_threshold;
-        int32_t saved_family_max_per_cell = _family_max_per_cell;
-        int32_t saved_family_decline_reviews = _family_decline_reviews;
-        int64_t saved_person_catalog_hash = _person_catalog_hash;
-        int32_t saved_person_mode = _person_runtime_mode;
-        int32_t saved_person_max_per_family = _person_max_per_family;
-        int32_t saved_person_max_per_cell = _person_max_per_cell;
-        int32_t saved_person_max_total = _person_max_total;
-        int32_t saved_person_records_per_slice = _person_records_per_slice;
+            _family_split_population_threshold.get();
+        int32_t saved_family_max_per_cell = _family_max_per_cell.get();
+        int32_t saved_family_decline_reviews = _family_decline_reviews.get();
+        int64_t saved_person_catalog_hash = _person_catalog_hash.get();
+        int32_t saved_person_mode = _person_runtime_mode.get();
+        int32_t saved_person_max_per_family = _person_max_per_family.get();
+        int32_t saved_person_max_per_cell = _person_max_per_cell.get();
+        int32_t saved_person_max_total = _person_max_total.get();
+        int32_t saved_person_records_per_slice = _person_records_per_slice.get();
         int32_t person_count = 0, person_need_count = 0;
         int32_t saved_trait_catalog_version = 0;
         int64_t saved_trait_catalog_hash = 0;
@@ -238,23 +238,23 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         }
         if (schema >= 24 &&
             (!read_le(bytes, cursor, saved_prosperity_profile_hash) ||
-             saved_prosperity_profile_hash != _prosperity_profile_hash)) {
+             saved_prosperity_profile_hash != _prosperity_profile_hash.get())) {
             error = "save_prosperity_profile_hash_mismatch";
             return false;
         }
-        int32_t saved_building_plan_days = _building_plan_days;
+        int32_t saved_building_plan_days = _building_plan_days.get();
         if (schema >= 25 && !read_le(bytes, cursor, saved_building_plan_days)) {
             error = "save_building_plan_days_mismatch";
             return false;
         }
         if (schema >= 25 && schema < 38 &&
-            saved_building_plan_days != _building_plan_days) {
+            saved_building_plan_days != _building_plan_days.get()) {
             error = "save_building_plan_days_mismatch";
             return false;
         }
         if (schema >= 26) {
             if (!read_le(bytes, cursor, saved_family_catalog_hash) ||
-                (saved_family_catalog_hash != _family_catalog_hash &&
+                (saved_family_catalog_hash != _family_catalog_hash.get() &&
                  !(schema == 39 && _family_catalog_compat_hash_v39 != 0 &&
                    saved_family_catalog_hash == _family_catalog_compat_hash_v39))) {
                 error = "save_family_catalog_hash_mismatch";
@@ -271,21 +271,21 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 error = "save_family_policy_header_payload_truncated";
                 return false;
             }
-            if (saved_family_mode != _family_runtime_mode ||
-                saved_family_min_founders != _family_min_founder_people ||
-                saved_family_review_days != _family_review_days ||
+            if (saved_family_mode != _family_runtime_mode.get() ||
+                saved_family_min_founders != _family_min_founder_people.get() ||
+                saved_family_review_days != _family_review_days.get() ||
                 saved_family_milestone_hash != family_milestone_hash() ||
                 saved_family_split_population_threshold !=
-                    _family_split_population_threshold ||
-                saved_family_max_per_cell != _family_max_per_cell ||
-                saved_family_decline_reviews != _family_decline_reviews) {
+                    _family_split_population_threshold.get() ||
+                saved_family_max_per_cell != _family_max_per_cell.get() ||
+                saved_family_decline_reviews != _family_decline_reviews.get()) {
                 error = "save_family_policy_profile_mismatch";
                 return false;
             }
         }
         if (schema >= 27) {
             if (!read_le(bytes, cursor, saved_person_catalog_hash) ||
-                saved_person_catalog_hash != _person_catalog_hash) {
+                saved_person_catalog_hash != _person_catalog_hash.get()) {
                 error = "save_person_catalog_hash_mismatch";
                 return false;
             }
@@ -299,11 +299,11 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 error = "save_person_policy_header_payload_truncated";
                 return false;
             }
-            if (saved_person_mode != _person_runtime_mode ||
-                saved_person_max_per_family != _person_max_per_family ||
-                saved_person_max_per_cell != _person_max_per_cell ||
-                saved_person_max_total != _person_max_total ||
-                saved_person_records_per_slice != _person_records_per_slice) {
+            if (saved_person_mode != _person_runtime_mode.get() ||
+                saved_person_max_per_family != _person_max_per_family.get() ||
+                saved_person_max_per_cell != _person_max_per_cell.get() ||
+                saved_person_max_total != _person_max_total.get() ||
+                saved_person_records_per_slice != _person_records_per_slice.get()) {
                 error = "save_person_policy_profile_mismatch";
                 return false;
             }
@@ -317,8 +317,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             !read_le(bytes, cursor, family_expedition_count) ||
             !read_le(bytes, cursor, next_family_expedition_stable_id) ||
             !read_le(bytes, cursor, next_colonization_receipt_id) ||
-            saved_trait_catalog_version != _family_trait_catalog_version ||
-            saved_trait_catalog_hash != _family_trait_catalog_hash ||
+            saved_trait_catalog_version != _family_trait_catalog_version.get() ||
+            saved_trait_catalog_hash != _family_trait_catalog_hash.get() ||
             family_trait_count < 0 || family_trait_count > 1000000 ||
             family_influence_count < 0 || family_influence_count > 10000000 ||
             family_trait_command_count < 0 ||
@@ -394,8 +394,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         int32_t fiscal_peer_count = 0;
         if (!read_le(bytes, cursor, ceiling_confirm) || !read_le(bytes, cursor, ceiling_expand) ||
             !read_le(bytes, cursor, ceiling_recover) || !read_le(bytes, cursor, ceiling_count) ||
-            ceiling_confirm != _price_ceiling_confirm_days || ceiling_expand != _price_ceiling_expand_bp ||
-            ceiling_recover != _price_ceiling_recover_bp || ceiling_count < 0 ||
+            ceiling_confirm != _price_ceiling_confirm_days.get() || ceiling_expand != _price_ceiling_expand_bp.get() ||
+            ceiling_recover != _price_ceiling_recover_bp.get() || ceiling_count < 0 ||
             ceiling_count > int64_t(markets) * goods) {
             error = "save_price_ceiling_profile_or_count_invalid";
             return false;
@@ -410,7 +410,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         _restore.expected_fiscal_peer = schema >= 52 ? fiscal_peer_count : 0;
         _restore.expected_d7_peer_ext = schema >= 53 ? fiscal_peer_count : 0;
         _restore.expected_resource_rows = static_cast<int64_t>(_resource_ids.size()) *
-            static_cast<int64_t>(_cell_count);
+            static_cast<int64_t>(_cell_count.get());
         if (!read_id_table(bytes, cursor, professions) || !read_id_table(bytes, cursor, ethnicities) ||
             !read_id_table(bytes, cursor, good_ids) || !read_id_table(bytes, cursor, plan_ids) ||
             cursor != bytes.size()) {
@@ -418,22 +418,22 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             return false;
         }
         const bool market_hash_ok = schema == 10
-            ? (_catalog_compat_hash_v10 != 0 && catalog_hash == _catalog_compat_hash_v10)
+            ? (_catalog_compat_hash_v10.get() != 0 && catalog_hash == _catalog_compat_hash_v10.get())
             : (schema == 13 ? (_catalog_compat_hash_v13 != 0 &&
                 catalog_hash == _catalog_compat_hash_v13) :
                 (schema == 39 ? (_catalog_compat_hash_v39 != 0 &&
                     catalog_hash == _catalog_compat_hash_v39) :
-                    catalog_hash == _catalog_hash));
+                    catalog_hash == _catalog_hash.get()));
         const bool building_hash_ok = schema == 13
             ? (_building_catalog_compat_hash_v13 != 0 &&
                building_catalog_hash == _building_catalog_compat_hash_v13)
-            : building_catalog_hash == _building_catalog_hash;
+            : building_catalog_hash == _building_catalog_hash.get();
         // One reason per rule. A single combined reason gave a player whose
         // save would not load nothing to act on: a changed catalog, a changed
         // map size, and a capacity knob all read the same.
         const char *header_mismatch = nullptr;
-        if (saved_cells != _cell_count) header_mismatch = "cell_count";
-        else if (markets <= 0 || markets > _cell_count) header_mismatch = "market_count";
+        if (saved_cells != _cell_count.get()) header_mismatch = "cell_count";
+        else if (markets <= 0 || markets > _cell_count.get()) header_mismatch = "market_count";
         else if (goods != static_cast<int32_t>(_good_ids.size())) header_mismatch = "good_count";
         else if (pages < 0 || active_count < 0 ||
                  active_count > static_cast<int64_t>(pages) * COHORT_PAGE_SIZE)
@@ -444,9 +444,9 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                  labor_signal_count < 0 || labor_signal_count > 10000000)
             header_mismatch = "signal_count";
         else if (next_event_id <= 0) header_mismatch = "next_event_id";
-        else if (trade_order_count < 0 || trade_order_count > _trade_max_orders)
+        else if (trade_order_count < 0 || trade_order_count > _trade_max_orders.get())
             header_mismatch = "trade_order_capacity";
-        else if (trade_flow_count < 0 || trade_flow_count > _trade_max_signals)
+        else if (trade_flow_count < 0 || trade_flow_count > _trade_max_signals.get())
             header_mismatch = "trade_flow_capacity";
         else if (tariff_history_count < 0 || tariff_history_count > 1000000)
             header_mismatch = "tariff_history_count";
@@ -454,92 +454,92 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                  country_partner_count < 0 || country_partner_count > 10000000)
             header_mismatch = "country_trade_count";
         else if (next_trade_order_id <= 0) header_mismatch = "next_trade_order_id";
-        else if (person_count < 0 || person_count > _person_max_total)
+        else if (person_count < 0 || person_count > _person_max_total.get())
             header_mismatch = "person_capacity";
         else if (person_need_count < 0 ||
-                 person_need_count > _person_max_total * MAX_NEEDS_PER_PLAN)
+                 person_need_count > _person_max_total.get() * MAX_NEEDS_PER_PLAN)
             header_mismatch = "person_need_capacity";
         else if (!market_hash_ok) header_mismatch = "catalog_hash";
         else if (money_scale != MONEY_SCALE || goods_scale != GOODS_SCALE ||
                  ratio_scale != Q16_ONE || rate_scale != Q32_ONE)
             header_mismatch = "fixed_point_scale";
-        else if (professions != _profession_ids) header_mismatch = "profession_ids";
-        else if (ethnicities != _ethnicity_ids) header_mismatch = "ethnicity_ids";
-        else if (good_ids != _good_ids) header_mismatch = "good_ids";
-        else if (plan_ids != _plan_ids) header_mismatch = "plan_ids";
+        else if (professions != _profession_ids.values()) header_mismatch = "profession_ids";
+        else if (ethnicities != _ethnicity_ids.values()) header_mismatch = "ethnicity_ids";
+        else if (good_ids != _good_ids.values()) header_mismatch = "good_ids";
+        else if (plan_ids != _plan_ids.values()) header_mismatch = "plan_ids";
         if (header_mismatch != nullptr) {
             error = std::string("save_catalog_scale_or_capacity_mismatch:") +
                 header_mismatch;
             return false;
         }
-        if (schema >= 11 && (saved_trade_mode != _trade_runtime_mode ||
-            saved_trade_capacity != _trade_capacity_per_merchant_q16 ||
-            saved_trade_speed != _trade_speed_cost_per_day ||
-            saved_trade_margin != _trade_min_margin_q16 ||
-            saved_trade_targets != _trade_target_count ||
-            saved_trade_signal_budget != _trade_signal_pairs_per_slice ||
-            saved_trade_route_budget != _trade_route_searches_per_slice ||
-            saved_trade_expansions != _trade_max_route_expansions ||
-            saved_trade_cache != _trade_route_cache_entries ||
-            saved_trade_signals != _trade_max_signals ||
-            saved_trade_candidates != _trade_max_candidates ||
-            saved_trade_orders != _trade_max_orders ||
-            saved_trade_alpha != _trade_flow_ema_alpha_q16 ||
-            saved_trade_stock_share != _trade_max_stock_share_q16)) {
+        if (schema >= 11 && (saved_trade_mode != _trade_runtime_mode.get() ||
+            saved_trade_capacity != _trade_capacity_per_merchant_q16.get() ||
+            saved_trade_speed != _trade_speed_cost_per_day.get() ||
+            saved_trade_margin != _trade_min_margin_q16.get() ||
+            saved_trade_targets != _trade_target_count.get() ||
+            saved_trade_signal_budget != _trade_signal_pairs_per_slice.get() ||
+            saved_trade_route_budget != _trade_route_searches_per_slice.get() ||
+            saved_trade_expansions != _trade_max_route_expansions.get() ||
+            saved_trade_cache != _trade_route_cache_entries.get() ||
+            saved_trade_signals != _trade_max_signals.get() ||
+            saved_trade_candidates != _trade_max_candidates.get() ||
+            saved_trade_orders != _trade_max_orders.get() ||
+            saved_trade_alpha != _trade_flow_ema_alpha_q16.get() ||
+            saved_trade_stock_share != _trade_max_stock_share_q16.get())) {
             error = "save_trade_profile_mismatch";
             return false;
         }
         const bool policy_matches =
-            saved_loss_threshold == _building_severe_loss_threshold_q16 &&
-            saved_loss_cycles == _building_severe_loss_cycles &&
-            saved_restart_margin == _building_restart_margin_q16 &&
-            saved_restart_cycles == _building_restart_cycles &&
-            saved_merchant_reserve == _merchant_procurement_cash_reserve_q16 &&
-            saved_market_making_days == _merchant_market_making_days_q16 &&
-            saved_credit_mode == _merchant_credit_runtime_mode &&
-            saved_credit_exposure == _merchant_credit_exposure_q16 &&
-            saved_credit_premium == _merchant_credit_premium_q16 &&
-            saved_credit_terms == _merchant_credit_term_cycles &&
-            saved_recovery_cycles == _recovery_success_cycles &&
-            saved_liquidation_reviews == _recovery_liquidation_failed_reviews;
+            saved_loss_threshold == _building_severe_loss_threshold_q16.get() &&
+            saved_loss_cycles == _building_severe_loss_cycles.get() &&
+            saved_restart_margin == _building_restart_margin_q16.get() &&
+            saved_restart_cycles == _building_restart_cycles.get() &&
+            saved_merchant_reserve == _merchant_procurement_cash_reserve_q16.get() &&
+            saved_market_making_days == _merchant_market_making_days_q16.get() &&
+            saved_credit_mode == _merchant_credit_runtime_mode.get() &&
+            saved_credit_exposure == _merchant_credit_exposure_q16.get() &&
+            saved_credit_premium == _merchant_credit_premium_q16.get() &&
+            saved_credit_terms == _merchant_credit_term_cycles.get() &&
+            saved_recovery_cycles == _recovery_success_cycles.get() &&
+            saved_liquidation_reviews == _recovery_liquidation_failed_reviews.get();
         // v33/v34 saves contain the retired probe/restart policy fields. They
         // remain decodable, but the current profile is authoritative after
         // migration, including the one-year suspended liquidation window.
         if ((schema >= 35 && !policy_matches) ||
-            (schema == 11 && _trade_runtime_mode == 2 && !policy_matches)) {
+            (schema == 11 && _trade_runtime_mode.get() == 2 && !policy_matches)) {
             error = "save_business_policy_profile_mismatch";
             return false;
         }
         const bool dynamic_policy_matches =
-            saved_trade_export_days == _trade_export_floor_days &&
-            saved_trade_export_fraction == _trade_export_inventory_fraction_q16 &&
-            saved_trade_import_fraction == _trade_import_fill_fraction_q16 &&
-            saved_trade_response_days == _trade_response_days &&
+            saved_trade_export_days == _trade_export_floor_days.get() &&
+            saved_trade_export_fraction == _trade_export_inventory_fraction_q16.get() &&
+            saved_trade_import_fraction == _trade_import_fill_fraction_q16.get() &&
+            saved_trade_response_days == _trade_response_days.get() &&
             (schema >= 38 ||
-             saved_investment_review_days == _investment_review_days) &&
-            saved_investment_shortage == _investment_min_shortage_q16 &&
-            saved_investment_utilization == _investment_min_utilization_q16 &&
-            saved_investment_payback_days == _investment_max_payback_days &&
-            saved_investment_cycles == _investment_operating_cycles &&
+             saved_investment_review_days == _investment_review_days.get()) &&
+            saved_investment_shortage == _investment_min_shortage_q16.get() &&
+            saved_investment_utilization == _investment_min_utilization_q16.get() &&
+            saved_investment_payback_days == _investment_max_payback_days.get() &&
+            saved_investment_cycles == _investment_operating_cycles.get() &&
             saved_investment_gap_fill_share ==
-                _investment_gap_fill_share_q16 &&
+                _investment_gap_fill_share_q16.get() &&
             saved_investment_portfolio_max_types ==
-                _investment_portfolio_max_types &&
+                _investment_portfolio_max_types.get() &&
             saved_investment_max_type_owner_share ==
-                _investment_max_type_owner_share_q16 &&
+                _investment_max_type_owner_share_q16.get() &&
             saved_investment_max_growth_share ==
-                _investment_max_growth_share_q16 &&
+                _investment_max_growth_share_q16.get() &&
             saved_investment_new_type_seed_buildings ==
-                _investment_new_type_seed_buildings &&
+                _investment_new_type_seed_buildings.get() &&
             saved_investment_merchant_transition_min_improvement ==
-                _investment_merchant_transition_min_improvement_q16 &&
+                _investment_merchant_transition_min_improvement_q16.get() &&
             saved_recovery_liquidation_max_share ==
-                _recovery_liquidation_max_share_q16 &&
-            saved_resource_reserve == _resource_min_reserve_q16 &&
-            saved_resource_harvest == _resource_safe_harvest_q16 &&
-            saved_resource_horizon == _resource_min_horizon_days &&
-            saved_bullion_cap == _bullion_monthly_issue_cap_q16 &&
-            saved_support_cap == _producer_support_monthly_cap_q16;
+                _recovery_liquidation_max_share_q16.get() &&
+            saved_resource_reserve == _resource_min_reserve_q16.get() &&
+            saved_resource_harvest == _resource_safe_harvest_q16.get() &&
+            saved_resource_horizon == _resource_min_horizon_days.get() &&
+            saved_bullion_cap == _bullion_monthly_issue_cap_q16.get() &&
+            saved_support_cap == _producer_support_monthly_cap_q16.get();
         if (schema >= 35 && !dynamic_policy_matches) {
             error = "save_dynamic_policy_profile_mismatch";
             return false;
@@ -608,7 +608,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         _committed_construction_receipts.clear();
         _next_construction_receipt_id = 1;
         _event_consumer_ack.clear();
-        population_store().clear(_cell_count);
+        population_store().clear(_cell_count.get());
         population_store().page_next.assign(pages, -1);
         population_store().page_cell.assign(pages, -1);
         const size_t slots = static_cast<size_t>(pages) * COHORT_PAGE_SIZE;
@@ -663,14 +663,14 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         _startup_demand_touched_keys.clear();
         _trade_active_keys.clear();
         _trade_active_key_present.assign(static_cast<size_t>(markets) * goods, 0);
-        market_store().cell_to_market.assign(_cell_count, -1);
-        _market_signals.clear(_cell_count);
+        market_store().cell_to_market.assign(_cell_count.get(), -1);
+        _market_signals.clear(_cell_count.get());
         _market_signals.good_ids.reserve(signal_count);
         _market_signals.business_demand_ema.reserve(signal_count);
         _market_signals.offered_supply_ema.reserve(signal_count);
         _market_signals.realized_withdrawal_ema.reserve(signal_count);
         _market_signals.cost_anchor_price.reserve(signal_count);
-        _labor_signals.clear(_cell_count);
+        _labor_signals.clear(_cell_count.get());
         _labor_signals.profession_ids.reserve(labor_signal_count);
         _labor_signals.base_living_cost.reserve(labor_signal_count);
         _labor_signals.role_living_cost.reserve(labor_signal_count);
@@ -689,37 +689,37 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         _country_good_trade.countries.reserve(country_good_count);
         _country_partner_trade.clear();
         _country_partner_trade.countries.reserve(country_partner_count);
-        _environment_temperature_q16.assign(_cell_count, 0);
-        _environment_temperature_30d_q16.assign(_cell_count, 0);
-        _environment_moisture_q16.assign(_cell_count, 0);
-        _environment_plant_available_water_q16.assign(_cell_count, 0);
-        _environment_precipitation_q16.assign(_cell_count, 0);
-        _environment_snow_q16.assign(_cell_count, 0);
-        _environment_weather_q16.assign(_cell_count, 0);
-        _cell_living_cost_per_capita.assign(_cell_count, 0);
-        _epoch_cell_development_q16.assign(_cell_count, 0);
-        _cell_social_pressure_level.assign(_cell_count, 0);
-        _cell_support_ema_q16.assign(_cell_count, Q16_ONE);
-        _cell_food_output_eq_period.assign(_cell_count, 0);
-        _cell_food_input_eq_period.assign(_cell_count, 0);
-        _cell_food_import_eq_period.assign(_cell_count, 0);
-        _cell_food_export_eq_period.assign(_cell_count, 0);
-        _cell_food_access_eq_period.assign(_cell_count, 0);
-        _cell_food_output_eq_previous.assign(_cell_count, 0);
-        _cell_food_input_eq_previous.assign(_cell_count, 0);
-        _cell_food_import_eq_previous.assign(_cell_count, 0);
-        _cell_food_export_eq_previous.assign(_cell_count, 0);
-        _cell_food_access_eq_previous.assign(_cell_count, 0);
-        _cell_food_flow_valid.assign(_cell_count, 0);
+        _environment_temperature_q16.assign(_cell_count.get(), 0);
+        _environment_temperature_30d_q16.assign(_cell_count.get(), 0);
+        _environment_moisture_q16.assign(_cell_count.get(), 0);
+        _environment_plant_available_water_q16.assign(_cell_count.get(), 0);
+        _environment_precipitation_q16.assign(_cell_count.get(), 0);
+        _environment_snow_q16.assign(_cell_count.get(), 0);
+        _environment_weather_q16.assign(_cell_count.get(), 0);
+        _cell_living_cost_per_capita.assign(_cell_count.get(), 0);
+        _epoch_cell_development_q16.assign(_cell_count.get(), 0);
+        _cell_social_pressure_level.assign(_cell_count.get(), 0);
+        _cell_support_ema_q16.assign(_cell_count.get(), Q16_ONE);
+        _cell_food_output_eq_period.assign(_cell_count.get(), 0);
+        _cell_food_input_eq_period.assign(_cell_count.get(), 0);
+        _cell_food_import_eq_period.assign(_cell_count.get(), 0);
+        _cell_food_export_eq_period.assign(_cell_count.get(), 0);
+        _cell_food_access_eq_period.assign(_cell_count.get(), 0);
+        _cell_food_output_eq_previous.assign(_cell_count.get(), 0);
+        _cell_food_input_eq_previous.assign(_cell_count.get(), 0);
+        _cell_food_import_eq_previous.assign(_cell_count.get(), 0);
+        _cell_food_export_eq_previous.assign(_cell_count.get(), 0);
+        _cell_food_access_eq_previous.assign(_cell_count.get(), 0);
+        _cell_food_flow_valid.assign(_cell_count.get(), 0);
         _food_flow_previous_period_days = 0;
-        _cell_carrying_k_geo.assign(_cell_count, _carrying_k_habitat_ref);
-        _cell_carrying_k_eff.assign(_cell_count, _carrying_k_habitat_ref);
-        _cell_carrying_surplus_q16.assign(_cell_count, Q16_ONE);
-        _cell_carrying_sat_q16.assign(_cell_count, Q16_ONE);
+        _cell_carrying_k_geo.assign(_cell_count.get(), _carrying_k_habitat_ref);
+        _cell_carrying_k_eff.assign(_cell_count.get(), _carrying_k_habitat_ref);
+        _cell_carrying_surplus_q16.assign(_cell_count.get(), Q16_ONE);
+        _cell_carrying_sat_q16.assign(_cell_count.get(), Q16_ONE);
         _cell_carrying_family_surplus_q16.assign(
-            static_cast<size_t>(_cell_count) * CARRYING_FAMILY_COUNT, Q16_ONE);
+            static_cast<size_t>(_cell_count.get()) * CARRYING_FAMILY_COUNT, Q16_ONE);
         _cell_carrying_family_bindable.assign(
-            static_cast<size_t>(_cell_count) * CARRYING_FAMILY_COUNT, 0);
+            static_cast<size_t>(_cell_count.get()) * CARRYING_FAMILY_COUNT, 0);
         _environment_day = environment_day;
         _environment_hash = environment_hash;
         _epoch_days = epoch_days;
@@ -737,11 +737,11 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             } else {
                 _locked_investment_cycle_days =
                     longer_investment_cycle_days(
-                        _locked_slow_cycle_days,
-                        _locked_market_cycle_days,
+                        _locked_slow_cycle_days.get(),
+                        _locked_market_cycle_days.get(),
                         saved_investment_review_days);
                 const int32_t invest_cycle = std::max(
-                    1, _locked_investment_cycle_days);
+                    1, _locked_investment_cycle_days.get());
                 if (last_day < 0) {
                     _investment_cycle_start_day = 0;
                 } else {
@@ -754,8 +754,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             apply_locked_slow_days();
             if (schema >= 43) {
                 for (int32_t sector = 0; sector < 5; ++sector)
-                    _maintenance_horizon_days_by_sector[sector] =
-                        saved_maintenance_horizons[sector];
+                    _maintenance_horizon_days_by_sector.write_scalar(sector,
+                        saved_maintenance_horizons[sector]);
                 _building_maintenance_cost_factor_q16 =
                     saved_maintenance_cost_factor;
                 if (!_building_types.empty())
@@ -947,17 +947,17 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         for (uint32_t record = 0; record < records; ++record) {
             int32_t cell = -1, market = -1;
             if (!read_le(bytes, cursor, cell) || !read_le(bytes, cursor, market) ||
-                cell != _restore.restored_cells || cell < 0 || cell >= _cell_count) {
+                cell != _restore.restored_cells || cell < 0 || cell >= _cell_count.get()) {
                 error = "save_cell_market_record_invalid";
                 return false;
             }
-            if (!read_le(bytes, cursor, _environment_temperature_q16[cell]) ||
-                !read_le(bytes, cursor, _environment_temperature_30d_q16[cell]) ||
-                !read_le(bytes, cursor, _environment_moisture_q16[cell]) ||
-                !read_le(bytes, cursor, _environment_plant_available_water_q16[cell]) ||
-                !read_le(bytes, cursor, _environment_precipitation_q16[cell]) ||
-                !read_le(bytes, cursor, _environment_snow_q16[cell]) ||
-                !read_le(bytes, cursor, _environment_weather_q16[cell])) {
+            if (!read_column_le(bytes, cursor, _environment_temperature_q16, cell) ||
+                !read_column_le(bytes, cursor, _environment_temperature_30d_q16, cell) ||
+                !read_column_le(bytes, cursor, _environment_moisture_q16, cell) ||
+                !read_column_le(bytes, cursor, _environment_plant_available_water_q16, cell) ||
+                !read_column_le(bytes, cursor, _environment_precipitation_q16, cell) ||
+                !read_column_le(bytes, cursor, _environment_snow_q16, cell) ||
+                !read_column_le(bytes, cursor, _environment_weather_q16, cell)) {
                 error = "save_cell_environment_record_invalid";
                 return false;
             }
@@ -968,15 +968,15 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                         locked_market_cycle_days()) %
                         locked_market_cycle_days()
                     : cell % ROLLING_PHASE_COUNT;
-                if (!read_le(bytes, cursor, _cell_last_settlement_day[cell]) ||
-                    !read_le(bytes, cursor, _cell_settlement_generation[cell]) ||
-                    !read_le(bytes, cursor, _cell_price_stock_gen[cell]) ||
-                    !read_le(bytes, cursor, _cell_owner_cash_gen[cell]) ||
-                    !read_le(bytes, cursor, _cell_population_gen[cell]) ||
-                    !read_le(bytes, cursor, _cell_building_structure_gen[cell]) ||
-                    !read_le(bytes, cursor, _cell_technology_gen[cell]) ||
+                if (!read_column_le(bytes, cursor, _cell_last_settlement_day, cell) ||
+                    !read_column_le(bytes, cursor, _cell_settlement_generation, cell) ||
+                    !read_column_le(bytes, cursor, _cell_price_stock_gen, cell) ||
+                    !read_column_le(bytes, cursor, _cell_owner_cash_gen, cell) ||
+                    !read_column_le(bytes, cursor, _cell_population_gen, cell) ||
+                    !read_column_le(bytes, cursor, _cell_building_structure_gen, cell) ||
+                    !read_column_le(bytes, cursor, _cell_technology_gen, cell) ||
                     !read_column_le(bytes, cursor, _cell_resource_gen, cell) ||
-                    !read_le(bytes, cursor, _cell_trade_gen[cell]) ||
+                    !read_column_le(bytes, cursor, _cell_trade_gen, cell) ||
                     !read_le(bytes, cursor, saved_phase) ||
                     saved_phase != expected_phase) {
                     error = "save_cell_rolling_state_invalid";
@@ -984,8 +984,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 }
             }
             if (schema >= 23) {
-                if (!read_le(bytes, cursor,
-                        _fiscal_previous_country_handles[cell])) {
+                if (!read_column_le(bytes, cursor, _fiscal_previous_country_handles, cell)) {
                     error = "save_cell_fiscal_country_truncated";
                     return false;
                 }
@@ -993,8 +992,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                      kind < ACTIVE_TAX_KIND_COUNT; ++kind) {
                     const size_t lane = static_cast<size_t>(cell) *
                         ACTIVE_TAX_KIND_COUNT + kind;
-                    if (!read_le(bytes, cursor,
-                            _fiscal_previous_requests[lane]) ||
+                    if (!read_column_le(bytes, cursor, _fiscal_previous_requests, lane) ||
                         _fiscal_previous_requests[lane] < 0) {
                         error = "save_cell_fiscal_request_invalid";
                         return false;
@@ -1004,21 +1002,17 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             if (schema >= 24) {
                 uint8_t tier_flags = 0;
                 if (!read_le(bytes, cursor, tier_flags) ||
-                    !read_le(bytes, cursor,
-                        _settlements.prosperity_generation[cell]) ||
-                    !read_le(bytes, cursor,
-                        _settlements.name_roll_generation[cell]) ||
+                    !read_column_le(bytes, cursor, _settlements.prosperity_generation, cell) ||
+                    !read_column_le(bytes, cursor, _settlements.name_roll_generation, cell) ||
                     (tier_flags & 0x7fU) >= _prosperity_thresholds.size()) {
                     error = "save_cell_settlement_state_invalid";
                     return false;
                 }
-                _settlements.tier[cell] =
-                    static_cast<uint8_t>(tier_flags & 0x7fU);
-                _settlements.name_forced[cell] =
-                    (tier_flags & 0x80U) != 0 ? 1 : 0;
+                _settlements.tier.write_scalar(cell, static_cast<uint8_t>(tier_flags & 0x7fU), market_mutation_sink());
+                _settlements.name_forced.write_scalar(cell, (tier_flags & 0x80U) != 0 ? 1 : 0, market_mutation_sink());
             }
             if (schema >= 30) {
-                if (!read_le(bytes, cursor, _cell_social_pressure_level[cell]) ||
+                if (!read_column_le(bytes, cursor, _cell_social_pressure_level, cell) ||
                     _cell_social_pressure_level[cell] >= SAT_PRESSURE_LEVEL_COUNT) {
                     error = "save_cell_social_pressure_level_invalid";
                     return false;
@@ -1028,17 +1022,17 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 const size_t birth_lane_begin =
                     static_cast<size_t>(cell) * _ethnicity_ids.size();
                 for (size_t ethnicity = 0; ethnicity < _ethnicity_ids.size(); ++ethnicity) {
-                    int64_t &residual_q32 =
-                        _birth_residual_q32[birth_lane_begin + ethnicity];
+                    int64_t residual_q32 = 0;
                     if (!read_le(bytes, cursor, residual_q32) ||
                         residual_q32 < 0 || residual_q32 >= Q32_ONE) {
                         error = "save_cell_birth_residual_invalid";
                         return false;
                     }
+                    _birth_residual_q32.write_scalar(birth_lane_begin + ethnicity, residual_q32);
                 }
             }
             if (schema >= 36) {
-                if (!read_le(bytes, cursor, _cell_support_ema_q16[cell]) ||
+                if (!read_column_le(bytes, cursor, _cell_support_ema_q16, cell) ||
                     _cell_support_ema_q16[cell] < 0 ||
                     _cell_support_ema_q16[cell] > Q16_ONE * 4) {
                     error = "save_cell_support_ema_invalid";
@@ -1047,12 +1041,12 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             }
             if (schema >= 45) {
                 int32_t saved_food_days = 0;
-                if (!read_le(bytes, cursor, _cell_food_flow_valid[cell]) ||
-                    !read_le(bytes, cursor, _cell_food_output_eq_previous[cell]) ||
-                    !read_le(bytes, cursor, _cell_food_input_eq_previous[cell]) ||
-                    !read_le(bytes, cursor, _cell_food_import_eq_previous[cell]) ||
-                    !read_le(bytes, cursor, _cell_food_export_eq_previous[cell]) ||
-                    !read_le(bytes, cursor, _cell_food_access_eq_previous[cell]) ||
+                if (!read_column_le(bytes, cursor, _cell_food_flow_valid, cell) ||
+                    !read_column_le(bytes, cursor, _cell_food_output_eq_previous, cell) ||
+                    !read_column_le(bytes, cursor, _cell_food_input_eq_previous, cell) ||
+                    !read_column_le(bytes, cursor, _cell_food_import_eq_previous, cell) ||
+                    !read_column_le(bytes, cursor, _cell_food_export_eq_previous, cell) ||
+                    !read_column_le(bytes, cursor, _cell_food_access_eq_previous, cell) ||
                     !read_le(bytes, cursor, saved_food_days) ||
                     _cell_food_flow_valid[cell] > 1 ||
                     _cell_food_output_eq_previous[cell] < 0 ||
@@ -1065,7 +1059,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                     return false;
                 }
                 _food_flow_previous_period_days = std::max(
-                    _food_flow_previous_period_days, saved_food_days);
+                    _food_flow_previous_period_days.get(), saved_food_days);
             }
             market_store().cell_to_market.write_scalar(cell, market, market_mutation_sink());
             ++_restore.restored_cells;
@@ -1170,7 +1164,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 error = "save_building_fact_quote_payload_truncated";
                 return false;
             }
-            if (!read_le(bytes, cursor, roles) || group.cell < 0 || group.cell >= _cell_count ||
+            if (!read_le(bytes, cursor, roles) || group.cell < 0 || group.cell >= _cell_count.get() ||
                 group.type_id < 0 || group.type_id >= static_cast<int32_t>(_building_types.size()) ||
                 group.owner_signature_id < 0 ||
                 group.owner_signature_id >= static_cast<int32_t>(_signatures.size()) ||
@@ -1270,7 +1264,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 (schema >= 26 && !read_le(bytes, cursor,
                     pending.sponsor_family_handle)) ||
                 pending.cell < 0 ||
-                pending.cell >= _cell_count || pending.type_id < 0 ||
+                pending.cell >= _cell_count.get() || pending.type_id < 0 ||
                 pending.type_id >= static_cast<int32_t>(_building_types.size()) ||
                 pending.owner_signature_id < 0 ||
                 pending.owner_signature_id >= static_cast<int32_t>(_signatures.size()) ||
@@ -1315,7 +1309,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             if (!read_le(bytes, cursor, cell) || !read_le(bytes, cursor, good) ||
                 !read_le(bytes, cursor, business) || !read_le(bytes, cursor, supply) ||
                 (_restore.schema_version >= 12 && !read_le(bytes, cursor, realized)) ||
-                !read_le(bytes, cursor, anchor) || cell < 0 || cell >= _cell_count ||
+                !read_le(bytes, cursor, anchor) || cell < 0 || cell >= _cell_count.get() ||
                 good < 0 || good >= market_store().good_count.get() || business < 0 || supply < 0 ||
                 realized < 0 ||
                 anchor < 0 || (anchor != 0 &&
@@ -1328,7 +1322,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             }
             _restore.last_signal_cell = cell;
             _restore.last_signal_good = good;
-            ++_market_signals.cell_offsets[cell + 1];
+            _market_signals.cell_offsets.write_scalar(cell + 1, _market_signals.cell_offsets[cell + 1] + 1, market_mutation_sink());
             _market_signals.good_ids.push_back(good);
             _market_signals.business_demand_ema.push_back(business);
             _market_signals.offered_supply_ema.push_back(supply);
@@ -1354,7 +1348,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 !read_le(bytes, cursor, paid) ||
                 !read_le(bytes, cursor, jobs) ||
                 !read_le(bytes, cursor, ratio) ||
-                cell < 0 || cell >= _cell_count || profession < 0 ||
+                cell < 0 || cell >= _cell_count.get() || profession < 0 ||
                 profession >= static_cast<int32_t>(_profession_ids.size()) ||
                 base_living < 0 || role_living < 0 || contract < 0 || paid < 0 ||
                 jobs < 0 || ratio < 0 || ratio > Q16_ONE ||
@@ -1366,7 +1360,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             }
             _restore.last_labor_cell = cell;
             _restore.last_labor_profession = profession;
-            ++_labor_signals.cell_offsets[cell + 1];
+            _labor_signals.cell_offsets.write_scalar(cell + 1, _labor_signals.cell_offsets[cell + 1] + 1, market_mutation_sink());
             _labor_signals.profession_ids.push_back(profession);
             _labor_signals.base_living_cost.push_back(base_living);
             _labor_signals.role_living_cost.push_back(role_living);
@@ -1399,8 +1393,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 (!trade_orders_store().ids.empty() && id <= trade_orders_store().ids.back()) ||
                 source_country_handle == 0 || destination_country_handle == 0 ||
                 source_country_slot < 0 || destination_country_slot < 0 ||
-                source < 0 || source >= _cell_count || destination < 0 ||
-                destination >= _cell_count || source == destination || country < 0 ||
+                source < 0 || source >= _cell_count.get() || destination < 0 ||
+                destination >= _cell_count.get() || source == destination || country < 0 ||
                 departure < 0 || arrival < departure || cash < 0 || capacity <= 0 ||
                 state > TradeOrderStore::WAITING_RECEIVER || delivered > 1 ||
                 (state == TradeOrderStore::IN_TRANSIT && delivered != 0) ||
@@ -1489,7 +1483,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 !read_le(bytes, cursor, export_ema) ||
                 !read_le(bytes, cursor, period_import) ||
                 !read_le(bytes, cursor, period_export) || cell < 0 ||
-                cell >= _cell_count || good < 0 || good >= market_store().good_count.get() ||
+                cell >= _cell_count.get() || good < 0 || good >= market_store().good_count.get() ||
                 import_ema < 0 || export_ema < 0 || period_import < 0 ||
                 period_export < 0 || (!_trade_flows.cells.empty() &&
                     (_trade_flows.cells.back() > cell ||
@@ -1554,14 +1548,14 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             _fiscal_cumulative_paid.resize(size, 0);
         };
         ensure_summary_size(summary_count);
-        const auto read_group = [&](std::vector<int64_t> &values,
+        const auto read_group = [&](auto &values,
                                     int32_t country) {
             for (int32_t kind = 0;
                  kind < NativeCountryRuntime::TAX_KIND_COUNT; ++kind) {
                 const size_t index = static_cast<size_t>(country) *
                     NativeCountryRuntime::TAX_KIND_COUNT + kind;
                 if (index >= values.size() ||
-                    !read_le(bytes, cursor, values[index]) ||
+                    !read_column_le(bytes, cursor, values, index) ||
                     values[index] < 0)
                     return false;
             }
@@ -1592,7 +1586,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 error = "save_fiscal_record_invalid";
                 return false;
             }
-            _fiscal_escrow_by_country[static_cast<size_t>(country)] = escrow;
+            _fiscal_escrow_by_country.write_scalar(static_cast<size_t>(country), escrow, market_mutation_sink());
             ++_restore.restored_fiscal;
         }
         _restore.fiscal_seen = true;
@@ -1626,11 +1620,11 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 !read_string(bytes, cursor, root_id) ||
                 !read_string(bytes, cursor, suffix_id) ||
                 !read_le(bytes, cursor, disambiguator) ||
-                cell < 0 || cell >= _cell_count ||
+                cell < 0 || cell >= _cell_count.get() ||
                 _settlements.name_active[cell] != 0 ||
                 (_settlements.tier[cell] < _settlement_named_tier &&
                  _settlements.name_forced[cell] == 0) ||
-                pack_id != _settlement_name_pack_id) {
+                pack_id != _settlement_name_pack_id.get()) {
                 error = "save_settlement_name_record_invalid";
                 return false;
             }
@@ -1654,11 +1648,11 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 error = "save_settlement_name_component_missing";
                 return false;
             }
-            _settlements.name_active[cell] = 1;
-            _settlements.prefix[cell] = prefix;
-            _settlements.root[cell] = root;
-            _settlements.suffix[cell] = suffix;
-            _settlements.disambiguator[cell] = disambiguator;
+            _settlements.name_active.write_scalar(cell, 1, market_mutation_sink());
+            _settlements.prefix.write_scalar(cell, prefix, market_mutation_sink());
+            _settlements.root.write_scalar(cell, root, market_mutation_sink());
+            _settlements.suffix.write_scalar(cell, suffix, market_mutation_sink());
+            _settlements.disambiguator.write_scalar(cell, disambiguator, market_mutation_sink());
             const std::string visible = settlement_name_for_cell(cell);
             if (!_settlements.active_names.emplace(visible, cell).second) {
                 error = "save_settlement_name_duplicate";
@@ -1692,8 +1686,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 active > 1 || generation == 0 ||
                 (active != 0 && (stable_id <= 0 || surname < 0 ||
                     surname >= static_cast<int32_t>(_family_surname_ids.size()) ||
-                    home_cell < 0 || home_cell >= _cell_count ||
-                    (schema >= 40 && (origin_cell < 0 || origin_cell >= _cell_count ||
+                    home_cell < 0 || home_cell >= _cell_count.get() ||
+                    (schema >= 40 && (origin_cell < 0 || origin_cell >= _cell_count.get() ||
                         culture_group < 0 || ethnicity < 0 ||
                         ethnicity >= static_cast<int32_t>(_ethnicity_culture_group_ids.size()) ||
                         culture_group != _ethnicity_culture_group_ids[ethnicity])) ||
@@ -1948,7 +1942,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                     family_influences().active.size()) || active > 1 ||
                 generation == 0 || (active != 0 &&
                     (!families_store().valid_handle(family_handle, family) ||
-                     cell < 0 || cell >= _cell_count || stable_id <= 0 ||
+                     cell < 0 || cell >= _cell_count.get() || stable_id <= 0 ||
                      population < 0 || cash < 0 || asset < 0 || level > 5 ||
                      pending > 5 || population_share < 0 ||
                      population_share > Q16_ONE || cash_share < 0 ||
@@ -2054,8 +2048,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                     error = "save_family_expedition_family_handle_invalid";
                     return false;
                 }
-                if (source_cell < 0 || source_cell >= _cell_count ||
-                    target_cell < 0 || target_cell >= _cell_count) {
+                if (source_cell < 0 || source_cell >= _cell_count.get() ||
+                    target_cell < 0 || target_cell >= _cell_count.get()) {
                     error = "save_family_expedition_cell_invalid"; return false;
                 }
                 if (departure_day < 0 || due_day < departure_day) {
@@ -2108,7 +2102,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 int32_t cell = -1, cumulative = -1;
                 if (!read_le(bytes, cursor, cell) ||
                     !read_le(bytes, cursor, cumulative) || active == 0 ||
-                    cell < 0 || cell >= _cell_count || cumulative < last_cost ||
+                    cell < 0 || cell >= _cell_count.get() || cumulative < last_cost ||
                     (route == 0 && (cell != source_cell || cumulative != 0)) ||
                     (route + 1 == route_count &&
                      (cell != target_cell || cumulative != route_cost))) {
@@ -2339,7 +2333,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 country < 0 || good < 0 ||
                 good >= market_store().good_count.get() || import_quantity < 0 ||
                 export_quantity < 0 || import_base < 0 || export_base < 0 ||
-                batch_epoch < -1 || batch_epoch > _epoch_id ||
+                batch_epoch < -1 || batch_epoch > _epoch_id.get() ||
                 batch_import_quantity < 0 || batch_export_quantity < 0 ||
                 batch_import_base < 0 || batch_export_base < 0) {
                 error = "save_country_good_record_invalid";
@@ -2388,7 +2382,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 country < 0 || partner < 0 || country == partner ||
                 import_quantity < 0 || export_quantity < 0 || import_base < 0 ||
                 export_base < 0 || order_count < 0 ||
-                batch_epoch < -1 || batch_epoch > _epoch_id ||
+                batch_epoch < -1 || batch_epoch > _epoch_id.get() ||
                 batch_import_quantity < 0 || batch_export_quantity < 0 ||
                 batch_import_base < 0 || batch_export_base < 0 ||
                 batch_order_count < 0) {
@@ -2457,7 +2451,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             quote.route_edge_dirs.resize(edge_count);
             std::unordered_set<int32_t> unique_cells;
             for (int32_t &cell : quote.route_cells) {
-                if (!read_le(bytes, cursor, cell) || cell < 0 || cell >= _cell_count ||
+                if (!read_le(bytes, cursor, cell) || cell < 0 || cell >= _cell_count.get() ||
                     !unique_cells.emplace(cell).second) {
                     error = "save_canal_quote_route_invalid"; return false;
                 }
@@ -2474,7 +2468,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             }
             const int32_t index = static_cast<int32_t>(_canal_quotes.size());
             _canal_quotes.push_back(std::move(quote));
-            if (active != 0) _canal_quote_index[_canal_quotes.back().token] = index;
+            if (active != 0) _canal_quote_index.write_record(_canal_quotes.back().token, index);
             ++_restore.restored_canal_quotes;
         }
         _restore.canal_quotes_seen = true;
@@ -2521,7 +2515,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             project.route_edge_dirs.resize(edge_count);
             std::unordered_set<int32_t> unique_cells;
             for (int32_t &cell : project.route_cells) {
-                if (!read_le(bytes, cursor, cell) || cell < 0 || cell >= _cell_count ||
+                if (!read_le(bytes, cursor, cell) || cell < 0 || cell >= _cell_count.get() ||
                     !unique_cells.emplace(cell).second) {
                     error = "save_canal_project_route_invalid"; return false;
                 }
@@ -2551,7 +2545,7 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 !read_le(bytes, cursor, state.limit) || !read_le(bytes, cursor, state.confirmation_days) ||
                 market < 0 || market >= market_store().market_count.get() || state.good < 0 ||
                 state.good >= market_store().good_count.get() || state.limit < 1 ||
-                state.confirmation_days > _price_ceiling_confirm_days) {
+                state.confirmation_days > _price_ceiling_confirm_days.get()) {
                 error = "save_price_ceiling_record_invalid"; return false;
             }
             const int64_t key = int64_t(market) * market_store().good_count.get() + state.good;
@@ -2559,7 +2553,8 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 error = "save_price_ceiling_order_invalid"; return false;
             }
             _restore.last_ceiling_key = key;
-            market_store().price_ceilings[market].push_back(state);
+            auto ceiling_write = market_store().price_ceilings.edit_row(market);
+            ceiling_write[0].push_back(state);
             ++_restore.restored_ceilings;
         }
         _restore.ceilings_seen = true;
@@ -2705,11 +2700,11 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
             if (!read_le(bytes, cursor, resource) || !read_le(bytes, cursor, cell) ||
                 !read_le(bytes, cursor, stock) || !read_le(bytes, cursor, generation) ||
                 resource < 0 || resource >= static_cast<int32_t>(_resource_ids.size()) ||
-                cell < 0 || cell >= _cell_count || stock < 0) {
+                cell < 0 || cell >= _cell_count.get() || stock < 0) {
                 error = "save_resource_stock_record_invalid";
                 return false;
             }
-            const int64_t key = static_cast<int64_t>(resource) * _cell_count + cell;
+            const int64_t key = static_cast<int64_t>(resource) * _cell_count.get() + cell;
             if (key <= _restore.last_resource_key ||
                 key >= static_cast<int64_t>(resource_stock_lanes().size())) {
                 error = "save_resource_stock_order_invalid";
@@ -2722,14 +2717,14 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
         }
     } else if (schema >= 52 && section == SAVE_SECTION_CADENCE_STATE) {
         if (!_restore.cadence_state_seen) {
-            _cell_tier.assign(static_cast<size_t>(_cell_count), 1);
-            _cell_next_review_day.assign(static_cast<size_t>(_cell_count), 0);
-            _cell_force_wake.assign(static_cast<size_t>(_cell_count), 0);
-            _cell_tier_seen_gen.assign(static_cast<size_t>(_cell_count), 0);
-            _cell_tier_seen_population.assign(static_cast<size_t>(_cell_count), -1);
-            _cell_tier_change_day.assign(static_cast<size_t>(_cell_count),
-                                         _last_committed_day);
-            _cell_shortage_since_day.assign(static_cast<size_t>(_cell_count), -1);
+            _cell_tier.assign(static_cast<size_t>(_cell_count.get()), 1);
+            _cell_next_review_day.assign(static_cast<size_t>(_cell_count.get()), 0);
+            _cell_force_wake.assign(static_cast<size_t>(_cell_count.get()), 0);
+            _cell_tier_seen_gen.assign(static_cast<size_t>(_cell_count.get()), 0);
+            _cell_tier_seen_population.assign(static_cast<size_t>(_cell_count.get()), -1);
+            _cell_tier_change_day.assign(static_cast<size_t>(_cell_count.get()),
+                                         _last_committed_day.get());
+            _cell_shortage_since_day.assign(static_cast<size_t>(_cell_count.get()), -1);
             _restore.cadence_state_seen = true;
         }
         for (uint32_t i = 0; i < records; ++i) {
@@ -2749,22 +2744,22 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 !read_le(bytes, cursor, shortage_since) ||
                 !read_le(bytes, cursor, effect_shortage) ||
                 !read_le(bytes, cursor, essentials_shortage) ||
-                cell < 0 || cell >= _cell_count || tier > 3 || force_wake > 1 ||
+                cell < 0 || cell >= _cell_count.get() || tier > 3 || force_wake > 1 ||
                 effect_shortage < 0 || essentials_shortage < 0 ||
                 cell != _restore.restored_cadence_cells) {
                 error = "save_cadence_state_record_invalid";
                 return false;
             }
             const size_t index = static_cast<size_t>(cell);
-            _cell_tier[index] = tier;
-            _cell_next_review_day[index] = next_review;
-            _cell_force_wake[index] = force_wake;
-            _cell_tier_seen_gen[index] = seen_gen;
-            _cell_tier_seen_population[index] = seen_population;
-            _cell_tier_change_day[index] = change_day;
-            _cell_shortage_since_day[index] = shortage_since;
-            _cell_effect_shortage_q16[index] = effect_shortage;
-            _cell_essentials_shortage_q16[index] = essentials_shortage;
+            _cell_tier.write_scalar(index, tier, market_mutation_sink());
+            _cell_next_review_day.write_scalar(index, next_review, market_mutation_sink());
+            _cell_force_wake.write_scalar(index, force_wake, market_mutation_sink());
+            _cell_tier_seen_gen.write_scalar(index, seen_gen, market_mutation_sink());
+            _cell_tier_seen_population.write_scalar(index, seen_population, market_mutation_sink());
+            _cell_tier_change_day.write_scalar(index, change_day, market_mutation_sink());
+            _cell_shortage_since_day.write_scalar(index, shortage_since, market_mutation_sink());
+            _cell_effect_shortage_q16.write_scalar(index, effect_shortage, market_mutation_sink());
+            _cell_essentials_shortage_q16.write_scalar(index, essentials_shortage, market_mutation_sink());
             ++_restore.restored_cadence_cells;
         }
         if (cursor < bytes.size()) {
@@ -2838,19 +2833,21 @@ bool NativeEconomyRuntime::decode_restore_chunk(const std::vector<uint8_t> &byte
                 error = "save_d7_peer_ext_transaction_mismatch";
                 return false;
             }
-            journal->second.session_epoch = session_epoch;
-            journal->second.source_domain = source_domain;
-            journal->second.target_domain = target_domain;
-            journal->second.effective_day = effective_day;
-            journal->second.sequence = sequence;
-            journal->second.reservation_state =
+            auto journal_write = _asset_peer_journal.edit(request_id);
+            auto &journal_record = journal_write.get();
+            journal_record.session_epoch = session_epoch;
+            journal_record.source_domain = source_domain;
+            journal_record.target_domain = target_domain;
+            journal_record.effective_day = effective_day;
+            journal_record.sequence = sequence;
+            journal_record.reservation_state =
                 static_cast<RuntimeD7ReservationState>(reservation_state);
-            journal->second.terminal_result =
+            journal_record.terminal_result =
                 static_cast<RuntimeD7TerminalResult>(terminal_result);
-            journal->second.retry_identity = retry_identity;
-            journal->second.late_ack_rejection_reason = late_reason;
-            journal->second.state_hash_before = state_hash_before;
-            journal->second.state_hash_after = state_hash_after;
+            journal_record.retry_identity = retry_identity;
+            journal_record.late_ack_rejection_reason = late_reason;
+            journal_record.state_hash_before = state_hash_before;
+            journal_record.state_hash_after = state_hash_after;
             _fiscal_digest_rebuild = true;
             ++_restore.restored_d7_peer_ext;
         }

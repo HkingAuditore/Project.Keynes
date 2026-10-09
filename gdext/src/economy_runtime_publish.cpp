@@ -47,7 +47,7 @@ bool NativeEconomyRuntime::publish_epoch_slice(
         int64_t &work_done, std::string &error) {
     const auto started = Clock::now();
     const PublishPhase executed_phase = _publish_phase;
-    EconomyCostProbe probe(publish_phase_name(executed_phase), _current_day);
+    EconomyCostProbe probe(publish_phase_name(executed_phase), _current_day.get());
     const int64_t work_before = work_done;
     _executed_substage = publish_phase_name(executed_phase);
     const size_t budget = static_cast<size_t>(PUBLISH_ENTRIES_PER_SLICE);
@@ -67,7 +67,7 @@ bool NativeEconomyRuntime::publish_epoch_slice(
             _structural_touched_cells.size(), start + budget);
         for (; _publish_cursor < end; ++_publish_cursor) {
             const int32_t cell = _structural_touched_cells[_publish_cursor];
-            if (cell < 0 || cell >= _cell_count) continue;
+            if (cell < 0 || cell >= _cell_count.get()) continue;
             const CellSummary summary = build_cell_summary(cell);
             stage_cell_summary(cell, summary);
             if (summary.population != 0) continue;
@@ -88,7 +88,7 @@ bool NativeEconomyRuntime::publish_epoch_slice(
                     : AuditTotals{};
             const bool periodic_full =
                 _full_audit_verify_interval_days > 0 &&
-                _current_day % _full_audit_verify_interval_days == 0;
+                _current_day.get() % _full_audit_verify_interval_days == 0;
             const char *verify_every_day = std::getenv("PK_ECONOMY_AUDIT_VERIFY_EVERY_DAY");
             const bool diagnostic_full = verify_every_day &&
                 std::strcmp(verify_every_day, "1") == 0;
@@ -449,7 +449,7 @@ bool NativeEconomyRuntime::publish_epoch_slice(
         ++work_done;
     } else if (_publish_phase == PublishPhase::WATERMARK) {
         const size_t start = _publish_cursor;
-        const size_t end = std::min(static_cast<size_t>(_cell_count), start + budget);
+        const size_t end = std::min(static_cast<size_t>(_cell_count.get()), start + budget);
         for (; _publish_cursor < end; ++_publish_cursor) {
             if (_staging_cells[_publish_cursor].population <= 0) continue;
             const int64_t settlement_day =
@@ -466,13 +466,13 @@ bool NativeEconomyRuntime::publish_epoch_slice(
             }
         }
         work_done += static_cast<int64_t>(end - start);
-        if (_publish_cursor >= static_cast<size_t>(_cell_count)) {
+        if (_publish_cursor >= static_cast<size_t>(_cell_count.get())) {
             _settlement_max_age_days = _publish_have_populated
                 ? std::max<int64_t>(0, _sample_day - _settlement_watermark) : 0;
             _publish_cursor = 0;
             _publish_valuation_sat = 0;
             _publish_trade_alpha = std::min<int64_t>(Q16_ONE, saturating_mul(
-                _trade_flow_ema_alpha_q16, std::max(1, _epoch_days),
+                _trade_flow_ema_alpha_q16.get(), std::max(1, _epoch_days.get()),
                 _publish_valuation_sat));
             _publish_phase = PublishPhase::TRADE_FLOW;
         }
@@ -487,21 +487,21 @@ bool NativeEconomyRuntime::publish_epoch_slice(
                 _trade_flows.period_export[_publish_cursor],
                 _publish_valuation_sat);
             const int64_t observed_import = _trade_flows.period_import[_publish_cursor] /
-                std::max(1, _epoch_days);
+                std::max(1, _epoch_days.get());
             const int64_t observed_export = _trade_flows.period_export[_publish_cursor] /
-                std::max(1, _epoch_days);
-            _trade_flows.import_ema[_publish_cursor] = saturating_add(
+                std::max(1, _epoch_days.get());
+            _trade_flows.import_ema.write_scalar(_publish_cursor, saturating_add(
                 _trade_flows.import_ema[_publish_cursor], mul_div_sat(
                     observed_import - _trade_flows.import_ema[_publish_cursor],
                     _publish_trade_alpha, Q16_ONE, _publish_valuation_sat),
-                _publish_valuation_sat);
-            _trade_flows.export_ema[_publish_cursor] = saturating_add(
+                _publish_valuation_sat), market_mutation_sink());
+            _trade_flows.export_ema.write_scalar(_publish_cursor, saturating_add(
                 _trade_flows.export_ema[_publish_cursor], mul_div_sat(
                     observed_export - _trade_flows.export_ema[_publish_cursor],
                     _publish_trade_alpha, Q16_ONE, _publish_valuation_sat),
-                _publish_valuation_sat);
-            _trade_flows.period_import[_publish_cursor] = 0;
-            _trade_flows.period_export[_publish_cursor] = 0;
+                _publish_valuation_sat), market_mutation_sink());
+            _trade_flows.period_import.write_scalar(_publish_cursor, 0, market_mutation_sink());
+            _trade_flows.period_export.write_scalar(_publish_cursor, 0, market_mutation_sink());
         }
         work_done += static_cast<int64_t>(end - start);
         if (_publish_cursor >= _trade_flows.cells.size()) {
@@ -534,7 +534,7 @@ bool NativeEconomyRuntime::publish_epoch_slice(
             const int64_t age = std::max<int64_t>(0, _sample_day - first_seen);
             _trade_signal_max_age_days = std::max(_trade_signal_max_age_days, age);
             if (_trade_signal_first_dispatch_day[_publish_cursor] >= 0 ||
-                age <= _trade_response_days) continue;
+                age <= _trade_response_days.get()) continue;
             ++_trade_response_deadline_misses;
             switch (_trade_signal_last_rejection_reason[_publish_cursor]) {
                 case TRADE_SIGNAL_DIAG_NO_SPREAD: ++_trade_unresolved_no_spread; break;
@@ -566,7 +566,7 @@ bool NativeEconomyRuntime::publish_epoch_slice(
             _trade_plan_init.phase != TradePlanInitPhase::IDLE &&
             _trade_plan_init.phase != TradePlanInitPhase::DONE;
         const bool needs_plan = init_in_progress ||
-            (_trade_runtime_mode != 0 && _trade_topology.ready &&
+            (_trade_runtime_mode.get() != 0 && _trade_topology.ready &&
             (_trade_plan.phase == TradePlanStore::IDLE ||
              _trade_plan.country_topology_hash != _epoch_country_topology_hash ||
              _trade_plan.topology_generation != _trade_topology.topology_generation));
@@ -599,12 +599,12 @@ bool NativeEconomyRuntime::publish_epoch_slice(
             start + static_cast<size_t>(PUBLISH_COMMIT_ENTRIES_PER_SLICE));
         for (; _publish_cursor < end; ++_publish_cursor) {
             const int32_t cell = _epoch_settlement_cells[_publish_cursor];
-            if (cell < 0 || cell >= _cell_count) continue;
-            _cell_last_settlement_day[cell] = _sample_day;
-            ++_cell_settlement_generation[cell];
-            ++_cell_price_stock_gen[cell];
-            ++_cell_owner_cash_gen[cell];
-            ++_cell_population_gen[cell];
+            if (cell < 0 || cell >= _cell_count.get()) continue;
+            _cell_last_settlement_day.write_scalar(cell, _sample_day, market_mutation_sink());
+            _cell_settlement_generation.write_scalar(cell, _cell_settlement_generation[cell] + 1, market_mutation_sink());
+            _cell_price_stock_gen.write_scalar(cell, _cell_price_stock_gen[cell] + 1, market_mutation_sink());
+            _cell_owner_cash_gen.write_scalar(cell, _cell_owner_cash_gen[cell] + 1, market_mutation_sink());
+            _cell_population_gen.write_scalar(cell, _cell_population_gen[cell] + 1, market_mutation_sink());
             _cell_resource_gen.write_scalar(cell, _cell_resource_gen[cell] + uint32_t{1});
             if (cell < static_cast<int32_t>(market_store().cell_to_market.size()) &&
                 cell < static_cast<int32_t>(_cell_effect_shortage_q16.size())) {
@@ -624,16 +624,14 @@ bool NativeEconomyRuntime::publish_epoch_slice(
                             essentials_q16 = std::max(essentials_q16, lane_shortage);
                     }
                 }
-                _cell_effect_shortage_q16[static_cast<size_t>(cell)] =
-                    std::clamp<int32_t>(shortage_q16, 0,
-                        static_cast<int32_t>(Q16_ONE));
+                _cell_effect_shortage_q16.write_scalar(static_cast<size_t>(cell), std::clamp<int32_t>(shortage_q16, 0,
+                        static_cast<int32_t>(Q16_ONE)), market_mutation_sink());
                 if (cell < static_cast<int32_t>(_cell_essentials_shortage_q16.size()))
-                    _cell_essentials_shortage_q16[static_cast<size_t>(cell)] =
-                        std::clamp<int32_t>(essentials_q16, 0,
-                            static_cast<int32_t>(Q16_ONE));
+                    _cell_essentials_shortage_q16.write_scalar(static_cast<size_t>(cell), std::clamp<int32_t>(essentials_q16, 0,
+                            static_cast<int32_t>(Q16_ONE)), market_mutation_sink());
             }
             if (cell < static_cast<int32_t>(_cell_resource_abundance_q16.size()) &&
-                _cell_count > 0 && !resource_stock_lanes().empty()) {
+                _cell_count.get() > 0 && !resource_stock_lanes().empty()) {
                 int64_t total = 0;
                 int32_t counted = 0;
                 int64_t sat = 0;
@@ -641,7 +639,7 @@ bool NativeEconomyRuntime::publish_epoch_slice(
                     _resource_ids.size());
                 for (int32_t resource = 0; resource < resource_count; ++resource) {
                     const size_t idx = static_cast<size_t>(resource) *
-                        static_cast<size_t>(_cell_count) + static_cast<size_t>(cell);
+                        static_cast<size_t>(_cell_count.get()) + static_cast<size_t>(cell);
                     if (idx >= resource_stock_lanes().size() ||
                         resource_stock_lanes()[idx] <= 0) continue;
                     const int64_t remaining =
@@ -679,7 +677,7 @@ bool NativeEconomyRuntime::publish_epoch_slice(
         _rolling_deferred_cells = std::max(
             0, _rolling_due_cells - _rolling_processed_cells);
         _last_committed_day = _sample_day;
-        _commit_day = _current_day;
+        _commit_day = _current_day.get();
         if (++_committed_generation == 0) _committed_generation = 1;
         _resource_deltas_ready = std::any_of(
             _resource_touched_lanes.begin(), _resource_touched_lanes.end(),

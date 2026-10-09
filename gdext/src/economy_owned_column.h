@@ -14,6 +14,8 @@ template<class T> class EconomyOwnedColumn : private economy_detail::RegistryOwn
 public:
     explicit EconomyOwnedColumn(EconomyFieldDescriptor field)
         : Column(economy_detail::RegistryOwner::changes, field) {}
+    EconomyOwnedColumn(EconomyFieldDescriptor field, std::initializer_list<T> initial)
+        : EconomyOwnedColumn(field) { Column::assign(initial.begin(), initial.end()); }
     EconomyOwnedColumn(const EconomyOwnedColumn &other) : EconomyOwnedColumn(other.descriptor()) {
         Column::assign(other.values());
     }

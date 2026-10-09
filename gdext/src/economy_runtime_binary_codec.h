@@ -6,6 +6,7 @@
 #include <utility>
 #include <vector>
 #include "economy_tracked_column.h"
+#include "economy_tracked_scalar.h"
 
 namespace pk::binary_codec {
 
@@ -37,6 +38,19 @@ inline bool read_column_le(const std::vector<uint8_t> &in, size_t &cursor,
     T value{};
     if (!read_le(in, cursor, value)) return false;
     column.write_scalar(index, value);
+    return true;
+}
+template <typename T>
+inline bool read_column_le(const std::vector<uint8_t> &in, size_t &cursor,
+    std::vector<T> &column, size_t index) {
+    return read_le(in, cursor, column.at(index));
+}
+template <typename T>
+inline bool read_scalar_le(const std::vector<uint8_t> &in, size_t &cursor,
+    EconomyTrackedScalar<T> &target) {
+    T value{};
+    if (!read_le(in, cursor, value)) return false;
+    target = value;
     return true;
 }
 

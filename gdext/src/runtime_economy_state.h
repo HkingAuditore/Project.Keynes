@@ -15,6 +15,7 @@
 #include "runtime_economy_live_tables.h"
 #include "runtime_economy_family_side_tables.h"
 #include "economy_tracked_records.h"
+#include "economy_keyed_variable_records.h"
 
 namespace pk {
 
@@ -22,6 +23,9 @@ struct RuntimeEconomyPriceCeilingState {
     int32_t good = -1;
     int32_t limit = 0;
     uint16_t confirmation_days = 0;
+    template<class Visitor> void visit_persisted(Visitor &visit) const {
+        visit(good); visit(limit); visit(confirmation_days);
+    }
 };
 
 // Live market storage, independent of the Godot facade and formula executor.
@@ -35,7 +39,8 @@ struct RuntimeEconomyMarketStore {
     EconomyTrackedColumn<int64_t> demand_ema;
     EconomyTrackedColumn<uint16_t> last_shortage_q16;
     EconomyTrackedColumn<int32_t> cell_to_market;
-    std::vector<std::vector<RuntimeEconomyPriceCeilingState>> price_ceilings;
+    EconomyKeyedVariableRecords<std::vector<RuntimeEconomyPriceCeilingState>> price_ceilings{
+        {{25, 1}, "market.price_ceilings", EconomyFieldEncoding::CanonicalRecord, 1}};
 
     RuntimeEconomyMarketStore();
     RuntimeEconomyMarketStore(const RuntimeEconomyMarketStore &other);

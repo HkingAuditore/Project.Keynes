@@ -17,28 +17,28 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                                       64 * 1024, 16 * 1024 * 1024);
     std::vector<uint8_t> payload;
     if (_save.section == SAVE_SECTION_HEADER) {
-        append_le<int32_t>(payload, _cell_count);
+        append_le<int32_t>(payload, _cell_count.get());
         append_le<int32_t>(payload, market_store().market_count.get());
         append_le<int32_t>(payload, market_store().good_count.get());
         append_le<int32_t>(payload, static_cast<int32_t>(population_store().page_next.size()));
         append_le<int64_t>(payload, population_store().active_count);
-        append_le<int32_t>(payload, _epoch_days);
-        append_le<int64_t>(payload, _last_committed_day);
-        append_le<int64_t>(payload, _epoch_id);
+        append_le<int32_t>(payload, _epoch_days.get());
+        append_le<int64_t>(payload, _last_committed_day.get());
+        append_le<int64_t>(payload, _epoch_id.get());
         append_le<int32_t>(payload, NativeCountryRuntime::SCHEMA_VERSION);
         append_le<uint64_t>(payload, _save_country_identity_override
             ? _save_country_generation : _country_runtime->generation());
         append_le<uint64_t>(payload, _save_country_identity_override
             ? _save_country_state_hash
             : static_cast<uint64_t>(_country_runtime->state_hash()));
-        append_le<int64_t>(payload, _seed);
-        append_le<int64_t>(payload, _catalog_hash);
-        append_le<int64_t>(payload, _building_catalog_hash);
+        append_le<int64_t>(payload, _seed.get());
+        append_le<int64_t>(payload, _catalog_hash.get());
+        append_le<int64_t>(payload, _building_catalog_hash.get());
         append_le<int32_t>(payload, static_cast<int32_t>(building_count()));
         append_le<int32_t>(payload, static_cast<int32_t>(pending_construction_count()));
-        append_le<int64_t>(payload, _environment_day);
-        append_le<int64_t>(payload, _environment_hash);
-        append_le<uint64_t>(payload, _next_submit_order);
+        append_le<int64_t>(payload, _environment_day.get());
+        append_le<int64_t>(payload, _environment_hash.get());
+        append_le<uint64_t>(payload, _next_submit_order.get());
         append_le<int64_t>(payload, MONEY_SCALE);
         append_le<int64_t>(payload, GOODS_SCALE);
         append_le<int64_t>(payload, Q16_ONE);
@@ -48,8 +48,8 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
         append_le<int32_t>(payload, static_cast<int32_t>(_market_signals.good_ids.size()));
         append_le<int32_t>(payload,
                            static_cast<int32_t>(_labor_signals.profession_ids.size()));
-        append_le<int64_t>(payload, _next_event_id);
-        append_le<uint64_t>(payload, _event_stream_hash);
+        append_le<int64_t>(payload, _next_event_id.get());
+        append_le<uint64_t>(payload, _event_stream_hash.get());
         append_le<int32_t>(payload, trade_orders_store().size());
         append_le<int32_t>(payload, static_cast<int32_t>(_trade_flows.cells.size()));
         append_le<int32_t>(payload, static_cast<int32_t>(
@@ -58,82 +58,82 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             _country_good_trade.countries.size()));
         append_le<int32_t>(payload, static_cast<int32_t>(
             _country_partner_trade.countries.size()));
-        append_le<uint64_t>(payload, _country_trade_revision);
+        append_le<uint64_t>(payload, _country_trade_revision.get());
         append_le<int64_t>(payload, trade_orders_store().next_id);
-        append_le<int32_t>(payload, _trade_runtime_mode);
-        append_le<int64_t>(payload, _trade_capacity_per_merchant_q16);
-        append_le<int32_t>(payload, _trade_speed_cost_per_day);
-        append_le<int32_t>(payload, _trade_min_margin_q16);
-        append_le<int32_t>(payload, _trade_target_count);
-        append_le<int32_t>(payload, _trade_signal_pairs_per_slice);
-        append_le<int32_t>(payload, _trade_route_searches_per_slice);
-        append_le<int32_t>(payload, _trade_max_route_expansions);
-        append_le<int32_t>(payload, _trade_route_cache_entries);
-        append_le<int32_t>(payload, _trade_max_signals);
-        append_le<int32_t>(payload, _trade_max_candidates);
-        append_le<int32_t>(payload, _trade_max_orders);
-        append_le<int32_t>(payload, _trade_flow_ema_alpha_q16);
-        append_le<int32_t>(payload, _trade_max_stock_share_q16);
-        append_le<int32_t>(payload, _building_severe_loss_threshold_q16);
-        append_le<int32_t>(payload, _building_severe_loss_cycles);
-        append_le<int32_t>(payload, _building_restart_margin_q16);
-        append_le<int32_t>(payload, _building_restart_cycles);
-        append_le<int32_t>(payload, _merchant_procurement_cash_reserve_q16);
-        append_le<int32_t>(payload, _merchant_market_making_days_q16);
-        append_le<int32_t>(payload, _merchant_credit_runtime_mode);
-        append_le<int32_t>(payload, _merchant_credit_exposure_q16);
-        append_le<int32_t>(payload, _merchant_credit_premium_q16);
-        append_le<int32_t>(payload, _merchant_credit_term_cycles);
-        append_le<int32_t>(payload, _recovery_success_cycles);
-        append_le<int32_t>(payload, _recovery_liquidation_failed_reviews);
-        append_le<int32_t>(payload, _trade_export_floor_days);
-        append_le<int32_t>(payload, _trade_export_inventory_fraction_q16);
-        append_le<int32_t>(payload, _trade_import_fill_fraction_q16);
-        append_le<int32_t>(payload, _trade_response_days);
-        append_le<int32_t>(payload, _investment_review_days);
-        append_le<int32_t>(payload, _investment_min_shortage_q16);
-        append_le<int32_t>(payload, _investment_min_utilization_q16);
-        append_le<int32_t>(payload, _investment_max_payback_days);
-        append_le<int32_t>(payload, _investment_operating_cycles);
-        append_le<int32_t>(payload, _investment_gap_fill_share_q16);
-        append_le<int32_t>(payload, _investment_portfolio_max_types);
-        append_le<int32_t>(payload, _investment_max_type_owner_share_q16);
-        append_le<int32_t>(payload, _investment_max_growth_share_q16);
-        append_le<int32_t>(payload, _investment_new_type_seed_buildings);
+        append_le<int32_t>(payload, _trade_runtime_mode.get());
+        append_le<int64_t>(payload, _trade_capacity_per_merchant_q16.get());
+        append_le<int32_t>(payload, _trade_speed_cost_per_day.get());
+        append_le<int32_t>(payload, _trade_min_margin_q16.get());
+        append_le<int32_t>(payload, _trade_target_count.get());
+        append_le<int32_t>(payload, _trade_signal_pairs_per_slice.get());
+        append_le<int32_t>(payload, _trade_route_searches_per_slice.get());
+        append_le<int32_t>(payload, _trade_max_route_expansions.get());
+        append_le<int32_t>(payload, _trade_route_cache_entries.get());
+        append_le<int32_t>(payload, _trade_max_signals.get());
+        append_le<int32_t>(payload, _trade_max_candidates.get());
+        append_le<int32_t>(payload, _trade_max_orders.get());
+        append_le<int32_t>(payload, _trade_flow_ema_alpha_q16.get());
+        append_le<int32_t>(payload, _trade_max_stock_share_q16.get());
+        append_le<int32_t>(payload, _building_severe_loss_threshold_q16.get());
+        append_le<int32_t>(payload, _building_severe_loss_cycles.get());
+        append_le<int32_t>(payload, _building_restart_margin_q16.get());
+        append_le<int32_t>(payload, _building_restart_cycles.get());
+        append_le<int32_t>(payload, _merchant_procurement_cash_reserve_q16.get());
+        append_le<int32_t>(payload, _merchant_market_making_days_q16.get());
+        append_le<int32_t>(payload, _merchant_credit_runtime_mode.get());
+        append_le<int32_t>(payload, _merchant_credit_exposure_q16.get());
+        append_le<int32_t>(payload, _merchant_credit_premium_q16.get());
+        append_le<int32_t>(payload, _merchant_credit_term_cycles.get());
+        append_le<int32_t>(payload, _recovery_success_cycles.get());
+        append_le<int32_t>(payload, _recovery_liquidation_failed_reviews.get());
+        append_le<int32_t>(payload, _trade_export_floor_days.get());
+        append_le<int32_t>(payload, _trade_export_inventory_fraction_q16.get());
+        append_le<int32_t>(payload, _trade_import_fill_fraction_q16.get());
+        append_le<int32_t>(payload, _trade_response_days.get());
+        append_le<int32_t>(payload, _investment_review_days.get());
+        append_le<int32_t>(payload, _investment_min_shortage_q16.get());
+        append_le<int32_t>(payload, _investment_min_utilization_q16.get());
+        append_le<int32_t>(payload, _investment_max_payback_days.get());
+        append_le<int32_t>(payload, _investment_operating_cycles.get());
+        append_le<int32_t>(payload, _investment_gap_fill_share_q16.get());
+        append_le<int32_t>(payload, _investment_portfolio_max_types.get());
+        append_le<int32_t>(payload, _investment_max_type_owner_share_q16.get());
+        append_le<int32_t>(payload, _investment_max_growth_share_q16.get());
+        append_le<int32_t>(payload, _investment_new_type_seed_buildings.get());
         append_le<int32_t>(
-            payload, _investment_merchant_transition_min_improvement_q16);
-        append_le<int32_t>(payload, _recovery_liquidation_max_share_q16);
-        append_le<int32_t>(payload, _resource_min_reserve_q16);
-        append_le<int32_t>(payload, _resource_safe_harvest_q16);
-        append_le<int32_t>(payload, _resource_min_horizon_days);
-        append_le<int32_t>(payload, _bullion_monthly_issue_cap_q16);
-        append_le<int32_t>(payload, _producer_support_monthly_cap_q16);
-        append_le<int64_t>(payload, _government_research_procured_points);
-        append_le<int64_t>(payload, _government_research_procurement_cash);
-        append_le<int64_t>(payload, _government_research_procurement_orders);
-        append_le<int64_t>(payload, _prosperity_profile_hash);
-        append_le<int32_t>(payload, _building_plan_days);
-        append_le<int64_t>(payload, _family_catalog_hash);
-        append_le<int32_t>(payload, _family_runtime_mode);
+            payload, _investment_merchant_transition_min_improvement_q16.get());
+        append_le<int32_t>(payload, _recovery_liquidation_max_share_q16.get());
+        append_le<int32_t>(payload, _resource_min_reserve_q16.get());
+        append_le<int32_t>(payload, _resource_safe_harvest_q16.get());
+        append_le<int32_t>(payload, _resource_min_horizon_days.get());
+        append_le<int32_t>(payload, _bullion_monthly_issue_cap_q16.get());
+        append_le<int32_t>(payload, _producer_support_monthly_cap_q16.get());
+        append_le<int64_t>(payload, _government_research_procured_points.get());
+        append_le<int64_t>(payload, _government_research_procurement_cash.get());
+        append_le<int64_t>(payload, _government_research_procurement_orders.get());
+        append_le<int64_t>(payload, _prosperity_profile_hash.get());
+        append_le<int32_t>(payload, _building_plan_days.get());
+        append_le<int64_t>(payload, _family_catalog_hash.get());
+        append_le<int32_t>(payload, _family_runtime_mode.get());
         append_le<int32_t>(payload, static_cast<int32_t>(
-            _family_min_founder_people));
-        append_le<int32_t>(payload, _family_review_days);
+            _family_min_founder_people.get()));
+        append_le<int32_t>(payload, _family_review_days.get());
         append_le<int64_t>(payload, family_milestone_hash());
-        append_le<int64_t>(payload, _family_split_population_threshold);
-        append_le<int32_t>(payload, _family_max_per_cell);
-        append_le<int32_t>(payload, _family_decline_reviews);
-        append_le<int64_t>(payload, _person_catalog_hash);
-        append_le<int32_t>(payload, _person_runtime_mode);
-        append_le<int32_t>(payload, _person_max_per_family);
-        append_le<int32_t>(payload, _person_max_per_cell);
-        append_le<int32_t>(payload, _person_max_total);
-        append_le<int32_t>(payload, _person_records_per_slice);
+        append_le<int64_t>(payload, _family_split_population_threshold.get());
+        append_le<int32_t>(payload, _family_max_per_cell.get());
+        append_le<int32_t>(payload, _family_decline_reviews.get());
+        append_le<int64_t>(payload, _person_catalog_hash.get());
+        append_le<int32_t>(payload, _person_runtime_mode.get());
+        append_le<int32_t>(payload, _person_max_per_family.get());
+        append_le<int32_t>(payload, _person_max_per_cell.get());
+        append_le<int32_t>(payload, _person_max_total.get());
+        append_le<int32_t>(payload, _person_records_per_slice.get());
         append_le<int32_t>(payload,
             static_cast<int32_t>(persons_store().active.size()));
         append_le<int32_t>(payload,
             static_cast<int32_t>(person_needs().size()));
-        append_le<int32_t>(payload, _family_trait_catalog_version);
-        append_le<int64_t>(payload, _family_trait_catalog_hash);
+        append_le<int32_t>(payload, _family_trait_catalog_version.get());
+        append_le<int64_t>(payload, _family_trait_catalog_hash.get());
         append_le<int32_t>(payload,
             static_cast<int32_t>(family_trait_rolls().size()));
         append_le<int32_t>(payload,
@@ -144,26 +144,26 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             static_cast<int32_t>(family_expeditions_store().active.size()));
         append_le<int32_t>(payload,
             static_cast<int32_t>(family_expeditions_store().active_count));
-        append_le<int64_t>(payload, _next_family_expedition_stable_id);
-        append_le<int64_t>(payload, _next_colonization_receipt_id);
+        append_le<int64_t>(payload, _next_family_expedition_stable_id.get());
+        append_le<int64_t>(payload, _next_colonization_receipt_id.get());
         append_le<int32_t>(payload, static_cast<int32_t>(_canal_quotes.size()));
         append_le<int32_t>(payload, static_cast<int32_t>(_canal_projects.size()));
-        append_le<uint64_t>(payload, _next_canal_quote_token);
-        append_le<uint64_t>(payload, _next_canal_project_id);
-        append_le<int64_t>(payload, _next_canal_receipt_id);
-        append_le<int32_t>(payload, _locked_market_cycle_days);
-        append_le<int64_t>(payload, _market_cycle_start_day);
-        append_le<int32_t>(payload, _locked_slow_cycle_days);
-        append_le<int64_t>(payload, _slow_cycle_start_day);
-        append_le<int32_t>(payload, _locked_investment_cycle_days);
-        append_le<int64_t>(payload, _investment_cycle_start_day);
+        append_le<uint64_t>(payload, _next_canal_quote_token.get());
+        append_le<uint64_t>(payload, _next_canal_project_id.get());
+        append_le<int64_t>(payload, _next_canal_receipt_id.get());
+        append_le<int32_t>(payload, _locked_market_cycle_days.get());
+        append_le<int64_t>(payload, _market_cycle_start_day.get());
+        append_le<int32_t>(payload, _locked_slow_cycle_days.get());
+        append_le<int64_t>(payload, _slow_cycle_start_day.get());
+        append_le<int32_t>(payload, _locked_investment_cycle_days.get());
+        append_le<int64_t>(payload, _investment_cycle_start_day.get());
         for (int32_t sector = 0; sector < 5; ++sector)
             append_le<int32_t>(payload, _maintenance_horizon_days_by_sector[sector]);
-        append_le<int32_t>(payload, _building_maintenance_cost_factor_q16);
-        append_le<int32_t>(payload, _startup_demand_runtime_mode);
-        append_le<int32_t>(payload, _price_ceiling_confirm_days);
-        append_le<int32_t>(payload, _price_ceiling_expand_bp);
-        append_le<int32_t>(payload, _price_ceiling_recover_bp);
+        append_le<int32_t>(payload, _building_maintenance_cost_factor_q16.get());
+        append_le<int32_t>(payload, _startup_demand_runtime_mode.get());
+        append_le<int32_t>(payload, _price_ceiling_confirm_days.get());
+        append_le<int32_t>(payload, _price_ceiling_expand_bp.get());
+        append_le<int32_t>(payload, _price_ceiling_recover_bp.get());
         append_le<int64_t>(payload, price_ceiling_state_count());
         append_le<int32_t>(payload, static_cast<int32_t>(
             _asset_peer_journal.size()));
@@ -247,7 +247,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
         const int32_t record_bytes = 167 +
             static_cast<int32_t>(_ethnicity_ids.size()) * 8;
         const int32_t max_records = std::max(1, (budget - 16) / record_bytes);
-        const int32_t end = std::min(_cell_count, _save.cell_cursor + max_records);
+        const int32_t end = std::min(_cell_count.get(), _save.cell_cursor + max_records);
         payload.reserve(static_cast<size_t>(std::max(0, end - _save.cell_cursor)) * record_bytes);
         const int32_t begin = _save.cell_cursor;
         for (; _save.cell_cursor < end; ++_save.cell_cursor) {
@@ -318,9 +318,9 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             append_le<int64_t>(payload,
                 food_cell < _cell_food_access_eq_previous.size()
                     ? _cell_food_access_eq_previous[food_cell] : 0);
-            append_le<int32_t>(payload, _food_flow_previous_period_days);
+            append_le<int32_t>(payload, _food_flow_previous_period_days.get());
         }
-        if (_save.cell_cursor >= _cell_count) ++_save.section;
+        if (_save.cell_cursor >= _cell_count.get()) ++_save.section;
         return make_save_chunk(SAVE_SECTION_CELLS,
                                static_cast<uint32_t>(_save.cell_cursor - begin), payload);
     }
@@ -674,12 +674,12 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
     }
     if (_save.section == SAVE_SECTION_SETTLEMENT_NAMES) {
         uint32_t records = 0;
-        while (_save.settlement_cursor < _cell_count) {
+        while (_save.settlement_cursor < _cell_count.get()) {
             const int32_t cell = _save.settlement_cursor++;
             if (_settlements.name_active[cell] == 0) continue;
             std::vector<uint8_t> record;
             append_le<int32_t>(record, cell);
-            append_string(record, _settlement_name_pack_id);
+            append_string(record, _settlement_name_pack_id.get());
             const bool full_name = _settlements.root[cell] < 0;
             append_string(record, full_name
                 ? _settlement_full_name_ids[_settlements.prefix[cell]]
@@ -698,7 +698,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
             payload.insert(payload.end(), record.begin(), record.end());
             ++records;
         }
-        if (_save.settlement_cursor >= _cell_count) ++_save.section;
+        if (_save.settlement_cursor >= _cell_count.get()) ++_save.section;
         return make_save_chunk(SAVE_SECTION_SETTLEMENT_NAMES, records, payload);
     }
     if (_save.section == SAVE_SECTION_FAMILY_RECORDS) {
@@ -764,7 +764,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
         for (; _save.family_ownership_cursor < end;
              ++_save.family_ownership_cursor) {
             const FamilyBuildingOwnership &edge =
-                family_ownerships()[_save.family_ownership_cursor];
+                family_ownerships().read_at(_save.family_ownership_cursor, __FILE__, __LINE__);
             append_le<uint64_t>(payload, edge.family_handle);
             append_le<uint64_t>(payload, edge.building_handle);
             append_le<int64_t>(payload, edge.owned_count);
@@ -1279,8 +1279,8 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
         payload.reserve(static_cast<size_t>(std::max(0, end - begin)) * record_bytes);
         for (; _save.resource_cursor < end; ++_save.resource_cursor) {
             const int32_t lane = _save.resource_cursor;
-            const int32_t resource = _cell_count > 0 ? lane / _cell_count : 0;
-            const int32_t cell = _cell_count > 0 ? lane % _cell_count : 0;
+            const int32_t resource = _cell_count.get() > 0 ? lane / _cell_count.get() : 0;
+            const int32_t cell = _cell_count.get() > 0 ? lane % _cell_count.get() : 0;
             append_le<int32_t>(payload, resource);
             append_le<int32_t>(payload, cell);
             append_le<int64_t>(payload, resource_stock_lanes()[static_cast<size_t>(lane)]);
@@ -1297,7 +1297,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
         constexpr int32_t record_bytes = 50;
         const int32_t max_records = std::max(1, (budget - 16) / record_bytes);
         const int32_t begin = _save.cadence_cursor;
-        const int32_t end = std::min(_cell_count, begin + max_records);
+        const int32_t end = std::min(_cell_count.get(), begin + max_records);
         payload.reserve(static_cast<size_t>(std::max(0, end - begin)) *
                         record_bytes);
         for (; _save.cadence_cursor < end; ++_save.cadence_cursor) {
@@ -1307,7 +1307,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                 cell < _cell_tier.size() ? _cell_tier[cell] : uint8_t{1});
             append_le<int64_t>(payload,
                 cell < _cell_next_review_day.size()
-                    ? _cell_next_review_day[cell] : _last_committed_day);
+                    ? _cell_next_review_day[cell] : _last_committed_day.get());
             append_le<uint8_t>(payload,
                 cell < _cell_force_wake.size() ? _cell_force_wake[cell] : 0);
             append_le<uint32_t>(payload,
@@ -1317,7 +1317,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                     ? _cell_tier_seen_population[cell] : -1);
             append_le<int64_t>(payload,
                 cell < _cell_tier_change_day.size()
-                    ? _cell_tier_change_day[cell] : _last_committed_day);
+                    ? _cell_tier_change_day[cell] : _last_committed_day.get());
             append_le<int64_t>(payload,
                 cell < _cell_shortage_since_day.size()
                     ? _cell_shortage_since_day[cell] : -1);
@@ -1328,7 +1328,7 @@ PackedByteArray NativeEconomyRuntime::read_save_chunk(int32_t max_bytes) {
                 cell < _cell_essentials_shortage_q16.size()
                     ? _cell_essentials_shortage_q16[cell] : 0);
         }
-        if (_save.cadence_cursor >= _cell_count) {
+        if (_save.cadence_cursor >= _cell_count.get()) {
             // Optional v52 footer. Older v52 streams end after the fixed-size
             // cell records; readers accept both layouts.
             append_le<uint64_t>(payload, _committed_generation);

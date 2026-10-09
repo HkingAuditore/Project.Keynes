@@ -289,6 +289,10 @@ public:
         return std::unique_lock<std::mutex>(
             _economy_authority_boundary_mutex, std::try_to_lock);
     }
+    std::unique_lock<std::mutex> try_lock_economy_read_boundary() const {
+        return std::unique_lock<std::mutex>(
+            _economy_authority_boundary_mutex, std::try_to_lock);
+    }
     void complete_economy_input_capture() noexcept {
         {
             std::lock_guard<std::mutex> control_lock(_control_mutex);

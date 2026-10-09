@@ -48,7 +48,7 @@ uint8_t NativeEconomyRuntime::prosperity_tier_for_population(
 }
 
 std::string NativeEconomyRuntime::settlement_name_for_cell(int32_t cell) const {
-    if (cell < 0 || cell >= _cell_count ||
+    if (cell < 0 || cell >= _cell_count.get() ||
         cell >= static_cast<int32_t>(_settlements.name_active.size()) ||
         _settlements.name_active[cell] == 0) return {};
     const int32_t p = _settlements.prefix[cell];
@@ -76,7 +76,7 @@ std::string NativeEconomyRuntime::settlement_name_for_cell(int32_t cell) const {
 }
 
 void NativeEconomyRuntime::assign_settlement_name(int32_t cell) {
-    if (cell < 0 || cell >= _cell_count ||
+    if (cell < 0 || cell >= _cell_count.get() ||
         _settlements.name_active[cell] != 0) return;
     const uint64_t full_count = _settlement_full_name_text.size();
     const uint64_t pc = _settlement_prefix_text.size();
@@ -85,10 +85,10 @@ void NativeEconomyRuntime::assign_settlement_name(int32_t cell) {
     const uint64_t component_count = pc * rc * sc;
     const uint64_t combinations = full_count + component_count;
     uint64_t hash = 1469598103934665603ULL;
-    hash = trace_hash_mix(hash, static_cast<uint64_t>(_seed));
+    hash = trace_hash_mix(hash, static_cast<uint64_t>(_seed.get()));
     hash = trace_hash_mix(hash, static_cast<uint32_t>(cell));
     hash = trace_hash_mix(hash, _settlements.name_roll_generation[cell]);
-    for (unsigned char ch : _settlement_name_pack_id)
+    for (unsigned char ch : _settlement_name_pack_id.get())
         hash = trace_hash_mix(hash, ch);
     const auto weighted_pick = [&](const std::vector<int32_t> &weights,
                                    uint64_t salt) {
@@ -169,37 +169,37 @@ void NativeEconomyRuntime::assign_settlement_name(int32_t cell) {
         } while (_settlements.active_names.find(name) !=
                  _settlements.active_names.end());
     }
-    _settlements.prefix[cell] = p;
-    _settlements.root[cell] = r;
-    _settlements.suffix[cell] = s;
-    _settlements.disambiguator[cell] = disambiguator;
-    _settlements.name_active[cell] = 1;
+    _settlements.prefix.write_scalar(cell, p, market_mutation_sink());
+    _settlements.root.write_scalar(cell, r, market_mutation_sink());
+    _settlements.suffix.write_scalar(cell, s, market_mutation_sink());
+    _settlements.disambiguator.write_scalar(cell, disambiguator, market_mutation_sink());
+    _settlements.name_active.write_scalar(cell, 1, market_mutation_sink());
     _settlements.active_names.emplace(name, cell);
     ++_settlement_names_assigned;
 }
 
 void NativeEconomyRuntime::release_settlement_name(int32_t cell) {
-    if (cell < 0 || cell >= _cell_count ||
+    if (cell < 0 || cell >= _cell_count.get() ||
         _settlements.name_active[cell] == 0) return;
     _settlements.active_names.erase(settlement_name_for_cell(cell));
-    _settlements.name_active[cell] = 0;
-    _settlements.prefix[cell] = -1;
-    _settlements.root[cell] = -1;
-    _settlements.suffix[cell] = -1;
-    _settlements.disambiguator[cell] = 0;
-    ++_settlements.name_roll_generation[cell];
+    _settlements.name_active.write_scalar(cell, 0, market_mutation_sink());
+    _settlements.prefix.write_scalar(cell, -1, market_mutation_sink());
+    _settlements.root.write_scalar(cell, -1, market_mutation_sink());
+    _settlements.suffix.write_scalar(cell, -1, market_mutation_sink());
+    _settlements.disambiguator.write_scalar(cell, 0, market_mutation_sink());
+    _settlements.name_roll_generation.write_scalar(cell, _settlements.name_roll_generation[cell] + 1, market_mutation_sink());
     ++_settlement_names_released;
 }
 
 void NativeEconomyRuntime::initialize_settlements_from_population() {
-    _settlements.clear(_cell_count);
+    _settlements.clear(_cell_count.get());
     std::vector<int32_t> cells;
-    cells.reserve(_cell_count);
-    for (int32_t cell = 0; cell < _cell_count; ++cell) cells.push_back(cell);
+    cells.reserve(_cell_count.get());
+    for (int32_t cell = 0; cell < _cell_count.get(); ++cell) cells.push_back(cell);
     for (int32_t cell : cells) {
         const uint8_t tier = prosperity_tier_for_population(
             population_total_for_cell(cell), 0);
-        _settlements.tier[cell] = tier;
+        _settlements.tier.write_scalar(cell, tier, market_mutation_sink());
         if (tier >= _settlement_named_tier) assign_settlement_name(cell);
     }
     _settlement_names_assigned = 0;
@@ -215,13 +215,13 @@ void NativeEconomyRuntime::update_settlements_for_changed_cells() {
         _population_changed_cells.end());
     SettlementRevision revision;
     for (int32_t cell : _population_changed_cells) {
-        if (cell < 0 || cell >= _cell_count) continue;
+        if (cell < 0 || cell >= _cell_count.get()) continue;
         const uint8_t before = _settlements.tier[cell];
         const uint8_t after = prosperity_tier_for_population(
             population_total_for_cell(cell), before);
         if (after == before) continue;
-        _settlements.tier[cell] = after;
-        ++_settlements.prosperity_generation[cell];
+        _settlements.tier.write_scalar(cell, after, market_mutation_sink());
+        _settlements.prosperity_generation.write_scalar(cell, _settlements.prosperity_generation[cell] + 1, market_mutation_sink());
         if (after > before) ++_prosperity_promotions;
         else ++_prosperity_demotions;
         if (before < _settlement_named_tier &&
@@ -232,7 +232,7 @@ void NativeEconomyRuntime::update_settlements_for_changed_cells() {
                  _settlements.name_forced[cell] == 0)
             release_settlement_name(cell);
         if (after > before) {
-            if (_family_cell_offsets.size() == static_cast<size_t>(_cell_count) + 1) {
+            if (_family_cell_offsets.size() == static_cast<size_t>(_cell_count.get()) + 1) {
                 for (int32_t cursor = _family_cell_offsets[cell];
                      cursor < _family_cell_offsets[cell + 1]; ++cursor) {
                     const int32_t family = _family_cell_indices[
@@ -255,7 +255,7 @@ void NativeEconomyRuntime::update_settlements_for_changed_cells() {
         for (const auto &item : _settlements.revisions)
             entries += item.changes.size();
         while (!_settlements.revisions.empty() &&
-               entries > static_cast<size_t>(std::max(1, _cell_count * 2))) {
+               entries > static_cast<size_t>(std::max(1, _cell_count.get() * 2))) {
             entries -= _settlements.revisions.front().changes.size();
             _settlements.revisions.pop_front();
         }
@@ -265,7 +265,7 @@ void NativeEconomyRuntime::update_settlements_for_changed_cells() {
 
 void NativeEconomyRuntime::append_settlement_fields(
         Dictionary &out, int32_t cell) const {
-    if (cell < 0 || cell >= _cell_count ||
+    if (cell < 0 || cell >= _cell_count.get() ||
         cell >= static_cast<int32_t>(_settlements.tier.size())) return;
     const int32_t tier = _settlements.tier[cell];
     out["prosperity_tier"] = tier;
@@ -296,7 +296,7 @@ Dictionary NativeEconomyRuntime::settlement_rows(
     PackedStringArray suffix_ids;
     PackedInt32Array disambiguators;
     for (const SettlementChange &change : changes) {
-        if (change.cell < 0 || change.cell >= _cell_count) continue;
+        if (change.cell < 0 || change.cell >= _cell_count.get()) continue;
         cells.push_back(change.cell);
         tiers.push_back(_settlements.tier[change.cell]);
         active.push_back(_settlements.name_active[change.cell]);
@@ -305,7 +305,7 @@ Dictionary NativeEconomyRuntime::settlement_rows(
         const bool full_name = named &&
             _settlements.root[change.cell] < 0;
         pack_ids.push_back(named
-            ? from_utf8(_settlement_name_pack_id) : String());
+            ? from_utf8(_settlement_name_pack_id.get()) : String());
         prefix_ids.push_back(named
             ? from_utf8((full_name ? _settlement_full_name_ids[
                 _settlements.prefix[change.cell]] : _settlement_prefix_ids[

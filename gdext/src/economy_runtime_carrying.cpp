@@ -45,7 +45,7 @@ int32_t lut_or_one(const std::vector<int32_t> &lut, int32_t index) {
 void NativeEconomyRuntime::accumulate_trade_food_flow(
         int32_t cell, int32_t good, int64_t import_qty,
         int64_t export_qty, int64_t &sat) {
-    if (cell < 0 || cell >= _cell_count || good < 0 ||
+    if (cell < 0 || cell >= _cell_count.get() || good < 0 ||
         good >= static_cast<int32_t>(_good_food_equivalent_q16.size())) return;
     const int64_t coefficient = _good_food_equivalent_q16[
         static_cast<size_t>(good)];
@@ -62,7 +62,7 @@ void NativeEconomyRuntime::accumulate_trade_food_flow(
 }
 
 void NativeEconomyRuntime::commit_food_flow_snapshot() {
-    const size_t cells = static_cast<size_t>(std::max(0, _cell_count));
+    const size_t cells = static_cast<size_t>(std::max(0, _cell_count.get()));
     if (_cell_food_output_eq_period.size() != cells ||
         _cell_food_input_eq_period.size() != cells ||
         _cell_food_import_eq_period.size() != cells ||
@@ -75,10 +75,10 @@ void NativeEconomyRuntime::commit_food_flow_snapshot() {
     _cell_food_access_eq_previous.swap(_cell_food_access_eq_period);
     if (_cell_food_flow_valid.size() != cells)
         _cell_food_flow_valid.resize(cells, 0);
-    std::fill(_cell_food_flow_valid.begin(), _cell_food_flow_valid.end(), 1);
-    _food_flow_previous_period_days = std::max(1, _epoch_days);
+    _cell_food_flow_valid.fill_range(0, _cell_food_flow_valid.size(), 1, market_mutation_sink());
+    _food_flow_previous_period_days = std::max(1, _epoch_days.get());
     const int64_t denominator = saturating_mul(
-        _food_flow_previous_period_days,
+        _food_flow_previous_period_days.get(),
         std::max<int64_t>(1, _carrying_survival_food_per_person),
         _saturation_count);
     for (size_t cell = 0; cell < cells; ++cell) {
@@ -92,10 +92,10 @@ void NativeEconomyRuntime::commit_food_flow_snapshot() {
 int64_t NativeEconomyRuntime::food_flow_capacity_for_cell(
         int32_t cell, int64_t &k_geo, int64_t &sat) const {
     k_geo = 0;
-    if (cell < 0 || cell >= _cell_count ||
+    if (cell < 0 || cell >= _cell_count.get() ||
         static_cast<size_t>(cell) >= _cell_food_flow_valid.size() ||
         _cell_food_flow_valid[static_cast<size_t>(cell)] == 0) return 0;
-    const int64_t flow_days = std::max<int32_t>(1, _food_flow_previous_period_days);
+    const int64_t flow_days = std::max<int32_t>(1, _food_flow_previous_period_days.get());
     const int64_t per_person_food = std::max<int64_t>(
         1, _carrying_survival_food_per_person);
     const int64_t denominator = saturating_mul(flow_days, per_person_food, sat);
@@ -443,10 +443,10 @@ int64_t NativeEconomyRuntime::carrying_climate_habitability_q16(
 
 int64_t NativeEconomyRuntime::carrying_resource_stock(int32_t resource_id,
                                                       int32_t cell) const {
-    if (cell < 0 || cell >= _cell_count || resource_id < 0 ||
+    if (cell < 0 || cell >= _cell_count.get() || resource_id < 0 ||
         resource_id >= static_cast<int32_t>(_resource_ids.size())) return 0;
     const size_t idx = static_cast<size_t>(resource_id) *
-        static_cast<size_t>(_cell_count) + static_cast<size_t>(cell);
+        static_cast<size_t>(_cell_count.get()) + static_cast<size_t>(cell);
     if (idx >= resource_stock_lanes().size()) return 0;
     return std::max<int64_t>(0, resource_stock_lanes()[idx]);
 }
@@ -454,8 +454,8 @@ int64_t NativeEconomyRuntime::carrying_resource_stock(int32_t resource_id,
 int64_t NativeEconomyRuntime::cell_k_geo_persons(int32_t cell, int64_t &sat) const {
     const int64_t habitat_ref = std::max<int64_t>(0, _carrying_k_habitat_ref);
     const int64_t floor_k = std::max<int64_t>(0, _carrying_k_floor);
-    if (cell < 0 || cell >= _cell_count ||
-        _building_landform.size() != static_cast<size_t>(_cell_count)) {
+    if (cell < 0 || cell >= _cell_count.get() ||
+        _building_landform.size() != static_cast<size_t>(_cell_count.get())) {
         return std::max(floor_k, habitat_ref);
     }
     const bool is_water = _building_is_water[static_cast<size_t>(cell)] != 0;
@@ -513,7 +513,7 @@ int64_t NativeEconomyRuntime::cell_k_geo_persons(int32_t cell, int64_t &sat) con
                     yield.resource_id < static_cast<int32_t>(_resource_ecology_capacity.size())
                         ? _resource_ecology_capacity[static_cast<size_t>(yield.resource_id)] : 0;
                 const int64_t reserve_floor = mul_div_sat(
-                    harvestable, _resource_min_reserve_q16, Q16_ONE, dummy);
+                    harvestable, _resource_min_reserve_q16.get(), Q16_ONE, dummy);
                 const int64_t harvestable_stock = std::max<int64_t>(
                     0, harvestable - reserve_floor);
                 const int64_t biomass = std::min<int64_t>(
@@ -524,7 +524,7 @@ int64_t NativeEconomyRuntime::cell_k_geo_persons(int32_t cell, int64_t &sat) con
                     ? _resource_ecology_growth_q16[static_cast<size_t>(yield.resource_id)]
                     : 0;
                 harvestable = mul_div_sat(mul_div_sat(biomass, std::max(0, growth),
-                    Q16_ONE, dummy), std::max(0, _resource_safe_harvest_q16),
+                    Q16_ONE, dummy), std::max(0, _resource_safe_harvest_q16.get()),
                     Q16_ONE, dummy);
             }
             if (yield.secondary_resource_id >= 0 && yield.secondary_qty > 0) {
@@ -642,9 +642,9 @@ int64_t NativeEconomyRuntime::cell_family_surplus_q16(
 
 void NativeEconomyRuntime::append_carrying_capacity_fields(
         Dictionary &out, int32_t cell_idx) const {
-    if (cell_idx < 0 || cell_idx >= _cell_count) return;
+    if (cell_idx < 0 || cell_idx >= _cell_count.get()) return;
     const size_t cell = static_cast<size_t>(cell_idx);
-    const int64_t flow_days = std::max<int32_t>(1, _food_flow_previous_period_days);
+    const int64_t flow_days = std::max<int32_t>(1, _food_flow_previous_period_days.get());
     const bool valid = cell < _cell_food_flow_valid.size() &&
         _cell_food_flow_valid[cell] != 0;
     const int64_t local_net = valid && cell < _cell_food_output_eq_previous.size()

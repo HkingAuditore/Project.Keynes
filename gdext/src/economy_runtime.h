@@ -26,6 +26,9 @@
 
 #include "economy_graph_kernels.h"
 #include "runtime_economy_state.h"
+#include "economy_tracked_journal.h"
+#include "economy_keyed_variable_records.h"
+#include "economy_owned_record_value.h"
 #include "runtime_economy_population_store.h"
 #include "runtime_pod_protocol.h"
 
@@ -1115,6 +1118,18 @@ private:
         uint64_t state_hash_after = 0;
         std::array<char, RUNTIME_ECONOMY_ASSET_REASON_CAPACITY> reason{};
         std::array<char, RUNTIME_ECONOMY_ASSET_REASON_CAPACITY> late_ack_rejection_reason{};
+        template<class Visitor> void visit_persisted(Visitor &visit) const {
+            visit(request_id); visit(transaction_id); visit(session_epoch); visit(country_handle);
+            visit(country_generation); visit(peer_generation); visit(committed_peer_generation);
+            visit(day); visit(effective_day); visit(operation_sequence); visit(sequence);
+            visit(continuation_index); visit(source_domain); visit(target_domain); visit(country_slot);
+            visit(static_cast<uint16_t>(operation)); visit(static_cast<uint8_t>(result_code));
+            visit(static_cast<uint8_t>(state)); visit(static_cast<uint8_t>(reservation_state));
+            visit(static_cast<uint8_t>(terminal_result)); visit(accepted);
+            visit(requested_quantity); visit(requested_cash); visit(committed_quantity); visit(committed_cash);
+            visit(retry_identity); visit(state_hash_before); visit(state_hash_after);
+            visit(reason); visit(late_ack_rejection_reason);
+        }
     };
     using AssetPeerJournalRecord = FiscalPeerJournalRecord;
     static uint64_t fiscal_record_digest(const FiscalPeerJournalRecord &record);
@@ -1916,6 +1931,16 @@ private:
         int32_t priority = 0;
         int64_t sequence = 0;
         uint64_t submit_order = 0;
+        template<class Visitor> void visit_persisted(Visitor &visit) const {
+            visit(operation);
+            visit(family_handle);
+            visit(trait_id);
+            visit(strength_q16);
+            visit(effective_day);
+            visit(priority);
+            visit(sequence);
+            visit(submit_order);
+        }
     };
 
     static constexpr int32_t FAMILY_FOUNDING_CARD_COUNT = 3;
@@ -1934,6 +1959,18 @@ private:
         int32_t effect_id = -1;
         std::vector<int32_t> trait_ids;
         std::vector<int32_t> trait_strength_q16;
+        template<class Visitor> void visit_persisted(Visitor &visit) const {
+            visit(stable_id);
+            visit(surname_id);
+            visit(culture_group_id);
+            visit(building_handle);
+            visit(building_type_id);
+            visit(owner_signature_id);
+            visit(founders);
+            visit(effect_id);
+            visit(trait_ids);
+            visit(trait_strength_q16);
+        }
     };
 
     struct FamilyFoundingOffer {
@@ -1947,6 +1984,18 @@ private:
         int64_t created_day = 0;
         int32_t failed_reviews = 0;
         std::vector<FamilyFoundingCandidate> candidates;
+        template<class Visitor> void visit_persisted(Visitor &visit) const {
+            visit(offer_id);
+            visit(generation);
+            visit(cell);
+            visit(milestone_index);
+            visit(milestone_population);
+            visit(status);
+            visit(chosen_index);
+            visit(created_day);
+            visit(failed_reviews);
+            visit(candidates);
+        }
     };
 
     struct FamilyFoundingChoiceCommand {
@@ -1956,6 +2005,14 @@ private:
         int64_t effective_day = 0;
         int64_t sequence = 0;
         uint64_t submit_order = 0;
+        template<class Visitor> void visit_persisted(Visitor &visit) const {
+            visit(offer_id);
+            visit(generation);
+            visit(choice_index);
+            visit(effective_day);
+            visit(sequence);
+            visit(submit_order);
+        }
     };
 
     struct FamilyFoundingIdentity {
@@ -1970,12 +2027,22 @@ private:
         uint64_t branch_handle = 0;
         std::string definition_key;
         int32_t magnitude_q16 = 0;
+        template<class Visitor> void visit_persisted(Visitor &visit) const {
+            visit(branch_handle);
+            visit(definition_key);
+            visit(magnitude_q16);
+        }
     };
 
     struct FamilyTriggerBinding {
         uint64_t branch_handle = 0;
         std::string definition_key;
         int32_t reward_target = 0;
+        template<class Visitor> void visit_persisted(Visitor &visit) const {
+            visit(branch_handle);
+            visit(definition_key);
+            visit(reward_target);
+        }
     };
 
     struct FamilyEffectBinding {
@@ -1988,6 +2055,17 @@ private:
         uint64_t target_handle = 0;
         uint32_t target_generation = 0;
         uint64_t metric_mask = 0;
+        template<class Visitor> void visit_persisted(Visitor &visit) const {
+            visit(branch_handle);
+            visit(definition_key);
+            visit(strength_q16);
+            visit(instance_id);
+            visit(generation);
+            visit(target_domain);
+            visit(target_handle);
+            visit(target_generation);
+            visit(metric_mask);
+        }
     };
 
     // FamilyExpeditionState / FamilyExpeditionPayload /
@@ -2437,15 +2515,15 @@ private:
     };
 
     struct SettlementStore {
-        std::vector<uint8_t> tier;
-        std::vector<uint8_t> name_active;
-        std::vector<uint8_t> name_forced;
-        std::vector<uint32_t> prosperity_generation;
-        std::vector<uint32_t> name_roll_generation;
-        std::vector<int32_t> prefix;
-        std::vector<int32_t> root;
-        std::vector<int32_t> suffix;
-        std::vector<uint32_t> disambiguator;
+        EconomyOwnedColumn<uint8_t> tier{{{17, 1}, "SettlementStore.tier", EconomyFieldEncoding::U8, 1}};
+        EconomyOwnedColumn<uint8_t> name_active{{{17, 2}, "SettlementStore.name_active", EconomyFieldEncoding::U8, 1}};
+        EconomyOwnedColumn<uint8_t> name_forced{{{17, 3}, "SettlementStore.name_forced", EconomyFieldEncoding::U8, 1}};
+        EconomyOwnedColumn<uint32_t> prosperity_generation{{{17, 4}, "SettlementStore.prosperity_generation", EconomyFieldEncoding::U32, 4}};
+        EconomyOwnedColumn<uint32_t> name_roll_generation{{{17, 5}, "SettlementStore.name_roll_generation", EconomyFieldEncoding::U32, 4}};
+        EconomyOwnedColumn<int32_t> prefix{{{17, 6}, "SettlementStore.prefix", EconomyFieldEncoding::I32, 4}};
+        EconomyOwnedColumn<int32_t> root{{{17, 7}, "SettlementStore.root", EconomyFieldEncoding::I32, 4}};
+        EconomyOwnedColumn<int32_t> suffix{{{17, 8}, "SettlementStore.suffix", EconomyFieldEncoding::I32, 4}};
+        EconomyOwnedColumn<uint32_t> disambiguator{{{17, 9}, "SettlementStore.disambiguator", EconomyFieldEncoding::U32, 4}};
         std::unordered_map<std::string, int32_t> active_names;
         std::deque<SettlementRevision> revisions;
         int64_t revision = 0;
@@ -2475,15 +2553,15 @@ private:
     using ResourceStore = RuntimeEconomyResourceStore;
 
     struct MarketSignalStore {
-        std::vector<int32_t> cell_offsets;
-        std::vector<int32_t> good_ids;
+        EconomyOwnedColumn<int32_t> cell_offsets{{{18, 1}, "MarketSignalStore.cell_offsets", EconomyFieldEncoding::I32, 4}};
+        EconomyOwnedColumn<int32_t> good_ids{{{18, 2}, "MarketSignalStore.good_ids", EconomyFieldEncoding::I32, 4}};
         // Optional O(1) (cell, good) -> sparse signal index. Rebuilt from the
         // authoritative ascending CSR and excluded from save/hash state.
         std::vector<int32_t> dense_index;
-        std::vector<int64_t> business_demand_ema;
-        std::vector<int64_t> offered_supply_ema;
-        std::vector<int64_t> realized_withdrawal_ema;
-        std::vector<int32_t> cost_anchor_price;
+        EconomyOwnedColumn<int64_t> business_demand_ema{{{18, 3}, "MarketSignalStore.business_demand_ema", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> offered_supply_ema{{{18, 4}, "MarketSignalStore.offered_supply_ema", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> realized_withdrawal_ema{{{18, 5}, "MarketSignalStore.realized_withdrawal_ema", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int32_t> cost_anchor_price{{{18, 6}, "MarketSignalStore.cost_anchor_price", EconomyFieldEncoding::I32, 4}};
 
         void clear(int32_t cells) {
             cell_offsets.assign(static_cast<size_t>(std::max(0, cells)) + 1, 0);
@@ -2791,12 +2869,12 @@ private:
 #undef PK_ECONOMY_FAMILY_SIDE_TABLE_ACCESSOR
 
     struct TradeFlowSignalStore {
-        std::vector<int32_t> cells;
-        std::vector<int32_t> goods;
-        std::vector<int64_t> import_ema;
-        std::vector<int64_t> export_ema;
-        std::vector<int64_t> period_import;
-        std::vector<int64_t> period_export;
+        EconomyOwnedColumn<int32_t> cells{{{20, 1}, "TradeFlowSignalStore.cells", EconomyFieldEncoding::I32, 4}};
+        EconomyOwnedColumn<int32_t> goods{{{20, 2}, "TradeFlowSignalStore.goods", EconomyFieldEncoding::I32, 4}};
+        EconomyOwnedColumn<int64_t> import_ema{{{20, 3}, "TradeFlowSignalStore.import_ema", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> export_ema{{{20, 4}, "TradeFlowSignalStore.export_ema", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> period_import{{{20, 5}, "TradeFlowSignalStore.period_import", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> period_export{{{20, 6}, "TradeFlowSignalStore.period_export", EconomyFieldEncoding::I64, 8}};
 
         void clear() {
             cells.clear(); goods.clear(); import_ema.clear(); export_ema.clear();
@@ -2805,24 +2883,24 @@ private:
     };
 
     struct CountryGoodTradeAggregateStore {
-        std::vector<int32_t> countries;
-        std::vector<int32_t> goods;
+        EconomyOwnedColumn<int32_t> countries{{{21, 1}, "CountryGoodTradeAggregateStore.countries", EconomyFieldEncoding::I32, 4}};
+        EconomyOwnedColumn<int32_t> goods{{{21, 2}, "CountryGoodTradeAggregateStore.goods", EconomyFieldEncoding::I32, 4}};
         // Cumulative authority.
-        std::vector<int64_t> import_quantity;
-        std::vector<int64_t> export_quantity;
-        std::vector<int64_t> import_base;
-        std::vector<int64_t> export_base;
-        std::vector<int64_t> import_tariff;
-        std::vector<int64_t> export_tariff;
+        EconomyOwnedColumn<int64_t> import_quantity{{{21, 3}, "CountryGoodTradeAggregateStore.import_quantity", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> export_quantity{{{21, 4}, "CountryGoodTradeAggregateStore.export_quantity", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> import_base{{{21, 5}, "CountryGoodTradeAggregateStore.import_base", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> export_base{{{21, 6}, "CountryGoodTradeAggregateStore.export_base", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> import_tariff{{{21, 7}, "CountryGoodTradeAggregateStore.import_tariff", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> export_tariff{{{21, 8}, "CountryGoodTradeAggregateStore.export_tariff", EconomyFieldEncoding::I64, 8}};
         // Latest touched epoch. Query treats rows from an older epoch as a
         // lazy-zero previous batch while retaining the cumulative columns.
-        std::vector<int64_t> batch_epoch;
-        std::vector<int64_t> batch_import_quantity;
-        std::vector<int64_t> batch_export_quantity;
-        std::vector<int64_t> batch_import_base;
-        std::vector<int64_t> batch_export_base;
-        std::vector<int64_t> batch_import_tariff;
-        std::vector<int64_t> batch_export_tariff;
+        EconomyOwnedColumn<int64_t> batch_epoch{{{21, 9}, "CountryGoodTradeAggregateStore.batch_epoch", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> batch_import_quantity{{{21, 10}, "CountryGoodTradeAggregateStore.batch_import_quantity", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> batch_export_quantity{{{21, 11}, "CountryGoodTradeAggregateStore.batch_export_quantity", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> batch_import_base{{{21, 12}, "CountryGoodTradeAggregateStore.batch_import_base", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> batch_export_base{{{21, 13}, "CountryGoodTradeAggregateStore.batch_export_base", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> batch_import_tariff{{{21, 14}, "CountryGoodTradeAggregateStore.batch_import_tariff", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> batch_export_tariff{{{21, 15}, "CountryGoodTradeAggregateStore.batch_export_tariff", EconomyFieldEncoding::I64, 8}};
         void clear() {
             countries.clear(); goods.clear(); import_quantity.clear();
             export_quantity.clear(); import_base.clear(); export_base.clear();
@@ -2835,20 +2913,20 @@ private:
     };
 
     struct CountryPartnerTradeAggregateStore {
-        std::vector<int32_t> countries;
-        std::vector<int32_t> partners;
+        EconomyOwnedColumn<int32_t> countries{{{22, 1}, "CountryPartnerTradeAggregateStore.countries", EconomyFieldEncoding::I32, 4}};
+        EconomyOwnedColumn<int32_t> partners{{{22, 2}, "CountryPartnerTradeAggregateStore.partners", EconomyFieldEncoding::I32, 4}};
         // Cumulative authority.
-        std::vector<int64_t> import_quantity;
-        std::vector<int64_t> export_quantity;
-        std::vector<int64_t> import_base;
-        std::vector<int64_t> export_base;
-        std::vector<int64_t> order_count;
-        std::vector<int64_t> batch_epoch;
-        std::vector<int64_t> batch_import_quantity;
-        std::vector<int64_t> batch_export_quantity;
-        std::vector<int64_t> batch_import_base;
-        std::vector<int64_t> batch_export_base;
-        std::vector<int64_t> batch_order_count;
+        EconomyOwnedColumn<int64_t> import_quantity{{{22, 3}, "CountryPartnerTradeAggregateStore.import_quantity", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> export_quantity{{{22, 4}, "CountryPartnerTradeAggregateStore.export_quantity", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> import_base{{{22, 5}, "CountryPartnerTradeAggregateStore.import_base", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> export_base{{{22, 6}, "CountryPartnerTradeAggregateStore.export_base", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> order_count{{{22, 7}, "CountryPartnerTradeAggregateStore.order_count", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> batch_epoch{{{22, 8}, "CountryPartnerTradeAggregateStore.batch_epoch", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> batch_import_quantity{{{22, 9}, "CountryPartnerTradeAggregateStore.batch_import_quantity", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> batch_export_quantity{{{22, 10}, "CountryPartnerTradeAggregateStore.batch_export_quantity", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> batch_import_base{{{22, 11}, "CountryPartnerTradeAggregateStore.batch_import_base", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> batch_export_base{{{22, 12}, "CountryPartnerTradeAggregateStore.batch_export_base", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> batch_order_count{{{22, 13}, "CountryPartnerTradeAggregateStore.batch_order_count", EconomyFieldEncoding::I64, 8}};
         void clear() {
             countries.clear(); partners.clear(); import_quantity.clear();
             export_quantity.clear(); import_base.clear(); export_base.clear();
@@ -2860,18 +2938,18 @@ private:
     };
 
     struct TariffHistoryStore {
-        std::vector<int32_t> countries;
-        std::vector<int32_t> kinds;
-        std::vector<int64_t> bases;
-        std::vector<int64_t> assessed;
-        std::vector<int64_t> collected;
-        std::vector<int64_t> requests;
-        std::vector<int64_t> reserved;
-        std::vector<int64_t> paid;
-        std::vector<int64_t> cumulative_bases;
-        std::vector<int64_t> cumulative_collected;
-        std::vector<int64_t> cumulative_requests;
-        std::vector<int64_t> cumulative_paid;
+        EconomyOwnedColumn<int32_t> countries{{{23, 1}, "TariffHistoryStore.countries", EconomyFieldEncoding::I32, 4}};
+        EconomyOwnedColumn<int32_t> kinds{{{23, 2}, "TariffHistoryStore.kinds", EconomyFieldEncoding::I32, 4}};
+        EconomyOwnedColumn<int64_t> bases{{{23, 3}, "TariffHistoryStore.bases", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> assessed{{{23, 4}, "TariffHistoryStore.assessed", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> collected{{{23, 5}, "TariffHistoryStore.collected", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> requests{{{23, 6}, "TariffHistoryStore.requests", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> reserved{{{23, 7}, "TariffHistoryStore.reserved", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> paid{{{23, 8}, "TariffHistoryStore.paid", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> cumulative_bases{{{23, 9}, "TariffHistoryStore.cumulative_bases", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> cumulative_collected{{{23, 10}, "TariffHistoryStore.cumulative_collected", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> cumulative_requests{{{23, 11}, "TariffHistoryStore.cumulative_requests", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> cumulative_paid{{{23, 12}, "TariffHistoryStore.cumulative_paid", EconomyFieldEncoding::I64, 8}};
         void clear() {
             countries.clear(); kinds.clear(); bases.clear(); assessed.clear();
             collected.clear(); requests.clear(); reserved.clear(); paid.clear();
@@ -2881,14 +2959,14 @@ private:
     };
 
     struct LaborMarketStore {
-        std::vector<int32_t> cell_offsets;
-        std::vector<int32_t> profession_ids;
-        std::vector<int64_t> base_living_cost;
-        std::vector<int64_t> role_living_cost;
-        std::vector<int64_t> contract_wage_ema;
-        std::vector<int64_t> paid_wage_ema;
-        std::vector<int64_t> job_days;
-        std::vector<int32_t> pay_ratio_q16;
+        EconomyOwnedColumn<int32_t> cell_offsets{{{19, 1}, "LaborMarketStore.cell_offsets", EconomyFieldEncoding::I32, 4}};
+        EconomyOwnedColumn<int32_t> profession_ids{{{19, 2}, "LaborMarketStore.profession_ids", EconomyFieldEncoding::I32, 4}};
+        EconomyOwnedColumn<int64_t> base_living_cost{{{19, 3}, "LaborMarketStore.base_living_cost", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> role_living_cost{{{19, 4}, "LaborMarketStore.role_living_cost", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> contract_wage_ema{{{19, 5}, "LaborMarketStore.contract_wage_ema", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> paid_wage_ema{{{19, 6}, "LaborMarketStore.paid_wage_ema", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int64_t> job_days{{{19, 7}, "LaborMarketStore.job_days", EconomyFieldEncoding::I64, 8}};
+        EconomyOwnedColumn<int32_t> pay_ratio_q16{{{19, 8}, "LaborMarketStore.pay_ratio_q16", EconomyFieldEncoding::I32, 4}};
 
         void clear(int32_t cells) {
             cell_offsets.assign(static_cast<size_t>(std::max(0, cells)) + 1, 0);
@@ -2931,6 +3009,19 @@ private:
         uint64_t submit_order = 0;
         int64_t effect_request_id = 0;
         uint64_t effect_idempotency_key = 0;
+        template<class Visitor> void visit_persisted(Visitor &visit) const {
+            visit(opcode);
+            visit(effective_day);
+            visit(sequence);
+            visit(target_handle);
+            visit(i32_0);
+            visit(i32_1);
+            visit(i64_0);
+            visit(i64_1);
+            visit(submit_order);
+            visit(effect_request_id);
+            visit(effect_idempotency_key);
+        }
     };
 
     struct EffectCommandResult {
@@ -2947,6 +3038,15 @@ private:
         int64_t population = 0;
         int64_t funds = 0;
         int64_t sequence = 0;
+        template<class Visitor> void visit_persisted(Visitor &visit) const {
+            visit(opcode);
+            visit(source_slot);
+            visit(cell);
+            visit(signature);
+            visit(population);
+            visit(funds);
+            visit(sequence);
+        }
     };
 
     struct CellSummary {
@@ -3387,6 +3487,13 @@ private:
         std::array<int64_t, 2> material_quantities{{0, 0}};
         std::vector<int32_t> route_cells;
         std::vector<int32_t> route_edge_dirs;
+        template<class Visitor> void visit_persisted(Visitor &visit) const {
+            visit(token); visit(country_handle); visit(snapshot_day); visit(topology_hash);
+            visit(country_generation); visit(price_hash); visit(source_kind);
+            visit(new_edge_count); visit(reused_edge_count); visit(construction_days);
+            visit(cash_required); visit(material_good_ids); visit(material_quantities);
+            visit(route_cells); visit(route_edge_dirs);
+        }
     };
 
     struct CanalProject {
@@ -3405,6 +3512,23 @@ private:
         uint8_t state = CANAL_PROJECT_BUILDING;
         std::vector<int32_t> route_cells;
         std::vector<int32_t> route_edge_dirs;
+        template<class Visitor> void visit_persisted(Visitor &visit) const {
+            visit(handle);
+            visit(generation);
+            visit(country_handle);
+            visit(effective_day);
+            visit(sequence);
+            visit(ready_day);
+            visit(effect_transaction_id);
+            visit(topology_hash);
+            visit(cash_paid);
+            visit(treasury_goods_used);
+            visit(market_goods_used);
+            visit(source_kind);
+            visit(state);
+            visit(route_cells);
+            visit(route_edge_dirs);
+        }
     };
 
     struct CanalConstructionReceipt {
@@ -3944,7 +4068,8 @@ private:
     bool _publish_have_populated = false;
     TradePlanInitState _trade_plan_init;
 
-    int32_t _cell_count = 0;
+    ChangeRegistry _metadata_changes;
+    EconomyTrackedScalar<int32_t> _cell_count{_metadata_changes, {{15, 4}, "metadata.cell_count", EconomyFieldEncoding::I32, 4}, 0};
     int32_t _cells_per_slice = 256;
     bool _auto_slice_by_scale = true;
     int32_t _building_cells_per_slice = AUTO_BUILDING_CELLS_PER_SLICE;
@@ -3958,7 +4083,7 @@ private:
     int32_t _building_output_efficiency_q16 = Q16_ONE;
     bool _auto_building_slice_by_scale = true;
     int32_t _commands_per_slice = 16384;
-    int32_t _epoch_days = 1;
+    EconomyTrackedScalar<int32_t> _epoch_days{_metadata_changes, {{15, 12}, "metadata.epoch_days", EconomyFieldEncoding::I32, 4}, 1};
     // 本 epoch 每格各自的未结算天数，以及全局取 min 造成的天数丢失量。
     // _epoch_days 是所有结算格的最小值：分桶齐整时每格相同、丢失恒为 0；新格上线
     // 或 cadence 重锁会让同批格的 elapsed 不齐，落后格的差额当前被直接丢弃。
@@ -3966,13 +4091,13 @@ private:
     // 活跃度分级（阶段 6）。当前只观测：分级结果进直方图与 report，不参与工作集
     // 选择，所以逐日数值与分级前逐位相同。要让 T2/T3 真正降频，前提是同一天内不同
     // 格能用不同的 dt，而 _epoch_days 是每 epoch 一个标量，见 cell_elapsed_days。
-    std::vector<uint8_t> _cell_tier;
-    std::vector<int64_t> _cell_next_review_day;
-    std::vector<uint8_t> _cell_force_wake;
-    std::vector<uint32_t> _cell_tier_seen_gen;
-    std::vector<int64_t> _cell_tier_seen_population;
-    std::vector<int64_t> _cell_tier_change_day;
-    std::vector<int64_t> _cell_shortage_since_day;
+    EconomyOwnedColumn<uint8_t> _cell_tier{{{16, 33}, "persisted_columns.cell_tier", EconomyFieldEncoding::U8, 1}};
+    EconomyOwnedColumn<int64_t> _cell_next_review_day{{{16, 31}, "persisted_columns.cell_next_review_day", EconomyFieldEncoding::I64, 8}};
+    EconomyOwnedColumn<uint8_t> _cell_force_wake{{{16, 30}, "persisted_columns.cell_force_wake", EconomyFieldEncoding::U8, 1}};
+    EconomyOwnedColumn<uint32_t> _cell_tier_seen_gen{{{16, 35}, "persisted_columns.cell_tier_seen_gen", EconomyFieldEncoding::U32, 4}};
+    EconomyOwnedColumn<int64_t> _cell_tier_seen_population{{{16, 36}, "persisted_columns.cell_tier_seen_population", EconomyFieldEncoding::I64, 8}};
+    EconomyOwnedColumn<int64_t> _cell_tier_change_day{{{16, 34}, "persisted_columns.cell_tier_change_day", EconomyFieldEncoding::I64, 8}};
+    EconomyOwnedColumn<int64_t> _cell_shortage_since_day{{{16, 32}, "persisted_columns.cell_shortage_since_day", EconomyFieldEncoding::I64, 8}};
     std::vector<int64_t> _cell_population_total;
     static constexpr int32_t SHORTAGE_ACUTE_DAYS = 10;
     int64_t _tier_histogram[4] = {0, 0, 0, 0};
@@ -3986,12 +4111,12 @@ private:
     int32_t _configured_epoch_days = MARKET_CYCLE_MAX_DAYS;
     int32_t _min_epoch_days = MARKET_CYCLE_MIN_DAYS;
     int32_t _max_epoch_days = MARKET_CYCLE_MAX_DAYS;
-    int32_t _locked_market_cycle_days = MARKET_CYCLE_MIN_DAYS;
-    int64_t _market_cycle_start_day = 0;
-    int32_t _locked_slow_cycle_days = PLAN_CYCLE_MIN_DAYS;
-    int64_t _slow_cycle_start_day = 0;
-    int32_t _locked_investment_cycle_days = INVEST_CYCLE_MIN_DAYS;
-    int64_t _investment_cycle_start_day = 0;
+    EconomyTrackedScalar<int32_t> _locked_market_cycle_days{_metadata_changes, {{15, 20}, "metadata.locked_market_cycle_days", EconomyFieldEncoding::I32, 4}, MARKET_CYCLE_MIN_DAYS};
+    EconomyTrackedScalar<int64_t> _market_cycle_start_day{_metadata_changes, {{15, 22}, "metadata.market_cycle_start_day", EconomyFieldEncoding::I64, 8}, 0};
+    EconomyTrackedScalar<int32_t> _locked_slow_cycle_days{_metadata_changes, {{15, 21}, "metadata.locked_slow_cycle_days", EconomyFieldEncoding::I32, 4}, PLAN_CYCLE_MIN_DAYS};
+    EconomyTrackedScalar<int64_t> _slow_cycle_start_day{_metadata_changes, {{15, 28}, "metadata.slow_cycle_start_day", EconomyFieldEncoding::I64, 8}, 0};
+    EconomyTrackedScalar<int32_t> _locked_investment_cycle_days{_metadata_changes, {{15, 19}, "metadata.locked_investment_cycle_days", EconomyFieldEncoding::I32, 4}, INVEST_CYCLE_MIN_DAYS};
+    EconomyTrackedScalar<int64_t> _investment_cycle_start_day{_metadata_changes, {{15, 17}, "metadata.investment_cycle_start_day", EconomyFieldEncoding::I64, 8}, 0};
     int32_t _slow_cycle_min_days = PLAN_CYCLE_MIN_DAYS;
     int32_t _slow_cycle_max_days = PLAN_CYCLE_MAX_DAYS;
     int32_t _invest_cycle_min_days = INVEST_CYCLE_MIN_DAYS;
@@ -4084,14 +4209,14 @@ private:
     std::array<int32_t, SAT_PRESSURE_LEVEL_COUNT - 1>
         _satisfaction_pressure_thresholds_q16 = {13107, 26214, 39322, 52429};
     int32_t _wage_ema_alpha_q16 = 8192;
-    int32_t _employment_mobility_daily_q16 = 13107;
+    EconomyTrackedScalar<int32_t> _employment_mobility_daily_q16{_metadata_changes, {{15, 8}, "metadata.employment_mobility_daily_q16", EconomyFieldEncoding::I32, 4}, 13107};
     // Extra hurdle when both source and target start understaffed and the source
     // still has positive opportunity income. Keeps opportunity-gradient flow
     // while suppressing small-gap understaffed↔understaffed thrashing.
-    int32_t _employment_understaffed_reallocation_hurdle_mult_q16 = Q16_ONE * 2;
+    EconomyTrackedScalar<int32_t> _employment_understaffed_reallocation_hurdle_mult_q16{_metadata_changes, {{15, 9}, "metadata.employment_understaffed_reallocation_hurdle_mult_q16", EconomyFieldEncoding::I32, 4}, Q16_ONE * 2};
     // Authoritative understaffed↔understaffed reverse-move cooldown (simulation days).
     int32_t _employment_understaffed_mobility_cooldown_days = 30;
-    int32_t _employment_choice_temperature_q16 = 6554;
+    EconomyTrackedScalar<int32_t> _employment_choice_temperature_q16{_metadata_changes, {{15, 7}, "metadata.employment_choice_temperature_q16", EconomyFieldEncoding::I32, 4}, 6554};
     int32_t _wage_max_rise_q16_per_day = 1311;
     int32_t _wage_max_fall_q16_per_day = 1311;
     // Damping: contract wage floor may not exceed the building's per-employee
@@ -4099,22 +4224,24 @@ private:
     // pushing wages far beyond what the employer can pay. 0 disables the cap.
     int32_t _wage_income_cap_ratio_q16 = 78643; // ~1.2x
     int32_t _employee_profit_share_q16 = 16384;
-    int32_t _building_severe_loss_threshold_q16 = -16384;
-    int32_t _building_severe_loss_cycles = 3;
-    int32_t _building_restart_margin_q16 = 6554;
-    int32_t _building_restart_cycles = 2;
-    int32_t _merchant_procurement_cash_reserve_q16 = 8192;
-    int32_t _merchant_market_making_days_q16 = Q16_ONE * 60;
-    int32_t _merchant_credit_runtime_mode = 2; // 0=OFF, 1=PROBE, 2=ACTIVE.
-    int32_t _merchant_credit_exposure_q16 = 16384;
-    int32_t _merchant_credit_premium_q16 = 3277;
-    int32_t _merchant_credit_term_cycles = 6;
-    int32_t _recovery_success_cycles = 2;
+    EconomyTrackedScalar<int32_t> _building_severe_loss_threshold_q16{_metadata_changes, {{15, 37}, "config.building_severe_loss_threshold_q16", EconomyFieldEncoding::I32, 4}, -16384};
+    EconomyTrackedScalar<int32_t> _building_severe_loss_cycles{_metadata_changes, {{15, 36}, "config.building_severe_loss_cycles", EconomyFieldEncoding::I32, 4}, 3};
+    EconomyTrackedScalar<int32_t> _building_restart_margin_q16{_metadata_changes, {{15, 35}, "config.building_restart_margin_q16", EconomyFieldEncoding::I32, 4}, 6554};
+    EconomyTrackedScalar<int32_t> _building_restart_cycles{_metadata_changes, {{15, 34}, "config.building_restart_cycles", EconomyFieldEncoding::I32, 4}, 2};
+    EconomyTrackedScalar<int32_t> _merchant_procurement_cash_reserve_q16{_metadata_changes, {{15, 66}, "config.merchant_procurement_cash_reserve_q16", EconomyFieldEncoding::I32, 4}, 8192};
+    EconomyTrackedScalar<int32_t> _merchant_market_making_days_q16{_metadata_changes, {{15, 65}, "config.merchant_market_making_days_q16", EconomyFieldEncoding::I32, 4}, Q16_ONE * 60};
+    EconomyTrackedScalar<int32_t> _merchant_credit_runtime_mode{_metadata_changes, {{15, 63}, "config.merchant_credit_runtime_mode", EconomyFieldEncoding::I32, 4}, 2}; // 0=OFF, 1=PROBE, 2=ACTIVE.
+    EconomyTrackedScalar<int32_t> _merchant_credit_exposure_q16{_metadata_changes, {{15, 61}, "config.merchant_credit_exposure_q16", EconomyFieldEncoding::I32, 4}, 16384};
+    EconomyTrackedScalar<int32_t> _merchant_credit_premium_q16{_metadata_changes, {{15, 62}, "config.merchant_credit_premium_q16", EconomyFieldEncoding::I32, 4}, 3277};
+    EconomyTrackedScalar<int32_t> _merchant_credit_term_cycles{_metadata_changes, {{15, 64}, "config.merchant_credit_term_cycles", EconomyFieldEncoding::I32, 4}, 6};
+    EconomyTrackedScalar<int32_t> _recovery_success_cycles{_metadata_changes, {{15, 82}, "config.recovery_success_cycles", EconomyFieldEncoding::I32, 4}, 2};
     // 73 five-day reviews are approximately one year. The old recovery name
     // is retained only for save/profile compatibility.
-    int32_t _recovery_liquidation_failed_reviews = 73;
-    int32_t _maintenance_horizon_days_by_sector[5] = {5475, 2920, 3650, 2190, 7300};
-    int32_t _building_maintenance_cost_factor_q16 = Q16_ONE;
+    EconomyTrackedScalar<int32_t> _recovery_liquidation_failed_reviews{_metadata_changes, {{15, 80}, "config.recovery_liquidation_failed_reviews", EconomyFieldEncoding::I32, 4}, 73};
+    EconomyOwnedColumn<int32_t> _maintenance_horizon_days_by_sector{
+        {{16, 51}, "config.maintenance_horizon_days_by_sector", EconomyFieldEncoding::I32, 4},
+        {5475, 2920, 3650, 2190, 7300}};
+    EconomyTrackedScalar<int32_t> _building_maintenance_cost_factor_q16{_metadata_changes, {{15, 32}, "config.building_maintenance_cost_factor_q16", EconomyFieldEncoding::I32, 4}, Q16_ONE};
     int32_t _merchant_profession_id = -1;
     std::string _merchant_profession_stable_id = "merchant";
     // Reserved profession representing unemployed population. Resolved from the
@@ -4124,50 +4251,50 @@ private:
     int32_t _unemployed_profession_id = -1;
     std::string _unemployed_profession_stable_id = "unemployed";
     int32_t _market_runtime_mode = 1; // 0=OFF, 1=PROBE, 2=ACTIVE.
-    int32_t _trade_runtime_mode = 2; // 0=OFF, 1=PROBE, 2=ACTIVE.
-    int32_t _startup_demand_runtime_mode = 1; // 0=OFF, 1=ACTIVE.
-    int64_t _trade_capacity_per_merchant_q16 = 64 * Q16_ONE;
-    int32_t _trade_speed_cost_per_day = 4;
-    int32_t _trade_min_margin_q16 = 3277;
-    int32_t _trade_target_count = 4;
-    int32_t _trade_signal_pairs_per_slice = 4096;
-    int32_t _trade_route_searches_per_slice = 32;
-    int32_t _trade_max_route_expansions = 8192;
-    int32_t _trade_route_cache_entries = 16384;
-    int32_t _trade_max_signals = 32768;
-    int32_t _trade_max_candidates = 8192;
-    int32_t _trade_max_orders = 4096;
-    int32_t _trade_flow_ema_alpha_q16 = 8192;
-    int32_t _trade_max_stock_share_q16 = 16384;
-    int32_t _trade_export_floor_days = 5;
-    int32_t _trade_export_inventory_fraction_q16 = Q16_ONE / 2;
-    int32_t _trade_import_fill_fraction_q16 = Q16_ONE / 2;
-    int32_t _trade_response_days = 15;
-    int32_t _investment_review_days = 30;
+    EconomyTrackedScalar<int32_t> _trade_runtime_mode{_metadata_changes, {{15, 30}, "metadata.trade_runtime_mode", EconomyFieldEncoding::I32, 4}, 2}; // 0=OFF, 1=PROBE, 2=ACTIVE.
+    EconomyTrackedScalar<int32_t> _startup_demand_runtime_mode{_metadata_changes, {{15, 29}, "metadata.startup_demand_runtime_mode", EconomyFieldEncoding::I32, 4}, 1}; // 0=OFF, 1=ACTIVE.
+    EconomyTrackedScalar<int64_t> _trade_capacity_per_merchant_q16{_metadata_changes, {{15, 87}, "config.trade_capacity_per_merchant_q16", EconomyFieldEncoding::I64, 8}, 64 * Q16_ONE};
+    EconomyTrackedScalar<int32_t> _trade_speed_cost_per_day{_metadata_changes, {{15, 102}, "config.trade_speed_cost_per_day", EconomyFieldEncoding::I32, 4}, 4};
+    EconomyTrackedScalar<int32_t> _trade_min_margin_q16{_metadata_changes, {{15, 97}, "config.trade_min_margin_q16", EconomyFieldEncoding::I32, 4}, 3277};
+    EconomyTrackedScalar<int32_t> _trade_target_count{_metadata_changes, {{15, 103}, "config.trade_target_count", EconomyFieldEncoding::I32, 4}, 4};
+    EconomyTrackedScalar<int32_t> _trade_signal_pairs_per_slice{_metadata_changes, {{15, 101}, "config.trade_signal_pairs_per_slice", EconomyFieldEncoding::I32, 4}, 4096};
+    EconomyTrackedScalar<int32_t> _trade_route_searches_per_slice{_metadata_changes, {{15, 100}, "config.trade_route_searches_per_slice", EconomyFieldEncoding::I32, 4}, 32};
+    EconomyTrackedScalar<int32_t> _trade_max_route_expansions{_metadata_changes, {{15, 94}, "config.trade_max_route_expansions", EconomyFieldEncoding::I32, 4}, 8192};
+    EconomyTrackedScalar<int32_t> _trade_route_cache_entries{_metadata_changes, {{15, 99}, "config.trade_route_cache_entries", EconomyFieldEncoding::I32, 4}, 16384};
+    EconomyTrackedScalar<int32_t> _trade_max_signals{_metadata_changes, {{15, 95}, "config.trade_max_signals", EconomyFieldEncoding::I32, 4}, 32768};
+    EconomyTrackedScalar<int32_t> _trade_max_candidates{_metadata_changes, {{15, 92}, "config.trade_max_candidates", EconomyFieldEncoding::I32, 4}, 8192};
+    EconomyTrackedScalar<int32_t> _trade_max_orders{_metadata_changes, {{15, 93}, "config.trade_max_orders", EconomyFieldEncoding::I32, 4}, 4096};
+    EconomyTrackedScalar<int32_t> _trade_flow_ema_alpha_q16{_metadata_changes, {{15, 90}, "config.trade_flow_ema_alpha_q16", EconomyFieldEncoding::I32, 4}, 8192};
+    EconomyTrackedScalar<int32_t> _trade_max_stock_share_q16{_metadata_changes, {{15, 96}, "config.trade_max_stock_share_q16", EconomyFieldEncoding::I32, 4}, 16384};
+    EconomyTrackedScalar<int32_t> _trade_export_floor_days{_metadata_changes, {{15, 88}, "config.trade_export_floor_days", EconomyFieldEncoding::I32, 4}, 5};
+    EconomyTrackedScalar<int32_t> _trade_export_inventory_fraction_q16{_metadata_changes, {{15, 89}, "config.trade_export_inventory_fraction_q16", EconomyFieldEncoding::I32, 4}, Q16_ONE / 2};
+    EconomyTrackedScalar<int32_t> _trade_import_fill_fraction_q16{_metadata_changes, {{15, 91}, "config.trade_import_fill_fraction_q16", EconomyFieldEncoding::I32, 4}, Q16_ONE / 2};
+    EconomyTrackedScalar<int32_t> _trade_response_days{_metadata_changes, {{15, 98}, "config.trade_response_days", EconomyFieldEncoding::I32, 4}, 15};
+    EconomyTrackedScalar<int32_t> _investment_review_days{_metadata_changes, {{15, 60}, "config.investment_review_days", EconomyFieldEncoding::I32, 4}, 30};
     // Locked slow-cycle length S. Plan evaluation and investment review share
     // this value. Profile 10/30 are range hints and v37 restore compatibility,
     // not a fixed production cadence.
-    int32_t _building_plan_days = 10;
-    int32_t _investment_min_shortage_q16 = Q16_ONE / 8;
-    int32_t _investment_min_utilization_q16 = 42598;
-    int32_t _investment_max_payback_days = 365;
-    int32_t _investment_operating_cycles = 2;
-    int32_t _investment_gap_fill_share_q16 = Q16_ONE / 4;
-    int32_t _investment_portfolio_max_types = 4;
-    int32_t _investment_max_type_owner_share_q16 = Q16_ONE / 2;
-    int32_t _investment_max_growth_share_q16 = 16384;
-    int32_t _investment_new_type_seed_buildings = 1;
+    EconomyTrackedScalar<int32_t> _building_plan_days{_metadata_changes, {{15, 33}, "config.building_plan_days", EconomyFieldEncoding::I32, 4}, 10};
+    EconomyTrackedScalar<int32_t> _investment_min_shortage_q16{_metadata_changes, {{15, 55}, "config.investment_min_shortage_q16", EconomyFieldEncoding::I32, 4}, Q16_ONE / 8};
+    EconomyTrackedScalar<int32_t> _investment_min_utilization_q16{_metadata_changes, {{15, 56}, "config.investment_min_utilization_q16", EconomyFieldEncoding::I32, 4}, 42598};
+    EconomyTrackedScalar<int32_t> _investment_max_payback_days{_metadata_changes, {{15, 52}, "config.investment_max_payback_days", EconomyFieldEncoding::I32, 4}, 365};
+    EconomyTrackedScalar<int32_t> _investment_operating_cycles{_metadata_changes, {{15, 58}, "config.investment_operating_cycles", EconomyFieldEncoding::I32, 4}, 2};
+    EconomyTrackedScalar<int32_t> _investment_gap_fill_share_q16{_metadata_changes, {{15, 50}, "config.investment_gap_fill_share_q16", EconomyFieldEncoding::I32, 4}, Q16_ONE / 4};
+    EconomyTrackedScalar<int32_t> _investment_portfolio_max_types{_metadata_changes, {{15, 59}, "config.investment_portfolio_max_types", EconomyFieldEncoding::I32, 4}, 4};
+    EconomyTrackedScalar<int32_t> _investment_max_type_owner_share_q16{_metadata_changes, {{15, 53}, "config.investment_max_type_owner_share_q16", EconomyFieldEncoding::I32, 4}, Q16_ONE / 2};
+    EconomyTrackedScalar<int32_t> _investment_max_growth_share_q16{_metadata_changes, {{15, 51}, "config.investment_max_growth_share_q16", EconomyFieldEncoding::I32, 4}, 16384};
+    EconomyTrackedScalar<int32_t> _investment_new_type_seed_buildings{_metadata_changes, {{15, 57}, "config.investment_new_type_seed_buildings", EconomyFieldEncoding::I32, 4}, 1};
     int32_t _investment_displacement_min_advantage_q16 = Q16_ONE / 16;
-    int32_t _investment_merchant_transition_min_improvement_q16 = Q16_ONE / 2;
+    EconomyTrackedScalar<int32_t> _investment_merchant_transition_min_improvement_q16{_metadata_changes, {{15, 54}, "config.investment_merchant_transition_min_improvement_q16", EconomyFieldEncoding::I32, 4}, Q16_ONE / 2};
     int32_t _investment_sparse_mode = 2;
-    int32_t _recovery_liquidation_max_share_q16 = Q16_ONE / 4;
-    int32_t _resource_min_reserve_q16 = 22938;
+    EconomyTrackedScalar<int32_t> _recovery_liquidation_max_share_q16{_metadata_changes, {{15, 81}, "config.recovery_liquidation_max_share_q16", EconomyFieldEncoding::I32, 4}, Q16_ONE / 4};
+    EconomyTrackedScalar<int32_t> _resource_min_reserve_q16{_metadata_changes, {{15, 84}, "config.resource_min_reserve_q16", EconomyFieldEncoding::I32, 4}, 22938};
     // Zero is open access. Positive values enable the optional managed
     // safe-harvest budget.
-    int32_t _resource_safe_harvest_q16 = 0;
-    int32_t _resource_min_horizon_days = 3650;
-    int32_t _bullion_monthly_issue_cap_q16 = 655;
-    int32_t _producer_support_monthly_cap_q16 = 3277;
+    EconomyTrackedScalar<int32_t> _resource_safe_harvest_q16{_metadata_changes, {{15, 85}, "config.resource_safe_harvest_q16", EconomyFieldEncoding::I32, 4}, 0};
+    EconomyTrackedScalar<int32_t> _resource_min_horizon_days{_metadata_changes, {{15, 83}, "config.resource_min_horizon_days", EconomyFieldEncoding::I32, 4}, 3650};
+    EconomyTrackedScalar<int32_t> _bullion_monthly_issue_cap_q16{_metadata_changes, {{15, 38}, "config.bullion_monthly_issue_cap_q16", EconomyFieldEncoding::I32, 4}, 655};
+    EconomyTrackedScalar<int32_t> _producer_support_monthly_cap_q16{_metadata_changes, {{15, 79}, "config.producer_support_monthly_cap_q16", EconomyFieldEncoding::I32, 4}, 3277};
     bool _worker_enabled = true;
     int32_t _worker_market_threshold = 256;
     int32_t _worker_tasks_hint = 0;
@@ -4189,15 +4316,15 @@ private:
     int32_t _accuracy_choice_temperature_q16 = 983;
     int32_t _accuracy_exact_probe_rate_q16 = 655;
     int32_t _accuracy_fallback_cooldown_epochs = 10;
-    int64_t _seed = 0;
-    int64_t _catalog_hash = 0;
+    EconomyTrackedScalar<int64_t> _seed{_metadata_changes, {{15, 86}, "config.seed", EconomyFieldEncoding::I64, 8}, 0};
+    EconomyTrackedScalar<int64_t> _catalog_hash{_metadata_changes, {{15, 3}, "metadata.catalog_hash", EconomyFieldEncoding::I64, 8}, 0};
     int64_t _catalog_compat_hash_v6 = 0;
-    int64_t _epoch_id = 0;
+    EconomyTrackedScalar<int64_t> _epoch_id{_metadata_changes, {{15, 13}, "metadata.epoch_id", EconomyFieldEncoding::I64, 8}, 0};
     uint64_t _committed_generation = 1;
     int64_t _sample_day = -1;
-    int64_t _current_day = -1;
+    EconomyTrackedScalar<int64_t> _current_day{_metadata_changes, {{15, 6}, "metadata.current_day", EconomyFieldEncoding::I64, 8}, -1};
     int64_t _commit_day = -1;
-    int64_t _last_committed_day = -1;
+    EconomyTrackedScalar<int64_t> _last_committed_day{_metadata_changes, {{15, 18}, "metadata.last_committed_day", EconomyFieldEncoding::I64, 8}, -1};
     int64_t _explicit_money_mint = 0;
     int64_t _explicit_money_burn = 0;
     int64_t _external_population_delta = 0;
@@ -4213,7 +4340,7 @@ private:
     std::vector<int64_t> _cell_moved_in;
     std::vector<int64_t> _cell_moved_out;
     int64_t _saturation_count = 0;
-    uint64_t _next_submit_order = 1;
+    EconomyTrackedScalar<uint64_t> _next_submit_order{_metadata_changes, {{15, 72}, "config.next_submit_order", EconomyFieldEncoding::U64, 8}, 1};
 
     int32_t _cell_cursor = 0;
     int32_t _command_cursor = 0;
@@ -4394,9 +4521,9 @@ private:
     int64_t _merchant_input_procurement_allocated = 0;
     int64_t _merchant_trade_purchase_cash = 0;
     int64_t _merchant_trade_sale_cash = 0;
-    int64_t _government_research_procured_points = 0;
-    int64_t _government_research_procurement_cash = 0;
-    int64_t _government_research_procurement_orders = 0;
+    EconomyTrackedScalar<int64_t> _government_research_procured_points{_metadata_changes, {{15, 47}, "config.government_research_procured_points", EconomyFieldEncoding::I64, 8}, 0};
+    EconomyTrackedScalar<int64_t> _government_research_procurement_cash{_metadata_changes, {{15, 48}, "config.government_research_procurement_cash", EconomyFieldEncoding::I64, 8}, 0};
+    EconomyTrackedScalar<int64_t> _government_research_procurement_orders{_metadata_changes, {{15, 49}, "config.government_research_procurement_orders", EconomyFieldEncoding::I64, 8}, 0};
     // Resumable government research procurement state. These vectors are
     // epoch-local continuation data: candidate ordering and country budget
     // decisions are captured once, then consumed in stable cursor order.
@@ -4619,12 +4746,12 @@ private:
     std::vector<CommittedGameplayFact> _committed_gameplay_facts;
     std::deque<AuditFrame> _audit_history;
     std::unordered_map<std::string, int64_t> _event_consumer_ack;
-    int64_t _next_event_id = 1;
+    EconomyTrackedScalar<int64_t> _next_event_id{_metadata_changes, {{15, 70}, "config.next_event_id", EconomyFieldEncoding::I64, 8}, 1};
     int64_t _event_evicted_count = 0;
     int64_t _first_evicted_event_id = 0;
     int64_t _trace_detail_truncated = 0;
     int64_t _trace_uncommitted_discarded = 0;
-    uint64_t _event_stream_hash = 1469598103934665603ULL;
+    EconomyTrackedScalar<uint64_t> _event_stream_hash{_metadata_changes, {{15, 39}, "config.event_stream_hash", EconomyFieldEncoding::U64, 8}, 1469598103934665603ULL};
     double _event_summary_ms = 0.0;
     double _event_detail_ms = 0.0;
     double _event_publish_ms = 0.0;
@@ -4816,8 +4943,8 @@ private:
     std::unordered_map<uint64_t, int32_t> _family_expedition_target_index;
     std::vector<std::pair<int64_t, int32_t>> _family_expedition_due_heap;
     std::vector<ColonizationReceipt> _colonization_receipts;
-    int64_t _next_colonization_receipt_id = 1;
-    int64_t _next_family_expedition_stable_id = 1;
+    EconomyTrackedScalar<int64_t> _next_colonization_receipt_id{_metadata_changes, {{15, 69}, "config.next_colonization_receipt_id", EconomyFieldEncoding::I64, 8}, 1};
+    EconomyTrackedScalar<int64_t> _next_family_expedition_stable_id{_metadata_changes, {{15, 71}, "config.next_family_expedition_stable_id", EconomyFieldEncoding::I64, 8}, 1};
     std::vector<ColonizationQuoteCacheEntry> _colonization_quote_cache;
     std::unordered_map<uint64_t, int32_t> _colonization_quote_index;
     std::vector<int32_t> _colonization_quote_route_cells;
@@ -4833,14 +4960,15 @@ private:
     double _colonization_route_query_ms = 0.0;
     double _colonization_payload_split_ms = 0.0;
     double _colonization_cross_domain_ms = 0.0;
-    std::vector<CanalQuote> _canal_quotes;
-    std::unordered_map<uint64_t, int32_t> _canal_quote_index;
-    std::vector<CanalProject> _canal_projects;
+    EconomyKeyedVariableRecords<CanalQuote> _canal_quotes{{{27, 2}, "canal.quotes", EconomyFieldEncoding::CanonicalRecord, 1}};
+    EconomyTrackedJournal<uint64_t, int32_t> _canal_quote_index{{{27, 3}, "canal.active_quote_index", EconomyFieldEncoding::CanonicalRecord, 1}};
+    EconomyKeyedVariableRecords<CanalProject> _canal_projects{
+        {{27, 1}, "infrastructure.canal_projects", EconomyFieldEncoding::CanonicalRecord, 1}};
     std::unordered_map<uint64_t, int32_t> _canal_project_index;
     std::vector<CanalConstructionReceipt> _canal_receipts;
-    uint64_t _next_canal_quote_token = 1;
-    uint64_t _next_canal_project_id = 1;
-    int64_t _next_canal_receipt_id = 1;
+    EconomyTrackedScalar<uint64_t> _next_canal_quote_token{_metadata_changes, {{15, 67}, "config.next_canal_quote_token", EconomyFieldEncoding::U64, 8}, 1};
+    EconomyTrackedScalar<uint64_t> _next_canal_project_id{_metadata_changes, {{15, 23}, "metadata.next_canal_project_id", EconomyFieldEncoding::U64, 8}, 1};
+    EconomyTrackedScalar<int64_t> _next_canal_receipt_id{_metadata_changes, {{15, 68}, "config.next_canal_receipt_id", EconomyFieldEncoding::I64, 8}, 1};
     // A+Y N5: unbound fallback only; see the accessors below.
     FamilyCellInfluenceStore _family_influences_local;
     NotablePersonStore _persons_local;
@@ -4854,25 +4982,28 @@ private:
     std::vector<int32_t> _family_birth_factor_q16;
     std::vector<int32_t> _family_absorb_bonus_q16;
     std::vector<int32_t> _family_colonization_population_reward;
-    std::vector<FamilyTraitCommand> _family_trait_commands;
+    EconomyTrackedRecords<FamilyTraitCommand> _family_trait_commands{{{14, 4}, "commands.family_trait_commands", EconomyFieldEncoding::CanonicalRecord, 1}};
     // Milestone founding: per-cell count of population milestones that have
     // produced a family, offers awaiting a player choice, queued choices, and
     // the random-pool effect preselected on the chosen card (by stable id).
-    std::vector<uint8_t> _family_milestones_reached;
-    std::vector<FamilyFoundingOffer> _family_founding_offers;
-    std::vector<FamilyFoundingChoiceCommand> _family_founding_choices;
-    std::vector<std::pair<int64_t, int32_t>> _family_founding_effects;
-    int64_t _next_family_founding_offer_id = 1;
+    EconomyOwnedColumn<uint8_t> _family_milestones_reached{
+        {{16, 27}, "family.milestones_reached", EconomyFieldEncoding::U8, 1}};
+    EconomyKeyedVariableRecords<FamilyFoundingOffer> _family_founding_offers{{{24, 1}, "family_variable.family_founding_offers", EconomyFieldEncoding::CanonicalRecord, 1}};
+    EconomyTrackedRecords<FamilyFoundingChoiceCommand> _family_founding_choices{{{14, 5}, "commands.family_founding_choices", EconomyFieldEncoding::CanonicalRecord, 1}};
+    EconomyKeyedVariableRecords<std::pair<int64_t, int32_t>> _family_founding_effects{
+        {{24, 5}, "family.founding_effects", EconomyFieldEncoding::CanonicalRecord, 1}};
+    EconomyTrackedScalar<int64_t> _next_family_founding_offer_id{_metadata_changes,
+        {{15, 31}, "family.next_founding_offer_id", EconomyFieldEncoding::I64, 8}, 1};
     std::vector<int32_t> _family_founding_offer_by_cell;
     bool _family_founding_offer_index_dirty = true;
-    std::vector<FamilyModifierBinding> _family_modifier_bindings;
-    std::vector<FamilyEffectBinding> _family_effect_bindings;
+    EconomyKeyedVariableRecords<FamilyModifierBinding> _family_modifier_bindings{{{24, 2}, "family_variable.family_modifier_bindings", EconomyFieldEncoding::CanonicalRecord, 1}};
+    EconomyKeyedVariableRecords<FamilyEffectBinding> _family_effect_bindings{{{24, 4}, "family_variable.family_effect_bindings", EconomyFieldEncoding::CanonicalRecord, 1}};
     std::unordered_map<int64_t, size_t> _family_effect_binding_by_instance;
     std::unordered_map<uint64_t, std::vector<int64_t>>
         _family_effect_instances_by_branch;
     std::unordered_map<int32_t, std::vector<int64_t>>
         _family_effect_instances_by_cell;
-    std::vector<FamilyTriggerBinding> _family_trigger_bindings;
+    EconomyKeyedVariableRecords<FamilyTriggerBinding> _family_trigger_bindings{{{24, 3}, "family_variable.family_trigger_bindings", EconomyFieldEncoding::CanonicalRecord, 1}};
     // A+Y N5: unbound fallback only; see person_needs().
     EconomyTrackedRecords<PersonNeedState> _person_needs_local{{{12, 4}, "family_records.person_needs", EconomyFieldEncoding::CanonicalRecord, 1}};
     // Set when a retirement leaves need rows behind. Compaction is deferred to
@@ -5008,21 +5139,21 @@ private:
     std::vector<int64_t> _demand_basis_need_environment;
     // Persistent per-cell rolling settlement state. Phase is derived from the
     // Stable cell id; last day and generation are PKEC v16 authority.
-    std::vector<int64_t> _cell_last_settlement_day;
+    EconomyOwnedColumn<int64_t> _cell_last_settlement_day{{{16, 9}, "native_columns.cell_last_settlement_day", EconomyFieldEncoding::I64, 8}};
     // Q32 fractional births accumulated per cell and ethnicity.
-    std::vector<int64_t> _birth_residual_q32;
-    std::vector<uint32_t> _cell_settlement_generation;
-    std::vector<uint32_t> _cell_price_stock_gen;
-    std::vector<uint32_t> _cell_owner_cash_gen;
-    std::vector<uint32_t> _cell_population_gen;
-    std::vector<uint32_t> _cell_building_structure_gen;
-    std::vector<uint32_t> _cell_technology_gen;
+    EconomyOwnedColumn<int64_t> _birth_residual_q32{{{16, 1}, "native_columns.birth_residual_q32", EconomyFieldEncoding::I64, 8}};
+    EconomyOwnedColumn<uint32_t> _cell_settlement_generation{{{16, 13}, "native_columns.cell_settlement_generation", EconomyFieldEncoding::U32, 4}};
+    EconomyOwnedColumn<uint32_t> _cell_price_stock_gen{{{16, 12}, "native_columns.cell_price_stock_gen", EconomyFieldEncoding::U32, 4}};
+    EconomyOwnedColumn<uint32_t> _cell_owner_cash_gen{{{16, 10}, "native_columns.cell_owner_cash_gen", EconomyFieldEncoding::U32, 4}};
+    EconomyOwnedColumn<uint32_t> _cell_population_gen{{{16, 11}, "native_columns.cell_population_gen", EconomyFieldEncoding::U32, 4}};
+    EconomyOwnedColumn<uint32_t> _cell_building_structure_gen{{{16, 2}, "native_columns.cell_building_structure_gen", EconomyFieldEncoding::U32, 4}};
+    EconomyOwnedColumn<uint32_t> _cell_technology_gen{{{16, 16}, "native_columns.cell_technology_gen", EconomyFieldEncoding::U32, 4}};
     ChangeRegistry _resource_changes_local;
     EconomyTrackedColumn<uint32_t> _cell_resource_gen{_resource_changes_local,
         {{3, 2}, "resource.cell_generation", EconomyFieldEncoding::U32, 4}};
-    std::vector<uint32_t> _cell_trade_gen;
-    std::vector<int32_t> _cell_effect_shortage_q16;
-    std::vector<int32_t> _cell_essentials_shortage_q16;
+    EconomyOwnedColumn<uint32_t> _cell_trade_gen{{{16, 17}, "native_columns.cell_trade_gen", EconomyFieldEncoding::U32, 4}};
+    EconomyOwnedColumn<int32_t> _cell_effect_shortage_q16{{{16, 28}, "persisted_columns.cell_effect_shortage_q16", EconomyFieldEncoding::I32, 4}};
+    EconomyOwnedColumn<int32_t> _cell_essentials_shortage_q16{{{16, 29}, "persisted_columns.cell_essentials_shortage_q16", EconomyFieldEncoding::I32, 4}};
     std::vector<int32_t> _cell_resource_abundance_q16;
     std::vector<int32_t> _cell_previous_precipitation_q16;
     std::vector<int32_t> _cell_rain_event_q16;
@@ -5249,7 +5380,7 @@ private:
     std::vector<std::vector<int32_t>> _country_partner_display_rows;
     std::vector<uint8_t> _country_good_display_dirty;
     std::vector<uint8_t> _country_partner_display_dirty;
-    uint64_t _country_trade_revision = 0;
+    EconomyTrackedScalar<uint64_t> _country_trade_revision{_metadata_changes, {{15, 5}, "metadata.country_trade_revision", EconomyFieldEncoding::U64, 8}, 0};
     LaborMarketStore _labor_signals;
     LaborMarketStore _labor_signals_rebuild_scratch;
     std::vector<FormulaDefinition> _formulas;
@@ -5269,7 +5400,7 @@ private:
     std::vector<int32_t> _ethnicity_need_factor_q16;
     std::vector<Rule> _rules;
     std::vector<int64_t> _rule_params;
-    std::vector<std::string> _profession_ids;
+    EconomyKeyedVariableRecords<std::string> _profession_ids{{{26, 9}, "catalog_ids.profession_ids", EconomyFieldEncoding::CanonicalRecord, 1}};
     std::vector<int32_t> _profession_class_index;
     std::vector<std::string> _carrying_class_ids;
     std::vector<int32_t> _profession_political_class_index;
@@ -5297,9 +5428,9 @@ private:
     std::vector<CarryingSupportYield> _epoch_country_support_yield;
     std::vector<int32_t> _profession_technology_offsets;
     std::vector<int32_t> _profession_required_technologies;
-    std::vector<std::string> _ethnicity_ids;
+    EconomyKeyedVariableRecords<std::string> _ethnicity_ids{{{26, 6}, "catalog_ids.ethnicity_ids", EconomyFieldEncoding::CanonicalRecord, 1}};
     std::vector<int32_t> _ethnicity_culture_group_ids;
-    std::vector<std::string> _good_ids;
+    EconomyKeyedVariableRecords<std::string> _good_ids{{{26, 7}, "catalog_ids.good_ids", EconomyFieldEncoding::CanonicalRecord, 1}};
     std::vector<int32_t> _good_occupancy_bit_offsets;
     std::vector<int32_t> _good_occupancy_bits;
     std::vector<int32_t> _bio_introduce_cells;
@@ -5307,7 +5438,7 @@ private:
     // Main-thread only. Production workers land introductions in
     // ProductionResult; merge_building_production_result commits them here.
     std::unordered_set<uint64_t> _bio_introduce_keys;
-    std::vector<std::string> _plan_ids;
+    EconomyKeyedVariableRecords<std::string> _plan_ids{{{26, 8}, "catalog_ids.plan_ids", EconomyFieldEncoding::CanonicalRecord, 1}};
     std::vector<int32_t> _good_default_price;
     std::vector<int64_t> _good_default_stock;
     std::vector<int32_t> _good_reference_max_price;
@@ -5346,13 +5477,13 @@ private:
     // 端点数走。_valid=false 时消费方退回全图循环，语义不变。
     std::vector<int32_t> _merchant_nonempty_cells;
     bool _merchant_nonempty_cells_valid = false;
-    std::vector<int32_t> _environment_temperature_q16;
-    std::vector<int32_t> _environment_temperature_30d_q16;
-    std::vector<int32_t> _environment_moisture_q16;
-    std::vector<int32_t> _environment_plant_available_water_q16;
-    std::vector<int32_t> _environment_precipitation_q16;
-    std::vector<int32_t> _environment_snow_q16;
-    std::vector<int32_t> _environment_weather_q16;
+    EconomyOwnedColumn<int32_t> _environment_temperature_q16{{{16, 42}, "persisted_columns.environment_temperature_q16", EconomyFieldEncoding::I32, 4}};
+    EconomyOwnedColumn<int32_t> _environment_temperature_30d_q16{{{16, 41}, "persisted_columns.environment_temperature_30d_q16", EconomyFieldEncoding::I32, 4}};
+    EconomyOwnedColumn<int32_t> _environment_moisture_q16{{{16, 37}, "persisted_columns.environment_moisture_q16", EconomyFieldEncoding::I32, 4}};
+    EconomyOwnedColumn<int32_t> _environment_plant_available_water_q16{{{16, 38}, "persisted_columns.environment_plant_available_water_q16", EconomyFieldEncoding::I32, 4}};
+    EconomyOwnedColumn<int32_t> _environment_precipitation_q16{{{16, 39}, "persisted_columns.environment_precipitation_q16", EconomyFieldEncoding::I32, 4}};
+    EconomyOwnedColumn<int32_t> _environment_snow_q16{{{16, 40}, "persisted_columns.environment_snow_q16", EconomyFieldEncoding::I32, 4}};
+    EconomyOwnedColumn<int32_t> _environment_weather_q16{{{16, 43}, "persisted_columns.environment_weather_q16", EconomyFieldEncoding::I32, 4}};
     std::vector<int32_t> _building_elevation_q16;
     std::vector<uint8_t> _building_terrain;
     std::vector<uint8_t> _building_landform;
@@ -5406,16 +5537,16 @@ private:
     std::vector<std::string> _resource_extra_slots;
     int64_t _building_context_day = -1;
     bool _resource_deltas_ready = false;
-    int64_t _environment_day = -1;
-    int64_t _environment_hash = 0;
+    EconomyTrackedScalar<int64_t> _environment_day{_metadata_changes, {{15, 10}, "metadata.environment_day", EconomyFieldEncoding::I64, 8}, -1};
+    EconomyTrackedScalar<int64_t> _environment_hash{_metadata_changes, {{15, 11}, "metadata.environment_hash", EconomyFieldEncoding::I64, 8}, 0};
     std::vector<int32_t> _market_cell_offsets;
     std::vector<int32_t> _market_cells;
-    std::vector<Command> _pending_commands;
-    std::vector<Command> _epoch_commands;
+    EconomyTrackedRecords<Command> _pending_commands{{{14, 1}, "commands.pending_commands", EconomyFieldEncoding::CanonicalRecord, 1}};
+    EconomyTrackedRecords<Command> _epoch_commands{{{14, 2}, "commands.epoch_commands", EconomyFieldEncoding::CanonicalRecord, 1}};
     std::unordered_map<int64_t, EffectCommandResult> _effect_command_results;
     std::unordered_map<uint64_t, int64_t> _effect_idempotency_requests;
     int64_t _next_effect_request_id = 1;
-    std::vector<StructuralCommand> _structural_commands;
+    EconomyTrackedRecords<StructuralCommand> _structural_commands{{{14, 3}, "commands.structural_commands", EconomyFieldEncoding::CanonicalRecord, 1}};
     std::vector<CellSummary> _committed_cells;
     std::vector<CellSummary> _staging_cells;
     std::vector<int32_t> _staging_touched_cells;
@@ -5436,23 +5567,24 @@ private:
     std::vector<int64_t> _prosperity_thresholds;
     std::vector<std::string> _prosperity_ids;
     std::vector<std::string> _prosperity_names;
-    std::vector<std::string> _settlement_prefix_ids;
+    EconomyKeyedVariableRecords<std::string> _settlement_prefix_ids{{{26, 2}, "name_catalog.settlement_prefix_ids", EconomyFieldEncoding::CanonicalRecord, 1}};
     std::vector<std::string> _settlement_prefix_text;
     std::vector<int32_t> _settlement_prefix_weights;
     std::vector<std::string> _settlement_prefix_alias_ids;
     std::vector<std::string> _settlement_prefix_alias_targets;
-    std::vector<std::string> _settlement_root_ids;
+    EconomyKeyedVariableRecords<std::string> _settlement_root_ids{{{26, 3}, "name_catalog.settlement_root_ids", EconomyFieldEncoding::CanonicalRecord, 1}};
     std::vector<std::string> _settlement_root_text;
     std::vector<int32_t> _settlement_root_weights;
     std::vector<std::string> _settlement_root_alias_ids;
     std::vector<std::string> _settlement_root_alias_targets;
-    std::vector<std::string> _settlement_suffix_ids;
+    EconomyKeyedVariableRecords<std::string> _settlement_suffix_ids{{{26, 4}, "name_catalog.settlement_suffix_ids", EconomyFieldEncoding::CanonicalRecord, 1}};
     std::vector<std::string> _settlement_suffix_text;
     std::vector<int32_t> _settlement_suffix_weights;
     std::vector<std::string> _settlement_suffix_alias_ids;
     std::vector<std::string> _settlement_suffix_alias_targets;
-    std::string _settlement_name_pack_id = "default_zh";
-    std::vector<std::string> _settlement_full_name_ids;
+    EconomyOwnedRecordValue<std::string> _settlement_name_pack_id{
+        {{26, 5}, "name_catalog.pack_id", EconomyFieldEncoding::CanonicalRecord, 1}, "default_zh"};
+    EconomyKeyedVariableRecords<std::string> _settlement_full_name_ids{{{26, 1}, "name_catalog.settlement_full_name_ids", EconomyFieldEncoding::CanonicalRecord, 1}};
     std::vector<std::string> _settlement_full_name_text;
     std::vector<int32_t> _settlement_full_name_weights;
     std::vector<std::string> _settlement_full_name_alias_ids;
@@ -5460,7 +5592,7 @@ private:
     int32_t _settlement_full_name_share_q16 = 32768;
     int32_t _settlement_named_tier = 2;
     int32_t _settlement_downgrade_bp = 9000;
-    int64_t _prosperity_profile_hash = 0;
+    EconomyTrackedScalar<int64_t> _prosperity_profile_hash{_metadata_changes, {{15, 27}, "metadata.prosperity_profile_hash", EconomyFieldEncoding::I64, 8}, 0};
     int64_t _settlement_catalog_hash = 0;
     int64_t _prosperity_changed_cells = 0;
     int64_t _prosperity_promotions = 0;
@@ -5531,7 +5663,7 @@ private:
     bool _epoch_trade_vision_gated = false;
     bool _trade_visibility_manual = false;
     std::vector<uint64_t> _epoch_country_technologies;
-    std::vector<uint64_t> _epoch_country_handles;
+    EconomyOwnedColumn<uint64_t> _epoch_country_handles{{{16, 18}, "native_columns.epoch_country_handles", EconomyFieldEncoding::U64, 8}};
     // Catalog-resolved tax stat ids and the per-epoch effective integer rates.
     // Only configure/capture touches ModifierRuntime; workers read these dense arrays.
     std::vector<int32_t> _income_tax_stat_ids;
@@ -5617,8 +5749,8 @@ private:
     uint8_t _epoch_negative_tax_mask = 0;
     uint8_t _epoch_absolute_tax_mask = 0;
     static constexpr int32_t ACTIVE_TAX_KIND_COUNT = 3;
-    std::vector<int64_t> _fiscal_previous_requests;
-    std::vector<uint64_t> _fiscal_previous_country_handles;
+    EconomyOwnedColumn<int64_t> _fiscal_previous_requests{{{16, 26}, "native_columns.fiscal_previous_requests", EconomyFieldEncoding::I64, 8}};
+    EconomyOwnedColumn<uint64_t> _fiscal_previous_country_handles{{{16, 25}, "native_columns.fiscal_previous_country_handles", EconomyFieldEncoding::U64, 8}};
     // Epoch-transient reservation weights. Income lanes are seeded from the
     // frozen minimum-living subsidy floor for current cohorts plus a bounded
     // prospective floor for available owner/employee professions, so a newly
@@ -5639,20 +5771,21 @@ private:
     std::vector<int64_t> _fiscal_epoch_assessed;
     std::vector<int64_t> _fiscal_epoch_collected;
     std::vector<int64_t> _fiscal_epoch_paid;
-    std::vector<int64_t> _fiscal_escrow_by_country;
-    std::unordered_map<uint64_t, AssetPeerJournalRecord> _asset_peer_journal;
-    std::vector<int64_t> _fiscal_last_bases;
-    std::vector<int64_t> _fiscal_last_assessed;
-    std::vector<int64_t> _fiscal_last_collected;
-    std::vector<int64_t> _fiscal_last_requests;
-    std::vector<int64_t> _fiscal_last_reserved;
-    std::vector<int64_t> _fiscal_last_paid;
-    std::vector<int64_t> _fiscal_last_unmet;
-    std::vector<int64_t> _fiscal_last_events;
-    std::vector<int64_t> _fiscal_cumulative_bases;
-    std::vector<int64_t> _fiscal_cumulative_collected;
-    std::vector<int64_t> _fiscal_cumulative_requests;
-    std::vector<int64_t> _fiscal_cumulative_paid;
+    EconomyOwnedColumn<int64_t> _fiscal_escrow_by_country{{{16, 23}, "native_columns.fiscal_escrow_by_country", EconomyFieldEncoding::I64, 8}};
+    EconomyTrackedJournal<uint64_t, AssetPeerJournalRecord> _asset_peer_journal{
+        {{13, 1}, "fiscal.peer_journal", EconomyFieldEncoding::CanonicalRecord, 1}};
+    EconomyOwnedColumn<int64_t> _fiscal_last_bases{{{16, 45}, "persisted_columns.fiscal_last_bases", EconomyFieldEncoding::I64, 8}};
+    EconomyOwnedColumn<int64_t> _fiscal_last_assessed{{{16, 44}, "persisted_columns.fiscal_last_assessed", EconomyFieldEncoding::I64, 8}};
+    EconomyOwnedColumn<int64_t> _fiscal_last_collected{{{16, 46}, "persisted_columns.fiscal_last_collected", EconomyFieldEncoding::I64, 8}};
+    EconomyOwnedColumn<int64_t> _fiscal_last_requests{{{16, 48}, "persisted_columns.fiscal_last_requests", EconomyFieldEncoding::I64, 8}};
+    EconomyOwnedColumn<int64_t> _fiscal_last_reserved{{{16, 49}, "persisted_columns.fiscal_last_reserved", EconomyFieldEncoding::I64, 8}};
+    EconomyOwnedColumn<int64_t> _fiscal_last_paid{{{16, 47}, "persisted_columns.fiscal_last_paid", EconomyFieldEncoding::I64, 8}};
+    EconomyOwnedColumn<int64_t> _fiscal_last_unmet{{{16, 50}, "persisted_columns.fiscal_last_unmet", EconomyFieldEncoding::I64, 8}};
+    EconomyOwnedColumn<int64_t> _fiscal_last_events{{{16, 24}, "native_columns.fiscal_last_events", EconomyFieldEncoding::I64, 8}};
+    EconomyOwnedColumn<int64_t> _fiscal_cumulative_bases{{{16, 19}, "native_columns.fiscal_cumulative_bases", EconomyFieldEncoding::I64, 8}};
+    EconomyOwnedColumn<int64_t> _fiscal_cumulative_collected{{{16, 20}, "native_columns.fiscal_cumulative_collected", EconomyFieldEncoding::I64, 8}};
+    EconomyOwnedColumn<int64_t> _fiscal_cumulative_requests{{{16, 22}, "native_columns.fiscal_cumulative_requests", EconomyFieldEncoding::I64, 8}};
+    EconomyOwnedColumn<int64_t> _fiscal_cumulative_paid{{{16, 21}, "native_columns.fiscal_cumulative_paid", EconomyFieldEncoding::I64, 8}};
     FiscalReservationContinuation _fiscal_reservation_continuation;
     FiscalSettlementContinuation _fiscal_settlement_continuation;
     // Tariffs stay on a sparse cell x {import, export} lane separate from the
@@ -5757,10 +5890,10 @@ private:
     std::vector<int64_t> _cell_living_cost_per_capita;
     // Last published social-pressure level per cell. Persisted so a reload does
     // not replay a level-crossing event that already fired.
-    std::vector<uint8_t> _cell_social_pressure_level;
+    EconomyOwnedColumn<uint8_t> _cell_social_pressure_level{{{16, 14}, "native_columns.cell_social_pressure_level", EconomyFieldEncoding::U8, 1}};
     // Slow EMA of the surplus×sat mix factor. Fertility reads this so a single
     // harvest spike does not jump K_eff. Persisted in PKEC v36.
-    std::vector<int32_t> _cell_support_ema_q16;
+    EconomyOwnedColumn<int32_t> _cell_support_ema_q16{{{16, 15}, "native_columns.cell_support_ema_q16", EconomyFieldEncoding::I32, 4}};
     // Derived carrying diagnostics. Not hashed except support EMA; Inspector only.
     std::vector<int64_t> _cell_carrying_k_geo;
     std::vector<int64_t> _cell_carrying_k_eff;
@@ -5776,13 +5909,13 @@ private:
     std::vector<int64_t> _cell_food_import_eq_period;
     std::vector<int64_t> _cell_food_export_eq_period;
     std::vector<int64_t> _cell_food_access_eq_period;
-    std::vector<int64_t> _cell_food_output_eq_previous;
-    std::vector<int64_t> _cell_food_input_eq_previous;
-    std::vector<int64_t> _cell_food_import_eq_previous;
-    std::vector<int64_t> _cell_food_export_eq_previous;
-    std::vector<int64_t> _cell_food_access_eq_previous;
-    std::vector<uint8_t> _cell_food_flow_valid;
-    int32_t _food_flow_previous_period_days = 0;
+    EconomyOwnedColumn<int64_t> _cell_food_output_eq_previous{{{16, 8}, "native_columns.cell_food_output_eq_previous", EconomyFieldEncoding::I64, 8}};
+    EconomyOwnedColumn<int64_t> _cell_food_input_eq_previous{{{16, 7}, "native_columns.cell_food_input_eq_previous", EconomyFieldEncoding::I64, 8}};
+    EconomyOwnedColumn<int64_t> _cell_food_import_eq_previous{{{16, 6}, "native_columns.cell_food_import_eq_previous", EconomyFieldEncoding::I64, 8}};
+    EconomyOwnedColumn<int64_t> _cell_food_export_eq_previous{{{16, 4}, "native_columns.cell_food_export_eq_previous", EconomyFieldEncoding::I64, 8}};
+    EconomyOwnedColumn<int64_t> _cell_food_access_eq_previous{{{16, 3}, "native_columns.cell_food_access_eq_previous", EconomyFieldEncoding::I64, 8}};
+    EconomyOwnedColumn<uint8_t> _cell_food_flow_valid{{{16, 5}, "native_columns.cell_food_flow_valid", EconomyFieldEncoding::U8, 1}};
+    EconomyTrackedScalar<int32_t> _food_flow_previous_period_days{_metadata_changes, {{15, 16}, "metadata.food_flow_previous_period_days", EconomyFieldEncoding::I32, 4}, 0};
     int64_t _food_output_events = 0;
     int64_t _food_input_events = 0;
     int64_t _food_trade_events = 0;
@@ -5886,19 +6019,19 @@ private:
     // previous all-pending scan from every active building cell.
     std::vector<int32_t> _pending_construction_cell_offsets;
     std::vector<int32_t> _pending_construction_cell_indices;
-    int64_t _building_catalog_hash = 0;
+    EconomyTrackedScalar<int64_t> _building_catalog_hash{_metadata_changes, {{15, 1}, "metadata.building_catalog_hash", EconomyFieldEncoding::I64, 8}, 0};
     int64_t _building_catalog_compat_hash_v6 = 0;
     int64_t _building_catalog_compat_hash_v7 = 0;
     int64_t _building_catalog_compat_hash_v13 = 0;
     int64_t _catalog_compat_hash_v7 = 0;
     int64_t _catalog_compat_hash_v8 = 0;
-    int64_t _catalog_compat_hash_v10 = 0;
+    EconomyTrackedScalar<int64_t> _catalog_compat_hash_v10{_metadata_changes, {{15, 2}, "metadata.catalog_compat_hash_v10", EconomyFieldEncoding::I64, 8}, 0};
     int64_t _catalog_compat_hash_v13 = 0;
     int64_t _catalog_compat_hash_v39 = 0;
-    int64_t _family_catalog_hash = 0;
+    EconomyTrackedScalar<int64_t> _family_catalog_hash{_metadata_changes, {{15, 40}, "config.family_catalog_hash", EconomyFieldEncoding::I64, 8}, 0};
     int64_t _family_catalog_compat_hash_v39 = 0;
-    int32_t _family_trait_catalog_version = 0;
-    int64_t _family_trait_catalog_hash = 0;
+    EconomyTrackedScalar<int32_t> _family_trait_catalog_version{_metadata_changes, {{15, 15}, "metadata.family_trait_catalog_version", EconomyFieldEncoding::I32, 4}, 0};
+    EconomyTrackedScalar<int64_t> _family_trait_catalog_hash{_metadata_changes, {{15, 14}, "metadata.family_trait_catalog_hash", EconomyFieldEncoding::I64, 8}, 0};
     int32_t _family_core_trait_min = 0;
     int32_t _family_core_trait_max = 0;
     std::vector<std::string> _family_trait_ids;
@@ -5976,34 +6109,34 @@ private:
     std::vector<std::string> _family_culture_group_naming_formats;
     std::vector<std::string> _family_culture_group_separators;
     std::vector<std::string> _family_culture_group_suffixes;
-    int64_t _person_catalog_hash = 0;
+    EconomyTrackedScalar<int64_t> _person_catalog_hash{_metadata_changes, {{15, 73}, "config.person_catalog_hash", EconomyFieldEncoding::I64, 8}, 0};
     std::string _person_given_name_pack_id = "default_zh";
     std::vector<std::string> _person_given_name_ids;
     std::vector<std::string> _person_given_name_text;
     std::vector<int32_t> _person_given_name_weights;
 
     // Notable-family policy. The anonymous majority remains implicit.
-    int32_t _family_runtime_mode = 2; // 0=OFF, 1=PROBE, 2=ACTIVE.
-    int32_t _family_review_days = 30;
+    EconomyTrackedScalar<int32_t> _family_runtime_mode{_metadata_changes, {{15, 45}, "config.family_runtime_mode", EconomyFieldEncoding::I32, 4}, 2}; // 0=OFF, 1=PROBE, 2=ACTIVE.
+    EconomyTrackedScalar<int32_t> _family_review_days{_metadata_changes, {{15, 44}, "config.family_review_days", EconomyFieldEncoding::I32, 4}, 30};
     // Ascending committed-population thresholds; each one crossed by a cell
     // produces one founding offer. Starter capital founders do not count.
     std::vector<int64_t> _family_milestone_populations{
         100, 200, 500, 1000, 2000, 5000, 10000, 20000};
-    int64_t _family_min_founder_people = 30;
+    EconomyTrackedScalar<int64_t> _family_min_founder_people{_metadata_changes, {{15, 43}, "config.family_min_founder_people", EconomyFieldEncoding::I64, 8}, 30};
     int32_t _family_founding_choice_mode = 1; // 0=AUTO, 1=PLAYER.
-    int64_t _family_split_population_threshold = 100;
-    int32_t _family_max_per_cell = 8;
+    EconomyTrackedScalar<int64_t> _family_split_population_threshold{_metadata_changes, {{15, 46}, "config.family_split_population_threshold", EconomyFieldEncoding::I64, 8}, 100};
+    EconomyTrackedScalar<int32_t> _family_max_per_cell{_metadata_changes, {{15, 42}, "config.family_max_per_cell", EconomyFieldEncoding::I32, 4}, 8};
     int32_t _family_cells_per_slice = 128;
-    int32_t _family_decline_reviews = 3;
+    EconomyTrackedScalar<int32_t> _family_decline_reviews{_metadata_changes, {{15, 41}, "config.family_decline_reviews", EconomyFieldEncoding::I32, 4}, 3};
     // Notable households include dependents of the owned owner posts, not just
     // the two shopkeepers. Anonymous majority stays implicit.
     int32_t _family_household_people_per_owner_slot = 256;
     int32_t _family_household_max_people = 1024;
-    int32_t _person_runtime_mode = 2; // 0=OFF, 1=PROBE, 2=ACTIVE.
-    int32_t _person_max_per_family = 4;
-    int32_t _person_max_per_cell = 128;
-    int32_t _person_max_total = 65536;
-    int32_t _person_records_per_slice = 4096;
+    EconomyTrackedScalar<int32_t> _person_runtime_mode{_metadata_changes, {{15, 78}, "config.person_runtime_mode", EconomyFieldEncoding::I32, 4}, 2}; // 0=OFF, 1=PROBE, 2=ACTIVE.
+    EconomyTrackedScalar<int32_t> _person_max_per_family{_metadata_changes, {{15, 75}, "config.person_max_per_family", EconomyFieldEncoding::I32, 4}, 4};
+    EconomyTrackedScalar<int32_t> _person_max_per_cell{_metadata_changes, {{15, 74}, "config.person_max_per_cell", EconomyFieldEncoding::I32, 4}, 128};
+    EconomyTrackedScalar<int32_t> _person_max_total{_metadata_changes, {{15, 76}, "config.person_max_total", EconomyFieldEncoding::I32, 4}, 65536};
+    EconomyTrackedScalar<int32_t> _person_records_per_slice{_metadata_changes, {{15, 77}, "config.person_records_per_slice", EconomyFieldEncoding::I32, 4}, 4096};
 
     SaveState _save;
     RestoreState _restore;
@@ -6708,9 +6841,9 @@ private:
     std::vector<int64_t> _epoch_ceiling_research_requested, _epoch_ceiling_research_delivered;
     std::vector<int32_t> _epoch_ceiling_research_touched;
 
-    int32_t _price_ceiling_confirm_days = 30;
-    int32_t _price_ceiling_expand_bp = 50;
-    int32_t _price_ceiling_recover_bp = 10;
+    EconomyTrackedScalar<int32_t> _price_ceiling_confirm_days{_metadata_changes, {{15, 24}, "metadata.price_ceiling_confirm_days", EconomyFieldEncoding::I32, 4}, 30};
+    EconomyTrackedScalar<int32_t> _price_ceiling_expand_bp{_metadata_changes, {{15, 25}, "metadata.price_ceiling_expand_bp", EconomyFieldEncoding::I32, 4}, 50};
+    EconomyTrackedScalar<int32_t> _price_ceiling_recover_bp{_metadata_changes, {{15, 26}, "metadata.price_ceiling_recover_bp", EconomyFieldEncoding::I32, 4}, 10};
     int64_t _price_ceiling_expansions = 0;
     int64_t _price_ceiling_recoveries = 0;
     int64_t _price_ceiling_blocked_rises = 0;
@@ -6965,7 +7098,7 @@ private:
     void add_family_effect_binding(FamilyEffectBinding binding);
     void remove_family_effect_binding(size_t index);
     int64_t family_effect_metric_revision(int32_t phase) const;
-    bool publish_family_effect_metrics(FamilyEffectBinding &binding,
+    bool publish_family_effect_metrics(const FamilyEffectBinding &binding,
                                        int64_t revision,
                                        uint64_t requested_mask);
     void refresh_family_effect_metrics_for_branch(uint64_t branch_handle,
@@ -7122,6 +7255,193 @@ private:
             case 8: return family_expeditions_store().changes;
             case 9: return trade_orders_store().changes;
             case 10: return _building_role_changes;
+            case 14:
+                switch (field.column) {
+                    case 1: return _pending_commands.registry();
+                    case 2: return _epoch_commands.registry();
+                    case 3: return _structural_commands.registry();
+                    case 4: return _family_trait_commands.registry();
+                    case 5: return _family_founding_choices.registry();
+                    default: throw std::logic_error("economy_worker_command_column_unregistered");
+                }
+            case 17:
+                switch (field.column) {
+                    case 1: return _settlements.tier.registry();
+                    case 2: return _settlements.name_active.registry();
+                    case 3: return _settlements.name_forced.registry();
+                    case 4: return _settlements.prosperity_generation.registry();
+                    case 5: return _settlements.name_roll_generation.registry();
+                    case 6: return _settlements.prefix.registry();
+                    case 7: return _settlements.root.registry();
+                    case 8: return _settlements.suffix.registry();
+                    case 9: return _settlements.disambiguator.registry();
+                    default: throw std::logic_error("economy_worker_signal_column_unregistered");
+                }
+            case 18:
+                switch (field.column) {
+                    case 1: return _market_signals.cell_offsets.registry();
+                    case 2: return _market_signals.good_ids.registry();
+                    case 3: return _market_signals.business_demand_ema.registry();
+                    case 4: return _market_signals.offered_supply_ema.registry();
+                    case 5: return _market_signals.realized_withdrawal_ema.registry();
+                    case 6: return _market_signals.cost_anchor_price.registry();
+                    default: throw std::logic_error("economy_worker_signal_column_unregistered");
+                }
+            case 19:
+                switch (field.column) {
+                    case 1: return _labor_signals.cell_offsets.registry();
+                    case 2: return _labor_signals.profession_ids.registry();
+                    case 3: return _labor_signals.base_living_cost.registry();
+                    case 4: return _labor_signals.role_living_cost.registry();
+                    case 5: return _labor_signals.contract_wage_ema.registry();
+                    case 6: return _labor_signals.paid_wage_ema.registry();
+                    case 7: return _labor_signals.job_days.registry();
+                    case 8: return _labor_signals.pay_ratio_q16.registry();
+                    default: throw std::logic_error("economy_worker_signal_column_unregistered");
+                }
+            case 20:
+                switch (field.column) {
+                    case 1: return _trade_flows.cells.registry();
+                    case 2: return _trade_flows.goods.registry();
+                    case 3: return _trade_flows.import_ema.registry();
+                    case 4: return _trade_flows.export_ema.registry();
+                    case 5: return _trade_flows.period_import.registry();
+                    case 6: return _trade_flows.period_export.registry();
+                    default: throw std::logic_error("economy_worker_signal_column_unregistered");
+                }
+            case 21:
+                switch (field.column) {
+                    case 1: return _country_good_trade.countries.registry();
+                    case 2: return _country_good_trade.goods.registry();
+                    case 3: return _country_good_trade.import_quantity.registry();
+                    case 4: return _country_good_trade.export_quantity.registry();
+                    case 5: return _country_good_trade.import_base.registry();
+                    case 6: return _country_good_trade.export_base.registry();
+                    case 7: return _country_good_trade.import_tariff.registry();
+                    case 8: return _country_good_trade.export_tariff.registry();
+                    case 9: return _country_good_trade.batch_epoch.registry();
+                    case 10: return _country_good_trade.batch_import_quantity.registry();
+                    case 11: return _country_good_trade.batch_export_quantity.registry();
+                    case 12: return _country_good_trade.batch_import_base.registry();
+                    case 13: return _country_good_trade.batch_export_base.registry();
+                    case 14: return _country_good_trade.batch_import_tariff.registry();
+                    case 15: return _country_good_trade.batch_export_tariff.registry();
+                    default: throw std::logic_error("economy_worker_signal_column_unregistered");
+                }
+            case 22:
+                switch (field.column) {
+                    case 1: return _country_partner_trade.countries.registry();
+                    case 2: return _country_partner_trade.partners.registry();
+                    case 3: return _country_partner_trade.import_quantity.registry();
+                    case 4: return _country_partner_trade.export_quantity.registry();
+                    case 5: return _country_partner_trade.import_base.registry();
+                    case 6: return _country_partner_trade.export_base.registry();
+                    case 7: return _country_partner_trade.order_count.registry();
+                    case 8: return _country_partner_trade.batch_epoch.registry();
+                    case 9: return _country_partner_trade.batch_import_quantity.registry();
+                    case 10: return _country_partner_trade.batch_export_quantity.registry();
+                    case 11: return _country_partner_trade.batch_import_base.registry();
+                    case 12: return _country_partner_trade.batch_export_base.registry();
+                    case 13: return _country_partner_trade.batch_order_count.registry();
+                    default: throw std::logic_error("economy_worker_signal_column_unregistered");
+                }
+            case 23:
+                switch (field.column) {
+                    case 1: return _tariff_history.countries.registry();
+                    case 2: return _tariff_history.kinds.registry();
+                    case 3: return _tariff_history.bases.registry();
+                    case 4: return _tariff_history.assessed.registry();
+                    case 5: return _tariff_history.collected.registry();
+                    case 6: return _tariff_history.requests.registry();
+                    case 7: return _tariff_history.reserved.registry();
+                    case 8: return _tariff_history.paid.registry();
+                    case 9: return _tariff_history.cumulative_bases.registry();
+                    case 10: return _tariff_history.cumulative_collected.registry();
+                    case 11: return _tariff_history.cumulative_requests.registry();
+                    case 12: return _tariff_history.cumulative_paid.registry();
+                    default: throw std::logic_error("economy_worker_signal_column_unregistered");
+                }
+            case 25: return market_store().price_ceilings.registry();
+            case 27: return _canal_projects.registry();
+            case 26:
+                switch (field.column) {
+                    case 1: return _settlement_full_name_ids.registry();
+                    case 2: return _settlement_prefix_ids.registry();
+                    case 3: return _settlement_root_ids.registry();
+                    case 4: return _settlement_suffix_ids.registry();
+                    case 5: return _settlement_name_pack_id.registry();
+                    case 6: return _ethnicity_ids.registry();
+                    case 7: return _good_ids.registry();
+                    case 8: return _plan_ids.registry();
+                    case 9: return _profession_ids.registry();
+                    default: throw std::logic_error("economy_name_catalog_column_unregistered");
+                }
+            case 24:
+                switch (field.column) {
+                    case 1: return _family_founding_offers.registry();
+                    case 2: return _family_modifier_bindings.registry();
+                    case 3: return _family_trigger_bindings.registry();
+                    case 4: return _family_effect_bindings.registry();
+                    case 5: return _family_founding_effects.registry();
+                    default: throw std::logic_error("economy_worker_variable_column_unregistered");
+                }
+            case 16:
+                switch (field.column) {
+                    case 1: return _birth_residual_q32.registry();
+                    case 2: return _cell_building_structure_gen.registry();
+                    case 3: return _cell_food_access_eq_previous.registry();
+                    case 4: return _cell_food_export_eq_previous.registry();
+                    case 5: return _cell_food_flow_valid.registry();
+                    case 6: return _cell_food_import_eq_previous.registry();
+                    case 7: return _cell_food_input_eq_previous.registry();
+                    case 8: return _cell_food_output_eq_previous.registry();
+                    case 9: return _cell_last_settlement_day.registry();
+                    case 10: return _cell_owner_cash_gen.registry();
+                    case 11: return _cell_population_gen.registry();
+                    case 12: return _cell_price_stock_gen.registry();
+                    case 13: return _cell_settlement_generation.registry();
+                    case 14: return _cell_social_pressure_level.registry();
+                    case 15: return _cell_support_ema_q16.registry();
+                    case 16: return _cell_technology_gen.registry();
+                    case 17: return _cell_trade_gen.registry();
+                    case 18: return _epoch_country_handles.registry();
+                    case 19: return _fiscal_cumulative_bases.registry();
+                    case 20: return _fiscal_cumulative_collected.registry();
+                    case 21: return _fiscal_cumulative_paid.registry();
+                    case 22: return _fiscal_cumulative_requests.registry();
+                    case 23: return _fiscal_escrow_by_country.registry();
+                    case 24: return _fiscal_last_events.registry();
+                    case 25: return _fiscal_previous_country_handles.registry();
+                    case 26: return _fiscal_previous_requests.registry();
+                    case 27: return _family_milestones_reached.registry();
+                    case 28: return _cell_effect_shortage_q16.registry();
+                    case 29: return _cell_essentials_shortage_q16.registry();
+                    case 30: return _cell_force_wake.registry();
+                    case 31: return _cell_next_review_day.registry();
+                    case 32: return _cell_shortage_since_day.registry();
+                    case 33: return _cell_tier.registry();
+                    case 34: return _cell_tier_change_day.registry();
+                    case 35: return _cell_tier_seen_gen.registry();
+                    case 36: return _cell_tier_seen_population.registry();
+                    case 37: return _environment_moisture_q16.registry();
+                    case 38: return _environment_plant_available_water_q16.registry();
+                    case 39: return _environment_precipitation_q16.registry();
+                    case 40: return _environment_snow_q16.registry();
+                    case 41: return _environment_temperature_30d_q16.registry();
+                    case 42: return _environment_temperature_q16.registry();
+                    case 43: return _environment_weather_q16.registry();
+                    case 44: return _fiscal_last_assessed.registry();
+                    case 45: return _fiscal_last_bases.registry();
+                    case 46: return _fiscal_last_collected.registry();
+                    case 47: return _fiscal_last_paid.registry();
+                    case 48: return _fiscal_last_requests.registry();
+                    case 49: return _fiscal_last_reserved.registry();
+                    case 50: return _fiscal_last_unmet.registry();
+                    case 51: return _maintenance_horizon_days_by_sector.registry();
+                    default: throw std::logic_error("economy_worker_native_column_unregistered");
+                }
+            case 15: return _metadata_changes;
+            case 13: return _asset_peer_journal.registry();
             case 12:
                 switch (field.column) {
                     case 1: return family_memberships().registry();

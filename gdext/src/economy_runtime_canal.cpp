@@ -103,18 +103,18 @@ bool NativeEconomyRuntime::plan_canal_route(
         return false;
     }
     if (!_trade_topology.ready ||
-        _trade_topology.neighbors.size() != static_cast<size_t>(_cell_count) * 6 ||
-        _trade_topology.canal_edge_mask.size() != static_cast<size_t>(_cell_count) ||
-        _building_elevation_q16.size() != static_cast<size_t>(_cell_count) ||
-        _building_terrain.size() != static_cast<size_t>(_cell_count) ||
-        _building_landform.size() != static_cast<size_t>(_cell_count) ||
-        _building_is_water.size() != static_cast<size_t>(_cell_count) ||
-        _building_has_river.size() != static_cast<size_t>(_cell_count)) {
+        _trade_topology.neighbors.size() != static_cast<size_t>(_cell_count.get()) * 6 ||
+        _trade_topology.canal_edge_mask.size() != static_cast<size_t>(_cell_count.get()) ||
+        _building_elevation_q16.size() != static_cast<size_t>(_cell_count.get()) ||
+        _building_terrain.size() != static_cast<size_t>(_cell_count.get()) ||
+        _building_landform.size() != static_cast<size_t>(_cell_count.get()) ||
+        _building_is_water.size() != static_cast<size_t>(_cell_count.get()) ||
+        _building_has_river.size() != static_cast<size_t>(_cell_count.get())) {
         error = "canal_topology_unavailable";
         return false;
     }
-    if (start_cell < 0 || start_cell >= _cell_count || end_cell < 0 ||
-        end_cell >= _cell_count || start_cell == end_cell || waypoints.size() > 30) {
+    if (start_cell < 0 || start_cell >= _cell_count.get() || end_cell < 0 ||
+        end_cell >= _cell_count.get() || start_cell == end_cell || waypoints.size() > 30) {
         error = "canal_endpoints_invalid";
         return false;
     }
@@ -133,7 +133,7 @@ bool NativeEconomyRuntime::plan_canal_route(
     }
 
     auto legal_cell = [&](int32_t cell) {
-        if (cell < 0 || cell >= _cell_count || _building_is_water[cell] != 0 ||
+        if (cell < 0 || cell >= _cell_count.get() || _building_is_water[cell] != 0 ||
             _country_runtime->country_handle_for_cell(cell) !=
                 static_cast<int64_t>(country_handle)) return false;
         const uint8_t terrain = _building_terrain[cell];
@@ -145,7 +145,7 @@ bool NativeEconomyRuntime::plan_canal_route(
     auto source_at = [&](int32_t cell) {
         uint8_t source = CANAL_SOURCE_NONE;
         if (_building_has_river[cell] != 0) source = CANAL_SOURCE_FRESHWATER;
-        if (_trade_topology.canal_water.size() == static_cast<size_t>(_cell_count) &&
+        if (_trade_topology.canal_water.size() == static_cast<size_t>(_cell_count.get()) &&
             _trade_topology.canal_edge_mask[cell] != 0 &&
             _trade_topology.canal_water[cell] > 0.0001f)
             source = CANAL_SOURCE_FRESHWATER;
@@ -194,9 +194,9 @@ bool NativeEconomyRuntime::plan_canal_route(
             return false;
         }
         constexpr int64_t INF = std::numeric_limits<int64_t>::max() / 4;
-        std::vector<int64_t> distance(static_cast<size_t>(_cell_count), INF);
-        std::vector<int32_t> parent(static_cast<size_t>(_cell_count), -1);
-        std::vector<int8_t> parent_dir(static_cast<size_t>(_cell_count), -1);
+        std::vector<int64_t> distance(static_cast<size_t>(_cell_count.get()), INF);
+        std::vector<int32_t> parent(static_cast<size_t>(_cell_count.get()), -1);
+        std::vector<int8_t> parent_dir(static_cast<size_t>(_cell_count.get()), -1);
         using QueueRow = std::pair<int64_t, int32_t>;
         std::priority_queue<QueueRow, std::vector<QueueRow>, std::greater<QueueRow>> open;
         distance[source] = 0;
@@ -341,7 +341,7 @@ bool NativeEconomyRuntime::plan_canal_route(
         return false;
     }
     quote.country_handle = country_handle;
-    quote.snapshot_day = _current_day;
+    quote.snapshot_day = _current_day.get();
     quote.topology_hash = _trade_topology.topology_hash;
     quote.country_generation = country_handle >> 32U;
     return true;
@@ -364,7 +364,7 @@ godot::Dictionary NativeEconomyRuntime::canal_route_quote(
     token &= 0x7fffffffffffffffULL;
     if (token == 0) token = _next_canal_quote_token++;
     quote.token = token;
-    _canal_quote_index[token] = static_cast<int32_t>(_canal_quotes.size());
+    _canal_quote_index.write_record(token, static_cast<int32_t>(_canal_quotes.size()));
     _canal_quotes.push_back(std::move(quote));
     return canal_quote_dictionary(_canal_quotes.back());
 }
@@ -388,7 +388,7 @@ bool NativeEconomyRuntime::validate_canal_quote_snapshot(
             static_cast<int64_t>(quote.country_handle)) ||
         quote.country_generation != (quote.country_handle >> 32U) ||
         !_trade_topology.ready || quote.topology_hash != _trade_topology.topology_hash ||
-        _current_day < quote.snapshot_day || _current_day > quote.snapshot_day + 2) {
+        _current_day.get() < quote.snapshot_day || _current_day.get() > quote.snapshot_day + 2) {
         error = "canal_quote_snapshot_changed";
         return false;
     }
@@ -460,7 +460,7 @@ void NativeEconomyRuntime::stage_canal_receipt(
         int64_t cash_paid, int64_t treasury_goods_used,
         int64_t market_goods_used) {
     _canal_receipts.push_back({_next_canal_receipt_id++, cmd.effective_day,
-        _current_day, cmd.sequence, cmd.target_handle, project_handle, ok,
+        _current_day.get(), cmd.sequence, cmd.target_handle, project_handle, ok,
         code == nullptr ? "canal_command_rejected" : code, cash_paid,
         treasury_goods_used, market_goods_used});
 }
@@ -507,7 +507,7 @@ bool NativeEconomyRuntime::apply_canal_build_command(
         stage_canal_receipt(cmd, false, "canal_treasury_cash_insufficient");
         return true;
     }
-    if (cash > 0 && (_merchant_offsets.size() != static_cast<size_t>(_cell_count + 1) ||
+    if (cash > 0 && (_merchant_offsets.size() != static_cast<size_t>(_cell_count.get() + 1) ||
                      _merchant_offsets[quote.route_cells.front()] >=
                      _merchant_offsets[quote.route_cells.front() + 1])) {
         stage_canal_receipt(cmd, false, "canal_market_unavailable");
@@ -539,7 +539,7 @@ bool NativeEconomyRuntime::apply_canal_build_command(
     project.country_handle = quote.country_handle;
     project.effective_day = cmd.effective_day;
     project.sequence = cmd.sequence;
-    project.ready_day = _current_day + quote.construction_days;
+    project.ready_day = _current_day.get() + quote.construction_days;
     project.topology_hash = quote.topology_hash;
     project.cash_paid = cash;
     project.treasury_goods_used = treasury_total;
@@ -556,7 +556,9 @@ bool NativeEconomyRuntime::apply_canal_build_command(
 
 bool NativeEconomyRuntime::process_due_canal_projects(
         int64_t day, std::string &error) {
-    for (CanalProject &project : _canal_projects) {
+    for (size_t project_row = 0; project_row < _canal_projects.size(); ++project_row) {
+        auto project_write = _canal_projects.edit_row(project_row);
+        CanalProject &project = project_write[0];
         if (project.state == CANAL_PROJECT_AWAITING_EFFECT) {
             if (_effect_runtime == nullptr || project.effect_transaction_id <= 0) continue;
             const int32_t status = _effect_runtime->transaction_status_pod(

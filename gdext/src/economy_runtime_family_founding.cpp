@@ -36,7 +36,7 @@ int64_t NativeEconomyRuntime::family_milestone_hash() const {
 
 void NativeEconomyRuntime::clear_family_founding_state() {
     _family_milestones_reached.assign(
-        static_cast<size_t>(std::max(0, _cell_count)), 0);
+        static_cast<size_t>(std::max(0, _cell_count.get())), 0);
     _family_founding_offers.clear();
     _family_founding_choices.clear();
     _family_founding_effects.clear();
@@ -47,10 +47,10 @@ void NativeEconomyRuntime::clear_family_founding_state() {
 
 void NativeEconomyRuntime::rebuild_family_founding_offer_index() {
     _family_founding_offer_by_cell.assign(
-        static_cast<size_t>(std::max(0, _cell_count)), -1);
+        static_cast<size_t>(std::max(0, _cell_count.get())), -1);
     for (size_t i = 0; i < _family_founding_offers.size(); ++i) {
         const int32_t cell = _family_founding_offers[i].cell;
-        if (cell >= 0 && cell < _cell_count)
+        if (cell >= 0 && cell < _cell_count.get())
             _family_founding_offer_by_cell[static_cast<size_t>(cell)] =
                 static_cast<int32_t>(i);
     }
@@ -58,10 +58,10 @@ void NativeEconomyRuntime::rebuild_family_founding_offer_index() {
 }
 
 int32_t NativeEconomyRuntime::family_founding_offer_for_cell(int32_t cell) {
-    if (cell < 0 || cell >= _cell_count || _family_founding_offers.empty())
+    if (cell < 0 || cell >= _cell_count.get() || _family_founding_offers.empty())
         return -1;
     if (_family_founding_offer_index_dirty ||
-        _family_founding_offer_by_cell.size() != static_cast<size_t>(_cell_count))
+        _family_founding_offer_by_cell.size() != static_cast<size_t>(_cell_count.get()))
         rebuild_family_founding_offer_index();
     return _family_founding_offer_by_cell[static_cast<size_t>(cell)];
 }
@@ -82,11 +82,10 @@ int32_t NativeEconomyRuntime::family_founding_effect_for(int64_t stable_id) cons
 
 void NativeEconomyRuntime::prune_family_founding_effects() {
     if (_family_founding_effects.empty()) return;
-    _family_founding_effects.erase(std::remove_if(
-        _family_founding_effects.begin(), _family_founding_effects.end(),
+    _family_founding_effects.erase_if(
         [&](const std::pair<int64_t, int32_t> &row) {
             return _family_stable_ids.count(row.first) == 0;
-        }), _family_founding_effects.end());
+        });
 }
 
 // Founders a group could contribute to a brand-new family: the owner-signature
@@ -95,7 +94,7 @@ void NativeEconomyRuntime::prune_family_founding_effects() {
 // minimum.
 int64_t NativeEconomyRuntime::family_founding_founders_for_group(
         int32_t cell, int32_t group_index) const {
-    if (cell < 0 || cell >= _cell_count || group_index < 0 ||
+    if (cell < 0 || cell >= _cell_count.get() || group_index < 0 ||
         group_index >= static_cast<int32_t>(building_count())) return 0;
     const auto group = building_at(static_cast<size_t>(group_index));
     if (group.cell != cell || group.count <= 0 || group.modifier_handle == 0 ||
@@ -110,8 +109,8 @@ int64_t NativeEconomyRuntime::family_founding_founders_for_group(
     if (csr_exact && _family_building_offsets.size() == building_count() + 1) {
         for (int32_t p = _family_building_offsets[group_index];
              p < _family_building_offsets[group_index + 1]; ++p)
-            family_owned += family_ownerships()[
-                _family_building_edge_indices[p]].owned_count;
+            family_owned += family_ownerships().read_at(
+                _family_building_edge_indices[p], __FILE__, __LINE__).owned_count;
     } else {
         for (const FamilyBuildingOwnership &edge : family_ownerships())
             if (edge.building_handle == group.modifier_handle)
@@ -140,18 +139,18 @@ int64_t NativeEconomyRuntime::family_founding_founders_for_group(
     if (available < owner_slots) return 0;
     const int64_t room = std::max<int64_t>(0,
         cell_population / 2 - cell_family_people);
-    const int64_t cap = std::max(_family_min_founder_people, room);
+    const int64_t cap = std::max(_family_min_founder_people.get(), room);
     const int64_t founders = std::min({family_household_target_people(owner_slots),
         available, cap});
-    return founders >= _family_min_founder_people ? founders : 0;
+    return founders >= _family_min_founder_people.get() ? founders : 0;
 }
 
 int32_t NativeEconomyRuntime::build_family_founding_candidates(
         int32_t cell, int32_t milestone_index,
         std::vector<FamilyFoundingCandidate> &out) const {
     out.clear();
-    if (cell < 0 || cell >= _cell_count ||
-        _building_cell_offsets.size() != static_cast<size_t>(_cell_count + 1))
+    if (cell < 0 || cell >= _cell_count.get() ||
+        _building_cell_offsets.size() != static_cast<size_t>(_cell_count.get() + 1))
         return 0;
     struct Ranked {
         int32_t group = -1;
@@ -193,13 +192,13 @@ int32_t NativeEconomyRuntime::build_family_founding_candidates(
         const auto group = building_at(static_cast<size_t>(pick.group));
         FamilyFoundingCandidate candidate;
         uint64_t hash = 1469598103934665603ULL;
-        hash = trace_hash_mix(hash, static_cast<uint64_t>(_seed));
+        hash = trace_hash_mix(hash, static_cast<uint64_t>(_seed.get()));
         hash = trace_hash_mix(hash, 0x464f554e44435244ULL); // "FOUNDCRD"
         hash = trace_hash_mix(hash, static_cast<uint32_t>(cell));
         hash = trace_hash_mix(hash, static_cast<uint32_t>(milestone_index));
         hash = trace_hash_mix(hash, static_cast<uint32_t>(card));
         hash = trace_hash_mix(hash, static_cast<uint64_t>(
-            _next_family_founding_offer_id));
+            _next_family_founding_offer_id.get()));
         int64_t stable_id = static_cast<int64_t>(
             (hash & 0x7fffffffffffffffULL) | 1ULL);
         for (uint64_t probe = 1; _family_stable_ids.count(stable_id) != 0 ||
@@ -266,7 +265,7 @@ int32_t NativeEconomyRuntime::family_founding_auto_choice(
         const FamilyFoundingOffer &offer) const {
     if (offer.candidates.empty()) return -1;
     uint64_t hash = 1469598103934665603ULL;
-    hash = trace_hash_mix(hash, static_cast<uint64_t>(_seed));
+    hash = trace_hash_mix(hash, static_cast<uint64_t>(_seed.get()));
     hash = trace_hash_mix(hash, 0x4155544f5049434bULL); // "AUTOPICK"
     hash = trace_hash_mix(hash, static_cast<uint64_t>(offer.offer_id));
     hash = trace_hash_mix(hash, static_cast<uint32_t>(offer.cell));
@@ -290,7 +289,7 @@ bool NativeEconomyRuntime::resolve_family_founding_offer(
         // founding industry is rebound to the best building still eligible.
         group_index = -1;
         std::tuple<int32_t, int64_t, int32_t, int32_t> best_key{};
-        if (_building_cell_offsets.size() == static_cast<size_t>(_cell_count + 1)) {
+        if (_building_cell_offsets.size() == static_cast<size_t>(_cell_count.get() + 1)) {
             for (int32_t g = _building_cell_offsets[cell];
                  g < _building_cell_offsets[cell + 1]; ++g) {
                 const int64_t available = family_founding_founders_for_group(cell, g);
@@ -321,46 +320,45 @@ bool NativeEconomyRuntime::resolve_family_founding_offer(
 }
 
 void NativeEconomyRuntime::review_family_milestone(int32_t cell) {
-    if (_family_runtime_mode != 2 || cell < 0 || cell >= _cell_count) return;
-    if (_family_milestones_reached.size() != static_cast<size_t>(_cell_count))
-        _family_milestones_reached.resize(static_cast<size_t>(_cell_count), 0);
-    uint8_t &reached = _family_milestones_reached[static_cast<size_t>(cell)];
+    if (_family_runtime_mode.get() != 2 || cell < 0 || cell >= _cell_count.get()) return;
+    if (_family_milestones_reached.size() != static_cast<size_t>(_cell_count.get()))
+        _family_milestones_reached.resize(static_cast<size_t>(_cell_count.get()), 0);
+    auto milestone_write = EconomyRowWriteLease::create();
+    uint8_t &reached = _family_milestones_reached.borrow_row(static_cast<size_t>(cell), *milestone_write);
     auto finish_offer = [&](int32_t index) {
         const int64_t offer_id = _family_founding_offers[
             static_cast<size_t>(index)].offer_id;
         _family_founding_offers.erase(_family_founding_offers.begin() + index);
-        _family_founding_choices.erase(std::remove_if(
-            _family_founding_choices.begin(), _family_founding_choices.end(),
+        _family_founding_choices.erase_if(
             [&](const FamilyFoundingChoiceCommand &command) {
                 return command.offer_id == offer_id;
-            }), _family_founding_choices.end());
+            });
         _family_founding_offer_index_dirty = true;
     };
     const int32_t existing = family_founding_offer_for_cell(cell);
     if (existing >= 0) {
-        FamilyFoundingOffer &offer = _family_founding_offers[
-            static_cast<size_t>(existing)];
-        int32_t choice = -1;
-        bool automatic = false;
-        if (offer.status == FAMILY_FOUNDING_SELECTED) {
-            choice = offer.chosen_index;
-        } else if (!family_founding_player_choice(cell)) {
-            choice = family_founding_auto_choice(offer);
-            automatic = true;
-        }
-        if (choice < 0) return;
-        if (resolve_family_founding_offer(offer, choice)) {
-            if (reached < 255) ++reached;
-            if (automatic) ++_family_offers_auto_resolved;
-            finish_offer(existing);
-            return;
-        }
-        offer.status = FAMILY_FOUNDING_SELECTED;
-        offer.chosen_index = choice;
-        if (++offer.failed_reviews >= FAMILY_FOUNDING_MAX_FAILED_REVIEWS) {
-            ++_family_offers_voided;
-            finish_offer(existing);
-        }
+        const bool finished = [&] {
+            auto offer_write = _family_founding_offers.edit_row(static_cast<size_t>(existing));
+            FamilyFoundingOffer &offer = offer_write[0];
+            int32_t choice = -1;
+            bool automatic = false;
+            if (offer.status == FAMILY_FOUNDING_SELECTED) choice = offer.chosen_index;
+            else if (!family_founding_player_choice(cell)) {
+                choice = family_founding_auto_choice(offer); automatic = true;
+            }
+            if (choice < 0) return false;
+            if (resolve_family_founding_offer(offer, choice)) {
+                if (reached < 255) ++reached;
+                if (automatic) ++_family_offers_auto_resolved;
+                return true;
+            }
+            offer.status = FAMILY_FOUNDING_SELECTED; offer.chosen_index = choice;
+            if (++offer.failed_reviews >= FAMILY_FOUNDING_MAX_FAILED_REVIEWS) {
+                ++_family_offers_voided; return true;
+            }
+            return false;
+        }();
+        if (finished) finish_offer(existing);
         return;
     }
     if (reached >= _family_milestone_populations.size()) return;
@@ -368,7 +366,7 @@ void NativeEconomyRuntime::review_family_milestone(int32_t cell) {
     if (_committed_cells[cell].population < threshold) return;
     int32_t families_here = 0;
     if (!_family_indices_dirty &&
-        _family_cell_offsets.size() == static_cast<size_t>(_cell_count + 1)) {
+        _family_cell_offsets.size() == static_cast<size_t>(_cell_count.get() + 1)) {
         families_here = _family_cell_offsets[cell + 1] - _family_cell_offsets[cell];
     } else {
         std::vector<uint64_t> handles;
@@ -383,7 +381,7 @@ void NativeEconomyRuntime::review_family_milestone(int32_t cell) {
         }
         families_here = static_cast<int32_t>(handles.size());
     }
-    if (families_here >= _family_max_per_cell) return;
+    if (families_here >= _family_max_per_cell.get()) return;
     FamilyFoundingOffer offer;
     if (build_family_founding_candidates(cell, reached, offer.candidates) <= 0)
         return;
@@ -391,7 +389,7 @@ void NativeEconomyRuntime::review_family_milestone(int32_t cell) {
     offer.cell = cell;
     offer.milestone_index = reached;
     offer.milestone_population = threshold;
-    offer.created_day = _current_day;
+    offer.created_day = _current_day.get();
     if (family_founding_player_choice(cell)) {
         _family_founding_offers.push_back(std::move(offer));
         _family_founding_offer_index_dirty = true;
@@ -406,8 +404,7 @@ void NativeEconomyRuntime::review_family_milestone(int32_t cell) {
 
 void NativeEconomyRuntime::apply_due_family_founding_choices() {
     if (!_family_founding_choices.empty()) {
-        std::stable_sort(_family_founding_choices.begin(),
-            _family_founding_choices.end(),
+        _family_founding_choices.stable_sort(
             [](const FamilyFoundingChoiceCommand &a,
                const FamilyFoundingChoiceCommand &b) {
                 return std::tie(a.effective_day, a.sequence, a.submit_order) <
@@ -415,7 +412,7 @@ void NativeEconomyRuntime::apply_due_family_founding_choices() {
             });
         std::vector<FamilyFoundingChoiceCommand> retained;
         for (const FamilyFoundingChoiceCommand &command : _family_founding_choices) {
-            if (command.effective_day > _current_day) {
+            if (command.effective_day > _current_day.get()) {
                 retained.push_back(command);
                 continue;
             }
@@ -430,14 +427,18 @@ void NativeEconomyRuntime::apply_due_family_founding_choices() {
                 ++_family_offer_choice_rejected;
                 continue;
             }
-            it->status = FAMILY_FOUNDING_SELECTED;
-            it->chosen_index = command.choice_index;
-            it->failed_reviews = 0;
+            auto offer_write = _family_founding_offers.edit_row(it - _family_founding_offers.begin());
+            auto &offer = offer_write[0];
+            offer.status = FAMILY_FOUNDING_SELECTED;
+            offer.chosen_index = command.choice_index;
+            offer.failed_reviews = 0;
         }
         _family_founding_choices.swap(retained);
     }
     if (_family_founding_choice_mode == 0) {
-        for (FamilyFoundingOffer &offer : _family_founding_offers) {
+        for (size_t offer_row = 0; offer_row < _family_founding_offers.size(); ++offer_row) {
+        auto offer_write = _family_founding_offers.edit_row(offer_row);
+        FamilyFoundingOffer &offer = offer_write[0];
             if (offer.status != FAMILY_FOUNDING_OPEN) continue;
             offer.status = FAMILY_FOUNDING_SELECTED;
             offer.chosen_index = family_founding_auto_choice(offer);
@@ -601,7 +602,7 @@ Dictionary NativeEconomyRuntime::submit_family_founding_choice(
 void NativeEconomyRuntime::append_family_founding_hash(uint64_t &hash) const {
     auto mix = [&](uint64_t value) { hash = economy_hash_u64(hash, value); };
     mix(0x464f554e44494e47ULL); // "FOUNDING"
-    mix(static_cast<uint64_t>(_next_family_founding_offer_id));
+    mix(static_cast<uint64_t>(_next_family_founding_offer_id.get()));
     for (size_t cell = 0; cell < _family_milestones_reached.size(); ++cell) {
         if (_family_milestones_reached[cell] == 0) continue;
         mix(cell);
@@ -665,7 +666,7 @@ bool NativeEconomyRuntime::write_family_founding_save_records(
         int32_t index = _save.family_founding_cursor;
         if (index == 0) {
             append_le<uint8_t>(record, kFoundingRecordHeader);
-            append_le<int64_t>(record, _next_family_founding_offer_id);
+            append_le<int64_t>(record, _next_family_founding_offer_id.get());
             append_le<int32_t>(record, milestones);
             append_le<int32_t>(record, offers);
             append_le<int32_t>(record, choices);
@@ -733,7 +734,7 @@ bool NativeEconomyRuntime::read_family_founding_save_records(
         const std::vector<uint8_t> &bytes, size_t &cursor, uint32_t records,
         std::string &error) {
     if (!_restore.family_founding_seen) {
-        _family_milestones_reached.assign(static_cast<size_t>(_cell_count), 0);
+        _family_milestones_reached.assign(static_cast<size_t>(_cell_count.get()), 0);
         _family_founding_offers.clear();
         _family_founding_choices.clear();
         _family_founding_effects.clear();
@@ -760,8 +761,8 @@ bool NativeEconomyRuntime::read_family_founding_save_records(
                 !read_le(bytes, cursor, offers) ||
                 !read_le(bytes, cursor, choices) ||
                 !read_le(bytes, cursor, effects) || next_offer <= 0 ||
-                milestones < 0 || milestones > _cell_count || offers < 0 ||
-                offers > _cell_count || choices < 0 || choices > _cell_count ||
+                milestones < 0 || milestones > _cell_count.get() || offers < 0 ||
+                offers > _cell_count.get() || choices < 0 || choices > _cell_count.get() ||
                 effects < 0 || effects > 10000000) {
                 error = "save_family_founding_header_invalid";
                 return false;
@@ -773,13 +774,13 @@ bool NativeEconomyRuntime::read_family_founding_save_records(
             int32_t cell = -1;
             uint8_t count = 0;
             if (!read_le(bytes, cursor, cell) || !read_le(bytes, cursor, count) ||
-                cell < 0 || cell >= _cell_count || count == 0 ||
+                cell < 0 || cell >= _cell_count.get() || count == 0 ||
                 count > _family_milestone_populations.size() ||
                 _family_milestones_reached[static_cast<size_t>(cell)] != 0) {
                 error = "save_family_founding_milestone_invalid";
                 return false;
             }
-            _family_milestones_reached[static_cast<size_t>(cell)] = count;
+            _family_milestones_reached.write_scalar(static_cast<size_t>(cell), count);
         } else if (kind == kFoundingRecordOffer) {
             FamilyFoundingOffer offer;
             uint8_t candidate_count = 0;
@@ -873,9 +874,9 @@ bool NativeEconomyRuntime::validate_restored_family_founding(
     const int32_t trait_count = static_cast<int32_t>(_family_trait_ids.size());
     const int32_t effect_count = static_cast<int32_t>(_family_effect_keys.size());
     for (const FamilyFoundingOffer &offer : _family_founding_offers) {
-        if (offer.offer_id <= 0 || offer.offer_id >= _next_family_founding_offer_id ||
+        if (offer.offer_id <= 0 || offer.offer_id >= _next_family_founding_offer_id.get() ||
             !offer_ids.insert(offer.offer_id).second || offer.cell < 0 ||
-            offer.cell >= _cell_count || !offer_cells.insert(offer.cell).second ||
+            offer.cell >= _cell_count.get() || !offer_cells.insert(offer.cell).second ||
             (offer.status != FAMILY_FOUNDING_OPEN &&
              offer.status != FAMILY_FOUNDING_SELECTED) ||
             offer.milestone_index < 0 || offer.milestone_index >=

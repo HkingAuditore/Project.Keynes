@@ -261,7 +261,7 @@ int64_t NativeEconomyRuntime::family_population_in_cell(
         uint64_t family_handle, int32_t cell) const {
     int32_t family = -1;
     if (!families_store().valid_handle(family_handle, family) || cell < 0 ||
-        cell >= _cell_count) return 0;
+        cell >= _cell_count.get()) return 0;
     int64_t total = 0;
     const bool csr = _family_member_offsets.size() == families_store().active.size() + 1;
     const int32_t begin = csr ? _family_member_offsets[family] : 0;
@@ -282,20 +282,20 @@ int64_t NativeEconomyRuntime::family_population_in_cell(
 bool NativeEconomyRuntime::colonization_target_owner_allowed(
         uint64_t country_handle, int32_t cell) const {
     if (_country_runtime == nullptr || country_handle == 0 || cell < 0 ||
-        cell >= _cell_count) return false;
+        cell >= _cell_count.get()) return false;
     const int64_t owner = _country_runtime->country_handle_for_cell(cell);
     return owner == 0 || owner == static_cast<int64_t>(country_handle);
 }
 
 bool NativeEconomyRuntime::colonization_destination_family_allowed(
         uint64_t family_handle, int32_t cell) const {
-    if (family_handle == 0 || cell < 0 || cell >= _cell_count) return false;
+    if (family_handle == 0 || cell < 0 || cell >= _cell_count.get()) return false;
     if (family_population_in_cell(family_handle, cell) > 0) return true;
-    if (_family_cell_offsets.size() != static_cast<size_t>(_cell_count + 1))
+    if (_family_cell_offsets.size() != static_cast<size_t>(_cell_count.get() + 1))
         return true;
     const int32_t count = _family_cell_offsets[static_cast<size_t>(cell) + 1] -
         _family_cell_offsets[static_cast<size_t>(cell)];
-    return count < _family_max_per_cell;
+    return count < _family_max_per_cell.get();
 }
 
 bool NativeEconomyRuntime::plan_family_colonization_route(
@@ -305,15 +305,15 @@ bool NativeEconomyRuntime::plan_family_colonization_route(
         int32_t &cost, std::string &error) {
     route.clear(); cumulative.clear(); cost = 0;
     if (!_trade_topology.ready ||
-        _trade_topology.neighbors.size() != static_cast<size_t>(_cell_count) * 6 ||
-        _trade_topology.passable.size() != static_cast<size_t>(_cell_count) ||
-        _trade_topology.enter_cost.size() != static_cast<size_t>(_cell_count)) {
+        _trade_topology.neighbors.size() != static_cast<size_t>(_cell_count.get()) * 6 ||
+        _trade_topology.passable.size() != static_cast<size_t>(_cell_count.get()) ||
+        _trade_topology.enter_cost.size() != static_cast<size_t>(_cell_count.get())) {
         error = "colonization_topology_unavailable";
         return false;
     }
-    if (country_handle == 0 || source_cell < 0 || source_cell >= _cell_count ||
-        target_cell < 0 || target_cell >= _cell_count || source_cell == target_cell ||
-        visible == nullptr || visible_count != _cell_count) {
+    if (country_handle == 0 || source_cell < 0 || source_cell >= _cell_count.get() ||
+        target_cell < 0 || target_cell >= _cell_count.get() || source_cell == target_cell ||
+        visible == nullptr || visible_count != _cell_count.get()) {
         error = "colonization_route_request_invalid";
         return false;
     }
@@ -334,7 +334,7 @@ bool NativeEconomyRuntime::plan_family_colonization_route(
         return false;
     }
     const uint8_t cap = water_capability_for_handle(country_handle, false);
-    const size_t cells = static_cast<size_t>(_cell_count);
+    const size_t cells = static_cast<size_t>(_cell_count.get());
     if (_colonization_distance.size() != cells) {
         _colonization_distance.resize(cells);
         _colonization_distance_stamp.assign(cells, 0);
@@ -408,7 +408,7 @@ bool NativeEconomyRuntime::plan_family_colonization_route(
         }
         const int32_t from = cursor;
         cursor = _colonization_parent[cursor];
-        if (cursor < 0 || route.size() > static_cast<size_t>(_cell_count) * 2) {
+        if (cursor < 0 || route.size() > static_cast<size_t>(_cell_count.get()) * 2) {
             error = "colonization_route_parent_cycle";
             return false;
         }
@@ -429,7 +429,7 @@ void NativeEconomyRuntime::fill_colonization_query_flags(Dictionary &out) const 
     out["fatal"] = _fatal;
     out["committed"] = !_epoch_active && !_fatal && !_save.active && !_restore.active;
     out["nonbinding"] = _epoch_active;
-    out["snapshot_day"] = _current_day;
+    out["snapshot_day"] = _current_day.get();
 }
 
 Dictionary NativeEconomyRuntime::family_colonization_quotes(
@@ -458,13 +458,13 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
     int32_t ignored_total = 0;
     std::string route_error;
     // This validates target/topology before the one reverse search below.
-    if (target_cell < 0 || target_cell >= _cell_count) {
+    if (target_cell < 0 || target_cell >= _cell_count.get()) {
         out["ok"] = false;
         out["code"] = "colonization_target_invalid";
         fill_colonization_query_flags(out);
         return out;
     }
-    if (visible == nullptr || visible_count != _cell_count) {
+    if (visible == nullptr || visible_count != _cell_count.get()) {
         out["ok"] = false;
         out["code"] = "colonization_visibility_unavailable";
         fill_colonization_query_flags(out);
@@ -476,7 +476,7 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
         fill_colonization_query_flags(out);
         return out;
     }
-    if (_trade_topology.passable.size() != static_cast<size_t>(_cell_count) ||
+    if (_trade_topology.passable.size() != static_cast<size_t>(_cell_count.get()) ||
         !_trade_topology.ready) {
         out["ok"] = false;
         out["code"] = "colonization_topology_not_ready";
@@ -513,11 +513,11 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
     // Run one bounded reverse Dijkstra and retain all reached local source
     // cells. This is the same scratch as single-route validation and never
     // clears a map-sized array.
-    if (_colonization_distance.size() != static_cast<size_t>(_cell_count)) {
-        _colonization_distance.resize(_cell_count);
-        _colonization_distance_stamp.assign(_cell_count, 0);
-        _colonization_parent.resize(_cell_count);
-        _colonization_parent_stamp.assign(_cell_count, 0);
+    if (_colonization_distance.size() != static_cast<size_t>(_cell_count.get())) {
+        _colonization_distance.resize(_cell_count.get());
+        _colonization_distance_stamp.assign(_cell_count.get(), 0);
+        _colonization_parent.resize(_cell_count.get());
+        _colonization_parent_stamp.assign(_cell_count.get(), 0);
     }
     if (++_colonization_search_stamp == 0) {
         std::fill(_colonization_distance_stamp.begin(),
@@ -589,7 +589,7 @@ Dictionary NativeEconomyRuntime::family_colonization_quotes(
         int32_t cost; int32_t days; uint64_t token; };
     std::vector<Candidate> candidates;
     for (const int32_t source : reached_sources) {
-        if (_family_cell_offsets.size() != static_cast<size_t>(_cell_count + 1))
+        if (_family_cell_offsets.size() != static_cast<size_t>(_cell_count.get() + 1))
             continue;
         ColonizationKitPlan source_preview;
         plan_colonization_kit(source, target_cell, 1, 1, false, source_preview);
@@ -1091,7 +1091,7 @@ bool NativeEconomyRuntime::apply_family_expedition_player_command(
         }
     }
     append_colonization_command_receipt(country, cmd.target_handle, target_cell,
-        cmd.sequence, cmd.effective_day, _current_day, 7, error.c_str());
+        cmd.sequence, cmd.effective_day, _current_day.get(), 7, error.c_str());
     ++_rejected_commands;
     error.clear();
     return true;
@@ -1109,7 +1109,7 @@ int64_t NativeEconomyRuntime::family_expedition_displayed_population(
 }
 
 int64_t NativeEconomyRuntime::market_stock(int32_t cell, int32_t good_id) const {
-    if (cell < 0 || cell >= _cell_count || good_id < 0 ||
+    if (cell < 0 || cell >= _cell_count.get() || good_id < 0 ||
         good_id >= market_store().good_count.get())
         return 0;
     const int32_t market = market_store().cell_to_market[cell];
@@ -1557,12 +1557,14 @@ void NativeEconomyRuntime::unwind_family_expedition_payload_extract(
                 payload.people, payload.funds, payload.owner_employed,
                 payload.employee_employed});
         } else {
-            membership->people += payload.people;
-            membership->cash_claim += payload.cash_claim;
-            membership->owner_employed += payload.owner_employed;
-            membership->employee_employed += payload.employee_employed;
-            membership->population_basis += payload.people;
-            membership->funds_basis += payload.cash_claim;
+            auto membership_write = family_memberships().edit_row(membership - family_memberships().begin(), market_mutation_sink());
+            auto &membership_row = membership_write[0];
+            membership_row.people += payload.people;
+            membership_row.cash_claim += payload.cash_claim;
+            membership_row.owner_employed += payload.owner_employed;
+            membership_row.employee_employed += payload.employee_employed;
+            membership_row.population_basis += payload.people;
+            membership_row.funds_basis += payload.cash_claim;
         }
         const uint32_t person_end = std::min<uint32_t>(
             payload.person_begin + payload.person_count,
@@ -1810,7 +1812,7 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
         int64_t remaining_selected = candidate.selected;
         for (const int32_t person : people) {
             uint64_t hash = 1469598103934665603ULL;
-            hash = trace_hash_mix(hash, static_cast<uint64_t>(_seed));
+            hash = trace_hash_mix(hash, static_cast<uint64_t>(_seed.get()));
             hash = trace_hash_mix(hash, static_cast<uint64_t>(
                 family_expeditions_store().stable_id[expedition]));
             hash = trace_hash_mix(hash, static_cast<uint64_t>(
@@ -1912,7 +1914,7 @@ bool NativeEconomyRuntime::extract_family_expedition_payload(
 
 bool NativeEconomyRuntime::restore_family_expedition_payload(
         int32_t expedition, int32_t destination_cell, std::string &error) {
-    if (destination_cell < 0 || destination_cell >= _cell_count) {
+    if (destination_cell < 0 || destination_cell >= _cell_count.get()) {
         error = "colonization_destination_invalid"; return false;
     }
     const uint64_t family_handle = family_expeditions_store().family_handle[expedition];
@@ -2034,7 +2036,7 @@ bool NativeEconomyRuntime::finalize_immediate_family_expedition_settlement(
     rebuild_family_owned_output_csr();
     if (_person_indices_dirty) rebuild_person_indices();
 
-    if (destination_cell >= 0 && destination_cell < _cell_count) {
+    if (destination_cell >= 0 && destination_cell < _cell_count.get()) {
         const CellSummary summary = build_cell_summary(destination_cell);
         if (destination_cell < static_cast<int32_t>(_committed_cells.size()))
             _committed_cells[destination_cell] = summary;
@@ -2042,7 +2044,7 @@ bool NativeEconomyRuntime::finalize_immediate_family_expedition_settlement(
             _staging_cells[destination_cell] = summary;
         if (destination_cell < static_cast<int32_t>(
                 _cell_population_gen.size()))
-            ++_cell_population_gen[destination_cell];
+            _cell_population_gen.write_scalar(destination_cell, _cell_population_gen[destination_cell] + 1, market_mutation_sink());
     }
     // Restore already audit-touches the destination lane. Rebuilding the
     // incremental shadow after that would snapshot post-merge population and
@@ -2135,13 +2137,13 @@ bool NativeEconomyRuntime::apply_settle_family_expedition(
         family_expeditions_store().state.write_scalar(expedition, EXPEDITION_RETURNING, market_mutation_sink());
         release_family_expedition_reservations(expedition);
         note_family_expedition_audit_invalidation();
-        family_expeditions_store().due_day.write_scalar(expedition, _current_day +
+        family_expeditions_store().due_day.write_scalar(expedition, _current_day.get() +
             std::max<int64_t>(1, (family_expeditions_store().route_cost[expedition] +
                 family_expeditions_store().speed[expedition] - 1) /
                 family_expeditions_store().speed[expedition]), market_mutation_sink());
         push_family_expedition_due(expedition);
         append_colonization_receipt(expedition, cmd.sequence,
-            cmd.effective_day, _current_day, 3, "TARGET_LOST_RETURNING");
+            cmd.effective_day, _current_day.get(), 3, "TARGET_LOST_RETURNING");
         return true;
     }
     const int32_t destination = family_expeditions_store().target_cell[expedition];
@@ -2154,7 +2156,7 @@ bool NativeEconomyRuntime::apply_settle_family_expedition(
         apply_family_colonization_population_reward(destination,
             family_expeditions_store().family_handle[expedition], cmd.i32_1);
     append_colonization_receipt(expedition, cmd.sequence, cmd.effective_day,
-        _current_day, claimed ? 4 : 6, claimed ? "CLAIMED" : "RELOCATED");
+        _current_day.get(), claimed ? 4 : 6, claimed ? "CLAIMED" : "RELOCATED");
     _family_expedition_target_index.erase(family_expedition_target_key(
         country_handle, destination));
     family_expeditions_store().release(expedition);
@@ -2195,7 +2197,7 @@ void NativeEconomyRuntime::recover_lost_family_settlement_commands() {
             result->second.complete != 0) continue;
         Command command;
         command.opcode = COMMAND_SETTLE_FAMILY_EXPEDITION;
-        command.effective_day = _current_day;
+        command.effective_day = _current_day.get();
         command.sequence = static_cast<int64_t>(settle_key & 0x7fffffffffffffffULL);
         command.target_handle = handle;
         command.i32_0 = family_expeditions_store().target_cell[expedition];

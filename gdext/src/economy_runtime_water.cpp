@@ -50,8 +50,8 @@ uint64_t NativeEconomyRuntime::trade_route_cache_key(
 }
 
 bool NativeEconomyRuntime::cells_are_hex_neighbors(int32_t a, int32_t b) const {
-    if (a < 0 || b < 0 || a >= _cell_count || b >= _cell_count) return false;
-    if (_trade_topology.neighbors.size() != static_cast<size_t>(_cell_count) * 6)
+    if (a < 0 || b < 0 || a >= _cell_count.get() || b >= _cell_count.get()) return false;
+    if (_trade_topology.neighbors.size() != static_cast<size_t>(_cell_count.get()) * 6)
         return false;
     for (int32_t direction = 0; direction < 6; ++direction) {
         if (_trade_topology.neighbors[static_cast<size_t>(a) * 6 + direction] == b)
@@ -110,9 +110,9 @@ uint8_t NativeEconomyRuntime::water_capability_for_handle(
 }
 
 int32_t NativeEconomyRuntime::trade_component_for(int32_t cell, uint8_t cap) const {
-    if (cell < 0 || cell >= _cell_count) return -1;
+    if (cell < 0 || cell >= _cell_count.get()) return -1;
     const int32_t layer = water_layer_index(cap);
-    const size_t index = static_cast<size_t>(layer) * static_cast<size_t>(_cell_count) +
+    const size_t index = static_cast<size_t>(layer) * static_cast<size_t>(_cell_count.get()) +
         static_cast<size_t>(cell);
     if (index < _trade_topology.component_layers.size())
         return _trade_topology.component_layers[index];
@@ -126,7 +126,7 @@ int32_t NativeEconomyRuntime::trade_land_step_cost(
     const int32_t cost = trade_edge_cost(from_cell, to_cell);
     if (cost <= 0) return 0;
     if ((cap & WATER_CAP_RIVER) == 0) return cost;
-    if (_trade_topology.has_river.size() != static_cast<size_t>(_cell_count))
+    if (_trade_topology.has_river.size() != static_cast<size_t>(_cell_count.get()))
         return cost;
     if (_trade_topology.has_river[static_cast<size_t>(from_cell)] == 0 ||
         _trade_topology.has_river[static_cast<size_t>(to_cell)] == 0)
@@ -138,8 +138,8 @@ void NativeEconomyRuntime::collect_transport_successors(
         int32_t cell, uint8_t cap, bool reverse) {
     _transport_succ_cells.clear();
     _transport_succ_costs.clear();
-    if (cell < 0 || cell >= _cell_count ||
-        _trade_topology.neighbors.size() != static_cast<size_t>(_cell_count) * 6)
+    if (cell < 0 || cell >= _cell_count.get() ||
+        _trade_topology.neighbors.size() != static_cast<size_t>(_cell_count.get()) * 6)
         return;
     for (int32_t direction = 0; direction < 6; ++direction) {
         const int32_t neighbor = _trade_topology.neighbors[
@@ -156,7 +156,7 @@ void NativeEconomyRuntime::collect_transport_successors(
     const int32_t graph_index = water_portal_graph_index(cap);
     if (graph_index < 0 || graph_index >= WATER_PORTAL_GRAPH_COUNT) return;
     const WaterPortalGraph &graph = _trade_topology.water_portals[graph_index];
-    if (graph.cell_portal.size() != static_cast<size_t>(_cell_count)) return;
+    if (graph.cell_portal.size() != static_cast<size_t>(_cell_count.get())) return;
     const int32_t portal = graph.cell_portal[static_cast<size_t>(cell)];
     if (portal < 0) return;
     const std::vector<int32_t> &offsets = reverse ? graph.reverse_offsets : graph.offsets;
@@ -169,7 +169,7 @@ void NativeEconomyRuntime::collect_transport_successors(
         if (edge < 0 || edge >= static_cast<int32_t>(targets.size())) continue;
         const int32_t next = targets[static_cast<size_t>(edge)];
         const int32_t cost = costs[static_cast<size_t>(edge)];
-        if (next < 0 || next >= _cell_count || cost <= 0) continue;
+        if (next < 0 || next >= _cell_count.get() || cost <= 0) continue;
         _transport_succ_cells.push_back(next);
         _transport_succ_costs.push_back(cost);
     }
@@ -178,7 +178,7 @@ void NativeEconomyRuntime::collect_transport_successors(
 void NativeEconomyRuntime::build_water_portal_graph(int32_t graph_index) {
     WaterPortalGraph &graph = _trade_topology.water_portals[graph_index];
     graph.clear();
-    const int32_t count = _cell_count;
+    const int32_t count = _cell_count.get();
     if (count <= 0 ||
         _trade_topology.water_class.size() != static_cast<size_t>(count) ||
         _trade_topology.neighbors.size() != static_cast<size_t>(count) * 6) {
@@ -311,7 +311,7 @@ void NativeEconomyRuntime::build_water_transport_graphs() {
 }
 
 void NativeEconomyRuntime::build_water_component_layers() {
-    const int32_t count = _cell_count;
+    const int32_t count = _cell_count.get();
     _trade_topology.component_layers.assign(
         static_cast<size_t>(WATER_LAYER_COUNT) * static_cast<size_t>(std::max(0, count)),
         -1);
@@ -360,16 +360,16 @@ bool NativeEconomyRuntime::reconstruct_water_corridor(
         int32_t from_portal, int32_t to_portal, uint8_t cap,
         std::vector<int32_t> &water_cells) const {
     water_cells.clear();
-    if (from_portal < 0 || to_portal < 0 || from_portal >= _cell_count ||
-        to_portal >= _cell_count || from_portal == to_portal) return false;
-    if (_trade_topology.water_class.size() != static_cast<size_t>(_cell_count) ||
-        _trade_topology.neighbors.size() != static_cast<size_t>(_cell_count) * 6)
+    if (from_portal < 0 || to_portal < 0 || from_portal >= _cell_count.get() ||
+        to_portal >= _cell_count.get() || from_portal == to_portal) return false;
+    if (_trade_topology.water_class.size() != static_cast<size_t>(_cell_count.get()) ||
+        _trade_topology.neighbors.size() != static_cast<size_t>(_cell_count.get()) * 6)
         return false;
     auto water_ok = [&](int32_t cell) {
         return water_class_navigable(
             _trade_topology.water_class[static_cast<size_t>(cell)], cap);
     };
-    std::vector<int32_t> parent(static_cast<size_t>(_cell_count), -2);
+    std::vector<int32_t> parent(static_cast<size_t>(_cell_count.get()), -2);
     std::vector<int32_t> queue;
     queue.reserve(64);
     int32_t reached = -1;

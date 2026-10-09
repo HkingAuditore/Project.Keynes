@@ -519,12 +519,12 @@ Dictionary NativeEconomyRuntime::configure(const Dictionary &catalog, const Dict
     _stage = Stage::IDLE;
     out["ok"] = true;
     out["schema_version"] = SCHEMA_VERSION;
-    out["catalog_hash"] = _catalog_hash;
-    out["cell_count"] = _cell_count;
+    out["catalog_hash"] = _catalog_hash.get();
+    out["cell_count"] = _cell_count.get();
     out["good_count"] = static_cast<int32_t>(_good_ids.size());
     out["signature_count"] = static_cast<int32_t>(_signatures.size());
     out["building_type_count"] = static_cast<int32_t>(_building_types.size());
-    out["family_catalog_hash"] = _family_catalog_hash;
+    out["family_catalog_hash"] = _family_catalog_hash.get();
     out["money_scale"] = MONEY_SCALE;
     out["goods_scale"] = GOODS_SCALE;
     out["ratio_scale"] = Q16_ONE;
@@ -543,13 +543,13 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
         return out;
     }
     _bootstrapped = false;
-    population_store().clear(_cell_count);
+    population_store().clear(_cell_count.get());
     _birth_residual_q32.assign(
-        static_cast<size_t>(_cell_count) * _ethnicity_ids.size(), 0);
-    _settlements.clear(_cell_count);
+        static_cast<size_t>(_cell_count.get()) * _ethnicity_ids.size(), 0);
+    _settlements.clear(_cell_count.get());
     market_store().clear();
-    _market_signals.clear(_cell_count);
-    _labor_signals.clear(_cell_count);
+    _market_signals.clear(_cell_count.get());
+    _labor_signals.clear(_cell_count.get());
     _trade_plan.clear_transient();
     _trade_active_keys.clear();
     _trade_active_key_present.clear();
@@ -630,12 +630,12 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
         return a < b;
     });
     for (size_t i : bootstrap_order) {
-        if (cells[i] < 0 || cells[i] >= _cell_count || signatures[i] < 0 ||
+        if (cells[i] < 0 || cells[i] >= _cell_count.get() || signatures[i] < 0 ||
             signatures[i] >= static_cast<int32_t>(_signatures.size()) || populations[i] < 0 ||
             funds[i] < 0) {
             out["ok"] = false;
             out["reason"] = "population_packet_entry_invalid";
-            population_store().clear(_cell_count);
+            population_store().clear(_cell_count.get());
             return out;
         }
         if (populations[i] == 0) continue;
@@ -643,7 +643,7 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
         if (slot < 0) {
             out["ok"] = false;
             out["reason"] = "population_page_allocation_failed";
-            population_store().clear(_cell_count);
+            population_store().clear(_cell_count.get());
             return out;
         }
         population_store().population.write_scalar(slot, saturating_add(population_store().population[slot], populations[i], _saturation_count), market_mutation_sink());
@@ -661,21 +661,21 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
                 break;
             }
         }
-        if (cell < 0 || cell >= _cell_count || !has_population) {
+        if (cell < 0 || cell >= _cell_count.get() || !has_population) {
             out["ok"] = false;
             out["reason"] = "forced_named_cell_invalid";
-            population_store().clear(_cell_count);
+            population_store().clear(_cell_count.get());
             return out;
         }
     }
 
     int64_t merchant_repairs = 0;
     std::string merchant_error;
-    for (int32_t cell = 0; cell < _cell_count; ++cell) {
+    for (int32_t cell = 0; cell < _cell_count.get(); ++cell) {
         if (!ensure_merchant_invariant(cell, merchant_repairs, merchant_error)) {
             out["ok"] = false;
             out["reason"] = String(merchant_error.c_str());
-            population_store().clear(_cell_count);
+            population_store().clear(_cell_count.get());
             return out;
         }
     }
@@ -685,8 +685,8 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
         return out;
     }
 
-    int32_t market_count = dict_num<int32_t>(market_packet, "market_count", _cell_count);
-    if (market_count != _cell_count) {
+    int32_t market_count = dict_num<int32_t>(market_packet, "market_count", _cell_count.get());
+    if (market_count != _cell_count.get()) {
         out["ok"] = false;
         out["reason"] = "market_v2_requires_one_market_per_cell";
         return out;
@@ -713,8 +713,8 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     _startup_demand_stamps.assign(static_cast<size_t>(matrix_size), 0);
     _startup_demand_generation = 0;
     _startup_demand_touched_keys.clear();
-    market_store().cell_to_market.resize(_cell_count);
-    for (int32_t c = 0; c < _cell_count; ++c) market_store().cell_to_market.write_scalar(c, c % market_count, market_mutation_sink());
+    market_store().cell_to_market.resize(_cell_count.get());
+    for (int32_t c = 0; c < _cell_count.get(); ++c) market_store().cell_to_market.write_scalar(c, c % market_count, market_mutation_sink());
     for (int32_t m = 0; m < market_count; ++m) {
         for (int32_t g = 0; g < market_store().good_count.get(); ++g) {
             const int64_t idx = market_store().index(m, g);
@@ -726,12 +726,12 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
 
     std::vector<int32_t> cell_to_market = packed_i32(market_packet, "cell_to_market");
     if (!cell_to_market.empty()) {
-        if (cell_to_market.size() != static_cast<size_t>(_cell_count)) {
+        if (cell_to_market.size() != static_cast<size_t>(_cell_count.get())) {
             out["ok"] = false;
             out["reason"] = "cell_to_market_size_mismatch";
             return out;
         }
-        for (int32_t cell = 0; cell < _cell_count; ++cell) {
+        for (int32_t cell = 0; cell < _cell_count.get(); ++cell) {
             if (cell_to_market[cell] != cell) {
                 out["ok"] = false;
                 out["reason"] = "market_v2_requires_identity_cell_mapping";
@@ -829,15 +829,15 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
         }
     }
     if (!founder_cells.empty() &&
-        (_family_runtime_mode != 2 || _person_runtime_mode != 2)) {
+        (_family_runtime_mode.get() != 2 || _person_runtime_mode.get() != 2)) {
         out["ok"] = false;
-        out["reason"] = _family_runtime_mode != 2
+        out["reason"] = _family_runtime_mode.get() != 2
             ? "founder_family_runtime_inactive"
             : "founder_person_runtime_inactive";
         return out;
     }
     for (size_t i = 0; i < building_cells.size(); ++i) {
-        if (building_cells[i] < 0 || building_cells[i] >= _cell_count ||
+        if (building_cells[i] < 0 || building_cells[i] >= _cell_count.get() ||
             building_types[i] < 0 || building_types[i] >= static_cast<int32_t>(_building_types.size()) ||
             building_owners[i] < 0 || building_owners[i] >= static_cast<int32_t>(_signatures.size()) ||
             building_counts[i] <= 0 ||
@@ -884,7 +884,7 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
             const int32_t cell = founder_cells[packet_index];
             const int32_t type_id = founder_types[packet_index];
             const int32_t owner_signature = founder_owners[packet_index];
-            if (cell < 0 || cell >= _cell_count || cell == previous_cell ||
+            if (cell < 0 || cell >= _cell_count.get() || cell == previous_cell ||
                 type_id < 0 ||
                 type_id >= static_cast<int32_t>(_building_types.size()) ||
                 owner_signature < 0 ||
@@ -998,26 +998,25 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     _epoch_days = choose_epoch_days(population_store().active_count);
     _commit_lag_budget_days = std::max(0, locked_market_cycle_days() - 1);
     _last_committed_day = -1;
-    _cell_last_settlement_day.resize(_cell_count);
-    _cell_settlement_generation.assign(_cell_count, 0);
-    _cell_price_stock_gen.assign(_cell_count, 0);
-    _cell_owner_cash_gen.assign(_cell_count, 0);
-    _cell_population_gen.assign(_cell_count, 0);
-    _cell_building_structure_gen.assign(_cell_count, 0);
-    _cell_technology_gen.assign(_cell_count, 0);
-    _cell_resource_gen.assign(_cell_count, 0);
-    _cell_trade_gen.assign(_cell_count, 0);
-    _cell_effect_shortage_q16.assign(_cell_count, 0);
-    _cell_essentials_shortage_q16.assign(_cell_count, 0);
-    _cell_resource_abundance_q16.assign(_cell_count, 0);
+    _cell_last_settlement_day.resize(_cell_count.get());
+    _cell_settlement_generation.assign(_cell_count.get(), 0);
+    _cell_price_stock_gen.assign(_cell_count.get(), 0);
+    _cell_owner_cash_gen.assign(_cell_count.get(), 0);
+    _cell_population_gen.assign(_cell_count.get(), 0);
+    _cell_building_structure_gen.assign(_cell_count.get(), 0);
+    _cell_technology_gen.assign(_cell_count.get(), 0);
+    _cell_resource_gen.assign(_cell_count.get(), 0);
+    _cell_trade_gen.assign(_cell_count.get(), 0);
+    _cell_effect_shortage_q16.assign(_cell_count.get(), 0);
+    _cell_essentials_shortage_q16.assign(_cell_count.get(), 0);
+    _cell_resource_abundance_q16.assign(_cell_count.get(), 0);
     _fiscal_previous_country_handles.assign(
-        static_cast<size_t>(_cell_count), 0);
+        static_cast<size_t>(_cell_count.get()), 0);
     _fiscal_previous_requests.assign(
-        static_cast<size_t>(_cell_count) * ACTIVE_TAX_KIND_COUNT, 0);
+        static_cast<size_t>(_cell_count.get()) * ACTIVE_TAX_KIND_COUNT, 0);
     const int32_t n = locked_market_cycle_days();
-    for (int32_t cell = 0; cell < _cell_count; ++cell) {
-        _cell_last_settlement_day[cell] =
-            static_cast<int64_t>(((cell % n) + n) % n) - n;
+    for (int32_t cell = 0; cell < _cell_count.get(); ++cell) {
+        _cell_last_settlement_day.write_scalar(cell, static_cast<int64_t>(((cell % n) + n) % n) - n, market_mutation_sink());
     }
     _settlement_watermark = -n;
     _settlement_newest_day = -1;
@@ -1032,7 +1031,7 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     rebuild_committed_summaries();
     initialize_settlements_from_population();
     for (int32_t cell : forced_named_cells) {
-        _settlements.name_forced[cell] = 1;
+        _settlements.name_forced.write_scalar(cell, 1, market_mutation_sink());
         assign_settlement_name(cell);
     }
     if (founder_family_count > 0)
@@ -1095,16 +1094,16 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     out["accuracy_exact_probe_rate_q16"] = _accuracy_exact_probe_rate_q16;
     out["accuracy_fallback_cooldown_epochs"] =
         _accuracy_fallback_cooldown_epochs;
-    out["employment_mobility_daily_q16"] = _employment_mobility_daily_q16;
+    out["employment_mobility_daily_q16"] = _employment_mobility_daily_q16.get();
     out["employment_understaffed_reallocation_hurdle_mult_q16"] =
-        _employment_understaffed_reallocation_hurdle_mult_q16;
+        _employment_understaffed_reallocation_hurdle_mult_q16.get();
     out["employment_choice_temperature_q16"] =
-        _employment_choice_temperature_q16;
+        _employment_choice_temperature_q16.get();
     out["merchant_count"] = static_cast<int64_t>(_merchant_slots.size());
     out["merchant_repairs"] = merchant_repairs;
     out["building_group_count"] = static_cast<int64_t>(building_count());
-    out["family_runtime_mode"] = _family_runtime_mode == 0 ? "OFF" :
-        (_family_runtime_mode == 1 ? "PROBE" : "ACTIVE");
+    out["family_runtime_mode"] = _family_runtime_mode.get() == 0 ? "OFF" :
+        (_family_runtime_mode.get() == 1 ? "PROBE" : "ACTIVE");
     out["family_count"] = families_store().active_count.get();
     out["family_membership_edge_count"] = static_cast<int64_t>(
         family_memberships().size());
@@ -1138,8 +1137,8 @@ Dictionary NativeEconomyRuntime::bootstrap(const Dictionary &population_packet,
     out["families_dissolved"] = _families_dissolved;
     out["family_owner_jobs_filled"] = _family_owner_jobs_filled;
     out["family_owner_jobs_vacant"] = _family_owner_jobs_vacant;
-    out["notable_person_runtime_mode"] = _person_runtime_mode == 0 ? "OFF" :
-        (_person_runtime_mode == 1 ? "PROBE" : "ACTIVE");
+    out["notable_person_runtime_mode"] = _person_runtime_mode.get() == 0 ? "OFF" :
+        (_person_runtime_mode.get() == 1 ? "PROBE" : "ACTIVE");
     out["notable_person_count"] = persons_store().active_count.get();
     out["person_need_edge_count"] = static_cast<int64_t>(person_needs().size());
     out["persons_promoted"] = _persons_promoted;
@@ -1240,7 +1239,7 @@ Dictionary NativeEconomyRuntime::submit_commands(const Dictionary &batch) {
             return out;
         }
         if ((opcodes[i] == COMMAND_MOVE_POPULATION &&
-             (i32_0[i] < 0 || i32_0[i] >= _cell_count)) ||
+             (i32_0[i] < 0 || i32_0[i] >= _cell_count.get())) ||
             (opcodes[i] == COMMAND_CHANGE_SIGNATURE &&
              (i32_0[i] < 0 || i32_0[i] >= static_cast<int32_t>(_signatures.size())))) {
             out["ok"] = false;
@@ -1250,7 +1249,7 @@ Dictionary NativeEconomyRuntime::submit_commands(const Dictionary &batch) {
         }
         if ((opcodes[i] == COMMAND_BUILD || opcodes[i] == COMMAND_DEMOLISH ||
              treasury_build) &&
-            (i32_0[i] < 0 || i32_0[i] >= _cell_count || i32_1[i] < 0 ||
+            (i32_0[i] < 0 || i32_0[i] >= _cell_count.get() || i32_1[i] < 0 ||
              i32_1[i] >= static_cast<int32_t>(_building_types.size()) || i64_0[i] <= 0)) {
             out["ok"] = false;
             out["reason"] = "command_building_target_invalid";
@@ -1403,7 +1402,7 @@ bool NativeEconomyRuntime::validate_command_pod(const Command &cmd,
         return false;
     }
     if ((cmd.opcode == COMMAND_MOVE_POPULATION &&
-         (cmd.i32_0 < 0 || cmd.i32_0 >= _cell_count)) ||
+         (cmd.i32_0 < 0 || cmd.i32_0 >= _cell_count.get())) ||
         (cmd.opcode == COMMAND_CHANGE_SIGNATURE &&
          (cmd.i32_0 < 0 || cmd.i32_0 >= static_cast<int32_t>(
              _signatures.size())))) {
@@ -1411,7 +1410,7 @@ bool NativeEconomyRuntime::validate_command_pod(const Command &cmd,
         return false;
     }
     if ((cmd.opcode == COMMAND_BUILD || cmd.opcode == COMMAND_DEMOLISH) &&
-        (cmd.i32_0 < 0 || cmd.i32_0 >= _cell_count || cmd.i32_1 < 0 ||
+        (cmd.i32_0 < 0 || cmd.i32_0 >= _cell_count.get() || cmd.i32_1 < 0 ||
          cmd.i32_1 >= static_cast<int32_t>(_building_types.size()) ||
          cmd.i64_0 <= 0)) {
         error = "command_building_target_invalid";
@@ -1439,8 +1438,8 @@ bool NativeEconomyRuntime::validate_command_pod(const Command &cmd,
         if (cmd.opcode == COMMAND_START_FAMILY_EXPEDITION) {
             int32_t family = -1;
             if (!families_store().valid_handle(cmd.target_handle, family) ||
-                cmd.i32_0 < 0 || cmd.i32_0 >= _cell_count ||
-                cmd.i32_1 < 0 || cmd.i32_1 >= _cell_count ||
+                cmd.i32_0 < 0 || cmd.i32_0 >= _cell_count.get() ||
+                cmd.i32_1 < 0 || cmd.i32_1 >= _cell_count.get() ||
                 cmd.i64_0 < 1) {
                 error = "colonization_command_invalid";
                 return false;
@@ -1566,11 +1565,11 @@ bool NativeEconomyRuntime::submit_effect_commands_pod(
     const bool immediate_family_settlement = !_epoch_active &&
         staged.size() == 1 &&
         staged.front().opcode == COMMAND_SETTLE_FAMILY_EXPEDITION &&
-        staged.front().effective_day <= _current_day;
+        staged.front().effective_day <= _current_day.get();
     // When no epoch is open, due effect commands must apply (or fail) now.
     // Queuing them for a future begin_epoch deadlocks WorldClock: Effect ACK
     // arms the day barrier, and the next epoch never starts.
-    const int64_t due_day = std::max(_current_day, _last_committed_day);
+    const int64_t due_day = std::max(_current_day.get(), _last_committed_day.get());
     for (Command &command : staged) {
         command.submit_order = _next_submit_order++;
         _effect_idempotency_requests.emplace(command.effect_idempotency_key,
@@ -1617,7 +1616,7 @@ bool NativeEconomyRuntime::submit_effect_commands_pod(
 void NativeEconomyRuntime::drain_due_effect_pending_commands() {
     if (_epoch_active || _fatal || !_bootstrapped || _pending_commands.empty())
         return;
-    const int64_t due_day = std::max(_current_day, _last_committed_day);
+    const int64_t due_day = std::max(_current_day.get(), _last_committed_day.get());
     std::vector<Command> kept;
     kept.reserve(_pending_commands.size());
     for (const Command &command : _pending_commands) {

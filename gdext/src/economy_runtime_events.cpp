@@ -51,7 +51,7 @@ PackedByteArray make_event_archive_chunk(uint16_t section, uint32_t records,
 
 void NativeEconomyRuntime::publish_social_pressure_facts() {
     for (const int32_t cell : _epoch_settlement_cells) {
-        if (cell < 0 || cell >= _cell_count ||
+        if (cell < 0 || cell >= _cell_count.get() ||
             cell >= static_cast<int32_t>(_cell_social_pressure_level.size()))
             continue;
         int64_t weighted = 0;
@@ -78,7 +78,7 @@ void NativeEconomyRuntime::publish_social_pressure_facts() {
         const int32_t level = social_pressure_level_for(composite_q16);
         const int32_t previous = _cell_social_pressure_level[cell];
         if (level == previous) continue;
-        _cell_social_pressure_level[cell] = static_cast<uint8_t>(level);
+        _cell_social_pressure_level.write_scalar(cell, static_cast<uint8_t>(level), market_mutation_sink());
         CommittedGameplayFact fact;
         fact.kind = GAMEPLAY_FACT_SOCIAL_PRESSURE;
         fact.cell = cell;
@@ -127,7 +127,7 @@ void NativeEconomyRuntime::publish_technology_practice_facts() {
     };
     for (size_t pk_row = 0; pk_row < building_count(); ++pk_row) {
         const auto group = building_at(pk_row);
-        if (group.count <= 0 || group.cell < 0 || group.cell >= _cell_count ||
+        if (group.count <= 0 || group.cell < 0 || group.cell >= _cell_count.get() ||
             group.type_id < 0 ||
             group.type_id >= static_cast<int32_t>(_building_types.size()) ||
             group.cell >= static_cast<int32_t>(_epoch_cell_country.size()))
@@ -155,7 +155,7 @@ void NativeEconomyRuntime::publish_technology_practice_facts() {
             ++aggregate.groups[static_cast<size_t>(rule)];
             add_first(aggregate, rule, group.cell);
         }
-        const int64_t period_days = std::max(1, _epoch_days);
+        const int64_t period_days = std::max(1, _epoch_days.get());
         const int64_t utilization_q16 = std::clamp<int64_t>(
             group.last_capacity_q16, 0, Q16_ONE);
         const int64_t effective_days = std::max<int64_t>(
@@ -222,7 +222,7 @@ void NativeEconomyRuntime::publish_technology_practice_facts() {
             ++aggregate.research_groups;
     }
     for (const int32_t cell : _epoch_settlement_cells) {
-        if (cell < 0 || cell >= _cell_count ||
+        if (cell < 0 || cell >= _cell_count.get() ||
             cell >= static_cast<int32_t>(_epoch_cell_country.size())) continue;
         const int32_t country = _epoch_cell_country[static_cast<size_t>(cell)];
         if (country < 0 || country >= static_cast<int32_t>(countries.size())) continue;
@@ -331,7 +331,7 @@ void NativeEconomyRuntime::publish_country_development_facts() {
     class_snapshot.revision = ++_class_opinion_revision;
     class_snapshot.class_hash = _political_class_hash;
     class_snapshot.epoch_day = _sample_day;
-    class_snapshot.commit_day = _current_day;
+    class_snapshot.commit_day = _current_day.get();
     class_snapshot.country_count = _epoch_country_count;
     class_snapshot.class_count = class_count;
     class_snapshot.country_handles.assign(_epoch_country_handles.begin(),
@@ -456,10 +456,10 @@ void NativeEconomyRuntime::publish_country_development_facts() {
     // `_market_cells` is the existing stable market/settlement CSR. Only cells
     // with a committed population are evidence-bearing settlements; empty map
     // cells never enter the development scan or emit a fact.
-    if (_committed_cells.size() == static_cast<size_t>(_cell_count)) {
+    if (_committed_cells.size() == static_cast<size_t>(_cell_count.get())) {
         for (const int32_t cell : _market_cells) {
             ++cells_scanned;
-            if (cell < 0 || cell >= _cell_count ||
+            if (cell < 0 || cell >= _cell_count.get() ||
                 _committed_cells[static_cast<size_t>(cell)].population <= 0 ||
                 cell >= static_cast<int32_t>(_epoch_cell_country.size()))
                 continue;
@@ -561,10 +561,10 @@ void NativeEconomyRuntime::publish_country_development_facts() {
     finalize_class_snapshot();
     if (!publish_development) return;
 
-    const int64_t period_days = std::max<int64_t>(1, _epoch_days);
+    const int64_t period_days = std::max<int64_t>(1, _epoch_days.get());
     for (size_t pk_row = 0; pk_row < building_count(); ++pk_row) {
         const auto group = building_at(pk_row);
-        if (group.count <= 0 || group.cell < 0 || group.cell >= _cell_count ||
+        if (group.count <= 0 || group.cell < 0 || group.cell >= _cell_count.get() ||
             group.type_id < 0 || group.type_id >= static_cast<int32_t>(_building_types.size()) ||
             group.cell >= static_cast<int32_t>(_epoch_cell_country.size()))
             continue;
@@ -793,7 +793,7 @@ void NativeEconomyRuntime::trace_record_cashflow(int32_t cell, uint64_t cohort_h
 
 void NativeEconomyRuntime::trace_reconcile_inspector_cashflows() {
     const int32_t cell = _staging_events.cashflow_cell;
-    if (cell < 0 || cell >= _cell_count) return;
+    if (cell < 0 || cell >= _cell_count.get()) return;
     population_store().for_each_in_cell(cell, [&](int32_t slot) {
         const uint64_t handle = population_store().handle_for_slot(slot);
         int64_t recorded_income = 0;
@@ -834,13 +834,13 @@ void NativeEconomyRuntime::trace_begin_epoch() {
         _inspector_trace_pending = false;
     }
     _staging_events = {};
-    _staging_events.epoch_id = _epoch_id;
+    _staging_events.epoch_id = _epoch_id.get();
     _staging_events.sample_day = _sample_day;
-    _staging_events.commit_day = _sample_day < 0 ? _current_day :
-        _sample_day + std::max(0, _epoch_days - 1);
-    _staging_events.period_days = std::max(1, _epoch_days);
+    _staging_events.commit_day = _sample_day < 0 ? _current_day.get() :
+        _sample_day + std::max(0, _epoch_days.get() - 1);
+    _staging_events.period_days = std::max(1, _epoch_days.get());
     const bool inspector_trace_due = _inspector_trace_cell >= 0 &&
-        _inspector_trace_cell < _cell_count &&
+        _inspector_trace_cell < _cell_count.get() &&
         cell_in_market_workset(_inspector_trace_cell, _sample_day);
     _staging_events.cashflow_cell =
         (_trace_mode == TRACE_SELECTIVE || _trace_mode == TRACE_FULL_DEBUG) &&
@@ -849,7 +849,7 @@ void NativeEconomyRuntime::trace_begin_epoch() {
     if (_staging_events.cashflow_cell >= 0) {
         _staging_events.cashflows.reserve(64);
     }
-    _staging_events.stream_hash = _event_stream_hash;
+    _staging_events.stream_hash = _event_stream_hash.get();
     _staging_events.stream_hash = trace_hash_mix(
         _staging_events.stream_hash, static_cast<uint64_t>(_staging_events.epoch_id));
     _staging_events.stream_hash = trace_hash_mix(
@@ -917,7 +917,7 @@ void NativeEconomyRuntime::trace_append(int32_t kind, int32_t stage, int32_t cel
             ++_trace_detail_truncated;
         }
     }
-    event.event_id = _next_event_id + static_cast<int64_t>(_staging_events.events.size());
+    event.event_id = _next_event_id.get() + static_cast<int64_t>(_staging_events.events.size());
     uint64_t hash = _staging_events.stream_hash;
     hash = trace_hash_mix(hash, static_cast<uint64_t>(event.event_id));
     hash = trace_hash_mix(hash, static_cast<uint64_t>(event.kind));
@@ -946,7 +946,7 @@ void NativeEconomyRuntime::trace_commit_epoch(int64_t population_error,
     const auto start = Clock::now();
     trace_reconcile_inspector_cashflows();
     trace_append(EVENT_EPOCH_COMMITTED, static_cast<int32_t>(Stage::AGGREGATE_PUBLISH), -1,
-                 SUBJECT_NONE, _epoch_id, -1, -1,
+                 SUBJECT_NONE, _epoch_id.get(), -1, -1,
                  static_cast<int64_t>(_staging_events.events.size()),
                  population_error, money_error, goods_error, nullptr, 0);
     const int64_t event_count = static_cast<int64_t>(_staging_events.events.size());
@@ -965,15 +965,15 @@ void NativeEconomyRuntime::trace_commit_epoch(int64_t population_error,
     }
     const int64_t leg_count = static_cast<int64_t>(_staging_events.legs.size());
     if (_trace_mode != TRACE_OFF) {
-        _staging_events.first_event_id = _next_event_id;
+        _staging_events.first_event_id = _next_event_id.get();
         _next_event_id += event_count;
-        _staging_events.last_event_id = _next_event_id - 1;
+        _staging_events.last_event_id = _next_event_id.get() - 1;
         _event_stream_hash = _staging_events.stream_hash;
         _committed_event_batches.push_back(std::move(_staging_events));
     }
-    _audit_history.push_back({_epoch_id, _sample_day, _current_day, event_count, leg_count,
+    _audit_history.push_back({_epoch_id.get(), _sample_day, _current_day.get(), event_count, leg_count,
                               population_error, money_error, goods_error,
-                              _event_stream_hash});
+                              _event_stream_hash.get()});
     while (static_cast<int32_t>(_audit_history.size()) > _trace_retention_epochs) {
         _audit_history.pop_front();
     }
@@ -1122,9 +1122,9 @@ Dictionary NativeEconomyRuntime::event_schema() const {
 Dictionary NativeEconomyRuntime::set_trace_filter(const Dictionary &filter) {
     Dictionary out;
     std::vector<int32_t> cells = packed_i32(filter, "cells");
-    std::vector<uint8_t> mask(static_cast<size_t>(std::max(0, _cell_count)), 0);
+    std::vector<uint8_t> mask(static_cast<size_t>(std::max(0, _cell_count.get())), 0);
     for (int32_t cell : cells) {
-        if (cell < 0 || cell >= _cell_count) {
+        if (cell < 0 || cell >= _cell_count.get()) {
             out["ok"] = false;
             out["reason"] = "economy_trace_cell_out_of_range";
             return out;
@@ -1148,7 +1148,7 @@ Dictionary NativeEconomyRuntime::set_trace_filter(const Dictionary &filter) {
 
 Dictionary NativeEconomyRuntime::set_inspector_trace_cell(int32_t cell_idx) {
     Dictionary out;
-    if (cell_idx < -1 || cell_idx >= _cell_count) {
+    if (cell_idx < -1 || cell_idx >= _cell_count.get()) {
         out["ok"] = false;
         out["reason"] = "economy_inspector_trace_cell_out_of_range";
         return out;
@@ -1237,7 +1237,7 @@ Dictionary NativeEconomyRuntime::poll_events(const Dictionary &opts) const {
     out["leg_before"] = leg_before; out["leg_after"] = leg_after;
     out["count"] = event_id.size(); out["last_event_id"] = last_id;
     out["consumer_id"] = consumer;
-    out["consumer_lag"] = std::max<int64_t>(0, _next_event_id - 1 - last_id);
+    out["consumer_lag"] = std::max<int64_t>(0, _next_event_id.get() - 1 - last_id);
     out["gap"] = !_committed_event_batches.empty() &&
         after < _committed_event_batches.front().first_event_id - 1;
     out["ok"] = true;
@@ -1277,9 +1277,9 @@ Dictionary NativeEconomyRuntime::trace_report() const {
     out["audit_frame_count"] = static_cast<int64_t>(_audit_history.size());
     out["oldest_event_id"] = _committed_event_batches.empty() ? 0 :
         _committed_event_batches.front().first_event_id;
-    out["newest_event_id"] = _next_event_id - 1;
-    out["next_event_id"] = _next_event_id;
-    out["stream_hash"] = static_cast<int64_t>(_event_stream_hash);
+    out["newest_event_id"] = _next_event_id.get() - 1;
+    out["next_event_id"] = _next_event_id.get();
+    out["stream_hash"] = static_cast<int64_t>(_event_stream_hash.get());
     out["memory_bytes"] = trace_memory_bytes();
     out["memory_budget_bytes"] = _trace_memory_budget;
     out["evicted_event_count"] = _event_evicted_count;
@@ -1323,10 +1323,10 @@ PackedByteArray NativeEconomyRuntime::read_event_archive_chunk(int32_t max_bytes
                                       64 * 1024, 16 * 1024 * 1024);
     std::vector<uint8_t> payload;
     if (!_event_archive.header_emitted) {
-        append_le<int64_t>(payload, _catalog_hash);
-        append_le<int64_t>(payload, _building_catalog_hash);
-        append_le<int64_t>(payload, _next_event_id);
-        append_le<uint64_t>(payload, _event_stream_hash);
+        append_le<int64_t>(payload, _catalog_hash.get());
+        append_le<int64_t>(payload, _building_catalog_hash.get());
+        append_le<int64_t>(payload, _next_event_id.get());
+        append_le<uint64_t>(payload, _event_stream_hash.get());
         append_le<int32_t>(payload, static_cast<int32_t>(_event_archive.batch_limit));
         _event_archive.header_emitted = true;
         return make_event_archive_chunk(EVENT_ARCHIVE_HEADER, 1, payload);

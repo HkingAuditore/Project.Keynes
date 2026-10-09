@@ -27,9 +27,9 @@ bool NativeEconomyRuntime::configure_profile(const Dictionary &profile, std::str
     _price_ceiling_confirm_days = dict_num<int32_t>(profile, "price_ceiling_confirm_days", 30);
     _price_ceiling_expand_bp = dict_num<int32_t>(profile, "price_ceiling_expand_bp", 50);
     _price_ceiling_recover_bp = dict_num<int32_t>(profile, "price_ceiling_recover_bp", 10);
-    if (_price_ceiling_confirm_days < 1 || _price_ceiling_confirm_days > 365 ||
-        _price_ceiling_expand_bp < 1 || _price_ceiling_expand_bp > 100 ||
-        _price_ceiling_recover_bp < 1 || _price_ceiling_recover_bp > 100) {
+    if (_price_ceiling_confirm_days.get() < 1 || _price_ceiling_confirm_days.get() > 365 ||
+        _price_ceiling_expand_bp.get() < 1 || _price_ceiling_expand_bp.get() > 100 ||
+        _price_ceiling_recover_bp.get() < 1 || _price_ceiling_recover_bp.get() > 100) {
         error = "price_ceiling_profile_invalid";
         return false;
     }
@@ -374,7 +374,7 @@ bool NativeEconomyRuntime::configure_profile(const Dictionary &profile, std::str
         for (int32_t sector = 0; sector < 5; ++sector) {
             const int32_t value = sector < static_cast<int32_t>(horizons.size())
                 ? horizons[static_cast<size_t>(sector)] : defaults[sector];
-            _maintenance_horizon_days_by_sector[sector] = std::clamp(value, 1, 365000);
+            _maintenance_horizon_days_by_sector.write_scalar(sector, std::clamp(value, 1, 365000));
         }
     }
     _building_maintenance_cost_factor_q16 = std::clamp(

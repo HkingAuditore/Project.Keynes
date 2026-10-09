@@ -27,7 +27,7 @@ Dictionary NativeEconomyRuntime::market_cell_snapshot(int32_t cell_idx) const {
     out["committed"] = !_epoch_active && !_fatal;
     out["busy"] = _epoch_active;
     out["snapshot_source"] = "rolling_committed";
-    if (!_bootstrapped || cell_idx < 0 || cell_idx >= _cell_count) {
+    if (!_bootstrapped || cell_idx < 0 || cell_idx >= _cell_count.get()) {
         out["ok"] = false;
         out["reason"] = !_bootstrapped ? "economy_not_bootstrapped" : "cell_out_of_range";
         return out;
@@ -36,11 +36,11 @@ Dictionary NativeEconomyRuntime::market_cell_snapshot(int32_t cell_idx) const {
     out["ok"] = true;
     out["state_day"] = _cell_last_settlement_day[cell_idx];
     out["age_days"] = std::max<int64_t>(0,
-        _current_day - _cell_last_settlement_day[cell_idx]);
+        _current_day.get() - _cell_last_settlement_day[cell_idx]);
     out["settlement_generation"] = static_cast<int64_t>(
         _cell_settlement_generation[cell_idx]);
     out["market_id"] = market;
-    out["epoch_id"] = _epoch_id;
+    out["epoch_id"] = _epoch_id.get();
     PackedStringArray good_ids;
     PackedInt64Array stock;
     PackedInt64Array demand_ema;
@@ -221,7 +221,7 @@ Dictionary NativeEconomyRuntime::market_cell_snapshot(int32_t cell_idx) const {
             ? _trade_signal_last_rejection_reason[signal_clock] :
                 TRADE_SIGNAL_DIAG_NONE);
         trade_deadline_exceeded.push_back(first_seen >= 0 && first_dispatch < 0 &&
-            _sample_day - first_seen > _trade_response_days ? 1 : 0);
+            _sample_day - first_seen > _trade_response_days.get() ? 1 : 0);
         cost_anchor_price.push_back(signal >= 0 ?
             _market_signals.cost_anchor_price[signal] : 0);
         const PricePressure pressure = price_pressure(
@@ -491,7 +491,7 @@ Dictionary NativeEconomyRuntime::explain_cohort_satisfaction(
 Dictionary NativeEconomyRuntime::cell_satisfaction_attractiveness(
         int32_t cell_idx) const {
     Dictionary out;
-    if (!_configured || cell_idx < 0 || cell_idx >= _cell_count) {
+    if (!_configured || cell_idx < 0 || cell_idx >= _cell_count.get()) {
         out["ok"] = false;
         out["reason"] = !_configured ? "economy_not_configured"
                                      : "cell_index_invalid";
@@ -657,7 +657,7 @@ Dictionary NativeEconomyRuntime::country_trade_snapshot(
     out["ok"] = true;
     out["country_handle"] = country_handle;
     out["view"] = view;
-    out["revision"] = static_cast<int64_t>(_country_trade_revision);
+    out["revision"] = static_cast<int64_t>(_country_trade_revision.get());
     if (view == "summary") {
         const auto fiscal_value = [&](int32_t kind, const std::vector<int64_t> &values) {
             const size_t index = static_cast<size_t>(country) *
@@ -727,7 +727,7 @@ Dictionary NativeEconomyRuntime::country_trade_snapshot(
             goods.push_back(_country_good_trade.goods[i]);
             const bool current_batch = i < static_cast<int32_t>(
                 _country_good_trade.batch_epoch.size()) &&
-                _country_good_trade.batch_epoch[i] == _epoch_id;
+                _country_good_trade.batch_epoch[i] == _epoch_id.get();
             imports.push_back(current_batch ?
                 _country_good_trade.batch_import_quantity[i] : 0);
             exports.push_back(current_batch ?
@@ -808,7 +808,7 @@ Dictionary NativeEconomyRuntime::country_trade_snapshot(
                     ? static_cast<int64_t>(_epoch_country_handles[partner_slot]) : 0);
             const bool current_batch = i < static_cast<int32_t>(
                 _country_partner_trade.batch_epoch.size()) &&
-                _country_partner_trade.batch_epoch[i] == _epoch_id;
+                _country_partner_trade.batch_epoch[i] == _epoch_id.get();
             imports.push_back(current_batch ?
                 _country_partner_trade.batch_import_quantity[i] : 0);
             exports.push_back(current_batch ?
@@ -855,7 +855,7 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     out["committed"] = !_epoch_active && !_fatal;
     out["busy"] = _epoch_active;
     out["snapshot_source"] = "rolling_committed";
-    if (!_bootstrapped || cell_idx < 0 || cell_idx >= _cell_count) {
+    if (!_bootstrapped || cell_idx < 0 || cell_idx >= _cell_count.get()) {
         out["ok"] = false;
         out["reason"] = !_bootstrapped ? "economy_not_bootstrapped" : "cell_out_of_range";
         return out;
@@ -863,11 +863,11 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     out["ok"] = true;
     out["state_day"] = _cell_last_settlement_day[cell_idx];
     out["age_days"] = std::max<int64_t>(0,
-        _current_day - _cell_last_settlement_day[cell_idx]);
+        _current_day.get() - _cell_last_settlement_day[cell_idx]);
     out["settlement_generation"] = static_cast<int64_t>(
         _cell_settlement_generation[cell_idx]);
-    out["epoch_id"] = _epoch_id;
-    out["period_days"] = std::max(1, _epoch_days);
+    out["epoch_id"] = _epoch_id.get();
+    out["period_days"] = std::max(1, _epoch_days.get());
     PackedStringArray type_ids;
     PackedInt64Array type_counts;
     PackedInt32Array target_operating_margin_q16;
@@ -1030,9 +1030,9 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
     employee_fill_offsets.push_back(0);
     group_input_selected_offsets.push_back(0);
     family_ownership_offsets.push_back(0);
-    const int32_t group_begin = _building_cell_offsets.size() == static_cast<size_t>(_cell_count + 1)
+    const int32_t group_begin = _building_cell_offsets.size() == static_cast<size_t>(_cell_count.get() + 1)
         ? _building_cell_offsets[cell_idx] : 0;
-    const int32_t group_end = _building_cell_offsets.size() == static_cast<size_t>(_cell_count + 1)
+    const int32_t group_end = _building_cell_offsets.size() == static_cast<size_t>(_cell_count.get() + 1)
         ? _building_cell_offsets[cell_idx + 1] : 0;
     auto diagnostic_for_type = [&](int32_t type_id) -> const InvestmentDiagnostic * {
         if (_investment_diagnostic_cell != cell_idx) return nullptr;
@@ -1117,7 +1117,7 @@ Dictionary NativeEconomyRuntime::building_cell_snapshot(int32_t cell_idx) const 
             for (int32_t p = _family_building_offsets[group_idx];
                  p < _family_building_offsets[group_idx + 1]; ++p) {
                 const FamilyBuildingOwnership &ownership =
-                    family_ownerships()[_family_building_edge_indices[p]];
+                    family_ownerships().read_at(_family_building_edge_indices[p], __FILE__, __LINE__);
                 family_ownership_handles.push_back(static_cast<int64_t>(
                     ownership.family_handle));
                 family_owned_counts.push_back(ownership.owned_count);
@@ -1638,7 +1638,7 @@ Dictionary NativeEconomyRuntime::building_visual_snapshot(
     cells.reserve(static_cast<size_t>(requested_cells.size()));
     for (int64_t i = 0; i < requested_cells.size(); ++i) {
         const int32_t cell = requested_cells[i];
-        if (cell < 0 || cell >= _cell_count) {
+        if (cell < 0 || cell >= _cell_count.get()) {
             out["reason"] = "cell_out_of_range";
             out["invalid_cell"] = cell;
             return out;
@@ -1693,14 +1693,14 @@ Dictionary NativeEconomyRuntime::treasury_construction_quotes(
     out["ok"] = false;
     out["cell_idx"] = cell_idx;
     out["country_handle"] = country_handle;
-    out["snapshot_day"] = _current_day;
+    out["snapshot_day"] = _current_day.get();
     out["nonbinding"] = true;
     if (!_bootstrapped || _fatal || _country_runtime == nullptr) {
         out["reason"] = !_bootstrapped ? "economy_not_bootstrapped" :
             (_fatal ? "economy_fatal" : "country_runtime_required");
         return out;
     }
-    if (cell_idx < 0 || cell_idx >= _cell_count ||
+    if (cell_idx < 0 || cell_idx >= _cell_count.get() ||
         !_country_runtime->valid_handle(country_handle)) {
         out["reason"] = "construction_target_invalid";
         return out;
@@ -1834,7 +1834,7 @@ Dictionary NativeEconomyRuntime::treasury_construction_quotes(
             }
         }
         if (can_build && quote_cash > 0 &&
-            (_merchant_offsets.size() != static_cast<size_t>(_cell_count + 1) ||
+            (_merchant_offsets.size() != static_cast<size_t>(_cell_count.get() + 1) ||
              _merchant_offsets[cell_idx] >= _merchant_offsets[cell_idx + 1])) {
             can_build = false;
             reason = "construction_market_unavailable";
@@ -1905,7 +1905,7 @@ Dictionary NativeEconomyRuntime::family_cell_snapshot(
     Dictionary out;
     out["cell_idx"] = cell_idx;
     out["committed"] = !_epoch_active && !_fatal;
-    if (!_bootstrapped || cell_idx < 0 || cell_idx >= _cell_count) {
+    if (!_bootstrapped || cell_idx < 0 || cell_idx >= _cell_count.get()) {
         out["ok"] = false;
         out["reason"] = !_bootstrapped ? "economy_not_bootstrapped" :
             "cell_out_of_range";
@@ -1914,7 +1914,7 @@ Dictionary NativeEconomyRuntime::family_cell_snapshot(
     offset = std::max(0, offset);
     limit = std::clamp(limit, 1, 256);
     std::vector<int32_t> indices;
-    if (_family_cell_offsets.size() == static_cast<size_t>(_cell_count + 1)) {
+    if (_family_cell_offsets.size() == static_cast<size_t>(_cell_count.get() + 1)) {
         for (int32_t p = _family_cell_offsets[cell_idx];
              p < _family_cell_offsets[cell_idx + 1]; ++p)
             indices.push_back(_family_cell_indices[p]);
@@ -2130,8 +2130,8 @@ Dictionary NativeEconomyRuntime::family_snapshot(int64_t family_handle_value) co
         ? _family_owned_offsets[index + 1]
         : static_cast<int32_t>(family_ownerships().size());
     for (int32_t p = owned_begin; p < owned_end; ++p) {
-        const FamilyBuildingOwnership &ownership = family_ownerships()[
-            owned_csr_ready ? _family_owned_edge_indices[p] : p];
+        const FamilyBuildingOwnership &ownership = family_ownerships().read_at(
+            owned_csr_ready ? _family_owned_edge_indices[p] : p, __FILE__, __LINE__);
         if (ownership.family_handle != handle) continue;
         const int32_t group = building_index_for_handle(ownership.building_handle);
         if (group < 0 || buildings_store().group_units[group] <= 0) continue;
@@ -2238,8 +2238,8 @@ Dictionary NativeEconomyRuntime::family_traits(
     }
     out["ok"] = true;
     out["family_handle"] = family_handle_value;
-    out["trait_catalog_version"] = _family_trait_catalog_version;
-    out["trait_catalog_hash"] = _family_trait_catalog_hash;
+    out["trait_catalog_version"] = _family_trait_catalog_version.get();
+    out["trait_catalog_hash"] = _family_trait_catalog_hash.get();
     out["trait_keys"] = keys;
     out["display_names"] = names;
     out["strength_q16"] = strengths;
@@ -2390,8 +2390,8 @@ Dictionary NativeEconomyRuntime::family_branches(
         ? _family_owned_offsets[index + 1]
         : static_cast<int32_t>(family_ownerships().size());
     for (int32_t p = owned_begin; p < owned_end; ++p) {
-        const FamilyBuildingOwnership &edge = family_ownerships()[
-            owned_csr_ready ? _family_owned_edge_indices[p] : p];
+        const FamilyBuildingOwnership &edge = family_ownerships().read_at(
+            owned_csr_ready ? _family_owned_edge_indices[p] : p, __FILE__, __LINE__);
         if (edge.family_handle != handle) continue;
         const int32_t group = building_index_for_handle(edge.building_handle);
         if (group < 0) continue;
@@ -2491,8 +2491,8 @@ Dictionary NativeEconomyRuntime::family_industries(
         ? _family_owned_offsets[index + 1]
         : static_cast<int32_t>(family_ownerships().size());
     for (int32_t p = owned_begin; p < owned_end; ++p) {
-        const FamilyBuildingOwnership &edge = family_ownerships()[
-            owned_csr_ready ? _family_owned_edge_indices[p] : p];
+        const FamilyBuildingOwnership &edge = family_ownerships().read_at(
+            owned_csr_ready ? _family_owned_edge_indices[p] : p, __FILE__, __LINE__);
         if (edge.family_handle == handle) rows.push_back(&edge);
     }
     std::sort(rows.begin(), rows.end(), [&](const auto *a, const auto *b) {
@@ -2612,8 +2612,8 @@ Dictionary NativeEconomyRuntime::notable_person_snapshot(
     if (_family_owned_offsets.size() == families_store().active.size() + 1)
         for (int32_t p = _family_owned_offsets[family];
              p < _family_owned_offsets[family + 1]; ++p) {
-            const FamilyBuildingOwnership &ownership = family_ownerships()[
-                _family_owned_edge_indices[p]];
+            const FamilyBuildingOwnership &ownership = family_ownerships().read_at(
+                _family_owned_edge_indices[p], __FILE__, __LINE__);
             const int32_t group = building_index_for_handle(ownership.building_handle);
             if (group < 0 || buildings_store().group_units[group] <= 0) continue;
             family_assets = saturating_add(family_assets, mul_div_sat(
@@ -2733,7 +2733,7 @@ Dictionary NativeEconomyRuntime::trade_orders_for_cell(
         int32_t cell_idx, int32_t offset, int32_t limit) const {
     Dictionary out;
     out["cell_idx"] = cell_idx;
-    if (!_bootstrapped || cell_idx < 0 || cell_idx >= _cell_count) {
+    if (!_bootstrapped || cell_idx < 0 || cell_idx >= _cell_count.get()) {
         out["ok"] = false;
         out["reason"] = !_bootstrapped ? "economy_not_bootstrapped" : "cell_out_of_range";
         return out;

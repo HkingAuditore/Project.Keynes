@@ -19,7 +19,7 @@ using namespace godot;
 Dictionary NativeEconomyRuntime::named_settlement_snapshot() const {
     std::vector<SettlementChange> changes;
     changes.reserve(_settlements.active_names.size());
-    for (int32_t cell = 0; cell < _cell_count; ++cell) {
+    for (int32_t cell = 0; cell < _cell_count.get(); ++cell) {
         if (_settlements.name_active[cell] != 0)
             changes.push_back({cell, _settlements.tier[cell], 1});
     }
@@ -57,7 +57,7 @@ Dictionary NativeEconomyRuntime::population_cell_summary(int32_t cell_idx) const
     out["committed"] = !_epoch_active && !_fatal;
     out["busy"] = _epoch_active;
     out["snapshot_source"] = "rolling_committed";
-    if (!_bootstrapped || cell_idx < 0 || cell_idx >= _cell_count) {
+    if (!_bootstrapped || cell_idx < 0 || cell_idx >= _cell_count.get()) {
         out["ok"] = false;
         out["reason"] = !_bootstrapped ? "economy_not_bootstrapped" : "cell_out_of_range";
         return out;
@@ -66,7 +66,7 @@ Dictionary NativeEconomyRuntime::population_cell_summary(int32_t cell_idx) const
     out["ok"] = true;
     out["state_day"] = _cell_last_settlement_day[cell_idx];
     out["age_days"] = std::max<int64_t>(0,
-        _current_day - _cell_last_settlement_day[cell_idx]);
+        _current_day.get() - _cell_last_settlement_day[cell_idx]);
     out["settlement_generation"] = static_cast<int64_t>(
         _cell_settlement_generation[cell_idx]);
     out["population"] = summary.population;
@@ -76,7 +76,7 @@ Dictionary NativeEconomyRuntime::population_cell_summary(int32_t cell_idx) const
     out["cohort_count"] = summary.cohort_count;
     out["satisfaction_q16"] = summary.satisfaction_q16;
     out["survival_satisfaction_q16"] = summary.satisfaction_q16;
-    out["epoch_id"] = _epoch_id;
+    out["epoch_id"] = _epoch_id.get();
     append_settlement_fields(out, cell_idx);
     append_population_employment_fields(out, cell_idx);
     append_carrying_capacity_fields(out, cell_idx);
@@ -88,7 +88,7 @@ void NativeEconomyRuntime::append_population_employment_fields(
     int64_t job_capacity = 0;
     int64_t jobs_filled = 0;
     int64_t snapshot_sat = 0;
-    if (_building_cell_offsets.size() == static_cast<size_t>(_cell_count + 1)) {
+    if (_building_cell_offsets.size() == static_cast<size_t>(_cell_count.get() + 1)) {
         for (int32_t group_index = _building_cell_offsets[cell_idx];
              group_index < _building_cell_offsets[cell_idx + 1];
              ++group_index) {
@@ -243,7 +243,7 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
     out["committed"] = !_epoch_active && !_fatal;
     out["busy"] = _epoch_active;
     out["snapshot_source"] = "rolling_committed";
-    if (!_bootstrapped || cell_idx < 0 || cell_idx >= _cell_count) {
+    if (!_bootstrapped || cell_idx < 0 || cell_idx >= _cell_count.get()) {
         out["ok"] = false;
         out["reason"] = !_bootstrapped ? "economy_not_bootstrapped" : "cell_out_of_range";
         return out;
@@ -255,7 +255,7 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
     out["ok"] = true;
     out["state_day"] = _cell_last_settlement_day[cell_idx];
     out["age_days"] = std::max<int64_t>(0,
-        _current_day - _cell_last_settlement_day[cell_idx]);
+        _current_day.get() - _cell_last_settlement_day[cell_idx]);
     out["settlement_generation"] = static_cast<int64_t>(
         _cell_settlement_generation[cell_idx]);
     out["population"] = summary.population;
@@ -265,7 +265,7 @@ Dictionary NativeEconomyRuntime::population_cell_snapshot_impl(
     out["cohort_count"] = summary.cohort_count;
     out["satisfaction_q16"] = summary.satisfaction_q16;
     out["survival_satisfaction_q16"] = summary.satisfaction_q16;
-    out["epoch_id"] = _epoch_id;
+    out["epoch_id"] = _epoch_id.get();
     append_settlement_fields(out, cell_idx);
     append_population_employment_fields(out, cell_idx);
     append_carrying_capacity_fields(out, cell_idx);
