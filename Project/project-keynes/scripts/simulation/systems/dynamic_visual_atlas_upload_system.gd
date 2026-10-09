@@ -212,6 +212,7 @@ var _cpp_commit_skip_count: int = 0
 var _lut_refresh_pending: bool = false
 var _lut_last_refresh_tick: int = -1
 var _lut_last_due_tick: int = -1
+var _lut_last_environment_generation: int = -1
 var _lut_stride: int = 1
 var _lut_phase: int = 0
 var _lut_pending_before_tick: bool = false
@@ -391,9 +392,30 @@ func _lut_active_decay_pending() -> bool:
 
 func _native_visual_commit_pending() -> bool:
 	var ext = _get_world_ext()
-	return ext != null \
-			and ext.has_method(&"is_native_daily_visual_commit_pending") \
-			and bool(ext.call(&"is_native_daily_visual_commit_pending"))
+	if ext == null:
+		return false
+	if ext.has_method(&"is_native_daily_visual_commit_pending") \
+			and bool(ext.call(&"is_native_daily_visual_commit_pending")):
+		return true
+	# ACTIVE climate worker 仍在提交日事务时，SoA slot 可能处于写入中。
+	# LUT 编码读取的是 slot 的裸数组；50x 下这个窗口更容易与渲染帧重叠，
+	# 造成 dyn_lut 的整批内容在新旧快照之间跳变。等本日事务完全提交后，
+	# 下一 tick 的 catch-up 会用同一份稳定 slot 编码。
+	if ext.has_method(&"get_runtime_thread_report"):
+		var tr: Dictionary = ext.call(&"get_runtime_thread_report")
+		if bool(tr.get("climate_worker_authoritative", false)) \
+				and int(tr.get("worker_day_inflight", 0)) != 0:
+			return true
+	return false
+
+
+func _runtime_environment_generation() -> int:
+	var ext = _get_world_ext()
+	if ext == null or not ext.has_method(&"get_runtime_thread_report"):
+		return -1
+	var tr: Dictionary = ext.call(&"get_runtime_thread_report")
+	return int(tr.get("simulation_environment_generation",
+		tr.get("environment_generation", -1)))
 
 
 func _build_lut_commit_deferred_report(t_start_us: int, tick_index: int,
@@ -500,6 +522,12 @@ func tick(ctx) -> Dictionary:
 					pending_before, due_this_tick, due_tick)
 		var catchup: bool = pending_before and not due_this_tick
 		var dirty_count: int = _lut_peek_dirty_count()
+		var environment_generation := _runtime_environment_generation()
+		if environment_generation >= 0 and environment_generation <= _lut_last_environment_generation \
+				and not catchup and dirty_count == 0 and not _lut_active_decay_pending() \
+				and _lut_textures_ready():
+			return _build_lut_skip_report(t_start_us, tick_index, pending_before,
+					due_this_tick, due_tick, dirty_count)
 		if dirty_count == 0 and not catchup and _lut_textures_ready() and not _lut_active_decay_pending():
 			return _build_lut_skip_report(t_start_us, tick_index, pending_before,
 					due_this_tick, due_tick, dirty_count)
@@ -531,6 +559,8 @@ func tick(ctx) -> Dictionary:
 		var lut_report: Dictionary = baker.refresh_cell_luts_daily(
 			map, world_data, dirty_indices,
 			not dirty_source_available or dense_dirty_fallback)
+		if environment_generation >= 0:
+			_lut_last_environment_generation = environment_generation
 		_lut_last_refresh_tick = tick_index
 		_lut_refresh_pending = false
 		_lut_pending_before_tick = pending_before
@@ -1275,6 +1305,7 @@ func _reset_state_machine() -> void:
 	_stride_dirty_noop = false
 	_stride_dirty_reason = ""
 	_smooth_prep_state = {}
+	_lut_last_environment_generation = -1
 
 
 func _clear_cpp_commit_queue() -> void:

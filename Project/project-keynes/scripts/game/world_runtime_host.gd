@@ -1685,6 +1685,12 @@ func _drain_runtime_natural_resource_commits() -> void:
 func _apply_climate_writeback_if_authoritative(report: Dictionary) -> void:
 	if not bool(report.get("climate_worker_authoritative", false)):
 		return
+	# 只接受严格递增的 worker 提交日。capacity barrier 期间，host 可能在
+	# 多个渲染帧重试同一个 pending day；重复调用 writeback 会让视觉消费者
+	# 在旧快照与新快照之间来回切换，尤其在 50x 下表现为海冰闪烁。
+	var committed_day := int(report.get("simulation_committed_day", -1))
+	if committed_day >= 0 and committed_day <= _runtime_climate_writeback_last_day:
+		return
 	# 回灌绑在 DCWorldExt 上，MapGenerator 没有转发它：这条路径每帧走一次，
 	# 多一层 GDScript 转发只是白开销。
 	var ext = _generator.get_data_core_world_ext() \
