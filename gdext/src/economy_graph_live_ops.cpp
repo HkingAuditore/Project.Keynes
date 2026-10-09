@@ -138,7 +138,7 @@ bool NativeEconomyGraphStageOps::capture_probe(std::vector<uint8_t> &bytes,
         return false;
     }
     const uint64_t generation = _runtime->_committed_generation;
-    const int64_t committed_day = _runtime->_last_committed_day;
+    const int64_t committed_day = _runtime->_last_committed_day.get();
     const uint64_t hash = static_cast<uint64_t>(
         std::max<int64_t>(0, _runtime->state_hash()));
     append_u64(bytes, generation);

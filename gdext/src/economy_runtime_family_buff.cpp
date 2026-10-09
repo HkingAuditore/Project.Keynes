@@ -142,8 +142,8 @@ int32_t NativeEconomyRuntime::family_group_owned_output_factor_q16(
         if (edge_index < 0 || edge_index >= static_cast<int32_t>(
                 family_ownerships().size()))
             continue;
-        const FamilyBuildingOwnership &edge = family_ownerships()[
-            static_cast<size_t>(edge_index)];
+        const FamilyBuildingOwnership &edge = family_ownerships().read_at(
+            static_cast<size_t>(edge_index), __FILE__, __LINE__);
         int32_t family = -1;
         if (!families_store().valid_handle(edge.family_handle, family)) continue;
         const int64_t owned = std::max<int64_t>(0, std::min(edge.owned_count,
@@ -163,7 +163,7 @@ int32_t NativeEconomyRuntime::family_group_owned_output_factor_q16(
 void NativeEconomyRuntime::rebuild_family_industry_metrics() {
     _family_industry_stats.clear();
     if (families_store().active.empty() || _building_cell_offsets.size() !=
-            static_cast<size_t>(_cell_count) + 1)
+            static_cast<size_t>(_cell_count.get()) + 1)
         return;
     const std::unordered_map<uint64_t, int32_t> &building_by_handle =
         building_handle_index();
@@ -189,7 +189,7 @@ void NativeEconomyRuntime::rebuild_family_industry_metrics() {
             family < 0 || family >= static_cast<int32_t>(family_cells.size()))
             continue;
         const int32_t cell = family_influences().cell[branch];
-        if (cell >= 0 && cell < _cell_count)
+        if (cell >= 0 && cell < _cell_count.get())
             family_cells[static_cast<size_t>(family)].push_back(cell);
     }
     for (int32_t family = 0; family < static_cast<int32_t>(families_store().active.size());
@@ -198,7 +198,7 @@ void NativeEconomyRuntime::rebuild_family_industry_metrics() {
         auto &cells = family_cells[static_cast<size_t>(family)];
         if (cells.empty()) {
             const int32_t home = families_store().home_cell[family];
-            if (home >= 0 && home < _cell_count) cells.push_back(home);
+            if (home >= 0 && home < _cell_count.get()) cells.push_back(home);
         }
         std::sort(cells.begin(), cells.end());
         cells.erase(std::unique(cells.begin(), cells.end()), cells.end());
@@ -220,8 +220,8 @@ void NativeEconomyRuntime::rebuild_family_industry_metrics() {
                     if (edge_index < 0 || edge_index >= static_cast<int32_t>(
                             family_ownerships().size()))
                         continue;
-                    const FamilyBuildingOwnership &edge = family_ownerships()[
-                        static_cast<size_t>(edge_index)];
+                    const FamilyBuildingOwnership &edge = family_ownerships().read_at(
+                        static_cast<size_t>(edge_index), __FILE__, __LINE__);
                     if (edge.family_handle != family_handle) continue;
                     const auto found = building_by_handle.find(edge.building_handle);
                     if (found == building_by_handle.end()) continue;
@@ -480,7 +480,7 @@ void NativeEconomyRuntime::grant_random_pool_family_effect(
     owned.erase(std::unique(owned.begin(), owned.end()), owned.end());
     const int32_t origin = families_store().origin_cell[family_index];
     const int32_t home = families_store().home_cell[family_index];
-    const int32_t tech_cell = origin >= 0 && origin < _cell_count ? origin : home;
+    const int32_t tech_cell = origin >= 0 && origin < _cell_count.get() ? origin : home;
     int32_t chosen = family_founding_effect_for(
         families_store().stable_id[family_index]);
     if (chosen >= 0) {
@@ -509,7 +509,7 @@ int32_t NativeEconomyRuntime::roll_random_pool_family_effect(
         const std::vector<int32_t> &avoid) const {
     if (_family_effect_keys.empty()) return -1;
     uint64_t rng = 1469598103934665603ULL;
-    rng = trace_hash_mix(rng, static_cast<uint64_t>(_seed));
+    rng = trace_hash_mix(rng, static_cast<uint64_t>(_seed.get()));
     rng = trace_hash_mix(rng, stable_id);
     rng = trace_hash_mix(rng, static_cast<uint32_t>(
         _family_effect_catalog_version));
@@ -636,7 +636,7 @@ void NativeEconomyRuntime::grant_family_effect_to_branches(
                 if (target_handle == 0) return;
             } else {
                 const int32_t resolved = target_cell >= 0 ? target_cell : source_cell;
-                if (resolved < 0 || resolved >= _cell_count) return;
+                if (resolved < 0 || resolved >= _cell_count.get()) return;
                 target_handle = static_cast<uint64_t>(resolved);
                 target_generation = 1;
             }
@@ -646,7 +646,7 @@ void NativeEconomyRuntime::grant_family_effect_to_branches(
                         static_cast<uint32_t>(branch_handle >> 32U), 0x46414d50,
                         static_cast<int64_t>(family_influences().stable_id[branch]),
                         branch_handle, target_handle, target_generation, prestige,
-                        _current_day, true, error))
+                        _current_day.get(), true, error))
                     return;
                 if (!_effect_runtime->set_metric_pod(instance_id, 0,
                         family_effect_metric_revision(1), magnitude, error))
@@ -722,10 +722,10 @@ void NativeEconomyRuntime::grant_ancestral_precept_for_country(
                     static_cast<uint32_t>(branch_handle >> 32U), 0x46414d43,
                     static_cast<int64_t>(family_influences().stable_id[branch]),
                     branch_handle, target_handle, target_generation, prestige,
-                    _current_day, true, error))
+                    _current_day.get(), true, error))
                 continue;
             _effect_runtime->refresh_managed_duration_pod(instance_id,
-                static_cast<uint32_t>(branch_handle >> 32U), _current_day);
+                static_cast<uint32_t>(branch_handle >> 32U), _current_day.get());
             if (!_effect_runtime->set_metric_pod(instance_id, 0,
                     family_effect_metric_revision(1), magnitude, error))
                 continue;
@@ -751,19 +751,19 @@ void NativeEconomyRuntime::collect_family_effect_target_cells(
         int32_t source_cell, int32_t selector_kind,
         std::vector<int32_t> &out_cells) const {
     out_cells.clear();
-    if (source_cell < 0 || source_cell >= _cell_count) return;
+    if (source_cell < 0 || source_cell >= _cell_count.get()) return;
     if (selector_kind != kSelectorNeighborsR1 && selector_kind != kSelectorNeighborsR2) {
         out_cells.push_back(source_cell);
         return;
     }
-    if (_building_neighbors.size() != static_cast<size_t>(_cell_count) * 6)
+    if (_building_neighbors.size() != static_cast<size_t>(_cell_count.get()) * 6)
         return;
     std::unordered_set<int32_t> unique;
     auto push_ring = [&](int32_t cell) {
         for (int32_t dir = 0; dir < 6; ++dir) {
             const int32_t neighbor = _building_neighbors[
                 static_cast<size_t>(cell) * 6 + dir];
-            if (neighbor < 0 || neighbor >= _cell_count || neighbor == source_cell)
+            if (neighbor < 0 || neighbor >= _cell_count.get() || neighbor == source_cell)
                 continue;
             unique.insert(neighbor);
         }
@@ -788,7 +788,8 @@ void NativeEconomyRuntime::fire_family_event_once_effect(int32_t family_index,
     const uint64_t family_handle = families_store().handle_for_index(family_index);
     const int32_t effect_id = family_effect_id_for_key(program_key);
     for (size_t i = 0; i < _family_effect_bindings.size(); ++i) {
-        FamilyEffectBinding &binding = _family_effect_bindings[i];
+        auto binding_write = _family_effect_bindings.edit_row(i);
+        FamilyEffectBinding &binding = binding_write[0];
         if (binding.definition_key != program_key) continue;
         int32_t branch = -1;
         if (!family_influences().valid_handle(binding.branch_handle, branch) ||
@@ -807,7 +808,7 @@ void NativeEconomyRuntime::fire_family_event_once_effect(int32_t family_index,
                 binding.generation, 0x46414d45,
                 static_cast<int64_t>(family_influences().stable_id[branch]),
                 binding.branch_handle, binding.target_handle,
-                binding.target_generation, prestige, _current_day, true, error))
+                binding.target_generation, prestige, _current_day.get(), true, error))
             continue;
         _effect_runtime->set_metric_pod(binding.instance_id, 0,
             family_effect_metric_revision(1), magnitude, error);
@@ -841,7 +842,7 @@ void NativeEconomyRuntime::apply_pending_family_split_gifts() {
             gift.building_type_id >= 0) {
             Command cmd;
             cmd.opcode = COMMAND_FAMILY_FREE_BUILDING;
-            cmd.effective_day = _current_day;
+            cmd.effective_day = _current_day.get();
             cmd.sequence = 1;
             cmd.target_handle = branch_handle;
             cmd.i32_0 = 0;
@@ -853,7 +854,7 @@ void NativeEconomyRuntime::apply_pending_family_split_gifts() {
             gift.population > 0) {
             Command cmd;
             cmd.opcode = COMMAND_FAMILY_POPULATION_REWARD;
-            cmd.effective_day = _current_day;
+            cmd.effective_day = _current_day.get();
             cmd.sequence = 2;
             cmd.target_handle = branch_handle;
             cmd.i32_0 = 0;
@@ -865,7 +866,7 @@ void NativeEconomyRuntime::apply_pending_family_split_gifts() {
 
 void NativeEconomyRuntime::rebuild_family_policy_scalars() {
     ensure_family_policy_factors();
-    const size_t cells = static_cast<size_t>(std::max(0, _cell_count));
+    const size_t cells = static_cast<size_t>(std::max(0, _cell_count.get()));
     const size_t sector_span = cells * 5U;
     auto reset_stamped = [&](std::vector<int32_t> &lane, int32_t fill,
                              size_t expected) {
@@ -904,7 +905,7 @@ void NativeEconomyRuntime::rebuild_family_policy_scalars() {
         }
     }
     auto stamp_cell = [&](int32_t cell) {
-        if (cell < 0 || cell >= _cell_count) return;
+        if (cell < 0 || cell >= _cell_count.get()) return;
         _family_policy_stamped_cells.push_back(cell);
     };
     auto mix_family_factor = [](int32_t &slot, int32_t magnitude) {

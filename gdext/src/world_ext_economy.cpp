@@ -151,6 +151,7 @@ Dictionary DCWorldExt::configure_economy(const Dictionary &catalog,
                                          const Dictionary &profile,
                                          int cell_count,
                                          int64_t seed) {
+    _economy_read_report_cache.clear();
     invalidate_economy_input_capture_cache(true);
     // Headless/focused callers that have no explicit country package still
     // receive the same default-country bootstrap as production. MapGenerator
@@ -202,11 +203,15 @@ Dictionary DCWorldExt::configure_economy(const Dictionary &catalog,
 
 Dictionary DCWorldExt::bootstrap_economy(const Dictionary &population_packet,
                                          const Dictionary &market_packet) {
+    _economy_read_report_cache.clear();
     invalidate_economy_input_capture_cache(true);
     if (_economy_runtime == nullptr) {
         return unavailable();
     }
-    return runtime_from(_economy_runtime)->bootstrap(population_packet, market_packet);
+    Dictionary result = runtime_from(_economy_runtime)->bootstrap(population_packet, market_packet);
+    if (bool(result.get("ok", false)))
+        _economy_read_report_cache = runtime_from(_economy_runtime)->report();
+    return result;
 }
 
 Dictionary DCWorldExt::submit_economy_commands(const Dictionary &packed_batch) {
@@ -1001,7 +1006,23 @@ Dictionary DCWorldExt::get_economy_report() const {
         out["mode"] = "native";
         return out;
     }
-    return runtime_from(_economy_runtime)->report();
+    std::unique_lock<std::mutex> boundary;
+    if (_runtime_host != nullptr && _runtime_host->economy_worker_owns_execution()) {
+        boundary = _runtime_host->try_lock_economy_read_boundary();
+        if (!boundary.owns_lock()) {
+            Dictionary cached = _economy_read_report_cache.duplicate(true);
+            cached["report_boundary_pending"] = true;
+            cached["report_available"] = !_economy_read_report_cache.is_empty();
+            return cached;
+        }
+    }
+    // This is still the compatibility DETAIL report, not a post-command
+    // EconomyCommitView. Its arrays are inspected only at a stable boundary.
+    _economy_read_report_cache = runtime_from(_economy_runtime)->report();
+    Dictionary result = _economy_read_report_cache.duplicate(true);
+    result["report_boundary_pending"] = false;
+    result["report_available"] = true;
+    return result;
 }
 
 Dictionary DCWorldExt::get_country_class_opinion_snapshot() const {
@@ -1543,8 +1564,10 @@ Dictionary DCWorldExt::reset_economy(const String &reason) {
     }
     _economy_last_notified_event_id = 0;
     Dictionary out = runtime_from(_economy_runtime)->reset(reason);
-    if (static_cast<bool>(out.get("ok", false)))
+    if (static_cast<bool>(out.get("ok", false))) {
         invalidate_economy_input_capture_cache(true);
+        _economy_read_report_cache = runtime_from(_economy_runtime)->report();
+    }
     return out;
 }
 
@@ -1785,6 +1808,7 @@ Dictionary DCWorldExt::restore_economy_ecp2(const PackedByteArray &bytes) {
         return out;
     }
     invalidate_economy_input_capture_cache(true);
+    _economy_read_report_cache = runtime_from(_economy_runtime)->report();
     out["ok"] = true;
     out["schema_version"] = state.schema_version;
     out["format"] = "ECP2";
@@ -1841,8 +1865,10 @@ Dictionary DCWorldExt::end_economy_restore() {
         return unavailable();
     }
     Dictionary out = runtime_from(_economy_runtime)->end_restore();
-    if (static_cast<bool>(out.get("ok", false)))
+    if (static_cast<bool>(out.get("ok", false))) {
         invalidate_economy_input_capture_cache(true);
+        _economy_read_report_cache = runtime_from(_economy_runtime)->report();
+    }
     return out;
 }
 

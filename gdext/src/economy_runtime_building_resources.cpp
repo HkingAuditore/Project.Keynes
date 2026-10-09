@@ -7,7 +7,7 @@ namespace pk {
 
 int32_t NativeEconomyRuntime::building_resource_access_cells(
         int32_t cell, int32_t resource_id, int32_t *out_cells, int32_t capacity) const {
-    if (out_cells == nullptr || capacity <= 0 || cell < 0 || cell >= _cell_count ||
+    if (out_cells == nullptr || capacity <= 0 || cell < 0 || cell >= _cell_count.get() ||
         resource_id < 0 || resource_id >= static_cast<int32_t>(_resource_ids.size())) {
         return 0;
     }
@@ -17,9 +17,9 @@ int32_t NativeEconomyRuntime::building_resource_access_cells(
 
 int64_t NativeEconomyRuntime::available_resource_amount(
         const ResourceAmount &item, int32_t cell) const {
-    if (cell < 0 || cell >= _cell_count || item.resource_id < 0 ||
+    if (cell < 0 || cell >= _cell_count.get() || item.resource_id < 0 ||
         item.resource_id >= static_cast<int32_t>(_resource_ids.size())) return 0;
-    const size_t idx = static_cast<size_t>(item.resource_id) * _cell_count + cell;
+    const size_t idx = static_cast<size_t>(item.resource_id) * _cell_count.get() + cell;
     // Snapshots can be queried immediately after bootstrap, before the first
     // resource epoch has allocated all lanes. Treat an absent lane as zero
     // available capacity instead of indexing an uninitialised vector.
@@ -40,9 +40,9 @@ int64_t NativeEconomyRuntime::available_resource_amount(
             std::max<int64_t>(0, resource_harvest_remaining_lanes()[idx]));
     int64_t sat = 0;
     const int64_t harvest = resource_is_renewable(item.resource_id) &&
-            _resource_safe_harvest_q16 > 0
+            _resource_safe_harvest_q16.get() > 0
         ? saturating_mul(renewable_safe_harvest(item.resource_id, cell),
-              std::max<int64_t>(1, _epoch_days), sat)
+              std::max<int64_t>(1, _epoch_days.get()), sat)
         : remaining;
     return std::min(remaining, std::max<int64_t>(0, harvest));
 }
@@ -62,14 +62,14 @@ void NativeEconomyRuntime::ensure_resource_lane(size_t idx) {
     lane_generation[idx] = _resource_current_generation;
     remaining_lanes[idx] = resource_stock_lanes()[idx];
     resource_delta_lanes()[idx] = 0;
-    const int32_t resource = _cell_count > 0
-        ? static_cast<int32_t>(idx / static_cast<size_t>(_cell_count)) : -1;
-    const int32_t cell = _cell_count > 0
-        ? static_cast<int32_t>(idx % static_cast<size_t>(_cell_count)) : -1;
+    const int32_t resource = _cell_count.get() > 0
+        ? static_cast<int32_t>(idx / static_cast<size_t>(_cell_count.get())) : -1;
+    const int32_t cell = _cell_count.get() > 0
+        ? static_cast<int32_t>(idx % static_cast<size_t>(_cell_count.get())) : -1;
     harvest_lanes[idx] =
-        resource_is_renewable(resource) && _resource_safe_harvest_q16 > 0
+        resource_is_renewable(resource) && _resource_safe_harvest_q16.get() > 0
         ? saturating_mul(renewable_safe_harvest(resource, cell),
-              std::max<int64_t>(1, _epoch_days), _saturation_count)
+              std::max<int64_t>(1, _epoch_days.get()), _saturation_count)
         : std::max<int64_t>(0, remaining_lanes[idx]);
     if (_production_result_sink != nullptr) {
         _production_result_sink->resource_touched_lanes.push_back(idx);
@@ -80,9 +80,9 @@ void NativeEconomyRuntime::ensure_resource_lane(size_t idx) {
 
 void NativeEconomyRuntime::consume_resource_amount(
         const ResourceAmount &item, int32_t cell, int64_t quantity) {
-    if (cell < 0 || cell >= _cell_count || item.resource_id < 0 ||
+    if (cell < 0 || cell >= _cell_count.get() || item.resource_id < 0 ||
         item.resource_id >= static_cast<int32_t>(_resource_ids.size())) return;
-    const size_t idx = static_cast<size_t>(item.resource_id) * _cell_count + cell;
+    const size_t idx = static_cast<size_t>(item.resource_id) * _cell_count.get() + cell;
     ensure_resource_lane(idx);
     std::vector<int64_t> &remaining_lanes = resource_remaining_lanes();
     const int64_t taken = std::min<int64_t>(
@@ -109,10 +109,10 @@ bool NativeEconomyRuntime::resource_is_renewable(int32_t resource_id) const {
 
 int32_t NativeEconomyRuntime::resource_stock_density_q16(
         int32_t resource_id, int32_t cell) const {
-    if (!resource_is_renewable(resource_id) || cell < 0 || cell >= _cell_count)
+    if (!resource_is_renewable(resource_id) || cell < 0 || cell >= _cell_count.get())
         return Q16_ONE;
     const size_t resource = static_cast<size_t>(resource_id);
-    const size_t idx = resource * static_cast<size_t>(_cell_count) +
+    const size_t idx = resource * static_cast<size_t>(_cell_count.get()) +
         static_cast<size_t>(cell);
     if (idx >= resource_stock_lanes().size() ||
         resource >= _resource_ecology_capacity.size())
@@ -187,9 +187,9 @@ int32_t NativeEconomyRuntime::resource_stock_density_q16(
 
 int64_t NativeEconomyRuntime::renewable_safe_harvest(
         int32_t resource_id, int32_t cell) const {
-    if (_resource_safe_harvest_q16 <= 0 || !resource_is_renewable(resource_id) ||
-        cell < 0 || cell >= _cell_count) return 0;
-    const size_t idx = static_cast<size_t>(resource_id) * _cell_count + cell;
+    if (_resource_safe_harvest_q16.get() <= 0 || !resource_is_renewable(resource_id) ||
+        cell < 0 || cell >= _cell_count.get()) return 0;
+    const size_t idx = static_cast<size_t>(resource_id) * _cell_count.get() + cell;
     if (idx >= resource_remaining_lanes().size() ||
         idx >= resource_stock_lanes().size()) return 0;
     int64_t sat = 0;
@@ -205,14 +205,14 @@ int64_t NativeEconomyRuntime::renewable_safe_harvest(
     // applying a false global absolute floor to naturally sparse cells.
     const int64_t reserve_floor = mul_div_sat(
         std::max<int64_t>(0, lane_remaining),
-        _resource_min_reserve_q16, Q16_ONE, sat);
+        _resource_min_reserve_q16.get(), Q16_ONE, sat);
     const int64_t remaining = lane_remaining;
     const int64_t harvestable_stock = std::max<int64_t>(
         0, remaining - reserve_floor);
     const int64_t biomass = std::min<int64_t>(capacity / 8, harvestable_stock);
     return mul_div_sat(mul_div_sat(biomass,
         _resource_ecology_growth_q16[resource_id], Q16_ONE,
-        sat), _resource_safe_harvest_q16, Q16_ONE, sat);
+        sat), _resource_safe_harvest_q16.get(), Q16_ONE, sat);
 }
 
 } // namespace pk

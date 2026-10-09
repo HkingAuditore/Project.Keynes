@@ -17,8 +17,8 @@ namespace {
 void NativeEconomyRuntime::replace_employment_metrics_for_cell(
         int32_t cell, int64_t owner_jobs, int64_t employee_jobs,
         int64_t unemployed_population) {
-    if (cell < 0 || cell >= _cell_count) return;
-    const size_t cells = static_cast<size_t>(_cell_count);
+    if (cell < 0 || cell >= _cell_count.get()) return;
+    const size_t cells = static_cast<size_t>(_cell_count.get());
     if (_employment_metrics_epoch_by_cell.size() != cells) {
         _employment_metrics_epoch_by_cell.assign(
             cells, std::numeric_limits<int64_t>::min());
@@ -27,7 +27,7 @@ void NativeEconomyRuntime::replace_employment_metrics_for_cell(
         _employment_unemployed_by_cell.assign(cells, 0);
     }
     const size_t index = static_cast<size_t>(cell);
-    if (_employment_metrics_epoch_by_cell[index] == _epoch_id) {
+    if (_employment_metrics_epoch_by_cell[index] == _epoch_id.get()) {
         _filled_owner_jobs = saturating_sub(
             _filled_owner_jobs, _employment_owner_jobs_by_cell[index],
             _saturation_count);
@@ -38,7 +38,7 @@ void NativeEconomyRuntime::replace_employment_metrics_for_cell(
             _unemployed_population, _employment_unemployed_by_cell[index],
             _saturation_count);
     }
-    _employment_metrics_epoch_by_cell[index] = _epoch_id;
+    _employment_metrics_epoch_by_cell[index] = _epoch_id.get();
     _employment_owner_jobs_by_cell[index] = std::max<int64_t>(0, owner_jobs);
     _employment_employee_jobs_by_cell[index] = std::max<int64_t>(0, employee_jobs);
     _employment_unemployed_by_cell[index] = std::max<int64_t>(
@@ -59,8 +59,8 @@ bool NativeEconomyRuntime::reconcile_building_employment_after_population_change
     thread_local std::vector<int32_t> stable_cells;
     thread_local std::vector<uint32_t> stable_cell_stamp;
     thread_local uint32_t stable_cell_generation = 0;
-    if (stable_cell_stamp.size() < static_cast<size_t>(_cell_count))
-        stable_cell_stamp.resize(static_cast<size_t>(_cell_count), 0);
+    if (stable_cell_stamp.size() < static_cast<size_t>(_cell_count.get()))
+        stable_cell_stamp.resize(static_cast<size_t>(_cell_count.get()), 0);
     ++stable_cell_generation;
     if (stable_cell_generation == 0) {
         std::fill(stable_cell_stamp.begin(), stable_cell_stamp.end(), 0);
@@ -68,7 +68,7 @@ bool NativeEconomyRuntime::reconcile_building_employment_after_population_change
     }
     stable_cells.clear();
     for (const int32_t cell : affected_cells) {
-        if (cell < 0 || cell >= _cell_count ||
+        if (cell < 0 || cell >= _cell_count.get() ||
             stable_cell_stamp[cell] == stable_cell_generation) continue;
         stable_cell_stamp[cell] = stable_cell_generation;
         stable_cells.push_back(cell);
@@ -440,12 +440,12 @@ double elapsed_ms(const Clock::time_point &start) {
 } // namespace
 
 bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) {
-    EconomyCostProbe cost("employment.wage_prepare", _current_day);
+    EconomyCostProbe cost("employment.wage_prepare", _current_day.get());
     uint64_t quoted_pairs = 0;
     const auto started = Clock::now();
-    if (cell < 0 || cell >= _cell_count ||
-        _building_cell_offsets.size() != static_cast<size_t>(_cell_count + 1) ||
-        _labor_signals.cell_offsets.size() != static_cast<size_t>(_cell_count + 1)) {
+    if (cell < 0 || cell >= _cell_count.get() ||
+        _building_cell_offsets.size() != static_cast<size_t>(_cell_count.get() + 1) ||
+        _labor_signals.cell_offsets.size() != static_cast<size_t>(_cell_count.get() + 1)) {
         error = "building_employment_restore_index_invalid";
         return false;
     }
@@ -470,7 +470,7 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
         }
     }
     const int64_t daily_merchant_cash =
-        merchant_cash / std::max(1, _epoch_days);
+        merchant_cash / std::max(1, _epoch_days.get());
     for (int32_t signal = _labor_signals.cell_offsets[cell];
          signal < _labor_signals.cell_offsets[cell + 1]; ++signal) {
         const int32_t profession = _labor_signals.profession_ids[signal];
@@ -690,7 +690,7 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
                 // Once the lot has minted/sold, never bid wages against more
                 // cash than the previous period actually brought in per day.
                 if (group.last_observed_capacity_days_q16 > 0) {
-                    const int64_t epoch_days = std::max(1, _epoch_days);
+                    const int64_t epoch_days = std::max(1, _epoch_days.get());
                     const int64_t realized_period = saturating_add(
                         saturating_add(
                             std::max<int64_t>(0, group.last_bullion_mint_receipt),
@@ -798,7 +798,7 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
                     if (desired > current) {
                         const int64_t cap = std::max<int64_t>(1, mul_div_sat(
                             current, saturating_mul(_wage_max_rise_q16_per_day,
-                                                    std::max(1, _epoch_days),
+                                                    std::max(1, _epoch_days.get()),
                                                     _saturation_count),
                             Q16_ONE, _saturation_count));
                         next = std::min(desired, saturating_add(
@@ -806,7 +806,7 @@ bool NativeEconomyRuntime::prepare_cell_wages(int32_t cell, std::string &error) 
                     } else {
                         const int64_t cap = mul_div_sat(
                             current, saturating_mul(_wage_max_fall_q16_per_day,
-                                                    std::max(1, _epoch_days),
+                                                    std::max(1, _epoch_days.get()),
                                                     _saturation_count),
                             Q16_ONE, _saturation_count);
                         next = std::max(desired, saturating_sub(
@@ -842,7 +842,7 @@ void NativeEconomyRuntime::update_cell_labor_signals(int32_t cell) {
     const auto started = Clock::now();
     const int64_t alpha = std::min<int64_t>(
         Q16_ONE, saturating_mul(_wage_ema_alpha_q16,
-                                std::max(1, _epoch_days), _saturation_count));
+                                std::max(1, _epoch_days.get()), _saturation_count));
     for (int32_t signal = _labor_signals.cell_offsets[cell];
          signal < _labor_signals.cell_offsets[cell + 1]; ++signal) {
         const int32_t profession = _labor_signals.profession_ids[signal];
@@ -858,7 +858,7 @@ void NativeEconomyRuntime::update_cell_labor_signals(int32_t cell) {
                 if (role.profession_id != profession) continue;
                 const int32_t index = group.employee_fill_begin + r;
                 jobs = saturating_add(jobs, saturating_mul(
-                    _building_employee_filled[index], std::max(1, _epoch_days),
+                    _building_employee_filled[index], std::max(1, _epoch_days.get()),
                     _saturation_count), _saturation_count);
                 due = saturating_add(due, _building_role_base_wage_due[index],
                                      _saturation_count);
@@ -876,14 +876,12 @@ void NativeEconomyRuntime::update_cell_labor_signals(int32_t cell) {
                     alpha, Q16_ONE, _saturation_count),
                     _saturation_count);
             };
-            _labor_signals.contract_wage_ema[signal] =
-                ema(_labor_signals.contract_wage_ema[signal], observed_contract);
-            _labor_signals.paid_wage_ema[signal] =
-                ema(_labor_signals.paid_wage_ema[signal], observed_paid);
-            _labor_signals.job_days[signal] = jobs;
-            _labor_signals.pay_ratio_q16[signal] = static_cast<int32_t>(
+            _labor_signals.contract_wage_ema.write_scalar(signal, ema(_labor_signals.contract_wage_ema[signal], observed_contract), market_mutation_sink());
+            _labor_signals.paid_wage_ema.write_scalar(signal, ema(_labor_signals.paid_wage_ema[signal], observed_paid), market_mutation_sink());
+            _labor_signals.job_days.write_scalar(signal, jobs, market_mutation_sink());
+            _labor_signals.pay_ratio_q16.write_scalar(signal, static_cast<int32_t>(
                 std::clamp<int64_t>(mul_div_sat(paid, Q16_ONE,
-                    std::max<int64_t>(1, due), _saturation_count), 0, Q16_ONE));
+                    std::max<int64_t>(1, due), _saturation_count), 0, Q16_ONE)), market_mutation_sink());
             ++_labor_signal_updates;
         }
     }
@@ -995,14 +993,14 @@ bool NativeEconomyRuntime::run_building_employment_cell(
     const int32_t professions = static_cast<int32_t>(_profession_ids.size());
     demand.assign(professions, 0);
     fill.assign(professions, 0);
-    const int32_t first = _building_cell_offsets.size() == static_cast<size_t>(_cell_count + 1)
+    const int32_t first = _building_cell_offsets.size() == static_cast<size_t>(_cell_count.get() + 1)
         ? _building_cell_offsets[cell] : 0;
-    const int32_t last = _building_cell_offsets.size() == static_cast<size_t>(_cell_count + 1)
+    const int32_t last = _building_cell_offsets.size() == static_cast<size_t>(_cell_count.get() + 1)
         ? _building_cell_offsets[cell + 1] : 0;
     int64_t stay_q16 = Q16_ONE;
     const int64_t daily_mobility_q16 = std::clamp<int64_t>(
-        _employment_mobility_daily_q16, 0, Q16_ONE);
-    for (int32_t d = 0; d < std::max(1, _epoch_days); ++d) {
+        _employment_mobility_daily_q16.get(), 0, Q16_ONE);
+    for (int32_t d = 0; d < std::max(1, _epoch_days.get()); ++d) {
         stay_q16 = mul_div_sat(stay_q16,
             Q16_ONE - daily_mobility_q16, Q16_ONE, _saturation_count);
     }
@@ -1155,7 +1153,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                                                   int32_t target_group) -> bool {
             for (const OwnerMobilityCooldown &entry : _owner_mobility_cooldowns) {
                 if (entry.cell != cell) continue;
-                if (entry.until_day < _current_day) continue;
+                if (entry.until_day < _current_day.get()) continue;
                 if ((entry.source_group == source_group &&
                      entry.target_group == target_group) ||
                     (entry.source_group == target_group &&
@@ -1167,7 +1165,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         };
         auto record_owner_mobility_cooldown = [&](int32_t source_group,
                                                   int32_t target_group) {
-            const int64_t until = _current_day + std::max<int32_t>(
+            const int64_t until = _current_day.get() + std::max<int32_t>(
                 1, _employment_understaffed_mobility_cooldown_days);
             for (OwnerMobilityCooldown &entry : _owner_mobility_cooldowns) {
                 if (entry.cell == cell &&
@@ -1206,7 +1204,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             if (target_profession == _merchant_profession_id &&
                 source_profession != _merchant_profession_id) {
                 hurdle = std::max<int64_t>(hurdle,
-                    _investment_merchant_transition_min_improvement_q16);
+                    _investment_merchant_transition_min_improvement_q16.get());
             }
             return hurdle;
         };
@@ -1341,7 +1339,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         };
         auto choice_factor_q16 = [&](int64_t improvement) -> int64_t {
             const int64_t temperature = std::max<int64_t>(1,
-                _employment_choice_temperature_q16);
+                _employment_choice_temperature_q16.get());
             const int64_t softened = mul_div_sat(
                 std::max<int64_t>(0, improvement), Q16_ONE,
                 saturating_add(Q16_ONE, temperature, _saturation_count),
@@ -1358,7 +1356,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
             const int64_t full_period_cost = saturating_mul(
                 saturating_mul(group.sample_unit_input_cost, group.count,
                                _saturation_count),
-                std::max<int64_t>(1, _epoch_days), _saturation_count);
+                std::max<int64_t>(1, _epoch_days.get()), _saturation_count);
             // Match the household-market reserve: one entrant carries its
             // proportional share of the period's physical input bill.
             const int64_t operation_scale = employment_utilization_q16(group);
@@ -1370,7 +1368,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                 return 0;
             const int64_t people = std::max<int64_t>(1,
                 population_store().population[slot]);
-            const int64_t days = std::max<int64_t>(1, _epoch_days);
+            const int64_t days = std::max<int64_t>(1, _epoch_days.get());
             return std::max<int64_t>(0, population_store().epoch_expense[slot]) /
                 people / days;
         };
@@ -1406,7 +1404,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                     ACTIVE_TAX_KIND_COUNT + NativeCountryRuntime::TAX_INCOME],
                 0, Q16_ONE));
             const int64_t funded_period_floor = mul_div_sat(
-                saturating_mul(daily_floor, std::max<int64_t>(1, _epoch_days),
+                saturating_mul(daily_floor, std::max<int64_t>(1, _epoch_days.get()),
                     _saturation_count),
                 fulfillment, Q16_ONE, _saturation_count);
             return std::max<int64_t>(funded_transfer, funded_period_floor);
@@ -1957,7 +1955,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
         const bool capture_employment_diagnostics = cell == _inspector_trace_cell;
         if (capture_employment_diagnostics) {
             _employment_diagnostic_cell = cell;
-            _employment_diagnostic_day = _current_day;
+            _employment_diagnostic_day = _current_day.get();
             _employment_diagnostics.clear();
         }
         thread_local std::vector<int64_t> unemployed_budget_by_eth;
@@ -3189,7 +3187,7 @@ bool NativeEconomyRuntime::run_building_employment_cell(
                     effective_hurdle = mul_div_sat(
                         base_hurdle,
                         std::max<int32_t>(Q16_ONE,
-                            _employment_understaffed_reallocation_hurdle_mult_q16),
+                            _employment_understaffed_reallocation_hurdle_mult_q16.get()),
                         Q16_ONE, _saturation_count);
                     if (source_understaffed && target_understaffed &&
                         owner_mobility_cooldown_active(candidate,

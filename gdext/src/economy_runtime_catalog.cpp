@@ -327,7 +327,7 @@ bool NativeEconomyRuntime::compile_family_trait_catalog(
             _family_trait_modifier_definition_keys.size() * 6 &&
         _family_trait_trigger_definition_keys_by_tier.size() ==
             _family_trait_trigger_reward_targets.size() * 6;
-    if (_family_trait_catalog_version <= 0 || _family_trait_catalog_hash == 0 ||
+    if (_family_trait_catalog_version.get() <= 0 || _family_trait_catalog_hash.get() == 0 ||
         _family_core_trait_min < 0 ||
         _family_core_trait_max < _family_core_trait_min || !primary_shape ||
         !match_any_shape ||
@@ -807,7 +807,7 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
                 return false;
             }
             _good_target_inventory_days_q16[i] = static_cast<int32_t>(mul_div_sat(
-                _merchant_market_making_days_q16,
+                _merchant_market_making_days_q16.get(),
                 good_inventory_target_ratios_q16[i], Q16_ONE,
                 _saturation_count));
         }
@@ -1619,7 +1619,7 @@ bool NativeEconomyRuntime::compile_catalog(const Dictionary &catalog, std::strin
         dict_num<int64_t>(catalog, "building_catalog_compat_hash_v7", 0);
     _building_catalog_compat_hash_v13 =
         dict_num<int64_t>(catalog, "building_catalog_compat_hash_v13", 0);
-    if (_catalog_hash == 0) {
+    if (_catalog_hash.get() == 0) {
         error = "catalog_hash_required";
         return false;
     }
@@ -1754,7 +1754,7 @@ bool NativeEconomyRuntime::compile_family_catalog(
         _family_culture_group_ids.size() != _family_culture_group_naming_formats.size() ||
         _family_culture_group_ids.size() != _family_culture_group_separators.size() ||
         _family_culture_group_ids.size() != _family_culture_group_suffixes.size() ||
-        _family_catalog_hash == 0) {
+        _family_catalog_hash.get() == 0) {
         error = "family_surname_catalog_invalid";
         return false;
     }
@@ -1805,7 +1805,7 @@ bool NativeEconomyRuntime::compile_person_catalog(
     if (_person_given_name_ids.empty() ||
         _person_given_name_ids.size() != _person_given_name_text.size() ||
         _person_given_name_ids.size() != _person_given_name_weights.size() ||
-        _person_catalog_hash == 0) {
+        _person_catalog_hash.get() == 0) {
         error = "person_given_name_catalog_invalid";
         return false;
     }
@@ -1890,7 +1890,7 @@ bool NativeEconomyRuntime::compile_settlement_catalog(
         _settlement_downgrade_bp < 1 || _settlement_downgrade_bp > 10000 ||
         _settlement_full_name_share_q16 < 0 ||
         _settlement_full_name_share_q16 > 65536 ||
-        _prosperity_profile_hash == 0 || _settlement_catalog_hash == 0) {
+        _prosperity_profile_hash.get() == 0 || _settlement_catalog_hash == 0) {
         error = "settlement_profile_invalid";
         return false;
     }

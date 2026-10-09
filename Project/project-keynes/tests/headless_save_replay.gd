@@ -201,7 +201,18 @@ func _advance(host: WorldRuntimeHost, clock: WorldClock, generator,
 		var key := "worker_time_%s_us" % category
 		timing_deltas[category] = int(final_progress.get(key, 0)) - int(thread_start.get(key, 0))
 	_result["measurement_worker_time_us"] = timing_deltas
+	# The compatibility bridge deliberately returns its last safe report while
+	# the worker owns mutable arrays. A final assertion must wait for a fresh
+	# boundary report, rather than interpret a marked cached revision as final.
+	var final_report_started := Time.get_ticks_msec()
 	var final_economy: Dictionary = generator.get_economy_report()
+	while bool(final_economy.get("report_boundary_pending", false)) \
+			and Time.get_ticks_msec() - final_report_started < 5000:
+		await get_tree().process_frame
+		final_economy = generator.get_economy_report()
+	_result["final_report_wait_msec"] = Time.get_ticks_msec() - final_report_started
+	if bool(final_economy.get("report_boundary_pending", false)):
+		_failures.append("final_economy_report_pending")
 	var final_audit := final_economy
 	var audit_ext = generator.get_data_core_world_ext()
 	if audit_ext != null and audit_ext.has_method("get_economy_committed_audit_report"):

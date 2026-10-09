@@ -13,7 +13,7 @@ bool NativeEconomyRuntime::plan_construction_materials(
         std::vector<int64_t> *stock_inout,
         bool split_candidates) const {
     plan = ConstructionMaterialPlan{};
-    if (cell < 0 || cell >= _cell_count || type_id < 0 ||
+    if (cell < 0 || cell >= _cell_count.get() || type_id < 0 ||
         type_id >= static_cast<int32_t>(_building_types.size()) || count <= 0 ||
         _building_construction_candidate_offsets.size() !=
             _building_construction_goods.size() + 1) {
@@ -191,17 +191,17 @@ void NativeEconomyRuntime::stage_construction_receipt(
         const Command &cmd, bool ok, const char *code, int64_t cash_paid,
         int64_t treasury_goods_used, int64_t market_goods_used) {
     _staging_construction_receipts.push_back({0, cmd.sequence,
-        cmd.effective_day, _current_day, cmd.target_handle, cmd.i32_0,
+        cmd.effective_day, _current_day.get(), cmd.target_handle, cmd.i32_0,
         cmd.i32_1, ok, code == nullptr ? "command_rejected" : code,
         cash_paid, treasury_goods_used, market_goods_used});
 }
 
 int32_t NativeEconomyRuntime::treasury_build_owner_signature(
         int32_t cell, int32_t type_id) const {
-    if (cell < 0 || cell >= _cell_count || type_id < 0 ||
+    if (cell < 0 || cell >= _cell_count.get() || type_id < 0 ||
         type_id >= static_cast<int32_t>(_building_types.size())) return -1;
     const int32_t owner_profession = _building_types[type_id].owner_profession_id;
-    if (_building_cell_offsets.size() == static_cast<size_t>(_cell_count + 1)) {
+    if (_building_cell_offsets.size() == static_cast<size_t>(_cell_count.get() + 1)) {
         for (int32_t group = _building_cell_offsets[cell];
              group < _building_cell_offsets[cell + 1]; ++group) {
             const auto candidate = building_at(static_cast<size_t>(group));
@@ -256,7 +256,7 @@ bool NativeEconomyRuntime::apply_treasury_sponsored_build_command(
         return reject("unsupported_ownership_policy");
     if (_country_runtime == nullptr ||
         !_country_runtime->valid_handle(static_cast<int64_t>(cmd.target_handle)) ||
-        cell < 0 || cell >= _cell_count || type_id < 0 ||
+        cell < 0 || cell >= _cell_count.get() || type_id < 0 ||
         type_id >= static_cast<int32_t>(_building_types.size()) || cmd.i64_0 != 1)
         return reject("construction_target_invalid");
     if (_country_runtime->country_handle_for_cell(cell) !=
@@ -317,7 +317,7 @@ bool NativeEconomyRuntime::apply_treasury_sponsored_build_command(
             market_goods_total, market_used[i], _saturation_count);
     }
     if (total_cash > 0 && (_merchant_offsets.size() !=
-            static_cast<size_t>(_cell_count + 1) ||
+            static_cast<size_t>(_cell_count.get() + 1) ||
             _merchant_offsets[cell] >= _merchant_offsets[cell + 1]))
         return reject("construction_market_unavailable");
     if (_country_runtime->cash_for_handle(
@@ -365,7 +365,7 @@ bool NativeEconomyRuntime::apply_build_command(const Command &cmd, int32_t owner
     const int32_t cell = cmd.i32_0;
     const int32_t type_id = cmd.i32_1;
     const int64_t count = cmd.i64_0;
-    if (cell < 0 || cell >= _cell_count || type_id < 0 ||
+    if (cell < 0 || cell >= _cell_count.get() || type_id < 0 ||
         type_id >= static_cast<int32_t>(_building_types.size()) || count <= 0 ||
         population_store().page_cell[owner_slot / COHORT_PAGE_SIZE] != cell) {
         _last_building_rejection_reason = "building_target_invalid";
@@ -443,9 +443,9 @@ bool NativeEconomyRuntime::apply_build_command(const Command &cmd, int32_t owner
     if (funding_gap > 0) {
         const bool cached_investment_credit =
             _investment_merchant_cash_by_cell.size() ==
-                static_cast<size_t>(_cell_count) &&
+                static_cast<size_t>(_cell_count.get()) &&
             _investment_outstanding_credit_by_cell.size() ==
-                static_cast<size_t>(_cell_count) &&
+                static_cast<size_t>(_cell_count.get()) &&
             static_cast<size_t>(cell) <
                 _investment_cell_finance_stamp.size() &&
             _investment_cell_finance_stamp[cell] ==
@@ -480,15 +480,15 @@ bool NativeEconomyRuntime::apply_build_command(const Command &cmd, int32_t owner
             }
         }
         const int64_t exposure = mul_div_sat(
-            merchant_cash, _merchant_credit_exposure_q16,
+            merchant_cash, _merchant_credit_exposure_q16.get(),
             Q16_ONE, _saturation_count);
         const int64_t reserve = mul_div_sat(
-            merchant_cash, _merchant_procurement_cash_reserve_q16,
+            merchant_cash, _merchant_procurement_cash_reserve_q16.get(),
             Q16_ONE, _saturation_count);
         const int64_t available = std::max<int64_t>(0, std::min(
             exposure - std::min(exposure, outstanding),
             merchant_cash - std::min(merchant_cash, reserve)));
-        if (_merchant_credit_runtime_mode != 2 || funding_gap > available ||
+        if (_merchant_credit_runtime_mode.get() != 2 || funding_gap > available ||
             debit_local_merchants(cell, funding_gap, CASHFLOW_MERCHANT_BUSINESS,
                                   &_saturation_count) != funding_gap) {
             _last_building_rejection_reason = "building_owner_funds_insufficient";
@@ -502,7 +502,7 @@ bool NativeEconomyRuntime::apply_build_command(const Command &cmd, int32_t owner
                               CASHFLOW_OTHER, funding_gap, 0);
         construction_debt_principal = funding_gap;
         construction_debt_premium = saturating_add(saturating_mul(
-            funding_gap, _merchant_credit_premium_q16, _saturation_count),
+            funding_gap, _merchant_credit_premium_q16.get(), _saturation_count),
             Q16_ONE - 1, _saturation_count) / Q16_ONE;
         if (cached_investment_credit) {
             _investment_outstanding_credit_by_cell[cell] =
@@ -607,7 +607,7 @@ bool NativeEconomyRuntime::commit_preflighted_build_command(
         return false;
     }
     if (_investment_merchant_cash_by_cell.size() ==
-            static_cast<size_t>(_cell_count) &&
+            static_cast<size_t>(_cell_count.get()) &&
         static_cast<size_t>(cell) < _investment_cell_finance_stamp.size() &&
         _investment_cell_finance_stamp[cell] ==
             _investment_scratch_generation) {
@@ -619,7 +619,7 @@ bool NativeEconomyRuntime::commit_preflighted_build_command(
         _sample_day + effective_construction_days, cmd.sequence,
         construction_debt_principal, construction_debt_premium,
         static_cast<uint16_t>(construction_debt_principal > 0
-            ? _merchant_credit_term_cycles : 0),
+            ? _merchant_credit_term_cycles.get() : 0),
         sponsor_family_for_cohort(population_store().handle_for_slot(owner_slot),
                                   cell)});
     if (trace_detail && owner_funds_before != population_store().funds[owner_slot]) {
@@ -659,7 +659,7 @@ bool NativeEconomyRuntime::apply_demolish_command(const Command &cmd, int32_t ow
     const int32_t cell = cmd.i32_0;
     const int32_t type_id = cmd.i32_1;
     const int64_t count = cmd.i64_0;
-    if (cell < 0 || cell >= _cell_count || type_id < 0 ||
+    if (cell < 0 || cell >= _cell_count.get() || type_id < 0 ||
         type_id >= static_cast<int32_t>(_building_types.size()) || count <= 0 ||
         population_store().page_cell[owner_slot / COHORT_PAGE_SIZE] != cell) {
         _last_building_rejection_reason = "demolish_target_invalid";

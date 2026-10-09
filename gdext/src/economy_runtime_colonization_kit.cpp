@@ -33,14 +33,14 @@ void NativeEconomyRuntime::sort_colonization_kit_cargo(
 
 bool NativeEconomyRuntime::cell_has_submitted_or_pending_buildings(
         int32_t cell) const {
-    if (cell < 0 || cell >= _cell_count) return false;
-    if (_building_cell_offsets.size() == static_cast<size_t>(_cell_count + 1)) {
+    if (cell < 0 || cell >= _cell_count.get()) return false;
+    if (_building_cell_offsets.size() == static_cast<size_t>(_cell_count.get() + 1)) {
         for (int32_t group = _building_cell_offsets[cell];
              group < _building_cell_offsets[cell + 1]; ++group) {
             if (buildings_store().group_units[group] > 0) return true;
         }
         if (_pending_building_topology_rebuild) {
-            const int32_t sorted_end = _building_cell_offsets[_cell_count];
+            const int32_t sorted_end = _building_cell_offsets[_cell_count.get()];
             for (int32_t group = sorted_end;
                  group < static_cast<int32_t>(building_count()); ++group) {
                 if (buildings_store().cell[group] == cell &&
@@ -55,7 +55,7 @@ bool NativeEconomyRuntime::cell_has_submitted_or_pending_buildings(
         }
     }
     if (_pending_construction_cell_offsets.size() ==
-            static_cast<size_t>(_cell_count + 1)) {
+            static_cast<size_t>(_cell_count.get() + 1)) {
         for (int32_t cursor = _pending_construction_cell_offsets[cell];
              cursor < _pending_construction_cell_offsets[cell + 1]; ++cursor) {
             const int32_t pending_index =
@@ -175,7 +175,7 @@ void NativeEconomyRuntime::fill_colonization_kit_buffer(
         int32_t travel_days, ColonizationKitPlan &kit,
         const ColonizationReserveContext *reserve,
         int32_t bridge_days_override) const {
-    if (population <= 0 || source_cell < 0 || source_cell >= _cell_count)
+    if (population <= 0 || source_cell < 0 || source_cell >= _cell_count.get())
         return;
     const int32_t market = market_store().cell_to_market[source_cell];
     if (market < 0 || market >= market_store().market_count.get()) return;
@@ -402,8 +402,8 @@ bool NativeEconomyRuntime::plan_colonization_kit(
         bool ignore_existing, const ColonizationReserveContext *reserve) const {
     kit = ColonizationKitPlan{};
     kit.supported_population = std::max<int64_t>(0, population);
-    if (source_cell < 0 || source_cell >= _cell_count ||
-        target_cell < 0 || target_cell >= _cell_count || population <= 0)
+    if (source_cell < 0 || source_cell >= _cell_count.get() ||
+        target_cell < 0 || target_cell >= _cell_count.get() || population <= 0)
         return false;
     const bool has_existing = cell_has_submitted_or_pending_buildings(target_cell);
     kit.place_buildings = (has_existing && !ignore_existing) ? 0 : 1;
@@ -414,9 +414,9 @@ bool NativeEconomyRuntime::plan_colonization_kit(
     // epoch begin and would invalidate every live quote after one cycle.
     if (!_resource_ids.empty() &&
         resource_stock_lanes().size() >= _resource_ids.size() *
-            static_cast<size_t>(_cell_count)) {
+            static_cast<size_t>(_cell_count.get())) {
         for (size_t resource = 0; resource < _resource_ids.size(); ++resource) {
-            const size_t lane = resource * static_cast<size_t>(_cell_count) +
+            const size_t lane = resource * static_cast<size_t>(_cell_count.get()) +
                 static_cast<size_t>(target_cell);
             kit.dest_identity = trace_hash_mix(kit.dest_identity,
                 static_cast<uint64_t>(resource_stock_lanes()[lane]));
@@ -792,7 +792,7 @@ bool NativeEconomyRuntime::plan_colonization_kit(
 
 bool NativeEconomyRuntime::adjust_market_stock(
         int32_t cell, int32_t good_id, int64_t delta, std::string &error) {
-    if (cell < 0 || cell >= _cell_count || good_id < 0 ||
+    if (cell < 0 || cell >= _cell_count.get() || good_id < 0 ||
         good_id >= market_store().good_count.get()) {
         error = "colonization_kit_market_invalid";
         return false;
@@ -961,12 +961,12 @@ bool NativeEconomyRuntime::reserve_preparing_family_expedition_cargo(
                 _epoch_nonhousehold_withdrawals[signal] = saturating_add(
                     _epoch_nonhousehold_withdrawals[signal], quantity,
                     _saturation_count);
-                _market_signals.business_demand_ema[signal] = saturating_add(
+                _market_signals.business_demand_ema.write_scalar(signal, saturating_add(
                     _market_signals.business_demand_ema[signal], quantity,
-                    _saturation_count);
-                _market_signals.realized_withdrawal_ema[signal] = saturating_add(
+                    _saturation_count), market_mutation_sink());
+                _market_signals.realized_withdrawal_ema.write_scalar(signal, saturating_add(
                     _market_signals.realized_withdrawal_ema[signal], quantity,
-                    _saturation_count);
+                    _saturation_count), market_mutation_sink());
             }
             return true;
         }
@@ -1279,7 +1279,7 @@ bool NativeEconomyRuntime::advance_family_expedition_procurement(
         }();
         const godot::Dictionary begun = _country_runtime->begin_economy_treasury_spend(
             static_cast<int64_t>(family_expeditions_store().country_handle[c.expedition]),
-            packed_ids, packed_qty, 0, _epoch_id, static_cast<int32_t>(_stage));
+            packed_ids, packed_qty, 0, _epoch_id.get(), static_cast<int32_t>(_stage));
         if (!static_cast<bool>(begun.get("ok", false))) {
             c.active = false;
             error = godot::String(begun.get(
@@ -1385,8 +1385,8 @@ bool NativeEconomyRuntime::start_family_expedition_procurement(
     c.cargo_flags = cargo_flags;
     c.quantity = quantity;
     c.cash = cash;
-    c.started_day = std::max<int64_t>(0, _current_day);
-    if (_merchant_offsets.size() == static_cast<size_t>(_cell_count + 1)) {
+    c.started_day = std::max<int64_t>(0, _current_day.get());
+    if (_merchant_offsets.size() == static_cast<size_t>(_cell_count.get() + 1)) {
         for (int32_t edge = _merchant_offsets[source_cell];
              edge < _merchant_offsets[source_cell + 1]; ++edge) {
             const int32_t slot = _merchant_slots[edge];
@@ -1422,7 +1422,7 @@ bool NativeEconomyRuntime::start_family_expedition_procurement(
     }
     const godot::Dictionary begun = _country_runtime->begin_economy_good_from_market(
         static_cast<int64_t>(family_expeditions_store().country_handle[expedition]),
-        good, quantity, _epoch_id, static_cast<int32_t>(_stage), 0, cash);
+        good, quantity, _epoch_id.get(), static_cast<int32_t>(_stage), 0, cash);
     if (!static_cast<bool>(begun.get("ok", false))) {
         error = godot::String(begun.get(
             "code", "colonization_treasury_peer_country_rejected")).utf8().get_data();

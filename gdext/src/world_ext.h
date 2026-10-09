@@ -3103,6 +3103,9 @@ private:
     uint64_t                                 _economy_capture_count = 0;
     uint64_t                                 _economy_capture_reuse_count = 0;
     godot::Dictionary                        _economy_capture_cached_report;
+    // Main-thread-only compatibility report. Never read worker-owned vectors
+    // without the authority boundary; a busy worker yields this private copy.
+    mutable godot::Dictionary                _economy_read_report_cache;
     uint64_t                                  _canal_topology_generation = 0;
     // 运河编译态。原先是五个独立成员，现在整组进 HydrologyCanalState ——
     // hydrology_pass_pure 要能在 worker 侧跑，而 worker 拿不到 DCWorldExt 的成员。

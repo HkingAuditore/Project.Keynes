@@ -1,5 +1,6 @@
 #include "economy_tracked_records.h"
 #include "economy_paged_column.h"
+#include "runtime_economy_family_side_tables.h"
 #include <cassert>
 
 namespace pk {
@@ -18,6 +19,26 @@ template<class Visitor> void economy_visit_record(const TestRecord &row, Visitor
 using namespace pk;
 
 int main() {
+    {
+        EconomyFamilyExpeditionPayload original, transient;
+        transient.reserved_slot = 123;
+        const auto first = EconomyRecordCodec<EconomyFamilyExpeditionPayload>::encode(original);
+        const auto second = EconomyRecordCodec<EconomyFamilyExpeditionPayload>::encode(transient);
+        assert(first.size == second.size && first.data == second.data);
+        transient.funds = 123;
+        const auto changed = EconomyRecordCodec<EconomyFamilyExpeditionPayload>::encode(transient);
+        assert(first.data != changed.data);
+        EconomyTrackedRecords<EconomyFamilyMembershipEdge> membership(
+            {{12, 1}, "family.membership", EconomyFieldEncoding::CanonicalRecord, 1});
+        membership.push_back({1, 2, 3, 4, 5, 6, 7, 8});
+        assert(membership.record_width() == 64);
+        const auto &bytes = membership.canonical_column().values();
+        assert(bytes.size() == 64);
+        for (size_t field = 0; field < 8; ++field) {
+            assert(bytes[field * 8] == field + 1);
+            for (size_t byte = 1; byte < 8; ++byte) assert(bytes[field * 8 + byte] == 0);
+        }
+    }
     EconomyTrackedRecords<TestRecord> rows({{12, 1}, "test.records", EconomyFieldEncoding::CanonicalRecord, 1});
     rows.resize(400);
     assert(rows.record_width() == 21);

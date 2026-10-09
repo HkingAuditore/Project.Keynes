@@ -126,7 +126,7 @@ struct EconomySoAView {
     uint8_t *survival_clothing_good_mask = nullptr;
     size_t survival_mask_count = 0;
     int64_t *population_by_cell = nullptr;
-    int64_t *treasury_by_country = nullptr;
+    const int64_t *treasury_by_country = nullptr;
     uint64_t generation = 0;
     int64_t sample_day = -1;
     int64_t committed_day = -1;

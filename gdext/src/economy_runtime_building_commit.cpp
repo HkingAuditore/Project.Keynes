@@ -82,7 +82,7 @@ bool NativeEconomyRuntime::commit_ready_construction(
          ++pending_row) {
         const PendingConstruction pending =
             pending_construction_copy(pending_row);
-        if (pending.ready_day > _current_day) continue;
+        if (pending.ready_day > _current_day.get()) continue;
         if (pending.sponsor_family_handle != 0)
             sponsored_completed.push_back(pending);
         changed = true;
@@ -104,7 +104,7 @@ bool NativeEconomyRuntime::commit_ready_construction(
                 pending.merchant_debt_premium, _saturation_count));
             if (pending.merchant_debt_principal > 0 ||
                 pending.merchant_debt_premium > 0) {
-                buildings_store().merchant_debt_term_cycles_left.write_scalar(existing, static_cast<uint16_t>(_merchant_credit_term_cycles));
+                buildings_store().merchant_debt_term_cycles_left.write_scalar(existing, static_cast<uint16_t>(_merchant_credit_term_cycles.get()));
             }
         } else {
             BuildingGroup group;
@@ -175,7 +175,7 @@ bool NativeEconomyRuntime::commit_ready_construction(
             _staging_gameplay_facts.push_back(fact);
         }
     }
-    changed = erase_ready_pending_construction(_current_day) > 0 || changed;
+    changed = erase_ready_pending_construction(_current_day.get()) > 0 || changed;
     if (prune_empty_groups || topology_changed) {
         for (size_t pk_row = 0; pk_row < building_count(); ++pk_row) {
             const auto group = building_at(pk_row);
@@ -183,7 +183,7 @@ bool NativeEconomyRuntime::commit_ready_construction(
             if (_modifier_runtime != nullptr)
                 _modifier_runtime->retire_building_identity(
                     group.cell, group.type_id, group.owner_signature_id,
-                    _current_day);
+                    _current_day.get());
             changed_cells.push_back(group.cell);
             topology_changed = true;
             changed = true;

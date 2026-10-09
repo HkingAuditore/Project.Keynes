@@ -257,7 +257,7 @@ bool EconomyCsvRecorder::start(const Config &config, NativeEconomyRuntime &runti
         error = "economy_not_ready";
         return false;
     }
-    if (config.q.size() != static_cast<size_t>(runtime._cell_count) ||
+    if (config.q.size() != static_cast<size_t>(runtime._cell_count.get()) ||
         config.r.size() != config.q.size() || config.s.size() != config.q.size()) {
         error = "coordinate_size_mismatch";
         return false;
@@ -289,7 +289,7 @@ bool EconomyCsvRecorder::start(const Config &config, NativeEconomyRuntime &runti
             std::unique(_config.cell_indices.begin(), _config.cell_indices.end()),
             _config.cell_indices.end());
         for (const int32_t cell : _config.cell_indices) {
-            if (cell < 0 || cell >= runtime._cell_count) {
+            if (cell < 0 || cell >= runtime._cell_count.get()) {
                 error = "cell_index_out_of_range";
                 return false;
             }
@@ -298,11 +298,11 @@ bool EconomyCsvRecorder::start(const Config &config, NativeEconomyRuntime &runti
     } else {
         _sample_cells.clear();
         _sample_cells.reserve(static_cast<size_t>(
-            (runtime._cell_count + _config.cell_stride - 1) / _config.cell_stride));
-        for (int32_t cell = 0; cell < runtime._cell_count; cell += _config.cell_stride)
+            (runtime._cell_count.get() + _config.cell_stride - 1) / _config.cell_stride));
+        for (int32_t cell = 0; cell < runtime._cell_count.get(); cell += _config.cell_stride)
             _sample_cells.push_back(cell);
     }
-    _sample_cell_positions.assign(static_cast<size_t>(runtime._cell_count), -1);
+    _sample_cell_positions.assign(static_cast<size_t>(runtime._cell_count.get()), -1);
     for (int32_t i = 0; i < static_cast<int32_t>(_sample_cells.size()); ++i)
         _sample_cell_positions[_sample_cells[i]] = i;
     _resource_runtime_indices.assign(_config.resource_ids.size(), -1);
@@ -317,7 +317,7 @@ bool EconomyCsvRecorder::start(const Config &config, NativeEconomyRuntime &runti
         _resource_runtime_indices[resource] = static_cast<int32_t>(
             std::distance(runtime._resource_ids.begin(), it));
     }
-    const size_t resource_history_size = static_cast<size_t>(runtime._cell_count) *
+    const size_t resource_history_size = static_cast<size_t>(runtime._cell_count.get()) *
         _config.resource_ids.size();
     _previous_resource_reserve.assign(resource_history_size, 0.0f);
     _pending_resource_artificial.assign(resource_history_size, 0);
@@ -341,7 +341,7 @@ bool EconomyCsvRecorder::start(const Config &config, NativeEconomyRuntime &runti
             runtime.population_store().for_each_in_cell(cell, [&](int32_t) { ++sampled_cohorts; });
         if (_config.enabled[BUILDINGS]) {
             if (runtime._building_cell_offsets.size() ==
-                static_cast<size_t>(runtime._cell_count + 1)) {
+                static_cast<size_t>(runtime._cell_count.get() + 1)) {
                 sampled_buildings += static_cast<size_t>(
                     runtime._building_cell_offsets[cell + 1] -
                     runtime._building_cell_offsets[cell]);
@@ -405,7 +405,7 @@ int64_t EconomyCsvRecorder::projected_rows(const NativeEconomyRuntime &runtime) 
             runtime.population_store().for_each_in_cell(cell, [&](int32_t) { ++rows; });
         }
         if (_config.enabled[BUILDINGS]) {
-            if (runtime._building_cell_offsets.size() == static_cast<size_t>(runtime._cell_count + 1)) {
+            if (runtime._building_cell_offsets.size() == static_cast<size_t>(runtime._cell_count.get() + 1)) {
                 for (int32_t i = runtime._building_cell_offsets[cell];
                      i < runtime._building_cell_offsets[cell + 1]; ++i) {
                     if (runtime.buildings_store().group_units[i] > 0) ++rows;
@@ -513,10 +513,10 @@ bool EconomyCsvRecorder::capture_worker_committed(
     const auto &stock = runtime.resource_stock_lanes();
     for (size_t r = 0; r < lanes.size(); ++r) {
         const int32_t source = _resource_runtime_indices[r];
-        if (source < 0 || (static_cast<size_t>(source) + 1) * runtime._cell_count > stock.size()) continue;
-        lanes[r].resize(runtime._cell_count);
-        for (int32_t c = 0; c < runtime._cell_count; ++c)
-            lanes[r][c] = static_cast<float>(stock[static_cast<size_t>(source) * runtime._cell_count + c]) /
+        if (source < 0 || (static_cast<size_t>(source) + 1) * runtime._cell_count.get() > stock.size()) continue;
+        lanes[r].resize(runtime._cell_count.get());
+        for (int32_t c = 0; c < runtime._cell_count.get(); ++c)
+            lanes[r][c] = static_cast<float>(stock[static_cast<size_t>(source) * runtime._cell_count.get() + c]) /
                 static_cast<float>(NativeEconomyRuntime::GOODS_SCALE);
         arrays[r] = lanes[r].data();
     }
@@ -531,7 +531,7 @@ bool EconomyCsvRecorder::capture_committed(
         reason = "not_committed";
         return false;
     }
-    const int64_t epoch_id = runtime._epoch_id;
+    const int64_t epoch_id = runtime._epoch_id.get();
     {
         std::lock_guard<std::mutex> lock(_mutex);
         if (!_accepting || _state != 2) {
@@ -625,12 +625,12 @@ bool EconomyCsvRecorder::fill_batch(
         error = "resource_array_count_mismatch";
         return false;
     }
-    batch.epoch_id = runtime._epoch_id;
+    batch.epoch_id = runtime._epoch_id.get();
     const int64_t day = runtime._commit_day;
 
     if (_config.enabled[SUMMARY]) {
         SummaryRow row;
-        row.epoch_row_id = epoch_row_id; row.epoch_id = runtime._epoch_id; row.day_index = day;
+        row.epoch_row_id = epoch_row_id; row.epoch_id = runtime._epoch_id.get(); row.day_index = day;
         row.epoch_active = runtime._epoch_active; row.stage = static_cast<int32_t>(runtime._stage);
         row.progress_q16 = runtime.stage_progress_q16(); row.sample_day = runtime._sample_day;
         row.commit_day = runtime._commit_day; row.cohort_count = runtime.population_store().active_count;
@@ -765,7 +765,7 @@ bool EconomyCsvRecorder::fill_batch(
         row.trade_unresolved_capacity = runtime._trade_unresolved_capacity;
         row.trade_unresolved_cash = runtime._trade_unresolved_cash;
         row.trade_unresolved_order_cap = runtime._trade_unresolved_order_cap;
-        row.trade_runtime_mode = runtime._trade_runtime_mode;
+        row.trade_runtime_mode = runtime._trade_runtime_mode.get();
         row.trade_topology_ready = runtime._trade_topology.ready;
         row.trade_topology_generation = runtime._trade_topology.topology_generation;
         row.trade_topology_hash = runtime._trade_topology.topology_hash;
@@ -890,9 +890,9 @@ bool EconomyCsvRecorder::fill_batch(
                  line < runtime.trade_orders_store().line_offsets[order + 1]; ++line) {
                 const int32_t good = runtime.trade_orders_store().line_goods[line];
                 const int64_t qty = runtime.trade_orders_store().line_quantities[line];
-                const int32_t src_pos = src >= 0 && src < runtime._cell_count
+                const int32_t src_pos = src >= 0 && src < runtime._cell_count.get()
                     ? _sample_cell_positions[src] : -1;
-                const int32_t dst_pos = dst >= 0 && dst < runtime._cell_count
+                const int32_t dst_pos = dst >= 0 && dst < runtime._cell_count.get()
                     ? _sample_cell_positions[dst] : -1;
                 if (src_pos >= 0)
                     outbound[static_cast<size_t>(src_pos) * runtime.market_store().good_count.get() + good] += qty;
@@ -911,7 +911,7 @@ bool EconomyCsvRecorder::fill_batch(
         _sample_cells.size() * resource_arrays.size());
 
     for (const int32_t cell : _sample_cells) {
-        CommonCell common{epoch_row_id, runtime._epoch_id, day, cell,
+        CommonCell common{epoch_row_id, runtime._epoch_id.get(), day, cell,
                           _config.q[cell], _config.r[cell], _config.s[cell]};
         if (_config.enabled[COHORTS]) {
             int32_t cohort_index = 0;
@@ -946,7 +946,7 @@ bool EconomyCsvRecorder::fill_batch(
                 row.owner_employed = runtime.population_store().owner_employed[slot];
                 row.employee_employed = runtime.population_store().employee_employed[slot];
                 row.unemployed = std::max<int64_t>(0, row.population - row.owner_employed - row.employee_employed);
-                if (cell >= 0 && cell < runtime._cell_count &&
+                if (cell >= 0 && cell < runtime._cell_count.get() &&
                     cell < static_cast<int32_t>(runtime._cell_births.size()) &&
                     cell < static_cast<int32_t>(runtime._cell_deaths.size()) &&
                     cell < static_cast<int32_t>(runtime._cell_moved_in.size()) &&
@@ -961,7 +961,7 @@ bool EconomyCsvRecorder::fill_batch(
         }
         if (_config.enabled[BUILDINGS]) {
             int32_t group_index = 0;
-            if (runtime._building_cell_offsets.size() == static_cast<size_t>(runtime._cell_count + 1)) {
+            if (runtime._building_cell_offsets.size() == static_cast<size_t>(runtime._cell_count.get() + 1)) {
                 for (int32_t index = runtime._building_cell_offsets[cell];
                      index < runtime._building_cell_offsets[cell + 1]; ++index) {
                     const auto group = runtime.building_at(static_cast<size_t>(index));
@@ -1095,7 +1095,7 @@ bool EconomyCsvRecorder::fill_batch(
                     row.owner_livelihood_required = runtime.saturating_mul(
                         runtime.saturating_mul(row.owner_living_cost_per_day,
                             std::max<int64_t>(0, group.filled_owner), snapshot_sat),
-                        std::max(1, runtime._epoch_days), snapshot_sat);
+                        std::max(1, runtime._epoch_days.get()), snapshot_sat);
                     row.viability_operating_cost = runtime.saturating_add(
                         runtime.saturating_add(group.last_input_cost,
                             group.last_base_wages_due, snapshot_sat),
@@ -1288,7 +1288,7 @@ bool EconomyCsvRecorder::fill_batch(
                     return false;
                 }
                 const size_t flat = static_cast<size_t>(resource) *
-                    runtime._cell_count + cell;
+                    runtime._cell_count.get() + cell;
                 const float closing = resource_arrays[resource][cell];
                 const bool valid = flat < _resource_history_valid.size() &&
                     _resource_history_valid[flat] != 0;
@@ -1299,7 +1299,7 @@ bool EconomyCsvRecorder::fill_batch(
                         static_cast<int32_t>(_resource_runtime_indices.size())
                     ? _resource_runtime_indices[resource] : -1;
                 const size_t runtime_flat = runtime_resource >= 0
-                    ? static_cast<size_t>(runtime_resource) * runtime._cell_count + cell
+                    ? static_cast<size_t>(runtime_resource) * runtime._cell_count.get() + cell
                     : runtime._last_published_resource_deltas.size();
                 const int64_t pending_fixed = runtime_flat <
                         runtime._last_published_resource_deltas.size()
@@ -1335,7 +1335,7 @@ bool EconomyCsvRecorder::fill_batch(
                         runtime_resource];
                     int64_t harvest = 0;
                     if (runtime._building_cell_offsets.size() == static_cast<size_t>(
-                            runtime._cell_count + 1)) {
+                            runtime._cell_count.get() + 1)) {
                         for (int32_t group_index = runtime._building_cell_offsets[cell];
                              group_index < runtime._building_cell_offsets[cell + 1];
                              ++group_index) {

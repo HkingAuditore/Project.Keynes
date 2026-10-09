@@ -137,7 +137,7 @@ int32_t NativeEconomyRuntime::stage_progress_q16() const {
                 (_family_commit_phase == 0 ? 0 :
                     (_family_commit_phase == 1
                         ? (static_cast<int64_t>(_family_commit_cursor) *
-                           (Q16_ONE / 40)) / std::max(1, _cell_count)
+                           (Q16_ONE / 40)) / std::max(1, _cell_count.get())
                         : Q16_ONE / 40)));
         case Stage::PERSON_COMMIT:
             return static_cast<int32_t>(Q16_ONE * 39 / 40 +
@@ -600,6 +600,16 @@ int64_t NativeEconomyRuntime::memory_bytes() const {
     cap(_building_landform); cap(_building_vegetation); cap(_building_is_water);
     cap(_building_has_river); cap(_building_neighbors);
     bytes += trace_memory_bytes();
+    bytes += static_cast<int64_t>(family_memberships().canonical_memory_bytes() +
+        family_ownerships().canonical_memory_bytes() + family_trait_rolls().canonical_memory_bytes() +
+        person_needs().canonical_memory_bytes() + family_expedition_payloads().canonical_memory_bytes() +
+        family_expedition_cargo().canonical_memory_bytes() + family_expedition_kit_buildings().canonical_memory_bytes());
+    bytes += static_cast<int64_t>(_asset_peer_journal.canonical_memory_bytes() +
+        _canal_quotes.canonical_memory_bytes() + _canal_projects.canonical_memory_bytes() +
+        _canal_quote_index.canonical_memory_bytes() + market_store().price_ceilings.canonical_memory_bytes() +
+        _family_founding_offers.canonical_memory_bytes() + _family_modifier_bindings.canonical_memory_bytes() +
+        _family_trigger_bindings.canonical_memory_bytes() + _family_effect_bindings.canonical_memory_bytes() +
+        _family_founding_effects.canonical_memory_bytes());
     return bytes;
 }
 
@@ -670,10 +680,10 @@ Dictionary NativeEconomyRuntime::compact_report() const {
     Dictionary out;
     write_hash_work_report(out);
     const int64_t age_days = _epoch_active
-        ? std::max<int64_t>(0, _current_day - _sample_day)
+        ? std::max<int64_t>(0, _current_day.get() - _sample_day)
         : _settlement_max_age_days;
     const int64_t deadline_day = _sample_day;
-    const bool commit_due = _epoch_active && _current_day >= deadline_day;
+    const bool commit_due = _epoch_active && _current_day.get() >= deadline_day;
 
     out["path"] = "ECONOMY_GRAPH";
     out["mode"] = "native";
@@ -681,12 +691,12 @@ Dictionary NativeEconomyRuntime::compact_report() const {
     out["configured"] = _configured;
     out["bootstrapped"] = _bootstrapped;
     out["epoch_active"] = _epoch_active;
-    out["epoch_id"] = _epoch_id;
+    out["epoch_id"] = _epoch_id.get();
     out["committed_generation"] = static_cast<int64_t>(_committed_generation);
     out["sample_day"] = _sample_day;
-    out["current_day"] = _current_day;
+    out["current_day"] = _current_day.get();
     out["commit_day"] = _commit_day;
-    out["last_committed_day"] = _last_committed_day;
+    out["last_committed_day"] = _last_committed_day.get();
     out["age_days"] = age_days;
     out["stage"] = stage_name();
     out["next_stage"] = stage_name();
@@ -809,7 +819,7 @@ Dictionary NativeEconomyRuntime::compact_report() const {
             household_slice_breakdown_work();
     }
 
-    out["economy_event_newest_id"] = _next_event_id - 1;
+    out["economy_event_newest_id"] = _next_event_id.get() - 1;
     out["economy_event_last_batch_count"] = _committed_event_batches.empty() ? 0 :
         static_cast<int64_t>(_committed_event_batches.back().events.size());
     out["worker_tasks"] = _worker_tasks;
@@ -1009,8 +1019,8 @@ Dictionary NativeEconomyRuntime::compact_report() const {
         _budgeted_building_commit_phase_fusions;
     out["budgeted_publish_phase_fusions"] =
         _budgeted_publish_phase_fusions;
-    out["family_runtime_mode"] = _family_runtime_mode == 0 ? "OFF" :
-        (_family_runtime_mode == 1 ? "PROBE" : "ACTIVE");
+    out["family_runtime_mode"] = _family_runtime_mode.get() == 0 ? "OFF" :
+        (_family_runtime_mode.get() == 1 ? "PROBE" : "ACTIVE");
     out["family_count"] = families_store().active_count.get();
     out["family_membership_edge_count"] = static_cast<int64_t>(
         family_memberships().size());
@@ -1067,7 +1077,7 @@ Dictionary NativeEconomyRuntime::compact_report() const {
     out["canal_active_quote_count"] = static_cast<int64_t>(
         _canal_quote_index.size());
     out["canal_project_count"] = static_cast<int64_t>(_canal_projects.size());
-    out["canal_next_project_id"] = static_cast<int64_t>(_next_canal_project_id);
+    out["canal_next_project_id"] = static_cast<int64_t>(_next_canal_project_id.get());
     out["canal_receipt_count"] = static_cast<int64_t>(_canal_receipts.size());
     int64_t canal_building = 0;
     int64_t canal_awaiting_effect = 0;
@@ -1104,8 +1114,8 @@ Dictionary NativeEconomyRuntime::compact_report() const {
     out["families_dissolved"] = _families_dissolved;
     out["family_owner_jobs_filled"] = _family_owner_jobs_filled;
     out["family_owner_jobs_vacant"] = _family_owner_jobs_vacant;
-    out["notable_person_runtime_mode"] = _person_runtime_mode == 0 ? "OFF" :
-        (_person_runtime_mode == 1 ? "PROBE" : "ACTIVE");
+    out["notable_person_runtime_mode"] = _person_runtime_mode.get() == 0 ? "OFF" :
+        (_person_runtime_mode.get() == 1 ? "PROBE" : "ACTIVE");
     out["notable_person_count"] = persons_store().active_count.get();
     out["person_need_edge_count"] = static_cast<int64_t>(person_needs().size());
     out["persons_promoted"] = _persons_promoted;
@@ -1120,11 +1130,11 @@ Dictionary NativeEconomyRuntime::compact_report() const {
     // ACTIVE repurchase regressions can observe durable counters without a
     // full diagnostic copy every cursor slice.
     out["government_research_procured_points"] =
-        _government_research_procured_points;
+        _government_research_procured_points.get();
     out["government_research_procurement_cash"] =
-        _government_research_procurement_cash;
+        _government_research_procurement_cash.get();
     out["government_research_procurement_orders"] =
-        _government_research_procurement_orders;
+        _government_research_procurement_orders.get();
     out["country_research_procurement_rejections"] =
         _country_research_procurement_rejections;
     out["country_research_procurement_transactions"] =
@@ -1212,10 +1222,10 @@ Dictionary NativeEconomyRuntime::report() const {
     Dictionary out;
     write_hash_work_report(out);
     const int64_t age_days = _epoch_active
-        ? std::max<int64_t>(0, _current_day - _sample_day)
+        ? std::max<int64_t>(0, _current_day.get() - _sample_day)
         : _settlement_max_age_days;
     const int64_t deadline_day = _sample_day;
-    const bool commit_due = _epoch_active && _current_day >= deadline_day;
+    const bool commit_due = _epoch_active && _current_day.get() >= deadline_day;
     const int64_t population_expected = _opening_totals.population + _births - _deaths +
                                         _external_population_delta;
     const int64_t money_open = _opening_totals.cohort_funds +
@@ -1236,13 +1246,13 @@ Dictionary NativeEconomyRuntime::report() const {
     out["configured"] = _configured;
     out["bootstrapped"] = _bootstrapped;
     out["epoch_active"] = _epoch_active;
-    out["epoch_id"] = _epoch_id;
+    out["epoch_id"] = _epoch_id.get();
     out["committed_generation"] = static_cast<int64_t>(_committed_generation);
     write_cadence_report(out);
     out["sample_day"] = _sample_day;
-    out["current_day"] = _current_day;
+    out["current_day"] = _current_day.get();
     out["commit_day"] = _commit_day;
-    out["last_committed_day"] = _last_committed_day;
+    out["last_committed_day"] = _last_committed_day.get();
     out["age_days"] = age_days;
     out["stage"] = stage_name();
     out["next_stage"] = stage_name();
@@ -1582,8 +1592,8 @@ Dictionary NativeEconomyRuntime::report() const {
     out["event_summary_ms"] = _event_summary_ms;
     out["event_detail_ms"] = _event_detail_ms;
     out["event_publish_ms"] = _event_publish_ms;
-    out["event_stream_hash"] = static_cast<int64_t>(_event_stream_hash);
-    out["economy_event_newest_id"] = _next_event_id - 1;
+    out["event_stream_hash"] = static_cast<int64_t>(_event_stream_hash.get());
+    out["economy_event_newest_id"] = _next_event_id.get() - 1;
     out["economy_event_last_batch_count"] = _committed_event_batches.empty() ? 0 :
         static_cast<int64_t>(_committed_event_batches.back().events.size());
     out["economy_trace_memory_bytes"] = trace_memory_bytes();
@@ -1999,8 +2009,8 @@ Dictionary NativeEconomyRuntime::report() const {
     out["building_cells_per_slice"] = _building_cells_per_slice;
     out["building_groups_per_slice"] = _building_groups_per_slice;
     out["auto_slice_by_scale"] = _auto_slice_by_scale;
-    out["family_runtime_mode"] = _family_runtime_mode == 0 ? "OFF" :
-        (_family_runtime_mode == 1 ? "PROBE" : "ACTIVE");
+    out["family_runtime_mode"] = _family_runtime_mode.get() == 0 ? "OFF" :
+        (_family_runtime_mode.get() == 1 ? "PROBE" : "ACTIVE");
     out["family_count"] = families_store().active_count.get();
     out["family_membership_edge_count"] = static_cast<int64_t>(
         family_memberships().size());
@@ -2093,8 +2103,8 @@ Dictionary NativeEconomyRuntime::report() const {
     out["families_dissolved"] = _families_dissolved;
     out["family_owner_jobs_filled"] = _family_owner_jobs_filled;
     out["family_owner_jobs_vacant"] = _family_owner_jobs_vacant;
-    out["notable_person_runtime_mode"] = _person_runtime_mode == 0 ? "OFF" :
-        (_person_runtime_mode == 1 ? "PROBE" : "ACTIVE");
+    out["notable_person_runtime_mode"] = _person_runtime_mode.get() == 0 ? "OFF" :
+        (_person_runtime_mode.get() == 1 ? "PROBE" : "ACTIVE");
     out["notable_person_count"] = persons_store().active_count.get();
     out["person_need_edge_count"] = static_cast<int64_t>(person_needs().size());
     out["persons_promoted"] = _persons_promoted;
@@ -2122,7 +2132,7 @@ Dictionary NativeEconomyRuntime::report() const {
         _city_output_cell_offsets.capacity() * sizeof(int32_t) +
         _city_output_good_indices.capacity() * sizeof(int32_t) +
         _city_output_factors_q16.capacity() * sizeof(int32_t));
-    out["canal_next_project_id"] = static_cast<int64_t>(_next_canal_project_id);
+    out["canal_next_project_id"] = static_cast<int64_t>(_next_canal_project_id.get());
     out["cohort_count"] = population_store().active_count.get();
     out["market_count"] = market_store().market_count.get();
     out["good_count"] = market_store().good_count.get();
@@ -2145,7 +2155,7 @@ Dictionary NativeEconomyRuntime::report() const {
     out["explicit_stock_delta"] = _explicit_stock_delta;
     out["building_investment_model"] = "endogenous_owner_portfolio_v9";
     out["startup_demand_runtime_mode"] =
-        _startup_demand_runtime_mode == 0 ? "OFF" : "ACTIVE";
+        _startup_demand_runtime_mode.get() == 0 ? "OFF" : "ACTIVE";
     out["startup_demand_seed_count"] = _startup_demand_seed_count;
     out["startup_demand_touched_lanes"] = _startup_demand_touched_lanes;
     out["startup_demand_catalog_edges"] = _startup_demand_catalog_edges;
@@ -2158,21 +2168,21 @@ Dictionary NativeEconomyRuntime::report() const {
     out["startup_demand_prepare_ms"] = _startup_demand_prepare_ms;
     out["startup_demand_scratch_bytes"] = _startup_demand_scratch_bytes;
     out["investment_gap_fill_share_q16"] =
-        _investment_gap_fill_share_q16;
+        _investment_gap_fill_share_q16.get();
     out["investment_portfolio_max_types"] =
-        _investment_portfolio_max_types;
+        _investment_portfolio_max_types.get();
     out["investment_max_type_owner_share_q16"] =
-        _investment_max_type_owner_share_q16;
+        _investment_max_type_owner_share_q16.get();
     out["investment_max_growth_share_q16"] =
-        _investment_max_growth_share_q16;
+        _investment_max_growth_share_q16.get();
     out["investment_new_type_seed_buildings"] =
-        _investment_new_type_seed_buildings;
+        _investment_new_type_seed_buildings.get();
     out["investment_displacement_min_advantage_q16"] =
         _investment_displacement_min_advantage_q16;
     out["investment_merchant_transition_min_improvement_q16"] =
-        _investment_merchant_transition_min_improvement_q16;
+        _investment_merchant_transition_min_improvement_q16.get();
     out["recovery_liquidation_max_share_q16"] =
-        _recovery_liquidation_max_share_q16;
+        _recovery_liquidation_max_share_q16.get();
     out["building_investment_candidates"] = _building_investment_candidates;
     out["building_owner_mobility"] = _building_owner_mobility;
     out["building_owner_job_reallocations"] =
@@ -2322,11 +2332,11 @@ Dictionary NativeEconomyRuntime::report() const {
     out["merchant_trade_purchase_cash"] = _merchant_trade_purchase_cash;
     out["merchant_trade_sale_cash"] = _merchant_trade_sale_cash;
     out["government_research_procured_points"] =
-        _government_research_procured_points;
+        _government_research_procured_points.get();
     out["government_research_procurement_cash"] =
-        _government_research_procurement_cash;
+        _government_research_procurement_cash.get();
     out["government_research_procurement_orders"] =
-        _government_research_procurement_orders;
+        _government_research_procurement_orders.get();
     out["country_research_procurement_cursor"] =
         static_cast<int64_t>(_country_research_procurement_cursor);
     out["country_research_procurement_candidate_count"] =
@@ -2416,8 +2426,8 @@ Dictionary NativeEconomyRuntime::report() const {
                 pending.merchant_debt_principal, pending.merchant_debt_premium,
                 report_sat), report_sat);
     }
-    out["merchant_credit_runtime_mode"] = _merchant_credit_runtime_mode == 0
-        ? "OFF" : (_merchant_credit_runtime_mode == 1 ? "PROBE" : "ACTIVE");
+    out["merchant_credit_runtime_mode"] = _merchant_credit_runtime_mode.get() == 0
+        ? "OFF" : (_merchant_credit_runtime_mode.get() == 1 ? "PROBE" : "ACTIVE");
     out["merchant_credit_budget"] = _merchant_credit_budget;
     out["merchant_credit_committed"] = _merchant_credit_committed;
     out["merchant_credit_drawn"] = _merchant_credit_drawn;
@@ -2442,13 +2452,13 @@ Dictionary NativeEconomyRuntime::report() const {
     out["maintenance_unmet"] = _maintenance_unmet;
     out["maintenance_unpaid_value"] = _maintenance_unpaid_value;
     out["owner_working_capital_reserved"] = _owner_working_capital_reserved;
-    out["building_severe_loss_threshold_q16"] = _building_severe_loss_threshold_q16;
-    out["building_severe_loss_cycles"] = _building_severe_loss_cycles;
-    out["building_restart_margin_q16"] = _building_restart_margin_q16;
-    out["building_restart_cycles"] = _building_restart_cycles;
+    out["building_severe_loss_threshold_q16"] = _building_severe_loss_threshold_q16.get();
+    out["building_severe_loss_cycles"] = _building_severe_loss_cycles.get();
+    out["building_restart_margin_q16"] = _building_restart_margin_q16.get();
+    out["building_restart_cycles"] = _building_restart_cycles.get();
     out["merchant_procurement_cash_reserve_q16"] =
-        _merchant_procurement_cash_reserve_q16;
-    out["merchant_market_making_days_q16"] = _merchant_market_making_days_q16;
+        _merchant_procurement_cash_reserve_q16.get();
+    out["merchant_market_making_days_q16"] = _merchant_market_making_days_q16.get();
     out["labor_signal_edges"] =
         static_cast<int64_t>(_labor_signals.profession_ids.size());
     out["labor_signal_updates"] = _labor_signal_updates;
@@ -2459,8 +2469,8 @@ Dictionary NativeEconomyRuntime::report() const {
     out["building_resource_limited_groups"] = _building_resource_limited_groups;
     out["market_signal_edges"] = static_cast<int64_t>(_market_signals.good_ids.size());
     out["market_signal_updates"] = _market_signal_updates;
-    out["trade_runtime_mode"] = _trade_runtime_mode == 0 ? "OFF"
-        : (_trade_runtime_mode == 1 ? "PROBE" : "ACTIVE");
+    out["trade_runtime_mode"] = _trade_runtime_mode.get() == 0 ? "OFF"
+        : (_trade_runtime_mode.get() == 1 ? "PROBE" : "ACTIVE");
     out["trade_topology_ready"] = _trade_topology.ready;
     out["trade_topology_generation"] = static_cast<int64_t>(
         _trade_topology.topology_generation);
@@ -2658,7 +2668,7 @@ Dictionary NativeEconomyRuntime::report() const {
     write_fiscal_continuation_report(out);
     out["cycle_deadline_day"] = deadline_day;
     out["days_until_commit"] = _epoch_active
-        ? std::max<int64_t>(0, deadline_day - _current_day) : 0;
+        ? std::max<int64_t>(0, deadline_day - _current_day.get()) : 0;
     write_cadence_report(out);
     out["market_target_cohorts_per_slice"] = _target_cohorts_per_slice;
     out["market_cells_per_slice"] = _cells_per_slice;
@@ -2690,11 +2700,11 @@ Dictionary NativeEconomyRuntime::report() const {
     out["accuracy_candidate_top_k"] = _accuracy_candidate_top_k;
     out["accuracy_choice_temperature_q16"] =
         _accuracy_choice_temperature_q16;
-    out["employment_mobility_daily_q16"] = _employment_mobility_daily_q16;
+    out["employment_mobility_daily_q16"] = _employment_mobility_daily_q16.get();
     out["employment_understaffed_reallocation_hurdle_mult_q16"] =
-        _employment_understaffed_reallocation_hurdle_mult_q16;
+        _employment_understaffed_reallocation_hurdle_mult_q16.get();
     out["employment_choice_temperature_q16"] =
-        _employment_choice_temperature_q16;
+        _employment_choice_temperature_q16.get();
     out["accuracy_exact_probe_rate_q16"] = _accuracy_exact_probe_rate_q16;
     out["accuracy_fallback_cooldown_epochs"] =
         _accuracy_fallback_cooldown_epochs;
@@ -2725,15 +2735,15 @@ Dictionary NativeEconomyRuntime::report() const {
     out["period_transactions"] = true;
     out["max_command_latency_days"] = locked_market_cycle_days();
     out["pending_commands"] = static_cast<int64_t>(_pending_commands.size());
-    out["catalog_hash"] = _catalog_hash;
-    out["building_catalog_hash"] = _building_catalog_hash;
-    out["environment_day"] = _environment_day;
-    out["environment_hash"] = _environment_hash;
+    out["catalog_hash"] = _catalog_hash.get();
+    out["building_catalog_hash"] = _building_catalog_hash.get();
+    out["environment_day"] = _environment_day.get();
+    out["environment_hash"] = _environment_hash.get();
     out["country_schema_version"] = NativeCountryRuntime::SCHEMA_VERSION;
     out["country_generation"] = static_cast<int64_t>(_epoch_country_generation);
     out["country_state_hash"] = static_cast<int64_t>(_epoch_country_hash);
     out["country_commands_due"] = _country_runtime != nullptr &&
-        _country_runtime->should_run(_current_day);
+        _country_runtime->should_run(_current_day.get());
     out["merchant_count"] = static_cast<int64_t>(_merchant_slots.size());
     out["merchant_repairs"] = _merchant_repairs;
     out["price_cap_hits"] = _price_cap_hits;
@@ -2746,9 +2756,9 @@ Dictionary NativeEconomyRuntime::report() const {
     for (const auto &row : market_store().price_ceilings)
         ceiling_capacity_bytes += static_cast<int64_t>(row.capacity() * sizeof(PriceCeilingState));
     out["price_ceiling_state_bytes"] = ceiling_capacity_bytes;
-    out["price_ceiling_confirm_days"] = _price_ceiling_confirm_days;
-    out["price_ceiling_expand_bp"] = _price_ceiling_expand_bp;
-    out["price_ceiling_recover_bp"] = _price_ceiling_recover_bp;
+    out["price_ceiling_confirm_days"] = _price_ceiling_confirm_days.get();
+    out["price_ceiling_expand_bp"] = _price_ceiling_expand_bp.get();
+    out["price_ceiling_recover_bp"] = _price_ceiling_recover_bp.get();
     out["price_numeric_floor_hits"] = _price_numeric_floor_hits;
     out["price_numeric_ceiling_hits"] = _price_numeric_ceiling_hits;
     out["price_ceiling_limit_hits"] = _price_catalog_bound_hits;

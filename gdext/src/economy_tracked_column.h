@@ -22,7 +22,8 @@ template<class T> class EconomyTrackedColumn {
     std::atomic<size_t> _active_guards{0};
     mutable uint64_t _hash_consumed_revision = 0;
     void require_idle() const {
-        if (_active_guards.load(std::memory_order_acquire)) throw std::logic_error("economy_column_structure_during_write");
+        if (_active_guards.load(std::memory_order_acquire))
+            economy_tracking_failure("economy_column_structure_during_write", descriptor().name);
     }
     void capture_before(size_t index, T value, EconomyWorkerChanges *sink) {
         if (_audit_role == EconomyAuditRole::None) return;
@@ -57,9 +58,16 @@ public:
         _hash_consumed_revision = mutation_revision();
         return result;
     }
+    std::vector<uint64_t> take_change_pages(EconomyChangeConsumer consumer) const {
+        if (consumer == EconomyChangeConsumer::Hash) return take_hash_pages();
+        return _registry->take_pages(_field, consumer);
+    }
     operator const std::vector<T> &() const noexcept { return _values; }
     const T *data() const noexcept { return _values.data(); }
-    const T &operator[](size_t index) const { return _values.at(index); }
+    const T &operator[](size_t index) const {
+        if (index >= _values.size()) economy_tracking_range_failure("economy_column_read_range_invalid", descriptor().name, index, size());
+        return _values[index];
+    }
     size_t size() const noexcept { return _values.size(); }
     bool empty() const noexcept { return _values.empty(); }
     size_t capacity() const noexcept { return _values.capacity(); }
@@ -122,7 +130,8 @@ public:
         _registry->reorder(_field, 0, size());
     }
     void write_scalar(size_t index, T value, EconomyWorkerChanges *sink = nullptr) {
-        T &target = _values.at(index);
+        if (index >= size()) economy_tracking_range_failure("economy_column_write_lane_invalid", descriptor().name, index, size());
+        T &target = _values[index];
         if (target == value) return;
         capture_before(index, target, sink);
         target = value;
@@ -131,7 +140,7 @@ public:
     }
     void write_values(size_t first, const T *values, size_t count, EconomyWorkerChanges *sink = nullptr) {
         if (first > size() || count > size() - first || (count && !values))
-            throw std::out_of_range("economy_column_write_values_invalid");
+            economy_tracking_range_failure("economy_column_write_values_invalid", descriptor().name, first, size());
         for (size_t index = 0; index < count;) {
             if (_values[first + index] == values[index]) { ++index; continue; }
             const size_t start = index;
@@ -168,7 +177,7 @@ public:
         WriteRange(EconomyTrackedColumn &owner, size_t first, size_t count, EconomyWorkerChanges *sink)
             : _owner(&owner), _first(first), _sink(sink) {
             if (first > owner.size() || count > owner.size() - first)
-                throw std::out_of_range("economy_column_write_range_invalid");
+                economy_tracking_range_failure("economy_column_write_range_invalid", owner.descriptor().name, first, owner.size());
             _before.assign(owner._values.begin() + first, owner._values.begin() + first + count);
             ++owner._active_guards;
         }
@@ -201,7 +210,8 @@ public:
         std::fill(guard.data(), guard.data() + count, value);
     }
     T &borrow_row(size_t index, EconomyRowWriteLease &lease) {
-        T &value = _values.at(index);
+        if (index >= size()) economy_tracking_range_failure("economy_column_borrow_lane_invalid", descriptor().name, index, size());
+        T &value = _values[index];
         // Claim the preimage before another write through an overlapping row
         // lease or scalar entry. An unchanged lease contributes a zero delta.
         capture_before(index, value, lease.sink());

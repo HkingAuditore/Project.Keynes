@@ -1,5 +1,17 @@
 # Performance Diagnostics Playbook
 
+## Economy 写入登记异常（2026-10-09）
+
+`[economy-tracking-failure]` 给出 guard 存活期间的非法结构修改及字段名；
+`[economy-tracking-range]` 给出非法读写的 reason、字段、index 与 size。
+这些检查拒绝操作，不通过取消 guard 或放宽边界检查恢复推进。
+独立负例测试会故意打印这些行；生产回放出现时必须作为失败调查。
+无正常 `[save-replay/result]` 的进程退出不能按权威日已推进而判定通过。
+
+登记器、字段目录与分页树的当前接入范围见
+[分页状态实施记录](./economy-paged-state-implementation.md)。生产哈希仍为 v2；
+内部 v3 组件测试通过不代表命令后提交视图、分层输入或原生异步存档已经启用。
+
 ## 模拟停机与卡死：先看哪份文件（2026-09-22）
 
 停机（economy fatal）和卡死（权威日不推进）现在都会自动落取证 JSON，**不需要开 GM 面板，

@@ -63,7 +63,7 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _epoch_ceiling_business_requested.clear();
     _epoch_ceiling_business_unfilled.clear();
     {
-        EconomyCostProbe probe("research_scratch_clear", _current_day,
+        EconomyCostProbe probe("research_scratch_clear", _current_day.get(),
             _epoch_ceiling_research_touched.size() * 2);
         for (int32_t market : _epoch_ceiling_research_touched) {
             _epoch_ceiling_research_requested[market] = 0;
@@ -288,8 +288,8 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _country_research_procurement_rejections = 0;
     _country_research_procurement_continuation = {};
     auto reset_cell_metric = [&](std::vector<int64_t> &metric) {
-        if (metric.size() != static_cast<size_t>(_cell_count)) {
-            metric.assign(static_cast<size_t>(_cell_count), 0);
+        if (metric.size() != static_cast<size_t>(_cell_count.get())) {
+            metric.assign(static_cast<size_t>(_cell_count.get()), 0);
         } else {
             std::fill(metric.begin(), metric.end(), int64_t{0});
         }
@@ -492,10 +492,10 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
     _consumed_goods = 0;
     _births = 0;
     _deaths = 0;
-    _cell_births.assign(static_cast<size_t>(std::max(0, _cell_count)), 0);
-    _cell_deaths.assign(static_cast<size_t>(std::max(0, _cell_count)), 0);
-    _cell_moved_in.assign(static_cast<size_t>(std::max(0, _cell_count)), 0);
-    _cell_moved_out.assign(static_cast<size_t>(std::max(0, _cell_count)), 0);
+    _cell_births.assign(static_cast<size_t>(std::max(0, _cell_count.get())), 0);
+    _cell_deaths.assign(static_cast<size_t>(std::max(0, _cell_count.get())), 0);
+    _cell_moved_in.assign(static_cast<size_t>(std::max(0, _cell_count.get())), 0);
+    _cell_moved_out.assign(static_cast<size_t>(std::max(0, _cell_count.get())), 0);
     _saturation_count = 0;
     _structural_touched_cells.clear();
     _population_changed_cells.clear();
@@ -546,7 +546,7 @@ void NativeEconomyRuntime::clear_epoch_metrics() {
 void NativeEconomyRuntime::capture_completed_perf_snapshot() {
     CompletedEpochPerf snapshot;
     snapshot.valid = true;
-    snapshot.epoch_id = _epoch_id;
+    snapshot.epoch_id = _epoch_id.get();
     snapshot.sample_day = _sample_day;
     snapshot.continuation_slices = _continuation_slices;
     snapshot.market_worker_tasks_max = _market_worker_tasks_max;
@@ -734,32 +734,32 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
         error = "epoch_start_state_invalid";
         return false;
     }
-    if (day_index <= _last_committed_day) return true;
+    if (day_index <= _last_committed_day.get()) return true;
     // All failure-prone checks happen here, before any state mutation.
     if (market_store().good_count.get() != static_cast<int32_t>(_good_ids.size()) ||
-        market_store().cell_to_market.size() != static_cast<size_t>(_cell_count) ||
+        market_store().cell_to_market.size() != static_cast<size_t>(_cell_count.get()) ||
         market_store().stock.size() != static_cast<size_t>(market_store().market_count.get()) * market_store().good_count.get() ||
         _market_cell_offsets.size() != static_cast<size_t>(market_store().market_count.get() + 1)) {
         error = "market_shape_invariant_broken";
         return false;
     }
-    if (_environment_day != day_index || _environment_temperature_q16.size() !=
-            static_cast<size_t>(_cell_count)) {
+    if (_environment_day.get() != day_index || _environment_temperature_q16.size() !=
+            static_cast<size_t>(_cell_count.get())) {
         error = "same_day_environment_not_captured";
         return false;
     }
     if (!_building_types.empty() && (_building_context_day != day_index ||
-        _building_elevation_q16.size() != static_cast<size_t>(_cell_count) ||
-        _building_neighbors.size() != static_cast<size_t>(_cell_count) * 6 ||
-        resource_stock_lanes().size() != _resource_ids.size() * static_cast<size_t>(_cell_count))) {
+        _building_elevation_q16.size() != static_cast<size_t>(_cell_count.get()) ||
+        _building_neighbors.size() != static_cast<size_t>(_cell_count.get()) * 6 ||
+        resource_stock_lanes().size() != _resource_ids.size() * static_cast<size_t>(_cell_count.get()))) {
         error = "same_day_building_context_not_captured";
         return false;
     }
-    if (_merchant_primary_slot.size() != static_cast<size_t>(_cell_count)) {
+    if (_merchant_primary_slot.size() != static_cast<size_t>(_cell_count.get())) {
         error = "merchant_index_shape_invalid";
         return false;
     }
-    const size_t cache_cells = static_cast<size_t>(_cell_count);
+    const size_t cache_cells = static_cast<size_t>(_cell_count.get());
     const size_t cache_variants = cache_cells * _variants.size();
     const size_t cache_needs = cache_cells * _needs.size();
     if (_demand_basis_cache_day.size() != cache_cells)
@@ -771,7 +771,7 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
     _demand_basis_need_composites.resize(cache_needs);
     _demand_basis_need_environment.resize(cache_needs);
     bool merchant_index_dirty = false;
-    for (int32_t cell = 0; cell < _cell_count; ++cell) {
+    for (int32_t cell = 0; cell < _cell_count.get(); ++cell) {
         const int32_t primary = _merchant_primary_slot[cell];
         if (is_merchant_slot(primary)) continue;
         if (primary < 0 &&
@@ -820,7 +820,7 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
     const auto workset_started = Clock::now();
     rebuild_economy_live_cells();
     maybe_lock_cadence_cycles(day_index);
-    _rolling_phase = cycle_phase(day_index, _market_cycle_start_day,
+    _rolling_phase = cycle_phase(day_index, _market_cycle_start_day.get(),
                                  locked_market_cycle_days());
     _epoch_market_ids.clear();
     _epoch_settlement_cells.clear();
@@ -828,7 +828,7 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
     _epoch_plan_cells.clear();
     const int32_t market_count = std::max(0, market_store().market_count.get());
     const bool have_market_map =
-        market_store().cell_to_market.size() == static_cast<size_t>(_cell_count);
+        market_store().cell_to_market.size() == static_cast<size_t>(_cell_count.get());
     std::vector<uint8_t> market_added(static_cast<size_t>(market_count), 0);
     for (const int32_t cell : _economy_live_cells) {
         if (!cell_in_market_workset(cell, day_index)) continue;
@@ -851,9 +851,9 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
     for (int32_t resource = 0;
          resource < static_cast<int32_t>(_resource_ids.size()); ++resource) {
         for (const int32_t cell : _epoch_settlement_cells) {
-            if (cell < 0 || cell >= _cell_count) continue;
+            if (cell < 0 || cell >= _cell_count.get()) continue;
             ensure_resource_lane(
-                static_cast<size_t>(resource) * _cell_count + cell);
+                static_cast<size_t>(resource) * _cell_count.get() + cell);
         }
     }
     _epoch_begin_resource_lane_ms = elapsed_ms(resource_lane_started);
@@ -870,7 +870,7 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
             market_work += static_cast<int64_t>(
                 _committed_cells[cell].cohort_count) * 16;
             if (_building_cell_offsets.size() ==
-                    static_cast<size_t>(_cell_count + 1)) {
+                    static_cast<size_t>(_cell_count.get() + 1)) {
                 market_work += static_cast<int64_t>(
                     _building_cell_offsets[cell + 1] -
                     _building_cell_offsets[cell]) * 4;
@@ -892,7 +892,7 @@ bool NativeEconomyRuntime::start_epoch(int64_t day_index, std::string &error) {
         // that has already recorded a severe loss must be reconsidered on the
         // next market boundary even when the slower investment cadence is not
         // due; otherwise hysteresis can stall between plan buckets.
-        if (_building_cell_offsets.size() == static_cast<size_t>(_cell_count + 1)) {
+        if (_building_cell_offsets.size() == static_cast<size_t>(_cell_count.get() + 1)) {
             for (const int32_t cell : _epoch_building_cells) {
                 if (!cell_in_market_workset(cell, day_index)) continue;
                 bool needs_lifecycle_review = false;
@@ -967,7 +967,7 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
          resource < static_cast<int32_t>(_resource_ids.size()); ++resource) {
         for (const int32_t cell : _epoch_building_cells) {
             ensure_resource_lane(
-                static_cast<size_t>(resource) * _cell_count + cell);
+                static_cast<size_t>(resource) * _cell_count.get() + cell);
         }
     }
     _epoch_begin_resource_lane_ms += elapsed_ms(resource_lane_2_started);
@@ -975,12 +975,12 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
     // A+Y N8: CSR is rebuilt straight from the sole pending columns.
     const std::vector<int32_t> &pending_cells = buildings_store().pending_cell;
     _pending_construction_cell_offsets.assign(
-        static_cast<size_t>(_cell_count) + 1, 0);
+        static_cast<size_t>(_cell_count.get()) + 1, 0);
     for (const int32_t pending_cell : pending_cells) {
-        if (pending_cell >= 0 && pending_cell < _cell_count)
+        if (pending_cell >= 0 && pending_cell < _cell_count.get())
             ++_pending_construction_cell_offsets[pending_cell + 1];
     }
-    for (int32_t cell = 0; cell < _cell_count; ++cell) {
+    for (int32_t cell = 0; cell < _cell_count.get(); ++cell) {
         _pending_construction_cell_offsets[cell + 1] +=
             _pending_construction_cell_offsets[cell];
     }
@@ -994,7 +994,7 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
          pending_index < static_cast<int32_t>(pending_cells.size());
          ++pending_index) {
         const int32_t cell = pending_cells[pending_index];
-        if (cell >= 0 && cell < _cell_count)
+        if (cell >= 0 && cell < _cell_count.get())
             _pending_construction_cell_indices[pending_cursors[cell]++] = pending_index;
     }
     _epoch_begin_construction_csr_ms = elapsed_ms(construction_csr_started);
@@ -1003,7 +1003,7 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
     // This keeps employment and the published operating state on the same
     // frozen-cycle boundary instead of changing state after hiring has settled.
     for (const int32_t cell : _epoch_building_cells) {
-        if (_building_cell_offsets.size() != static_cast<size_t>(_cell_count + 1))
+        if (_building_cell_offsets.size() != static_cast<size_t>(_cell_count.get() + 1))
             continue;
         for (int32_t g = _building_cell_offsets[cell];
              g < _building_cell_offsets[cell + 1]; ++g) {
@@ -1170,11 +1170,11 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
     trace_begin_epoch();
     const auto commands_started = Clock::now();
     _epoch_commands.clear();
-    auto due_end = std::stable_partition(_pending_commands.begin(), _pending_commands.end(),
+    auto due_end = _pending_commands.stable_partition(
                                          [&](const Command &c) { return c.effective_day <= day_index; });
     _epoch_commands.assign(_pending_commands.begin(), due_end);
     _pending_commands.erase(_pending_commands.begin(), due_end);
-    std::stable_sort(_epoch_commands.begin(), _epoch_commands.end(), [](const Command &a, const Command &b) {
+    _epoch_commands.stable_sort( [](const Command &a, const Command &b) {
         if (a.effective_day != b.effective_day) return a.effective_day < b.effective_day;
         if (a.sequence != b.sequence) return a.sequence < b.sequence;
         if (a.opcode != b.opcode) return a.opcode < b.opcode;
@@ -1197,7 +1197,7 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
         }
         return true;
     };
-    _epoch_commands.erase(std::remove_if(_epoch_commands.begin(), _epoch_commands.end(),
+    _epoch_commands.erase_if(
                                          [&](const Command &cmd) {
         const bool family_reward = is_family_ledger_command(cmd.opcode);
         const bool expedition_command =
@@ -1230,14 +1230,14 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
             return reject_epoch_command(cmd);
         }
         if ((cmd.opcode == COMMAND_MOVE_POPULATION &&
-             (cmd.i32_0 < 0 || cmd.i32_0 >= _cell_count)) ||
+             (cmd.i32_0 < 0 || cmd.i32_0 >= _cell_count.get())) ||
             (cmd.opcode == COMMAND_CHANGE_SIGNATURE &&
              (cmd.i32_0 < 0 || cmd.i32_0 >= static_cast<int32_t>(_signatures.size())))) {
             return reject_epoch_command(cmd);
         }
         if ((cmd.opcode == COMMAND_BUILD || cmd.opcode == COMMAND_DEMOLISH ||
              cmd.opcode == COMMAND_TREASURY_SPONSORED_BUILD) &&
-            (cmd.i32_0 < 0 || cmd.i32_0 >= _cell_count || cmd.i32_1 < 0 ||
+            (cmd.i32_0 < 0 || cmd.i32_0 >= _cell_count.get() || cmd.i32_1 < 0 ||
              cmd.i32_1 >= static_cast<int32_t>(_building_types.size()) || cmd.i64_0 <= 0)) {
             return reject_epoch_command(cmd);
         }
@@ -1266,7 +1266,7 @@ bool NativeEconomyRuntime::finish_epoch_start_after_fiscal(
             return reject_epoch_command(cmd);
         }
         return false;
-    }), _epoch_commands.end());
+    });
     // Population adjustments must be visible to building plan / recovery. The
     // normal LEDGER_APPLY stage runs after BUILDING_PLAN, which previously let
     // recovery approve against labour that the same epoch was about to remove.
@@ -1410,7 +1410,7 @@ bool NativeEconomyRuntime::run_epoch_open_prelude_drain(
         }
         pull_due_family_settlements();
 
-        const bool cycle_due = day_index > _last_committed_day;
+        const bool cycle_due = day_index > _last_committed_day.get();
         if (cycle_due && trade_planner_should_run()) {
             _stage = Stage::TRADE_PLANNING;
             _executed_stage = Stage::TRADE_PLANNING;

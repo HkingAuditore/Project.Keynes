@@ -8,8 +8,24 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <cstdio>
 
 namespace pk {
+
+[[noreturn]] inline void economy_tracking_failure(const char *reason, const char *field) {
+    std::fprintf(stderr, "[economy-tracking-failure] reason=%s field=%s\n", reason, field ? field : "unknown");
+    std::fflush(stderr);
+    throw std::logic_error(reason);
+}
+
+[[noreturn]] inline void economy_tracking_range_failure(const char *reason,
+        const char *field, uint64_t index, uint64_t size) {
+    std::fprintf(stderr, "[economy-tracking-range] reason=%s field=%s index=%llu size=%llu\n",
+        reason, field ? field : "unknown", static_cast<unsigned long long>(index),
+        static_cast<unsigned long long>(size));
+    std::fflush(stderr);
+    throw std::out_of_range(reason);
+}
 
 struct EconomyFieldId {
     uint32_t domain = 0, column = 0;
@@ -20,6 +36,7 @@ struct EconomyFieldId {
 enum class EconomyFieldEncoding : uint8_t { U8, U16, U32, U64, I8, I16, I32, I64, CanonicalRecord };
 enum class EconomyChangeConsumer : uint8_t { Hash, Audit, Publish, Count };
 enum class EconomyAuditRole : uint8_t { None, Population, Cash, Goods };
+enum class EconomyFieldLayout : uint8_t { Dense, KeyedRows };
 
 struct EconomyFieldDescriptor {
     EconomyFieldId id;
@@ -27,6 +44,7 @@ struct EconomyFieldDescriptor {
     EconomyFieldEncoding encoding = EconomyFieldEncoding::U8;
     uint32_t width = 1;
     EconomyAuditRole audit_role = EconomyAuditRole::None;
+    EconomyFieldLayout layout = EconomyFieldLayout::Dense;
 };
 
 class EconomyFieldCatalog {
@@ -46,6 +64,7 @@ struct EconomyColumnChange {
     uint64_t lanes = 0, structure_revision = 0;
     bool structure_changed = false;
     std::vector<uint64_t> pages;
+    std::vector<uint64_t> keys;
 };
 
 struct EconomyChangeBatch {
@@ -82,6 +101,7 @@ class ChangeRegistry {
     struct Entry {
         EconomyColumnChange current;
         uint32_t width = 0;
+        EconomyFieldLayout layout = EconomyFieldLayout::Dense;
         uint64_t mutation_revision = 0;
         EconomyAuditRole audit_role = EconomyAuditRole::None;
         uint64_t audit_epoch = 1;
@@ -90,6 +110,9 @@ class ChangeRegistry {
         std::vector<uint64_t> stamps;
         std::vector<uint8_t> consumer_pending;
         std::array<std::vector<uint64_t>, static_cast<size_t>(EconomyChangeConsumer::Count)> consumer_pages;
+        struct KeyStamp { uint64_t epoch = 0; uint8_t pending = 0; };
+        std::map<uint64_t, KeyStamp> key_stamps;
+        std::array<std::vector<uint64_t>, static_cast<size_t>(EconomyChangeConsumer::Count)> consumer_keys;
     };
     std::map<uint64_t, Entry> _entries;
     EconomyFieldCatalog _catalog;
@@ -115,6 +138,7 @@ public:
             throw std::logic_error("economy_change_field_invalid");
         Entry entry;
         entry.width = field.width;
+        entry.layout = field.layout;
         entry.audit_role = field.audit_role;
         entry.current.field = field.id;
         entry.current.lanes = lanes;
@@ -155,6 +179,7 @@ public:
     void touch_pages(WriterHandle writer, uint64_t first, uint64_t count) {
         if (writer._owner != this || !writer._entry) throw std::logic_error("economy_change_writer_invalid");
         auto &entry = *writer._entry;
+        if (entry.layout != EconomyFieldLayout::Dense) throw std::logic_error("economy_keyed_field_dense_write");
         if (!count) return;
         ++entry.mutation_revision;
         if (first > UINT64_MAX - count) throw std::overflow_error("economy_dirty_range_overflow");
@@ -173,6 +198,19 @@ public:
             entry.current.pages.push_back(page);
         }
     }
+    void touch_key(EconomyFieldId id, uint64_t key) {
+        auto &entry = _entries.at(id.key());
+        if (entry.layout != EconomyFieldLayout::KeyedRows) throw std::logic_error("economy_dense_field_keyed_write");
+        ++entry.mutation_revision;
+        auto &stamp = entry.key_stamps[key];
+        for (size_t consumer = 0; consumer < entry.consumer_keys.size(); ++consumer) {
+            const uint8_t bit = static_cast<uint8_t>(1u << consumer);
+            if (stamp.pending & bit) continue;
+            stamp.pending |= bit; entry.consumer_keys[consumer].push_back(key);
+        }
+        if (stamp.epoch == _epoch) return;
+        stamp.epoch = _epoch; entry.current.keys.push_back(key);
+    }
     void touch(EconomyFieldId id, uint64_t first, uint64_t count) {
         touch(WriterHandle(this, &_entries.at(id.key())), first, count);
     }
@@ -182,6 +220,10 @@ public:
         const auto &entry = *writer._entry;
         if (first > entry.current.lanes || count > entry.current.lanes - first)
             throw std::out_of_range("economy_dirty_lane_range_invalid");
+        if (entry.layout == EconomyFieldLayout::KeyedRows) {
+            for (uint64_t key = first; key < first + count; ++key) touch_key(entry.current.field, key);
+            return;
+        }
         const uint64_t per_page = 4096 / entry.width;
         touch_pages(writer, first / per_page, (first + count - 1) / per_page - first / per_page + 1);
     }
@@ -194,19 +236,35 @@ public:
         entry.current.structure_changed = true;
         if (entry.audit_role != EconomyAuditRole::None) entry.audit.requires_full_reference = true;
         ++entry.current.structure_revision;
+        if (entry.layout == EconomyFieldLayout::KeyedRows) {
+            for (uint64_t key = lanes; key < old; ++key) touch_key(id, key);
+            return;
+        }
         const uint64_t per_page = 4096 / entry.width;
         const uint64_t first = std::min(old, lanes) / per_page;
         const uint64_t end = std::max(old, lanes) / per_page +
             (std::max(old, lanes) % per_page != 0);
         if (end > first) touch_pages(id, first, end - first);
     }
+    void set_keyed_size(EconomyFieldId id, uint64_t count) {
+        auto &entry = _entries.at(id.key());
+        if (entry.layout != EconomyFieldLayout::KeyedRows) throw std::logic_error("economy_dense_field_keyed_size");
+        if (entry.current.lanes == count) return;
+        entry.current.lanes = count; entry.current.structure_changed = true;
+        ++entry.current.structure_revision; ++entry.mutation_revision;
+    }
     void reorder(EconomyFieldId id, uint64_t first, uint64_t count) {
+        if (!count) return;
         auto &entry = _entries.at(id.key());
         ++entry.current.structure_revision;
         entry.current.structure_changed = true;
         if (entry.audit_role != EconomyAuditRole::None) entry.audit.requires_full_reference = true;
         ++entry.mutation_revision;
-        touch(id, first, count);
+        if (entry.layout == EconomyFieldLayout::KeyedRows) {
+            if (first > entry.current.lanes || count > entry.current.lanes - first)
+                throw std::out_of_range("economy_keyed_range_invalid");
+            for (uint64_t key = first; key < first + count; ++key) touch_key(id, key);
+        } else touch(id, first, count);
     }
     void mark_all(EconomyFieldId id) {
         const auto lanes = _entries.at(id.key()).current.lanes;
@@ -227,15 +285,26 @@ public:
         batch.revision = ++_revision;
         for (auto &pair : _entries) {
             auto &current = pair.second.current;
-            if (current.pages.empty() && !current.structure_changed) continue;
+            if (current.pages.empty() && current.keys.empty() && !current.structure_changed) continue;
             std::sort(current.pages.begin(), current.pages.end());
+            std::sort(current.keys.begin(), current.keys.end());
             batch.columns.push_back(current);
+            // Reclaim only touched keys whose page consumers are all done.
+            // The sealed batch owns its own key list, so slow batch consumers
+            // do not require these dedup stamps to stay allocated.
+            for (auto key : current.keys) {
+                const auto stamp = pair.second.key_stamps.find(key);
+                if (stamp != pair.second.key_stamps.end() && !stamp->second.pending)
+                    pair.second.key_stamps.erase(stamp);
+            }
             current.pages.clear();
+            current.keys.clear();
             current.structure_changed = false;
         }
         _sealed.push_back(batch);
         if (++_epoch == 0) {
             for (auto &pair : _entries) std::fill(pair.second.stamps.begin(), pair.second.stamps.end(), 0);
+            for (auto &pair : _entries) for (auto &key : pair.second.key_stamps) key.second.epoch = 0;
             _epoch = 1;
         }
         return batch;
@@ -258,6 +327,24 @@ public:
         std::sort(result.begin(), result.end());
         return result;
     }
+    std::vector<uint64_t> take_keys(EconomyFieldId id, EconomyChangeConsumer consumer) {
+        auto &entry = _entries.at(id.key());
+        if (entry.layout != EconomyFieldLayout::KeyedRows) throw std::logic_error("economy_dense_field_keyed_read");
+        const size_t index = static_cast<size_t>(consumer);
+        if (index >= entry.consumer_keys.size()) throw std::out_of_range("economy_change_consumer_invalid");
+        std::vector<uint64_t> result;
+        result.swap(entry.consumer_keys[index]);
+        const uint8_t bit = static_cast<uint8_t>(1u << index);
+        for (auto key : result) {
+            const auto stamp = entry.key_stamps.find(key);
+            if (stamp == entry.key_stamps.end()) throw std::logic_error("economy_key_stamp_missing");
+            stamp->second.pending &= static_cast<uint8_t>(~bit);
+            if (!stamp->second.pending && stamp->second.epoch != _epoch) entry.key_stamps.erase(stamp);
+        }
+        std::sort(result.begin(), result.end());
+        return result;
+    }
+    size_t retained_key_stamps(EconomyFieldId id) const { return _entries.at(id.key()).key_stamps.size(); }
     uint64_t revision() const noexcept { return _revision; }
     uint64_t cursor(EconomyChangeConsumer consumer) const { return _cursors.at(static_cast<size_t>(consumer)); }
     void acknowledge(EconomyChangeConsumer consumer, uint64_t revision) {
